@@ -1,0 +1,31 @@
+{
+  "name": "mcptest-monorepo",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "MCP server testing framework — monorepo root (private, not published)",
+  "license": "MIT",
+  "packageManager": "pnpm@11.17.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "test": "vitest run",
+    "lint": "biome check .",
+    "format": "biome format --write .",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "release": "pnpm build && changeset publish"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.5",
+    "@changesets/cli": "^2.31.1",
+    "@types/node": "^24.13.3",
+    "tsdown": "^0.22.14",
+    "turbo": "^2.10.7",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.10"
+  }
+}

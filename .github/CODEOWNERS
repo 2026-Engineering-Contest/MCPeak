@@ -1,0 +1,10 @@
+# 해당 경로 변경 시 오너가 자동으로 리뷰어로 지정된다.
+# TODO(사람): @*-owner 자리표시자를 실제 GitHub 계정으로 교체하세요.
+/packages/core/       @core-owner
+/packages/runner/     @runner-owner
+/packages/generate/   @generate-owner
+/packages/record/     @record-owner
+/packages/mock/       @mock-owner
+/packages/cli/        @runner-owner @mock-owner
+/docs/adr/            @core-owner
+/CONTRIBUTING.md      @core-owner @runner-owner

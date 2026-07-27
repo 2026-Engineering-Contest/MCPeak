@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "moduleDetection": "force",
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "skipLibCheck": true,
+    "declaration": true,
+    "sourceMap": true,
+    "baseUrl": ".",
+    "paths": {
+      "@mcptest/core": ["./packages/core/src/index.ts"],
+      "@mcptest/runner": ["./packages/runner/src/index.ts"],
+      "@mcptest/generate": ["./packages/generate/src/index.ts"],
+      "@mcptest/record": ["./packages/record/src/index.ts"],
+      "@mcptest/mock": ["./packages/mock/src/index.ts"]
+    }
+  }
+}

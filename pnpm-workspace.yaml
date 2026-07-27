@@ -1,0 +1,12 @@
+packages:
+  - "packages/*"
+
+# Shared dependency versions live in the catalog to prevent version drift
+# across the 6 packages (CONTRIBUTING §부록 B).
+catalog:
+  # Pinned to the 1.x stable line ON PURPOSE — do NOT add "^" or bump to 2.x.
+  # The split-package 2.0 SDK is still in development and would break core.
+  "@modelcontextprotocol/sdk": "1.30.0"
+
+minimumReleaseAgeExclude:
+  - '@modelcontextprotocol/sdk@1.30.0'

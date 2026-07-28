@@ -11,8 +11,8 @@ concurrency:
 permissions:
   contents: write
   pull-requests: write
-  # npm provenance / OIDC 발행을 위해 필요 (CONTRIBUTING §7).
-  id-token: write
+  # W2 알파 배포 시 함께 복구한다 — npm provenance / OIDC 발행용 (CONTRIBUTING §7).
+  # id-token: write
 
 jobs:
   release:
@@ -38,12 +38,21 @@ jobs:
       - name: Build
         run: pnpm build
 
-      - name: Create Release Pull Request or Publish
+      # 버전 PR 생성까지만 한다. 배포는 의도적으로 비활성화돼 있다.
+      #
+      # changesets 액션은 changeset 파일이 하나도 없으면 "미배포분을 배포하라"로
+      # 해석해 publish 를 즉시 실행한다. 그 상태에서 NPM_TOKEN 시크릿이 추가되면
+      # 0.0.0 패키지 6개가 npm 에 그대로 올라간다. npm 은 72시간 뒤 unpublish 가
+      # 막히고 그 버전·이름은 영구히 사용할 수 없게 된다.
+      #
+      # W2 알파 배포(CONTRIBUTING §7) 시점에 릴리스 담당이 아래 두 줄의 주석을
+      # 해제하고, 위 permissions 의 id-token 도 함께 복구한다.
+      - name: Create Release Pull Request
         uses: changesets/action@v1
         with:
           version: pnpm version-packages
-          publish: pnpm release
+          # publish: pnpm release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # 토큰 값은 여기에 넣지 않는다 — 저장소 시크릿으로만 참조한다.
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          # NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

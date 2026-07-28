@@ -11,6 +11,8 @@ concurrency:
 
 jobs:
   verify:
+    # 린트 · 타입체크 · 테스트는 지원 대상 런타임 전부에서 돌린다.
+    # 이 잡이 "사용자 환경에서 동작한다"를 보증한다 (CONTRIBUTING §6).
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -41,6 +43,37 @@ jobs:
 
       - name: Test
         run: pnpm test
+
+  build:
+    # 빌드만 별도 잡으로 분리한다.
+    #
+    # 번들러(tsdown 0.22)가 engines.node 를 "^22.18.0 || >=24.11.0" 으로 선언하고
+    # 있어 Node 20 에서는 실행 자체가 안 된다(내부에서 ES2024 의
+    # Promise.withResolvers 를 쓴다). Node 20 은 2026-04-30 자로 EOL 이라
+    # 생태계 전반이 지원을 걷는 중이고, pnpm 11 도 같은 이유로 22.13+ 를 요구한다.
+    #
+    # 빌드는 산출물을 만드는 개발 시점 작업이고, 산출물 자체는 ES2022 라 Node 20
+    # 에서 정상 동작한다. 따라서 "지원 런타임 전부에서 검사, 빌드는 최신 LTS 에서"
+    # 로 나눈다. 사용자에게 한 Node 20 지원 약속은 verify 잡이 계속 보증한다.
+    #
+    # Node 20 지원 자체를 접을지는 팀 결정 사항이다 (CONTRIBUTING §6 개정 + ADR).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
 
       - name: Build
         run: pnpm build

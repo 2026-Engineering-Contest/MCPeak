@@ -1,4 +1,4 @@
-import type { ToolResult } from "@mcptest/core";
+import type { ToolResult } from "@ohmymcp/core";
 
 /** 녹화된 상호작용의 묶음. 매칭 키 · 비결정 필드 처리는 ADR-0003 에서 결정한다. */
 export interface Cassette {

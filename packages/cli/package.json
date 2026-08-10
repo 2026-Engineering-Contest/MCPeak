@@ -1,15 +1,15 @@
 {
-  "name": "mcptest",
+  "name": "ohmymcp",
   "version": "0.0.0",
   "private": false,
   "type": "module",
-  "description": "mcptest 프레임워크의 CLI 진입점 (얇게 유지)",
+  "description": "OhMyMCP 프레임워크의 CLI 진입점 (얇게 유지)",
   "license": "MIT",
   "publishConfig": {
     "access": "public"
   },
   "bin": {
-    "mcptest": "./dist/cli.mjs"
+    "ohmymcp": "./dist/cli.mjs"
   },
   "exports": {
     ".": {
@@ -34,9 +34,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@mcptest/runner": "workspace:*",
-    "@mcptest/generate": "workspace:*",
-    "@mcptest/record": "workspace:*",
-    "@mcptest/mock": "workspace:*"
+    "@ohmymcp/runner": "workspace:*",
+    "@ohmymcp/generate": "workspace:*",
+    "@ohmymcp/record": "workspace:*",
+    "@ohmymcp/mock": "workspace:*"
   }
 }

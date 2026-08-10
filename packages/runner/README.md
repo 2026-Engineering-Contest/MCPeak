@@ -1,9 +1,9 @@
-# @mcptest/runner
+# @ohmymcp/runner
 
 공개 API 설계 · matcher · **실패 메시지 품질** · 리포터 · JUnit XML.
 
 - **오너:** (이름)
-- **의존:** `@mcptest/core`
+- **의존:** `@ohmymcp/core`
 
 ## 상태
 

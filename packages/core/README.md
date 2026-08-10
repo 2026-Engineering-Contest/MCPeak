@@ -1,4 +1,4 @@
-# @mcptest/core
+# @ohmymcp/core
 
 트랜스포트 · 프로세스 기동/종료 · 타임아웃 · stderr 수집 · 핸드셰이크.
 

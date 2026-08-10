@@ -1,4 +1,4 @@
-import type { ToolResult } from "@mcptest/core";
+import type { ToolResult } from "@ohmymcp/core";
 
 export interface MockServer {
   url: string;

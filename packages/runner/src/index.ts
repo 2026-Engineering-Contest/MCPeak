@@ -1,4 +1,4 @@
-import type { McpClient, ToolResult } from "@mcptest/core";
+import type { McpClient, ToolResult } from "@ohmymcp/core";
 
 /** `createMcpTest` 에 넘기는 설정. */
 export interface McpTestConfig {

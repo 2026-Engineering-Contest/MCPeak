@@ -1,5 +1,5 @@
 {
-  "name": "@mcptest/record",
+  "name": "@ohmymcp/record",
   "version": "0.0.0",
   "private": false,
   "type": "module",
@@ -31,6 +31,6 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@mcptest/core": "workspace:*"
+    "@ohmymcp/core": "workspace:*"
   }
 }

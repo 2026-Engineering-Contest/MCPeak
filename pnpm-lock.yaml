@@ -38,16 +38,16 @@ importers:
 
   packages/cli:
     dependencies:
-      '@mcptest/generate':
+      '@ohmymcp/generate':
         specifier: workspace:*
         version: link:../generate
-      '@mcptest/mock':
+      '@ohmymcp/mock':
         specifier: workspace:*
         version: link:../mock
-      '@mcptest/record':
+      '@ohmymcp/record':
         specifier: workspace:*
         version: link:../record
-      '@mcptest/runner':
+      '@ohmymcp/runner':
         specifier: workspace:*
         version: link:../runner
 
@@ -59,25 +59,25 @@ importers:
 
   packages/generate:
     dependencies:
-      '@mcptest/core':
+      '@ohmymcp/core':
         specifier: workspace:*
         version: link:../core
 
   packages/mock:
     dependencies:
-      '@mcptest/core':
+      '@ohmymcp/core':
         specifier: workspace:*
         version: link:../core
 
   packages/record:
     dependencies:
-      '@mcptest/core':
+      '@ohmymcp/core':
         specifier: workspace:*
         version: link:../core
 
   packages/runner:
     dependencies:
-      '@mcptest/core':
+      '@ohmymcp/core':
         specifier: workspace:*
         version: link:../core
 

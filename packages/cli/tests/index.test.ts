@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { COMMANDS, run } from "../src/index.js";
 
-describe("mcptest cli", () => {
+describe("ohmymcp cli", () => {
   it("run() 은 아직 구현되지 않은 스텁이다", () => {
     expect(run).toBeTypeOf("function");
     expect(() => run([])).toThrow("not implemented");

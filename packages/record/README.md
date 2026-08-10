@@ -1,9 +1,9 @@
-# @mcptest/record
+# @ohmymcp/record
 
 카세트 포맷 · 요청 매칭 키 · 비결정 필드 처리 · 계약 스냅샷.
 
 - **오너:** (이름)
-- **의존:** `@mcptest/core`
+- **의존:** `@ohmymcp/core`
 
 ## 상태
 

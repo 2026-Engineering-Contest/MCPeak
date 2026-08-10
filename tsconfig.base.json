@@ -17,11 +17,11 @@
     "sourceMap": true,
     "baseUrl": ".",
     "paths": {
-      "@mcptest/core": ["./packages/core/src/index.ts"],
-      "@mcptest/runner": ["./packages/runner/src/index.ts"],
-      "@mcptest/generate": ["./packages/generate/src/index.ts"],
-      "@mcptest/record": ["./packages/record/src/index.ts"],
-      "@mcptest/mock": ["./packages/mock/src/index.ts"]
+      "@ohmymcp/core": ["./packages/core/src/index.ts"],
+      "@ohmymcp/runner": ["./packages/runner/src/index.ts"],
+      "@ohmymcp/generate": ["./packages/generate/src/index.ts"],
+      "@ohmymcp/record": ["./packages/record/src/index.ts"],
+      "@ohmymcp/mock": ["./packages/mock/src/index.ts"]
     }
   }
 }

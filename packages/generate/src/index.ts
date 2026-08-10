@@ -1,4 +1,4 @@
-import type { ToolDef } from "@mcptest/core";
+import type { ToolDef } from "@ohmymcp/core";
 
 /** 테스트 코드를 생성할 때의 옵션. */
 export interface GenerateOptions {

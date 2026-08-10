@@ -1,9 +1,9 @@
-# @mcptest/generate
+# @ohmymcp/generate
 
 툴 스키마 분석 · 테스트 케이스 합성 · 코드 생성.
 
 - **오너:** (이름)
-- **의존:** `@mcptest/core`
+- **의존:** `@ohmymcp/core`
 
 ## 상태
 

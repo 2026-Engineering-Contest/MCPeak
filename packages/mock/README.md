@@ -1,9 +1,9 @@
-# @mcptest/mock
+# @ohmymcp/mock
 
 가짜 데이터 생성 · 응답 주입 API. (릴리스 · 도그푸딩도 이 오너가 겸한다.)
 
 - **오너:** (이름)
-- **의존:** `@mcptest/core`
+- **의존:** `@ohmymcp/core`
 
 ## 상태
 

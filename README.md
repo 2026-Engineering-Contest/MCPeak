@@ -1,4 +1,4 @@
-# mcptest
+# OhMyMCP
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 
@@ -12,16 +12,16 @@ MCP(Model Context Protocol) 서버를 **코드로 자동 테스트**하는 오�
 ## 설치
 
 ```bash
-npm install -D mcptest
+npm install -D ohmymcp
 # 또는
-pnpm add -D mcptest
+pnpm add -D ohmymcp
 ```
 
 ## 30초 예제
 
 ```ts
-import { createMcpTest, toContainTool } from "@mcptest/runner";
-import { connect } from "@mcptest/core";
+import { createMcpTest, toContainTool } from "@ohmymcp/runner";
+import { connect } from "@ohmymcp/core";
 
 createMcpTest({ client: await connect({ command: "node", args: ["./server.js"] }) }, (t) => {
   // matcher · runner API 는 각 오너가 구현 중입니다.
@@ -38,12 +38,12 @@ createMcpTest({ client: await connect({ command: "node", args: ["./server.js"] }
 
 | 패키지 | 역할 |
 |---|---|
-| [`@mcptest/core`](./packages/core) | 트랜스포트 · 프로세스 수명주기 · 핸드셰이크 |
-| [`@mcptest/runner`](./packages/runner) | `createMcpTest` · matcher · 리포터 |
-| [`@mcptest/generate`](./packages/generate) | 스키마 → 테스트 코드 생성 |
-| [`@mcptest/record`](./packages/record) | 녹화 · 재생 · 계약 스냅샷 |
-| [`@mcptest/mock`](./packages/mock) | 목 서버 · 가짜 데이터 |
-| [`mcptest`](./packages/cli) | CLI 진입점 |
+| [`@ohmymcp/core`](./packages/core) | 트랜스포트 · 프로세스 수명주기 · 핸드셰이크 |
+| [`@ohmymcp/runner`](./packages/runner) | `createMcpTest` · matcher · 리포터 |
+| [`@ohmymcp/generate`](./packages/generate) | 스키마 → 테스트 코드 생성 |
+| [`@ohmymcp/record`](./packages/record) | 녹화 · 재생 · 계약 스냅샷 |
+| [`@ohmymcp/mock`](./packages/mock) | 목 서버 · 가짜 데이터 |
+| [`ohmymcp`](./packages/cli) | CLI 진입점 |
 
 ## 개발
 

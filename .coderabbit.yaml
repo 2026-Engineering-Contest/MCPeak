@@ -1,8 +1,6 @@
 # yaml-language-server: $schema=https://storage.googleapis.com/coderabbit_public_assets/schema.v2.json
 #
 # CodeRabbit 자동 리뷰 설정.
-# `main` 보호 규칙에서 리뷰 필수가 해제돼 있어, 이 봇이 사실상 유일한 상시 리뷰어다.
-# 그래서 profile 을 assertive 로 둔다 (기본값은 chill).
 #
 # **대시보드에서 설정하지 말고 이 파일에서 한다.** 리뷰 로그의
 # "Configuration used: Path: .coderabbit.yaml" 이 이 파일이 적용됨을 보여준다.
@@ -33,7 +31,11 @@ knowledge_base:
     scope: auto
 
 reviews:
-  profile: assertive
+  # quiet < chill(기본) < assertive.
+  # assertive 로 뒀더니 "6개 고치니 8개 더" 가 되어 팀원이 리뷰를 읽지 않게 됐다.
+  # 아무도 안 읽는 리뷰어는 0점이므로 기본값으로 내린다. 규칙 위반 탐지는
+  # knowledge_base 와 path_instructions 가 담당하므로 이 값과 무관하다.
+  profile: chill
   request_changes_workflow: false
   high_level_summary: true
   poem: false

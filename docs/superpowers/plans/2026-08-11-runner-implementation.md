@@ -4,7 +4,7 @@
 
 **Goal:** Implement the first deterministic `TestSuiteSpec → RunnerEvent[] + RunnerReport` vertical slice in `@ohmymcp/runner`, with `toolExists`, `isError`, validation, timeout, cancellation, and a generate-ready public contract.
 
-**Architecture:** Keep the JSON-compatible specification contract isolated under `src/spec/`, re-export it from the existing package root, and let a sequential executor consume only the frozen `McpClient` contract. Assertions return structured results rather than throwing. Runner keeps private operational inputs separate from sanitized observer snapshots, returns report/drain lifecycle Promises, and retains each sanitized case specification and diagnostic so generate can later build reviewed single-case or batch repair requests.
+**Architecture:** Keep the JSON-compatible specification contract isolated under `src/spec/`, re-export it from the existing package root, and let a sequential executor consume only the frozen `McpClient` contract. Assertions return structured results rather than throwing. Runner keeps private operational inputs separate from sanitized observer snapshots, returns an independently completing report plus a bounded non-rejecting drain result, and retains each sanitized case specification and diagnostic so generate can later build reviewed single-case or batch repair requests.
 
 **Tech Stack:** TypeScript 5.9, Vitest 4, tsdown, Biome, Node.js 20+, pnpm workspaces. Add no dependency.
 
@@ -19,7 +19,8 @@
 - Do not add timestamps, measured durations, random IDs, or parallel execution.
 - Do not call `client.close()` from Runner.
 - Expose sanitized event/report snapshots only; actual MCP calls use the private original input.
-- Return a non-rejecting `drain` Promise and require callers to await it before closing the client.
+- Return a non-rejecting bounded `drain` result. Default deadline is 5,000ms; caller range is integer `1..60_000ms`.
+- CLI, Dashboard Node, and test adapters must close through an idempotent `closeOnce` after drain; deadline expiry is the forced transport-close path.
 - Enforce default observer limits of 65,536 bytes per case and 1,048,576 bytes per report.
 - Child agents and the main agent must not commit, merge, or push. The user performs each commit after a review gate.
 - Do not revert unrelated user changes. The current `.gitignore` and `docs/2026-08-11-runner-session-handoff.md` changes are outside implementation ownership.
@@ -41,6 +42,7 @@
 - `packages/runner/src/executor.ts` — sequential execution, event emission, report construction, timeout, abort.
 - `packages/runner/tests/spec-validation.test.ts` — validator and helper tests.
 - `packages/runner/tests/spec-schema.test.ts` — JSON Schema contract tests.
+- `packages/runner/tests/helpers/schema-evaluator.ts` — dev-only evaluator for the exact public Schema keyword subset.
 - `packages/runner/tests/assertions.test.ts` — assertion and message tests.
 - `packages/runner/tests/sanitization.test.ts` — recursive masking and payload-limit tests.
 - `packages/runner/tests/executor.test.ts` — execution, event, report, timeout, and abort tests.
@@ -48,13 +50,10 @@
 
 ### Modify
 
-- `packages/runner/src/index.ts` — remove unusable stubs and re-export the approved API.
+- `packages/runner/src/index.ts` — re-export the approved API while retaining deprecated public stub shims.
+- `packages/runner/tests/index.test.ts` — preserve deprecated named-export compatibility assertions.
 - `packages/runner/package.json` — replace the stub-oriented description only.
 - `packages/runner/README.md` — document declarative authoring and execution.
-
-### Delete
-
-- `packages/runner/tests/index.test.ts` — replace tests that only assert `not implemented`.
 
 ### Must remain unchanged
 
@@ -385,12 +384,17 @@ export interface RunSuiteOptions {
   onEvent?: (event: RunnerEvent) => void;
   redaction?: RunnerRedactionOptions;
   payloadLimits?: RunnerPayloadLimits;
+  drainTimeoutMs?: number;
 }
 
 export interface RunnerExecution {
   report: Promise<RunnerReport>;
-  drain: Promise<void>;
+  drain: Promise<RunnerDrainResult>;
 }
+
+export type RunnerDrainResult =
+  | { status: "settled" }
+  | { status: "deadlineExceeded"; pendingOperations: 1 };
 
 export function runSuite(options: RunSuiteOptions): RunnerExecution;
 
@@ -470,8 +474,9 @@ export interface SuiteCompletedEvent extends RunnerEventBase {
 - Create: `packages/runner/src/spec/index.ts`
 - Create: `packages/runner/tests/spec-validation.test.ts`
 - Create: `packages/runner/tests/spec-schema.test.ts`
+- Create: `packages/runner/tests/helpers/schema-evaluator.ts`
 - Modify: `packages/runner/src/index.ts`
-- Delete: `packages/runner/tests/index.test.ts`
+- Modify: `packages/runner/tests/index.test.ts`
 
 **Consumes:** Frozen `McpClient` types only indirectly; this task must not import core.
 
@@ -595,7 +600,7 @@ Add these named cases with the exact issue assertion shown:
 | `공백뿐인 식별자와 이름을 거절한다` | code `INVALID_VALUE` at `id`, `name`, `cases[0].id`, `cases[0].name` |
 | `필수 필드 누락을 각각 보고한다` | `MISSING_REQUIRED_FIELD` at `schemaVersion`, `id`, `name`, `cases` |
 | `중첩된 알 수 없는 필드를 거절한다` | `UNKNOWN_FIELD` at `cases[0].operation.toolNmae` |
-| `유한하지 않은 숫자 입력을 거절한다` | `INVALID_JSON_VALUE` for both `NaN` and `Infinity` input paths |
+| `유한하지 않은 숫자 입력을 거절한다` | `INVALID_JSON_VALUE` for `NaN`, `Infinity`, and `-Infinity` input paths; implementation calls `Number.isFinite` |
 | `사용자 정의 class 입력을 거절한다` | `INVALID_JSON_VALUE` at `cases[0].operation.input` |
 | `timeout 경계를 정확히 검증한다` | `2_147_483_647`은 valid; `0`, `-1`, `1.5`, `2_147_483_648`은 `INVALID_TIMEOUT` |
 | `공유 JSON 객체 참조를 허용한다` | 같은 plain object를 두 입력 필드가 가리켜도 issues가 비어 있음 |
@@ -615,7 +620,78 @@ In `spec-schema.test.ts`, assert the concrete contract rather than snapshotting 
 | input의 JSON scalar/array/object | `$defs.jsonValue.oneOf`와 재귀 `$ref` |
 | timeout `0`, `2_147_483_648` | `$defs.timeoutMs.minimum/maximum` |
 
-중복 case ID, class instance, `NaN`/`Infinity`, 공유 참조, cycle은 직렬화된 JSON Schema가 표현할 수 없는 validator-only fixture로 표시한다.
+중복 case ID, class instance, `NaN`/`Infinity`/`-Infinity`, 공유 참조, cycle은 직렬화된 JSON Schema가 표현할 수 없는 validator-only fixture로 표시한다.
+
+`tests/helpers/schema-evaluator.ts`는 production export가 아닌 dev-only helper다. 다음 signature와 실패 code를 고정한다.
+
+```ts
+export interface SchemaEvaluationError {
+  code: "INVALID_SCHEMA" | "UNRESOLVED_REF" | "ONE_OF_MATCH_COUNT" | "INSTANCE_MISMATCH";
+  instancePath: string;
+  schemaPath: string;
+  message: string;
+}
+
+export function evaluateSchema(
+  rootSchema: ReadonlyJsonObject,
+  instance: unknown,
+): { valid: boolean; errors: SchemaEvaluationError[] };
+```
+
+Evaluator는 local `#/$defs/<name>`만 JSON Pointer unescape(`~1` → `/`, `~0` → `~`) 후 root에서 해석한다. 없는 target 또는 local 형식이 아닌 `$ref`는 `UNRESOLVED_REF`다. `$ref` sibling은 이 Schema에서 사용하지 않으며 발견하면 `INVALID_SCHEMA`다. `oneOf`는 각 branch를 독립 error buffer로 평가하고 match 수가 정확히 1이 아니면 `ONE_OF_MATCH_COUNT`다. 지원 keyword는 `$ref`, `oneOf`, `type`, `const`, `required`, `properties`, `additionalProperties`, `items`, `minItems`, `minLength`, `pattern`, `minimum`, `maximum`이며 `$schema`, `$id`, `$defs`는 root metadata로만 허용한다. 그 밖의 keyword는 `INVALID_SCHEMA`로 실패한다. `type: "number"`는 `typeof === "number" && Number.isFinite(instance)`다. `type: "object"`는 null/array가 아니고 prototype이 `Object.prototype` 또는 `null`인 record만 허용해 production validator와 정확히 맞춘다. `additionalProperties: false`는 선언되지 않은 own enumerable key를 거절하고, Schema 객체이면 모든 추가 key 값에 그 Schema를 재귀 적용한다.
+
+같은 frozen `MCP_SUITE_JSON_SCHEMA`에 아래 fixture를 실제 실행한다.
+
+```ts
+it.each([
+  ["valid listTools", validListToolsSuite, true],
+  ["valid recursive callTool input", validRecursiveInputSuite, true],
+  ["valid null-prototype input", validNullPrototypeInputSuite, true],
+  ["missing required field", missingNameSuite, false],
+  ["unknown nested field", unknownOperationFieldSuite, false],
+  ["wrong operation/assertion branch", mixedOperationAssertionSuite, false],
+  ["empty assertions", emptyAssertionsSuite, false],
+  ["timeout over maximum", oversizedTimeoutSuite, false],
+] as const)("공개 JSON Schema를 실행 검증한다: %s", (_name, fixture, expected) => {
+  expect(evaluateSchema(MCP_SUITE_JSON_SCHEMA, fixture).valid).toBe(expected);
+});
+
+it("깨진 local ref를 evaluator 오류로 보고한다", () => {
+  const broken = structuredClone(MCP_SUITE_JSON_SCHEMA) as unknown as MutableSuiteSchema;
+  broken.properties.cases.items.oneOf[0].$ref = "#/$defs/missingCase";
+  expect(evaluateSchema(broken, validListToolsSuite).errors).toContainEqual(
+    expect.objectContaining({ code: "UNRESOLVED_REF" }),
+  );
+});
+
+it("oneOf가 0개 또는 2개 맞으면 거절한다", () => {
+  const zero = evaluateSchema(MCP_SUITE_JSON_SCHEMA, mixedOperationAssertionSuite);
+  expect(zero.errors).toContainEqual(expect.objectContaining({ code: "ONE_OF_MATCH_COUNT" }));
+
+  const duplicated = structuredClone(MCP_SUITE_JSON_SCHEMA) as unknown as MutableSuiteSchema;
+  duplicated.properties.cases.items.oneOf = [
+    { $ref: "#/$defs/listToolsCase" },
+    { $ref: "#/$defs/listToolsCase" },
+  ];
+  expect(evaluateSchema(duplicated, validListToolsSuite).errors).toContainEqual(
+    expect.objectContaining({ code: "ONE_OF_MATCH_COUNT" }),
+  );
+});
+```
+
+`MutableSuiteSchema` is test-only and exactly describes the branch the two corruption tests mutate:
+
+```ts
+type MutableSuiteSchema = ReadonlyJsonObject & {
+  properties: {
+    cases: {
+      items: {
+        oneOf: Array<{ $ref: string }>;
+      };
+    };
+  };
+};
+```
 
 ```ts
 it("JSON Schema가 version 1과 닫힌 계약을 공개한다", () => {
@@ -726,16 +802,16 @@ it("공개 JSON Schema 타입이 중첩 값까지 readonly다", () => {
 Run:
 
 ```bash
-pnpm exec vitest run packages/runner/tests/spec-validation.test.ts packages/runner/tests/spec-schema.test.ts
+pnpm exec vitest run packages/runner/tests/spec-validation.test.ts packages/runner/tests/spec-schema.test.ts packages/runner/tests/index.test.ts
 ```
 
 Expected: failure because the new modules and exports do not exist. A syntax or test-collection failure is not the intended RED; correct the test setup until Vitest reports missing implementation symbols.
 
 - [ ] **Step 3: Implement the exact types and JSON Schema contract**
 
-Implement the full JSON Schema object from Plan §3 byte-for-byte except for formatter-controlled whitespace. Export it as `ReadonlyJsonObject`, keep `additionalProperties: false` for contract objects, and allow arbitrary recursive JSON values only under `operation.input`. Recursively freeze every Schema array and object before exposing the constant. Do not add a JSON Schema validator dependency.
+Implement the full JSON Schema object from Plan §3 byte-for-byte except for formatter-controlled whitespace. Export it as `ReadonlyJsonObject`, keep `additionalProperties: false` for contract objects, and allow arbitrary recursive JSON values only under `operation.input`. Recursively freeze every Schema array and object before exposing the constant. Implement the dev-only evaluator contract above under `tests/helpers`; do not export or bundle it and do not add a JSON Schema validator dependency.
 
-`spec/index.ts` re-exports only spec types, Schema, validator, and error. Root `src/index.ts` re-exports `./spec/index.js`. Remove `createMcpTest`, `toContainTool`, and their old types.
+`spec/index.ts` re-exports only spec types, Schema, validator, and error. Root `src/index.ts` re-exports `./spec/index.js`. Preserve `McpTestConfig`, `McpTestContext`, `TestBody`, `MatchResult`, `createMcpTest`, and `toContainTool` as deprecated compatibility shims with their existing signatures and exact `not implemented` throw behavior; removing or silently changing these exports requires a later major release.
 
 - [ ] **Step 4: Implement deterministic validation**
 
@@ -753,6 +829,7 @@ Rules:
 - A non-object node produces one `INVALID_TYPE` and does not recursively validate children.
 - Strings must contain at least one non-whitespace character.
 - Timeout must be a positive safe integer.
+- Every numeric JSON value must satisfy `Number.isFinite`; reject `NaN`, `Infinity`, and `-Infinity` with `INVALID_JSON_VALUE` before cloning or serialization.
 - JSON objects must be arrays or plain records with prototype `Object.prototype` or `null`.
 - JSON 값 검사는 전역 visited set이 아니라 현재 활성 재귀 stack을 사용한다. 따라서 `{ a: shared, b: shared }` 같은 비순환 공유 참조는 허용하고, 조상 객체를 다시 가리키는 실제 cycle만 두 번째 경로에서 `INVALID_JSON_VALUE`로 보고한다.
 - `validateMcpSuite` aggregates issues and never throws.
@@ -763,7 +840,7 @@ Rules:
 Run:
 
 ```bash
-pnpm exec vitest run packages/runner/tests/spec-validation.test.ts packages/runner/tests/spec-schema.test.ts
+pnpm exec vitest run packages/runner/tests/spec-validation.test.ts packages/runner/tests/spec-schema.test.ts packages/runner/tests/index.test.ts
 pnpm --filter @ohmymcp/runner typecheck
 ```
 
@@ -963,7 +1040,7 @@ Add these named cases and exact assertions:
 | `event handler 오류를 호출자에게 전달한다` | rejection is the same sentinel Error; no subsequent MCP call |
 | `같은 입력은 같은 이벤트와 보고서를 만든다` | two independent runs are deep equal |
 | `보고서를 안전하게 직렬화한다` | `JSON.stringify` succeeds and serialized keys exclude `raw`, `timestamp`, `duration`, `durationMs` |
-| `정상 실행 handle의 drain을 완료한다` | `report`와 `drain`이 모두 resolve하고 `client.close`는 Runner에서 호출하지 않음 |
+| `정상 실행 handle의 drain을 완료한다` | `report` resolves, `drain` equals `{ status: "settled" }`, `client.close`는 Runner에서 호출하지 않음 |
 
 In `sanitization.test.ts`, use this fixed input:
 
@@ -1015,7 +1092,7 @@ Rules:
 - Preserve case and assertion order.
 - Do not include operation output in the public report beyond relevant diagnostics.
 - Do not call `client.close()`.
-- Return `{ report, drain }`; on ordinary completion/rejection, `drain` settles no later than `report` and never rejects.
+- Return `{ report, drain }`; on ordinary completion/rejection with no pending MCP request, `drain` resolves `{ status: "settled" }` no later than `report` and never rejects.
 - In this task, use a temporary internal control path that resolves operations normally; Task 4 adds timeout/abort without changing public event/report names.
 
 `sanitization.ts` implements these exact defaults and rules:
@@ -1075,7 +1152,7 @@ Do not start Task 4 before verifying the supplied SHA.
 
 **Consumes:** Task 3 executor and final public result/event names.
 
-**Produces:** timeout priority, external abort, remaining `notRun` results, timer/listener cleanup, and pending-operation `drain` lifecycle.
+**Produces:** timeout priority, external abort, remaining `notRun` results, timer/listener cleanup, bounded pending-operation drain outcomes, and caller-owned idempotent forced close.
 
 - [ ] **Step 1: Write fake-timer timeout and abort tests**
 
@@ -1108,9 +1185,13 @@ Add these named cases and exact assertions:
 | `모든 settle 경로가 timer와 listener를 정리한다` | fake timer count 0 and instrumented add/remove listener counts equal |
 | `timeout과 abort 뒤 다음 MCP 호출을 시작하지 않는다` | call record contains current operation only |
 | `Runner가 client를 닫지 않는다` | close spy count 0 for timeout and abort |
-| `timeout report 뒤 pending operation을 drain한다` | report resolves first; operation settle 전 drain pending; settle 후 drain resolves |
-| `abort 직후 시작한 close 절차는 drain을 기다린다` | `execution.drain.then(() => client.close())`를 report 직후 시작; operation settle 전 close 0회, settle 후 1회 |
-| `pending operation reject를 drain이 삼킨다` | timeout 뒤 원본 Promise reject; drain resolves and no unhandled rejection |
+| `report는 drain과 독립적으로 먼저 끝난다` | timeout report resolves while pending operation and drain remain pending |
+| `deadline 전 operation을 정상 drain한다` | operation settle 전 drain pending; settle 후 `{ status: "settled" }`; caller close 1회 |
+| `drain deadline 뒤 transport를 강제 종료한다` | report 후 `4_999ms` close 0회; `5_000ms`에 `{ status: "deadlineExceeded", pendingOperations: 1 }`; caller close 1회 |
+| `caller drain deadline 범위를 검증한다` | `0`, `1.5`, `60_001`은 events/calls 전 `RangeError`; `1`, `60_000`은 허용 |
+| `pending operation의 늦은 reject를 삼킨다` | deadline/close 뒤 원본 Promise reject; no unhandled rejection and drain result unchanged |
+| `report reject에서도 finally로 한 번 닫는다` | event handler sentinel rejection을 primary error로 보존; drain 후 close 1회 |
+| `timeout abort 중복 cleanup은 close를 중복 호출하지 않는다` | adapter-local `closeOnce()`를 두 경로에서 호출해도 same Promise와 close spy 1회 |
 
 - [ ] **Step 2: Run focused tests and observe RED**
 
@@ -1134,22 +1215,62 @@ type ControlledOperation<T> =
 
 Use one settle function that clears the timer and removes the abort listener exactly once. Check `signal.aborted` before starting and again in the timeout callback so explicit cancellation has priority. Never close the client and never start the next case after `timedOut` or `cancelled`.
 
-`runSuite` creates a resolved default `pendingSettlement`, then replaces it whenever an MCP Promise starts:
+`runSuite` validates `drainTimeoutMs` before events or MCP calls. Use `DEFAULT_DRAIN_TIMEOUT_MS = 5_000` and `MAX_DRAIN_TIMEOUT_MS = 60_000`; accept only integers in `1..60_000`. It creates a resolved default `pendingSettlement`, attaches both handlers as soon as an MCP Promise starts, and records whether that request is still pending.
 
 ```ts
-pendingSettlement = operationPromise.then(
-  () => undefined,
-  () => undefined,
-);
+const DEFAULT_DRAIN_TIMEOUT_MS = 5_000;
+const MAX_DRAIN_TIMEOUT_MS = 60_000;
+
+let pending = false;
+let pendingSettlement = Promise.resolve();
+
+function trackOperation<T>(operationPromise: Promise<T>): Promise<T> {
+  pending = true;
+  pendingSettlement = operationPromise.then(
+    () => { pending = false; },
+    () => { pending = false; },
+  );
+  return operationPromise;
+}
+
+async function finishDrain(): Promise<RunnerDrainResult> {
+  if (!pending) return { status: "settled" };
+  return new Promise((resolve) => {
+    let finished = false;
+    const finish = (result: RunnerDrainResult): void => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timer);
+      resolve(result);
+    };
+    const timer = setTimeout(
+      () => finish({ status: "deadlineExceeded", pendingOperations: 1 }),
+      drainTimeoutMs,
+    );
+    void pendingSettlement.then(() => finish({ status: "settled" }));
+  });
+}
+
 const report = executeSuite();
 const drain = report.then(
-  () => pendingSettlement,
-  () => pendingSettlement,
-).then(() => undefined);
+  () => finishDrain(),
+  () => finishDrain(),
+);
 return { report, drain };
 ```
 
-This reads the final tracked Promise after logical report settlement, prevents unhandled rejection, and keeps `drain` non-rejecting. It tracks at most one request because suite execution is sequential and stops after timeout/abort.
+The production implementation may avoid the illustrative closure reassignment, but must preserve these state transitions. `pendingSettlement` has a rejection handler before the logical timeout/abort can win, so a deadline result and forced client close cannot create an unhandled late rejection. The drain timer starts only after `report` settles, is cleared on early settlement, and never makes `drain` reject. It tracks at most one request because suite execution is sequential and stops after timeout/abort.
+
+Caller contract tests define an adapter-local idempotent close helper:
+
+```ts
+function createCloseOnce(client: McpClient): () => Promise<void> {
+  let closePromise: Promise<void> | undefined;
+  return () => (closePromise ??= Promise.resolve().then(() => client.close()));
+}
+```
+
+The test adapter awaits `report` in `try/catch`, then always awaits `drain` and `closeOnce()` in `finally`. If report and close both reject, assert an `AggregateError([reportError, closeError])`; otherwise preserve the single primary error. Runner never imports or calls this helper.
 
 Assertions for the current timed-out/cancelled case are `skipped` with `OPERATION_RESULT_UNAVAILABLE`. Assertions for remaining cases are `notRun` without a diagnostic. 시작하지 않은 operation은 적용된 timer가 없으므로 `timeoutMs` 필드를 갖지 않는다.
 
@@ -1211,12 +1332,13 @@ Set the package description to:
 README must show:
 
 1. `defineMcpSuite` with one `listTools/toolExists` case and one `callTool/isError` case.
-2. `const execution = runSuite({ client, suite, onEvent, redaction, payloadLimits })`, `await execution.report`, `await execution.drain`, `await client.close()`의 안전한 lifecycle.
+2. `const execution = runSuite({ client, suite, onEvent, redaction, payloadLimits, drainTimeoutMs })`와 `try/catch/finally`에서 report 오류를 보존하고 `await execution.drain` 뒤 idempotent `closeOnce(client)`를 호출하는 안전한 lifecycle.
 3. Timeout priority and the 10-second Runner fallback.
-4. Statement that Runner never closes the injected client and callers must await `drain` before closing after timeout/abort.
+4. Statement that Runner never closes the injected client; drain default `5_000ms`, `settled | deadlineExceeded` 의미, deadline 뒤 caller forced close, late rejection handler 유지.
 5. Default sensitive-key redaction, caller `sensitiveValues`, 65,536-byte case and 1,048,576-byte report limits, and no automatic persistence.
 6. Statement that `RunnerReport` is JSON-serializable and retains sanitized failed case specs/diagnostics for later repair.
 7. Current non-goals: generate provider/repair validator implementation, JUnit, Vitest adapter, parallel execution.
+8. `createMcpTest`와 `toContainTool`은 minor 호환성을 위한 deprecated shim이며 기존 시그니처/`not implemented` 오류를 유지하고 major release 전에는 제거하지 않는다는 migration note.
 
 - [ ] **Step 2: Add the exact changeset**
 
@@ -1444,14 +1566,14 @@ await spawn_agent({
   model: "gpt-5.6-terra",
   reasoning_effort: "medium",
   message: `역할: OhMyMCP Runner 공개 명세 계약 구현자.
-목표: 선언형 suite union 타입, deep-readonly draft 2020-12 JSON Schema, 구조화 validator, defineMcpSuite, 루트 재수출을 TDD로 구현한다. 한 case는 listTools 또는 callTool 하나만 가지며 assertion 조합, 닫힌 필드, 고유 ID, 비어 있지 않은 문자열, JSON 값, `1..2_147_483_647ms` timeout을 검증한다. 비순환 공유 객체는 허용하고 실제 cycle만 거절한다. JSON Schema와 validator 제약을 같은 valid/invalid fixture로 대조하고 Schema의 중첩 변경은 TypeScript와 recursive freeze 모두 막는다.
+목표: 선언형 suite union 타입, deep-readonly draft 2020-12 JSON Schema, 구조화 validator, defineMcpSuite, 루트 재수출을 TDD로 구현한다. 한 case는 listTools 또는 callTool 하나만 가지며 assertion 조합, 닫힌 필드, 고유 ID, 비어 있지 않은 문자열, 유한 JSON 값, `1..2_147_483_647ms` timeout을 검증한다. 비순환 공유 객체는 허용하고 실제 cycle만 거절한다. dev-only evaluator로 공개 JSON Schema에 같은 valid/invalid fixture를 실행해 `$ref`와 `oneOf`까지 검증하고 Schema의 중첩 변경은 TypeScript와 recursive freeze 모두 막는다. 기존 `createMcpTest`/`toContainTool` named export와 `not implemented` 동작은 deprecated shim으로 보존한다.
 Worktree: ${runnerWorktree}
 Report: ${runnerWorktree}/.agents/reports/task-1-runner-spec.md
 첫 명령으로 `git rev-parse --show-toplevel`을 실행하고 출력이 위 Worktree 절대 경로와 같은지, 그 경로에 이 계획과 승인된 선행 HEAD가 있는지 확인한다. 다르면 BLOCKED로 끝낸다.
 먼저 CLAUDE.md, CONTRIBUTING.md, .agents/skills/execution-conventions/SKILL.md, docs/conventions/execution.md, Runner 설계 문서와 구현 계획을 끝까지 읽는다.
-허용 Files: packages/runner/src/spec/types.ts, packages/runner/src/spec/json-schema.ts, packages/runner/src/spec/validation.ts, packages/runner/src/spec/index.ts, packages/runner/src/index.ts, packages/runner/tests/spec-validation.test.ts, packages/runner/tests/spec-schema.test.ts, packages/runner/tests/index.test.ts, .agents/reports/task-1-runner-spec.md.
+허용 Files: packages/runner/src/spec/types.ts, packages/runner/src/spec/json-schema.ts, packages/runner/src/spec/validation.ts, packages/runner/src/spec/index.ts, packages/runner/src/index.ts, packages/runner/tests/helpers/schema-evaluator.ts, packages/runner/tests/spec-validation.test.ts, packages/runner/tests/spec-schema.test.ts, packages/runner/tests/index.test.ts, .agents/reports/task-1-runner-spec.md.
 금지: 다른 파일 수정, background 실행, commit, merge, push, 하위 agent spawn, 다른 작업자의 변경 되돌리기.
-반드시 Task 1 Files의 테스트에 필수 필드·unknown 필드·operation/assertion 조합·timeout 양 경계·공유 참조·cycle·schema 내부 참조·recursive freeze를 먼저 작성한다. Schema parity 단언은 suite/case/operation/assertion의 `required`와 `additionalProperties`, 네 discriminant의 `const`, cases/assertions `minItems`와 variant `$ref`, timeout 최소·최대, `jsonValue.oneOf`의 null/string/number/boolean/재귀 array/재귀 object 분기를 모두 정확한 값으로 검사한다. `pnpm exec vitest run packages/runner/tests/spec-validation.test.ts packages/runner/tests/spec-schema.test.ts`에서 의도한 RED를 확인한 뒤 최소 구현한다. GREEN은 같은 focused 명령, `pnpm exec vitest run packages/runner/tests`, `pnpm --filter @ohmymcp/runner typecheck`로 확인한다.
+반드시 Task 1 Files의 테스트에 필수 필드·unknown 필드·operation/assertion 조합·timeout 양 경계·`NaN`/`Infinity`/`-Infinity`·null-prototype JSON object·공유 참조·cycle·schema 내부 참조·recursive freeze를 먼저 작성한다. Schema parity는 공개 객체를 dev-only evaluator로 실행해 valid/invalid fixture 판정, 깨진 local `$ref`, `oneOf` match 0개와 2개를 검사한다. evaluator와 production validator 모두 `Object.prototype | null` record만 object로 허용한다. 기존 export 호환 테스트도 유지한다. `pnpm exec vitest run packages/runner/tests/spec-validation.test.ts packages/runner/tests/spec-schema.test.ts packages/runner/tests/index.test.ts`에서 의도한 RED를 확인한 뒤 최소 구현한다. GREEN은 같은 focused 명령, `pnpm exec vitest run packages/runner/tests`, `pnpm --filter @ohmymcp/runner typecheck`로 확인한다.
 보고서는 지정 경로에 작성하고 최종 응답은 status: READY_FOR_REVIEW 또는 status: BLOCKED로 시작한다. 변경 파일, RED 관찰, GREEN 결과, 남은 위험을 포함한다.`,
 });
 ```
@@ -1508,14 +1630,14 @@ await spawn_agent({
   model: "gpt-5.6-terra",
   reasoning_effort: "medium",
   message: `역할: OhMyMCP Runner timeout·AbortSignal 상태 전이 구현자.
-목표: case→suite→10_000ms 우선순위와 AbortSignal을 단일 controlled-operation helper로 구현한다. `2_147_483_647ms`까지 정확히 예약하고 더 큰 값은 명세 단계에서 거절한다. timeout은 현재 timedOut/나머지 notRun/suite failed, abort는 현재 cancelled 또는 미시작 notRun/suite aborted다. 시작하지 않은 operation은 `timeoutMs`가 없다. timeout/abort 뒤 다음 MCP 호출과 client.close를 금지하고 timer/listener를 정확히 한 번 정리하며, report 이후 실제 pending 요청은 non-rejecting `drain`으로 추적한다.
+목표: case→suite→10_000ms 우선순위와 AbortSignal을 단일 controlled-operation helper로 구현한다. `2_147_483_647ms`까지 정확히 예약하고 더 큰 값은 명세 단계에서 거절한다. timeout은 현재 timedOut/나머지 notRun/suite failed, abort는 현재 cancelled 또는 미시작 notRun/suite aborted다. 시작하지 않은 operation은 `timeoutMs`가 없다. timeout/abort 뒤 다음 MCP 호출과 Runner의 client.close를 금지하고 timer/listener를 정확히 한 번 정리한다. report 이후 pending 요청은 기본 5_000ms, 허용 1..60_000ms의 non-rejecting drain이 `settled | deadlineExceeded`로 추적하며 caller의 idempotent close가 deadline 뒤 transport를 강제 종료한다.
 Worktree: ${runnerWorktree}
 Report: ${runnerWorktree}/.agents/reports/task-4-runner-timeout.md
 첫 명령으로 `git rev-parse --show-toplevel`을 실행하고 출력이 위 Worktree 절대 경로와 같은지, 그 경로에 이 계획과 승인된 Task 3 HEAD가 있는지 확인한다. 다르면 BLOCKED로 끝낸다.
 프로젝트 지침, 실행 규약, 설계, 계획을 읽고 현재 HEAD가 승인된 Task 3 SHA인지 확인한다.
 허용 Files: packages/runner/src/executor.ts, packages/runner/tests/executor.test.ts, .agents/reports/task-4-runner-timeout.md.
 금지: core 타입 변경, client.close 호출, timeout 뒤 다음 MCP 호출, 허용 Files 밖 수정, background, commit, merge, push, 하위 agent spawn.
-fake timer로 timeout 우선순위·최대 경계·notRun 필드·abort 우선순위·고정 이벤트·timer/listener cleanup·후속 호출 금지를 먼저 RED로 확인한다. report가 pending operation보다 먼저 끝나고 drain은 settle까지 기다리는지, 즉시 시작한 `drain.then(() => client.close())`가 settle 뒤 close 1회를 만드는지, 원본 reject가 unhandled rejection 없이 drain resolve되는지도 검사한다. RED/GREEN은 `pnpm exec vitest run packages/runner/tests/executor.test.ts`, 회귀는 `pnpm exec vitest run packages/runner/tests`, `pnpm --filter @ohmymcp/runner typecheck`, `pnpm --filter @ohmymcp/runner build`로 확인한다.
+fake timer로 timeout 우선순위·최대 경계·notRun 필드·abort 우선순위·고정 이벤트·timer/listener cleanup·후속 호출 금지를 먼저 RED로 확인한다. report가 pending operation보다 먼저 끝나는지, deadline 전 settle은 `settled`, 정확히 5_000ms pending은 `deadlineExceeded`가 되는지 검사한다. deadline 뒤 close 1회, 늦은 reject의 unhandled rejection 없음, report reject의 finally 정리, 중복 timeout/abort cleanup에도 close 1회를 검증한다. RED/GREEN은 `pnpm exec vitest run packages/runner/tests/executor.test.ts`, 회귀는 `pnpm exec vitest run packages/runner/tests`, `pnpm --filter @ohmymcp/runner typecheck`, `pnpm --filter @ohmymcp/runner build`로 확인한다.
 최종 응답은 READY_FOR_REVIEW 또는 BLOCKED와 증거를 포함한다.`,
 });
 ```
@@ -1529,7 +1651,7 @@ await spawn_agent({
   model: "gpt-5.6-terra",
   reasoning_effort: "medium",
   message: `역할: OhMyMCP Runner 문서·릴리스·회귀 검증 담당자.
-목표: Runner README에 listTools/callTool/timeout/AbortSignal/event/report, redaction/payload limit, `await execution.drain` 뒤 client close 예제와 Generate가 루트 `@ohmymcp/runner` 계약을 소비한다는 경계를 문서화하고, `minor` changeset을 추가한 뒤 전체 회귀를 검증한다.
+목표: Runner README에 listTools/callTool/timeout/AbortSignal/event/report, redaction/payload limit, bounded drain의 `settled | deadlineExceeded`, `try/catch/finally`와 idempotent close 예제, deprecated public shim migration note, Generate가 루트 `@ohmymcp/runner` 계약을 소비한다는 경계를 문서화하고, `minor` changeset을 추가한 뒤 전체 회귀를 검증한다.
 Worktree: ${runnerWorktree}
 Report: ${runnerWorktree}/.agents/reports/task-5-runner-docs.md
 첫 명령으로 `git rev-parse --show-toplevel`을 실행하고 출력이 위 Worktree 절대 경로와 같은지, 그 경로에 이 계획과 승인된 Task 4 HEAD가 있는지 확인한다. 다르면 BLOCKED로 끝낸다.

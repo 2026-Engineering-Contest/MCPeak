@@ -290,6 +290,8 @@ validator는 다음을 검사한다.
 
 `runSuite`도 실행 전에 같은 검증을 방어적으로 수행한다. 검증 실패 시 MCP 작업과 Runner 이벤트를 발생시키지 않고 `SuiteValidationError`를 던진다.
 
+JSON 값 validator는 `typeof value === "number"`인 모든 위치에서 `Number.isFinite(value)`를 검사한다. 따라서 일반 유한수는 허용하지만 `NaN`, `Infinity`, `-Infinity`는 `INVALID_JSON_VALUE`로 거절한다. JSON stringify가 이 값들을 `null`로 조용히 바꾸기 전에 operational input과 observer snapshot이 같은 의미를 갖도록 보장한다.
+
 ## 7. Generate용 공개 계약 경계
 
 generate는 Runner의 루트 공개 API에서 명세 계약을 직접 소비한다.
@@ -440,13 +442,13 @@ export const MCP_SUITE_JSON_SCHEMA: ReadonlyJsonObject = {
 };
 ```
 
-타입, JSON Schema, validator가 서로 다른 규칙을 갖지 않도록 공통으로 표현 가능한 제약마다 validator fixture와 JSON Schema 경로를 한 parity 표에서 연결해 테스트한다. 외부 Schema evaluator를 추가하지 않는 첫 구현에서는 validator가 fixture를 실행하고, 같은 표의 Schema 경로가 대응 keyword와 값을 갖는지 단언한다. 새 assertion을 추가할 때 세 계약과 parity 표를 같은 Runner 변경에서 갱신한다.
+타입, JSON Schema, validator가 서로 다른 규칙을 갖지 않도록 공통으로 표현 가능한 제약마다 같은 valid/invalid fixture를 validator와 공개 `MCP_SUITE_JSON_SCHEMA`에 모두 실행한다. 테스트 전용 소형 evaluator는 로컬 `$ref`, `oneOf`, `type`, `const`, `required`, `properties`, `additionalProperties`, `items`, `minItems`, `minLength`, `pattern`, `minimum`, `maximum`만 지원한다. 알 수 없는 keyword와 해석할 수 없는 `$ref`는 조용히 건너뛰지 않고 evaluator 오류로 처리한다. 새 assertion을 추가할 때 세 계약, evaluator 범위, parity fixture를 같은 Runner 변경에서 갱신한다.
 
 JSON Schema는 직렬화된 JSON 문서의 구조를 표현하므로 중복 case ID 같은 스위트 의미 규칙이나 JavaScript 메모리의 공유 참조·순환 참조는 표현하지 못한다. 이 항목들은 validator 전용 fixture로 분명히 표시한다. 반대로 필수 필드, 닫힌 객체, 비어 있지 않은 문자열, 배열 최소 길이, discriminant 조합, 재귀 JSON 값, timeout 범위는 parity 대상이다.
 
 공개 Schema 객체는 `ReadonlyJsonObject`로 노출하고 모듈 초기화 시 재귀적으로 `Object.freeze`한다. TypeScript 소비자는 중첩 필드 변경을 컴파일할 수 없고, JavaScript 소비자도 런타임에 변경할 수 없다. generate나 다른 소비자가 `$defs`를 변경해 같은 프로세스의 후속 검증·생성 계약을 바꾸지 못하게 한다.
 
-외부 JSON Schema validator 의존성은 이번 작업에서 추가하지 않는다. Runner의 소형 명세 범위는 직접 검증하고, JSON Schema 객체의 필수 필드와 discriminant가 validator fixture와 일치하는지 테스트한다. 향후 범위가 커져 외부 validator가 필요해지면 용도와 라이선스를 먼저 합의한다.
+외부 JSON Schema validator 의존성은 이번 작업에서 추가하지 않는다. production validator는 독립적으로 유지하고, dev-only evaluator는 공개 Schema 객체 자체를 대상으로 유효 fixture 수용, 무효 fixture 거절, 깨진 로컬 `$ref` 탐지, `oneOf`가 정확히 한 분기만 허용하는 동작을 실행 검증한다. 향후 범위가 커져 외부 validator가 필요해지면 용도와 라이선스를 먼저 합의한다.
 
 `generate → runner`는 순환 의존을 만들지 않는다.
 
@@ -466,6 +468,7 @@ export interface RunSuiteOptions {
   onEvent?: (event: RunnerEvent) => void;
   redaction?: RunnerRedactionOptions;
   payloadLimits?: RunnerPayloadLimits;
+  drainTimeoutMs?: number;
 }
 
 export interface RunnerRedactionOptions {
@@ -495,24 +498,39 @@ export class RunnerPayloadLimitError extends Error {
 
 export interface RunnerExecution {
   report: Promise<RunnerReport>;
-  drain: Promise<void>;
+  drain: Promise<RunnerDrainResult>;
 }
+
+export type RunnerDrainResult =
+  | { status: "settled" }
+  | { status: "deadlineExceeded"; pendingOperations: 1 };
 
 export function runSuite(options: RunSuiteOptions): RunnerExecution;
 ```
 
 Runner는 `client.close()`를 호출하지 않는다. client를 만들고 닫는 책임은 CLI, Dashboard Node 서버 또는 테스트 adapter에 있다.
 
-호출자는 `report`로 논리적인 suite 완료를 관찰하고, `drain`이 resolve된 뒤 client를 닫는다. `drain`은 Runner가 시작한 모든 MCP Promise가 fulfilled 또는 rejected로 settle되면 resolve하며 자체적으로 reject하지 않는다. timeout이나 operation 중 abort에서는 `report`가 먼저 resolve될 수 있지만, `drain`은 취소할 수 없는 실제 요청이 끝날 때까지 pending이다. 시작 전 abort 또는 정상 완료처럼 보류 요청이 없으면 `drain`은 즉시 resolve한다.
+호출자는 `report`로 논리적인 suite 완료를 관찰하고, `drain`이 resolve된 뒤 client를 닫는다. `report`는 `drain`과 독립적으로 먼저 resolve 또는 reject할 수 있다. `drain`은 자체적으로 reject하지 않으며, Runner가 시작한 MCP Promise가 먼저 settle되면 `{ status: "settled" }`를 반환한다. 보류 요청이 없으면 즉시 같은 결과를 반환한다.
+
+timeout 또는 operation 중 abort 뒤 취소할 수 없는 요청이 남으면 `report` 완료 시점부터 별도 drain deadline을 적용한다. `drainTimeoutMs` 기본값은 `5_000ms`, 허용 범위는 `1..60_000ms`의 정수다. 이 5초는 작업 성공을 기다리는 timeout이 아니라 transport가 이미 시작한 요청을 정리할 짧은 grace period다. deadline이 먼저 끝나면 `drain`은 `{ status: "deadlineExceeded", pendingOperations: 1 }`을 반환하고 caller가 `client.close()`로 transport를 강제 종료할 수 있게 한다. 늦게 settle하는 원본 Promise에는 fulfillment/rejection handler를 계속 붙여 unhandled rejection을 만들지 않는다.
 
 ```ts
 const execution = runSuite({ client, suite, signal });
-const report = await execution.report;
-await execution.drain;
-await client.close();
+const closeOnce = createCloseOnce(client);
+let report: RunnerReport | undefined;
+let reportError: unknown;
+try {
+  report = await execution.report;
+} catch (error) {
+  reportError = error;
+} finally {
+  const drainResult = await execution.drain;
+  await closeOnce(); // drainResult.status가 deadlineExceeded여도 transport를 닫음
+}
+if (reportError !== undefined) throw reportError;
 ```
 
-`report`가 reject하더라도 호출자는 `finally`에서 `drain`을 기다린 뒤 client를 닫는다. 이 handle 계약으로 Core의 동결된 `McpClient.close()` 의미를 바꾸지 않고 pending 요청과 close의 경쟁을 막는다.
+CLI, Dashboard Node, 테스트 adapter는 위 `try/catch/finally` 구조와 adapter-local `closeOnce`를 사용한다. `closeOnce`는 최초 `client.close()` Promise를 캐시해 timeout·abort·오류 정리 경로가 겹쳐도 실제 close를 정확히 한 번만 호출한다. `report`와 `client.close()`가 모두 실패하면 primary report 오류를 보존하고 close 오류를 cause 또는 `AggregateError`로 함께 보고한다. Runner 자체는 어떤 경로에서도 injected client를 닫지 않는다.
 
 `onEvent`는 동기 관찰자다. handler가 던진 오류는 테스트 실패로 변환하지 않고 `RunnerExecution.report` rejection으로 호출자에게 전파하며, 다음 MCP 작업은 시작하지 않는다. 정상적인 성공, 실패, timeout, `AbortSignal` 경로에서는 항상 마지막에 `suiteCompleted`를 전달한다. validation, event handler, payload-limit 오류는 안전한 정상 종료 경로가 아니므로 이 보장을 적용하지 않는다.
 
@@ -568,8 +586,9 @@ Runner의 10초 값은 generate를 거치지 않은 명세가 무기한 대기�
 - timeout: 현재 케이스 `timedOut`, 남은 케이스 `notRun`, 스위트 상태 `failed`
 - 외부 취소: 현재 케이스 `cancelled`, 남은 케이스 `notRun`, 스위트 상태 `aborted`
 - 두 경우 모두 다음 케이스를 시작하지 않고 `client.close()`도 호출하지 않음
-- 논리 결과인 `report`는 먼저 완료할 수 있지만 취소할 수 없는 요청은 `drain`이 추적함
-- 호출자는 timeout·abort 직후 close 절차를 시작할 수 있으나 실제 `client.close()` 호출은 `await execution.drain` 뒤에만 수행함
+- 논리 결과인 `report`는 먼저 완료할 수 있지만 취소할 수 없는 요청은 별도 deadline이 있는 `drain`이 추적함
+- 요청이 먼저 settle하면 정상 drain 뒤 닫고, deadline을 넘으면 `deadlineExceeded`를 관찰한 caller가 transport를 강제 종료함
+- 원본 Promise의 rejection handler는 강제 종료 뒤에도 유지하며 Runner는 `client.close()`를 직접 호출하지 않음
 
 timeout으로 실행은 조기 종료되지만 CI 의미상 실패이므로 스위트 상태는 `aborted`가 아니라 `failed`다.
 
@@ -904,10 +923,29 @@ export type RepairValidationResult =
   | { valid: true; value: RepairResult }
   | { valid: false; issues: RepairValidationIssue[] };
 
+export interface SanitizedRepairResultPreview {
+  result: RepairResult;
+  redactionsApplied: true;
+  redactedPaths: string[];
+  applicable: boolean;
+  requiresApproval: true;
+}
+
 export function validateRepairResult(
   input: unknown,
   context: RepairValidationContext,
 ): RepairValidationResult;
+
+export function sanitizeRepairResult(options: {
+  result: RepairResult;
+  redaction?: RunnerRedactionOptions;
+}): SanitizedRepairResultPreview;
+
+export function applyReviewedRepairs(options: {
+  originalSuite: TestSuiteSpec;
+  preview: SanitizedRepairResultPreview;
+  approved: boolean;
+}): TestSuiteSpec;
 ```
 
 실패가 테스트 오류라는 보장은 없다. provider는 기대값을 실제값에 맞춰 통과시키는 방향으로 무조건 수정하지 않고 테스트 오류, 서버 오류, 판단 불가를 구분한다.
@@ -924,7 +962,9 @@ export function validateRepairResult(
 
 승인된 교체안은 해당 케이스만 바꾸며, CLI 또는 Dashboard가 교체된 케이스로 작은 임시 suite를 만들어 선택 재실행할 수 있다. 첫 Runner API에 별도 `caseIds` 필터를 추가하지 않는다.
 
-`validateRepairResult`의 구현과 소유권은 미래 `@ohmymcp/generate`에 있다. provider JSON은 CLI/Dashboard에 반환하기 전에 반드시 이 함수를 통과한다. validator는 닫힌 객체와 필수 필드, 비어 있지 않은 explanation, boolean `needsReview`를 검사하고 다음 순서로 문맥 규칙을 적용한다.
+`validateRepairResult`, `sanitizeRepairResult`, `applyReviewedRepairs`의 구현과 소유권은 미래 `@ohmymcp/generate`에 있다. provider JSON은 먼저 구조·문맥 검증을 통과하고, 그 다음 모든 `replacement.operation.input`에 기본 민감 키와 caller 지정 민감 키·문자열 값 redaction을 재귀 적용해야 한다. explanation을 포함한 나머지 문자열에도 caller의 exact `sensitiveValues`와 compile prompt의 민감 assignment 규칙을 적용한다. CLI/Dashboard는 raw `RepairResult`를 받지 않고 `SanitizedRepairResultPreview`만 받는다. 알 수 없는 PII는 자동 판별했다고 주장하지 않으며 preview와 명시적 사용자 승인이 마지막 경계다. validator는 닫힌 객체와 필수 필드, 비어 있지 않은 explanation, boolean `needsReview`를 검사하고 다음 순서로 문맥 규칙을 적용한다.
+
+`sanitizeRepairResult`는 모든 redaction 위치를 `redactedPaths`에 기록한다. replacement 내부에 redaction이 하나라도 있으면 `applicable: false`다. UI는 해당 후보를 적용할 수 없고, 사용자가 replacement 값을 직접 채우고 검토한 새 결과를 다시 validate→sanitize해야 한다. `applyReviewedRepairs`는 `approved === true`, `applicable === true`, replacement 관련 `redactedPaths.length === 0`인 preview만 받으며, preview에 표시된 sanitized replacement 자체를 deep clone해 적용하고 최종 suite를 `validateMcpSuite`로 다시 검증한다. raw provider 결과를 숨겨서 적용하거나 `[REDACTED]` placeholder를 suite에 기록하는 경로는 없다. explanation만 redacted된 경우에는 suite에 적용되는 replacement가 변하지 않으므로 `applicable` 판정에 영향을 주지 않는다.
 
 1. `repairs` 배열 순서대로 shape issue를 기록한다.
 2. 같은 `caseId`의 두 번째 decision을 `DUPLICATE_REPAIR_CASE_ID`로 거절한다.
@@ -943,6 +983,8 @@ Generate 구현 계획은 최소한 다음 fixture를 고정한다.
 | replacement의 ID 변경 | `REPLACEMENT_CASE_ID_MISMATCH` |
 | callTool case를 listTools로 변경 | `REPLACEMENT_OPERATION_MISMATCH` |
 | 빈 assertions 또는 알 수 없는 필드가 있는 replacement | `INVALID_REPLACEMENT` |
+| replacement의 `Authorization`과 caller PII sentinel | preview에서 `[REDACTED]`, `applicable: false`, 승인해도 apply 거절, 직렬화 결과에 원문 없음 |
+| 사용자가 redacted replacement 값을 다시 입력 | validate→sanitize 재실행 후 redacted replacement path가 0일 때만 승인·적용 |
 
 검증 실패 시 provider 결과를 일부 적용하거나 사용자 diff 화면으로 넘기지 않는다. sanitized `RepairRequest`만 provider에 전달하며 `RepairResult` validator는 비밀값이 다시 삽입된 replacement도 같은 redaction/preview 단계를 거친 뒤에만 승인 후보로 만든다.
 
@@ -959,6 +1001,20 @@ export interface ProviderStatus {
 export interface CompileRequest {
   prompt: string;
   tools: McpToolContext[];
+}
+
+export interface CompileRequestPreview {
+  request: CompileRequest;
+  byteLength: number;
+  redactionsApplied: true;
+  requiresApproval: true;
+}
+
+export class CompilePayloadLimitError extends Error {
+  override readonly name = "CompilePayloadLimitError";
+  readonly scope: "prompt" | "tools" | "request";
+  readonly limitBytes: number;
+  readonly actualBytes: number;
 }
 
 export type CompileResult =
@@ -997,7 +1053,7 @@ export interface TimeoutDecision {
 export interface NaturalLanguageCompiler {
   readonly id: "codex" | "claude";
   checkAvailability(): Promise<ProviderStatus>;
-  compile(request: CompileRequest): Promise<CompileResult>;
+  compile(request: CompileRequest): Promise<unknown>;
 }
 
 export interface FailedCaseRepairer {
@@ -1005,7 +1061,46 @@ export interface FailedCaseRepairer {
   checkAvailability(): Promise<ProviderStatus>;
   repair(request: RepairRequest): Promise<unknown>;
 }
+
+export function prepareCompileRequest(options: {
+  prompt: string;
+  tools: readonly McpToolContext[];
+  redaction?: RunnerRedactionOptions;
+}): CompileRequestPreview;
+
+export type CompileValidationResult =
+  | { valid: true; value: CompileResult }
+  | { valid: false; issues: GenerateIssue[] };
+
+export function validateCompileResult(input: unknown): CompileValidationResult;
+
+export type CompileDispatchResult =
+  | { status: "notApproved" }
+  | { status: "validated"; result: CompileValidationResult };
+
+export function dispatchCompile(options: {
+  compiler: NaturalLanguageCompiler;
+  preview: CompileRequestPreview;
+  approved: boolean;
+}): Promise<CompileDispatchResult>;
 ```
+
+`prepareCompileRequest`는 provider 전송 전에 반드시 호출한다. `tools[].inputSchema`에는 repair와 같은 재귀 key/value redaction을 적용한다. 자연어 prompt에는 caller의 exact `sensitiveValues`와 `authorization: ...`, `api_key=...`처럼 정규화된 기본 민감 키가 `:` 또는 `=` 앞에 있는 assignment의 값을 `[REDACTED]`로 바꾼다. UTF-8 상한은 prompt `65_536` bytes, tools `131_072` bytes, 전체 request `262_144` bytes이며 어느 하나라도 넘으면 preview를 만들지 않는다. CLI/Dashboard는 byte length와 redacted payload를 보여주고 매 요청마다 사용자의 명시적 승인을 받은 뒤에만 provider를 호출한다.
+
+`NaturalLanguageCompiler.compile`의 반환값은 외부 JSON이므로 `unknown`이다. 공통 Generate 경계의 `validateCompileResult`가 닫힌 envelope, issue와 metadata shape를 검증하고, 성공 결과의 `suite`를 Runner `validateMcpSuite`로 검증·정규화한 뒤에만 `CompileResult`를 반환한다. adapter는 유효한 결과에 provider 전용 envelope를 남기지 않는다. invalid suite나 유효하지 않은 metadata는 일부 수용하지 않고 전체 실패로 반환한다.
+
+CLI/Dashboard는 provider를 직접 호출하지 않고 `dispatchCompile`만 호출한다. `approved === false`이면 `{ status: "notApproved" }`를 반환하고 `compiler.compile`을 호출하지 않는다. true이면 preview의 sanitized `request`만 provider에 보내고, 반환된 `unknown`을 즉시 `validateCompileResult`에 전달해 `{ status: "validated", result }`로 반환한다. preview 생성 뒤 prompt나 tools 원본이 바뀌어도 전송 payload는 바뀌지 않는다.
+
+미래 Generate 테스트는 아래 fixture를 고정한다.
+
+| Fixture | Expected |
+|---|---|
+| prompt `Authorization: Bearer compile-secret` | preview가 `Authorization: [REDACTED]`, 직렬화 문자열에 `compile-secret` 없음 |
+| tool `inputSchema.properties.api_key.default = "tool-secret"` | default 값 `[REDACTED]` |
+| caller PII sentinel `person@example.com`이 prompt와 tool schema에 존재 | 두 위치 모두 `[REDACTED]` |
+| prompt `65_537`, tools `131_073`, request `262_145` UTF-8 bytes | 각각 `CompilePayloadLimitError`의 `prompt`, `tools`, `request` scope |
+| `dispatchCompile({ approved: false })` | `{ status: "notApproved" }`, provider `compile` 호출 0회 |
+| provider 성공 envelope의 suite에 `cases` 누락 | `validateCompileResult` invalid, CLI/Dashboard에 suite 없음 |
 
 공통 provider 실행 계층은 다음만 담당한다.
 
@@ -1014,7 +1109,7 @@ export interface FailedCaseRepairer {
 - 파일 수정 및 불필요한 도구 사용 제한
 - timeout, 종료 코드, stderr 수집
 - provider별 JSON envelope 제거
-- JSON 파싱 뒤 compile 결과는 `validateMcpSuite`, repair 결과는 문맥을 포함한 `validateRepairResult`로 검증
+- JSON 파싱 뒤 compile 결과는 `validateCompileResult`, repair 결과는 문맥을 포함한 `validateRepairResult`와 `sanitizeRepairResult`로 검증
 - 모호한 결과는 `needsReview`
 
 Codex와 Claude 고유 명령이나 응답 envelope는 adapter 내부에 가둔다. Runner와 CLI에는 검증된 공통 결과만 노출한다.
@@ -1038,9 +1133,10 @@ generate는 세 입력 경로를 같은 `TestSuiteSpec`으로 정규화한다.
 
 ### 자연어 생성
 
-- 자연어와 필요한 툴 정의만 provider stdin에 전달
+- `prepareCompileRequest`가 redaction·byte 제한을 적용한 자연어와 필요한 툴 정의만 provider stdin에 전달
 - `MCP_SUITE_JSON_SCHEMA`로 구조화 출력 제한
-- 생성 결과에 `validateMcpSuite` 적용
+- provider 반환은 `unknown`으로 받고 `validateCompileResult` 내부에서 `validateMcpSuite` 적용
+- redacted compile payload와 byte length를 보여주고 provider 전송 전 사용자 승인
 - 실제 MCP 툴 실행 전 사용자 미리보기와 승인
 
 ### Timeout 생성 정책
@@ -1056,13 +1152,13 @@ generate는 세 입력 경로를 같은 `TestSuiteSpec`으로 정규화한다.
 
 ## 16. 기존 Runner 스텁 처리
 
-현재 `createMcpTest`와 `toContainTool`은 구현되지 않은 스텁이며 새 선언형 계약과 맞지 않는다.
+현재 `createMcpTest`와 `toContainTool`은 구현되지 않은 공개 스텁이며 새 선언형 계약과 맞지 않는다.
 
 - `createMcpTest` callback 모델은 공통 JSON 명세를 표현하지 못한다.
 - `toContainTool`은 툴 목록이 아닌 `ToolResult`를 받아 의미가 맞지 않는다.
-- 두 실행 모델을 동시에 유지하지 않는다.
+- 두 실행 모델을 동시에 구현하지 않는다.
 
-첫 Runner 구현에서 두 스텁을 새 API로 교체한다. 아직 실제 배포된 동작이 없고 버전이 `0.0.0`이므로 호환 wrapper는 만들지 않는다. Vitest 지원은 나중에 독립 adapter로 설계한다.
+이번 변경은 minor release이므로 기존 named export, 타입, 호출 시 `not implemented` 오류 동작을 deprecated compatibility shim으로 유지한다. `void` callback API를 새 `RunnerExecution`에 위임하면 반환·await 의미가 조용히 달라지므로 억지 wrapper는 만들지 않는다. README에서 새 선언형 API를 권장하고, deprecated shim 제거는 major release와 migration 문서가 승인된 뒤에만 수행한다. Vitest 지원은 나중에 독립 adapter로 설계한다.
 
 Runner README는 같은 변경에서 갱신한다. 공동 소유인 루트 README 수정은 별도 합의가 필요한 후속 문서 작업으로 기록한다.
 
@@ -1074,6 +1170,8 @@ Runner README는 같은 변경에서 갱신한다. 공동 소유인 루트 READM
 - 여러 검증 오류를 한 번에 반환
 - 중복 ID, 빈 배열, 잘못된 조합, 알 수 없는 필드 거절
 - 0, 음수, 소수, `2_147_483_647` 초과 timeout 거절
+- `NaN`, `Infinity`, `-Infinity` JSON 입력 거절
+- dev-only evaluator가 공개 JSON Schema의 valid/invalid fixture, local `$ref`, `oneOf`를 실제 실행
 - TypeScript 타입, JSON Schema, validator parity
 - 중첩 Schema 속성이 TypeScript readonly이고 런타임에도 재귀 동결됐는지 검증
 
@@ -1104,8 +1202,10 @@ Runner README는 같은 변경에서 갱신한다. 공동 소유인 루트 READM
 - timeout 시 현재 케이스 `timedOut`, 나머지 `notRun`
 - abort 전과 실행 중 abort 검증
 - timeout과 abort에서 다음 MCP 작업 및 `client.close()` 미호출
-- timeout·abort의 `report` 완료 뒤 pending MCP Promise가 settle할 때까지 `drain`이 pending인지 검증
-- close 절차를 즉시 시작해도 `drain` 뒤에만 실제 `client.close()`가 호출되는지 검증
+- timeout·abort의 `report`가 `drain`과 독립적으로 먼저 완료되는지 검증
+- pending MCP Promise가 deadline 전에 settle하면 `drain.status === "settled"`
+- `5_000ms` deadline까지 pending이면 `deadlineExceeded`, 이후 caller close 1회, 늦은 reject의 unhandled rejection 없음
+- `report` reject와 timeout·abort 정리 경로가 겹쳐도 adapter의 idempotent close가 실제 `client.close()`를 한 번만 호출
 
 ### Generate/repair 준비성
 
@@ -1115,6 +1215,11 @@ Runner README는 같은 변경에서 갱신한다. 공동 소유인 루트 READM
 - `ToolResult.raw` 미포함
 - repair payload의 재귀 마스킹, case/전체 byte 제한, 전송 전 승인 검증
 - provider 교체안의 중복·unknown·미선택 case ID와 잘못된 replacement 거절 fixture
+- 검증된 replacement의 provider-inserted secret과 caller PII sentinel을 UI preview 전에 재마스킹
+- redacted replacement는 적용 불가이며 사용자가 값을 다시 입력한 sanitized preview만 적용
+- compile prompt/tool schema redaction, prompt/tools/request byte 제한, provider 전송 전 승인
+- compile의 `unknown` 결과에서 invalid suite와 invalid metadata를 거절
+- deprecated `createMcpTest` named export와 기존 throw 동작 유지
 
 ### 필수 테스트 이름과 핵심 단언
 
@@ -1123,7 +1228,8 @@ Runner README는 같은 변경에서 갱신한다. 공동 소유인 루트 READM
 | `유효한 listTools와 callTool 명세를 검증한다` | `valid === true`, 반환 `value`가 입력과 deep equality |
 | `명세의 모든 구조 오류를 경로 순서대로 반환한다` | issue code가 `MISSING_REQUIRED_FIELD`, `INVALID_TIMEOUT`, `INCOMPATIBLE_ASSERTION` 순서이고 각 `path`가 정확히 일치 |
 | `중복된 케이스 ID를 거절한다` | `DUPLICATE_CASE_ID`, `path === "cases[1].id"` |
-| `JSON Schema와 validator의 유효 fixture 판정이 일치한다` | 두 계약 모두 유효 fixture를 수용하고 각 무효 fixture의 대상 제약이 존재 |
+| `JSON Schema와 validator의 fixture 판정이 일치한다` | dev evaluator와 validator가 같은 valid fixture를 수용하고 invalid fixture를 거절하며 깨진 `$ref`와 0개/2개 `oneOf` match를 탐지 |
+| `유한하지 않은 JSON 숫자를 거절한다` | `NaN`, `Infinity`, `-Infinity`가 각각 `INVALID_JSON_VALUE` |
 | `목록에 존재하는 툴 assertion을 통과시킨다` | assertion status가 `passed`, `listTools` 호출 횟수가 1 |
 | `없는 툴의 실제 목록을 locale 없이 정렬한다` | `['가', 'a', 'A', 'a']`가 JavaScript UTF-16 비교 기준 `['A', 'a', '가']`이고 `localeCompare`를 호출하지 않음 |
 | `isError 기대값 true와 false를 각각 비교한다` | 일치 시 `passed`, 불일치 시 `IS_ERROR_MISMATCH`와 boolean expected·actual |
@@ -1134,12 +1240,18 @@ Runner README는 같은 변경에서 갱신한다. 공동 소유인 루트 READM
 | `이벤트 listener의 객체 변경이 보고서를 바꾸지 않는다` | listener가 `caseStarted.case.name`을 바꿔도 최종 `TestCaseResult.spec.name`은 원래 값 |
 | `timeout 시 후속 케이스를 시작하지 않는다` | 현재 case `timedOut`, 후속 case `notRun`, suite `failed`, `stopReason.type === "timeout"` |
 | `AbortSignal 취소 시 스위트를 aborted로 끝낸다` | 현재 case `cancelled`, 후속 case `notRun`, suite `aborted`, client `close` 호출 0회 |
-| `timeout 뒤 drain 후 client를 닫는다` | report가 먼저 resolve되고 pending operation settle 전 drain/close는 pending, settle 후 drain resolve와 close 1회 |
+| `timeout 뒤 정상 drain 후 client를 닫는다` | report가 먼저 resolve되고 deadline 전 operation settle 후 `settled`, close 1회 |
+| `drain deadline 뒤 transport를 강제 종료한다` | `5_000ms` 후 `deadlineExceeded`, close 1회, 늦은 operation reject에 unhandled rejection 없음 |
+| `report reject에서도 client를 한 번 닫는다` | finally 경로가 drain을 기다리고 중복 cleanup 호출에도 close spy 1회, primary report 오류 보존 |
 | `event와 report에서 민감정보를 제거한다` | `apiKey`, `Authorization`, caller 지정 sentinel 값이 모두 `[REDACTED]`이며 실제 client 호출에는 원본 값 전달 |
 | `observer payload 제한을 적용한다` | case 초과는 MCP/event 전 `RunnerPayloadLimitError`, report 초과는 `suiteCompleted` 없이 같은 오류 |
 | `같은 입력에 같은 결과를 만든다` | 두 실행의 event 배열과 report가 deep equality이고 timestamp·duration 키가 없음 |
 | `실패 보고서를 repair 입력으로 직렬화한다` | `JSON.stringify` 성공, sanitized `spec`과 diagnostic 존재, 직렬화 문자열에 `raw`와 sentinel secret이 없음 |
 | `신뢰할 수 없는 repair 결과를 문맥 검증한다` | duplicate, unknown, unselected ID와 ID/operation mismatch, invalid replacement가 각각 고정 issue code로 거절됨 |
+| `repair 결과를 UI 전에 다시 마스킹한다` | provider가 넣은 `Authorization`과 caller PII sentinel이 preview에서 `[REDACTED]`, candidate `applicable === false` |
+| `검토한 sanitized replacement만 적용한다` | raw provider result와 redacted placeholder는 적용 불가; 재입력·재검증된 applicable preview만 원본 suite의 해당 case를 변경 |
+| `compile provider 경계를 검증한다` | sanitized prompt/tool preview 승인 뒤에만 호출하며 oversized request와 invalid suite 결과를 거절 |
+| `deprecated createMcpTest 호환성을 유지한다` | named import가 유지되고 기존 호출이 동일한 `not implemented` 오류를 던짐 |
 
 구현 계획은 위 이름과 단언을 실제 Vitest 코드로 전량 제시한다. 테스트용 client는 인메모리 객체만 사용하며 실제 MCP 서버 프로세스를 띄우지 않는다.
 
@@ -1161,6 +1273,7 @@ packages/runner/src/
 └── index.ts
 
 packages/runner/tests/
+├── helpers/schema-evaluator.ts
 ├── spec-validation.test.ts
 ├── spec-schema.test.ts
 ├── assertions.test.ts

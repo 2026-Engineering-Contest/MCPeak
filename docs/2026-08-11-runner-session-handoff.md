@@ -129,13 +129,15 @@ Provider별 adapter를 둔다.
 interface NaturalLanguageCompiler {
   readonly id: "codex" | "claude";
   checkAvailability(): Promise<ProviderStatus>;
-  compile(request: CompileRequest): Promise<CompileResult>;
+  compile(request: CompileRequest): Promise<unknown>;
 }
 ```
 
 - Codex adapter: 비대화형 `codex exec`와 JSON Schema 구조화 출력 사용
 - Claude adapter: 비대화형 `claude -p`와 `--json-schema` 사용
-- 공통 처리: stdin 입력, timeout, 종료 코드, stderr, JSON 파싱, schema 검증
+- 공통 처리: compile prompt와 tool schema redaction, UTF-8 byte 제한, 전송 전 preview·승인, stdin 입력, timeout, 종료 코드, stderr, JSON 파싱
+- 외부 compile JSON은 `unknown`으로 받고 Generate 경계의 `validateCompileResult`와 Runner `validateMcpSuite`를 모두 통과한 뒤에만 사용
+- CLI/Dashboard는 `dispatchCompile`에 preview와 승인 여부를 전달하며, 미승인 시 provider를 호출하지 않음
 - provider 고유의 출력 envelope는 adapter 내부에서 제거
 - runner에는 provider 정보가 아니라 검증된 `TestSuiteSpec`만 전달
 
@@ -171,7 +173,10 @@ export function defineMcpSuite(spec: TestSuiteSpec): TestSuiteSpec;
 
 export interface RunnerExecution {
   report: Promise<RunnerReport>;
-  drain: Promise<void>;
+  drain: Promise<
+    | { status: "settled" }
+    | { status: "deadlineExceeded"; pendingOperations: 1 }
+  >;
 }
 
 export function runSuite(options: {
@@ -179,10 +184,17 @@ export function runSuite(options: {
   suite: TestSuiteSpec;
   signal?: AbortSignal;
   onEvent?: (event: RunnerEvent) => void;
+  drainTimeoutMs?: number;
 }): RunnerExecution;
 ```
 
-`onEvent`는 CLI의 실시간 터미널 출력과 Dashboard의 SSE 전달에 사용한다. 최종 `RunnerReport`는 sanitized JSON 응답에 사용하며, timeout·abort 뒤에는 `drain`을 기다린 후 client를 닫는다.
+`onEvent`는 CLI의 실시간 터미널 출력과 Dashboard의 SSE 전달에 사용한다. 최종 `RunnerReport`는 sanitized JSON 응답에 사용한다. `report`는 pending MCP Promise와 독립적으로 먼저 완료할 수 있다. timeout·abort 뒤 `drain`은 기본 `5_000ms`의 별도 정리 deadline까지 원본 요청 settlement를 기다리고, 먼저 끝나면 `settled`, 상한을 넘으면 `deadlineExceeded`를 반환한다.
+
+Runner는 injected `McpClient`를 절대 닫지 않는다. CLI, Dashboard Node, 테스트 adapter가 `try/catch/finally`에서 `report`와 `drain`을 관찰한 뒤 idempotent `closeOnce`로 client를 정확히 한 번 닫는다. deadline 초과에서는 이 close가 transport 강제 종료 경로다. 원본 MCP Promise에는 늦은 reject를 처리하는 handler를 계속 유지한다.
+
+기존 공개 `createMcpTest`와 `toContainTool`은 minor 변경에서 제거하지 않는다. 현재 시그니처와 `not implemented` 오류를 deprecated shim으로 유지하고, 제거는 major release와 migration 문서를 동반한다.
+
+향후 repair에서는 raw provider 결과나 `[REDACTED]`가 포함된 replacement를 적용하지 않는다. 사용자가 sanitized preview에서 값을 다시 입력한 뒤 validate→sanitize를 재실행해 `applicable`이 된 replacement만 승인·적용한다.
 
 ## 8. Runner 최우선 구현 범위
 

@@ -1,5 +1,7 @@
 packages:
   - "packages/*"
+  # 도그푸딩 대상 예제 서버. private 이라 배포되지 않는다 (CONTRIBUTING §6).
+  - "examples/*"
 
 # Shared dependency versions live in the catalog to prevent version drift
 # across the 6 packages (CONTRIBUTING §부록 B).

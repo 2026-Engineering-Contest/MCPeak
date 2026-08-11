@@ -1,5 +1,5 @@
 import type { McpClient } from "@ohmymcp/core";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   type RunnerEvent,
   runSuite,
@@ -48,6 +48,117 @@ function fake(records: unknown[], reject = false): McpClient {
   };
 }
 describe("runSuite", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("timeout 뒤 현재 case를 종료하고 나머지를 실행하지 않는다", async () => {
+    vi.useFakeTimers();
+    const records: unknown[] = [];
+    const client = fake(records);
+    client.listTools = () => {
+      records.push({ type: "listTools" });
+      return new Promise(() => undefined);
+    };
+    const execution = runSuite({ client, suite });
+    await vi.advanceTimersByTimeAsync(123);
+    await expect(execution.report).resolves.toMatchObject({
+      status: "failed",
+      stopReason: { type: "timeout", caseId: "tools" },
+      summary: { timedOut: 1, notRun: 1 },
+    });
+    expect(records).toEqual([{ type: "listTools" }]);
+    expect(records).not.toContainEqual({ type: "close" });
+  });
+  it("시작 전 abort는 operation 없이 suite를 중단한다", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const records: unknown[] = [];
+    const report = await runSuite({ client: fake(records), suite, signal: controller.signal })
+      .report;
+    expect(report).toMatchObject({ status: "aborted", stopReason: { type: "abortSignal" } });
+    expect(report.cases.map((item) => item.status)).toEqual(["notRun", "notRun"]);
+    expect(records).toEqual([]);
+  });
+  it("case, suite, fallback 순으로 timeout을 적용하고 최대값을 보존한다", async () => {
+    const values: number[] = [];
+    const pending = () => new Promise<never>(() => undefined);
+    const firstCase = suite.cases[0];
+    if (firstCase === undefined) throw new Error("fixture case missing");
+    for (const [caseTimeout, suiteTimeout, expected] of [
+      [7, 9, 7],
+      [undefined, 9, 9],
+      [undefined, undefined, 10_000],
+      [2_147_483_647, undefined, 2_147_483_647],
+    ] as const) {
+      vi.useFakeTimers();
+      const input = structuredClone(suite);
+      if (suiteTimeout === undefined) delete input.defaultTimeoutMs;
+      else input.defaultTimeoutMs = suiteTimeout;
+      input.cases = [
+        { ...firstCase, ...(caseTimeout === undefined ? {} : { timeoutMs: caseTimeout }) },
+      ];
+      const execution = runSuite({
+        client: { ...fake([]), listTools: pending },
+        suite: input,
+        onEvent: (event) => {
+          if (event.type === "operationStarted") values.push(event.timeoutMs);
+        },
+      });
+      if (expected !== 2_147_483_647) await vi.advanceTimersByTimeAsync(expected);
+      else await vi.advanceTimersByTimeAsync(1);
+      if (expected !== 2_147_483_647) await execution.report;
+      vi.useRealTimers();
+    }
+    expect(values).toEqual([7, 9, 10_000, 2_147_483_647]);
+  });
+  it("operation abort와 timeout 동시 abort는 cancelled가 우선이다", async () => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    const client = { ...fake([]), listTools: () => new Promise<never>(() => undefined) };
+    const firstCase = suite.cases[0];
+    if (firstCase === undefined) throw new Error("fixture case missing");
+    const execution = runSuite({
+      client,
+      suite: { ...suite, defaultTimeoutMs: 10, cases: [firstCase] },
+      signal: controller.signal,
+      drainTimeoutMs: 1,
+    });
+    controller.abort();
+    await vi.advanceTimersByTimeAsync(10);
+    await expect(execution.report).resolves.toMatchObject({
+      status: "aborted",
+      cases: [{ status: "cancelled" }],
+    });
+    await vi.advanceTimersByTimeAsync(1);
+    await execution.drain;
+    expect(vi.getTimerCount()).toBe(0);
+  });
+  it("drain option은 호출 전 동기 검증하고 deadline 결과는 late reject에도 유지한다", async () => {
+    for (const drainTimeoutMs of [0, NaN, Infinity, -1, 1.5, 60_001])
+      expect(() => runSuite({ client: fake([]), suite, drainTimeoutMs })).toThrow(RangeError);
+    vi.useFakeTimers();
+    let reject!: (error: unknown) => void;
+    const client = {
+      ...fake([]),
+      listTools: () =>
+        new Promise<never>((_, fail) => {
+          reject = fail;
+        }),
+    };
+    const firstCase = suite.cases[0];
+    if (firstCase === undefined) throw new Error("fixture case missing");
+    const execution = runSuite({
+      client,
+      suite: { ...suite, defaultTimeoutMs: 1, cases: [firstCase] },
+      drainTimeoutMs: 2,
+    });
+    await vi.advanceTimersByTimeAsync(3);
+    await expect(execution.drain).resolves.toEqual({
+      status: "deadlineExceeded",
+      pendingOperations: 1,
+    });
+    reject(new Error("late"));
+    await Promise.resolve();
+  });
   it("순서대로 이벤트와 케이스를 실행한다", async () => {
     const records: unknown[] = [];
     const events: unknown[] = [];

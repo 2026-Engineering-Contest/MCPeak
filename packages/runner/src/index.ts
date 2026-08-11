@@ -22,6 +22,13 @@ export {
   type RunnerPayloadLimits,
   type RunnerRedactionOptions,
 } from "./sanitization.js";
+export {
+  type FinalizeRunnerExecutionOptions,
+  finalizeRunnerExecution,
+  type McpClientShutdownController,
+  type RunnerForceCloseReason,
+  RunnerShutdownTimeoutError,
+} from "./shutdown.js";
 export * from "./spec/index.js";
 
 /** `createMcpTest` 에 넘기는 설정. */

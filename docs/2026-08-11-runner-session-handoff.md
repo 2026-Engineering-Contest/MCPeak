@@ -2,8 +2,8 @@
 
 - 작성일: 2026-08-11
 - 프로젝트: OhMyMCP
-- 작업 위치: `/Users/doo._.hyun/Study/Project/OhMyMCP`
-- 참고 제안서: `/Users/doo._.hyun/Downloads/mcp-test-프로젝트-제안서.md`
+- 작업 위치: 저장소 루트
+- 참고 제안서: 외부 자료 `mcp-test-프로젝트-제안서.md`
 - 현재 단계: 설계 승인 및 구현 계획 작성 완료
 - 후속 설계: `docs/superpowers/specs/2026-08-11-runner-design.md`
 - 후속 구현 계획: `docs/superpowers/plans/2026-08-11-runner-implementation.md`
@@ -68,7 +68,7 @@ McpClient
 사용자의 MCP 서버 프로세스
 ```
 
-Dashboard는 다른 팀원이 구현한다. 사용자는 `npm run build -w <dashboard>` 후 `npm start -w <dashboard>`로 로컬 서버를 띄우고, 브라우저에서 테스트 생성과 실행 결과를 확인하는 흐름을 원한다.
+Dashboard는 다른 팀원이 구현한다. 구체적인 workspace 이름과 실행 명령은 Dashboard 패키지가 추가될 때 그 패키지의 README에서 확정하며, 사용자는 로컬 서버와 브라우저에서 테스트 생성·실행 결과를 확인하는 흐름을 원한다.
 
 Runner는 CLI, Dashboard, Vitest 중 어느 하나에도 직접 종속되지 않는 혼합형 구조로 만든다.
 
@@ -160,23 +160,29 @@ packages/runner/src/
 ├── executor.ts      # 순차 실행, timeout, 중단
 ├── assertions.ts    # 툴, 입력, 응답, 오류 assertion
 ├── diagnostics.ts   # 사람이 읽는 실패 메시지
+├── sanitization.ts  # observer payload 마스킹과 크기 제한
 └── index.ts         # 공개 API 재수출
 ```
 
-제안된 최소 공개 API는 다음과 같다. 아직 최종 타입 검토가 필요하다.
+후속 설계에서 확정한 lifecycle의 핵심은 다음과 같다. 전체 타입은 설계 문서를 따른다.
 
 ```ts
 export function defineMcpSuite(spec: TestSuiteSpec): TestSuiteSpec;
 
-export async function runSuite(options: {
+export interface RunnerExecution {
+  report: Promise<RunnerReport>;
+  drain: Promise<void>;
+}
+
+export function runSuite(options: {
   client: McpClient;
   suite: TestSuiteSpec;
   signal?: AbortSignal;
   onEvent?: (event: RunnerEvent) => void;
-}): Promise<RunnerReport>;
+}): RunnerExecution;
 ```
 
-`onEvent`는 CLI의 실시간 터미널 출력과 Dashboard의 SSE 전달에 사용한다. 최종 `RunnerReport`는 JSON 응답과 JUnit 변환에 사용한다.
+`onEvent`는 CLI의 실시간 터미널 출력과 Dashboard의 SSE 전달에 사용한다. 최종 `RunnerReport`는 sanitized JSON 응답에 사용하며, timeout·abort 뒤에는 `drain`을 기다린 후 client를 닫는다.
 
 ## 8. Runner 최우선 구현 범위
 

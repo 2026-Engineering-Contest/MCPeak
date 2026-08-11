@@ -4,7 +4,7 @@
 
 **Goal:** Implement the first deterministic `TestSuiteSpec → RunnerEvent[] + RunnerReport` vertical slice in `@ohmymcp/runner`, with `toolExists`, `isError`, validation, timeout, cancellation, and a generate-ready public contract.
 
-**Architecture:** Keep the JSON-compatible specification contract isolated under `src/spec/`, re-export it from the existing package root, and let a sequential executor consume only the frozen `McpClient` contract. Assertions return structured results rather than throwing. Runner events are observer snapshots, and the final report retains each executed case specification and diagnostic so generate can later build single-case or batch repair requests.
+**Architecture:** Keep the JSON-compatible specification contract isolated under `src/spec/`, re-export it from the existing package root, and let a sequential executor consume only the frozen `McpClient` contract. Assertions return structured results rather than throwing. Runner keeps private operational inputs separate from sanitized observer snapshots, returns report/drain lifecycle Promises, and retains each sanitized case specification and diagnostic so generate can later build reviewed single-case or batch repair requests.
 
 **Tech Stack:** TypeScript 5.9, Vitest 4, tsdown, Biome, Node.js 20+, pnpm workspaces. Add no dependency.
 
@@ -18,6 +18,9 @@
 - Preserve specification order, event order, result order, and deterministic diagnostics.
 - Do not add timestamps, measured durations, random IDs, or parallel execution.
 - Do not call `client.close()` from Runner.
+- Expose sanitized event/report snapshots only; actual MCP calls use the private original input.
+- Return a non-rejecting `drain` Promise and require callers to await it before closing the client.
+- Enforce default observer limits of 65,536 bytes per case and 1,048,576 bytes per report.
 - Child agents and the main agent must not commit, merge, or push. The user performs each commit after a review gate.
 - Do not revert unrelated user changes. The current `.gitignore` and `docs/2026-08-11-runner-session-handoff.md` changes are outside implementation ownership.
 - Design source of truth: `docs/superpowers/specs/2026-08-11-runner-design.md`.
@@ -34,10 +37,12 @@
 - `packages/runner/src/spec/index.ts` — side-effect-free spec contract exports.
 - `packages/runner/src/diagnostics.ts` — stable diagnostic factories and thrown-value normalization.
 - `packages/runner/src/assertions.ts` — pure `toolExists` and `isError` evaluation.
+- `packages/runner/src/sanitization.ts` — observer redaction, UTF-8 payload sizing, and limit errors.
 - `packages/runner/src/executor.ts` — sequential execution, event emission, report construction, timeout, abort.
 - `packages/runner/tests/spec-validation.test.ts` — validator and helper tests.
 - `packages/runner/tests/spec-schema.test.ts` — JSON Schema contract tests.
 - `packages/runner/tests/assertions.test.ts` — assertion and message tests.
+- `packages/runner/tests/sanitization.test.ts` — recursive masking and payload-limit tests.
 - `packages/runner/tests/executor.test.ts` — execution, event, report, timeout, and abort tests.
 - `.changeset/runner-declarative-suite.md` — minor release note for Runner.
 
@@ -86,6 +91,13 @@ export type JsonValue =
   | JsonValue[]
   | { [key: string]: JsonValue };
 export type JsonObject = { [key: string]: JsonValue };
+export type ReadonlyJsonValue =
+  | JsonPrimitive
+  | readonly ReadonlyJsonValue[]
+  | ReadonlyJsonObject;
+export type ReadonlyJsonObject = {
+  readonly [key: string]: ReadonlyJsonValue;
+};
 
 export interface TestSuiteSpec {
   schemaVersion: 1;
@@ -172,7 +184,7 @@ export class SuiteValidationError extends Error {
 The JSON Schema implementation is this exact object:
 
 ```ts
-export const MCP_SUITE_JSON_SCHEMA: JsonObject = {
+export const MCP_SUITE_JSON_SCHEMA: ReadonlyJsonObject = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
   $id: "https://ohmymcp.dev/schemas/test-suite/v1.json",
   type: "object",
@@ -341,14 +353,46 @@ export interface RunnerReport {
   summary: RunnerSummary;
 }
 
+export interface RunnerRedactionOptions {
+  sensitiveKeys?: readonly string[];
+  sensitiveValues?: readonly string[];
+}
+
+export interface RunnerPayloadLimits {
+  maxCaseBytes?: number;
+  maxReportBytes?: number;
+}
+
+export class RunnerPayloadLimitError extends Error {
+  override readonly name = "RunnerPayloadLimitError";
+  readonly scope: "case" | "report";
+  readonly limitBytes: number;
+  readonly actualBytes: number;
+  readonly caseId?: string;
+
+  constructor(options: {
+    scope: "case" | "report";
+    limitBytes: number;
+    actualBytes: number;
+    caseId?: string;
+  });
+}
+
 export interface RunSuiteOptions {
   client: McpClient;
   suite: TestSuiteSpec;
   signal?: AbortSignal;
   onEvent?: (event: RunnerEvent) => void;
+  redaction?: RunnerRedactionOptions;
+  payloadLimits?: RunnerPayloadLimits;
 }
 
-export function runSuite(options: RunSuiteOptions): Promise<RunnerReport>;
+export interface RunnerExecution {
+  report: Promise<RunnerReport>;
+  drain: Promise<void>;
+}
+
+export function runSuite(options: RunSuiteOptions): RunnerExecution;
 
 export type RunnerEvent =
   | SuiteStartedEvent
@@ -666,6 +710,15 @@ it("공개 JSON Schema를 재귀적으로 동결한다", () => {
   };
   visit(MCP_SUITE_JSON_SCHEMA);
 });
+
+it("공개 JSON Schema 타입이 중첩 값까지 readonly다", () => {
+  const definitions = MCP_SUITE_JSON_SCHEMA.$defs;
+  if (false && definitions !== null && typeof definitions === "object" && !Array.isArray(definitions)) {
+    // @ts-expect-error nested schema objects are read-only
+    definitions.timeoutMs = null;
+  }
+  expect(Object.isFrozen(definitions)).toBe(true);
+});
 ```
 
 - [ ] **Step 2: Run focused tests and observe RED**
@@ -680,7 +733,7 @@ Expected: failure because the new modules and exports do not exist. A syntax or 
 
 - [ ] **Step 3: Implement the exact types and JSON Schema contract**
 
-Implement the full JSON Schema object from Plan §3 byte-for-byte except for formatter-controlled whitespace. Keep `additionalProperties: false` for contract objects and allow arbitrary recursive JSON values only under `operation.input`. Recursively freeze every Schema array and object before exposing the constant. Do not add a JSON Schema validator dependency.
+Implement the full JSON Schema object from Plan §3 byte-for-byte except for formatter-controlled whitespace. Export it as `ReadonlyJsonObject`, keep `additionalProperties: false` for contract objects, and allow arbitrary recursive JSON values only under `operation.input`. Recursively freeze every Schema array and object before exposing the constant. Do not add a JSON Schema validator dependency.
 
 `spec/index.ts` re-exports only spec types, Schema, validator, and error. Root `src/index.ts` re-exports `./spec/index.js`. Remove `createMcpTest`, `toContainTool`, and their old types.
 
@@ -783,7 +836,7 @@ Add these named cases and exact assertions:
 | `존재하는 get_weather 툴을 통과시킨다` | `{ spec, status: "passed" }`, no diagnostic |
 | `isError true와 false 일치를 통과시킨다` | true/true and false/false both `passed` |
 | `오류 응답을 기대했지만 정상 응답이면 실패한다` | exact message `오류 응답을 기대했지만 정상 응답을 받았습니다.`, expected true, actual false |
-| `실제 툴 이름을 중복 제거하고 정렬한다` | input names `z`, `a`, `z` produce actual `["a", "z"]` |
+| `실제 툴 이름을 UTF-16 순서로 중복 제거한다` | input names `가`, `a`, `A`, `a` produce actual `["A", "a", "가"]`; spied `localeCompare` call count 0 |
 | `진단에서 raw와 관련 없는 content를 제외한다` | `JSON.stringify(result)` contains neither `raw` nor the sentinel secret string |
 | `Error를 JSON 진단값으로 정규화한다` | `{ type: "error", name: "Error", message: "Connection closed" }` |
 | `비 Error throw를 안전하게 정규화한다` | every string, finite number, boolean, null, undefined, bigint, symbol, function, object, circular object result passes `JSON.stringify` and never calls a supplied `toJSON` spy |
@@ -799,6 +852,8 @@ Expected: missing diagnostic and assertion modules.
 - [ ] **Step 3: Implement diagnostic factories and pure assertions**
 
 Use one diagnostic factory per code. Assertion functions do not throw for mismatches and do not mutate their inputs. Successful assertion results omit `diagnostic`.
+
+Tool names are deduplicated before sorting. Use the locale-independent comparator `(left, right) => left < right ? -1 : left > right ? 1 : 0`; do not use `localeCompare`, `Intl.Collator`, or process locale.
 
 `normalizeThrownValue` uses this deterministic mapping and never calls `toJSON` or a custom string conversion:
 
@@ -843,13 +898,15 @@ Do not start Task 3 before verifying the supplied SHA.
 
 **Files:**
 
+- Create: `packages/runner/src/sanitization.ts`
 - Create: `packages/runner/src/executor.ts`
+- Create: `packages/runner/tests/sanitization.test.ts`
 - Create: `packages/runner/tests/executor.test.ts`
 - Modify: `packages/runner/src/index.ts`
 
 **Consumes:** Task 1 spec contract and Task 2 assertion/diagnostic results.
 
-**Produces:** All report, event, and `runSuite` types from Plan §3, with sequential success, assertion failure, and operation rejection paths.
+**Produces:** All report, event, security, payload-limit, and `runSuite` handle types from Plan §3, with sequential success, assertion failure, and operation rejection paths.
 
 - [ ] **Step 1: Write sequential execution tests**
 
@@ -906,14 +963,37 @@ Add these named cases and exact assertions:
 | `event handler 오류를 호출자에게 전달한다` | rejection is the same sentinel Error; no subsequent MCP call |
 | `같은 입력은 같은 이벤트와 보고서를 만든다` | two independent runs are deep equal |
 | `보고서를 안전하게 직렬화한다` | `JSON.stringify` succeeds and serialized keys exclude `raw`, `timestamp`, `duration`, `durationMs` |
+| `정상 실행 handle의 drain을 완료한다` | `report`와 `drain`이 모두 resolve하고 `client.close`는 Runner에서 호출하지 않음 |
+
+In `sanitization.test.ts`, use this fixed input:
+
+```ts
+const input = {
+  Authorization: "Bearer top-secret",
+  nested: {
+    api_key: "key-secret",
+    note: "caller-secret",
+  },
+};
+```
+
+Add these exact cases:
+
+| Test name | Exact assertion |
+|---|---|
+| `기본 민감 키와 caller 값을 재귀 마스킹한다` | `Authorization`, `api_key`, exact `caller-secret` become `[REDACTED]`; key order is preserved |
+| `실제 호출은 원본이고 event와 report만 sanitized다` | fake client receives `input` deep equal; serialized events/report contain none of the three secret strings |
+| `case payload 초과를 실행 전에 거절한다` | `maxCaseBytes: 128`, oversized input; `RunnerPayloadLimitError` scope `case`; events/calls empty |
+| `report payload 초과는 안전하지 않은 완료 event를 만들지 않는다` | case limit passes, `maxReportBytes: 256`; report rejects scope `report`; event types exclude `suiteCompleted` |
+| `limit을 기본값보다 높이거나 잘못 지정하면 거절한다` | zero, fractional, `65_537` case, `1_048_577` report each reject with `RangeError` before events/calls |
 
 - [ ] **Step 2: Run focused tests and observe RED**
 
 ```bash
-pnpm exec vitest run packages/runner/tests/executor.test.ts
+pnpm exec vitest run packages/runner/tests/executor.test.ts packages/runner/tests/sanitization.test.ts
 ```
 
-Expected: `runSuite` and event/report exports are missing.
+Expected: `runSuite`, event/report, sanitization, and payload-limit exports are missing.
 
 - [ ] **Step 3: Implement the deterministic state machine**
 
@@ -930,11 +1010,27 @@ Rules:
 - Snapshot the validated suite before `suiteStarted`.
 - A fulfilled `callTool` operation is `completed` even when `ToolResult.isError` is true; `isError` assertion decides pass/fail.
 - Emit a JSON-safe clone to `onEvent`, never the internal mutable object.
+- Keep a private operational suite for client calls and a separate sanitized observer suite for events/reports.
 - Start `sequence` at 0 and increment once per emitted conceptual event.
 - Preserve case and assertion order.
 - Do not include operation output in the public report beyond relevant diagnostics.
 - Do not call `client.close()`.
+- Return `{ report, drain }`; on ordinary completion/rejection, `drain` settles no later than `report` and never rejects.
 - In this task, use a temporary internal control path that resolves operations normally; Task 4 adds timeout/abort without changing public event/report names.
+
+`sanitization.ts` implements these exact defaults and rules:
+
+```ts
+const DEFAULT_SENSITIVE_KEYS = new Set([
+  "authorization", "cookie", "password", "passwd", "secret", "token",
+  "apikey", "accesstoken", "refreshtoken", "clientsecret",
+]);
+const REDACTED = "[REDACTED]";
+const DEFAULT_MAX_CASE_BYTES = 65_536;
+const DEFAULT_MAX_REPORT_BYTES = 1_048_576;
+```
+
+Normalize keys with `key.toLowerCase().replace(/[^a-z0-9]/g, "")`. Extra sensitive keys extend the defaults; sensitive string values match exactly. Recursively sanitize only `operation.input` while cloning the rest of each case unchanged. Measure `JSON.stringify(value)` with `new TextEncoder().encode(serialized).byteLength`. Caller limits must be positive integers no greater than the defaults. Preflight every sanitized case before `suiteStarted`; measure the final report before `suiteCompleted`. Limit failures reject `report` with `RunnerPayloadLimitError` and do not mutate the caller input.
 
 Rejected operations use these exact messages:
 
@@ -979,16 +1075,16 @@ Do not start Task 4 before verifying the supplied SHA.
 
 **Consumes:** Task 3 executor and final public result/event names.
 
-**Produces:** timeout priority, external abort, remaining `notRun` results, timer/listener cleanup.
+**Produces:** timeout priority, external abort, remaining `notRun` results, timer/listener cleanup, and pending-operation `drain` lifecycle.
 
 - [ ] **Step 1: Write fake-timer timeout and abort tests**
 
 Use `vi.useFakeTimers()` with cleanup in `afterEach`. Required tests:
 
 ```ts
-const run = runSuite({ client, suite, onEvent: (event) => events.push(event) });
+const execution = runSuite({ client, suite, onEvent: (event) => events.push(event) });
 await vi.advanceTimersByTimeAsync(10_000);
-const report = await run;
+const report = await execution.report;
 
 expect(report.status).toBe("failed");
 expect(report.stopReason).toEqual({ type: "timeout", caseId: "a" });
@@ -1012,6 +1108,9 @@ Add these named cases and exact assertions:
 | `모든 settle 경로가 timer와 listener를 정리한다` | fake timer count 0 and instrumented add/remove listener counts equal |
 | `timeout과 abort 뒤 다음 MCP 호출을 시작하지 않는다` | call record contains current operation only |
 | `Runner가 client를 닫지 않는다` | close spy count 0 for timeout and abort |
+| `timeout report 뒤 pending operation을 drain한다` | report resolves first; operation settle 전 drain pending; settle 후 drain resolves |
+| `abort 직후 시작한 close 절차는 drain을 기다린다` | `execution.drain.then(() => client.close())`를 report 직후 시작; operation settle 전 close 0회, settle 후 1회 |
+| `pending operation reject를 drain이 삼킨다` | timeout 뒤 원본 Promise reject; drain resolves and no unhandled rejection |
 
 - [ ] **Step 2: Run focused tests and observe RED**
 
@@ -1034,6 +1133,23 @@ type ControlledOperation<T> =
 ```
 
 Use one settle function that clears the timer and removes the abort listener exactly once. Check `signal.aborted` before starting and again in the timeout callback so explicit cancellation has priority. Never close the client and never start the next case after `timedOut` or `cancelled`.
+
+`runSuite` creates a resolved default `pendingSettlement`, then replaces it whenever an MCP Promise starts:
+
+```ts
+pendingSettlement = operationPromise.then(
+  () => undefined,
+  () => undefined,
+);
+const report = executeSuite();
+const drain = report.then(
+  () => pendingSettlement,
+  () => pendingSettlement,
+).then(() => undefined);
+return { report, drain };
+```
+
+This reads the final tracked Promise after logical report settlement, prevents unhandled rejection, and keeps `drain` non-rejecting. It tracks at most one request because suite execution is sequential and stops after timeout/abort.
 
 Assertions for the current timed-out/cancelled case are `skipped` with `OPERATION_RESULT_UNAVAILABLE`. Assertions for remaining cases are `notRun` without a diagnostic. 시작하지 않은 operation은 적용된 timer가 없으므로 `timeoutMs` 필드를 갖지 않는다.
 
@@ -1095,11 +1211,12 @@ Set the package description to:
 README must show:
 
 1. `defineMcpSuite` with one `listTools/toolExists` case and one `callTool/isError` case.
-2. `runSuite({ client, suite, onEvent })`.
+2. `const execution = runSuite({ client, suite, onEvent, redaction, payloadLimits })`, `await execution.report`, `await execution.drain`, `await client.close()`의 안전한 lifecycle.
 3. Timeout priority and the 10-second Runner fallback.
-4. Statement that Runner never closes the injected client.
-5. Statement that `RunnerReport` is JSON-serializable and retains failed case specs/diagnostics for later repair.
-6. Current non-goals: generate provider, JUnit, Vitest adapter, parallel execution.
+4. Statement that Runner never closes the injected client and callers must await `drain` before closing after timeout/abort.
+5. Default sensitive-key redaction, caller `sensitiveValues`, 65,536-byte case and 1,048,576-byte report limits, and no automatic persistence.
+6. Statement that `RunnerReport` is JSON-serializable and retains sanitized failed case specs/diagnostics for later repair.
+7. Current non-goals: generate provider/repair validator implementation, JUnit, Vitest adapter, parallel execution.
 
 - [ ] **Step 2: Add the exact changeset**
 
@@ -1176,11 +1293,14 @@ OhMyMCP Runner 구현 계획을 오케스트레이션해라.
 
 [1단계: 작업 공간 만들기] 다른 무엇보다 먼저 이것부터 해라.
 
-원본 저장소는 /Users/doo._.hyun/Study/Project/OhMyMCP 이다.
-먼저 원본 저장소에서 다음을 실행하고 값을 기록해라.
+먼저 현재 checkout에서 저장소 루트를 계산하고 다음 값을 기록해라.
 
-  git rev-parse --git-dir
-  git rev-parse --git-common-dir
+  repo_root="$(git rev-parse --show-toplevel)"
+  base_commit="$(git rev-parse HEAD)"
+  git_dir="$(git rev-parse --path-format=absolute --git-dir)"
+  git_common_dir="$(git rev-parse --path-format=absolute --git-common-dir)"
+  printf '%s\n' "$git_dir"
+  printf '%s\n' "$git_common_dir"
   git branch --show-current
   git rev-parse HEAD
   git status --short
@@ -1190,29 +1310,32 @@ git status가 깨끗하지 않으면 아무 변경도 하지 말고 BLOCKED로 �
   docs/superpowers/specs/2026-08-11-runner-design.md
   docs/superpowers/plans/2026-08-11-runner-implementation.md
 
-worktree나 브랜치를 만들기 전에 원본의 로컬 전제 조건을 검사한다. `AGENTS.md`, `.agents`, `.agents/skills/execution-conventions/SKILL.md`, `docs/conventions`, `docs/conventions/execution.md`가 원본에 실제로 존재해야 한다. 하나라도 없으면 아직 어떤 git 상태도 만들지 말고 필요한 경로를 포함해 BLOCKED로 보고한다. `AGENTS.md`, `.agents`, `docs/conventions`가 각각 `git check-ignore`로 ignore되는지도 확인하고, 하나라도 ignore되지 않으면 BLOCKED다.
+worktree나 브랜치를 만들기 전에 로컬 규약 원본을 찾는다. `git worktree list --porcelain`의 각 `worktree` 경로 중 `AGENTS.md`, `.agents/skills/execution-conventions/SKILL.md`, `docs/conventions/execution.md`를 모두 가진 경로를 찾고 절대 경로를 `rules_root`로 기록한다. 후보가 정확히 하나가 아니면 아직 어떤 git 상태도 만들지 말고 BLOCKED로 보고한다. 그 경로에서 `AGENTS.md`, `.agents`, `docs/conventions`가 각각 `git check-ignore`로 ignore되는지도 확인한다.
 
-그 다음 git-dir과 git-common-dir의 절대 경로를 비교한다. 이 프롬프트는 일반 checkout에서만 시작한다. 이미 연결 worktree이면 경로를 추측하거나 재사용하지 말고 BLOCKED로 보고한다. 일반 checkout이면 아래 worktree와 브랜치를 만든다.
+그 다음 `git_dir`과 `git_common_dir`의 절대 경로 문자열을 비교한다. 서로 다르면 이미 연결 worktree이므로 중첩 worktree를 만들지 않고 `runner_worktree="$repo_root"`로 기록한다. 같으면 일반 checkout이므로 다음 값을 계산한다.
 
-  worktree: /Users/doo._.hyun/Study/Project/OhMyMCP-worktrees/runner-declarative-suite
-  branch: feat/runner-declarative-suite
-  base: 원본 저장소에서 방금 확인한 git rev-parse HEAD
+  worktree_parent="$(dirname "$repo_root")/$(basename "$repo_root")-worktrees"
+  runner_worktree="$worktree_parent/runner-declarative-suite"
+  runner_branch="feat/runner-declarative-suite"
+  base_commit="$(git -C "$repo_root" rev-parse HEAD)"
 
-worktree 경로 또는 브랜치가 이미 존재하면 삭제하거나 재사용하지 말고 BLOCKED로 보고해라. 생성 직전에 `base_commit=$(git -C /Users/doo._.hyun/Study/Project/OhMyMCP rev-parse HEAD)`로 실제 SHA를 변수에 저장한다. 전용 부모 디렉터리를 `mkdir -p /Users/doo._.hyun/Study/Project/OhMyMCP-worktrees`로 만든 뒤 다음 명령을 실행한다.
+일반 checkout에서 계산한 worktree 경로 또는 브랜치가 이미 존재하면 삭제하거나 재사용하지 말고 BLOCKED로 보고해라. 생성 직전에 `base_commit="$(git -C "$repo_root" rev-parse HEAD)"`를 다시 계산하고, 다음 명령을 실행한다.
 
-  git worktree add -b feat/runner-declarative-suite /Users/doo._.hyun/Study/Project/OhMyMCP-worktrees/runner-declarative-suite "$base_commit"
+  mkdir -p "$worktree_parent"
+  git -C "$repo_root" worktree add -b "$runner_branch" "$runner_worktree" "$base_commit"
 
-새 worktree를 만들었다면 이미 검증한 원본의 로컬 규약을 새 worktree의 같은 상대 경로로 복사한다.
+선택한 worktree에 로컬 규약이 없으면 검증한 `rules_root`에서 같은 상대 경로로 복사한다.
 
-  /Users/doo._.hyun/Study/Project/OhMyMCP/AGENTS.md
-  /Users/doo._.hyun/Study/Project/OhMyMCP/.agents
-  /Users/doo._.hyun/Study/Project/OhMyMCP/docs/conventions
+  cp "$rules_root/AGENTS.md" "$runner_worktree/AGENTS.md"
+  mkdir -p "$runner_worktree/.agents" "$runner_worktree/docs/conventions"
+  cp -R "$rules_root/.agents/." "$runner_worktree/.agents/"
+  cp -R "$rules_root/docs/conventions/." "$runner_worktree/docs/conventions/"
 
 worktree에 진입해 다음을 확인한다.
 
   pwd가 선택한 worktree 절대 경로인지
   git rev-parse HEAD가 기록한 base SHA와 같은지
-  git branch --show-current가 feat/runner-declarative-suite인지
+  일반 checkout에서 만들었다면 git branch --show-current가 feat/runner-declarative-suite인지
   설계 문서와 구현 계획이 존재하는지
   git status --short가 깨끗한지
 
@@ -1246,7 +1369,7 @@ Task 1 구현 자식은 네이티브 spawn_agent를 다음 설정과 일치시�
   model: gpt-5.6-terra
   reasoning_effort: medium
   허용 Files: 계획의 Task 1 Files만
-  report: /Users/doo._.hyun/Study/Project/OhMyMCP-worktrees/runner-declarative-suite/.agents/reports/task-1-runner-spec.md
+  report: $runner_worktree/.agents/reports/task-1-runner-spec.md
 
 Task 2 구현 자식:
 
@@ -1255,7 +1378,7 @@ Task 2 구현 자식:
   model: gpt-5.6-terra
   reasoning_effort: medium
   허용 Files: 계획의 Task 2 Files만
-  report: /Users/doo._.hyun/Study/Project/OhMyMCP-worktrees/runner-declarative-suite/.agents/reports/task-2-runner-assertions.md
+  report: $runner_worktree/.agents/reports/task-2-runner-assertions.md
 
 Task 3 구현 자식:
 
@@ -1264,7 +1387,7 @@ Task 3 구현 자식:
   model: gpt-5.6-terra
   reasoning_effort: medium
   허용 Files: 계획의 Task 3 Files만
-  report: /Users/doo._.hyun/Study/Project/OhMyMCP-worktrees/runner-declarative-suite/.agents/reports/task-3-runner-executor.md
+  report: $runner_worktree/.agents/reports/task-3-runner-executor.md
 
 Task 4 구현 자식:
 
@@ -1273,7 +1396,7 @@ Task 4 구현 자식:
   model: gpt-5.6-terra
   reasoning_effort: medium
   허용 Files: 계획의 Task 4 Files만
-  report: /Users/doo._.hyun/Study/Project/OhMyMCP-worktrees/runner-declarative-suite/.agents/reports/task-4-runner-timeout.md
+  report: $runner_worktree/.agents/reports/task-4-runner-timeout.md
 
 Task 5 구현 자식:
 
@@ -1282,9 +1405,9 @@ Task 5 구현 자식:
   model: gpt-5.6-terra
   reasoning_effort: medium
   허용 Files: 계획의 Task 5 Files만
-  report: /Users/doo._.hyun/Study/Project/OhMyMCP-worktrees/runner-declarative-suite/.agents/reports/task-5-runner-docs.md
+  report: $runner_worktree/.agents/reports/task-5-runner-docs.md
 
-각 자식 message에는 역할, Task 전문, worktree 절대 경로, 설계·계획 경로, 허용 Files, 금지 파일, RED/GREEN 명령, report 경로와 다음 완료 형식을 반복해서 넣어라. 이전 message나 표를 참조하게 하지 마라.
+각 자식 message를 만들 때 `$runner_worktree`를 실제 기록한 절대 경로 문자열로 치환한다. literal 변수명이나 개인 홈 경로를 자식에게 보내지 않는다. message에는 역할, Task 전문, worktree 절대 경로, 설계·계획 경로, 허용 Files, 금지 파일, RED/GREEN 명령, report 경로와 다음 완료 형식을 반복해서 넣어라. 이전 message나 표를 참조하게 하지 마라.
 
   status: READY_FOR_REVIEW 또는 status: BLOCKED
   변경 파일
@@ -1308,9 +1431,9 @@ Task 5 구현 자식:
 검증된 경우에만 다음 Task를 시작한다. Task 1부터 Task 5까지 계획 순서대로 반복한다. 활성 자식은 한 번에 구현 1개 또는 리뷰 1개만 둔다. 완료 알림만 믿지 말고 report, diff, 테스트를 직접 확인한다.
 ```
 
-## 5. Exact Native Spawn Calls
+## 5. Runtime-Resolved Native Spawn Calls
 
-The orchestrator uses these calls one at a time. Each child starts with no forked conversation and obtains all authority and context from its message and the referenced committed files.
+The orchestrator uses these calls one at a time. Before each call it binds `runnerWorktree` to the exact absolute `runner_worktree` recorded in §4. Template interpolation happens before the tool call; the actual `spawn_agent` payload must contain neither a `${runnerWorktree}` literal nor a personal home-directory constant, and each rendered `Report:` line is therefore absolute. Each child starts with no forked conversation and obtains all authority and context from the fully rendered message and committed files.
 
 권장 스폰 설정: `default / gpt-5.6-terra / medium`.
 
@@ -1321,8 +1444,10 @@ await spawn_agent({
   model: "gpt-5.6-terra",
   reasoning_effort: "medium",
   message: `역할: OhMyMCP Runner 공개 명세 계약 구현자.
-목표: 선언형 suite union 타입, draft 2020-12 JSON Schema, 구조화 validator, defineMcpSuite, 루트 재수출을 TDD로 구현한다. 한 case는 listTools 또는 callTool 하나만 가지며 assertion 조합, 닫힌 필드, 고유 ID, 비어 있지 않은 문자열, JSON 값, `1..2_147_483_647ms` timeout을 검증한다. 비순환 공유 객체는 허용하고 실제 cycle만 거절한다. JSON Schema와 validator 제약을 같은 valid/invalid fixture로 대조한다.
-Worktree: /Users/doo._.hyun/Study/Project/OhMyMCP-worktrees/runner-declarative-suite
+목표: 선언형 suite union 타입, deep-readonly draft 2020-12 JSON Schema, 구조화 validator, defineMcpSuite, 루트 재수출을 TDD로 구현한다. 한 case는 listTools 또는 callTool 하나만 가지며 assertion 조합, 닫힌 필드, 고유 ID, 비어 있지 않은 문자열, JSON 값, `1..2_147_483_647ms` timeout을 검증한다. 비순환 공유 객체는 허용하고 실제 cycle만 거절한다. JSON Schema와 validator 제약을 같은 valid/invalid fixture로 대조하고 Schema의 중첩 변경은 TypeScript와 recursive freeze 모두 막는다.
+Worktree: ${runnerWorktree}
+Report: ${runnerWorktree}/.agents/reports/task-1-runner-spec.md
+첫 명령으로 `git rev-parse --show-toplevel`을 실행하고 출력이 위 Worktree 절대 경로와 같은지, 그 경로에 이 계획과 승인된 선행 HEAD가 있는지 확인한다. 다르면 BLOCKED로 끝낸다.
 먼저 CLAUDE.md, CONTRIBUTING.md, .agents/skills/execution-conventions/SKILL.md, docs/conventions/execution.md, Runner 설계 문서와 구현 계획을 끝까지 읽는다.
 허용 Files: packages/runner/src/spec/types.ts, packages/runner/src/spec/json-schema.ts, packages/runner/src/spec/validation.ts, packages/runner/src/spec/index.ts, packages/runner/src/index.ts, packages/runner/tests/spec-validation.test.ts, packages/runner/tests/spec-schema.test.ts, packages/runner/tests/index.test.ts, .agents/reports/task-1-runner-spec.md.
 금지: 다른 파일 수정, background 실행, commit, merge, push, 하위 agent spawn, 다른 작업자의 변경 되돌리기.
@@ -1340,12 +1465,14 @@ await spawn_agent({
   model: "gpt-5.6-terra",
   reasoning_effort: "medium",
   message: `역할: OhMyMCP Runner 실패 진단·assertion 구현자.
-목표: `toolExists`와 `isError`를 순수 함수로 평가하고 구조화된 `RunnerDiagnostic`을 만든다. 한 operation 결과로 assertion을 명세 순서대로 모두 평가하며, TOOL_NOT_FOUND는 정렬된 tool 이름만, IS_ERROR_MISMATCH는 boolean만, operation reject는 정규화한 `{ type, name, message }`만 노출한다. raw/content/순환 객체/함수/symbol은 진단에 넣지 않는다.
-Worktree: /Users/doo._.hyun/Study/Project/OhMyMCP-worktrees/runner-declarative-suite
+목표: `toolExists`와 `isError`를 순수 함수로 평가하고 구조화된 `RunnerDiagnostic`을 만든다. 한 operation 결과로 assertion을 명세 순서대로 모두 평가하며, TOOL_NOT_FOUND는 중복 제거 후 locale과 무관한 UTF-16 순서의 tool 이름만, IS_ERROR_MISMATCH는 boolean만, operation reject는 정규화한 `{ type, name, message }`만 노출한다. raw/content/순환 객체/함수/symbol은 진단에 넣지 않는다.
+Worktree: ${runnerWorktree}
+Report: ${runnerWorktree}/.agents/reports/task-2-runner-assertions.md
+첫 명령으로 `git rev-parse --show-toplevel`을 실행하고 출력이 위 Worktree 절대 경로와 같은지, 그 경로에 이 계획과 승인된 Task 1 HEAD가 있는지 확인한다. 다르면 BLOCKED로 끝낸다.
 먼저 프로젝트 지침, 실행 규약, Runner 설계, 구현 계획을 끝까지 읽고 현재 HEAD가 사용자 승인 Task 1 SHA인지 확인한다.
 허용 Files: packages/runner/src/diagnostics.ts, packages/runner/src/assertions.ts, packages/runner/src/index.ts, packages/runner/tests/assertions.test.ts, .agents/reports/task-2-runner-assertions.md.
 금지: 허용 Files 밖 수정, fixture 수정, raw/content 노출, background 실행, commit, merge, push, 하위 agent spawn, 다른 변경 되돌리기.
-다음 실패 단언을 그대로 테스트한다. 없는 툴 `missing`은 code `TOOL_NOT_FOUND`, message `툴 'missing'를 찾을 수 없습니다.`, expected `missing`, 정렬된 actual `["add", "get_weather"]`, hint `서버의 tools/list 응답과 테스트 명세를 확인하세요.`다. `isError`가 expected false/actual true면 code `IS_ERROR_MISMATCH`, message `정상 응답을 기대했지만 오류 응답을 받았습니다.`, hint `툴 입력값과 서버의 오류 응답을 확인하세요.`다. expected true/actual false면 message `오류 응답을 기대했지만 정상 응답을 받았습니다.`이고 같은 hint를 쓴다. 존재/일치 성공, tool 이름 중복 제거·정렬, raw/content secret 제외, Error와 모든 비 Error throw의 JSON-safe 정규화도 먼저 RED로 만든다.
+다음 실패 단언을 그대로 테스트한다. 없는 툴 `missing`은 code `TOOL_NOT_FOUND`, message `툴 'missing'를 찾을 수 없습니다.`, expected `missing`, 정렬된 actual `["add", "get_weather"]`, hint `서버의 tools/list 응답과 테스트 명세를 확인하세요.`다. 별도 fixture `가`, `a`, `A`, `a`는 `["A", "a", "가"]`가 되고 spied `localeCompare`는 0회다. `isError`가 expected false/actual true면 code `IS_ERROR_MISMATCH`, message `정상 응답을 기대했지만 오류 응답을 받았습니다.`, hint `툴 입력값과 서버의 오류 응답을 확인하세요.`다. expected true/actual false면 message `오류 응답을 기대했지만 정상 응답을 받았습니다.`이고 같은 hint를 쓴다. 존재/일치 성공, raw/content secret 제외, Error와 모든 비 Error throw의 JSON-safe 정규화도 먼저 RED로 만든다.
 RED/GREEN focused 명령은 `pnpm exec vitest run packages/runner/tests/assertions.test.ts`다. 이후 `pnpm exec vitest run packages/runner/tests/assertions.test.ts packages/runner/tests/spec-validation.test.ts packages/runner/tests/spec-schema.test.ts`와 `pnpm --filter @ohmymcp/runner typecheck`를 실행한다.
 보고서와 최종 응답 형식은 status, 변경 파일, RED, GREEN, 남은 위험 순서다.`,
 });
@@ -1360,12 +1487,14 @@ await spawn_agent({
   model: "gpt-5.6-terra",
   reasoning_effort: "medium",
   message: `역할: OhMyMCP Runner 순차 executor 구현자.
-목표: 검증된 suite snapshot을 case 순서대로 실행하고 event sequence 0부터 고정 순서로 발행한다. 모든 case 이벤트에는 `caseId`와 `caseIndex`를 넣는다. 보통 assertion/operation 실패 뒤에는 다음 case를 실행하고, 배타적 `RunnerSummary`, 원본 spec, 안전한 직렬화 보고서를 만든다. event handler 오류는 그대로 전파한다.
-Worktree: /Users/doo._.hyun/Study/Project/OhMyMCP-worktrees/runner-declarative-suite
+목표: 검증된 private operational suite를 case 순서대로 실행하고 sanitized observer snapshot을 event sequence 0부터 고정 순서로 발행한다. 모든 case 이벤트에는 `caseId`와 `caseIndex`를 넣는다. 보통 assertion/operation 실패 뒤에는 다음 case를 실행하고, 배타적 `RunnerSummary`, sanitized spec, 안전한 직렬화 보고서와 `{ report, drain }` handle을 만든다. event handler 오류는 `report`에 그대로 전파한다.
+Worktree: ${runnerWorktree}
+Report: ${runnerWorktree}/.agents/reports/task-3-runner-executor.md
+첫 명령으로 `git rev-parse --show-toplevel`을 실행하고 출력이 위 Worktree 절대 경로와 같은지, 그 경로에 이 계획과 승인된 Task 2 HEAD가 있는지 확인한다. 다르면 BLOCKED로 끝낸다.
 프로젝트 지침, 실행 규약, 설계, 계획을 읽고 현재 HEAD가 승인된 Task 2 SHA인지 확인한다.
-허용 Files: packages/runner/src/executor.ts, packages/runner/src/index.ts, packages/runner/tests/executor.test.ts, .agents/reports/task-3-runner-executor.md.
+허용 Files: packages/runner/src/sanitization.ts, packages/runner/src/executor.ts, packages/runner/src/index.ts, packages/runner/tests/sanitization.test.ts, packages/runner/tests/executor.test.ts, .agents/reports/task-3-runner-executor.md.
 금지: timeout 범위를 미리 구현, 병렬 실행, client.close 호출, raw 응답 보고, 허용 Files 밖 수정, background, commit, merge, push, 하위 agent spawn.
-이벤트 순서는 `suiteStarted → caseStarted → operationStarted → operationCompleted → assertionCompleted* → caseCompleted`를 case마다 반복한 뒤 `suiteCompleted`이고 sequence는 0부터 1씩 증가한다. caseStarted/caseCompleted를 포함한 모든 case 이벤트의 caseId/caseIndex, snapshot 격리, assertion/operation 실패 후 다음 case 실행, 배타적 summary, 동일 입력 deep equality, raw/timestamp/duration 제외, handler 오류 동일 객체 전파를 먼저 RED로 확인한다. timeout/abort 없이 Task 3 상태표만 최소 구현한다. RED/GREEN은 `pnpm exec vitest run packages/runner/tests/executor.test.ts`, 회귀는 `pnpm exec vitest run packages/runner/tests`, `pnpm --filter @ohmymcp/runner typecheck`, `pnpm --filter @ohmymcp/runner build`로 확인한다.
+이벤트 순서는 `suiteStarted → caseStarted → operationStarted → operationCompleted → assertionCompleted* → caseCompleted`를 case마다 반복한 뒤 `suiteCompleted`이고 sequence는 0부터 1씩 증가한다. case 식별자, snapshot 격리, 실패 후 계속 실행, 배타적 summary, 동일 입력 deep equality, handler 오류를 먼저 RED로 확인한다. `Authorization`/`api_key`/caller sentinel 재귀 마스킹, 원본 client input 보존, 65_536-byte case와 1_048_576-byte report 상한, unsafe `suiteCompleted` 제외, 정상 drain도 테스트한다. timeout/abort 없이 Task 3 상태표만 구현한다. RED/GREEN은 `pnpm exec vitest run packages/runner/tests/executor.test.ts packages/runner/tests/sanitization.test.ts`, 회귀는 `pnpm exec vitest run packages/runner/tests`, `pnpm --filter @ohmymcp/runner typecheck`, `pnpm --filter @ohmymcp/runner build`로 확인한다.
 최종 응답은 READY_FOR_REVIEW 또는 BLOCKED와 증거를 포함한다.`,
 });
 ```
@@ -1379,12 +1508,14 @@ await spawn_agent({
   model: "gpt-5.6-terra",
   reasoning_effort: "medium",
   message: `역할: OhMyMCP Runner timeout·AbortSignal 상태 전이 구현자.
-목표: case→suite→10_000ms 우선순위와 AbortSignal을 단일 controlled-operation helper로 구현한다. `2_147_483_647ms`까지 정확히 예약하고 더 큰 값은 명세 단계에서 거절한다. timeout은 현재 timedOut/나머지 notRun/suite failed, abort는 현재 cancelled 또는 미시작 notRun/suite aborted다. 시작하지 않은 operation은 `timeoutMs`가 없다. timeout/abort 뒤 다음 MCP 호출과 client.close를 금지하고 timer/listener를 정확히 한 번 정리한다.
-Worktree: /Users/doo._.hyun/Study/Project/OhMyMCP-worktrees/runner-declarative-suite
+목표: case→suite→10_000ms 우선순위와 AbortSignal을 단일 controlled-operation helper로 구현한다. `2_147_483_647ms`까지 정확히 예약하고 더 큰 값은 명세 단계에서 거절한다. timeout은 현재 timedOut/나머지 notRun/suite failed, abort는 현재 cancelled 또는 미시작 notRun/suite aborted다. 시작하지 않은 operation은 `timeoutMs`가 없다. timeout/abort 뒤 다음 MCP 호출과 client.close를 금지하고 timer/listener를 정확히 한 번 정리하며, report 이후 실제 pending 요청은 non-rejecting `drain`으로 추적한다.
+Worktree: ${runnerWorktree}
+Report: ${runnerWorktree}/.agents/reports/task-4-runner-timeout.md
+첫 명령으로 `git rev-parse --show-toplevel`을 실행하고 출력이 위 Worktree 절대 경로와 같은지, 그 경로에 이 계획과 승인된 Task 3 HEAD가 있는지 확인한다. 다르면 BLOCKED로 끝낸다.
 프로젝트 지침, 실행 규약, 설계, 계획을 읽고 현재 HEAD가 승인된 Task 3 SHA인지 확인한다.
 허용 Files: packages/runner/src/executor.ts, packages/runner/tests/executor.test.ts, .agents/reports/task-4-runner-timeout.md.
 금지: core 타입 변경, client.close 호출, timeout 뒤 다음 MCP 호출, 허용 Files 밖 수정, background, commit, merge, push, 하위 agent spawn.
-fake timer로 timeout 우선순위·최대 경계·notRun 필드·abort 우선순위·고정 이벤트·timer/listener cleanup·후속 호출 금지의 의도한 RED를 먼저 확인한다. ControlledOperation union 하나로 최소 구현한다. RED/GREEN은 `pnpm exec vitest run packages/runner/tests/executor.test.ts`, 회귀는 `pnpm exec vitest run packages/runner/tests`, `pnpm --filter @ohmymcp/runner typecheck`, `pnpm --filter @ohmymcp/runner build`로 확인한다.
+fake timer로 timeout 우선순위·최대 경계·notRun 필드·abort 우선순위·고정 이벤트·timer/listener cleanup·후속 호출 금지를 먼저 RED로 확인한다. report가 pending operation보다 먼저 끝나고 drain은 settle까지 기다리는지, 즉시 시작한 `drain.then(() => client.close())`가 settle 뒤 close 1회를 만드는지, 원본 reject가 unhandled rejection 없이 drain resolve되는지도 검사한다. RED/GREEN은 `pnpm exec vitest run packages/runner/tests/executor.test.ts`, 회귀는 `pnpm exec vitest run packages/runner/tests`, `pnpm --filter @ohmymcp/runner typecheck`, `pnpm --filter @ohmymcp/runner build`로 확인한다.
 최종 응답은 READY_FOR_REVIEW 또는 BLOCKED와 증거를 포함한다.`,
 });
 ```
@@ -1398,8 +1529,10 @@ await spawn_agent({
   model: "gpt-5.6-terra",
   reasoning_effort: "medium",
   message: `역할: OhMyMCP Runner 문서·릴리스·회귀 검증 담당자.
-목표: Runner README에 listTools/callTool/timeout/AbortSignal/event/report 예제와 Generate가 루트 `@ohmymcp/runner` 계약을 소비한다는 경계를 문서화하고, `minor` changeset을 추가한 뒤 전체 회귀를 검증한다.
-Worktree: /Users/doo._.hyun/Study/Project/OhMyMCP-worktrees/runner-declarative-suite
+목표: Runner README에 listTools/callTool/timeout/AbortSignal/event/report, redaction/payload limit, `await execution.drain` 뒤 client close 예제와 Generate가 루트 `@ohmymcp/runner` 계약을 소비한다는 경계를 문서화하고, `minor` changeset을 추가한 뒤 전체 회귀를 검증한다.
+Worktree: ${runnerWorktree}
+Report: ${runnerWorktree}/.agents/reports/task-5-runner-docs.md
+첫 명령으로 `git rev-parse --show-toplevel`을 실행하고 출력이 위 Worktree 절대 경로와 같은지, 그 경로에 이 계획과 승인된 Task 4 HEAD가 있는지 확인한다. 다르면 BLOCKED로 끝낸다.
 프로젝트 지침, 실행 규약, 설계, 계획을 읽고 현재 HEAD가 승인된 Task 4 SHA인지 확인한다.
 허용 Files: packages/runner/package.json, packages/runner/README.md, .changeset/runner-declarative-suite.md, .agents/reports/task-5-runner-docs.md.
 금지: root README와 다른 패키지 수정, repository-wide write format, background, commit, merge, push, 하위 agent spawn.
@@ -1419,11 +1552,13 @@ await spawn_agent({
   model: "gpt-5.6-terra",
   reasoning_effort: "medium",
   message: `역할: OhMyMCP Runner 최종 읽기 전용 리뷰어.
-Worktree: /Users/doo._.hyun/Study/Project/OhMyMCP-worktrees/runner-declarative-suite
+Worktree: ${runnerWorktree}
+Report: ${runnerWorktree}/.agents/reports/final-runner-review.md
+첫 명령으로 `git rev-parse --show-toplevel`을 실행하고 출력이 위 Worktree 절대 경로와 같은지, 그 경로에 이 계획과 승인된 Task 5 HEAD가 있는지 확인한다. 다르면 BLOCKED로 끝낸다.
 목표: Runner 설계와 구현 결과의 공개 타입/JSON Schema/validator parity, one-operation-per-case, 모든 assertion 평가, 실패 후 계속 실행, timeout·abort 중단, deterministic event/report, raw 데이터 제외, Generate 루트 계약 경계를 base 이후 diff와 테스트로 읽기 전용 검토한다. Runner 설계 문서, 구현 계획, CLAUDE.md, CONTRIBUTING.md를 읽는다.
 파일 수정, background 실행, commit, merge, push, 하위 agent spawn은 금지한다.
 공개 계약 일치, 테스트 누락, timeout·abort 결정론성, raw 데이터 노출, 패키지 소유권, generate 연동 경계를 검토하고 필요한 read-only 테스트를 실행한다.
-보고서: /Users/doo._.hyun/Study/Project/OhMyMCP-worktrees/runner-declarative-suite/.agents/reports/final-runner-review.md
+보고서는 위 Report 절대 경로에 작성한다.
 최종 응답은 status: READY_FOR_REVIEW 또는 status: BLOCKED로 시작하고 발견 사항을 심각도순으로 적는다.`,
 });
 ```

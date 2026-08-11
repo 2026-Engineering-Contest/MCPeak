@@ -146,12 +146,14 @@ interface NaturalLanguageCompiler {
 - 외부 compile JSON은 `unknown`으로 받고 Generate 경계의 `validateCompileResult`와 Runner `validateMcpSuite`를 모두 통과한 뒤에만 사용
 - CLI/Dashboard는 request preview의 fingerprint를 승인하며, `dispatchCompile`은 opaque binding에 보존한 immutable sanitized request만 provider에 전달함. 승인 뒤 preview가 바뀌면 승인을 무효화하고 provider를 호출하지 않음
 - provider stdout는 각 `Buffer` chunk를 문자열 결합·JSON parsing하기 전에 기본 `262_144` UTF-8 bytes로 제한함. 초과 시 child/stream을 중단하고 parse·sanitize 없이 내용 없는 `outputLimitExceeded`를 반환함
+- stdout는 chunk 상태를 유지하는 fatal UTF-8 decoder를 final flush한 뒤에만 JSON parsing하며 malformed·불완전 sequence는 후속 parse·validate·sanitize 없이 `providerFailed(invalidUtf8)`로 반환함
 - provider 호출 timeout은 request preview에 표시·승인되는 기본 `120_000ms`이며, dispatch가 caller 취소와 timeout을 자체 race해 permanently pending provider도 구조화된 `providerFailed`로 끝냄. non-zero exit·reject·잘못된 UTF-8/JSON도 raw stderr나 exception을 노출하지 않는 고정 failure code로 정규화함
 - provider compile·repair 결과는 raw/sanitized result byte 제한과 전체 string/object redaction을 통과한 safe preview로만 UI에 전달함
 - result sanitization의 `scope: "result"` 크기 초과는 dispatch/apply에서 `resultLimitExceeded`로 변환하며 preview·snapshot·suite를 만들지 않고 예외나 unhandled rejection을 UI 경계로 흘리지 않음
 - invalid compile·repair 결과는 raw key/value/message를 보간하지 않는 code/path 기반 고정 issue dictionary만 반환하며, issue 개수·UTF-8 크기도 제한함
 - 실행 승인 직전에 result preview의 binding·fingerprint를 확인하고 validate→sanitize를 재실행한 뒤 opaque immutable execution snapshot으로 고정함. Runner는 getter가 반환한 그 snapshot의 suite만 실행하며 승인 뒤 변경에는 재승인이 필요함
 - repair는 request 생성 시 원래 suite와 `selectedCaseIds`를 opaque binding에 고정하며 approval 단계에서 selection을 caller 입력으로 다시 받지 않음
+- compile·repair request의 `inputSchema`가 runtime에서 JSON 값이 아니면 고정 code/path의 동기 `GenerateRequestValidationError`를 던지고 preview·binding·provider 호출을 만들지 않음
 - provider 고유의 출력 envelope는 adapter 내부에서 제거
 - runner에는 provider 정보가 아니라 검증된 `TestSuiteSpec`만 전달
 

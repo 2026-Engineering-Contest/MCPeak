@@ -852,6 +852,17 @@ export interface McpToolContext {
   readonly inputSchema: ReadonlyJsonValue;
 }
 
+export class GenerateRequestValidationError extends Error {
+  override readonly name = "GenerateRequestValidationError";
+  readonly code: "INVALID_TOOL_INPUT_SCHEMA";
+  override readonly message: "툴 inputSchema가 JSON 값이 아닙니다.";
+  readonly path: string;
+  readonly toolIndex: number;
+  readonly hint: "tools/list의 inputSchema를 JSON 값으로 정규화하세요.";
+
+  constructor(options: { toolIndex: number });
+}
+
 export interface FailedCaseContext {
   readonly spec: TestCaseSpec;
   readonly operation: OperationResult;
@@ -904,7 +915,7 @@ export function prepareRepairRequest(options: {
 
 기본 repair 후보는 status가 `failed`인 케이스다. `timedOut`은 우선 timeout 설정과 서버 지연 문제로 안내하며 사용자가 명시적으로 선택한 경우에만 `needsReview` 후보로 보낸다. `cancelled`와 `notRun`은 실행 결과가 없으므로 repair 대상으로 보내지 않는다.
 
-`prepareRepairRequest`의 구현과 소유권은 미래 `@ohmymcp/generate`에 있다. 함수는 `originalSuite`와 report의 suite identity·case ID를 먼저 대조하고, report의 sanitized 실패 case만 선택하며 tools의 `inputSchema`에도 같은 redaction을 적용한다. case당 `65_536` bytes 또는 전체 `262_144` bytes를 넘으면 `RepairPayloadLimitError`를 던지고 preview를 반환하지 않는다. result 상한 기본값은 `262_144` UTF-8 bytes, 허용값은 `1..262_144`의 유한 정수이며 caller는 낮출 수만 있다. provider 호출 timeout 기본값은 `120_000ms`, 허용값은 `1..600_000ms`의 유한 정수다. 두 옵션의 잘못된 값은 preview나 provider 실행 전에 동기 `RangeError`로 거절한다. `ToolDef.inputSchema`가 JSON 값이 아니면 repair 요청을 만들기 전에 구조화된 오류 또는 `needsReview`로 처리한다. raw MCP 메시지, 환경 변수, 서버 stderr, 관련 없는 응답 본문은 기본 payload에서 제외한다.
+`prepareRepairRequest`의 구현과 소유권은 미래 `@ohmymcp/generate`에 있다. 함수는 `originalSuite`와 report의 suite identity·case ID를 먼저 대조하고, report의 sanitized 실패 case만 선택하며 tools의 `inputSchema`에도 같은 redaction을 적용한다. case당 `65_536` bytes 또는 전체 `262_144` bytes를 넘으면 `RepairPayloadLimitError`를 던지고 preview를 반환하지 않는다. result 상한 기본값은 `262_144` UTF-8 bytes, 허용값은 `1..262_144`의 유한 정수이며 caller는 낮출 수만 있다. provider 호출 timeout 기본값은 `120_000ms`, 허용값은 `1..600_000ms`의 유한 정수다. 두 옵션의 잘못된 값은 preview나 provider 실행 전에 동기 `RangeError`로 거절한다. runtime caller가 타입을 우회해 전달할 수 있으므로 tools는 redaction보다 먼저 배열 순서대로 검사한다. `inputSchema`가 JSON primitive(`string`, `boolean`, `null`, 유한 `number`), dense array, 또는 `Object.prototype | null` plain object로만 재귀 구성된 비순환 `ReadonlyJsonValue`가 아니면 첫 위반 tool index만 받는 `GenerateRequestValidationError`를 동기로 던진다. 비순환 공유 참조는 허용하지만 sparse array, `undefined`, `bigint`, `symbol`, 함수, 비 plain object, 비유한 숫자, cycle은 거절한다. 이 오류의 `code`, `message`, `hint`는 위 고정 literal이고 `path`는 안전한 numeric index로 만든 `tools[i].inputSchema`다. 이 경로에는 `needsReview` 대체 결과가 없으며 preview·binding·provider 호출도 만들지 않는다. raw MCP 메시지, 환경 변수, 서버 stderr, 관련 없는 응답 본문은 기본 payload에서 제외한다.
 
 함수는 sanitized request, original suite, 정렬·중복 제거한 `selectedCaseIds`, redaction 정책, result 상한, provider timeout을 deep clone·deep freeze해 module-private `WeakMap<RepairRequestBinding, RepairRequestContext>`에 보존한다. visible preview fingerprint는 binding·fingerprint를 제외한 canonical JSON SHA-256이다. `dispatchRepair`는 compile과 같은 approval fingerprint 검사를 수행하고 mutable `preview.request`가 아니라 binding의 request snapshot만 provider에 전달한다. stdout은 binding의 `maxResultBytes`로 streaming 제한하며 초과하면 process/stream을 중단하고 parse·validate·sanitize 전에 내용 없는 `outputLimitExceeded`를 반환한다. 이 request binding이 provider result의 유일한 원본 suite·선택 집합·timeout 문맥이다.
 
@@ -1109,6 +1120,8 @@ Generate 구현 계획은 최소한 다음 fixture를 고정한다.
 | preview의 `applicable`, `redactedPaths`, `result` 또는 fingerprint를 승인 뒤 변조 | `approvalInvalidated`, 적용 0건, 새 preview와 재승인 필요 |
 | 원래 `selectedCaseIds = ["a"]`인 binding에 caller가 `b`를 추가하려 함 | approval API가 selection을 받지 않으며 stored context로 `UNSELECTED_REPAIR_CASE_ID`, 적용 0건 |
 | repair request의 cases/tools/fingerprint 또는 binding을 provider 승인 뒤 변조 | `approvalInvalidated`, provider 호출 0회 |
+| `inputSchema`가 각각 `"schema"`, `true`, `null`, `0`, dense array, null-prototype object | compile·repair prepare가 모두 허용하고 immutable sanitized preview 생성 |
+| runtime에서 `inputSchema`가 `new Date()`, `undefined`, `NaN`, `Infinity`, sparse array, 함수, bigint, symbol 또는 cycle | 각 값에 동기 `GenerateRequestValidationError`, code `INVALID_TOOL_INPUT_SCHEMA`, 고정 numeric path; preview·binding·provider 호출 0회, raw schema 노출 없음 |
 | provider repair stdout가 chunk 수신 중 `262_145` UTF-8 bytes에 도달 | process/stream 중단, parse·sanitize 0회, `outputLimitExceeded` |
 | raw 또는 sanitized repair result `262_145` UTF-8 bytes | dispatch는 `resultLimitExceeded`와 preview 0개; 승인 뒤 apply 재검증도 같은 reason과 suite 0개; reject 없음 |
 | 사용자가 redacted replacement 값을 다시 입력 | validate→sanitize 재실행 후 redacted replacement path가 0일 때만 승인·적용 |
@@ -1358,7 +1371,7 @@ export function applyReviewedCompileResult(options: {
 
 모든 Generate fingerprint는 같은 canonical serializer를 사용한다. array 순서는 유지하고 object key는 JavaScript UTF-16 code unit 순서로 정렬하며, JSON-safe visible field만 직렬화한다. opaque `binding`과 자기 자신인 `fingerprint` 필드는 제외하고 Node 내장 SHA-256의 lowercase hex를 사용한다. fingerprint만으로 binding을 인증하지 않으며, 반드시 module-private registry의 binding identity와 함께 확인한다. CLI와 Dashboard backend가 승인 시 표시·저장한 fingerprint가 provider dispatch와 execution snapshot 생성에 그대로 전달된다.
 
-`prepareCompileRequest`는 provider 전송 전에 반드시 호출한다. `tools[].inputSchema`에는 repair와 같은 재귀 key/value redaction을 적용한다. 자연어 prompt에는 caller의 exact `sensitiveValues`와 `authorization: ...`, `api_key=...`처럼 정규화된 기본 민감 키가 `:` 또는 `=` 앞에 있는 assignment의 값을 `[REDACTED]`로 바꾼다. UTF-8 상한은 prompt `65_536` bytes, tools `131_072` bytes, 전체 request `262_144` bytes이며 어느 하나라도 넘으면 preview를 만들지 않는다. `maxResultBytes` 기본값은 `262_144`, 허용값은 `1..262_144`의 유한 정수이고 caller는 기본값보다 낮출 수만 있다. `providerTimeoutMs` 기본값은 `120_000`, 허용값은 `1..600_000`의 유한 정수다. 잘못된 옵션은 preview나 provider 실행 전에 동기 `RangeError`다.
+`prepareCompileRequest`는 provider 전송 전에 반드시 호출한다. `tools[].inputSchema`에는 repair와 같은 runtime `ReadonlyJsonValue` 검증을 redaction보다 먼저 적용하며 첫 위반에 같은 동기 `GenerateRequestValidationError`를 던진다. 이때 preview·binding·provider 호출은 없다. 통과한 schema에만 같은 재귀 key/value redaction을 적용한다. 자연어 prompt에는 caller의 exact `sensitiveValues`와 `authorization: ...`, `api_key=...`처럼 정규화된 기본 민감 키가 `:` 또는 `=` 앞에 있는 assignment의 값을 `[REDACTED]`로 바꾼다. UTF-8 상한은 prompt `65_536` bytes, tools `131_072` bytes, 전체 request `262_144` bytes이며 어느 하나라도 넘으면 preview를 만들지 않는다. `maxResultBytes` 기본값은 `262_144`, 허용값은 `1..262_144`의 유한 정수이고 caller는 기본값보다 낮출 수만 있다. `providerTimeoutMs` 기본값은 `120_000`, 허용값은 `1..600_000`의 유한 정수다. 잘못된 옵션은 preview나 provider 실행 전에 동기 `RangeError`다.
 
 `prepareCompileRequest`는 sanitized request, redaction 정책, `maxResultBytes`, `providerTimeoutMs`를 deep clone·deep freeze해 module-private `WeakMap<CompileRequestBinding, CompileRequestContext>`에 저장한다. visible preview의 `binding`과 `fingerprint`를 제외한 canonical JSON SHA-256을 fingerprint로 함께 반환한다. CLI/Dashboard는 이 visible preview의 byte length, redacted payload, result 상한, provider timeout과 fingerprint를 한 화면에서 보여주고 `{ approved: true, fingerprint }`로 매 요청을 승인한다. `dispatchCompile`은 미승인이면 preview를 읽지 않는다. 승인된 경우 등록된 binding, 현재 visible preview fingerprint, approval fingerprint가 모두 일치하는지 provider 호출 전에 확인한다. 하나라도 다르면 `approvalInvalidated`이며 재검토·재승인이 필요하다. 일치하면 mutable `preview.request`가 아니라 binding 안의 deep-frozen request snapshot만 provider에 전달한다. 따라서 승인 전후 prompt/tools/timeout 변경이나 다른 binding 치환으로 redaction과 상한을 우회할 수 없다.
 
@@ -1370,7 +1383,7 @@ adapter가 관찰한 non-zero exit, invalid UTF-8, invalid JSON은 각각 `nonZe
 
 `NaturalLanguageCompiler.compile`의 반환값은 외부 JSON이므로 `unknown`이다. 다만 adapter는 JSON 전체를 메모리에 받은 뒤 이 Promise를 resolve하면 안 된다. 공통 provider reader가 child stdout의 각 `Buffer` chunk를 UTF-8 decode·문자열 결합 전에 `byteLength`로 누적하고 binding의 `maxResultBytes`를 넘는 첫 chunk에서 child process 또는 response stream을 중단한다. provider envelope를 포함한 stdout 전체가 상한 대상이다. 초과 뒤 남은 chunk는 버리고 JSON parse, envelope 제거, `validateCompileResult`, sanitization을 전혀 호출하지 않는다. `dispatchCompile`은 provider 출력 내용을 포함하지 않는 `{ status: "outputLimitExceeded", error: { name: "CompilePayloadLimitError", scope: "providerOutput", limitBytes, actualBytes } }`를 반환한다. `actualBytes`는 초과를 관찰한 누적 byte 수이며, stdout 일부나 stderr 원문을 CLI/Dashboard에 전달하지 않는다. repair adapter도 같은 streaming reader를 사용하고 `RepairPayloadLimitError(scope: "providerOutput")`로 실패한다. stderr는 별도 `65_536` byte 상한으로 수집·sanitization하고 초과분은 버려 메모리를 무제한 사용하지 않는다.
 
-수신 상한을 통과한 뒤에만 adapter가 UTF-8 decode, provider envelope 제거와 JSON parse를 수행한다. 그 `unknown`을 공통 Generate 경계의 `validateCompileResult`가 닫힌 envelope, issue와 metadata shape로 검증하고, 성공 결과의 `suite`를 Runner `validateMcpSuite`로 검증·정규화한 뒤에만 `CompileResult`를 반환한다. adapter는 유효한 결과에 provider 전용 envelope를 남기지 않는다. invalid suite나 유효하지 않은 metadata는 일부 수용하지 않고 전체 실패로 반환한다.
+reader는 호출마다 `new TextDecoder("utf-8", { fatal: true })` 하나를 만들고, 상한 안의 각 chunk에 `decoder.decode(chunk, { stream: true })`를 호출해 분할된 멀티바이트 sequence 상태를 다음 chunk까지 보존한다. stdout 종료 시 반드시 인자 없는 `decoder.decode()`로 final flush한 뒤에만 문자열 결합 결과를 provider envelope 제거와 `JSON.parse`에 전달한다. chunk decode나 final flush가 한 번이라도 throw하면 child/stream을 중단하고 raw byte나 대체 문자를 만들지 않은 `ProviderInvocationError(code: "invalidUtf8")`로 끝낸다. dispatch는 이를 `providerFailed(invalidUtf8)`로 변환하며 JSON parse, envelope 제거, validation, sanitization 호출 횟수는 모두 0이다. 유효한 UTF-8과 수신 상한을 통과한 뒤에만 adapter가 envelope 제거와 JSON parse를 수행한다. 그 `unknown`을 공통 Generate 경계의 `validateCompileResult`가 닫힌 envelope, issue와 metadata shape로 검증하고, 성공 결과의 `suite`를 Runner `validateMcpSuite`로 검증·정규화한 뒤에만 `CompileResult`를 반환한다. adapter는 유효한 결과에 provider 전용 envelope를 남기지 않는다. invalid suite나 유효하지 않은 metadata는 일부 수용하지 않고 전체 실패로 반환한다.
 
 `sanitizeCompileResult`는 수신 상한을 통과한 valid provider 결과와 승인된 request binding을 함께 받는다. binding에 고정된 기본 민감 key, caller key/value, 민감 assignment 규칙을 suite의 `name`, case name, operation tool/input, assertion 값, warnings/issues/metadata 문자열에 모두 적용한다. raw validated result와 sanitized result를 다시 측정해 어느 쪽이든 binding의 `maxResultBytes`를 넘으면 내용을 오류에 포함하지 않고 `CompilePayloadLimitError(scope: "result")`를 던진다. redaction 위치를 `redactedPaths`에 기록하며 suite 안에 redaction이 하나라도 있으면 `executable: false`다. provider 결과의 secret을 UI에 보여주거나 `[REDACTED]`가 든 suite를 실행하지 않는다. 함수는 request binding과 output redaction·상한 정책을 `CompileResultReviewBinding`에 연결하고, binding·fingerprint를 제외한 visible preview의 canonical JSON SHA-256 fingerprint를 만든다.
 
@@ -1387,6 +1400,8 @@ CLI/Dashboard는 provider를 직접 호출하지 않고 `dispatchCompile`만 호
 | prompt `Authorization: Bearer compile-secret` | preview가 `Authorization: [REDACTED]`, 직렬화 문자열에 `compile-secret` 없음 |
 | tool `inputSchema.properties.api_key.default = "tool-secret"` | default 값 `[REDACTED]` |
 | caller PII sentinel `person@example.com`이 prompt와 tool schema에 존재 | 두 위치 모두 `[REDACTED]` |
+| JSON primitive·dense array·plain/null-prototype object `inputSchema` | 모두 허용; 비순환 shared object도 정상 preview |
+| runtime에서 비 JSON·비 plain·비유한·sparse·cyclic `inputSchema`로 타입을 우회 | 동기 `GenerateRequestValidationError`; preview·binding·provider 호출 0회, fixed code/path/message/hint에 raw schema 없음 |
 | prompt `65_537`, tools `131_073`, request `262_145` UTF-8 bytes | 각각 `CompilePayloadLimitError`의 `prompt`, `tools`, `request` scope |
 | `dispatchCompile({ approval: { approved: false } })` | `{ status: "notApproved" }`, preview getter와 provider `compile` 호출 0회 |
 | request preview의 prompt/tools/fingerprint 또는 binding을 승인 뒤 변조 | `approvalInvalidated`, provider 호출 0회 |
@@ -1404,7 +1419,9 @@ compile과 repair에 같은 provider lifecycle fixture를 각각 적용한다.
 | `providerTimeoutMs`가 `0`, 소수, `600_001`, `NaN`, `Infinity` | prepare가 provider·preview 전에 동기 `RangeError`; `1`과 `600_000`은 허용 |
 | provider가 `undefined` 또는 secret이 든 `Error`로 reject | dispatch가 reject하지 않고 `providerFailed(rejected)`; public 직렬화 결과에 reject 값·secret 없음 |
 | exit `17`, stderr `Authorization: process-secret`, stderr 상한 초과 | `providerFailed(nonZeroExit)`, `exitCode === 17`, `stderr === { captured: true, truncated: true }`; 원문·secret 없음 |
-| invalid UTF-8 또는 invalid JSON | 각각 고정 `providerFailed(invalidUtf8)` 또는 `providerFailed(invalidJson)`; raw byte/text 없음 |
+| 유효한 `"서울"` UTF-8 bytes를 멀티바이트 중간에서 두 chunk로 분할 | stateful decoder가 원문을 복원하고 정상 JSON 처리 |
+| malformed sequence `[0xe2]` 다음 `[0x28, 0xa1]` 또는 incomplete final `[0xe2, 0x82]` | chunk decode/final flush에서 `providerFailed(invalidUtf8)`; parse·envelope·validate·sanitize 0회, raw byte/text 없음 |
+| 유효 UTF-8이지만 invalid JSON | 고정 `providerFailed(invalidJson)`; raw text 없음 |
 | timeout `120_000ms`, provider가 permanently pending | `119_999ms`에는 미완료, `120_000ms`에 `providerFailed(timedOut)`과 `timeoutMs === 120_000`; internal signal abort·termination 요청, dispatch pending 없음 |
 | caller signal이 호출 전 aborted | provider 호출 0회, `providerFailed(cancelled)` |
 | 실행 중 caller abort | internal signal abort·termination 요청, `providerFailed(cancelled)` |
@@ -1422,6 +1439,7 @@ compile과 repair에 같은 provider lifecycle fixture를 각각 적용한다.
 - expected adapter error와 임의 reject를 raw 값 없는 `ProviderFailure`로 정규화하며 늦은 settlement handler 유지
 - provider별 JSON envelope 제거
 - stdout를 UTF-8 byte 상한 안에서 streaming 수신하고 초과 시 process/stream을 중단한 뒤 JSON parsing을 생략
+- chunk 상태를 보존하는 fatal UTF-8 decoder를 final flush하고 decode 실패 시 후속 parsing·validation을 생략
 - JSON 파싱 뒤 compile 결과는 `validateCompileResult`와 `sanitizeCompileResult`, repair 결과는 binding에 저장한 원래 문맥을 포함한 `validateRepairResult`와 `sanitizeRepairResult`로 검증
 - 모호한 결과는 `needsReview`
 

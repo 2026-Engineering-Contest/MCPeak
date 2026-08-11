@@ -143,6 +143,7 @@ interface NaturalLanguageCompiler {
 - CLI/Dashboard는 request preview의 fingerprint를 승인하며, `dispatchCompile`은 opaque binding에 보존한 immutable sanitized request만 provider에 전달함. 승인 뒤 preview가 바뀌면 승인을 무효화하고 provider를 호출하지 않음
 - provider stdout는 각 `Buffer` chunk를 문자열 결합·JSON parsing하기 전에 기본 `262_144` UTF-8 bytes로 제한함. 초과 시 child/stream을 중단하고 parse·sanitize 없이 내용 없는 `outputLimitExceeded`를 반환함
 - provider compile·repair 결과는 raw/sanitized result byte 제한과 전체 string/object redaction을 통과한 safe preview로만 UI에 전달함
+- invalid compile·repair 결과는 raw key/value/message를 보간하지 않는 code/path 기반 고정 issue dictionary만 반환하며, issue 개수·UTF-8 크기도 제한함
 - 실행 승인 직전에 result preview의 binding·fingerprint를 확인하고 validate→sanitize를 재실행한 뒤 opaque immutable execution snapshot으로 고정함. Runner는 getter가 반환한 그 snapshot의 suite만 실행하며 승인 뒤 변경에는 재승인이 필요함
 - repair는 request 생성 시 원래 suite와 `selectedCaseIds`를 opaque binding에 고정하며 approval 단계에서 selection을 caller 입력으로 다시 받지 않음
 - provider 고유의 출력 envelope는 adapter 내부에서 제거
@@ -221,6 +222,8 @@ export function finalizeRunnerExecution(options: {
 `runSuite`는 injected `McpClient`를 절대 닫지 않는다. Runner는 execution과 실제 client identity를 private `WeakMap`에 묶는다. `finalizeRunnerExecution`은 shutdown controller의 client가 그 객체와 다르거나 execution binding이 없으면 report/drain 또는 transport를 건드리기 전에 동기 `TypeError`로 거절한다. CLI, Dashboard Node, 테스트 adapter는 pending `listTools`/`callTool`과 독립적으로 underlying transport를 끊는 `McpClientShutdownController.forceClose`를 구현한다.
 
 `closeTimeoutMs`와 `forceCloseTimeoutMs` 기본값은 각각 `2_000ms`, 허용값은 `1..10_000ms`의 유한 정수다. `0`은 즉시 종료가 아니라 잘못된 설정이고 `NaN`, `Infinity`, 음수, 소수, 상한 초과와 함께 report/drain 관찰 및 transport 호출 전 동기 `RangeError`다. 정상 drain이면 bounded graceful close, drain/close deadline이면 해당 reason의 bounded force close를 실행한다. `close()`가 즉시 reject하면 오류를 보존한 뒤 `forceClose("gracefulCloseFailed")`를 호출한다. stdio는 process/stream 종료와 `SIGKILL`, HTTP는 request abort와 socket destroy를 사용한다. permanently pending `listTools`/`callTool`, 느리거나 실패하는 close에서도 finalize는 유한 시간 안에 끝나며 실제 종료는 idempotent하게 한 번만 수행한다. 원본 MCP Promise에는 늦은 reject handler를 계속 유지한다.
+
+drain·close·forceClose의 모든 deadline race는 같은 monotonic 규칙을 쓴다. settlement가 `now < deadlineAt`에 관찰될 때만 Promise가 이기고, 정확한 경계를 포함한 `now >= deadlineAt`에서는 deadline이 항상 이긴다. 따라서 close가 정확히 `2_000ms`에 끝나면 `gracefulCloseDeadlineExceeded` force path, forceClose가 정확히 `2_000ms`에 끝나면 `RunnerShutdownTimeoutError`가 고정 결과다. 경계의 늦은 reject는 handler가 관찰하지만 이미 정한 오류 목록과 finalize 결과를 변경하지 않는다.
 
 finalize는 report, drain, close, force-close outcome을 별도로 기록한다. rejection reason이 `undefined`여도 실패 flag를 유지하고, 실패 하나면 그 값을 그대로 throw하며 둘 이상이면 report→drain→close→force-close 순서의 `AggregateError`를 throw한다. close rejection 뒤 force-close 성공 여부와 관계없이 원래 close 오류를 보존하며 cleanup 오류가 primary report 오류를 덮거나 삼키지 않는다.
 

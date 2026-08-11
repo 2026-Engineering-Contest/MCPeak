@@ -544,7 +544,9 @@ timeout 또는 operation 중 abort 뒤 취소할 수 없는 요청이 남으면 
 
 `deadlineExceeded`에서 일반 `McpClient.close()`만 호출하는 것은 충분하지 않다. close가 같은 pending 요청을 기다릴 수 있기 때문이다. `McpClientShutdownController.forceClose`는 pending `listTools` 또는 `callTool` Promise와 독립적으로 underlying transport를 끊어야 한다. stdio adapter는 자식 프로세스와 stream을 종료하고 grace 뒤 `SIGKILL`, HTTP adapter는 request `AbortController`와 socket destroy를 사용한다. `finalizeRunnerExecution`은 drain deadline 초과 시 graceful close를 건너뛰고 `forceClose("drainDeadlineExceeded")`를 호출한다.
 
-정상 drain에서는 `close()`를 먼저 호출하되 기본 `closeTimeoutMs: 2_000` 안에 끝나지 않으면 `forceClose("gracefulCloseDeadlineExceeded")`로 전환한다. `close()`가 먼저 reject하면 그 오류를 graceful-close outcome에 기록하고 즉시 별도의 `forceClose("gracefulCloseFailed")`를 수행한다. 따라서 즉시 실패한 graceful close도 transport를 열린 채 남기지 않으며 report 오류가 있으면 report를 첫 오류로 보존한다. `forceCloseTimeoutMs` 기본값도 `2_000`이다. 두 옵션은 모두 `1..10_000ms`의 유한 정수만 허용하고, `0`은 즉시 종료가 아니라 잘못된 설정이다. `0`, `NaN`, `Infinity`, 음수, 소수, `10_001` 이상은 binding 확인과 report/drain 관찰 및 transport 호출 전에 `finalizeRunnerExecution`이 동기 `RangeError`를 던진다. force close도 상한을 넘으면 `RunnerShutdownTimeoutError`로 기록하고 finalize를 끝내므로 caller가 영원히 대기하지 않는다. timeout race에서 빠진 close/force Promise에도 양쪽 settlement handler를 유지해 늦은 reject를 unhandled로 만들지 않는다. transport adapter는 force-close 호출을 idempotent하게 캐시하고 실제 종료 동작을 정확히 한 번 수행한다.
+정상 drain에서는 `close()`를 먼저 호출하되 기본 `closeTimeoutMs: 2_000` 안에 끝나지 않으면 `forceClose("gracefulCloseDeadlineExceeded")`로 전환한다. `close()`가 먼저 reject하면 그 오류를 graceful-close outcome에 기록하고 즉시 별도의 `forceClose("gracefulCloseFailed")`를 수행한다. 따라서 즉시 실패한 graceful close도 transport를 열린 채 남기지 않으며 report 오류가 있으면 report를 첫 오류로 보존한다. `forceCloseTimeoutMs` 기본값도 `2_000`이다. 두 옵션은 모두 `1..10_000ms`의 유한 정수만 허용하고, `0`은 즉시 종료가 아니라 잘못된 설정이다. `0`, `NaN`, `Infinity`, 음수, 소수, `10_001` 이상은 binding 확인과 report/drain 관찰 및 transport 호출 전에 `finalizeRunnerExecution`이 동기 `RangeError`를 던진다.
+
+drain, graceful close, force close는 같은 monotonic `deadlineAt` 비교 helper를 사용한다. 각 Promise의 fulfillment/rejection이 `now < deadlineAt`에 관찰될 때만 settlement가 이기며, `now >= deadlineAt`이면 항상 deadline이 이긴다. 따라서 close가 정확히 `2_000ms`에 fulfill/reject하면 `gracefulCloseDeadlineExceeded`로 force close하고 그 경계 rejection은 늦은 settlement로 관찰만 할 뿐 close 오류 목록에 추가하지 않는다. force close가 정확히 `2_000ms`에 fulfill/reject하면 `RunnerShutdownTimeoutError`가 이기고 이후 settlement가 finalize 결과를 바꾸지 않는다. timeout race에서 빠진 close/force Promise에도 양쪽 settlement handler를 유지해 늦은 reject를 unhandled로 만들지 않는다. transport adapter는 force-close 호출을 idempotent하게 캐시하고 실제 종료 동작을 정확히 한 번 수행한다. exact-boundary fake-timer fixture는 close와 force close의 fulfill/reject 네 경우 모두 이 결과를 고정한다.
 
 ```ts
 const execution = runSuite({ client: shutdown.client, suite, signal });
@@ -948,11 +950,24 @@ export type RepairValidationIssueCode =
   | "REPLACEMENT_OPERATION_MISMATCH"
   | "INVALID_REPLACEMENT";
 
-export interface RepairValidationIssue {
+export interface RepairValidationIssue extends PublicProviderValidationIssue {
   code: RepairValidationIssueCode;
   path: string;
-  message: string;
-  hint: string;
+}
+
+export type PublicProviderValidationIssueCode =
+  | RepairValidationIssueCode
+  | "INVALID_PROVIDER_RESULT"
+  | "INVALID_PROVIDER_ENVELOPE"
+  | "INVALID_SUITE"
+  | "INVALID_GENERATION_METADATA"
+  | "VALIDATION_ISSUES_TRUNCATED";
+
+export interface PublicProviderValidationIssue {
+  readonly code: PublicProviderValidationIssueCode;
+  readonly path?: string;
+  readonly message: string;
+  readonly hint: string;
 }
 
 export type RepairValidationResult =
@@ -1002,7 +1017,7 @@ export type RepairDispatchResult =
         actualBytes: number;
       };
     }
-  | { status: "invalid"; issues: RepairValidationIssue[] }
+  | { status: "invalid"; issues: PublicProviderValidationIssue[] }
   | { status: "preview"; preview: SanitizedRepairResultPreview };
 
 export function dispatchRepair(options: {
@@ -1025,10 +1040,14 @@ export type RepairApplicationResult =
         | "approvalInvalidated"
         | "invalid"
         | "redactionRequired";
-      issues?: RepairValidationIssue[];
+      issues?: PublicProviderValidationIssue[];
       preview?: SanitizedRepairResultPreview;
     };
 ```
+
+`PublicProviderValidationIssue`는 provider 결과를 그대로 설명하는 객체가 아니라 validator가 로컬에서 생성하는 안전한 진단이다. compile·repair validator는 raw input의 key, value, 문자열 표현, provider message 또는 metadata를 `code`, `path`, `message`, `hint` 어디에도 보간하지 않는다. `code`는 닫힌 allowlist, `message`와 `hint`는 code별 고정 dictionary에서만 가져온다. `path`는 validator가 순회한 알려진 schema field와 numeric array index로만 구성하며 unknown property는 그 이름을 쓰지 않고 가장 가까운 알려진 parent path를 가리킨다. 알 수 없는 내부 code도 raw 내용을 전달하지 않고 고정 `INVALID_PROVIDER_RESULT` 진단으로 축약한다.
+
+dispatch/apply 경계는 최대 100개, 최종 직렬화 배열 기준 `65_536` UTF-8 bytes까지만 이 안전한 issue를 반환한다. 더 많은 finding이 있으면 고정 `VALIDATION_ISSUES_TRUNCATED` 한 건이 마지막 원소로 들어갈 count와 byte budget을 먼저 예약한다. 다음 normal issue와 sentinel을 함께 넣었을 때 어느 상한이든 넘으면 normal issue 수집을 멈추고, 필요하면 이미 넣은 마지막 normal issue부터 제거해 sentinel을 포함한 최종 배열 자체가 반드시 `length <= 100` 및 `byteLength <= 65_536`을 만족하게 한다. sentinel 단독 크기는 상수로 검증한다. actual provider content와 생략된 수는 포함하지 않는다. `RepairDispatchResult.invalid`, `CompileDispatchResult.invalid`, 두 application result의 `issues`는 이 public 타입만 사용한다. raw sentinel을 unknown key·value·message 위치에 넣은 invalid fixture는 반환된 전체 issue 배열의 모든 필드를 재귀 직렬화해 sentinel이 없음을 확인한다. 101개 이상의 finding과 byte 상한 직전 fixture는 sentinel을 포함한 최종 배열도 두 상한을 넘지 않는지 검증한다.
 
 실패가 테스트 오류라는 보장은 없다. provider는 기대값을 실제값에 맞춰 통과시키는 방향으로 무조건 수정하지 않고 테스트 오류, 서버 오류, 판단 불가를 구분한다.
 
@@ -1069,6 +1088,7 @@ Generate 구현 계획은 최소한 다음 fixture를 고정한다.
 | replacement의 ID 변경 | `REPLACEMENT_CASE_ID_MISMATCH` |
 | callTool case를 listTools로 변경 | `REPLACEMENT_OPERATION_MISMATCH` |
 | 빈 assertions 또는 알 수 없는 필드가 있는 replacement | `INVALID_REPLACEMENT` |
+| invalid repair envelope의 unknown key/value에 `raw-invalid-secret` | 모든 public issue field와 직렬화 결과에 sentinel 없음; 고정 code/path/message/hint만 반환 |
 | replacement의 `Authorization`과 caller PII sentinel | preview에서 `[REDACTED]`, `applicable: false`, 승인해도 apply 거절, 직렬화 결과에 원문 없음 |
 | preview의 `applicable`, `redactedPaths`, `result` 또는 fingerprint를 승인 뒤 변조 | `approvalInvalidated`, 적용 0건, 새 preview와 재승인 필요 |
 | 원래 `selectedCaseIds = ["a"]`인 binding에 caller가 `b`를 추가하려 함 | approval API가 selection을 받지 않으며 stored context로 `UNSELECTED_REPAIR_CASE_ID`, 적용 0건 |
@@ -1177,7 +1197,7 @@ export function prepareCompileRequest(options: {
 
 export type CompileValidationResult =
   | { valid: true; value: CompileResult }
-  | { valid: false; issues: GenerateIssue[] };
+  | { valid: false; issues: PublicProviderValidationIssue[] };
 
 export function validateCompileResult(input: unknown): CompileValidationResult;
 
@@ -1214,7 +1234,7 @@ export type CompileDispatchResult =
         actualBytes: number;
       };
     }
-  | { status: "invalid"; issues: GenerateIssue[] }
+  | { status: "invalid"; issues: PublicProviderValidationIssue[] }
   | { status: "preview"; preview: SanitizedCompileResultPreview };
 
 export function dispatchCompile(options: {
@@ -1244,7 +1264,7 @@ export type CompileApplicationResult =
         | "invalid"
         | "redactionRequired"
         | "noSuite";
-      issues?: GenerateIssue[];
+      issues?: PublicProviderValidationIssue[];
       preview?: SanitizedCompileResultPreview;
     };
 
@@ -1266,7 +1286,7 @@ export function applyReviewedCompileResult(options: {
 
 `sanitizeCompileResult`는 수신 상한을 통과한 valid provider 결과와 승인된 request binding을 함께 받는다. binding에 고정된 기본 민감 key, caller key/value, 민감 assignment 규칙을 suite의 `name`, case name, operation tool/input, assertion 값, warnings/issues/metadata 문자열에 모두 적용한다. raw validated result와 sanitized result를 다시 측정해 어느 쪽이든 binding의 `maxResultBytes`를 넘으면 내용을 오류에 포함하지 않고 `CompilePayloadLimitError(scope: "result")`를 던진다. redaction 위치를 `redactedPaths`에 기록하며 suite 안에 redaction이 하나라도 있으면 `executable: false`다. provider 결과의 secret을 UI에 보여주거나 `[REDACTED]`가 든 suite를 실행하지 않는다. 함수는 request binding과 output redaction·상한 정책을 `CompileResultReviewBinding`에 연결하고, binding·fingerprint를 제외한 visible preview의 canonical JSON SHA-256 fingerprint를 만든다.
 
-CLI/Dashboard는 provider를 직접 호출하지 않고 `dispatchCompile`만 호출한다. approval이 false이면 `{ status: "notApproved" }`를 반환하고 preview getter나 `compiler.compile`을 건드리지 않는다. 승인 binding과 fingerprint가 유효하면 binding의 sanitized request와 `maxResultBytes`를 provider에 보내고, bounded reader가 반환한 `unknown`을 즉시 `validateCompileResult`에 전달한다. invalid 결과는 locally generated issue만 반환한다. valid 결과는 같은 request binding으로 즉시 `sanitizeCompileResult`를 수행한 뒤 `{ status: "preview", preview }`로만 반환하므로 raw provider output은 CLI/Dashboard 경계를 넘지 않는다.
+CLI/Dashboard는 provider를 직접 호출하지 않고 `dispatchCompile`만 호출한다. approval이 false이면 `{ status: "notApproved" }`를 반환하고 preview getter나 `compiler.compile`을 건드리지 않는다. 승인 binding과 fingerprint가 유효하면 binding의 sanitized request와 `maxResultBytes`를 provider에 보내고, bounded reader가 반환한 `unknown`을 즉시 `validateCompileResult`에 전달한다. invalid 결과는 raw key/value/message를 보간하지 않는 bounded `PublicProviderValidationIssue`만 반환한다. valid 결과는 같은 request binding으로 즉시 `sanitizeCompileResult`를 수행한 뒤 `{ status: "preview", preview }`로만 반환하므로 raw provider output은 CLI/Dashboard 경계를 넘지 않는다.
 
 실행 전에는 result preview에 대한 별도 사용자 승인이 필요하다. `applyReviewedCompileResult`는 approval이 false면 preview를 읽지 않고 `notApproved`를 반환한다. 승인 true에서는 등록된 result binding, approval fingerprint, 현재 visible preview fingerprint를 먼저 비교한다. 사용자가 승인한 뒤 preview의 `result`, `executable`, `redactedPaths`, byte length 또는 fingerprint가 바뀌면 `approvalInvalidated`를 반환하고 새 validate→sanitize preview와 재승인을 요구한다. 일치해도 mutable 필드를 신뢰하지 않고 `validateCompileResult(preview.result)`와 binding의 정책을 사용한 `sanitizeCompileResult`를 재실행한다. invalid, redaction 잔존, `ok: false`는 각각 실행을 거절한다.
 
@@ -1283,7 +1303,7 @@ CLI/Dashboard는 provider를 직접 호출하지 않고 `dispatchCompile`만 호
 | `dispatchCompile({ approval: { approved: false } })` | `{ status: "notApproved" }`, preview getter와 provider `compile` 호출 0회 |
 | request preview의 prompt/tools/fingerprint 또는 binding을 승인 뒤 변조 | `approvalInvalidated`, provider 호출 0회 |
 | provider stdout가 chunk 수신 중 `262_145` UTF-8 bytes에 도달 | child/stream 중단, parse·sanitize 0회, `outputLimitExceeded`이고 내용 노출 없음 |
-| provider 성공 envelope의 suite에 `cases` 누락 | `validateCompileResult` invalid, CLI/Dashboard에 suite 없음 |
+| provider 성공 envelope의 suite에 `cases`가 없고 unknown key/value에 `raw-invalid-secret` | `validateCompileResult` invalid, CLI/Dashboard에 suite 없음, 모든 public issue field에 sentinel 없음 |
 | provider suite name과 `operation.input.Authorization`에 `provider-secret` | serialized result preview에 secret 없음, 두 path 기록, `executable: false` |
 | result preview를 승인 뒤 `executable: true` 또는 secret suite로 변조 | `approvalInvalidated`, snapshot 없음, 재승인 필요 |
 | 승인된 result preview가 변경되지 않음 | validate→sanitize 재실행 후 opaque `CompileExecutionSnapshot`; getter와 Runner는 binding에 저장된 같은 frozen suite 사용 |
@@ -1395,6 +1415,7 @@ Runner README는 같은 변경에서 갱신한다. 공동 소유인 루트 READM
 - `5_000ms` deadline까지 pending이면 `deadlineExceeded`, pending request와 독립적인 force close 1회, 늦은 reject의 unhandled rejection 없음
 - settlement 관찰 시각이 drain deadline과 같으면 callback 등록 순서와 무관하게 deadline이 이김
 - permanently pending `listTools`와 `callTool`, graceful close 지연·실패, force close 지연·실패가 모두 정해진 상한 안에 finalize되는지 검증
+- close와 force close의 fulfill/reject가 정확히 deadline에 관찰되는 네 경우 모두 deadline 우선이며 late settlement가 결과를 바꾸지 않음
 - execution에 binding된 client와 다른 shutdown controller 또는 위조 execution을 transport 접근 전에 거절
 - close rejection은 `gracefulCloseFailed` force close를 수행하고 report→drain→close→force 오류 순서를 보존
 - report/drain/close 오류와 `undefined` rejection reason을 outcome flag로 보존하고 단일 오류 또는 순서가 고정된 `AggregateError`로 반환
@@ -1407,6 +1428,7 @@ Runner README는 같은 변경에서 갱신한다. 공동 소유인 루트 READM
 - 보고서 `JSON.stringify` 성공
 - `ToolResult.raw` 미포함
 - repair payload의 재귀 마스킹, case/request/provider-output/result byte 제한, request/result fingerprint 승인 검증
+- invalid compile/repair provider sentinel이 bounded public validation issue의 어떤 field에도 나타나지 않음
 - repair의 원래 suite와 `selectedCaseIds`가 request binding에 고정되고 approval 단계에서 교체되지 않는지 검증
 - provider 교체안의 중복·unknown·미선택 case ID와 잘못된 replacement 거절 fixture
 - 검증된 replacement의 provider-inserted secret과 caller PII sentinel을 UI preview 전에 재마스킹
@@ -1439,7 +1461,7 @@ Runner README는 같은 변경에서 갱신한다. 공동 소유인 루트 READM
 | `timeout 뒤 정상 drain 후 graceful close한다` | report가 먼저 resolve되고 deadline 전 operation settle 후 `settled`, finalizer close 1회 |
 | `drain deadline 뒤 transport를 강제 종료한다` | permanently pending listTools/callTool 각각 `5_000ms` 후 `deadlineExceeded`, 독립 force close 1회, 늦은 operation reject에 unhandled rejection 없음 |
 | `drain deadline 경계 결과를 결정적으로 고정한다` | settlement가 `deadlineAt`에 관찰되면 항상 `deadlineExceeded`, callback 등록 순서와 무관 |
-| `graceful close와 force close를 유한 상한으로 끝낸다` | close 2,000ms 초과 시 deadline reason, close reject 시 `gracefulCloseFailed`, force 2,000ms 초과 시 structured timeout error, finalize pending 없음 |
+| `graceful close와 force close를 유한 상한으로 끝낸다` | close 2,000ms 초과/정확 경계 시 deadline reason, 경계 전 close reject만 `gracefulCloseFailed`, force 2,000ms 초과/정확 경계 시 structured timeout error, finalize pending 없음 |
 | `execution과 shutdown client identity를 강제한다` | 다른 client controller와 위조 execution은 report/drain·transport 접근 전 동기 `TypeError` |
 | `report reject와 cleanup 오류를 보존한다` | undefined rejection도 실패로 유지; 여러 실패는 report→drain→close→force 순서 `AggregateError`, 종료 동작 1회 |
 | `event와 report에서 민감정보를 제거한다` | `apiKey`, `Authorization`, caller 지정 sentinel 값이 모두 `[REDACTED]`이며 실제 client 호출에는 원본 값 전달 |
@@ -1450,6 +1472,7 @@ Runner README는 같은 변경에서 갱신한다. 공동 소유인 루트 READM
 | `repair 결과를 UI 전에 다시 마스킹한다` | provider가 넣은 `Authorization`과 caller PII sentinel이 preview에서 `[REDACTED]`, candidate `applicable === false` |
 | `검토한 sanitized replacement만 적용한다` | request binding의 original selection만 사용; raw/redacted/oversize/승인 후 변조 결과는 적용 불가; 재입력·재승인된 applicable preview만 해당 case 변경 |
 | `compile provider 경계를 검증한다` | immutable request snapshot만 승인 후 호출; stdout streaming limit은 parse 전에 중단; result 재검증 뒤 같은 fingerprint의 opaque execution snapshot만 Runner에 전달 |
+| `invalid provider issue에서 raw 값을 제거한다` | compile/repair unknown key·value·message sentinel이 모든 returned issue code/path/message/hint와 직렬화 결과에 없음; 101개/byte-boundary fixture도 truncation sentinel 포함 최종 배열이 100개·65,536 bytes 이하 |
 | `deprecated createMcpTest 호환성을 유지한다` | named import가 유지되고 기존 호출이 동일한 `not implemented` 오류를 던짐 |
 
 구현 계획은 위 이름과 단언을 실제 Vitest 코드로 전량 제시한다. 테스트용 client는 인메모리 객체만 사용하며 실제 MCP 서버 프로세스를 띄우지 않는다.

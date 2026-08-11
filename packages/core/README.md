@@ -1,12 +1,87 @@
 # @ohmymcp/core
 
-트랜스포트 · 프로세스 기동/종료 · 타임아웃 · stderr 수집 · 핸드셰이크.
+`@ohmymcp/core`는 로컬 MCP 서버 프로세스를 stdio로 시작하고 MCP handshake를 완료한 뒤,
+동결된 `McpClient`를 제공한다. 서버 프로세스, stdin/stdout, bounded stderr와 종료 수명주기는
+Core가 소유한다.
 
-- **오너:** `@seodduu` `@endl24` `@sunghoon0303` (① MCP 서버 테스트 파트)
-- **의존:** `@modelcontextprotocol/sdk` (catalog, 1.x 고정)
+## 공개 API
 
-## 상태
+간단히 사용할 때는 `connect`로 동결된 클라이언트만 받을 수 있다.
 
-`src/types.ts` 의 `McpClient` / `ToolDef` / `ToolResult` 는 **동결된 계약**이다.
-5명의 병렬 작업 기준점이므로 변경하려면 PR + 영향받는 오너 전원의 승인이 필요하다
-(CONTRIBUTING §3). 나머지는 스텁이며 오너가 구현한다.
+```ts
+import { connect } from "@ohmymcp/core";
+
+const client = await connect({
+  command: process.execPath,
+  args: ["./server.mjs"],
+  env: { MCP_MODE: "test" },
+  cwd: process.cwd(),
+  connectTimeoutMs: 10_000,
+  maxMessageBytes: 10 * 1024 * 1024,
+  maxStderrBytes: 64 * 1024,
+});
+
+try {
+  const tools = await client.listTools();
+  const result = await client.callTool("get_weather", { city: "Seoul" });
+  console.log(tools, result);
+} finally {
+  await client.close();
+}
+```
+
+CLI나 다른 composition root에서 정상 종료와 즉시 강제 종료를 구분해야 하면 `connectStdio`를
+사용한다.
+
+```ts
+import { connectStdio } from "@ohmymcp/core";
+
+const connection = await connectStdio({
+  command: "node",
+  args: ["./server.mjs"],
+  env: { MCP_MODE: "test" },
+  cwd: process.cwd(),
+});
+
+try {
+  await connection.client.listTools();
+} finally {
+  await connection.close();
+  // pending MCP 요청과 무관하게 종료해야 할 때:
+  // await connection.forceClose();
+}
+
+console.log(connection.getDiagnostics());
+```
+
+`connect`는 `connectStdio(options)`의 `connection.client`를 반환한다. `ConnectOptions`는
+`command`, `args`, 명시적인 `env`, `cwd`, handshake 제한 시간, stdout 메시지 최대 크기와 stderr
+최대 크기를 받는다. 기본값은 각각 10초, 10 MiB, 64 KiB다. 값은 유한한 정수여야 하며 허용
+범위를 벗어나면 자식 프로세스를 시작하기 전에 실패한다.
+
+환경변수는 전체 `process.env`를 상속하지 않는다. 부모 환경에는 인증 토큰 같은 비밀값이 섞일 수
+있고, 실행마다 달라지는 값이 테스트 결정론성을 깨뜨릴 수 있기 때문이다. SDK가 허용한 안전한
+기본 환경변수만 전달하며, 추가 값은 `env`에 명시한 경우에만 자식 프로세스로 전달한다.
+
+stderr는 신뢰할 수 없는 자식 프로세스 입력으로 취급한다. 최근 byte만 bounded buffer에 보존하며
+기본 상한은 64 KiB다. stderr 내용은 진단 snapshot에는 포함될 수 있지만 기본 오류 message와
+`McpClientError.toJSON()`에는 포함되지 않는다. 오류 JSON에는 code, phase, 고정된 message와 hint,
+exit code, signal, stderr 잘림 여부만 들어간다.
+
+실행은 shell을 거치지 않으므로 `args`가 공백이나 shell 문자를 포함해도 다시 해석되지 않는다.
+Windows에서는 `.cmd`와 `.bat` command를 거절한다. 운영체제가 직접 실행할 수 있는 executable을
+`command`로 주고, script 경로와 script 인자는 `args`로 전달한다. Windows command wrapping과
+command-line quoting은 이 transport의 범위가 아니다.
+
+첫 공개 transport는 로컬 stdio뿐이다. Streamable HTTP, SSE, WebSocket, OAuth와 원격 MCP 인증은
+후속 설계와 ADR에서 별도로 결정한다.
+
+Core는 Runner를 import하지 않는다. Runner는 `McpClient`를 주입받고, CLI가 `connectStdio`의
+`client`, `close`, `forceClose`를 Runner의 shutdown 경계에 조립하는 composition root다.
+
+## 범위와 안정성
+
+`src/types.ts`의 `McpClient`, `ToolDef`, `ToolResult`는 패키지 간 동결 계약이다. Core는
+`@modelcontextprotocol/sdk` 1.x를 사용하며 SDK 버전을 올리지 않는다.
+
+오너: `@seodduu` `@endl24` `@sunghoon0303` (MCP 서버 테스트 파트)

@@ -1,10 +1,19 @@
 # 해당 경로 변경 시 오너가 자동으로 리뷰어로 지정된다.
-# TODO(사람): @*-owner 자리표시자를 실제 GitHub 계정으로 교체하세요.
-/packages/core/       @core-owner
-/packages/runner/     @runner-owner
-/packages/generate/   @generate-owner
-/packages/record/     @record-owner
-/packages/mock/       @mock-owner
-/packages/cli/        @runner-owner @mock-owner
-/docs/adr/            @core-owner
-/CONTRIBUTING.md      @core-owner @runner-owner
+#
+# 팀은 패키지가 아니라 **3개 파트**로 나뉘어 있다 (2026-08-11 합의).
+#   ① MCP 서버 테스트 : @seodduu @endl24 @sunghoon0303  → core · runner · generate
+#   ② replay/record   : @ddxng5                        → record
+#   ③ mock server     : @storyrago                     → mock
+# `cli` 는 공동이며 각자 자기 서브커맨드만 수정한다 (CONTRIBUTING §2.1).
+
+/packages/core/       @seodduu @endl24 @sunghoon0303
+/packages/runner/     @seodduu @endl24 @sunghoon0303
+/packages/generate/   @seodduu @endl24 @sunghoon0303
+/packages/record/     @ddxng5
+/packages/mock/       @storyrago
+
+/packages/cli/        @seodduu @endl24 @sunghoon0303 @ddxng5 @storyrago
+/fixtures/            @seodduu @endl24 @sunghoon0303 @ddxng5 @storyrago
+
+/docs/adr/            @seodduu @endl24 @sunghoon0303
+/CONTRIBUTING.md      @seodduu @endl24 @sunghoon0303 @ddxng5 @storyrago

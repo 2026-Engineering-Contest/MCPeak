@@ -54,16 +54,27 @@ ohmymcp/
 
 ### 2.1 오너 표
 
-각 패키지에는 **오너 1명**이 있다. 오너는 그 패키지의 설계 결정권과 최종 책임을 가진다.
+작업은 **3개 파트**로 나눈다 (2026-08-11 합의). 파트가 그 안의 패키지에 대한 설계 결정권과 최종 책임을 가진다.
 
-| 패키지 | 오너 | 책임 범위 |
+| 파트 | 담당 | 패키지 |
 |---|---|---|
-| `core` | (이름) | 트랜스포트, 프로세스 기동·종료, 타임아웃, stderr 수집, 핸드셰이크 |
-| `runner` | (이름) | 공개 API 설계, matcher, **실패 메시지 품질**, 리포터, JUnit XML |
-| `generate` | (이름) | 툴 스키마 분석, 테스트 케이스 합성, 코드 생성 |
-| `record` | (이름) | 카세트 포맷, 요청 매칭 키, 비결정 필드 처리, 계약 스냅샷 |
-| `mock` + 릴리스 | (이름) | 가짜 데이터 생성, 응답 주입 API, npm 배포·버저닝, **도그푸딩** |
-| `cli` | 공동 | 각 오너가 자기 서브커맨드만 수정 |
+| ① MCP 서버 테스트 | `@seodduu` `@endl24` `@sunghoon0303` | `core` · `runner` · `generate` |
+| ② replay / record | `@ddxng5` | `record` |
+| ③ mock server | `@storyrago` | `mock` |
+| 공동 | 전원 | `cli` · `fixtures` |
+
+| 패키지 | 책임 범위 |
+|---|---|
+| `core` | 트랜스포트, 프로세스 기동·종료, 타임아웃, stderr 수집, 핸드셰이크 |
+| `runner` | 공개 API 설계, matcher, **실패 메시지 품질**, 리포터, JUnit XML |
+| `generate` | 툴 스키마 분석, 테스트 케이스 합성, 코드 생성 |
+| `record` | 카세트 포맷, 요청 매칭 키, 비결정 필드 처리, 계약 스냅샷 |
+| `mock` | 목 서버(Streamable HTTP), 응답 주입 API |
+| `cli` | 각자 자기 서브커맨드만 수정 |
+
+> **미정:** npm 배포·버저닝과 **도그푸딩** 담당. 3파트 분할 이전 표에서는 `mock` 오너가 겸하게 되어 있었다. §7·§10이 이 역할을 전제하므로 첫 알파 배포 전에 정해야 한다.
+
+> ① 파트는 3명이 3개 패키지를 함께 소유한다. §1-1(패키지 단위 소유)과 §12(그 패키지의 커밋 대부분이 내 것이다)를 지키려면 파트 안에서 패키지를 1인 1개로 다시 나누는 편이 낫다. 파트 내부에서 정하고 이 표를 갱신한다.
 
 ### 2.2 소유권 규칙
 
@@ -360,14 +371,17 @@ CI에서 자동 검사한다. 로컬에서는 커밋 훅으로 린트·포맷만
 
 ```
 # .github/CODEOWNERS — 해당 경로 변경 시 오너가 자동으로 리뷰어로 지정된다
-/packages/core/       @core-owner
-/packages/runner/     @runner-owner
-/packages/generate/   @generate-owner
-/packages/record/     @record-owner
-/packages/mock/       @mock-owner
-/packages/cli/        @runner-owner @mock-owner
-/docs/adr/            @core-owner
-/CONTRIBUTING.md      @core-owner @runner-owner
+/packages/core/       @seodduu @endl24 @sunghoon0303
+/packages/runner/     @seodduu @endl24 @sunghoon0303
+/packages/generate/   @seodduu @endl24 @sunghoon0303
+/packages/record/     @ddxng5
+/packages/mock/       @storyrago
+
+/packages/cli/        @seodduu @endl24 @sunghoon0303 @ddxng5 @storyrago
+/fixtures/            @seodduu @endl24 @sunghoon0303 @ddxng5 @storyrago
+
+/docs/adr/            @seodduu @endl24 @sunghoon0303
+/CONTRIBUTING.md      @seodduu @endl24 @sunghoon0303 @ddxng5 @storyrago
 ```
 
 ## 부록 B. 권장 툴체인

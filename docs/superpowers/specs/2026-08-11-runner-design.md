@@ -505,32 +505,53 @@ export type RunnerDrainResult =
   | { status: "settled" }
   | { status: "deadlineExceeded"; pendingOperations: 1 };
 
+export type RunnerForceCloseReason =
+  | "drainDeadlineExceeded"
+  | "gracefulCloseDeadlineExceeded";
+
+export interface McpClientShutdownController {
+  client: McpClient;
+  close(): Promise<void>;
+  forceClose(reason: RunnerForceCloseReason): Promise<void>;
+}
+
+export interface FinalizeRunnerExecutionOptions {
+  execution: RunnerExecution;
+  shutdown: McpClientShutdownController;
+  closeTimeoutMs?: number;
+  forceCloseTimeoutMs?: number;
+}
+
+export class RunnerShutdownTimeoutError extends Error {
+  override readonly name = "RunnerShutdownTimeoutError";
+  readonly phase = "forceClose";
+  readonly limitMs: number;
+}
+
 export function runSuite(options: RunSuiteOptions): RunnerExecution;
+export function finalizeRunnerExecution(
+  options: FinalizeRunnerExecutionOptions,
+): Promise<RunnerReport>;
 ```
 
-Runner는 `client.close()`를 호출하지 않는다. client를 만들고 닫는 책임은 CLI, Dashboard Node 서버 또는 테스트 adapter에 있다.
+`runSuite`는 `client.close()` 또는 `forceClose()`를 호출하지 않는다. client와 underlying transport를 만들고 `McpClientShutdownController`를 구현하는 책임은 CLI, Dashboard Node 서버 또는 테스트 adapter에 있다. caller는 `shutdown.client === runSuite`에 전달한 client인지 확인하며 `finalizeRunnerExecution`을 명시적으로 호출한다.
 
 호출자는 `report`로 논리적인 suite 완료를 관찰하고, `drain`이 resolve된 뒤 client를 닫는다. `report`는 `drain`과 독립적으로 먼저 resolve 또는 reject할 수 있다. `drain`은 자체적으로 reject하지 않으며, Runner가 시작한 MCP Promise가 먼저 settle되면 `{ status: "settled" }`를 반환한다. 보류 요청이 없으면 즉시 같은 결과를 반환한다.
 
-timeout 또는 operation 중 abort 뒤 취소할 수 없는 요청이 남으면 `report` 완료 시점부터 별도 drain deadline을 적용한다. `drainTimeoutMs` 기본값은 `5_000ms`, 허용 범위는 `1..60_000ms`의 정수다. 이 5초는 작업 성공을 기다리는 timeout이 아니라 transport가 이미 시작한 요청을 정리할 짧은 grace period다. deadline이 먼저 끝나면 `drain`은 `{ status: "deadlineExceeded", pendingOperations: 1 }`을 반환하고 caller가 `client.close()`로 transport를 강제 종료할 수 있게 한다. 늦게 settle하는 원본 Promise에는 fulfillment/rejection handler를 계속 붙여 unhandled rejection을 만들지 않는다.
+timeout 또는 operation 중 abort 뒤 취소할 수 없는 요청이 남으면 `report` 완료 시점부터 별도 drain deadline을 적용한다. `drainTimeoutMs` 기본값은 `5_000ms`, 허용값은 `1..60_000ms`의 유한 정수다. `0`은 즉시 종료 의미가 아니라 잘못된 설정이며 `NaN`, `Infinity`, 음수, 소수, `60_001` 이상과 함께 `runSuite`가 이벤트·MCP 호출 전에 동기 `RangeError`를 던진다. 이 5초는 작업 성공을 기다리는 timeout이 아니라 transport가 이미 시작한 요청을 정리할 짧은 grace period다. deadline이 먼저 끝나면 `drain`은 `{ status: "deadlineExceeded", pendingOperations: 1 }`을 반환한다. 늦게 settle하는 원본 Promise에는 fulfillment/rejection handler를 계속 붙여 unhandled rejection을 만들지 않는다.
+
+`deadlineExceeded`에서 일반 `McpClient.close()`만 호출하는 것은 충분하지 않다. close가 같은 pending 요청을 기다릴 수 있기 때문이다. `McpClientShutdownController.forceClose`는 pending `callTool` Promise와 독립적으로 underlying transport를 끊어야 한다. stdio adapter는 자식 프로세스와 stream을 종료하고 grace 뒤 `SIGKILL`, HTTP adapter는 request `AbortController`와 socket destroy를 사용한다. `finalizeRunnerExecution`은 drain deadline 초과 시 graceful close를 건너뛰고 `forceClose("drainDeadlineExceeded")`를 호출한다.
+
+정상 drain에서는 `close()`를 먼저 호출하되 기본 `closeTimeoutMs: 2_000` 안에 끝나지 않으면 `forceClose("gracefulCloseDeadlineExceeded")`로 전환한다. `forceCloseTimeoutMs` 기본값도 `2_000`, 두 옵션의 허용값은 `1..10_000ms`의 유한 정수이며 0과 비유한수·음수·소수·상한 초과는 동기 `RangeError`다. force close도 상한을 넘으면 `RunnerShutdownTimeoutError`로 기록하고 finalize를 끝내므로 caller가 영원히 대기하지 않는다. timeout race에서 빠진 close/force Promise에도 양쪽 settlement handler를 유지해 늦은 reject를 unhandled로 만들지 않는다. transport adapter는 force-close 호출을 idempotent하게 캐시하고 실제 종료 동작을 정확히 한 번 수행한다.
 
 ```ts
-const execution = runSuite({ client, suite, signal });
-const closeOnce = createCloseOnce(client);
-let report: RunnerReport | undefined;
-let reportError: unknown;
-try {
-  report = await execution.report;
-} catch (error) {
-  reportError = error;
-} finally {
-  const drainResult = await execution.drain;
-  await closeOnce(); // drainResult.status가 deadlineExceeded여도 transport를 닫음
-}
-if (reportError !== undefined) throw reportError;
+const execution = runSuite({ client: shutdown.client, suite, signal });
+const report = await finalizeRunnerExecution({ execution, shutdown });
 ```
 
-CLI, Dashboard Node, 테스트 adapter는 위 `try/catch/finally` 구조와 adapter-local `closeOnce`를 사용한다. `closeOnce`는 최초 `client.close()` Promise를 캐시해 timeout·abort·오류 정리 경로가 겹쳐도 실제 close를 정확히 한 번만 호출한다. `report`와 `client.close()`가 모두 실패하면 primary report 오류를 보존하고 close 오류를 cause 또는 `AggregateError`로 함께 보고한다. Runner 자체는 어떤 경로에서도 injected client를 닫지 않는다.
+`finalizeRunnerExecution`은 `report`, `drain`, graceful close/force close를 각각 `{ ok: true, value } | { ok: false, error }` outcome으로 기록한다. boolean 실패 flag를 사용하므로 rejection reason이 `undefined`여도 실패를 잃지 않는다. report가 먼저 resolve 또는 reject하고 drain은 그 뒤 `settled | deadlineExceeded`로 non-rejecting 완료한다. defensive하게 drain rejection도 별도 cleanup failure로 기록한다. 실패가 하나면 그 rejection value를 그대로 throw하고, 둘 이상이면 report→drain→close/force-close 순서의 `AggregateError`를 throw한다. cleanup 오류가 primary report 오류를 덮거나 삼키지 않는다. `finalizeRunnerExecution` 자체도 같은 execution/controller 조합의 첫 Promise를 캐시해 중복 호출이 실제 close를 반복하지 않게 한다.
+
+현재 CLI와 Dashboard는 아직 Runner를 호출하지 않는 스텁이므로 이번 Runner PR은 generic controller/finalizer와 인메모리 contract test까지만 구현한다. 후속 CLI/Dashboard 연동 PR은 실제 transport별 controller를 먼저 구현하고 permanently pending call에 대한 force-close 통합 테스트를 통과하기 전에는 `runSuite`를 사용자 경로에 연결할 수 없다.
 
 `onEvent`는 동기 관찰자다. handler가 던진 오류는 테스트 실패로 변환하지 않고 `RunnerExecution.report` rejection으로 호출자에게 전파하며, 다음 MCP 작업은 시작하지 않는다. 정상적인 성공, 실패, timeout, `AbortSignal` 경로에서는 항상 마지막에 `suiteCompleted`를 전달한다. validation, event handler, payload-limit 오류는 안전한 정상 종료 경로가 아니므로 이 보장을 적용하지 않는다.
 
@@ -587,8 +608,8 @@ Runner의 10초 값은 generate를 거치지 않은 명세가 무기한 대기�
 - 외부 취소: 현재 케이스 `cancelled`, 남은 케이스 `notRun`, 스위트 상태 `aborted`
 - 두 경우 모두 다음 케이스를 시작하지 않고 `client.close()`도 호출하지 않음
 - 논리 결과인 `report`는 먼저 완료할 수 있지만 취소할 수 없는 요청은 별도 deadline이 있는 `drain`이 추적함
-- 요청이 먼저 settle하면 정상 drain 뒤 닫고, deadline을 넘으면 `deadlineExceeded`를 관찰한 caller가 transport를 강제 종료함
-- 원본 Promise의 rejection handler는 강제 종료 뒤에도 유지하며 Runner는 `client.close()`를 직접 호출하지 않음
+- 요청이 먼저 settle하면 `finalizeRunnerExecution`이 bounded graceful close를 시도하고, deadline을 넘으면 controller의 독립 `forceClose`로 transport를 강제 종료함
+- 원본 Promise의 rejection handler는 강제 종료 뒤에도 유지하며 `runSuite`는 close를 직접 호출하지 않음
 
 timeout으로 실행은 조기 종료되지만 CI 의미상 실패이므로 스위트 상태는 `aborted`가 아니라 `failed`다.
 
@@ -943,9 +964,20 @@ export function sanitizeRepairResult(options: {
 
 export function applyReviewedRepairs(options: {
   originalSuite: TestSuiteSpec;
+  selectedCaseIds: readonly string[];
   preview: SanitizedRepairResultPreview;
+  redaction?: RunnerRedactionOptions;
   approved: boolean;
-}): TestSuiteSpec;
+}): RepairApplicationResult;
+
+export type RepairApplicationResult =
+  | { applied: true; suite: TestSuiteSpec }
+  | {
+      applied: false;
+      reason: "notApproved" | "invalid" | "redactionRequired";
+      issues?: RepairValidationIssue[];
+      preview?: SanitizedRepairResultPreview;
+    };
 ```
 
 실패가 테스트 오류라는 보장은 없다. provider는 기대값을 실제값에 맞춰 통과시키는 방향으로 무조건 수정하지 않고 테스트 오류, 서버 오류, 판단 불가를 구분한다.
@@ -964,7 +996,9 @@ export function applyReviewedRepairs(options: {
 
 `validateRepairResult`, `sanitizeRepairResult`, `applyReviewedRepairs`의 구현과 소유권은 미래 `@ohmymcp/generate`에 있다. provider JSON은 먼저 구조·문맥 검증을 통과하고, 그 다음 모든 `replacement.operation.input`에 기본 민감 키와 caller 지정 민감 키·문자열 값 redaction을 재귀 적용해야 한다. explanation을 포함한 나머지 문자열에도 caller의 exact `sensitiveValues`와 compile prompt의 민감 assignment 규칙을 적용한다. CLI/Dashboard는 raw `RepairResult`를 받지 않고 `SanitizedRepairResultPreview`만 받는다. 알 수 없는 PII는 자동 판별했다고 주장하지 않으며 preview와 명시적 사용자 승인이 마지막 경계다. validator는 닫힌 객체와 필수 필드, 비어 있지 않은 explanation, boolean `needsReview`를 검사하고 다음 순서로 문맥 규칙을 적용한다.
 
-`sanitizeRepairResult`는 모든 redaction 위치를 `redactedPaths`에 기록한다. replacement 내부에 redaction이 하나라도 있으면 `applicable: false`다. UI는 해당 후보를 적용할 수 없고, 사용자가 replacement 값을 직접 채우고 검토한 새 결과를 다시 validate→sanitize해야 한다. `applyReviewedRepairs`는 `approved === true`, `applicable === true`, replacement 관련 `redactedPaths.length === 0`인 preview만 받으며, preview에 표시된 sanitized replacement 자체를 deep clone해 적용하고 최종 suite를 `validateMcpSuite`로 다시 검증한다. raw provider 결과를 숨겨서 적용하거나 `[REDACTED]` placeholder를 suite에 기록하는 경로는 없다. explanation만 redacted된 경우에는 suite에 적용되는 replacement가 변하지 않으므로 `applicable` 판정에 영향을 주지 않는다.
+`sanitizeRepairResult`는 모든 redaction 위치를 `redactedPaths`에 기록한다. replacement 내부에 redaction이 하나라도 있으면 `applicable: false`다. UI는 해당 후보를 적용할 수 없고, 사용자가 replacement 값을 직접 채우고 검토한 새 결과를 다시 validate→sanitize해야 한다. raw provider 결과를 숨겨서 적용하거나 `[REDACTED]` placeholder를 suite에 기록하는 경로는 없다. explanation만 redacted된 경우에는 suite에 적용되는 replacement가 변하지 않으므로 `applicable` 판정에 영향을 주지 않는다.
+
+`SanitizedRepairResultPreview`는 UI가 편집할 수 있는 untrusted 값이다. `applyReviewedRepairs`는 `approved === false`이면 preview를 읽지 않고 `{ applied: false, reason: "notApproved" }`를 반환한다. 승인된 경우에도 preview의 `applicable`, `redactedPaths`, `result`를 신뢰하지 않는다. `preview.result`를 `validateRepairResult`에 `originalSuite`와 caller가 다시 제공한 `selectedCaseIds` context로 재검증하고, valid value를 caller가 다시 제공한 redaction policy로 `sanitizeRepairResult`에 재통과시킨다. 새 결과가 invalid면 `invalid`, replacement redaction이 남으면 새 safe preview와 `redactionRequired`를 반환한다. 새로 계산한 candidate만 deep clone해 원본 suite에 적용하고 최종 suite를 `validateMcpSuite`로 다시 검사한 뒤 `{ applied: true, suite }`를 반환한다.
 
 1. `repairs` 배열 순서대로 shape issue를 기록한다.
 2. 같은 `caseId`의 두 번째 decision을 `DUPLICATE_REPAIR_CASE_ID`로 거절한다.
@@ -984,6 +1018,7 @@ Generate 구현 계획은 최소한 다음 fixture를 고정한다.
 | callTool case를 listTools로 변경 | `REPLACEMENT_OPERATION_MISMATCH` |
 | 빈 assertions 또는 알 수 없는 필드가 있는 replacement | `INVALID_REPLACEMENT` |
 | replacement의 `Authorization`과 caller PII sentinel | preview에서 `[REDACTED]`, `applicable: false`, 승인해도 apply 거절, 직렬화 결과에 원문 없음 |
+| preview의 `applicable`, `redactedPaths`, `result`를 승인 직전 변조 | context validate와 sanitize를 재실행해 invalid/redaction을 다시 탐지하고 적용 0건 |
 | 사용자가 redacted replacement 값을 다시 입력 | validate→sanitize 재실행 후 redacted replacement path가 0일 때만 승인·적용 |
 
 검증 실패 시 provider 결과를 일부 적용하거나 사용자 diff 화면으로 넘기지 않는다. sanitized `RepairRequest`만 provider에 전달하며 `RepairResult` validator는 비밀값이 다시 삽입된 replacement도 같은 redaction/preview 단계를 거친 뒤에만 승인 후보로 만든다.
@@ -1012,7 +1047,7 @@ export interface CompileRequestPreview {
 
 export class CompilePayloadLimitError extends Error {
   override readonly name = "CompilePayloadLimitError";
-  readonly scope: "prompt" | "tools" | "request";
+  readonly scope: "prompt" | "tools" | "request" | "result";
   readonly limitBytes: number;
   readonly actualBytes: number;
 }
@@ -1074,22 +1109,59 @@ export type CompileValidationResult =
 
 export function validateCompileResult(input: unknown): CompileValidationResult;
 
+export interface SanitizedCompileResultPreview {
+  result: CompileResult;
+  byteLength: number;
+  redactedPaths: string[];
+  executable: boolean;
+  requiresApproval: true;
+}
+
+export function sanitizeCompileResult(options: {
+  result: CompileResult;
+  redaction?: RunnerRedactionOptions;
+  maxResultBytes?: number;
+}): SanitizedCompileResultPreview;
+
 export type CompileDispatchResult =
   | { status: "notApproved" }
-  | { status: "validated"; result: CompileValidationResult };
+  | { status: "invalid"; issues: GenerateIssue[] }
+  | { status: "preview"; preview: SanitizedCompileResultPreview };
 
 export function dispatchCompile(options: {
   compiler: NaturalLanguageCompiler;
   preview: CompileRequestPreview;
   approved: boolean;
+  redaction?: RunnerRedactionOptions;
+  maxResultBytes?: number;
 }): Promise<CompileDispatchResult>;
+
+export type CompileApplicationResult =
+  | { accepted: true; suite: TestSuiteSpec }
+  | {
+      accepted: false;
+      reason: "notApproved" | "invalid" | "redactionRequired" | "noSuite";
+      issues?: GenerateIssue[];
+      preview?: SanitizedCompileResultPreview;
+    };
+
+export function applyReviewedCompileResult(options: {
+  preview: SanitizedCompileResultPreview;
+  approved: boolean;
+  redaction?: RunnerRedactionOptions;
+  maxResultBytes?: number;
+}): CompileApplicationResult;
 ```
 
 `prepareCompileRequest`는 provider 전송 전에 반드시 호출한다. `tools[].inputSchema`에는 repair와 같은 재귀 key/value redaction을 적용한다. 자연어 prompt에는 caller의 exact `sensitiveValues`와 `authorization: ...`, `api_key=...`처럼 정규화된 기본 민감 키가 `:` 또는 `=` 앞에 있는 assignment의 값을 `[REDACTED]`로 바꾼다. UTF-8 상한은 prompt `65_536` bytes, tools `131_072` bytes, 전체 request `262_144` bytes이며 어느 하나라도 넘으면 preview를 만들지 않는다. CLI/Dashboard는 byte length와 redacted payload를 보여주고 매 요청마다 사용자의 명시적 승인을 받은 뒤에만 provider를 호출한다.
 
 `NaturalLanguageCompiler.compile`의 반환값은 외부 JSON이므로 `unknown`이다. 공통 Generate 경계의 `validateCompileResult`가 닫힌 envelope, issue와 metadata shape를 검증하고, 성공 결과의 `suite`를 Runner `validateMcpSuite`로 검증·정규화한 뒤에만 `CompileResult`를 반환한다. adapter는 유효한 결과에 provider 전용 envelope를 남기지 않는다. invalid suite나 유효하지 않은 metadata는 일부 수용하지 않고 전체 실패로 반환한다.
 
-CLI/Dashboard는 provider를 직접 호출하지 않고 `dispatchCompile`만 호출한다. `approved === false`이면 `{ status: "notApproved" }`를 반환하고 `compiler.compile`을 호출하지 않는다. true이면 preview의 sanitized `request`만 provider에 보내고, 반환된 `unknown`을 즉시 `validateCompileResult`에 전달해 `{ status: "validated", result }`로 반환한다. preview 생성 뒤 prompt나 tools 원본이 바뀌어도 전송 payload는 바뀌지 않는다.
+`sanitizeCompileResult`는 valid provider 결과의 모든 string과 JSON object를 재귀 순회한다. 기본 민감 key, caller key/value, 민감 assignment 규칙을 suite의 `name`, case name, operation tool/input, assertion 값, warnings/issues/metadata 문자열에 모두 적용한다. 기본 result 상한은 `262_144` UTF-8 bytes이고 caller는 양의 정수로만 낮출 수 있다. raw validated result와 sanitized result를 모두 메모리에서 측정해 어느 쪽이든 상한을 넘으면 내용을 오류에 포함하지 않고 `CompilePayloadLimitError(scope: "result")`를 던진다. redaction 위치를 `redactedPaths`에 기록하며 suite 안에 redaction이 하나라도 있으면 `executable: false`다. provider 결과의 secret을 UI에 보여주거나 `[REDACTED]`가 든 suite를 실행하지 않는다.
+
+CLI/Dashboard는 provider를 직접 호출하지 않고 `dispatchCompile`만 호출한다. `approved === false`이면 `{ status: "notApproved" }`를 반환하고 `compiler.compile`을 호출하지 않는다. true이면 request preview의 sanitized `request`만 provider에 보내고, 반환된 `unknown`을 즉시 `validateCompileResult`에 전달한다. invalid 결과는 locally generated issue만 반환한다. valid 결과는 즉시 `sanitizeCompileResult`로 마스킹·크기 검사한 뒤 `{ status: "preview", preview }`로만 반환하므로 raw provider output은 CLI/Dashboard 경계를 넘지 않는다. preview 생성 뒤 prompt나 tools 원본이 바뀌어도 전송 payload는 바뀌지 않는다.
+
+실행 전에는 별도 사용자 승인이 필요하다. `applyReviewedCompileResult`는 승인 false면 preview를 읽지 않고 `notApproved`를 반환한다. 승인 true에서도 mutable preview의 `executable`, `redactedPaths`, `result`를 신뢰하지 않고 `validateCompileResult(preview.result)`와 `sanitizeCompileResult`를 재실행한다. invalid, redaction 잔존, `ok: false`는 각각 실행을 거절하며, 새로 검증·마스킹한 `ok: true` suite만 deep clone해 반환한다.
 
 미래 Generate 테스트는 아래 fixture를 고정한다.
 
@@ -1101,6 +1173,9 @@ CLI/Dashboard는 provider를 직접 호출하지 않고 `dispatchCompile`만 호
 | prompt `65_537`, tools `131_073`, request `262_145` UTF-8 bytes | 각각 `CompilePayloadLimitError`의 `prompt`, `tools`, `request` scope |
 | `dispatchCompile({ approved: false })` | `{ status: "notApproved" }`, provider `compile` 호출 0회 |
 | provider 성공 envelope의 suite에 `cases` 누락 | `validateCompileResult` invalid, CLI/Dashboard에 suite 없음 |
+| provider suite name과 `operation.input.Authorization`에 `provider-secret` | serialized result preview에 secret 없음, 두 path 기록, `executable: false` |
+| mutable result preview가 `executable: true`로 변조됨 | apply 시 validate→sanitize 재실행, redactionRequired, suite 반환 없음 |
+| sanitized result `262_145` UTF-8 bytes | UI 전달 전 `CompilePayloadLimitError(scope: "result")` |
 
 공통 provider 실행 계층은 다음만 담당한다.
 
@@ -1109,7 +1184,7 @@ CLI/Dashboard는 provider를 직접 호출하지 않고 `dispatchCompile`만 호
 - 파일 수정 및 불필요한 도구 사용 제한
 - timeout, 종료 코드, stderr 수집
 - provider별 JSON envelope 제거
-- JSON 파싱 뒤 compile 결과는 `validateCompileResult`, repair 결과는 문맥을 포함한 `validateRepairResult`와 `sanitizeRepairResult`로 검증
+- JSON 파싱 뒤 compile 결과는 `validateCompileResult`와 `sanitizeCompileResult`, repair 결과는 문맥을 포함한 `validateRepairResult`와 `sanitizeRepairResult`로 검증
 - 모호한 결과는 `needsReview`
 
 Codex와 Claude 고유 명령이나 응답 envelope는 adapter 내부에 가둔다. Runner와 CLI에는 검증된 공통 결과만 노출한다.
@@ -1204,8 +1279,10 @@ Runner README는 같은 변경에서 갱신한다. 공동 소유인 루트 READM
 - timeout과 abort에서 다음 MCP 작업 및 `client.close()` 미호출
 - timeout·abort의 `report`가 `drain`과 독립적으로 먼저 완료되는지 검증
 - pending MCP Promise가 deadline 전에 settle하면 `drain.status === "settled"`
-- `5_000ms` deadline까지 pending이면 `deadlineExceeded`, 이후 caller close 1회, 늦은 reject의 unhandled rejection 없음
-- `report` reject와 timeout·abort 정리 경로가 겹쳐도 adapter의 idempotent close가 실제 `client.close()`를 한 번만 호출
+- `5_000ms` deadline까지 pending이면 `deadlineExceeded`, pending call과 독립적인 force close 1회, 늦은 reject의 unhandled rejection 없음
+- permanently pending call, graceful close 지연·실패, force close 지연·실패가 모두 정해진 상한 안에 finalize되는지 검증
+- report/drain/close 오류와 `undefined` rejection reason을 outcome flag로 보존하고 단일 오류 또는 순서가 고정된 `AggregateError`로 반환
+- `report` reject와 timeout·abort 정리 경로가 겹쳐도 idempotent controller가 실제 transport 종료를 한 번만 수행
 
 ### Generate/repair 준비성
 
@@ -1219,6 +1296,7 @@ Runner README는 같은 변경에서 갱신한다. 공동 소유인 루트 READM
 - redacted replacement는 적용 불가이며 사용자가 값을 다시 입력한 sanitized preview만 적용
 - compile prompt/tool schema redaction, prompt/tools/request byte 제한, provider 전송 전 승인
 - compile의 `unknown` 결과에서 invalid suite와 invalid metadata를 거절
+- provider compile 결과를 UI 전 재마스킹·크기 제한하고 mutable preview를 실행 승인 직전 재검증
 - deprecated `createMcpTest` named export와 기존 throw 동작 유지
 
 ### 필수 테스트 이름과 핵심 단언
@@ -1240,9 +1318,11 @@ Runner README는 같은 변경에서 갱신한다. 공동 소유인 루트 READM
 | `이벤트 listener의 객체 변경이 보고서를 바꾸지 않는다` | listener가 `caseStarted.case.name`을 바꿔도 최종 `TestCaseResult.spec.name`은 원래 값 |
 | `timeout 시 후속 케이스를 시작하지 않는다` | 현재 case `timedOut`, 후속 case `notRun`, suite `failed`, `stopReason.type === "timeout"` |
 | `AbortSignal 취소 시 스위트를 aborted로 끝낸다` | 현재 case `cancelled`, 후속 case `notRun`, suite `aborted`, client `close` 호출 0회 |
-| `timeout 뒤 정상 drain 후 client를 닫는다` | report가 먼저 resolve되고 deadline 전 operation settle 후 `settled`, close 1회 |
-| `drain deadline 뒤 transport를 강제 종료한다` | `5_000ms` 후 `deadlineExceeded`, close 1회, 늦은 operation reject에 unhandled rejection 없음 |
-| `report reject에서도 client를 한 번 닫는다` | finally 경로가 drain을 기다리고 중복 cleanup 호출에도 close spy 1회, primary report 오류 보존 |
+| `drain 설정을 동기 검증한다` | 0/NaN/Infinity/음수/소수/60_001은 event·MCP 전 `RangeError`, 1과 60_000 허용 |
+| `timeout 뒤 정상 drain 후 graceful close한다` | report가 먼저 resolve되고 deadline 전 operation settle 후 `settled`, finalizer close 1회 |
+| `drain deadline 뒤 transport를 강제 종료한다` | permanently pending call에서 `5_000ms` 후 `deadlineExceeded`, 독립 force close 1회, 늦은 operation reject에 unhandled rejection 없음 |
+| `graceful close와 force close를 유한 상한으로 끝낸다` | close 2,000ms 초과 시 force 전환, force 2,000ms 초과 시 structured timeout error, finalize pending 없음 |
+| `report reject와 cleanup 오류를 보존한다` | undefined rejection도 실패로 유지; 여러 실패는 report→drain→close→force 순서 `AggregateError`, 종료 동작 1회 |
 | `event와 report에서 민감정보를 제거한다` | `apiKey`, `Authorization`, caller 지정 sentinel 값이 모두 `[REDACTED]`이며 실제 client 호출에는 원본 값 전달 |
 | `observer payload 제한을 적용한다` | case 초과는 MCP/event 전 `RunnerPayloadLimitError`, report 초과는 `suiteCompleted` 없이 같은 오류 |
 | `같은 입력에 같은 결과를 만든다` | 두 실행의 event 배열과 report가 deep equality이고 timestamp·duration 키가 없음 |
@@ -1250,7 +1330,7 @@ Runner README는 같은 변경에서 갱신한다. 공동 소유인 루트 READM
 | `신뢰할 수 없는 repair 결과를 문맥 검증한다` | duplicate, unknown, unselected ID와 ID/operation mismatch, invalid replacement가 각각 고정 issue code로 거절됨 |
 | `repair 결과를 UI 전에 다시 마스킹한다` | provider가 넣은 `Authorization`과 caller PII sentinel이 preview에서 `[REDACTED]`, candidate `applicable === false` |
 | `검토한 sanitized replacement만 적용한다` | raw provider result와 redacted placeholder는 적용 불가; 재입력·재검증된 applicable preview만 원본 suite의 해당 case를 변경 |
-| `compile provider 경계를 검증한다` | sanitized prompt/tool preview 승인 뒤에만 호출하며 oversized request와 invalid suite 결과를 거절 |
+| `compile provider 경계를 검증한다` | sanitized prompt/tool preview 승인 뒤에만 호출하고, provider output도 UI 전 sanitize/limit하며 secret-bearing mutable preview를 실행 직전 재검증 |
 | `deprecated createMcpTest 호환성을 유지한다` | named import가 유지되고 기존 호출이 동일한 `not implemented` 오류를 던짐 |
 
 구현 계획은 위 이름과 단언을 실제 Vitest 코드로 전량 제시한다. 테스트용 client는 인메모리 객체만 사용하며 실제 MCP 서버 프로세스를 띄우지 않는다.
@@ -1270,6 +1350,7 @@ packages/runner/src/
 ├── diagnostics.ts
 ├── sanitization.ts
 ├── executor.ts
+├── shutdown.ts
 └── index.ts
 
 packages/runner/tests/
@@ -1278,7 +1359,8 @@ packages/runner/tests/
 ├── spec-schema.test.ts
 ├── assertions.test.ts
 ├── sanitization.test.ts
-└── executor.test.ts
+├── executor.test.ts
+└── shutdown.test.ts
 
 .changeset/
 └── runner-declarative-suite.md

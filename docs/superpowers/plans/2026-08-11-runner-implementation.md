@@ -17,10 +17,10 @@
 - Use in-memory fake clients and `fixtures/tools-list.sample.json`; do not start a real MCP server.
 - Preserve specification order, event order, result order, and deterministic diagnostics.
 - Do not add timestamps, measured durations, random IDs, or parallel execution.
-- Do not call `client.close()` from Runner.
+- `runSuite` must not close the client. Only explicit caller-invoked `finalizeRunnerExecution` may use the supplied shutdown controller.
 - Expose sanitized event/report snapshots only; actual MCP calls use the private original input.
 - Return a non-rejecting bounded `drain` result. Default deadline is 5,000ms; caller range is integer `1..60_000ms`.
-- CLI, Dashboard Node, and test adapters must close through an idempotent `closeOnce` after drain; deadline expiry is the forced transport-close path.
+- CLI, Dashboard Node, and test adapters must provide an idempotent shutdown controller; `finalizeRunnerExecution` bounds graceful and forced transport close independently of pending MCP calls.
 - Enforce default observer limits of 65,536 bytes per case and 1,048,576 bytes per report.
 - Child agents and the main agent must not commit, merge, or push. The user performs each commit after a review gate.
 - Do not revert unrelated user changes. The current `.gitignore` and `docs/2026-08-11-runner-session-handoff.md` changes are outside implementation ownership.
@@ -40,12 +40,14 @@
 - `packages/runner/src/assertions.ts` — pure `toolExists` and `isError` evaluation.
 - `packages/runner/src/sanitization.ts` — observer redaction, UTF-8 payload sizing, and limit errors.
 - `packages/runner/src/executor.ts` — sequential execution, event emission, report construction, timeout, abort.
+- `packages/runner/src/shutdown.ts` — bounded drain/graceful/force-close finalization with lossless error aggregation.
 - `packages/runner/tests/spec-validation.test.ts` — validator and helper tests.
 - `packages/runner/tests/spec-schema.test.ts` — JSON Schema contract tests.
 - `packages/runner/tests/helpers/schema-evaluator.ts` — dev-only evaluator for the exact public Schema keyword subset.
 - `packages/runner/tests/assertions.test.ts` — assertion and message tests.
 - `packages/runner/tests/sanitization.test.ts` — recursive masking and payload-limit tests.
 - `packages/runner/tests/executor.test.ts` — execution, event, report, timeout, and abort tests.
+- `packages/runner/tests/shutdown.test.ts` — permanently pending calls, bounded transport termination, idempotence, and error preservation.
 - `.changeset/runner-declarative-suite.md` — minor release note for Runner.
 
 ### Modify
@@ -396,7 +398,33 @@ export type RunnerDrainResult =
   | { status: "settled" }
   | { status: "deadlineExceeded"; pendingOperations: 1 };
 
+export type RunnerForceCloseReason =
+  | "drainDeadlineExceeded"
+  | "gracefulCloseDeadlineExceeded";
+
+export interface McpClientShutdownController {
+  client: McpClient;
+  close(): Promise<void>;
+  forceClose(reason: RunnerForceCloseReason): Promise<void>;
+}
+
+export interface FinalizeRunnerExecutionOptions {
+  execution: RunnerExecution;
+  shutdown: McpClientShutdownController;
+  closeTimeoutMs?: number;
+  forceCloseTimeoutMs?: number;
+}
+
+export class RunnerShutdownTimeoutError extends Error {
+  override readonly name = "RunnerShutdownTimeoutError";
+  readonly phase = "forceClose";
+  readonly limitMs: number;
+}
+
 export function runSuite(options: RunSuiteOptions): RunnerExecution;
+export function finalizeRunnerExecution(
+  options: FinalizeRunnerExecutionOptions,
+): Promise<RunnerReport>;
 
 export type RunnerEvent =
   | SuiteStartedEvent
@@ -1091,8 +1119,8 @@ Rules:
 - Start `sequence` at 0 and increment once per emitted conceptual event.
 - Preserve case and assertion order.
 - Do not include operation output in the public report beyond relevant diagnostics.
-- Do not call `client.close()`.
-- Return `{ report, drain }`; on ordinary completion/rejection with no pending MCP request, `drain` resolves `{ status: "settled" }` no later than `report` and never rejects.
+- `runSuite` does not call `client.close()` or `forceClose()`; Task 4 adds only the explicitly invoked finalizer.
+- Return `{ report, drain }`; `report` may resolve or reject first. `drain` is chained after that outcome, never rejects, and returns `{ status: "settled" }` in Task 3 because no pending operation remains. Task 4 extends only the value to `{ status: "settled" } | { status: "deadlineExceeded", pendingOperations: 1 }` without changing report-first ordering.
 - In this task, use a temporary internal control path that resolves operations normally; Task 4 adds timeout/abort without changing public event/report names.
 
 `sanitization.ts` implements these exact defaults and rules:
@@ -1148,7 +1176,10 @@ Do not start Task 4 before verifying the supplied SHA.
 **Files:**
 
 - Modify: `packages/runner/src/executor.ts`
+- Create: `packages/runner/src/shutdown.ts`
 - Modify: `packages/runner/tests/executor.test.ts`
+- Create: `packages/runner/tests/shutdown.test.ts`
+- Modify: `packages/runner/src/index.ts`
 
 **Consumes:** Task 3 executor and final public result/event names.
 
@@ -1186,17 +1217,30 @@ Add these named cases and exact assertions:
 | `timeout과 abort 뒤 다음 MCP 호출을 시작하지 않는다` | call record contains current operation only |
 | `Runner가 client를 닫지 않는다` | close spy count 0 for timeout and abort |
 | `report는 drain과 독립적으로 먼저 끝난다` | timeout report resolves while pending operation and drain remain pending |
-| `deadline 전 operation을 정상 drain한다` | operation settle 전 drain pending; settle 후 `{ status: "settled" }`; caller close 1회 |
-| `drain deadline 뒤 transport를 강제 종료한다` | report 후 `4_999ms` close 0회; `5_000ms`에 `{ status: "deadlineExceeded", pendingOperations: 1 }`; caller close 1회 |
-| `caller drain deadline 범위를 검증한다` | `0`, `1.5`, `60_001`은 events/calls 전 `RangeError`; `1`, `60_000`은 허용 |
+| `deadline 전 operation을 정상 drain한다` | operation settle 전 drain pending; settle 후 `{ status: "settled" }`; finalizer graceful close 1회 |
+| `drain deadline 뒤 transport를 강제 종료한다` | report 후 `4_999ms` force 0회; `5_000ms`에 `{ status: "deadlineExceeded", pendingOperations: 1 }`; independent force close 1회 |
+| `caller drain deadline 범위를 동기 검증한다` | `0`, `NaN`, `Infinity`, `-1`, `1.5`, `60_001`은 `runSuite` 호출 자체가 events/calls 전 `RangeError`; `1`, `60_000`은 허용 |
 | `pending operation의 늦은 reject를 삼킨다` | deadline/close 뒤 원본 Promise reject; no unhandled rejection and drain result unchanged |
 | `report reject에서도 finally로 한 번 닫는다` | event handler sentinel rejection을 primary error로 보존; drain 후 close 1회 |
-| `timeout abort 중복 cleanup은 close를 중복 호출하지 않는다` | adapter-local `closeOnce()`를 두 경로에서 호출해도 same Promise와 close spy 1회 |
+| `timeout abort 중복 cleanup은 transport 종료를 중복 호출하지 않는다` | 같은 execution/controller의 finalizer를 두 경로에서 호출해도 same Promise와 close/force 합계 1회 |
+
+In `shutdown.test.ts`, use a fake `McpClientShutdownController` whose `forceClose` settles independently of its permanently pending `client.callTool` and `close` Promises. Add these exact tests:
+
+| Test name | Exact assertion |
+|---|---|
+| `permanently pending call을 drain deadline 뒤 강제 종료한다` | report resolves; at 4,999ms force 0; at 5,000ms reason `drainDeadlineExceeded`; finalize resolves after force; pending call remains handled |
+| `graceful close deadline 뒤 force close로 전환한다` | settled drain; close pending for 1,999ms; at 2,000ms force reason `gracefulCloseDeadlineExceeded`; one close and one force call |
+| `force close 자체도 유한 상한으로 끝낸다` | force Promise permanently pending; 2,000ms 후 `RunnerShutdownTimeoutError`; finalize no longer pending |
+| `shutdown timeout 옵션을 동기 검증한다` | close/force 각각 `0`, `NaN`, `Infinity`, `-1`, `1.5`, `10_001`은 transport call 전 `RangeError`; `1`, `10_000` valid |
+| `undefined report rejection을 보존한다` | report rejects `undefined`, cleanup succeeds, returned Promise rejects with `undefined` rather than resolving |
+| `report와 close 실패를 순서대로 집계한다` | `AggregateError.errors` deep equals `[reportSentinel, closeSentinel, forceSentinel]` when graceful and forced shutdown both fail |
+| `drain contract 위반도 cleanup 오류로 보존한다` | fake drain rejects sentinel; force cleanup still runs; failure list keeps report before drain before shutdown |
+| `finalize 중복 호출이 transport 종료를 반복하지 않는다` | same execution/controller returns same Promise; close/force total operation count 1 |
 
 - [ ] **Step 2: Run focused tests and observe RED**
 
 ```bash
-pnpm exec vitest run packages/runner/tests/executor.test.ts
+pnpm exec vitest run packages/runner/tests/executor.test.ts packages/runner/tests/shutdown.test.ts
 ```
 
 Expected: timeout/abort assertions fail against Task 3 behavior while existing executor tests remain green.
@@ -1215,7 +1259,7 @@ type ControlledOperation<T> =
 
 Use one settle function that clears the timer and removes the abort listener exactly once. Check `signal.aborted` before starting and again in the timeout callback so explicit cancellation has priority. Never close the client and never start the next case after `timedOut` or `cancelled`.
 
-`runSuite` validates `drainTimeoutMs` before events or MCP calls. Use `DEFAULT_DRAIN_TIMEOUT_MS = 5_000` and `MAX_DRAIN_TIMEOUT_MS = 60_000`; accept only integers in `1..60_000`. It creates a resolved default `pendingSettlement`, attaches both handlers as soon as an MCP Promise starts, and records whether that request is still pending.
+`runSuite` synchronously validates `drainTimeoutMs` before snapshots, events, or MCP calls. Use `DEFAULT_DRAIN_TIMEOUT_MS = 5_000` and `MAX_DRAIN_TIMEOUT_MS = 60_000`; accept only finite integers in `1..60_000`. Zero never means immediate force-close. It creates a resolved default `pendingSettlement`, attaches both handlers as soon as an MCP Promise starts, and records whether that request is still pending.
 
 ```ts
 const DEFAULT_DRAIN_TIMEOUT_MS = 5_000;
@@ -1261,16 +1305,21 @@ return { report, drain };
 
 The production implementation may avoid the illustrative closure reassignment, but must preserve these state transitions. `pendingSettlement` has a rejection handler before the logical timeout/abort can win, so a deadline result and forced client close cannot create an unhandled late rejection. The drain timer starts only after `report` settles, is cleared on early settlement, and never makes `drain` reject. It tracks at most one request because suite execution is sequential and stops after timeout/abort.
 
-Caller contract tests define an adapter-local idempotent close helper:
+`shutdown.ts` defines a generic outcome helper that does not use `undefined` as the failure sentinel:
 
 ```ts
-function createCloseOnce(client: McpClient): () => Promise<void> {
-  let closePromise: Promise<void> | undefined;
-  return () => (closePromise ??= Promise.resolve().then(() => client.close()));
-}
+type PromiseOutcome<T> =
+  | { ok: true; value: T }
+  | { ok: false; error: unknown };
+
+const settle = <T>(promise: Promise<T>): Promise<PromiseOutcome<T>> =>
+  promise.then(
+    (value) => ({ ok: true, value }),
+    (error) => ({ ok: false, error }),
+  );
 ```
 
-The test adapter awaits `report` in `try/catch`, then always awaits `drain` and `closeOnce()` in `finally`. If report and close both reject, assert an `AggregateError([reportError, closeError])`; otherwise preserve the single primary error. Runner never imports or calls this helper.
+`finalizeRunnerExecution` first settles report, then drain. A settled drain starts controller `close()` raced against `closeTimeoutMs = 2_000`; timeout or close rejection triggers `forceClose("gracefulCloseDeadlineExceeded")`. `deadlineExceeded` skips close and triggers `forceClose("drainDeadlineExceeded")`. Force close is independently raced against `forceCloseTimeoutMs = 2_000`. Both timed-out Promises keep the two-sided `settle` handler so late rejection is observed. Cache the entire finalize Promise by execution/controller identity before any async work. Collect failed outcomes in report, drain, graceful close, force close order; throw the sole exact rejection value or `AggregateError` for multiple failures. A graceful timeout is control flow, while a graceful close rejection remains in the failure list even if force close succeeds. `runSuite` never imports `shutdown.ts` or initiates shutdown.
 
 Assertions for the current timed-out/cancelled case are `skipped` with `OPERATION_RESULT_UNAVAILABLE`. Assertions for remaining cases are `notRun` without a diagnostic. 시작하지 않은 operation은 적용된 timer가 없으므로 `timeoutMs` 필드를 갖지 않는다.
 
@@ -1286,7 +1335,7 @@ RUN_ABORTED hint: 취소 신호를 발생시킨 호출자 상태를 확인한 �
 - [ ] **Step 4: Run focused, package, and deterministic verification**
 
 ```bash
-pnpm exec vitest run packages/runner/tests/executor.test.ts
+pnpm exec vitest run packages/runner/tests/executor.test.ts packages/runner/tests/shutdown.test.ts
 pnpm exec vitest run packages/runner/tests
 pnpm --filter @ohmymcp/runner typecheck
 pnpm --filter @ohmymcp/runner build
@@ -1332,13 +1381,14 @@ Set the package description to:
 README must show:
 
 1. `defineMcpSuite` with one `listTools/toolExists` case and one `callTool/isError` case.
-2. `const execution = runSuite({ client, suite, onEvent, redaction, payloadLimits, drainTimeoutMs })`와 `try/catch/finally`에서 report 오류를 보존하고 `await execution.drain` 뒤 idempotent `closeOnce(client)`를 호출하는 안전한 lifecycle.
+2. `const execution = runSuite({ client: shutdown.client, suite, onEvent, redaction, payloadLimits, drainTimeoutMs })`와 `finalizeRunnerExecution({ execution, shutdown })`의 bounded lifecycle.
 3. Timeout priority and the 10-second Runner fallback.
-4. Statement that Runner never closes the injected client; drain default `5_000ms`, `settled | deadlineExceeded` 의미, deadline 뒤 caller forced close, late rejection handler 유지.
+4. Statement that `runSuite` never closes the injected client; drain default `5_000ms`, `settled | deadlineExceeded`, 2,000ms graceful/force close bounds, stdio process kill 또는 HTTP abort/socket destroy를 구현하는 controller, late rejection handler 유지.
 5. Default sensitive-key redaction, caller `sensitiveValues`, 65,536-byte case and 1,048,576-byte report limits, and no automatic persistence.
 6. Statement that `RunnerReport` is JSON-serializable and retains sanitized failed case specs/diagnostics for later repair.
 7. Current non-goals: generate provider/repair validator implementation, JUnit, Vitest adapter, parallel execution.
 8. `createMcpTest`와 `toContainTool`은 minor 호환성을 위한 deprecated shim이며 기존 시그니처/`not implemented` 오류를 유지하고 major release 전에는 제거하지 않는다는 migration note.
+9. `drainTimeoutMs`의 `1..60_000`, close/force timeout의 `1..10_000` 유한 정수 범위와 0/비유한수/음수/소수의 동기 `RangeError`.
 
 - [ ] **Step 2: Add the exact changeset**
 
@@ -1565,16 +1615,18 @@ await spawn_agent({
   fork_turns: "none",
   model: "gpt-5.6-terra",
   reasoning_effort: "medium",
-  message: `역할: OhMyMCP Runner 공개 명세 계약 구현자.
-목표: 선언형 suite union 타입, deep-readonly draft 2020-12 JSON Schema, 구조화 validator, defineMcpSuite, 루트 재수출을 TDD로 구현한다. 한 case는 listTools 또는 callTool 하나만 가지며 assertion 조합, 닫힌 필드, 고유 ID, 비어 있지 않은 문자열, 유한 JSON 값, `1..2_147_483_647ms` timeout을 검증한다. 비순환 공유 객체는 허용하고 실제 cycle만 거절한다. dev-only evaluator로 공개 JSON Schema에 같은 valid/invalid fixture를 실행해 `$ref`와 `oneOf`까지 검증하고 Schema의 중첩 변경은 TypeScript와 recursive freeze 모두 막는다. 기존 `createMcpTest`/`toContainTool` named export와 `not implemented` 동작은 deprecated shim으로 보존한다.
-Worktree: ${runnerWorktree}
-Report: ${runnerWorktree}/.agents/reports/task-1-runner-spec.md
-첫 명령으로 `git rev-parse --show-toplevel`을 실행하고 출력이 위 Worktree 절대 경로와 같은지, 그 경로에 이 계획과 승인된 선행 HEAD가 있는지 확인한다. 다르면 BLOCKED로 끝낸다.
-먼저 CLAUDE.md, CONTRIBUTING.md, .agents/skills/execution-conventions/SKILL.md, docs/conventions/execution.md, Runner 설계 문서와 구현 계획을 끝까지 읽는다.
-허용 Files: packages/runner/src/spec/types.ts, packages/runner/src/spec/json-schema.ts, packages/runner/src/spec/validation.ts, packages/runner/src/spec/index.ts, packages/runner/src/index.ts, packages/runner/tests/helpers/schema-evaluator.ts, packages/runner/tests/spec-validation.test.ts, packages/runner/tests/spec-schema.test.ts, packages/runner/tests/index.test.ts, .agents/reports/task-1-runner-spec.md.
-금지: 다른 파일 수정, background 실행, commit, merge, push, 하위 agent spawn, 다른 작업자의 변경 되돌리기.
-반드시 Task 1 Files의 테스트에 필수 필드·unknown 필드·operation/assertion 조합·timeout 양 경계·`NaN`/`Infinity`/`-Infinity`·null-prototype JSON object·공유 참조·cycle·schema 내부 참조·recursive freeze를 먼저 작성한다. Schema parity는 공개 객체를 dev-only evaluator로 실행해 valid/invalid fixture 판정, 깨진 local `$ref`, `oneOf` match 0개와 2개를 검사한다. evaluator와 production validator 모두 `Object.prototype | null` record만 object로 허용한다. 기존 export 호환 테스트도 유지한다. `pnpm exec vitest run packages/runner/tests/spec-validation.test.ts packages/runner/tests/spec-schema.test.ts packages/runner/tests/index.test.ts`에서 의도한 RED를 확인한 뒤 최소 구현한다. GREEN은 같은 focused 명령, `pnpm exec vitest run packages/runner/tests`, `pnpm --filter @ohmymcp/runner typecheck`로 확인한다.
-보고서는 지정 경로에 작성하고 최종 응답은 status: READY_FOR_REVIEW 또는 status: BLOCKED로 시작한다. 변경 파일, RED 관찰, GREEN 결과, 남은 위험을 포함한다.`,
+  message: [
+    "역할: OhMyMCP Runner 공개 명세 계약 구현자.",
+    "목표: 선언형 suite union 타입, deep-readonly draft 2020-12 JSON Schema, 구조화 validator, defineMcpSuite, 루트 재수출을 TDD로 구현한다. 한 case는 listTools 또는 callTool 하나만 가지며 assertion 조합, 닫힌 필드, 고유 ID, 비어 있지 않은 문자열, 유한 JSON 값, `1..2_147_483_647ms` timeout을 검증한다. 비순환 공유 객체는 허용하고 실제 cycle만 거절한다. dev-only evaluator로 공개 JSON Schema에 같은 valid/invalid fixture를 실행해 `$ref`와 `oneOf`까지 검증하고 Schema의 중첩 변경은 TypeScript와 recursive freeze 모두 막는다. 기존 `createMcpTest`/`toContainTool` named export와 `not implemented` 동작은 deprecated shim으로 보존한다.",
+    "Worktree: ${runnerWorktree}",
+    "Report: ${runnerWorktree}/.agents/reports/task-1-runner-spec.md",
+    "첫 명령으로 `git rev-parse --show-toplevel`을 실행하고 출력이 위 Worktree 절대 경로와 같은지, 그 경로에 이 계획과 승인된 선행 HEAD가 있는지 확인한다. 다르면 BLOCKED로 끝낸다.",
+    "먼저 CLAUDE.md, CONTRIBUTING.md, .agents/skills/execution-conventions/SKILL.md, docs/conventions/execution.md, Runner 설계 문서와 구현 계획을 끝까지 읽는다.",
+    "허용 Files: packages/runner/src/spec/types.ts, packages/runner/src/spec/json-schema.ts, packages/runner/src/spec/validation.ts, packages/runner/src/spec/index.ts, packages/runner/src/index.ts, packages/runner/tests/helpers/schema-evaluator.ts, packages/runner/tests/spec-validation.test.ts, packages/runner/tests/spec-schema.test.ts, packages/runner/tests/index.test.ts, .agents/reports/task-1-runner-spec.md.",
+    "금지: 다른 파일 수정, background 실행, commit, merge, push, 하위 agent spawn, 다른 작업자의 변경 되돌리기.",
+    "반드시 Task 1 Files의 테스트에 필수 필드·unknown 필드·operation/assertion 조합·timeout 양 경계·`NaN`/`Infinity`/`-Infinity`·null-prototype JSON object·공유 참조·cycle·schema 내부 참조·recursive freeze를 먼저 작성한다. Schema parity는 공개 객체를 dev-only evaluator로 실행해 valid/invalid fixture 판정, 깨진 local `$ref`, `oneOf` match 0개와 2개를 검사한다. evaluator와 production validator 모두 `Object.prototype | null` record만 object로 허용한다. 기존 export 호환 테스트도 유지한다. `pnpm exec vitest run packages/runner/tests/spec-validation.test.ts packages/runner/tests/spec-schema.test.ts packages/runner/tests/index.test.ts`에서 의도한 RED를 확인한 뒤 최소 구현한다. GREEN은 같은 focused 명령, `pnpm exec vitest run packages/runner/tests`, `pnpm --filter @ohmymcp/runner typecheck`로 확인한다.",
+    "보고서는 지정 경로에 작성하고 최종 응답은 status: READY_FOR_REVIEW 또는 status: BLOCKED로 시작한다. 변경 파일, RED 관찰, GREEN 결과, 남은 위험을 포함한다.",
+  ].join("\n").replaceAll("${runnerWorktree}", runnerWorktree),
 });
 ```
 
@@ -1586,17 +1638,19 @@ await spawn_agent({
   fork_turns: "none",
   model: "gpt-5.6-terra",
   reasoning_effort: "medium",
-  message: `역할: OhMyMCP Runner 실패 진단·assertion 구현자.
-목표: `toolExists`와 `isError`를 순수 함수로 평가하고 구조화된 `RunnerDiagnostic`을 만든다. 한 operation 결과로 assertion을 명세 순서대로 모두 평가하며, TOOL_NOT_FOUND는 중복 제거 후 locale과 무관한 UTF-16 순서의 tool 이름만, IS_ERROR_MISMATCH는 boolean만, operation reject는 정규화한 `{ type, name, message }`만 노출한다. raw/content/순환 객체/함수/symbol은 진단에 넣지 않는다.
-Worktree: ${runnerWorktree}
-Report: ${runnerWorktree}/.agents/reports/task-2-runner-assertions.md
-첫 명령으로 `git rev-parse --show-toplevel`을 실행하고 출력이 위 Worktree 절대 경로와 같은지, 그 경로에 이 계획과 승인된 Task 1 HEAD가 있는지 확인한다. 다르면 BLOCKED로 끝낸다.
-먼저 프로젝트 지침, 실행 규약, Runner 설계, 구현 계획을 끝까지 읽고 현재 HEAD가 사용자 승인 Task 1 SHA인지 확인한다.
-허용 Files: packages/runner/src/diagnostics.ts, packages/runner/src/assertions.ts, packages/runner/src/index.ts, packages/runner/tests/assertions.test.ts, .agents/reports/task-2-runner-assertions.md.
-금지: 허용 Files 밖 수정, fixture 수정, raw/content 노출, background 실행, commit, merge, push, 하위 agent spawn, 다른 변경 되돌리기.
-다음 실패 단언을 그대로 테스트한다. 없는 툴 `missing`은 code `TOOL_NOT_FOUND`, message `툴 'missing'를 찾을 수 없습니다.`, expected `missing`, 정렬된 actual `["add", "get_weather"]`, hint `서버의 tools/list 응답과 테스트 명세를 확인하세요.`다. 별도 fixture `가`, `a`, `A`, `a`는 `["A", "a", "가"]`가 되고 spied `localeCompare`는 0회다. `isError`가 expected false/actual true면 code `IS_ERROR_MISMATCH`, message `정상 응답을 기대했지만 오류 응답을 받았습니다.`, hint `툴 입력값과 서버의 오류 응답을 확인하세요.`다. expected true/actual false면 message `오류 응답을 기대했지만 정상 응답을 받았습니다.`이고 같은 hint를 쓴다. 존재/일치 성공, raw/content secret 제외, Error와 모든 비 Error throw의 JSON-safe 정규화도 먼저 RED로 만든다.
-RED/GREEN focused 명령은 `pnpm exec vitest run packages/runner/tests/assertions.test.ts`다. 이후 `pnpm exec vitest run packages/runner/tests/assertions.test.ts packages/runner/tests/spec-validation.test.ts packages/runner/tests/spec-schema.test.ts`와 `pnpm --filter @ohmymcp/runner typecheck`를 실행한다.
-보고서와 최종 응답 형식은 status, 변경 파일, RED, GREEN, 남은 위험 순서다.`,
+  message: [
+    "역할: OhMyMCP Runner 실패 진단·assertion 구현자.",
+    "목표: `toolExists`와 `isError`를 순수 함수로 평가하고 구조화된 `RunnerDiagnostic`을 만든다. 한 operation 결과로 assertion을 명세 순서대로 모두 평가하며, TOOL_NOT_FOUND는 중복 제거 후 locale과 무관한 UTF-16 순서의 tool 이름만, IS_ERROR_MISMATCH는 boolean만, operation reject는 정규화한 `{ type, name, message }`만 노출한다. raw/content/순환 객체/함수/symbol은 진단에 넣지 않는다.",
+    "Worktree: ${runnerWorktree}",
+    "Report: ${runnerWorktree}/.agents/reports/task-2-runner-assertions.md",
+    "첫 명령으로 `git rev-parse --show-toplevel`을 실행하고 출력이 위 Worktree 절대 경로와 같은지, 그 경로에 이 계획과 승인된 Task 1 HEAD가 있는지 확인한다. 다르면 BLOCKED로 끝낸다.",
+    "먼저 프로젝트 지침, 실행 규약, Runner 설계, 구현 계획을 끝까지 읽고 현재 HEAD가 사용자 승인 Task 1 SHA인지 확인한다.",
+    "허용 Files: packages/runner/src/diagnostics.ts, packages/runner/src/assertions.ts, packages/runner/src/index.ts, packages/runner/tests/assertions.test.ts, .agents/reports/task-2-runner-assertions.md.",
+    "금지: 허용 Files 밖 수정, fixture 수정, raw/content 노출, background 실행, commit, merge, push, 하위 agent spawn, 다른 변경 되돌리기.",
+    "다음 실패 단언을 그대로 테스트한다. 없는 툴 `missing`은 code `TOOL_NOT_FOUND`, message `툴 'missing'를 찾을 수 없습니다.`, expected `missing`, 정렬된 actual `[\"add\", \"get_weather\"]`, hint `서버의 tools/list 응답과 테스트 명세를 확인하세요.`다. 별도 fixture `가`, `a`, `A`, `a`는 `[\"A\", \"a\", \"가\"]`가 되고 spied `localeCompare`는 0회다. `isError`가 expected false/actual true면 code `IS_ERROR_MISMATCH`, message `정상 응답을 기대했지만 오류 응답을 받았습니다.`, hint `툴 입력값과 서버의 오류 응답을 확인하세요.`다. expected true/actual false면 message `오류 응답을 기대했지만 정상 응답을 받았습니다.`이고 같은 hint를 쓴다. 존재/일치 성공, raw/content secret 제외, Error와 모든 비 Error throw의 JSON-safe 정규화도 먼저 RED로 만든다.",
+    "RED/GREEN focused 명령은 `pnpm exec vitest run packages/runner/tests/assertions.test.ts`다. 이후 `pnpm exec vitest run packages/runner/tests/assertions.test.ts packages/runner/tests/spec-validation.test.ts packages/runner/tests/spec-schema.test.ts`와 `pnpm --filter @ohmymcp/runner typecheck`를 실행한다.",
+    "보고서와 최종 응답 형식은 status, 변경 파일, RED, GREEN, 남은 위험 순서다.",
+  ].join("\n").replaceAll("${runnerWorktree}", runnerWorktree),
 });
 ```
 
@@ -1608,16 +1662,18 @@ await spawn_agent({
   fork_turns: "none",
   model: "gpt-5.6-terra",
   reasoning_effort: "medium",
-  message: `역할: OhMyMCP Runner 순차 executor 구현자.
-목표: 검증된 private operational suite를 case 순서대로 실행하고 sanitized observer snapshot을 event sequence 0부터 고정 순서로 발행한다. 모든 case 이벤트에는 `caseId`와 `caseIndex`를 넣는다. 보통 assertion/operation 실패 뒤에는 다음 case를 실행하고, 배타적 `RunnerSummary`, sanitized spec, 안전한 직렬화 보고서와 `{ report, drain }` handle을 만든다. event handler 오류는 `report`에 그대로 전파한다.
-Worktree: ${runnerWorktree}
-Report: ${runnerWorktree}/.agents/reports/task-3-runner-executor.md
-첫 명령으로 `git rev-parse --show-toplevel`을 실행하고 출력이 위 Worktree 절대 경로와 같은지, 그 경로에 이 계획과 승인된 Task 2 HEAD가 있는지 확인한다. 다르면 BLOCKED로 끝낸다.
-프로젝트 지침, 실행 규약, 설계, 계획을 읽고 현재 HEAD가 승인된 Task 2 SHA인지 확인한다.
-허용 Files: packages/runner/src/sanitization.ts, packages/runner/src/executor.ts, packages/runner/src/index.ts, packages/runner/tests/sanitization.test.ts, packages/runner/tests/executor.test.ts, .agents/reports/task-3-runner-executor.md.
-금지: timeout 범위를 미리 구현, 병렬 실행, client.close 호출, raw 응답 보고, 허용 Files 밖 수정, background, commit, merge, push, 하위 agent spawn.
-이벤트 순서는 `suiteStarted → caseStarted → operationStarted → operationCompleted → assertionCompleted* → caseCompleted`를 case마다 반복한 뒤 `suiteCompleted`이고 sequence는 0부터 1씩 증가한다. case 식별자, snapshot 격리, 실패 후 계속 실행, 배타적 summary, 동일 입력 deep equality, handler 오류를 먼저 RED로 확인한다. `Authorization`/`api_key`/caller sentinel 재귀 마스킹, 원본 client input 보존, 65_536-byte case와 1_048_576-byte report 상한, unsafe `suiteCompleted` 제외, 정상 drain도 테스트한다. timeout/abort 없이 Task 3 상태표만 구현한다. RED/GREEN은 `pnpm exec vitest run packages/runner/tests/executor.test.ts packages/runner/tests/sanitization.test.ts`, 회귀는 `pnpm exec vitest run packages/runner/tests`, `pnpm --filter @ohmymcp/runner typecheck`, `pnpm --filter @ohmymcp/runner build`로 확인한다.
-최종 응답은 READY_FOR_REVIEW 또는 BLOCKED와 증거를 포함한다.`,
+  message: [
+    "역할: OhMyMCP Runner 순차 executor 구현자.",
+    "목표: 검증된 private operational suite를 case 순서대로 실행하고 sanitized observer snapshot을 event sequence 0부터 고정 순서로 발행한다. 모든 case 이벤트에는 `caseId`와 `caseIndex`를 넣는다. 보통 assertion/operation 실패 뒤에는 다음 case를 실행하고, 배타적 `RunnerSummary`, sanitized spec, 안전한 직렬화 보고서와 `{ report, drain }` handle을 만든다. event handler 오류는 `report`에 그대로 전파한다.",
+    "Worktree: ${runnerWorktree}",
+    "Report: ${runnerWorktree}/.agents/reports/task-3-runner-executor.md",
+    "첫 명령으로 `git rev-parse --show-toplevel`을 실행하고 출력이 위 Worktree 절대 경로와 같은지, 그 경로에 이 계획과 승인된 Task 2 HEAD가 있는지 확인한다. 다르면 BLOCKED로 끝낸다.",
+    "프로젝트 지침, 실행 규약, 설계, 계획을 읽고 현재 HEAD가 승인된 Task 2 SHA인지 확인한다.",
+    "허용 Files: packages/runner/src/sanitization.ts, packages/runner/src/executor.ts, packages/runner/src/index.ts, packages/runner/tests/sanitization.test.ts, packages/runner/tests/executor.test.ts, .agents/reports/task-3-runner-executor.md.",
+    "금지: timeout 범위를 미리 구현, 병렬 실행, client.close 호출, raw 응답 보고, 허용 Files 밖 수정, background, commit, merge, push, 하위 agent spawn.",
+    "이벤트 순서는 `suiteStarted → caseStarted → operationStarted → operationCompleted → assertionCompleted* → caseCompleted`를 case마다 반복한 뒤 `suiteCompleted`이고 sequence는 0부터 1씩 증가한다. case 식별자, snapshot 격리, 실패 후 계속 실행, 배타적 summary, 동일 입력 deep equality, handler 오류를 먼저 RED로 확인한다. `Authorization`/`api_key`/caller sentinel 재귀 마스킹, 원본 client input 보존, 65_536-byte case와 1_048_576-byte report 상한, unsafe `suiteCompleted` 제외, 정상 drain도 테스트한다. timeout/abort 없이 Task 3 상태표만 구현한다. RED/GREEN은 `pnpm exec vitest run packages/runner/tests/executor.test.ts packages/runner/tests/sanitization.test.ts`, 회귀는 `pnpm exec vitest run packages/runner/tests`, `pnpm --filter @ohmymcp/runner typecheck`, `pnpm --filter @ohmymcp/runner build`로 확인한다.",
+    "최종 응답은 READY_FOR_REVIEW 또는 BLOCKED와 증거를 포함한다.",
+  ].join("\n").replaceAll("${runnerWorktree}", runnerWorktree),
 });
 ```
 
@@ -1629,16 +1685,18 @@ await spawn_agent({
   fork_turns: "none",
   model: "gpt-5.6-terra",
   reasoning_effort: "medium",
-  message: `역할: OhMyMCP Runner timeout·AbortSignal 상태 전이 구현자.
-목표: case→suite→10_000ms 우선순위와 AbortSignal을 단일 controlled-operation helper로 구현한다. `2_147_483_647ms`까지 정확히 예약하고 더 큰 값은 명세 단계에서 거절한다. timeout은 현재 timedOut/나머지 notRun/suite failed, abort는 현재 cancelled 또는 미시작 notRun/suite aborted다. 시작하지 않은 operation은 `timeoutMs`가 없다. timeout/abort 뒤 다음 MCP 호출과 Runner의 client.close를 금지하고 timer/listener를 정확히 한 번 정리한다. report 이후 pending 요청은 기본 5_000ms, 허용 1..60_000ms의 non-rejecting drain이 `settled | deadlineExceeded`로 추적하며 caller의 idempotent close가 deadline 뒤 transport를 강제 종료한다.
-Worktree: ${runnerWorktree}
-Report: ${runnerWorktree}/.agents/reports/task-4-runner-timeout.md
-첫 명령으로 `git rev-parse --show-toplevel`을 실행하고 출력이 위 Worktree 절대 경로와 같은지, 그 경로에 이 계획과 승인된 Task 3 HEAD가 있는지 확인한다. 다르면 BLOCKED로 끝낸다.
-프로젝트 지침, 실행 규약, 설계, 계획을 읽고 현재 HEAD가 승인된 Task 3 SHA인지 확인한다.
-허용 Files: packages/runner/src/executor.ts, packages/runner/tests/executor.test.ts, .agents/reports/task-4-runner-timeout.md.
-금지: core 타입 변경, client.close 호출, timeout 뒤 다음 MCP 호출, 허용 Files 밖 수정, background, commit, merge, push, 하위 agent spawn.
-fake timer로 timeout 우선순위·최대 경계·notRun 필드·abort 우선순위·고정 이벤트·timer/listener cleanup·후속 호출 금지를 먼저 RED로 확인한다. report가 pending operation보다 먼저 끝나는지, deadline 전 settle은 `settled`, 정확히 5_000ms pending은 `deadlineExceeded`가 되는지 검사한다. deadline 뒤 close 1회, 늦은 reject의 unhandled rejection 없음, report reject의 finally 정리, 중복 timeout/abort cleanup에도 close 1회를 검증한다. RED/GREEN은 `pnpm exec vitest run packages/runner/tests/executor.test.ts`, 회귀는 `pnpm exec vitest run packages/runner/tests`, `pnpm --filter @ohmymcp/runner typecheck`, `pnpm --filter @ohmymcp/runner build`로 확인한다.
-최종 응답은 READY_FOR_REVIEW 또는 BLOCKED와 증거를 포함한다.`,
+  message: [
+    "역할: OhMyMCP Runner timeout·AbortSignal 상태 전이 구현자.",
+    "목표: case→suite→10_000ms 우선순위와 AbortSignal을 단일 controlled-operation helper로 구현한다. `2_147_483_647ms`까지 정확히 예약하고 더 큰 값은 명세 단계에서 거절한다. timeout은 현재 timedOut/나머지 notRun/suite failed, abort는 현재 cancelled 또는 미시작 notRun/suite aborted다. 시작하지 않은 operation은 `timeoutMs`가 없다. timeout/abort 뒤 다음 MCP 호출과 `runSuite`의 close를 금지하고 timer/listener를 정확히 한 번 정리한다. report 이후 pending 요청은 기본 5_000ms, 허용 1..60_000ms의 non-rejecting drain이 `settled | deadlineExceeded`로 추적한다. 명시적으로 호출한 finalizer만 2,000ms bounded graceful close와 pending call에 독립적인 2,000ms force close를 수행한다.",
+    "Worktree: ${runnerWorktree}",
+    "Report: ${runnerWorktree}/.agents/reports/task-4-runner-timeout.md",
+    "첫 명령으로 `git rev-parse --show-toplevel`을 실행하고 출력이 위 Worktree 절대 경로와 같은지, 그 경로에 이 계획과 승인된 Task 3 HEAD가 있는지 확인한다. 다르면 BLOCKED로 끝낸다.",
+    "프로젝트 지침, 실행 규약, 설계, 계획을 읽고 현재 HEAD가 승인된 Task 3 SHA인지 확인한다.",
+    "허용 Files: packages/runner/src/executor.ts, packages/runner/src/shutdown.ts, packages/runner/src/index.ts, packages/runner/tests/executor.test.ts, packages/runner/tests/shutdown.test.ts, .agents/reports/task-4-runner-timeout.md.",
+    "금지: core 타입 변경, `runSuite` 내부 client.close/forceClose 호출, timeout 뒤 다음 MCP 호출, 허용 Files 밖 수정, background, commit, merge, push, 하위 agent spawn.",
+    "fake timer로 timeout 우선순위·최대 경계·notRun 필드·abort 우선순위·고정 이벤트·timer/listener cleanup·후속 호출 금지를 먼저 RED로 확인한다. report가 resolve/reject 먼저 끝나고 drain은 그 뒤 union 결과로 non-rejecting 완료되는지 검사한다. drain 0/NaN/Infinity/음수/소수/상한 초과 동기 거절, permanently pending call의 5,000ms deadline, 2,000ms graceful/force bounds, pending call과 독립적인 forceClose, late reject 처리, undefined report rejection, report→drain→close→force 오류 집계, finalizer 중복 호출에도 transport 종료 1회를 검증한다. RED/GREEN은 `pnpm exec vitest run packages/runner/tests/executor.test.ts packages/runner/tests/shutdown.test.ts`, 회귀는 `pnpm exec vitest run packages/runner/tests`, `pnpm --filter @ohmymcp/runner typecheck`, `pnpm --filter @ohmymcp/runner build`로 확인한다.",
+    "최종 응답은 READY_FOR_REVIEW 또는 BLOCKED와 증거를 포함한다.",
+  ].join("\n").replaceAll("${runnerWorktree}", runnerWorktree),
 });
 ```
 
@@ -1650,16 +1708,18 @@ await spawn_agent({
   fork_turns: "none",
   model: "gpt-5.6-terra",
   reasoning_effort: "medium",
-  message: `역할: OhMyMCP Runner 문서·릴리스·회귀 검증 담당자.
-목표: Runner README에 listTools/callTool/timeout/AbortSignal/event/report, redaction/payload limit, bounded drain의 `settled | deadlineExceeded`, `try/catch/finally`와 idempotent close 예제, deprecated public shim migration note, Generate가 루트 `@ohmymcp/runner` 계약을 소비한다는 경계를 문서화하고, `minor` changeset을 추가한 뒤 전체 회귀를 검증한다.
-Worktree: ${runnerWorktree}
-Report: ${runnerWorktree}/.agents/reports/task-5-runner-docs.md
-첫 명령으로 `git rev-parse --show-toplevel`을 실행하고 출력이 위 Worktree 절대 경로와 같은지, 그 경로에 이 계획과 승인된 Task 4 HEAD가 있는지 확인한다. 다르면 BLOCKED로 끝낸다.
-프로젝트 지침, 실행 규약, 설계, 계획을 읽고 현재 HEAD가 승인된 Task 4 SHA인지 확인한다.
-허용 Files: packages/runner/package.json, packages/runner/README.md, .changeset/runner-declarative-suite.md, .agents/reports/task-5-runner-docs.md.
-금지: root README와 다른 패키지 수정, repository-wide write format, background, commit, merge, push, 하위 agent spawn.
-README 예제가 실제 공개 타입과 일치하는지 확인하고 `@ohmymcp/runner` minor changeset을 작성한다. `pnpm exec vitest run packages/runner/tests`, `pnpm --filter @ohmymcp/runner typecheck`, `pnpm --filter @ohmymcp/runner build`, `pnpm test`, `pnpm typecheck`, `pnpm lint`, `pnpm build`, `pnpm exec changeset status`를 순서대로 실행하고 검사 대상 수와 exit code를 기록한다.
-최종 응답은 READY_FOR_REVIEW 또는 BLOCKED와 증거를 포함한다.`,
+  message: [
+    "역할: OhMyMCP Runner 문서·릴리스·회귀 검증 담당자.",
+    "목표: Runner README에 listTools/callTool/timeout/AbortSignal/event/report, redaction/payload limit, bounded drain의 `settled | deadlineExceeded`, explicit finalizer와 graceful/force-close controller 예제, deprecated public shim migration note, Generate가 루트 `@ohmymcp/runner` 계약을 소비한다는 경계를 문서화하고, `minor` changeset을 추가한 뒤 전체 회귀를 검증한다.",
+    "Worktree: ${runnerWorktree}",
+    "Report: ${runnerWorktree}/.agents/reports/task-5-runner-docs.md",
+    "첫 명령으로 `git rev-parse --show-toplevel`을 실행하고 출력이 위 Worktree 절대 경로와 같은지, 그 경로에 이 계획과 승인된 Task 4 HEAD가 있는지 확인한다. 다르면 BLOCKED로 끝낸다.",
+    "프로젝트 지침, 실행 규약, 설계, 계획을 읽고 현재 HEAD가 승인된 Task 4 SHA인지 확인한다.",
+    "허용 Files: packages/runner/package.json, packages/runner/README.md, .changeset/runner-declarative-suite.md, .agents/reports/task-5-runner-docs.md.",
+    "금지: root README와 다른 패키지 수정, repository-wide write format, background, commit, merge, push, 하위 agent spawn.",
+    "README 예제가 실제 공개 타입과 일치하는지 확인하고 `@ohmymcp/runner` minor changeset을 작성한다. `pnpm exec vitest run packages/runner/tests`, `pnpm --filter @ohmymcp/runner typecheck`, `pnpm --filter @ohmymcp/runner build`, `pnpm test`, `pnpm typecheck`, `pnpm lint`, `pnpm build`, `pnpm exec changeset status`를 순서대로 실행하고 검사 대상 수와 exit code를 기록한다.",
+    "최종 응답은 READY_FOR_REVIEW 또는 BLOCKED와 증거를 포함한다.",
+  ].join("\n").replaceAll("${runnerWorktree}", runnerWorktree),
 });
 ```
 
@@ -1673,15 +1733,17 @@ await spawn_agent({
   fork_turns: "none",
   model: "gpt-5.6-terra",
   reasoning_effort: "medium",
-  message: `역할: OhMyMCP Runner 최종 읽기 전용 리뷰어.
-Worktree: ${runnerWorktree}
-Report: ${runnerWorktree}/.agents/reports/final-runner-review.md
-첫 명령으로 `git rev-parse --show-toplevel`을 실행하고 출력이 위 Worktree 절대 경로와 같은지, 그 경로에 이 계획과 승인된 Task 5 HEAD가 있는지 확인한다. 다르면 BLOCKED로 끝낸다.
-목표: Runner 설계와 구현 결과의 공개 타입/JSON Schema/validator parity, one-operation-per-case, 모든 assertion 평가, 실패 후 계속 실행, timeout·abort 중단, deterministic event/report, raw 데이터 제외, Generate 루트 계약 경계를 base 이후 diff와 테스트로 읽기 전용 검토한다. Runner 설계 문서, 구현 계획, CLAUDE.md, CONTRIBUTING.md를 읽는다.
-파일 수정, background 실행, commit, merge, push, 하위 agent spawn은 금지한다.
-공개 계약 일치, 테스트 누락, timeout·abort 결정론성, raw 데이터 노출, 패키지 소유권, generate 연동 경계를 검토하고 필요한 read-only 테스트를 실행한다.
-보고서는 위 Report 절대 경로에 작성한다.
-최종 응답은 status: READY_FOR_REVIEW 또는 status: BLOCKED로 시작하고 발견 사항을 심각도순으로 적는다.`,
+  message: [
+    "역할: OhMyMCP Runner 최종 읽기 전용 리뷰어.",
+    "Worktree: ${runnerWorktree}",
+    "Report: ${runnerWorktree}/.agents/reports/final-runner-review.md",
+    "첫 명령으로 `git rev-parse --show-toplevel`을 실행하고 출력이 위 Worktree 절대 경로와 같은지, 그 경로에 이 계획과 승인된 Task 5 HEAD가 있는지 확인한다. 다르면 BLOCKED로 끝낸다.",
+    "목표: Runner 설계와 구현 결과의 공개 타입/JSON Schema/validator parity, one-operation-per-case, 모든 assertion 평가, 실패 후 계속 실행, timeout·abort 중단, deterministic event/report, raw 데이터 제외, Generate 루트 계약 경계를 base 이후 diff와 테스트로 읽기 전용 검토한다. Runner 설계 문서, 구현 계획, CLAUDE.md, CONTRIBUTING.md를 읽는다.",
+    "파일 수정, background 실행, commit, merge, push, 하위 agent spawn은 금지한다.",
+    "공개 계약 일치, 테스트 누락, timeout·abort 결정론성, raw 데이터 노출, 패키지 소유권, generate 연동 경계를 검토하고 필요한 read-only 테스트를 실행한다.",
+    "보고서는 위 Report 절대 경로에 작성한다.",
+    "최종 응답은 status: READY_FOR_REVIEW 또는 status: BLOCKED로 시작하고 발견 사항을 심각도순으로 적는다.",
+  ].join("\n").replaceAll("${runnerWorktree}", runnerWorktree),
 });
 ```
 

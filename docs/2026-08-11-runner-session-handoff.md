@@ -138,6 +138,7 @@ interface NaturalLanguageCompiler {
 - 공통 처리: compile prompt와 tool schema redaction, UTF-8 byte 제한, 전송 전 preview·승인, stdin 입력, timeout, 종료 코드, stderr, JSON 파싱
 - 외부 compile JSON은 `unknown`으로 받고 Generate 경계의 `validateCompileResult`와 Runner `validateMcpSuite`를 모두 통과한 뒤에만 사용
 - CLI/Dashboard는 `dispatchCompile`에 preview와 승인 여부를 전달하며, 미승인 시 provider를 호출하지 않음
+- provider compile 결과도 `sanitizeCompileResult`와 result byte 제한을 거쳐 safe preview로만 UI에 전달하고, 실행 승인 직전에 mutable preview를 재검증·재마스킹함
 - provider 고유의 출력 envelope는 adapter 내부에서 제거
 - runner에는 provider 정보가 아니라 검증된 `TestSuiteSpec`만 전달
 
@@ -163,6 +164,7 @@ packages/runner/src/
 ├── assertions.ts    # 툴, 입력, 응답, 오류 assertion
 ├── diagnostics.ts   # 사람이 읽는 실패 메시지
 ├── sanitization.ts  # observer payload 마스킹과 크기 제한
+├── shutdown.ts      # bounded drain·graceful·force-close finalizer
 └── index.ts         # 공개 API 재수출
 ```
 
@@ -186,11 +188,28 @@ export function runSuite(options: {
   onEvent?: (event: RunnerEvent) => void;
   drainTimeoutMs?: number;
 }): RunnerExecution;
+
+export interface McpClientShutdownController {
+  client: McpClient;
+  close(): Promise<void>;
+  forceClose(
+    reason: "drainDeadlineExceeded" | "gracefulCloseDeadlineExceeded",
+  ): Promise<void>;
+}
+
+export function finalizeRunnerExecution(options: {
+  execution: RunnerExecution;
+  shutdown: McpClientShutdownController;
+  closeTimeoutMs?: number;
+  forceCloseTimeoutMs?: number;
+}): Promise<RunnerReport>;
 ```
 
-`onEvent`는 CLI의 실시간 터미널 출력과 Dashboard의 SSE 전달에 사용한다. 최종 `RunnerReport`는 sanitized JSON 응답에 사용한다. `report`는 pending MCP Promise와 독립적으로 먼저 완료할 수 있다. timeout·abort 뒤 `drain`은 기본 `5_000ms`의 별도 정리 deadline까지 원본 요청 settlement를 기다리고, 먼저 끝나면 `settled`, 상한을 넘으면 `deadlineExceeded`를 반환한다.
+`onEvent`는 CLI의 실시간 터미널 출력과 Dashboard의 SSE 전달에 사용한다. 최종 `RunnerReport`는 sanitized JSON 응답에 사용한다. `report`는 pending MCP Promise와 독립적으로 먼저 완료할 수 있다. timeout·abort 뒤 `drain`은 기본 `5_000ms`의 별도 정리 deadline까지 원본 요청 settlement를 기다리고, 먼저 끝나면 `settled`, 상한을 넘으면 `deadlineExceeded`를 반환한다. `drainTimeoutMs`는 `1..60_000`의 유한 정수만 허용한다. `0`은 즉시 종료가 아니라 잘못된 설정이며 `NaN`, `Infinity`, 음수, 소수, 상한 초과와 함께 이벤트·MCP 호출 전 동기 `RangeError`다.
 
-Runner는 injected `McpClient`를 절대 닫지 않는다. CLI, Dashboard Node, 테스트 adapter가 `try/catch/finally`에서 `report`와 `drain`을 관찰한 뒤 idempotent `closeOnce`로 client를 정확히 한 번 닫는다. deadline 초과에서는 이 close가 transport 강제 종료 경로다. 원본 MCP Promise에는 늦은 reject를 처리하는 handler를 계속 유지한다.
+`runSuite`는 injected `McpClient`를 절대 닫지 않는다. CLI, Dashboard Node, 테스트 adapter는 pending call과 독립적으로 underlying transport를 끊는 `McpClientShutdownController.forceClose`를 구현한다. `finalizeRunnerExecution`이 report·drain을 관찰하고, 정상 drain이면 2초 bounded graceful close, drain/close deadline이면 2초 bounded force close를 실행한다. stdio는 process/stream 종료와 `SIGKILL`, HTTP는 request abort와 socket destroy를 사용한다. permanently pending call, 느리거나 실패하는 close에서도 finalize는 유한 시간 안에 끝나며 실제 종료는 idempotent하게 한 번만 수행한다. 원본 MCP Promise에는 늦은 reject handler를 계속 유지한다.
+
+finalize는 report, drain, close, force-close outcome을 별도로 기록한다. rejection reason이 `undefined`여도 실패 flag를 유지하고, 실패 하나면 그 값을 그대로 throw하며 둘 이상이면 report 오류를 첫 항목으로 둔 `AggregateError`를 throw한다. cleanup 오류가 primary report 오류를 덮거나 삼키지 않는다.
 
 기존 공개 `createMcpTest`와 `toContainTool`은 minor 변경에서 제거하지 않는다. 현재 시그니처와 `not implemented` 오류를 deprecated shim으로 유지하고, 제거는 major release와 migration 문서를 동반한다.
 

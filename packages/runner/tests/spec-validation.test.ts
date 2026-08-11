@@ -126,6 +126,29 @@ describe("MCP suite validation", () => {
     });
   });
 
+  it("operation type이 없어도 assertion 자체의 구조는 검증한다", () => {
+    const result = validateMcpSuite({
+      ...validSuite,
+      cases: [
+        {
+          id: "missing-operation-and-assertion-type",
+          name: "operation과 assertion type 누락",
+          operation: {},
+          assertions: [{}, { type: "isError", expected: "false" }],
+        },
+      ],
+    });
+
+    expect(result).toMatchObject({
+      valid: false,
+      issues: [
+        { code: "MISSING_REQUIRED_FIELD", path: "cases[0].operation.type" },
+        { code: "MISSING_REQUIRED_FIELD", path: "cases[0].assertions[0].type" },
+        { code: "INVALID_TYPE", path: "cases[0].assertions[1].expected" },
+      ],
+    });
+  });
+
   it.each([0, -1, 1.5, 2_147_483_648])(
     "timeout %p을 거절하고 최대 양 경계는 허용한다",
     (timeoutMs) => {

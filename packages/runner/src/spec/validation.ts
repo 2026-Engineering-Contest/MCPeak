@@ -216,7 +216,6 @@ function validateAssertions(
     issue(issues, "EMPTY_ASSERTIONS", path);
     return;
   }
-  if (kind === undefined) return;
   value.forEach((assertion, index) => {
     const itemPath = `${path}[${index}]`;
     if (!plain(assertion)) {
@@ -224,10 +223,22 @@ function validateAssertions(
       return;
     }
     const type = assertion.type;
-    const expected =
-      kind === "listTools" ? "toolExists" : kind === "callTool" ? "isError" : undefined;
-    if (type !== expected) {
-      issue(issues, "INCOMPATIBLE_ASSERTION", itemPath);
+    if (kind !== undefined) {
+      const expected =
+        kind === "listTools" ? "toolExists" : kind === "callTool" ? "isError" : undefined;
+      if (expected === undefined || type !== expected) {
+        issue(issues, "INCOMPATIBLE_ASSERTION", itemPath);
+        return;
+      }
+    } else if (type !== "toolExists" && type !== "isError") {
+      required(assertion, ["type"], itemPath, issues);
+      if ("type" in assertion)
+        issue(
+          issues,
+          typeof type === "string" ? "INVALID_VALUE" : "INVALID_TYPE",
+          `${itemPath}.type`,
+        );
+      unknowns(assertion, ["type"], itemPath, issues);
       return;
     }
     if (type === "toolExists") {

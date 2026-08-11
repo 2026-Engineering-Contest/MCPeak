@@ -145,6 +145,7 @@ interface NaturalLanguageCompiler {
 - 공통 처리: compile prompt와 tool schema redaction, UTF-8 byte 제한, 전송 전 preview·승인, stdin 입력, timeout, 종료 코드, stderr, JSON 파싱
 - 외부 compile JSON은 `unknown`으로 받고 Generate 경계의 `validateCompileResult`와 Runner `validateMcpSuite`를 모두 통과한 뒤에만 사용
 - CLI/Dashboard는 request preview의 fingerprint를 승인하며, `dispatchCompile`은 opaque binding에 보존한 immutable sanitized request만 provider에 전달함. 승인 뒤 preview가 바뀌면 승인을 무효화하고 provider를 호출하지 않음
+- dispatch는 binding의 `maxResultBytes`를 provider option `maxOutputBytes`로, `providerTimeoutMs`를 `timeoutMs`로 그대로 매핑함. 기본값은 각각 `262_144` bytes와 `120_000ms`, 허용값은 각각 `1..262_144`와 `1..600_000`의 유한 정수이며 잘못된 값은 preview·binding·provider 호출 전에 동기 `RangeError`로 거절함
 - provider stdout는 각 `Buffer` chunk를 문자열 결합·JSON parsing하기 전에 기본 `262_144` UTF-8 bytes로 제한함. 초과 시 child/stream을 중단하고 parse·sanitize 없이 내용 없는 `outputLimitExceeded`를 반환함
 - stdout는 chunk 상태를 유지하는 fatal UTF-8 decoder를 final flush한 뒤에만 JSON parsing하며 malformed·불완전 sequence는 후속 parse·validate·sanitize 없이 `providerFailed(invalidUtf8)`로 반환함
 - provider 호출 timeout은 request preview에 표시·승인되는 기본 `120_000ms`이며, dispatch가 caller 취소와 timeout을 자체 race해 permanently pending provider도 구조화된 `providerFailed`로 끝냄. non-zero exit·reject·잘못된 UTF-8/JSON도 raw stderr나 exception을 노출하지 않는 고정 failure code로 정규화함

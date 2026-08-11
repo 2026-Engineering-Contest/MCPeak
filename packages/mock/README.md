@@ -6,15 +6,15 @@
 - **의존:** `@ohmymcp/core` · `@modelcontextprotocol/sdk` (catalog, 1.x 고정)
 
 실제 MCP 서버 없이, MCP 를 사용하는 프로그램을 테스트하기 위한 것이다.
-외부 API 키도 실제 날씨도 필요 없이 "기온이 -10도일 때"를 만들어낼 수 있다.
+API 키도 네트워크도 없이, 실제 서버로는 만들어내기 어려운 상황을 원하는 대로 세워둘 수 있다.
 
 ## 사용법
 
 ```ts
 import { createMockServer } from "@ohmymcp/mock";
 
-const mock = await createMockServer({ tools });          // tools: ToolDef[]
-mock.on("get_weather", { city: "서울" }, { temp: -10 });  // 인자별로 응답을 건다
+const mock = await createMockServer({ tools });   // tools: ToolDef[]
+mock.on("add", { a: 1, b: 2 }, { sum: 3 });       // 툴 + 인자 조합별로 응답을 건다
 
 console.log(mock.url);   // http://127.0.0.1:53211/mcp
 // ...테스트 대상 프로그램을 이 주소에 연결한다...
@@ -42,8 +42,8 @@ await mock.close();
 실패 메시지가 곧 제품이다 (CLAUDE.md). 무엇이 없고 무엇이 등록돼 있는지 알려준다.
 
 ```
-→ 툴 'get_weather' 을(를) 인자 {"city":"제주"} 로 호출했지만 주입된 응답이 없습니다.
-→ 이 툴에 주입된 인자: {"city":"서울"}
+→ 툴 'add' 을(를) 인자 {"a":5,"b":7} 로 호출했지만 주입된 응답이 없습니다.
+→ 이 툴에 주입된 인자: {"a":1,"b":2}
 → mock.on(툴이름, 인자, 응답) 을 호출했는지 확인하세요.
 ```
 

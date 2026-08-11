@@ -63,14 +63,14 @@ describe("@ohmymcp/mock", () => {
 
   it("같은 툴을 인자에 따라 다르게 응답한다", async () => {
     const server = await start();
-    server.on("get_weather", { city: "서울" }, { temp: -10, condition: "눈" });
-    server.on("get_weather", { city: "부산" }, { temp: 5, condition: "맑음" });
+    server.on("add", { a: 1, b: 2 }, { sum: 3 });
+    server.on("add", { a: 10, b: 20 }, { sum: 30 });
     const client = await connect(server);
 
-    const seoul = await client.callTool({ name: "get_weather", arguments: { city: "서울" } });
-    const busan = await client.callTool({ name: "get_weather", arguments: { city: "부산" } });
-    expect(JSON.parse(text(seoul))).toEqual({ temp: -10, condition: "눈" });
-    expect(JSON.parse(text(busan))).toEqual({ temp: 5, condition: "맑음" });
+    const small = await client.callTool({ name: "add", arguments: { a: 1, b: 2 } });
+    const large = await client.callTool({ name: "add", arguments: { a: 10, b: 20 } });
+    expect(JSON.parse(text(small))).toEqual({ sum: 3 });
+    expect(JSON.parse(text(large))).toEqual({ sum: 30 });
 
     await client.close();
   });
@@ -88,14 +88,12 @@ describe("@ohmymcp/mock", () => {
 
   it("같은 호출 3회가 바이트 단위로 동일하다", async () => {
     const server = await start();
-    server.on("get_weather", { city: "서울" }, { temp: -10 });
+    server.on("add", { a: 1, b: 2 }, { sum: 3 });
     const client = await connect(server);
 
     const runs: string[] = [];
     for (let i = 0; i < 3; i++) {
-      runs.push(
-        JSON.stringify(await client.callTool({ name: "get_weather", arguments: { city: "서울" } })),
-      );
+      runs.push(JSON.stringify(await client.callTool({ name: "add", arguments: { a: 1, b: 2 } })));
     }
     expect(new Set(runs).size).toBe(1);
 
@@ -104,13 +102,13 @@ describe("@ohmymcp/mock", () => {
 
   it("주입되지 않은 호출은 무엇이 등록돼 있는지 알려준다", async () => {
     const server = await start();
-    server.on("get_weather", { city: "서울" }, { temp: -10 });
+    server.on("add", { a: 1, b: 2 }, { sum: 3 });
     const client = await connect(server);
 
-    const result = await client.callTool({ name: "get_weather", arguments: { city: "제주" } });
+    const result = await client.callTool({ name: "add", arguments: { a: 5, b: 7 } });
     expect(result.isError).toBe(true);
     expect(text(result)).toContain("주입된 응답이 없습니다");
-    expect(text(result)).toContain('{"city":"서울"}');
+    expect(text(result)).toContain('{"a":1,"b":2}');
     expect(text(result)).toContain("mock.on(");
 
     await client.close();

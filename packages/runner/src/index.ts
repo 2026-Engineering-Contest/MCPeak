@@ -1,5 +1,7 @@
 import type { McpClient, ToolResult } from "@ohmymcp/core";
 
+export type { AssertionResult } from "./assertions.js";
+export type { RunnerDiagnostic, RunnerDiagnosticCode } from "./diagnostics.js";
 export * from "./spec/index.js";
 
 /** `createMcpTest` 에 넘기는 설정. */

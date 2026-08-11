@@ -1,13 +1,23 @@
+import type { McpProcessDiagnostics } from "./diagnostics.js";
+import type { ConnectOptions } from "./options.js";
 import type { McpClient } from "./types.js";
 
+export type { McpProcessDiagnostics } from "./diagnostics.js";
+export type { McpClientErrorCode, McpClientErrorPhase } from "./errors.js";
+export { McpClientError } from "./errors.js";
+export type { ConnectOptions } from "./options.js";
 export type { McpClient, ToolDef, ToolResult } from "./types.js";
 
-/** stdio 로 MCP 서버 프로세스를 기동할 때의 옵션. */
-export interface ConnectOptions {
-  command: string;
-  args?: string[];
-  env?: Record<string, string>;
-  cwd?: string;
+export interface McpStdioConnection {
+  readonly client: McpClient;
+  getDiagnostics(): McpProcessDiagnostics;
+  close(): Promise<void>;
+  forceClose(): Promise<void>;
+}
+
+/** Task 3가 controlled stdio transport로 채울 연결 진입점이다. */
+export function connectStdio(_options: ConnectOptions): Promise<McpStdioConnection> {
+  throw new Error("not implemented");
 }
 
 /**

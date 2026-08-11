@@ -1,0 +1,17 @@
+{
+  "name": "@ohmymcp-examples/weather-server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "도그푸딩용 예제 MCP 서버 (stdio) — 고정 데이터로 결정론적으로 응답한다",
+  "license": "MIT",
+  "bin": {
+    "example-weather-server": "./server.mjs"
+  },
+  "scripts": {
+    "start": "node ./server.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "catalog:"
+  }
+}

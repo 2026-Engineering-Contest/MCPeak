@@ -5,3 +5,8 @@ coverage/
 *.tsbuildinfo
 *.log
 .DS_Store
+
+# Local Codex configuration
+/AGENTS.md
+/.agents/
+/docs/conventions/

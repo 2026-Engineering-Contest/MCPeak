@@ -1,0 +1,1083 @@
+# Runner 실행·보고서 및 Generate 연동 설계
+
+- 상태: 프로젝트 계획 규약 반영 후 사용자 재검토 대기
+- 작성일: 2026-08-11
+- 구현 대상: `@ohmymcp/runner`
+- 후속 연동 대상: `@ohmymcp/generate`, `ohmymcp` CLI, Dashboard
+
+## 1. 목적
+
+Runner는 생성 출처와 무관하게 검증된 `TestSuiteSpec`을 받아 MCP 작업을 순차 실행하고, CLI와 Dashboard가 함께 소비할 수 있는 이벤트와 보고서를 만든다.
+
+첫 수직 기능의 완료 조건은 다음과 같다.
+
+> 가짜 `McpClient`와 직접 작성하거나 generate가 만든 `TestSuiteSpec`을 Runner에 전달하면, 툴 존재 여부와 정상·오류 응답을 검사하고 구조화된 이벤트 및 최종 보고서를 반환한다.
+
+완료 여부는 다음 명령과 관찰 결과로 판정한다.
+
+```text
+pnpm exec vitest run packages/runner/tests
+→ Runner 단위 테스트 전체 통과
+
+pnpm --filter @ohmymcp/runner typecheck
+→ Runner 공개 타입과 테스트 타입체크 통과
+
+pnpm --filter @ohmymcp/runner build
+→ ESM, CJS, 선언 파일 생성 성공
+
+pnpm exec biome check packages/runner
+→ Runner 변경 파일 lint·format 검사 통과
+```
+
+동일한 suite와 결정론적 fake client를 두 번 실행한 `RunnerEvent[]`와 `RunnerReport`가 deep equality를 만족하고, 보고서를 `JSON.stringify`할 수 있어야 한다. 전체 저장소 회귀 검증은 `pnpm test`, `pnpm typecheck`, `pnpm lint`, `pnpm build` 네 명령으로 판정한다.
+
+Runner 결과는 이후 Codex 또는 Claude가 실패한 테스트를 수정할 수 있는 입력으로도 재사용한다. Runner가 AI를 직접 호출하지는 않는다.
+
+## 2. 범위
+
+### 이번 Runner 구현에 포함
+
+- 선언형 `TestSuiteSpec` 공개 계약
+- TypeScript 작성 helper와 런타임 validator
+- generate가 소비할 JSON Schema
+- `listTools`와 `callTool` 작업
+- `toolExists`와 `isError` assertion
+- 명세 순서에 따른 순차 실행
+- 구조화된 진단, 이벤트, 최종 보고서
+- 테스트별 timeout과 외부 `AbortSignal`
+- 실패한 테스트를 AI 수정 흐름에 넘길 수 있는 결과 구조
+- Runner 공개 기능 변경을 설명하는 changeset
+
+### 이번 구현에서 제외
+
+- Codex·Claude 프로세스 실행
+- 자연어 또는 JSON Schema 기반 테스트 생성
+- 실패 테스트 자동 수정과 파일 반영
+- CLI 명령과 Dashboard UI
+- JUnit과 Vitest adapter
+- 입력·응답 JSON Schema assertion
+- `ToolResult.content`의 범용 JSON 본문 추출
+- 병렬 실행
+- 토큰 추정과 MCP 정의 최적화
+
+제외 항목은 후속 구현 시 경계를 다시 설계하지 않도록 이 문서에 연동 계약을 남긴다.
+
+## 3. 설계 원칙
+
+1. 테스트 케이스 하나는 MCP 작업을 정확히 한 번 수행한다.
+2. 한 작업 결과에는 여러 assertion을 작성할 수 있다.
+3. assertion 하나가 실패해도 독립적인 나머지 assertion은 계속 검사한다.
+4. 선행 결과가 없어 검사할 수 없는 assertion만 `skipped`로 기록한다.
+5. 일반 실패는 다음 케이스의 실행을 막지 않는다.
+6. 취소할 수 없는 MCP 작업의 timeout과 외부 취소는 스위트를 중단한다.
+7. 명세, 이벤트, 결과는 JSON으로 직렬화할 수 있어야 한다.
+8. 타임스탬프와 실제 실행 시간처럼 매 실행마다 달라지는 값은 결과에 넣지 않는다.
+9. 실패 정보에는 원인, 실제 값, 해결 힌트를 포함한다.
+10. Runner는 주입받은 `McpClient`의 수명주기를 소유하지 않는다.
+
+## 4. 전체 데이터 흐름
+
+```text
+직접 작성 ───────────────────────┐
+                                │
+스키마 기반 generate ───────────┼─→ TestSuiteSpec
+                                │         ↓
+자연어 + Codex/Claude ──────────┘   validateMcpSuite
+                                          ↓
+                                   사용자 미리보기·승인
+                                          ↓
+                                       runSuite
+                                      ↙        ↘
+                              RunnerEvent    RunnerReport
+                                  ↓               ↓
+                           CLI/Dashboard    실패 테스트 선택
+                                                  ↓
+                                            generate repair
+                                                  ↓
+                                         사용자 검토·선택 반영
+```
+
+CLI와 Dashboard는 생성과 실행을 연결하지만 테스트 내용이나 timeout을 스스로 추론하지 않는다.
+
+## 5. 공개 명세 모델
+
+### 5.1 JSON 값
+
+명세는 JSON 파일, AI 구조화 출력, TypeScript helper에서 같은 범위를 사용한다.
+
+```ts
+export type JsonPrimitive = string | number | boolean | null;
+
+export type JsonValue =
+  | JsonPrimitive
+  | JsonValue[]
+  | { [key: string]: JsonValue };
+
+export type JsonObject = {
+  [key: string]: JsonValue;
+};
+```
+
+### 5.2 스위트와 케이스
+
+```ts
+export interface TestSuiteSpec {
+  schemaVersion: 1;
+  id: string;
+  name: string;
+  defaultTimeoutMs?: number;
+  cases: TestCaseSpec[];
+}
+
+export type TestCaseSpec = ListToolsCaseSpec | CallToolCaseSpec;
+
+export interface TestCaseBase {
+  id: string;
+  name: string;
+  timeoutMs?: number;
+}
+
+export interface ListToolsCaseSpec extends TestCaseBase {
+  operation: {
+    type: "listTools";
+  };
+  assertions: ToolListAssertionSpec[];
+}
+
+export interface CallToolCaseSpec extends TestCaseBase {
+  operation: {
+    type: "callTool";
+    tool: string;
+    input: JsonObject;
+  };
+  assertions: ToolResultAssertionSpec[];
+}
+```
+
+인자가 없는 툴도 `input: {}`를 명시한다. 생략과 빈 입력을 동일시하지 않는다.
+
+작업별 discriminated union은 다음과 같은 무의미한 조합을 타입 단계에서 차단한다.
+
+```text
+listTools + isError      → 허용하지 않음
+callTool + toolExists    → 허용하지 않음
+```
+
+### 5.3 첫 assertion 두 개
+
+```ts
+export type ToolListAssertionSpec = ToolExistsAssertionSpec;
+
+export interface ToolExistsAssertionSpec {
+  type: "toolExists";
+  tool: string;
+}
+
+export type ToolResultAssertionSpec = IsErrorAssertionSpec;
+
+export interface IsErrorAssertionSpec {
+  type: "isError";
+  expected: boolean;
+}
+
+export type AssertionSpec =
+  | ToolListAssertionSpec
+  | ToolResultAssertionSpec;
+```
+
+### 5.4 예시
+
+```ts
+const suite = defineMcpSuite({
+  schemaVersion: 1,
+  id: "weather-server",
+  name: "날씨 MCP 서버 테스트",
+  defaultTimeoutMs: 10_000,
+  cases: [
+    {
+      id: "weather-tool-exists",
+      name: "날씨 조회 툴을 제공한다",
+      operation: { type: "listTools" },
+      assertions: [
+        { type: "toolExists", tool: "get_weather" },
+      ],
+    },
+    {
+      id: "weather-call-succeeds",
+      name: "서울 날씨를 정상적으로 조회한다",
+      timeoutMs: 30_000,
+      operation: {
+        type: "callTool",
+        tool: "get_weather",
+        input: { city: "서울" },
+      },
+      assertions: [
+        { type: "isError", expected: false },
+      ],
+    },
+  ],
+});
+```
+
+`서울` 같은 도메인 입력값은 Runner가 결정하지 않는다. 사용자가 직접 작성하거나 generate가 자연어, `default`, `examples` 등의 근거로 제안한다.
+
+## 6. 명세 작성과 검증 API
+
+```ts
+export function defineMcpSuite<const T extends TestSuiteSpec>(spec: T): T;
+
+export function validateMcpSuite(input: unknown): SuiteValidationResult;
+
+export type SuiteValidationResult =
+  | { valid: true; value: TestSuiteSpec }
+  | { valid: false; issues: SuiteValidationIssue[] };
+
+export interface SuiteValidationIssue {
+  code: SuiteValidationIssueCode;
+  path: string;
+  message: string;
+  hint: string;
+}
+
+export type SuiteValidationIssueCode =
+  | "MISSING_REQUIRED_FIELD"
+  | "UNKNOWN_FIELD"
+  | "UNSUPPORTED_SCHEMA_VERSION"
+  | "INVALID_TYPE"
+  | "INVALID_VALUE"
+  | "DUPLICATE_CASE_ID"
+  | "EMPTY_CASES"
+  | "EMPTY_ASSERTIONS"
+  | "INCOMPATIBLE_ASSERTION"
+  | "INVALID_JSON_VALUE"
+  | "INVALID_TIMEOUT";
+
+export class SuiteValidationError extends Error {
+  override readonly name = "SuiteValidationError";
+  readonly issues: SuiteValidationIssue[];
+
+  constructor(issues: SuiteValidationIssue[]) {
+    super("MCP 테스트 명세가 유효하지 않습니다.");
+    this.issues = issues;
+  }
+}
+```
+
+`defineMcpSuite`는 TypeScript의 문맥 타입과 리터럴 타입을 유지하며 런타임 검증도 수행한다. 잘못된 경우 구조화된 `issues`를 가진 `SuiteValidationError`를 던진다.
+
+`validateMcpSuite`는 JSON과 AI 출력처럼 신뢰할 수 없는 `unknown`을 안전하게 검사하며, 하나를 발견했다고 멈추지 않고 전체 issue를 작성 순서대로 반환한다.
+
+validator는 다음을 검사한다.
+
+- `schemaVersion`이 정확히 `1`인지
+- 필수 문자열이 비어 있지 않은지
+- 케이스 ID가 스위트 안에서 고유한지
+- 케이스와 assertion 배열이 비어 있지 않은지
+- operation과 assertion 조합이 맞는지
+- `callTool.input`이 JSON 객체인지
+- `NaN`, `Infinity`, 사용자 정의 class instance처럼 실제 JSON으로 표현할 수 없는 값이 없는지
+- timeout이 `1..2_147_483_647` 범위의 정수인지
+- 알 수 없는 필드가 없는지
+
+`runSuite`도 실행 전에 같은 검증을 방어적으로 수행한다. 검증 실패 시 MCP 작업과 Runner 이벤트를 발생시키지 않고 `SuiteValidationError`를 던진다.
+
+## 7. Generate용 공개 계약 경계
+
+generate는 Runner의 루트 공개 API에서 명세 계약을 직접 소비한다.
+
+```ts
+import {
+  MCP_SUITE_JSON_SCHEMA,
+  validateMcpSuite,
+  type TestSuiteSpec,
+} from "@ohmymcp/runner";
+```
+
+별도 `@ohmymcp/runner/spec` subpath는 첫 구현에 만들지 않는다. 현재 `tsconfig.base.json`은 `@ohmymcp/runner` 루트만 소스에 매핑한다. subpath를 추가하면 Runner 작업 범위를 넘어 공유 루트 설정까지 바꾸거나 generate가 Runner 빌드 산출물에 의존해야 한다. 두 선택 모두 현재의 패키지별 병렬 개발 원칙에 맞지 않는다.
+
+Runner 내부에서는 명세 계약을 `src/spec/`에 격리하되 `src/index.ts`가 이를 재수출한다. spec 모듈은 executor를 import하지 않고, executor 모듈도 import 시 작업을 수행하는 부작용을 갖지 않는다.
+
+JSON Schema는 다음 정책을 가진다.
+
+- `schemaVersion`은 `const: 1`
+- 명세 계약 객체는 `additionalProperties: false`
+- 사용자 툴 입력인 `operation.input`만 임의 JSON 객체 키를 허용
+- operation과 assertion은 `type` discriminant로 구분
+- 필수 필드는 JSON Schema와 TypeScript 타입에서 동일
+- timeout은 Node 단일 timer가 정확히 표현할 수 있는 `1..2_147_483_647ms`
+
+첫 버전의 Schema 계약은 다음과 같다.
+
+```ts
+export const MCP_SUITE_JSON_SCHEMA: JsonObject = {
+  $schema: "https://json-schema.org/draft/2020-12/schema",
+  $id: "https://ohmymcp.dev/schemas/test-suite/v1.json",
+  type: "object",
+  additionalProperties: false,
+  required: ["schemaVersion", "id", "name", "cases"],
+  properties: {
+    schemaVersion: { const: 1 },
+    id: { $ref: "#/$defs/nonEmptyString" },
+    name: { $ref: "#/$defs/nonEmptyString" },
+    defaultTimeoutMs: { $ref: "#/$defs/timeoutMs" },
+    cases: {
+      type: "array",
+      minItems: 1,
+      items: {
+        oneOf: [
+          { $ref: "#/$defs/listToolsCase" },
+          { $ref: "#/$defs/callToolCase" },
+        ],
+      },
+    },
+  },
+  $defs: {
+    nonEmptyString: {
+      type: "string",
+      minLength: 1,
+      pattern: "\\S",
+    },
+    timeoutMs: {
+      type: "integer",
+      minimum: 1,
+      maximum: 2_147_483_647,
+    },
+    jsonValue: {
+      oneOf: [
+        { type: "null" },
+        { type: "string" },
+        { type: "number" },
+        { type: "boolean" },
+        {
+          type: "array",
+          items: { $ref: "#/$defs/jsonValue" },
+        },
+        {
+          type: "object",
+          additionalProperties: { $ref: "#/$defs/jsonValue" },
+        },
+      ],
+    },
+    toolExistsAssertion: {
+      type: "object",
+      additionalProperties: false,
+      required: ["type", "tool"],
+      properties: {
+        type: { const: "toolExists" },
+        tool: { $ref: "#/$defs/nonEmptyString" },
+      },
+    },
+    isErrorAssertion: {
+      type: "object",
+      additionalProperties: false,
+      required: ["type", "expected"],
+      properties: {
+        type: { const: "isError" },
+        expected: { type: "boolean" },
+      },
+    },
+    listToolsCase: {
+      type: "object",
+      additionalProperties: false,
+      required: ["id", "name", "operation", "assertions"],
+      properties: {
+        id: { $ref: "#/$defs/nonEmptyString" },
+        name: { $ref: "#/$defs/nonEmptyString" },
+        timeoutMs: { $ref: "#/$defs/timeoutMs" },
+        operation: {
+          type: "object",
+          additionalProperties: false,
+          required: ["type"],
+          properties: {
+            type: { const: "listTools" },
+          },
+        },
+        assertions: {
+          type: "array",
+          minItems: 1,
+          items: { $ref: "#/$defs/toolExistsAssertion" },
+        },
+      },
+    },
+    callToolCase: {
+      type: "object",
+      additionalProperties: false,
+      required: ["id", "name", "operation", "assertions"],
+      properties: {
+        id: { $ref: "#/$defs/nonEmptyString" },
+        name: { $ref: "#/$defs/nonEmptyString" },
+        timeoutMs: { $ref: "#/$defs/timeoutMs" },
+        operation: {
+          type: "object",
+          additionalProperties: false,
+          required: ["type", "tool", "input"],
+          properties: {
+            type: { const: "callTool" },
+            tool: { $ref: "#/$defs/nonEmptyString" },
+            input: {
+              type: "object",
+              additionalProperties: { $ref: "#/$defs/jsonValue" },
+            },
+          },
+        },
+        assertions: {
+          type: "array",
+          minItems: 1,
+          items: { $ref: "#/$defs/isErrorAssertion" },
+        },
+      },
+    },
+  },
+};
+```
+
+타입, JSON Schema, validator가 서로 다른 규칙을 갖지 않도록 공통으로 표현 가능한 제약마다 validator fixture와 JSON Schema 경로를 한 parity 표에서 연결해 테스트한다. 외부 Schema evaluator를 추가하지 않는 첫 구현에서는 validator가 fixture를 실행하고, 같은 표의 Schema 경로가 대응 keyword와 값을 갖는지 단언한다. 새 assertion을 추가할 때 세 계약과 parity 표를 같은 Runner 변경에서 갱신한다.
+
+JSON Schema는 직렬화된 JSON 문서의 구조를 표현하므로 중복 case ID 같은 스위트 의미 규칙이나 JavaScript 메모리의 공유 참조·순환 참조는 표현하지 못한다. 이 항목들은 validator 전용 fixture로 분명히 표시한다. 반대로 필수 필드, 닫힌 객체, 비어 있지 않은 문자열, 배열 최소 길이, discriminant 조합, 재귀 JSON 값, timeout 범위는 parity 대상이다.
+
+공개 Schema 객체는 모듈 초기화 시 재귀적으로 `Object.freeze`한다. generate나 다른 소비자가 `$defs`를 변경해 같은 프로세스의 후속 검증·생성 계약을 바꾸지 못하게 한다.
+
+외부 JSON Schema validator 의존성은 이번 작업에서 추가하지 않는다. Runner의 소형 명세 범위는 직접 검증하고, JSON Schema 객체의 필수 필드와 discriminant가 validator fixture와 일치하는지 테스트한다. 향후 범위가 커져 외부 validator가 필요해지면 용도와 라이선스를 먼저 합의한다.
+
+`generate → runner`는 순환 의존을 만들지 않는다.
+
+```text
+generate → runner → core
+```
+
+단, 현재 문서화된 형제 패키지 의존 방향을 넓히고 generate의 workspace dependency가 추가되므로 실제 generate 작업 전에 팀 합의를 받는다. 합의 전에는 스키마를 복사하지 않는다. 새 공용 contract 패키지를 만드는 것은 MVP 범위에서 제외한다.
+
+## 8. 실행 API
+
+```ts
+export interface RunSuiteOptions {
+  client: McpClient;
+  suite: TestSuiteSpec;
+  signal?: AbortSignal;
+  onEvent?: (event: RunnerEvent) => void;
+}
+
+export function runSuite(options: RunSuiteOptions): Promise<RunnerReport>;
+```
+
+Runner는 `client.close()`를 호출하지 않는다. client를 만들고 닫는 책임은 CLI, Dashboard Node 서버 또는 테스트 adapter에 있다.
+
+`onEvent`는 동기 관찰자다. handler가 던진 오류는 테스트 실패로 변환하지 않고 `runSuite` 호출자에게 전파하며, 다음 MCP 작업은 시작하지 않는다. 정상적인 성공, 실패, timeout, `AbortSignal` 경로에서는 항상 마지막에 `suiteCompleted`를 전달한다.
+
+`runSuite`는 검증 직후 실행용 명세 snapshot을 만들고 그 snapshot만 읽는다. 호출자가 실행 도중 원본 객체를 변경해 실행 결과와 `TestCaseResult.spec`이 달라지는 일을 막기 위함이다. Runner는 전달받은 원본 객체를 수정하지 않는다.
+
+이벤트 listener에도 Runner 내부 상태의 참조를 직접 노출하지 않는다. `onEvent`에는 JSON-safe snapshot을 전달해 listener가 event 객체를 변경하더라도 이후 assertion, case 결과, 최종 보고서가 바뀌지 않게 한다.
+
+## 9. 실행 의미
+
+각 케이스는 다음 순서로 실행한다.
+
+```text
+caseStarted
+→ operationStarted
+→ listTools 또는 callTool 정확히 한 번
+→ operationCompleted
+→ assertion을 명세 순서대로 모두 평가
+→ caseCompleted
+```
+
+- assertion 실패는 독립적인 다음 assertion의 평가를 막지 않는다.
+- 작업 결과가 없으면 관련 assertion을 `skipped`로 기록한다.
+- 일반 assertion 실패와 MCP 메서드의 reject는 다음 케이스의 실행을 막지 않는다.
+- 실행 순서와 결과 배열 순서는 명세의 케이스 및 assertion 순서와 같다.
+
+## 10. Timeout과 취소
+
+timeout 적용 우선순위는 다음과 같다.
+
+```text
+case.timeoutMs
+→ suite.defaultTimeoutMs
+→ Runner 안전 기본값 10_000ms
+```
+
+사용자가 값을 지정했다면 generate가 덮어쓰지 않는다. 사용자가 생략한 경우 generate는 실행 명세에 다음 제안값을 구체화한다.
+
+```text
+일반 또는 로컬 작업                   → 10_000ms
+외부 API 호출이 명확하거나 강하게 추정 → 30_000ms
+```
+
+generate가 툴 정의나 자연어만으로 판단을 확신하지 못하면 값을 제안하되 `TIMEOUT_INFERRED` 경고와 `needsReview: true`를 반환한다. schema-only 생성은 실제 구현을 알 수 없다는 한계를 숨기지 않는다.
+
+Runner의 10초 값은 generate를 거치지 않은 명세가 무기한 대기하지 않게 하는 최종 안전장치다. 시작한 operation에는 실제 적용값을 `timeoutMs`로 남기지만 실제 경과 시간과 타임스탬프는 기록하지 않는다. Node가 `2_147_483_647ms`보다 큰 단일 timer를 1ms로 축소할 수 있으므로 명세와 validator가 그보다 큰 값을 거절한다.
+
+### 취소할 수 없는 작업의 제약
+
+동결된 `McpClient`의 `listTools()`와 `callTool()`은 `AbortSignal`을 받지 않는다. `Promise.race`로 Runner의 대기를 끝내도 실제 요청은 백그라운드에서 계속될 수 있다. 이 상태에서 다음 케이스를 시작하면 순차 실행과 결정론성이 깨질 수 있다.
+
+따라서 다음 정책을 사용한다.
+
+- timeout: 현재 케이스 `timedOut`, 남은 케이스 `notRun`, 스위트 상태 `failed`
+- 외부 취소: 현재 케이스 `cancelled`, 남은 케이스 `notRun`, 스위트 상태 `aborted`
+- 두 경우 모두 다음 케이스를 시작하지 않고 `client.close()`도 호출하지 않음
+
+timeout으로 실행은 조기 종료되지만 CI 의미상 실패이므로 스위트 상태는 `aborted`가 아니라 `failed`다.
+
+`signal.aborted === true`인 상태로 시작하면 `suiteStarted` 직후 모든 케이스를 `notRun`으로 만든 `suiteCompleted`를 발행한다. 케이스 사이에 취소되면 완료한 케이스는 유지하고 나머지는 `notRun`으로 둔다. 두 경우 `stopReason`은 `{ type: "abortSignal" }`이며 `caseId`가 없다. operation 실행 중 취소된 경우에만 현재 케이스 ID를 `stopReason.caseId`에 기록한다.
+
+## 11. 진단 모델
+
+```ts
+export interface RunnerDiagnostic {
+  code: RunnerDiagnosticCode;
+  message: string;
+  expected?: JsonValue;
+  actual?: JsonValue;
+  hint: string;
+}
+
+export type RunnerDiagnosticCode =
+  | "TOOL_NOT_FOUND"
+  | "IS_ERROR_MISMATCH"
+  | "OPERATION_FAILED"
+  | "OPERATION_RESULT_UNAVAILABLE"
+  | "CASE_TIMEOUT"
+  | "RUN_ABORTED";
+```
+
+첫 구현의 진단 규칙은 다음과 같다.
+
+- `TOOL_NOT_FOUND.actual`에는 툴 이름만 알파벳순으로 정렬해 넣는다.
+- `IS_ERROR_MISMATCH`에는 boolean `expected`와 `actual`만 넣는다.
+- Error 객체는 `{ type, name, message }` 형태의 JSON 값으로 정규화한다.
+- `ToolResult.raw`와 관련 없는 응답 전체는 보고서에 넣지 않는다.
+- 순환 객체, 함수, symbol 등 직렬화할 수 없는 값은 그대로 노출하지 않는다.
+
+`message`는 원인, `actual`은 관찰값, `hint`는 해결 방향을 제공한다. AI 전송 시에는 로컬 보고서의 값조차 자동 전송하지 않고 사용자가 payload를 확인하고 승인하게 한다.
+
+## 12. 결과 모델
+
+```ts
+export interface RunnerReport {
+  schemaVersion: 1;
+  suite: {
+    id: string;
+    name: string;
+    defaultTimeoutMs?: number;
+  };
+  status: "passed" | "failed" | "aborted";
+  stopReason?:
+    | { type: "timeout"; caseId: string }
+    | { type: "abortSignal"; caseId?: string };
+  cases: TestCaseResult[];
+  summary: RunnerSummary;
+}
+
+export interface RunnerSummary {
+  total: number;
+  passed: number;
+  failed: number;
+  timedOut: number;
+  cancelled: number;
+  notRun: number;
+}
+
+export interface TestCaseResult {
+  spec: TestCaseSpec;
+  status: "passed" | "failed" | "timedOut" | "cancelled" | "notRun";
+  operation: OperationResult;
+  assertions: AssertionResult[];
+}
+
+export type OperationResult =
+  | {
+      status: "completed" | "failed" | "timedOut" | "cancelled";
+      timeoutMs: number;
+      diagnostic?: RunnerDiagnostic;
+    }
+  | {
+      status: "notRun";
+      diagnostic?: RunnerDiagnostic;
+    };
+
+export interface AssertionResult {
+  spec: AssertionSpec;
+  status: "passed" | "failed" | "skipped" | "notRun";
+  diagnostic?: RunnerDiagnostic;
+}
+```
+
+summary의 각 케이스는 정확히 한 상태에만 집계한다. `failed`는 status가 정확히 `failed`인 케이스 수이며 `timedOut`, `cancelled`, `notRun`을 중복 포함하지 않는다. `total`은 다섯 상태 카운트의 합이다.
+
+`TestCaseResult.spec`은 실행 당시 원본 케이스를 보존한다. 이 필드와 assertion 진단이 AI 수정 요청의 핵심 입력이다. 보고서 전체는 `JSON.stringify`할 수 있어야 한다.
+
+## 13. 이벤트 모델
+
+```ts
+export type RunnerEvent =
+  | SuiteStartedEvent
+  | CaseStartedEvent
+  | OperationStartedEvent
+  | OperationCompletedEvent
+  | AssertionCompletedEvent
+  | CaseCompletedEvent
+  | SuiteCompletedEvent;
+
+export interface RunnerEventBase {
+  sequence: number;
+}
+
+export interface SuiteStartedEvent extends RunnerEventBase {
+  type: "suiteStarted";
+  suite: {
+    id: string;
+    name: string;
+  };
+  totalCases: number;
+}
+
+export interface CaseStartedEvent extends RunnerEventBase {
+  type: "caseStarted";
+  caseId: string;
+  caseIndex: number;
+  case: TestCaseSpec;
+}
+
+export interface OperationStartedEvent extends RunnerEventBase {
+  type: "operationStarted";
+  caseId: string;
+  caseIndex: number;
+  operation: TestCaseSpec["operation"];
+  timeoutMs: number;
+}
+
+export interface OperationCompletedEvent extends RunnerEventBase {
+  type: "operationCompleted";
+  caseId: string;
+  caseIndex: number;
+  result: OperationResult;
+}
+
+export interface AssertionCompletedEvent extends RunnerEventBase {
+  type: "assertionCompleted";
+  caseId: string;
+  caseIndex: number;
+  assertionIndex: number;
+  result: AssertionResult;
+}
+
+export interface CaseCompletedEvent extends RunnerEventBase {
+  type: "caseCompleted";
+  caseId: string;
+  caseIndex: number;
+  result: TestCaseResult;
+}
+
+export interface SuiteCompletedEvent extends RunnerEventBase {
+  type: "suiteCompleted";
+  report: RunnerReport;
+}
+```
+
+이벤트의 공통 식별 필드는 다음과 같다.
+
+- suite 이벤트: `{ id, name }`
+- case 이벤트: `caseId`, `caseIndex`
+- assertion 이벤트: `assertionIndex`
+
+성공한 케이스 하나의 고정 순서는 다음과 같다.
+
+```text
+suiteStarted
+caseStarted
+operationStarted
+operationCompleted
+assertionCompleted (명세 순서대로 반복)
+caseCompleted
+suiteCompleted
+```
+
+`sequence`는 0부터 시작해 이벤트마다 1씩 증가한다. timestamp는 넣지 않는다.
+
+timeout과 취소 시에도 현재 operation, 각 skipped assertion, 현재 case의 완료 이벤트를 보낸 후 `suiteCompleted`를 보낸다. 시작하지 않은 나머지 케이스에는 개별 이벤트를 만들지 않고 최종 보고서에 `notRun`으로 포함한다.
+
+별도 `suiteAborted` 이벤트는 만들지 않는다. 모든 정상 Runner 종료 경로가 `suiteCompleted` 하나를 기다리게 하기 위함이다.
+
+## 14. 실패 테스트 수정 연동 계약
+
+### 14.1 책임 분리
+
+```text
+Runner   → 원본 테스트와 구조화된 실패 결과 생성
+CLI/UI   → 실패 테스트 선택, payload 미리보기, 사용자 승인
+Generate → provider 호출, 수정 결과 검증, 교체 후보 반환
+Provider → 수정·서버 문제·판단 불가 중 하나를 제안
+```
+
+Runner는 provider 이름이나 자연어 생성 여부를 알지 않는다.
+
+### 14.2 단일 및 일괄 수정 요청
+
+generate는 한 개와 여러 개를 같은 배열 계약으로 처리한다.
+
+```ts
+export interface RepairRequest {
+  suite: {
+    id: string;
+    name: string;
+    defaultTimeoutMs?: number;
+  };
+  tools: McpToolContext[];
+  cases: FailedCaseContext[];
+}
+
+export interface McpToolContext {
+  name: string;
+  description?: string;
+  inputSchema: JsonValue;
+}
+
+export interface FailedCaseContext {
+  spec: TestCaseSpec;
+  operation: OperationResult;
+  assertions: AssertionResult[];
+}
+```
+
+한 케이스만 고칠 때 `cases.length === 1`, 실패 전체를 고칠 때 선택된 실패 수만큼 전달한다. passing 케이스는 provider payload에 넣지 않는다.
+
+기본 repair 후보는 status가 `failed`인 케이스다. `timedOut`은 우선 timeout 설정과 서버 지연 문제로 안내하며 사용자가 명시적으로 선택한 경우에만 `needsReview` 후보로 보낸다. `cancelled`와 `notRun`은 실행 결과가 없으므로 repair 대상으로 보내지 않는다.
+
+`tools`는 해당 케이스 수정에 필요한 이름, 설명, input schema만 안전한 JSON으로 정규화한 값이다. `ToolDef.inputSchema`가 JSON 값이 아니면 repair 요청을 만들기 전에 구조화된 오류 또는 `needsReview`로 처리한다. raw MCP 메시지, 환경 변수, 서버 stderr, 관련 없는 응답 본문은 기본 payload에서 제외한다.
+
+### 14.3 Provider 결과
+
+```ts
+export type RepairDecision =
+  | {
+      caseId: string;
+      decision: "replace";
+      replacement: TestCaseSpec;
+      explanation: string;
+      needsReview: boolean;
+    }
+  | {
+      caseId: string;
+      decision: "serverIssue";
+      explanation: string;
+    }
+  | {
+      caseId: string;
+      decision: "needsReview";
+      explanation: string;
+    };
+
+export interface RepairResult {
+  repairs: RepairDecision[];
+}
+```
+
+실패가 테스트 오류라는 보장은 없다. provider는 기대값을 실제값에 맞춰 통과시키는 방향으로 무조건 수정하지 않고 테스트 오류, 서버 오류, 판단 불가를 구분한다.
+
+`replace` 결과는 다음 제약을 만족해야 한다.
+
+- 요청한 실패 케이스마다 최대 하나의 결과
+- passing 또는 선택하지 않은 케이스 수정 금지
+- 교체 후에도 기존 `caseId` 유지
+- replacement를 원래 suite 문맥에 끼워 넣은 뒤 `validateMcpSuite`와 같은 규칙으로 재검증
+- 자동 파일 반영 금지
+- 변경 전후 diff와 explanation을 표시한 뒤 사용자 승인
+
+승인된 교체안은 해당 케이스만 바꾸며, CLI 또는 Dashboard가 교체된 케이스로 작은 임시 suite를 만들어 선택 재실행할 수 있다. 첫 Runner API에 별도 `caseIds` 필터를 추가하지 않는다.
+
+### 14.4 Generate provider 구조 가이드
+
+자연어 compile과 실패 repair는 입력·출력 계약이 다르므로 공개 인터페이스를 분리한다. Codex와 Claude adapter는 두 인터페이스를 모두 구현할 수 있다.
+
+```ts
+export interface ProviderStatus {
+  available: boolean;
+  message?: string;
+}
+
+export interface CompileRequest {
+  prompt: string;
+  tools: McpToolContext[];
+}
+
+export type CompileResult =
+  | {
+      ok: true;
+      suite: TestSuiteSpec;
+      needsReview: boolean;
+      warnings: GenerateIssue[];
+      metadata: GenerationMetadata;
+    }
+  | {
+      ok: false;
+      issues: GenerateIssue[];
+    };
+
+export interface GenerateIssue {
+  code: string;
+  path?: string;
+  message: string;
+  hint: string;
+}
+
+export interface GenerationMetadata {
+  source: "schema" | "naturalLanguage";
+  policyVersion: string;
+  timeoutDecisions: TimeoutDecision[];
+}
+
+export interface TimeoutDecision {
+  caseId: string;
+  timeoutMs: number;
+  source: "user" | "localDefault" | "externalApiDefault";
+  inferred: boolean;
+}
+
+export interface NaturalLanguageCompiler {
+  readonly id: "codex" | "claude";
+  checkAvailability(): Promise<ProviderStatus>;
+  compile(request: CompileRequest): Promise<CompileResult>;
+}
+
+export interface FailedCaseRepairer {
+  readonly id: "codex" | "claude";
+  checkAvailability(): Promise<ProviderStatus>;
+  repair(request: RepairRequest): Promise<RepairResult>;
+}
+```
+
+공통 provider 실행 계층은 다음만 담당한다.
+
+- 입력은 셸 인자가 아니라 stdin으로 전달
+- 일회성 비대화형 세션 사용
+- 파일 수정 및 불필요한 도구 사용 제한
+- timeout, 종료 코드, stderr 수집
+- provider별 JSON envelope 제거
+- JSON 파싱과 공개 Schema 검증
+- 모호한 결과는 `needsReview`
+
+Codex와 Claude 고유 명령이나 응답 envelope는 adapter 내부에 가둔다. Runner와 CLI에는 검증된 공통 결과만 노출한다.
+
+## 15. Generate의 테스트 생성 가이드
+
+generate는 세 입력 경로를 같은 `TestSuiteSpec`으로 정규화한다.
+
+### 직접 작성
+
+- TypeScript: `defineMcpSuite`
+- JSON: `validateMcpSuite`
+
+### 결정론적 스키마 생성
+
+- `ToolDef.name`으로 `toolExists` 생성
+- `inputSchema.default` 또는 `examples`가 있으면 유효 호출 입력 후보로 사용
+- 의미 있는 입력값의 근거가 없으면 임의의 도메인 값을 사실처럼 만들지 않음
+- 추론이 필요한 값은 경고와 `needsReview` 표시
+- 같은 schema와 정책 버전에는 같은 case ID, 순서, 입력, timeout 생성
+
+### 자연어 생성
+
+- 자연어와 필요한 툴 정의만 provider stdin에 전달
+- `MCP_SUITE_JSON_SCHEMA`로 구조화 출력 제한
+- 생성 결과에 `validateMcpSuite` 적용
+- 실제 MCP 툴 실행 전 사용자 미리보기와 승인
+
+### Timeout 생성 정책
+
+- 사용자 지정값 우선, 절대 덮어쓰지 않음
+- 일반·로컬 작업은 10초 제안
+- 툴 설명이나 사용자 의도에 외부 API·네트워크 호출 근거가 있으면 30초 제안
+- 근거가 약하면 값을 채우되 `TIMEOUT_INFERRED` 및 `needsReview`
+- 첫 정책 버전은 `timeout-v1`
+- 정책 버전을 generate 결과 메타데이터에 남겨 재현 가능하게 함
+
+결정론적 schema-only 생성은 `inputSchema`만 보고 외부 호출을 추측하지 않고 10초를 사용한다. 자연어 또는 툴 설명에 외부 API·네트워크·원격 서비스 호출이 명시된 경우 generate가 30초를 제안한다. 의미를 추론했지만 근거 문장을 특정할 수 없으면 30초를 자동 확정하지 않고 `TIMEOUT_INFERRED`와 `needsReview`를 함께 반환한다.
+
+## 16. 기존 Runner 스텁 처리
+
+현재 `createMcpTest`와 `toContainTool`은 구현되지 않은 스텁이며 새 선언형 계약과 맞지 않는다.
+
+- `createMcpTest` callback 모델은 공통 JSON 명세를 표현하지 못한다.
+- `toContainTool`은 툴 목록이 아닌 `ToolResult`를 받아 의미가 맞지 않는다.
+- 두 실행 모델을 동시에 유지하지 않는다.
+
+첫 Runner 구현에서 두 스텁을 새 API로 교체한다. 아직 실제 배포된 동작이 없고 버전이 `0.0.0`이므로 호환 wrapper는 만들지 않는다. Vitest 지원은 나중에 독립 adapter로 설계한다.
+
+Runner README는 같은 변경에서 갱신한다. 공동 소유인 루트 README 수정은 별도 합의가 필요한 후속 문서 작업으로 기록한다.
+
+## 17. 테스트 설계
+
+### 명세와 Schema
+
+- 유효한 `listTools` 및 `callTool` 명세 통과
+- 여러 검증 오류를 한 번에 반환
+- 중복 ID, 빈 배열, 잘못된 조합, 알 수 없는 필드 거절
+- 0, 음수, 소수, 안전 정수 범위 밖 timeout 거절
+- TypeScript 타입, JSON Schema, validator parity
+
+### Assertions와 진단
+
+- 존재하는 툴 통과
+- 없는 툴은 `TOOL_NOT_FOUND`와 정렬된 실제 목록 반환
+- `isError`의 true와 false 기대값 모두 통과·실패 검증
+- 실패 메시지에 원인, 실제 값, 힌트 포함
+- operation 한 번의 결과에 모든 assertion을 순서대로 적용
+
+### Executor와 이벤트
+
+- 명세 순서대로 케이스 실행
+- 케이스마다 MCP 메서드 정확히 한 번 호출
+- assertion 실패와 메서드 reject 후 다음 케이스 계속 실행
+- 이벤트 종류, 순서, sequence 검증
+- 최종 summary 카운트 검증
+- 같은 입력을 두 번 실행한 이벤트와 보고서 deep equality
+- timestamp와 실제 duration이 없는지 검증
+
+### Timeout과 취소
+
+- fake timer로 case, suite, Runner fallback 우선순위 검증
+- timeout 시 현재 케이스 `timedOut`, 나머지 `notRun`
+- abort 전과 실행 중 abort 검증
+- timeout과 abort에서 다음 MCP 작업 및 `client.close()` 미호출
+
+### Generate/repair 준비성
+
+- 실패 결과에 원본 spec과 diagnostic 포함
+- 하나 또는 모든 실패 결과 선택 가능
+- 보고서 `JSON.stringify` 성공
+- `ToolResult.raw` 미포함
+- provider 교체안의 case ID 보존과 재검증 요구를 fixture로 문서화
+
+### 필수 테스트 이름과 핵심 단언
+
+| 테스트 이름 | 핵심 단언 |
+|---|---|
+| `유효한 listTools와 callTool 명세를 검증한다` | `valid === true`, 반환 `value`가 입력과 deep equality |
+| `명세의 모든 구조 오류를 경로 순서대로 반환한다` | issue code가 `MISSING_REQUIRED_FIELD`, `INVALID_TIMEOUT`, `INCOMPATIBLE_ASSERTION` 순서이고 각 `path`가 정확히 일치 |
+| `중복된 케이스 ID를 거절한다` | `DUPLICATE_CASE_ID`, `path === "cases[1].id"` |
+| `JSON Schema와 validator의 유효 fixture 판정이 일치한다` | 두 계약 모두 유효 fixture를 수용하고 각 무효 fixture의 대상 제약이 존재 |
+| `목록에 존재하는 툴 assertion을 통과시킨다` | assertion status가 `passed`, `listTools` 호출 횟수가 1 |
+| `없는 툴의 정렬된 실제 목록을 진단한다` | code가 `TOOL_NOT_FOUND`, expected가 요청 이름, actual이 알파벳순 이름 배열, hint가 비어 있지 않음 |
+| `isError 기대값 true와 false를 각각 비교한다` | 일치 시 `passed`, 불일치 시 `IS_ERROR_MISMATCH`와 boolean expected·actual |
+| `한 작업 결과로 모든 assertion을 평가한다` | MCP 메서드 호출 횟수가 1이고 assertion result 수와 순서가 명세와 같음 |
+| `assertion 실패 후 다음 케이스를 실행한다` | 호출 기록과 report case 순서가 `a`, `b`, `c` |
+| `MCP 메서드 reject 후 다음 케이스를 실행한다` | 현재 operation은 `failed`, assertion은 `skipped`, 다음 case는 실행됨 |
+| `성공 이벤트를 고정 순서로 발행한다` | type 배열이 `suiteStarted`부터 `suiteCompleted`까지 승인 순서와 같고 sequence가 `0..n` |
+| `이벤트 listener의 객체 변경이 보고서를 바꾸지 않는다` | listener가 `caseStarted.case.name`을 바꿔도 최종 `TestCaseResult.spec.name`은 원래 값 |
+| `timeout 시 후속 케이스를 시작하지 않는다` | 현재 case `timedOut`, 후속 case `notRun`, suite `failed`, `stopReason.type === "timeout"` |
+| `AbortSignal 취소 시 스위트를 aborted로 끝낸다` | 현재 case `cancelled`, 후속 case `notRun`, suite `aborted`, client `close` 호출 0회 |
+| `같은 입력에 같은 결과를 만든다` | 두 실행의 event 배열과 report가 deep equality이고 timestamp·duration 키가 없음 |
+| `실패 보고서를 repair 입력으로 직렬화한다` | `JSON.stringify` 성공, 원본 `spec`과 diagnostic 존재, 직렬화 문자열에 `raw` 키 없음 |
+
+구현 계획은 위 이름과 단언을 실제 Vitest 코드로 전량 제시한다. 테스트용 client는 인메모리 객체만 사용하며 실제 MCP 서버 프로세스를 띄우지 않는다.
+
+`toolExists` 테스트의 툴 정의는 공용 [fixtures/tools-list.sample.json](../../../fixtures/tools-list.sample.json)을 읽어 `ToolDef[]`로 사용한다. `callTool` 결과, reject, 지연 Promise와 호출 기록은 각 테스트가 인메모리 fake `McpClient`로 만든다. 공용 fixture는 Runner 작업에서 수정하지 않는다.
+
+## 18. 예상 파일 구조
+
+```text
+packages/runner/src/
+├── spec/
+│   ├── types.ts
+│   ├── json-schema.ts
+│   ├── validation.ts
+│   └── index.ts
+├── assertions.ts
+├── diagnostics.ts
+├── executor.ts
+└── index.ts
+
+packages/runner/tests/
+├── spec-validation.test.ts
+├── spec-schema.test.ts
+├── assertions.test.ts
+└── executor.test.ts
+
+.changeset/
+└── runner-declarative-suite.md
+```
+
+`spec/`은 executor를 import하지 않는다. `src/index.ts`가 명세 계약과 executor API를 한곳에서 재수출하며 import 시 실행 부작용을 만들지 않는다.
+
+같은 변경에서 다음 기존 파일도 수정한다.
+
+- `packages/runner/package.json`: 설명과 공개 진입점 메타데이터 확인
+- `packages/runner/README.md`: 새 선언형 API 예시로 교체
+- `packages/runner/tests/index.test.ts`: 기존 스텁 테스트 제거 후 분리된 테스트로 대체
+- `.changeset/runner-declarative-suite.md`: Runner 공개 API 교체와 수직 기능을 설명하는 minor changeset
+
+`packages/runner/tsdown.config.mjs`는 루트 진입점 하나를 유지하므로 변경하지 않는다. 루트 `tsconfig.base.json`, `vitest.config.ts`, `biome.json`도 수정하지 않는다.
+
+## 19. 구현 순서
+
+1. 공개 타입, JSON Schema, validator와 실패 테스트
+2. `toolExists`, `isError`, 구조화된 진단과 실패 테스트
+3. 순차 executor, 이벤트, 보고서와 실패 테스트
+4. timeout, `AbortSignal`, fake timer 테스트
+5. Runner README와 generate/CLI 후속 연동 계약 확인
+
+구현은 한 번에 `packages/runner`만 수정하며 타입 시그니처와 실패 테스트를 구현보다 먼저 제시한다. 변경량이 400줄을 크게 넘으면 리뷰 가능한 단위로 PR을 나눈다.
+
+### 19.1 의존성 그래프와 Wave
+
+```text
+Task 1: spec 타입·Schema·validator
+  ↓
+Task 2: assertion·diagnostic
+  ↓
+Task 3: executor·event·report
+  ↓
+Task 4: timeout·AbortSignal
+  ↓
+Task 5: package 문서·전체 회귀 검증
+```
+
+모든 태스크가 같은 Runner 공개 계약과 `src/index.ts`에 순차적으로 의존한다. 병렬 터미널로 나누면 파일 소유권과 타입 변경이 겹치므로 첫 구현은 **Wave 1개, 터미널 1개, worktree 1개, 태스크 순차 실행**으로 계획한다. 각 태스크 구현은 별도 자식 에이전트가 맡고 메인 세션은 diff·테스트·계약 검토 게이트를 담당한다.
+
+### 19.2 모델 배분
+
+- 공개 타입, JSON Schema, 패키지 경계 판단: 상위 모델
+- 실패 진단 문안과 실제값 최소 공개 판단: 상위 모델
+- 승인된 계약에 따른 기계적인 assertion·executor·timeout 구현: 표준 모델
+- 최종 계약·회귀 검토: 상위 모델
+
+구체적인 `model`과 `reasoning_effort`, agent message, 허용 Files, report 경로는 구현 계획에 실제 값으로 고정한다. 자식 에이전트는 background 실행, commit, merge, push, 하위 agent spawn을 하지 않는다.
+
+팀 `CLAUDE.md`의 “커밋과 푸시는 사람이 한다”가 일반 Wave 규약보다 우선한다. 메인 세션도 commit, merge, push를 실행하지 않는다. 각 태스크 검토가 통과하면 권장 커밋 메시지와 변경 파일을 사용자에게 제시하고, 사용자가 만든 통합 SHA를 확인한 뒤에만 후속 태스크를 시작한다.
+
+### 19.3 작업공간 제약
+
+- 실행 전 `git rev-parse --git-dir`, `git rev-parse --git-common-dir`, `git branch --show-current`로 기존 연결 worktree 여부를 확인한다.
+- Codex App이 이미 격리한 worktree이면 중첩 worktree를 만들지 않는다.
+- 새 worktree가 필요하면 프로젝트 로컬 실행 규약이 지정한 경로만 사용한다.
+- 이 설계 문서와 구현 계획은 실행 기준 커밋에서 접근 가능해야 한다. 현재처럼 untracked라면 사용자가 먼저 커밋하거나 실행 프롬프트가 명시적으로 복사해야 한다.
+- `.agents/`와 `docs/conventions/`는 로컬 ignore 대상이므로 새 worktree를 만들 때 원본 작업공간에서 복사하고, 작업 에이전트에게도 동일 규약을 제공한다.
+
+### 19.4 파일 소유권
+
+허용 범위는 `packages/runner/**`, Runner changeset 한 파일, Runner 설계·계획 문서다. 다음 공유 계약은 수정하지 않는다.
+
+```text
+packages/core/src/types.ts
+package.json
+pnpm-workspace.yaml
+turbo.json
+tsconfig.base.json
+vitest.config.ts
+biome.json
+packages/generate/**
+packages/cli/**
+```
+
+generate 연동에 workspace dependency나 공유 설정 변경이 필요하면 구현하지 않고 별도 팀 승인 항목으로 보고한다.
+
+## 20. 후속 결정과 명시적 한계
+
+- `ToolResult.content`의 JSON 본문 추출은 응답 assertion 설계 시 별도로 결정한다.
+- JUnit과 Vitest adapter는 RunnerReport 변환 계층으로 추가하며 executor에 결합하지 않는다.
+- 병렬 실행은 필요성이 입증되기 전까지 도입하지 않는다.
+- generate의 Runner workspace dependency는 팀 승인 후 추가한다.
+- timeout 10초·30초 정책은 도그푸딩 결과로 재검토하되 변경 근거와 정책 버전을 기록한다.
+- 응답 본문을 AI에 전송할 필요가 생기면 크기 제한, 비밀값 마스킹, 사용자 승인 정책을 먼저 설계한다.
+- Runner와 generate의 계약 변경은 JSON Schema 버전 및 영향 범위를 함께 검토한다.

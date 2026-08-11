@@ -1,6 +1,6 @@
 # Runner 실행·보고서 및 Generate 연동 설계
 
-- 상태: 프로젝트 계획 규약 반영 후 사용자 재검토 대기
+- 상태: 사용자 승인 완료, Runner 구현 대기
 - 작성일: 2026-08-11
 - 구현 대상: `@ohmymcp/runner`
 - 후속 연동 대상: `@ohmymcp/generate`, `ohmymcp` CLI, Dashboard
@@ -78,15 +78,11 @@ Runner 결과는 이후 Codex 또는 Claude가 실패한 테스트를 수정할 
 ## 4. 전체 데이터 흐름
 
 ```text
-직접 작성 ───────────────────────┐
-                                │
-스키마 기반 generate ───────────┼─→ TestSuiteSpec
-                                │         ↓
-자연어 + Codex/Claude ──────────┘   validateMcpSuite
-                                          ↓
-                                   사용자 미리보기·승인
-                                          ↓
-                                       runSuite
+직접 작성 ─→ validateMcpSuite ─────────────────────────┐
+                                                       │
+스키마 기반 generate ─→ validate→sanitize→승인 snapshot ├─→ runSuite
+                                                       │
+자연어 + Codex/Claude ─→ validate→sanitize→승인 snapshot ┘
                                       ↙        ↘
                               RunnerEvent    RunnerReport
                                   ↓               ↓
@@ -97,7 +93,7 @@ Runner 결과는 이후 Codex 또는 Claude가 실패한 테스트를 수정할 
                                          사용자 검토·선택 반영
 ```
 
-CLI와 Dashboard는 생성과 실행을 연결하지만 테스트 내용이나 timeout을 스스로 추론하지 않는다.
+Generate의 compile·repair 결과만 safe preview 승인과 immutable snapshot 경계를 통과한다. 사용자가 직접 작성한 명세는 `validateMcpSuite`를 통과하면 별도 Generate 승인 없이 Runner에 전달할 수 있다. CLI와 Dashboard는 생성과 실행을 연결하지만 테스트 내용이나 timeout을 스스로 추론하지 않는다.
 
 ## 5. 공개 명세 모델
 
@@ -866,6 +862,7 @@ export interface RepairRequestPreview {
   request: RepairRequest;
   byteLength: number;
   maxResultBytes: number;
+  providerTimeoutMs: number;
   requiresApproval: true;
   fingerprint: string;
   binding: RepairRequestBinding;
@@ -899,6 +896,7 @@ export function prepareRepairRequest(options: {
   tools: readonly McpToolContext[];
   redaction?: RunnerRedactionOptions;
   maxResultBytes?: number;
+  providerTimeoutMs?: number;
 }): RepairRequestPreview;
 ```
 
@@ -906,9 +904,9 @@ export function prepareRepairRequest(options: {
 
 기본 repair 후보는 status가 `failed`인 케이스다. `timedOut`은 우선 timeout 설정과 서버 지연 문제로 안내하며 사용자가 명시적으로 선택한 경우에만 `needsReview` 후보로 보낸다. `cancelled`와 `notRun`은 실행 결과가 없으므로 repair 대상으로 보내지 않는다.
 
-`prepareRepairRequest`의 구현과 소유권은 미래 `@ohmymcp/generate`에 있다. 함수는 `originalSuite`와 report의 suite identity·case ID를 먼저 대조하고, report의 sanitized 실패 case만 선택하며 tools의 `inputSchema`에도 같은 redaction을 적용한다. case당 `65_536` bytes 또는 전체 `262_144` bytes를 넘으면 `RepairPayloadLimitError`를 던지고 preview를 반환하지 않는다. result 상한 기본값은 `262_144` UTF-8 bytes, 허용값은 `1..262_144`의 유한 정수이며 caller는 낮출 수만 있다. `ToolDef.inputSchema`가 JSON 값이 아니면 repair 요청을 만들기 전에 구조화된 오류 또는 `needsReview`로 처리한다. raw MCP 메시지, 환경 변수, 서버 stderr, 관련 없는 응답 본문은 기본 payload에서 제외한다.
+`prepareRepairRequest`의 구현과 소유권은 미래 `@ohmymcp/generate`에 있다. 함수는 `originalSuite`와 report의 suite identity·case ID를 먼저 대조하고, report의 sanitized 실패 case만 선택하며 tools의 `inputSchema`에도 같은 redaction을 적용한다. case당 `65_536` bytes 또는 전체 `262_144` bytes를 넘으면 `RepairPayloadLimitError`를 던지고 preview를 반환하지 않는다. result 상한 기본값은 `262_144` UTF-8 bytes, 허용값은 `1..262_144`의 유한 정수이며 caller는 낮출 수만 있다. provider 호출 timeout 기본값은 `120_000ms`, 허용값은 `1..600_000ms`의 유한 정수다. 두 옵션의 잘못된 값은 preview나 provider 실행 전에 동기 `RangeError`로 거절한다. `ToolDef.inputSchema`가 JSON 값이 아니면 repair 요청을 만들기 전에 구조화된 오류 또는 `needsReview`로 처리한다. raw MCP 메시지, 환경 변수, 서버 stderr, 관련 없는 응답 본문은 기본 payload에서 제외한다.
 
-함수는 sanitized request, original suite, 정렬·중복 제거한 `selectedCaseIds`, redaction 정책, result 상한을 deep clone·deep freeze해 module-private `WeakMap<RepairRequestBinding, RepairRequestContext>`에 보존한다. visible preview fingerprint는 binding·fingerprint를 제외한 canonical JSON SHA-256이다. `dispatchRepair`는 compile과 같은 approval fingerprint 검사를 수행하고 mutable `preview.request`가 아니라 binding의 request snapshot만 provider에 전달한다. stdout은 binding의 `maxResultBytes`로 streaming 제한하며 초과하면 process/stream을 중단하고 parse·validate·sanitize 전에 내용 없는 `outputLimitExceeded`를 반환한다. 이 request binding이 provider result의 유일한 원본 suite·선택 집합 문맥이다.
+함수는 sanitized request, original suite, 정렬·중복 제거한 `selectedCaseIds`, redaction 정책, result 상한, provider timeout을 deep clone·deep freeze해 module-private `WeakMap<RepairRequestBinding, RepairRequestContext>`에 보존한다. visible preview fingerprint는 binding·fingerprint를 제외한 canonical JSON SHA-256이다. `dispatchRepair`는 compile과 같은 approval fingerprint 검사를 수행하고 mutable `preview.request`가 아니라 binding의 request snapshot만 provider에 전달한다. stdout은 binding의 `maxResultBytes`로 streaming 제한하며 초과하면 process/stream을 중단하고 parse·validate·sanitize 전에 내용 없는 `outputLimitExceeded`를 반환한다. 이 request binding이 provider result의 유일한 원본 suite·선택 집합·timeout 문맥이다.
 
 ### 14.3 Provider 결과
 
@@ -1008,11 +1006,21 @@ export function sanitizeRepairResult(options: {
 export type RepairDispatchResult =
   | { status: "notApproved" }
   | { status: "approvalInvalidated" }
+  | { status: "providerFailed"; failure: ProviderFailure }
   | {
       status: "outputLimitExceeded";
       error: {
         name: "RepairPayloadLimitError";
         scope: "providerOutput";
+        limitBytes: number;
+        actualBytes: number;
+      };
+    }
+  | {
+      status: "resultLimitExceeded";
+      error: {
+        name: "RepairPayloadLimitError";
+        scope: "result";
         limitBytes: number;
         actualBytes: number;
       };
@@ -1024,6 +1032,7 @@ export function dispatchRepair(options: {
   repairer: FailedCaseRepairer;
   preview: RepairRequestPreview;
   approval: GenerateReviewApproval;
+  signal?: AbortSignal;
 }): Promise<RepairDispatchResult>;
 
 export function applyReviewedRepairs(options: {
@@ -1038,10 +1047,17 @@ export type RepairApplicationResult =
       reason:
         | "notApproved"
         | "approvalInvalidated"
+        | "resultLimitExceeded"
         | "invalid"
         | "redactionRequired";
       issues?: PublicProviderValidationIssue[];
       preview?: SanitizedRepairResultPreview;
+      error?: {
+        name: "RepairPayloadLimitError";
+        scope: "result";
+        limitBytes: number;
+        actualBytes: number;
+      };
     };
 ```
 
@@ -1065,11 +1081,11 @@ dispatch/apply 경계는 최대 100개, 최종 직렬화 배열 기준 `65_536` 
 
 `validateRepairResult`, `sanitizeRepairResult`, `applyReviewedRepairs`의 구현과 소유권은 미래 `@ohmymcp/generate`에 있다. provider JSON은 먼저 구조·문맥 검증을 통과하고, 그 다음 모든 `replacement.operation.input`에 기본 민감 키와 caller 지정 민감 키·문자열 값 redaction을 재귀 적용해야 한다. explanation을 포함한 나머지 문자열에도 caller의 exact `sensitiveValues`와 compile prompt의 민감 assignment 규칙을 적용한다. CLI/Dashboard는 raw `RepairResult`를 받지 않고 `SanitizedRepairResultPreview`만 받는다. 알 수 없는 PII는 자동 판별했다고 주장하지 않으며 preview와 명시적 사용자 승인이 마지막 경계다. validator는 닫힌 객체와 필수 필드, 비어 있지 않은 explanation, boolean `needsReview`를 검사하고 다음 순서로 문맥 규칙을 적용한다.
 
-`sanitizeRepairResult`는 request binding에서 원본 validation context, redaction, result 상한을 읽고 모든 redaction 위치를 `redactedPaths`에 기록한다. replacement 내부에 redaction이 하나라도 있으면 `applicable: false`다. UI는 해당 후보를 적용할 수 없고, 사용자가 replacement 값을 직접 채우고 검토한 새 결과를 같은 request binding으로 다시 validate→sanitize해야 한다. raw provider 결과를 숨겨서 적용하거나 `[REDACTED]` placeholder를 suite에 기록하는 경로는 없다. explanation만 redacted된 경우에는 suite에 적용되는 replacement가 변하지 않으므로 `applicable` 판정에 영향을 주지 않는다. raw validated result와 sanitized result를 각각 측정해 어느 쪽이든 binding의 상한을 넘으면 내용 없는 `RepairPayloadLimitError(scope: "result")`를 반환하고 preview·UI·저장 경계로 결과를 보내지 않는다. `byteLength`는 통과한 sanitized result의 실제 UTF-8 byte 수다.
+`sanitizeRepairResult`는 request binding에서 원본 validation context, redaction, result 상한을 읽고 모든 redaction 위치를 `redactedPaths`에 기록한다. replacement 내부에 redaction이 하나라도 있으면 `applicable: false`다. UI는 해당 후보를 적용할 수 없고, 사용자가 replacement 값을 직접 채우고 검토한 새 결과를 같은 request binding으로 다시 validate→sanitize해야 한다. raw provider 결과를 숨겨서 적용하거나 `[REDACTED]` placeholder를 suite에 기록하는 경로는 없다. explanation만 redacted된 경우에는 suite에 적용되는 replacement가 변하지 않으므로 `applicable` 판정에 영향을 주지 않는다. raw validated result와 sanitized result를 각각 측정해 어느 쪽이든 binding의 상한을 넘으면 내용 없는 `RepairPayloadLimitError(scope: "result")`를 동기로 던지고 preview·UI·저장 경계로 결과를 보내지 않는다. `dispatchRepair`는 이를 `status: "resultLimitExceeded"`로, `applyReviewedRepairs`의 재검증 경로는 `reason: "resultLimitExceeded"`로 변환한다. `byteLength`는 통과한 sanitized result의 실제 UTF-8 byte 수다.
 
 `SanitizedRepairResultPreview`는 UI가 편집할 수 있는 untrusted 값이다. `sanitizeRepairResult`는 request binding에 이미 고정된 original suite, `selectedCaseIds`, redaction 정책, result 상한을 새 module-private `WeakMap<RepairReviewBinding, RepairReviewContext>`에 연결하고 opaque review binding을 preview에 넣는다. public fingerprint는 `binding`과 `fingerprint` 필드를 제외한 visible preview의 canonical JSON SHA-256이다. 원래 선택 집합은 provider 결과 처리나 approval API의 caller 입력으로 다시 받지 않는다.
 
-`applyReviewedRepairs`는 `approval.approved === false`이면 preview나 binding을 읽지 않고 `{ applied: false, reason: "notApproved" }`를 반환한다. 승인된 경우에는 binding이 등록되어 있는지, 현재 visible preview fingerprint와 `approval.fingerprint`가 원래 fingerprint와 모두 같은지 먼저 검사한다. preview가 승인 뒤 바뀌거나 binding이 복제·위조되면 provider나 suite 내용을 적용하지 않고 `approvalInvalidated`를 반환해 같은 request binding에서 만든 새 validate→sanitize preview와 새 승인을 요구한다. 일치해도 preview의 `applicable`, `redactedPaths`, `result`는 신뢰하지 않는다. `preview.result`를 review binding에 연결된 원본 suite와 원래 `selectedCaseIds`로 `validateRepairResult`에 재통과시키고, 같은 request binding의 redaction·byte 정책으로 다시 sanitize한다. 새 결과가 invalid면 `invalid`, replacement redaction이 남으면 새 safe preview와 `redactionRequired`를 반환한다. 새로 계산한 candidate만 binding의 원본 suite deep clone에 적용하고 최종 suite를 `validateMcpSuite`로 다시 검사한 뒤 `{ applied: true, suite }`를 반환한다.
+`applyReviewedRepairs`는 `approval.approved === false`이면 preview나 binding을 읽지 않고 `{ applied: false, reason: "notApproved" }`를 반환한다. 승인된 경우에는 binding이 등록되어 있는지, 현재 visible preview fingerprint와 `approval.fingerprint`가 원래 fingerprint와 모두 같은지 먼저 검사한다. preview가 승인 뒤 바뀌거나 binding이 복제·위조되면 provider나 suite 내용을 적용하지 않고 `approvalInvalidated`를 반환해 같은 request binding에서 만든 새 validate→sanitize preview와 새 승인을 요구한다. 일치해도 preview의 `applicable`, `redactedPaths`, `result`는 신뢰하지 않는다. `preview.result`를 review binding에 연결된 원본 suite와 원래 `selectedCaseIds`로 `validateRepairResult`에 재통과시키고, 같은 request binding의 redaction·byte 정책으로 다시 sanitize한다. 이 재-sanitize가 `RepairPayloadLimitError(scope: "result")`를 던지면 예외를 밖으로 보내지 않고 구조화된 `resultLimitExceeded`를 반환하며 suite를 만들지 않는다. 새 결과가 invalid면 `invalid`, replacement redaction이 남으면 새 safe preview와 `redactionRequired`를 반환한다. 새로 계산한 candidate만 binding의 원본 suite deep clone에 적용하고 최종 suite를 `validateMcpSuite`로 다시 검사한 뒤 `{ applied: true, suite }`를 반환한다.
 
 1. `repairs` 배열 순서대로 shape issue를 기록한다.
 2. 같은 `caseId`의 두 번째 decision을 `DUPLICATE_REPAIR_CASE_ID`로 거절한다.
@@ -1094,7 +1110,7 @@ Generate 구현 계획은 최소한 다음 fixture를 고정한다.
 | 원래 `selectedCaseIds = ["a"]`인 binding에 caller가 `b`를 추가하려 함 | approval API가 selection을 받지 않으며 stored context로 `UNSELECTED_REPAIR_CASE_ID`, 적용 0건 |
 | repair request의 cases/tools/fingerprint 또는 binding을 provider 승인 뒤 변조 | `approvalInvalidated`, provider 호출 0회 |
 | provider repair stdout가 chunk 수신 중 `262_145` UTF-8 bytes에 도달 | process/stream 중단, parse·sanitize 0회, `outputLimitExceeded` |
-| raw 또는 sanitized repair result `262_145` UTF-8 bytes | UI·저장 전 `RepairPayloadLimitError(scope: "result")`, preview 없음 |
+| raw 또는 sanitized repair result `262_145` UTF-8 bytes | dispatch는 `resultLimitExceeded`와 preview 0개; 승인 뒤 apply 재검증도 같은 reason과 suite 0개; reject 없음 |
 | 사용자가 redacted replacement 값을 다시 입력 | validate→sanitize 재실행 후 redacted replacement path가 0일 때만 승인·적용 |
 
 검증 실패 시 provider 결과를 일부 적용하거나 사용자 diff 화면으로 넘기지 않는다. sanitized `RepairRequest`만 provider에 전달하며 `RepairResult` validator는 비밀값이 다시 삽입된 replacement도 같은 redaction/preview 단계를 거친 뒤에만 승인 후보로 만든다.
@@ -1109,6 +1125,52 @@ export interface ProviderStatus {
   message?: string;
 }
 
+export type ProviderFailureCode =
+  | "rejected"
+  | "nonZeroExit"
+  | "timedOut"
+  | "cancelled"
+  | "invalidUtf8"
+  | "invalidJson"
+  | "internal";
+
+export interface ProviderFailure {
+  readonly code: ProviderFailureCode;
+  readonly providerId: "codex" | "claude";
+  readonly message: string;
+  readonly hint: string;
+  readonly exitCode?: number;
+  readonly timeoutMs?: number;
+  readonly stderr: {
+    readonly captured: boolean;
+    readonly truncated: boolean;
+  };
+}
+
+export class ProviderInvocationError extends Error {
+  override readonly name = "ProviderInvocationError";
+  readonly code: "nonZeroExit" | "invalidUtf8" | "invalidJson";
+  readonly providerId: "codex" | "claude";
+  readonly exitCode?: number;
+  readonly stderr: {
+    readonly captured: boolean;
+    readonly truncated: boolean;
+  };
+
+  constructor(options: {
+    code: "nonZeroExit" | "invalidUtf8" | "invalidJson";
+    providerId: "codex" | "claude";
+    exitCode?: number;
+    stderr: { captured: boolean; truncated: boolean };
+  });
+}
+
+export interface ProviderInvocationOptions {
+  readonly maxOutputBytes: number;
+  readonly timeoutMs: number;
+  readonly signal: AbortSignal;
+}
+
 export interface CompileRequest {
   readonly prompt: string;
   readonly tools: readonly McpToolContext[];
@@ -1118,6 +1180,7 @@ export interface CompileRequestPreview {
   request: CompileRequest;
   byteLength: number;
   maxResultBytes: number;
+  providerTimeoutMs: number;
   redactionsApplied: true;
   requiresApproval: true;
   fingerprint: string;
@@ -1175,7 +1238,7 @@ export interface NaturalLanguageCompiler {
   checkAvailability(): Promise<ProviderStatus>;
   compile(
     request: CompileRequest,
-    options: { maxOutputBytes: number },
+    options: ProviderInvocationOptions,
   ): Promise<unknown>;
 }
 
@@ -1184,7 +1247,7 @@ export interface FailedCaseRepairer {
   checkAvailability(): Promise<ProviderStatus>;
   repair(
     request: RepairRequest,
-    options: { maxOutputBytes: number },
+    options: ProviderInvocationOptions,
   ): Promise<unknown>;
 }
 
@@ -1193,6 +1256,7 @@ export function prepareCompileRequest(options: {
   tools: readonly McpToolContext[];
   redaction?: RunnerRedactionOptions;
   maxResultBytes?: number;
+  providerTimeoutMs?: number;
 }): CompileRequestPreview;
 
 export type CompileValidationResult =
@@ -1225,11 +1289,21 @@ export function sanitizeCompileResult(options: {
 export type CompileDispatchResult =
   | { status: "notApproved" }
   | { status: "approvalInvalidated" }
+  | { status: "providerFailed"; failure: ProviderFailure }
   | {
       status: "outputLimitExceeded";
       error: {
         name: "CompilePayloadLimitError";
         scope: "providerOutput";
+        limitBytes: number;
+        actualBytes: number;
+      };
+    }
+  | {
+      status: "resultLimitExceeded";
+      error: {
+        name: "CompilePayloadLimitError";
+        scope: "result";
         limitBytes: number;
         actualBytes: number;
       };
@@ -1241,6 +1315,7 @@ export function dispatchCompile(options: {
   compiler: NaturalLanguageCompiler;
   preview: CompileRequestPreview;
   approval: GenerateReviewApproval;
+  signal?: AbortSignal;
 }): Promise<CompileDispatchResult>;
 
 declare const compileExecutionSnapshotBrand: unique symbol;
@@ -1261,11 +1336,18 @@ export type CompileApplicationResult =
       reason:
         | "notApproved"
         | "approvalInvalidated"
+        | "resultLimitExceeded"
         | "invalid"
         | "redactionRequired"
         | "noSuite";
       issues?: PublicProviderValidationIssue[];
       preview?: SanitizedCompileResultPreview;
+      error?: {
+        name: "CompilePayloadLimitError";
+        scope: "result";
+        limitBytes: number;
+        actualBytes: number;
+      };
     };
 
 export function applyReviewedCompileResult(options: {
@@ -1276,9 +1358,15 @@ export function applyReviewedCompileResult(options: {
 
 모든 Generate fingerprint는 같은 canonical serializer를 사용한다. array 순서는 유지하고 object key는 JavaScript UTF-16 code unit 순서로 정렬하며, JSON-safe visible field만 직렬화한다. opaque `binding`과 자기 자신인 `fingerprint` 필드는 제외하고 Node 내장 SHA-256의 lowercase hex를 사용한다. fingerprint만으로 binding을 인증하지 않으며, 반드시 module-private registry의 binding identity와 함께 확인한다. CLI와 Dashboard backend가 승인 시 표시·저장한 fingerprint가 provider dispatch와 execution snapshot 생성에 그대로 전달된다.
 
-`prepareCompileRequest`는 provider 전송 전에 반드시 호출한다. `tools[].inputSchema`에는 repair와 같은 재귀 key/value redaction을 적용한다. 자연어 prompt에는 caller의 exact `sensitiveValues`와 `authorization: ...`, `api_key=...`처럼 정규화된 기본 민감 키가 `:` 또는 `=` 앞에 있는 assignment의 값을 `[REDACTED]`로 바꾼다. UTF-8 상한은 prompt `65_536` bytes, tools `131_072` bytes, 전체 request `262_144` bytes이며 어느 하나라도 넘으면 preview를 만들지 않는다. `maxResultBytes` 기본값은 `262_144`, 허용값은 `1..262_144`의 유한 정수이고 caller는 기본값보다 낮출 수만 있다. 잘못된 값은 provider 실행 전에 동기 `RangeError`다.
+`prepareCompileRequest`는 provider 전송 전에 반드시 호출한다. `tools[].inputSchema`에는 repair와 같은 재귀 key/value redaction을 적용한다. 자연어 prompt에는 caller의 exact `sensitiveValues`와 `authorization: ...`, `api_key=...`처럼 정규화된 기본 민감 키가 `:` 또는 `=` 앞에 있는 assignment의 값을 `[REDACTED]`로 바꾼다. UTF-8 상한은 prompt `65_536` bytes, tools `131_072` bytes, 전체 request `262_144` bytes이며 어느 하나라도 넘으면 preview를 만들지 않는다. `maxResultBytes` 기본값은 `262_144`, 허용값은 `1..262_144`의 유한 정수이고 caller는 기본값보다 낮출 수만 있다. `providerTimeoutMs` 기본값은 `120_000`, 허용값은 `1..600_000`의 유한 정수다. 잘못된 옵션은 preview나 provider 실행 전에 동기 `RangeError`다.
 
-`prepareCompileRequest`는 sanitized request, redaction 정책, `maxResultBytes`를 deep clone·deep freeze해 module-private `WeakMap<CompileRequestBinding, CompileRequestContext>`에 저장한다. visible preview의 `binding`과 `fingerprint`를 제외한 canonical JSON SHA-256을 fingerprint로 함께 반환한다. CLI/Dashboard는 이 visible preview의 byte length, redacted payload, result 상한과 fingerprint를 한 화면에서 보여주고 `{ approved: true, fingerprint }`로 매 요청을 승인한다. `dispatchCompile`은 미승인이면 preview를 읽지 않는다. 승인된 경우 등록된 binding, 현재 visible preview fingerprint, approval fingerprint가 모두 일치하는지 provider 호출 전에 확인한다. 하나라도 다르면 `approvalInvalidated`이며 재검토·재승인이 필요하다. 일치하면 mutable `preview.request`가 아니라 binding 안의 deep-frozen request snapshot만 provider에 전달한다. 따라서 승인 전후 prompt/tools 변경이나 다른 binding 치환으로 redaction과 상한을 우회할 수 없다.
+`prepareCompileRequest`는 sanitized request, redaction 정책, `maxResultBytes`, `providerTimeoutMs`를 deep clone·deep freeze해 module-private `WeakMap<CompileRequestBinding, CompileRequestContext>`에 저장한다. visible preview의 `binding`과 `fingerprint`를 제외한 canonical JSON SHA-256을 fingerprint로 함께 반환한다. CLI/Dashboard는 이 visible preview의 byte length, redacted payload, result 상한, provider timeout과 fingerprint를 한 화면에서 보여주고 `{ approved: true, fingerprint }`로 매 요청을 승인한다. `dispatchCompile`은 미승인이면 preview를 읽지 않는다. 승인된 경우 등록된 binding, 현재 visible preview fingerprint, approval fingerprint가 모두 일치하는지 provider 호출 전에 확인한다. 하나라도 다르면 `approvalInvalidated`이며 재검토·재승인이 필요하다. 일치하면 mutable `preview.request`가 아니라 binding 안의 deep-frozen request snapshot만 provider에 전달한다. 따라서 승인 전후 prompt/tools/timeout 변경이나 다른 binding 치환으로 redaction과 상한을 우회할 수 없다.
+
+`dispatchCompile`과 `dispatchRepair`는 예상 가능한 provider 생명주기 실패로 reject하지 않는 API다. 둘은 승인된 binding의 timeout으로 내부 `AbortController`를 만들고 caller `signal`을 연결한 뒤 monotonic deadline과 provider Promise를 race한다. caller signal이 호출 전에 이미 aborted면 provider를 호출하지 않고 `providerFailed(cancelled)`를 반환한다. 실행 중 abort면 내부 signal을 abort하고 `cancelled`, deadline이면 내부 signal을 abort하고 `timedOut`을 반환한다. abort와 deadline이 같은 관찰 시각이면 caller signal의 `aborted`를 먼저 검사해 `cancelled`를 우선한다. timer와 listener는 한 settle 경로에서 정확히 한 번 해제한다.
+
+adapter는 전달받은 `signal`의 abort를 받으면 child/stream에 graceful termination을 요청하고 최대 `2_000ms` 뒤 force kill하며, dispatch는 이 cleanup이나 원래 provider Promise가 settle할 때까지 기다리지 않는다. provider Promise에는 생성 즉시 fulfill/reject 양쪽 handler를 붙여 timeout·취소 뒤 늦은 resolve/reject와 `undefined` reject도 항상 관찰한다. 따라서 permanently pending provider에서도 dispatch는 승인된 timeout에 끝나며, 늦은 reject는 unhandled rejection이 되지 않는다.
+
+adapter가 관찰한 non-zero exit, invalid UTF-8, invalid JSON은 각각 `nonZeroExit`, `invalidUtf8`, `invalidJson`의 `ProviderInvocationError`로 reject한다. stdout streaming 상한은 해당 payload limit error로 reject한다. dispatch는 이 알려진 오류를 `providerFailed` 또는 `outputLimitExceeded`로 변환하고, 그 밖의 reject 값은 내용이나 타입과 무관하게 `providerFailed(rejected)`로 변환한다. dispatch 내부의 예상하지 못한 동기 오류도 raw 값을 버리고 `providerFailed(internal)`로 변환한다. `ProviderFailure.message`와 `hint`는 `(providerId, code)`별 로컬 고정 dictionary만 사용한다. public stderr에는 원문이나 sanitized 일부를 싣지 않고 `captured`와 `truncated` boolean만, non-zero exit에는 안전하게 파싱된 정수 `exitCode`만, timeout에는 승인된 `timeoutMs`만 넣는다. 이 규칙 때문에 provider exception, stdout, stderr의 비밀값은 CLI/Dashboard failure에 포함되지 않는다.
 
 `NaturalLanguageCompiler.compile`의 반환값은 외부 JSON이므로 `unknown`이다. 다만 adapter는 JSON 전체를 메모리에 받은 뒤 이 Promise를 resolve하면 안 된다. 공통 provider reader가 child stdout의 각 `Buffer` chunk를 UTF-8 decode·문자열 결합 전에 `byteLength`로 누적하고 binding의 `maxResultBytes`를 넘는 첫 chunk에서 child process 또는 response stream을 중단한다. provider envelope를 포함한 stdout 전체가 상한 대상이다. 초과 뒤 남은 chunk는 버리고 JSON parse, envelope 제거, `validateCompileResult`, sanitization을 전혀 호출하지 않는다. `dispatchCompile`은 provider 출력 내용을 포함하지 않는 `{ status: "outputLimitExceeded", error: { name: "CompilePayloadLimitError", scope: "providerOutput", limitBytes, actualBytes } }`를 반환한다. `actualBytes`는 초과를 관찰한 누적 byte 수이며, stdout 일부나 stderr 원문을 CLI/Dashboard에 전달하지 않는다. repair adapter도 같은 streaming reader를 사용하고 `RepairPayloadLimitError(scope: "providerOutput")`로 실패한다. stderr는 별도 `65_536` byte 상한으로 수집·sanitization하고 초과분은 버려 메모리를 무제한 사용하지 않는다.
 
@@ -1286,9 +1374,9 @@ export function applyReviewedCompileResult(options: {
 
 `sanitizeCompileResult`는 수신 상한을 통과한 valid provider 결과와 승인된 request binding을 함께 받는다. binding에 고정된 기본 민감 key, caller key/value, 민감 assignment 규칙을 suite의 `name`, case name, operation tool/input, assertion 값, warnings/issues/metadata 문자열에 모두 적용한다. raw validated result와 sanitized result를 다시 측정해 어느 쪽이든 binding의 `maxResultBytes`를 넘으면 내용을 오류에 포함하지 않고 `CompilePayloadLimitError(scope: "result")`를 던진다. redaction 위치를 `redactedPaths`에 기록하며 suite 안에 redaction이 하나라도 있으면 `executable: false`다. provider 결과의 secret을 UI에 보여주거나 `[REDACTED]`가 든 suite를 실행하지 않는다. 함수는 request binding과 output redaction·상한 정책을 `CompileResultReviewBinding`에 연결하고, binding·fingerprint를 제외한 visible preview의 canonical JSON SHA-256 fingerprint를 만든다.
 
-CLI/Dashboard는 provider를 직접 호출하지 않고 `dispatchCompile`만 호출한다. approval이 false이면 `{ status: "notApproved" }`를 반환하고 preview getter나 `compiler.compile`을 건드리지 않는다. 승인 binding과 fingerprint가 유효하면 binding의 sanitized request와 `maxResultBytes`를 provider에 보내고, bounded reader가 반환한 `unknown`을 즉시 `validateCompileResult`에 전달한다. invalid 결과는 raw key/value/message를 보간하지 않는 bounded `PublicProviderValidationIssue`만 반환한다. valid 결과는 같은 request binding으로 즉시 `sanitizeCompileResult`를 수행한 뒤 `{ status: "preview", preview }`로만 반환하므로 raw provider output은 CLI/Dashboard 경계를 넘지 않는다.
+CLI/Dashboard는 provider를 직접 호출하지 않고 `dispatchCompile`만 호출한다. approval이 false이면 `{ status: "notApproved" }`를 반환하고 preview getter나 `compiler.compile`을 건드리지 않는다. 승인 binding과 fingerprint가 유효하면 binding의 sanitized request, `maxResultBytes`, `providerTimeoutMs`, 내부 signal을 provider에 보내고, bounded reader가 반환한 `unknown`을 즉시 `validateCompileResult`에 전달한다. invalid 결과는 raw key/value/message를 보간하지 않는 bounded `PublicProviderValidationIssue`만 반환한다. valid 결과는 같은 request binding으로 즉시 `sanitizeCompileResult`를 수행한다. 이 함수의 `CompilePayloadLimitError(scope: "result")`는 dispatch가 catch해 `status: "resultLimitExceeded"`로 반환하고 preview를 만들지 않는다. 그 밖의 valid 결과만 `{ status: "preview", preview }`로 반환하므로 raw provider output은 CLI/Dashboard 경계를 넘지 않는다.
 
-실행 전에는 result preview에 대한 별도 사용자 승인이 필요하다. `applyReviewedCompileResult`는 approval이 false면 preview를 읽지 않고 `notApproved`를 반환한다. 승인 true에서는 등록된 result binding, approval fingerprint, 현재 visible preview fingerprint를 먼저 비교한다. 사용자가 승인한 뒤 preview의 `result`, `executable`, `redactedPaths`, byte length 또는 fingerprint가 바뀌면 `approvalInvalidated`를 반환하고 새 validate→sanitize preview와 재승인을 요구한다. 일치해도 mutable 필드를 신뢰하지 않고 `validateCompileResult(preview.result)`와 binding의 정책을 사용한 `sanitizeCompileResult`를 재실행한다. invalid, redaction 잔존, `ok: false`는 각각 실행을 거절한다.
+실행 전에는 result preview에 대한 별도 사용자 승인이 필요하다. `applyReviewedCompileResult`는 approval이 false면 preview를 읽지 않고 `notApproved`를 반환한다. 승인 true에서는 등록된 result binding, approval fingerprint, 현재 visible preview fingerprint를 먼저 비교한다. 사용자가 승인한 뒤 preview의 `result`, `executable`, `redactedPaths`, byte length 또는 fingerprint가 바뀌면 `approvalInvalidated`를 반환하고 새 validate→sanitize preview와 재승인을 요구한다. 일치해도 mutable 필드를 신뢰하지 않고 `validateCompileResult(preview.result)`와 binding의 정책을 사용한 `sanitizeCompileResult`를 재실행한다. 이 재-sanitize의 `CompilePayloadLimitError(scope: "result")`는 밖으로 던지지 않고 `reason: "resultLimitExceeded"`와 안전한 크기 metadata만 반환하며 snapshot을 만들지 않는다. invalid, redaction 잔존, `ok: false`는 각각 실행을 거절한다.
 
 통과한 `ok: true` suite는 승인에 사용한 fingerprint와 함께 deep clone·deep freeze해 module-private `WeakMap<CompileExecutionSnapshot, TestSuiteSpec>`에 저장하고 opaque snapshot handle만 반환한다. 승인 결과와 Runner 호출 사이에 mutable preview를 다시 읽지 않으며 CLI/Dashboard는 `runSuite({ client, suite: getCompileExecutionSuite(snapshot) })`를 호출한다. getter는 등록되지 않았거나 변조된 handle을 거절하고 저장된 동일 suite 객체만 반환한다. Runner도 호출 시 자체 operational clone을 동기 생성하므로 승인된 snapshot 이후의 원본 변경은 실행에 영향을 주지 않는다. 즉 사용자 승인이 가리킨 fingerprint와 Runner가 받은 suite는 하나의 불변 snapshot binding에 속한다.
 
@@ -1307,7 +1395,22 @@ CLI/Dashboard는 provider를 직접 호출하지 않고 `dispatchCompile`만 호
 | provider suite name과 `operation.input.Authorization`에 `provider-secret` | serialized result preview에 secret 없음, 두 path 기록, `executable: false` |
 | result preview를 승인 뒤 `executable: true` 또는 secret suite로 변조 | `approvalInvalidated`, snapshot 없음, 재승인 필요 |
 | 승인된 result preview가 변경되지 않음 | validate→sanitize 재실행 후 opaque `CompileExecutionSnapshot`; getter와 Runner는 binding에 저장된 같은 frozen suite 사용 |
-| sanitized result `262_145` UTF-8 bytes | UI 전달 전 `CompilePayloadLimitError(scope: "result")` |
+| raw 또는 sanitized result `262_145` UTF-8 bytes | dispatch는 `resultLimitExceeded`와 preview 0개; 승인 뒤 재검증 apply는 같은 reason과 snapshot 0개; 어느 경로도 reject하지 않음 |
+
+compile과 repair에 같은 provider lifecycle fixture를 각각 적용한다.
+
+| Fixture | Expected |
+|---|---|
+| `providerTimeoutMs`가 `0`, 소수, `600_001`, `NaN`, `Infinity` | prepare가 provider·preview 전에 동기 `RangeError`; `1`과 `600_000`은 허용 |
+| provider가 `undefined` 또는 secret이 든 `Error`로 reject | dispatch가 reject하지 않고 `providerFailed(rejected)`; public 직렬화 결과에 reject 값·secret 없음 |
+| exit `17`, stderr `Authorization: process-secret`, stderr 상한 초과 | `providerFailed(nonZeroExit)`, `exitCode === 17`, `stderr === { captured: true, truncated: true }`; 원문·secret 없음 |
+| invalid UTF-8 또는 invalid JSON | 각각 고정 `providerFailed(invalidUtf8)` 또는 `providerFailed(invalidJson)`; raw byte/text 없음 |
+| timeout `120_000ms`, provider가 permanently pending | `119_999ms`에는 미완료, `120_000ms`에 `providerFailed(timedOut)`과 `timeoutMs === 120_000`; internal signal abort·termination 요청, dispatch pending 없음 |
+| caller signal이 호출 전 aborted | provider 호출 0회, `providerFailed(cancelled)` |
+| 실행 중 caller abort | internal signal abort·termination 요청, `providerFailed(cancelled)` |
+| caller abort와 timeout이 같은 monotonic 시각에 관찰 | `cancelled`가 이기며 timer/listener 정리 1회 |
+| timeout·취소가 반환된 뒤 provider가 늦게 reject | 결과 불변, `unhandledRejection` 0건 |
+| raw 또는 sanitized result가 result 상한보다 1 byte 큼 | dispatch의 `resultLimitExceeded`, preview 0개; approved apply 재검증도 같은 reason, suite/snapshot 0개, reject 0건 |
 
 공통 provider 실행 계층은 다음만 담당한다.
 
@@ -1315,6 +1418,8 @@ CLI/Dashboard는 provider를 직접 호출하지 않고 `dispatchCompile`만 호
 - 일회성 비대화형 세션 사용
 - 파일 수정 및 불필요한 도구 사용 제한
 - timeout, 종료 코드, bounded·sanitized stderr 수집
+- caller 취소와 승인된 timeout을 dispatch에서 race하고 adapter signal로 bounded termination 요청
+- expected adapter error와 임의 reject를 raw 값 없는 `ProviderFailure`로 정규화하며 늦은 settlement handler 유지
 - provider별 JSON envelope 제거
 - stdout를 UTF-8 byte 상한 안에서 streaming 수신하고 초과 시 process/stream을 중단한 뒤 JSON parsing을 생략
 - JSON 파싱 뒤 compile 결과는 `validateCompileResult`와 `sanitizeCompileResult`, repair 결과는 binding에 저장한 원래 문맥을 포함한 `validateRepairResult`와 `sanitizeRepairResult`로 검증
@@ -1345,7 +1450,7 @@ generate는 세 입력 경로를 같은 `TestSuiteSpec`으로 정규화한다.
 - `MCP_SUITE_JSON_SCHEMA`로 구조화 출력 제한
 - provider 반환은 `unknown`으로 받고 `validateCompileResult` 내부에서 `validateMcpSuite` 적용
 - redacted compile payload와 byte length를 보여주고 provider 전송 전 사용자 승인
-- 실제 MCP 툴 실행 전 사용자 미리보기와 승인
+- generate가 만든 suite는 실제 MCP 툴 실행 전 sanitized result 미리보기 승인과 immutable snapshot 생성
 
 ### Timeout 생성 정책
 
@@ -1436,6 +1541,8 @@ Runner README는 같은 변경에서 갱신한다. 공동 소유인 루트 READM
 - compile prompt/tool schema redaction, prompt/tools/request/provider-output/result byte 제한, provider 전송 전 immutable request snapshot 승인
 - compile의 `unknown` 결과에서 invalid suite와 invalid metadata를 거절
 - provider compile 결과를 UI 전 재마스킹·크기 제한하고 승인 fingerprint가 같은 result만 opaque immutable execution snapshot으로 고정
+- compile·repair provider의 reject/non-zero exit/invalid UTF-8·JSON/timeout/cancel을 non-rejecting dispatch 상태로 정규화하고 permanently pending·late reject를 종료
+- compile·repair의 raw/sanitized result limit을 dispatch/apply의 `resultLimitExceeded`로 정규화해 preview·suite·snapshot을 만들지 않음
 - deprecated `createMcpTest` named export와 기존 throw 동작 유지
 
 ### 필수 테스트 이름과 핵심 단언
@@ -1492,6 +1599,7 @@ packages/runner/src/
 ├── diagnostics.ts
 ├── sanitization.ts
 ├── executor.ts
+├── execution-binding.ts
 ├── shutdown.ts
 └── index.ts
 

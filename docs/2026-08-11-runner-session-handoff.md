@@ -131,7 +131,11 @@ interface NaturalLanguageCompiler {
   checkAvailability(): Promise<ProviderStatus>;
   compile(
     request: CompileRequest,
-    options: { maxOutputBytes: number },
+    options: {
+      maxOutputBytes: number;
+      timeoutMs: number;
+      signal: AbortSignal;
+    },
   ): Promise<unknown>;
 }
 ```
@@ -142,7 +146,9 @@ interface NaturalLanguageCompiler {
 - 외부 compile JSON은 `unknown`으로 받고 Generate 경계의 `validateCompileResult`와 Runner `validateMcpSuite`를 모두 통과한 뒤에만 사용
 - CLI/Dashboard는 request preview의 fingerprint를 승인하며, `dispatchCompile`은 opaque binding에 보존한 immutable sanitized request만 provider에 전달함. 승인 뒤 preview가 바뀌면 승인을 무효화하고 provider를 호출하지 않음
 - provider stdout는 각 `Buffer` chunk를 문자열 결합·JSON parsing하기 전에 기본 `262_144` UTF-8 bytes로 제한함. 초과 시 child/stream을 중단하고 parse·sanitize 없이 내용 없는 `outputLimitExceeded`를 반환함
+- provider 호출 timeout은 request preview에 표시·승인되는 기본 `120_000ms`이며, dispatch가 caller 취소와 timeout을 자체 race해 permanently pending provider도 구조화된 `providerFailed`로 끝냄. non-zero exit·reject·잘못된 UTF-8/JSON도 raw stderr나 exception을 노출하지 않는 고정 failure code로 정규화함
 - provider compile·repair 결과는 raw/sanitized result byte 제한과 전체 string/object redaction을 통과한 safe preview로만 UI에 전달함
+- result sanitization의 `scope: "result"` 크기 초과는 dispatch/apply에서 `resultLimitExceeded`로 변환하며 preview·snapshot·suite를 만들지 않고 예외나 unhandled rejection을 UI 경계로 흘리지 않음
 - invalid compile·repair 결과는 raw key/value/message를 보간하지 않는 code/path 기반 고정 issue dictionary만 반환하며, issue 개수·UTF-8 크기도 제한함
 - 실행 승인 직전에 result preview의 binding·fingerprint를 확인하고 validate→sanitize를 재실행한 뒤 opaque immutable execution snapshot으로 고정함. Runner는 getter가 반환한 그 snapshot의 suite만 실행하며 승인 뒤 변경에는 재승인이 필요함
 - repair는 request 생성 시 원래 suite와 `selectedCaseIds`를 opaque binding에 고정하며 approval 단계에서 selection을 caller 입력으로 다시 받지 않음
@@ -157,7 +163,7 @@ Provider adapter는 runner가 아니라 `generate` 측 책임이다. 이번 runn
 - AI CLI의 파일 수정 및 불필요한 도구 사용을 제한한다.
 - 별도 일회성 세션을 사용한다.
 - 제한 시간 초과 시 자식 프로세스를 종료한다.
-- 사용자 승인 전 실제 MCP 툴을 실행하지 않는다.
+- 자연어 compile 또는 실패 repair로 생성된 결과는 sanitized preview 승인과 immutable execution snapshot 생성 전 실제 MCP 툴을 실행하지 않는다. 직접 작성하고 `validateMcpSuite`를 통과한 `TestSuiteSpec`은 별도 Generate 승인 없이 `runSuite`로 실행할 수 있다.
 - 모호한 변환을 추측하지 않고 `needsReview` 또는 구조화된 오류로 반환한다.
 
 ## 7. Runner 책임과 제안된 구조
@@ -165,15 +171,21 @@ Provider adapter는 runner가 아니라 `generate` 측 책임이다. 이번 runn
 Runner는 테스트의 생성 출처를 알 필요가 없다. 검증된 `TestSuiteSpec`을 받아 실행하고 `RunnerEvent` 및 `RunnerReport`를 만든다.
 
 ```text
-packages/runner/src/
-├── spec.ts          # TestSuiteSpec 공개 타입과 구조 검증
-├── executor.ts      # 순차 실행, timeout, 중단
-├── assertions.ts    # 툴, 입력, 응답, 오류 assertion
-├── diagnostics.ts   # 사람이 읽는 실패 메시지
-├── sanitization.ts  # observer payload 마스킹과 크기 제한
-├── execution-binding.ts # package-private execution/client identity registry
-├── shutdown.ts      # bounded drain·graceful·force-close finalizer
-└── index.ts         # 공개 API 재수출
+packages/runner/
+├── src/
+│   ├── spec/
+│   │   ├── types.ts       # TestSuiteSpec과 validation result 공개 타입
+│   │   ├── json-schema.ts # MCP_SUITE_JSON_SCHEMA
+│   │   ├── validation.ts  # 결정적 runtime validator
+│   │   └── index.ts       # side-effect-free spec exports
+│   ├── executor.ts        # 순차 실행, timeout, 중단
+│   ├── assertions.ts      # 툴, 입력, 응답, 오류 assertion
+│   ├── diagnostics.ts     # 사람이 읽는 실패 메시지
+│   ├── sanitization.ts    # observer payload 마스킹과 크기 제한
+│   ├── execution-binding.ts # package-private execution/client identity registry
+│   ├── shutdown.ts        # bounded drain·graceful·force-close finalizer
+│   └── index.ts           # 공개 API 재수출
+└── tests/helpers/schema-evaluator.ts # dev-only JSON Schema parity evaluator
 ```
 
 후속 설계에서 확정한 lifecycle의 핵심은 다음과 같다. 전체 타입은 설계 문서를 따른다.
@@ -194,6 +206,8 @@ export function runSuite(options: {
   suite: TestSuiteSpec;
   signal?: AbortSignal;
   onEvent?: (event: RunnerEvent) => void;
+  redaction?: RunnerRedactionOptions;
+  payloadLimits?: RunnerPayloadLimits;
   drainTimeoutMs?: number;
 }): RunnerExecution;
 

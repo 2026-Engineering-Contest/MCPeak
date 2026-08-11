@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": false,
   "type": "module",
-  "description": "createMcpTest · matcher · 리포터",
+  "description": "선언형 MCP 테스트 실행 · assertion · 구조화된 리포트",
   "license": "MIT",
   "publishConfig": {
     "access": "public"

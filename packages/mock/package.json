@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": false,
   "type": "module",
-  "description": "목 서버 · 가짜 데이터 생성",
+  "description": "목 MCP 서버 (Streamable HTTP) · 응답 주입",
   "license": "MIT",
   "publishConfig": {
     "access": "public"
@@ -31,6 +31,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@ohmymcp/core": "workspace:*"
+    "@ohmymcp/core": "workspace:*",
+    "@modelcontextprotocol/sdk": "catalog:"
   }
 }

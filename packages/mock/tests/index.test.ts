@@ -1,16 +1,127 @@
-import { describe, expect, it } from "vitest";
-import { createMockServer, injectResponse } from "../src/index.js";
+import { readFileSync } from "node:fs";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import type { ToolDef } from "@ohmymcp/core";
+import { afterEach, describe, expect, it } from "vitest";
+import { createMockServer, type MockServer } from "../src/index.js";
 
-describe("@ohmymcp/mock", () => {
-  it("createMockServer() 는 아직 구현되지 않은 스텁이다", () => {
-    expect(createMockServer).toBeTypeOf("function");
-    expect(() => createMockServer({})).toThrow("not implemented");
-  });
+const { tools } = JSON.parse(
+  readFileSync(new URL("../../../fixtures/tools-list.sample.json", import.meta.url), "utf8"),
+) as { tools: ToolDef[] };
 
-  it("injectResponse() 도 스텁이다", () => {
-    const response: ToolResultLike = { content: null, isError: false, raw: null };
-    expect(() => injectResponse("get_weather", response)).toThrow("not implemented");
-  });
+/** 테스트가 끝나면 열린 서버를 반드시 닫는다 — 안 닫으면 vitest 가 종료되지 않는다. */
+const opened: MockServer[] = [];
+
+async function start(): Promise<MockServer> {
+  const server = await createMockServer({ tools });
+  opened.push(server);
+  return server;
+}
+
+async function connect(server: MockServer): Promise<Client> {
+  const client = new Client({ name: "test", version: "0.0.0" });
+  await client.connect(new StreamableHTTPClientTransport(new URL(server.url)));
+  return client;
+}
+
+/**
+ * 툴 응답의 텍스트 본문을 꺼낸다.
+ * `callTool` 반환 타입은 구버전 호환 형태(`toolResult`)와의 유니온이라 `unknown` 으로 받는다.
+ */
+function text(result: unknown): string {
+  const content = (result as { content?: Array<{ text?: string }> }).content;
+  const first = content?.[0]?.text;
+  if (first === undefined) throw new Error("응답에 텍스트 content 가 없습니다.");
+  return first;
+}
+
+afterEach(async () => {
+  await Promise.all(opened.splice(0).map((s) => s.close()));
 });
 
-type ToolResultLike = { content: unknown; isError: boolean; raw: unknown };
+describe("@ohmymcp/mock", () => {
+  it("url 을 돌려주고 그 주소로 붙을 수 있다", async () => {
+    const server = await start();
+    expect(server.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/mcp$/);
+
+    const client = await connect(server);
+    await client.close();
+  });
+
+  it("listTools 가 주어진 툴을 JSON Schema 그대로 노출한다", async () => {
+    const server = await start();
+    const client = await connect(server);
+
+    const listed = await client.listTools();
+    expect(listed.tools.map((t) => t.name)).toEqual(["get_weather", "add"]);
+    expect(listed.tools.find((t) => t.name === "get_weather")?.inputSchema).toEqual(
+      tools.find((t) => t.name === "get_weather")?.inputSchema,
+    );
+
+    await client.close();
+  });
+
+  it("같은 툴을 인자에 따라 다르게 응답한다", async () => {
+    const server = await start();
+    server.on("get_weather", { city: "서울" }, { temp: -10, condition: "눈" });
+    server.on("get_weather", { city: "부산" }, { temp: 5, condition: "맑음" });
+    const client = await connect(server);
+
+    const seoul = await client.callTool({ name: "get_weather", arguments: { city: "서울" } });
+    const busan = await client.callTool({ name: "get_weather", arguments: { city: "부산" } });
+    expect(JSON.parse(text(seoul))).toEqual({ temp: -10, condition: "눈" });
+    expect(JSON.parse(text(busan))).toEqual({ temp: 5, condition: "맑음" });
+
+    await client.close();
+  });
+
+  it("인자의 키 순서가 달라도 같은 응답을 찾는다", async () => {
+    const server = await start();
+    server.on("add", { a: 1, b: 2 }, { sum: 3 });
+    const client = await connect(server);
+
+    const result = await client.callTool({ name: "add", arguments: { b: 2, a: 1 } });
+    expect(JSON.parse(text(result))).toEqual({ sum: 3 });
+
+    await client.close();
+  });
+
+  it("같은 호출 3회가 바이트 단위로 동일하다", async () => {
+    const server = await start();
+    server.on("get_weather", { city: "서울" }, { temp: -10 });
+    const client = await connect(server);
+
+    const runs: string[] = [];
+    for (let i = 0; i < 3; i++) {
+      runs.push(
+        JSON.stringify(await client.callTool({ name: "get_weather", arguments: { city: "서울" } })),
+      );
+    }
+    expect(new Set(runs).size).toBe(1);
+
+    await client.close();
+  });
+
+  it("주입되지 않은 호출은 무엇이 등록돼 있는지 알려준다", async () => {
+    const server = await start();
+    server.on("get_weather", { city: "서울" }, { temp: -10 });
+    const client = await connect(server);
+
+    const result = await client.callTool({ name: "get_weather", arguments: { city: "제주" } });
+    expect(result.isError).toBe(true);
+    expect(text(result)).toContain("주입된 응답이 없습니다");
+    expect(text(result)).toContain('{"city":"서울"}');
+    expect(text(result)).toContain("mock.on(");
+
+    await client.close();
+  });
+
+  it("close() 이후에는 연결되지 않는다", async () => {
+    const server = await createMockServer({ tools });
+    const { url } = server;
+    await server.close();
+
+    const client = new Client({ name: "test", version: "0.0.0" });
+    await expect(client.connect(new StreamableHTTPClientTransport(new URL(url)))).rejects.toThrow();
+  });
+});

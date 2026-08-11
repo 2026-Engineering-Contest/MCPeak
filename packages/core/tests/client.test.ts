@@ -72,6 +72,16 @@ describe("McpClient SDK adapter", () => {
     expect(compatibilityResult.raw).toBe(compatibilityRaw);
   });
 
+  it("형식이 아닌 callTool 응답은 callTool OPERATION_FAILED로 정규화한다", async () => {
+    for (const result of [null, undefined, 0, "text", true, [], {}, { isError: false }]) {
+      const { client } = adapter({ callTool: async () => result });
+      await expect(client.callTool("tool", {})).rejects.toMatchObject({
+        code: "OPERATION_FAILED",
+        phase: "callTool",
+      });
+    }
+  });
+
   it("JSON object가 아닌, 순환 또는 과도하게 깊은 인자를 SDK 호출 전에 거절한다", async () => {
     const { sdk, client } = adapter();
     await expect(client.callTool("", {})).rejects.toMatchObject({ code: "INVALID_TOOL_ARGUMENTS" });

@@ -12,9 +12,18 @@ describe("@ohmymcp/core", () => {
     await expect(
       connectStdio({ command: "ohmymcp-command-that-does-not-exist", env: { SECRET: secret } }),
     ).rejects.toMatchObject({ code: "PROCESS_START_FAILED", phase: "spawn" });
-    await expect(
-      connectStdio({ command: process.execPath, args: ["-e", "process.exit(7)"] }),
-    ).rejects.toMatchObject({ code: "PROCESS_EXITED", phase: "process" });
+    let unexpectedConnection: Awaited<ReturnType<typeof connectStdio>> | undefined;
+    try {
+      unexpectedConnection = await connectStdio({
+        command: process.execPath,
+        args: ["-e", "process.exit(7)"],
+      });
+      throw new Error("process 종료 전에 connectStdio가 성공했습니다");
+    } catch (error) {
+      expect(error).toMatchObject({ code: "PROCESS_EXITED", phase: "process" });
+    } finally {
+      await unexpectedConnection?.forceClose();
+    }
     try {
       await connectStdio({
         command: "ohmymcp-command-that-does-not-exist",

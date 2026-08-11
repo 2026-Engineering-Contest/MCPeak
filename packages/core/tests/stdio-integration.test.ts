@@ -28,15 +28,29 @@ async function assertNoResidue(path: string): Promise<void> {
   let pid: number | undefined;
   for (let attempt = 0; attempt < 20 && pid === undefined; attempt += 1) {
     try {
-      pid = Number(await readFile(path, "utf8"));
+      const value = (await readFile(path, "utf8")).trim();
+      const parsed = Number(value);
+      if (/^[1-9]\d*$/.test(value) && Number.isSafeInteger(parsed)) pid = parsed;
+      else await new Promise((resolve) => setTimeout(resolve, 10));
     } catch {
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
   }
-  expect(pid).toBeTypeOf("number");
+  expect(pid).toSatisfy(
+    (value) => typeof value === "number" && Number.isSafeInteger(value) && value > 0,
+  );
   if (pid === undefined) return;
-  await new Promise((resolve) => setTimeout(resolve, 10));
-  expect(() => process.kill(pid, 0)).toThrow(/ESRCH/);
+  let missing = false;
+  for (let attempt = 0; attempt < 20 && !missing; attempt += 1) {
+    try {
+      process.kill(pid, 0);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    } catch (error) {
+      expect(error).toMatchObject({ code: "ESRCH" });
+      missing = true;
+    }
+  }
+  expect(missing).toBe(true);
 }
 
 describe.sequential("stdio 실제 프로세스", () => {

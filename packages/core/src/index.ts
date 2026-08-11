@@ -104,8 +104,6 @@ export async function connectStdio(options: ConnectOptions): Promise<McpStdioCon
 
 /**
  * MCP 서버 프로세스를 기동하고 핸드셰이크를 완료한 뒤 클라이언트를 반환한다.
- *
- * 아직 구현되지 않음 — `core` 오너가 채운다.
  */
 export async function connect(options: ConnectOptions): Promise<McpClient> {
   return (await connectStdio(options)).client;

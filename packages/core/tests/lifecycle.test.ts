@@ -29,6 +29,12 @@ class FakeClock implements LifecycleClock {
       timer.callback();
     }
   }
+  fireEarly() {
+    const timer = this.#timers.find((item) => !item.cancelled);
+    if (!timer) throw new Error("예약된 timer가 없습니다");
+    timer.cancelled = true;
+    timer.callback();
+  }
   get unrefCalls() {
     return this.#timers.reduce((count, timer) => count + timer.unrefCalls, 0);
   }
@@ -84,6 +90,7 @@ class FakeTransportChild extends FakeChild {
     endCalls: 0,
     destroyCalls: 0,
     writes: [] as string[],
+    writeResult: true,
     end: () => {
       this.stdin.endCalls += 1;
     },
@@ -92,7 +99,7 @@ class FakeTransportChild extends FakeChild {
     },
     write: (value: string) => {
       this.stdin.writes.push(value);
-      return true;
+      return this.stdin.writeResult;
     },
   });
   override stdout = Object.assign(new EventEmitter(), {
@@ -219,6 +226,31 @@ describe("LifecycleController", () => {
     child.close(0, null);
     expect(controller.state).toBe("failed");
     expect(controller.getDiagnostics()).toEqual(diagnostics);
+  });
+
+  it("close escalation의 SIGKILL 관찰 timeout은 forceClose에도 같은 실패를 반환한다", async () => {
+    const { child, clock, controller } = setup();
+    const closing = controller.close();
+    clock.advance(500);
+    clock.advance(500);
+    clock.advance(0);
+    clock.advance(500);
+    await expect(closing).rejects.toMatchObject({ code: "FORCE_CLOSE_TIMEOUT" });
+    const forced = controller.forceClose();
+    await expect(forced).rejects.toMatchObject({ code: "FORCE_CLOSE_TIMEOUT" });
+    expect(controller.forceClose()).toBe(forced);
+    expect(child.kills).toEqual(["SIGTERM", "SIGKILL"]);
+  });
+
+  it("deadline timer가 일찍 실행되면 남은 시간으로 다시 예약한다", async () => {
+    const { child, clock, controller } = setup();
+    const closing = controller.close();
+    clock.fireEarly();
+    expect(child.kills).toEqual([]);
+    clock.advance(500);
+    expect(child.kills).toEqual(["SIGTERM"]);
+    child.close();
+    await closing;
   });
 
   it("ESRCH는 강제 종료 성공이고 권한 오류는 안전한 실패다", async () => {
@@ -381,9 +413,23 @@ describe("NodeControlledStdioTransport", () => {
       code: "PROCESS_START_FAILED",
       phase: "spawn",
     });
+    expect(pending.transport.state).toBe("forceClosing");
     expect(pending.child.listenerCount("spawn")).toBe(0);
     expect(pending.child.kills).toEqual(["SIGKILL"]);
     pending.child.close();
+  });
+
+  it("startup error는 PROCESS_START_FAILED 한 번만 보고하고 transport error로 중복 보고하지 않는다", async () => {
+    const { transport, child } = controlled();
+    const errors: Error[] = [];
+    transport.onerror = (error) => errors.push(error);
+    const started = transport.start();
+    child.emit("error", new Error("spawn failed"));
+    await expect(started).rejects.toMatchObject({ code: "PROCESS_START_FAILED", phase: "spawn" });
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatchObject({ code: "PROCESS_START_FAILED", phase: "spawn" });
+    child.close();
+    await transport.forceClose();
   });
 
   it("synchronous spawn throw는 PROCESS_START_FAILED로 reject되고 child cleanup을 만들지 않는다", async () => {
@@ -468,17 +514,59 @@ describe("NodeControlledStdioTransport", () => {
     const previous = process.env.PARENT_SECRET_SENTINEL;
     process.env.PARENT_SECRET_SENTINEL = "must-not-leak";
     const context = controlled();
-    const started = context.transport.start();
-    context.child.emit("spawn");
+    try {
+      const started = context.transport.start();
+      context.child.emit("spawn");
+      await started;
+      const environment = (context.spawnedOptions as { env: Record<string, string> }).env;
+      expect(environment.PARENT_SECRET_SENTINEL).toBeUndefined();
+      expect(environment.PATH).toBe("explicit-path");
+      expect(environment.EXPLICIT).toBe("yes");
+    } finally {
+      if (previous === undefined) delete process.env.PARENT_SECRET_SENTINEL;
+      else process.env.PARENT_SECRET_SENTINEL = previous;
+      const closed = context.transport.forceClose();
+      context.child.close();
+      await closed;
+    }
+  });
+
+  it("backpressure send는 drain에서 끝나고 error와 close에서는 listener를 정리하며 거절한다", async () => {
+    const { transport, child } = controlled();
+    const started = transport.start();
+    child.emit("spawn");
     await started;
-    const environment = (context.spawnedOptions as { env: Record<string, string> }).env;
-    expect(environment.PARENT_SECRET_SENTINEL).toBeUndefined();
-    expect(environment.PATH).toBe("explicit-path");
-    expect(environment.EXPLICIT).toBe("yes");
-    if (previous === undefined) delete process.env.PARENT_SECRET_SENTINEL;
-    else process.env.PARENT_SECRET_SENTINEL = previous;
-    const closed = context.transport.forceClose();
-    context.child.close();
+    child.stdin.writeResult = false;
+    const initialListeners = {
+      drain: child.stdin.listenerCount("drain"),
+      error: child.stdin.listenerCount("error"),
+      close: child.stdin.listenerCount("close"),
+    };
+    const sent = transport.send({ jsonrpc: "2.0", method: "notifications/test" });
+    expect(child.stdin.listenerCount("drain")).toBe(initialListeners.drain + 1);
+    expect(child.stdin.listenerCount("error")).toBe(initialListeners.error + 1);
+    expect(child.stdin.listenerCount("close")).toBe(initialListeners.close + 1);
+    child.stdin.emit("drain");
+    await sent;
+    expect(child.stdin.listenerCount("drain")).toBe(initialListeners.drain);
+    expect(child.stdin.listenerCount("error")).toBe(initialListeners.error);
+    expect(child.stdin.listenerCount("close")).toBe(initialListeners.close);
+
+    const failed = transport.send({ jsonrpc: "2.0", method: "notifications/test" });
+    child.stdin.emit("error", new Error("write failed"));
+    await expect(failed).rejects.toThrow("write failed");
+    expect(child.stdin.listenerCount("drain")).toBe(initialListeners.drain);
+    expect(child.stdin.listenerCount("error")).toBe(initialListeners.error);
+    expect(child.stdin.listenerCount("close")).toBe(initialListeners.close);
+
+    const closedBeforeDrain = transport.send({ jsonrpc: "2.0", method: "notifications/test" });
+    child.stdin.emit("close");
+    await expect(closedBeforeDrain).rejects.toThrow("stdin closed before drain");
+    expect(child.stdin.listenerCount("drain")).toBe(initialListeners.drain);
+    expect(child.stdin.listenerCount("error")).toBe(initialListeners.error);
+    expect(child.stdin.listenerCount("close")).toBe(initialListeners.close);
+    const closed = transport.forceClose();
+    child.close();
     await closed;
   });
 });

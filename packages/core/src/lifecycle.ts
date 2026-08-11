@@ -175,6 +175,9 @@ export class LifecycleController {
           : SIGKILL_OBSERVE_MS;
     this.#deadlineAt = this.clock.now() + wait;
     this.#deadlineStage = stage;
+    this.#armDeadline(stage, wait);
+  }
+  #armDeadline(stage: "stdin" | "term" | "kill", wait: number): void {
     this.#timer = this.clock.setTimeout(() => this.#atDeadline(stage), wait);
     this.#timer.unref();
   }
@@ -188,7 +191,11 @@ export class LifecycleController {
     }
   }
   #atDeadline(stage: "stdin" | "term" | "kill"): void {
-    if (this.clock.now() < (this.#deadlineAt ?? Infinity)) return;
+    const deadlineAt = this.#deadlineAt;
+    if (deadlineAt !== undefined && this.clock.now() < deadlineAt) {
+      this.#armDeadline(stage, deadlineAt - this.clock.now());
+      return;
+    }
     this.#timer = undefined;
     this.#deadlineStage = undefined;
     if (this.#state === "closed") return;
@@ -212,6 +219,7 @@ export class LifecycleController {
       if (stage === "term") {
         this.#sendKill("SIGKILL");
         this.#state = "forceClosing";
+        this.#ensureForcePromise();
         this.#schedule("kill");
         return;
       }
@@ -234,6 +242,11 @@ export class LifecycleController {
     } catch (cause) {
       this.#failForce(cause);
     }
+  }
+  #ensureForcePromise(): void {
+    if (this.#forcePromise) return;
+    this.#forceDeferred = deferred();
+    this.#forcePromise = this.#forceDeferred.promise;
   }
   #sendKill(signal: NodeJS.Signals): void {
     if (signal === "SIGTERM" && this.#termSent) return;

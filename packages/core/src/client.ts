@@ -159,6 +159,13 @@ export function createMcpClientAdapter(
       if (typeof result === "object" && result !== null && "toolResult" in result) {
         return { content: result.toolResult, isError: false, raw: result };
       }
+      if (typeof result !== "object" || result === null || !("content" in result))
+        throw new McpClientError({
+          code: "OPERATION_FAILED",
+          phase: "callTool",
+          diagnostics: diagnostics(),
+          cause: result,
+        });
       const standard = result as { content: unknown; isError?: boolean };
       return { content: standard.content, isError: standard.isError ?? false, raw: result };
     },

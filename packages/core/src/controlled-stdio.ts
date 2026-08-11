@@ -99,6 +99,7 @@ export class NodeControlledStdioTransport implements ControlledStdioTransport {
         () => this.#notifyClose(),
         { normalClose: () => this.#normalCloseHook?.() },
       );
+      let startupErrorObserved = false;
       const onSpawn = () => {
         child.removeListener("error", startError);
         if (this.state !== "starting") return;
@@ -106,13 +107,16 @@ export class NodeControlledStdioTransport implements ControlledStdioTransport {
         resolve();
       };
       const startError = (cause: Error) => {
+        startupErrorObserved = true;
         child.removeListener("spawn", onSpawn);
         child.removeListener("error", startError);
         this.#startFailed(reject, cause);
       };
       child.once("spawn", onSpawn);
       child.once("error", startError);
-      child.on("error", (cause) => this.#transportFailed(cause));
+      child.on("error", (cause) => {
+        if (!startupErrorObserved) this.#transportFailed(cause);
+      });
       child.stdout.on("data", (chunk: Buffer) => this.#readStdout(chunk));
       child.stdout.on("error", (cause) => this.#transportFailed(cause));
       child.stdin.on("error", (cause) => this.#transportFailed(cause));
@@ -129,11 +133,28 @@ export class NodeControlledStdioTransport implements ControlledStdioTransport {
     if (!child || this.state === "closed" || this.state === "failed")
       throw new Error("stdio transport is not connected");
     await new Promise<void>((resolve, reject) => {
+      const cleanup = () => {
+        child.stdin.removeListener("drain", onDrain);
+        child.stdin.removeListener("error", onError);
+        child.stdin.removeListener("close", onClose);
+      };
+      const settle = (cause?: unknown) => {
+        cleanup();
+        if (cause === undefined) resolve();
+        else reject(cause);
+      };
+      const onDrain = () => settle();
+      const onError = (cause: Error) => settle(cause);
+      const onClose = () => settle(new Error("stdio stdin closed before drain"));
       try {
         if (child.stdin.write(serializeMessage(message))) resolve();
-        else child.stdin.once("drain", resolve);
+        else {
+          child.stdin.once("drain", onDrain);
+          child.stdin.once("error", onError);
+          child.stdin.once("close", onClose);
+        }
       } catch (cause) {
-        reject(cause);
+        settle(cause);
       }
     });
   }

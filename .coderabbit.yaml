@@ -37,7 +37,9 @@ reviews:
   request_changes_workflow: false
   high_level_summary: true
   poem: false
-  collapse_walkthrough: true
+  # 워크스루(변경 파일 요약 표 · 시퀀스 다이어그램 · 리뷰 난이도 추정)를 펼쳐서 보여준다.
+  # 접어두면 클릭해야 보이는데, 그러면 아무도 안 본다.
+  collapse_walkthrough: false
 
   path_filters:
     - "!**/dist/**"

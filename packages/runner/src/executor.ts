@@ -1,4 +1,4 @@
-import type { McpClient, ToolResult } from "@ohmymcp/core";
+import type { McpClient, ToolDef, ToolResult } from "@ohmymcp/core";
 import { type AssertionResult, assertIsError, assertToolExists } from "./assertions.js";
 import { normalizeThrownValue, type RunnerDiagnostic } from "./diagnostics.js";
 import { bindExecution, monotonicNowMs } from "./execution-binding.js";
@@ -9,12 +9,15 @@ import {
   type RunnerRedactionOptions,
   resolvePayloadLimits,
   sanitizeCase,
+  sanitizeJsonValue,
 } from "./sanitization.js";
 import {
   type AssertionSpec,
+  type IsErrorAssertionSpec,
   SuiteValidationError,
   type TestCaseSpec,
   type TestSuiteSpec,
+  type ToolExistsAssertionSpec,
   validateMcpSuite,
 } from "./spec/index.js";
 
@@ -90,13 +93,17 @@ const unavailable = (): RunnerDiagnostic => ({
   message: "MCP 작업 결과가 없어 assertion을 검사할 수 없습니다.",
   hint: "먼저 MCP 작업 실패 원인을 해결하세요.",
 });
-const failed = (operation: TestCaseSpec["operation"], error: unknown): RunnerDiagnostic => ({
+const failed = (
+  operation: TestCaseSpec["operation"],
+  error: unknown,
+  redaction?: RunnerRedactionOptions,
+): RunnerDiagnostic => ({
   code: "OPERATION_FAILED",
   message:
     operation.type === "listTools"
       ? "MCP 툴 목록 조회 중 오류가 발생했습니다."
       : `툴 '${operation.tool}' 호출 중 오류가 발생했습니다.`,
-  actual: normalizeThrownValue(error),
+  actual: sanitizeJsonValue(normalizeThrownValue(error), redaction),
   hint: "MCP 서버 프로세스와 연결 상태를 확인하세요.",
 });
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
@@ -117,6 +124,9 @@ type Controlled<T> =
   | { type: "rejected"; error: unknown }
   | { type: "timedOut" }
   | { type: "cancelled" };
+type OperationValue =
+  | { type: "listTools"; tools: readonly ToolDef[] }
+  | { type: "callTool"; result: ToolResult };
 export function runSuite(options: RunSuiteOptions): RunnerExecution {
   const drainTimeoutMs = validDrainTimeout(options.drainTimeoutMs);
   const validated = validateMcpSuite(options.suite);
@@ -238,12 +248,14 @@ export function runSuite(options: RunSuiteOptions): RunnerExecution {
       const timeoutMs = spec.timeoutMs ?? operational.defaultTimeoutMs ?? 10_000;
       emit({ type: "caseStarted", ...fields, case: observed });
       emit({ type: "operationStarted", ...fields, operation: observed.operation, timeoutMs });
-      let result: ToolResult | undefined;
+      let result: OperationValue | undefined;
       let operation: OperationResult;
-      const request =
+      const request: Promise<OperationValue> =
         spec.operation.type === "listTools"
-          ? track(options.client.listTools()).then((tools) => ({ tools }) as unknown as ToolResult)
-          : track(options.client.callTool(spec.operation.tool, spec.operation.input));
+          ? track(options.client.listTools()).then((tools) => ({ type: "listTools", tools }))
+          : track(options.client.callTool(spec.operation.tool, spec.operation.input)).then(
+              (toolResult) => ({ type: "callTool", result: toolResult }),
+            );
       const outcome = await controlled(request, timeoutMs);
       if (outcome.type === "fulfilled") {
         result = outcome.value;
@@ -252,7 +264,7 @@ export function runSuite(options: RunSuiteOptions): RunnerExecution {
         operation = {
           status: "failed",
           timeoutMs,
-          diagnostic: failed(spec.operation, outcome.error),
+          diagnostic: failed(spec.operation, outcome.error, options.redaction),
         };
       else if (outcome.type === "timedOut")
         operation = {
@@ -283,12 +295,9 @@ export function runSuite(options: RunSuiteOptions): RunnerExecution {
                 status: "skipped" as const,
                 diagnostic: unavailable(),
               }
-            : spec.operation.type === "listTools"
-              ? assertToolExists(
-                  (result as unknown as { tools: Parameters<typeof assertToolExists>[0] }).tools,
-                  assertion as never,
-                )
-              : assertIsError(result, assertion as never);
+            : result.type === "listTools"
+              ? assertToolExists(result.tools, assertion as ToolExistsAssertionSpec)
+              : assertIsError(result.result, assertion as IsErrorAssertionSpec);
         emit({ type: "assertionCompleted", ...fields, assertionIndex, result: outcome });
         return outcome;
       });

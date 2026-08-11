@@ -29,7 +29,29 @@ export {
   type RunnerForceCloseReason,
   RunnerShutdownTimeoutError,
 } from "./shutdown.js";
-export * from "./spec/index.js";
+export { MCP_SUITE_JSON_SCHEMA } from "./spec/json-schema.js";
+export type {
+  AssertionSpec,
+  CallToolCaseSpec,
+  IsErrorAssertionSpec,
+  JsonObject,
+  JsonPrimitive,
+  JsonValue,
+  ListToolsCaseSpec,
+  ReadonlyJsonObject,
+  ReadonlyJsonValue,
+  SuiteValidationIssue,
+  SuiteValidationIssueCode,
+  SuiteValidationResult,
+  TestCaseBase,
+  TestCaseSpec,
+  TestSuiteSpec,
+  ToolExistsAssertionSpec,
+  ToolListAssertionSpec,
+  ToolResultAssertionSpec,
+} from "./spec/types.js";
+export { SuiteValidationError } from "./spec/types.js";
+export { defineMcpSuite, validateMcpSuite } from "./spec/validation.js";
 
 /** `createMcpTest` 에 넘기는 설정. */
 export interface McpTestConfig {

@@ -75,6 +75,39 @@ describe("sanitization", () => {
     for (const secret of ["top-secret", "key-secret", "caller-secret"])
       expect(serialized).not.toContain(secret);
   });
+  it("계약 식별자는 민감값과 같아도 보존한다", async () => {
+    const suite = structuredClone(secretSuite);
+    const firstCase = suite.cases[0];
+    if (firstCase === undefined) throw new Error("fixture case missing");
+    firstCase.name = "caller-secret";
+
+    const report = await runSuite({
+      client: client([]),
+      suite,
+      redaction: { sensitiveValues: ["caller-secret"] },
+    }).report;
+
+    expect(report.cases[0]?.spec.name).toBe("caller-secret");
+  });
+  it("operation 실패 진단의 민감값을 마스킹한다", async () => {
+    const failingClient = client([]);
+    failingClient.callTool = async () => {
+      throw new Error("caller-secret");
+    };
+
+    const report = await runSuite({
+      client: failingClient,
+      suite: secretSuite,
+      redaction: { sensitiveValues: ["caller-secret"] },
+    }).report;
+
+    expect(report.cases[0]?.operation.diagnostic?.actual).toEqual({
+      type: "error",
+      name: "Error",
+      message: "[REDACTED]",
+    });
+    expect(JSON.stringify(report)).not.toContain("caller-secret");
+  });
   it("case payload 초과를 이벤트와 호출 전에 거절한다", async () => {
     const records: unknown[] = [];
     const events: RunnerEvent[] = [];

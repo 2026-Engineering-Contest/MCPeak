@@ -77,15 +77,17 @@ function sanitizeValue(
       : sanitizeValue(nestedValue, keys, values);
   return copy;
 }
+export function sanitizeJsonValue(value: JsonValue, options?: RunnerRedactionOptions): JsonValue {
+  const keys = new Set(DEFAULT_SENSITIVE_KEYS);
+  for (const key of options?.sensitiveKeys ?? []) keys.add(normalizeSensitiveKey(key));
+  return sanitizeValue(value, keys, new Set(options?.sensitiveValues ?? []));
+}
 export function sanitizeCase(
   caseSpec: TestCaseSpec,
   options?: RunnerRedactionOptions,
 ): TestCaseSpec {
-  const keys = new Set(DEFAULT_SENSITIVE_KEYS);
-  for (const key of options?.sensitiveKeys ?? []) keys.add(normalizeSensitiveKey(key));
-  const values = new Set(options?.sensitiveValues ?? []);
   const copy = JSON.parse(JSON.stringify(caseSpec)) as TestCaseSpec;
   if (copy.operation.type === "callTool")
-    copy.operation.input = sanitizeValue(copy.operation.input, keys, values) as JsonObject;
+    copy.operation.input = sanitizeJsonValue(copy.operation.input, options) as JsonObject;
   return copy;
 }

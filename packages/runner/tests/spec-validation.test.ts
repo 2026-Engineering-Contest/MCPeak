@@ -107,6 +107,25 @@ describe("MCP suite validation", () => {
     });
   });
 
+  it("operation type 누락은 근본 원인 하나만 보고한다", () => {
+    const result = validateMcpSuite({
+      ...validSuite,
+      cases: [
+        {
+          id: "missing-operation-type",
+          name: "operation type 누락",
+          operation: { tool: "weather", input: {} },
+          assertions: [{ type: "isError", expected: false }],
+        },
+      ],
+    });
+
+    expect(result).toMatchObject({
+      valid: false,
+      issues: [{ code: "MISSING_REQUIRED_FIELD", path: "cases[0].operation.type" }],
+    });
+  });
+
   it.each([0, -1, 1.5, 2_147_483_648])(
     "timeout %p을 거절하고 최대 양 경계는 허용한다",
     (timeoutMs) => {
@@ -189,6 +208,34 @@ describe("MCP suite validation", () => {
       valid: false,
       issues: [{ code: "INVALID_JSON_VALUE", path: "cases[0].operation.input.self" }],
     });
+  });
+
+  it("깊게 중첩된 JSON 입력도 예외 없이 검증한다", () => {
+    let input: Record<string, unknown> = { end: true };
+    for (let depth = 0; depth < 10_000; depth++) input = { next: input };
+
+    expect(() =>
+      validateMcpSuite({
+        ...validSuite,
+        cases: [
+          {
+            ...validSuite.cases[1],
+            operation: { type: "callTool", tool: "weather", input },
+          },
+        ],
+      }),
+    ).not.toThrow();
+    expect(
+      validateMcpSuite({
+        ...validSuite,
+        cases: [
+          {
+            ...validSuite.cases[1],
+            operation: { type: "callTool", tool: "weather", input },
+          },
+        ],
+      }).valid,
+    ).toBe(true);
   });
 
   it("defineMcpSuite는 identity를 보존하고 구조화된 오류를 던진다", () => {

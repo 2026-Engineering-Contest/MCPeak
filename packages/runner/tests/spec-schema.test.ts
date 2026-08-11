@@ -24,6 +24,8 @@ describe("MCP_SUITE_JSON_SCHEMA", () => {
       invalid,
       { ...valid, name: " " },
       { ...valid, defaultTimeoutMs: 2_147_483_648 },
+      { ...valid, defaultTimeoutMs: 10_000 },
+      { ...valid, defaultTimeoutMs: 2_147_483_647 },
     ]) {
       expect(evaluateSchema(MCP_SUITE_JSON_SCHEMA, fixture).valid).toBe(
         validateMcpSuite(fixture).valid,
@@ -62,6 +64,24 @@ describe("MCP_SUITE_JSON_SCHEMA", () => {
       expect.objectContaining({ code: "ONE_OF_MATCH_COUNT" }),
     );
     expect(evaluateSchema(two, 1).errors).toContainEqual(
+      expect.objectContaining({ code: "ONE_OF_MATCH_COUNT" }),
+    );
+  });
+
+  it("앞선 형제 오류가 이후 oneOf 분기 판정을 오염시키지 않는다", () => {
+    const schema = {
+      type: "object",
+      properties: {
+        bad: { const: "expected" },
+        variant: { oneOf: [{ const: "match" }, { const: "other" }] },
+      },
+    } as unknown as ReadonlyJsonObject;
+
+    const result = evaluateSchema(schema, { bad: "actual", variant: "match" });
+
+    expect(result.valid).toBe(false);
+    expect(result.errors).toContainEqual(expect.objectContaining({ code: "INSTANCE_MISMATCH" }));
+    expect(result.errors).not.toContainEqual(
       expect.objectContaining({ code: "ONE_OF_MATCH_COUNT" }),
     );
   });

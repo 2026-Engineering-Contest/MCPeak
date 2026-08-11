@@ -48,37 +48,54 @@ function json(
   issues: SuiteValidationIssue[],
   active: Set<object>,
 ): boolean {
-  if (value === null || typeof value === "string" || typeof value === "boolean") return true;
-  if (typeof value === "number") {
-    if (!Number.isFinite(value)) issue(issues, "INVALID_JSON_VALUE", path);
-    return Number.isFinite(value);
-  }
-  if (Array.isArray(value)) {
-    if (active.has(value)) {
-      issue(issues, "INVALID_JSON_VALUE", path);
-      return false;
+  type Frame = { type: "visit"; value: unknown; path: string } | { type: "leave"; value: object };
+  const frames: Frame[] = [{ type: "visit", value, path }];
+  let valid = true;
+
+  while (frames.length > 0) {
+    const frame = frames.pop();
+    if (frame === undefined) break;
+    if (frame.type === "leave") {
+      active.delete(frame.value);
+      continue;
     }
-    active.add(value);
-    value.forEach((entry, index) => {
-      json(entry, `${path}[${index}]`, issues, active);
-    });
-    active.delete(value);
-    return true;
-  }
-  if (plain(value)) {
-    if (active.has(value)) {
-      issue(issues, "INVALID_JSON_VALUE", path);
-      return false;
+
+    const current = frame.value;
+    if (current === null || typeof current === "string" || typeof current === "boolean") continue;
+    if (typeof current === "number") {
+      if (!Number.isFinite(current)) {
+        issue(issues, "INVALID_JSON_VALUE", frame.path);
+        valid = false;
+      }
+      continue;
     }
-    active.add(value);
-    Object.keys(value).forEach((key) => {
-      json(value[key], `${path}.${key}`, issues, active);
-    });
-    active.delete(value);
-    return true;
+    if (!Array.isArray(current) && !plain(current)) {
+      issue(issues, "INVALID_JSON_VALUE", frame.path);
+      valid = false;
+      continue;
+    }
+    if (active.has(current)) {
+      issue(issues, "INVALID_JSON_VALUE", frame.path);
+      valid = false;
+      continue;
+    }
+
+    active.add(current);
+    frames.push({ type: "leave", value: current });
+    if (Array.isArray(current)) {
+      for (let index = current.length - 1; index >= 0; index--)
+        frames.push({ type: "visit", value: current[index], path: `${frame.path}[${index}]` });
+      continue;
+    }
+    const keys = Object.keys(current);
+    for (let index = keys.length - 1; index >= 0; index--) {
+      const key = keys[index];
+      if (key !== undefined)
+        frames.push({ type: "visit", value: current[key], path: `${frame.path}.${key}` });
+    }
   }
-  issue(issues, "INVALID_JSON_VALUE", path);
-  return false;
+
+  return valid;
 }
 export function validateMcpSuite(input: unknown): SuiteValidationResult {
   const issues: SuiteValidationIssue[] = [];
@@ -159,8 +176,10 @@ function validateOperation(
   }
   required(value, ["type"], path, issues);
   if (kind !== "listTools" && kind !== "callTool") {
-    issue(issues, "INVALID_VALUE", `${path}.type`);
-    unknowns(value, ["type"], path, issues);
+    if ("type" in value) {
+      issue(issues, "INVALID_VALUE", `${path}.type`);
+      unknowns(value, ["type"], path, issues);
+    }
     return;
   }
   const keys = kind === "listTools" ? ["type"] : ["type", "tool", "input"];
@@ -197,6 +216,7 @@ function validateAssertions(
     issue(issues, "EMPTY_ASSERTIONS", path);
     return;
   }
+  if (kind === undefined) return;
   value.forEach((assertion, index) => {
     const itemPath = `${path}[${index}]`;
     if (!plain(assertion)) {

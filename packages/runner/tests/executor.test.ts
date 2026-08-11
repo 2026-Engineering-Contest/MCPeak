@@ -90,6 +90,7 @@ describe("runSuite", () => {
       [2_147_483_647, undefined, 2_147_483_647],
     ] as const) {
       vi.useFakeTimers();
+      const controller = new AbortController();
       const input = structuredClone(suite);
       if (suiteTimeout === undefined) delete input.defaultTimeoutMs;
       else input.defaultTimeoutMs = suiteTimeout;
@@ -99,13 +100,17 @@ describe("runSuite", () => {
       const execution = runSuite({
         client: { ...fake([]), listTools: pending },
         suite: input,
+        signal: controller.signal,
         onEvent: (event) => {
           if (event.type === "operationStarted") values.push(event.timeoutMs);
         },
       });
       if (expected !== 2_147_483_647) await vi.advanceTimersByTimeAsync(expected);
-      else await vi.advanceTimersByTimeAsync(1);
-      if (expected !== 2_147_483_647) await execution.report;
+      else {
+        await vi.advanceTimersByTimeAsync(1);
+        controller.abort();
+      }
+      await execution.report;
       vi.useRealTimers();
     }
     expect(values).toEqual([7, 9, 10_000, 2_147_483_647]);

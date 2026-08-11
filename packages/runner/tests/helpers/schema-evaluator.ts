@@ -22,6 +22,7 @@ export function evaluateSchema(
     message: string,
   ) => errors.push({ code, instancePath, schemaPath, message });
   const walk = (schema: unknown, value: unknown, ip: string, sp: string): boolean => {
+    const entryErrorCount = errors.length;
     if (!record(schema)) {
       fail("INVALID_SCHEMA", ip, sp, "Schema must be an object.");
       return false;
@@ -69,8 +70,9 @@ export function evaluateSchema(
       let matches = 0;
       for (let i = 0; i < schema.oneOf.length; i++) {
         const before = errors.length;
-        const ok = walk(schema.oneOf[i], value, ip, `${sp}/oneOf/${i}`);
+        walk(schema.oneOf[i], value, ip, `${sp}/oneOf/${i}`);
         const branchErrors = errors.splice(before);
+        const ok = branchErrors.length === 0;
         errors.push(
           ...branchErrors.filter(
             (error) => error.code === "INVALID_SCHEMA" || error.code === "UNRESOLVED_REF",
@@ -97,7 +99,9 @@ export function evaluateSchema(
               ? record(value)
               : schema.type === "number"
                 ? typeof value === "number" && Number.isFinite(value)
-                : typeof value === schema.type;
+                : schema.type === "integer"
+                  ? typeof value === "number" && Number.isInteger(value)
+                  : typeof value === schema.type;
       if (!ok) {
         fail("INSTANCE_MISMATCH", ip, sp, "type mismatch");
         return false;
@@ -150,7 +154,7 @@ export function evaluateSchema(
       fail("INSTANCE_MISMATCH", ip, sp, "minimum mismatch");
     if (typeof value === "number" && typeof schema.maximum === "number" && value > schema.maximum)
       fail("INSTANCE_MISMATCH", ip, sp, "maximum mismatch");
-    return errors.length === 0;
+    return errors.length === entryErrorCount;
   };
   walk(rootSchema, instance, "$", "#");
   return { valid: errors.length === 0, errors };

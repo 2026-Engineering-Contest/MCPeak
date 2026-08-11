@@ -1,0 +1,234 @@
+import {
+  SuiteValidationError,
+  type SuiteValidationIssue,
+  type SuiteValidationIssueCode,
+  type SuiteValidationResult,
+  type TestSuiteSpec,
+} from "./types.js";
+
+const plain = (v: unknown): v is Record<string, unknown> =>
+  typeof v === "object" &&
+  v !== null &&
+  !Array.isArray(v) &&
+  (Object.getPrototypeOf(v) === Object.prototype || Object.getPrototypeOf(v) === null);
+const issue = (issues: SuiteValidationIssue[], code: SuiteValidationIssueCode, path: string) =>
+  issues.push({
+    code,
+    path,
+    message: `명세 필드 '${path}'가 유효하지 않습니다.`,
+    hint: "명세 계약에 맞게 필드와 값을 확인하세요.",
+  });
+const nonEmpty = (v: unknown) => typeof v === "string" && /\S/.test(v);
+const timeout = (v: unknown) =>
+  typeof v === "number" && Number.isSafeInteger(v) && v >= 1 && v <= 2_147_483_647;
+const unknowns = (
+  value: Record<string, unknown>,
+  allowed: readonly string[],
+  path: string,
+  issues: SuiteValidationIssue[],
+) =>
+  Object.keys(value)
+    .filter((key) => !allowed.includes(key))
+    .sort()
+    .forEach((key) => {
+      issue(issues, "UNKNOWN_FIELD", path ? `${path}.${key}` : key);
+    });
+const required = (
+  value: Record<string, unknown>,
+  names: readonly string[],
+  path: string,
+  issues: SuiteValidationIssue[],
+) =>
+  names.forEach((name) => {
+    if (!(name in value)) issue(issues, "MISSING_REQUIRED_FIELD", path ? `${path}.${name}` : name);
+  });
+function json(
+  value: unknown,
+  path: string,
+  issues: SuiteValidationIssue[],
+  active: Set<object>,
+): boolean {
+  if (value === null || typeof value === "string" || typeof value === "boolean") return true;
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) issue(issues, "INVALID_JSON_VALUE", path);
+    return Number.isFinite(value);
+  }
+  if (Array.isArray(value)) {
+    if (active.has(value)) {
+      issue(issues, "INVALID_JSON_VALUE", path);
+      return false;
+    }
+    active.add(value);
+    value.forEach((entry, index) => {
+      json(entry, `${path}[${index}]`, issues, active);
+    });
+    active.delete(value);
+    return true;
+  }
+  if (plain(value)) {
+    if (active.has(value)) {
+      issue(issues, "INVALID_JSON_VALUE", path);
+      return false;
+    }
+    active.add(value);
+    Object.keys(value).forEach((key) => {
+      json(value[key], `${path}.${key}`, issues, active);
+    });
+    active.delete(value);
+    return true;
+  }
+  issue(issues, "INVALID_JSON_VALUE", path);
+  return false;
+}
+export function validateMcpSuite(input: unknown): SuiteValidationResult {
+  const issues: SuiteValidationIssue[] = [];
+  if (!plain(input)) {
+    issue(issues, "INVALID_TYPE", "$");
+    return { valid: false, issues };
+  }
+  if (!("schemaVersion" in input)) issue(issues, "MISSING_REQUIRED_FIELD", "schemaVersion");
+  else if (input.schemaVersion !== 1) issue(issues, "UNSUPPORTED_SCHEMA_VERSION", "schemaVersion");
+  for (const key of ["id", "name"] as const)
+    if (!(key in input)) issue(issues, "MISSING_REQUIRED_FIELD", key);
+    else if (!nonEmpty(input[key]))
+      issue(issues, typeof input[key] === "string" ? "INVALID_VALUE" : "INVALID_TYPE", key);
+  if ("defaultTimeoutMs" in input && !timeout(input.defaultTimeoutMs))
+    issue(issues, "INVALID_TIMEOUT", "defaultTimeoutMs");
+  unknowns(input, ["schemaVersion", "id", "name", "defaultTimeoutMs", "cases"], "", issues);
+  if (!("cases" in input)) {
+    issue(issues, "MISSING_REQUIRED_FIELD", "cases");
+    return { valid: false, issues };
+  }
+  if (!Array.isArray(input.cases)) {
+    issue(issues, "INVALID_TYPE", "cases");
+    return { valid: false, issues };
+  }
+  if (input.cases.length === 0) issue(issues, "EMPTY_CASES", "cases");
+  const seen = new Set<string>();
+  input.cases.forEach((caseValue, index) => {
+    validateCase(caseValue, index, seen, issues);
+  });
+  return issues.length === 0
+    ? { valid: true, value: input as unknown as TestSuiteSpec }
+    : { valid: false, issues };
+}
+function validateCase(
+  value: unknown,
+  index: number,
+  seen: Set<string>,
+  issues: SuiteValidationIssue[],
+): void {
+  const path = `cases[${index}]`;
+  if (!plain(value)) {
+    issue(issues, "INVALID_TYPE", path);
+    return;
+  }
+  for (const key of ["id", "name"] as const)
+    if (!(key in value)) issue(issues, "MISSING_REQUIRED_FIELD", `${path}.${key}`);
+    else if (!nonEmpty(value[key]))
+      issue(
+        issues,
+        typeof value[key] === "string" ? "INVALID_VALUE" : "INVALID_TYPE",
+        `${path}.${key}`,
+      );
+  if (typeof value.id === "string" && nonEmpty(value.id)) {
+    if (seen.has(value.id)) issue(issues, "DUPLICATE_CASE_ID", `${path}.id`);
+    else seen.add(value.id);
+  }
+  if ("timeoutMs" in value && !timeout(value.timeoutMs))
+    issue(issues, "INVALID_TIMEOUT", `${path}.timeoutMs`);
+  unknowns(value, ["id", "name", "timeoutMs", "operation", "assertions"], path, issues);
+  const operation = value.operation;
+  const kind = plain(operation) && typeof operation.type === "string" ? operation.type : undefined;
+  validateOperation(operation, kind, `${path}.operation`, issues);
+  validateAssertions(value.assertions, kind, `${path}.assertions`, issues);
+}
+function validateOperation(
+  value: unknown,
+  kind: string | undefined,
+  path: string,
+  issues: SuiteValidationIssue[],
+): void {
+  if (value === undefined) {
+    issue(issues, "MISSING_REQUIRED_FIELD", path);
+    return;
+  }
+  if (!plain(value)) {
+    issue(issues, "INVALID_TYPE", path);
+    return;
+  }
+  required(value, ["type"], path, issues);
+  if (kind !== "listTools" && kind !== "callTool") {
+    issue(issues, "INVALID_VALUE", `${path}.type`);
+    unknowns(value, ["type"], path, issues);
+    return;
+  }
+  const keys = kind === "listTools" ? ["type"] : ["type", "tool", "input"];
+  required(value, keys, path, issues);
+  if (kind === "callTool") {
+    if ("tool" in value && !nonEmpty(value.tool))
+      issue(
+        issues,
+        typeof value.tool === "string" ? "INVALID_VALUE" : "INVALID_TYPE",
+        `${path}.tool`,
+      );
+    if ("input" in value) {
+      if (plain(value.input)) json(value.input, `${path}.input`, issues, new Set());
+      else issue(issues, "INVALID_JSON_VALUE", `${path}.input`);
+    }
+  }
+  unknowns(value, keys, path, issues);
+}
+function validateAssertions(
+  value: unknown,
+  kind: string | undefined,
+  path: string,
+  issues: SuiteValidationIssue[],
+): void {
+  if (value === undefined) {
+    issue(issues, "MISSING_REQUIRED_FIELD", path);
+    return;
+  }
+  if (!Array.isArray(value)) {
+    if (value !== undefined) issue(issues, "INVALID_TYPE", path);
+    return;
+  }
+  if (value.length === 0) {
+    issue(issues, "EMPTY_ASSERTIONS", path);
+    return;
+  }
+  value.forEach((assertion, index) => {
+    const itemPath = `${path}[${index}]`;
+    if (!plain(assertion)) {
+      issue(issues, "INVALID_TYPE", itemPath);
+      return;
+    }
+    const type = assertion.type;
+    const expected =
+      kind === "listTools" ? "toolExists" : kind === "callTool" ? "isError" : undefined;
+    if (type !== expected) {
+      issue(issues, "INCOMPATIBLE_ASSERTION", itemPath);
+      return;
+    }
+    if (type === "toolExists") {
+      required(assertion, ["type", "tool"], itemPath, issues);
+      if ("tool" in assertion && !nonEmpty(assertion.tool))
+        issue(
+          issues,
+          typeof assertion.tool === "string" ? "INVALID_VALUE" : "INVALID_TYPE",
+          `${itemPath}.tool`,
+        );
+      unknowns(assertion, ["type", "tool"], itemPath, issues);
+    } else {
+      required(assertion, ["type", "expected"], itemPath, issues);
+      if ("expected" in assertion && typeof assertion.expected !== "boolean")
+        issue(issues, "INVALID_TYPE", `${itemPath}.expected`);
+      unknowns(assertion, ["type", "expected"], itemPath, issues);
+    }
+  });
+}
+export function defineMcpSuite<const T extends TestSuiteSpec>(spec: T): T {
+  const result = validateMcpSuite(spec);
+  if (!result.valid) throw new SuiteValidationError(result.issues);
+  return spec;
+}

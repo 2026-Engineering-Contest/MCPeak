@@ -1,5 +1,7 @@
 import type { McpClient, ToolResult } from "@ohmymcp/core";
 
+export * from "./spec/index.js";
+
 /** `createMcpTest` 에 넘기는 설정. */
 export interface McpTestConfig {
   client: McpClient;

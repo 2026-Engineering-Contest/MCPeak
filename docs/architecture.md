@@ -140,13 +140,17 @@ ADR도 이미 1인 1개씩 균등 배정돼 있다:
 
 > **[제안 — 미합의]** 실제로 조정이 필요해 보이는 건 하나다. `mock` 오너가 npm 배포·버저닝·도그푸딩까지 겸해 부담이 크다. 도그푸딩(외부 MCP 서버 3~5개에 우리 도구 적용, §10)을 5명이 하나씩 나눠 가지면 균형이 맞고 `docs/adoption.md` 실적도 각자 이름으로 쌓인다. 논의 대상이다.
 
-## 7. 아직 안 정해진 것
+## 7. CLI와 Core 연결 결정
 
-> **[제안 — 미합의]** 아래 선택지는 논의를 위한 정리이고, 결정된 것이 아니다.
+2026-08-12 승인된 [Core stdio transport 설계](./superpowers/specs/2026-08-12-core-stdio-transport-design.md)에
+따라 CLI가 composition root로서 Core와 Runner를 직접 조립한다.
 
-**`cli`가 `core`를 의존하지 않는다.** 현재 `packages/cli/package.json`의 의존성은 `runner` · `generate` · `record` · `mock` 넷뿐인데, `ohmymcp test`는 서버에 연결해야 한다.
+```text
+cli → core
+cli → runner
+runner → core의 동결 타입
+```
 
-- (A) `cli`의 의존성에 `core`를 추가한다 — 직관적이지만 cli가 core를 직접 안다
-- (B) `runner`가 `connect`를 재수출한다 — `cli → runner → core` 단방향이 유지되고 사용자 import도 하나로 줄지만, runner의 공개 표면이 넓어진다
-
-`cli`는 공동 소유라 오너 한 명이 정할 수 없다. 오너 배정 확정 시 같이 정한다.
+Runner는 Core의 `connect` 또는 `connectStdio`를 재수출하지 않는다. Core도 Runner를 import하지
+않는다. `ohmymcp test`를 구현하는 후속 CLI PR에서 `@ohmymcp/core` workspace dependency를 팀
+승인 범위로 추가한다.

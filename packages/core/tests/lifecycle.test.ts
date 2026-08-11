@@ -247,7 +247,7 @@ describe("LifecycleController", () => {
     await expect(force).resolves.toBeUndefined();
   });
 
-  it("closed 뒤 종료 API는 같은 terminal Promise를 반환하고 side effect가 없다", async () => {
+  it("정상 close 완료 뒤 종료 API는 최초 close Promise를 반환하고 side effect가 없다", async () => {
     const { child, controller } = setup();
     const first = controller.close();
     child.close(0, null);
@@ -255,10 +255,21 @@ describe("LifecycleController", () => {
     const diagnostics = controller.getDiagnostics();
     const close = controller.close();
     const force = controller.forceClose();
-    expect(close).toBe(force);
+    expect(close).toBe(first);
+    expect(force).toBe(first);
     expect(child.stdin.endCalls).toBe(1);
     expect(child.kills).toEqual([]);
     expect(controller.getDiagnostics()).toEqual(diagnostics);
+  });
+
+  it("forceClose가 먼저 완료된 뒤 종료 API는 최초 force Promise를 반환한다", async () => {
+    const { child, controller } = setup();
+    const first = controller.forceClose();
+    child.close(null, "SIGKILL");
+    await first;
+
+    expect(controller.forceClose()).toBe(first);
+    expect(controller.close()).toBe(first);
   });
 
   it("normal close 훅 실패는 CLOSE_FAILED와 cached force cleanup을 보존한다", async () => {
@@ -280,6 +291,7 @@ describe("LifecycleController", () => {
     expect(controller.state).toBe("failed");
     const cleanup = controller.forceClose();
     expect(cleanup).toBe(controller.forceClose());
+    expect(controller.close()).toBe(cleanup);
     expect(child.kills).toEqual(["SIGKILL"]);
     child.close();
     await cleanup;

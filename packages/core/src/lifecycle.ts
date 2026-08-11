@@ -106,7 +106,7 @@ export class LifecycleController {
 
   close(): Promise<void> {
     if (this.#state === "forceClosing") return this.#forcePromise ?? this.#terminal();
-    if (this.#state === "closed") return this.#terminal();
+    if (this.#state === "closed") return this.#completed();
     if (this.#state === "failed")
       return this.#forcePromise ?? this.#closePromise ?? this.#terminal();
     if (this.#closePromise) return this.#closePromise;
@@ -133,7 +133,7 @@ export class LifecycleController {
 
   forceClose(): Promise<void> {
     if (this.#state === "forceClosing") return this.#forcePromise ?? this.#terminal();
-    if (this.#state === "closed") return this.#terminal();
+    if (this.#state === "closed") return this.#completed();
     if (this.#state === "failed") return this.#forcePromise ?? this.#terminal();
     return this.#beginForce(false);
   }
@@ -317,5 +317,8 @@ export class LifecycleController {
   #terminal(): Promise<void> {
     if (!this.#terminalPromise) this.#terminalPromise = Promise.resolve();
     return this.#terminalPromise;
+  }
+  #completed(): Promise<void> {
+    return this.#forcePromise ?? this.#closePromise ?? this.#terminal();
   }
 }

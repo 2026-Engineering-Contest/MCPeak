@@ -58,14 +58,17 @@ function handleCall(name, args) {
     if (typeof city !== "string") {
       return fail('→ \'city\' 는 문자열이어야 합니다. 예: { "city": "서울" }');
     }
-    const hit = WEATHER[city];
-    if (!hit) {
+    // Object.hasOwn 으로 확인한다. WEATHER[city] 의 truthy 검사만 하면
+    // "toString" · "constructor" · "__proto__" 같은 프로토타입 속성이 걸려
+    // 실패 처리를 통과한다 (WEATHER["toString"] 은 함수라 truthy).
+    // 그러면 temp·condition 없는 빈 성공 응답이 나간다.
+    if (!Object.hasOwn(WEATHER, city)) {
       return fail(
         `→ '${city}' 의 날씨 데이터가 없습니다. 사용 가능한 도시: ${Object.keys(WEATHER).join(", ")}\n` +
           "→ 이 예제 서버는 고정 데이터만 가지고 있습니다.",
       );
     }
-    return text({ city, ...hit });
+    return text({ city, ...WEATHER[city] });
   }
 
   if (name === "add") {

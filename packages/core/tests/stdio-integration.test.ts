@@ -44,8 +44,11 @@ describe.sequential("stdio 실제 프로세스", () => {
     const pid = await pidPath();
     const connection = await connectStdio({
       command: process.execPath,
-      args: ["--import", fixture("handshake-never-completes.mjs"), weatherServer],
-      env: { OHMYMCP_PID_FILE: pid.path },
+      args: [fixture("handshake-never-completes.mjs")],
+      env: {
+        OHMYMCP_PID_FILE: pid.path,
+        OHMYMCP_TARGET_MODULE: weatherServer,
+      },
     });
     openConnections.add(connection);
     try {

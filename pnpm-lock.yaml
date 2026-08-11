@@ -65,6 +65,9 @@ importers:
 
   packages/mock:
     dependencies:
+      '@modelcontextprotocol/sdk':
+        specifier: 'catalog:'
+        version: 1.30.0(zod@4.4.3)
       '@ohmymcp/core':
         specifier: workspace:*
         version: link:../core

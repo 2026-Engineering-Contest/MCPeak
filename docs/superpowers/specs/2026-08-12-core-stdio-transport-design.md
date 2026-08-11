@@ -206,12 +206,18 @@ pending request와 독립적인 즉시 `forceClose()`를 확실하게 구현하�
 field 접근, type cast를 통한 내부 객체 접근, SDK source monkey patch는 사용하지 않는다.
 
 프로세스는 `shell: false`, `windowsHide: true`로 실행한다. shell command 문자열을 조합하지 않으므로
-args의 공백이나 shell 문자가 다시 해석되지 않는다. Windows에서 `.cmd` 또는 `.bat` 실행이 필요한
-경우 호출자가 실제 executable 이름을 전달한다. 첫 구현은 shell fallback을 사용하지 않는다.
+args의 공백이나 shell 문자가 다시 해석되지 않는다. 첫 구현은 Windows의 `.cmd`와 `.bat` 파일을
+지원하지 않는다. Windows에서 command가 대소문자와 무관하게 해당 확장자로 끝나면 option 검증에서
+명확한 `TypeError`로 거절하고 child process를 만들지 않는다. 사용자는 `node`처럼 운영체제가 직접
+실행할 수 있는 executable과 script 경로를 args로 전달해야 한다. `cmd.exe` wrapping과 Windows
+command-line quoting은 별도 설계 없이는 추가하지 않는다.
 
-환경변수는 SDK `getDefaultEnvironment()`의 안전한 기본 목록에 `options.env`를 덮어쓴다. 부모
-프로세스의 전체 `process.env`를 자동 상속하지 않는다. Notion token 같은 인증정보는 사용자가
-`env`에 명시한 경우에만 자식 프로세스로 전달한다.
+환경변수는 SDK 1.30.0의 `getDefaultEnvironment()` 결과에 `options.env`를 덮어써 명시한 값이
+우선하게 한다. SDK의 플랫폼별 허용 key는 Windows에서 `APPDATA`, `HOMEDRIVE`, `HOMEPATH`,
+`LOCALAPPDATA`, `PATH`, `PROCESSOR_ARCHITECTURE`, `SYSTEMDRIVE`, `SYSTEMROOT`, `TEMP`,
+`USERNAME`, `USERPROFILE`, `PROGRAMFILES`이고, 그 밖의 플랫폼에서 `HOME`, `LOGNAME`, `PATH`,
+`SHELL`, `TERM`, `USER`다. 부모 프로세스의 전체 `process.env`를 자동 상속하지 않는다. Notion
+token 같은 인증정보는 사용자가 `env`에 명시한 경우에만 자식 프로세스로 전달한다.
 
 ## 6. 연결 상태 전이
 
@@ -233,7 +239,9 @@ created | starting | handshaking | open | closing | forceClosing
 규칙은 다음과 같다.
 
 1. option 검증을 통과한 뒤에만 `starting`으로 이동한다.
-2. child process의 `spawn` event 뒤 `handshaking`으로 이동한다.
+2. child process의 `spawn` event를 관찰한 시점에도 state가 `starting`일 때만 `handshaking`으로
+   이동한다. `closing`, `forceClosing`, `closed`, `failed`에서 늦게 도착한 `spawn` event는 transport
+   start나 SDK handshake를 시작하지 않고 settled Promise와 진단을 변경하지 않는다.
 3. SDK initialize와 initialized notification이 끝난 뒤에만 `open` connection을 반환한다.
 4. spawn 또는 handshake 실패 시 connection을 반환하지 않고 즉시 force-close를 시작한다.
 5. child process가 스스로 종료하면 transport `onclose`를 정확히 한 번 호출하고 pending SDK
@@ -243,8 +251,12 @@ created | starting | handshaking | open | closing | forceClosing
 7. `forceClose()`가 시작된 뒤 `close()`를 호출하면 새 종료 동작을 만들지 않고 기존 force-close
    Promise를 반환한다.
 8. 같은 종료 메서드의 반복 호출은 같은 Promise를 반환한다.
-9. 실제 stdin end, `SIGTERM`, `SIGKILL`, stream destroy는 각각 최대 한 번만 수행한다.
-10. 최종 상태와 진단 snapshot은 늦게 도착한 process event가 뒤집지 않는다.
+9. `closed`에 도달한 뒤 `close()`와 `forceClose()`는 이미 resolve된 terminal Promise를 반환한다.
+   추가 stdin end, `SIGTERM`, `SIGKILL`, stream destroy를 수행하지 않고 최종 state와 진단을
+   변경하지 않는다. 정상 close로 닫혔으면 기존 close Promise를 재사용하고, child가 스스로 종료해
+   닫혔으면 connection별 terminal Promise 하나를 생성해 두 메서드가 공유한다.
+10. 실제 stdin end, `SIGTERM`, `SIGKILL`, stream destroy는 각각 최대 한 번만 수행한다.
+11. 최종 상태와 진단 snapshot은 늦게 도착한 process event가 뒤집지 않는다.
 
 ## 7. 정상 종료와 강제 종료
 
@@ -270,13 +282,22 @@ stdout와 stderr reader 중단
 → 최대 500ms 동안 close event 관찰
 ```
 
-`SIGKILL` 직후 close event가 500ms 안에 관찰되지 않으면 `McpClientError`의
-`FORCE_CLOSE_TIMEOUT`으로 reject한다. timeout 뒤에도 모든 process listener는 늦은 close를
-관찰해 자원을 정리하지만 이미 반환한 오류를 변경하지 않는다.
+`SIGKILL` 직후 close event가 500ms 안에 관찰되지 않으면 state를 `failed`로 확정하고
+`McpClientError`의 `FORCE_CLOSE_TIMEOUT`으로 reject한다. timeout 뒤에도 최소 process listener는
+늦은 close를 관찰해 자원을 정리하지만 state, 반환한 오류, 오류에 저장된 진단을 변경하지 않는다.
+정확히 500ms에 timeout과 close event가 경쟁하면 deadline이 우선하며 이후 close event도 같은
+최종 결과를 유지한다.
 
 `kill()`이 process-not-found를 의미하면 이미 종료된 것으로 보고 성공 처리한다. 권한 오류나 다른
 시스템 오류는 `FORCE_CLOSE_FAILED`로 보존한다. `forceClose()`는 pending `listTools`, `callTool`,
 SDK `Client.close()` Promise를 기다린 뒤 시작하지 않는다.
+
+정상 `close()` 중 stdin 종료, SDK close, stdout 또는 stderr reader 중단이 실패하면 원인을 `cause`에
+보존한 `CLOSE_FAILED`, phase `close`로 close Promise를 reject하고 state를 `failed`로 확정한다.
+오류 생성 시점의 진단은 frozen snapshot으로 보존한다. 동시에 별도의 force-close cleanup Promise를
+한 번만 시작하고 cache한다. 이후 `forceClose()`는 이 cleanup Promise를 반환하며 cleanup 성공이나
+실패가 이미 확정된 close 오류, `failed` state와 진단을 덮지 않는다. 이후 `close()`는 같은 rejected
+close Promise를 반환한다.
 
 Core의 종료 timer는 모두 `unref()`해 종료 대상 process가 이미 사라진 경우 timer만으로 Node
 process가 살아 있지 않게 한다.
@@ -372,6 +393,8 @@ export type McpClientErrorCode =
 export type McpClientErrorPhase =
   | "spawn"
   | "handshake"
+  | "process"
+  | "transport"
   | "listTools"
   | "callTool"
   | "close"
@@ -392,19 +415,24 @@ export class McpClientError extends Error {
 자동 보간하지 않는다. 원래 오류는 `cause`에 보존하지만 신뢰할 수 없는 값으로 취급하고
 `toJSON()`에서 제외한다. `diagnostics`는 오류 생성 시점의 frozen snapshot이다.
 
-| code | message가 설명할 내용 | hint가 제안할 조치 |
-|---|---|---|
-| `PROCESS_START_FAILED` | MCP 서버 프로세스를 시작하지 못함 | command 실행 가능 여부와 cwd 확인 |
-| `HANDSHAKE_TIMEOUT` | 제한 시간 안에 MCP 초기화를 마치지 못함 | 서버가 stdio MCP인지와 timeout 확인 |
-| `HANDSHAKE_FAILED` | MCP 초기화 응답 또는 protocol 협상 실패 | 서버 stderr와 SDK 호환성 확인 |
-| `PROCESS_EXITED` | 요청 완료 전 서버가 종료됨 | exit code, signal, bounded stderr 확인 |
-| `TRANSPORT_FAILED` | stdio framing 또는 stream 오류 | stdout에 MCP 외 텍스트를 쓰는지 확인 |
-| `OPERATION_FAILED` | 서버가 MCP 작업을 protocol 오류로 거절함 | 요청한 tool과 서버 기능 및 진단 확인 |
-| `INVALID_TOOL_ARGUMENTS` | callTool 인자가 JSON object가 아님 | object 입력과 JSON 값만 사용 |
-| `PAGINATION_CURSOR_REPEATED` | tools/list cursor가 반복됨 | 서버 pagination 구현 확인 |
-| `CLOSE_FAILED` | 정상 종료 과정 실패 | 진단 확인 후 force close 결과 확인 |
-| `FORCE_CLOSE_FAILED` | 강제 종료 시스템 호출 실패 | 권한과 process 상태 확인 |
-| `FORCE_CLOSE_TIMEOUT` | SIGKILL 뒤 close event가 상한 안에 없음 | process 잔존 여부와 운영체제 상태 확인 |
+| code | 고정 phase | message가 설명할 내용 | hint가 제안할 조치 |
+|---|---|---|---|
+| `PROCESS_START_FAILED` | `spawn` | MCP 서버 프로세스를 시작하지 못함 | command 실행 가능 여부와 cwd 확인 |
+| `HANDSHAKE_TIMEOUT` | `handshake` | 제한 시간 안에 MCP 초기화를 마치지 못함 | 서버가 stdio MCP인지와 timeout 확인 |
+| `HANDSHAKE_FAILED` | `handshake` | MCP 초기화 응답 또는 protocol 협상 실패 | 서버 stderr와 SDK 호환성 확인 |
+| `PROCESS_EXITED` | `process` | 요청 완료 전 서버가 종료됨 | exit code, signal, bounded stderr 확인 |
+| `TRANSPORT_FAILED` | `transport` | stdio framing 또는 stream 오류 | stdout에 MCP 외 텍스트를 쓰는지 확인 |
+| `OPERATION_FAILED` | 시작한 작업에 따라 `listTools` 또는 `callTool` | 서버가 MCP 작업을 protocol 오류로 거절함 | 요청한 tool과 서버 기능 및 진단 확인 |
+| `INVALID_TOOL_ARGUMENTS` | `callTool` | callTool 인자가 JSON object가 아님 | object 입력과 JSON 값만 사용 |
+| `PAGINATION_CURSOR_REPEATED` | `listTools` | tools/list cursor가 반복됨 | 서버 pagination 구현 확인 |
+| `CLOSE_FAILED` | `close` | 정상 종료 과정 실패 | 진단 확인 후 force close 결과 확인 |
+| `FORCE_CLOSE_FAILED` | `forceClose` | 강제 종료 시스템 호출 실패 | 권한과 process 상태 확인 |
+| `FORCE_CLOSE_TIMEOUT` | `forceClose` | SIGKILL 뒤 close event가 상한 안에 없음 | process 잔존 여부와 운영체제 상태 확인 |
+
+connection이 열린 뒤 process가 스스로 종료한 경우와 공개 작업 바깥의 process exit는
+`PROCESS_EXITED`, phase `process`다. stdout framing과 stream의 비동기 실패는 공개 작업 진행 여부와
+무관하게 `TRANSPORT_FAILED`, phase `transport`로 만든다. 공개 작업 Promise는 앞서 정의한 primary
+오류 우선순위에 따라 작업 오류를 유지할 수 있지만 transport `onerror`에는 이 고정 mapping을 쓴다.
 
 동일 실패에서 protocol 오류와 process exit가 함께 관찰되면 먼저 시작된 공개 작업의 오류를
 primary로 유지하고 process 진단은 그 오류의 diagnostics에 넣는다. cleanup 오류가 primary 작업
@@ -419,8 +447,9 @@ primary로 유지하고 process 진단은 그 오류의 diagnostics에 넣는다
 - stderr는 도착 순서를 유지하고 크기 제한 이외의 정렬이나 내용 변경을 하지 않는다.
 - 동일 connection에서 close와 force-close 경쟁 결과는 호출 순서가 아니라 상태 전이 규칙으로
   고정한다. force-close 요청이 관찰되면 항상 force-close가 우선한다.
-- process event listener와 timer는 최종 상태에서 모두 제거한다. 늦은 error event는 handler가
-  관찰해 unhandled error를 만들지 않지만 공개 결과를 변경하지 않는다.
+- timer와 정상 작업 listener는 최종 상태에서 제거한다. process가 아직 close되지 않은 `failed`
+  상태에서는 늦은 `error`와 `close`를 안전하게 소비하는 최소 listener만 유지하고, close 관찰 뒤
+  제거한다. 이 listener는 공개 state, settled Promise와 frozen 진단을 변경하지 않는다.
 
 ## 12. 테스트 계약
 
@@ -461,8 +490,12 @@ primary로 유지하고 process 진단은 그 오류의 diagnostics에 넣는다
 | `forceClose는 pending callTool과 독립적으로 끝난다` | listTools와 같은 계약, late reject unhandled 없음 |
 | `close 도중 forceClose가 오면 즉시 승급한다` | 기존 grace timer를 기다리지 않고 SIGKILL 1회 |
 | `종료 API 반복 호출은 같은 Promise와 한 번의 실제 종료를 공유한다` | close/force 각각 identity, stdin end와 signal 횟수 상한 |
-| `SIGKILL 뒤 close event가 없으면 유한 시간에 실패한다` | 500ms 경계에서 `FORCE_CLOSE_TIMEOUT`, 늦은 event가 결과를 바꾸지 않음 |
+| `closed 뒤 종료 API는 아무 동작도 반복하지 않는다` | 자발적 exit와 정상 close 각각에서 두 메서드가 resolved terminal Promise 반환, side effect 0회, state와 진단 불변 |
+| `normal close 단계 실패를 보존하고 강제 정리한다` | stdin end, SDK close, reader 중단 각각 `CLOSE_FAILED`와 phase `close`, frozen 진단, final `failed`, cleanup Promise 재사용 |
+| `SIGKILL 뒤 close event가 없으면 유한 시간에 실패한다` | 500ms 경계에서 `FORCE_CLOSE_TIMEOUT`과 final `failed`, 늦은 event 뒤에도 state와 진단 불변 |
+| `forceClose 뒤 늦은 spawn은 handshake를 시작하지 않는다` | starting에서 force-close 뒤 spawn을 보내도 transport start와 SDK handshake 0회, settled Promise와 진단 불변 |
 | `stdout protocol 오류는 fatal transport 실패다` | 비-JSON 줄, invalid JSON-RPC, message 상한 초과 각각 고정 code, force-close 1회 |
+| `공개 오류 code와 phase mapping이 고정된다` | 모든 code 조합, 비동기 process exit와 stdout framing 실패가 표의 phase와 일치 |
 
 ### 12.4 stderr와 실제 서버 통합
 
@@ -547,8 +580,8 @@ CLI가 composition root이므로 Core와 Runner를 직접 조립한다. Runner�
 
 ## 15. 명시적 한계와 후속 결정
 
-- Windows `.cmd`와 `.bat` command 탐색 편의성은 첫 도그푸딩 뒤 검토한다. 첫 구현은
-  `shell: false`와 사용자가 전달한 executable을 그대로 사용한다.
+- Windows `.cmd`와 `.bat` command 지원은 첫 도그푸딩 뒤 검토한다. 첫 구현은 해당 확장자를
+  spawn 전에 거절하고 `shell: false`로 운영체제가 직접 실행할 수 있는 executable만 사용한다.
 - process tree 종료는 보장하지 않는다. MCP 서버가 분리된 손자 프로세스를 만들면 별도 process
   group 정책이 필요하다.
 - 원격 Streamable HTTP는 request abort, socket 종료, OAuth redaction을 별도 설계한다.

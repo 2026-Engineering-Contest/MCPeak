@@ -141,6 +141,8 @@ export type McpClientErrorCode =
 export type McpClientErrorPhase =
   | "spawn"
   | "handshake"
+  | "process"
+  | "transport"
   | "listTools"
   | "callTool"
   | "close"
@@ -244,7 +246,9 @@ created | starting | handshaking | open | closing | forceClosing
 상태 전이 규칙은 다음과 같다.
 
 1. spawn 전 option 검증 실패는 child process를 만들지 않는다.
-2. process `spawn` event 뒤에만 handshake를 시작한다.
+2. process `spawn` event를 관찰한 시점에도 state가 `starting`일 때만 handshake를 시작한다.
+   `closing`, `forceClosing`, `closed`, `failed`에서는 event만 관찰하고 transport start, SDK handshake,
+   settled Promise와 진단을 변경하지 않는다.
 3. transport start가 resolve되면 `handshaking`이고, SDK initialize와 initialized notification이
    끝난 뒤 `markOpen()`을 정확히 한 번 호출해 `open` connection을 반환한다.
 4. spawn과 handshake 실패는 connection을 반환하지 않고 force-close를 시작한다.
@@ -254,7 +258,8 @@ created | starting | handshaking | open | closing | forceClosing
 8. close 진행 중 force-close가 호출되면 현재 timer를 취소하고 즉시 force-close로 승급한다.
 9. force-close가 시작된 뒤 close는 force-close Promise를 반환한다.
 10. stdin end, stdout/stderr reader 중단, stdin destroy, `SIGTERM`, `SIGKILL`은 각각 최대 한 번이다.
-11. 늦은 process event는 listener가 관찰하지만 settled Promise와 최종 진단을 변경하지 않는다.
+11. `closed`에서 종료 메서드는 이미 resolve된 terminal Promise를 반환하고 종료 side effect를 반복하지 않는다.
+12. 늦은 process event는 listener가 관찰하지만 settled Promise와 최종 진단을 변경하지 않는다.
 
 고정 시간은 다음과 같다.
 
@@ -274,7 +279,14 @@ process settlement callback이 모두 `now >= deadlineAt`을 검사하므로 cal
 
 force-close는 기존 request와 SDK close를 기다리지 않고 reader 중단, stdin destroy, `SIGKILL`,
 close event 관찰 순서로 실행한다. process-not-found는 성공이고 권한 또는 다른 kill 오류는
-`FORCE_CLOSE_FAILED`다. 500ms 안에 close event가 없으면 `FORCE_CLOSE_TIMEOUT`이다.
+`FORCE_CLOSE_FAILED`다. 500ms 안에 close event가 없으면 `FORCE_CLOSE_TIMEOUT`이고 final state는
+`failed`다. 정확히 500ms의 timeout 뒤 늦은 close event가 와도 final state와 진단은 바뀌지 않는다.
+
+정상 close의 stdin end, SDK close, reader 중단 실패는 `CLOSE_FAILED`, phase `close`로 정규화하고
+해당 시점의 진단과 cause를 보존한다. close Promise는 reject하고 final state는 `failed`로 고정한다.
+동시에 force-close cleanup을 한 번 시작해 cache하며 이후 `forceClose()`는 그 Promise를 반환한다.
+cleanup 결과는 이미 확정된 close 오류, state와 진단을 덮지 않는다. 이후 `close()`는 같은 rejected
+close Promise를 반환한다.
 
 ## 7. 데이터 변환 계약
 
@@ -377,13 +389,14 @@ agent는 한 번에 하나만 둔다.
 |---|---|
 | `연결 옵션 기본값을 결정론적으로 채운다` | 10,000, 10MiB, 64KiB와 빈 args/env |
 | `잘못된 구조를 process 시작 전에 거절한다` | 빈 command, args/env/cwd 타입, unknown field에서 path가 있는 `TypeError` |
+| `지원하지 않는 Windows command를 시작 전에 거절한다` | win32에서 대소문자가 다른 `.cmd`와 `.bat`도 `TypeError`, spawn 0회 |
 | `수치 옵션 경계를 검증한다` | 각 옵션의 0, NaN, ±Infinity, 음수, 소수, 상한+1 reject, 양 경계 accept |
 | `연결 옵션을 immutable snapshot으로 복사한다` | 원본 args/env 변경 뒤 resolved value 불변, 중첩 freeze |
 | `stderr 최근 byte만 보존한다` | 상한 이하 원문, 초과 시 tail과 truncation true |
 | `UTF-8 byte 경계도 안전한 문자열을 반환한다` | partial multibyte가 replacement character이며 throw 없음 |
 | `진단 snapshot은 호출마다 새 frozen 값이다` | reference 다름, mutation 불가, 내부 상태 불변 |
 | `오류 message와 JSON은 비밀값을 제외한다` | command/args/env/cwd/stderr/cause sentinel이 모든 직렬화 필드에 없음 |
-| `오류 code별 message와 hint가 고정된다` | 모든 code와 phase를 순회해 non-empty 고정 문자열 |
+| `오류 code별 message, hint와 phase가 고정된다` | 모든 code를 순회하고 process, transport를 포함한 설계 mapping과 non-empty 고정 문자열 검증 |
 | `기존 connect export와 동결 타입을 유지한다` | named export 존재, `McpClient` signature typecheck, `types.ts` diff 없음 |
 
 RED 명령:
@@ -439,9 +452,12 @@ package-private fake spawn, fake child process, fake monotonic clock을 사용�
 | `forceClose는 grace timer를 기다리지 않는다` | 호출 turn에 reader 중단, stdin destroy, SIGKILL 1회 |
 | `close 도중 forceClose가 오면 승급한다` | 기존 timer 취소, SIGTERM 여부와 무관하게 SIGKILL 최대 1회 |
 | `종료 메서드는 reference-equal Promise를 공유한다` | close 반복, force 반복, force 이후 close의 identity와 side effect 횟수 |
+| `closed 뒤 종료 메서드는 side effect가 없다` | 자발적 exit와 정상 close 각각 resolved terminal Promise, 추가 종료 동작 0회, state와 진단 불변 |
+| `정상 close 단계 실패를 보존한다` | stdin end, SDK close, reader 중단 각각 `CLOSE_FAILED`, phase `close`, frozen 진단, final `failed`, force cleanup 재사용 |
 | `process-not-found kill은 성공이다` | reject 없음, final closed |
 | `kill 권한 오류를 안전한 실패로 보존한다` | `FORCE_CLOSE_FAILED`, cause는 JSON에 없음 |
-| `SIGKILL close event 상한을 지킨다` | 499ms pending, 500ms `FORCE_CLOSE_TIMEOUT`, 늦은 close가 결과 불변 |
+| `SIGKILL close event 상한을 지킨다` | 499ms pending, 500ms `FORCE_CLOSE_TIMEOUT`과 final `failed`, 늦은 close 뒤 state와 진단 불변 |
+| `forceClose 뒤 늦은 spawn을 무시한다` | starting에서 force-close 뒤 spawn에도 transport start와 SDK handshake 0회, settled Promise와 진단 불변 |
 | `process close는 onclose를 한 번만 호출한다` | close/error 중복 event에도 SDK callback 1회 |
 | `stdout protocol 오류는 fatal이다` | 비-JSON, invalid JSON-RPC, message 상한 초과 각각 force-close 1회 |
 | `stderr는 fatal이 아니다` | stderr append 뒤 연결 state 유지와 bounded snapshot |
@@ -457,7 +473,14 @@ pnpm exec vitest run packages/core/tests/lifecycle.test.ts
 ### 구현 규칙
 
 - Node `child_process.spawn`을 `shell: false`, `windowsHide: true`, stdio pipe로 호출한다.
-- SDK `getDefaultEnvironment()`에 resolved explicit env를 덮어쓴다. 전체 `process.env`를 사용하지 않는다.
+- Task 1이 Windows의 `.cmd`와 `.bat` command를 대소문자와 무관하게 `TypeError`로 거절한다.
+  Task 2는 검증된 command만 받고 `cmd.exe` wrapping과 command-line quoting을 추가하지 않는다.
+  Windows 테스트에서는 spawn 0회와 안전한 고정 오류를 검증한다.
+- SDK 1.30.0의 `getDefaultEnvironment()`가 반환하는 플랫폼별 허용 key만 상속하고 resolved explicit
+  env를 그 위에 덮어쓴다. Windows 허용 key는 `APPDATA`, `HOMEDRIVE`, `HOMEPATH`, `LOCALAPPDATA`,
+  `PATH`, `PROCESSOR_ARCHITECTURE`, `SYSTEMDRIVE`, `SYSTEMROOT`, `TEMP`, `USERNAME`, `USERPROFILE`,
+  `PROGRAMFILES`이고, 그 밖의 플랫폼은 `HOME`, `LOGNAME`, `PATH`, `SHELL`, `TERM`, `USER`다.
+  전체 `process.env`를 사용하지 않으며 parent secret sentinel 제외와 explicit 값 우선순위를 테스트한다.
 - SDK 공개 `Transport`, `ReadBuffer`, `serializeMessage`만 사용한다.
 - transport가 invalid stdout을 관찰하면 `onerror` 뒤 force-close하고 새 message를 처리하지 않는다.
 - process `error`와 `close` event 경쟁은 첫 terminal observation만 state를 결정한다.
@@ -513,7 +536,9 @@ feat(core): stdio 프로세스 수명주기 구현
 | `spawn 실패를 안전한 오류로 정규화한다` | code, phase, hint, bounded diagnostics, secret JSON 제외 |
 | `handshake timeout 뒤 process를 강제 종료한다` | timeout code, SIGKILL 최대 1회, fixture PID 잔존 없음 |
 | `handshake와 cleanup 실패를 순서대로 보존한다` | `AggregateError.errors`가 handshake primary, force cleanup 순서 |
-| `process 조기 종료를 진단과 함께 반환한다` | exitCode 또는 signal, bounded stderr, safe JSON |
+| `SDK close 실패를 정상 종료 오류로 보존한다` | `CLOSE_FAILED`, phase `close`, frozen 진단, final `failed`, force cleanup Promise 재사용 |
+| `process 조기 종료를 진단과 함께 반환한다` | `PROCESS_EXITED`, phase `process`, exitCode 또는 signal, bounded stderr, safe JSON |
+| `비동기 transport 실패의 phase를 고정한다` | 공개 작업 밖 stdout framing 실패가 `TRANSPORT_FAILED`, phase `transport` |
 | `weather-server의 실제 도구와 호출 결과를 반환한다` | `get_weather`, `add`, 서울 성공, 미지원 도시 true |
 | `weather-server 정상 종료 뒤 process를 남기지 않는다` | injected spawn observer가 기록한 PID에 process-not-found |
 | `pending listTools를 forceClose로 끝낸다` | force 전 pending, force 뒤 SDK rejection, child 잔존 없음 |
@@ -582,7 +607,7 @@ README에 다음을 실제 공개 타입과 일치하게 기록한다.
 - 전체 process.env를 상속하지 않는 이유
 - stderr가 bounded untrusted 진단이고 기본 오류 JSON에 포함되지 않는다는 경고
 - stdio만 지원하며 HTTP와 OAuth는 후속이라는 범위
-- Windows `.cmd`와 `.bat` executable을 명시해야 한다는 제한
+- Windows `.cmd`와 `.bat`는 첫 구현에서 거절하며 executable과 script args 조합을 써야 한다는 제한
 - Core는 Runner를 import하지 않고 CLI가 조립한다는 경계
 
 changeset은 `@ohmymcp/core` minor이며 설명은 한국어로 작성한다.
@@ -626,15 +651,36 @@ docs(core): stdio transport 사용법과 changeset 추가
 각 Task가 `READY_FOR_REVIEW`를 반환해도 다음 Task를 바로 시작하지 않는다. 메인 세션이 다음을
 직접 확인한다.
 
+Task 시작 직전 다음 명령으로 HEAD를 `TASK_BASE_SHA`에 기록하고 같은 shell에서 유지한다.
+
 ```bash
-git diff --check
-git status --short
-git diff -- packages/core .changeset/core-stdio-transport.md
-git diff -- packages/core/src/types.ts pnpm-workspace.yaml pnpm-lock.yaml package.json
+TASK_BASE_SHA="$(git rev-parse HEAD)"
 ```
 
+리뷰 시 Task의 Files 절에 적힌 정확한 경로를 정렬한 allowlist 파일을 만든 뒤 tracked와 untracked
+변경을 합친 목록과 비교한다.
+
+```bash
+: "${TASK_BASE_SHA:?Task 시작 시 기록한 SHA가 필요합니다}"
+TASK_AUDIT_DIR="$(mktemp -d)"
+git diff --name-only "$TASK_BASE_SHA" > "$TASK_AUDIT_DIR/tracked"
+git ls-files --others --exclude-standard > "$TASK_AUDIT_DIR/untracked"
+LC_ALL=C sort -u "$TASK_AUDIT_DIR/tracked" "$TASK_AUDIT_DIR/untracked" > "$TASK_AUDIT_DIR/actual"
+LC_ALL=C sort -u "$TASK_AUDIT_DIR/allowlist" > "$TASK_AUDIT_DIR/allowed"
+comm -23 "$TASK_AUDIT_DIR/actual" "$TASK_AUDIT_DIR/allowed" > "$TASK_AUDIT_DIR/disallowed"
+test ! -s "$TASK_AUDIT_DIR/disallowed"
+git diff --check "$TASK_BASE_SHA"
+git status --short
+```
+
+`allowlist`는 glob이 아니라 Task별 Files의 한 줄당 한 경로다. 수정 가능성이 조건부인
+`packages/core/package.json`도 Task 4에서 허용하지 않으면 넣지 않는다. `packages/core/src/types.ts`,
+`pnpm-workspace.yaml`, `pnpm-lock.yaml`, root `package.json`, root TypeScript, Turbo, Biome, Vitest 설정과
+그 밖의 모든 root 설정은 어느 allowlist에도 넣지 않는다. `disallowed`가 한 줄이라도 있거나 목록
+생성에 실패하면 후속 Task를 시작하지 않는다. 검토가 끝나면 `TASK_AUDIT_DIR`만 제거한다.
+
 1. agent report를 읽는다.
-2. 허용 Files diff만 존재하는지 확인한다.
+2. tracked와 untracked 합집합이 Task의 정확한 allowlist와 일치하는지 확인한다.
 3. RED가 의도한 이유로 실패했는지 확인한다.
 4. GREEN 명령과 테스트 수를 재실행한다.
 5. 설계와 이 계획의 필수 단언을 직접 대조한다.
@@ -786,7 +832,7 @@ await spawn_agent({
     "첫 명령으로 git rev-parse --show-toplevel을 실행해 Worktree 절대 경로와 같은지 확인한다. AGENTS.md, .agents/skills/execution-conventions/SKILL.md, docs/conventions/execution.md, ADR-0001, Core 설계와 이 구현 계획을 끝까지 읽는다. 하나라도 없거나 경로가 다르면 BLOCKED다.",
     "허용 Files: packages/core/src/errors.ts, packages/core/src/options.ts, packages/core/src/diagnostics.ts, packages/core/src/index.ts, packages/core/tests/options.test.ts, packages/core/tests/diagnostics.test.ts, packages/core/tests/errors.test.ts, packages/core/tests/index.test.ts, .agents/reports/task-1-core-contract.md.",
     "금지: packages/core/src/types.ts, dependency와 lockfile, 다른 package, root 설정 수정, background, commit, merge, push, 하위 agent spawn, 다른 변경 되돌리기.",
-    "테스트를 먼저 작성한다. option 기본값은 connect 10000ms, message 10MiB, stderr 64KiB다. 빈 command, args/env/cwd 타입, unknown field, 각 수치의 0/NaN/±Infinity/음수/소수/상한+1을 거절하고 양 경계는 허용한다. 원본 변경에도 immutable snapshot이 유지돼야 한다. stderr는 byte-tail과 truncation, partial UTF-8 replacement, 새 frozen snapshot을 검증한다. 모든 McpClientError code의 고정 message/hint와 stderr/cause/config sentinel이 없는 safe toJSON을 검증한다. 기존 connect stub과 동결 타입은 유지한다.",
+    "테스트를 먼저 작성한다. option 기본값은 connect 10000ms, message 10MiB, stderr 64KiB다. 빈 command, args/env/cwd 타입, unknown field, 각 수치의 0/NaN/±Infinity/음수/소수/상한+1과 win32의 .cmd/.bat command를 process 시작 전에 거절하고 양 수치 경계는 허용한다. 원본 변경에도 immutable snapshot이 유지돼야 한다. stderr는 byte-tail과 truncation, partial UTF-8 replacement, 새 frozen snapshot을 검증한다. 모든 McpClientError code의 고정 message/hint/phase와 process, transport phase, stderr/cause/config sentinel이 없는 safe toJSON을 검증한다. 기존 connect stub과 동결 타입은 유지한다.",
     "RED/GREEN: pnpm exec vitest run packages/core/tests/options.test.ts packages/core/tests/diagnostics.test.ts packages/core/tests/errors.test.ts packages/core/tests/index.test.ts. 이후 pnpm --filter @ohmymcp/core typecheck, build와 pnpm exec biome check packages/core를 실행하고 수집 수를 기록한다.",
     "보고서와 최종 응답은 READY_FOR_REVIEW 또는 BLOCKED, 변경 파일, RED, GREEN, 남은 위험 순서다.",
   ].join("\n").replaceAll("${coreWorktree}", coreWorktree),
@@ -810,7 +856,7 @@ await spawn_agent({
     "첫 명령으로 저장소 루트와 Worktree가 같은지 확인하고, 현재 HEAD가 사용자 승인 Task 1과 통합 대장 commit을 포함하는지 확인한다. AGENTS.md, .agents/skills/execution-conventions/SKILL.md, docs/conventions/execution.md, ADR, 설계, 계획을 끝까지 읽는다.",
     "허용 Files: packages/core/src/controlled-stdio.ts, packages/core/src/lifecycle.ts, packages/core/src/diagnostics.ts, packages/core/tests/lifecycle.test.ts, .agents/reports/task-2-core-lifecycle.md.",
     "금지: public frozen types, index public 이름 변경, SDK version, dependency, 다른 package, root 설정 수정, background, commit, merge, push, 하위 agent spawn, 다른 변경 되돌리기.",
-    "테스트를 먼저 작성한다. stdin grace 500ms, SIGTERM grace 500ms, SIGKILL 관찰 500ms이고 exact boundary는 deadline 우선이다. close 반복과 force 반복은 reference-equal Promise, force 뒤 close는 force Promise다. close 중 force는 timer를 기다리지 않고 승급하며 stdin end/destroy, reader 중단, SIGTERM/SIGKILL, onclose는 각각 최대 1회다. ESRCH는 성공, 권한 오류는 FORCE_CLOSE_FAILED, SIGKILL 뒤 500ms 무응답은 FORCE_CLOSE_TIMEOUT이다. invalid stdout/JSON-RPC/message 상한은 fatal, stderr는 nonfatal이고 모든 timer는 unref한다. Node spawn은 shell false이고 SDK 공개 Transport, ReadBuffer, serializeMessage, getDefaultEnvironment만 사용한다.",
+    "테스트를 먼저 작성한다. stdin grace 500ms, SIGTERM grace 500ms, SIGKILL 관찰 500ms이고 exact boundary는 deadline 우선이다. close 반복과 force 반복은 reference-equal Promise, force 뒤 close는 force Promise다. closed 뒤에는 resolved terminal Promise와 side effect 0회다. close 중 force는 timer를 기다리지 않고 승급하며 stdin end/destroy, reader 중단, SIGTERM/SIGKILL, onclose는 각각 최대 1회다. stdin 또는 reader 종료 실패는 CLOSE_FAILED와 final failed이며 force cleanup을 재사용한다. ESRCH는 성공, 권한 오류는 FORCE_CLOSE_FAILED, SIGKILL 뒤 500ms 무응답은 FORCE_CLOSE_TIMEOUT과 final failed이고 늦은 close가 state와 진단을 바꾸지 않는다. forceClose 뒤 늦은 spawn은 transport start와 handshake를 시작하지 않는다. invalid stdout/JSON-RPC/message 상한은 TRANSPORT_FAILED와 transport phase, stderr는 nonfatal이고 모든 timer는 unref한다. Node spawn은 shell false이고 SDK 공개 Transport, ReadBuffer, serializeMessage, getDefaultEnvironment만 사용한다. SDK 안전 환경 key만 상속하고 explicit env가 우선하며 parent secret sentinel은 제외한다.",
     "RED: pnpm exec vitest run packages/core/tests/lifecycle.test.ts. GREEN 뒤 Core 전체 테스트, typecheck, build, Biome를 실행하고 수집 수를 기록한다.",
     "보고서와 최종 응답은 READY_FOR_REVIEW 또는 BLOCKED 형식이다.",
   ].join("\n").replaceAll("${coreWorktree}", coreWorktree),
@@ -834,7 +880,7 @@ await spawn_agent({
     "첫 명령으로 저장소 루트와 Worktree를 확인하고 HEAD가 승인된 Task 2와 통합 대장 commit을 포함하는지 확인한다. AGENTS.md, .agents/skills/execution-conventions/SKILL.md, docs/conventions/execution.md, ADR, 설계, 계획을 끝까지 읽는다.",
     "허용 Files: packages/core/src/client.ts, packages/core/src/index.ts, packages/core/src/errors.ts, packages/core/tests/client.test.ts, packages/core/tests/index.test.ts, packages/core/tests/stdio-integration.test.ts, packages/core/tests/fixtures/handshake-never-completes.mjs, packages/core/tests/fixtures/pending-list-tools.mjs, packages/core/tests/fixtures/pending-call-tool.mjs, .agents/reports/task-3-core-sdk-integration.md.",
     "금지: core frozen types, weather-server 수정, dependency와 lockfile, 다른 package, root 설정, 외부 network, background, commit, merge, push, 하위 agent spawn, 다른 변경 되돌리기.",
-    "테스트를 먼저 작성한다. listTools는 모든 page를 서버 순서대로 합치고 같은 cursor는 빈 문자열도 두 번째 관찰에서 PAGINATION_CURSOR_REPEATED다. callTool은 non-empty name과 JSON object만 허용하고 null/array/undefined/function/symbol/BigInt/비유한 수/cycle/과도한 depth를 SDK 호출 전에 INVALID_TOOL_ARGUMENTS로 거절하되 비순환 공유 참조는 허용한다. 표준과 compatibility ToolResult, isError true resolve, OPERATION_FAILED와 process/transport error 구분, handshake와 cleanup 오류 순서 보존을 검증한다. 실제 process suite는 직렬이며 weather-server 성공과 오류, handshake timeout, pending listTools/callTool force close, PID 잔존 없음을 검사한다.",
+    "테스트를 먼저 작성한다. listTools는 모든 page를 서버 순서대로 합치고 같은 cursor는 빈 문자열도 두 번째 관찰에서 PAGINATION_CURSOR_REPEATED다. callTool은 non-empty name과 JSON object만 허용하고 null/array/undefined/function/symbol/BigInt/비유한 수/cycle/과도한 depth를 SDK 호출 전에 INVALID_TOOL_ARGUMENTS로 거절하되 비순환 공유 참조는 허용한다. 표준과 compatibility ToolResult, isError true resolve, OPERATION_FAILED와 process/transport error 및 phase 구분, SDK close 실패의 CLOSE_FAILED와 force cleanup 재사용, handshake와 cleanup 오류 순서 보존을 검증한다. 실제 process suite는 직렬이며 weather-server 성공과 오류, handshake timeout, pending listTools/callTool force close, PID 잔존 없음을 검사한다.",
     "RED/GREEN은 client/index focused 테스트와 stdio-integration 테스트를 분리 실행한다. 이후 Core 전체 테스트, typecheck, build, Biome를 실행하고 실제 process 테스트 수와 잔존 process 검사를 보고한다.",
     "보고서와 최종 응답은 READY_FOR_REVIEW 또는 BLOCKED 형식이다.",
   ].join("\n").replaceAll("${coreWorktree}", coreWorktree),

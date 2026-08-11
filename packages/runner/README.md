@@ -2,7 +2,7 @@
 
 공개 API 설계 · matcher · **실패 메시지 품질** · 리포터 · JUnit XML.
 
-- **오너:** (이름)
+- **오너:** `@seodduu` `@endl24` `@sunghoon0303` (① MCP 서버 테스트 파트)
 - **의존:** `@ohmymcp/core`
 
 ## 상태

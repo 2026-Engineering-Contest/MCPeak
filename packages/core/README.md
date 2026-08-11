@@ -2,7 +2,7 @@
 
 트랜스포트 · 프로세스 기동/종료 · 타임아웃 · stderr 수집 · 핸드셰이크.
 
-- **오너:** (이름)
+- **오너:** `@seodduu` `@endl24` `@sunghoon0303` (① MCP 서버 테스트 파트)
 - **의존:** `@modelcontextprotocol/sdk` (catalog, 1.x 고정)
 
 ## 상태

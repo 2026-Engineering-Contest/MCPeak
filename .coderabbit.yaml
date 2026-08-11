@@ -4,14 +4,33 @@
 # `main` 보호 규칙에서 리뷰 필수가 해제돼 있어, 이 봇이 사실상 유일한 상시 리뷰어다.
 # 그래서 profile 을 assertive 로 둔다 (기본값은 chill).
 #
-# 여기 적은 지시문은 CONTRIBUTING 의 규칙 중 **CI 가 검사하지 못하는 것**만 골라 담았다.
-# 린트·타입·테스트·빌드는 이미 CI 가 막으므로 중복해서 지적하게 하지 않는다.
+# **대시보드에서 설정하지 말고 이 파일에서 한다.** 리뷰 로그의
+# "Configuration used: Path: .coderabbit.yaml" 이 이 파일이 적용됨을 보여준다.
+# 대시보드 설정은 팀원에게 보이지 않고 PR 리뷰도 받을 수 없다.
+#
+# 규칙 본문은 CONTRIBUTING.md · CLAUDE.md 에 있고, 아래 knowledge_base 로 읽힌다.
+# path_instructions 에는 **"이 경로에서만" 이 필요한 것**만 남긴다 — 문서에 이미
+# 적힌 규칙을 여기 복사하면 문서가 바뀔 때 조용히 어긋난다.
 
 language: ko-KR
 
 tone_instructions: >
   한국어로 간결하게 리뷰한다. 스타일 지적은 하지 않는다 — 포매터 설정이 정답이다
-  (CONTRIBUTING §6). 대신 규칙 위반, 결정론성 위반, 실패 메시지 품질에 집중한다.
+  (CONTRIBUTING §6). 규칙 위반, 결정론성 위반, 실패 메시지 품질에 집중한다.
+  린트·타입체크·테스트·빌드는 CI 가 이미 머지를 막으므로 중복해서 지적하지 않는다.
+
+knowledge_base:
+  code_guidelines:
+    enabled: true
+    # 팀 규칙의 원본. 문서를 고치면 리뷰 기준도 따라 바뀐다.
+    filePatterns:
+      - "CONTRIBUTING.md" # 팀 헌장 — 소유권·동결·PR·품질 게이트·릴리스·의존성 정책
+      - "CLAUDE.md" # 매 세션 지켜야 할 것 — 결정론성, 실패 메시지, 의존 방향
+      - "docs/adr/*.md" # 확정된 설계 결정
+      - "docs/architecture.md" # 패키지 경계와 병렬 작업 방식
+  learnings:
+    # public 저장소이므로 auto 는 repo 단위(local)로 동작한다.
+    scope: auto
 
 reviews:
   profile: assertive
@@ -24,42 +43,39 @@ reviews:
     - "!**/dist/**"
     - "!pnpm-lock.yaml"
 
+  # 아래 항목은 전부 "해당 경로에서만 성립하는 것" 이다.
+  # 전역 규칙(결정론성 · 의존 방향 · 실패 메시지 품질 · 파트 경계 · 의존성 정책)은
+  # knowledge_base 가 CONTRIBUTING·CLAUDE.md 에서 직접 읽는다.
   path_instructions:
     - path: "packages/core/src/types.ts"
       instructions: >
-        이 파일은 5명 병렬 작업의 동결된 기준점이다 (CONTRIBUTING §3).
-        McpClient / ToolDef / ToolResult 에 어떤 변경이든 있으면 반드시 지적하고,
-        PR 제목에 [BREAKING] 이 붙어 있는지, 영향받는 오너 전원의 승인이 있는지 확인하라.
-
-    - path: "packages/**"
-      instructions: >
-        1. 파트 경계: 작업은 3개 파트로 나뉜다 —
-           ① MCP 서버 테스트(core · runner · generate), ② replay/record(record),
-           ③ mock server(mock). 한 PR 이 서로 다른 파트의 패키지를 동시에 수정하면
-           지적하라. 커밋이 섞이면 기여 이력을 증명할 수 없다 (§2.2).
-           예외는 빌드가 깨져 전원이 막힌 경우뿐이다. cli 와 fixtures 는 공동이지만
-           한 PR 에서 여러 파트의 영역을 동시에 건드리지 않는다.
-        2. 의존 방향: cli -> runner/generate/record/mock -> core 단방향이다.
-           역방향 참조나 순환이 생기면 지적하라.
-        3. 결정론성: 같은 입력에 항상 같은 결과가 나와야 한다.
-           Date.now(), new Date(), Math.random(), 실행 순서 의존, 객체 키 순서 의존
-           코드가 있으면 지적하라. 녹화·재생 기능의 존재 이유가 이것이다.
-        4. 실패 메시지: 이 프로젝트에서 테스트 도구의 UI 는 실패 시 터미널에 찍히는
-           문장이다. "expected true, got false" 수준의 메시지는 지적하라.
-           무엇이 왜 다른지, 어떻게 고치는지가 보여야 한다.
+        이 파일 하나만 동결 대상이다 (CONTRIBUTING §3). McpClient / ToolDef / ToolResult 에
+        어떤 변경이든 있으면 반드시 지적하고, PR 제목의 [BREAKING] 표기와 영향받는 파트
+        전원의 승인 여부를 확인하라. 같은 패키지의 다른 파일에는 이 규칙을 적용하지 마라.
 
     - path: "packages/record/**"
       instructions: >
-        녹화 파일에 인증 헤더·토큰·API 키가 섞여 커밋될 수 있는 경로가 있으면
-        반드시 지적하라. 마스킹 규칙은 이 패키지 오너의 명시적 책임이다 (§13.5).
+        녹화 파일에 인증 헤더·토큰·API 키가 섞여 커밋될 수 있는 경로가 있으면 반드시
+        지적하라. 마스킹 규칙 수립은 이 패키지 오너의 명시적 책임이다 (CONTRIBUTING §13.5).
+        다른 패키지에는 해당하지 않는다.
 
-    - path: "**/package.json"
+    - path: "packages/mock/**"
       instructions: >
-        1. @modelcontextprotocol/sdk 는 1.x 로 고정돼 있다. "^" 를 붙이거나 2.x 로
-           올리려는 변경은 지적하라. 분리 패키지 구조의 2.0 이 개발 중이라 core 가 깨진다.
-        2. 새 런타임 의존성이 추가되면 용도와 라이선스를 묻고, GPL·AGPL 계열이면
-           지적하라 (MIT 프로젝트라 충돌한다, §13).
-        3. 공유 버전은 pnpm catalog 로 관리한다. 패키지별로 버전을 직접 박으면 지적하라.
+        목 서버는 stateless 로 뜬다. sessionIdGenerator 에 randomUUID 등을 넣어 stateful
+        로 바꾸려는 변경은 결정론성을 깨므로 지적하라. 요청 매칭 키는 객체 키 순서에
+        영향받지 않아야 한다 (ADR-0005).
+
+    - path: "packages/cli/**"
+      instructions: >
+        cli 는 공동 소유이며 얇게 유지한다. 각자 자기 파트의 서브커맨드만 수정한다.
+        한 PR 이 여러 파트의 서브커맨드를 동시에 건드리면 지적하라. 실제 로직이 여기
+        들어오면 각 패키지로 옮기라고 지적하라.
+
+    - path: ".github/workflows/**"
+      instructions: >
+        필수 상태 체크는 verify(20/22/24) 와 build 다. 이 잡의 이름이 바뀌면 main 보호
+        규칙이 조용히 무력화되므로 반드시 지적하라. build 잡이 Node 22 전용인 것은
+        의도된 것이다 (tsdown 의 engines 제약, ci.yml 주석 참조).
 
   auto_review:
     enabled: true

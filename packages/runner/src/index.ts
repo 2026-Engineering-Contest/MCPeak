@@ -2,6 +2,26 @@ import type { McpClient, ToolResult } from "@ohmymcp/core";
 
 export type { AssertionResult } from "./assertions.js";
 export type { RunnerDiagnostic, RunnerDiagnosticCode } from "./diagnostics.js";
+export {
+  type OperationResult,
+  type RunnerDrainResult,
+  type RunnerEvent,
+  type RunnerExecution,
+  type RunnerReport,
+  type RunnerSummary,
+  type RunSuiteOptions,
+  runSuite,
+  type TestCaseResult,
+} from "./executor.js";
+export {
+  DEFAULT_MAX_CASE_BYTES,
+  DEFAULT_MAX_REPORT_BYTES,
+  DEFAULT_SENSITIVE_KEYS,
+  REDACTED,
+  RunnerPayloadLimitError,
+  type RunnerPayloadLimits,
+  type RunnerRedactionOptions,
+} from "./sanitization.js";
 export * from "./spec/index.js";
 
 /** `createMcpTest` 에 넘기는 설정. */

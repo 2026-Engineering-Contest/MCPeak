@@ -11,6 +11,9 @@ MCP(Model Context Protocol) 서버를 **코드로 자동 테스트**하는 오�
 
 ## 설치
 
+> **아직 npm 에 배포되지 않았습니다.** 아래 명령은 첫 알파 배포 이후에 동작합니다.
+> 그때까지는 저장소를 클론해 [개발](#개발) 절차를 따르세요.
+
 ```bash
 npm install -D ohmymcp
 # 또는
@@ -18,6 +21,9 @@ pnpm add -D ohmymcp
 ```
 
 ## 30초 예제
+
+> **아직 동작하지 않습니다.** 아래는 목표로 하는 API 형태이며, `connect` 와
+> `createMcpTest` 는 현재 스텁이라 실행하면 `Error: not implemented` 가 납니다.
 
 ```ts
 import { createMcpTest, toContainTool } from "@ohmymcp/runner";

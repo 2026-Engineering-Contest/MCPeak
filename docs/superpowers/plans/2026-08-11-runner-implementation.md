@@ -18,9 +18,10 @@
 - Preserve specification order, event order, result order, and deterministic diagnostics.
 - Do not add timestamps, measured durations, random IDs, or parallel execution.
 - `runSuite` must not close the client. Only explicit caller-invoked `finalizeRunnerExecution` may use the supplied shutdown controller.
+- Bind each `RunnerExecution` opaquely to the exact `McpClient` used by `runSuite`; reject missing or mismatched shutdown controllers before observing execution or touching transport state.
 - Expose sanitized event/report snapshots only; actual MCP calls use the private original input.
 - Return a non-rejecting bounded `drain` result. Default deadline is 5,000ms; caller range is integer `1..60_000ms`.
-- CLI, Dashboard Node, and test adapters must provide an idempotent shutdown controller; `finalizeRunnerExecution` bounds graceful and forced transport close independently of pending MCP calls.
+- CLI, Dashboard Node, and test adapters must provide an idempotent shutdown controller; `finalizeRunnerExecution` bounds graceful and forced transport close independently of pending MCP calls and force-closes after graceful rejection as well as deadlines.
 - Enforce default observer limits of 65,536 bytes per case and 1,048,576 bytes per report.
 - Child agents and the main agent must not commit, merge, or push. The user performs each commit after a review gate.
 - Do not revert unrelated user changes. The current `.gitignore` and `docs/2026-08-11-runner-session-handoff.md` changes are outside implementation ownership.
@@ -40,6 +41,7 @@
 - `packages/runner/src/assertions.ts` — pure `toolExists` and `isError` evaluation.
 - `packages/runner/src/sanitization.ts` — observer redaction, UTF-8 payload sizing, and limit errors.
 - `packages/runner/src/executor.ts` — sequential execution, event emission, report construction, timeout, abort.
+- `packages/runner/src/execution-binding.ts` — private `RunnerExecution → McpClient` identity registry shared only by executor and shutdown.
 - `packages/runner/src/shutdown.ts` — bounded drain/graceful/force-close finalization with lossless error aggregation.
 - `packages/runner/tests/spec-validation.test.ts` — validator and helper tests.
 - `packages/runner/tests/spec-schema.test.ts` — JSON Schema contract tests.
@@ -47,7 +49,7 @@
 - `packages/runner/tests/assertions.test.ts` — assertion and message tests.
 - `packages/runner/tests/sanitization.test.ts` — recursive masking and payload-limit tests.
 - `packages/runner/tests/executor.test.ts` — execution, event, report, timeout, and abort tests.
-- `packages/runner/tests/shutdown.test.ts` — permanently pending calls, bounded transport termination, idempotence, and error preservation.
+- `packages/runner/tests/shutdown.test.ts` — permanently pending listTools/callTool requests, execution/client binding, bounded transport termination, idempotence, and error preservation.
 - `.changeset/runner-declarative-suite.md` — minor release note for Runner.
 
 ### Modify
@@ -390,8 +392,8 @@ export interface RunSuiteOptions {
 }
 
 export interface RunnerExecution {
-  report: Promise<RunnerReport>;
-  drain: Promise<RunnerDrainResult>;
+  readonly report: Promise<RunnerReport>;
+  readonly drain: Promise<RunnerDrainResult>;
 }
 
 export type RunnerDrainResult =
@@ -400,7 +402,9 @@ export type RunnerDrainResult =
 
 export type RunnerForceCloseReason =
   | "drainDeadlineExceeded"
-  | "gracefulCloseDeadlineExceeded";
+  | "drainFailed"
+  | "gracefulCloseDeadlineExceeded"
+  | "gracefulCloseFailed";
 
 export interface McpClientShutdownController {
   client: McpClient;
@@ -487,6 +491,8 @@ export interface SuiteCompletedEvent extends RunnerEventBase {
   report: RunnerReport;
 }
 ```
+
+The client binding is deliberately not a forgeable public field on `RunnerExecution`. `runSuite` registers `execution → client` in a module-private `WeakMap<RunnerExecution, McpClient>`. `finalizeRunnerExecution` validates timeout options first, then requires the registered client to be reference-equal to `shutdown.client`; it synchronously throws before reading report/drain or invoking transport methods when either check fails.
 
 ---
 
@@ -1176,6 +1182,7 @@ Do not start Task 4 before verifying the supplied SHA.
 **Files:**
 
 - Modify: `packages/runner/src/executor.ts`
+- Create: `packages/runner/src/execution-binding.ts`
 - Create: `packages/runner/src/shutdown.ts`
 - Modify: `packages/runner/tests/executor.test.ts`
 - Create: `packages/runner/tests/shutdown.test.ts`
@@ -1219,23 +1226,29 @@ Add these named cases and exact assertions:
 | `report는 drain과 독립적으로 먼저 끝난다` | timeout report resolves while pending operation and drain remain pending |
 | `deadline 전 operation을 정상 drain한다` | operation settle 전 drain pending; settle 후 `{ status: "settled" }`; finalizer graceful close 1회 |
 | `drain deadline 뒤 transport를 강제 종료한다` | report 후 `4_999ms` force 0회; `5_000ms`에 `{ status: "deadlineExceeded", pendingOperations: 1 }`; independent force close 1회 |
+| `drain deadline과 같은 시각의 settlement는 deadline이 이긴다` | fake clock `deadlineAt`에 pending request를 settle해도 항상 `deadlineExceeded`; timer/Promise callback 등록 순서를 뒤집은 두 subcase 결과가 같음 |
 | `caller drain deadline 범위를 동기 검증한다` | `0`, `NaN`, `Infinity`, `-1`, `1.5`, `60_001`은 `runSuite` 호출 자체가 events/calls 전 `RangeError`; `1`, `60_000`은 허용 |
 | `pending operation의 늦은 reject를 삼킨다` | deadline/close 뒤 원본 Promise reject; no unhandled rejection and drain result unchanged |
 | `report reject에서도 finally로 한 번 닫는다` | event handler sentinel rejection을 primary error로 보존; drain 후 close 1회 |
 | `timeout abort 중복 cleanup은 transport 종료를 중복 호출하지 않는다` | 같은 execution/controller의 finalizer를 두 경로에서 호출해도 same Promise와 close/force 합계 1회 |
 
-In `shutdown.test.ts`, use a fake `McpClientShutdownController` whose `forceClose` settles independently of its permanently pending `client.callTool` and `close` Promises. Add these exact tests:
+In `shutdown.test.ts`, use a fake `McpClientShutdownController` whose `forceClose` settles independently of permanently pending `client.listTools`, `client.callTool`, and `close` Promises. The fake exposes late resolve/reject controls for both MCP methods so the tests can prove forced cleanup does not change an already completed drain/finalize result. Add these exact tests:
 
 | Test name | Exact assertion |
 |---|---|
 | `permanently pending call을 drain deadline 뒤 강제 종료한다` | report resolves; at 4,999ms force 0; at 5,000ms reason `drainDeadlineExceeded`; finalize resolves after force; pending call remains handled |
+| `permanently pending listTools도 같은 계약으로 강제 종료한다` | `listTools()` timeout report 후 drain deadline에서 `drainDeadlineExceeded`; force 뒤 finalize 완료; 원본 request의 늦은 reject에도 result와 unhandled 상태 불변 |
 | `graceful close deadline 뒤 force close로 전환한다` | settled drain; close pending for 1,999ms; at 2,000ms force reason `gracefulCloseDeadlineExceeded`; one close and one force call |
+| `graceful close reject 뒤 별도 reason으로 force close한다` | close sentinel을 close outcome에 보존하고 즉시 `gracefulCloseFailed`; force 성공 시 close sentinel만 throw, report도 실패하면 report가 첫 AggregateError 항목 |
 | `force close 자체도 유한 상한으로 끝낸다` | force Promise permanently pending; 2,000ms 후 `RunnerShutdownTimeoutError`; finalize no longer pending |
-| `shutdown timeout 옵션을 동기 검증한다` | close/force 각각 `0`, `NaN`, `Infinity`, `-1`, `1.5`, `10_001`은 transport call 전 `RangeError`; `1`, `10_000` valid |
+| `shutdown timeout 옵션을 동기 검증한다` | close/force 각각 기본값 `2_000`; `0`은 immediate close가 아닌 invalid; `0`, `NaN`, `Infinity`, `-1`, `1.5`, `10_001`은 report/drain getter와 transport call 전 동기 `RangeError`; `1`, `10_000` valid |
+| `다른 client의 shutdown controller를 거절한다` | execution은 client A, controller는 client B; timeout 검증 뒤 동기 `TypeError`, report/drain getter와 B의 close/force 호출 0회 |
+| `위조한 RunnerExecution을 거절한다` | 구조적으로 같은 report/drain 객체지만 private binding 없음; 동기 `TypeError`, transport 호출 0회 |
 | `undefined report rejection을 보존한다` | report rejects `undefined`, cleanup succeeds, returned Promise rejects with `undefined` rather than resolving |
-| `report와 close 실패를 순서대로 집계한다` | `AggregateError.errors` deep equals `[reportSentinel, closeSentinel, forceSentinel]` when graceful and forced shutdown both fail |
-| `drain contract 위반도 cleanup 오류로 보존한다` | fake drain rejects sentinel; force cleanup still runs; failure list keeps report before drain before shutdown |
+| `report와 close 실패를 순서대로 집계한다` | close reject reason은 `gracefulCloseFailed`; `AggregateError.errors` deep equals `[reportSentinel, closeSentinel, forceSentinel]` when graceful and forced shutdown both fail |
+| `drain contract 위반도 cleanup 오류로 보존한다` | private helper로 등록한 genuine execution의 drain이 sentinel reject; `drainFailed` force cleanup; failure list keeps report before drain before force |
 | `finalize 중복 호출이 transport 종료를 반복하지 않는다` | same execution/controller returns same Promise; close/force total operation count 1 |
+| `한 execution에 다른 controller lifecycle을 시작하지 않는다` | first valid controller 뒤 같은 client의 다른 controller는 동기 `TypeError`; first Promise와 transport count 불변 |
 
 - [ ] **Step 2: Run focused tests and observe RED**
 
@@ -1279,19 +1292,34 @@ function trackOperation<T>(operationPromise: Promise<T>): Promise<T> {
 
 async function finishDrain(): Promise<RunnerDrainResult> {
   if (!pending) return { status: "settled" };
+  const deadlineAt = monotonicNowMs() + drainTimeoutMs;
   return new Promise((resolve) => {
     let finished = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const finish = (result: RunnerDrainResult): void => {
       if (finished) return;
       finished = true;
-      clearTimeout(timer);
+      if (timer !== undefined) clearTimeout(timer);
       resolve(result);
     };
-    const timer = setTimeout(
-      () => finish({ status: "deadlineExceeded", pendingOperations: 1 }),
-      drainTimeoutMs,
-    );
-    void pendingSettlement.then(() => finish({ status: "settled" }));
+    const finishDeadline = (): void => {
+      const remaining = deadlineAt - monotonicNowMs();
+      if (remaining > 0) {
+        timer = setTimeout(finishDeadline, remaining);
+        return;
+      }
+      finish({ status: "deadlineExceeded", pendingOperations: 1 });
+    };
+    timer = setTimeout(finishDeadline, drainTimeoutMs);
+    void pendingSettlement.then(() => {
+      // Exact-boundary rule: deadline wins when settlement is observed at
+      // deadlineAt, independent of timer/microtask registration order.
+      if (monotonicNowMs() >= deadlineAt) {
+        finish({ status: "deadlineExceeded", pendingOperations: 1 });
+        return;
+      }
+      finish({ status: "settled" });
+    });
   });
 }
 
@@ -1303,7 +1331,7 @@ const drain = report.then(
 return { report, drain };
 ```
 
-The production implementation may avoid the illustrative closure reassignment, but must preserve these state transitions. `pendingSettlement` has a rejection handler before the logical timeout/abort can win, so a deadline result and forced client close cannot create an unhandled late rejection. The drain timer starts only after `report` settles, is cleared on early settlement, and never makes `drain` reject. It tracks at most one request because suite execution is sequential and stops after timeout/abort.
+The production implementation may avoid the illustrative closure reassignment, but must preserve these state transitions. `monotonicNowMs` is one injected/internal monotonic clock used by both callbacks and fake-timer tests. Settlement observed strictly before `deadlineAt` wins; observation at or after it always returns `deadlineExceeded`. `pendingSettlement` has a rejection handler before the logical timeout/abort can win, so a deadline result and forced client close cannot create an unhandled late rejection. The drain timer starts only after `report` settles, is cleared on early settlement, and never makes `drain` reject. It tracks at most one `listTools` or `callTool` request because suite execution is sequential and stops after timeout/abort.
 
 `shutdown.ts` defines a generic outcome helper that does not use `undefined` as the failure sentinel:
 
@@ -1319,7 +1347,9 @@ const settle = <T>(promise: Promise<T>): Promise<PromiseOutcome<T>> =>
   );
 ```
 
-`finalizeRunnerExecution` first settles report, then drain. A settled drain starts controller `close()` raced against `closeTimeoutMs = 2_000`; timeout or close rejection triggers `forceClose("gracefulCloseDeadlineExceeded")`. `deadlineExceeded` skips close and triggers `forceClose("drainDeadlineExceeded")`. Force close is independently raced against `forceCloseTimeoutMs = 2_000`. Both timed-out Promises keep the two-sided `settle` handler so late rejection is observed. Cache the entire finalize Promise by execution/controller identity before any async work. Collect failed outcomes in report, drain, graceful close, force close order; throw the sole exact rejection value or `AggregateError` for multiple failures. A graceful timeout is control flow, while a graceful close rejection remains in the failure list even if force close succeeds. `runSuite` never imports `shutdown.ts` or initiates shutdown.
+`execution-binding.ts` owns a module-private `WeakMap<RunnerExecution, McpClient>` and exports only package-private register/read helpers; `index.ts` must not re-export them. `runSuite` registers the fully constructed execution immediately before returning it, while `shutdown.ts` reads the binding. This keeps executor independent of shutdown lifecycle code. `finalizeRunnerExecution` is a non-`async` validating wrapper: synchronously validate `closeTimeoutMs` and `forceCloseTimeoutMs` first (default `2_000`, finite integer `1..10_000`; zero is invalid), then resolve the execution binding and require `shutdown.client` reference identity. Invalid values throw `RangeError`; missing or mismatched binding throws `TypeError`. Neither path reads report/drain getters or calls transport methods.
+
+After validation, cache `{ controller, promise }` in a `WeakMap` keyed only by execution before async work. The same controller receives the same Promise; any different controller for an already-finalizing/finalized execution synchronously throws `TypeError`, even if it wraps the same client. First settle report, then drain. A settled drain starts controller `close()` raced against `closeTimeoutMs`. A deadline triggers `forceClose("gracefulCloseDeadlineExceeded")`; an immediate or delayed close rejection is recorded and triggers `forceClose("gracefulCloseFailed")`. `deadlineExceeded` drain skips close and triggers `forceClose("drainDeadlineExceeded")`. A defensive rejection from a genuinely bound drain is recorded and triggers `forceClose("drainFailed")`. Force close is independently raced against `forceCloseTimeoutMs`. Both timed-out Promises keep the two-sided `settle` handler so late rejection is observed. Collect failed outcomes in report, drain, graceful close, force close order; throw the sole exact rejection value or `AggregateError` for multiple failures. A graceful timeout is control flow, while a graceful close rejection remains in the failure list even if force close succeeds. Freeze the returned `RunnerExecution` object after binding so public properties cannot be replaced. `runSuite` never imports `shutdown.ts` or initiates shutdown.
 
 Assertions for the current timed-out/cancelled case are `skipped` with `OPERATION_RESULT_UNAVAILABLE`. Assertions for remaining cases are `notRun` without a diagnostic. 시작하지 않은 operation은 적용된 timer가 없으므로 `timeoutMs` 필드를 갖지 않는다.
 
@@ -1687,14 +1717,14 @@ await spawn_agent({
   reasoning_effort: "medium",
   message: [
     "역할: OhMyMCP Runner timeout·AbortSignal 상태 전이 구현자.",
-    "목표: case→suite→10_000ms 우선순위와 AbortSignal을 단일 controlled-operation helper로 구현한다. `2_147_483_647ms`까지 정확히 예약하고 더 큰 값은 명세 단계에서 거절한다. timeout은 현재 timedOut/나머지 notRun/suite failed, abort는 현재 cancelled 또는 미시작 notRun/suite aborted다. 시작하지 않은 operation은 `timeoutMs`가 없다. timeout/abort 뒤 다음 MCP 호출과 `runSuite`의 close를 금지하고 timer/listener를 정확히 한 번 정리한다. report 이후 pending 요청은 기본 5_000ms, 허용 1..60_000ms의 non-rejecting drain이 `settled | deadlineExceeded`로 추적한다. 명시적으로 호출한 finalizer만 2,000ms bounded graceful close와 pending call에 독립적인 2,000ms force close를 수행한다.",
+    "목표: case→suite→10_000ms 우선순위와 AbortSignal을 단일 controlled-operation helper로 구현한다. `2_147_483_647ms`까지 정확히 예약하고 더 큰 값은 명세 단계에서 거절한다. timeout은 현재 timedOut/나머지 notRun/suite failed, abort는 현재 cancelled 또는 미시작 notRun/suite aborted다. 시작하지 않은 operation은 `timeoutMs`가 없다. timeout/abort 뒤 다음 MCP 호출과 `runSuite`의 close를 금지하고 timer/listener를 정확히 한 번 정리한다. report 이후 pending 요청은 기본 5_000ms, 허용 1..60_000ms의 non-rejecting drain이 `settled | deadlineExceeded`로 추적하며 정확한 deadline 경계에서는 deadline이 이긴다. 명시적으로 호출한 finalizer만 execution에 binding된 동일 client controller로 2,000ms bounded graceful close와 pending listTools/callTool에 독립적인 2,000ms force close를 수행한다. close reject는 gracefulCloseFailed reason으로 force close한다.",
     "Worktree: ${runnerWorktree}",
     "Report: ${runnerWorktree}/.agents/reports/task-4-runner-timeout.md",
     "첫 명령으로 `git rev-parse --show-toplevel`을 실행하고 출력이 위 Worktree 절대 경로와 같은지, 그 경로에 이 계획과 승인된 Task 3 HEAD가 있는지 확인한다. 다르면 BLOCKED로 끝낸다.",
     "프로젝트 지침, 실행 규약, 설계, 계획을 읽고 현재 HEAD가 승인된 Task 3 SHA인지 확인한다.",
-    "허용 Files: packages/runner/src/executor.ts, packages/runner/src/shutdown.ts, packages/runner/src/index.ts, packages/runner/tests/executor.test.ts, packages/runner/tests/shutdown.test.ts, .agents/reports/task-4-runner-timeout.md.",
+    "허용 Files: packages/runner/src/executor.ts, packages/runner/src/execution-binding.ts, packages/runner/src/shutdown.ts, packages/runner/src/index.ts, packages/runner/tests/executor.test.ts, packages/runner/tests/shutdown.test.ts, .agents/reports/task-4-runner-timeout.md.",
     "금지: core 타입 변경, `runSuite` 내부 client.close/forceClose 호출, timeout 뒤 다음 MCP 호출, 허용 Files 밖 수정, background, commit, merge, push, 하위 agent spawn.",
-    "fake timer로 timeout 우선순위·최대 경계·notRun 필드·abort 우선순위·고정 이벤트·timer/listener cleanup·후속 호출 금지를 먼저 RED로 확인한다. report가 resolve/reject 먼저 끝나고 drain은 그 뒤 union 결과로 non-rejecting 완료되는지 검사한다. drain 0/NaN/Infinity/음수/소수/상한 초과 동기 거절, permanently pending call의 5,000ms deadline, 2,000ms graceful/force bounds, pending call과 독립적인 forceClose, late reject 처리, undefined report rejection, report→drain→close→force 오류 집계, finalizer 중복 호출에도 transport 종료 1회를 검증한다. RED/GREEN은 `pnpm exec vitest run packages/runner/tests/executor.test.ts packages/runner/tests/shutdown.test.ts`, 회귀는 `pnpm exec vitest run packages/runner/tests`, `pnpm --filter @ohmymcp/runner typecheck`, `pnpm --filter @ohmymcp/runner build`로 확인한다.",
+    "fake timer로 timeout 우선순위·최대 경계·notRun 필드·abort 우선순위·고정 이벤트·timer/listener cleanup·후속 호출 금지를 먼저 RED로 확인한다. report가 resolve/reject 먼저 끝나고 drain은 그 뒤 union 결과로 non-rejecting 완료되는지 검사한다. drain 0/NaN/Infinity/음수/소수/상한 초과 동기 거절, exact deadline에서 deadline 우선, permanently pending listTools와 callTool 각각의 5,000ms deadline, 2,000ms graceful/force bounds, close rejection의 gracefulCloseFailed force path, wrong-client/forged-execution 동기 거절, pending request와 독립적인 forceClose, late reject 처리, undefined report rejection, report→drain→close→force 오류 집계, finalizer 중복 호출에도 transport 종료 1회를 검증한다. RED/GREEN은 `pnpm exec vitest run packages/runner/tests/executor.test.ts packages/runner/tests/shutdown.test.ts`, 회귀는 `pnpm exec vitest run packages/runner/tests`, `pnpm --filter @ohmymcp/runner typecheck`, `pnpm --filter @ohmymcp/runner build`로 확인한다.",
     "최종 응답은 READY_FOR_REVIEW 또는 BLOCKED와 증거를 포함한다.",
   ].join("\n").replaceAll("${runnerWorktree}", runnerWorktree),
 });

@@ -1,5 +1,58 @@
 import type { McpClient, ToolResult } from "@ohmymcp/core";
 
+export type { AssertionResult } from "./assertions.js";
+export type { RunnerDiagnostic, RunnerDiagnosticCode } from "./diagnostics.js";
+export {
+  type OperationResult,
+  type RunnerDrainResult,
+  type RunnerEvent,
+  type RunnerExecution,
+  type RunnerReport,
+  type RunnerSummary,
+  type RunSuiteOptions,
+  runSuite,
+  type TestCaseResult,
+} from "./executor.js";
+export {
+  DEFAULT_MAX_CASE_BYTES,
+  DEFAULT_MAX_REPORT_BYTES,
+  DEFAULT_SENSITIVE_KEYS,
+  REDACTED,
+  RunnerPayloadLimitError,
+  type RunnerPayloadLimits,
+  type RunnerRedactionOptions,
+} from "./sanitization.js";
+export {
+  type FinalizeRunnerExecutionOptions,
+  finalizeRunnerExecution,
+  type McpClientShutdownController,
+  type RunnerForceCloseReason,
+  RunnerShutdownTimeoutError,
+} from "./shutdown.js";
+export { MCP_SUITE_JSON_SCHEMA } from "./spec/json-schema.js";
+export type {
+  AssertionSpec,
+  CallToolCaseSpec,
+  IsErrorAssertionSpec,
+  JsonObject,
+  JsonPrimitive,
+  JsonValue,
+  ListToolsCaseSpec,
+  ReadonlyJsonObject,
+  ReadonlyJsonValue,
+  SuiteValidationIssue,
+  SuiteValidationIssueCode,
+  SuiteValidationResult,
+  TestCaseBase,
+  TestCaseSpec,
+  TestSuiteSpec,
+  ToolExistsAssertionSpec,
+  ToolListAssertionSpec,
+  ToolResultAssertionSpec,
+} from "./spec/types.js";
+export { SuiteValidationError } from "./spec/types.js";
+export { defineMcpSuite, validateMcpSuite } from "./spec/validation.js";
+
 /** `createMcpTest` 에 넘기는 설정. */
 export interface McpTestConfig {
   client: McpClient;

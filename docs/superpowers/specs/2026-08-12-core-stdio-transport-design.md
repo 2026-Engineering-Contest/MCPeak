@@ -493,7 +493,7 @@ primary로 유지하고 process 진단은 그 오류의 diagnostics에 넣는다
 | `closed 뒤 종료 API는 아무 동작도 반복하지 않는다` | 자발적 exit와 정상 close 각각에서 두 메서드가 resolved terminal Promise 반환, side effect 0회, state와 진단 불변 |
 | `normal close 단계 실패를 보존하고 강제 정리한다` | stdin end, SDK close, reader 중단 각각 `CLOSE_FAILED`와 phase `close`, frozen 진단, final `failed`, cleanup Promise 재사용 |
 | `SIGKILL 뒤 close event가 없으면 유한 시간에 실패한다` | 500ms 경계에서 `FORCE_CLOSE_TIMEOUT`과 final `failed`, 늦은 event 뒤에도 state와 진단 불변 |
-| `forceClose 뒤 늦은 spawn은 handshake를 시작하지 않는다` | starting에서 force-close 뒤 spawn을 보내도 transport start와 SDK handshake 0회, settled Promise와 진단 불변 |
+| `forceClose 뒤 늦은 spawn은 handshake를 시작하지 않는다` | starting에서 force-close 뒤 spawn을 보내도 transport start, SDK handshake와 listener 재등록 0회, settled Promise와 진단 불변 |
 | `stdout protocol 오류는 fatal transport 실패다` | 비-JSON 줄, invalid JSON-RPC, message 상한 초과 각각 고정 code, force-close 1회 |
 | `공개 오류 code와 phase mapping이 고정된다` | 모든 code 조합, 비동기 process exit와 stdout framing 실패가 표의 phase와 일치 |
 

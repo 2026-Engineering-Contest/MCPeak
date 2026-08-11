@@ -457,7 +457,7 @@ package-private fake spawn, fake child process, fake monotonic clock을 사용�
 | `process-not-found kill은 성공이다` | reject 없음, final closed |
 | `kill 권한 오류를 안전한 실패로 보존한다` | `FORCE_CLOSE_FAILED`, cause는 JSON에 없음 |
 | `SIGKILL close event 상한을 지킨다` | 499ms pending, 500ms `FORCE_CLOSE_TIMEOUT`과 final `failed`, 늦은 close 뒤 state와 진단 불변 |
-| `forceClose 뒤 늦은 spawn을 무시한다` | starting에서 force-close 뒤 spawn에도 transport start와 SDK handshake 0회, settled Promise와 진단 불변 |
+| `forceClose 뒤 늦은 spawn을 무시한다` | starting에서 force-close 뒤 spawn에도 transport start, SDK handshake와 listener 재등록 0회, settled Promise와 진단 불변 |
 | `process close는 onclose를 한 번만 호출한다` | close/error 중복 event에도 SDK callback 1회 |
 | `stdout protocol 오류는 fatal이다` | 비-JSON, invalid JSON-RPC, message 상한 초과 각각 force-close 1회 |
 | `stderr는 fatal이 아니다` | stderr append 뒤 연결 state 유지와 bounded snapshot |
@@ -856,7 +856,7 @@ await spawn_agent({
     "첫 명령으로 저장소 루트와 Worktree가 같은지 확인하고, 현재 HEAD가 사용자 승인 Task 1과 통합 대장 commit을 포함하는지 확인한다. AGENTS.md, .agents/skills/execution-conventions/SKILL.md, docs/conventions/execution.md, ADR, 설계, 계획을 끝까지 읽는다.",
     "허용 Files: packages/core/src/controlled-stdio.ts, packages/core/src/lifecycle.ts, packages/core/src/diagnostics.ts, packages/core/tests/lifecycle.test.ts, .agents/reports/task-2-core-lifecycle.md.",
     "금지: public frozen types, index public 이름 변경, SDK version, dependency, 다른 package, root 설정 수정, background, commit, merge, push, 하위 agent spawn, 다른 변경 되돌리기.",
-    "테스트를 먼저 작성한다. stdin grace 500ms, SIGTERM grace 500ms, SIGKILL 관찰 500ms이고 exact boundary는 deadline 우선이다. close 반복과 force 반복은 reference-equal Promise, force 뒤 close는 force Promise다. closed 뒤에는 resolved terminal Promise와 side effect 0회다. close 중 force는 timer를 기다리지 않고 승급하며 stdin end/destroy, reader 중단, SIGTERM/SIGKILL, onclose는 각각 최대 1회다. stdin 또는 reader 종료 실패는 CLOSE_FAILED와 final failed이며 force cleanup을 재사용한다. ESRCH는 성공, 권한 오류는 FORCE_CLOSE_FAILED, SIGKILL 뒤 500ms 무응답은 FORCE_CLOSE_TIMEOUT과 final failed이고 늦은 close가 state와 진단을 바꾸지 않는다. forceClose 뒤 늦은 spawn은 transport start와 handshake를 시작하지 않는다. invalid stdout/JSON-RPC/message 상한은 TRANSPORT_FAILED와 transport phase, stderr는 nonfatal이고 모든 timer는 unref한다. Node spawn은 shell false이고 SDK 공개 Transport, ReadBuffer, serializeMessage, getDefaultEnvironment만 사용한다. SDK 안전 환경 key만 상속하고 explicit env가 우선하며 parent secret sentinel은 제외한다.",
+    "테스트를 먼저 작성한다. stdin grace 500ms, SIGTERM grace 500ms, SIGKILL 관찰 500ms이고 exact boundary는 deadline 우선이다. close 반복과 force 반복은 reference-equal Promise, force 뒤 close는 force Promise다. closed 뒤에는 resolved terminal Promise와 side effect 0회다. close 중 force는 timer를 기다리지 않고 승급하며 stdin end/destroy, reader 중단, SIGTERM/SIGKILL, onclose는 각각 최대 1회다. stdin 또는 reader 종료 실패는 CLOSE_FAILED와 final failed이며 force cleanup을 재사용한다. ESRCH는 성공, 권한 오류는 FORCE_CLOSE_FAILED, SIGKILL 뒤 500ms 무응답은 FORCE_CLOSE_TIMEOUT과 final failed이고 늦은 close가 state와 진단을 바꾸지 않는다. forceClose 뒤 늦은 spawn은 transport start, handshake와 listener 재등록을 하지 않는다. invalid stdout/JSON-RPC/message 상한은 TRANSPORT_FAILED와 transport phase, stderr는 nonfatal이고 모든 timer는 unref한다. Node spawn은 shell false이고 SDK 공개 Transport, ReadBuffer, serializeMessage, getDefaultEnvironment만 사용한다. SDK 안전 환경 key만 상속하고 explicit env가 우선하며 parent secret sentinel은 제외한다.",
     "RED: pnpm exec vitest run packages/core/tests/lifecycle.test.ts. GREEN 뒤 Core 전체 테스트, typecheck, build, Biome를 실행하고 수집 수를 기록한다.",
     "보고서와 최종 응답은 READY_FOR_REVIEW 또는 BLOCKED 형식이다.",
   ].join("\n").replaceAll("${coreWorktree}", coreWorktree),

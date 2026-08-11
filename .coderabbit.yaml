@@ -81,6 +81,20 @@ reviews:
         규칙이 조용히 무력화되므로 반드시 지적하라. build 잡이 Node 22 전용인 것은
         의도된 것이다 (tsdown 의 engines 제약, ci.yml 주석 참조).
 
+  # Finishing Touches — 리뷰 외에 코드를 만들어내는 기능들.
+  #
+  # unit_tests 만 끈다. 이것만 **사람이 요청하지 않아도 스스로 PR 을 연다**
+  # (#21 이 그렇게 열렸고 CI 가 깨진 채였다. vitest.config.ts 까지 건드렸다).
+  #
+  # autofix · fix_ci 는 켜 둔다. 둘 다 체크박스나 @coderabbitai 명령으로
+  # **사람이 눌러야** 움직이므로 저절로 히스토리를 오염시키지 않는다.
+  # 다만 `@coderabbitai fix-ci commit` 은 현재 브랜치에 직접 커밋하므로 쓰지 않는다
+  # — §12 는 "그 패키지의 커밋 대부분이 내 것" 을 개인 기여 증거로 요구한다.
+  # 별도 PR 을 여는 `@coderabbitai fix-ci` 는 리뷰를 거치므로 괜찮다.
+  finishing_touches:
+    unit_tests:
+      enabled: false
+
   auto_review:
     enabled: true
     drafts: false

@@ -3,6 +3,28 @@ import { join, resolve } from "node:path";
 import type { ToolDef } from "@ohmymcp/core";
 import type { TestCaseSpec, TestSuiteSpec } from "@ohmymcp/runner";
 
+export type {
+  AuthoringDispatchResult,
+  AuthoringProviderResult,
+  AuthoringRequest,
+  AuthoringRequestBinding,
+  AuthoringRequestMode,
+  AuthoringRequestPreview,
+  McpToolContext,
+  TestAuthoringProvider,
+} from "./authoring-request.js";
+export {
+  DEFAULT_MAX_RESULT_BYTES,
+  DEFAULT_PROVIDER_TIMEOUT_MS,
+  dispatchAuthoringRequest,
+  MAX_PROMPT_BYTES,
+  MAX_PROVIDER_TIMEOUT_MS,
+  MAX_REQUEST_BYTES,
+  MAX_TOOLS_BYTES,
+  prepareAuthoringRequest,
+  validateAuthoringProviderResult,
+} from "./authoring-request.js";
+export { AUTHORING_OUTPUT_SCHEMA } from "./authoring-schema.js";
 export {
   applyAuthoringChanges,
   createAuthoringDiff,

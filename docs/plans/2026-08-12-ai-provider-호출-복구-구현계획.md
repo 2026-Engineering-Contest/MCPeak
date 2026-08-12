@@ -1,7 +1,7 @@
 # AI provider 호출 복구 구현계획 (2026-08-12)
 
 참조 문서: `docs/ai-provider-schema-compatibility.md`
-참조 구현: `/Users/doo._.hyun/Study/Project/MCPLens-V2/packages/extension/src/inferenceCli.ts`
+참조 구현: MCPLens-V2 저장소의 `packages/extension/src/inferenceCli.ts` (이 저장소 밖의 로컬 참조)
 
 ## 1. 배경과 근거
 
@@ -123,9 +123,13 @@ function unwrap(result: ProviderProcessResult, claude: boolean): unknown;
 1. `result.ok === false`이면 `new AuthoringProviderError(result.code, result)`.
 2. Claude인 경우 envelope는 plain object여야 하고,
    `type === "result"`, `subtype === "success"`,
-   `is_error !== true`, `api_error_status` 키 없음,
+   `is_error !== true`, `api_error_status`가 `null` 또는 `undefined`,
    `structured_output` 키 존재를 **전부** 만족해야 한다. 만족하면 `structured_output`을 취한다.
    Codex인 경우 `result.value`를 그대로 취한다.
+
+   > **정정(Task A2).** 이 항목은 원래 "`api_error_status` 키 없음"이었다. Claude 2.1.228의 정상
+   > 성공 응답이 이 키를 항상 `null`로 담아, 키 존재로 판정하면 모든 성공이 거절된다. A2에서
+   > 값 기준(`null`/`undefined`만 통과)으로 정정했고 위 본문은 정정 후 계약이다.
 3. 취한 값이 plain object여야 한다.
 4. `status`가 `"candidate"` 또는 `"questions"`여야 한다.
 5. `status === "questions"`이면 `{ status: "questions", questions }`를 반환한다.
@@ -439,12 +443,12 @@ untracked다. **worktree를 만들기 전에 커밋되어 있어야 한다.** �
 ```
 [1단계: 작업 공간 만들기] 다른 무엇보다 먼저 이것부터 해라.
 
-/Users/doo._.hyun/Study/Project/OhMyMCP 에서
+이 저장소의 루트에서
   git worktree add .claude/worktrees/ohmymcp-generate-provider -b fix/generate-provider-schema
-를 실행한 뒤 세션을 /Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/ohmymcp-generate-provider 로 옮겨라.
+를 실행한 뒤 세션을 방금 만든 .claude/worktrees/ohmymcp-generate-provider 로 옮겨라.
 
 진입 후 아래를 확인하고, 하나라도 어긋나면 중단하고 BLOCKED로 보고해라:
-  - pwd가 /Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/ohmymcp-generate-provider 인지
+  - pwd가 .claude/worktrees/ohmymcp-generate-provider 로 끝나는지
   - git log --oneline -1 이 루트에서 본 기점 커밋과 같은지
   - docs/plans/2026-08-12-ai-provider-호출-복구-구현계획.md 와
     docs/ai-provider-schema-compatibility.md 가 실제로 존재하는지
@@ -487,7 +491,7 @@ untracked다. **worktree를 만들기 전에 커밋되어 있어야 한다.** �
   3. pnpm vitest run packages/generate 로 표적 검증.
   4. pnpm build && pnpm typecheck && pnpm lint && pnpm test 로 전체 회귀 검증.
      타입체크와 린트는 검사한 파일 수가 0이 아닌지 출력에서 확인한다.
-  5. 보고서를 /Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/ohmymcp-generate-provider/docs/reports/task-a1.md 에 쓴다.
+  5. 보고서를 worktree 안의 docs/reports/task-a1.md 에 쓴다.
      보고서에는 pwd, git rev-parse HEAD, 기점 커밋, 변경 파일 목록, 실행한 검증 명령과 결과 원문,
      내가 임의로 판단한 부분을 적는다.
 
@@ -502,12 +506,12 @@ untracked다. **worktree를 만들기 전에 커밋되어 있어야 한다.** �
 ```
 [1단계: 작업 공간 만들기] 다른 무엇보다 먼저 이것부터 해라.
 
-/Users/doo._.hyun/Study/Project/OhMyMCP 에서
+이 저장소의 루트에서
   git worktree add .claude/worktrees/ohmymcp-cli-provider-failure -b fix/cli-provider-failure-message
-를 실행한 뒤 세션을 /Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/ohmymcp-cli-provider-failure 로 옮겨라.
+를 실행한 뒤 세션을 방금 만든 .claude/worktrees/ohmymcp-cli-provider-failure 로 옮겨라.
 
 진입 후 아래를 확인하고, 하나라도 어긋나면 중단하고 BLOCKED로 보고해라:
-  - pwd가 /Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/ohmymcp-cli-provider-failure 인지
+  - pwd가 .claude/worktrees/ohmymcp-cli-provider-failure 로 끝나는지
   - git log --oneline -1 이 루트에서 본 기점 커밋과 같은지
   - docs/plans/2026-08-12-ai-provider-호출-복구-구현계획.md 가 실제로 존재하는지
   - git status --short 가 비어 있는지
@@ -549,7 +553,7 @@ providerId, code, timeoutMs, exitCode, stderr 이며 이것만으로 구현할 �
   3. pnpm vitest run packages/cli 로 표적 검증.
   4. pnpm build && pnpm typecheck && pnpm lint && pnpm test 로 전체 회귀 검증.
      타입체크와 린트는 검사한 파일 수가 0이 아닌지 출력에서 확인한다.
-  5. 보고서를 /Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/ohmymcp-cli-provider-failure/docs/reports/task-b1.md 에 쓴다.
+  5. 보고서를 worktree 안의 docs/reports/task-b1.md 에 쓴다.
      보고서에는 pwd, git rev-parse HEAD, 기점 커밋, 변경 파일 목록, 실행한 검증 명령과 결과 원문,
      내가 임의로 판단한 부분을 적는다.
 

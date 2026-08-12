@@ -26,8 +26,10 @@ JSON Schema 범위를 벗어나기 때문이다.
      완화하지 않는다.
 
 3. `packages/generate/src/providers.ts`
-   - Claude의 JSON envelope에서 `is_error: true` 또는 `api_error_status`가 있는 결과를 성공으로
-     취급하지 않는다.
+   - Claude의 JSON envelope에서 `is_error: true`이거나 `api_error_status`에 **값이 담긴** 결과를
+     성공으로 취급하지 않는다. 판정은 키 존재가 아니라 값 기준이다. Claude 2.1.228의 정상 성공
+     응답이 `api_error_status`를 항상 `null`로 담기 때문에, 키 존재로 판정하면 모든 성공이
+     거절된다. 따라서 `null`과 `undefined`만 통과시킨다.
    - raw stderr와 인증정보는 노출하지 않고 안전한 failure code만 반환한다.
 
 4. `packages/cli/src/generate-command.ts`

@@ -2,7 +2,7 @@
 
 ## 작업 공간
 
-- pwd: `/Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/ohmymcp-generate-provider`
+- worktree: `<repo-root>/.claude/worktrees/ohmymcp-generate-provider`
 - 브랜치: `fix/generate-api-error-status` (`f277608`에서 분기)
 - `git rev-parse HEAD`: `f2776084d3ece056a426c083a75572315d3992f9`
 - 기점 커밋: `f277608 merge(generate): Task A1 provider 호출 복구 통합` (지시받은 기점과 일치)

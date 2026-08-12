@@ -11,7 +11,7 @@
 
 ## 작업 공간
 
-- pwd: `/Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/ohmymcp-cli-flaky-deadline`
+- worktree: `<repo-root>/.claude/worktrees/ohmymcp-cli-flaky-deadline`
 - 브랜치: `fix/cli-flaky-deadline`
 - `git rev-parse HEAD`: `1921d4c7fdcea907069a4d8e585cf705ac8d2f65`
 - 기점 커밋: `1921d4c merge(cli): Task B2 입력 종료 처리 통합` (지시받은 값과 일치)

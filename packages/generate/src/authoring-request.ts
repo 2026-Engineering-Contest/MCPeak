@@ -1,0 +1,421 @@
+import {
+  DEFAULT_SENSITIVE_KEYS,
+  REDACTED,
+  type RunnerRedactionOptions,
+  type TestSuiteSpec,
+  validateMcpSuite,
+} from "@ohmymcp/runner";
+import { reviewLocalAuthoringCandidate } from "./authoring-session.js";
+import type {
+  AuthoringSessionView,
+  GenerateReviewApproval,
+  PublicProviderValidationIssue,
+  SanitizedAuthoringCandidate,
+} from "./authoring-types.js";
+import { deepFreeze, sha256 } from "./canonical.js";
+import type { AuthoringProviderFailureCode } from "./provider-process.js";
+import { redactAuthoringSuite } from "./redaction.js";
+
+export type AuthoringRequestMode = "initial" | "revise";
+export interface McpToolContext {
+  readonly name: string;
+  readonly description?: string;
+  readonly inputSchema: unknown;
+}
+declare const requestBrand: unique symbol;
+export interface AuthoringRequestBinding {
+  readonly [requestBrand]: true;
+}
+export interface AuthoringRequest {
+  readonly mode: AuthoringRequestMode;
+  readonly instruction: string;
+  readonly baseline: TestSuiteSpec;
+  readonly candidate: TestSuiteSpec;
+  readonly tools: readonly McpToolContext[];
+}
+export interface AuthoringRequestPreview {
+  readonly request: AuthoringRequest;
+  readonly byteLength: number;
+  readonly maxResultBytes: number;
+  readonly providerTimeoutMs: number;
+  readonly providerId: "codex" | "claude";
+  readonly model: string;
+  readonly redactionsApplied: true;
+  readonly requiresApproval: true;
+  readonly fingerprint: string;
+  readonly binding: AuthoringRequestBinding;
+}
+export interface TestAuthoringProvider {
+  readonly id: "codex" | "claude";
+  /** Factory에 고정된 모델이며 있으면 승인된 request preview와 일치해야 한다. */
+  readonly model?: string;
+  author(
+    request: AuthoringRequest,
+    options: { signal?: AbortSignal; timeoutMs: number },
+  ): Promise<unknown>;
+}
+export type AuthoringProviderResult =
+  | {
+      readonly status: "candidate";
+      readonly suite: TestSuiteSpec;
+      readonly summary: string;
+      readonly warnings: readonly PublicProviderValidationIssue[];
+      readonly questions: readonly string[];
+    }
+  | { readonly status: "questions"; readonly questions: readonly string[] };
+export type AuthoringDispatchResult =
+  | { readonly status: "notApproved" }
+  | { readonly status: "approvalInvalidated" }
+  | { readonly status: "providerFailed"; readonly failure: PublicProviderFailure }
+  | { readonly status: "resultLimitExceeded" }
+  | { readonly status: "invalid"; readonly issues: readonly PublicProviderValidationIssue[] }
+  | { readonly status: "questions"; readonly questions: readonly string[] }
+  | { readonly status: "preview"; readonly preview: SanitizedAuthoringCandidate };
+
+export const MAX_PROMPT_BYTES = 65_536;
+export const MAX_TOOLS_BYTES = 131_072;
+export const MAX_REQUEST_BYTES = 262_144;
+export const DEFAULT_MAX_RESULT_BYTES = 262_144;
+export const DEFAULT_PROVIDER_TIMEOUT_MS = 120_000;
+export const MAX_PROVIDER_TIMEOUT_MS = 600_000;
+
+export interface PublicProviderFailure {
+  readonly providerId: "codex" | "claude";
+  readonly code: AuthoringProviderFailureCode;
+  readonly timeoutMs: number;
+  readonly exitCode?: number;
+  readonly stderr?: { readonly captured: boolean; readonly truncated: boolean };
+}
+
+type RequestState = {
+  request: AuthoringRequest;
+  fingerprint: string;
+  providerId: "codex" | "claude";
+  timeoutMs: number;
+  maxResultBytes: number;
+  tools: readonly McpToolContext[];
+  redaction?: RunnerRedactionOptions;
+};
+const requests = new WeakMap<AuthoringRequestPreview, RequestState>();
+const candidates = new WeakMap<SanitizedAuthoringCandidate, TestSuiteSpec>();
+const providerFailureCodes = new Set<AuthoringProviderFailureCode>([
+  "providerUnavailable",
+  "nonZeroExit",
+  "timedOut",
+  "cancelled",
+  "outputLimitExceeded",
+  "invalidUtf8",
+  "invalidJson",
+  "schemaMismatch",
+  "internal",
+]);
+const plain = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" &&
+  value !== null &&
+  !Array.isArray(value) &&
+  (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null);
+function assertJson(value: unknown, path: string, active = new Set<object>()): void {
+  if (value === null || typeof value === "string" || typeof value === "boolean") return;
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) throw issue("INVALID_JSON", path);
+    return;
+  }
+  if (!Array.isArray(value) && !plain(value)) throw issue("INVALID_JSON", path);
+  if (active.has(value)) throw issue("INVALID_JSON", path);
+  active.add(value);
+  try {
+    if (Array.isArray(value))
+      for (let i = 0; i < value.length; i++) {
+        if (!(i in value)) throw issue("INVALID_JSON", `${path}[${i}]`);
+        assertJson(value[i], `${path}[${i}]`, active);
+      }
+    else for (const key of Object.keys(value)) assertJson(value[key], `${path}.${key}`, active);
+  } finally {
+    active.delete(value);
+  }
+}
+function issue(code: string, path: string): Error {
+  const error = new TypeError(`JSON으로 표현할 수 없는 inputSchema입니다: ${path}`);
+  Object.assign(error, { code, path, hint: "JSON 값만 사용하세요." });
+  return error;
+}
+function byte(value: unknown): number {
+  try {
+    return Buffer.byteLength(JSON.stringify(value), "utf8");
+  } catch {
+    return Number.POSITIVE_INFINITY;
+  }
+}
+function redacted(value: unknown, options?: RunnerRedactionOptions): unknown {
+  const keys = new Set(DEFAULT_SENSITIVE_KEYS);
+  for (const key of options?.sensitiveKeys ?? [])
+    keys.add(key.toLowerCase().replace(/[^a-z0-9]/g, ""));
+  const values = new Set(options?.sensitiveValues ?? []);
+  const visit = (item: unknown): unknown => {
+    if (typeof item === "string") return values.has(item) ? REDACTED : item;
+    if (item === null || typeof item !== "object") return item;
+    if (Array.isArray(item)) return item.map(visit);
+    return Object.fromEntries(
+      Object.entries(item).map(([key, nested]) => [
+        key,
+        keys.has(key.toLowerCase().replace(/[^a-z0-9]/g, "")) ? REDACTED : visit(nested),
+      ]),
+    );
+  };
+  return visit(value);
+}
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+function redactText(value: string, options?: RunnerRedactionOptions): string {
+  let result = value;
+  for (const sensitiveValue of options?.sensitiveValues ?? [])
+    if (sensitiveValue.length > 0) result = result.split(sensitiveValue).join(REDACTED);
+  for (const key of [...DEFAULT_SENSITIVE_KEYS, ...(options?.sensitiveKeys ?? [])]) {
+    const expression = new RegExp(`(${escapeRegex(key)}\\s*[=:]\\s*)[^\\s,;]+`, "gi");
+    result = result.replace(expression, `$1${REDACTED}`);
+  }
+  return result;
+}
+function publicProviderFailure(error: unknown, state: RequestState): PublicProviderFailure {
+  const source = error as {
+    code?: unknown;
+    exitCode?: unknown;
+    stderr?: { captured?: unknown; truncated?: unknown };
+  };
+  const code =
+    typeof source?.code === "string" &&
+    providerFailureCodes.has(source.code as AuthoringProviderFailureCode)
+      ? (source.code as AuthoringProviderFailureCode)
+      : "internal";
+  const exitCode =
+    typeof source?.exitCode === "number" &&
+    Number.isInteger(source.exitCode) &&
+    source.exitCode >= 0
+      ? source.exitCode
+      : undefined;
+  const stderr =
+    typeof source?.stderr?.captured === "boolean" && typeof source.stderr.truncated === "boolean"
+      ? { captured: source.stderr.captured, truncated: source.stderr.truncated }
+      : undefined;
+  return { providerId: state.providerId, code, timeoutMs: state.timeoutMs, exitCode, stderr };
+}
+function safeIssues(input: unknown): readonly PublicProviderValidationIssue[] {
+  const result = validateMcpSuite(input);
+  if (result.valid) return [];
+  return result.issues.slice(0, 100).map(({ code }) => ({
+    code,
+    path: "suite",
+    message: "provider 결과가 suite 계약을 만족하지 않습니다.",
+    hint: "지원되는 suite 형식을 사용하세요.",
+  }));
+}
+function frozen<T>(value: T): T {
+  return deepFreeze(structuredClone(value));
+}
+export function prepareAuthoringRequest(options: {
+  mode: AuthoringRequestMode;
+  instruction: string;
+  baseline: TestSuiteSpec;
+  candidate: TestSuiteSpec;
+  tools: readonly McpToolContext[];
+  providerId: "codex" | "claude";
+  model: string;
+  redaction?: RunnerRedactionOptions;
+  maxResultBytes?: number;
+  providerTimeoutMs?: number;
+}): AuthoringRequestPreview {
+  if (options.mode !== "initial" && options.mode !== "revise")
+    throw new TypeError("지원하지 않는 authoring request mode입니다.");
+  if (
+    !Number.isInteger(options.providerTimeoutMs ?? DEFAULT_PROVIDER_TIMEOUT_MS) ||
+    (options.providerTimeoutMs ?? DEFAULT_PROVIDER_TIMEOUT_MS) < 1 ||
+    (options.providerTimeoutMs ?? DEFAULT_PROVIDER_TIMEOUT_MS) > MAX_PROVIDER_TIMEOUT_MS
+  )
+    throw new RangeError("provider timeout은 1부터 600000 사이의 정수여야 합니다.");
+  if (
+    !Number.isInteger(options.maxResultBytes ?? DEFAULT_MAX_RESULT_BYTES) ||
+    (options.maxResultBytes ?? DEFAULT_MAX_RESULT_BYTES) < 1 ||
+    (options.maxResultBytes ?? DEFAULT_MAX_RESULT_BYTES) > DEFAULT_MAX_RESULT_BYTES
+  )
+    throw new RangeError("max result bytes가 유효하지 않습니다.");
+  for (const tool of options.tools) assertJson(tool.inputSchema, `tools.${tool.name}.inputSchema`);
+  if (byte(options.instruction) > MAX_PROMPT_BYTES)
+    throw new RangeError("prompt byte limit을 초과했습니다.");
+  if (byte(options.tools) > MAX_TOOLS_BYTES)
+    throw new RangeError("tools byte limit을 초과했습니다.");
+  const baseline = redacted(options.baseline, options.redaction) as TestSuiteSpec;
+  const candidate =
+    options.mode === "initial"
+      ? baseline
+      : (redacted(options.candidate, options.redaction) as TestSuiteSpec);
+  const request = frozen({
+    mode: options.mode,
+    instruction: redacted(options.instruction, options.redaction) as string,
+    baseline,
+    candidate,
+    tools: redacted(options.tools, options.redaction) as McpToolContext[],
+  });
+  if (byte(request) > MAX_REQUEST_BYTES) throw new RangeError("request byte limit을 초과했습니다.");
+  const fingerprint = sha256(request);
+  const binding = frozen({} as never);
+  const preview = frozen({
+    request,
+    byteLength: byte(request),
+    maxResultBytes: options.maxResultBytes ?? DEFAULT_MAX_RESULT_BYTES,
+    providerTimeoutMs: options.providerTimeoutMs ?? DEFAULT_PROVIDER_TIMEOUT_MS,
+    providerId: options.providerId,
+    model: options.model,
+    redactionsApplied: true as const,
+    requiresApproval: true as const,
+    fingerprint,
+    binding,
+  });
+  requests.set(preview, {
+    request,
+    fingerprint,
+    providerId: options.providerId,
+    timeoutMs: preview.providerTimeoutMs,
+    maxResultBytes: preview.maxResultBytes,
+    tools: request.tools,
+    redaction: options.redaction,
+  });
+  return preview;
+}
+export function validateAuthoringProviderResult(
+  raw: unknown,
+  preview: AuthoringRequestPreview,
+): AuthoringDispatchResult {
+  const state = requests.get(preview);
+  if (
+    state === undefined ||
+    preview.fingerprint !== state.fingerprint ||
+    sha256(preview.request) !== state.fingerprint
+  )
+    return { status: "approvalInvalidated" };
+  if (byte(raw) > state.maxResultBytes) return { status: "resultLimitExceeded" };
+  if (!plain(raw) || (raw.status !== "candidate" && raw.status !== "questions"))
+    return { status: "invalid", issues: safeIssues(raw) };
+  if (raw.status === "questions") {
+    const questions = raw.questions;
+    return Array.isArray(questions) &&
+      questions.length > 0 &&
+      questions.every((v) => typeof v === "string" && /\S/.test(v))
+      ? {
+          status: "questions",
+          questions: frozen(questions.map((item) => redactText(item, state.redaction))),
+        }
+      : {
+          status: "invalid",
+          issues: [
+            {
+              code: "INVALID_VALUE",
+              path: "questions",
+              message: "질문 결과가 유효하지 않습니다.",
+              hint: "비어 있지 않은 질문을 반환하세요.",
+            },
+          ],
+        };
+  }
+  if (
+    !plain(raw.suite) ||
+    typeof raw.summary !== "string" ||
+    !Array.isArray(raw.questions) ||
+    !Array.isArray(raw.warnings)
+  )
+    return { status: "invalid", issues: safeIssues(raw.suite) };
+  const suiteIssues = safeIssues(raw.suite);
+  const suite = raw.suite as unknown as TestSuiteSpec;
+  if (
+    suite.id !== state.request.candidate.id ||
+    suite.schemaVersion !== state.request.candidate.schemaVersion
+  )
+    suiteIssues.concat();
+  const contextIssues: PublicProviderValidationIssue[] = [...suiteIssues];
+  if (
+    suite.id !== state.request.candidate.id ||
+    suite.schemaVersion !== state.request.candidate.schemaVersion
+  )
+    contextIssues.push({
+      code: "INVALID_VALUE",
+      path: "suite.id",
+      message: "suite identity가 요청과 일치하지 않습니다.",
+      hint: "요청의 suite identity를 유지하세요.",
+    });
+  const names = new Set(state.tools.map((tool) => tool.name));
+  suite.cases?.forEach((item, index) => {
+    if (item.operation.type === "callTool" && !names.has(item.operation.tool))
+      contextIssues.push({
+        code: "INVALID_VALUE",
+        path: `suite.cases[${index}].operation.tool`,
+        message: "허용되지 않은 MCP 도구입니다.",
+        hint: "요청에 포함된 도구만 사용하세요.",
+      });
+  });
+  if (contextIssues.length) return { status: "invalid", issues: contextIssues.slice(0, 100) };
+  const sanitized = redactAuthoringSuite(suite, state.redaction);
+  const result: AuthoringProviderResult = {
+    status: "candidate",
+    suite: frozen(sanitized.suite),
+    summary: redactText(raw.summary, state.redaction),
+    warnings: [],
+    questions: frozen(
+      raw.questions
+        .filter((v): v is string => typeof v === "string")
+        .map((item) => redactText(item, state.redaction)),
+    ),
+  };
+  if (byte(result) > state.maxResultBytes) return { status: "resultLimitExceeded" };
+  const candidate = frozen({
+    result,
+    byteLength: byte(result),
+    redactedPaths: frozen(sanitized.redactedPaths),
+    executable: sanitized.redactedPaths.length === 0,
+    requiresApproval: true as const,
+    fingerprint: sha256(result),
+    binding: frozen({} as never),
+  });
+  candidates.set(candidate, result.suite);
+  return { status: "preview", preview: candidate };
+}
+export async function dispatchAuthoringRequest(options: {
+  provider: TestAuthoringProvider;
+  preview: AuthoringRequestPreview;
+  approval: GenerateReviewApproval;
+  signal?: AbortSignal;
+  session?: AuthoringSessionView;
+}): Promise<AuthoringDispatchResult> {
+  const state = requests.get(options.preview);
+  if (!options.approval.approved) return { status: "notApproved" };
+  if (
+    state === undefined ||
+    options.approval.fingerprint !== state.fingerprint ||
+    options.preview.fingerprint !== state.fingerprint ||
+    sha256(options.preview.request) !== state.fingerprint ||
+    options.provider.id !== state.providerId ||
+    (options.provider.model !== undefined && options.provider.model !== options.preview.model)
+  )
+    return { status: "approvalInvalidated" };
+  try {
+    const providerResult = await options.provider.author(state.request, {
+      signal: options.signal,
+      timeoutMs: state.timeoutMs,
+    });
+    const result = validateAuthoringProviderResult(providerResult, options.preview);
+    if (result.status !== "preview" || options.session === undefined) return result;
+    const candidate =
+      plain(providerResult) && providerResult.status === "candidate" && plain(providerResult.suite)
+        ? (providerResult.suite as unknown as TestSuiteSpec)
+        : result.preview.result.suite;
+    return reviewLocalAuthoringCandidate({
+      session: options.session,
+      candidate,
+      tools: state.tools,
+      providerId: state.providerId,
+      redaction: state.redaction,
+      sensitiveValues: state.redaction?.sensitiveValues,
+    });
+  } catch (error) {
+    return { status: "providerFailed", failure: publicProviderFailure(error, state) };
+  }
+}

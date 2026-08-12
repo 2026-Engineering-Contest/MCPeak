@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ToolDef } from "@ohmymcp/core";
 import { afterEach, describe, expect, it } from "vitest";
-import { GenerateTestsError, generateTests } from "../src/index.js";
+import { createBaselineSuite, GenerateTestsError, generateTests } from "../src/index.js";
 
 const temporaryDirectories: string[] = [];
 
@@ -22,6 +22,24 @@ afterEach(async () => {
 });
 
 describe("generateTests", () => {
+  it("기존 파일 생성과 baseline case 합성 규칙을 공유한다", async () => {
+    const tool: ToolDef = {
+      name: "get_weather",
+      inputSchema: {
+        type: "object",
+        properties: { city: { type: "string" } },
+        required: ["city"],
+      },
+    };
+    const [path] = await generateTests([tool], { outDir: await temporaryOutDir() });
+    const source = await readFile(path as string, "utf8");
+    const generatedCase = JSON.parse(source.match(/defineMcpSuite\((\{[\s\S]*\})\);/)?.[1] ?? "{}")
+      .cases[0];
+
+    expect(generatedCase).toEqual(
+      createBaselineSuite([tool], { suiteId: "server", suiteName: "서버" }).suite.cases[0],
+    );
+  });
   it("도구마다 client 연결이 없는 선언형 Runner suite를 생성한다", async () => {
     const outDir = await temporaryOutDir();
     const tools: ToolDef[] = [

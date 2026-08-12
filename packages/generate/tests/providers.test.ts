@@ -194,11 +194,43 @@ describe("provider adapters", () => {
     });
     expect(r.calls).toHaveLength(1);
   });
+  it("승인한 model과 factory model이 다르면 inference를 spawn하지 않는다", async () => {
+    const r = runner({ ok: true, value: { status: "questions", questions: ["q"] } });
+    const approved = preview();
+    const different = createCodexAuthoringProvider({
+      run: r.run,
+      capabilities: async () => true,
+      model: "higher-cost-model",
+    });
+    await expect(
+      dispatchAuthoringRequest({
+        provider: different,
+        preview: approved,
+        approval: { approved: true, fingerprint: approved.fingerprint },
+      }),
+    ).resolves.toEqual({ status: "approvalInvalidated" });
+    expect(r.calls).toHaveLength(0);
+
+    const matching = createCodexAuthoringProvider({
+      run: r.run,
+      capabilities: async () => true,
+      model: approved.model,
+    });
+    await expect(
+      dispatchAuthoringRequest({
+        provider: matching,
+        preview: approved,
+        approval: { approved: true, fingerprint: approved.fingerprint },
+      }),
+    ).resolves.toMatchObject({ status: "questions" });
+    expect(r.calls).toHaveLength(1);
+  });
   it("dispatch는 승인 binding의 frozen request만 provider에 보낸다", async () => {
     const p = preview();
     let calls = 0;
     const provider = {
       id: "codex" as const,
+      model: "m",
       author: async (request: unknown) => {
         calls++;
         expect(Object.isFrozen(request)).toBe(true);

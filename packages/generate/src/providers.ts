@@ -102,6 +102,7 @@ function makeProvider(id: "codex" | "claude", options: Options): TestAuthoringPr
   const model = options.model ?? "m";
   return {
     id,
+    model,
     async author(request, settings) {
       if (!(await hasRequiredCapabilities(id, options)))
         throw new AuthoringProviderError("providerUnavailable");

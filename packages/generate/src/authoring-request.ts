@@ -46,6 +46,8 @@ export interface AuthoringRequestPreview {
 }
 export interface TestAuthoringProvider {
   readonly id: "codex" | "claude";
+  /** Factory에 고정된 모델이며 있으면 승인된 request preview와 일치해야 한다. */
+  readonly model?: string;
   author(
     request: AuthoringRequest,
     options: { signal?: AbortSignal; timeoutMs: number },
@@ -347,7 +349,8 @@ export async function dispatchAuthoringRequest(options: {
     options.approval.fingerprint !== state.fingerprint ||
     options.preview.fingerprint !== state.fingerprint ||
     sha256(options.preview.request) !== state.fingerprint ||
-    options.provider.id !== state.providerId
+    options.provider.id !== state.providerId ||
+    (options.provider.model !== undefined && options.provider.model !== options.preview.model)
   )
     return { status: "approvalInvalidated" };
   try {

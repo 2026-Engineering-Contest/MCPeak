@@ -194,6 +194,37 @@ describe("provider adapters", () => {
     });
     expect(r.calls).toHaveLength(1);
   });
+  it("adapter process failure의 안전한 진단만 dispatch까지 보존한다", async () => {
+    const r = runner({
+      ok: false,
+      code: "nonZeroExit",
+      exitCode: 23,
+      stderr: { captured: true, truncated: true },
+      stdout: "RAW_STDOUT_SENTINEL",
+    } as ProviderProcessResult);
+    const approved = preview();
+    const result = await dispatchAuthoringRequest({
+      provider: createCodexAuthoringProvider({
+        run: r.run,
+        capabilities: async () => true,
+        model: approved.model,
+      }),
+      preview: approved,
+      approval: { approved: true, fingerprint: approved.fingerprint },
+    });
+    expect(result).toEqual({
+      status: "providerFailed",
+      failure: {
+        providerId: "codex",
+        code: "nonZeroExit",
+        timeoutMs: approved.providerTimeoutMs,
+        exitCode: 23,
+        stderr: { captured: true, truncated: true },
+      },
+    });
+    expect(JSON.stringify(result)).not.toContain("RAW_");
+    expect(JSON.stringify(result)).not.toContain("stack");
+  });
   it("승인한 model과 factory model이 다르면 inference를 spawn하지 않는다", async () => {
     const r = runner({ ok: true, value: { status: "questions", questions: ["q"] } });
     const approved = preview();

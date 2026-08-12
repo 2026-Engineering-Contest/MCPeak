@@ -37,4 +37,33 @@ describe("ohmymcp cli", () => {
       await rm(directory, { recursive: true, force: true });
     }
   });
+
+  it("generate 의존성 로드 실패를 raw 오류 없이 정규화한다", async () => {
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    vi.doMock("@ohmymcp/generate", () => {
+      throw new Error("GENERATE_DYNAMIC_SECRET_STACK");
+    });
+    try {
+      await expect(
+        run([
+          "generate",
+          "--suite-id",
+          "weather",
+          "--name",
+          "Weather",
+          "--out",
+          "suite.json",
+          "--command",
+          "node",
+          "--baseline-only",
+        ]),
+      ).resolves.toBe(1);
+      expect(stderr.mock.calls.map(([text]) => String(text)).join("")).not.toContain(
+        "GENERATE_DYNAMIC_SECRET_STACK",
+      );
+    } finally {
+      vi.doUnmock("@ohmymcp/generate");
+      stderr.mockRestore();
+    }
+  });
 });

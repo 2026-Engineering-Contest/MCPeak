@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { nodeGenerateDependencies, nodeReviewIO, runGenerateCommand } from "./generate-command.js";
 import { parseTestCommand, runCli } from "./test-command.js";
 
 export type Command = (argv: string[]) => Promise<number>;
@@ -30,6 +31,47 @@ const unavailableRuntimeDependencies = {
 };
 
 export async function run(argv: string[]): Promise<number> {
+  if (argv[0] === "generate") {
+    let core: typeof import("@ohmymcp/core");
+    let runner: typeof import("@ohmymcp/runner");
+    let generate: typeof import("@ohmymcp/generate");
+    try {
+      [core, runner, generate] = await Promise.all([
+        import("@ohmymcp/core"),
+        import("@ohmymcp/runner"),
+        import("@ohmymcp/generate"),
+      ]);
+    } catch {
+      return runGenerateCommand(argv, {
+        ...nodeGenerateDependencies(),
+        connect: unavailableDependencies.connect,
+        createBaselineSuite: unavailableDependencies.validateSuite,
+        createAuthoringSession: unavailableDependencies.validateSuite,
+        finalizeAuthoringDraft: unavailableDependencies.validateSuite,
+        getAuthoringExecutionSuite: unavailableDependencies.validateSuite,
+        validateSuite: unavailableDependencies.validateSuite,
+      } as never);
+    }
+    return runGenerateCommand(argv, {
+      ...nodeGenerateDependencies(),
+      connect: core.connectStdio,
+      createBaselineSuite: generate.createBaselineSuite,
+      createAuthoringSession: generate.createAuthoringSession,
+      finalizeAuthoringDraft: generate.finalizeAuthoringDraft,
+      getAuthoringExecutionSuite: generate.getAuthoringExecutionSuite,
+      validateSuite: runner.validateMcpSuite,
+      reviewIO: nodeReviewIO(),
+      providers: {
+        codex: (model) => generate.createCodexAuthoringProvider({ model }),
+        claude: (model) => generate.createClaudeAuthoringProvider({ model }),
+      },
+      prepareAuthoringRequest: generate.prepareAuthoringRequest,
+      dispatchAuthoringRequest: generate.dispatchAuthoringRequest,
+      createAuthoringDiff: generate.createAuthoringDiff,
+      applyAuthoringChanges: generate.applyAuthoringChanges,
+      reviewLocalAuthoringCandidate: generate.reviewLocalAuthoringCandidate,
+    });
+  }
   if (argv[0] !== "test") return runCli(argv, unavailableDependencies);
   try {
     const input = parseTestCommand(argv.slice(1));

@@ -1,6 +1,6 @@
 {
   "name": "@ohmymcp/generate",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": false,
   "type": "module",
   "description": "스키마 → 테스트 코드 생성",

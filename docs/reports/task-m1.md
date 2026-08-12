@@ -2,7 +2,7 @@
 
 ## 작업 공간
 
-- pwd: `/Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/ohmymcp-merge-pr38`
+- pwd: `<repo-root>/.claude/worktrees/ohmymcp-merge-pr38`
 - 브랜치: `merge/pr38` (`main`에서 분기, 분기 시 HEAD `1fa089d`)
 - 진입 시 `git status --short` 비어 있었고 `pnpm install` 정상.
 - 실행한 git 명령은 `worktree add`, `fetch origin`, `merge origin/main`,

@@ -2,7 +2,7 @@
 
 ## 작업 공간
 
-- pwd: `/Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/ohmymcp-review2-generate`
+- pwd: `<repo-root>/.claude/worktrees/ohmymcp-review2-generate`
 - 브랜치: `fix/review2-generate` (`33499b8`에서 분기)
 - `git rev-parse HEAD`: `33499b84eeec81b7b522f6094f4498aabc08a363`
 - 진입 시 `git status --short` 비어 있었고 `pnpm install` 뒤 baseline 111 passed 확인. 커밋 안 함.

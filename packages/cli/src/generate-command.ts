@@ -71,6 +71,21 @@ export interface ReviewIO {
 }
 type TestAuthoringProvider = import("@ohmymcp/generate").TestAuthoringProvider;
 class UsageError extends Error {}
+/**
+ * 출력 경로에 이미 파일이 있어 저장을 멈춘 경우. 다른 I/O 실패와 사용자 조치가 다르므로
+ * 타입으로 갈라 둔다. 뭉뚱그리면 "저장하지 못했습니다"만 남아 어떤 파일이 왜 막았는지 모른다.
+ */
+class OutputExistsError extends Error {
+  constructor(readonly path: string) {
+    super("output exists");
+  }
+}
+/** 출력 파일 충돌 안내. 경로는 라벨 뒤에 두어 조사가 변수에 붙지 않게 한다. */
+function outputExistsFailure(deps: GenerateCommandDependencies, path: string): void {
+  deps.writeStderr(
+    `오류 [GENERATE_OUTPUT_EXISTS]: 출력 파일이 이미 있어 저장하지 않았습니다. 경로: ${path}\n해결: 다른 \`--out\` 경로를 지정하거나 기존 파일을 옮긴 뒤 다시 저장하세요.\n`,
+  );
+}
 /** 검토 도중 입력 스트림이 닫혔음을 알리는 sentinel. 사용자 취소와 같은 경로로 처리한다. */
 class ReviewInputClosedError extends Error {}
 /**
@@ -188,8 +203,7 @@ async function saveSuite(
   fingerprint: string,
   deps: GenerateCommandDependencies,
 ): Promise<void> {
-  if (await deps.exists(input.outPath))
-    throw new UsageError("기존 출력 파일을 비대화형으로 덮어쓸 수 없습니다.");
+  if (await deps.exists(input.outPath)) throw new OutputExistsError(input.outPath);
   const temporary = join(dirname(input.outPath), `.${basename(input.outPath)}.ohmymcp.tmp`);
   let created = false;
   try {
@@ -419,8 +433,9 @@ async function runInteractiveReview(
             deps,
           );
           return 0;
-        } catch {
-          safeFailure(deps, "SAVE_FAILED");
+        } catch (error) {
+          if (error instanceof OutputExistsError) outputExistsFailure(deps, error.path);
+          else safeFailure(deps, "SAVE_FAILED");
           continue;
         }
       }
@@ -565,11 +580,14 @@ export async function runGenerateCommand(
     );
     deps.writeStdout(`baseline suite를 저장했습니다: ${input.outPath}\n`);
     return 0;
-  } catch {
+  } catch (error) {
     if (connection !== undefined) await connection.forceClose().catch(() => undefined);
-    deps.writeStderr(
-      "오류 [GENERATE_FAILED]: baseline suite를 생성하거나 저장하지 못했습니다.\n해결: MCP 서버와 출력 경로를 확인한 뒤 다시 실행하세요.\n",
-    );
+    // 같은 결함이 비대화형 경로에도 있었다. 여기서도 원인이 뭉개지면 안 된다.
+    if (error instanceof OutputExistsError) outputExistsFailure(deps, error.path);
+    else
+      deps.writeStderr(
+        "오류 [GENERATE_FAILED]: baseline suite를 생성하거나 저장하지 못했습니다.\n해결: MCP 서버와 출력 경로를 확인한 뒤 다시 실행하세요.\n",
+      );
     return 1;
   }
 }
@@ -599,13 +617,25 @@ export function nodeReviewIO(
   input: NodeJS.ReadableStream = process.stdin,
   output: NodeJS.WritableStream = process.stdout,
 ): ReviewIO {
-  const readline = createInterface({ input, output });
+  /**
+   * readline은 첫 질문에서 만든다. createInterface는 만드는 즉시 입력 스트림을 참조해
+   * 닫기 전까지 이벤트 루프를 붙잡는다. `--baseline-only`처럼 아무것도 묻지 않는 경로에서
+   * 미리 만들면 실제 TTY에서 프로세스가 종료되지 않는다(파이프로 돌리면 stdin이 끝나
+   * 우연히 종료돼 그동안 드러나지 않았다). 만들지 않으면 닫기를 잊을 여지도 없다.
+   */
+  let readline: ReturnType<typeof createInterface> | undefined;
   let closed = false;
   let rejectPending: (() => void) | undefined;
-  readline.on("close", () => {
-    closed = true;
-    rejectPending?.();
-  });
+  const ensureReadline = (): ReturnType<typeof createInterface> => {
+    if (readline !== undefined) return readline;
+    const created = createInterface({ input, output });
+    created.on("close", () => {
+      closed = true;
+      rejectPending?.();
+    });
+    readline = created;
+    return created;
+  };
   /**
    * EOF에는 두 모양이 있고 둘 다 스택 노출이나 무한 대기로 끝난다. 둘 다 sentinel로 바꾼다.
    * 1) 이미 닫힌 뒤 부르면 Node가 ERR_USE_AFTER_CLOSE를 던진다.
@@ -613,11 +643,12 @@ export function nodeReviewIO(
    */
   const question = async (prompt: string): Promise<string> => {
     if (closed) throw new ReviewInputClosedError();
+    const active = ensureReadline();
     const closedSignal = new Promise<never>((_, reject) => {
       rejectPending = () => reject(new ReviewInputClosedError());
     });
     try {
-      return await Promise.race([readline.question(prompt), closedSignal]);
+      return await Promise.race([active.question(prompt), closedSignal]);
     } catch (error) {
       if (isReviewInputClosed(error)) throw new ReviewInputClosedError();
       throw error;
@@ -638,6 +669,7 @@ export function nodeReviewIO(
     write: (text) => {
       output.write(text);
     },
-    close: () => readline.close(),
+    // 만들지 않았으면 닫을 것도 없다.
+    close: () => readline?.close(),
   };
 }

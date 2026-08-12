@@ -2,7 +2,7 @@
 
 ## 작업 공간
 
-- pwd: `/Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/ohmymcp-cli-stdin-eof`
+- worktree: `<repo-root>/.claude/worktrees/ohmymcp-cli-stdin-eof`
 - 브랜치: `fix/cli-stdin-eof`
 - `git rev-parse HEAD`: `4b738488c8763413417d7f1e668b2e3b58b8c743`
 - 기점 커밋: `4b73848 docs(generate): A2 통합 대장 기록` (지시받은 값과 일치)

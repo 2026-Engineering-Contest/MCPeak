@@ -2,7 +2,7 @@
 
 ## 작업 공간
 
-- pwd: `/Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/ohmymcp-cli-show-diff`
+- worktree: `<repo-root>/.claude/worktrees/ohmymcp-cli-show-diff`
 - 브랜치: `fix/cli-show-diff`
 - `git rev-parse HEAD`: `9efbeac47d33f9b347c1f9e373948bdc9cd24b95`
 - 기점 커밋: `9efbeac docs(core): stdio 통합 테스트 간헐 실패 인계 문서 추가` (지시받은 값과 일치)

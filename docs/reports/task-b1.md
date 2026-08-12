@@ -2,7 +2,7 @@
 
 ## 작업 공간
 
-- pwd: `/Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/ohmymcp-cli-provider-failure`
+- worktree: `<repo-root>/.claude/worktrees/ohmymcp-cli-provider-failure`
 - 브랜치: `fix/cli-provider-failure-message`
 - `git rev-parse HEAD`: `ecede41ff0b8953b61fca26d565cfe866060a343`
 - 기점 커밋: `ecede41 chore(cli): generate 출력 경로 gitignore 추가` (지시받은 값과 일치)

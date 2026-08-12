@@ -240,9 +240,15 @@ describe("runGenerateCommand", () => {
   });
   it("기존 out 파일을 비대화형으로 덮어쓰지 않는다", async () => {
     const d = deps({ exists: vi.fn(async () => true) });
+    const stderr: string[] = [];
+    d.value.writeStderr = (text) => stderr.push(text);
     expect(await runGenerateCommand(argv, d.value)).toBe(1);
     expect(d.value.openTemp).not.toHaveBeenCalled();
     expect(d.value.rename).not.toHaveBeenCalled();
+    const output = stderr.join("");
+    expect(output).toContain("GENERATE_OUTPUT_EXISTS");
+    expect(output).toContain("경로: /tmp/out.json");
+    expect(output).not.toContain("GENERATE_FAILED");
   });
   it("같은 디렉터리 temp write를 다시 읽어 검증한 뒤 rename한다", async () => {
     const d = deps();
@@ -484,6 +490,28 @@ describe("AI 대화형 검토", () => {
     expect(d.value.openTemp).not.toHaveBeenCalled();
     expect(d.io.confirm).toHaveBeenCalledOnce();
   });
+  it("저장하려는 경로에 파일이 있으면 경로와 조치를 안내한다", async () => {
+    const d = reviewDeps(["save", "cancel"], [], [true]);
+    d.value.exists = vi.fn(async () => true);
+    await runGenerateCommand(interactiveArgv, d.value);
+    const output = d.stderr.join("");
+    expect(output).toContain("GENERATE_OUTPUT_EXISTS");
+    expect(output).toContain("경로: /tmp/out.json");
+    expect(output).toContain("--out");
+    expect(output).not.toContain("GENERATE_SAVE_FAILED");
+    expect(d.value.openTemp).not.toHaveBeenCalled();
+  });
+  it("경로 충돌이 아닌 저장 실패는 기존 문구를 유지한다", async () => {
+    const d = reviewDeps(["save", "cancel"], [], [true]);
+    d.value.openTemp = vi.fn(async () => {
+      throw new Error("EACCES");
+    });
+    await runGenerateCommand(interactiveArgv, d.value);
+    const output = d.stderr.join("");
+    expect(output).toContain("GENERATE_SAVE_FAILED");
+    expect(output).not.toContain("GENERATE_OUTPUT_EXISTS");
+    expect(output).not.toContain("EACCES");
+  });
   it("사용자 취소는 provider·파일 쓰기 없이 종료 코드 0이다", async () => {
     const d = reviewDeps(["cancel"]);
     await expect(runGenerateCommand(interactiveArgv, d.value)).resolves.toBe(0);
@@ -523,10 +551,11 @@ describe("AI 대화형 검토", () => {
     expect(output).toContain("GENERATE_PROVIDER_EXIT");
     expect(output).toContain("종료 코드: 1");
   });
-  it("exitCode를 모르면 코드 없이 종료 사실만 안내한다", async () => {
+  it("exitCode가 없으면 종료 코드 라벨 자체를 빼고 안내한다", async () => {
     const output = await failWith({ ...base, code: "nonZeroExit" });
     expect(output).toContain("GENERATE_PROVIDER_EXIT");
     expect(output).not.toContain("코드 undefined");
+    expect(output).not.toContain("종료 코드:");
   });
   it("timedOut이면 timeout 값과 함께 조치를 안내한다", async () => {
     const output = await failWith({ ...base, code: "timedOut" });
@@ -655,10 +684,11 @@ describe("AI 대화형 검토", () => {
     expect(output).toContain("codex login status");
     expect(output).not.toContain("claude /status");
   });
-  it("exitCode를 모르면 코드 없이 종료 사실만 안내한다", async () => {
+  it("exitCode가 없어도 provider에 맞는 명령과 모델 이름은 안내한다", async () => {
     const output = await failOn("claude", "haiku", { code: "nonZeroExit", timeoutMs: 120_000 });
     expect(output).toContain("GENERATE_PROVIDER_EXIT");
     expect(output).not.toContain("코드 undefined");
+    expect(output).toContain("모델: haiku");
     expect(output).toContain("claude /status");
   });
   it("reason은 nonZeroExit 밖에서 무시된다", async () => {
@@ -770,6 +800,38 @@ describe("AI 대화형 검토", () => {
     expect(output).not.toContain("node:internal");
     expect(output.split("\n").some((line) => line.trimStart().startsWith("at "))).toBe(false);
     expect(d.value.openTemp).not.toHaveBeenCalled();
+  });
+  it("nodeReviewIO는 질문하기 전에는 readline을 만들지 않는다", async () => {
+    // createInterface는 만드는 즉시 입력 스트림에 리스너를 건다. 리스너 수가 곧 생성 여부다.
+    // EOF로 끝나는 스트림은 만들자마자 닫혀 리스너가 사라지므로 열린 채로 두는 스트림을 쓴다.
+    const input = new Readable({ read: () => undefined });
+    const output = new Writable({ write: (_chunk, _encoding, callback) => callback() });
+    const listeners = () => input.listenerCount("data") + input.listenerCount("end");
+    const before = listeners();
+    const io = nodeReviewIO(input, output);
+    expect(listeners()).toBe(before);
+    // 만들지 않았으므로 닫을 것도 없다.
+    expect(() => io.close?.()).not.toThrow();
+    const pending = io.input("질문: ");
+    expect(listeners()).toBeGreaterThan(before);
+    io.close?.();
+    await expect(pending).rejects.toBeInstanceOf(Error);
+  });
+  it("baseline-only는 reviewIO에 아무것도 묻지 않는다", async () => {
+    const d = deps();
+    const io = {
+      interactive: true,
+      choose: vi.fn(),
+      input: vi.fn(),
+      confirm: vi.fn(),
+      write: vi.fn(),
+      close: vi.fn(),
+    };
+    d.value.reviewIO = io as never;
+    expect(await runGenerateCommand([...interactiveArgv, "--baseline-only"], d.value)).toBe(0);
+    expect(io.choose).not.toHaveBeenCalled();
+    expect(io.input).not.toHaveBeenCalled();
+    expect(io.confirm).not.toHaveBeenCalled();
   });
 
   /** candidate suite 하나를 provider 응답으로 넣고 showDiff 출력만 뽑는다. */

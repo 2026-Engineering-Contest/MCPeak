@@ -47,6 +47,27 @@ cli → runner → core
 cli → record / mock → core
 ```
 
+### `generate → runner`의 현재 상태
+
+위 그림의 `generate → runner`는 타입 참조만이 아니다. `generate`는 `runner`에서 **런타임 값**도
+가져온다. 현재 참조는 셋이다.
+
+| 가져오는 것 | 종류 | 쓰이는 곳 |
+|---|---|---|
+| `TestSuiteSpec`, `TestCaseSpec`, `SuiteValidationIssue`, `RunnerRedactionOptions` | 타입 | suite 합성과 authoring 전 구간 |
+| `validateMcpSuite` | 함수 | provider 결과와 로컬 candidate를 suite 계약으로 재검증 |
+| `MCP_SUITE_JSON_SCHEMA` | 상수 | provider 프롬프트에 suite 형식을 알림 |
+| `DEFAULT_SENSITIVE_KEYS`, `REDACTED` | 상수 | authoring suite redaction |
+
+이것은 선언된 단방향 규칙(`cli → generate → runner → core`)에 어긋나지 않는다. `generate`가
+`runner`를 참조하는 것은 화살표 방향 그대로다. 다만 아래 §3의 "core의 **타입**만 있으면 되고
+**구현**은 필요 없다"는 서술은 core에 대한 것이고, `runner`에 대해서는 성립하지 않는다.
+`generate`는 `runner`의 구현(검증 함수와 스키마 상수)에 의존한다.
+
+이 의존을 없애려면 suite 스펙과 검증기를 두 패키지가 공유하는 더 낮은 층으로 내려야 한다.
+그것은 패키지 경계를 바꾸는 결정이라 별도 ADR 대상이며 **아직 정해지지 않았다.** 여기서는
+현재 상태만 적는다.
+
 ## 3. 왜 단계가 아니라 병렬인가
 
 **`connect()`를 호출하는 패키지가 하나도 없다.** 네 패키지 모두 core의 산출물을 *인자로 받는다*:

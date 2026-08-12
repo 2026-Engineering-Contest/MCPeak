@@ -2,7 +2,7 @@
 
 ## 작업 공간
 
-- pwd: `/Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/ohmymcp-generate-failure-reason`
+- worktree: `<repo-root>/.claude/worktrees/ohmymcp-generate-failure-reason`
 - 브랜치: `fix/generate-failure-reason` (`9efbeac`에서 분기)
 - `git rev-parse HEAD`: `9efbeac47d33f9b347c1f9e373948bdc9cd24b95`
 - 진입 직후 `git status --short` 비어 있었고 `pnpm install`이 정상 실행됐다. 커밋은 하지 않았다.

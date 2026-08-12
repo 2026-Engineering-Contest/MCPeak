@@ -2,7 +2,7 @@
 
 ## 작업 공간
 
-- pwd: `/Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/ohmymcp-cli-failure-message`
+- worktree: `<repo-root>/.claude/worktrees/ohmymcp-cli-failure-message`
 - 브랜치: `fix/cli-failure-message`
 - `git rev-parse HEAD`: `9f17a69763ecf94df6ff47b0d9fc047633891351`
 - 기점 커밋: `9f17a69 docs(cli): B4·B5 통합 대장 기록` (지시받은 값과 일치)

@@ -1,7 +1,9 @@
 import type { ToolDef } from "@ohmymcp/core";
 import { type TestSuiteSpec, validateMcpSuite } from "@ohmymcp/runner";
 import { deepFreeze, sha256 } from "./canonical.js";
-import { createGeneratedCase, GenerateTestsError, safeGeneratedBaseName } from "./index.js";
+import { safeBaseName } from "./filename.js";
+import { buildGeneratedCase } from "./render.js";
+import { GenerateTestsError } from "./schema.js";
 
 export const BASELINE_POLICY_VERSION = "schema-baseline-v1" as const;
 export const DEFAULT_BASELINE_TIMEOUT_MS = 10_000;
@@ -61,15 +63,12 @@ export function createBaselineSuite(
 
   const usedNames = new Set<string>();
   const cases = tools.map((tool, index) => {
-    const initialName = safeGeneratedBaseName(
-      typeof tool?.name === "string" ? tool.name : "",
-      index,
-    );
+    const initialName = safeBaseName(typeof tool?.name === "string" ? tool.name : "", index);
     let baseName = initialName;
     for (let occurrence = 2; usedNames.has(baseName); occurrence++)
       baseName = `${initialName}-${occurrence}`;
     usedNames.add(baseName);
-    return createGeneratedCase(tool, index, baseName);
+    return buildGeneratedCase(tool, index, baseName);
   });
   const suite: TestSuiteSpec = {
     schemaVersion: 1,

@@ -145,9 +145,9 @@ describe("generateTests", () => {
     );
 
     expect(paths.map((path) => path.slice(outDir.length + 1))).toEqual([
-      "weather-current.generated.ts",
-      "weather-current-2.generated.ts",
-      "tool-3.generated.ts",
+      "weather-current-c34dac28.generated.ts",
+      "weather-current-411bd031.generated.ts",
+      "tool-080a6f09.generated.ts",
     ]);
   });
 
@@ -265,5 +265,104 @@ describe("generateTests", () => {
 
     await expect(generateTests([], { outDir })).resolves.toEqual([]);
     await expect(readdir(outDir)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("keeps fallback filenames stable when tool order changes", async () => {
+    const firstOutDir = await temporaryOutDir();
+    const secondOutDir = await temporaryOutDir();
+    const schema = { type: "object", properties: {}, required: [] };
+    const names = [
+      "\ud55c\uae00 \ub3c4\uad6c",
+      "\u4e2d\u6587\u5de5\u5177",
+      "CON",
+      "\uac00",
+      "\u1100\u1161",
+    ];
+
+    const first = await generateTests(
+      names.map((name) => ({ name, inputSchema: schema })),
+      { outDir: firstOutDir },
+    );
+    const second = await generateTests(
+      [...names].reverse().map((name) => ({ name, inputSchema: schema })),
+      { outDir: secondOutDir },
+    );
+    const relativeNames = (paths: string[], outDir: string) =>
+      paths.map((path) => path.slice(outDir.length + 1)).sort();
+    const namesByTool = (toolNames: string[], paths: string[], outDir: string) =>
+      Object.fromEntries(
+        toolNames.map((name, index) => [name, paths[index]?.slice(outDir.length + 1)]),
+      );
+
+    expect(relativeNames(first, firstOutDir)).toEqual([
+      "tool-080a6f09.generated.ts",
+      "tool-5574b135.generated.ts",
+      "tool-64ee5293-64ee5293.generated.ts",
+      "tool-64ee5293-a0d2271e.generated.ts",
+      "tool-a3dbc4b6.generated.ts",
+    ]);
+    expect(relativeNames(second, secondOutDir)).toEqual(relativeNames(first, firstOutDir));
+    expect(namesByTool([...names].reverse(), second, secondOutDir)).toEqual(
+      namesByTool(names, first, firstOutDir),
+    );
+  });
+
+  it("requires schema properties to be owned rather than inherited", async () => {
+    const outDir = await temporaryOutDir();
+
+    await expect(
+      generateTests(
+        [
+          {
+            name: "inherited-required",
+            inputSchema: { type: "object", properties: {}, required: ["constructor"] },
+          },
+        ],
+        { outDir },
+      ),
+    ).rejects.toMatchObject({
+      code: "UNSUPPORTED_SCHEMA",
+      path: "tools[0].inputSchema.required[0]",
+    });
+
+    await expect(
+      generateTests(
+        [
+          {
+            name: "inherited-candidate-required",
+            inputSchema: {
+              type: "object",
+              properties: { constructor: { type: "string" } },
+              required: ["constructor"],
+              default: {},
+            },
+          },
+        ],
+        { outDir },
+      ),
+    ).rejects.toMatchObject({
+      code: "UNSUPPORTED_SCHEMA",
+      path: "tools[0].inputSchema",
+    });
+  });
+
+  it("does not treat inherited object keys as candidate properties", async () => {
+    const outDir = await temporaryOutDir();
+    const [path] = await generateTests(
+      [
+        {
+          name: "inherited-candidate",
+          inputSchema: {
+            type: "object",
+            properties: {},
+            required: [],
+            default: { toString: "owned-value" },
+          },
+        },
+      ],
+      { outDir },
+    );
+
+    await expect(readFile(path as string, "utf8")).resolves.toContain('"toString": "owned-value"');
   });
 });

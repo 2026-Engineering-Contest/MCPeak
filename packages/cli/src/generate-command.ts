@@ -71,6 +71,17 @@ export interface ReviewIO {
 }
 type TestAuthoringProvider = import("@ohmymcp/generate").TestAuthoringProvider;
 class UsageError extends Error {}
+/** 검토 도중 입력 스트림이 닫혔음을 알리는 sentinel. 사용자 취소와 같은 경로로 처리한다. */
+class ReviewInputClosedError extends Error {}
+/**
+ * 입력 스트림이 닫혀 발생한 오류인지 판정한다.
+ * sentinel 외에 Node readline의 ERR_USE_AFTER_CLOSE도 인정한다. nodeReviewIO가 아닌 ReviewIO
+ * 구현이 readline을 직접 감싸도 같은 종료 경로를 타게 하기 위함이다.
+ */
+function isReviewInputClosed(error: unknown): boolean {
+  if (error instanceof ReviewInputClosedError) return true;
+  return (error as { code?: unknown } | null)?.code === "ERR_USE_AFTER_CLOSE";
+}
 
 const optionNames = new Set([
   "--suite-id",
@@ -399,6 +410,10 @@ async function runInteractiveReview(
       else if (result.status === "providerFailed") providerFailure(deps, result.failure);
       else io.write("AI 결과를 검토 후보로 사용할 수 없습니다.\n");
     }
+  } catch (error) {
+    if (!isReviewInputClosed(error)) throw error;
+    deps.writeStdout("입력이 종료되어 검토를 취소했습니다. 저장하지 않았습니다.\n");
+    return 0;
   } finally {
     io.close?.();
   }
@@ -478,18 +493,49 @@ export const nodeGenerateDependencies = (): Omit<
   writeStderr: (text) => process.stderr.write(text),
 });
 
-export function nodeReviewIO(): ReviewIO {
-  const readline = createInterface({ input: process.stdin, output: process.stdout });
+export function nodeReviewIO(
+  input: NodeJS.ReadableStream = process.stdin,
+  output: NodeJS.WritableStream = process.stdout,
+): ReviewIO {
+  const readline = createInterface({ input, output });
+  let closed = false;
+  let rejectPending: (() => void) | undefined;
+  readline.on("close", () => {
+    closed = true;
+    rejectPending?.();
+  });
+  /**
+   * EOF에는 두 모양이 있고 둘 다 스택 노출이나 무한 대기로 끝난다. 둘 다 sentinel로 바꾼다.
+   * 1) 이미 닫힌 뒤 부르면 Node가 ERR_USE_AFTER_CLOSE를 던진다.
+   * 2) 대기 중에 닫히면 question promise가 영영 settle되지 않는다. close 이벤트와 race시킨다.
+   */
+  const question = async (prompt: string): Promise<string> => {
+    if (closed) throw new ReviewInputClosedError();
+    const closedSignal = new Promise<never>((_, reject) => {
+      rejectPending = () => reject(new ReviewInputClosedError());
+    });
+    try {
+      return await Promise.race([readline.question(prompt), closedSignal]);
+    } catch (error) {
+      if (isReviewInputClosed(error)) throw new ReviewInputClosedError();
+      throw error;
+    } finally {
+      rejectPending = undefined;
+    }
+  };
   return {
-    interactive: Boolean(process.stdin.isTTY && process.stdout.isTTY),
-    input: (message) => readline.question(message),
+    interactive: Boolean(
+      (input as NodeJS.ReadStream).isTTY && (output as NodeJS.WriteStream).isTTY,
+    ),
+    input: (message) => question(message),
     choose: async (message, choices) => {
-      const value = await readline.question(`${message} [${choices.join("/")}]: `);
+      const value = await question(`${message} [${choices.join("/")}]: `);
       return value.trim();
     },
-    confirm: async (message) =>
-      (await readline.question(`${message} [y/N] `)).trim().toLowerCase() === "y",
-    write: (text) => process.stdout.write(text),
+    confirm: async (message) => (await question(`${message} [y/N] `)).trim().toLowerCase() === "y",
+    write: (text) => {
+      output.write(text);
+    },
     close: () => readline.close(),
   };
 }

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { access, open, readFile, rename, unlink } from "node:fs/promises";
+import { access, link, open, readFile, unlink } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { createInterface } from "node:readline/promises";
 import type { McpStdioConnection, ToolDef } from "@ohmymcp/core";
@@ -47,7 +47,12 @@ export interface GenerateCommandDependencies {
     close(): Promise<void>;
   }>;
   readFile(path: string): Promise<Uint8Array>;
-  rename(from: string, to: string): Promise<void>;
+  /**
+   * 임시 파일을 최종 경로에 커밋한다. `rename`이 아니라 `link`인 것이 요점이다.
+   * `rename`은 대상이 있으면 말없이 덮어쓴다. `link`는 EEXIST로 실패하므로
+   * 원자성과 no-clobber를 동시에 얻는다. 덮어쓸 수 있는 primitive를 아예 두지 않는다.
+   */
+  link(from: string, to: string): Promise<void>;
   unlink(path: string): Promise<void>;
   writeStdout(text: string): void;
   writeStderr(text: string): void;
@@ -197,14 +202,29 @@ function canonicalJson(value: unknown): string {
 function suiteFingerprint(suite: TestSuiteSpec): string {
   return createHash("sha256").update(canonicalJson(suite)).digest("hex");
 }
+let temporarySequence = 0;
+/**
+ * 임시 파일 이름은 실행마다 고유해야 한다. 고정 이름이면 같은 디렉터리에서 두 실행이 겹칠 때
+ * `openTemp`의 `wx`가 EEXIST로 실패하는데, 그것은 출력 경로 충돌과 전혀 다른 실패다.
+ * 저장되는 suite 내용에는 들어가지 않으므로 결정론성 요구와 무관하다.
+ */
+function temporaryPath(outPath: string): string {
+  temporarySequence += 1;
+  return join(
+    dirname(outPath),
+    `.${basename(outPath)}.ohmymcp.${process.pid}.${temporarySequence}.tmp`,
+  );
+}
 async function saveSuite(
   input: GenerateCommandInput,
   suite: TestSuiteSpec,
   fingerprint: string,
   deps: GenerateCommandDependencies,
 ): Promise<void> {
+  // 선검사는 사용자에게 더 빨리 알려주기 위한 것이고 **보장이 아니다.** 여기서 통과해도
+  // 커밋 직전에 다른 프로세스가 같은 경로를 만들 수 있다. no-clobber 보장은 아래 link에 있다.
   if (await deps.exists(input.outPath)) throw new OutputExistsError(input.outPath);
-  const temporary = join(dirname(input.outPath), `.${basename(input.outPath)}.ohmymcp.tmp`);
+  const temporary = temporaryPath(input.outPath);
   let created = false;
   try {
     const handle = await deps.openTemp(temporary);
@@ -220,9 +240,16 @@ async function saveSuite(
     const validated = deps.validateSuite(parsed);
     if (!validated.valid || suiteFingerprint(validated.value) !== fingerprint)
       throw new Error("invalid saved suite");
-    await deps.rename(temporary, input.outPath);
-    created = false;
+    // 커밋. link는 대상이 있으면 EEXIST로 실패한다. rename처럼 남의 파일을 덮어쓰지 않는다.
+    try {
+      await deps.link(temporary, input.outPath);
+    } catch (error) {
+      if ((error as { code?: unknown } | null)?.code === "EEXIST")
+        throw new OutputExistsError(input.outPath);
+      throw error;
+    }
   } finally {
+    // link는 원본을 남기므로 성공해도 임시를 지운다. 실패했을 때의 정리 경로와 같다.
     if (created) await deps.unlink(temporary).catch(() => undefined);
   }
 }
@@ -607,7 +634,7 @@ export const nodeGenerateDependencies = (): Omit<
       .catch(() => false),
   openTemp: (path) => open(path, "wx"),
   readFile,
-  rename,
+  link,
   unlink,
   writeStdout: (text) => process.stdout.write(text),
   writeStderr: (text) => process.stderr.write(text),

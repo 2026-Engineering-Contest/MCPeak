@@ -5,3 +5,5 @@ A2-generate-api-error-status	89d0aab	2026-08-12
 C1-real-cli-e2e	4b73848	2026-08-12
 B2-cli-stdin-eof	1921d4c	2026-08-12
 B3-cli-flaky-deadline	8998e0e	2026-08-12
+B4-cli-show-diff	f393c48	2026-08-12
+B5-generate-failure-reason	9e36aa9	2026-08-12

@@ -1,5 +1,5 @@
 import { type ChildProcessWithoutNullStreams, spawn as nodeSpawn } from "node:child_process";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 export type AuthoringProviderFailureCode =
@@ -37,17 +37,19 @@ export interface ProviderProcessDeps {
   ) => ProviderProcessChild;
   readonly mkdtemp: (prefix: string) => Promise<string>;
   readonly rm: (path: string) => Promise<void>;
+  readonly writeFile: (path: string, contents: string) => Promise<void>;
   readonly clock?: ProviderProcessClock;
 }
 export interface ProviderProcessSpec {
   readonly command: string;
-  readonly args: readonly string[];
+  readonly args: readonly string[] | ((cwd: string) => readonly string[]);
   readonly stdin: string;
   readonly timeoutMs: number;
   readonly env: NodeJS.ProcessEnv;
   readonly cwdPrefix: string;
   readonly maxOutputBytes: number;
   readonly signal?: AbortSignal;
+  readonly files?: readonly { readonly name: string; readonly contents: string }[];
 }
 export type ProviderProcessResult =
   | {
@@ -74,6 +76,7 @@ const systemDeps: ProviderProcessDeps = {
     nodeSpawn(command, args, options) as ChildProcessWithoutNullStreams,
   mkdtemp: (prefix) => mkdtemp(prefix),
   rm: (path) => rm(path, { recursive: true, force: true }),
+  writeFile: (path, contents) => writeFile(path, contents, { encoding: "utf8", flag: "wx" }),
   clock: defaultClock,
 };
 
@@ -84,9 +87,24 @@ export async function runProviderProcess(
   const deps = supplied ?? systemDeps;
   if (spec.signal?.aborted) return { ok: false, code: "cancelled" };
   const cwd = await deps.mkdtemp(join(spec.cwdPrefix, "ohmymcp-provider-"));
+  try {
+    for (const file of spec.files ?? []) {
+      if (
+        file.name.includes("/") ||
+        file.name.includes("\\") ||
+        file.name === "." ||
+        file.name === ".."
+      )
+        throw new TypeError("provider temp file name is invalid");
+      await deps.writeFile(join(cwd, file.name), file.contents);
+    }
+  } catch {
+    await deps.rm(cwd);
+    return { ok: false, code: "internal" };
+  }
   let child: ProviderProcessChild;
   try {
-    child = deps.spawn(spec.command, spec.args, {
+    child = deps.spawn(spec.command, typeof spec.args === "function" ? spec.args(cwd) : spec.args, {
       cwd,
       env: spec.env,
       shell: false,

@@ -52,13 +52,16 @@ function runner(value: ProviderProcessResult) {
 describe("provider adapters", () => {
   it("Codex를 빈 cwd의 read-only ephemeral structured 실행으로 호출한다", async () => {
     const r = runner({ ok: true, value: { status: "questions", questions: ["q"] } });
-    const provider = createCodexAuthoringProvider({
-      run: r.run,
-      capabilities: async () => true,
-      tempSchemaPath: "/empty/schema.json",
-    });
+    const provider = createCodexAuthoringProvider({ run: r.run, capabilities: async () => true });
     await provider.author(preview().request, { timeoutMs: 1 });
-    expect(r.calls[0]).toMatchObject({
+    const invocation = r.calls[0] as {
+      args: (cwd: string) => readonly string[];
+      files: readonly { name: string; contents: string }[];
+      cwdPrefix: string;
+      command: string;
+      shell: boolean;
+    };
+    expect({ ...invocation, args: invocation.args("/empty/provider") }).toMatchObject({
       command: "codex",
       args: [
         "exec",
@@ -75,12 +78,15 @@ describe("provider adapters", () => {
         "--ignore-rules",
         "--skip-git-repo-check",
         "--output-schema",
-        "/empty/schema.json",
+        "/empty/provider/authoring-output-schema.json",
         "-",
       ],
       shell: false,
-      cwdPrefix: "/empty/",
+      cwdPrefix: expect.any(String),
     });
+    expect(invocation.files).toEqual([
+      { name: "authoring-output-schema.json", contents: expect.any(String) },
+    ]);
   });
   it("Claude를 safe mode와 빈 도구·MCP·session으로 호출한다", async () => {
     const r = runner({
@@ -116,6 +122,22 @@ describe("provider adapters", () => {
       code: "providerUnavailable",
     });
     expect(r.calls).toHaveLength(0);
+  });
+  it("기본 capability 검사는 실제 help 출력의 필수 flag를 모두 요구한다", async () => {
+    const calls: { command: string; args: readonly string[] }[] = [];
+    const provider = createClaudeAuthoringProvider({
+      run: async (input) => {
+        throw new Error(`inference spawn 금지: ${JSON.stringify(input)}`);
+      },
+      runHelp: async (command, args) => {
+        calls.push({ command, args });
+        return "--safe-mode --model --tools --no-session-persistence --strict-mcp-config --mcp-config --output-format";
+      },
+    });
+    await expect(provider.author(preview().request, { timeoutMs: 1 })).rejects.toMatchObject({
+      code: "providerUnavailable",
+    });
+    expect(calls).toEqual([{ command: "claude", args: ["--help"] }]);
   });
   it("두 provider가 같은 고정 지침과 제한된 context를 받는다", async () => {
     const c = runner({ ok: true, value: { status: "questions", questions: ["q"] } });

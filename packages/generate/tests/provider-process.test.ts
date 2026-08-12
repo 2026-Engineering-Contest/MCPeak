@@ -50,6 +50,7 @@ function setup() {
   const clock = new Clock();
   const calls: unknown[] = [];
   const removed: string[] = [];
+  const written: { path: string; contents: string }[] = [];
   const deps: ProviderProcessDeps = {
     spawn: (...args) => {
       calls.push(args);
@@ -59,9 +60,12 @@ function setup() {
     rm: async (path) => {
       removed.push(path);
     },
+    writeFile: async (path, contents) => {
+      written.push({ path, contents });
+    },
     clock,
   };
-  return { child, clock, calls, removed, deps };
+  return { child, clock, calls, removed, written, deps };
 }
 const spec = {
   command: "fake",
@@ -128,6 +132,30 @@ describe("provider process", () => {
     await done;
     expect(s.removed).toEqual([]);
     s.child.close();
+    await Promise.resolve();
+    expect(s.removed).toEqual(["/empty/provider"]);
+  });
+  it("실행 cwd와 Codex schema 파일을 child 종료 뒤 함께 정리한다", async () => {
+    const s = setup();
+    const done = runProviderProcess(
+      {
+        ...spec,
+        args: (cwd: string) => ["--output-schema", `${cwd}/authoring-output-schema.json`],
+        files: [{ name: "authoring-output-schema.json", contents: '{"type":"object"}' }],
+      },
+      s.deps,
+    );
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(s.calls[0]).toMatchObject([
+      "fake",
+      ["--output-schema", "/empty/provider/authoring-output-schema.json"],
+      { cwd: "/empty/provider" },
+    ]);
+    expect(s.written).toEqual([
+      { path: "/empty/provider/authoring-output-schema.json", contents: '{"type":"object"}' },
+    ]);
+    s.child.close();
+    await done;
     await Promise.resolve();
     expect(s.removed).toEqual(["/empty/provider"]);
   });

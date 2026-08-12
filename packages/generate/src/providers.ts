@@ -1,3 +1,6 @@
+import { execFile } from "node:child_process";
+import { tmpdir } from "node:os";
+import { promisify } from "node:util";
 import type { AuthoringRequest, TestAuthoringProvider } from "./authoring-request.js";
 import { DEFAULT_MAX_RESULT_BYTES } from "./authoring-request.js";
 import { AUTHORING_OUTPUT_SCHEMA } from "./authoring-schema.js";
@@ -34,8 +37,9 @@ type Options = {
   readonly capabilities?: () => Promise<boolean>;
   readonly environment?: NodeJS.ProcessEnv;
   readonly model?: string;
-  readonly tempSchemaPath?: string;
+  readonly runHelp?: (command: string, args: readonly string[]) => Promise<string>;
 };
+const execFileAsync = promisify(execFile);
 function environment(input: NodeJS.ProcessEnv | undefined): NodeJS.ProcessEnv {
   const source = input ?? process.env;
   return Object.fromEntries(
@@ -46,6 +50,41 @@ function environment(input: NodeJS.ProcessEnv | undefined): NodeJS.ProcessEnv {
 }
 function prompt(request: AuthoringRequest): string {
   return `${FIXED_INSTRUCTION}\n\n${JSON.stringify(request)}\n${UNTRUSTED_WARNING}`;
+}
+async function hasRequiredCapabilities(id: "codex" | "claude", options: Options): Promise<boolean> {
+  if (options.capabilities) return options.capabilities();
+  const args = id === "codex" ? ["exec", "--help"] : ["--help"];
+  try {
+    const output = options.runHelp
+      ? await options.runHelp(id, args)
+      : (await execFileAsync(id, args, { env: environment(options.environment) })).stdout;
+    const required =
+      id === "codex"
+        ? [
+            "-C",
+            "-m",
+            "model_reasoning_effort",
+            "read-only",
+            "--ephemeral",
+            "--ignore-user-config",
+            "--ignore-rules",
+            "--skip-git-repo-check",
+            "--output-schema",
+          ]
+        : [
+            "--safe-mode",
+            "--model",
+            "--tools",
+            "--no-session-persistence",
+            "--strict-mcp-config",
+            "--mcp-config",
+            "--output-format",
+            "--json-schema",
+          ];
+    return required.every((flag) => output.includes(flag));
+  } catch {
+    return false;
+  }
 }
 function unwrap(result: ProviderProcessResult, claude: boolean): unknown {
   if (!result.ok) throw new AuthoringProviderError(result.code);
@@ -64,27 +103,27 @@ function makeProvider(id: "codex" | "claude", options: Options): TestAuthoringPr
   return {
     id,
     async author(request, settings) {
-      if (!(await (options.capabilities?.() ?? Promise.resolve(true))))
+      if (!(await hasRequiredCapabilities(id, options)))
         throw new AuthoringProviderError("providerUnavailable");
       const common = {
         stdin: prompt(request),
         timeoutMs: settings.timeoutMs,
         env: environment(options.environment),
-        cwdPrefix: "/empty/",
+        cwdPrefix: tmpdir(),
         maxOutputBytes: DEFAULT_MAX_RESULT_BYTES,
         signal: settings.signal,
         shell: false as const,
       };
       if (id === "codex") {
-        const schema = options.tempSchemaPath ?? "/empty/schema.json";
+        const schemaName = "authoring-output-schema.json";
         return unwrap(
           await run({
             ...common,
             command: "codex",
-            args: [
+            args: (cwd) => [
               "exec",
               "-C",
-              "/empty/provider",
+              cwd,
               "-m",
               model,
               "-c",
@@ -96,9 +135,10 @@ function makeProvider(id: "codex" | "claude", options: Options): TestAuthoringPr
               "--ignore-rules",
               "--skip-git-repo-check",
               "--output-schema",
-              schema,
+              `${cwd}/${schemaName}`,
               "-",
             ],
+            files: [{ name: schemaName, contents: JSON.stringify(AUTHORING_OUTPUT_SCHEMA) }],
           }),
           false,
         );

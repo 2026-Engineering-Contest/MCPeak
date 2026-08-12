@@ -3,8 +3,11 @@
   "version": "0.0.1",
   "private": false,
   "type": "module",
-  "description": "목 MCP 서버 (Streamable HTTP) · 응답 주입",
+  "description": "목 MCP 서버 (Streamable HTTP · stdio) · 응답 주입",
   "license": "MIT",
+  "bin": {
+    "ohmymcp-mock": "./dist/stdio.mjs"
+  },
   "publishConfig": {
     "access": "public"
   },

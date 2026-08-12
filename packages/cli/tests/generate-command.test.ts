@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { Readable, Writable } from "node:stream";
 import type { McpStdioConnection, ToolDef } from "@ohmymcp/core";
 import {
   applyAuthoringChanges,
@@ -16,6 +17,7 @@ import type { TestSuiteSpec } from "@ohmymcp/runner";
 import { describe, expect, it, vi } from "vitest";
 import {
   type GenerateCommandDependencies,
+  nodeReviewIO,
   parseGenerateCommand,
   runGenerateCommand,
 } from "../src/generate-command.js";
@@ -570,5 +572,82 @@ describe("AI 대화형 검토", () => {
     expect(output).not.toContain("OPENAI_API_KEY");
     expect(output).not.toContain("INSTRUCTION_PAYLOAD_TEXT");
     expect(output.split("\n").some((line) => line.trimStart().startsWith("at "))).toBe(false);
+  });
+
+  function inputClosedError(): Error {
+    const error = new Error("readline was closed");
+    error.name = "Error [ERR_USE_AFTER_CLOSE]";
+    Object.assign(error, { code: "ERR_USE_AFTER_CLOSE" });
+    error.stack =
+      "Error [ERR_USE_AFTER_CLOSE]: readline was closed\n    at [kQuestion] (node:internal/readline/interface:441:13)";
+    return error;
+  }
+  function closedIODeps() {
+    const d = reviewDeps(["codex", "cancel"], ["", "request"], [true]);
+    const stdout: string[] = [];
+    d.value.writeStdout = (text) => stdout.push(text);
+    return { ...d, stdout };
+  }
+  function assertClosedExit(d: { stdout: string[]; stderr: string[] }): void {
+    const output = [...d.stdout, ...d.stderr].join("");
+    expect(output).toContain("입력이 종료되어 검토를 취소했습니다");
+    expect(output).not.toContain("ERR_USE_AFTER_CLOSE");
+    expect(output).not.toContain("node:internal");
+    expect(output.split("\n").some((line) => line.trimStart().startsWith("at "))).toBe(false);
+  }
+
+  it("검토 중 입력이 닫히면 스택 없이 취소로 종료한다", async () => {
+    const d = closedIODeps();
+    d.io.choose = vi.fn(async () => {
+      throw inputClosedError();
+    });
+    await expect(runGenerateCommand(interactiveArgv, d.value)).resolves.toBe(0);
+    expect(d.stdout.join("")).toContain("입력이 종료되어 검토를 취소했습니다");
+    assertClosedExit(d);
+    expect(d.value.openTemp).not.toHaveBeenCalled();
+    expect(d.value.rename).not.toHaveBeenCalled();
+    expect(d.io.close).toHaveBeenCalledOnce();
+  });
+  it("입력 닫힘이 아닌 오류는 삼키지 않는다", async () => {
+    const d = closedIODeps();
+    d.io.choose = vi.fn(async () => {
+      throw new Error("REVIEW_IO_BOOM");
+    });
+    await expect(runGenerateCommand(interactiveArgv, d.value)).rejects.toThrow("REVIEW_IO_BOOM");
+    expect(d.stdout.join("")).not.toContain("입력이 종료되어 검토를 취소했습니다");
+  });
+  it("input과 confirm에서 닫혀도 같은 경로로 종료한다", async () => {
+    for (const stage of ["input", "confirm"] as const) {
+      const d = closedIODeps();
+      d.io[stage] = vi.fn(async () => {
+        throw inputClosedError();
+      }) as never;
+      await expect(runGenerateCommand(interactiveArgv, d.value)).resolves.toBe(0);
+      assertClosedExit(d);
+      expect(d.value.openTemp).not.toHaveBeenCalled();
+      expect(d.value.rename).not.toHaveBeenCalled();
+      expect(d.io.close).toHaveBeenCalledOnce();
+    }
+  });
+  it("실제 readline도 EOF에서 스택 없이 취소로 끝난다", async () => {
+    const written: string[] = [];
+    const io = nodeReviewIO(
+      Readable.from([]),
+      new Writable({
+        write(chunk, _encoding, callback) {
+          written.push(String(chunk));
+          callback();
+        },
+      }),
+    );
+    const d = closedIODeps();
+    d.value.reviewIO = { ...io, interactive: true };
+    await expect(runGenerateCommand(interactiveArgv, d.value)).resolves.toBe(0);
+    const output = [...d.stdout, ...d.stderr, ...written].join("");
+    expect(output).toContain("입력이 종료되어 검토를 취소했습니다");
+    expect(output).not.toContain("ERR_USE_AFTER_CLOSE");
+    expect(output).not.toContain("node:internal");
+    expect(output.split("\n").some((line) => line.trimStart().startsWith("at "))).toBe(false);
+    expect(d.value.openTemp).not.toHaveBeenCalled();
   });
 });

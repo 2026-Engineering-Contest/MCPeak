@@ -25,6 +25,12 @@ export interface SanitizedAuthoringCandidate {
     readonly status: "candidate";
     readonly suite: TestSuiteSpec;
     readonly questions: readonly string[];
+    /**
+     * provider가 보고한 요약과 경고. 로컬 검토 경로(reviewLocalAuthoringCandidate)는 provider
+     * 응답 없이 candidate를 만들므로 두 필드가 없다. 그래서 optional이다.
+     */
+    readonly summary?: string;
+    readonly warnings?: readonly string[];
   };
   readonly byteLength: number;
   readonly redactedPaths: readonly string[];

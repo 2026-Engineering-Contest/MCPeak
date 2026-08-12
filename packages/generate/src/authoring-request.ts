@@ -17,7 +17,13 @@ import type {
   AuthoringProviderFailureCode,
   AuthoringProviderFailureReason,
 } from "./provider-process.js";
-import { redactAuthoringSuite, sanitizeRedactable } from "./redaction.js";
+import {
+  type RedactionPathGuard,
+  redactAuthoringSuite,
+  SUITE_CONTRACT_PATHS,
+  sanitizeRedactable,
+  TOOL_CONTRACT_PATHS,
+} from "./redaction.js";
 
 export type AuthoringRequestMode = "initial" | "revise";
 export interface McpToolContext {
@@ -160,8 +166,11 @@ function byte(value: unknown): number {
   }
 }
 /** 치환 규칙은 redaction.ts 한 곳에만 둔다. 여기서 두 번째 구현을 만들지 않는다. */
-const redacted = (value: unknown, options?: RunnerRedactionOptions): unknown =>
-  sanitizeRedactable(value, options);
+const redacted = (
+  value: unknown,
+  options?: RunnerRedactionOptions,
+  contractPath?: RedactionPathGuard,
+): unknown => sanitizeRedactable(value, options, contractPath);
 function escapeRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -256,17 +265,21 @@ export function prepareAuthoringRequest(options: {
     throw new RangeError("prompt byte limit을 초과했습니다.");
   if (byte(options.tools) > MAX_TOOLS_BYTES)
     throw new RangeError("tools byte limit을 초과했습니다.");
-  const baseline = redacted(options.baseline, options.redaction) as TestSuiteSpec;
+  const baseline = redacted(
+    options.baseline,
+    options.redaction,
+    SUITE_CONTRACT_PATHS,
+  ) as TestSuiteSpec;
   const candidate =
     options.mode === "initial"
       ? baseline
-      : (redacted(options.candidate, options.redaction) as TestSuiteSpec);
+      : (redacted(options.candidate, options.redaction, SUITE_CONTRACT_PATHS) as TestSuiteSpec);
   const request = frozen({
     mode: options.mode,
     instruction: redacted(options.instruction, options.redaction) as string,
     baseline,
     candidate,
-    tools: redacted(options.tools, options.redaction) as McpToolContext[],
+    tools: redacted(options.tools, options.redaction, TOOL_CONTRACT_PATHS) as McpToolContext[],
   });
   if (byte(request) > MAX_REQUEST_BYTES) throw new RangeError("request byte limit을 초과했습니다.");
   const fingerprint = sha256(request);

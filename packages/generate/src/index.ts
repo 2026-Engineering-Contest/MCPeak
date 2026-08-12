@@ -54,6 +54,8 @@ export {
   createBaselineSuite,
   DEFAULT_BASELINE_TIMEOUT_MS,
 } from "./baseline.js";
+/** suite fingerprint 계산의 단일 구현. cli가 자체 구현을 두면 두 벌이 갈라진다. */
+export { canonicalJson, sha256 } from "./canonical.js";
 export type {
   AuthoringProviderFailureCode,
   AuthoringProviderFailureReason,

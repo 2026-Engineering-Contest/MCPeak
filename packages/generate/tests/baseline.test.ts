@@ -7,6 +7,7 @@ import {
   createBaselineSuite,
   DEFAULT_BASELINE_TIMEOUT_MS,
   GenerateTestsError,
+  sha256,
 } from "../src/index.js";
 
 const tools: ToolDef[] = [
@@ -142,5 +143,23 @@ describe("createBaselineSuite", () => {
 
     expect(validateMcpSuite(result.suite)).toMatchObject({ valid: true });
     expect(packageJson.dependencies?.["@ohmymcp/runner"]).toBe("workspace:*");
+  });
+
+  it("sha256은 같은 값에 항상 같은 해시를 준다", () => {
+    const suite = createBaselineSuite(tools, { suiteId: "weather", suiteName: "날씨" }).suite;
+    expect(sha256(suite)).toBe(sha256(structuredClone(suite)));
+    expect(sha256(suite)).toBe(
+      suite &&
+        createBaselineSuite(tools, {
+          suiteId: "weather",
+          suiteName: "날씨",
+        }).suiteFingerprint,
+    );
+    expect(sha256("x")).toMatch(/^[0-9a-f]{64}$/);
+  });
+  it("sha256은 key 순서가 다른 동등한 객체에 같은 해시를 준다", () => {
+    expect(sha256({ a: 1, b: { c: 2, d: [3, 4] } })).toBe(sha256({ b: { d: [3, 4], c: 2 }, a: 1 }));
+    // 배열 순서는 의미가 있으므로 달라야 한다.
+    expect(sha256([1, 2])).not.toBe(sha256([2, 1]));
   });
 });

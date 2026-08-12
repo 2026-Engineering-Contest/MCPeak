@@ -3,7 +3,8 @@
 MCP 도구의 입력 스키마에서 검토 가능한 happy-path 테스트 초안을 생성합니다.
 
 - **오너:** `@seodduu` `@endl24` `@sunghoon0303`
-- **의존:** `@ohmymcp/core`, `@ohmymcp/runner`
+- **생성 시 의존:** `@ohmymcp/core`
+- **생성 결과 실행 시 의존:** `@ohmymcp/runner`
 
 ## 테스트 생성
 
@@ -15,8 +16,12 @@ const paths = await generateTests(tools, {
 });
 ```
 
-각 도구마다 `<tool-name>.generated.ts` 파일이 만들어집니다. 생성 파일은 서버 연결 방법이나
-`McpClient`를 포함하지 않고 Runner의 선언형 `generatedSuite`만 export합니다.
+도구 이름은 소문자 영문·숫자와 하이픈으로 정규화되고 최대 80자로 잘립니다. 정규화 결과가
+비어 있거나 Windows 예약 이름이면 `tool-<순번>`을 사용합니다. 이미 예약된 이름과 충돌하면
+비어 있는 이름을 찾을 때까지 `-2`, `-3`처럼 결정론적 접미사를 붙입니다. 따라서 호출자는
+접미사가 없는 `<tool-name>.generated.ts`를 가정하지 말고 반환된 `paths`로 생성 파일을 찾아야
+합니다. 생성 파일은 서버 연결 방법이나 `McpClient`를 포함하지 않고 Runner의 선언형
+`generatedSuite`만 export합니다.
 
 입력값은 `const` → `default` → `examples[0]` → `enum[0]` → 타입별 고정값 순서로 선택합니다.
 객체에서는 필수 프로퍼티만 포함하고 배열에서는 `items`로 원소 한 개를 생성합니다. 생성된

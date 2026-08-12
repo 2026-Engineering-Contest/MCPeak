@@ -1,12 +1,21 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import type { ToolDef } from "@ohmymcp/core";
-import {
-  type JsonObject,
-  type JsonValue,
-  type TestSuiteSpec,
-  validateMcpSuite,
-} from "@ohmymcp/runner";
+
+type JsonValue = null | boolean | number | string | JsonValue[] | JsonObject;
+type JsonObject = { [key: string]: JsonValue };
+type GeneratedSuiteSpec = {
+  schemaVersion: 1;
+  id: string;
+  name: string;
+  defaultTimeoutMs: number;
+  cases: Array<{
+    id: string;
+    name: string;
+    operation: { type: "callTool"; tool: string; input: JsonObject };
+    assertions: [{ type: "isError"; expected: false }];
+  }>;
+};
 
 /** 테스트 코드를 생성할 때의 옵션. */
 export interface GenerateOptions {
@@ -168,7 +177,7 @@ function validateSchema(
         "UNSUPPORTED_SCHEMA",
         `${path}.${unsupported}`,
         `지원하지 않는 JSON Schema 키워드 '${unsupported}'가 있습니다.`,
-        "첫 버전은 type, required, properties, items, enum, const, default, examples를 지원합니다.",
+        `첫 버전은 ${[...SUPPORTED_SCHEMA_KEYS].join(", ")}를 지원합니다.`,
       );
     }
 
@@ -217,7 +226,7 @@ function validateSchema(
           "items는 array 스키마에서만 사용하세요.",
         );
       }
-      const properties = schema.properties ?? {};
+      const properties = "properties" in schema ? schema.properties : {};
       if (!plainObject(properties)) {
         fail(
           "UNSUPPORTED_SCHEMA",
@@ -229,7 +238,7 @@ function validateSchema(
       for (const key of Object.keys(properties).sort()) {
         validateSchema(properties[key], `${path}.properties.${key}`, active);
       }
-      const required = schema.required ?? [];
+      const required = "required" in schema ? schema.required : [];
       if (!Array.isArray(required) || required.some((key) => typeof key !== "string")) {
         fail(
           "UNSUPPORTED_SCHEMA",
@@ -331,8 +340,11 @@ function valueMatchesSchema(value: JsonValue, schema: JsonSchema): boolean {
   )
     return false;
   if (type === "object" && plainObject(value)) {
-    const properties = (schema.properties ?? {}) as Record<string, JsonSchema>;
-    const required = (schema.required ?? []) as string[];
+    const properties = ("properties" in schema ? schema.properties : {}) as Record<
+      string,
+      JsonSchema
+    >;
+    const required = ("required" in schema ? schema.required : []) as string[];
     if (required.some((key) => !(key in value))) return false;
     return Object.keys(value).every(
       (key) =>
@@ -372,8 +384,11 @@ function synthesizeValue(schema: JsonSchema, path: string): JsonValue {
         value = [synthesizeValue(schema.items as JsonSchema, `${path}.items`)];
         break;
       case "object": {
-        const properties = (schema.properties ?? {}) as Record<string, JsonSchema>;
-        const required = (schema.required ?? []) as string[];
+        const properties = ("properties" in schema ? schema.properties : {}) as Record<
+          string,
+          JsonSchema
+        >;
+        const required = ("required" in schema ? schema.required : []) as string[];
         value = Object.fromEntries(
           required.map((key) => [
             key,
@@ -407,7 +422,7 @@ function safeBaseName(name: string, index: number): string {
   return slug.length === 0 || WINDOWS_RESERVED_NAMES.test(slug) ? `tool-${index + 1}` : slug;
 }
 
-function buildSuite(tool: ToolDef, index: number, baseName: string): TestSuiteSpec {
+function buildSuite(tool: ToolDef, index: number, baseName: string): GeneratedSuiteSpec {
   const toolPath = `tools[${index}]`;
   if (!plainObject(tool)) {
     fail(
@@ -459,7 +474,7 @@ function buildSuite(tool: ToolDef, index: number, baseName: string): TestSuiteSp
   };
 }
 
-function renderSuite(suite: TestSuiteSpec): string {
+function renderSuite(suite: GeneratedSuiteSpec): string {
   return [
     'import { defineMcpSuite } from "@ohmymcp/runner";',
     "",
@@ -471,7 +486,7 @@ function renderSuite(suite: TestSuiteSpec): string {
 
 /**
  * 도구 스키마마다 Runner의 선언형 suite 파일을 만들고 생성한 절대 경로를 반환한다.
- * 모든 스키마와 suite를 먼저 검증하므로 스키마 오류로 일부 파일만 생성되지 않는다.
+ * 모든 스키마를 먼저 검증하므로 스키마 오류로 일부 파일만 생성되지 않는다.
  */
 export async function generateTests(tools: ToolDef[], options: GenerateOptions): Promise<string[]> {
   if (!Array.isArray(tools)) {
@@ -492,24 +507,16 @@ export async function generateTests(tools: ToolDef[], options: GenerateOptions):
   }
   if (tools.length === 0) return [];
 
-  const usedNames = new Map<string, number>();
+  const usedNames = new Set<string>();
   const drafts = tools.map((tool, index) => {
     const initialName = safeBaseName(typeof tool?.name === "string" ? tool.name : "", index);
-    const occurrence = (usedNames.get(initialName) ?? 0) + 1;
-    usedNames.set(initialName, occurrence);
-    const baseName = occurrence === 1 ? initialName : `${initialName}-${occurrence}`;
-    const suite = buildSuite(tool, index, baseName);
-    const validation = validateMcpSuite(suite);
-    if (!validation.valid) {
-      const first = validation.issues[0];
-      fail(
-        "GENERATED_SUITE_INVALID",
-        first?.path ?? `tools[${index}]`,
-        `생성된 Runner suite가 공개 계약을 만족하지 않습니다: ${first?.message ?? tool.name}`,
-        first?.hint ?? "도구 이름과 입력 스키마를 확인하세요.",
-      );
+    let baseName = initialName;
+    for (let occurrence = 2; usedNames.has(baseName); occurrence++) {
+      baseName = `${initialName}-${occurrence}`;
     }
-    return { fileName: `${baseName}.generated.ts`, source: renderSuite(validation.value) };
+    usedNames.add(baseName);
+    const suite = buildSuite(tool, index, baseName);
+    return { fileName: `${baseName}.generated.ts`, source: renderSuite(suite) };
   });
 
   const outDir = resolve(options.outDir);

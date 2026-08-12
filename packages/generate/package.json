@@ -31,7 +31,6 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@ohmymcp/core": "workspace:*",
-    "@ohmymcp/runner": "workspace:*"
+    "@ohmymcp/core": "workspace:*"
   }
 }

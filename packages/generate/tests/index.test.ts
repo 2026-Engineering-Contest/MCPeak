@@ -131,6 +131,54 @@ describe("generateTests", () => {
     ]);
   });
 
+  it("접미사가 도구 이름과 다시 충돌해도 경로와 suite id를 고유하게 만든다", async () => {
+    const outDir = await temporaryOutDir();
+    const schema = { type: "object", properties: {}, required: [] };
+
+    const paths = await generateTests(
+      [
+        { name: "a", inputSchema: schema },
+        { name: "a", inputSchema: schema },
+        { name: "a-2", inputSchema: schema },
+      ],
+      { outDir },
+    );
+
+    expect(paths.map((path) => path.slice(outDir.length + 1))).toEqual([
+      "a.generated.ts",
+      "a-2.generated.ts",
+      "a-2-2.generated.ts",
+    ]);
+    expect(new Set(paths).size).toBe(paths.length);
+
+    const sources = await Promise.all(paths.map((path) => readFile(path, "utf8")));
+    const suiteIds = sources.map((source) => source.match(/"id": "([^"]+-generated)"/)?.[1]);
+    expect(new Set(suiteIds).size).toBe(suiteIds.length);
+  });
+
+  it.each(["properties", "required"] as const)(
+    "명시적으로 null인 %s를 누락된 키처럼 취급하지 않는다",
+    async (keyword) => {
+      const outDir = await temporaryOutDir();
+
+      await expect(
+        generateTests(
+          [
+            {
+              name: `null-${keyword}`,
+              inputSchema: { type: "object", [keyword]: null },
+            },
+          ],
+          { outDir },
+        ),
+      ).rejects.toMatchObject({
+        code: "UNSUPPORTED_SCHEMA",
+        path: `tools[0].inputSchema.${keyword}`,
+      });
+      await expect(readdir(outDir)).rejects.toMatchObject({ code: "ENOENT" });
+    },
+  );
+
   it("지원하지 않는 스키마가 있으면 어떤 파일도 쓰기 전에 경로와 이유를 보고한다", async () => {
     const outDir = await temporaryOutDir();
 
@@ -156,6 +204,7 @@ describe("generateTests", () => {
     await expect(generation).rejects.toMatchObject({
       code: "UNSUPPORTED_SCHEMA",
       path: "tools[1].inputSchema.properties.query.minLength",
+      hint: expect.stringContaining("description, title"),
     });
     await expect(readdir(outDir)).rejects.toMatchObject({ code: "ENOENT" });
   });

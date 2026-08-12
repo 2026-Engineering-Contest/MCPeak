@@ -51,6 +51,20 @@ export {
   createBaselineSuite,
   DEFAULT_BASELINE_TIMEOUT_MS,
 } from "./baseline.js";
+export type {
+  AuthoringProviderFailureCode,
+  ProviderProcessChild,
+  ProviderProcessDeps,
+  ProviderProcessResult,
+  ProviderProcessSpec,
+} from "./provider-process.js";
+export {
+  createClaudeAuthoringProvider,
+  createClaudeProvider,
+  createCodexAuthoringProvider,
+  createCodexProvider,
+  PROVIDER_ENV_ALLOWLIST,
+} from "./providers.js";
 
 type JsonValue = null | boolean | number | string | JsonValue[] | JsonObject;
 type JsonObject = { [key: string]: JsonValue };

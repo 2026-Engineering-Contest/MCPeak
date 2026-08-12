@@ -34,7 +34,7 @@ flowchart LR
 |---|---|---|---|
 | `core` | `ConnectOptions` (command, args, env, cwd) | `McpClient` | 프로세스 기동·종료, 핸드셰이크, 타임아웃, stderr 수집 |
 | `runner` | `McpClient` (**주입받음**) | 실패 메시지 · 리포트 · JUnit XML | 공개 API, matcher, **실패 메시지 품질** |
-| `generate` | `ToolDef[]` (**주입받음**) | 테스트 소스 파일 경로 | 스키마 분석, 테스트 케이스 합성 |
+| `generate` | `ToolDef[]` (**주입받음**) | 테스트 소스 파일 경로 · 승인된 suite snapshot | 결정론적 baseline 합성, AI authoring 검토·승인 |
 | `record` | `ToolResult` (**주입받음**) | 카세트 파일 · 계약 스냅샷 | 매칭 키, 비결정 필드 처리, 비밀값 마스킹 |
 | `mock` | 툴 정의 · 주입할 응답 | 목 서버 | 가짜 데이터, 응답 주입 |
 | `cli` | `argv` | 종료 코드 | 얇은 디스패처. 각자 자기 서브커맨드만 |
@@ -42,7 +42,9 @@ flowchart LR
 의존 방향은 단방향이다. 역참조·순환 금지.
 
 ```
-cli → runner / generate / record / mock → core
+cli → generate → runner → core
+cli → runner → core
+cli → record / mock → core
 ```
 
 ## 3. 왜 단계가 아니라 병렬인가

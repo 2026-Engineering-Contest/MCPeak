@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": false,
   "type": "module",
-  "description": "스키마 → 테스트 코드 생성",
+  "description": "결정론적 baseline과 승인형 AI 검토로 MCP 테스트를 생성",
   "license": "MIT",
   "publishConfig": {
     "access": "public"

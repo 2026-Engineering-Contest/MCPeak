@@ -820,6 +820,13 @@ timeout과 취소 시에도 현재 operation, 각 skipped assertion, 현재 case
 
 ## 14. 실패 테스트 수정 연동 계약
 
+이 절은 Runner가 보장하는 compile·repair 안전 경계의 진실이다. 결정론적 baseline과 AI 후보의
+공존, 검토 중 재호출, 실제 Codex·Claude CLI 격리 실행과 사용자 변경 선택은 후속
+[AI 보조 테스트 작성·반복 검토 설계](./2026-08-12-ai-assisted-test-authoring-design.md)를 따른다.
+§14.4의 아직 구현되지 않은 단발 `CompileRequest`, `CompileResult`, `NaturalLanguageCompiler` shape는
+후속 설계의 반복 authoring 계약이 대체한다. redaction, approval binding, provider lifecycle,
+bounded output과 safe failure 계약 및 이 절의 repair shape는 계속 유효하다.
+
 ### 14.1 책임 분리
 
 ```text

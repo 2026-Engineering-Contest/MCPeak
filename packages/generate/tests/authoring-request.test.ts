@@ -168,6 +168,48 @@ describe("authoring request", () => {
     });
     expect(applied).toMatchObject({ applied: true, draft: { revision: 1 } });
   });
+  it("dispatch bridge에도 caller redaction 정책을 적용한다", async () => {
+    const callerSecret = "bridge-secret";
+    const baseline = createBaselineSuite(tools, { suiteId: "weather", suiteName: "날씨" });
+    const session = createAuthoringSession(baseline);
+    const preview = prepareAuthoringRequest({
+      ...options(),
+      baseline: baseline.suite,
+      candidate: baseline.suite,
+      redaction: { sensitiveValues: [callerSecret] },
+    });
+    const candidate = structuredClone(baseline.suite);
+    const firstCase = candidate.cases[0];
+    if (firstCase?.operation.type !== "callTool") throw new Error("callTool case가 필요합니다.");
+    firstCase.operation.input.city = callerSecret;
+    const result = await dispatchAuthoringRequest({
+      provider: {
+        id: "codex",
+        author: async () => ({
+          status: "candidate",
+          suite: candidate,
+          summary: "ok",
+          warnings: [],
+          questions: [],
+        }),
+      },
+      preview,
+      approval: { approved: true, fingerprint: preview.fingerprint },
+      session,
+    });
+
+    expect(result).toMatchObject({ status: "preview", preview: { executable: false } });
+    if (result.status !== "preview") throw new Error("candidate preview가 필요합니다.");
+    const diff = createAuthoringDiff({ session, candidate: result.preview });
+    expect(
+      applyAuthoringChanges({
+        session,
+        preview: diff,
+        selectedChangeIds: diff.changes.map((change) => change.id),
+        approval: { approved: true, fingerprint: diff.candidateFingerprint },
+      }),
+    ).toMatchObject({ applied: false, reason: "redactionRequired" });
+  });
   it("Runner Schema를 수정하지 않고 authoring output Schema를 만든다", () => {
     expect(MCP_SUITE_JSON_SCHEMA).toEqual(MCP_SUITE_JSON_SCHEMA);
     expect(Object.isFrozen(MCP_SUITE_JSON_SCHEMA)).toBe(true);
@@ -235,6 +277,31 @@ describe("authoring request", () => {
     expect(JSON.stringify(result)).not.toContain(callerSecret);
     if (result.status !== "preview") throw new Error("candidate preview가 필요합니다.");
     expect(result.preview.fingerprint).not.toContain(callerSecret);
+  });
+  it("provider summary와 questions의 caller secret을 공개 preview에서 제거한다", () => {
+    const callerSecret = "metadata-secret";
+    const preview = prepareAuthoringRequest({
+      ...options(),
+      redaction: { sensitiveKeys: ["customerCredential"], sensitiveValues: [callerSecret] },
+    });
+    const candidate = structuredClone(suite());
+    const result = validateAuthoringProviderResult(
+      {
+        status: "candidate",
+        suite: candidate,
+        summary: `summary ${callerSecret}`,
+        warnings: [],
+        questions: [`customerCredential=${callerSecret}`],
+      },
+      preview,
+    );
+    expect(result).toMatchObject({ status: "preview" });
+    expect(JSON.stringify(result)).not.toContain(callerSecret);
+    const questions = validateAuthoringProviderResult(
+      { status: "questions", questions: [`customerCredential=${callerSecret}`] },
+      preview,
+    );
+    expect(JSON.stringify(questions)).not.toContain(callerSecret);
   });
   it("invalid provider issue에 raw key와 value를 넣지 않는다", () => {
     const result = validateAuthoringProviderResult(

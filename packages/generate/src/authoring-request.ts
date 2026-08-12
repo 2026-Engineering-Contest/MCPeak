@@ -142,6 +142,19 @@ function redacted(value: unknown, options?: RunnerRedactionOptions): unknown {
   };
   return visit(value);
 }
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+function redactText(value: string, options?: RunnerRedactionOptions): string {
+  let result = value;
+  for (const sensitiveValue of options?.sensitiveValues ?? [])
+    if (sensitiveValue.length > 0) result = result.split(sensitiveValue).join(REDACTED);
+  for (const key of [...DEFAULT_SENSITIVE_KEYS, ...(options?.sensitiveKeys ?? [])]) {
+    const expression = new RegExp(`(${escapeRegex(key)}\\s*[=:]\\s*)[^\\s,;]+`, "gi");
+    result = result.replace(expression, `$1${REDACTED}`);
+  }
+  return result;
+}
 function safeIssues(input: unknown): readonly PublicProviderValidationIssue[] {
   const result = validateMcpSuite(input);
   if (result.valid) return [];
@@ -243,7 +256,10 @@ export function validateAuthoringProviderResult(
     return Array.isArray(questions) &&
       questions.length > 0 &&
       questions.every((v) => typeof v === "string" && /\S/.test(v))
-      ? { status: "questions", questions: frozen(questions) }
+      ? {
+          status: "questions",
+          questions: frozen(questions.map((item) => redactText(item, state.redaction))),
+        }
       : {
           status: "invalid",
           issues: [
@@ -296,9 +312,13 @@ export function validateAuthoringProviderResult(
   const result: AuthoringProviderResult = {
     status: "candidate",
     suite: frozen(sanitized.suite),
-    summary: raw.summary,
+    summary: redactText(raw.summary, state.redaction),
     warnings: [],
-    questions: frozen(raw.questions.filter((v): v is string => typeof v === "string")),
+    questions: frozen(
+      raw.questions
+        .filter((v): v is string => typeof v === "string")
+        .map((item) => redactText(item, state.redaction)),
+    ),
   };
   if (byte(result) > state.maxResultBytes) return { status: "resultLimitExceeded" };
   const candidate = frozen({
@@ -331,19 +351,23 @@ export async function dispatchAuthoringRequest(options: {
   )
     return { status: "approvalInvalidated" };
   try {
-    const result = validateAuthoringProviderResult(
-      await options.provider.author(state.request, {
-        signal: options.signal,
-        timeoutMs: state.timeoutMs,
-      }),
-      options.preview,
-    );
+    const providerResult = await options.provider.author(state.request, {
+      signal: options.signal,
+      timeoutMs: state.timeoutMs,
+    });
+    const result = validateAuthoringProviderResult(providerResult, options.preview);
     if (result.status !== "preview" || options.session === undefined) return result;
+    const candidate =
+      plain(providerResult) && providerResult.status === "candidate" && plain(providerResult.suite)
+        ? (providerResult.suite as unknown as TestSuiteSpec)
+        : result.preview.result.suite;
     return reviewLocalAuthoringCandidate({
       session: options.session,
-      candidate: result.preview.result.suite,
+      candidate,
       tools: state.tools,
       providerId: state.providerId,
+      redaction: state.redaction,
+      sensitiveValues: state.redaction?.sensitiveValues,
     });
   } catch {
     return { status: "providerFailed" };

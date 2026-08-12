@@ -4,8 +4,12 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { McpClient, ToolDef } from "@ohmymcp/core";
 import { connect } from "@ohmymcp/core";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { assertMockDefinition } from "../src/index.js";
+
+// CI 는 빌드 없이 `pnpm test` 를 돌리므로 @ohmymcp/core 의 dist 가 없다.
+// 워크스페이스 패키지를 소스로 돌려 해결한다 (packages/cli 도 같은 방식).
+vi.mock("@ohmymcp/core", async () => import("../../core/src/index.js"));
 
 /**
  * 이 파일이 검증하는 것은 하나다 — **우리 도구로 우리 목 서버를 검증할 수 있는가**
@@ -179,6 +183,13 @@ describe("assertMockDefinition — 정의 파일 검증", () => {
   it("result 가 빠지면 몇 번째 항목인지 알려준다", () => {
     expect(rejects({ tools: TOOLS, responses: [{ tool: "add" }] })).toContain(
       "responses[0] 에 'result' 가 없습니다",
+    );
+  });
+
+  it("inputSchema 가 없는 툴을 거른다", () => {
+    // 없으면 클라이언트에 인자 없는 툴로 보인다. ToolDef 가 요구하는 필드다.
+    expect(rejects({ tools: [{ name: "add" }] })).toContain(
+      "tools[0] ('add') 에 'inputSchema' 가 없습니다",
     );
   });
 

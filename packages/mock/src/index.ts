@@ -142,8 +142,12 @@ export function assertMockDefinition(
 
   if (!Array.isArray(def.tools)) fail("'tools' 가 배열이 아닙니다");
   (def.tools as unknown[]).forEach((t, i) => {
-    if (t === null || typeof t !== "object" || typeof (t as ToolDef).name !== "string") {
-      fail(`tools[${i}] 에 문자열 'name' 이 없습니다`);
+    if (t === null || typeof t !== "object") fail(`tools[${i}] 가 객체가 아닙니다`);
+    const tool = t as Record<string, unknown>;
+    if (typeof tool.name !== "string") fail(`tools[${i}] 에 문자열 'name' 이 없습니다`);
+    // inputSchema 가 없으면 클라이언트에 인자 없는 툴로 보인다. ToolDef 가 요구하는 필드다.
+    if (!("inputSchema" in tool)) {
+      fail(`tools[${i}] ('${tool.name}') 에 'inputSchema' 가 없습니다`);
     }
   });
 

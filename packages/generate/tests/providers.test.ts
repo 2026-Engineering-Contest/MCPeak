@@ -361,6 +361,47 @@ describe("provider adapters", () => {
       createClaudeAuthoringProvider({ run: r.run }).author(preview().request, { timeoutMs: 1 }),
     ).rejects.toMatchObject({ code: "schemaMismatch" });
   });
+  it("Claude 성공 응답의 api_error_status가 null이면 정상 처리한다", async () => {
+    const r = runner({
+      ok: true,
+      value: {
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        api_error_status: null,
+        structured_output: {
+          status: "candidate",
+          suiteJson: JSON.stringify(suite()),
+          summary: "s",
+          warnings: [],
+          questions: [],
+        },
+      },
+    });
+    await expect(
+      createClaudeAuthoringProvider({ run: r.run }).author(preview().request, { timeoutMs: 1 }),
+    ).resolves.toMatchObject({ status: "candidate", suite: suite(), summary: "s" });
+  });
+  it("Claude 성공 응답에 api_error_status 키가 아예 없어도 정상 처리한다", async () => {
+    const r = runner({
+      ok: true,
+      value: {
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        structured_output: {
+          status: "candidate",
+          suiteJson: JSON.stringify(suite()),
+          summary: "s",
+          warnings: [],
+          questions: [],
+        },
+      },
+    });
+    await expect(
+      createClaudeAuthoringProvider({ run: r.run }).author(preview().request, { timeoutMs: 1 }),
+    ).resolves.toMatchObject({ status: "candidate", suite: suite(), summary: "s" });
+  });
   it("Claude subtype이 success가 아니면 schemaMismatch다", async () => {
     const r = runner({
       ok: true,

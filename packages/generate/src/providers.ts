@@ -68,12 +68,14 @@ function unwrap(result: ProviderProcessResult, claude: boolean): unknown {
   if (!result.ok) throw new AuthoringProviderError(result.code, result);
   let value: unknown = result.value;
   if (claude) {
+    // Claude 2.1.228 성공 응답은 api_error_status를 null로 항상 담는다.
+    // 키 존재로 판정하면 모든 성공이 거절되므로 값으로 본다.
     if (
       !plain(value) ||
       value.type !== "result" ||
       value.subtype !== "success" ||
       value.is_error === true ||
-      "api_error_status" in value ||
+      (value.api_error_status !== null && value.api_error_status !== undefined) ||
       !("structured_output" in value)
     )
       throw new AuthoringProviderError("schemaMismatch");

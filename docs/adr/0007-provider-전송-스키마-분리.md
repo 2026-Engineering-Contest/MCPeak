@@ -57,6 +57,9 @@ allowlist, 비밀값 redaction)가 전부 그대로 돈다. provider가 무엇�
   request 본문이라 이 증가로 한도에 걸리지는 않는다.
 - Claude의 오류 envelope를 성공으로 취급하지 않는다. `type`, `subtype`, `is_error`,
   `api_error_status`, `structured_output` 존재를 전부 확인한 뒤에만 결과를 취한다.
+- `api_error_status`는 키 존재가 아니라 값으로 판정한다. Claude 2.1.228의 성공 응답은 이 키를
+  `null`로 항상 담기 때문에, 키 존재로 거절하면 모든 성공이 `schemaMismatch`가 된다. 실제 CLI
+  호출로 확인한 사실이다.
 - `hasRequiredCapabilities` help 검사를 제거했다. `codex exec --help`에 없는 config key를 요구해
   codex가 한 번도 실행되지 않았고, spawn 실패는 `provider-process.ts`가 이미
   `providerUnavailable`로 매핑한다.

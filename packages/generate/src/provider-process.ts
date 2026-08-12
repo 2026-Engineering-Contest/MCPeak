@@ -25,7 +25,12 @@ export type AuthoringProviderFailureReason =
   | "serverError";
 
 export interface ProviderProcessChild {
-  readonly stdin: { write(value: string): unknown; end(): unknown };
+  readonly stdin: {
+    write(value: string): unknown;
+    end(): unknown;
+    /** stdin 스트림의 비동기 error(EPIPE 등)를 받는다. 없으면 리스너를 달지 않는다. */
+    on?(event: "error", listener: (error: Error) => void): unknown;
+  };
   readonly stdout: NodeJS.EventEmitter;
   readonly stderr: NodeJS.EventEmitter;
   kill(signal: NodeJS.Signals): boolean;
@@ -164,8 +169,9 @@ export async function runProviderProcess(
       if (finished) return;
       finished = true;
       timeoutTimer?.cancel();
-      killTimer?.cancel();
       deadlineTimer?.cancel();
+      // killTimer는 여기서 취소하지 않는다. SIGTERM을 무시하는 자식에게 SIGKILL이 가야
+      // 좀비가 남지 않는다. 이 타이머는 close 이벤트에서만 취소한다.
       resolve(result);
     };
     const terminate = (next: AuthoringProviderFailureCode) => {
@@ -224,6 +230,7 @@ export async function runProviderProcess(
     });
     child.on("close", (code: number | null) => {
       closed = true;
+      killTimer?.cancel();
       cleanup();
       spec.signal?.removeEventListener("abort", abort);
       if (finished) return;
@@ -266,6 +273,11 @@ export async function runProviderProcess(
         settle({ ok: false, code: "invalidJson", stderr: diagnostics() });
       }
     });
+    // stdin 스트림의 error는 비동기로 오므로 아래 try/catch가 잡지 못하고, 리스너가 없으면
+    // 처리되지 않은 stream error가 host 프로세스를 죽인다. 그래서 리스너를 단다.
+    // 실패로 보지는 않는다. provider가 프롬프트를 다 읽고 stdin을 먼저 닫으면 EPIPE가 나는데
+    // 그때도 stdout에는 정상 결과가 온다. 결과 판정은 exit code와 stdout parsing이 한다.
+    child.stdin.on?.("error", () => undefined);
     try {
       child.stdin.write(spec.stdin);
       child.stdin.end();

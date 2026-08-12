@@ -28,7 +28,12 @@ type SessionState = {
 const sessions = new WeakMap<AuthoringSessionView, SessionState>();
 const candidates = new WeakMap<
   SanitizedAuthoringCandidate,
-  { suite: TestSuiteSpec; providerId?: "codex" | "claude" }
+  {
+    suite: TestSuiteSpec;
+    providerId?: "codex" | "claude";
+    /** 이 candidate를 검토할 때 호출자가 준 도구 목록. 적용 단계 allowlist의 근거다. */
+    tools: readonly { readonly name: string }[];
+  }
 >();
 const diffs = new WeakMap<AuthoringDiffPreview, SanitizedAuthoringCandidate>();
 const snapshots = new WeakMap<AuthoringExecutionSnapshot, TestSuiteSpec>();
@@ -119,7 +124,11 @@ function candidateFor(options: LocalCandidateReviewOptions): LocalCandidateRevie
     fingerprint: sha256(frozenSuite),
     binding: binding(),
   });
-  candidates.set(preview, { suite: frozenSuite, providerId: options.providerId });
+  candidates.set(preview, {
+    suite: frozenSuite,
+    providerId: options.providerId,
+    tools: cloneFreeze(options.tools.map((tool) => ({ name: tool.name }))),
+  });
   current.working = preview;
   return { status: "preview", preview };
 }
@@ -279,15 +288,9 @@ export function applyAuthoringChanges(options: {
   if (validation.length > 0) return { applied: false, reason: "invalid", issues: validation };
   const stored = candidates.get(candidate);
   if (stored === undefined) return { applied: false, reason: "approvalInvalidated" };
-  const toolIssues = knownTools(
-    next,
-    next.cases
-      .filter(
-        (item): item is TestCaseSpec & { operation: { type: "callTool"; tool: string } } =>
-          item.operation.type === "callTool",
-      )
-      .map((item) => ({ name: item.operation.tool })),
-  );
+  // allowlist는 검사 대상 suite가 아니라 호출자가 준 도구 목록에서 온다.
+  // 대상 자신에서 만들면 검사가 항상 통과하는 죽은 코드가 된다.
+  const toolIssues = knownTools(next, stored.tools);
   if (toolIssues.length > 0) return { applied: false, reason: "invalid", issues: toolIssues };
   const revision = current.approved.revision + 1;
   const changed = new Set(

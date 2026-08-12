@@ -1,4 +1,5 @@
 import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { MCP_SUITE_JSON_SCHEMA } from "@ohmymcp/runner";
 import type { AuthoringRequest, TestAuthoringProvider } from "./authoring-request.js";
 import { DEFAULT_MAX_RESULT_BYTES } from "./authoring-request.js";
@@ -11,11 +12,27 @@ import {
   runProviderProcess,
 } from "./provider-process.js";
 
+/** 두 provider가 공통으로 필요로 하는 실행 환경. 인증정보가 아니다. */
+const COMMON_ENV_ALLOWLIST = ["PATH", "HOME", "USER", "SHELL"] as const;
+/**
+ * 인증정보는 provider별로 분리한다. codex 자식이 Anthropic 자격증명을,
+ * claude 자식이 OpenAI 자격증명을 받을 이유가 없다.
+ */
+export const CODEX_ENV_ALLOWLIST = [
+  ...COMMON_ENV_ALLOWLIST,
+  "CODEX_HOME",
+  "OPENAI_API_KEY",
+  "OPENAI_ORG_ID",
+  "OPENAI_PROJECT_ID",
+] as const;
+export const CLAUDE_ENV_ALLOWLIST = [
+  ...COMMON_ENV_ALLOWLIST,
+  "ANTHROPIC_API_KEY",
+  "CLAUDE_CODE_OAUTH_TOKEN",
+] as const;
+/** 두 목록의 합집합. 어떤 자식 프로세스도 이 밖의 환경변수를 받지 않는다. */
 export const PROVIDER_ENV_ALLOWLIST = [
-  "PATH",
-  "HOME",
-  "USER",
-  "SHELL",
+  ...COMMON_ENV_ALLOWLIST,
   "ANTHROPIC_API_KEY",
   "CLAUDE_CODE_OAUTH_TOKEN",
   "CODEX_HOME",
@@ -110,14 +127,16 @@ type Runner = (spec: ProviderProcessSpec) => Promise<ProviderProcessResult>;
 type Options = {
   readonly run?: Runner;
   readonly environment?: NodeJS.ProcessEnv;
-  readonly model?: string;
+  /** CLI가 승인받은 모델 식별자. 기본값을 두지 않는다. 임의의 기본값은 그대로 CLI 인자가 된다. */
+  readonly model: string;
 };
-function environment(input: NodeJS.ProcessEnv | undefined): NodeJS.ProcessEnv {
+function environment(
+  input: NodeJS.ProcessEnv | undefined,
+  allowlist: readonly string[],
+): NodeJS.ProcessEnv {
   const source = input ?? process.env;
   return Object.fromEntries(
-    PROVIDER_ENV_ALLOWLIST.flatMap((key) =>
-      source[key] === undefined ? [] : [[key, source[key]]],
-    ),
+    allowlist.flatMap((key) => (source[key] === undefined ? [] : [[key, source[key]]])),
   );
 }
 function prompt(request: AuthoringRequest): string {
@@ -169,7 +188,10 @@ function unwrap(result: ProviderProcessResult, claude: boolean): unknown {
 }
 function makeProvider(id: "codex" | "claude", options: Options): TestAuthoringProvider {
   const run = options.run ?? runProviderProcess;
-  const model = options.model ?? "m";
+  const model = options.model;
+  if (typeof model !== "string" || !/\S/.test(model))
+    throw new TypeError("provider model은 비어 있지 않은 문자열이어야 합니다.");
+  const allowlist = id === "codex" ? CODEX_ENV_ALLOWLIST : CLAUDE_ENV_ALLOWLIST;
   return {
     id,
     model,
@@ -177,7 +199,7 @@ function makeProvider(id: "codex" | "claude", options: Options): TestAuthoringPr
       const common = {
         stdin: prompt(request),
         timeoutMs: settings.timeoutMs,
-        env: environment(options.environment),
+        env: environment(options.environment, allowlist),
         cwdPrefix: tmpdir(),
         maxOutputBytes: DEFAULT_MAX_RESULT_BYTES,
         signal: settings.signal,
@@ -204,7 +226,7 @@ function makeProvider(id: "codex" | "claude", options: Options): TestAuthoringPr
               "--ignore-rules",
               "--skip-git-repo-check",
               "--output-schema",
-              `${cwd}/${schemaName}`,
+              join(cwd, schemaName),
               "-",
             ],
             files: [{ name: schemaName, contents: JSON.stringify(PROVIDER_OUTPUT_SCHEMA) }],
@@ -240,7 +262,7 @@ function makeProvider(id: "codex" | "claude", options: Options): TestAuthoringPr
     },
   };
 }
-export const createCodexProvider = (options: Options = {}) => makeProvider("codex", options);
-export const createClaudeProvider = (options: Options = {}) => makeProvider("claude", options);
+export const createCodexProvider = (options: Options) => makeProvider("codex", options);
+export const createClaudeProvider = (options: Options) => makeProvider("claude", options);
 export const createCodexAuthoringProvider = createCodexProvider;
 export const createClaudeAuthoringProvider = createClaudeProvider;

@@ -27,6 +27,13 @@ export function redactAuthoringSuite(
 }
 export { REDACTED };
 
+/**
+ * 민감 키·값 치환의 단일 구현. suite input과 request payload가 같은 규칙을 쓰도록
+ * 여기 한 곳에만 둔다. 두 벌로 두면 한쪽만 고쳐져 redaction이 조용히 어긋난다.
+ */
+export function sanitizeRedactable(value: unknown, options?: RunnerRedactionOptions): unknown {
+  return sanitize(value, options);
+}
 function sanitize(value: unknown, options?: RunnerRedactionOptions): unknown {
   const keys = new Set(DEFAULT_SENSITIVE_KEYS);
   for (const key of options?.sensitiveKeys ?? []) keys.add(normalize(key));

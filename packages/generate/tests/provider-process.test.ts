@@ -6,12 +6,17 @@ import {
   runProviderProcess,
 } from "../src/provider-process.js";
 
+class FakeStdin extends EventEmitter {
+  readonly writes: string[] = [];
+  end() {
+    return undefined;
+  }
+  write(value: string) {
+    return this.writes.push(value);
+  }
+}
 class FakeChild extends EventEmitter implements ProviderProcessChild {
-  readonly stdin = {
-    writes: [] as string[],
-    end: () => undefined,
-    write: (value: string) => this.stdin.writes.push(value),
-  };
+  readonly stdin = new FakeStdin();
   readonly stdout = new EventEmitter();
   readonly stderr = new EventEmitter();
   readonly kills: NodeJS.Signals[] = [];
@@ -260,6 +265,44 @@ describe("provider process", () => {
     await done;
     expect(received.length).toBeLessThanOrEqual(8_192);
     expect(received.endsWith("TAIL_MARKER")).toBe(true);
+  });
+  it("settle 뒤에도 SIGTERM을 무시한 자식에게 SIGKILL을 보낸다", async () => {
+    const s = setup();
+    const done = runProviderProcess(spec, s.deps);
+    await Promise.resolve();
+    s.child.stdout.emit("data", Buffer.alloc(262_145, 97));
+    await expect(done).resolves.toMatchObject({ ok: false, code: "outputLimitExceeded" });
+    expect(s.child.kills).toEqual(["SIGTERM"]);
+    s.clock.advance(1_000);
+    expect(s.child.kills).toEqual(["SIGTERM", "SIGKILL"]);
+  });
+  it("자식이 이미 닫혔으면 SIGKILL을 보내지 않는다", async () => {
+    const s = setup();
+    const done = runProviderProcess(spec, s.deps);
+    await Promise.resolve();
+    s.clock.advance(10);
+    expect(s.child.kills).toEqual(["SIGTERM"]);
+    s.child.close(1);
+    await done;
+    s.clock.advance(1_000);
+    expect(s.child.kills).toEqual(["SIGTERM"]);
+  });
+  it("stdin 스트림 error는 실행 결과를 바꾸지 않는다", async () => {
+    const s = setup();
+    const unhandled: unknown[] = [];
+    const onUnhandled = (value: unknown) => unhandled.push(value);
+    process.on("unhandledRejection", onUnhandled);
+    try {
+      const done = runProviderProcess(spec, s.deps);
+      await Promise.resolve();
+      s.child.stdin.emit("error", Object.assign(new Error("write EPIPE"), { code: "EPIPE" }));
+      s.child.stdout.emit("data", Buffer.from('{"ok":true}'));
+      s.child.close(0);
+      await expect(done).resolves.toMatchObject({ ok: true, value: { ok: true } });
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+    }
   });
   it("timeout·취소 뒤 늦은 settlement를 관찰한다", async () => {
     const s = setup();

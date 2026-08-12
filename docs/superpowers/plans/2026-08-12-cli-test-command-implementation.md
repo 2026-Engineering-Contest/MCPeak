@@ -825,8 +825,10 @@ OhMyMCP CLI test 명령 실제 실행 흐름 구현 계획을 오케스트레이
   docs/superpowers/specs/2026-08-12-cli-test-command-design.md
   docs/superpowers/plans/2026-08-12-cli-test-command-implementation.md
 
-git_dir와 git_common_dir가 다르면 현재 checkout이 이미 연결 worktree다. 중첩 worktree를 만들지
-말고 repo_root를 cli_worktree로 사용해라. 같으면 다음 값을 계산해라.
+git_dir와 git_common_dir가 다르면 현재 checkout이 이미 연결 worktree다. 이때 current_branch가
+정확히 `feat/cli-test-command`가 아니면 worktree나 파일을 변경하지 말고 BLOCKED로 끝내라.
+branch가 일치할 때만 중첩 worktree를 만들지 말고 repo_root를 cli_worktree로 사용해라. git_dir와
+git_common_dir가 같으면 다음 값을 계산해라.
 
   worktree_parent="$(dirname "$repo_root")/OhMyMCP-worktrees"
   cli_worktree="$worktree_parent/cli-test-command"

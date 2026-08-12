@@ -298,8 +298,13 @@ CLI는 `onEvent`를 제공하지 않는다. 이번 출력 계약은 중간 이�
   호출해 열린 프로세스를 정리한다.
 - execution을 얻은 뒤에는 `finalizeRunnerExecution`이 report 관찰, drain, graceful close,
   force close와 오류 집계를 전부 소유한다.
-- `finalizeRunnerExecution`이 reject하면 CLI가 `client.close()`를 별도로 호출해 primary 오류를
-  덮지 않는다. finalizer가 반환한 report와 cleanup 오류 순서를 그대로 보존한다.
+- `finalizeRunnerExecution`이 reject하면 CLI는 `client.close()`나 `connection.forceClose()`를 다시
+  호출하지 않는다. caller가 만든 shutdown controller와 finalizer가 유일한 종료 경로다.
+- drain이 `deadlineExceeded`이면 finalizer가 일반 close를 건너뛰고 shutdown controller의
+  `forceClose`를 호출한다. CLI가 이 처리를 일반 close로 바꾸지 않는다.
+- finalizer reject에는 report와 cleanup 오류가 정해진 순서로 집계돼 있다. CLI는 이 오류를
+  `RUNNER_FINALIZATION_FAILED`로 분류하고 stdout을 비운 채 stderr를 출력한 뒤 종료 코드 1을
+  반환하며, 집계된 오류를 다른 cleanup 오류로 덮지 않는다.
 - 정상·실패 report가 반환된 경우 finalization은 이미 끝났으므로 그 뒤에 report를 출력한다.
 - report 직렬화나 출력 전에 finalization이 실패하면 부분 report를 stdout에 출력하지 않는다.
 

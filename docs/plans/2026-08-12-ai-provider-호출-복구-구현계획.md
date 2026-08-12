@@ -335,7 +335,11 @@ cancelled
 `{timeoutMs}`는 `result.failure.timeoutMs`를 넣는다. `exitCode`가 `undefined`면 그 문장에서
 `코드 {exitCode}로 ` 부분을 빼고 `종료했습니다`로 쓴다.
 
-`357`행과 `364`행 두 호출부 모두 분기 대상이다.
+`364`행(`result.status === "providerFailed"`)만 분기 대상이다. `357`행은 `dispatchAuthoringRequest`
+자체가 throw한 경로라 `failure.code`를 알 수 없으므로 기존 `GENERATE_PROVIDER_FAILED`를 유지한다.
+원인을 모르는 채 원인별 문구를 고르면 잘못된 조치를 안내한다. 이 경로까지 나누려면
+`dispatchAuthoringRequest`가 던지는 오류 형태를 계약으로 고정해야 하고 그것은 `packages/generate`
+소관이므로 이 태스크의 범위 밖이다.
 
 **테스트**
 

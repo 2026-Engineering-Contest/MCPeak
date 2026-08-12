@@ -1,8 +1,10 @@
 # ADR-0007: provider 전송 스키마를 로컬 검증 스키마와 분리한다
 
-- 상태: 승인
+- 상태: 제안
 - 날짜: 2026-08-12
 - 담당: generate
+- 작성자: @seodduu (generate 파트)
+- 승인: 미승인. 아래 '승인' 절 참조
 - 참조: [AI provider 스키마 호환성 조사](../ai-provider-schema-compatibility.md)
 
 ## 배경
@@ -63,3 +65,13 @@ allowlist, 비밀값 redaction)가 전부 그대로 돈다. provider가 무엇�
 - `hasRequiredCapabilities` help 검사를 제거했다. `codex exec --help`에 없는 config key를 요구해
   codex가 한 번도 실행되지 않았고, spawn 실패는 `provider-process.ts`가 이미
   `providerUnavailable`로 매핑한다.
+
+## 승인
+
+- 상태: 미승인. PR #37 리뷰에서 검토 중이다.
+- 필요한 승인: `generate` 오너. 전송 스키마와 로컬 검증 스키마를 분리하는 결정이 `generate`의
+  공개 API(`PROVIDER_OUTPUT_SCHEMA`)를 늘린다.
+- 확정 방법: PR #37이 머지되면 이 결정이 코드로 확정된다. 그때 이 절의 상태와 문서 머리의
+  `상태`를 `승인`으로 바꾸고 `승인일`과 승인한 오너를 적는다.
+- 되돌리는 조건: 두 CLI 중 하나가 재귀 참조를 포함한 스키마를 받아들이게 되면 A안(인라인 전개)을
+  다시 검토한다.

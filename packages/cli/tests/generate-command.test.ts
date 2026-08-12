@@ -301,6 +301,7 @@ describe("AI 대화형 검토", () => {
       input: vi.fn(async () => inputs.shift() ?? ""),
       confirm: vi.fn(async () => confirms.shift() ?? false),
       write: vi.fn(),
+      close: vi.fn(),
     };
     const requests: unknown[] = [];
     const provider = {
@@ -485,6 +486,7 @@ describe("AI 대화형 검토", () => {
     await expect(runGenerateCommand(interactiveArgv, d.value)).resolves.toBe(0);
     expect(d.provider.author).not.toHaveBeenCalled();
     expect(d.value.openTemp).not.toHaveBeenCalled();
+    expect(d.io.close).toHaveBeenCalledOnce();
   });
   it("failure 출력에 prompt stdout stderr native stack을 넣지 않는다", async () => {
     const d = reviewDeps(["codex", "cancel"], ["", "request"], [true]);

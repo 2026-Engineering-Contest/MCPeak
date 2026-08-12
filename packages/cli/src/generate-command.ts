@@ -66,6 +66,7 @@ export interface ReviewIO {
   confirm(message: string): Promise<boolean>;
   write(text: string): void;
   readonly interactive: boolean;
+  close?(): void;
 }
 type TestAuthoringProvider = import("@ohmymcp/generate").TestAuthoringProvider;
 class UsageError extends Error {}
@@ -237,130 +238,134 @@ async function runInteractiveReview(
   let candidate: SanitizedAuthoringCandidate | undefined = session.workingCandidate;
   let preferred = input.provider;
   let model = input.model;
-  while (true) {
-    const action = await io.choose("검토 메뉴", [
-      "codex",
-      "claude",
-      "apply-all",
-      "select",
-      "revise",
-      "edit",
-      "save",
-      "cancel",
-    ]);
-    if (action === "cancel") return 0;
-    if (action === "save") {
-      const fingerprint = session.approvedDraft.suiteFingerprint;
-      io.write(`Final fingerprint: ${fingerprint}\n`);
-      if (!(await io.confirm("최종 JSON을 저장할까요?"))) continue;
-      const final = deps.finalizeAuthoringDraft({
-        session,
-        approval: { approved: true, fingerprint },
-      });
-      if (!final.finalized) {
-        safeFailure(deps, "FINALIZE_FAILED");
+  try {
+    while (true) {
+      const action = await io.choose("검토 메뉴", [
+        "codex",
+        "claude",
+        "apply-all",
+        "select",
+        "revise",
+        "edit",
+        "save",
+        "cancel",
+      ]);
+      if (action === "cancel") return 0;
+      if (action === "save") {
+        const fingerprint = session.approvedDraft.suiteFingerprint;
+        io.write(`Final fingerprint: ${fingerprint}\n`);
+        if (!(await io.confirm("최종 JSON을 저장할까요?"))) continue;
+        const final = deps.finalizeAuthoringDraft({
+          session,
+          approval: { approved: true, fingerprint },
+        });
+        if (!final.finalized) {
+          safeFailure(deps, "FINALIZE_FAILED");
+          continue;
+        }
+        try {
+          await saveSuite(
+            input,
+            deps.getAuthoringExecutionSuite(final.snapshot),
+            final.snapshot.fingerprint,
+            deps,
+          );
+          return 0;
+        } catch {
+          safeFailure(deps, "SAVE_FAILED");
+          continue;
+        }
+      }
+      if (action === "apply-all" || action === "select") {
+        if (!candidate) {
+          io.write("적용할 candidate가 없습니다.\n");
+          continue;
+        }
+        const diff = makeDiff({ session, candidate });
+        showDiff(io, diff);
+        const selected =
+          action === "apply-all"
+            ? diff.changes.map((change) => change.id)
+            : (await io.input("적용할 change ID를 쉼표로 입력하세요: "))
+                .split(",")
+                .map((id) => id.trim())
+                .filter(Boolean);
+        if (!(await io.confirm("선택한 변경을 적용할까요?"))) continue;
+        const result = apply({
+          session,
+          preview: diff,
+          selectedChangeIds: selected,
+          approval: { approved: true, fingerprint: diff.candidateFingerprint },
+        });
+        if (!result.applied) io.write(`변경을 적용하지 않았습니다: ${result.reason}\n`);
+        else io.write(`revision ${result.draft.revision}을 승인했습니다.\n`);
         continue;
       }
+      if (action === "edit") {
+        const path = await io.input("편집한 JSON 파일 경로: ");
+        try {
+          const parsed = JSON.parse(
+            new TextDecoder("utf-8", { fatal: true }).decode(await deps.readFile(path)),
+          );
+          const result = reviewLocal({ session, candidate: parsed, tools });
+          if (result.status === "preview") {
+            candidate = result.preview;
+            showDiff(io, makeDiff({ session, candidate }));
+          } else io.write("편집한 JSON을 candidate로 사용할 수 없습니다.\n");
+        } catch {
+          safeFailure(deps, "LOCAL_JSON_INVALID");
+        }
+        continue;
+      }
+      const providerId = action === "revise" ? preferred : action;
+      if (providerId !== "codex" && providerId !== "claude") {
+        io.write("지원하지 않는 메뉴입니다.\n");
+        continue;
+      }
+      if (action !== "revise" && providerId !== preferred)
+        model = input.provider === providerId ? input.model : undefined;
+      preferred = providerId;
+      const selectedModel =
+        model ?? (await io.input(`${providerId} model (${defaultModel(providerId)}): `));
+      model = selectedModel || defaultModel(providerId);
+      const provider = deps.providers?.[providerId]?.(model);
+      if (!provider) {
+        io.write(`${providerId} provider를 사용할 수 없습니다.\n`);
+        continue;
+      }
+      const instruction = await io.input(action === "revise" ? "피드백: " : "AI 요청: ");
+      const preview = prepare({
+        mode: action === "revise" ? "revise" : "initial",
+        instruction,
+        baseline: session.baseline.suite,
+        candidate: candidate?.result.suite ?? session.baseline.suite,
+        tools,
+        providerId,
+        model,
+      });
+      showRequest(io, preview);
+      if (!(await io.confirm("이 요청을 전송할까요?"))) continue;
+      let result: Awaited<ReturnType<typeof dispatch>>;
       try {
-        await saveSuite(
-          input,
-          deps.getAuthoringExecutionSuite(final.snapshot),
-          final.snapshot.fingerprint,
-          deps,
-        );
-        return 0;
+        result = await dispatch({
+          provider,
+          preview,
+          approval: { approved: true, fingerprint: preview.fingerprint },
+          session,
+        });
       } catch {
-        safeFailure(deps, "SAVE_FAILED");
+        safeFailure(deps, "PROVIDER_FAILED");
         continue;
       }
+      if (result.status === "preview") {
+        candidate = result.preview;
+        showDiff(io, makeDiff({ session, candidate }));
+      } else if (result.status === "questions") io.write(`질문:\n${result.questions.join("\n")}\n`);
+      else if (result.status === "providerFailed") safeFailure(deps, "PROVIDER_FAILED");
+      else io.write("AI 결과를 검토 후보로 사용할 수 없습니다.\n");
     }
-    if (action === "apply-all" || action === "select") {
-      if (!candidate) {
-        io.write("적용할 candidate가 없습니다.\n");
-        continue;
-      }
-      const diff = makeDiff({ session, candidate });
-      showDiff(io, diff);
-      const selected =
-        action === "apply-all"
-          ? diff.changes.map((change) => change.id)
-          : (await io.input("적용할 change ID를 쉼표로 입력하세요: "))
-              .split(",")
-              .map((id) => id.trim())
-              .filter(Boolean);
-      if (!(await io.confirm("선택한 변경을 적용할까요?"))) continue;
-      const result = apply({
-        session,
-        preview: diff,
-        selectedChangeIds: selected,
-        approval: { approved: true, fingerprint: diff.candidateFingerprint },
-      });
-      if (!result.applied) io.write(`변경을 적용하지 않았습니다: ${result.reason}\n`);
-      else io.write(`revision ${result.draft.revision}을 승인했습니다.\n`);
-      continue;
-    }
-    if (action === "edit") {
-      const path = await io.input("편집한 JSON 파일 경로: ");
-      try {
-        const parsed = JSON.parse(
-          new TextDecoder("utf-8", { fatal: true }).decode(await deps.readFile(path)),
-        );
-        const result = reviewLocal({ session, candidate: parsed, tools });
-        if (result.status === "preview") {
-          candidate = result.preview;
-          showDiff(io, makeDiff({ session, candidate }));
-        } else io.write("편집한 JSON을 candidate로 사용할 수 없습니다.\n");
-      } catch {
-        safeFailure(deps, "LOCAL_JSON_INVALID");
-      }
-      continue;
-    }
-    const providerId = action === "revise" ? preferred : action;
-    if (providerId !== "codex" && providerId !== "claude") {
-      io.write("지원하지 않는 메뉴입니다.\n");
-      continue;
-    }
-    if (action !== "revise" && providerId !== preferred)
-      model = input.provider === providerId ? input.model : undefined;
-    preferred = providerId;
-    const selectedModel =
-      model ?? (await io.input(`${providerId} model (${defaultModel(providerId)}): `));
-    model = selectedModel || defaultModel(providerId);
-    const provider = deps.providers?.[providerId]?.(model);
-    if (!provider) {
-      io.write(`${providerId} provider를 사용할 수 없습니다.\n`);
-      continue;
-    }
-    const instruction = await io.input(action === "revise" ? "피드백: " : "AI 요청: ");
-    const preview = prepare({
-      mode: action === "revise" ? "revise" : "initial",
-      instruction,
-      baseline: session.baseline.suite,
-      candidate: candidate?.result.suite ?? session.baseline.suite,
-      tools,
-      providerId,
-      model,
-    });
-    showRequest(io, preview);
-    if (!(await io.confirm("이 요청을 전송할까요?"))) continue;
-    let result: Awaited<ReturnType<typeof dispatch>>;
-    try {
-      result = await dispatch({
-        provider,
-        preview,
-        approval: { approved: true, fingerprint: preview.fingerprint },
-        session,
-      });
-    } catch {
-      safeFailure(deps, "PROVIDER_FAILED");
-      continue;
-    }
-    if (result.status === "preview") {
-      candidate = result.preview;
-      showDiff(io, makeDiff({ session, candidate }));
-    } else if (result.status === "questions") io.write(`질문:\n${result.questions.join("\n")}\n`);
-    else if (result.status === "providerFailed") safeFailure(deps, "PROVIDER_FAILED");
-    else io.write("AI 결과를 검토 후보로 사용할 수 없습니다.\n");
+  } finally {
+    io.close?.();
   }
 }
 
@@ -450,5 +455,6 @@ export function nodeReviewIO(): ReviewIO {
     confirm: async (message) =>
       (await readline.question(`${message} [y/N] `)).trim().toLowerCase() === "y",
     write: (text) => process.stdout.write(text),
+    close: () => readline.close(),
   };
 }

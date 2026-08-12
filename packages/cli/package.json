@@ -31,9 +31,11 @@
   ],
   "scripts": {
     "build": "tsdown --config-loader native",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:e2e": "node ./tests/dist-cli-e2e.mjs"
   },
   "dependencies": {
+    "@ohmymcp/core": "workspace:*",
     "@ohmymcp/runner": "workspace:*",
     "@ohmymcp/generate": "workspace:*",
     "@ohmymcp/record": "workspace:*",

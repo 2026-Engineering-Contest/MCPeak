@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "id": "weather-server-cli",
+  "name": "weather-server CLI E2E",
+  "defaultTimeoutMs": 10000,
+  "cases": [
+    {
+      "id": "weather-tool-exists",
+      "name": "get_weather 도구를 제공한다",
+      "operation": { "type": "listTools" },
+      "assertions": [{ "type": "toolExists", "tool": "get_weather" }]
+    },
+    {
+      "id": "seoul-weather-succeeds",
+      "name": "서울 날씨를 정상 조회한다",
+      "operation": { "type": "callTool", "tool": "get_weather", "input": { "city": "서울" } },
+      "assertions": [{ "type": "isError", "expected": false }]
+    },
+    {
+      "id": "unsupported-city-is-tool-error",
+      "name": "미지원 도시는 도구 오류를 반환한다",
+      "operation": { "type": "callTool", "tool": "get_weather", "input": { "city": "없는도시" } },
+      "assertions": [{ "type": "isError", "expected": true }]
+    }
+  ]
+}

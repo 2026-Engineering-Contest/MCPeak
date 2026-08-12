@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "weather-server-cli-failing",
+  "name": "weather-server CLI 실패 E2E",
+  "cases": [
+    {
+      "id": "missing-tool",
+      "name": "존재하지 않는 도구를 요구한다",
+      "operation": { "type": "listTools" },
+      "assertions": [{ "type": "toolExists", "tool": "missing_weather_tool" }]
+    }
+  ]
+}

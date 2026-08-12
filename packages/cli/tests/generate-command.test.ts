@@ -34,6 +34,10 @@ const fingerprint = createHash("sha256")
   .update('{"cases":[],"defaultTimeoutMs":10000,"id":"weather","name":"Weather","schemaVersion":1}')
   .digest("hex");
 
+/** 임시 파일 이름은 실행마다 고유하므로 open 이벤트의 경로는 비교에서 제외한다. */
+const normalizedEvents = (events: readonly string[]): string[] =>
+  events.map((event) => (event.startsWith("open:") ? "open" : event));
+
 function deps(overrides: Partial<GenerateCommandDependencies> = {}) {
   const events: string[] = [];
   const connection: McpStdioConnection = {
@@ -95,8 +99,8 @@ function deps(overrides: Partial<GenerateCommandDependencies> = {}) {
       events.push("read");
       return new TextEncoder().encode(JSON.stringify(suite));
     }),
-    rename: vi.fn(async () => {
-      events.push("rename");
+    link: vi.fn(async () => {
+      events.push("link");
     }),
     unlink: vi.fn(async () => {
       events.push("unlink");
@@ -216,18 +220,19 @@ describe("runGenerateCommand", () => {
     const stderr: string[] = [];
     d.value.writeStderr = (text) => stderr.push(text);
     expect(await runGenerateCommand(argv, d.value)).toBe(0);
-    expect(d.events).toEqual([
+    expect(normalizedEvents(d.events)).toEqual([
       "connect",
       "listTools",
       "close",
       "baseline",
       "finalize",
-      "open:/tmp/.out.json.ohmymcp.tmp",
+      "open",
       "write",
       "fsync",
       "fileClose",
       "read",
-      "rename",
+      "link",
+      "unlink",
     ]);
   });
   it("listTools 실패는 열린 connection을 강제 종료한다", async () => {
@@ -244,24 +249,72 @@ describe("runGenerateCommand", () => {
     d.value.writeStderr = (text) => stderr.push(text);
     expect(await runGenerateCommand(argv, d.value)).toBe(1);
     expect(d.value.openTemp).not.toHaveBeenCalled();
-    expect(d.value.rename).not.toHaveBeenCalled();
+    expect(d.value.link).not.toHaveBeenCalled();
     const output = stderr.join("");
     expect(output).toContain("GENERATE_OUTPUT_EXISTS");
     expect(output).toContain("경로: /tmp/out.json");
     expect(output).not.toContain("GENERATE_FAILED");
   });
-  it("같은 디렉터리 temp write를 다시 읽어 검증한 뒤 rename한다", async () => {
+  it("같은 디렉터리 temp write를 다시 읽어 검증한 뒤 link로 커밋한다", async () => {
     const d = deps();
     await runGenerateCommand(argv, d.value);
-    expect(d.events.slice(-6)).toEqual([
-      "open:/tmp/.out.json.ohmymcp.tmp",
+    expect(normalizedEvents(d.events).slice(-7)).toEqual([
+      "open",
       "write",
       "fsync",
       "fileClose",
       "read",
-      "rename",
+      "link",
+      "unlink",
     ]);
     expect(d.value.validateSuite).toHaveBeenCalledOnce();
+    // 임시 파일은 출력 경로와 같은 디렉터리에 있어야 link가 같은 파일시스템 안에서 끝난다.
+    const opened = d.events.find((event) => event.startsWith("open:")) ?? "";
+    expect(opened).toMatch(/^open:\/tmp\/\.out\.json\.ohmymcp\./);
+  });
+  it("선검사 뒤 커밋 직전에 파일이 생겨도 덮어쓰지 않는다", async () => {
+    // 경쟁 조건 재현. exists()는 없다고 답했지만 link 시점에는 이미 다른 프로세스가 만들어 뒀다.
+    const d = deps({ exists: vi.fn(async () => false) });
+    const stderr: string[] = [];
+    d.value.writeStderr = (text) => stderr.push(text);
+    d.value.link = vi.fn(async () => {
+      const error: NodeJS.ErrnoException = new Error("EEXIST: file already exists");
+      error.code = "EEXIST";
+      throw error;
+    });
+    expect(await runGenerateCommand(argv, d.value)).toBe(1);
+    const output = stderr.join("");
+    expect(output).toContain("GENERATE_OUTPUT_EXISTS");
+    expect(output).toContain("경로: /tmp/out.json");
+    expect(output).not.toContain("GENERATE_FAILED");
+    // 남의 파일을 건드리지 않았고, 자기 임시 파일은 치웠다.
+    expect(d.value.unlink).toHaveBeenCalledOnce();
+    expect(normalizedEvents(d.events)).toContain("unlink");
+  });
+  it("커밋 실패가 EEXIST가 아니면 출력 충돌로 오인하지 않는다", async () => {
+    const d = deps();
+    const stderr: string[] = [];
+    d.value.writeStderr = (text) => stderr.push(text);
+    d.value.link = vi.fn(async () => {
+      const error: NodeJS.ErrnoException = new Error("EXDEV: cross-device link");
+      error.code = "EXDEV";
+      throw error;
+    });
+    expect(await runGenerateCommand(argv, d.value)).toBe(1);
+    const output = stderr.join("");
+    expect(output).toContain("GENERATE_FAILED");
+    expect(output).not.toContain("GENERATE_OUTPUT_EXISTS");
+    expect(output).not.toContain("EXDEV");
+  });
+  it("임시 파일 이름은 실행마다 다르다", async () => {
+    const opened: string[] = [];
+    for (let run = 0; run < 2; run += 1) {
+      const d = deps();
+      await runGenerateCommand(argv, d.value);
+      opened.push(d.events.find((event) => event.startsWith("open:")) ?? "");
+    }
+    expect(opened[0]).not.toBe(opened[1]);
+    expect(opened[0]).toMatch(/^open:\/tmp\/\.out\.json\.ohmymcp\./);
   });
   it("temp 충돌과 재검증 실패는 목표 파일을 바꾸지 않는다", async () => {
     for (const override of [
@@ -274,7 +327,7 @@ describe("runGenerateCommand", () => {
     ]) {
       const d = deps(override);
       expect(await runGenerateCommand(argv, d.value)).toBe(1);
-      expect(d.value.rename).not.toHaveBeenCalled();
+      expect(d.value.link).not.toHaveBeenCalled();
     }
   });
   it("저장 JSON은 고정 필드 순서, 2칸 indent와 마지막 newline을 쓴다", async () => {
@@ -756,7 +809,7 @@ describe("AI 대화형 검토", () => {
     expect(d.stdout.join("")).toContain("입력이 종료되어 검토를 취소했습니다");
     assertClosedExit(d);
     expect(d.value.openTemp).not.toHaveBeenCalled();
-    expect(d.value.rename).not.toHaveBeenCalled();
+    expect(d.value.link).not.toHaveBeenCalled();
     expect(d.io.close).toHaveBeenCalledOnce();
   });
   it("입력 닫힘이 아닌 오류는 삼키지 않는다", async () => {
@@ -776,7 +829,7 @@ describe("AI 대화형 검토", () => {
       await expect(runGenerateCommand(interactiveArgv, d.value)).resolves.toBe(0);
       assertClosedExit(d);
       expect(d.value.openTemp).not.toHaveBeenCalled();
-      expect(d.value.rename).not.toHaveBeenCalled();
+      expect(d.value.link).not.toHaveBeenCalled();
       expect(d.io.close).toHaveBeenCalledOnce();
     }
   });

@@ -2,7 +2,7 @@
 
 ## 작업 공간
 
-- pwd: `/Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/ohmymcp-review-generate`
+- worktree: `<repo-root>/.claude/worktrees/ohmymcp-review-generate`
 - 브랜치: `fix/review-generate` (`cdb7d4e`에서 분기)
 - `git rev-parse HEAD`: `cdb7d4e69cd270f937d9839d970e94645d2ee76d`
 - 진입 시 `git status --short` 비어 있었고 `pnpm install` 뒤 `pnpm vitest run packages/generate`가

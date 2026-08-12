@@ -13,7 +13,10 @@ import type {
   SanitizedAuthoringCandidate,
 } from "./authoring-types.js";
 import { deepFreeze, sha256 } from "./canonical.js";
-import type { AuthoringProviderFailureCode } from "./provider-process.js";
+import type {
+  AuthoringProviderFailureCode,
+  AuthoringProviderFailureReason,
+} from "./provider-process.js";
 import { redactAuthoringSuite } from "./redaction.js";
 
 export type AuthoringRequestMode = "initial" | "revise";
@@ -84,6 +87,8 @@ export interface PublicProviderFailure {
   readonly code: AuthoringProviderFailureCode;
   readonly timeoutMs: number;
   readonly exitCode?: number;
+  /** 닫힌 enum이며 CLI 안내 분기에만 쓴다. raw stream 문자열은 절대 담기지 않는다. */
+  readonly reason?: AuthoringProviderFailureReason;
   readonly stderr?: { readonly captured: boolean; readonly truncated: boolean };
 }
 
@@ -108,6 +113,13 @@ const providerFailureCodes = new Set<AuthoringProviderFailureCode>([
   "invalidJson",
   "schemaMismatch",
   "internal",
+]);
+const providerFailureReasons = new Set<AuthoringProviderFailureReason>([
+  "notAuthenticated",
+  "unknownModel",
+  "rateLimited",
+  "badRequest",
+  "serverError",
 ]);
 const plain = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" &&
@@ -181,6 +193,7 @@ function publicProviderFailure(error: unknown, state: RequestState): PublicProvi
   const source = error as {
     code?: unknown;
     exitCode?: unknown;
+    reason?: unknown;
     stderr?: { captured?: unknown; truncated?: unknown };
   };
   const code =
@@ -198,7 +211,20 @@ function publicProviderFailure(error: unknown, state: RequestState): PublicProvi
     typeof source?.stderr?.captured === "boolean" && typeof source.stderr.truncated === "boolean"
       ? { captured: source.stderr.captured, truncated: source.stderr.truncated }
       : undefined;
-  return { providerId: state.providerId, code, timeoutMs: state.timeoutMs, exitCode, stderr };
+  // enum 멤버만 통과시킨다. 조작된 오류 객체의 임의 문자열이 UI로 새어 나가지 않게 한다.
+  const reason =
+    typeof source?.reason === "string" &&
+    providerFailureReasons.has(source.reason as AuthoringProviderFailureReason)
+      ? (source.reason as AuthoringProviderFailureReason)
+      : undefined;
+  return {
+    providerId: state.providerId,
+    code,
+    timeoutMs: state.timeoutMs,
+    exitCode,
+    reason,
+    stderr,
+  };
 }
 function safeIssues(input: unknown): readonly PublicProviderValidationIssue[] {
   const result = validateMcpSuite(input);

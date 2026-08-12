@@ -160,6 +160,65 @@ describe("authoring request", () => {
       expect(JSON.stringify(result)).not.toContain("RAW_");
     }
   });
+  it("PublicProviderFailure가 reason을 그대로 전달한다", async () => {
+    const preview = prepareAuthoringRequest(options());
+    const rawError = Object.assign(new Error("boom"), {
+      code: "nonZeroExit",
+      exitCode: 1,
+      reason: "unknownModel",
+    });
+    await expect(
+      dispatchAuthoringRequest({
+        provider: { id: "codex", author: async () => Promise.reject(rawError) },
+        preview,
+        approval: { approved: true, fingerprint: preview.fingerprint },
+      }),
+    ).resolves.toMatchObject({
+      status: "providerFailed",
+      failure: { code: "nonZeroExit", reason: "unknownModel" },
+    });
+  });
+  it("enum 밖의 reason 값은 버린다", async () => {
+    const preview = prepareAuthoringRequest(options());
+    const rawError = Object.assign(new Error("boom"), {
+      code: "nonZeroExit",
+      exitCode: 1,
+      reason: "arbitraryString",
+    });
+    const result = await dispatchAuthoringRequest({
+      provider: { id: "codex", author: async () => Promise.reject(rawError) },
+      preview,
+      approval: { approved: true, fingerprint: preview.fingerprint },
+    });
+    if (result.status !== "providerFailed") throw new Error("providerFailed가 필요합니다.");
+    expect(result.failure.reason).toBeUndefined();
+    expect(JSON.stringify(result)).not.toContain("arbitraryString");
+  });
+  it("기존 stderr {captured, truncated} 모양이 그대로다", async () => {
+    const preview = prepareAuthoringRequest(options());
+    const rawError = Object.assign(new Error("boom"), {
+      code: "nonZeroExit",
+      exitCode: 1,
+      reason: "rateLimited",
+      stderr: { captured: true, truncated: true },
+    });
+    const result = await dispatchAuthoringRequest({
+      provider: { id: "codex", author: async () => Promise.reject(rawError) },
+      preview,
+      approval: { approved: true, fingerprint: preview.fingerprint },
+    });
+    expect(result).toEqual({
+      status: "providerFailed",
+      failure: {
+        providerId: "codex",
+        code: "nonZeroExit",
+        timeoutMs: preview.providerTimeoutMs,
+        exitCode: 1,
+        reason: "rateLimited",
+        stderr: { captured: true, truncated: true },
+      },
+    });
+  });
   it("dispatch candidate를 session diff와 승인 적용으로 연결한다", async () => {
     const baseline = createBaselineSuite(tools, { suiteId: "weather", suiteName: "날씨" });
     const session = createAuthoringSession(baseline);

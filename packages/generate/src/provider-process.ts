@@ -13,6 +13,17 @@ export type AuthoringProviderFailureCode =
   | "schemaMismatch"
   | "internal";
 
+/**
+ * 비정상 종료의 원인 분류. CLI가 돌려준 숫자 상태 코드에서만 유도하는 닫힌 enum이며,
+ * raw stream의 어떤 부분 문자열도 여기에 담기지 않는다. 근거가 없으면 undefined다.
+ */
+export type AuthoringProviderFailureReason =
+  | "notAuthenticated"
+  | "unknownModel"
+  | "rateLimited"
+  | "badRequest"
+  | "serverError";
+
 export interface ProviderProcessChild {
   readonly stdin: { write(value: string): unknown; end(): unknown };
   readonly stdout: NodeJS.EventEmitter;
@@ -50,6 +61,14 @@ export interface ProviderProcessSpec {
   readonly maxOutputBytes: number;
   readonly signal?: AbortSignal;
   readonly files?: readonly { readonly name: string; readonly contents: string }[];
+  /**
+   * 비정상 종료 시 실패 원인을 분류한다. raw stream은 이 함수 밖으로 나가지 않으며 반환값은
+   * 닫힌 enum이다. provider별 신호 위치가 달라 provider 어댑터가 주입한다.
+   */
+  readonly classifyFailure?: (streams: {
+    readonly stdout: string;
+    readonly stderr: string;
+  }) => AuthoringProviderFailureReason | undefined;
 }
 export type ProviderProcessResult =
   | {
@@ -61,10 +80,17 @@ export type ProviderProcessResult =
       readonly ok: false;
       readonly code: AuthoringProviderFailureCode;
       readonly exitCode?: number;
+      readonly reason?: AuthoringProviderFailureReason;
       readonly stderr?: { readonly captured: boolean; readonly truncated: boolean };
     };
 
 const stderrLimit = 65_536;
+/**
+ * 분류에 넘길 stderr 상한. provider가 우리가 보낸 프롬프트를 stderr로 그대로 echo하는 경우가 있고
+ * 그 안에는 untrusted한 툴 설명이 들어 있다. 상태 코드 줄은 항상 끝부분에 오므로 마지막 8192자만
+ * 링버퍼로 들고, classifyFailure가 없으면 아예 보관하지 않는다.
+ */
+const stderrClassifyLimit = 8_192;
 const defaultClock: ProviderProcessClock = {
   setTimeout: (callback, ms) => {
     const timer = setTimeout(callback, ms);
@@ -119,6 +145,8 @@ export async function runProviderProcess(
     let output = "";
     let outputBytes = 0;
     let stderrBytes = 0;
+    let stderrTail = "";
+    const stderrDecoder = new TextDecoder("utf-8");
     let stderrCaptured = false;
     let stderrTruncated = false;
     let finished = false;
@@ -186,6 +214,10 @@ export async function runProviderProcess(
       stderrCaptured = true;
       stderrBytes += Buffer.byteLength(chunk);
       if (stderrBytes > stderrLimit) stderrTruncated = true;
+      if (spec.classifyFailure !== undefined)
+        stderrTail = (stderrTail + stderrDecoder.decode(chunk, { stream: true })).slice(
+          -stderrClassifyLimit,
+        );
     });
     child.on("error", () => {
       if (!finished) terminate("internal");
@@ -200,10 +232,24 @@ export async function runProviderProcess(
         return;
       }
       if (code !== 0) {
+        let classified: AuthoringProviderFailureReason | undefined;
+        if (spec.classifyFailure !== undefined) {
+          try {
+            output += decoder.decode();
+          } catch {
+            /* 분류용 flush 실패는 무시한다. 분류 근거가 없으면 reason 없이 간다. */
+          }
+          try {
+            classified = spec.classifyFailure({ stdout: output, stderr: stderrTail });
+          } catch {
+            classified = undefined;
+          }
+        }
         settle({
           ok: false,
           code: "nonZeroExit",
           exitCode: code ?? undefined,
+          ...(classified === undefined ? {} : { reason: classified }),
           stderr: diagnostics(),
         });
         return;

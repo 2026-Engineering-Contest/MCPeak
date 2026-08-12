@@ -297,6 +297,19 @@ export function validateAuthoringProviderResult(
   if (!plain(raw) || (raw.status !== "candidate" && raw.status !== "questions"))
     return { status: "invalid", issues: safeIssues(raw) };
   if (raw.status === "questions") {
+    // questions 응답에 suite/summary/warnings가 딸려오면 candidate를 우회 적용하려는 시도로 본다.
+    if ("suite" in raw || "summary" in raw || "warnings" in raw)
+      return {
+        status: "invalid",
+        issues: [
+          {
+            code: "INVALID_VALUE",
+            path: "status",
+            message: "questions 응답에 suite 결과가 함께 왔습니다.",
+            hint: "질문만 반환하거나 candidate로 반환하세요.",
+          },
+        ],
+      };
     const questions = raw.questions;
     return Array.isArray(questions) &&
       questions.length > 0 &&

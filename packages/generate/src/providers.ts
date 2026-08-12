@@ -1,9 +1,8 @@
-import { execFile } from "node:child_process";
 import { tmpdir } from "node:os";
-import { promisify } from "node:util";
+import { MCP_SUITE_JSON_SCHEMA } from "@ohmymcp/runner";
 import type { AuthoringRequest, TestAuthoringProvider } from "./authoring-request.js";
 import { DEFAULT_MAX_RESULT_BYTES } from "./authoring-request.js";
-import { AUTHORING_OUTPUT_SCHEMA } from "./authoring-schema.js";
+import { PROVIDER_OUTPUT_SCHEMA } from "./authoring-schema.js";
 import {
   type AuthoringProviderFailureCode,
   type ProviderProcessResult,
@@ -45,12 +44,9 @@ export class AuthoringProviderError extends Error {
 type Runner = (spec: ProviderProcessSpec) => Promise<ProviderProcessResult>;
 type Options = {
   readonly run?: Runner;
-  readonly capabilities?: () => Promise<boolean>;
   readonly environment?: NodeJS.ProcessEnv;
   readonly model?: string;
-  readonly runHelp?: (command: string, args: readonly string[]) => Promise<string>;
 };
-const execFileAsync = promisify(execFile);
 function environment(input: NodeJS.ProcessEnv | undefined): NodeJS.ProcessEnv {
   const source = input ?? process.env;
   return Object.fromEntries(
@@ -60,53 +56,51 @@ function environment(input: NodeJS.ProcessEnv | undefined): NodeJS.ProcessEnv {
   );
 }
 function prompt(request: AuthoringRequest): string {
-  return `${FIXED_INSTRUCTION}\n\n${JSON.stringify(request)}\n${UNTRUSTED_WARNING}`;
+  return `${FIXED_INSTRUCTION}\n\nTestSuiteSpec JSON Schema:\n${JSON.stringify(MCP_SUITE_JSON_SCHEMA)}\n\nsuiteJson 필드에는 이 스키마를 만족하는 suite를 JSON 문자열로 직렬화해 넣는다.\n\n${JSON.stringify(request)}\n${UNTRUSTED_WARNING}`;
 }
-async function hasRequiredCapabilities(id: "codex" | "claude", options: Options): Promise<boolean> {
-  if (options.capabilities) return options.capabilities();
-  const args = id === "codex" ? ["exec", "--help"] : ["--help"];
-  try {
-    const output = options.runHelp
-      ? await options.runHelp(id, args)
-      : (await execFileAsync(id, args, { env: environment(options.environment) })).stdout;
-    const required =
-      id === "codex"
-        ? [
-            "-C",
-            "-m",
-            "model_reasoning_effort",
-            "read-only",
-            "--ephemeral",
-            "--ignore-user-config",
-            "--ignore-rules",
-            "--skip-git-repo-check",
-            "--output-schema",
-          ]
-        : [
-            "--safe-mode",
-            "--model",
-            "--tools",
-            "--no-session-persistence",
-            "--strict-mcp-config",
-            "--mcp-config",
-            "--output-format",
-            "--json-schema",
-          ];
-    return required.every((flag) => output.includes(flag));
-  } catch {
-    return false;
-  }
-}
+const plain = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+/**
+ * provider 원시 결과를 validateAuthoringProviderResult가 받는 형태로 정규화한다.
+ * 실패는 전부 AuthoringProviderError로 던지며, raw stdout/stderr와 인증정보는 절대 담지 않는다.
+ */
 function unwrap(result: ProviderProcessResult, claude: boolean): unknown {
   if (!result.ok) throw new AuthoringProviderError(result.code, result);
-  if (!claude) return result.value;
-  if (
-    typeof result.value === "object" &&
-    result.value !== null &&
-    "structured_output" in result.value
-  )
-    return (result.value as { structured_output: unknown }).structured_output;
-  throw new AuthoringProviderError("schemaMismatch");
+  let value: unknown = result.value;
+  if (claude) {
+    if (
+      !plain(value) ||
+      value.type !== "result" ||
+      value.subtype !== "success" ||
+      value.is_error === true ||
+      "api_error_status" in value ||
+      !("structured_output" in value)
+    )
+      throw new AuthoringProviderError("schemaMismatch");
+    value = value.structured_output;
+  }
+  if (!plain(value)) throw new AuthoringProviderError("schemaMismatch");
+  if (value.status !== "candidate" && value.status !== "questions")
+    throw new AuthoringProviderError("schemaMismatch");
+  if (value.status === "questions") {
+    if (!Array.isArray(value.questions)) throw new AuthoringProviderError("schemaMismatch");
+    return { status: "questions", questions: value.questions };
+  }
+  if (typeof value.suiteJson !== "string") throw new AuthoringProviderError("schemaMismatch");
+  let suite: unknown;
+  try {
+    suite = JSON.parse(value.suiteJson);
+  } catch {
+    throw new AuthoringProviderError("schemaMismatch");
+  }
+  if (!plain(suite)) throw new AuthoringProviderError("schemaMismatch");
+  return {
+    status: "candidate",
+    suite,
+    summary: value.summary,
+    warnings: value.warnings,
+    questions: value.questions,
+  };
 }
 function makeProvider(id: "codex" | "claude", options: Options): TestAuthoringProvider {
   const run = options.run ?? runProviderProcess;
@@ -115,8 +109,6 @@ function makeProvider(id: "codex" | "claude", options: Options): TestAuthoringPr
     id,
     model,
     async author(request, settings) {
-      if (!(await hasRequiredCapabilities(id, options)))
-        throw new AuthoringProviderError("providerUnavailable");
       const common = {
         stdin: prompt(request),
         timeoutMs: settings.timeoutMs,
@@ -150,7 +142,7 @@ function makeProvider(id: "codex" | "claude", options: Options): TestAuthoringPr
               `${cwd}/${schemaName}`,
               "-",
             ],
-            files: [{ name: schemaName, contents: JSON.stringify(AUTHORING_OUTPUT_SCHEMA) }],
+            files: [{ name: schemaName, contents: JSON.stringify(PROVIDER_OUTPUT_SCHEMA) }],
           }),
           false,
         );
@@ -173,7 +165,7 @@ function makeProvider(id: "codex" | "claude", options: Options): TestAuthoringPr
             "--output-format",
             "json",
             "--json-schema",
-            JSON.stringify(AUTHORING_OUTPUT_SCHEMA),
+            JSON.stringify(PROVIDER_OUTPUT_SCHEMA),
           ],
         }),
         true,

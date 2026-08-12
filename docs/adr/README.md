@@ -16,3 +16,4 @@
 | [0003](./0003-cassette-matching-key.md) | 카세트 매칭 키 · 비결정 필드 처리 | record |
 | [0004](./0004-generation-scope.md) | 생성 테스트의 범위 | generate |
 | [0005](./0005-mock-data-strategy.md) | 목 데이터 생성 전략: 스키마 랜덤 vs 고정 시드 | mock |
+| [0006](./0006-ai-assisted-test-authoring.md) | 결정론적 baseline과 AI 테스트 후보의 공존 방식 | generate |

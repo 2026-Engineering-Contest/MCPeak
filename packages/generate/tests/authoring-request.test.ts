@@ -3,6 +3,9 @@ import { MCP_SUITE_JSON_SCHEMA } from "@ohmymcp/runner";
 import { describe, expect, it } from "vitest";
 import {
   AUTHORING_OUTPUT_SCHEMA,
+  applyAuthoringChanges,
+  createAuthoringDiff,
+  createAuthoringSession,
   createBaselineSuite,
   DEFAULT_MAX_RESULT_BYTES,
   dispatchAuthoringRequest,
@@ -122,6 +125,48 @@ describe("authoring request", () => {
       dispatchAuthoringRequest({ provider, preview: alteredFingerprint, approval }),
     ).resolves.toEqual({ status: "approvalInvalidated" });
     expect(calls).toBe(0);
+  });
+  it("dispatch candidate를 session diff와 승인 적용으로 연결한다", async () => {
+    const baseline = createBaselineSuite(tools, { suiteId: "weather", suiteName: "날씨" });
+    const session = createAuthoringSession(baseline);
+    const preview = prepareAuthoringRequest({
+      ...options(),
+      baseline: baseline.suite,
+      candidate: baseline.suite,
+    });
+    const candidate = structuredClone(baseline.suite);
+    candidate.cases.push({
+      id: "weather-error",
+      name: "오류",
+      operation: { type: "callTool", tool: "weather", input: { city: "Unknown" } },
+      assertions: [{ type: "isError", expected: true }],
+    });
+    const provider = {
+      id: "codex" as const,
+      author: async () => ({
+        status: "candidate",
+        suite: candidate,
+        summary: "ok",
+        warnings: [],
+        questions: [],
+      }),
+    };
+
+    const result = await dispatchAuthoringRequest({
+      provider,
+      preview,
+      approval: { approved: true, fingerprint: preview.fingerprint },
+      session,
+    });
+    if (result.status !== "preview") throw new Error("candidate preview가 필요합니다.");
+    const diff = createAuthoringDiff({ session, candidate: result.preview });
+    const applied = applyAuthoringChanges({
+      session,
+      preview: diff,
+      selectedChangeIds: diff.changes.map((change) => change.id),
+      approval: { approved: true, fingerprint: diff.candidateFingerprint },
+    });
+    expect(applied).toMatchObject({ applied: true, draft: { revision: 1 } });
   });
   it("Runner Schema를 수정하지 않고 authoring output Schema를 만든다", () => {
     expect(MCP_SUITE_JSON_SCHEMA).toEqual(MCP_SUITE_JSON_SCHEMA);

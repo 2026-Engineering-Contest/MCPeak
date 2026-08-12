@@ -5,7 +5,9 @@ import {
   type TestSuiteSpec,
   validateMcpSuite,
 } from "@ohmymcp/runner";
+import { reviewLocalAuthoringCandidate } from "./authoring-session.js";
 import type {
+  AuthoringSessionView,
   GenerateReviewApproval,
   PublicProviderValidationIssue,
   SanitizedAuthoringCandidate,
@@ -314,6 +316,7 @@ export async function dispatchAuthoringRequest(options: {
   preview: AuthoringRequestPreview;
   approval: GenerateReviewApproval;
   signal?: AbortSignal;
+  session?: AuthoringSessionView;
 }): Promise<AuthoringDispatchResult> {
   const state = requests.get(options.preview);
   if (!options.approval.approved) return { status: "notApproved" };
@@ -326,13 +329,20 @@ export async function dispatchAuthoringRequest(options: {
   )
     return { status: "approvalInvalidated" };
   try {
-    return validateAuthoringProviderResult(
+    const result = validateAuthoringProviderResult(
       await options.provider.author(state.request, {
         signal: options.signal,
         timeoutMs: state.timeoutMs,
       }),
       options.preview,
     );
+    if (result.status !== "preview" || options.session === undefined) return result;
+    return reviewLocalAuthoringCandidate({
+      session: options.session,
+      candidate: result.preview.result.suite,
+      tools: state.tools,
+      providerId: state.providerId,
+    });
   } catch {
     return { status: "providerFailed" };
   }

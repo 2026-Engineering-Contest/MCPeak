@@ -49,7 +49,14 @@ function execute(args) {
     const child = spawn(process.execPath, [cli, ...args], { stdio: ["ignore", "pipe", "pipe"] });
     let out = "",
       err = "",
-      settled = false;
+      settled = false,
+      timeout;
+    const settle = (callback, value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      callback(value);
+    };
     child.stdout.on("data", (value) => {
       out += value;
     });
@@ -57,17 +64,19 @@ function execute(args) {
       err += value;
     });
     child.once("error", (error) => {
-      if (!settled) {
-        settled = true;
-        reject(error);
-      }
+      settle(reject, error);
     });
     child.once("close", (code, signal) => {
-      if (!settled) {
-        settled = true;
-        resolvePromise({ code, signal, out, err });
-      }
+      settle(resolvePromise, { code, signal, out, err });
     });
+    timeout = setTimeout(() => {
+      if (settled) return;
+      try {
+        child.kill("SIGKILL");
+      } catch {}
+      settle(reject, new Error("dist CLI E2E child가 10000ms 안에 종료되지 않았습니다."));
+    }, 10_000);
+    timeout.unref?.();
   });
 }
 for (const [fixture, expectedStatus, expectedSummary] of [

@@ -90,6 +90,30 @@ function outputExistsFailure(deps: GenerateCommandDependencies, path: string): v
     `오류 [GENERATE_OUTPUT_EXISTS]: 출력 파일이 이미 있어 저장하지 않았습니다. 경로: ${path}\n해결: 다른 \`--out\` 경로를 지정하거나 기존 파일을 옮긴 뒤 다시 저장하세요.\n`,
   );
 }
+/** 커밋에 쓰는 hard link를 출력 디렉터리가 지원하지 않거나 권한이 없는 경우. */
+type LinkUnsupportedCode = "EPERM" | "ENOTSUP";
+class LinkUnsupportedError extends Error {
+  constructor(
+    readonly path: string,
+    readonly code: LinkUnsupportedCode,
+  ) {
+    super("link unsupported");
+  }
+}
+/**
+ * hard link 불가 안내. `code`는 위 두 값만 들어오는 닫힌 집합이라 그대로 보여준다.
+ * errno 이름은 사용자가 검색할 때 쓰는 단서이고 raw stderr나 인증정보가 아니다.
+ * 임의의 오류 문자열을 흘려보내지 않으려고 타입으로 좁혀 뒀다.
+ */
+function linkUnsupportedFailure(
+  deps: GenerateCommandDependencies,
+  path: string,
+  code: LinkUnsupportedCode,
+): void {
+  deps.writeStderr(
+    `오류 [GENERATE_LINK_UNSUPPORTED]: 출력 디렉터리가 hard link를 지원하지 않거나 권한이 없어 저장하지 못했습니다. 경로: ${path} (원인: ${code})\n해결: 로컬 디스크의 다른 디렉터리를 \`--out\`으로 지정한 뒤 다시 저장하세요. 네트워크 마운트(NFS·SMB 일부), FAT/exFAT USB, 컨테이너 바인드 마운트에서 주로 납니다.\n`,
+  );
+}
 /** 검토 도중 입력 스트림이 닫혔음을 알리는 sentinel. 사용자 취소와 같은 경로로 처리한다. */
 class ReviewInputClosedError extends Error {}
 /**
@@ -235,11 +259,19 @@ async function saveSuite(
     if (!validated.valid || (await suiteFingerprint(validated.value)) !== fingerprint)
       throw new Error("invalid saved suite");
     // 커밋. link는 대상이 있으면 EEXIST로 실패한다. rename처럼 남의 파일을 덮어쓰지 않는다.
+    //
+    // hard link를 못 쓰는 파일시스템(EPERM/ENOTSUP)에서 rename으로 떨어뜨리고 싶어지는
+    // 자리다. 하지 마라. rename은 대상이 있으면 **말없이 덮어쓴다.** 실측으로 확인했다
+    // (docs/reports/task-r4.md: link는 EEXIST로 실패하며 기존 내용 PRECIOUS를 보존했고,
+    // rename은 같은 상황에서 NEW로 덮어썼다). fallback을 넣는 순간 R4에서 없앤 데이터 손실
+    // 결함이 그대로 돌아온다. 저장하지 못하는 편이 남의 파일을 날리는 것보다 낫다.
     try {
       await deps.link(temporary, input.outPath);
     } catch (error) {
-      if ((error as { code?: unknown } | null)?.code === "EEXIST")
-        throw new OutputExistsError(input.outPath);
+      const code = (error as { code?: unknown } | null)?.code;
+      if (code === "EEXIST") throw new OutputExistsError(input.outPath);
+      if (code === "EPERM" || code === "ENOTSUP")
+        throw new LinkUnsupportedError(input.outPath, code);
       throw error;
     }
   } finally {
@@ -456,6 +488,8 @@ async function runInteractiveReview(
           return 0;
         } catch (error) {
           if (error instanceof OutputExistsError) outputExistsFailure(deps, error.path);
+          else if (error instanceof LinkUnsupportedError)
+            linkUnsupportedFailure(deps, error.path, error.code);
           else safeFailure(deps, "SAVE_FAILED");
           continue;
         }
@@ -605,6 +639,8 @@ export async function runGenerateCommand(
     if (connection !== undefined) await connection.forceClose().catch(() => undefined);
     // 같은 결함이 비대화형 경로에도 있었다. 여기서도 원인이 뭉개지면 안 된다.
     if (error instanceof OutputExistsError) outputExistsFailure(deps, error.path);
+    else if (error instanceof LinkUnsupportedError)
+      linkUnsupportedFailure(deps, error.path, error.code);
     else
       deps.writeStderr(
         "오류 [GENERATE_FAILED]: baseline suite를 생성하거나 저장하지 못했습니다.\n해결: MCP 서버와 출력 경로를 확인한 뒤 다시 실행하세요.\n",

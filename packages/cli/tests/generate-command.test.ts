@@ -305,7 +305,59 @@ describe("runGenerateCommand", () => {
     const output = stderr.join("");
     expect(output).toContain("GENERATE_FAILED");
     expect(output).not.toContain("GENERATE_OUTPUT_EXISTS");
+    expect(output).not.toContain("GENERATE_LINK_UNSUPPORTED");
     expect(output).not.toContain("EXDEV");
+  });
+
+  /** link가 지정한 errno로 실패하게 만든 뒤 stderr를 돌려준다. */
+  async function linkFailsWith(
+    code: string,
+  ): Promise<{ output: string; deps: ReturnType<typeof deps> }> {
+    const d = deps();
+    const stderr: string[] = [];
+    d.value.writeStderr = (text) => stderr.push(text);
+    d.value.link = vi.fn(async () => {
+      const error: NodeJS.ErrnoException = new Error(
+        `${code}: RAW_LINK_ERROR_TEXT, link '/tmp/x' -> '/tmp/y'`,
+      );
+      error.code = code;
+      throw error;
+    });
+    expect(await runGenerateCommand(argv, d.value)).toBe(1);
+    return { output: stderr.join(""), deps: d };
+  }
+
+  it("hard link를 지원하지 않으면 다른 디렉터리를 쓰도록 안내한다", async () => {
+    const { output, deps: d } = await linkFailsWith("EPERM");
+    expect(output).toContain("GENERATE_LINK_UNSUPPORTED");
+    expect(output).toContain("경로: /tmp/out.json");
+    expect(output).toContain("--out");
+    expect(output).toContain("(원인: EPERM)");
+    expect(output).not.toContain("GENERATE_FAILED");
+    expect(output).not.toContain("GENERATE_OUTPUT_EXISTS");
+    // 남의 파일을 건드리지 않았고 자기 임시 파일은 치웠다.
+    expect(d.value.unlink).toHaveBeenCalledOnce();
+  });
+  it("ENOTSUP도 같은 안내 경로를 탄다", async () => {
+    const { output } = await linkFailsWith("ENOTSUP");
+    expect(output).toContain("GENERATE_LINK_UNSUPPORTED");
+    expect(output).toContain("(원인: ENOTSUP)");
+    expect(output).not.toContain("GENERATE_FAILED");
+  });
+  it("EEXIST는 여전히 출력 충돌 안내다", async () => {
+    const { output } = await linkFailsWith("EEXIST");
+    expect(output).toContain("GENERATE_OUTPUT_EXISTS");
+    expect(output).not.toContain("GENERATE_LINK_UNSUPPORTED");
+  });
+  it("link 실패 안내에 원본 오류 문자열과 스택이 노출되지 않는다", async () => {
+    const outputs: string[] = [];
+    for (const code of ["EPERM", "ENOTSUP", "EEXIST", "EXDEV", "EIO"])
+      outputs.push((await linkFailsWith(code)).output);
+    const output = outputs.join("");
+    expect(output).not.toContain("RAW_LINK_ERROR_TEXT");
+    expect(output).not.toContain("EXDEV");
+    expect(output).not.toContain("EIO");
+    expect(output.split("\n").some((line) => line.trimStart().startsWith("at "))).toBe(false);
   });
   it("임시 파일 이름은 실행마다 다르다", async () => {
     const opened: string[] = [];
@@ -596,6 +648,34 @@ describe("AI 대화형 검토", () => {
     expect(output).toContain("GENERATE_SAVE_FAILED");
     expect(output).not.toContain("GENERATE_OUTPUT_EXISTS");
     expect(output).not.toContain("EACCES");
+  });
+  it("대화형 저장에서도 hard link 불가를 전용 문구로 안내한다", async () => {
+    const d = reviewDeps(["save", "cancel"], [], [true]);
+    // 임시 파일을 실제로 왕복시켜 fingerprint 재검증을 통과시켜야 link 단계까지 간다.
+    let written = "";
+    d.value.openTemp = vi.fn(async () => ({
+      writeFile: vi.fn(async (data: string) => {
+        written = data;
+      }),
+      sync: vi.fn(async () => undefined),
+      close: vi.fn(async () => undefined),
+    }));
+    d.value.readFile = vi.fn(async () => new TextEncoder().encode(written));
+    d.value.validateSuite = vi.fn((value) => ({
+      valid: true as const,
+      value: value as TestSuiteSpec,
+    }));
+    d.value.link = vi.fn(async () => {
+      const error: NodeJS.ErrnoException = new Error("EPERM: RAW_LINK_ERROR_TEXT");
+      error.code = "EPERM";
+      throw error;
+    });
+    await runGenerateCommand(interactiveArgv, d.value);
+    const output = d.stderr.join("");
+    expect(output).toContain("GENERATE_LINK_UNSUPPORTED");
+    expect(output).toContain("경로: /tmp/out.json");
+    expect(output).not.toContain("GENERATE_SAVE_FAILED");
+    expect(output).not.toContain("RAW_LINK_ERROR_TEXT");
   });
   it("사용자 취소는 provider·파일 쓰기 없이 종료 코드 0이다", async () => {
     const d = reviewDeps(["cancel"]);

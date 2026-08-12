@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { access, link, open, readFile, unlink } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { createInterface } from "node:readline/promises";
@@ -183,24 +182,19 @@ function renderSuite(suite: TestSuiteSpec): string {
   ordered.cases = suite.cases;
   return `${JSON.stringify(ordered, null, 2)}\n`;
 }
-function canonicalJson(value: unknown): string {
-  if (value === null || typeof value === "boolean" || typeof value === "string")
-    return JSON.stringify(value);
-  if (typeof value === "number") {
-    if (!Number.isFinite(value)) throw new TypeError("non-finite number");
-    return JSON.stringify(value);
-  }
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
-  if (typeof value !== "object") throw new TypeError("non-json value");
-  return `{${Object.keys(value as Record<string, unknown>)
-    .sort()
-    .map(
-      (key) => `${JSON.stringify(key)}:${canonicalJson((value as Record<string, unknown>)[key])}`,
-    )
-    .join(",")}}`;
-}
-function suiteFingerprint(suite: TestSuiteSpec): string {
-  return createHash("sha256").update(canonicalJson(suite)).digest("hex");
+/**
+ * fingerprint는 generate의 `sha256`을 그대로 쓴다. 두 벌을 두면 갈라지는 순간 승인 검증
+ * (`approval.fingerprint` 대조)이 조용히 깨진다. 여기서 다시 구현하지 마라.
+ *
+ * 정적 import가 아니라 동적 import인 이유: `index.ts`가 `@ohmymcp/generate`를 동적으로 불러
+ * 실패하면 안내 메시지로 떨어뜨린다. 이 모듈이 generate를 정적으로 묶으면 모듈 로드 시점에
+ * 터져 그 경로가 죽고, generate와 무관한 `ohmymcp test`까지 함께 죽는다. 빌드 산출물에
+ * node 내장 모듈 말고는 top-level import가 없는 현재 상태를 유지한다.
+ */
+let sha256Impl: ((value: unknown) => string) | undefined;
+async function suiteFingerprint(suite: TestSuiteSpec): Promise<string> {
+  sha256Impl ??= (await import("@ohmymcp/generate")).sha256;
+  return sha256Impl(suite);
 }
 let temporarySequence = 0;
 /**
@@ -238,7 +232,7 @@ async function saveSuite(
     const bytes = await deps.readFile(temporary);
     const parsed = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
     const validated = deps.validateSuite(parsed);
-    if (!validated.valid || suiteFingerprint(validated.value) !== fingerprint)
+    if (!validated.valid || (await suiteFingerprint(validated.value)) !== fingerprint)
       throw new Error("invalid saved suite");
     // 커밋. link는 대상이 있으면 EEXIST로 실패한다. rename처럼 남의 파일을 덮어쓰지 않는다.
     try {

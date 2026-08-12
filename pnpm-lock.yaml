@@ -71,6 +71,9 @@ importers:
       '@ohmymcp/core':
         specifier: workspace:*
         version: link:../core
+      '@ohmymcp/runner':
+        specifier: workspace:*
+        version: link:../runner
 
   packages/mock:
     dependencies:

@@ -1,10 +1,35 @@
 # @ohmymcp/generate
 
-MCP 도구의 입력 스키마에서 검토 가능한 happy-path 테스트 초안을 생성합니다.
+MCP 도구의 입력 스키마에서 결정론적 baseline을 만들고, 사용자가 승인한 AI 보조 검토로 테스트
+초안을 발전시킵니다.
 
 - **오너:** `@seodduu` `@endl24` `@sunghoon0303`
-- **생성 시 의존:** `@ohmymcp/core`
+- **생성 시 의존:** `@ohmymcp/core`, `@ohmymcp/runner`
 - **생성 결과 실행 시 의존:** `@ohmymcp/runner`
+
+## 결정론적 baseline
+
+`createBaselineSuite()`는 하나의 서버에서 발견한 `ToolDef[]`를 메모리의 `TestSuiteSpec`으로
+합성합니다. 같은 도구 정의와 옵션은 같은 suite와 fingerprint를 반환합니다. 이 API는 파일을
+쓰거나 서버에 연결하지 않으므로, CLI와 다른 사용자 인터페이스가 안전하게 조립할 수 있습니다.
+
+```ts
+import { createBaselineSuite } from "@ohmymcp/generate";
+
+const baseline = createBaselineSuite(tools, {
+  suiteId: "weather",
+  suiteName: "날씨 서버 baseline",
+});
+
+console.log(baseline.suiteFingerprint);
+```
+
+입력값은 `const` → `default` → `examples[0]` → `enum[0]` → 타입별 고정값 순서로 선택합니다.
+객체에서는 필수 프로퍼티만 포함하고 배열에서는 `items`로 원소 한 개를 생성합니다. baseline의
+happy-path는 도구 응답의 `isError`가 `false`인지 확인합니다.
+
+`generateTests()`는 기존 TypeScript 파일 생성 API로 계속 제공됩니다. 생성 파일 이름과 입력값
+선택 규칙은 아래 설명을 따릅니다.
 
 ## 테스트 생성
 
@@ -23,13 +48,36 @@ const paths = await generateTests(tools, {
 합니다. 생성 파일은 서버 연결 방법이나 `McpClient`를 포함하지 않고 Runner의 선언형
 `generatedSuite`만 export합니다.
 
-입력값은 `const` → `default` → `examples[0]` → `enum[0]` → 타입별 고정값 순서로 선택합니다.
-객체에서는 필수 프로퍼티만 포함하고 배열에서는 `items`로 원소 한 개를 생성합니다. 생성된
-happy-path는 도구 응답의 `isError`가 `false`인지 확인합니다.
-
 첫 버전은 단일 `type`, `required`, `properties`, `items`, `enum`, `const`, `default`, `examples`를
 지원합니다. `$ref`나 조합 스키마처럼 지원하지 않는 키워드가 있거나 후보값이 제약을 만족하지
 않으면 파일을 쓰기 전에 `GenerateTestsError`를 발생시킵니다.
+
+## AI 보조 검토와 승인
+
+AI 보조 흐름은 baseline, 현재 승인 draft, 검토 중 candidate, 최종 실행 snapshot을 분리합니다.
+Codex 또는 Claude의 제안은 바로 실행하거나 저장되지 않습니다. 승인 draft는 사용자가 선택한
+변경만 적용할 때 바뀝니다.
+
+사용자가 재수정을 요청할 때마다 provider session을 재개하지 않는 stateless한 새 요청을 만듭니다.
+각 요청은 baseline, 현재 working candidate, 사용자 피드백, 필요한 도구 정의와 고정 출력 계약을
+다시 사용합니다. 이전 raw prompt나 provider 출력은 자동으로 다음 요청에 포함하지 않습니다.
+
+승인은 세 단계입니다.
+
+1. 전송 승인: provider, model, 정제된 payload, byte 길이, timeout, fingerprint를 검토합니다.
+2. 변경 승인: 정제된 candidate와 로컬에서 계산한 diff를 검토하고 적용할 변경을 선택합니다.
+3. 최종 실행 승인: 저장 또는 실행 전에 최종 suite snapshot의 fingerprint를 다시 확인합니다.
+
+provider 결과는 runtime validation, 크기 제한, redaction을 통과한 candidate만 검토 화면에
+노출합니다. raw prompt, provider stdout·stderr, native error stack, 실제 MCP 입력·응답은 public
+상태, 로그, report에 보존하지 않습니다.
+
+Codex와 Claude adapter는 각각 빈 임시 작업 디렉터리, stdin, 구조화 출력 계약을 사용합니다.
+도구, MCP, 파일 쓰기와 provider session 영속화를 차단하고, 환경변수 allowlist, timeout, 취소와
+bounded 종료를 적용합니다. 실제 provider 실행에는 사용자가 설치하고 인증한 CLI가 필요합니다.
+
+`RunnerReport`를 바탕으로 provider를 호출해 테스트를 자동 repair하는 기능은 이 패키지의 현재
+범위가 아닙니다. Runner의 실행과 report 계약도 변경하지 않습니다.
 
 ## 실제 client로 실행
 

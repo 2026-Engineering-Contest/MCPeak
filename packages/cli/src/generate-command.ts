@@ -1,0 +1,732 @@
+import { access, link, open, readFile, unlink } from "node:fs/promises";
+import { basename, dirname, join } from "node:path";
+import { createInterface } from "node:readline/promises";
+import type { McpStdioConnection, ToolDef } from "@ohmymcp/core";
+import type {
+  AuthoringDiffPreview,
+  AuthoringExecutionSnapshot,
+  AuthoringRequestPreview,
+  AuthoringSessionView,
+  BaselineGenerationResult,
+  PublicProviderFailure,
+  SanitizedAuthoringCandidate,
+} from "@ohmymcp/generate";
+import type { SuiteValidationResult, TestSuiteSpec } from "@ohmymcp/runner";
+
+export const GENERATE_USAGE =
+  "사용법: ohmymcp generate --suite-id <id> --name <name> --out <suite.json> --command <executable> [--arg <value> ...] [--baseline-only] [--provider <codex|claude>] [--model <model>]";
+
+export interface GenerateCommandInput {
+  readonly suiteId: string;
+  readonly name: string;
+  readonly outPath: string;
+  readonly command: string;
+  readonly args: readonly string[];
+  readonly baselineOnly: boolean;
+  readonly provider?: "codex" | "claude";
+  readonly model?: string;
+}
+export interface GenerateCommandDependencies {
+  connect(options: { command: string; args: readonly string[] }): Promise<McpStdioConnection>;
+  createBaselineSuite(
+    tools: readonly ToolDef[],
+    options: { suiteId: string; suiteName: string },
+  ): BaselineGenerationResult;
+  createAuthoringSession(baseline: BaselineGenerationResult): AuthoringSessionView;
+  finalizeAuthoringDraft(options: {
+    session: AuthoringSessionView;
+    approval: { approved: boolean; fingerprint: string };
+  }): { finalized: true; snapshot: AuthoringExecutionSnapshot } | { finalized: false };
+  getAuthoringExecutionSuite(snapshot: AuthoringExecutionSnapshot): TestSuiteSpec;
+  validateSuite(value: unknown): SuiteValidationResult;
+  exists(path: string): Promise<boolean>;
+  openTemp(path: string): Promise<{
+    writeFile(data: string, encoding: "utf8"): Promise<void>;
+    sync(): Promise<void>;
+    close(): Promise<void>;
+  }>;
+  readFile(path: string): Promise<Uint8Array>;
+  /**
+   * 임시 파일을 최종 경로에 커밋한다. `rename`이 아니라 `link`인 것이 요점이다.
+   * `rename`은 대상이 있으면 말없이 덮어쓴다. `link`는 EEXIST로 실패하므로
+   * 원자성과 no-clobber를 동시에 얻는다. 덮어쓸 수 있는 primitive를 아예 두지 않는다.
+   */
+  link(from: string, to: string): Promise<void>;
+  unlink(path: string): Promise<void>;
+  writeStdout(text: string): void;
+  writeStderr(text: string): void;
+  reviewIO?: ReviewIO;
+  providers?: Partial<
+    Record<"codex" | "claude", (model: string) => TestAuthoringProvider | undefined>
+  >;
+  prepareAuthoringRequest?: typeof import("@ohmymcp/generate").prepareAuthoringRequest;
+  dispatchAuthoringRequest?: typeof import("@ohmymcp/generate").dispatchAuthoringRequest;
+  createAuthoringDiff?: typeof import("@ohmymcp/generate").createAuthoringDiff;
+  applyAuthoringChanges?: typeof import("@ohmymcp/generate").applyAuthoringChanges;
+  reviewLocalAuthoringCandidate?: typeof import("@ohmymcp/generate").reviewLocalAuthoringCandidate;
+}
+export interface ReviewIO {
+  input(message: string): Promise<string>;
+  choose(message: string, choices: readonly string[]): Promise<string>;
+  confirm(message: string): Promise<boolean>;
+  write(text: string): void;
+  readonly interactive: boolean;
+  close?(): void;
+}
+type TestAuthoringProvider = import("@ohmymcp/generate").TestAuthoringProvider;
+class UsageError extends Error {}
+/**
+ * 출력 경로에 이미 파일이 있어 저장을 멈춘 경우. 다른 I/O 실패와 사용자 조치가 다르므로
+ * 타입으로 갈라 둔다. 뭉뚱그리면 "저장하지 못했습니다"만 남아 어떤 파일이 왜 막았는지 모른다.
+ */
+class OutputExistsError extends Error {
+  constructor(readonly path: string) {
+    super("output exists");
+  }
+}
+/** 출력 파일 충돌 안내. 경로는 라벨 뒤에 두어 조사가 변수에 붙지 않게 한다. */
+function outputExistsFailure(deps: GenerateCommandDependencies, path: string): void {
+  deps.writeStderr(
+    `오류 [GENERATE_OUTPUT_EXISTS]: 출력 파일이 이미 있어 저장하지 않았습니다. 경로: ${path}\n해결: 다른 \`--out\` 경로를 지정하거나 기존 파일을 옮긴 뒤 다시 저장하세요.\n`,
+  );
+}
+/** 커밋에 쓰는 hard link를 출력 디렉터리가 지원하지 않거나 권한이 없는 경우. */
+type LinkUnsupportedCode = "EPERM" | "ENOTSUP";
+class LinkUnsupportedError extends Error {
+  constructor(
+    readonly path: string,
+    readonly code: LinkUnsupportedCode,
+  ) {
+    super("link unsupported");
+  }
+}
+/**
+ * hard link 불가 안내. `code`는 위 두 값만 들어오는 닫힌 집합이라 그대로 보여준다.
+ * errno 이름은 사용자가 검색할 때 쓰는 단서이고 raw stderr나 인증정보가 아니다.
+ * 임의의 오류 문자열을 흘려보내지 않으려고 타입으로 좁혀 뒀다.
+ */
+function linkUnsupportedFailure(
+  deps: GenerateCommandDependencies,
+  path: string,
+  code: LinkUnsupportedCode,
+): void {
+  deps.writeStderr(
+    `오류 [GENERATE_LINK_UNSUPPORTED]: 출력 디렉터리가 hard link를 지원하지 않거나 권한이 없어 저장하지 못했습니다. 경로: ${path} (원인: ${code})\n해결: 로컬 디스크의 다른 디렉터리를 \`--out\`으로 지정한 뒤 다시 저장하세요. 네트워크 마운트(NFS·SMB 일부), FAT/exFAT USB, 컨테이너 바인드 마운트에서 주로 납니다.\n`,
+  );
+}
+/** 검토 도중 입력 스트림이 닫혔음을 알리는 sentinel. 사용자 취소와 같은 경로로 처리한다. */
+class ReviewInputClosedError extends Error {}
+/**
+ * 입력 스트림이 닫혀 발생한 오류인지 판정한다.
+ * sentinel 외에 Node readline의 ERR_USE_AFTER_CLOSE도 인정한다. nodeReviewIO가 아닌 ReviewIO
+ * 구현이 readline을 직접 감싸도 같은 종료 경로를 타게 하기 위함이다.
+ */
+function isReviewInputClosed(error: unknown): boolean {
+  if (error instanceof ReviewInputClosedError) return true;
+  return (error as { code?: unknown } | null)?.code === "ERR_USE_AFTER_CLOSE";
+}
+
+const optionNames = new Set([
+  "--suite-id",
+  "--name",
+  "--out",
+  "--command",
+  "--arg",
+  "--baseline-only",
+  "--provider",
+  "--model",
+]);
+function optionValue(argv: readonly string[], index: number, option: string): [string, number] {
+  const item = argv[index];
+  if (item === undefined) throw new UsageError(`\`${option}\` 옵션 값이 필요합니다.`);
+  const equals = item.indexOf("=");
+  if (equals > 0) return [item.slice(equals + 1), index];
+  const value = argv[index + 1];
+  if (value === undefined || (option !== "--arg" && value.startsWith("--")))
+    throw new UsageError(`\`${option}\` 옵션 값이 필요합니다.`);
+  return [value, index + 1];
+}
+
+export function parseGenerateCommand(argv: readonly string[]): GenerateCommandInput {
+  const values = new Map<string, string>();
+  const args: string[] = [];
+  let baselineOnly = false;
+  for (let index = 0; index < argv.length; index++) {
+    const item = argv[index];
+    if (item === undefined) continue;
+    const option = item.includes("=") ? item.slice(0, item.indexOf("=")) : item;
+    if (!option.startsWith("--"))
+      throw new UsageError(`추가 위치 인자 '${item}'는 허용되지 않습니다.`);
+    if (!optionNames.has(option))
+      throw new UsageError(`지원하지 않는 generate 옵션 '${option}'입니다.`);
+    if (option === "--baseline-only") {
+      if (item !== option || baselineOnly)
+        throw new UsageError("`--baseline-only`는 한 번만 사용할 수 있습니다.");
+      baselineOnly = true;
+      continue;
+    }
+    const [value, consumed] = optionValue(argv, index, option);
+    index = consumed;
+    if (option === "--arg") {
+      args.push(value);
+      continue;
+    }
+    if (values.has(option)) throw new UsageError(`\`${option}\`는 한 번만 사용할 수 있습니다.`);
+    values.set(option, value);
+  }
+  for (const option of ["--suite-id", "--name", "--out", "--command"] as const)
+    if (values.get(option) === undefined) throw new UsageError(`\`${option}\` 옵션이 필요합니다.`);
+  const outPath = values.get("--out") as string;
+  if (!outPath.toLowerCase().endsWith(".json"))
+    throw new UsageError("`--out`은 .json 파일이어야 합니다.");
+  const rawProvider = values.get("--provider");
+  if (rawProvider !== undefined && rawProvider !== "codex" && rawProvider !== "claude")
+    throw new UsageError("`--provider`는 codex 또는 claude여야 합니다.");
+  if (values.has("--model") && rawProvider === undefined)
+    throw new UsageError("`--model`은 `--provider`와 함께만 사용할 수 있습니다.");
+  return Object.freeze({
+    suiteId: values.get("--suite-id") as string,
+    name: values.get("--name") as string,
+    outPath,
+    command: values.get("--command") as string,
+    args: Object.freeze(args),
+    baselineOnly,
+    provider: rawProvider,
+    model: values.get("--model"),
+  });
+}
+
+function renderSuite(suite: TestSuiteSpec): string {
+  const ordered: Record<string, unknown> = {
+    schemaVersion: suite.schemaVersion,
+    id: suite.id,
+    name: suite.name,
+  };
+  if (suite.defaultTimeoutMs !== undefined) ordered.defaultTimeoutMs = suite.defaultTimeoutMs;
+  ordered.cases = suite.cases;
+  return `${JSON.stringify(ordered, null, 2)}\n`;
+}
+/**
+ * fingerprint는 generate의 `sha256`을 그대로 쓴다. 두 벌을 두면 갈라지는 순간 승인 검증
+ * (`approval.fingerprint` 대조)이 조용히 깨진다. 여기서 다시 구현하지 마라.
+ *
+ * 정적 import가 아니라 동적 import인 이유: `index.ts`가 `@ohmymcp/generate`를 동적으로 불러
+ * 실패하면 안내 메시지로 떨어뜨린다. 이 모듈이 generate를 정적으로 묶으면 모듈 로드 시점에
+ * 터져 그 경로가 죽고, generate와 무관한 `ohmymcp test`까지 함께 죽는다. 빌드 산출물에
+ * node 내장 모듈 말고는 top-level import가 없는 현재 상태를 유지한다.
+ */
+let sha256Impl: ((value: unknown) => string) | undefined;
+async function suiteFingerprint(suite: TestSuiteSpec): Promise<string> {
+  sha256Impl ??= (await import("@ohmymcp/generate")).sha256;
+  return sha256Impl(suite);
+}
+let temporarySequence = 0;
+/**
+ * 임시 파일 이름은 실행마다 고유해야 한다. 고정 이름이면 같은 디렉터리에서 두 실행이 겹칠 때
+ * `openTemp`의 `wx`가 EEXIST로 실패하는데, 그것은 출력 경로 충돌과 전혀 다른 실패다.
+ * 저장되는 suite 내용에는 들어가지 않으므로 결정론성 요구와 무관하다.
+ */
+function temporaryPath(outPath: string): string {
+  temporarySequence += 1;
+  return join(
+    dirname(outPath),
+    `.${basename(outPath)}.ohmymcp.${process.pid}.${temporarySequence}.tmp`,
+  );
+}
+async function saveSuite(
+  input: GenerateCommandInput,
+  suite: TestSuiteSpec,
+  fingerprint: string,
+  deps: GenerateCommandDependencies,
+): Promise<void> {
+  // 선검사는 사용자에게 더 빨리 알려주기 위한 것이고 **보장이 아니다.** 여기서 통과해도
+  // 커밋 직전에 다른 프로세스가 같은 경로를 만들 수 있다. no-clobber 보장은 아래 link에 있다.
+  if (await deps.exists(input.outPath)) throw new OutputExistsError(input.outPath);
+  const temporary = temporaryPath(input.outPath);
+  let created = false;
+  try {
+    const handle = await deps.openTemp(temporary);
+    created = true;
+    try {
+      await handle.writeFile(renderSuite(suite), "utf8");
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    const bytes = await deps.readFile(temporary);
+    const parsed = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+    const validated = deps.validateSuite(parsed);
+    if (!validated.valid || (await suiteFingerprint(validated.value)) !== fingerprint)
+      throw new Error("invalid saved suite");
+    // 커밋. link는 대상이 있으면 EEXIST로 실패한다. rename처럼 남의 파일을 덮어쓰지 않는다.
+    //
+    // hard link를 못 쓰는 파일시스템(EPERM/ENOTSUP)에서 rename으로 떨어뜨리고 싶어지는
+    // 자리다. 하지 마라. rename은 대상이 있으면 **말없이 덮어쓴다.** 실측으로 확인했다
+    // (docs/reports/task-r4.md: link는 EEXIST로 실패하며 기존 내용 PRECIOUS를 보존했고,
+    // rename은 같은 상황에서 NEW로 덮어썼다). fallback을 넣는 순간 R4에서 없앤 데이터 손실
+    // 결함이 그대로 돌아온다. 저장하지 못하는 편이 남의 파일을 날리는 것보다 낫다.
+    try {
+      await deps.link(temporary, input.outPath);
+    } catch (error) {
+      const code = (error as { code?: unknown } | null)?.code;
+      if (code === "EEXIST") throw new OutputExistsError(input.outPath);
+      if (code === "EPERM" || code === "ENOTSUP")
+        throw new LinkUnsupportedError(input.outPath, code);
+      throw error;
+    }
+  } finally {
+    // link는 원본을 남기므로 성공해도 임시를 지운다. 실패했을 때의 정리 경로와 같다.
+    if (created) await deps.unlink(temporary).catch(() => undefined);
+  }
+}
+
+const defaultModel = (provider: "codex" | "claude") =>
+  provider === "codex" ? "gpt-5.6-luna" : "haiku";
+
+function showRequest(io: ReviewIO, preview: AuthoringRequestPreview): void {
+  io.write(
+    `Provider: ${preview.providerId}\nModel: ${preview.model}\nPayload: ${preview.byteLength} bytes\nResult limit: ${preview.maxResultBytes} bytes\nTimeout: ${preview.providerTimeoutMs}ms\nFingerprint: ${preview.fingerprint}\n전송 데이터: 사용자 요청, baseline suite, current candidate, 툴 이름·설명·inputSchema\n`,
+  );
+}
+// 승인 화면은 스크롤 없이 읽혀야 한다. 케이스 하나의 diff가 이보다 커지면 사람이 화면으로
+// 판단할 수 없고 저장 후 JSON을 여는 편이 맞는 경로다. 40줄은 흔한 터미널 높이(24~50줄)에서
+// 헤더와 메뉴 프롬프트를 빼고 남는 분량이다.
+const MAX_DIFF_BODY_LINES = 40;
+
+/**
+ * leaf 경로와 JSON 값을 문서 순서(Object.keys 순, 배열 인덱스 순)로 모은다.
+ * 정렬하지 않는다. 같은 입력에 항상 같은 출력이 나와야 하고 문서 순서로 그것이 만족된다.
+ * 빈 객체와 빈 배열은 그 자체를 leaf로 본다. 그러지 않으면 경로가 조용히 사라진다.
+ */
+function leaves(value: unknown, prefix = ""): (readonly [string, string])[] {
+  if (Array.isArray(value)) {
+    if (value.length === 0) return [[prefix, "[]"] as const];
+    return value.flatMap((item, index) => leaves(item, `${prefix}[${index}]`));
+  }
+  if (value !== null && typeof value === "object") {
+    const entries = Object.entries(value);
+    if (entries.length === 0) return [[prefix, "{}"] as const];
+    return entries.flatMap(([key, nested]) =>
+      leaves(nested, prefix === "" ? key : `${prefix}.${key}`),
+    );
+  }
+  return [[prefix, JSON.stringify(value) ?? "undefined"] as const];
+}
+/** before/after의 leaf를 비교해 다른 경로만 남긴다. 같은 경로의 -와 +는 붙여서 쓴다. */
+function changedLeaves(before: unknown, after: unknown): string[] {
+  const afterLeaves = leaves(after);
+  const afterByPath = new Map(afterLeaves);
+  const lines: string[] = [];
+  const seen = new Set<string>();
+  for (const [path, value] of leaves(before)) {
+    seen.add(path);
+    if (!afterByPath.has(path)) {
+      lines.push(`- ${path}: ${value}`);
+      continue;
+    }
+    const next = afterByPath.get(path);
+    if (next === value) continue;
+    lines.push(`- ${path}: ${value}`, `+ ${path}: ${next}`);
+  }
+  for (const [path, value] of afterLeaves) if (!seen.has(path)) lines.push(`+ ${path}: ${value}`);
+  return lines;
+}
+function diffBody(change: AuthoringDiffPreview["changes"][number]): string[] {
+  switch (change.type) {
+    case "addCase":
+      return leaves(change.case).map(([path, value]) => `+ ${path}: ${value}`);
+    case "removeCase":
+      return leaves(change.case).map(([path, value]) => `- ${path}: ${value}`);
+    case "caseOrder":
+      return [`- ${change.before.join(", ")}`, `+ ${change.after.join(", ")}`];
+    default:
+      return changedLeaves(change.before, change.after);
+  }
+}
+function showDiff(io: ReviewIO, preview: AuthoringDiffPreview): void {
+  for (const change of preview.changes) {
+    const body = diffBody(change);
+    const shown =
+      body.length > MAX_DIFF_BODY_LINES
+        ? [
+            ...body.slice(0, MAX_DIFF_BODY_LINES),
+            `... 이하 ${body.length - MAX_DIFF_BODY_LINES}줄 생략. 전체는 저장 후 JSON을 확인하세요.`,
+          ]
+        : body;
+    io.write(
+      `${change.id} ${change.type}${"caseId" in change ? ` ${change.caseId}` : ""}\n` +
+        shown.map((line) => `  ${line}\n`).join(""),
+    );
+  }
+}
+function safeFailure(deps: GenerateCommandDependencies, code: string): void {
+  deps.writeStderr(
+    `오류 [GENERATE_${code}]: AI 검토 요청을 완료하지 못했습니다.\n해결: 입력과 provider 상태를 확인한 뒤 메뉴에서 다시 요청하세요.\n`,
+  );
+}
+/** provider별 로그인 확인 명령. 두 provider의 명령을 함께 찍으면 사용자가 헛수고한다. */
+const authCommand = (provider: "codex" | "claude") =>
+  provider === "codex" ? "codex login status" : "claude /status";
+/**
+ * nonZeroExit의 reason별 안내. reason은 nonZeroExit 경로에서만 채워지는 닫힌 enum이며,
+ * 값이 없으면 원인을 모르는 것이므로 추측하지 않고 확인할 것을 모두 알려준다.
+ *
+ * 문구 규칙: 변수 바로 뒤에 조사를 붙이지 않는다. 한국어 조사는 앞말의 받침에 따라 형태가
+ * 갈리는데(을/를, 으로/로) 모델 이름과 종료 코드는 어떤 값이 올지 모른다. 어느 쪽으로 고정해도
+ * 반드시 틀리는 경우가 생기므로 `모델: {model}`처럼 라벨을 붙이거나 `명령으로`처럼 고정된
+ * 명사를 끼워 조사가 앞말에 의존하지 않게 한다.
+ */
+function exitMessage(failure: PublicProviderFailure, model: string): string {
+  const id = failure.providerId;
+  const fallback = defaultModel(id);
+  switch (failure.reason) {
+    case "unknownModel":
+      return `오류 [GENERATE_PROVIDER_MODEL]: ${id}가 이 모델을 사용할 수 없습니다. 모델: ${model}\n해결: 모델 이름을 확인하세요. 이 계정에서 쓸 수 없는 모델일 수도 있습니다. ${id} 기본값은 ${fallback}입니다.\n`;
+    case "notAuthenticated":
+      return `오류 [GENERATE_PROVIDER_AUTH]: ${id} 인증이 유효하지 않습니다.\n해결: \`${authCommand(id)}\` 명령으로 로그인 상태를 확인한 뒤 다시 요청하세요.\n`;
+    case "rateLimited":
+      return `오류 [GENERATE_PROVIDER_RATE_LIMIT]: ${id}가 요청 한도를 초과했습니다.\n해결: 잠시 뒤 다시 요청하세요. 반복되면 도구 수를 줄여 payload를 줄이세요.\n`;
+    // codex는 없는 모델에도, 잘못된 output schema에도 400을 준다. 둘을 구분할 수 없으므로
+    // 구분한 척하지 않고 사용자가 확인할 두 가지를 다 알려준다.
+    case "badRequest":
+      return `오류 [GENERATE_PROVIDER_REQUEST]: ${id}가 요청을 거절했습니다. 모델: ${model}\n해결: 두 가지를 확인하세요.\n  1. 모델 이름이 이 계정에서 쓸 수 있는지. ${id} 기본값은 ${fallback}입니다.\n  2. provider가 전송 schema를 받아들이는지. 반복되면 다른 provider로 시도하세요.\n`;
+    case "serverError":
+      return `오류 [GENERATE_PROVIDER_SERVER]: ${id} 쪽 서버 오류입니다.\n해결: 잠시 뒤 다시 요청하세요. 계속되면 provider 상태 페이지를 확인하세요.\n`;
+    default: {
+      // exitCode도 변수다. `코드 3로`는 "삼으로"라 틀린다. 라벨 형태로 조사를 떼어 둔다.
+      const exit = failure.exitCode === undefined ? "" : `종료 코드: ${failure.exitCode}, `;
+      return `오류 [GENERATE_PROVIDER_EXIT]: ${id}가 종료했습니다. ${exit}모델: ${model}\n해결: \`${authCommand(id)}\` 명령으로 로그인 상태를 확인하고, 모델 이름이 맞는지 확인하세요.\n`;
+    }
+  }
+}
+/**
+ * provider 실패를 원인별 안내로 분기한다. 사용자 조치가 다르므로 문구를 나눈다.
+ * 먼저 failure.code로 갈리고, nonZeroExit은 exitMessage에서 reason으로 한 겹 더 갈린다.
+ * failure를 알 수 없는 경로(dispatch 자체가 throw)는 기존 GENERATE_PROVIDER_FAILED를 유지한다.
+ */
+function providerFailure(
+  deps: GenerateCommandDependencies,
+  failure: PublicProviderFailure | undefined,
+  model: string,
+): void {
+  if (!failure) {
+    safeFailure(deps, "PROVIDER_FAILED");
+    return;
+  }
+  const id = failure.providerId;
+  const message = (() => {
+    switch (failure.code) {
+      case "providerUnavailable":
+        return `오류 [GENERATE_PROVIDER_UNAVAILABLE]: ${id} CLI를 실행할 수 없습니다.\n해결: \`${id} --version\` 명령으로 설치와 PATH를 확인한 뒤 다시 요청하세요.\n`;
+      case "nonZeroExit":
+        return exitMessage(failure, model);
+      case "timedOut":
+        return `오류 [GENERATE_PROVIDER_TIMEOUT]: ${id} 응답이 ${failure.timeoutMs}ms 안에 오지 않았습니다.\n해결: 도구 수를 줄이거나 timeout을 늘려 다시 요청하세요.\n`;
+      case "schemaMismatch":
+        return `오류 [GENERATE_PROVIDER_SCHEMA]: ${id}가 요구한 형식과 다른 결과를 돌려줬습니다.\n해결: 다시 요청하세요. 반복되면 다른 provider로 바꿔 시도하세요.\n`;
+      case "cancelled":
+        return "오류 [GENERATE_PROVIDER_CANCELLED]: AI 검토 요청이 취소됐습니다.\n해결: 메뉴에서 다시 요청하세요.\n";
+      default:
+        return undefined;
+    }
+  })();
+  if (message === undefined) safeFailure(deps, "PROVIDER_FAILED");
+  else deps.writeStderr(message);
+}
+
+async function runInteractiveReview(
+  input: GenerateCommandInput,
+  tools: readonly ToolDef[],
+  session: AuthoringSessionView,
+  deps: GenerateCommandDependencies,
+): Promise<number> {
+  const io = deps.reviewIO;
+  const prepare = deps.prepareAuthoringRequest;
+  const dispatch = deps.dispatchAuthoringRequest;
+  const makeDiff = deps.createAuthoringDiff;
+  const apply = deps.applyAuthoringChanges;
+  const reviewLocal = deps.reviewLocalAuthoringCandidate;
+  if (!io?.interactive || !prepare || !dispatch || !makeDiff || !apply || !reviewLocal) {
+    safeFailure(deps, "INTERACTIVE_REQUIRED");
+    return 1;
+  }
+  let candidate: SanitizedAuthoringCandidate | undefined = session.workingCandidate;
+  let preferred = input.provider;
+  let model = input.model;
+  try {
+    while (true) {
+      const action = await io.choose("검토 메뉴", [
+        "codex",
+        "claude",
+        "apply-all",
+        "select",
+        "revise",
+        "edit",
+        "save",
+        "cancel",
+      ]);
+      if (action === "cancel") return 0;
+      if (action === "save") {
+        const fingerprint = session.approvedDraft.suiteFingerprint;
+        io.write(`Final fingerprint: ${fingerprint}\n`);
+        if (!(await io.confirm("최종 JSON을 저장할까요?"))) continue;
+        const final = deps.finalizeAuthoringDraft({
+          session,
+          approval: { approved: true, fingerprint },
+        });
+        if (!final.finalized) {
+          safeFailure(deps, "FINALIZE_FAILED");
+          continue;
+        }
+        try {
+          await saveSuite(
+            input,
+            deps.getAuthoringExecutionSuite(final.snapshot),
+            final.snapshot.fingerprint,
+            deps,
+          );
+          return 0;
+        } catch (error) {
+          if (error instanceof OutputExistsError) outputExistsFailure(deps, error.path);
+          else if (error instanceof LinkUnsupportedError)
+            linkUnsupportedFailure(deps, error.path, error.code);
+          else safeFailure(deps, "SAVE_FAILED");
+          continue;
+        }
+      }
+      if (action === "apply-all" || action === "select") {
+        if (!candidate) {
+          io.write("적용할 candidate가 없습니다.\n");
+          continue;
+        }
+        const diff = makeDiff({ session, candidate });
+        showDiff(io, diff);
+        const selected =
+          action === "apply-all"
+            ? diff.changes.map((change) => change.id)
+            : (await io.input("적용할 change ID를 쉼표로 입력하세요: "))
+                .split(",")
+                .map((id) => id.trim())
+                .filter(Boolean);
+        if (!(await io.confirm("선택한 변경을 적용할까요?"))) continue;
+        const result = apply({
+          session,
+          preview: diff,
+          selectedChangeIds: selected,
+          approval: { approved: true, fingerprint: diff.candidateFingerprint },
+        });
+        if (!result.applied) io.write(`변경을 적용하지 않았습니다: ${result.reason}\n`);
+        else io.write(`revision ${result.draft.revision}을 승인했습니다.\n`);
+        continue;
+      }
+      if (action === "edit") {
+        const path = await io.input("편집한 JSON 파일 경로: ");
+        try {
+          const parsed = JSON.parse(
+            new TextDecoder("utf-8", { fatal: true }).decode(await deps.readFile(path)),
+          );
+          const result = reviewLocal({ session, candidate: parsed, tools });
+          if (result.status === "preview") {
+            candidate = result.preview;
+            showDiff(io, makeDiff({ session, candidate }));
+          } else io.write("편집한 JSON을 candidate로 사용할 수 없습니다.\n");
+        } catch {
+          safeFailure(deps, "LOCAL_JSON_INVALID");
+        }
+        continue;
+      }
+      const providerId = action === "revise" ? preferred : action;
+      if (providerId !== "codex" && providerId !== "claude") {
+        io.write("지원하지 않는 메뉴입니다.\n");
+        continue;
+      }
+      if (action !== "revise" && providerId !== preferred)
+        model = input.provider === providerId ? input.model : undefined;
+      preferred = providerId;
+      const selectedModel =
+        model ?? (await io.input(`${providerId} model (${defaultModel(providerId)}): `));
+      model = selectedModel || defaultModel(providerId);
+      const provider = deps.providers?.[providerId]?.(model);
+      if (!provider) {
+        io.write(`${providerId} provider를 사용할 수 없습니다.\n`);
+        continue;
+      }
+      const instruction = await io.input(action === "revise" ? "피드백: " : "AI 요청: ");
+      const preview = prepare({
+        mode: action === "revise" ? "revise" : "initial",
+        instruction,
+        baseline: session.baseline.suite,
+        candidate: candidate?.result.suite ?? session.baseline.suite,
+        tools,
+        providerId,
+        model,
+      });
+      showRequest(io, preview);
+      if (!(await io.confirm("이 요청을 전송할까요?"))) continue;
+      let result: Awaited<ReturnType<typeof dispatch>>;
+      try {
+        result = await dispatch({
+          provider,
+          preview,
+          approval: { approved: true, fingerprint: preview.fingerprint },
+          session,
+        });
+      } catch {
+        providerFailure(deps, undefined, model);
+        continue;
+      }
+      if (result.status === "preview") {
+        candidate = result.preview;
+        showDiff(io, makeDiff({ session, candidate }));
+      } else if (result.status === "questions") io.write(`질문:\n${result.questions.join("\n")}\n`);
+      else if (result.status === "providerFailed") providerFailure(deps, result.failure, model);
+      else io.write("AI 결과를 검토 후보로 사용할 수 없습니다.\n");
+    }
+  } catch (error) {
+    if (!isReviewInputClosed(error)) throw error;
+    deps.writeStdout("입력이 종료되어 검토를 취소했습니다. 저장하지 않았습니다.\n");
+    return 0;
+  } finally {
+    io.close?.();
+  }
+}
+
+export async function runGenerateCommand(
+  argv: readonly string[],
+  deps: GenerateCommandDependencies,
+): Promise<number> {
+  let input: GenerateCommandInput;
+  try {
+    input = parseGenerateCommand(argv[0] === "generate" ? argv.slice(1) : argv);
+  } catch (error) {
+    const message =
+      error instanceof UsageError ? error.message : "generate 입력을 해석할 수 없습니다.";
+    deps.writeStderr(`오류 [CLI_USAGE]: ${message}\n해결: ${GENERATE_USAGE}\n`);
+    return 1;
+  }
+  if (!input.baselineOnly && !deps.reviewIO?.interactive) {
+    deps.writeStderr(
+      "오류 [GENERATE_INTERACTIVE_REQUIRED]: AI 검토에는 TTY가 필요합니다.\n해결: `--baseline-only`를 지정하거나 대화형 터미널에서 실행하세요.\n",
+    );
+    return 1;
+  }
+  let connection: McpStdioConnection | undefined;
+  try {
+    connection = await deps.connect({ command: input.command, args: input.args });
+    const tools = await connection.client.listTools();
+    await connection.close();
+    connection = undefined;
+    const baseline = deps.createBaselineSuite(tools, {
+      suiteId: input.suiteId,
+      suiteName: input.name,
+    });
+    const session = deps.createAuthoringSession(baseline);
+    if (!input.baselineOnly) return runInteractiveReview(input, tools, session, deps);
+    const final = deps.finalizeAuthoringDraft({
+      session,
+      approval: { approved: true, fingerprint: session.approvedDraft.suiteFingerprint },
+    });
+    if (!final.finalized) throw new Error("finalize failed");
+    await saveSuite(
+      input,
+      deps.getAuthoringExecutionSuite(final.snapshot),
+      final.snapshot.fingerprint,
+      deps,
+    );
+    deps.writeStdout(`baseline suite를 저장했습니다: ${input.outPath}\n`);
+    return 0;
+  } catch (error) {
+    if (connection !== undefined) await connection.forceClose().catch(() => undefined);
+    // 같은 결함이 비대화형 경로에도 있었다. 여기서도 원인이 뭉개지면 안 된다.
+    if (error instanceof OutputExistsError) outputExistsFailure(deps, error.path);
+    else if (error instanceof LinkUnsupportedError)
+      linkUnsupportedFailure(deps, error.path, error.code);
+    else
+      deps.writeStderr(
+        "오류 [GENERATE_FAILED]: baseline suite를 생성하거나 저장하지 못했습니다.\n해결: MCP 서버와 출력 경로를 확인한 뒤 다시 실행하세요.\n",
+      );
+    return 1;
+  }
+}
+
+export const nodeGenerateDependencies = (): Omit<
+  GenerateCommandDependencies,
+  | "connect"
+  | "createBaselineSuite"
+  | "createAuthoringSession"
+  | "finalizeAuthoringDraft"
+  | "getAuthoringExecutionSuite"
+  | "validateSuite"
+> => ({
+  exists: async (path) =>
+    access(path)
+      .then(() => true)
+      .catch(() => false),
+  openTemp: (path) => open(path, "wx"),
+  readFile,
+  link,
+  unlink,
+  writeStdout: (text) => process.stdout.write(text),
+  writeStderr: (text) => process.stderr.write(text),
+});
+
+export function nodeReviewIO(
+  input: NodeJS.ReadableStream = process.stdin,
+  output: NodeJS.WritableStream = process.stdout,
+): ReviewIO {
+  /**
+   * readline은 첫 질문에서 만든다. createInterface는 만드는 즉시 입력 스트림을 참조해
+   * 닫기 전까지 이벤트 루프를 붙잡는다. `--baseline-only`처럼 아무것도 묻지 않는 경로에서
+   * 미리 만들면 실제 TTY에서 프로세스가 종료되지 않는다(파이프로 돌리면 stdin이 끝나
+   * 우연히 종료돼 그동안 드러나지 않았다). 만들지 않으면 닫기를 잊을 여지도 없다.
+   */
+  let readline: ReturnType<typeof createInterface> | undefined;
+  let closed = false;
+  let rejectPending: (() => void) | undefined;
+  const ensureReadline = (): ReturnType<typeof createInterface> => {
+    if (readline !== undefined) return readline;
+    const created = createInterface({ input, output });
+    created.on("close", () => {
+      closed = true;
+      rejectPending?.();
+    });
+    readline = created;
+    return created;
+  };
+  /**
+   * EOF에는 두 모양이 있고 둘 다 스택 노출이나 무한 대기로 끝난다. 둘 다 sentinel로 바꾼다.
+   * 1) 이미 닫힌 뒤 부르면 Node가 ERR_USE_AFTER_CLOSE를 던진다.
+   * 2) 대기 중에 닫히면 question promise가 영영 settle되지 않는다. close 이벤트와 race시킨다.
+   */
+  const question = async (prompt: string): Promise<string> => {
+    if (closed) throw new ReviewInputClosedError();
+    const active = ensureReadline();
+    const closedSignal = new Promise<never>((_, reject) => {
+      rejectPending = () => reject(new ReviewInputClosedError());
+    });
+    try {
+      return await Promise.race([active.question(prompt), closedSignal]);
+    } catch (error) {
+      if (isReviewInputClosed(error)) throw new ReviewInputClosedError();
+      throw error;
+    } finally {
+      rejectPending = undefined;
+    }
+  };
+  return {
+    interactive: Boolean(
+      (input as NodeJS.ReadStream).isTTY && (output as NodeJS.WriteStream).isTTY,
+    ),
+    input: (message) => question(message),
+    choose: async (message, choices) => {
+      const value = await question(`${message} [${choices.join("/")}]: `);
+      return value.trim();
+    },
+    confirm: async (message) => (await question(`${message} [y/N] `)).trim().toLowerCase() === "y",
+    write: (text) => {
+      output.write(text);
+    },
+    // 만들지 않았으면 닫을 것도 없다.
+    close: () => readline?.close(),
+  };
+}

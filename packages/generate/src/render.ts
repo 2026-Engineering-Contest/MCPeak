@@ -84,3 +84,15 @@ function renderSuite(suite: GeneratedSuiteSpec): string {
 export function renderTool(tool: ToolDef, index: number, baseName: string): string {
   return renderSuite(buildSuite(tool, index, baseName));
 }
+
+/**
+ * 파일 생성과 baseline이 함께 쓰는 단일 도구 case 합성 단계다.
+ * 파일로 쓰는 suite와 baseline suite가 같은 case를 만들도록 buildSuite 하나만 쓴다.
+ */
+export function buildGeneratedCase(
+  tool: ToolDef,
+  index: number,
+  baseName: string,
+): GeneratedSuiteSpec["cases"][number] {
+  return buildSuite(tool, index, baseName).cases[0] as GeneratedSuiteSpec["cases"][number];
+}

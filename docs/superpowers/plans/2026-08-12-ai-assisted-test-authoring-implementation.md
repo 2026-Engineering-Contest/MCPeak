@@ -66,10 +66,12 @@
 상위 모델은 provider process 수명주기나 approval binding의 같은 불확실성이 표준 모델의 서로 다른
 두 시도 후에도 남을 때만 `gpt-5.6-sol`, 추론 `medium`으로 승급한다.
 
+Worktree 경로는 저장소 루트 기준 상대 경로다.
+
 | Terminal | Worktree | Branch | Tasks | 시작 조건 |
 |---|---|---|---|---|
-| 1 | `/Users/doo._.hyun/Study/Project/OhMyMCP-worktrees/generate-ai-authoring` | `feat/generate-ai-authoring` | G1→G5 | 문서 커밋이 main HEAD이고 status clean |
-| 2 | `/Users/doo._.hyun/Study/Project/OhMyMCP-worktrees/cli-ai-authoring` | `feat/cli-ai-authoring` | C1→C4 | G5 최종 SHA가 main 조상이고 ledger에 기록됨 |
+| 1 | `../OhMyMCP-worktrees/generate-ai-authoring` | `feat/generate-ai-authoring` | G1→G5 | 문서 커밋이 main HEAD이고 status clean |
+| 2 | `../OhMyMCP-worktrees/cli-ai-authoring` | `feat/cli-ai-authoring` | C1→C4 | G5 최종 SHA가 main 조상이고 ledger에 기록됨 |
 
 두 terminal은 병렬 실행하지 않는다. CLI가 새 Generate 공개 API와 dist를 소비하므로 Generate 전체가
 main에 통합된 뒤 Terminal 2를 만든다.
@@ -899,13 +901,15 @@ docs/superpowers/specs/2026-08-12-ai-assisted-test-authoring-design.md,
 docs/superpowers/plans/2026-08-12-ai-assisted-test-authoring-implementation.md,
 docs/adr/0006-ai-assisted-test-authoring.md가 HEAD에 추적돼 있지 않으면 BLOCKED로 끝내라.
 
+아래 명령은 모두 이 저장소의 루트에서 실행한다. 경로도 그 기준의 상대 경로다.
+
 git-dir과 git-common-dir가 다르면 이미 연결 worktree이므로 중첩 worktree를 만들지 말고 현재 경로를
 generate_worktree로 쓴다. 같으면 branch feat/generate-ai-authoring과 경로
-/Users/doo._.hyun/Study/Project/OhMyMCP-worktrees/generate-ai-authoring이 모두 없는지 확인한다. 하나라도
+../OhMyMCP-worktrees/generate-ai-authoring이 모두 없는지 확인한다. 하나라도
 있으면 삭제·재사용하지 말고 BLOCKED다. 직전에
 ai_generate_base_commit="$(git rev-parse HEAD)"를 실행해 기준 SHA를 기록하고
 git worktree add -b feat/generate-ai-authoring
-/Users/doo._.hyun/Study/Project/OhMyMCP-worktrees/generate-ai-authoring
+../OhMyMCP-worktrees/generate-ai-authoring
 "$ai_generate_base_commit"을 실행해 그 경로로 이동한다.
 
 진입 뒤 pwd, HEAD==base_commit, branch, 세 문서 존재, clean status를 확인한다.
@@ -963,12 +967,14 @@ package root에 createBaselineSuite, createAuthoringSession, prepareAuthoringReq
 dispatchAuthoringRequest, createCodexAuthoringProvider, createClaudeAuthoringProvider export가 없거나
 Generate package tests/typecheck/build가 실패해도 BLOCKED다.
 
+아래 명령은 모두 이 저장소의 루트에서 실행한다. 경로도 그 기준의 상대 경로다.
+
 git-dir과 git-common-dir가 다르면 중첩 worktree를 만들지 말고 현재 경로를 cli_worktree로 쓴다.
 같으면 branch feat/cli-ai-authoring과 경로
-/Users/doo._.hyun/Study/Project/OhMyMCP-worktrees/cli-ai-authoring이 모두 없는지 확인한다. 하나라도 있으면
+../OhMyMCP-worktrees/cli-ai-authoring이 모두 없는지 확인한다. 하나라도 있으면
 삭제·재사용하지 말고 BLOCKED다. 직전에 ai_cli_base_commit="$(git rev-parse HEAD)"를 실행해 기준
 SHA를 기록하고 git worktree add -b feat/cli-ai-authoring
-/Users/doo._.hyun/Study/Project/OhMyMCP-worktrees/cli-ai-authoring "$ai_cli_base_commit"을 실행해 이동한다.
+../OhMyMCP-worktrees/cli-ai-authoring "$ai_cli_base_commit"을 실행해 이동한다.
 
 진입 뒤 pwd, HEAD==base_commit, branch, 문서 존재, clean status를 확인한다.
 pnpm install --frozen-lockfile를 실행하고 pnpm build로 fresh Generate dist를 만든 뒤

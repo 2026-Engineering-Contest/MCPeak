@@ -6,6 +6,9 @@ coverage/
 *.log
 .DS_Store
 
+# ohmymcp generate 기본 출력 경로 (로컬 실행 산출물)
+/generated/
+
 # Local Codex configuration
 /AGENTS.md
 /.agents/

@@ -5,6 +5,72 @@ import { nameDiscriminator, safeBaseName } from "./filename.js";
 import { renderTool } from "./render.js";
 import { fail } from "./schema.js";
 
+export type {
+  AuthoringDispatchResult,
+  AuthoringProviderResult,
+  AuthoringRequest,
+  AuthoringRequestBinding,
+  AuthoringRequestMode,
+  AuthoringRequestPreview,
+  McpToolContext,
+  PublicProviderFailure,
+  TestAuthoringProvider,
+} from "./authoring-request.js";
+export {
+  DEFAULT_MAX_RESULT_BYTES,
+  DEFAULT_PROVIDER_TIMEOUT_MS,
+  dispatchAuthoringRequest,
+  MAX_PROMPT_BYTES,
+  MAX_PROVIDER_TIMEOUT_MS,
+  MAX_REQUEST_BYTES,
+  MAX_TOOLS_BYTES,
+  prepareAuthoringRequest,
+  validateAuthoringProviderResult,
+} from "./authoring-request.js";
+export { AUTHORING_OUTPUT_SCHEMA, PROVIDER_OUTPUT_SCHEMA } from "./authoring-schema.js";
+export {
+  applyAuthoringChanges,
+  createAuthoringDiff,
+  createAuthoringSession,
+  finalizeAuthoringDraft,
+  getAuthoringExecutionSuite,
+  reviewLocalAuthoringCandidate,
+} from "./authoring-session.js";
+export type {
+  ApplyAuthoringChangesResult,
+  AuthoringChange,
+  AuthoringDiffPreview,
+  AuthoringDraft,
+  AuthoringExecutionSnapshot,
+  AuthoringSessionView,
+  CaseProvenance,
+  GenerateReviewApproval,
+  SanitizedAuthoringCandidate,
+} from "./authoring-types.js";
+export {
+  BASELINE_POLICY_VERSION,
+  type BaselineGenerationResult,
+  type BaselineSuiteOptions,
+  createBaselineSuite,
+  DEFAULT_BASELINE_TIMEOUT_MS,
+} from "./baseline.js";
+/** suite fingerprint 계산의 단일 구현. cli가 자체 구현을 두면 두 벌이 갈라진다. */
+export { canonicalJson, sha256 } from "./canonical.js";
+export type {
+  AuthoringProviderFailureCode,
+  AuthoringProviderFailureReason,
+  ProviderProcessChild,
+  ProviderProcessDeps,
+  ProviderProcessResult,
+  ProviderProcessSpec,
+} from "./provider-process.js";
+export {
+  createClaudeAuthoringProvider,
+  createClaudeProvider,
+  createCodexAuthoringProvider,
+  createCodexProvider,
+  PROVIDER_ENV_ALLOWLIST,
+} from "./providers.js";
 export type { GenerateTestsErrorCode } from "./schema.js";
 export { GenerateTestsError } from "./schema.js";
 

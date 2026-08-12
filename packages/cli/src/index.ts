@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { nodeGenerateDependencies, runGenerateCommand } from "./generate-command.js";
+import { nodeGenerateDependencies, nodeReviewIO, runGenerateCommand } from "./generate-command.js";
 import { parseTestCommand, runCli } from "./test-command.js";
 
 export type Command = (argv: string[]) => Promise<number>;
@@ -60,6 +60,16 @@ export async function run(argv: string[]): Promise<number> {
       finalizeAuthoringDraft: generate.finalizeAuthoringDraft,
       getAuthoringExecutionSuite: generate.getAuthoringExecutionSuite,
       validateSuite: runner.validateMcpSuite,
+      reviewIO: nodeReviewIO(),
+      providers: {
+        codex: (model) => generate.createCodexAuthoringProvider({ model }),
+        claude: (model) => generate.createClaudeAuthoringProvider({ model }),
+      },
+      prepareAuthoringRequest: generate.prepareAuthoringRequest,
+      dispatchAuthoringRequest: generate.dispatchAuthoringRequest,
+      createAuthoringDiff: generate.createAuthoringDiff,
+      applyAuthoringChanges: generate.applyAuthoringChanges,
+      reviewLocalAuthoringCandidate: generate.reviewLocalAuthoringCandidate,
     });
   }
   if (argv[0] !== "test") return runCli(argv, unavailableDependencies);

@@ -287,6 +287,23 @@ describe("provider process", () => {
     s.clock.advance(1_000);
     expect(s.child.kills).toEqual(["SIGTERM"]);
   });
+  it("stdin 쓰기 오류 뒤 비정상 종료는 internal로 보고한다", async () => {
+    const s = setup();
+    const done = runProviderProcess(spec, s.deps);
+    await Promise.resolve();
+    s.child.stdin.emit("error", Object.assign(new Error("write EPIPE"), { code: "EPIPE" }));
+    s.child.close(1);
+    await expect(done).resolves.toMatchObject({ ok: false, code: "internal" });
+  });
+  it("stdin 쓰기 오류 뒤 stdout이 JSON이 아니면 internal로 보고한다", async () => {
+    const s = setup();
+    const done = runProviderProcess(spec, s.deps);
+    await Promise.resolve();
+    s.child.stdin.emit("error", new Error("write EPIPE"));
+    s.child.stdout.emit("data", Buffer.from("not json"));
+    s.child.close(0);
+    await expect(done).resolves.toMatchObject({ ok: false, code: "internal" });
+  });
   it("stdin 스트림 error는 실행 결과를 바꾸지 않는다", async () => {
     const s = setup();
     const unhandled: unknown[] = [];

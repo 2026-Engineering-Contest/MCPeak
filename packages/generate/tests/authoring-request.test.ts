@@ -410,12 +410,8 @@ describe("authoring request", () => {
       preview,
     );
     if (result.status !== "preview") throw new Error("candidate preview가 필요합니다.");
-    // SanitizedAuthoringCandidate.result 타입은 authoring-types.ts가 소유하며 warnings를
-    // 노출하지 않는다. 런타임에는 실려 오므로 여기서만 좁혀 본다.
-    expect((result.preview.result as unknown as { warnings: readonly string[] }).warnings).toEqual([
-      "leak [REDACTED]",
-      "두 번째 경고",
-    ]);
+    expect(result.preview.result.warnings).toEqual(["leak [REDACTED]", "두 번째 경고"]);
+    expect(result.preview.result.summary).toBe("ok");
     expect(JSON.stringify(result)).not.toContain(callerSecret);
   });
   it("provider warnings 개수를 상한으로 자른다", () => {
@@ -431,11 +427,7 @@ describe("authoring request", () => {
       preview,
     );
     if (result.status !== "preview") throw new Error("candidate preview가 필요합니다.");
-    // SanitizedAuthoringCandidate.result 타입은 authoring-types.ts가 소유하며 warnings를
-    // 노출하지 않는다. 런타임에는 실려 오므로 여기서만 좁혀 본다.
-    expect(
-      (result.preview.result as unknown as { warnings: readonly string[] }).warnings,
-    ).toHaveLength(100);
+    expect(result.preview.result.warnings).toHaveLength(100);
   });
   it("camelCase 민감 키도 정규화해 가린다", () => {
     const preview = prepareAuthoringRequest({
@@ -455,6 +447,49 @@ describe("authoring request", () => {
   it("DEFAULT_SENSITIVE_KEYS는 전부 정규화된 형태다", () => {
     for (const key of DEFAULT_SENSITIVE_KEYS)
       expect(key).toBe(key.toLowerCase().replace(/[^a-z0-9]/g, ""));
+  });
+  it("계약 식별자는 값 기반 redaction에서 제외한다", () => {
+    const preview = prepareAuthoringRequest({
+      ...options(),
+      // suite id, case id, 툴 이름과 같은 문자열을 비밀값으로 선언한 상황.
+      redaction: { sensitiveValues: ["weather", "weather-success", "weather-generated"] },
+    });
+    expect(preview.request.baseline.id).toBe("weather");
+    expect(preview.request.baseline.cases[0]?.id).toBe("weather-success");
+    expect(preview.request.candidate.id).toBe("weather");
+    expect(preview.request.tools[0]?.name).toBe("weather");
+    const operation = preview.request.baseline.cases[0]?.operation;
+    if (operation?.type !== "callTool") throw new Error("callTool case가 필요합니다.");
+    expect(operation.tool).toBe("weather");
+    expect(operation.type).toBe("callTool");
+  });
+  it("같은 문자열이 operation.input 안에 있으면 여전히 가린다", () => {
+    const preview = prepareAuthoringRequest({
+      ...options(),
+      baseline: (() => {
+        const base = structuredClone(suite());
+        const first = base.cases[0];
+        if (first?.operation.type !== "callTool") throw new Error("callTool case가 필요합니다.");
+        first.operation.input.city = "weather";
+        return base;
+      })(),
+      redaction: { sensitiveValues: ["weather"] },
+    });
+    expect(preview.request.baseline.id).toBe("weather");
+    const operation = preview.request.baseline.cases[0]?.operation;
+    if (operation?.type !== "callTool") throw new Error("callTool case가 필요합니다.");
+    expect(operation.input.city).toBe("[REDACTED]");
+  });
+  it("계약 식별자를 비밀값으로 선언해도 provider 결과 검증이 통과한다", () => {
+    const preview = prepareAuthoringRequest({
+      ...options(),
+      redaction: { sensitiveValues: ["weather", "weather-success"] },
+    });
+    const result = validateAuthoringProviderResult(
+      { status: "candidate", suite: suite(), summary: "ok", warnings: [], questions: [] },
+      preview,
+    );
+    expect(result.status).toBe("preview");
   });
   it("questions 결과는 candidate를 만들지 않는다", () => {
     const result = validateAuthoringProviderResult(

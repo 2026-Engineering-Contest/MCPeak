@@ -270,6 +270,49 @@ describe("authoring request", () => {
       ).status,
     ).toBe("invalid");
   });
+  it("questions 응답에 suite가 함께 오면 거절한다", () => {
+    const result = validateAuthoringProviderResult(
+      { status: "questions", questions: ["q"], suite: {} },
+      prepareAuthoringRequest(options()),
+    );
+    expect(result.status).toBe("invalid");
+    if (result.status !== "invalid") throw new Error("invalid 결과가 필요합니다.");
+    expect(result.issues[0]?.path).toBe("status");
+  });
+  it("questions 응답에 summary가 함께 오면 거절한다", () => {
+    const result = validateAuthoringProviderResult(
+      { status: "questions", questions: ["q"], summary: "s" },
+      prepareAuthoringRequest(options()),
+    );
+    expect(result.status).toBe("invalid");
+    if (result.status !== "invalid") throw new Error("invalid 결과가 필요합니다.");
+    expect(result.issues[0]?.path).toBe("status");
+  });
+  it("provider schema를 통과해도 허용되지 않은 툴 이름이면 로컬 validator가 거절한다", () => {
+    const bad = structuredClone(suite());
+    const firstCase = bad.cases[0];
+    if (firstCase === undefined) throw new Error("baseline case가 필요합니다.");
+    firstCase.operation = { type: "callTool", tool: "unknown-tool", input: {} };
+    const result = validateAuthoringProviderResult(
+      { status: "candidate", suite: bad, summary: "ok", warnings: [], questions: [] },
+      prepareAuthoringRequest(options()),
+    );
+    expect(result.status).toBe("invalid");
+    if (result.status !== "invalid") throw new Error("invalid 결과가 필요합니다.");
+    expect(result.issues.some((issue) => issue.path === "suite.cases[0].operation.tool")).toBe(
+      true,
+    );
+  });
+  it("provider schema를 통과해도 suite id가 다르면 거절한다", () => {
+    const bad = { ...structuredClone(suite()), id: "other-suite" };
+    const result = validateAuthoringProviderResult(
+      { status: "candidate", suite: bad, summary: "ok", warnings: [], questions: [] },
+      prepareAuthoringRequest(options()),
+    );
+    expect(result.status).toBe("invalid");
+    if (result.status !== "invalid") throw new Error("invalid 결과가 필요합니다.");
+    expect(result.issues.some((issue) => issue.path === "suite.id")).toBe(true);
+  });
   it("questions 결과는 candidate를 만들지 않는다", () => {
     const result = validateAuthoringProviderResult(
       { status: "questions", questions: ["도시는?"] },

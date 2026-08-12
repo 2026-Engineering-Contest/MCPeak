@@ -41,3 +41,24 @@ export const AUTHORING_OUTPUT_SCHEMA = freeze({
   ],
   $defs: { ...(runnerDefs as Record<string, unknown>), suite: runner },
 });
+
+/**
+ * provider(Codex/Claude) 전송 전용 스키마.
+ * 두 CLI 공통 지원 범위만 사용한다: $schema / $id / $ref / $defs / 최상위 oneOf·allOf·anyOf·not 없음,
+ * 재귀 없음, nullable 없음. 문자열 제약은 pattern만 쓴다(minLength/minItems는 CLI별 지원이 불확실).
+ * suite는 객체가 아니라 JSON 문자열로 받는다. 근거는 docs/adr/0007-provider-전송-스키마-분리.md.
+ */
+export const PROVIDER_OUTPUT_SCHEMA = freeze({
+  type: "object",
+  additionalProperties: false,
+  required: ["status", "suiteJson", "summary", "warnings", "questions"],
+  properties: {
+    status: { enum: ["candidate", "questions"] },
+    // status가 "questions"이면 빈 문자열, "candidate"이면 TestSuiteSpec의 JSON 직렬화.
+    suiteJson: { type: "string" },
+    // status가 "questions"이면 빈 문자열.
+    summary: { type: "string" },
+    warnings: { type: "array", items: { type: "string" } },
+    questions: { type: "array", items: { type: "string", pattern: "\\S" } },
+  },
+});

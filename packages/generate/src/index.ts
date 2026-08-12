@@ -25,7 +25,7 @@ export {
   prepareAuthoringRequest,
   validateAuthoringProviderResult,
 } from "./authoring-request.js";
-export { AUTHORING_OUTPUT_SCHEMA } from "./authoring-schema.js";
+export { AUTHORING_OUTPUT_SCHEMA, PROVIDER_OUTPUT_SCHEMA } from "./authoring-schema.js";
 export {
   applyAuthoringChanges,
   createAuthoringDiff,

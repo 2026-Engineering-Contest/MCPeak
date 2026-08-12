@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   createBaselineSuite,
   dispatchAuthoringRequest,
+  PROVIDER_OUTPUT_SCHEMA,
   prepareAuthoringRequest,
 } from "../src/index.js";
 import type { ProviderProcessResult } from "../src/provider-process.js";
@@ -38,6 +39,20 @@ const preview = () =>
     providerId: "codex",
     model: "m",
   });
+const candidatePayload = () => ({
+  status: "candidate",
+  suiteJson: "{}",
+  summary: "s",
+  warnings: [],
+  questions: [],
+});
+const claudeEnvelope = (structured: unknown) => ({
+  type: "result",
+  subtype: "success",
+  structured_output: structured,
+});
+const plainEnvelope = (value: unknown): boolean =>
+  typeof value === "object" && value !== null && "type" in value;
 function runner(value: ProviderProcessResult) {
   const calls: unknown[] = [];
   return {
@@ -52,7 +67,7 @@ function runner(value: ProviderProcessResult) {
 describe("provider adapters", () => {
   it("Codex를 빈 cwd의 read-only ephemeral structured 실행으로 호출한다", async () => {
     const r = runner({ ok: true, value: { status: "questions", questions: ["q"] } });
-    const provider = createCodexAuthoringProvider({ run: r.run, capabilities: async () => true });
+    const provider = createCodexAuthoringProvider({ run: r.run });
     await provider.author(preview().request, { timeoutMs: 1 });
     const invocation = r.calls[0] as {
       args: (cwd: string) => readonly string[];
@@ -91,9 +106,9 @@ describe("provider adapters", () => {
   it("Claude를 safe mode와 빈 도구·MCP·session으로 호출한다", async () => {
     const r = runner({
       ok: true,
-      value: { structured_output: { status: "questions", questions: ["q"] }, noisy: "discard" },
+      value: { ...claudeEnvelope({ status: "questions", questions: ["q"] }), noisy: "discard" },
     });
-    const provider = createClaudeAuthoringProvider({ run: r.run, capabilities: async () => true });
+    const provider = createClaudeAuthoringProvider({ run: r.run });
     await provider.author(preview().request, { timeoutMs: 1 });
     expect(r.calls[0]).toMatchObject({
       command: "claude",
@@ -115,45 +130,15 @@ describe("provider adapters", () => {
       ],
     });
   });
-  it("필수 flag capability가 없으면 격리를 낮추지 않는다", async () => {
-    const r = runner({ ok: true, value: {} });
-    const provider = createCodexAuthoringProvider({ run: r.run, capabilities: async () => false });
-    await expect(provider.author(preview().request, { timeoutMs: 1 })).rejects.toMatchObject({
-      code: "providerUnavailable",
-    });
-    expect(r.calls).toHaveLength(0);
-  });
-  it("기본 capability 검사는 실제 help 출력의 필수 flag를 모두 요구한다", async () => {
-    const calls: { command: string; args: readonly string[] }[] = [];
-    const provider = createClaudeAuthoringProvider({
-      run: async (input) => {
-        throw new Error(`inference spawn 금지: ${JSON.stringify(input)}`);
-      },
-      runHelp: async (command, args) => {
-        calls.push({ command, args });
-        return "--safe-mode --model --tools --no-session-persistence --strict-mcp-config --mcp-config --output-format";
-      },
-    });
-    await expect(provider.author(preview().request, { timeoutMs: 1 })).rejects.toMatchObject({
-      code: "providerUnavailable",
-    });
-    expect(calls).toEqual([{ command: "claude", args: ["--help"] }]);
-  });
   it("두 provider가 같은 고정 지침과 제한된 context를 받는다", async () => {
     const c = runner({ ok: true, value: { status: "questions", questions: ["q"] } });
     const l = runner({
       ok: true,
-      value: { structured_output: { status: "questions", questions: ["q"] } },
+      value: claudeEnvelope({ status: "questions", questions: ["q"] }),
     });
     const request = preview().request;
-    await createCodexAuthoringProvider({ run: c.run, capabilities: async () => true }).author(
-      request,
-      { timeoutMs: 1 },
-    );
-    await createClaudeAuthoringProvider({ run: l.run, capabilities: async () => true }).author(
-      request,
-      { timeoutMs: 1 },
-    );
+    await createCodexAuthoringProvider({ run: c.run }).author(request, { timeoutMs: 1 });
+    await createClaudeAuthoringProvider({ run: l.run }).author(request, { timeoutMs: 1 });
     const cp = (c.calls[0] as { stdin: string }).stdin;
     const lp = (l.calls[0] as { stdin: string }).stdin;
     expect(cp).toContain(JSON.stringify(request));
@@ -178,7 +163,6 @@ describe("provider adapters", () => {
     const r = runner({ ok: false, code: "nonZeroExit", exitCode: 1 });
     const provider = createCodexAuthoringProvider({
       run: r.run,
-      capabilities: async () => true,
       environment: { PATH: "x", PWD: "bad", PROJECT_SECRET: "bad" },
     });
     await expect(provider.author(preview().request, { timeoutMs: 1 })).rejects.toMatchObject({
@@ -188,7 +172,7 @@ describe("provider adapters", () => {
   });
   it("provider 실패를 자동 재시도하거나 fallback하지 않는다", async () => {
     const r = runner({ ok: false, code: "nonZeroExit", exitCode: 1 });
-    const provider = createCodexAuthoringProvider({ run: r.run, capabilities: async () => true });
+    const provider = createCodexAuthoringProvider({ run: r.run });
     await expect(provider.author(preview().request, { timeoutMs: 1 })).rejects.toMatchObject({
       code: "nonZeroExit",
     });
@@ -206,7 +190,6 @@ describe("provider adapters", () => {
     const result = await dispatchAuthoringRequest({
       provider: createCodexAuthoringProvider({
         run: r.run,
-        capabilities: async () => true,
         model: approved.model,
       }),
       preview: approved,
@@ -230,7 +213,6 @@ describe("provider adapters", () => {
     const approved = preview();
     const different = createCodexAuthoringProvider({
       run: r.run,
-      capabilities: async () => true,
       model: "higher-cost-model",
     });
     await expect(
@@ -244,7 +226,6 @@ describe("provider adapters", () => {
 
     const matching = createCodexAuthoringProvider({
       run: r.run,
-      capabilities: async () => true,
       model: approved.model,
     });
     await expect(
@@ -284,5 +265,133 @@ describe("provider adapters", () => {
       }),
     ).resolves.toMatchObject({ status: "preview" });
     expect(calls).toBe(1);
+  });
+  it("help 조회 없이 바로 provider를 spawn한다", async () => {
+    const r = runner({ ok: true, value: { status: "questions", questions: ["q"] } });
+    await createCodexAuthoringProvider({ run: r.run }).author(preview().request, { timeoutMs: 1 });
+    expect(r.calls).toHaveLength(1);
+  });
+  it("provider 전송 스키마에 지원되지 않는 keyword가 없다", () => {
+    const banned = new Set(["$schema", "$id", "$ref", "$defs"]);
+    const visit = (node: unknown): void => {
+      if (Array.isArray(node)) {
+        for (const item of node) visit(item);
+        return;
+      }
+      if (node === null || typeof node !== "object") return;
+      for (const [key, value] of Object.entries(node)) {
+        expect(banned.has(key)).toBe(false);
+        visit(value);
+      }
+    };
+    visit(PROVIDER_OUTPUT_SCHEMA);
+    for (const combinator of ["oneOf", "allOf", "anyOf", "not"])
+      expect(combinator in PROVIDER_OUTPUT_SCHEMA).toBe(false);
+    expect(() => JSON.stringify(PROVIDER_OUTPUT_SCHEMA)).not.toThrow();
+  });
+  it("Codex에 전달하는 schema 파일 내용이 PROVIDER_OUTPUT_SCHEMA다", async () => {
+    const r = runner({ ok: true, value: { status: "questions", questions: ["q"] } });
+    await createCodexAuthoringProvider({ run: r.run }).author(preview().request, { timeoutMs: 1 });
+    const invocation = r.calls[0] as { files: readonly { name: string; contents: string }[] };
+    expect(invocation.files[0]?.contents).toBe(JSON.stringify(PROVIDER_OUTPUT_SCHEMA));
+  });
+  it("Claude --json-schema 인자가 PROVIDER_OUTPUT_SCHEMA다", async () => {
+    const r = runner({
+      ok: true,
+      value: claudeEnvelope({ status: "questions", questions: ["q"] }),
+    });
+    await createClaudeAuthoringProvider({ run: r.run }).author(preview().request, { timeoutMs: 1 });
+    const args = (r.calls[0] as { args: readonly string[] }).args;
+    expect(args[args.indexOf("--json-schema") + 1]).toBe(JSON.stringify(PROVIDER_OUTPUT_SCHEMA));
+  });
+  it("suiteJson을 파싱해 suite 객체로 정규화한다", async () => {
+    const r = runner({
+      ok: true,
+      value: {
+        status: "candidate",
+        suiteJson: JSON.stringify(suite()),
+        summary: "s",
+        warnings: [],
+        questions: [],
+      },
+    });
+    await expect(
+      createCodexAuthoringProvider({ run: r.run }).author(preview().request, { timeoutMs: 1 }),
+    ).resolves.toMatchObject({ status: "candidate", suite: suite(), summary: "s" });
+  });
+  it("suiteJson이 JSON이 아니면 schemaMismatch다", async () => {
+    const r = runner({
+      ok: true,
+      value: {
+        status: "candidate",
+        suiteJson: "{not json",
+        summary: "s",
+        warnings: [],
+        questions: [],
+      },
+    });
+    await expect(
+      createCodexAuthoringProvider({ run: r.run }).author(preview().request, { timeoutMs: 1 }),
+    ).rejects.toMatchObject({ code: "schemaMismatch" });
+  });
+  it("suiteJson이 객체가 아니면 schemaMismatch다", async () => {
+    const r = runner({
+      ok: true,
+      value: { status: "candidate", suiteJson: "[]", summary: "s", warnings: [], questions: [] },
+    });
+    await expect(
+      createCodexAuthoringProvider({ run: r.run }).author(preview().request, { timeoutMs: 1 }),
+    ).rejects.toMatchObject({ code: "schemaMismatch" });
+  });
+  it("Claude가 is_error를 세우면 candidate로 적용하지 않는다", async () => {
+    const r = runner({
+      ok: true,
+      value: { ...claudeEnvelope(candidatePayload()), is_error: true },
+    });
+    await expect(
+      createClaudeAuthoringProvider({ run: r.run }).author(preview().request, { timeoutMs: 1 }),
+    ).rejects.toMatchObject({ code: "schemaMismatch" });
+  });
+  it("Claude가 api_error_status를 담으면 candidate로 적용하지 않는다", async () => {
+    const r = runner({
+      ok: true,
+      value: { ...claudeEnvelope(candidatePayload()), api_error_status: 529 },
+    });
+    await expect(
+      createClaudeAuthoringProvider({ run: r.run }).author(preview().request, { timeoutMs: 1 }),
+    ).rejects.toMatchObject({ code: "schemaMismatch" });
+  });
+  it("Claude subtype이 success가 아니면 schemaMismatch다", async () => {
+    const r = runner({
+      ok: true,
+      value: { ...claudeEnvelope(candidatePayload()), subtype: "error_max_turns" },
+    });
+    await expect(
+      createClaudeAuthoringProvider({ run: r.run }).author(preview().request, { timeoutMs: 1 }),
+    ).rejects.toMatchObject({ code: "schemaMismatch" });
+  });
+  it("provider 실패 오류에 prompt·stdout·stderr 원문이 담기지 않는다", async () => {
+    const values: unknown[] = [
+      { status: "candidate", suiteJson: "{not json", summary: "s", warnings: [], questions: [] },
+      { ...claudeEnvelope(candidatePayload()), is_error: true },
+      { ...claudeEnvelope(candidatePayload()), api_error_status: 529 },
+      { ...claudeEnvelope(candidatePayload()), subtype: "error_max_turns" },
+    ];
+    let combined = "";
+    for (const value of values) {
+      const claude = plainEnvelope(value);
+      const provider = claude
+        ? createClaudeAuthoringProvider({ run: runner({ ok: true, value }).run })
+        : createCodexAuthoringProvider({ run: runner({ ok: true, value }).run });
+      const error = await provider
+        .author(preview().request, { timeoutMs: 1 })
+        .then(() => undefined)
+        .catch((thrown: unknown) => thrown);
+      expect(error).toBeInstanceOf(Error);
+      const failure = error as Error;
+      combined += `${JSON.stringify(failure)}${failure.message}${failure.stack ?? ""}`;
+    }
+    expect(combined).not.toContain("ignore previous instructions");
+    expect(combined).not.toContain("structured_output");
   });
 });

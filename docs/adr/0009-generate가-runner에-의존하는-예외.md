@@ -1,0 +1,68 @@
+# ADR-0009: `generate`가 `runner`에 의존하는 예외를 명시적으로 승인한다
+
+- 상태: 승인
+- 날짜: 2026-08-13
+- 담당: generate, runner
+- 참조: `docs/architecture.md`, `CONTRIBUTING.md` §3
+
+## 배경
+
+프로젝트의 의존 방향 규칙은 단방향이다.
+
+```
+cli → runner / generate / record / mock → core
+```
+
+이 규칙을 문자 그대로 읽으면 `generate`는 `core`만 참조해야 한다. 그런데 `generate`는
+`@ohmymcp/runner`를 직접 참조한다.
+
+| 종류 | 심볼 |
+|---|---|
+| 타입 | `TestSuiteSpec`, `TestCaseSpec`, `SuiteValidationIssue`, `RunnerRedactionOptions` |
+| 함수 | `validateMcpSuite` |
+| 상수 | `MCP_SUITE_JSON_SCHEMA`, `DEFAULT_SENSITIVE_KEYS`, `REDACTED` |
+
+이 의존은 AI 보조 작성 기능 이전부터 있었고, PR #37이 `MCP_SUITE_JSON_SCHEMA`를 하나 더 참조하면서
+코드 리뷰에서 지적됐다.
+
+화살표 방향 자체는 어긋나지 않는다. `generate`는 `cli`를 참조하지 않고 순환도 없다. 어긋나는 것은
+"각 패키지는 `core`의 타입만 있으면 된다"는 서술이다. 그 서술은 `core`에 대해서만 성립하고
+`runner`에 대해서는 성립하지 않는다. `generate`는 `runner`의 구현(`validateMcpSuite`)에 의존한다.
+
+## 선택지
+
+- A안: suite 스펙과 검증기를 `core`로 옮긴다.
+- B안: `runner`의 검증기를 `generate`에 주입한다.
+- C안: 예외를 명시적으로 승인하고 참조 범위를 검사로 고정한다.
+- D안: `generate`가 자체 검증기를 갖는다.
+
+## 결정
+
+C안을 채택한다. 이 의존을 예외로 승인하고, 참조하는 심볼 목록을 테스트로 고정한다. 목록 밖 심볼이
+추가되면 테스트가 깨진다.
+
+## 이유
+
+D안은 배제한다. 검증기가 두 벌이 되면 `runner`가 실행을 거부하는 suite를 `generate`가 만들 수
+있다. 실행기와 생성기의 판정이 갈리는 것이 이 도구에서 가장 나쁜 결함이다. 사용자는 통과한 suite가
+실행되지 않는 것을 본다.
+
+B안은 지금 문제를 해결하지 않는다. 주입은 런타임 결합을 옮길 뿐 `TestSuiteSpec` 타입 의존은
+그대로다. 타입만 남겨도 `MCP_SUITE_JSON_SCHEMA`처럼 값이 필요한 자리가 있다.
+
+A안이 원칙적으로 옳다. suite 스펙은 실행기와 생성기가 공유하는 계약이므로 더 낮은 층에 있어야
+한다. 그러나 지금 하지 않는다. `core`의 책임 범위와 `runner`의 공개 API를 함께 바꾸는 작업이고,
+`core/src/types.ts`는 다섯 명의 병렬 작업 기준점이라 변경에 전원 승인이 필요하다. AI 보조 작성
+기능을 내보내는 이 PR에 그 변경을 얹으면 두 작업의 실패가 뒤섞인다.
+
+C안은 A안을 막지 않는다. 참조 목록을 검사로 고정하면 의존이 조용히 커지는 것을 막고, 나중에 A안을
+할 때 무엇을 옮겨야 하는지가 그 목록에 이미 적혀 있다.
+
+## 결과
+
+- `generate → runner` 의존은 승인된 예외다. 위 표의 심볼만 허용한다.
+- 목록을 넓히려면 이 ADR을 고쳐야 한다. 테스트가 먼저 깨져 그 사실을 알린다.
+- 의존 방향 규칙의 서술을 정정한다. "각 패키지는 `core`의 타입만 있으면 된다"는 `core`에 한한
+  서술이고, `runner`에 대해서는 이 ADR이 정한 예외가 적용된다.
+- A안은 열려 있다. 착수 조건은 `core`의 책임 범위 확대에 대한 오너 전원 합의다. 그때 옮길 대상은
+  위 표와 같다.

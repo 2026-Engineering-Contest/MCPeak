@@ -1,0 +1,277 @@
+import { createHash } from "node:crypto";
+import type { McpStdioConnection, ToolDef } from "@ohmymcp/core";
+import type { TestSuiteSpec } from "@ohmymcp/runner";
+import { describe, expect, it, vi } from "vitest";
+import {
+  type GenerateCommandDependencies,
+  parseGenerateCommand,
+  runGenerateCommand,
+} from "../src/generate-command.js";
+
+const tools: ToolDef[] = [{ name: "weather", inputSchema: { type: "object" } }];
+const suite: TestSuiteSpec = {
+  schemaVersion: 1,
+  id: "weather",
+  name: "Weather",
+  defaultTimeoutMs: 10000,
+  cases: [],
+};
+const fingerprint = createHash("sha256")
+  .update('{"cases":[],"defaultTimeoutMs":10000,"id":"weather","name":"Weather","schemaVersion":1}')
+  .digest("hex");
+
+function deps(overrides: Partial<GenerateCommandDependencies> = {}) {
+  const events: string[] = [];
+  const connection: McpStdioConnection = {
+    client: {
+      listTools: vi.fn(async () => {
+        events.push("listTools");
+        return tools;
+      }),
+      callTool: vi.fn(),
+      close: vi.fn(),
+    },
+    getDiagnostics: vi.fn(),
+    close: vi.fn(async () => {
+      events.push("close");
+    }),
+    forceClose: vi.fn(async () => {
+      events.push("forceClose");
+    }),
+  };
+  const value: GenerateCommandDependencies = {
+    connect: vi.fn(async () => {
+      events.push("connect");
+      return connection;
+    }),
+    createBaselineSuite: vi.fn(() => {
+      events.push("baseline");
+      return {
+        suite,
+        baselineFingerprint: "baseline",
+        suiteFingerprint: "suite",
+        policyVersion: "schema-baseline-v1" as const,
+      };
+    }),
+    createAuthoringSession: vi.fn(
+      () => ({ approvedDraft: { suite, suiteFingerprint: "suite" } }) as never,
+    ),
+    finalizeAuthoringDraft: vi.fn(() => {
+      events.push("finalize");
+      return { finalized: true, snapshot: { fingerprint } } as never;
+    }),
+    getAuthoringExecutionSuite: vi.fn(() => suite),
+    validateSuite: vi.fn(() => ({ valid: true as const, value: suite })),
+    exists: vi.fn(async () => false),
+    openTemp: vi.fn(async (path: string) => {
+      events.push(`open:${path}`);
+      return {
+        writeFile: vi.fn(async () => {
+          events.push("write");
+        }),
+        sync: vi.fn(async () => {
+          events.push("fsync");
+        }),
+        close: vi.fn(async () => {
+          events.push("fileClose");
+        }),
+      };
+    }),
+    readFile: vi.fn(async () => {
+      events.push("read");
+      return new TextEncoder().encode(JSON.stringify(suite));
+    }),
+    rename: vi.fn(async () => {
+      events.push("rename");
+    }),
+    unlink: vi.fn(async () => {
+      events.push("unlink");
+    }),
+    writeStdout: vi.fn(),
+    writeStderr: vi.fn(),
+    ...overrides,
+  };
+  return { value, events, connection };
+}
+
+describe("parseGenerateCommand", () => {
+  it("generate 필수 값과 반복 arg를 순서대로 파싱한다", () => {
+    expect(
+      parseGenerateCommand([
+        "--suite-id",
+        "weather",
+        "--name",
+        "Weather",
+        "--out",
+        "out.json",
+        "--command",
+        "node",
+        "--arg",
+        "one",
+        "--arg",
+        "two",
+        "--baseline-only",
+      ]),
+    ).toEqual({
+      suiteId: "weather",
+      name: "Weather",
+      outPath: "out.json",
+      command: "node",
+      args: ["one", "two"],
+      baselineOnly: true,
+      provider: undefined,
+      model: undefined,
+    });
+  });
+  it("equals 형식, 하이픈 arg와 빈 arg를 보존한다", () => {
+    expect(
+      parseGenerateCommand([
+        "--suite-id=weather",
+        "--name=Weather",
+        "--out=out.json",
+        "--command=node",
+        "--arg=-m",
+        "--arg=",
+      ]),
+    ).toMatchObject({ args: ["-m", ""] });
+  });
+  it("누락·중복·unknown·추가 위치 인자를 사용법 오류로 거절한다", () => {
+    for (const argv of [
+      ["--name", "n"],
+      ["--suite-id", "x", "--suite-id", "y", "--name", "n", "--out", "x.json", "--command", "node"],
+      ["--suite-id", "x", "--name", "n", "--out", "x.json", "--command", "node", "--wat"],
+      ["--suite-id", "x", "--name", "n", "--out", "x.json", "--command", "--wat"],
+      ["--suite-id", "x", "--name", "n", "--out", "x.json", "--command", "--baseline-only"],
+      ["--suite-id", "x", "--name", "n", "--out", "x.json", "--command", "node", "extra"],
+    ])
+      expect(() => parseGenerateCommand(argv)).toThrow();
+  });
+  it("model 단독과 잘못된 provider를 process 전에 거절한다", async () => {
+    for (const argv of [
+      [
+        "generate",
+        "--suite-id",
+        "x",
+        "--name",
+        "n",
+        "--out",
+        "x.json",
+        "--command",
+        "node",
+        "--model",
+        "m",
+      ],
+      [
+        "generate",
+        "--suite-id",
+        "x",
+        "--name",
+        "n",
+        "--out",
+        "x.json",
+        "--command",
+        "node",
+        "--provider",
+        "other",
+      ],
+    ]) {
+      const d = deps();
+      expect(await runGenerateCommand(argv, d.value)).toBe(1);
+      expect(d.value.connect).not.toHaveBeenCalled();
+    }
+  });
+});
+
+describe("runGenerateCommand", () => {
+  const argv = [
+    "generate",
+    "--suite-id",
+    "weather",
+    "--name",
+    "Weather",
+    "--out",
+    "/tmp/out.json",
+    "--command",
+    "node",
+    "--arg",
+    "server.mjs",
+    "--baseline-only",
+  ];
+  it("baseline-only는 Core tools/list 뒤 server를 닫고 AI 없이 저장한다", async () => {
+    const d = deps();
+    expect(await runGenerateCommand(argv, d.value)).toBe(0);
+    expect(d.events).toEqual([
+      "connect",
+      "listTools",
+      "close",
+      "baseline",
+      "finalize",
+      "open:/tmp/.out.json.ohmymcp.tmp",
+      "write",
+      "fsync",
+      "fileClose",
+      "read",
+      "rename",
+    ]);
+  });
+  it("listTools 실패는 열린 connection을 강제 종료한다", async () => {
+    const d = deps();
+    d.connection.client.listTools = vi.fn(async () => {
+      throw new Error("secret");
+    });
+    expect(await runGenerateCommand(argv, d.value)).toBe(1);
+    expect(d.connection.forceClose).toHaveBeenCalledOnce();
+  });
+  it("기존 out 파일을 비대화형으로 덮어쓰지 않는다", async () => {
+    const d = deps({ exists: vi.fn(async () => true) });
+    expect(await runGenerateCommand(argv, d.value)).toBe(1);
+    expect(d.value.openTemp).not.toHaveBeenCalled();
+    expect(d.value.rename).not.toHaveBeenCalled();
+  });
+  it("같은 디렉터리 temp write를 다시 읽어 검증한 뒤 rename한다", async () => {
+    const d = deps();
+    await runGenerateCommand(argv, d.value);
+    expect(d.events.slice(-6)).toEqual([
+      "open:/tmp/.out.json.ohmymcp.tmp",
+      "write",
+      "fsync",
+      "fileClose",
+      "read",
+      "rename",
+    ]);
+    expect(d.value.validateSuite).toHaveBeenCalledOnce();
+  });
+  it("temp 충돌과 재검증 실패는 목표 파일을 바꾸지 않는다", async () => {
+    for (const override of [
+      {
+        openTemp: vi.fn(async () => {
+          throw new Error("EEXIST");
+        }),
+      },
+      { validateSuite: vi.fn(() => ({ valid: false as const, issues: [] })) },
+    ]) {
+      const d = deps(override);
+      expect(await runGenerateCommand(argv, d.value)).toBe(1);
+      expect(d.value.rename).not.toHaveBeenCalled();
+    }
+  });
+  it("저장 JSON은 고정 필드 순서, 2칸 indent와 마지막 newline을 쓴다", async () => {
+    const writeFile = vi.fn<(data: string, encoding: "utf8") => Promise<void>>(
+      async () => undefined,
+    );
+    const d = deps({ openTemp: vi.fn(async () => ({ writeFile, sync: vi.fn(), close: vi.fn() })) });
+    await runGenerateCommand(argv, d.value);
+    expect(writeFile.mock.calls[0]?.[0]).toBe(
+      '{\n  "schemaVersion": 1,\n  "id": "weather",\n  "name": "Weather",\n  "defaultTimeoutMs": 10000,\n  "cases": []\n}\n',
+    );
+  });
+  it("generate dispatch 실패를 raw 오류 없이 정규화한다", async () => {
+    const d = deps({
+      connect: vi.fn(async () => {
+        throw new Error("SECRET_STACK");
+      }),
+    });
+    await runGenerateCommand(argv, d.value);
+    expect(d.value.writeStderr).toHaveBeenCalledWith(expect.not.stringContaining("SECRET_STACK"));
+  });
+});

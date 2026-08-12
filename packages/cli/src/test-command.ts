@@ -1,5 +1,5 @@
 import { extname } from "node:path";
-import { McpClientError, type McpStdioConnection } from "@ohmymcp/core";
+import type { McpStdioConnection } from "@ohmymcp/core";
 import type {
   FinalizeRunnerExecutionOptions,
   RunnerExecution,
@@ -155,10 +155,23 @@ function format(failure: CliFailure): string {
     result += `\n- [${escapeTerminalText(issue.code)}] ${escapeTerminalText(issue.path)}: ${escapeTerminalText(issue.message)}\n  해결: ${escapeTerminalText(issue.hint)}`;
   return `${result}\n`;
 }
-function coreError(error: unknown): McpClientError | undefined {
+type CoreError = Readonly<{ name: "McpClientError"; code: string; message: string; hint: string }>;
+function coreError(error: unknown): CoreError | undefined {
   const seen = new Set<object>();
-  const visit = (value: unknown): McpClientError | undefined => {
-    if (value instanceof McpClientError) return value;
+  const visit = (value: unknown): CoreError | undefined => {
+    if (
+      typeof value === "object" &&
+      value !== null &&
+      "name" in value &&
+      value.name === "McpClientError" &&
+      "code" in value &&
+      typeof value.code === "string" &&
+      "message" in value &&
+      typeof value.message === "string" &&
+      "hint" in value &&
+      typeof value.hint === "string"
+    )
+      return value as CoreError;
     if (typeof value !== "object" || value === null || seen.has(value)) return undefined;
     seen.add(value);
     if (value instanceof AggregateError)

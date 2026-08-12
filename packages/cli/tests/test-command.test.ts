@@ -1,4 +1,4 @@
-import { McpClientError, type McpStdioConnection } from "@ohmymcp/core";
+import type { McpStdioConnection } from "@ohmymcp/core";
 import type { RunnerExecution, RunnerReport, TestSuiteSpec } from "@ohmymcp/runner";
 import { describe, expect, it, vi } from "vitest";
 import { parseTestCommand, runCli, type TestCommandDependencies } from "../src/test-command.js";
@@ -187,17 +187,14 @@ describe("runCli", () => {
     }
   });
   it("Core 오류만 안전하게 연결 실패로 출력한다", async () => {
-    const error = new McpClientError({
+    const error = {
+      name: "McpClientError" as const,
       code: "PROCESS_START_FAILED",
-      phase: "spawn",
-      diagnostics: {
-        exitCode: null,
-        signal: null,
-        stderr: "SECRET_STDERR",
-        stderrTruncated: false,
-      },
+      message: "연결 실패",
+      hint: "설정을 확인하세요.",
+      diagnostics: { stderr: "SECRET_STDERR" },
       cause: new Error("SECRET_CAUSE"),
-    });
+    };
     const d = deps({
       connect: async () => {
         throw new AggregateError([new Error("noise"), error], "outer");
@@ -253,16 +250,18 @@ describe("runCli", () => {
     expect(d.value.connect).not.toHaveBeenCalled();
   });
   it("direct, nested, 순환 AggregateError에서 DFS 첫 Core 오류를 사용한다", async () => {
-    const first = new McpClientError({
+    const first = {
+      name: "McpClientError" as const,
       code: "PROCESS_START_FAILED",
-      phase: "spawn",
-      diagnostics: { exitCode: null, signal: null, stderr: "", stderrTruncated: false },
-    });
-    const later = new McpClientError({
+      message: "process",
+      hint: "hint",
+    };
+    const later = {
+      name: "McpClientError" as const,
       code: "HANDSHAKE_FAILED",
-      phase: "handshake",
-      diagnostics: { exitCode: null, signal: null, stderr: "", stderrTruncated: false },
-    });
+      message: "handshake",
+      hint: "hint",
+    };
     const cyclic = new AggregateError([], "cyclic");
     cyclic.errors.push(cyclic, later);
     const errors: ReadonlyArray<readonly [unknown, string]> = [

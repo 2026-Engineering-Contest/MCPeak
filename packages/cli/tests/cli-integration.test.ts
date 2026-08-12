@@ -5,6 +5,9 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import { run } from "../src/index.js";
 
+vi.mock("@ohmymcp/core", async () => import("../../core/src/index.js"));
+vi.mock("@ohmymcp/runner", async () => import("../../runner/src/index.js"));
+
 const here = resolve(fileURLToPath(new URL(".", import.meta.url)));
 const root = resolve(here, "../../..");
 const wrapper = join(here, "fixtures/stdio-server-wrapper.mjs");

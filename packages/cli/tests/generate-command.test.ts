@@ -12,6 +12,7 @@ import {
   type PublicProviderFailure,
   prepareAuthoringRequest,
   reviewLocalAuthoringCandidate,
+  sha256,
 } from "@ohmymcp/generate";
 import type { CallToolCaseSpec, TestCaseSpec, TestSuiteSpec } from "@ohmymcp/runner";
 import { describe, expect, it, vi } from "vitest";
@@ -329,6 +330,37 @@ describe("runGenerateCommand", () => {
       expect(await runGenerateCommand(argv, d.value)).toBe(1);
       expect(d.value.link).not.toHaveBeenCalled();
     }
+  });
+  it("baseline 저장 경로의 fingerprint가 교체 전후로 동일하다", async () => {
+    // 기대값은 cli의 옛 지역 구현이 내던 값이다. 문자열로 박아 두어 generate의 sha256으로
+    // 갈아탄 뒤에도 같은 값이 나오는지 고정한다. 달라지면 승인 검증이 조용히 깨진다.
+    const expected = "dd42ff3ee4b40db6ea0416a3c9794da2d8e599f661a3ee0d3c39179dd266152c";
+    expect(fingerprint).toBe(expected);
+    expect(sha256(suite)).toBe(expected);
+    const d = deps();
+    // finalize가 이 fingerprint를 내면 saveSuite의 재검증이 통과해야 한다.
+    expect(await runGenerateCommand(argv, d.value)).toBe(0);
+    expect(d.value.link).toHaveBeenCalledOnce();
+  });
+  it("저장된 suite의 fingerprint가 다르면 커밋하지 않는다", async () => {
+    const d = deps({
+      finalizeAuthoringDraft: vi.fn(
+        () => ({ finalized: true, snapshot: { fingerprint: "다른값" } }) as never,
+      ),
+    });
+    expect(await runGenerateCommand(argv, d.value)).toBe(1);
+    expect(d.value.link).not.toHaveBeenCalled();
+  });
+  it("키 순서가 다른 동등한 suite는 같은 fingerprint를 낸다", () => {
+    const permuted: TestSuiteSpec = {
+      cases: [],
+      defaultTimeoutMs: 10000,
+      name: "Weather",
+      id: "weather",
+      schemaVersion: 1,
+    };
+    expect(sha256(permuted)).toBe(sha256(suite));
+    expect(sha256(permuted)).toBe(fingerprint);
   });
   it("저장 JSON은 고정 필드 순서, 2칸 indent와 마지막 newline을 쓴다", async () => {
     const writeFile = vi.fn<(data: string, encoding: "utf8") => Promise<void>>(

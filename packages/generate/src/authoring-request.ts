@@ -13,6 +13,7 @@ import type {
   SanitizedAuthoringCandidate,
 } from "./authoring-types.js";
 import { deepFreeze, sha256 } from "./canonical.js";
+import type { AuthoringProviderFailureCode } from "./provider-process.js";
 import { redactAuthoringSuite } from "./redaction.js";
 
 export type AuthoringRequestMode = "initial" | "revise";
@@ -65,7 +66,7 @@ export type AuthoringProviderResult =
 export type AuthoringDispatchResult =
   | { readonly status: "notApproved" }
   | { readonly status: "approvalInvalidated" }
-  | { readonly status: "providerFailed" }
+  | { readonly status: "providerFailed"; readonly failure: PublicProviderFailure }
   | { readonly status: "resultLimitExceeded" }
   | { readonly status: "invalid"; readonly issues: readonly PublicProviderValidationIssue[] }
   | { readonly status: "questions"; readonly questions: readonly string[] }
@@ -78,6 +79,14 @@ export const DEFAULT_MAX_RESULT_BYTES = 262_144;
 export const DEFAULT_PROVIDER_TIMEOUT_MS = 120_000;
 export const MAX_PROVIDER_TIMEOUT_MS = 600_000;
 
+export interface PublicProviderFailure {
+  readonly providerId: "codex" | "claude";
+  readonly code: AuthoringProviderFailureCode;
+  readonly timeoutMs: number;
+  readonly exitCode?: number;
+  readonly stderr?: { readonly captured: boolean; readonly truncated: boolean };
+}
+
 type RequestState = {
   request: AuthoringRequest;
   fingerprint: string;
@@ -89,6 +98,17 @@ type RequestState = {
 };
 const requests = new WeakMap<AuthoringRequestPreview, RequestState>();
 const candidates = new WeakMap<SanitizedAuthoringCandidate, TestSuiteSpec>();
+const providerFailureCodes = new Set<AuthoringProviderFailureCode>([
+  "providerUnavailable",
+  "nonZeroExit",
+  "timedOut",
+  "cancelled",
+  "outputLimitExceeded",
+  "invalidUtf8",
+  "invalidJson",
+  "schemaMismatch",
+  "internal",
+]);
 const plain = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" &&
   value !== null &&
@@ -156,6 +176,29 @@ function redactText(value: string, options?: RunnerRedactionOptions): string {
     result = result.replace(expression, `$1${REDACTED}`);
   }
   return result;
+}
+function publicProviderFailure(error: unknown, state: RequestState): PublicProviderFailure {
+  const source = error as {
+    code?: unknown;
+    exitCode?: unknown;
+    stderr?: { captured?: unknown; truncated?: unknown };
+  };
+  const code =
+    typeof source?.code === "string" &&
+    providerFailureCodes.has(source.code as AuthoringProviderFailureCode)
+      ? (source.code as AuthoringProviderFailureCode)
+      : "internal";
+  const exitCode =
+    typeof source?.exitCode === "number" &&
+    Number.isInteger(source.exitCode) &&
+    source.exitCode >= 0
+      ? source.exitCode
+      : undefined;
+  const stderr =
+    typeof source?.stderr?.captured === "boolean" && typeof source.stderr.truncated === "boolean"
+      ? { captured: source.stderr.captured, truncated: source.stderr.truncated }
+      : undefined;
+  return { providerId: state.providerId, code, timeoutMs: state.timeoutMs, exitCode, stderr };
 }
 function safeIssues(input: unknown): readonly PublicProviderValidationIssue[] {
   const result = validateMcpSuite(input);
@@ -372,7 +415,7 @@ export async function dispatchAuthoringRequest(options: {
       redaction: state.redaction,
       sensitiveValues: state.redaction?.sensitiveValues,
     });
-  } catch {
-    return { status: "providerFailed" };
+  } catch (error) {
+    return { status: "providerFailed", failure: publicProviderFailure(error, state) };
   }
 }

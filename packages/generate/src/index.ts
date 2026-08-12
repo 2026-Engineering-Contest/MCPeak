@@ -11,6 +11,7 @@ export type {
   AuthoringRequestMode,
   AuthoringRequestPreview,
   McpToolContext,
+  PublicProviderFailure,
   TestAuthoringProvider,
 } from "./authoring-request.js";
 export {

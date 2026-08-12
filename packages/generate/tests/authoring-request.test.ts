@@ -126,6 +126,40 @@ describe("authoring request", () => {
     ).resolves.toEqual({ status: "approvalInvalidated" });
     expect(calls).toBe(0);
   });
+  it("provider 안전 failure code와 진단만 보존한다", async () => {
+    const preview = prepareAuthoringRequest(options());
+    for (const [code, exitCode, stderr] of [
+      ["timedOut", undefined, undefined],
+      ["cancelled", undefined, undefined],
+      ["providerUnavailable", undefined, undefined],
+      ["nonZeroExit", 7, { captured: true, truncated: true }],
+      ["outputLimitExceeded", undefined, { captured: false, truncated: false }],
+    ] as const) {
+      const rawError = Object.assign(new Error("RAW_MESSAGE_SENTINEL"), {
+        code,
+        exitCode,
+        stderr,
+        stdout: "RAW_STDOUT_SENTINEL",
+        stack: "RAW_STACK_SENTINEL",
+      });
+      const result = await dispatchAuthoringRequest({
+        provider: { id: "codex", author: async () => Promise.reject(rawError) },
+        preview,
+        approval: { approved: true, fingerprint: preview.fingerprint },
+      });
+      expect(result).toMatchObject({
+        status: "providerFailed",
+        failure: {
+          providerId: "codex",
+          code,
+          timeoutMs: preview.providerTimeoutMs,
+          exitCode,
+          stderr,
+        },
+      });
+      expect(JSON.stringify(result)).not.toContain("RAW_");
+    }
+  });
   it("dispatch candidate를 session diff와 승인 적용으로 연결한다", async () => {
     const baseline = createBaselineSuite(tools, { suiteId: "weather", suiteName: "날씨" });
     const session = createAuthoringSession(baseline);

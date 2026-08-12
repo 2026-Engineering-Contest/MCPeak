@@ -1,14 +1,17 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { COMMANDS, run } from "../src/index.js";
 
 describe("ohmymcp cli", () => {
-  it("run() 은 아직 구현되지 않은 스텁이다", () => {
-    expect(run).toBeTypeOf("function");
-    expect(() => run([])).toThrow("not implemented");
+  it("알려진 서브커맨드를 선언한다", () => {
+    expect(COMMANDS).toEqual(["test", "generate", "record", "replay", "mock"]);
   });
 
-  it("알려진 서브커맨드를 선언한다", () => {
-    expect(COMMANDS).toContain("test");
-    expect(COMMANDS.length).toBeGreaterThan(0);
+  it("사용자 입력 오류를 reject하지 않고 종료 코드 1로 반환한다", async () => {
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    try {
+      await expect(run([])).resolves.toBe(1);
+    } finally {
+      stderr.mockRestore();
+    }
   });
 });

@@ -44,6 +44,9 @@ importers:
 
   packages/cli:
     dependencies:
+      '@ohmymcp/core':
+        specifier: workspace:*
+        version: link:../core
       '@ohmymcp/generate':
         specifier: workspace:*
         version: link:../generate

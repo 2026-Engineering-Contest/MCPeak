@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import type { ToolDef } from "@ohmymcp/core";
-import { safeBaseName } from "./filename.js";
+import { nameDiscriminator, safeBaseName } from "./filename.js";
 import { renderTool } from "./render.js";
 import { fail } from "./schema.js";
 
@@ -19,21 +19,44 @@ type GeneratedDraft = {
 };
 
 function createDrafts(tools: ToolDef[]): GeneratedDraft[] {
-  const usedNames = new Set<string>();
+  const entries = tools.map((tool, index) => {
+    const name = typeof tool?.name === "string" ? tool.name : "";
+    return { index, initialName: safeBaseName(name, index), name, tool };
+  });
+  const namesByInitialName = new Map<string, Set<string>>();
+  for (const { initialName, name } of entries) {
+    const names = namesByInitialName.get(initialName) ?? new Set<string>();
+    names.add(name);
+    namesByInitialName.set(initialName, names);
+  }
 
-  return tools.map((tool, index) => {
-    const initialName = safeBaseName(typeof tool?.name === "string" ? tool.name : "", index);
-    let baseName = initialName;
+  const usedNames = new Set<string>();
+  const drafts = new Array<GeneratedDraft>(tools.length);
+  const sortedEntries = [...entries].sort(
+    (left, right) =>
+      (left.initialName < right.initialName ? -1 : left.initialName > right.initialName ? 1 : 0) ||
+      (left.name < right.name ? -1 : left.name > right.name ? 1 : 0) ||
+      left.index - right.index,
+  );
+
+  for (const { index, initialName, name, tool } of sortedEntries) {
+    const hasDistinctCollision = (namesByInitialName.get(initialName)?.size ?? 0) > 1;
+    const stableName = hasDistinctCollision
+      ? `${initialName}-${nameDiscriminator(name)}`
+      : initialName;
+    let baseName = stableName;
     for (let occurrence = 2; usedNames.has(baseName); occurrence++) {
-      baseName = `${initialName}-${occurrence}`;
+      baseName = `${stableName}-${occurrence}`;
     }
     usedNames.add(baseName);
 
-    return {
+    drafts[index] = {
       fileName: `${baseName}.generated.ts`,
       source: renderTool(tool, index, baseName),
     };
-  });
+  }
+
+  return drafts;
 }
 
 /**

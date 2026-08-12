@@ -7,6 +7,11 @@ function fallbackBaseName(name: string): string {
   return `tool-${hash}`;
 }
 
+/** 정규화 결과가 같은 도구 이름을 원문 기준으로 구분하는 안정적인 식별자를 만든다. */
+export function nameDiscriminator(name: string): string {
+  return createHash("sha256").update(name).digest("hex").slice(0, 8);
+}
+
 /** MCP 도구 이름을 경로 구분자가 없는 결정론적인 파일 기본 이름으로 바꾼다. */
 export function safeBaseName(name: string, _index: number): string {
   const slug = name

@@ -1,21 +1,19 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import type { ToolDef } from "@ohmymcp/core";
+import type { TestCaseSpec, TestSuiteSpec } from "@ohmymcp/runner";
+
+export {
+  BASELINE_POLICY_VERSION,
+  type BaselineGenerationResult,
+  type BaselineSuiteOptions,
+  createBaselineSuite,
+  DEFAULT_BASELINE_TIMEOUT_MS,
+} from "./baseline.js";
 
 type JsonValue = null | boolean | number | string | JsonValue[] | JsonObject;
 type JsonObject = { [key: string]: JsonValue };
-type GeneratedSuiteSpec = {
-  schemaVersion: 1;
-  id: string;
-  name: string;
-  defaultTimeoutMs: number;
-  cases: Array<{
-    id: string;
-    name: string;
-    operation: { type: "callTool"; tool: string; input: JsonObject };
-    assertions: [{ type: "isError"; expected: false }];
-  }>;
-};
+type GeneratedSuiteSpec = TestSuiteSpec;
 
 /** 테스트 코드를 생성할 때의 옵션. */
 export interface GenerateOptions {
@@ -410,7 +408,7 @@ function synthesizeValue(schema: JsonSchema, path: string): JsonValue {
   return value;
 }
 
-function safeBaseName(name: string, index: number): string {
+export function safeGeneratedBaseName(name: string, index: number): string {
   const slug = name
     .normalize("NFKD")
     .replace(/[\u0300-\u036f]/g, "")
@@ -474,6 +472,11 @@ function buildSuite(tool: ToolDef, index: number, baseName: string): GeneratedSu
   };
 }
 
+/** 기존 파일 생성과 baseline이 함께 쓰는 단일 도구 case 합성 단계다. */
+export function createGeneratedCase(tool: ToolDef, index: number, baseName: string): TestCaseSpec {
+  return buildSuite(tool, index, baseName).cases[0] as TestCaseSpec;
+}
+
 function renderSuite(suite: GeneratedSuiteSpec): string {
   return [
     'import { defineMcpSuite } from "@ohmymcp/runner";',
@@ -509,7 +512,10 @@ export async function generateTests(tools: ToolDef[], options: GenerateOptions):
 
   const usedNames = new Set<string>();
   const drafts = tools.map((tool, index) => {
-    const initialName = safeBaseName(typeof tool?.name === "string" ? tool.name : "", index);
+    const initialName = safeGeneratedBaseName(
+      typeof tool?.name === "string" ? tool.name : "",
+      index,
+    );
     let baseName = initialName;
     for (let occurrence = 2; usedNames.has(baseName); occurrence++) {
       baseName = `${initialName}-${occurrence}`;

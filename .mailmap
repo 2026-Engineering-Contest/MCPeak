@@ -1,0 +1,36 @@
+# git 신원 통합.
+#
+# 사람마다 커밋 신원이 둘씩 갈려 있어 기여 집계가 쪼개진다. CONTRIBUTING §4 는
+# "나중에 git log --grep 한 줄로 개인 기여를 뽑아낼 수 있어야 한다" 를, §12 는
+# "그 패키지의 커밋 대부분이 내 것" 을 개인 기여 증거로 요구한다. 신원이 갈리면
+# 두 기준 모두 실제보다 적게 집계된다.
+#
+# 형식:  <표준 이름> <표준 이메일> <합칠 이름> <합칠 이메일>
+#
+# 커밋 이력을 다시 쓰지 않는다. 적용 범위는 아래와 같다.
+#
+#   적용됨   git shortlog, git log --use-mailmap, 포맷 %aN %aE %cN %cE
+#   적용 안 됨  포맷 %an %ae %cn %ce (항상 원본 값을 낸다)
+#
+# **GitHub 기여 그래프는 .mailmap 과 무관하다.** 그쪽은 커밋 이메일이 어느 계정에
+# 연결됐는지로 정해진다. 확인 결과 팀 전원의 이메일이 이미 각자 계정에 연결돼 있어
+# GitHub 쪽 집계는 원래 정상이다 (naver 주소 포함). 이 파일이 고치는 것은 로컬
+# git 집계이며, §4 의 `git log --grep` 방식이 정확히 그 경로를 쓴다.
+#
+# 확인:  git shortlog -sne --all
+#
+# 새 팀원이 합류하거나 기존 팀원이 다른 기기에서 커밋해 이름이 갈리면 여기에 한 줄
+# 추가한다. 애초에 갈리지 않게 하려면 각자 아래를 맞춰두는 편이 낫다.
+#   git config user.name  "<GitHub 표시 이름>"
+#   git config user.email "<GitHub noreply 또는 공개 이메일>"
+
+# ① MCP 서버 테스트 파트
+Doohyun Seo <tjengus9@gmail.com> <tjengus9@gmail.com>
+Doohyun Seo <tjengus9@gmail.com> seodduu <tjengus9@gmail.com>
+Doohyun Seo <tjengus9@gmail.com> DOOHYUN SEO <tjengus9@gmail.com>
+
+# ② replay / record 파트
+Dongoh Jung <112747309+ddxng5@users.noreply.github.com> JUNG DONGOH <wjdehddh03@naver.com>
+
+# ③ mock server 파트
+Jamin Cheon <40034379+storyrago@users.noreply.github.com> jamin cheon <cscsh2068@naver.com>

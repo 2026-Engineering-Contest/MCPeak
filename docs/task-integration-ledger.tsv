@@ -7,3 +7,4 @@ B2-cli-stdin-eof	1921d4c	2026-08-12
 B3-cli-flaky-deadline	8998e0e	2026-08-12
 B4-cli-show-diff	f393c48	2026-08-12
 B5-generate-failure-reason	9e36aa9	2026-08-12
+B6-cli-failure-message	afc0f1c	2026-08-12

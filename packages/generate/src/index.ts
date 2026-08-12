@@ -4,6 +4,25 @@ import type { ToolDef } from "@ohmymcp/core";
 import type { TestCaseSpec, TestSuiteSpec } from "@ohmymcp/runner";
 
 export {
+  applyAuthoringChanges,
+  createAuthoringDiff,
+  createAuthoringSession,
+  finalizeAuthoringDraft,
+  getAuthoringExecutionSuite,
+  reviewLocalAuthoringCandidate,
+} from "./authoring-session.js";
+export type {
+  ApplyAuthoringChangesResult,
+  AuthoringChange,
+  AuthoringDiffPreview,
+  AuthoringDraft,
+  AuthoringExecutionSnapshot,
+  AuthoringSessionView,
+  CaseProvenance,
+  GenerateReviewApproval,
+  SanitizedAuthoringCandidate,
+} from "./authoring-types.js";
+export {
   BASELINE_POLICY_VERSION,
   type BaselineGenerationResult,
   type BaselineSuiteOptions,

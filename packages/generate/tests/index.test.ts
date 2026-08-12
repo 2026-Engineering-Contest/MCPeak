@@ -153,6 +153,7 @@ describe("generateTests", () => {
 
     const sources = await Promise.all(paths.map((path) => readFile(path, "utf8")));
     const suiteIds = sources.map((source) => source.match(/"id": "([^"]+-generated)"/)?.[1]);
+    expect(suiteIds).not.toContain(undefined);
     expect(new Set(suiteIds).size).toBe(suiteIds.length);
   });
 

@@ -27,7 +27,7 @@
 - 툴마다 정상 입력을 사용하는 happy-path 테스트를 1개 생성한다.
 - 입력 스키마의 루트는 객체인 경우만 지원한다.
 - 객체 입력에는 `required`로 선언된 프로퍼티만 포함한다.
-- `required`, `properties`, primitive 타입, `enum`, `const`, `default`, `examples`, 중첩 객체와 배열을 지원한다.
+- `type`, `required`, `properties`, `items`, `enum`, `const`, `default`, `examples`와 이를 사용한 중첩 객체·배열을 지원한다. 이 목록에 없는 JSON Schema 키워드가 있으면 생성 전에 지원하지 않는 스키마로 거절한다.
 - 객체는 필수 프로퍼티를 재귀적으로 생성한다.
 - 배열은 `items` 스키마에서 원소 1개를 재귀적으로 생성한다.
 - 생성된 테스트는 도구 호출 결과가 오류 응답이 아닌지, 즉 `isError`가 `false`인지만 검증한다.
@@ -54,7 +54,9 @@
 | `array` | `items`에서 원소 1개를 재귀 생성한 배열 |
 | `null` | `null` |
 
-우선순위로 선택한 값이 JSON 값이 아니거나 선언된 지원 타입과 모순되면 임의로 보정하지 않고 지원하지 않는 스키마로 처리한다.
+빈 `examples`는 입력 후보가 없는 것으로 보고 다음 우선순위로 진행한다. 빈 `enum`은 만족 가능한 값이 없으므로 생성 전에 지원하지 않는 스키마로 거절한다.
+
+우선순위에서 처음 선택한 후보는 JSON 값이어야 하며, 해당 위치의 재귀 스키마 전체를 검증해 `type`, `enum`, `const`, `required`, `properties`, `items` 등 모든 지원 제약을 만족해야 한다. 따라서 `default`나 `examples[0]`도 같은 검증을 통과해야 한다. 선택한 후보가 제약과 모순되면 다음 후보로 대체하거나 임의로 보정하지 않고 지원하지 않는 스키마로 처리한다.
 
 ### 자동 생성하지 않는 범위
 
@@ -73,6 +75,8 @@
 
 생성 테스트는 Runner의 선언형 `TestSuiteSpec`을 사용하고, 각 happy-path 케이스는 `callTool` 작업과 `{ type: "isError", expected: false }` assertion으로 표현하는 방향을 제안한다. 생성한 명세는 파일을 쓰기 전에 Runner의 공개 validator로 검증한다.
 
+compile·repair 요청을 준비할 때는 [Runner 설계의 Generate 요청 검증 계약](../superpowers/specs/2026-08-11-runner-design.md)에 따라 `tools[].inputSchema`를 redaction보다 먼저 runtime `ReadonlyJsonValue`로 검증한다. 비 JSON 값은 preview·binding·provider 호출 전에 동기 `GenerateRequestValidationError`로 거절하며, 오류 코드는 `INVALID_TOOL_INPUT_SCHEMA`를 사용한다.
+
 다만 `generate → runner → core` 의존 방향과 `@ohmymcp/generate`의 Runner workspace dependency 추가는 이 ADR만으로 확정하지 않는다. Runner 담당과 팀의 별도 승인을 받은 뒤 의존성과 구체적인 생성 파일 형식을 구현한다. 승인 전에는 Runner 계약을 generate 내부에 복사하지 않는다.
 
 ## 이유
@@ -89,7 +93,7 @@ happy path 한 개와 최소 assertion은 스키마 기반 자동화가 신뢰�
 
 - generate는 JSON Schema 검사, 결정론적 입력값 합성, 테스트 명세 구성, 소스 렌더링과 안전한 파일 저장에 집중한다.
 - 사용자는 생성 파일을 초안으로 사용하고, 비정상 입력·응답 내용·비즈니스 의미 검증을 별도 파일에 작성한다.
-- 지원 범위를 벗어난 스키마는 부분 결과 없이 명확한 오류로 드러난다.
+- 지원 범위를 벗어난 스키마는 파일 쓰기 전에 실패하므로, 스키마 검증 오류로 인한 부분 결과를 남기지 않고 명확한 오류로 드러난다.
 - 같은 `ToolDef[]`와 옵션은 항상 같은 테스트 소스를 생성해야 한다.
 - 첫 버전은 완전한 JSON Schema 구현을 목표로 하지 않으며, 제외된 키워드는 실제 사용 사례와 별도 ADR 또는 후속 결정에 따라 확장한다.
 - Runner 연동이 승인되면 generate 패키지 의존성 변경과 공개 기능 추가를 changeset에 기록한다.

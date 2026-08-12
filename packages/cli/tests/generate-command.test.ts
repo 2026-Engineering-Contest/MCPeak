@@ -521,7 +521,7 @@ describe("AI 대화형 검토", () => {
   it("nonZeroExit이면 로그인 상태 확인을 안내하고 exit code를 보여준다", async () => {
     const output = await failWith({ ...base, code: "nonZeroExit", exitCode: 1 });
     expect(output).toContain("GENERATE_PROVIDER_EXIT");
-    expect(output).toContain("코드 1로");
+    expect(output).toContain("종료 코드: 1");
   });
   it("exitCode를 모르면 코드 없이 종료 사실만 안내한다", async () => {
     const output = await failWith({ ...base, code: "nonZeroExit" });
@@ -564,6 +564,127 @@ describe("AI 대화형 검토", () => {
           ...base,
           code,
           exitCode: 1,
+          stderr: { captured: true, truncated: true },
+        }),
+      );
+    const output = outputs.join("");
+    expect(output).not.toContain("ANTHROPIC_API_KEY");
+    expect(output).not.toContain("OPENAI_API_KEY");
+    expect(output).not.toContain("INSTRUCTION_PAYLOAD_TEXT");
+    expect(output.split("\n").some((line) => line.trimStart().startsWith("at "))).toBe(false);
+  });
+
+  /** provider와 모델을 지정해 실패를 태우고 stderr를 돌려준다. */
+  async function failOn(
+    providerId: "codex" | "claude",
+    model: string,
+    failure: Omit<PublicProviderFailure, "providerId">,
+  ): Promise<string> {
+    const d = reviewDeps([providerId, "cancel"], [model, "INSTRUCTION_PAYLOAD_TEXT"], [true]);
+    const provider = { id: providerId, model, author: vi.fn() };
+    d.value.providers = { codex: vi.fn(() => provider), claude: vi.fn(() => provider) };
+    d.value.dispatchAuthoringRequest = vi.fn(async () => ({
+      status: "providerFailed" as const,
+      failure: { ...failure, providerId },
+    }));
+    await runGenerateCommand(interactiveArgv, d.value);
+    return d.stderr.join("");
+  }
+  const exited = { code: "nonZeroExit" as const, timeoutMs: 120_000, exitCode: 1 };
+
+  it("unknownModel이면 모델 이름과 기본값을 알려준다", async () => {
+    const output = await failOn("codex", "gpt-nonexistent", {
+      ...exited,
+      reason: "unknownModel",
+    });
+    expect(output).toContain("GENERATE_PROVIDER_MODEL");
+    expect(output).toContain("모델: gpt-nonexistent");
+    expect(output).toContain("gpt-5.6-luna");
+  });
+  it("모델 이름 뒤에 조사를 붙이지 않는다", async () => {
+    // 받침 있는 이름("넷")과 없는 이름("쿠"). 을/를을 고정하면 한쪽은 반드시 틀린다.
+    for (const model of ["sonnet", "haiku"]) {
+      const output = await failOn("claude", model, { ...exited, reason: "unknownModel" });
+      expect(output).not.toContain("'을 사용할");
+      expect(output).not.toContain("'를 사용할");
+      expect(output).toContain(`모델: ${model}`);
+    }
+  });
+  it("명령 뒤에 조사를 붙이지 않는다", async () => {
+    for (const providerId of ["codex", "claude"] as const)
+      for (const reason of ["notAuthenticated", undefined] as const) {
+        const output = await failOn(providerId, "haiku", { ...exited, reason });
+        expect(output).not.toContain("status`으로");
+        expect(output).not.toContain("status`로");
+        expect(output).toContain("` 명령으로");
+      }
+  });
+  it("notAuthenticated면 provider에 맞는 인증 확인 명령만 안내한다", async () => {
+    const codex = await failOn("codex", "gpt-5.6-luna", { ...exited, reason: "notAuthenticated" });
+    expect(codex).toContain("GENERATE_PROVIDER_AUTH");
+    expect(codex).toContain("codex login status");
+    expect(codex).not.toContain("claude /status");
+    const claude = await failOn("claude", "haiku", { ...exited, reason: "notAuthenticated" });
+    expect(claude).toContain("GENERATE_PROVIDER_AUTH");
+    expect(claude).toContain("claude /status");
+    expect(claude).not.toContain("codex login status");
+  });
+  it("rateLimited면 재시도와 payload 축소를 안내한다", async () => {
+    const output = await failOn("codex", "gpt-5.6-luna", { ...exited, reason: "rateLimited" });
+    expect(output).toContain("GENERATE_PROVIDER_RATE_LIMIT");
+    expect(output).toContain("잠시 뒤 다시 요청하세요");
+    expect(output).toContain("payload");
+  });
+  it("badRequest면 모델과 schema 두 가지를 확인하도록 안내한다", async () => {
+    const output = await failOn("codex", "gpt-weird", { ...exited, reason: "badRequest" });
+    expect(output).toContain("GENERATE_PROVIDER_REQUEST");
+    expect(output).toContain("schema");
+    expect(output).toContain("gpt-weird");
+    expect(output).toContain("gpt-5.6-luna");
+  });
+  it("serverError면 재시도를 안내한다", async () => {
+    const output = await failOn("claude", "haiku", { ...exited, reason: "serverError" });
+    expect(output).toContain("GENERATE_PROVIDER_SERVER");
+    expect(output).toContain("잠시 뒤 다시 요청하세요");
+  });
+  it("reason이 없으면 기존 EXIT 문구에 모델을 붙여 안내한다", async () => {
+    const output = await failOn("codex", "gpt-5.6-luna", exited);
+    expect(output).toContain("GENERATE_PROVIDER_EXIT");
+    expect(output).toContain("종료 코드: 1");
+    expect(output).toContain("모델: gpt-5.6-luna");
+    expect(output).toContain("codex login status");
+    expect(output).not.toContain("claude /status");
+  });
+  it("exitCode를 모르면 코드 없이 종료 사실만 안내한다", async () => {
+    const output = await failOn("claude", "haiku", { code: "nonZeroExit", timeoutMs: 120_000 });
+    expect(output).toContain("GENERATE_PROVIDER_EXIT");
+    expect(output).not.toContain("코드 undefined");
+    expect(output).toContain("claude /status");
+  });
+  it("reason은 nonZeroExit 밖에서 무시된다", async () => {
+    const output = await failOn("codex", "gpt-5.6-luna", {
+      code: "timedOut",
+      timeoutMs: 120_000,
+      reason: "unknownModel",
+    });
+    expect(output).toContain("GENERATE_PROVIDER_TIMEOUT");
+    expect(output).not.toContain("GENERATE_PROVIDER_MODEL");
+  });
+  it("어떤 reason에서도 prompt·stdout·stderr·stack·인증정보가 노출되지 않는다", async () => {
+    const reasons: (PublicProviderFailure["reason"] | undefined)[] = [
+      "notAuthenticated",
+      "unknownModel",
+      "rateLimited",
+      "badRequest",
+      "serverError",
+      undefined,
+    ];
+    const outputs: string[] = [];
+    for (const reason of reasons)
+      outputs.push(
+        await failOn("codex", "gpt-5.6-luna", {
+          ...exited,
+          reason,
           stderr: { captured: true, truncated: true },
         }),
       );

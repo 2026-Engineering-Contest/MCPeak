@@ -297,13 +297,50 @@ function safeFailure(deps: GenerateCommandDependencies, code: string): void {
     `오류 [GENERATE_${code}]: AI 검토 요청을 완료하지 못했습니다.\n해결: 입력과 provider 상태를 확인한 뒤 메뉴에서 다시 요청하세요.\n`,
   );
 }
+/** provider별 로그인 확인 명령. 두 provider의 명령을 함께 찍으면 사용자가 헛수고한다. */
+const authCommand = (provider: "codex" | "claude") =>
+  provider === "codex" ? "codex login status" : "claude /status";
 /**
- * provider 실패를 원인별 안내로 분기한다. 사용자 조치가 코드마다 다르므로 문구를 나눈다.
+ * nonZeroExit의 reason별 안내. reason은 nonZeroExit 경로에서만 채워지는 닫힌 enum이며,
+ * 값이 없으면 원인을 모르는 것이므로 추측하지 않고 확인할 것을 모두 알려준다.
+ *
+ * 문구 규칙: 변수 바로 뒤에 조사를 붙이지 않는다. 한국어 조사는 앞말의 받침에 따라 형태가
+ * 갈리는데(을/를, 으로/로) 모델 이름과 종료 코드는 어떤 값이 올지 모른다. 어느 쪽으로 고정해도
+ * 반드시 틀리는 경우가 생기므로 `모델: {model}`처럼 라벨을 붙이거나 `명령으로`처럼 고정된
+ * 명사를 끼워 조사가 앞말에 의존하지 않게 한다.
+ */
+function exitMessage(failure: PublicProviderFailure, model: string): string {
+  const id = failure.providerId;
+  const fallback = defaultModel(id);
+  switch (failure.reason) {
+    case "unknownModel":
+      return `오류 [GENERATE_PROVIDER_MODEL]: ${id}가 이 모델을 사용할 수 없습니다. 모델: ${model}\n해결: 모델 이름을 확인하세요. 이 계정에서 쓸 수 없는 모델일 수도 있습니다. ${id} 기본값은 ${fallback}입니다.\n`;
+    case "notAuthenticated":
+      return `오류 [GENERATE_PROVIDER_AUTH]: ${id} 인증이 유효하지 않습니다.\n해결: \`${authCommand(id)}\` 명령으로 로그인 상태를 확인한 뒤 다시 요청하세요.\n`;
+    case "rateLimited":
+      return `오류 [GENERATE_PROVIDER_RATE_LIMIT]: ${id}가 요청 한도를 초과했습니다.\n해결: 잠시 뒤 다시 요청하세요. 반복되면 도구 수를 줄여 payload를 줄이세요.\n`;
+    // codex는 없는 모델에도, 잘못된 output schema에도 400을 준다. 둘을 구분할 수 없으므로
+    // 구분한 척하지 않고 사용자가 확인할 두 가지를 다 알려준다.
+    case "badRequest":
+      return `오류 [GENERATE_PROVIDER_REQUEST]: ${id}가 요청을 거절했습니다. 모델: ${model}\n해결: 두 가지를 확인하세요.\n  1. 모델 이름이 이 계정에서 쓸 수 있는지. ${id} 기본값은 ${fallback}입니다.\n  2. provider가 전송 schema를 받아들이는지. 반복되면 다른 provider로 시도하세요.\n`;
+    case "serverError":
+      return `오류 [GENERATE_PROVIDER_SERVER]: ${id} 쪽 서버 오류입니다.\n해결: 잠시 뒤 다시 요청하세요. 계속되면 provider 상태 페이지를 확인하세요.\n`;
+    default: {
+      // exitCode도 변수다. `코드 3로`는 "삼으로"라 틀린다. 라벨 형태로 조사를 떼어 둔다.
+      const exit = failure.exitCode === undefined ? "" : `종료 코드: ${failure.exitCode}, `;
+      return `오류 [GENERATE_PROVIDER_EXIT]: ${id}가 종료했습니다. ${exit}모델: ${model}\n해결: \`${authCommand(id)}\` 명령으로 로그인 상태를 확인하고, 모델 이름이 맞는지 확인하세요.\n`;
+    }
+  }
+}
+/**
+ * provider 실패를 원인별 안내로 분기한다. 사용자 조치가 다르므로 문구를 나눈다.
+ * 먼저 failure.code로 갈리고, nonZeroExit은 exitMessage에서 reason으로 한 겹 더 갈린다.
  * failure를 알 수 없는 경로(dispatch 자체가 throw)는 기존 GENERATE_PROVIDER_FAILED를 유지한다.
  */
 function providerFailure(
   deps: GenerateCommandDependencies,
   failure: PublicProviderFailure | undefined,
+  model: string,
 ): void {
   if (!failure) {
     safeFailure(deps, "PROVIDER_FAILED");
@@ -313,11 +350,9 @@ function providerFailure(
   const message = (() => {
     switch (failure.code) {
       case "providerUnavailable":
-        return `오류 [GENERATE_PROVIDER_UNAVAILABLE]: ${id} CLI를 실행할 수 없습니다.\n해결: \`${id} --version\`으로 설치와 PATH를 확인한 뒤 다시 요청하세요.\n`;
-      case "nonZeroExit": {
-        const exit = failure.exitCode === undefined ? "" : `코드 ${failure.exitCode}로 `;
-        return `오류 [GENERATE_PROVIDER_EXIT]: ${id}가 ${exit}종료했습니다.\n해결: 로그인 상태와 모델 사용 권한을 확인하세요. \`codex login status\` 또는 \`claude /status\`.\n`;
-      }
+        return `오류 [GENERATE_PROVIDER_UNAVAILABLE]: ${id} CLI를 실행할 수 없습니다.\n해결: \`${id} --version\` 명령으로 설치와 PATH를 확인한 뒤 다시 요청하세요.\n`;
+      case "nonZeroExit":
+        return exitMessage(failure, model);
       case "timedOut":
         return `오류 [GENERATE_PROVIDER_TIMEOUT]: ${id} 응답이 ${failure.timeoutMs}ms 안에 오지 않았습니다.\n해결: 도구 수를 줄이거나 timeout을 늘려 다시 요청하세요.\n`;
       case "schemaMismatch":
@@ -467,14 +502,14 @@ async function runInteractiveReview(
           session,
         });
       } catch {
-        providerFailure(deps, undefined);
+        providerFailure(deps, undefined, model);
         continue;
       }
       if (result.status === "preview") {
         candidate = result.preview;
         showDiff(io, makeDiff({ session, candidate }));
       } else if (result.status === "questions") io.write(`질문:\n${result.questions.join("\n")}\n`);
-      else if (result.status === "providerFailed") providerFailure(deps, result.failure);
+      else if (result.status === "providerFailed") providerFailure(deps, result.failure, model);
       else io.write("AI 결과를 검토 후보로 사용할 수 없습니다.\n");
     }
   } catch (error) {

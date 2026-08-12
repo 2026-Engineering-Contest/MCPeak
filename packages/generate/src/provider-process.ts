@@ -156,7 +156,6 @@ export async function runProviderProcess(
     let stderrTruncated = false;
     let finished = false;
     let closed = false;
-    let stdinWriteFailed = false;
     let reason: AuthoringProviderFailureCode | undefined;
     const clock = deps.clock ?? defaultClock;
     let timeoutTimer: { unref(): void; cancel(): void } | undefined;
@@ -240,16 +239,6 @@ export async function runProviderProcess(
         return;
       }
       if (code !== 0) {
-        // 프롬프트 쓰기가 실패한 뒤의 비정상 종료는 provider의 판정이 아니라 우리 쪽 입력 문제다.
-        if (stdinWriteFailed) {
-          settle({
-            ok: false,
-            code: "internal",
-            exitCode: code ?? undefined,
-            stderr: diagnostics(),
-          });
-          return;
-        }
         let classified: AuthoringProviderFailureReason | undefined;
         if (spec.classifyFailure !== undefined) {
           try {
@@ -275,37 +264,31 @@ export async function runProviderProcess(
       try {
         output += decoder.decode();
       } catch {
-        settle({
-          ok: false,
-          code: stdinWriteFailed ? "internal" : "invalidUtf8",
-          stderr: diagnostics(),
-        });
+        settle({ ok: false, code: "invalidUtf8", stderr: diagnostics() });
         return;
       }
-      let value: unknown;
+      // stdin 쓰기 오류가 있었다면 여기 오지 않는다. 그때는 terminate가 reason을 세우고
+      // 위쪽 분기가 실패를 확정한다.
       try {
-        value = JSON.parse(output);
+        settle({ ok: true, value: JSON.parse(output), stderr: diagnostics() });
       } catch {
-        settle({
-          ok: false,
-          code: stdinWriteFailed ? "internal" : "invalidJson",
-          stderr: diagnostics(),
-        });
-        return;
+        settle({ ok: false, code: "invalidJson", stderr: diagnostics() });
       }
-      // 여기까지 왔으면 exit 0 + 유효한 결과다. 쓰기 오류가 있었더라도 provider가 프롬프트를
-      // 다 읽고 stdin을 먼저 닫은 경우이므로 무시한다.
-      settle({ ok: true, value, stderr: diagnostics() });
     });
     // stdin 스트림의 error는 비동기로 오므로 아래 try/catch가 잡지 못하고, 리스너가 없으면
     // 처리되지 않은 stream error가 host 프로세스를 죽인다. 그래서 리스너를 단다.
     //
-    // 쓰기 오류를 그냥 무시하면 프롬프트가 잘려 나갔는데도 조용히 진행해 provider가 불완전한
-    // 입력으로 답한 결과를 성공으로 받게 된다. 그렇다고 곧바로 실패로 보면, provider가 프롬프트를
-    // 다 읽고 stdin을 먼저 닫아 생긴 정상 EPIPE까지 실패가 된다. 그래서 사실만 기억하고
-    // close 시점에 판정한다. exit code 0이면서 stdout이 유효한 결과면 무시하고, 그 외는 internal이다.
+    // 쓰기 오류는 예외 없이 실패다. 이전 판단(exit 0이고 stdout이 유효한 JSON이면 provider가
+    // 프롬프트를 다 읽고 stdin을 먼저 닫은 정상 상황으로 보고 무시)은 철회했다. 근거가 틀렸다.
+    // EPIPE는 이미 닫힌 파이프에 쓰려 할 때 난다. provider가 프롬프트를 전부 읽은 뒤 닫았다면
+    // 우리 쓰기는 이미 끝났을 것이고 오류가 날 이유가 없다. 오류가 났다면 일부 바이트가 전달되지
+    // 않은 것이고, provider의 답은 잘린 입력에 대한 답이다. exit code와 JSON 유효성은 그 사실을
+    // 뒤집지 못한다. 조용히 틀린 결과가 통과하는 것은 실패보다 나쁘다.
+    //
+    // settle을 직접 부르지 않는다. terminate가 자식을 정리(SIGTERM 뒤 SIGKILL escalation)하고
+    // close 이벤트가 실패를 확정한다.
     child.stdin.on?.("error", () => {
-      stdinWriteFailed = true;
+      terminate("internal");
     });
     try {
       child.stdin.write(spec.stdin);

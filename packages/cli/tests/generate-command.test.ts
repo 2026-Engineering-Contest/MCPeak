@@ -13,7 +13,7 @@ import {
   prepareAuthoringRequest,
   reviewLocalAuthoringCandidate,
 } from "@ohmymcp/generate";
-import type { TestSuiteSpec } from "@ohmymcp/runner";
+import type { CallToolCaseSpec, TestCaseSpec, TestSuiteSpec } from "@ohmymcp/runner";
 import { describe, expect, it, vi } from "vitest";
 import {
   type GenerateCommandDependencies,
@@ -649,5 +649,183 @@ describe("AI 대화형 검토", () => {
     expect(output).not.toContain("node:internal");
     expect(output.split("\n").some((line) => line.trimStart().startsWith("at "))).toBe(false);
     expect(d.value.openTemp).not.toHaveBeenCalled();
+  });
+
+  /** candidate suite 하나를 provider 응답으로 넣고 showDiff 출력만 뽑는다. */
+  async function diffOutput(
+    makeCandidate: (baselineSuite: TestSuiteSpec) => TestSuiteSpec,
+    options: { menu?: string[]; inputs?: string[]; confirms?: boolean[] } = {},
+  ): Promise<string> {
+    const d = reviewDeps(
+      options.menu ?? ["codex", "cancel"],
+      options.inputs ?? ["", "request"],
+      options.confirms ?? [true],
+    );
+    d.provider.author.mockResolvedValueOnce({
+      status: "candidate",
+      suite: makeCandidate(d.baseline.suite),
+      summary: "candidate",
+      warnings: [],
+      questions: [],
+    });
+    await runGenerateCommand(interactiveArgv, d.value);
+    return d.io.write.mock.calls.map((call) => String(call[0])).join("");
+  }
+  /** showDiff가 낸 줄만 남긴다(헤더 + 두 칸 들여쓴 본문). */
+  const diffLines = (output: string): string[] =>
+    output.split("\n").filter((line) => /^change-\d{3} /.test(line) || line.startsWith("  "));
+  /** 지정한 type의 change 하나만 골라 그 본문 줄(들여쓰기 제거)을 돌려준다. */
+  const blockBody = (output: string, type: string): string[] => {
+    const lines = diffLines(output);
+    const start = lines.findIndex((line) => new RegExp(`^change-\\d{3} ${type}\\b`).test(line));
+    if (start < 0) throw new Error(`${type} change가 출력에 없습니다.`);
+    const body: string[] = [];
+    for (const line of lines.slice(start + 1)) {
+      if (!line.startsWith("  ")) break;
+      body.push(line.slice(2));
+    }
+    return body;
+  };
+  const baseCase = (suite: TestSuiteSpec): TestCaseSpec => {
+    const first = suite.cases[0];
+    if (first === undefined) throw new Error("baseline case가 필요합니다.");
+    return first;
+  };
+  const isCallTool = (value: TestCaseSpec): value is CallToolCaseSpec =>
+    value.operation.type === "callTool";
+  /** baseline의 callTool 케이스에 다른 input을 끼운 케이스를 만든다. */
+  const withInput = (
+    suite: TestSuiteSpec,
+    input: CallToolCaseSpec["operation"]["input"],
+  ): CallToolCaseSpec => {
+    const first = suite.cases[0];
+    if (first === undefined || !isCallTool(first))
+      throw new Error("callTool baseline case가 필요합니다.");
+    return { ...first, operation: { ...first.operation, input } };
+  };
+
+  it("replaceCase는 바뀐 leaf 경로만 - 와 + 로 보여준다", async () => {
+    const output = await diffOutput((suite) => {
+      const cases: TestCaseSpec[] = [withInput(suite, { city: "서울" })];
+      return { ...suite, cases };
+    });
+    expect(output).toContain('+ operation.input.city: "서울"');
+    expect(output).not.toContain("assertions[0].expected");
+    expect(output).not.toContain("operation.tool");
+  });
+  it("addCase는 모든 leaf 경로를 + 로 보여준다", async () => {
+    const output = await diffOutput((suite) => {
+      const original = baseCase(suite);
+      return { ...suite, cases: [original, { ...original, id: "add-negative" }] };
+    });
+    const body = blockBody(output, "addCase");
+    expect(body).toContain('+ id: "add-negative"');
+    expect(body).toContain('+ operation.type: "callTool"');
+    expect(body).toContain('+ operation.tool: "weather"');
+    expect(body).toContain('+ assertions[0].type: "isError"');
+    expect(body.some((line) => line.startsWith("-"))).toBe(false);
+  });
+  it("removeCase는 모든 leaf 경로를 - 로 보여준다", async () => {
+    const output = await diffOutput((suite) => {
+      const original = baseCase(suite);
+      return {
+        ...suite,
+        cases: [{ ...original, id: "kept-case" }],
+      };
+    });
+    expect(output).toContain('- id: "weather-success"');
+    expect(output).toContain('- operation.tool: "weather"');
+    expect(output).toContain("- assertions[0].expected: false");
+  });
+  it("caseOrder는 before와 after 순서를 한 줄씩 보여준다", async () => {
+    const output = await diffOutput((suite) => {
+      const original = baseCase(suite);
+      const extra = { ...original, id: "add-success" };
+      return { ...suite, cases: [extra, original] };
+    });
+    expect(output).toContain("- weather-success");
+    expect(output).toContain("+ add-success, weather-success");
+  });
+  it("배열 인덱스 경로를 쓴다", async () => {
+    const output = await diffOutput((suite) => {
+      const original = baseCase(suite);
+      return { ...suite, cases: [original, { ...original, id: "add-negative" }] };
+    });
+    expect(output).toContain("assertions[0].");
+    expect(output).not.toContain("assertions.0.");
+  });
+  it("같은 입력은 항상 같은 출력을 낸다", async () => {
+    const make = (suite: TestSuiteSpec): TestSuiteSpec => {
+      const original = baseCase(suite);
+      return { ...suite, cases: [original, { ...original, id: "add-negative" }] };
+    };
+    const first = diffLines(await diffOutput(make)).join("\n");
+    const second = diffLines(await diffOutput(make)).join("\n");
+    expect(first).toBe(second);
+    expect(first).not.toBe("");
+  });
+  it("본문이 40줄을 넘으면 잘라내고 생략 줄을 붙인다", async () => {
+    const output = await diffOutput((suite) => {
+      const input: Record<string, number> = {};
+      for (let index = 0; index < 50; index += 1) input[`field${index}`] = index;
+      const cases: TestCaseSpec[] = [
+        baseCase(suite),
+        { ...withInput(suite, input), id: "add-wide" },
+      ];
+      return { ...suite, cases };
+    });
+    const body = blockBody(output, "addCase");
+    expect(body).toHaveLength(41);
+    const last = body.at(-1) ?? "";
+    expect(last).toContain("이하");
+    expect(last).toContain("줄 생략");
+  });
+  it("변경이 없으면 아무것도 쓰지 않는다", async () => {
+    const output = await diffOutput((suite) => suite);
+    expect(diffLines(output)).toEqual([]);
+  });
+  it("select 메뉴에서도 각 change의 내용이 보인다", async () => {
+    const d = reviewDeps(
+      ["codex", "select", "cancel"],
+      ["", "request", "change-001"],
+      [true, true],
+    );
+    const writes: string[] = [];
+    d.io.write = vi.fn((text: string) => {
+      writes.push(text);
+    });
+    d.provider.author.mockResolvedValueOnce({
+      status: "candidate",
+      suite: (() => {
+        const original = d.baseline.suite.cases[0];
+        if (original === undefined) throw new Error("baseline case가 필요합니다.");
+        return { ...d.baseline.suite, cases: [original, { ...original, id: "add-negative" }] };
+      })(),
+      summary: "candidate",
+      warnings: [],
+      questions: [],
+    });
+    await runGenerateCommand(interactiveArgv, d.value);
+    const beforePrompt = writes.join("");
+    expect(beforePrompt).toContain('+ id: "add-negative"');
+    expect(d.io.input).toHaveBeenCalledWith("적용할 change ID를 쉼표로 입력하세요: ");
+  });
+  it("provider가 돌려준 candidate의 민감 키는 redaction된 값이 보인다", async () => {
+    const output = await diffOutput((suite) => {
+      const cases: TestCaseSpec[] = [withInput(suite, { token: "hunter2" })];
+      return { ...suite, cases };
+    });
+    expect(output).toContain('+ operation.input.token: "[REDACTED]"');
+    expect(output).not.toContain("hunter2");
+  });
+  it("redaction 대상이 아닌 필드는 원문이 그대로 보인다", async () => {
+    const output = await diffOutput((suite) => {
+      const original = baseCase(suite);
+      return {
+        ...suite,
+        cases: [{ ...original, name: "PLAINTEXT_CASE_NAME" }],
+      };
+    });
+    expect(output).toContain('+ name: "PLAINTEXT_CASE_NAME"');
   });
 });

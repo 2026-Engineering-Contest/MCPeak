@@ -120,3 +120,60 @@ for (const [fixture, expectedStatus, expectedSummary] of [
     await rm(dir, { recursive: true, force: true });
   }
 }
+
+{
+  const dir = await mkdtemp(join(tmpdir(), "ohmymcp-dist-generate-"));
+  const pidFile = join(dir, "pid");
+  const suite = join(dir, "baseline.json");
+  try {
+    const generated = await execute([
+      "generate",
+      "--suite-id",
+      "weather",
+      "--name",
+      "Weather",
+      "--out",
+      suite,
+      "--command",
+      process.execPath,
+      "--arg",
+      wrapper,
+      "--arg",
+      pidFile,
+      "--arg",
+      server,
+      "--baseline-only",
+    ]);
+    assert.equal(generated.code, 0);
+    assert.equal(generated.err, "");
+    const value = JSON.parse(await readFile(suite, "utf8"));
+    assert.equal(value.cases.length, 2);
+    await expectExited(pidFile);
+    const result = await execute([
+      "test",
+      suite,
+      "--command",
+      process.execPath,
+      "--arg",
+      wrapper,
+      "--arg",
+      pidFile,
+      "--arg",
+      server,
+    ]);
+    assert.equal(result.code, 1);
+    assert.equal(result.err, "");
+    assert.deepEqual(JSON.parse(result.out).summary, {
+      total: 2,
+      passed: 1,
+      failed: 1,
+      timedOut: 0,
+      cancelled: 0,
+      notRun: 0,
+    });
+    await expectExited(pidFile);
+  } finally {
+    await cleanupPid(pidFile);
+    await rm(dir, { recursive: true, force: true });
+  }
+}

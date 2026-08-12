@@ -53,11 +53,11 @@ function valueMatchesSchema(value: JsonValue, schema: JsonSchema): boolean {
       JsonSchema
     >;
     const required = ("required" in schema ? schema.required : []) as string[];
-    if (required.some((key) => !(key in value))) return false;
+    if (required.some((key) => !Object.hasOwn(value, key))) return false;
     return Object.keys(value).every(
       (key) =>
-        properties[key] === undefined ||
-        valueMatchesSchema(value[key] as JsonValue, properties[key]),
+        !Object.hasOwn(properties, key) ||
+        valueMatchesSchema(value[key] as JsonValue, properties[key] as JsonSchema),
     );
   }
   if (type === "array" && Array.isArray(value)) {

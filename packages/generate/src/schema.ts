@@ -269,7 +269,7 @@ function validateObjectKeywords(
   const seen = new Set<string>();
   for (let index = 0; index < required.length; index++) {
     const key = required[index] as string;
-    if (seen.has(key) || !(key in properties)) {
+    if (seen.has(key) || !Object.hasOwn(properties, key)) {
       fail(
         "UNSUPPORTED_SCHEMA",
         `${path}.required[${index}]`,

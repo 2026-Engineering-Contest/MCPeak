@@ -8,6 +8,7 @@ import {
   dispatchAuthoringRequest,
   finalizeAuthoringDraft,
   getAuthoringExecutionSuite,
+  type PublicProviderFailure,
   prepareAuthoringRequest,
   reviewLocalAuthoringCandidate,
 } from "@ohmymcp/generate";
@@ -497,5 +498,77 @@ describe("AI 대화형 검토", () => {
     const output = d.stderr.join("");
     expect(output).toContain("PROVIDER_FAILED");
     expect(output).not.toMatch(/prompt|stdout|stderr|NATIVE_STACK/);
+  });
+
+  async function failWith(failure: PublicProviderFailure): Promise<string> {
+    const d = reviewDeps(["codex", "cancel"], ["", "INSTRUCTION_PAYLOAD_TEXT"], [true]);
+    d.value.dispatchAuthoringRequest = vi.fn(async () => ({
+      status: "providerFailed" as const,
+      failure,
+    }));
+    await runGenerateCommand(interactiveArgv, d.value);
+    return d.stderr.join("");
+  }
+  const base = { providerId: "codex" as const, timeoutMs: 120_000 };
+
+  it("providerUnavailable이면 CLI 설치와 PATH 확인을 안내한다", async () => {
+    const output = await failWith({ ...base, code: "providerUnavailable" });
+    expect(output).toContain("GENERATE_PROVIDER_UNAVAILABLE");
+    expect(output).toContain("--version");
+  });
+  it("nonZeroExit이면 로그인 상태 확인을 안내하고 exit code를 보여준다", async () => {
+    const output = await failWith({ ...base, code: "nonZeroExit", exitCode: 1 });
+    expect(output).toContain("GENERATE_PROVIDER_EXIT");
+    expect(output).toContain("코드 1로");
+  });
+  it("exitCode를 모르면 코드 없이 종료 사실만 안내한다", async () => {
+    const output = await failWith({ ...base, code: "nonZeroExit" });
+    expect(output).toContain("GENERATE_PROVIDER_EXIT");
+    expect(output).not.toContain("코드 undefined");
+  });
+  it("timedOut이면 timeout 값과 함께 조치를 안내한다", async () => {
+    const output = await failWith({ ...base, code: "timedOut" });
+    expect(output).toContain("GENERATE_PROVIDER_TIMEOUT");
+    expect(output).toContain("120000ms");
+  });
+  it("schemaMismatch면 재요청과 provider 전환을 안내한다", async () => {
+    const output = await failWith({ ...base, code: "schemaMismatch" });
+    expect(output).toContain("GENERATE_PROVIDER_SCHEMA");
+  });
+  it("cancelled면 메뉴에서 다시 요청하도록 안내한다", async () => {
+    const output = await failWith({ ...base, code: "cancelled" });
+    expect(output).toContain("GENERATE_PROVIDER_CANCELLED");
+  });
+  it("internal 등 그 외 코드는 기존 문구를 유지한다", async () => {
+    const output = await failWith({ ...base, code: "internal" });
+    expect(output).toContain("GENERATE_PROVIDER_FAILED");
+  });
+  it("실패 메시지에 prompt·stdout·stderr·stack·인증정보가 노출되지 않는다", async () => {
+    const codes: PublicProviderFailure["code"][] = [
+      "providerUnavailable",
+      "nonZeroExit",
+      "timedOut",
+      "schemaMismatch",
+      "cancelled",
+      "outputLimitExceeded",
+      "invalidUtf8",
+      "invalidJson",
+      "internal",
+    ];
+    const outputs: string[] = [];
+    for (const code of codes)
+      outputs.push(
+        await failWith({
+          ...base,
+          code,
+          exitCode: 1,
+          stderr: { captured: true, truncated: true },
+        }),
+      );
+    const output = outputs.join("");
+    expect(output).not.toContain("ANTHROPIC_API_KEY");
+    expect(output).not.toContain("OPENAI_API_KEY");
+    expect(output).not.toContain("INSTRUCTION_PAYLOAD_TEXT");
+    expect(output.split("\n").some((line) => line.trimStart().startsWith("at "))).toBe(false);
   });
 });

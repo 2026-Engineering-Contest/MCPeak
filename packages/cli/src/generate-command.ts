@@ -9,6 +9,7 @@ import type {
   AuthoringRequestPreview,
   AuthoringSessionView,
   BaselineGenerationResult,
+  PublicProviderFailure,
   SanitizedAuthoringCandidate,
 } from "@ohmymcp/generate";
 import type { SuiteValidationResult, TestSuiteSpec } from "@ohmymcp/runner";
@@ -218,6 +219,40 @@ function safeFailure(deps: GenerateCommandDependencies, code: string): void {
     `오류 [GENERATE_${code}]: AI 검토 요청을 완료하지 못했습니다.\n해결: 입력과 provider 상태를 확인한 뒤 메뉴에서 다시 요청하세요.\n`,
   );
 }
+/**
+ * provider 실패를 원인별 안내로 분기한다. 사용자 조치가 코드마다 다르므로 문구를 나눈다.
+ * failure를 알 수 없는 경로(dispatch 자체가 throw)는 기존 GENERATE_PROVIDER_FAILED를 유지한다.
+ */
+function providerFailure(
+  deps: GenerateCommandDependencies,
+  failure: PublicProviderFailure | undefined,
+): void {
+  if (!failure) {
+    safeFailure(deps, "PROVIDER_FAILED");
+    return;
+  }
+  const id = failure.providerId;
+  const message = (() => {
+    switch (failure.code) {
+      case "providerUnavailable":
+        return `오류 [GENERATE_PROVIDER_UNAVAILABLE]: ${id} CLI를 실행할 수 없습니다.\n해결: \`${id} --version\`으로 설치와 PATH를 확인한 뒤 다시 요청하세요.\n`;
+      case "nonZeroExit": {
+        const exit = failure.exitCode === undefined ? "" : `코드 ${failure.exitCode}로 `;
+        return `오류 [GENERATE_PROVIDER_EXIT]: ${id}가 ${exit}종료했습니다.\n해결: 로그인 상태와 모델 사용 권한을 확인하세요. \`codex login status\` 또는 \`claude /status\`.\n`;
+      }
+      case "timedOut":
+        return `오류 [GENERATE_PROVIDER_TIMEOUT]: ${id} 응답이 ${failure.timeoutMs}ms 안에 오지 않았습니다.\n해결: 도구 수를 줄이거나 timeout을 늘려 다시 요청하세요.\n`;
+      case "schemaMismatch":
+        return `오류 [GENERATE_PROVIDER_SCHEMA]: ${id}가 요구한 형식과 다른 결과를 돌려줬습니다.\n해결: 다시 요청하세요. 반복되면 다른 provider로 바꿔 시도하세요.\n`;
+      case "cancelled":
+        return "오류 [GENERATE_PROVIDER_CANCELLED]: AI 검토 요청이 취소됐습니다.\n해결: 메뉴에서 다시 요청하세요.\n";
+      default:
+        return undefined;
+    }
+  })();
+  if (message === undefined) safeFailure(deps, "PROVIDER_FAILED");
+  else deps.writeStderr(message);
+}
 
 async function runInteractiveReview(
   input: GenerateCommandInput,
@@ -354,14 +389,14 @@ async function runInteractiveReview(
           session,
         });
       } catch {
-        safeFailure(deps, "PROVIDER_FAILED");
+        providerFailure(deps, undefined);
         continue;
       }
       if (result.status === "preview") {
         candidate = result.preview;
         showDiff(io, makeDiff({ session, candidate }));
       } else if (result.status === "questions") io.write(`질문:\n${result.questions.join("\n")}\n`);
-      else if (result.status === "providerFailed") safeFailure(deps, "PROVIDER_FAILED");
+      else if (result.status === "providerFailed") providerFailure(deps, result.failure);
       else io.write("AI 결과를 검토 후보로 사용할 수 없습니다.\n");
     }
   } finally {

@@ -216,6 +216,26 @@ describe("authoring request", () => {
       validateAuthoringProviderResult("x".repeat(DEFAULT_MAX_RESULT_BYTES + 1), preview).status,
     ).toBe("resultLimitExceeded");
   });
+  it("caller redaction 정책을 provider 결과에도 적용한다", () => {
+    const callerSecret = "caller-secret";
+    const preview = prepareAuthoringRequest({
+      ...options(),
+      redaction: { sensitiveKeys: ["customerCredential"], sensitiveValues: [callerSecret] },
+    });
+    const candidate = structuredClone(suite());
+    const firstCase = candidate.cases[0];
+    if (firstCase?.operation.type !== "callTool") throw new Error("callTool case가 필요합니다.");
+    firstCase.operation.input.customerCredential = callerSecret;
+    const result = validateAuthoringProviderResult(
+      { status: "candidate", suite: candidate, summary: "ok", warnings: [], questions: [] },
+      preview,
+    );
+
+    expect(result).toMatchObject({ status: "preview", preview: { executable: false } });
+    expect(JSON.stringify(result)).not.toContain(callerSecret);
+    if (result.status !== "preview") throw new Error("candidate preview가 필요합니다.");
+    expect(result.preview.fingerprint).not.toContain(callerSecret);
+  });
   it("invalid provider issue에 raw key와 value를 넣지 않는다", () => {
     const result = validateAuthoringProviderResult(
       {

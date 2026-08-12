@@ -83,6 +83,7 @@ type RequestState = {
   timeoutMs: number;
   maxResultBytes: number;
   tools: readonly McpToolContext[];
+  redaction?: RunnerRedactionOptions;
 };
 const requests = new WeakMap<AuthoringRequestPreview, RequestState>();
 const candidates = new WeakMap<SanitizedAuthoringCandidate, TestSuiteSpec>();
@@ -219,6 +220,7 @@ export function prepareAuthoringRequest(options: {
     timeoutMs: preview.providerTimeoutMs,
     maxResultBytes: preview.maxResultBytes,
     tools: request.tools,
+    redaction: options.redaction,
   });
   return preview;
 }
@@ -290,7 +292,7 @@ export function validateAuthoringProviderResult(
       });
   });
   if (contextIssues.length) return { status: "invalid", issues: contextIssues.slice(0, 100) };
-  const sanitized = redactAuthoringSuite(suite);
+  const sanitized = redactAuthoringSuite(suite, state.redaction);
   const result: AuthoringProviderResult = {
     status: "candidate",
     suite: frozen(sanitized.suite),

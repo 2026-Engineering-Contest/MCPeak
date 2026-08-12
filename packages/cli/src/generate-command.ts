@@ -221,9 +221,76 @@ function showRequest(io: ReviewIO, preview: AuthoringRequestPreview): void {
     `Provider: ${preview.providerId}\nModel: ${preview.model}\nPayload: ${preview.byteLength} bytes\nResult limit: ${preview.maxResultBytes} bytes\nTimeout: ${preview.providerTimeoutMs}ms\nFingerprint: ${preview.fingerprint}\n전송 데이터: 사용자 요청, baseline suite, current candidate, 툴 이름·설명·inputSchema\n`,
   );
 }
+// 승인 화면은 스크롤 없이 읽혀야 한다. 케이스 하나의 diff가 이보다 커지면 사람이 화면으로
+// 판단할 수 없고 저장 후 JSON을 여는 편이 맞는 경로다. 40줄은 흔한 터미널 높이(24~50줄)에서
+// 헤더와 메뉴 프롬프트를 빼고 남는 분량이다.
+const MAX_DIFF_BODY_LINES = 40;
+
+/**
+ * leaf 경로와 JSON 값을 문서 순서(Object.keys 순, 배열 인덱스 순)로 모은다.
+ * 정렬하지 않는다. 같은 입력에 항상 같은 출력이 나와야 하고 문서 순서로 그것이 만족된다.
+ * 빈 객체와 빈 배열은 그 자체를 leaf로 본다. 그러지 않으면 경로가 조용히 사라진다.
+ */
+function leaves(value: unknown, prefix = ""): (readonly [string, string])[] {
+  if (Array.isArray(value)) {
+    if (value.length === 0) return [[prefix, "[]"] as const];
+    return value.flatMap((item, index) => leaves(item, `${prefix}[${index}]`));
+  }
+  if (value !== null && typeof value === "object") {
+    const entries = Object.entries(value);
+    if (entries.length === 0) return [[prefix, "{}"] as const];
+    return entries.flatMap(([key, nested]) =>
+      leaves(nested, prefix === "" ? key : `${prefix}.${key}`),
+    );
+  }
+  return [[prefix, JSON.stringify(value) ?? "undefined"] as const];
+}
+/** before/after의 leaf를 비교해 다른 경로만 남긴다. 같은 경로의 -와 +는 붙여서 쓴다. */
+function changedLeaves(before: unknown, after: unknown): string[] {
+  const afterLeaves = leaves(after);
+  const afterByPath = new Map(afterLeaves);
+  const lines: string[] = [];
+  const seen = new Set<string>();
+  for (const [path, value] of leaves(before)) {
+    seen.add(path);
+    if (!afterByPath.has(path)) {
+      lines.push(`- ${path}: ${value}`);
+      continue;
+    }
+    const next = afterByPath.get(path);
+    if (next === value) continue;
+    lines.push(`- ${path}: ${value}`, `+ ${path}: ${next}`);
+  }
+  for (const [path, value] of afterLeaves) if (!seen.has(path)) lines.push(`+ ${path}: ${value}`);
+  return lines;
+}
+function diffBody(change: AuthoringDiffPreview["changes"][number]): string[] {
+  switch (change.type) {
+    case "addCase":
+      return leaves(change.case).map(([path, value]) => `+ ${path}: ${value}`);
+    case "removeCase":
+      return leaves(change.case).map(([path, value]) => `- ${path}: ${value}`);
+    case "caseOrder":
+      return [`- ${change.before.join(", ")}`, `+ ${change.after.join(", ")}`];
+    default:
+      return changedLeaves(change.before, change.after);
+  }
+}
 function showDiff(io: ReviewIO, preview: AuthoringDiffPreview): void {
-  for (const change of preview.changes)
-    io.write(`${change.id} ${change.type}${"caseId" in change ? ` ${change.caseId}` : ""}\n`);
+  for (const change of preview.changes) {
+    const body = diffBody(change);
+    const shown =
+      body.length > MAX_DIFF_BODY_LINES
+        ? [
+            ...body.slice(0, MAX_DIFF_BODY_LINES),
+            `... 이하 ${body.length - MAX_DIFF_BODY_LINES}줄 생략. 전체는 저장 후 JSON을 확인하세요.`,
+          ]
+        : body;
+    io.write(
+      `${change.id} ${change.type}${"caseId" in change ? ` ${change.caseId}` : ""}\n` +
+        shown.map((line) => `  ${line}\n`).join(""),
+    );
+  }
 }
 function safeFailure(deps: GenerateCommandDependencies, code: string): void {
   deps.writeStderr(

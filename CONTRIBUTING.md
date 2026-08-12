@@ -134,7 +134,18 @@ docs(adr): 카세트 매칭 키 결정 기록
 
 - `type`: `feat` `fix` `docs` `test` `refactor` `chore` `ci`
 - `scope`: 패키지명(`core` `runner` `generate` `record` `mock` `cli`)
-- **scope는 필수다.** 나중에 `git log --grep "(record)"` 한 줄로 개인 기여를 뽑아낼 수 있어야 한다.
+- **scope는 필수다.** 나중에 패키지별 개인 기여를 명령 한 줄로 뽑아낼 수 있어야 한다.
+
+  ```bash
+  git log --no-merges --format='%s|%aN' \
+    | awk -F'|' '$1 ~ /^[a-z]+\(record\):/ {print $2}' | sort | uniq -c | sort -rn
+  ```
+
+  > `git log --grep "(record)"`는 쓰지 않는다. **결과가 부풀려진다.**
+  > `--grep`은 정규식이라 괄호가 그룹으로 해석돼 "record"를 아무 데서나 찾고, 커밋 **본문**까지 뒤진다.
+  > GitHub 머지 커밋은 본문에 원래 제목을 복사해 넣으므로 같은 작업이 머지 커밋과 원본 커밋으로 두 번 잡힌다.
+  > 위 명령은 `--no-merges`로 머지 커밋을 빼고, 제목(`%s`)만 보고, 패턴을 줄 앞에 고정한다.
+  > `%aN`은 `.mailmap`을 반영한 작성자명이다 — 신원이 갈려도 한 사람으로 집계된다.
 
 ---
 

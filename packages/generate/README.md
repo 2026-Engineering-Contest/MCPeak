@@ -1,11 +1,57 @@
 # @ohmymcp/generate
 
-툴 스키마 분석 · 테스트 케이스 합성 · 코드 생성.
+MCP 도구의 입력 스키마에서 검토 가능한 happy-path 테스트 초안을 생성합니다.
 
-- **오너:** `@seodduu` `@endl24` `@sunghoon0303` (① MCP 서버 테스트 파트)
-- **의존:** `@ohmymcp/core`
+- **오너:** `@seodduu` `@endl24` `@sunghoon0303`
+- **생성 시 의존:** `@ohmymcp/core`
+- **생성 결과 실행 시 의존:** `@ohmymcp/runner`
 
-## 상태
+## 테스트 생성
 
-`generateTests` 스텁만 존재한다. 어디까지 자동 생성하고 어디부터 사람이 쓰게 할지는
-ADR-0004 에서 결정한다.
+```ts
+import { generateTests } from "@ohmymcp/generate";
+
+const paths = await generateTests(tools, {
+  outDir: "./generated",
+});
+```
+
+도구 이름은 소문자 영문·숫자와 하이픈으로 정규화되고 최대 80자로 잘립니다. 정규화 결과가
+비어 있거나 Windows 예약 이름이면 `tool-<순번>`을 사용합니다. 이미 예약된 이름과 충돌하면
+비어 있는 이름을 찾을 때까지 `-2`, `-3`처럼 결정론적 접미사를 붙입니다. 따라서 호출자는
+접미사가 없는 `<tool-name>.generated.ts`를 가정하지 말고 반환된 `paths`로 생성 파일을 찾아야
+합니다. 생성 파일은 서버 연결 방법이나 `McpClient`를 포함하지 않고 Runner의 선언형
+`generatedSuite`만 export합니다.
+
+입력값은 `const` → `default` → `examples[0]` → `enum[0]` → 타입별 고정값 순서로 선택합니다.
+객체에서는 필수 프로퍼티만 포함하고 배열에서는 `items`로 원소 한 개를 생성합니다. 생성된
+happy-path는 도구 응답의 `isError`가 `false`인지 확인합니다.
+
+첫 버전은 단일 `type`, `required`, `properties`, `items`, `enum`, `const`, `default`, `examples`를
+지원합니다. `$ref`나 조합 스키마처럼 지원하지 않는 키워드가 있거나 후보값이 제약을 만족하지
+않으면 파일을 쓰기 전에 `GenerateTestsError`를 발생시킵니다.
+
+## 실제 client로 실행
+
+생성 파일과 실제 서버 연결은 별도 실행 진입점에서 조합합니다.
+
+```ts
+import { runSuite } from "@ohmymcp/runner";
+import { generatedSuite } from "./generated/get-weather.generated.js";
+
+const execution = runSuite({
+  client,
+  suite: generatedSuite,
+});
+
+const report = await execution.report;
+```
+
+client와 transport를 만든 실행 진입점은 실행이 끝난 뒤 해당 client의 종료도 책임져야 합니다.
+생성된 코드는 Vitest에 의존하지 않으므로 CLI, Dashboard 또는 별도 테스트 adapter에서도 같은
+suite를 사용할 수 있습니다.
+
+## 자동 생성 범위
+
+스키마만으로 알 수 없는 비정상 입력, 구체적인 응답 본문, 비즈니스 규칙 검증은 생성하지 않습니다.
+생성 결과를 초안으로 검토한 뒤 필요한 assertion과 케이스를 별도 파일에 추가하세요.

@@ -54,6 +54,7 @@ export {
 } from "./baseline.js";
 export type {
   AuthoringProviderFailureCode,
+  AuthoringProviderFailureReason,
   ProviderProcessChild,
   ProviderProcessDeps,
   ProviderProcessResult,

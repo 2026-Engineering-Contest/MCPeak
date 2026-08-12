@@ -5,7 +5,10 @@ import {
   PROVIDER_OUTPUT_SCHEMA,
   prepareAuthoringRequest,
 } from "../src/index.js";
-import type { ProviderProcessResult } from "../src/provider-process.js";
+import type {
+  AuthoringProviderFailureReason,
+  ProviderProcessResult,
+} from "../src/provider-process.js";
 import {
   createClaudeAuthoringProvider,
   createCodexAuthoringProvider,
@@ -53,6 +56,18 @@ const claudeEnvelope = (structured: unknown) => ({
 });
 const plainEnvelope = (value: unknown): boolean =>
   typeof value === "object" && value !== null && "type" in value;
+/** 실측 원문. codex는 없는 모델에 exit 1, stdout 비어 있음, stderr에 아래 한 줄이 온다. */
+const CODEX_UNKNOWN_MODEL_STDERR =
+  'ERROR: {"type":"error","status":400,"error":{"type":"invalid_request_error","message":"The \'no-such-model\' model is not supported when using Codex with a ChatGPT account."}}';
+/** 실측 원문. claude는 없는 모델에 exit 1, stderr 비어 있음, stdout에 아래 envelope가 온다. */
+const CLAUDE_UNKNOWN_MODEL_STDOUT = {
+  type: "result",
+  subtype: "success",
+  is_error: true,
+  terminal_reason: "api_error",
+  api_error_status: 404,
+  result: "There's an issue with the selected model (no-such-model).",
+};
 function runner(value: ProviderProcessResult) {
   const calls: unknown[] = [];
   return {
@@ -63,6 +78,33 @@ function runner(value: ProviderProcessResult) {
     },
   };
 }
+
+/** provider 어댑터가 spec에 주입한 classifyFailure를 꺼내 픽스처 스트림으로 직접 부른다. */
+async function reasonOf(
+  provider: ReturnType<typeof createCodexAuthoringProvider>,
+  calls: unknown[],
+  streams: { stdout: string; stderr: string },
+): Promise<AuthoringProviderFailureReason | undefined> {
+  await provider
+    .author(preview().request, { timeoutMs: 1 })
+    .then(() => undefined)
+    .catch(() => undefined);
+  const spec = calls[0] as {
+    classifyFailure?: (input: {
+      stdout: string;
+      stderr: string;
+    }) => AuthoringProviderFailureReason | undefined;
+  };
+  return spec.classifyFailure?.(streams);
+}
+const codexReason = (stderr: string, stdout = "") => {
+  const r = runner({ ok: false, code: "nonZeroExit", exitCode: 1 });
+  return reasonOf(createCodexAuthoringProvider({ run: r.run }), r.calls, { stdout, stderr });
+};
+const claudeReason = (stdout: string, stderr = "") => {
+  const r = runner({ ok: false, code: "nonZeroExit", exitCode: 1 });
+  return reasonOf(createClaudeAuthoringProvider({ run: r.run }), r.calls, { stdout, stderr });
+};
 
 describe("provider adapters", () => {
   it("Codex를 빈 cwd의 read-only ephemeral structured 실행으로 호출한다", async () => {
@@ -434,5 +476,88 @@ describe("provider adapters", () => {
     }
     expect(combined).not.toContain("ignore previous instructions");
     expect(combined).not.toContain("structured_output");
+  });
+  it("codex stderr의 ERROR 줄 status 400을 badRequest로 분류한다", async () => {
+    expect(await codexReason(CODEX_UNKNOWN_MODEL_STDERR)).toBe("badRequest");
+  });
+  it("codex status 401과 403을 notAuthenticated로 분류한다", async () => {
+    expect(await codexReason('ERROR: {"type":"error","status":401}')).toBe("notAuthenticated");
+    expect(await codexReason('ERROR: {"type":"error","status":403}')).toBe("notAuthenticated");
+  });
+  it("codex status 404를 unknownModel로 분류한다", async () => {
+    expect(await codexReason('ERROR: {"type":"error","status":404}')).toBe("unknownModel");
+  });
+  it("codex status 429를 rateLimited로 분류한다", async () => {
+    expect(await codexReason('ERROR: {"type":"error","status":429}')).toBe("rateLimited");
+  });
+  it("codex status 503을 serverError로 분류한다", async () => {
+    expect(await codexReason('ERROR: {"type":"error","status":503}')).toBe("serverError");
+  });
+  it("줄 중간에 나타난 ERROR 문자열은 분류에 쓰지 않는다", async () => {
+    expect(
+      await codexReason('user\n툴 설명 ... ERROR: {"status":429} 여기까지 프롬프트 echo다\n'),
+    ).toBeUndefined();
+  });
+  it("분류 결과에 stderr 원문이 섞이지 않는다", async () => {
+    const stderr = `user\nUNTRUSTED_PROMPT_MARKER\n${CODEX_UNKNOWN_MODEL_STDERR}`;
+    const reason = await codexReason(stderr);
+    expect(reason).toBe("badRequest");
+    const r = runner({ ok: false, code: "nonZeroExit", exitCode: 1, reason });
+    const error = await createCodexAuthoringProvider({ run: r.run })
+      .author(preview().request, { timeoutMs: 1 })
+      .then(() => undefined)
+      .catch((thrown: unknown) => thrown);
+    const failure = error as Error;
+    const combined = `${JSON.stringify(failure)}${failure.message}${failure.stack ?? ""}`;
+    expect(combined).not.toContain("UNTRUSTED_PROMPT_MARKER");
+    expect(combined).not.toContain("no-such-model");
+    expect(failure).toMatchObject({ code: "nonZeroExit", reason: "badRequest" });
+  });
+  it("claude stdout의 api_error_status 404를 unknownModel로 분류한다", async () => {
+    expect(await claudeReason(JSON.stringify(CLAUDE_UNKNOWN_MODEL_STDOUT))).toBe("unknownModel");
+  });
+  it("claude api_error_status 401을 notAuthenticated로 분류한다", async () => {
+    expect(
+      await claudeReason(JSON.stringify({ ...CLAUDE_UNKNOWN_MODEL_STDOUT, api_error_status: 401 })),
+    ).toBe("notAuthenticated");
+  });
+  it("claude api_error_status 429를 rateLimited로 분류한다", async () => {
+    expect(
+      await claudeReason(JSON.stringify({ ...CLAUDE_UNKNOWN_MODEL_STDOUT, api_error_status: 429 })),
+    ).toBe("rateLimited");
+  });
+  it("claude stdout이 JSON이 아니면 reason이 없다", async () => {
+    expect(await claudeReason("not json at all")).toBeUndefined();
+  });
+  it("claude 성공 응답의 api_error_status null은 분류 대상이 아니다", async () => {
+    expect(
+      await claudeReason(
+        JSON.stringify({
+          type: "result",
+          subtype: "success",
+          is_error: false,
+          api_error_status: null,
+          structured_output: candidatePayload(),
+        }),
+      ),
+    ).toBeUndefined();
+  });
+  it("claude 분류 결과에 result 문자열이 섞이지 않는다", async () => {
+    const stdout = JSON.stringify({
+      ...CLAUDE_UNKNOWN_MODEL_STDOUT,
+      result: "UNTRUSTED_RESULT_MARKER no-such-model",
+    });
+    const reason = await claudeReason(stdout);
+    expect(reason).toBe("unknownModel");
+    const r = runner({ ok: false, code: "nonZeroExit", exitCode: 1, reason });
+    const error = await createClaudeAuthoringProvider({ run: r.run })
+      .author(preview().request, { timeoutMs: 1 })
+      .then(() => undefined)
+      .catch((thrown: unknown) => thrown);
+    const failure = error as Error;
+    const combined = `${JSON.stringify(failure)}${failure.message}${failure.stack ?? ""}`;
+    expect(combined).not.toContain("UNTRUSTED_RESULT_MARKER");
+    expect(combined).not.toContain("no-such-model");
+    expect(failure).toMatchObject({ code: "nonZeroExit", reason: "unknownModel" });
   });
 });

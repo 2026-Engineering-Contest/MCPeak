@@ -178,6 +178,89 @@ describe("provider process", () => {
     invalid.child.close();
     await expect(two).resolves.toMatchObject({ code: "invalidJson" });
   });
+  it("classifyFailure가 없으면 stderr 내용을 보관하지 않는다", async () => {
+    const s = setup();
+    const done = runProviderProcess(spec, s.deps);
+    await Promise.resolve();
+    s.child.stderr.emit("data", Buffer.from('ERROR: {"status":404}'));
+    s.child.close(1);
+    const result = await done;
+    expect(result).toMatchObject({ ok: false, code: "nonZeroExit", exitCode: 1 });
+    expect("reason" in result).toBe(false);
+  });
+  it("비정상 종료 시 classifyFailure 결과를 reason으로 올린다", async () => {
+    const s = setup();
+    const seen: { stdout: string; stderr: string }[] = [];
+    const done = runProviderProcess(
+      {
+        ...spec,
+        classifyFailure: (streams) => {
+          seen.push({ ...streams });
+          return "unknownModel";
+        },
+      },
+      s.deps,
+    );
+    await Promise.resolve();
+    s.child.stderr.emit("data", Buffer.from("boom"));
+    s.child.close(1);
+    await expect(done).resolves.toMatchObject({
+      ok: false,
+      code: "nonZeroExit",
+      exitCode: 1,
+      reason: "unknownModel",
+    });
+    expect(seen).toEqual([{ stdout: "", stderr: "boom" }]);
+  });
+  it("classifyFailure가 undefined를 주면 reason이 없다", async () => {
+    const s = setup();
+    const done = runProviderProcess({ ...spec, classifyFailure: () => undefined }, s.deps);
+    await Promise.resolve();
+    s.child.close(1);
+    const result = await done;
+    expect(result).toMatchObject({ ok: false, code: "nonZeroExit" });
+    expect("reason" in result).toBe(false);
+  });
+  it("정상 종료에는 classifyFailure를 부르지 않는다", async () => {
+    const s = setup();
+    let calls = 0;
+    const done = runProviderProcess(
+      {
+        ...spec,
+        classifyFailure: () => {
+          calls++;
+          return "serverError";
+        },
+      },
+      s.deps,
+    );
+    await Promise.resolve();
+    s.child.stdout.emit("data", Buffer.from('{"ok":true}'));
+    s.child.close(0);
+    await expect(done).resolves.toMatchObject({ ok: true, value: { ok: true } });
+    expect(calls).toBe(0);
+  });
+  it("stderr는 마지막 8KB만 분류에 넘긴다", async () => {
+    const s = setup();
+    let received = "";
+    const done = runProviderProcess(
+      {
+        ...spec,
+        classifyFailure: (streams) => {
+          received = streams.stderr;
+          return undefined;
+        },
+      },
+      s.deps,
+    );
+    await Promise.resolve();
+    s.child.stderr.emit("data", Buffer.alloc(20_000, 97));
+    s.child.stderr.emit("data", Buffer.from("TAIL_MARKER"));
+    s.child.close(1);
+    await done;
+    expect(received.length).toBeLessThanOrEqual(8_192);
+    expect(received.endsWith("TAIL_MARKER")).toBe(true);
+  });
   it("timeout·취소 뒤 늦은 settlement를 관찰한다", async () => {
     const s = setup();
     const unhandled: unknown[] = [];

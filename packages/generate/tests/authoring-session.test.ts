@@ -174,9 +174,18 @@ describe("authoring session", () => {
 
   it("unknown change와 중복 selected ID를 거절한다", () => {
     const session = createAuthoringSession(baseline());
-    const review = reviewLocalAuthoringCandidate({ session, candidate: candidate(session), tools });
+    const next = candidate(session);
+    next.cases.push({
+      id: "weather-error",
+      name: "오류",
+      operation: { type: "callTool", tool: "weather", input: { city: "Unknown" } },
+      assertions: [{ type: "isError", expected: true }],
+    });
+    const review = reviewLocalAuthoringCandidate({ session, candidate: next, tools });
     if (review.status !== "preview") throw new Error("preview");
     const diff = createAuthoringDiff({ session, candidate: review.preview });
+    const existing = diff.changes[0];
+    if (existing === undefined) throw new Error("적어도 하나의 change가 필요합니다.");
     expect(
       applyAuthoringChanges({
         session,
@@ -185,14 +194,39 @@ describe("authoring session", () => {
         approval: approve(diff.candidateFingerprint),
       }),
     ).toMatchObject({ applied: false, reason: "unknownChange" });
+    // 존재하는 change ID를 두 번 넘겨야 중복 검사 자체가 검증된다.
     expect(
       applyAuthoringChanges({
         session,
         preview: diff,
-        selectedChangeIds: ["change-001", "change-001"],
+        selectedChangeIds: [existing.id, existing.id],
         approval: approve(diff.candidateFingerprint),
       }),
     ).toMatchObject({ applied: false, reason: "unknownChange" });
+  });
+  it("적용 결과가 세션에 전달된 도구 목록 밖의 도구를 남기면 거절한다", () => {
+    const session = createAuthoringSession(baseline());
+    // 서버가 echo 도구를 더는 제공하지 않는 상황. candidate는 echo case를 지웠지만
+    // 사용자가 그 삭제를 선택하지 않으면 승인본에 echo case가 그대로 남는다.
+    const next = candidate(session);
+    next.cases = next.cases.filter((item) => item.id !== "echo-success");
+    const review = reviewLocalAuthoringCandidate({
+      session,
+      candidate: next,
+      tools: [tools[0] as ToolDef],
+    });
+    if (review.status !== "preview") throw new Error("preview");
+    const diff = createAuthoringDiff({ session, candidate: review.preview });
+    const result = applyAuthoringChanges({
+      session,
+      preview: diff,
+      selectedChangeIds: [],
+      approval: approve(diff.candidateFingerprint),
+    });
+    expect(result).toMatchObject({ applied: false, reason: "invalid" });
+    if (result.applied) throw new Error("거절되어야 합니다.");
+    expect(result.issues?.some((issue) => issue.path === "cases[1].operation.tool")).toBe(true);
+    expect(session.approvedDraft.revision).toBe(0);
   });
 
   it("suite identity와 unknown tool candidate를 거절한다", () => {

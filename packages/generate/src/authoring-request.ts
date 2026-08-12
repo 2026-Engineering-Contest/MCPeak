@@ -17,7 +17,7 @@ import type {
   AuthoringProviderFailureCode,
   AuthoringProviderFailureReason,
 } from "./provider-process.js";
-import { redactAuthoringSuite } from "./redaction.js";
+import { redactAuthoringSuite, sanitizeRedactable } from "./redaction.js";
 
 export type AuthoringRequestMode = "initial" | "revise";
 export interface McpToolContext {
@@ -62,7 +62,8 @@ export type AuthoringProviderResult =
       readonly status: "candidate";
       readonly suite: TestSuiteSpec;
       readonly summary: string;
-      readonly warnings: readonly PublicProviderValidationIssue[];
+      /** provider가 보고한 경고 문장. 전송 스키마가 문자열 배열로 규정한다. */
+      readonly warnings: readonly string[];
       readonly questions: readonly string[];
     }
   | { readonly status: "questions"; readonly questions: readonly string[] };
@@ -158,24 +159,9 @@ function byte(value: unknown): number {
     return Number.POSITIVE_INFINITY;
   }
 }
-function redacted(value: unknown, options?: RunnerRedactionOptions): unknown {
-  const keys = new Set(DEFAULT_SENSITIVE_KEYS);
-  for (const key of options?.sensitiveKeys ?? [])
-    keys.add(key.toLowerCase().replace(/[^a-z0-9]/g, ""));
-  const values = new Set(options?.sensitiveValues ?? []);
-  const visit = (item: unknown): unknown => {
-    if (typeof item === "string") return values.has(item) ? REDACTED : item;
-    if (item === null || typeof item !== "object") return item;
-    if (Array.isArray(item)) return item.map(visit);
-    return Object.fromEntries(
-      Object.entries(item).map(([key, nested]) => [
-        key,
-        keys.has(key.toLowerCase().replace(/[^a-z0-9]/g, "")) ? REDACTED : visit(nested),
-      ]),
-    );
-  };
-  return visit(value);
-}
+/** 치환 규칙은 redaction.ts 한 곳에만 둔다. 여기서 두 번째 구현을 만들지 않는다. */
+const redacted = (value: unknown, options?: RunnerRedactionOptions): unknown =>
+  sanitizeRedactable(value, options);
 function escapeRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -365,11 +351,6 @@ export function validateAuthoringProviderResult(
     return { status: "invalid", issues: safeIssues(raw.suite) };
   const suiteIssues = safeIssues(raw.suite);
   const suite = raw.suite as unknown as TestSuiteSpec;
-  if (
-    suite.id !== state.request.candidate.id ||
-    suite.schemaVersion !== state.request.candidate.schemaVersion
-  )
-    suiteIssues.concat();
   const contextIssues: PublicProviderValidationIssue[] = [...suiteIssues];
   if (
     suite.id !== state.request.candidate.id ||
@@ -382,8 +363,13 @@ export function validateAuthoringProviderResult(
       hint: "요청의 suite identity를 유지하세요.",
     });
   const names = new Set(state.tools.map((tool) => tool.name));
-  suite.cases?.forEach((item, index) => {
-    if (item.operation.type === "callTool" && !names.has(item.operation.tool))
+  // 스키마 위반 suite는 case 모양을 보장하지 않는다. operation에 바로 접근하면 TypeError가 나고
+  // dispatch의 catch가 그것을 providerFailed/internal로 뭉개 사용자가 진짜 원인을 못 본다.
+  const cases = Array.isArray(suite.cases) ? suite.cases : [];
+  cases.forEach((item, index) => {
+    const operation = plain(item) ? item.operation : undefined;
+    if (!plain(operation)) return;
+    if (operation.type === "callTool" && !names.has(operation.tool as string))
       contextIssues.push({
         code: "INVALID_VALUE",
         path: `suite.cases[${index}].operation.tool`,
@@ -397,7 +383,14 @@ export function validateAuthoringProviderResult(
     status: "candidate",
     suite: frozen(sanitized.suite),
     summary: redactText(raw.summary, state.redaction),
-    warnings: [],
+    // provider가 보고한 경고를 사용자에게 전달한다. 문자열만 통과시키고 redaction을 적용하며
+    // 개수 상한을 둔다(issues와 같은 100). 검증만 하고 버리면 경고가 사용자에게 닿지 않는다.
+    warnings: frozen(
+      raw.warnings
+        .filter((v): v is string => typeof v === "string" && /\S/.test(v))
+        .slice(0, 100)
+        .map((item) => redactText(item, state.redaction)),
+    ),
     questions: frozen(
       raw.questions
         .filter((v): v is string => typeof v === "string")

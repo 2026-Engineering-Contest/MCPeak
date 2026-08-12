@@ -33,8 +33,10 @@ describe("generateTests", () => {
     };
     const [path] = await generateTests([tool], { outDir: await temporaryOutDir() });
     const source = await readFile(path as string, "utf8");
-    const generatedCase = JSON.parse(source.match(/defineMcpSuite\((\{[\s\S]*\})\);/)?.[1] ?? "{}")
-      .cases[0];
+    const matched = source.match(/defineMcpSuite\((\{[\s\S]*\})\);/);
+    // 폴백을 두면 정규식 불일치가 엉뚱한 TypeError로 바뀌어 진짜 원인이 가려진다.
+    expect(matched?.[1]).toBeTypeOf("string");
+    const generatedCase = JSON.parse(matched?.[1] as string).cases[0];
 
     expect(generatedCase).toEqual(
       createBaselineSuite([tool], { suiteId: "server", suiteName: "서버" }).suite.cases[0],

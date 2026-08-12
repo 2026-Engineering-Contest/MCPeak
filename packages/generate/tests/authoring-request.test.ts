@@ -1,6 +1,6 @@
 import type { ToolDef } from "@ohmymcp/core";
-import { MCP_SUITE_JSON_SCHEMA } from "@ohmymcp/runner";
-import { describe, expect, it } from "vitest";
+import { DEFAULT_SENSITIVE_KEYS, MCP_SUITE_JSON_SCHEMA } from "@ohmymcp/runner";
+import { describe, expect, it, vi } from "vitest";
 import {
   AUTHORING_OUTPUT_SCHEMA,
   applyAuthoringChanges,
@@ -303,8 +303,15 @@ describe("authoring request", () => {
       }),
     ).toMatchObject({ applied: false, reason: "redactionRequired" });
   });
-  it("Runner Schema를 수정하지 않고 authoring output Schema를 만든다", () => {
-    expect(MCP_SUITE_JSON_SCHEMA).toEqual(MCP_SUITE_JSON_SCHEMA);
+  it("Runner Schema를 수정하지 않고 authoring output Schema를 만든다", async () => {
+    // 자기 자신과 비교하면 어떤 회귀도 못 잡는다. generate를 거치지 않은 새 모듈 인스턴스를
+    // 따로 띄워 그것과 비교해야 원본 불변을 실제로 검증한다.
+    vi.resetModules();
+    const pristine = await import("@ohmymcp/runner");
+    expect(MCP_SUITE_JSON_SCHEMA).toEqual(pristine.MCP_SUITE_JSON_SCHEMA);
+    expect(Object.keys(MCP_SUITE_JSON_SCHEMA)).toEqual(
+      expect.arrayContaining(["$schema", "$id", "$defs"]),
+    );
     expect(Object.isFrozen(MCP_SUITE_JSON_SCHEMA)).toBe(true);
     expect(AUTHORING_OUTPUT_SCHEMA).toMatchObject({
       additionalProperties: false,
@@ -371,6 +378,83 @@ describe("authoring request", () => {
     expect(result.status).toBe("invalid");
     if (result.status !== "invalid") throw new Error("invalid 결과가 필요합니다.");
     expect(result.issues.some((issue) => issue.path === "suite.id")).toBe(true);
+  });
+  it("operation이 없는 case가 와도 예외 없이 invalid로 떨어진다", () => {
+    const bad = structuredClone(suite()) as unknown as { cases: unknown[] };
+    bad.cases[0] = { id: "weather-success", name: "이름만 있는 case" };
+    const preview = prepareAuthoringRequest(options());
+    let result: ReturnType<typeof validateAuthoringProviderResult>;
+    expect(() => {
+      result = validateAuthoringProviderResult(
+        { status: "candidate", suite: bad, summary: "ok", warnings: [], questions: [] },
+        preview,
+      );
+    }).not.toThrow();
+    // biome-ignore lint/style/noNonNullAssertion: 위 콜백이 반드시 대입한다.
+    expect(result!.status).toBe("invalid");
+  });
+  it("provider warnings를 redaction과 상한을 적용해 전달한다", () => {
+    const callerSecret = "warning-secret";
+    const preview = prepareAuthoringRequest({
+      ...options(),
+      redaction: { sensitiveValues: [callerSecret] },
+    });
+    const result = validateAuthoringProviderResult(
+      {
+        status: "candidate",
+        suite: suite(),
+        summary: "ok",
+        warnings: [`leak ${callerSecret}`, "두 번째 경고", 42, "  "],
+        questions: [],
+      },
+      preview,
+    );
+    if (result.status !== "preview") throw new Error("candidate preview가 필요합니다.");
+    // SanitizedAuthoringCandidate.result 타입은 authoring-types.ts가 소유하며 warnings를
+    // 노출하지 않는다. 런타임에는 실려 오므로 여기서만 좁혀 본다.
+    expect((result.preview.result as unknown as { warnings: readonly string[] }).warnings).toEqual([
+      "leak [REDACTED]",
+      "두 번째 경고",
+    ]);
+    expect(JSON.stringify(result)).not.toContain(callerSecret);
+  });
+  it("provider warnings 개수를 상한으로 자른다", () => {
+    const preview = prepareAuthoringRequest(options());
+    const result = validateAuthoringProviderResult(
+      {
+        status: "candidate",
+        suite: suite(),
+        summary: "ok",
+        warnings: Array.from({ length: 200 }, (_, index) => `경고 ${index}`),
+        questions: [],
+      },
+      preview,
+    );
+    if (result.status !== "preview") throw new Error("candidate preview가 필요합니다.");
+    // SanitizedAuthoringCandidate.result 타입은 authoring-types.ts가 소유하며 warnings를
+    // 노출하지 않는다. 런타임에는 실려 오므로 여기서만 좁혀 본다.
+    expect(
+      (result.preview.result as unknown as { warnings: readonly string[] }).warnings,
+    ).toHaveLength(100);
+  });
+  it("camelCase 민감 키도 정규화해 가린다", () => {
+    const preview = prepareAuthoringRequest({
+      ...options(),
+      tools: [
+        {
+          name: "weather",
+          inputSchema: { accessToken: "at", "refresh-token": "rt", clientSecret: "cs" },
+        },
+      ],
+    });
+    const serialized = JSON.stringify(preview.request.tools);
+    expect(serialized).not.toContain('"at"');
+    expect(serialized).not.toContain('"rt"');
+    expect(serialized).not.toContain('"cs"');
+  });
+  it("DEFAULT_SENSITIVE_KEYS는 전부 정규화된 형태다", () => {
+    for (const key of DEFAULT_SENSITIVE_KEYS)
+      expect(key).toBe(key.toLowerCase().replace(/[^a-z0-9]/g, ""));
   });
   it("questions 결과는 candidate를 만들지 않는다", () => {
     const result = validateAuthoringProviderResult(

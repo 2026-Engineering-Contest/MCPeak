@@ -4,7 +4,7 @@
 
 ```
 $ pwd
-/Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/ohmymcp-runner-body-assertion
+<repo>/.claude/worktrees/ohmymcp-runner-body-assertion
 
 $ git rev-parse HEAD
 a1f9bb47a129daadcedde76d2d9e4080628dac0c
@@ -136,7 +136,7 @@ E2E 실행 뒤 `weather-server/server.mjs` 문자열로 살아 있는 프로세�
 
 ```
 $ ps -o pid,ppid,etime,command -p ...
-14048  1  20:26:17  ... /Users/doo._.hyun/Study/Project/OhMyMCP/packages/cli/dist/cli.mjs generate ... --provider codex ...
+14048  1  20:26:17  ... <repo>/packages/cli/dist/cli.mjs generate ... --provider codex ...
 14050  14048  20:26:17  ... 같은 명령
 ```
 

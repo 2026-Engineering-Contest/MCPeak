@@ -4,7 +4,7 @@
 
 ```
 $ pwd
-/Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/ohmymcp-runner-body-assertion
+<repo>/.claude/worktrees/ohmymcp-runner-body-assertion
 
 $ git rev-parse HEAD
 15b695cd6c811722962a9c425af868ec990a9871
@@ -72,7 +72,7 @@ $ pnpm vitest run packages/runner/tests/spec-validation.test.ts packages/runner/
 ```
 $ pnpm vitest run packages/runner/tests/spec-validation.test.ts packages/runner/tests/spec-schema.test.ts
 
- RUN  v4.1.10 /Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/ohmymcp-runner-body-assertion
+ RUN  v4.1.10 <repo>/.claude/worktrees/ohmymcp-runner-body-assertion
 
  Test Files  2 passed (2)
       Tests  49 passed (49)
@@ -132,7 +132,7 @@ biome이 제시한 형태로 고쳐 통과시켰다.
 $ pnpm test
 > vitest run
 
- RUN  v4.1.10 /Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/ohmymcp-runner-body-assertion
+ RUN  v4.1.10 <repo>/.claude/worktrees/ohmymcp-runner-body-assertion
 
  Test Files  29 passed (29)
       Tests  382 passed | 1 skipped (383)

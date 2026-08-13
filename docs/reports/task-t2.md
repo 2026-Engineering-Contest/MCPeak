@@ -4,7 +4,7 @@
 
 ```
 $ pwd
-/Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/ohmymcp-runner-body-assertion
+<repo>/.claude/worktrees/ohmymcp-runner-body-assertion
 
 $ git rev-parse HEAD
 6f8d73e0817a4c75cdf36120defcae61cbf4d3cd
@@ -88,7 +88,7 @@ $ pnpm vitest run packages/runner/tests/body.test.ts packages/runner/tests/schem
 ```
 $ pnpm vitest run packages/runner/tests/body.test.ts packages/runner/tests/schema-match.test.ts
 
- RUN  v4.1.10 /Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/ohmymcp-runner-body-assertion
+ RUN  v4.1.10 <repo>/.claude/worktrees/ohmymcp-runner-body-assertion
 
  Test Files  2 passed (2)
       Tests  56 passed (56)
@@ -146,7 +146,7 @@ Checked 109 files in 19ms. No fixes applied.
 $ pnpm test
 > vitest run
 
- RUN  v4.1.10 /Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/ohmymcp-runner-body-assertion
+ RUN  v4.1.10 <repo>/.claude/worktrees/ohmymcp-runner-body-assertion
 
  Test Files  31 passed (31)
       Tests  438 passed | 1 skipped (439)

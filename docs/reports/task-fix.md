@@ -4,7 +4,7 @@
 
 ```
 $ pwd
-/Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/ohmymcp-body-fix
+<repo>/.claude/worktrees/ohmymcp-body-fix
 
 $ git rev-parse HEAD
 395f66fca3173ee93a1250e291569b162bd8308d

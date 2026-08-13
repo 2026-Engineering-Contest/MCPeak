@@ -4,7 +4,7 @@
 
 ```
 $ pwd
-/Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/ohmymcp-runner-body-assertion
+<repo>/.claude/worktrees/ohmymcp-runner-body-assertion
 
 $ git rev-parse HEAD
 323ce2e (T2 커밋)
@@ -96,7 +96,7 @@ $ pnpm vitest run packages/runner
 ```
 $ pnpm vitest run packages/runner
 
- RUN  v4.1.10 /Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/ohmymcp-runner-body-assertion
+ RUN  v4.1.10 <repo>/.claude/worktrees/ohmymcp-runner-body-assertion
 
  Test Files  10 passed (10)
       Tests  177 passed (177)

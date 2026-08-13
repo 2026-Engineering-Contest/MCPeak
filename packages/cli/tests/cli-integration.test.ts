@@ -14,6 +14,7 @@ const wrapper = join(here, "fixtures/stdio-server-wrapper.mjs");
 const server = join(root, "examples/weather-server/server.mjs");
 const success = join(here, "fixtures/weather-suite.json");
 const failure = join(here, "fixtures/weather-suite-failing.json");
+const bodyFailure = join(here, "fixtures/weather-body-assertion-failing.suite.json");
 
 const parsePid = (text: string): number | undefined => {
   if (!/^[1-9][0-9]*$/.test(text.trim())) return undefined;
@@ -91,6 +92,7 @@ describe.sequential("CLI 실제 weather-server", () => {
           pidFile,
           "--arg",
           server,
+          "--json",
         ]),
       ).toBe(0);
       const parsed = JSON.parse(out.mock.calls.map(([value]) => String(value)).join(""));
@@ -132,6 +134,7 @@ describe.sequential("CLI 실제 weather-server", () => {
           pidFile,
           "--arg",
           server,
+          "--json",
         ]),
       ).toBe(1);
       const parsed = JSON.parse(out.mock.calls.map(([value]) => String(value)).join(""));
@@ -142,6 +145,40 @@ describe.sequential("CLI 실제 weather-server", () => {
         summary: { total: 1, passed: 0, failed: 1, timedOut: 0, cancelled: 0, notRun: 0 },
       });
       expect(parsed.cases).toHaveLength(1);
+      expect(err).not.toHaveBeenCalled();
+      await expectExited(pidFile);
+    } finally {
+      out.mockRestore();
+      err.mockRestore();
+      await cleanupPid(pidFile);
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+  it("--json 없이 실패 케이스의 진단 문장을 stdout에 쓴다", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "ohmymcp-cli-"));
+    const pidFile = join(dir, "server.pid");
+    const out = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const err = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    try {
+      expect(
+        await run([
+          "test",
+          bodyFailure,
+          "--command",
+          process.execPath,
+          "--arg",
+          wrapper,
+          "--arg",
+          pidFile,
+          "--arg",
+          server,
+        ]),
+      ).toBe(1);
+      const text = out.mock.calls.map(([value]) => String(value)).join("");
+      // 실패 메시지가 곧 제품이다. 진단 문장이 실제로 사람 눈앞에 오는지 본다.
+      expect(text).toContain("$.temperature: 필수 필드가 없습니다.");
+      // 사람용 출력이므로 JSON 이 아니다.
+      expect(() => JSON.parse(text)).toThrow();
       expect(err).not.toHaveBeenCalled();
       await expectExited(pidFile);
     } finally {

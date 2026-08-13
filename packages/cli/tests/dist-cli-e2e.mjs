@@ -130,6 +130,7 @@ for (const [fixture, expectedStatus, expectedSummary] of [
       pidFile,
       "--arg",
       server,
+      "--json",
     ]);
     assert.equal(result.code, expectedStatus === "passed" ? 0 : 1);
     assert.equal(result.signal, null);
@@ -185,6 +186,7 @@ for (const [fixture, expectedStatus, expectedSummary] of [
       pidFile,
       "--arg",
       server,
+      "--json",
     ]);
     assert.equal(result.code, 1);
     assert.equal(result.err, "");
@@ -217,6 +219,7 @@ for (const [fixture, expectedStatus, expectedSummary] of [
     pidFile,
     "--arg",
     server,
+    "--json",
   ];
   try {
     const first = await execute(args);
@@ -236,6 +239,50 @@ for (const [fixture, expectedStatus, expectedSummary] of [
       diagnostic.violations[0].message,
       "$.temperature: 필수 필드가 없습니다. 발견된 필드: 'city', 'condition', 'temp'",
     );
+    await expectExited(pidFile);
+
+    // 결정론성: 같은 입력 2회 실행의 표준 출력 바이트가 같아야 한다.
+    const second = await execute(args);
+    assert.equal(second.out, first.out);
+    await expectExited(pidFile);
+  } finally {
+    await cleanupPid(pidFile);
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+{
+  const dir = await mkdtemp(join(tmpdir(), "ohmymcp-dist-render-"));
+  const pidFile = join(dir, "pid");
+  const args = [
+    "test",
+    join(here, "fixtures", "weather-body-assertion-failing.suite.json"),
+    "--command",
+    process.execPath,
+    "--arg",
+    wrapper,
+    "--arg",
+    pidFile,
+    "--arg",
+    server,
+  ];
+  try {
+    const first = await execute(args);
+    assert.equal(first.code, 1);
+    assert.equal(first.err, "");
+    // 사람용 출력이므로 JSON 이 아니다.
+    assert.throws(() => JSON.parse(first.out));
+    // 실패 메시지가 곧 제품이다. 진단 문장이 실제로 사람 눈앞에 오는지 본다.
+    assert.ok(
+      first.out.includes(
+        "$.temperature: 필수 필드가 없습니다. 발견된 필드: 'city', 'condition', 'temp'",
+      ),
+      `진단 문장이 stdout에 없습니다. 실제 출력:\n${first.out}`,
+    );
+    assert.ok(first.out.includes("해결: "), "해결 힌트 줄이 없습니다.");
+    // 색상 없이 나와야 한다. 자식 프로세스의 stdout 은 파이프이므로 TTY 가 아니다.
+    assert.ok(!first.out.includes("\u001b"), "TTY 가 아닌데 ANSI 시퀀스가 있습니다.");
+    assert.ok(!first.out.includes("\r"), "CRLF 를 쓰고 있습니다.");
     await expectExited(pidFile);
 
     // 결정론성: 같은 입력 2회 실행의 표준 출력 바이트가 같아야 한다.

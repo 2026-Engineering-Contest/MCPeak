@@ -27,6 +27,7 @@ export {
   runSuite,
   type TestCaseResult,
 } from "./executor.js";
+export { type JUnitRenderOptions, renderJUnit } from "./junit.js";
 export { type RenderReportOptions, renderReport } from "./reporter.js";
 export {
   DEFAULT_MAX_CASE_BYTES,

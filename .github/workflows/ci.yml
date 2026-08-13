@@ -78,6 +78,13 @@ jobs:
       - name: Build
         run: pnpm build
 
+      # 빌드가 성공했다는 것과 산출물이 실제로 도는 것은 다르다.
+      # 이 스텝은 dist/cli.mjs 를 그대로 실행해 examples/weather-server 를 테스트한다.
+      # vitest 쪽(cli-integration.test.ts)은 소스를 돌리므로 번들링·exports·shebang
+      # 문제를 잡지 못한다 — 그것들은 배포 후에야 드러난다 (CONTRIBUTING §6).
+      - name: Verify built CLI
+        run: pnpm --filter ohmymcp test:e2e
+
   changeset-check:
     # 기능 PR에 changeset이 없으면 경고만 남긴다 (머지 차단 아님).
     if: github.event_name == 'pull_request'

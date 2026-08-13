@@ -142,7 +142,7 @@ describe("provider adapters", () => {
         "--ignore-rules",
         "--skip-git-repo-check",
         "--output-schema",
-        "/empty/provider/authoring-output-schema.json",
+        join("/empty/provider", "authoring-output-schema.json"),
         "-",
       ],
       shell: false,

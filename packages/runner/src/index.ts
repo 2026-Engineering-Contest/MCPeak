@@ -1,7 +1,21 @@
 import type { McpClient, ToolResult } from "@ohmymcp/core";
 
-export type { AssertionResult } from "./assertions.js";
-export type { RunnerDiagnostic, RunnerDiagnosticCode } from "./diagnostics.js";
+export { type AssertionResult, assertBodyMatchesSchema } from "./assertions.js";
+export {
+  type BodyExtraction,
+  type BodyExtractionFailure,
+  type BodyForm,
+  extractResponseBody,
+} from "./body.js";
+export {
+  bodyExtractionFailedDiagnostic,
+  bodySchemaMismatchDiagnostic,
+  MAX_OBSERVED_KEYS,
+  MAX_VALUE_STRING_CHARS,
+  type RunnerDiagnostic,
+  type RunnerDiagnosticCode,
+  type SchemaViolationDiagnostic,
+} from "./diagnostics.js";
 export {
   type OperationResult,
   type RunnerDrainResult,
@@ -23,6 +37,13 @@ export {
   type RunnerRedactionOptions,
 } from "./sanitization.js";
 export {
+  MAX_SCHEMA_VIOLATIONS,
+  matchResponseSchema,
+  type SchemaMatchResult,
+  type SchemaViolation,
+  type SchemaViolationCode,
+} from "./schema-match.js";
+export {
   type FinalizeRunnerExecutionOptions,
   finalizeRunnerExecution,
   type McpClientShutdownController,
@@ -32,6 +53,7 @@ export {
 export { MCP_SUITE_JSON_SCHEMA } from "./spec/json-schema.js";
 export type {
   AssertionSpec,
+  BodyMatchesSchemaAssertionSpec,
   CallToolCaseSpec,
   IsErrorAssertionSpec,
   JsonObject,
@@ -40,6 +62,7 @@ export type {
   ListToolsCaseSpec,
   ReadonlyJsonObject,
   ReadonlyJsonValue,
+  ResponseSchema,
   SuiteValidationIssue,
   SuiteValidationIssueCode,
   SuiteValidationResult,

@@ -6,6 +6,7 @@ import {
   SuiteValidationError,
   type TestSuiteSpec,
 } from "../src/index.js";
+import { byteLength } from "../src/sanitization.js";
 
 const suite: TestSuiteSpec = {
   schemaVersion: 1,
@@ -343,5 +344,214 @@ describe("runSuite", () => {
     const serialized = JSON.stringify(first);
     for (const forbidden of ["raw", "timestamp", "duration", "durationMs"])
       expect(serialized).not.toContain(forbidden);
+  });
+});
+
+/** 본문 단언 통합 검증용. content 접근 횟수를 세는 ToolResult를 만든다. */
+function bodyResult(text: string, counter: { reads: number }, options?: { throwOnRead?: boolean }) {
+  return {
+    get content() {
+      counter.reads++;
+      if (options?.throwOnRead) throw new Error("content를 읽으면 안 됩니다.");
+      return [{ type: "text", text }];
+    },
+    isError: false,
+    raw: null,
+  } as unknown as import("@ohmymcp/core").ToolResult;
+}
+
+function bodyClient(result: () => import("@ohmymcp/core").ToolResult): McpClient {
+  return {
+    listTools: async () => [{ name: "get_weather", inputSchema: {} }],
+    callTool: async () => result(),
+    close: async () => undefined,
+  };
+}
+
+const bodySuite = (assertions: unknown[]): TestSuiteSpec =>
+  ({
+    schemaVersion: 1,
+    id: "body",
+    name: "body",
+    defaultTimeoutMs: 1_000,
+    cases: [
+      {
+        id: "call",
+        name: "call",
+        operation: { type: "callTool", tool: "get_weather", input: { city: "서울" } },
+        assertions,
+      },
+    ],
+  }) as TestSuiteSpec;
+
+/** 빈 properties와 빈 required는 검사할 제약이 없어 명세 검증이 거부한다. 있을 때만 넣는다. */
+const schemaOf = (properties: Record<string, unknown>, required: string[]) => ({
+  type: "object",
+  ...(required.length === 0 ? {} : { required }),
+  ...(Object.keys(properties).length === 0 ? {} : { properties }),
+});
+
+describe("runSuite와 bodyMatchesSchema", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("bodyMatchesSchema가 있는 케이스에서 본문을 검사한다", async () => {
+    const counter = { reads: 0 };
+    const report = await runSuite({
+      client: bodyClient(() => bodyResult('{"temperature":21}', counter)),
+      suite: bodySuite([
+        { type: "bodyMatchesSchema", schema: schemaOf({ temp: { type: "number" } }, ["temp"]) },
+      ]),
+    }).report;
+    expect(report.cases[0]?.status).toBe("failed");
+    expect(report.cases[0]?.assertions[0]?.diagnostic?.code).toBe("BODY_SCHEMA_MISMATCH");
+  });
+
+  it("bodyMatchesSchema가 없으면 추출을 호출하지 않는다", async () => {
+    const counter = { reads: 0 };
+    const report = await runSuite({
+      client: bodyClient(() => bodyResult("{}", counter, { throwOnRead: true })),
+      suite: bodySuite([{ type: "isError", expected: false }]),
+    }).report;
+    expect(report.status).toBe("passed");
+    expect(counter.reads).toBe(0);
+  });
+
+  it("한 케이스의 bodyMatchesSchema 두 개가 같은 추출을 공유한다", async () => {
+    const counter = { reads: 0 };
+    const result = bodyResult('{"temp":21}', counter);
+    const report = await runSuite({
+      client: bodyClient(() => result),
+      suite: bodySuite([
+        { type: "bodyMatchesSchema", schema: schemaOf({ temp: { type: "number" } }, ["temp"]) },
+        { type: "bodyMatchesSchema", schema: schemaOf({}, ["temp"]) },
+      ]),
+    }).report;
+    expect(report.status).toBe("passed");
+    expect(counter.reads).toBe(1);
+  });
+
+  it("isError가 실패해도 bodyMatchesSchema를 평가한다", async () => {
+    const counter = { reads: 0 };
+    const report = await runSuite({
+      client: bodyClient(() => bodyResult('{"temperature":21}', counter)),
+      suite: bodySuite([
+        { type: "isError", expected: true },
+        { type: "bodyMatchesSchema", schema: schemaOf({ temp: { type: "number" } }, ["temp"]) },
+      ]),
+    }).report;
+    const assertions = report.cases[0]?.assertions ?? [];
+    expect(assertions.map((item) => item.status)).toEqual(["failed", "failed"]);
+  });
+
+  it("MCP 호출이 실패하면 bodyMatchesSchema가 skipped다", async () => {
+    const report = await runSuite({
+      client: {
+        listTools: async () => [],
+        callTool: async () => {
+          throw new Error("nope");
+        },
+        close: async () => undefined,
+      },
+      suite: bodySuite([
+        { type: "bodyMatchesSchema", schema: schemaOf({ temp: { type: "number" } }, ["temp"]) },
+      ]),
+    }).report;
+    expect(report.cases[0]?.assertions[0]?.status).toBe("skipped");
+  });
+
+  it("타임아웃이면 bodyMatchesSchema가 skipped다", async () => {
+    vi.useFakeTimers();
+    const execution = runSuite({
+      client: {
+        listTools: async () => [],
+        callTool: () => new Promise(() => undefined),
+        close: async () => undefined,
+      },
+      suite: bodySuite([
+        { type: "bodyMatchesSchema", schema: schemaOf({ temp: { type: "number" } }, ["temp"]) },
+      ]),
+    });
+    await vi.advanceTimersByTimeAsync(1_000);
+    const report = await execution.report;
+    expect(report.cases[0]?.assertions[0]?.status).toBe("skipped");
+  });
+
+  it("위반 10건 케이스가 maxCaseBytes 안에 든다", async () => {
+    const counter = { reads: 0 };
+    const body = JSON.stringify(
+      Object.fromEntries(Array.from({ length: 25 }, (_, index) => [`f${index}`, "x"])),
+    );
+    const properties = Object.fromEntries(
+      Array.from({ length: 25 }, (_, index) => [`f${index}`, { type: "number" }]),
+    );
+    const report = await runSuite({
+      client: bodyClient(() => bodyResult(body, counter)),
+      suite: bodySuite([{ type: "bodyMatchesSchema", schema: schemaOf(properties, []) }]),
+    }).report;
+    const diagnostic = report.cases[0]?.assertions[0]?.diagnostic;
+    expect(diagnostic?.violations).toHaveLength(10);
+    expect(diagnostic?.totalViolations).toBe(25);
+    expect(byteLength(report.cases[0])).toBeLessThan(65_536);
+  });
+
+  it("큰 객체 위반 10건도 maxCaseBytes 안에 든다", async () => {
+    const counter = { reads: 0 };
+    const big = Object.fromEntries(
+      Array.from({ length: 200 }, (_, index) => [`k${index}`, "가".repeat(200)]),
+    );
+    const body = JSON.stringify(
+      Object.fromEntries(Array.from({ length: 12 }, (_, index) => [`f${index}`, big])),
+    );
+    const properties = Object.fromEntries(
+      Array.from({ length: 12 }, (_, index) => [`f${index}`, { type: "number" }]),
+    );
+    const report = await runSuite({
+      client: bodyClient(() => bodyResult(body, counter)),
+      suite: bodySuite([{ type: "bodyMatchesSchema", schema: schemaOf(properties, []) }]),
+    }).report;
+    const violations = report.cases[0]?.assertions[0]?.diagnostic?.violations ?? [];
+    expect(violations).toHaveLength(10);
+    for (const violation of violations)
+      expect(violation.actual).toEqual({ kind: "object", keys: 200 });
+    expect(byteLength(report.cases[0])).toBeLessThan(65_536);
+  });
+
+  it("기존 isError 전용 스위트의 보고서가 변하지 않는다", async () => {
+    const legacy: TestSuiteSpec = {
+      schemaVersion: 1,
+      id: "legacy",
+      name: "legacy",
+      defaultTimeoutMs: 1_000,
+      cases: [
+        {
+          id: "tools",
+          name: "tools",
+          operation: { type: "listTools" },
+          assertions: [{ type: "toolExists", tool: "get_weather" }],
+        },
+        {
+          id: "call",
+          name: "call",
+          operation: { type: "callTool", tool: "get_weather", input: { city: "서울" } },
+          assertions: [{ type: "isError", expected: false }],
+        },
+      ],
+    };
+    const report = await runSuite({
+      client: {
+        listTools: async () => [{ name: "get_weather", inputSchema: {} }],
+        callTool: async () => ({
+          content: [{ type: "text", text: '{"temp":21}' }],
+          isError: false,
+          raw: null,
+        }),
+        close: async () => undefined,
+      },
+      suite: legacy,
+    }).report;
+    // 이 문자열은 bodyMatchesSchema 도입 전(HEAD 323ce2e)에 같은 fixture로 얻은 보고서다.
+    expect(JSON.stringify(report)).toBe(
+      '{"schemaVersion":1,"suite":{"id":"legacy","name":"legacy","defaultTimeoutMs":1000},"status":"passed","cases":[{"spec":{"id":"tools","name":"tools","operation":{"type":"listTools"},"assertions":[{"type":"toolExists","tool":"get_weather"}]},"status":"passed","operation":{"status":"completed","timeoutMs":1000},"assertions":[{"spec":{"type":"toolExists","tool":"get_weather"},"status":"passed"}]},{"spec":{"id":"call","name":"call","operation":{"type":"callTool","tool":"get_weather","input":{"city":"서울"}},"assertions":[{"type":"isError","expected":false}]},"status":"passed","operation":{"status":"completed","timeoutMs":1000},"assertions":[{"spec":{"type":"isError","expected":false},"status":"passed"}]}],"summary":{"total":2,"passed":2,"failed":0,"timedOut":0,"cancelled":0,"notRun":0}}',
+    );
   });
 });

@@ -1,8 +1,9 @@
 import type { ToolDef } from "@ohmymcp/core";
 import { describe, expect, it, vi } from "vitest";
 import toolsListFixture from "../../../fixtures/tools-list.sample.json";
-import { assertIsError, assertToolExists } from "../src/assertions.js";
+import { assertBodyMatchesSchema, assertIsError, assertToolExists } from "../src/assertions.js";
 import { normalizeThrownValue } from "../src/diagnostics.js";
+import type { BodyMatchesSchemaAssertionSpec } from "../src/spec/types.js";
 
 const tools = toolsListFixture.tools as ToolDef[];
 
@@ -133,5 +134,42 @@ describe("normalizeThrownValue", () => {
     expect(normalizeThrownValue(Number.NaN)).toEqual({ type: "number", value: "NaN" });
     expect(normalizeThrownValue(Infinity)).toEqual({ type: "number", value: "Infinity" });
     expect(toJSON).not.toHaveBeenCalled();
+  });
+});
+
+describe("assertBodyMatchesSchema", () => {
+  const spec: BodyMatchesSchemaAssertionSpec = {
+    type: "bodyMatchesSchema",
+    schema: { type: "object", required: ["temp"], properties: { temp: { type: "number" } } },
+  };
+
+  it("추출 성공에 위반이 없으면 통과한다", () => {
+    const result = assertBodyMatchesSchema({ ok: true, body: { temp: 21 }, form: "json" }, spec);
+    expect(result.status).toBe("passed");
+    expect(result.diagnostic).toBeUndefined();
+  });
+
+  it("추출 성공에 위반이 있으면 실패한다", () => {
+    const result = assertBodyMatchesSchema(
+      { ok: true, body: { temperature: 21 }, form: "json" },
+      spec,
+    );
+    expect(result.status).toBe("failed");
+    expect(result.diagnostic?.code).toBe("BODY_SCHEMA_MISMATCH");
+  });
+
+  it("추출 실패면 실패한다", () => {
+    const result = assertBodyMatchesSchema(
+      { ok: false, failure: { code: "CONTENT_BLOCK_COUNT", actual: 2 } },
+      spec,
+    );
+    expect(result.status).toBe("failed");
+    expect(result.diagnostic?.code).toBe("BODY_EXTRACTION_FAILED");
+  });
+
+  it("extraction이 undefined면 skipped다", () => {
+    const result = assertBodyMatchesSchema(undefined, spec);
+    expect(result.status).toBe("skipped");
+    expect(result.diagnostic?.code).toBe("OPERATION_RESULT_UNAVAILABLE");
   });
 });

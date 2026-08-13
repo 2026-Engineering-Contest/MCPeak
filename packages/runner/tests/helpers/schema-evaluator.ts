@@ -10,6 +10,13 @@ const record = (v: unknown): v is Record<string, unknown> =>
   v !== null &&
   !Array.isArray(v) &&
   (Object.getPrototypeOf(v) === Object.prototype || Object.getPrototypeOf(v) === null);
+/**
+ * enum 후보 비교용 깊은 동등성. 이 평가기는 우리가 고정한 메타 스키마만 평가하고
+ * $defs의 후보 값은 전부 문자열 리터럴이므로 JSON.stringify 비교로 충분하다.
+ * const 판정은 기존 Object.is 동작을 유지한다.
+ */
+const deepEqual = (left: unknown, right: unknown): boolean =>
+  JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
 export function evaluateSchema(
   rootSchema: ReadonlyJsonObject,
   instance: unknown,
@@ -48,6 +55,8 @@ export function evaluateSchema(
       "oneOf",
       "type",
       "const",
+      "enum",
+      "maxLength",
       "required",
       "properties",
       "additionalProperties",
@@ -88,6 +97,13 @@ export function evaluateSchema(
     if ("const" in schema && !Object.is(value, schema.const)) {
       fail("INSTANCE_MISMATCH", ip, sp, "const mismatch");
       return false;
+    }
+    if (Array.isArray(schema.enum)) {
+      const matched = schema.enum.some((candidate) => deepEqual(candidate, value));
+      if (!matched) {
+        fail("INSTANCE_MISMATCH", ip, sp, "enum mismatch");
+        return false;
+      }
     }
     if (typeof schema.type === "string") {
       const ok =
@@ -144,6 +160,12 @@ export function evaluateSchema(
       value.length < schema.minLength
     )
       fail("INSTANCE_MISMATCH", ip, sp, "minLength mismatch");
+    if (
+      typeof value === "string" &&
+      typeof schema.maxLength === "number" &&
+      value.length > schema.maxLength
+    )
+      fail("INSTANCE_MISMATCH", ip, sp, "maxLength mismatch");
     if (
       typeof value === "string" &&
       typeof schema.pattern === "string" &&

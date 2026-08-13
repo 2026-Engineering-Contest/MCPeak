@@ -1,6 +1,7 @@
 export { MCP_SUITE_JSON_SCHEMA } from "./json-schema.js";
 export type {
   AssertionSpec,
+  BodyMatchesSchemaAssertionSpec,
   CallToolCaseSpec,
   IsErrorAssertionSpec,
   JsonObject,
@@ -9,6 +10,7 @@ export type {
   ListToolsCaseSpec,
   ReadonlyJsonObject,
   ReadonlyJsonValue,
+  ResponseSchema,
   SuiteValidationIssue,
   SuiteValidationIssueCode,
   SuiteValidationResult,

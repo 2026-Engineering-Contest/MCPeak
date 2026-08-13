@@ -261,6 +261,10 @@ describe("MCP suite validation", () => {
     ).toBe(true);
   });
 
+  it("기존 isError 전용 스위트가 그대로 통과한다", () => {
+    expect(validateMcpSuite(validSuite).valid).toBe(true);
+  });
+
   it("defineMcpSuite는 identity를 보존하고 구조화된 오류를 던진다", () => {
     const definedInput: TestSuiteSpec = {
       schemaVersion: 1,
@@ -285,5 +289,253 @@ describe("MCP suite validation", () => {
       return;
     }
     throw new Error("expected SuiteValidationError");
+  });
+});
+
+/** callTool 케이스 하나짜리 스위트를 만든다. 단언 배열만 바꿔가며 검증한다. */
+const callToolSuite = (assertions: unknown) => ({
+  schemaVersion: 1,
+  id: "suite",
+  name: "Suite",
+  cases: [
+    {
+      id: "call",
+      name: "호출",
+      operation: { type: "callTool", tool: "weather", input: { city: "서울" } },
+      assertions,
+    },
+  ],
+});
+
+/** bodyMatchesSchema 단언 하나만 담은 스위트를 만든다. */
+const bodySuite = (schema: unknown) => callToolSuite([{ type: "bodyMatchesSchema", schema }]);
+
+const issuesOf = (input: unknown) => {
+  const result = validateMcpSuite(input);
+  if (result.valid) throw new Error("유효하지 않은 명세를 기대했습니다.");
+  return result.issues;
+};
+
+const SCHEMA_PATH = "cases[0].assertions[0].schema";
+
+describe("bodyMatchesSchema 단언 검증", () => {
+  it("bodyMatchesSchema를 callTool 케이스에서 허용한다", () => {
+    expect(
+      validateMcpSuite(
+        bodySuite({ type: "object", required: ["temp"], properties: { temp: { type: "number" } } }),
+      ).valid,
+    ).toBe(true);
+  });
+
+  it("bodyMatchesSchema를 listTools 케이스에서 거부한다", () => {
+    expect(
+      issuesOf({
+        schemaVersion: 1,
+        id: "suite",
+        name: "Suite",
+        cases: [
+          {
+            id: "tools",
+            name: "툴",
+            operation: { type: "listTools" },
+            assertions: [{ type: "bodyMatchesSchema", schema: { type: "object" } }],
+          },
+        ],
+      }),
+    ).toContainEqual(
+      expect.objectContaining({
+        code: "INCOMPATIBLE_ASSERTION",
+        path: "cases[0].assertions[0]",
+      }),
+    );
+  });
+
+  it("isError와 bodyMatchesSchema를 한 배열에 함께 허용한다", () => {
+    const result = validateMcpSuite(
+      callToolSuite([
+        { type: "isError", expected: false },
+        { type: "bodyMatchesSchema", schema: { type: "object" } },
+      ]),
+    );
+    expect(result.valid).toBe(true);
+    if (!result.valid) throw new Error("유효한 명세를 기대했습니다.");
+    expect(result.value.cases[0]?.assertions).toHaveLength(2);
+  });
+
+  it("schema가 없으면 거부한다", () => {
+    expect(issuesOf(callToolSuite([{ type: "bodyMatchesSchema" }]))).toContainEqual(
+      expect.objectContaining({ code: "MISSING_REQUIRED_FIELD", path: SCHEMA_PATH }),
+    );
+  });
+
+  it("schema가 객체가 아니면 거부한다", () => {
+    expect(issuesOf(bodySuite("object"))).toContainEqual(
+      expect.objectContaining({ code: "INVALID_TYPE", path: SCHEMA_PATH }),
+    );
+  });
+
+  it("단언에 알 수 없는 필드가 있으면 거부한다", () => {
+    expect(
+      issuesOf(
+        callToolSuite([
+          { type: "bodyMatchesSchema", schema: { type: "object" }, source: "content" },
+        ]),
+      ),
+    ).toContainEqual(
+      expect.objectContaining({
+        code: "UNKNOWN_FIELD",
+        path: "cases[0].assertions[0].source",
+      }),
+    );
+  });
+
+  it("지원하지 않는 스키마 키워드를 거부한다", () => {
+    expect(issuesOf(bodySuite({ type: "number", multipleOf: 2 }))).toContainEqual(
+      expect.objectContaining({
+        code: "UNSUPPORTED_SCHEMA_KEYWORD",
+        path: `${SCHEMA_PATH}.multipleOf`,
+        message: "지원하지 않는 스키마 키워드입니다.",
+      }),
+    );
+  });
+
+  it("중첩된 properties의 알 수 없는 키워드도 거부한다", () => {
+    expect(
+      issuesOf(
+        bodySuite({
+          type: "object",
+          properties: { temp: { type: "number", multipleOf: 2 } },
+        }),
+      ),
+    ).toContainEqual(
+      expect.objectContaining({
+        code: "UNSUPPORTED_SCHEMA_KEYWORD",
+        path: `${SCHEMA_PATH}.properties.temp.multipleOf`,
+      }),
+    );
+  });
+
+  it("type 값이 목록 밖이면 거부한다", () => {
+    expect(issuesOf(bodySuite({ type: "json" }))).toContainEqual(
+      expect.objectContaining({ code: "INVALID_VALUE", path: `${SCHEMA_PATH}.type` }),
+    );
+  });
+
+  it("minimum에 type이 없으면 거부한다", () => {
+    const issues = issuesOf(bodySuite({ minimum: 0 }));
+    expect(issues).toContainEqual(
+      expect.objectContaining({
+        code: "SCHEMA_KEYWORD_REQUIRES_TYPE",
+        path: `${SCHEMA_PATH}.minimum`,
+      }),
+    );
+    expect(issues.find((entry) => entry.path === `${SCHEMA_PATH}.minimum`)?.message).toContain(
+      "number 또는 integer",
+    );
+  });
+
+  it("required에 type object가 없으면 거부한다", () => {
+    expect(issuesOf(bodySuite({ required: ["temp"] }))).toContainEqual(
+      expect.objectContaining({
+        code: "SCHEMA_KEYWORD_REQUIRES_TYPE",
+        path: `${SCHEMA_PATH}.required`,
+      }),
+    );
+  });
+
+  it("stringContains에 type string이 있으면 통과한다", () => {
+    expect(validateMcpSuite(bodySuite({ type: "string", stringContains: "맑음" })).valid).toBe(
+      true,
+    );
+  });
+
+  it("minItems가 음수이면 거부한다", () => {
+    expect(issuesOf(bodySuite({ type: "array", minItems: -1 }))).toContainEqual(
+      expect.objectContaining({ code: "INVALID_VALUE", path: `${SCHEMA_PATH}.minItems` }),
+    );
+  });
+
+  it("minItems가 소수이면 거부한다", () => {
+    expect(issuesOf(bodySuite({ type: "array", minItems: 1.5 }))).toContainEqual(
+      expect.objectContaining({ code: "INVALID_VALUE", path: `${SCHEMA_PATH}.minItems` }),
+    );
+  });
+
+  it("minimum이 NaN이면 거부한다", () => {
+    expect(issuesOf(bodySuite({ type: "number", minimum: NaN }))).toContainEqual(
+      expect.objectContaining({ code: "INVALID_VALUE", path: `${SCHEMA_PATH}.minimum` }),
+    );
+  });
+
+  it("enum이 빈 배열이면 거부한다", () => {
+    expect(issuesOf(bodySuite({ enum: [] }))).toContainEqual(
+      expect.objectContaining({ code: "INVALID_TYPE", path: `${SCHEMA_PATH}.enum` }),
+    );
+  });
+
+  it("stringContains가 빈 문자열이면 거부한다", () => {
+    expect(issuesOf(bodySuite({ type: "string", stringContains: "" }))).toContainEqual(
+      expect.objectContaining({ code: "INVALID_VALUE", path: `${SCHEMA_PATH}.stringContains` }),
+    );
+  });
+
+  it("required 원소가 문자열이 아니면 거부한다", () => {
+    expect(issuesOf(bodySuite({ type: "object", required: [1] }))).toContainEqual(
+      expect.objectContaining({ code: "INVALID_TYPE", path: `${SCHEMA_PATH}.required[0]` }),
+    );
+  });
+
+  it("additionalProperties에 스키마를 쓸 수 있다", () => {
+    expect(
+      validateMcpSuite(bodySuite({ type: "object", additionalProperties: { type: "string" } }))
+        .valid,
+    ).toBe(true);
+  });
+
+  it("additionalProperties 스키마의 오류도 잡는다", () => {
+    expect(
+      issuesOf(bodySuite({ type: "object", additionalProperties: { multipleOf: 2 } })),
+    ).toContainEqual(
+      expect.objectContaining({
+        code: "UNSUPPORTED_SCHEMA_KEYWORD",
+        path: `${SCHEMA_PATH}.additionalProperties.multipleOf`,
+      }),
+    );
+  });
+
+  it("items 스키마의 오류도 잡는다", () => {
+    expect(issuesOf(bodySuite({ type: "array", items: { multipleOf: 2 } }))).toContainEqual(
+      expect.objectContaining({
+        code: "UNSUPPORTED_SCHEMA_KEYWORD",
+        path: `${SCHEMA_PATH}.items.multipleOf`,
+      }),
+    );
+  });
+
+  it("깊이 500 중첩 스키마에서 스택이 넘치지 않는다", () => {
+    let schema: Record<string, unknown> = { type: "string" };
+    for (let depth = 0; depth < 500; depth++)
+      schema = { type: "object", properties: { next: schema } };
+
+    expect(() => validateMcpSuite(bodySuite(schema))).not.toThrow();
+    expect(validateMcpSuite(bodySuite(schema)).valid).toBe(true);
+  });
+
+  it("이슈 순서가 properties, additionalProperties, items 순이다", () => {
+    const issues = issuesOf(
+      bodySuite({
+        type: "object",
+        properties: { a: { multipleOf: 1 }, b: { multipleOf: 1 } },
+        additionalProperties: { multipleOf: 1 },
+        items: { multipleOf: 1 },
+      }),
+    );
+    expect(issues.map((entry) => entry.path)).toEqual([
+      `${SCHEMA_PATH}.items`,
+      `${SCHEMA_PATH}.properties.a.multipleOf`,
+      `${SCHEMA_PATH}.properties.b.multipleOf`,
+      `${SCHEMA_PATH}.additionalProperties.multipleOf`,
+      `${SCHEMA_PATH}.items.multipleOf`,
+    ]);
   });
 });

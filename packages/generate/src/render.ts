@@ -74,7 +74,8 @@ function renderSuite(suite: GeneratedSuiteSpec): string {
   return [
     'import { defineMcpSuite } from "@ohmymcp/runner";',
     "",
-    "// 이 파일은 @ohmymcp/generate가 생성했습니다. 실제 client는 별도 실행 진입점에서 주입하세요.",
+    "// 이 파일은 @ohmymcp/generate가 생성했습니다. 직접 수정하지 마세요.",
+    "// 실제 client는 별도 실행 진입점에서 주입하고, 사람이 작성하는 테스트는 별도 파일에 두세요.",
     `export const generatedSuite = defineMcpSuite(${JSON.stringify(suite, null, 2)});`,
     "",
   ].join("\n");

@@ -41,6 +41,17 @@ const paths = await generateTests(tools, {
 });
 ```
 
+기본적으로 생성 대상 파일이 이미 있으면 어떤 파일도 쓰지 않고 `OUTPUT_FILE_EXISTS` 오류로
+중단합니다. 기존 생성 파일을 명시적으로 교체하려는 경우에만 `overwrite: true`를 지정하세요.
+자동 생성 파일은 직접 수정하지 말고 사람이 작성하는 테스트는 별도 파일에 보관하는 것을 권장합니다.
+
+```ts
+await generateTests(tools, {
+  outDir: "./generated",
+  overwrite: true,
+});
+```
+
 도구 이름은 소문자 영문·숫자와 하이픈으로 정규화되고 최대 80자로 잘립니다. 정규화 결과가
 비어 있거나 Windows 예약 이름이면 `tool-<순번>`을 사용합니다. 이미 예약된 이름과 충돌하면
 비어 있는 이름을 찾을 때까지 `-2`, `-3`처럼 결정론적 접미사를 붙입니다. 따라서 호출자는

@@ -393,23 +393,23 @@ minimum  maximum  additionalProperties가 false
 
 ```
 TOOL_NOT_DECLARED
-  서버가 선언하지 않은 툴입니다: '{actual}'
-  (suggestion 있으면) 서버가 선언하지 않은 툴입니다: '{actual}'. 비슷한 툴: '{suggestion}'
+  서버가 선언하지 않은 툴입니다: {actual}
+  (suggestion 있으면) 서버가 선언하지 않은 툴입니다: {actual}. 비슷한 툴: {suggestion}
 
 REQUIRED_MISSING
-  필수 필드 '{expected}' 가 입력에 없습니다
-  (suggestion 있으면) 필수 필드 '{expected}' 가 입력에 없습니다. 비슷한 필드: '{suggestion}'
+  필수 필드 {expected} 가 입력에 없습니다
+  (suggestion 있으면) 필수 필드 {expected} 가 입력에 없습니다. 비슷한 필드: {suggestion}
 
 UNDECLARED_FIELD
-  '{actual}' 는 서버가 선언하지 않은 필드입니다
-  (suggestion 있으면) '{actual}' 는 서버가 선언하지 않은 필드입니다. 비슷한 필드: '{suggestion}'
+  {actual} 는 서버가 선언하지 않은 필드입니다
+  (suggestion 있으면) {actual} 는 서버가 선언하지 않은 필드입니다. 비슷한 필드: {suggestion}
 
 TYPE_MISMATCH
   {path} 의 타입이 다릅니다. 선언: {expected}, 명세: {actual}
 
 ENUM_MISMATCH
   {path} 값 {actual} 는 선언된 값이 아닙니다. 허용: {expected}
-  (suggestion 있으면) ... 허용: {expected}. 비슷한 값: '{suggestion}'
+  (suggestion 있으면) ... 허용: {expected}. 비슷한 값: {suggestion}
 
 SCHEMA_NOT_ANALYZABLE
   '{actual}' 의 입력 스키마를 해석하지 못해 이 툴의 입력 검사를 건너뜁니다
@@ -424,8 +424,14 @@ VACUOUS_MIN_ITEMS
   {path} 는 0이라 모든 배열이 통과합니다
 ```
 
-`expected`와 `actual`이 문자열이면 작은따옴표로 감싸고, 그 외 JSON 값이면 `JSON.stringify`
-결과를 그대로 쓴다. `enum` 배열은 `["c", "f"]` 형태로 찍힌다.
+치환 규칙은 하나뿐이다. **문자열이면 작은따옴표로 감싸고, 그 외 JSON 값이면
+`JSON.stringify` 결과를 그대로 쓴다.** `suggestion` 은 언제나 문자열이므로 항상 작은따옴표가
+붙는다. 위 템플릿에 따옴표를 직접 적지 않은 이유가 이것이다. 두 군데에서 따옴표를 붙이면
+문자열에 따옴표가 두 번 감긴다.
+
+그래서 `enum` 배열은 `JSON.stringify` 결과인 `["c","f"]` 로 찍힌다(공백 없음).
+`TYPE_MISMATCH` 의 `expected` 와 `actual` 은 타입 이름 문자열이므로 작은따옴표가 붙어
+`선언: 'string', 명세: 'number'` 가 된다.
 
 문장에 "어떻게 고치는지"를 넣지 않은 항목이 있는 이유. 고치는 방법이 상황에 따라 갈린다.
 명세를 고칠 수도 있고 서버 선언을 고칠 수도 있다. 그 안내는 소비자가 자기 맥락에서 덧붙인다.
@@ -439,7 +445,7 @@ VACUOUS_MIN_ITEMS
 ```
 ⚠ weather-ok  입력이 서버 선언과 어긋납니다
   → 필수 필드 'city' 가 입력에 없습니다. 비슷한 필드: 'citi'
-  → input.units 값 "celsius" 는 선언된 값이 아닙니다. 허용: ["c","f"]. 비슷한 값: 'c'
+  → input.units 값 'celsius' 는 선언된 값이 아닙니다. 허용: ["c","f"]. 비슷한 값: 'c'
 ```
 
 `cli test`의 실패 케이스 뒤:

@@ -16,7 +16,8 @@
 
 설계 문서 §2 를 그대로 쓴다. 통합 게이트에서 판정하는 항목만 여기 다시 적는다.
 
-- `pnpm test` · `pnpm typecheck` · `pnpm lint` 전부 통과하고, 각 출력의 검사 파일 수가 0 이 아님
+- `pnpm test` · `pnpm typecheck` · `pnpm lint` · `pnpm build` 전부 통과하고, 각 출력의 검사
+  파일 수가 0 이 아님
 - `packages/runner/tests/input-contract.test.ts` 와 `assertion-substance.test.ts` 의 설계 문서
   §10 케이스가 전부 존재하고 통과
 - 미지원 JSON Schema 키워드가 있는 툴에서 `REQUIRED_MISSING` · `TYPE_MISMATCH` ·
@@ -89,7 +90,7 @@ import 가능하다.
 
 **테스트.** 설계 문서 §10.5 전량.
 
-**표적 검증.** `pnpm --filter @ohmymcp/runner test`
+**표적 검증.** `pnpm test packages/runner`
 **회귀 검증.** `pnpm typecheck`, `pnpm lint`
 
 **보고서.** `docs/reports/task-t1-input-contract.md`
@@ -121,7 +122,7 @@ packages/runner/src/input-contract.ts        (스텁 본문을 실제 구현으�
 
 - `normalizeInputSchema` 는 **부분 성공이 없다.** 해석 불가면 `null` 을 반환하고 호출부는
   `SCHEMA_NOT_ANALYZABLE` 한 건만 낸다 (설계 §4.2 · §4.3)
-- 루트 차단 키워드 12 개: `anyOf` `oneOf` `allOf` `not` `if` `then` `else` `$ref`
+- 루트 차단 키워드 14 개: `anyOf` `oneOf` `allOf` `not` `if` `then` `else` `$ref`
   `$dynamicRef` `patternProperties` `dependentSchemas` `dependentRequired`
   `propertyNames` `unevaluatedProperties`
 - `additionalProperties` 는 **정확히 `false` 일 때만** `UNDECLARED_FIELD` 를 낸다. 없거나
@@ -130,7 +131,7 @@ packages/runner/src/input-contract.ts        (스텁 본문을 실제 구현으�
 - `integer` 는 `Number.isInteger` 로 따로 본다. `number` 선언에 정수 값은 위반이 아니다
 - 오타 후보 6 단계 규칙 (설계 §5.4). 거리 2 이하 **그리고** `floor(긴 쪽 길이 / 2)` 이하.
   동점이면 UTF-16 코드 단위 오름차순
-- 정렬 순서 (설계 §9.2) 와 상한 `MAX_FINDINGS_PER_CASE` (설계 §9.3)
+- 정렬 순서 (설계 §9.2), 스택 안전 (설계 §9.3), 상한 `MAX_FINDINGS_PER_CASE` (설계 §9.4)
 
 **재사용 (새로 구현하지 말 것).** `packages/runner/src/schema-match.ts` 의 `typeName`(39행),
 `plainObject`(33행), `jsonEqual`(54행), `byCodeUnit` 기준(43행). 두 벌을 두면 `null` 과 배열
@@ -138,7 +139,7 @@ packages/runner/src/input-contract.ts        (스텁 본문을 실제 구현으�
 
 **테스트.** 설계 문서 §10.1 · §10.3 · §10.4 전량.
 
-**표적 검증.** `pnpm --filter @ohmymcp/runner test`
+**표적 검증.** `pnpm test packages/runner`
 **회귀 검증.** `pnpm test`, `pnpm typecheck`, `pnpm lint`
 
 **보고서.** `docs/reports/task-t2-input-contract.md`
@@ -179,7 +180,7 @@ packages/runner/src/assertion-substance.ts   (스텁 본문을 실제 구현으�
 
 **테스트.** 설계 문서 §10.2 전량.
 
-**표적 검증.** `pnpm --filter @ohmymcp/runner test`
+**표적 검증.** `pnpm test packages/runner`
 **회귀 검증.** `pnpm test`, `pnpm typecheck`, `pnpm lint`
 
 **보고서.** `docs/reports/task-t3-input-contract.md`
@@ -286,7 +287,7 @@ docs/superpowers/plans/2026-08-14-input-contract-check-implementation.md
 그다음 부트스트랩을 해라. 새 worktree 는 node_modules 를 상속하지 않는다.
   pnpm install
   pnpm build
-그리고 pnpm --filter @ohmymcp/runner test 가 실제로 실행되는지 확인해라(기존 테스트가
+그리고 pnpm test packages/runner 가 실제로 실행되는지 확인해라(기존 테스트가
 통과해야 한다). 실행 자체가 안 되면 status: BLOCKED 로 보고하고 멈춰라.
 
 [2단계: 실행] Task T1 — 공유 계약과 문장
@@ -311,7 +312,7 @@ describeSpecFinding 의 문장은 설계 문서 §7 과 한 글자도 다르면 
 떠올라도 적용하지 말고 보고서에 제안으로만 적어라. 여러 소비자가 이 문장을 그대로 쓴다.
 
 검증:
-  pnpm --filter @ohmymcp/runner test
+  pnpm test packages/runner
   pnpm typecheck
   pnpm lint
 세 명령의 출력에서 검사한 파일 수가 0 이 아닌지 눈으로 확인해라. 0 이면 통과가 아니다.
@@ -343,7 +344,7 @@ describeSpecFinding 의 문장은 설계 문서 §7 과 한 글자도 다르면 
 그다음 부트스트랩을 해라.
   pnpm install
   pnpm build
-그리고 pnpm --filter @ohmymcp/runner test 가 실제로 실행되는지 확인해라. 실행 자체가 안 되면
+그리고 pnpm test packages/runner 가 실제로 실행되는지 확인해라. 실행 자체가 안 되면
 status: BLOCKED 로 보고하고 멈춰라.
 
 [2단계: 실행] Task T2 — 입력 계약 대조
@@ -374,7 +375,7 @@ typeName(39행), plainObject(33행), jsonEqual(54행), 그리고 byCodeUnit(43�
 판정이 애매하면 침묵해라. 설계 문서에 없는 새 SpecFindingCode 를 만들지 마라.
 
 검증:
-  pnpm --filter @ohmymcp/runner test
+  pnpm test packages/runner
   pnpm test
   pnpm typecheck
   pnpm lint
@@ -409,7 +410,7 @@ JSON.stringify 결과가 같은지 보는 테스트가 있어야 한다.
 그다음 부트스트랩을 해라.
   pnpm install
   pnpm build
-그리고 pnpm --filter @ohmymcp/runner test 가 실제로 실행되는지 확인해라. 실행 자체가 안 되면
+그리고 pnpm test packages/runner 가 실제로 실행되는지 확인해라. 실행 자체가 안 되면
 status: BLOCKED 로 보고하고 멈춰라.
 
 [2단계: 실행] Task T3 — 단언 실질성
@@ -442,7 +443,7 @@ status: BLOCKED 로 보고하고 멈춰라.
   - isError · toolExists 단언은 대상이 아니다. 단언 0 개는 validateMcpSuite 가 이미 잡는다
 
 검증:
-  pnpm --filter @ohmymcp/runner test
+  pnpm test packages/runner
   pnpm test
   pnpm typecheck
   pnpm lint
@@ -515,7 +516,7 @@ status: BLOCKED 로 보고하고 멈춰라.
 1. 보고서를 읽고, 허용 Files 밖 변경이 있는지 `git -C <worktree> status --short` 로 본다
 2. `git -C <worktree> diff main --stat` 으로 변경 범위를 확인한다.
    `packages/core` · 다른 패키지 · 루트 설정이 나오면 즉시 반려
-3. worktree 에서 `pnpm --filter @ohmymcp/runner test` · `pnpm typecheck` · `pnpm lint` 를
+3. worktree 에서 `pnpm test packages/runner` · `pnpm typecheck` · `pnpm lint` · `pnpm build` 를
    직접 돌리고 검사 파일 수가 0 이 아닌지 본다
 4. 설계 문서 §10 의 테스트 케이스가 실제로 존재하는지 이름으로 대조한다. 개수만 보지 않는다
 5. T2 통합 전 §10.3 의 오탐 방지 케이스가 전부 있는지 따로 확인한다. 완료 조건이다
@@ -533,7 +534,7 @@ T4-input-contract	<sha>	2026-08-14
    조상인지 `git cat-file -e` 와 `git merge-base --is-ancestor` 로 확인한다. **브랜치나
    worktree 가 존재한다는 사실을 완료 근거로 쓰지 않는다**
 
-전체 통합 후 최종 게이트로 `pnpm test` · `pnpm typecheck` · `pnpm lint` 를 루트에서 한 번 더
+전체 통합 후 최종 게이트로 `pnpm test` · `pnpm typecheck` · `pnpm lint` · `pnpm build` 를 루트에서 한 번 더
 돌린다.
 
 ## 10. 거짓 신호 점검
@@ -542,6 +543,7 @@ T4-input-contract	<sha>	2026-08-14
 
 | 거짓 신호 | 이 작업에서의 모습 | 진실 기준 |
 |---|---|---|
+| 테스트 명령이 즉시 exit 0 | `pnpm --filter @ohmymcp/runner test` 는 **존재하지 않는 스크립트**다. 패키지 `package.json` 에 `test` 가 없어 아무것도 안 하고 성공한다 | 출력에 `Test Files ... passed` 줄이 있는지 확인. 표적 검증은 `pnpm test packages/runner` |
 | 타입체크 · 린트 녹색 | 새 파일이 `index.ts` 에서 export 안 돼 검사 대상에서 빠짐 | 세 명령의 검사 파일 수를 출력에서 확인 |
 | 테스트 녹색 | T1 의 스텁이 그대로 남아 `throw` 하는데 아무도 호출 안 함 | T2 · T3 통합 후 `not implemented` 문자열이 `src/` 에 0 건인지 grep |
 | finding 0 건이라 깨끗해 보임 | 스키마 해석 불가로 전부 건너뜀 | `SCHEMA_NOT_ANALYZABLE` 개수를 따로 확인 (§10.3 테스트) |

@@ -393,26 +393,26 @@ minimum  maximum  additionalProperties가 false
 
 ```
 TOOL_NOT_DECLARED
-  서버가 선언하지 않은 툴입니다: '{actual}'
-  (suggestion 있으면) 서버가 선언하지 않은 툴입니다: '{actual}'. 비슷한 툴: '{suggestion}'
+  서버가 선언하지 않은 툴입니다: {actual}
+  (suggestion 있으면) 서버가 선언하지 않은 툴입니다: {actual}. 비슷한 툴: {suggestion}
 
 REQUIRED_MISSING
-  필수 필드 '{expected}' 가 입력에 없습니다
-  (suggestion 있으면) 필수 필드 '{expected}' 가 입력에 없습니다. 비슷한 필드: '{suggestion}'
+  필수 필드 {expected} 가 입력에 없습니다
+  (suggestion 있으면) 필수 필드 {expected} 가 입력에 없습니다. 비슷한 필드: {suggestion}
 
 UNDECLARED_FIELD
-  '{actual}' 는 서버가 선언하지 않은 필드입니다
-  (suggestion 있으면) '{actual}' 는 서버가 선언하지 않은 필드입니다. 비슷한 필드: '{suggestion}'
+  {actual} 는 서버가 선언하지 않은 필드입니다
+  (suggestion 있으면) {actual} 는 서버가 선언하지 않은 필드입니다. 비슷한 필드: {suggestion}
 
 TYPE_MISMATCH
   {path} 의 타입이 다릅니다. 선언: {expected}, 명세: {actual}
 
 ENUM_MISMATCH
   {path} 값 {actual} 는 선언된 값이 아닙니다. 허용: {expected}
-  (suggestion 있으면) ... 허용: {expected}. 비슷한 값: '{suggestion}'
+  (suggestion 있으면) ... 허용: {expected}. 비슷한 값: {suggestion}
 
 SCHEMA_NOT_ANALYZABLE
-  '{actual}' 의 입력 스키마를 해석하지 못해 이 툴의 입력 검사를 건너뜁니다
+  {actual} 의 입력 스키마를 해석하지 못해 이 툴의 입력 검사를 건너뜁니다
 
 UNCONSTRAINED_SCHEMA
   {path} 스키마에 제약이 없어 어떤 응답이든 통과합니다
@@ -424,8 +424,18 @@ VACUOUS_MIN_ITEMS
   {path} 는 0이라 모든 배열이 통과합니다
 ```
 
-`expected`와 `actual`이 문자열이면 작은따옴표로 감싸고, 그 외 JSON 값이면 `JSON.stringify`
-결과를 그대로 쓴다. `enum` 배열은 `["c", "f"]` 형태로 찍힌다.
+치환 규칙은 하나뿐이다. **문자열이면 작은따옴표로 감싸고, 그 외 JSON 값이면
+`JSON.stringify` 결과를 그대로 쓴다.** `suggestion` 은 언제나 문자열이므로 항상 작은따옴표가
+붙는다. 위 템플릿에 따옴표를 직접 적지 않은 이유가 이것이다. 두 군데에서 따옴표를 붙이면
+문자열에 따옴표가 두 번 감긴다.
+
+문자열 안의 제어 문자는 이스케이프한다. 툴 이름 · 필드 이름 · enum 값 · 스키마 프로퍼티
+이름은 모두 남의 서버나 남이 쓴 명세에서 오므로 개행이 들어 있을 수 있다. 그대로 넣으면
+"반환에 줄바꿈이 없다" 는 계약이 깨진다. `path` 에도 같은 규칙을 적용한다.
+
+그래서 `enum` 배열은 `JSON.stringify` 결과인 `["c","f"]` 로 찍힌다(공백 없음).
+`TYPE_MISMATCH` 의 `expected` 와 `actual` 은 타입 이름 문자열이므로 작은따옴표가 붙어
+`선언: 'string', 명세: 'number'` 가 된다.
 
 문장에 "어떻게 고치는지"를 넣지 않은 항목이 있는 이유. 고치는 방법이 상황에 따라 갈린다.
 명세를 고칠 수도 있고 서버 선언을 고칠 수도 있다. 그 안내는 소비자가 자기 맥락에서 덧붙인다.
@@ -439,8 +449,13 @@ VACUOUS_MIN_ITEMS
 ```
 ⚠ weather-ok  입력이 서버 선언과 어긋납니다
   → 필수 필드 'city' 가 입력에 없습니다. 비슷한 필드: 'citi'
-  → input.units 값 "celsius" 는 선언된 값이 아닙니다. 허용: ["c","f"]. 비슷한 값: 'c'
+  → input.units 값 'celsius' 는 선언된 값이 아닙니다. 허용: ["c","f"]
 ```
+
+`units` 쪽에는 `비슷한 값` 이 붙지 않는다. `"celsius"` 와 `"c"` 는 편집 거리가 6 이라
+§5.4 의 거리 2 조건에서 탈락하고, 통과하더라도 `floor(7 / 2) = 3` 조건에 다시 걸린다.
+한 글자짜리 enum 값은 구조적으로 후보가 될 수 없다. `suggestion` 이 붙는 것은
+`enum: ["celsius", "fahrenheit"]` 에 `"celcius"` 를 넣은 것 같은 경우다.
 
 `cli test`의 실패 케이스 뒤:
 
@@ -472,7 +487,20 @@ VACUOUS_MIN_ITEMS
 
 `Object.keys` 순회 순서에 기대지 않는다. 키를 모아 정렬한 뒤 순회한다.
 
-### 9.3 상한
+### 9.3 스택 안전
+
+중첩 스키마를 순회할 때 **재귀를 쓰지 않는다.** `schema-match.ts:125` 의 `frames` 패턴대로
+명시적 스택과 `while` 루프로 돈다.
+
+`validateMcpSuite` 에는 스키마 깊이 제한이 없다. 깊이 20000 짜리 중첩 `properties` 를 가진
+명세가 `valid: true` 로 통과한다. 그것을 `matchResponseSchema` 는 처리하는데 여기서 재귀를
+쓰면 `RangeError: Maximum call stack size exceeded` 로 죽는다. 같은 명세를 한쪽은 처리하고
+한쪽은 못 하는 비대칭이 생긴다.
+
+`tests/deep-and-cyclic-input.test.ts` 가 이 계약의 기존 회귀 테스트다. 파일 이름의
+"결함 1" · "결함 2" 가 가리키듯 과거에 실제로 밟은 문제다.
+
+### 9.4 상한
 
 한 케이스에서 `MAX_FINDINGS_PER_CASE`(10)를 넘으면 자르고 `totalFindings`에는 자르기 전 총합을
 센다. `schema-match.ts`의 `MAX_SCHEMA_VIOLATIONS`와 같은 값이고 같은 이유다. 상한을 넘은 사실을
@@ -573,11 +601,11 @@ describeSpecFinding
 ### 10.6 회귀
 
 ```
-· pnpm --filter @ohmymcp/runner test 전체 통과
+· pnpm test packages/runner 전체 통과
 · 기존 spec-validation.test.ts · schema-match.test.ts 단언 변경 0건
 ```
 
-표적 검증: `pnpm --filter @ohmymcp/runner test`
+표적 검증: `pnpm test packages/runner`
 전체 회귀: `pnpm test`, `pnpm typecheck`, `pnpm lint`
 
 ## 11. ADR

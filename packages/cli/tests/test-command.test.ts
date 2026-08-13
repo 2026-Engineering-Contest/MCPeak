@@ -11,6 +11,8 @@ const report = (status: RunnerReport["status"] = "passed"): RunnerReport => ({
   cases: [],
   summary: { total: 0, passed: 0, failed: 0, timedOut: 0, cancelled: 0, notRun: 0 },
 });
+/** 주입한 renderReport 가 돌려주는 값. 렌더링 문안은 runner 의 reporter.test.ts 가 고정한다. */
+const RENDERED = "렌더링 결과\n";
 const connection = (): McpStdioConnection => ({
   client: {
     listTools: async () => [],
@@ -50,6 +52,8 @@ function deps(overrides: Partial<TestCommandDependencies> = {}) {
       writes.events.push("finalize");
       return report();
     }),
+    renderReport: vi.fn(() => RENDERED),
+    colorEnabled: false,
     writeStdout: (text) => writes.out.push(text),
     writeStderr: (text) => writes.err.push(text),
     ...overrides,
@@ -60,7 +64,12 @@ function deps(overrides: Partial<TestCommandDependencies> = {}) {
 describe("parseTestCommand", () => {
   it("test 명세, command와 반복 arg를 입력 순서대로 파싱한다", () => {
     const input = parseTestCommand(["suite.json", "--command", "node", "--arg", "a", "--arg", "b"]);
-    expect(input).toEqual({ suitePath: "suite.json", command: "node", args: ["a", "b"] });
+    expect(input).toEqual({
+      suitePath: "suite.json",
+      command: "node",
+      args: ["a", "b"],
+      json: false,
+    });
     expect(Object.isFrozen(input)).toBe(true);
     expect(Object.isFrozen(input.args)).toBe(true);
   });
@@ -69,7 +78,14 @@ describe("parseTestCommand", () => {
       suitePath: "suite.json",
       command: "node",
       args: ["-m", ""],
+      json: false,
     });
+  });
+  it("parseTestCommand가 json 기본값 false를 낸다", () => {
+    expect(parseTestCommand(["suite.json", "--command", "node"]).json).toBe(false);
+  });
+  it("parseTestCommand가 json true를 낸다", () => {
+    expect(parseTestCommand(["suite.json", "--command", "node", "--json"]).json).toBe(true);
   });
 });
 
@@ -179,12 +195,74 @@ describe("runCli", () => {
   it("통과, 실패와 중단 report를 stdout으로만 출력한다", async () => {
     for (const status of ["passed", "failed", "aborted"] as const) {
       const d = deps({ finalize: async () => report(status) });
-      expect(await runCli(["test", "x.json", "--command", "node"], d.value)).toBe(
+      expect(await runCli(["test", "x.json", "--command", "node", "--json"], d.value)).toBe(
         status === "passed" ? 0 : 1,
       );
       expect(d.writes.out.join("")).toBe(`${JSON.stringify(report(status), null, 2)}\n`);
       expect(d.writes.err).toEqual([]);
     }
+  });
+  it("--json 없이 renderReport 결과를 stdout에 쓴다", async () => {
+    const d = deps();
+    await runCli(["test", "x.json", "--command", "node"], d.value);
+    expect(d.writes.out.join("")).toBe(RENDERED);
+    expect(d.writes.err).toEqual([]);
+  });
+  it("--json이면 기존 JSON 바이트를 쓴다", async () => {
+    const d = deps();
+    await runCli(["test", "x.json", "--command", "node", "--json"], d.value);
+    expect(d.writes.out.join("")).toBe(`${JSON.stringify(report(), null, 2)}\n`);
+  });
+  it("--json이면 renderReport를 호출하지 않는다", async () => {
+    const d = deps();
+    await runCli(["test", "x.json", "--command", "node", "--json"], d.value);
+    expect(d.value.renderReport).not.toHaveBeenCalled();
+  });
+  it("colorEnabled를 renderReport에 그대로 넘긴다", async () => {
+    const d = deps({ colorEnabled: true });
+    await runCli(["test", "x.json", "--command", "node"], d.value);
+    expect(d.value.renderReport).toHaveBeenCalledWith(report(), { color: true });
+  });
+  it("colorEnabled가 false면 그대로 넘긴다", async () => {
+    const d = deps({ colorEnabled: false });
+    await runCli(["test", "x.json", "--command", "node"], d.value);
+    expect(d.value.renderReport).toHaveBeenCalledWith(report(), { color: false });
+  });
+  it("--json을 두 번 쓰면 거절한다", async () => {
+    const d = deps();
+    expect(await runCli(["test", "x.json", "--command", "node", "--json", "--json"], d.value)).toBe(
+      1,
+    );
+    expect(d.writes.err.join("")).toContain("`--json`은 한 번만 사용할 수 있습니다.");
+  });
+  it("--json=true를 거절한다", async () => {
+    const d = deps();
+    expect(await runCli(["test", "x.json", "--command", "node", "--json=true"], d.value)).toBe(1);
+    expect(d.writes.err.join("")).toContain("`--json`은 값을 받지 않습니다.");
+  });
+  it("--json은 순서와 무관하다", async () => {
+    const before = deps();
+    await runCli(["test", "x.json", "--json", "--command", "node"], before.value);
+    const after = deps();
+    await runCli(["test", "x.json", "--command", "node", "--json"], after.value);
+    expect(before.writes.out.join("")).toBe(after.writes.out.join(""));
+  });
+  it("종료 코드는 --json 여부와 무관하다", async () => {
+    const plain = deps({ finalize: async () => report("failed") });
+    expect(await runCli(["test", "x.json", "--command", "node"], plain.value)).toBe(1);
+    const json = deps({ finalize: async () => report("failed") });
+    expect(await runCli(["test", "x.json", "--command", "node", "--json"], json.value)).toBe(1);
+  });
+  it("renderReport가 던지면 CLI_INTERNAL_ERROR가 된다", async () => {
+    const d = deps({
+      renderReport: () => {
+        throw new Error("RENDER_SECRET_STACK");
+      },
+    });
+    expect(await runCli(["test", "x.json", "--command", "node"], d.value)).toBe(1);
+    expect(d.writes.err.join("")).toContain("CLI_INTERNAL_ERROR");
+    expect(d.writes.err.join("")).not.toContain("RENDER_SECRET_STACK");
+    expect(d.writes.out).toEqual([]);
   });
   it("Core 오류만 안전하게 연결 실패로 출력한다", async () => {
     const error = {

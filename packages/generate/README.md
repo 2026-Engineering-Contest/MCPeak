@@ -46,6 +46,8 @@ const paths = await generateTests(tools, {
 자동 생성 파일은 직접 수정하지 말고 사람이 작성하는 테스트는 별도 파일에 보관하는 것을 권장합니다.
 덮어쓰기는 심볼릭 링크를 따라가지 않는 파일 열기를 지원하는 환경에서만 동작합니다. 대상이
 심볼릭 링크이거나 플랫폼이 해당 기능을 지원하지 않으면 기존 파일을 변경하지 않고 중단합니다.
+현재 Node.js가 `O_NOFOLLOW`를 제공하지 않는 Windows에서는 `overwrite: true`를 지원하지 않으며,
+기본 no-clobber 생성과 새 파일 생성은 그대로 사용할 수 있습니다.
 
 ```ts
 await generateTests(tools, {

@@ -297,34 +297,52 @@ describe("generateTests", () => {
     });
   });
 
-  it("overwrite를 명시하면 기존 생성 파일을 교체한다", async () => {
-    const outDir = await temporaryOutDir();
-    const tool: ToolDef = {
-      name: "replace-me",
-      inputSchema: {
-        type: "object",
-        properties: { value: { type: "string" } },
-        required: ["value"],
-      },
-    };
-    const path = join(outDir, "replace-me.generated.ts");
-    await mkdir(outDir, { recursive: true });
-    await writeFile(path, "이전 내용", "utf8");
+  it.runIf(typeof constants.O_NOFOLLOW === "number")(
+    "overwrite를 명시하면 기존 생성 파일을 교체한다",
+    async () => {
+      const outDir = await temporaryOutDir();
+      const tool: ToolDef = {
+        name: "replace-me",
+        inputSchema: {
+          type: "object",
+          properties: { value: { type: "string" } },
+          required: ["value"],
+        },
+      };
+      const path = join(outDir, "replace-me.generated.ts");
+      await mkdir(outDir, { recursive: true });
+      await writeFile(path, "이전 내용", "utf8");
 
-    if (typeof constants.O_NOFOLLOW !== "number") {
+      await expect(generateTests([tool], { outDir, overwrite: true })).resolves.toEqual([path]);
+      const source = await readFile(path, "utf8");
+      expect(source).not.toBe("이전 내용");
+      expect(source).toContain('"value": "example"');
+    },
+  );
+
+  it.runIf(typeof constants.O_NOFOLLOW !== "number")(
+    "안전한 파일 열기를 지원하지 않는 플랫폼에서는 overwrite를 거절하고 원본을 보존한다",
+    async () => {
+      const outDir = await temporaryOutDir();
+      const tool: ToolDef = {
+        name: "replace-me",
+        inputSchema: {
+          type: "object",
+          properties: { value: { type: "string" } },
+          required: ["value"],
+        },
+      };
+      const path = join(outDir, "replace-me.generated.ts");
+      await mkdir(outDir, { recursive: true });
+      await writeFile(path, "이전 내용", "utf8");
+
       await expect(generateTests([tool], { outDir, overwrite: true })).rejects.toMatchObject({
         code: "GENERATED_SUITE_INVALID",
         path,
       });
       await expect(readFile(path, "utf8")).resolves.toBe("이전 내용");
-      return;
-    }
-
-    await expect(generateTests([tool], { outDir, overwrite: true })).resolves.toEqual([path]);
-    const source = await readFile(path, "utf8");
-    expect(source).not.toBe("이전 내용");
-    expect(source).toContain('"value": "example"');
-  });
+    },
+  );
 
   it.runIf(typeof constants.O_NOFOLLOW === "number")(
     "overwrite에서도 기존 심볼릭 링크를 따라가지 않는다",

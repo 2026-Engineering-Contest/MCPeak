@@ -1,4 +1,5 @@
 import { EventEmitter } from "node:events";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   type ProviderProcessChild,
@@ -157,7 +158,10 @@ describe("provider process", () => {
       { cwd: "/empty/provider" },
     ]);
     expect(s.written).toEqual([
-      { path: "/empty/provider/authoring-output-schema.json", contents: '{"type":"object"}' },
+      {
+        path: join("/empty/provider", "authoring-output-schema.json"),
+        contents: '{"type":"object"}',
+      },
     ]);
     s.child.close();
     await done;

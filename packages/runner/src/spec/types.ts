@@ -22,7 +22,7 @@ export interface ListToolsCaseSpec extends TestCaseBase {
 }
 export interface CallToolCaseSpec extends TestCaseBase {
   operation: { type: "callTool"; tool: string; input: JsonObject };
-  assertions: IsErrorAssertionSpec[];
+  assertions: ToolResultAssertionSpec[];
 }
 export type TestCaseSpec = ListToolsCaseSpec | CallToolCaseSpec;
 export interface ToolExistsAssertionSpec {
@@ -33,8 +33,32 @@ export interface IsErrorAssertionSpec {
   type: "isError";
   expected: boolean;
 }
+/** 응답 본문 단언이 쓰는 JSON Schema 부분집합. 지원 범위는 ADR-0010에 있다. */
+export interface ResponseSchema {
+  type?: "object" | "array" | "string" | "number" | "integer" | "boolean" | "null";
+  const?: JsonValue;
+  enum?: JsonValue[];
+
+  required?: string[];
+  properties?: { [key: string]: ResponseSchema };
+  additionalProperties?: boolean | ResponseSchema;
+
+  items?: ResponseSchema;
+  minItems?: number;
+
+  minLength?: number;
+  maxLength?: number;
+  stringContains?: string;
+
+  minimum?: number;
+  maximum?: number;
+}
+export interface BodyMatchesSchemaAssertionSpec {
+  type: "bodyMatchesSchema";
+  schema: ResponseSchema;
+}
 export type ToolListAssertionSpec = ToolExistsAssertionSpec;
-export type ToolResultAssertionSpec = IsErrorAssertionSpec;
+export type ToolResultAssertionSpec = IsErrorAssertionSpec | BodyMatchesSchemaAssertionSpec;
 export type AssertionSpec = ToolListAssertionSpec | ToolResultAssertionSpec;
 export type SuiteValidationIssueCode =
   | "MISSING_REQUIRED_FIELD"
@@ -47,7 +71,9 @@ export type SuiteValidationIssueCode =
   | "EMPTY_ASSERTIONS"
   | "INCOMPATIBLE_ASSERTION"
   | "INVALID_JSON_VALUE"
-  | "INVALID_TIMEOUT";
+  | "INVALID_TIMEOUT"
+  | "UNSUPPORTED_SCHEMA_KEYWORD"
+  | "SCHEMA_KEYWORD_REQUIRES_TYPE";
 export interface SuiteValidationIssue {
   code: SuiteValidationIssueCode;
   path: string;

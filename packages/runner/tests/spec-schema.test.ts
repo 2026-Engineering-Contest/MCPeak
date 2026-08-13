@@ -17,6 +17,21 @@ const valid = {
 };
 const invalid = { ...valid, cases: [{ ...valid.cases[0], assertions: [] }] };
 
+/** bodyMatchesSchema 단언 하나만 담은 callTool 스위트를 만든다. */
+const bodyFixture = (schema: unknown) => ({
+  schemaVersion: 1,
+  id: "suite",
+  name: "Suite",
+  cases: [
+    {
+      id: "case",
+      name: "Case",
+      operation: { type: "callTool", tool: "weather", input: { city: "서울" } },
+      assertions: [{ type: "bodyMatchesSchema", schema }],
+    },
+  ],
+});
+
 describe("MCP_SUITE_JSON_SCHEMA", () => {
   it("공개 JSON Schema와 validator의 fixture 판정이 일치한다", () => {
     for (const fixture of [
@@ -84,5 +99,60 @@ describe("MCP_SUITE_JSON_SCHEMA", () => {
     expect(result.errors).not.toContainEqual(
       expect.objectContaining({ code: "ONE_OF_MATCH_COUNT" }),
     );
+  });
+
+  it("bodyMatchesSchema valid fixture가 두 계약에서 같은 판정을 낸다", () => {
+    const fixture = bodyFixture({
+      type: "object",
+      required: ["temp"],
+      properties: { temp: { type: "number", minimum: -100, maximum: 100 } },
+    });
+    expect(validateMcpSuite(fixture).valid).toBe(true);
+    expect(evaluateSchema(MCP_SUITE_JSON_SCHEMA, fixture).valid).toBe(true);
+  });
+
+  it("알 수 없는 키워드 fixture가 두 계약에서 같은 판정을 낸다", () => {
+    const fixture = bodyFixture({ type: "number", multipleOf: 2 });
+    expect(validateMcpSuite(fixture).valid).toBe(false);
+    expect(evaluateSchema(MCP_SUITE_JSON_SCHEMA, fixture).valid).toBe(false);
+  });
+
+  it("listTools에 bodyMatchesSchema를 넣은 fixture가 두 계약에서 같은 판정을 낸다", () => {
+    const fixture = {
+      schemaVersion: 1,
+      id: "suite",
+      name: "Suite",
+      cases: [
+        {
+          id: "case",
+          name: "Case",
+          operation: { type: "listTools" },
+          assertions: [{ type: "bodyMatchesSchema", schema: { type: "object" } }],
+        },
+      ],
+    };
+    expect(validateMcpSuite(fixture).valid).toBe(false);
+    expect(evaluateSchema(MCP_SUITE_JSON_SCHEMA, fixture).valid).toBe(false);
+  });
+
+  it("재귀 responseSchema를 evaluator가 해석한다", () => {
+    const fixture = bodyFixture({
+      type: "object",
+      properties: {
+        forecast: {
+          type: "object",
+          properties: { days: { type: "array", items: { type: "string", minLength: 1 } } },
+        },
+      },
+    });
+    expect(evaluateSchema(MCP_SUITE_JSON_SCHEMA, fixture).valid).toBe(true);
+  });
+
+  it("타입 짝 요구는 대조 대상이 아니다", () => {
+    // 설계 문서 §10.5: 키워드와 type의 짝 요구는 if/then이 필요해 공개 JSON Schema에
+    // 표현하지 않는다. validator만 잡고 evaluator는 통과시키는 의도적 불일치다.
+    const fixture = bodyFixture({ minimum: 0 });
+    expect(validateMcpSuite(fixture).valid).toBe(false);
+    expect(evaluateSchema(MCP_SUITE_JSON_SCHEMA, fixture).valid).toBe(true);
   });
 });

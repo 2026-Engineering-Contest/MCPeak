@@ -19,6 +19,69 @@ const issue = (issues: SuiteValidationIssue[], code: SuiteValidationIssueCode, p
     hint: "명세 계약에 맞게 필드와 값을 확인하세요.",
   });
 const nonEmpty = (v: unknown) => typeof v === "string" && /\S/.test(v);
+const RESPONSE_SCHEMA_KEYWORDS = [
+  "type",
+  "const",
+  "enum",
+  "required",
+  "properties",
+  "additionalProperties",
+  "items",
+  "minItems",
+  "minLength",
+  "maxLength",
+  "stringContains",
+  "minimum",
+  "maximum",
+] as const;
+
+const RESPONSE_SCHEMA_TYPES = [
+  "object",
+  "array",
+  "string",
+  "number",
+  "integer",
+  "boolean",
+  "null",
+] as const;
+
+/** 각 키워드가 요구하는 type 값. 설계 문서 §4.4. */
+const KEYWORD_TYPES: Readonly<Record<string, readonly string[]>> = {
+  required: ["object"],
+  properties: ["object"],
+  additionalProperties: ["object"],
+  items: ["array"],
+  minItems: ["array"],
+  minLength: ["string"],
+  maxLength: ["string"],
+  stringContains: ["string"],
+  minimum: ["number", "integer"],
+  maximum: ["number", "integer"],
+};
+
+const SUPPORTED_KEYWORD_LIST = RESPONSE_SCHEMA_KEYWORDS.join(", ");
+
+/** operation 종류별로 허용하는 단언. */
+const ALLOWED_ASSERTIONS: Readonly<Record<string, readonly string[]>> = {
+  listTools: ["toolExists"],
+  callTool: ["isError", "bodyMatchesSchema"],
+};
+
+const KNOWN_ASSERTIONS = ["toolExists", "isError", "bodyMatchesSchema"] as const;
+
+const nonNegativeInt = (v: unknown): boolean =>
+  typeof v === "number" && Number.isSafeInteger(v) && v >= 0;
+
+const finiteNumber = (v: unknown): boolean => typeof v === "number" && Number.isFinite(v);
+
+/** 기존 issue()는 고정 문안만 낸다. 새 코드 두 개는 전용 문안이 필요하다. */
+const issueWith = (
+  issues: SuiteValidationIssue[],
+  code: SuiteValidationIssueCode,
+  path: string,
+  message: string,
+  hint: string,
+) => issues.push({ code, path, message, hint });
 const timeout = (v: unknown) =>
   typeof v === "number" && Number.isSafeInteger(v) && v >= 1 && v <= 2_147_483_647;
 const unknowns = (
@@ -96,6 +159,115 @@ function json(
   }
 
   return valid;
+}
+/**
+ * ResponseSchema를 검증한다. 재귀가 아니라 명시적 프레임 스택으로 순회해
+ * 깊게 중첩한 스키마에서도 스택이 넘치지 않게 한다. validation.ts의 json()과 같은 방식이다.
+ * 방문 순서는 properties(선언 순서), additionalProperties, items 이며,
+ * 이 순서가 곧 issue 배열의 순서다.
+ */
+function validateResponseSchema(
+  root: unknown,
+  rootPath: string,
+  issues: SuiteValidationIssue[],
+): void {
+  const frames: { value: unknown; path: string }[] = [{ value: root, path: rootPath }];
+  while (frames.length > 0) {
+    const frame = frames.pop();
+    if (frame === undefined) break;
+    const { value, path } = frame;
+    if (!plain(value)) {
+      issue(issues, "INVALID_TYPE", path);
+      continue;
+    }
+
+    for (const key of Object.keys(value).sort())
+      if (!(RESPONSE_SCHEMA_KEYWORDS as readonly string[]).includes(key))
+        issueWith(
+          issues,
+          "UNSUPPORTED_SCHEMA_KEYWORD",
+          `${path}.${key}`,
+          "지원하지 않는 스키마 키워드입니다.",
+          `지원 키워드는 ${SUPPORTED_KEYWORD_LIST} 입니다.`,
+        );
+
+    const declared = "type" in value ? value.type : undefined;
+    if (
+      declared !== undefined &&
+      (typeof declared !== "string" ||
+        !(RESPONSE_SCHEMA_TYPES as readonly string[]).includes(declared))
+    )
+      issue(issues, "INVALID_VALUE", `${path}.type`);
+
+    for (const keyword of Object.keys(KEYWORD_TYPES).sort()) {
+      if (!(keyword in value)) continue;
+      const allowed = KEYWORD_TYPES[keyword] as readonly string[];
+      if (typeof declared !== "string" || !allowed.includes(declared))
+        issueWith(
+          issues,
+          "SCHEMA_KEYWORD_REQUIRES_TYPE",
+          `${path}.${keyword}`,
+          `'${keyword}'은 type이 ${allowed.join(" 또는 ")}일 때만 쓸 수 있습니다.`,
+          `같은 스키마에 "type": "${allowed[0]}"를 추가하세요.`,
+        );
+    }
+
+    if ("const" in value) json(value.const, `${path}.const`, issues, new Set());
+    if ("enum" in value) {
+      if (!Array.isArray(value.enum) || value.enum.length === 0)
+        issue(issues, "INVALID_TYPE", `${path}.enum`);
+      else
+        value.enum.forEach((candidate, index) => {
+          json(candidate, `${path}.enum[${index}]`, issues, new Set());
+        });
+    }
+    if ("required" in value) {
+      if (!Array.isArray(value.required)) issue(issues, "INVALID_TYPE", `${path}.required`);
+      else
+        value.required.forEach((key, index) => {
+          if (!nonEmpty(key))
+            issue(
+              issues,
+              typeof key === "string" ? "INVALID_VALUE" : "INVALID_TYPE",
+              `${path}.required[${index}]`,
+            );
+        });
+    }
+    for (const key of ["minItems", "minLength", "maxLength"] as const)
+      if (key in value && !nonNegativeInt(value[key]))
+        issue(issues, "INVALID_VALUE", `${path}.${key}`);
+    for (const key of ["minimum", "maximum"] as const)
+      if (key in value && !finiteNumber(value[key]))
+        issue(issues, "INVALID_VALUE", `${path}.${key}`);
+    if ("stringContains" in value && !nonEmpty(value.stringContains))
+      issue(
+        issues,
+        typeof value.stringContains === "string" ? "INVALID_VALUE" : "INVALID_TYPE",
+        `${path}.stringContains`,
+      );
+
+    // 역순으로 push해 pop 순서가 properties, additionalProperties, items 가 되게 한다.
+    if ("items" in value) frames.push({ value: value.items, path: `${path}.items` });
+    if ("additionalProperties" in value && typeof value.additionalProperties !== "boolean")
+      frames.push({
+        value: value.additionalProperties,
+        path: `${path}.additionalProperties`,
+      });
+    if ("properties" in value) {
+      if (!plain(value.properties)) issue(issues, "INVALID_TYPE", `${path}.properties`);
+      else {
+        const keys = Object.keys(value.properties);
+        for (let index = keys.length - 1; index >= 0; index--) {
+          const key = keys[index];
+          if (key !== undefined)
+            frames.push({
+              value: (value.properties as Record<string, unknown>)[key],
+              path: `${path}.properties.${key}`,
+            });
+        }
+      }
+    }
+  }
 }
 export function validateMcpSuite(input: unknown): SuiteValidationResult {
   const issues: SuiteValidationIssue[] = [];
@@ -224,13 +396,15 @@ function validateAssertions(
     }
     const type = assertion.type;
     if (kind !== undefined) {
-      const expected =
-        kind === "listTools" ? "toolExists" : kind === "callTool" ? "isError" : undefined;
-      if (expected === undefined || type !== expected) {
+      const allowed = ALLOWED_ASSERTIONS[kind];
+      if (allowed === undefined || typeof type !== "string" || !allowed.includes(type)) {
         issue(issues, "INCOMPATIBLE_ASSERTION", itemPath);
         return;
       }
-    } else if (type !== "toolExists" && type !== "isError") {
+    } else if (
+      typeof type !== "string" ||
+      !(KNOWN_ASSERTIONS as readonly string[]).includes(type)
+    ) {
       required(assertion, ["type"], itemPath, issues);
       if ("type" in assertion)
         issue(
@@ -250,11 +424,16 @@ function validateAssertions(
           `${itemPath}.tool`,
         );
       unknowns(assertion, ["type", "tool"], itemPath, issues);
-    } else {
+    } else if (type === "isError") {
       required(assertion, ["type", "expected"], itemPath, issues);
       if ("expected" in assertion && typeof assertion.expected !== "boolean")
         issue(issues, "INVALID_TYPE", `${itemPath}.expected`);
       unknowns(assertion, ["type", "expected"], itemPath, issues);
+    } else {
+      required(assertion, ["type", "schema"], itemPath, issues);
+      if ("schema" in assertion)
+        validateResponseSchema(assertion.schema, `${itemPath}.schema`, issues);
+      unknowns(assertion, ["type", "schema"], itemPath, issues);
     }
   });
 }

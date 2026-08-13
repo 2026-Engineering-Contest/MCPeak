@@ -50,6 +50,42 @@ export const MCP_SUITE_JSON_SCHEMA: ReadonlyJsonObject = freeze<ReadonlyJsonObje
       required: ["type", "expected"],
       properties: { type: { const: "isError" }, expected: { type: "boolean" } },
     },
+    nonNegativeInteger: { type: "integer", minimum: 0 },
+    responseSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        type: {
+          enum: ["object", "array", "string", "number", "integer", "boolean", "null"],
+        },
+        const: { $ref: "#/$defs/jsonValue" },
+        enum: { type: "array", minItems: 1, items: { $ref: "#/$defs/jsonValue" } },
+        required: { type: "array", items: { $ref: "#/$defs/nonEmptyString" } },
+        properties: {
+          type: "object",
+          additionalProperties: { $ref: "#/$defs/responseSchema" },
+        },
+        additionalProperties: {
+          oneOf: [{ type: "boolean" }, { $ref: "#/$defs/responseSchema" }],
+        },
+        items: { $ref: "#/$defs/responseSchema" },
+        minItems: { $ref: "#/$defs/nonNegativeInteger" },
+        minLength: { $ref: "#/$defs/nonNegativeInteger" },
+        maxLength: { $ref: "#/$defs/nonNegativeInteger" },
+        stringContains: { $ref: "#/$defs/nonEmptyString" },
+        minimum: { type: "number" },
+        maximum: { type: "number" },
+      },
+    },
+    bodyMatchesSchemaAssertion: {
+      type: "object",
+      additionalProperties: false,
+      required: ["type", "schema"],
+      properties: {
+        type: { const: "bodyMatchesSchema" },
+        schema: { $ref: "#/$defs/responseSchema" },
+      },
+    },
     listToolsCase: {
       type: "object",
       additionalProperties: false,
@@ -85,7 +121,16 @@ export const MCP_SUITE_JSON_SCHEMA: ReadonlyJsonObject = freeze<ReadonlyJsonObje
             input: { type: "object", additionalProperties: { $ref: "#/$defs/jsonValue" } },
           },
         },
-        assertions: { type: "array", minItems: 1, items: { $ref: "#/$defs/isErrorAssertion" } },
+        assertions: {
+          type: "array",
+          minItems: 1,
+          items: {
+            oneOf: [
+              { $ref: "#/$defs/isErrorAssertion" },
+              { $ref: "#/$defs/bodyMatchesSchemaAssertion" },
+            ],
+          },
+        },
       },
     },
   },

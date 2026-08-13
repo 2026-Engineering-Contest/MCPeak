@@ -379,8 +379,10 @@ describe("runGenerateCommand", () => {
     if (first === undefined || second === undefined)
       throw new Error("두 실행의 임시 파일 경로가 필요합니다.");
     expect(first).not.toBe(second);
-    expect(dirname(first)).toBe(normalize(dirname(outPath)));
-    expect(basename(first)).toMatch(/^\.out\.json\.ohmymcp\./);
+    for (const tempPath of [first, second]) {
+      expect(dirname(tempPath)).toBe(normalize(dirname(outPath)));
+      expect(basename(tempPath)).toMatch(/^\.out\.json\.ohmymcp\./);
+    }
   });
   it("temp 충돌과 재검증 실패는 목표 파일을 바꾸지 않는다", async () => {
     for (const override of [

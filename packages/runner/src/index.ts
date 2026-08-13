@@ -66,6 +66,7 @@ export type {
   ReadonlyJsonObject,
   ReadonlyJsonValue,
   ResponseSchema,
+  SuiteApproval,
   SuiteValidationIssue,
   SuiteValidationIssueCode,
   SuiteValidationResult,

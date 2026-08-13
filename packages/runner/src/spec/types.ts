@@ -4,10 +4,19 @@ export type JsonObject = { [key: string]: JsonValue };
 export type ReadonlyJsonValue = JsonPrimitive | readonly ReadonlyJsonValue[] | ReadonlyJsonObject;
 export type ReadonlyJsonObject = { readonly [key: string]: ReadonlyJsonValue };
 
+export interface SuiteApproval {
+  /**
+   * 승인 시점 명세의 sha256 hex 64자, 소문자.
+   * 이 블록 자신은 지문 계산에서 제외된다. 계산 규칙은 suiteFingerprint 하나가 소유한다.
+   */
+  fingerprint: string;
+}
+
 export interface TestSuiteSpec {
   schemaVersion: 1;
   id: string;
   name: string;
+  approval?: SuiteApproval;
   defaultTimeoutMs?: number;
   cases: TestCaseSpec[];
 }

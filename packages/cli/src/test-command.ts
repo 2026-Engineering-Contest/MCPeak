@@ -8,12 +8,19 @@ import type {
   SuiteValidationIssue,
   SuiteValidationResult,
 } from "@ohmymcp/runner";
+import {
+  hasDiagnosticContent,
+  isAbnormalExit,
+  type ProcessDiagnosticsInput,
+  renderProcessDiagnostics,
+} from "./process-diagnostics.js";
 
 export interface TestCommandInput {
   readonly suitePath: string;
   readonly command: string;
   readonly args: readonly string[];
   readonly json: boolean;
+  readonly stderrLines: number;
 }
 export type CliErrorCode =
   | "CLI_USAGE"
@@ -45,7 +52,10 @@ export interface TestCommandDependencies {
   writeStdout(text: string): void;
   writeStderr(text: string): void;
 }
-const usage = "사용법: ohmymcp test <suite.json> --command <executable> [--arg <value> ...]";
+const usage =
+  "사용법: ohmymcp test <suite.json> --command <executable> [--arg <value> ...] [--json] [--stderr-lines <N>]";
+/** --stderr-lines 기본값. 설계 문서 §6. */
+const DEFAULT_STDERR_LINES = 20;
 const dictionary: Record<
   Exclude<CliErrorCode, "CLI_USAGE" | "COMMAND_NOT_IMPLEMENTED">,
   Omit<CliFailure, "code">
@@ -100,6 +110,7 @@ export function parseTestCommand(argv: readonly string[]): TestCommandInput {
   if (suitePath === "") fail("테스트 명세 JSON 경로가 필요합니다.");
   let command: string | undefined;
   let json = false;
+  let stderrLines: number | undefined;
   const args: string[] = [];
   for (let index = 1; index < argv.length; index += 1) {
     const token = argv[index] ?? "";
@@ -133,6 +144,25 @@ export function parseTestCommand(argv: readonly string[]): TestCommandInput {
         if (value.startsWith("-")) fail("`--arg` 옵션 값이 필요합니다.");
       } else value = token.slice("--arg=".length);
       args.push(value);
+    } else if (token === "--stderr-lines" || token.startsWith("--stderr-lines=")) {
+      if (stderrLines !== undefined) fail("`--stderr-lines`는 한 번만 사용할 수 있습니다.");
+      let value: string;
+      if (token === "--stderr-lines") {
+        const next = argv[++index];
+        if (next === undefined)
+          throw new CliCommandError({
+            code: "CLI_USAGE",
+            message: "`--stderr-lines` 옵션 값이 필요합니다.",
+            hint: usage,
+          });
+        // `-1` 처럼 `-` 로 시작해도 값으로 받고 아래 검증에서 거절한다. 설계 문서 §6.
+        value = next;
+      } else value = token.slice("--stderr-lines=".length);
+      if (!/^\d+$/.test(value)) fail("`--stderr-lines` 값은 0 이상의 정수여야 합니다.");
+      const parsedLines = Number.parseInt(value, 10);
+      if (!Number.isSafeInteger(parsedLines))
+        fail("`--stderr-lines` 값은 0 이상의 정수여야 합니다.");
+      stderrLines = parsedLines;
     } else if (token === "--json") {
       if (json) fail("`--json`은 한 번만 사용할 수 있습니다.");
       json = true;
@@ -147,7 +177,13 @@ export function parseTestCommand(argv: readonly string[]): TestCommandInput {
       message: "`--command` 옵션이 필요합니다.",
       hint: usage,
     });
-  return Object.freeze({ suitePath, command, args: Object.freeze(args), json });
+  return Object.freeze({
+    suitePath,
+    command,
+    args: Object.freeze(args),
+    json,
+    stderrLines: stderrLines ?? DEFAULT_STDERR_LINES,
+  });
 }
 const escapeTerminalText = (value: string): string =>
   Array.from(value, (character) => {
@@ -168,7 +204,27 @@ function format(failure: CliFailure): string {
     result += `\n- [${escapeTerminalText(issue.code)}] ${escapeTerminalText(issue.path)}: ${escapeTerminalText(issue.message)}\n  해결: ${escapeTerminalText(issue.hint)}`;
   return `${result}\n`;
 }
-type CoreError = Readonly<{ name: "McpClientError"; code: string; message: string; hint: string }>;
+type CoreError = Readonly<{
+  name: "McpClientError";
+  code: string;
+  message: string;
+  hint: string;
+  diagnostics?: ProcessDiagnosticsInput;
+}>;
+/**
+ * core 의 McpProcessDiagnostics 인지 구조로 확인한다. core 를 import 하지 않는다.
+ * 하나라도 어긋나면 undefined 다. 설계 문서 §4.3.1.
+ */
+function processDiagnostics(value: unknown): ProcessDiagnosticsInput | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  if (!("stderr" in value) || typeof value.stderr !== "string") return undefined;
+  if (!("stderrTruncated" in value) || typeof value.stderrTruncated !== "boolean") return undefined;
+  if (!("exitCode" in value) || !(typeof value.exitCode === "number" || value.exitCode === null))
+    return undefined;
+  if (!("signal" in value) || !(typeof value.signal === "string" || value.signal === null))
+    return undefined;
+  return value as ProcessDiagnosticsInput;
+}
 function coreError(error: unknown): CoreError | undefined {
   const seen = new Set<object>();
   const visit = (value: unknown): CoreError | undefined => {
@@ -184,7 +240,15 @@ function coreError(error: unknown): CoreError | undefined {
       "hint" in value &&
       typeof value.hint === "string"
     )
-      return value as CoreError;
+      return Object.freeze({
+        name: "McpClientError" as const,
+        code: value.code,
+        message: value.message,
+        hint: value.hint,
+        diagnostics: processDiagnostics(
+          "diagnostics" in value ? (value as { diagnostics: unknown }).diagnostics : undefined,
+        ),
+      });
     if (typeof value !== "object" || value === null || seen.has(value)) return undefined;
     seen.add(value);
     if (value instanceof AggregateError)
@@ -286,7 +350,7 @@ export async function runCli(
     connection = await dependencies.connect({ command: input.command, args: input.args });
   } catch (error) {
     const core = coreError(error);
-    return writeFailure(
+    const failed = writeFailure(
       dependencies,
       core === undefined
         ? { code: "MCP_CONNECTION_FAILED", ...dictionary.MCP_CONNECTION_FAILED }
@@ -297,7 +361,46 @@ export async function runCli(
             coreCode: core.code,
           },
     );
+    // 억제 조건은 writeDiagnostics 와 같은 함수를 쓴다. 규칙이 갈라지면 spawn 실패처럼 진단이
+    // 가장 필요한 경로에만 조용히 미적용된다. §4.3, §4.3.1.
+    const diagnostics = core?.diagnostics;
+    if (input.stderrLines > 0 && diagnostics !== undefined && hasDiagnosticContent(diagnostics)) {
+      const block = renderProcessDiagnostics(diagnostics, { maxLines: input.stderrLines });
+      if (block !== "") dependencies.writeStderr(`\n${block}`);
+    }
+    return failed;
   }
+  /**
+   * 진단 스냅샷. 읽기를 시도했다는 사실과 그 결과를 함께 담는다. `undefined` 를 센티널로 쓰면
+   * "아직 안 읽었다" 와 "읽다 실패했다" 가 섞여, 실패했을 때 다시 읽는 일이 생긴다. §4.3.1.
+   */
+  type DiagnosticsSnapshot = { readonly value: ProcessDiagnosticsInput | undefined };
+  /** 진단 출력 실패가 판정을 바꾸면 안 된다. getDiagnostics 가 던지면 삼킨다. §4.3.1. */
+  const snapshotDiagnostics = (): DiagnosticsSnapshot => {
+    try {
+      return { value: connection.getDiagnostics() };
+    } catch {
+      return { value: undefined };
+    }
+  };
+  /**
+   * 블록 앞에는 항상 빈 줄을 둔다. 오류 메시지 뒤든 보고서 뒤든 같은 터미널에 이어 나오므로
+   * 경로마다 레이아웃이 달라질 이유가 없다. 설계 문서 §7.
+   * snapshot 을 주면 그 값을 쓴다. 우리가 프로세스를 정리한 뒤의 상태를 서버 탓으로 보고하지
+   * 않기 위해서다(설계 문서 §4.3).
+   */
+  const writeDiagnostics = (snapshot?: DiagnosticsSnapshot): void => {
+    if (input.stderrLines === 0) return;
+    // 스냅샷을 받았으면 그 결과가 전부다. 실패했더라도 다시 읽지 않는다. 다시 읽으면 우리가
+    // 프로세스를 정리한 뒤의 상태를 서버 탓으로 보고하게 된다.
+    const diagnostics = (snapshot ?? snapshotDiagnostics()).value;
+    if (diagnostics === undefined) return;
+    // 정보가 없는 블록은 소음이다. 설계 문서 §4.3. 판정은 렌더러가 아니라 여기에 둔다.
+    if (!hasDiagnosticContent(diagnostics)) return;
+    const block = renderProcessDiagnostics(diagnostics, { maxLines: input.stderrLines });
+    if (block === "") return;
+    dependencies.writeStderr(`\n${block}`);
+  };
   const shutdown = {
     client: connection.client,
     close: () => connection.close(),
@@ -307,22 +410,29 @@ export async function runCli(
   try {
     execution = dependencies.startRunner({ client: connection.client, suite: validated.value });
   } catch {
+    // forceClose 는 우리가 SIGTERM·SIGKILL 을 보내는 경로다. 그 뒤의 진단을 보여주면 서버가
+    // 죽은 것으로 오인된다. 원인은 로컬의 startRunner 실패다. 정리 전 상태를 찍어둔다.
+    const snapshot = snapshotDiagnostics();
     try {
       await connection.forceClose();
     } catch {}
-    return writeFailure(dependencies, {
+    const failed = writeFailure(dependencies, {
       code: "RUNNER_EXECUTION_FAILED",
       ...dictionary.RUNNER_EXECUTION_FAILED,
     });
+    writeDiagnostics(snapshot);
+    return failed;
   }
   let finalReport: RunnerReport;
   try {
     finalReport = await dependencies.finalize({ execution, shutdown });
   } catch {
-    return writeFailure(dependencies, {
+    const failed = writeFailure(dependencies, {
       code: "RUNNER_FINALIZATION_FAILED",
       ...dictionary.RUNNER_FINALIZATION_FAILED,
     });
+    writeDiagnostics();
+    return failed;
   }
   try {
     dependencies.writeStdout(
@@ -331,10 +441,18 @@ export async function runCli(
         : dependencies.renderReport(finalReport, { color: dependencies.colorEnabled }),
     );
   } catch {
+    // 원인이 서버가 아니라 우리 렌더링이므로 진단을 쓰지 않는다. 계획서 §4 호출 지점 4.
     return writeFailure(dependencies, {
       code: "CLI_INTERNAL_ERROR",
       ...dictionary.CLI_INTERNAL_ERROR,
     });
   }
+  const settled = snapshotDiagnostics();
+  // 전부 통과여도 비정상 종료면 쓴다. 종료 경로의 결함을 숨기지 않는다. 설계 문서 §4.3.
+  if (
+    finalReport.status !== "passed" ||
+    (settled.value !== undefined && isAbnormalExit(settled.value))
+  )
+    writeDiagnostics(settled);
   return finalReport.status === "passed" ? 0 : 1;
 }

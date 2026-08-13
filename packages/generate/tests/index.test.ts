@@ -315,7 +315,7 @@ describe("generateTests", () => {
 
       await expect(generateTests([tool], { outDir, overwrite: true })).resolves.toEqual([path]);
       const source = await readFile(path, "utf8");
-      expect(source).not.toBe("이전 내용");
+      expect(source).not.toContain("이전 내용");
       expect(source).toContain('"value": "example"');
     },
   );

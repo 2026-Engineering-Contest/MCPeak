@@ -38,7 +38,11 @@ const SUMMARY_LABELS: ReadonlyArray<readonly [keyof RunnerSummary, string]> = [
 const escapeTerminalText = (value: string): string =>
   Array.from(value, (character) => {
     const codePoint = character.codePointAt(0) ?? 0;
-    return codePoint <= 0x1f || codePoint === 0x7f || codePoint === 0x2028 || codePoint === 0x2029
+    // 0x7f..0x9f 는 DEL 과 C1 제어 문자다. U+009B 를 8비트 CSI 로 해석하는 터미널이 있다.
+    return codePoint <= 0x1f ||
+      (codePoint >= 0x7f && codePoint <= 0x9f) ||
+      codePoint === 0x2028 ||
+      codePoint === 0x2029
       ? `\\u${codePoint.toString(16).padStart(4, "0")}`
       : character;
   }).join("");

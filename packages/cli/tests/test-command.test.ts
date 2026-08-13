@@ -142,6 +142,13 @@ describe("runCli", () => {
     expect(unknown.writes.err.join("")).toContain("\\u000a");
     expect(unknown.writes.err.join("")).toContain("\\u001b");
   });
+  it("C1 제어 문자도 이스케이프한다", async () => {
+    // U+009B 는 8비트 CSI 다. 렌더러의 escapeTerminalText 와 같은 범위를 막아야 한다.
+    const d = deps();
+    await runCli([`bad${String.fromCodePoint(0x9b)}`], d.value);
+    expect(d.writes.err.join("")).toContain("\\u009b");
+    expect(d.writes.err.join("")).not.toContain(String.fromCodePoint(0x9b));
+  });
   it("JSON이 아닌 확장자를 파일 읽기 전에 거절하고 대문자 JSON은 그대로 읽는다", async () => {
     for (const path of ["suite.ts", "suite.js", "suite.yaml"]) {
       const d = deps();

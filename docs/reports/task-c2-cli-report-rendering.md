@@ -4,7 +4,7 @@
 
 ```
 pwd
-/Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/ohmymcp-cli-report-rendering
+<repository-root>/.claude/worktrees/ohmymcp-cli-report-rendering
 
 git rev-parse HEAD
 d3d16b7 (feat/cli-report-rendering)

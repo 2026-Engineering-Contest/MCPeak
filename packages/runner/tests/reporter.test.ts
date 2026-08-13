@@ -517,6 +517,18 @@ describe("renderReport", () => {
     expect(output).toContain(`${ESCAPED_ESC}[2J`);
   });
 
+  it("C1 제어 문자를 이스케이프한다", () => {
+    // U+009B 는 8비트 CSI 다. 이것을 통과시키면 일부 터미널이 제어 시퀀스로 해석한다.
+    const csi = String.fromCodePoint(0x9b);
+    const report = makeReport([
+      testCase({ id: `c1${csi}`, name: `이름${csi}[2J`, status: "passed" }),
+    ]);
+
+    const output = renderReport(report);
+    expect(output).not.toContain(csi);
+    expect(output).toContain("\\u009b");
+  });
+
   it("이스케이프 뒤 길이로 열을 맞춘다", () => {
     const report = makeReport([
       testCase({ id: `a${ESC}b`, name: "이름1", status: "passed" }),

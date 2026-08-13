@@ -1,5 +1,6 @@
-import { mkdir, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { constants } from "node:fs";
+import { lstat, mkdir, open, writeFile } from "node:fs/promises";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { ToolDef } from "@ohmymcp/core";
 import { nameDiscriminator, safeBaseName } from "./filename.js";
 import { renderTool } from "./render.js";
@@ -77,12 +78,94 @@ export { GenerateTestsError } from "./schema.js";
 /** 테스트 코드를 생성할 때의 옵션. */
 export interface GenerateOptions {
   outDir: string;
+  /** 기존 생성 파일을 교체할지 여부. 기본값은 false다. */
+  overwrite?: boolean;
 }
 
 type GeneratedDraft = {
   fileName: string;
   source: string;
 };
+
+function isNodeError(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && "code" in error;
+}
+
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await lstat(path);
+    return true;
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") return false;
+    throw error;
+  }
+}
+
+function assertPathInsideOutDir(outDir: string, path: string): void {
+  const relativePath = relative(outDir, path);
+  if (
+    relativePath === "" ||
+    relativePath === ".." ||
+    relativePath.startsWith(`..${sep}`) ||
+    isAbsolute(relativePath)
+  ) {
+    fail(
+      "GENERATED_SUITE_INVALID",
+      path,
+      `생성 파일 경로가 출력 디렉터리를 벗어납니다: ${path}`,
+      "도구 이름과 출력 디렉터리를 확인하세요.",
+    );
+  }
+}
+
+async function writeGeneratedFile(path: string, source: string, overwrite: boolean): Promise<void> {
+  if (overwrite) {
+    if (typeof constants.O_NOFOLLOW !== "number") {
+      fail(
+        "GENERATED_SUITE_INVALID",
+        path,
+        `이 환경에서는 생성 파일을 안전하게 덮어쓸 수 없습니다: ${path}`,
+        "심볼릭 링크를 따라가지 않는 파일 열기를 지원하는 환경을 사용하세요.",
+      );
+    }
+
+    let file: Awaited<ReturnType<typeof open>> | undefined;
+    try {
+      file = await open(
+        path,
+        constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW,
+      );
+      await file.writeFile(source, { encoding: "utf8" });
+    } catch (error) {
+      if (isNodeError(error) && error.code === "ELOOP") {
+        fail(
+          "GENERATED_SUITE_INVALID",
+          path,
+          `심볼릭 링크인 생성 파일을 덮어쓸 수 없습니다: ${path}`,
+          "심볼릭 링크를 제거하고 출력 디렉터리 안의 일반 파일을 사용하세요.",
+        );
+      }
+      throw error;
+    } finally {
+      await file?.close();
+    }
+    return;
+  }
+
+  try {
+    await writeFile(path, source, { encoding: "utf8", flag: "wx" });
+  } catch (error) {
+    if (isNodeError(error) && error.code === "EEXIST") {
+      fail(
+        "OUTPUT_FILE_EXISTS",
+        path,
+        `기존 생성 파일을 덮어쓸 수 없습니다: ${path}`,
+        "기존 파일을 보존하거나 명시적으로 overwrite: true를 지정하세요.",
+      );
+    }
+    throw error;
+  }
+}
 
 function createDrafts(tools: ToolDef[]): GeneratedDraft[] {
   const entries = tools.map((tool, index) => {
@@ -146,15 +229,42 @@ export async function generateTests(tools: ToolDef[], options: GenerateOptions):
       "생성 파일을 저장할 디렉터리를 지정하세요.",
     );
   }
+  if (options.overwrite !== undefined && typeof options.overwrite !== "boolean") {
+    fail(
+      "INVALID_OPTIONS",
+      "options.overwrite",
+      "overwrite 옵션은 boolean이어야 합니다.",
+      "기존 생성 파일을 교체하려면 true, 보존하려면 false를 지정하세요.",
+    );
+  }
   if (tools.length === 0) return [];
 
   const drafts = createDrafts(tools);
   const outDir = resolve(options.outDir);
   const paths = drafts.map(({ fileName }) => join(outDir, fileName));
+  for (const path of paths) assertPathInsideOutDir(outDir, path);
+
+  const overwrite = options.overwrite ?? false;
+  if (!overwrite) {
+    const existing = await Promise.all(
+      paths.map(async (path) => ((await pathExists(path)) ? path : null)),
+    );
+    const existingPath = existing.find((path): path is string => path !== null);
+    if (existingPath !== undefined) {
+      fail(
+        "OUTPUT_FILE_EXISTS",
+        existingPath,
+        `기존 생성 파일을 덮어쓸 수 없습니다: ${existingPath}`,
+        "기존 파일을 보존하거나 명시적으로 overwrite: true를 지정하세요.",
+      );
+    }
+  }
 
   await mkdir(outDir, { recursive: true });
   await Promise.all(
-    drafts.map(({ source }, index) => writeFile(paths[index] as string, source, "utf8")),
+    drafts.map(({ source }, index) =>
+      writeGeneratedFile(paths[index] as string, source, overwrite),
+    ),
   );
   return paths;
 }

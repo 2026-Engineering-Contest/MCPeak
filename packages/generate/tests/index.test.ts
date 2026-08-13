@@ -1,4 +1,5 @@
-import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { constants } from "node:fs";
+import { mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ToolDef } from "@ohmymcp/core";
@@ -79,6 +80,7 @@ describe("generateTests", () => {
     const weather = await readFile(paths[0] as string, "utf8");
     expect(weather).toContain('import { defineMcpSuite } from "@ohmymcp/runner";');
     expect(weather).toContain("export const generatedSuite = defineMcpSuite(");
+    expect(weather).toContain("직접 수정하지 마세요");
     expect(weather).toContain('"tool": "get_weather"');
     expect(weather).toContain('"city": "example"');
     expect(weather).toContain('"units": "metric"');
@@ -265,6 +267,139 @@ describe("generateTests", () => {
 
     await expect(generateTests([], { outDir })).resolves.toEqual([]);
     await expect(readdir(outDir)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("기존 생성 파일을 기본적으로 덮어쓰지 않는다", async () => {
+    const outDir = await temporaryOutDir();
+    const existingPath = join(outDir, "existing.generated.ts");
+    await mkdir(outDir, { recursive: true });
+    await writeFile(existingPath, "사용자가 보존할 내용", "utf8");
+
+    await expect(
+      generateTests(
+        [
+          {
+            name: "new-tool",
+            inputSchema: { type: "object", properties: {}, required: [] },
+          },
+          {
+            name: "existing",
+            inputSchema: { type: "object", properties: {}, required: [] },
+          },
+        ],
+        { outDir },
+      ),
+    ).rejects.toMatchObject({ code: "OUTPUT_FILE_EXISTS", path: existingPath });
+
+    await expect(readFile(existingPath, "utf8")).resolves.toBe("사용자가 보존할 내용");
+    await expect(readFile(join(outDir, "new-tool.generated.ts"), "utf8")).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
+  it("overwrite를 명시하면 기존 생성 파일을 교체한다", async () => {
+    const outDir = await temporaryOutDir();
+    const tool: ToolDef = {
+      name: "replace-me",
+      inputSchema: {
+        type: "object",
+        properties: { value: { type: "string" } },
+        required: ["value"],
+      },
+    };
+    const path = join(outDir, "replace-me.generated.ts");
+    await mkdir(outDir, { recursive: true });
+    await writeFile(path, "이전 내용", "utf8");
+
+    if (typeof constants.O_NOFOLLOW !== "number") {
+      await expect(generateTests([tool], { outDir, overwrite: true })).rejects.toMatchObject({
+        code: "GENERATED_SUITE_INVALID",
+        path,
+      });
+      await expect(readFile(path, "utf8")).resolves.toBe("이전 내용");
+      return;
+    }
+
+    await expect(generateTests([tool], { outDir, overwrite: true })).resolves.toEqual([path]);
+    const source = await readFile(path, "utf8");
+    expect(source).not.toBe("이전 내용");
+    expect(source).toContain('"value": "example"');
+  });
+
+  it.runIf(typeof constants.O_NOFOLLOW === "number")(
+    "overwrite에서도 기존 심볼릭 링크를 따라가지 않는다",
+    async () => {
+      const outDir = await temporaryOutDir();
+      const outsidePath = join(outDir, "..", "outside.ts");
+      const generatedPath = join(outDir, "linked.generated.ts");
+      await mkdir(outDir, { recursive: true });
+      await writeFile(outsidePath, "외부 파일", "utf8");
+      await symlink(outsidePath, generatedPath, "file");
+
+      await expect(
+        generateTests(
+          [{ name: "linked", inputSchema: { type: "object", properties: {}, required: [] } }],
+          { outDir, overwrite: true },
+        ),
+      ).rejects.toMatchObject({ code: "GENERATED_SUITE_INVALID", path: generatedPath });
+
+      await expect(readFile(outsidePath, "utf8")).resolves.toBe("외부 파일");
+    },
+  );
+
+  it.runIf(typeof constants.O_NOFOLLOW === "number")(
+    "동시에 심볼릭 링크로 교체되어도 링크 대상은 수정하지 않는다",
+    async () => {
+      const outDir = await temporaryOutDir();
+      const outsidePath = join(outDir, "..", "outside-race.ts");
+      const generatedPath = join(outDir, "racing.generated.ts");
+      await mkdir(outDir, { recursive: true });
+      await writeFile(outsidePath, "외부 파일", "utf8");
+      await writeFile(generatedPath, "기존 생성 파일", "utf8");
+
+      const tool: ToolDef = {
+        name: "racing",
+        description: "x".repeat(128 * 1024),
+        inputSchema: { type: "object", properties: {}, required: [] },
+      };
+      const generations = Array.from({ length: 20 }, () =>
+        generateTests([tool], { outDir, overwrite: true }).catch((error: unknown) => error),
+      );
+      const replacement = (async () => {
+        for (let index = 0; index < 20; index++) {
+          await rm(generatedPath, { force: true });
+          try {
+            await symlink(outsidePath, generatedPath, "file");
+          } catch (error) {
+            if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) {
+              throw error;
+            }
+          }
+          await new Promise<void>((resolve) => setImmediate(resolve));
+          await rm(generatedPath, { force: true });
+          await writeFile(generatedPath, "경쟁 중 일반 파일", "utf8");
+        }
+      })();
+
+      const results = await Promise.all(generations);
+      await replacement;
+      for (const result of results) {
+        if (result instanceof Error) {
+          expect(result).toMatchObject({ code: "GENERATED_SUITE_INVALID", path: generatedPath });
+        } else {
+          expect(result).toEqual([generatedPath]);
+        }
+      }
+      await expect(readFile(outsidePath, "utf8")).resolves.toBe("외부 파일");
+    },
+  );
+
+  it("overwrite 옵션은 boolean만 허용한다", async () => {
+    const outDir = await temporaryOutDir();
+
+    await expect(
+      generateTests([], { outDir, overwrite: "yes" } as unknown as { outDir: string }),
+    ).rejects.toMatchObject({ code: "INVALID_OPTIONS", path: "options.overwrite" });
   });
 
   it("keeps fallback filenames stable when tool order changes", async () => {

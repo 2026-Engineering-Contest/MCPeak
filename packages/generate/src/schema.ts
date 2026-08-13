@@ -6,6 +6,7 @@ export type SchemaType = "string" | "number" | "integer" | "boolean" | "object" 
 export type GenerateTestsErrorCode =
   | "INVALID_OPTIONS"
   | "INVALID_TOOL"
+  | "OUTPUT_FILE_EXISTS"
   | "UNSUPPORTED_SCHEMA"
   | "GENERATED_SUITE_INVALID";
 

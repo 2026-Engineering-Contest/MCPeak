@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { basename, dirname, normalize } from "node:path";
 import { Readable, Writable } from "node:stream";
 import type { McpStdioConnection, ToolDef } from "@ohmymcp/core";
 import {
@@ -38,6 +39,12 @@ const fingerprint = createHash("sha256")
 /** 임시 파일 이름은 실행마다 고유하므로 open 이벤트의 경로는 비교에서 제외한다. */
 const normalizedEvents = (events: readonly string[]): string[] =>
   events.map((event) => (event.startsWith("open:") ? "open" : event));
+
+const openedTempPath = (events: readonly string[]): string => {
+  const event = events.find((item) => item.startsWith("open:"));
+  if (event === undefined) throw new Error("임시 파일 open 이벤트가 필요합니다.");
+  return event.slice("open:".length);
+};
 
 function deps(overrides: Partial<GenerateCommandDependencies> = {}) {
   const events: string[] = [];
@@ -202,6 +209,7 @@ describe("parseGenerateCommand", () => {
 });
 
 describe("runGenerateCommand", () => {
+  const outPath = "/tmp/out.json";
   const argv = [
     "generate",
     "--suite-id",
@@ -209,7 +217,7 @@ describe("runGenerateCommand", () => {
     "--name",
     "Weather",
     "--out",
-    "/tmp/out.json",
+    outPath,
     "--command",
     "node",
     "--arg",
@@ -270,8 +278,9 @@ describe("runGenerateCommand", () => {
     ]);
     expect(d.value.validateSuite).toHaveBeenCalledOnce();
     // 임시 파일은 출력 경로와 같은 디렉터리에 있어야 link가 같은 파일시스템 안에서 끝난다.
-    const opened = d.events.find((event) => event.startsWith("open:")) ?? "";
-    expect(opened).toMatch(/^open:\/tmp\/\.out\.json\.ohmymcp\./);
+    const opened = openedTempPath(d.events);
+    expect(dirname(opened)).toBe(normalize(dirname(outPath)));
+    expect(basename(opened)).toMatch(/^\.out\.json\.ohmymcp\./);
   });
   it("선검사 뒤 커밋 직전에 파일이 생겨도 덮어쓰지 않는다", async () => {
     // 경쟁 조건 재현. exists()는 없다고 답했지만 link 시점에는 이미 다른 프로세스가 만들어 뒀다.
@@ -364,10 +373,16 @@ describe("runGenerateCommand", () => {
     for (let run = 0; run < 2; run += 1) {
       const d = deps();
       await runGenerateCommand(argv, d.value);
-      opened.push(d.events.find((event) => event.startsWith("open:")) ?? "");
+      opened.push(openedTempPath(d.events));
     }
-    expect(opened[0]).not.toBe(opened[1]);
-    expect(opened[0]).toMatch(/^open:\/tmp\/\.out\.json\.ohmymcp\./);
+    const [first, second] = opened;
+    if (first === undefined || second === undefined)
+      throw new Error("두 실행의 임시 파일 경로가 필요합니다.");
+    expect(first).not.toBe(second);
+    for (const tempPath of [first, second]) {
+      expect(dirname(tempPath)).toBe(normalize(dirname(outPath)));
+      expect(basename(tempPath)).toMatch(/^\.out\.json\.ohmymcp\./);
+    }
   });
   it("temp 충돌과 재검증 실패는 목표 파일을 바꾸지 않는다", async () => {
     for (const override of [

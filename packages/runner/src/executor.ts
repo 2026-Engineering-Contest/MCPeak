@@ -1,6 +1,16 @@
 import type { McpClient, ToolDef, ToolResult } from "@ohmymcp/core";
-import { type AssertionResult, assertIsError, assertToolExists } from "./assertions.js";
-import { normalizeThrownValue, type RunnerDiagnostic } from "./diagnostics.js";
+import {
+  type AssertionResult,
+  assertBodyMatchesSchema,
+  assertIsError,
+  assertToolExists,
+} from "./assertions.js";
+import { extractResponseBody } from "./body.js";
+import {
+  normalizeThrownValue,
+  operationResultUnavailableDiagnostic,
+  type RunnerDiagnostic,
+} from "./diagnostics.js";
 import { bindExecution, monotonicNowMs } from "./execution-binding.js";
 import {
   byteLength,
@@ -20,6 +30,7 @@ import {
   type ToolExistsAssertionSpec,
   validateMcpSuite,
 } from "./spec/index.js";
+import type { BodyMatchesSchemaAssertionSpec } from "./spec/types.js";
 
 export interface OperationResult {
   status: "completed" | "failed" | "timedOut" | "cancelled" | "notRun";
@@ -88,11 +99,7 @@ export interface RunnerExecution {
 export type RunnerDrainResult =
   | { status: "settled" }
   | { status: "deadlineExceeded"; pendingOperations: 1 };
-const unavailable = (): RunnerDiagnostic => ({
-  code: "OPERATION_RESULT_UNAVAILABLE",
-  message: "MCP 작업 결과가 없어 assertion을 검사할 수 없습니다.",
-  hint: "먼저 MCP 작업 실패 원인을 해결하세요.",
-});
+const unavailable = operationResultUnavailableDiagnostic;
 const failed = (
   operation: TestCaseSpec["operation"],
   error: unknown,
@@ -287,6 +294,14 @@ export function runSuite(options: RunSuiteOptions): RunnerExecution {
           },
         };
       emit({ type: "operationCompleted", ...fields, result: operation });
+      // 추출은 케이스당 한 번만 한다. 같은 케이스의 bodyMatchesSchema들이 결과를 공유한다.
+      const needsBody =
+        spec.operation.type === "callTool" &&
+        (spec.assertions as AssertionSpec[]).some((item) => item.type === "bodyMatchesSchema");
+      const extraction =
+        needsBody && result !== undefined && result.type === "callTool"
+          ? extractResponseBody(result.result)
+          : undefined;
       const assertions: AssertionResult[] = spec.assertions.map((assertion, assertionIndex) => {
         const outcome =
           result === undefined
@@ -297,7 +312,11 @@ export function runSuite(options: RunSuiteOptions): RunnerExecution {
               }
             : result.type === "listTools"
               ? assertToolExists(result.tools, assertion as ToolExistsAssertionSpec)
-              : assertIsError(result.result, assertion as IsErrorAssertionSpec);
+              : assertion.type === "isError"
+                ? assertIsError(result.result, assertion as IsErrorAssertionSpec)
+                : assertBodyMatchesSchema(extraction, assertion as BodyMatchesSchemaAssertionSpec, {
+                    redaction: options.redaction,
+                  });
         emit({ type: "assertionCompleted", ...fields, assertionIndex, result: outcome });
         return outcome;
       });

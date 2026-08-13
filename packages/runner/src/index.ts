@@ -1,13 +1,21 @@
 import type { McpClient, ToolResult } from "@ohmymcp/core";
 
-export type { AssertionResult } from "./assertions.js";
+export { type AssertionResult, assertBodyMatchesSchema } from "./assertions.js";
 export {
   type BodyExtraction,
   type BodyExtractionFailure,
   type BodyForm,
   extractResponseBody,
 } from "./body.js";
-export type { RunnerDiagnostic, RunnerDiagnosticCode } from "./diagnostics.js";
+export {
+  bodyExtractionFailedDiagnostic,
+  bodySchemaMismatchDiagnostic,
+  MAX_OBSERVED_KEYS,
+  MAX_VALUE_STRING_CHARS,
+  type RunnerDiagnostic,
+  type RunnerDiagnosticCode,
+  type SchemaViolationDiagnostic,
+} from "./diagnostics.js";
 export {
   type OperationResult,
   type RunnerDrainResult,

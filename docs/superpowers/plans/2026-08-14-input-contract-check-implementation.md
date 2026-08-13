@@ -16,7 +16,8 @@
 
 설계 문서 §2 를 그대로 쓴다. 통합 게이트에서 판정하는 항목만 여기 다시 적는다.
 
-- `pnpm test` · `pnpm typecheck` · `pnpm lint` 전부 통과하고, 각 출력의 검사 파일 수가 0 이 아님
+- `pnpm test` · `pnpm typecheck` · `pnpm lint` · `pnpm build` 전부 통과하고, 각 출력의 검사
+  파일 수가 0 이 아님
 - `packages/runner/tests/input-contract.test.ts` 와 `assertion-substance.test.ts` 의 설계 문서
   §10 케이스가 전부 존재하고 통과
 - 미지원 JSON Schema 키워드가 있는 툴에서 `REQUIRED_MISSING` · `TYPE_MISMATCH` ·
@@ -515,7 +516,7 @@ status: BLOCKED 로 보고하고 멈춰라.
 1. 보고서를 읽고, 허용 Files 밖 변경이 있는지 `git -C <worktree> status --short` 로 본다
 2. `git -C <worktree> diff main --stat` 으로 변경 범위를 확인한다.
    `packages/core` · 다른 패키지 · 루트 설정이 나오면 즉시 반려
-3. worktree 에서 `pnpm test packages/runner` · `pnpm typecheck` · `pnpm lint` 를
+3. worktree 에서 `pnpm test packages/runner` · `pnpm typecheck` · `pnpm lint` · `pnpm build` 를
    직접 돌리고 검사 파일 수가 0 이 아닌지 본다
 4. 설계 문서 §10 의 테스트 케이스가 실제로 존재하는지 이름으로 대조한다. 개수만 보지 않는다
 5. T2 통합 전 §10.3 의 오탐 방지 케이스가 전부 있는지 따로 확인한다. 완료 조건이다
@@ -533,7 +534,7 @@ T4-input-contract	<sha>	2026-08-14
    조상인지 `git cat-file -e` 와 `git merge-base --is-ancestor` 로 확인한다. **브랜치나
    worktree 가 존재한다는 사실을 완료 근거로 쓰지 않는다**
 
-전체 통합 후 최종 게이트로 `pnpm test` · `pnpm typecheck` · `pnpm lint` 를 루트에서 한 번 더
+전체 통합 후 최종 게이트로 `pnpm test` · `pnpm typecheck` · `pnpm lint` · `pnpm build` 를 루트에서 한 번 더
 돌린다.
 
 ## 10. 거짓 신호 점검

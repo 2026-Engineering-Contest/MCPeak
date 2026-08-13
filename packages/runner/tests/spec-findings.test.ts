@@ -177,3 +177,35 @@ describe("공유 상수", () => {
     expect(MAX_FINDINGS_PER_CASE).toBe(10);
   });
 });
+
+describe("리뷰 회귀: 한 줄 계약", () => {
+  it("actual 의 개행을 이스케이프해 줄바꿈이 생기지 않는다", () => {
+    const text = describeSpecFinding(
+      finding({ code: "TOOL_NOT_DECLARED", actual: "get\nweather" }),
+    );
+    expect(text).not.toContain("\n");
+    expect(text).toBe("서버가 선언하지 않은 툴입니다: 'get\\nweather'");
+  });
+
+  it("suggestion 의 개행도 이스케이프한다", () => {
+    const text = describeSpecFinding(
+      finding({ code: "TOOL_NOT_DECLARED", actual: "a", suggestion: "b\nc" }),
+    );
+    expect(text).not.toContain("\n");
+    expect(text).toContain("비슷한 툴: 'b\\nc'");
+  });
+
+  it("작은따옴표를 이스케이프해 감싸는 따옴표와 섞이지 않는다", () => {
+    expect(describeSpecFinding(finding({ code: "TOOL_NOT_DECLARED", actual: "it's" }))).toBe(
+      "서버가 선언하지 않은 툴입니다: 'it\\'s'",
+    );
+  });
+
+  it("path 의 제어 문자도 이스케이프한다", () => {
+    const text = describeSpecFinding(
+      finding({ code: "UNCONSTRAINED_SCHEMA", path: "assertions[0].schema.properties.a\nb" }),
+    );
+    expect(text).not.toContain("\n");
+    expect(text).toContain("properties.a\\nb");
+  });
+});

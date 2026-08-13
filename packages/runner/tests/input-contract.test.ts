@@ -461,3 +461,40 @@ describe("결정론성 (설계 §10.4)", () => {
     ]);
   });
 });
+
+describe("리뷰 회귀: type 배열과 중복 툴 이름", () => {
+  it("type 이 배열이면 enum 검사도 건너뛴다", () => {
+    // 합집합의 다른 갈래가 그 값을 허용할 수 있으므로 판정하지 않는다.
+    const result = check(
+      objectSchema({ properties: { v: { type: ["string", "null"], enum: ["x"] } } }),
+      { v: 3 },
+    );
+    expect(result.findings).toEqual([]);
+  });
+
+  it("type 이 배열이 아니면 enum 검사는 그대로 한다", () => {
+    const result = check(objectSchema({ properties: { v: { type: "string", enum: ["x"] } } }), {
+      v: "y",
+    });
+    expect(result.findings.map((f) => f.code)).toEqual(["ENUM_MISMATCH"]);
+  });
+
+  it("같은 이름의 툴이 두 번 선언되면 해석 불가로 처리한다", () => {
+    const tools = [
+      tool("dup", objectSchema({ properties: { a: { type: "string" } }, required: ["a"] })),
+      tool("dup", objectSchema({ properties: { b: { type: "number" } }, required: ["b"] })),
+    ];
+    const suite = suiteOf(callTool("case-1", "dup", { a: "값" }));
+    const result = checkInputContract({ suite, tools });
+    expect(result.findings.map((f) => f.code)).toEqual(["SCHEMA_NOT_ANALYZABLE"]);
+  });
+
+  it("중복 선언의 순서를 뒤집어도 결과가 같다", () => {
+    const first = tool("dup", objectSchema({ properties: { a: { type: "string" } } }));
+    const second = tool("dup", objectSchema({ properties: { b: { type: "number" } } }));
+    const suite = suiteOf(callTool("case-1", "dup", { a: "값" }));
+    expect(JSON.stringify(checkInputContract({ suite, tools: [first, second] }))).toBe(
+      JSON.stringify(checkInputContract({ suite, tools: [second, first] })),
+    );
+  });
+});

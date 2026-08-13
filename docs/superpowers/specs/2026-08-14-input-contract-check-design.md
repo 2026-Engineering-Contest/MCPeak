@@ -412,7 +412,7 @@ ENUM_MISMATCH
   (suggestion 있으면) ... 허용: {expected}. 비슷한 값: {suggestion}
 
 SCHEMA_NOT_ANALYZABLE
-  '{actual}' 의 입력 스키마를 해석하지 못해 이 툴의 입력 검사를 건너뜁니다
+  {actual} 의 입력 스키마를 해석하지 못해 이 툴의 입력 검사를 건너뜁니다
 
 UNCONSTRAINED_SCHEMA
   {path} 스키마에 제약이 없어 어떤 응답이든 통과합니다
@@ -428,6 +428,10 @@ VACUOUS_MIN_ITEMS
 `JSON.stringify` 결과를 그대로 쓴다.** `suggestion` 은 언제나 문자열이므로 항상 작은따옴표가
 붙는다. 위 템플릿에 따옴표를 직접 적지 않은 이유가 이것이다. 두 군데에서 따옴표를 붙이면
 문자열에 따옴표가 두 번 감긴다.
+
+문자열 안의 제어 문자는 이스케이프한다. 툴 이름 · 필드 이름 · enum 값 · 스키마 프로퍼티
+이름은 모두 남의 서버나 남이 쓴 명세에서 오므로 개행이 들어 있을 수 있다. 그대로 넣으면
+"반환에 줄바꿈이 없다" 는 계약이 깨진다. `path` 에도 같은 규칙을 적용한다.
 
 그래서 `enum` 배열은 `JSON.stringify` 결과인 `["c","f"]` 로 찍힌다(공백 없음).
 `TYPE_MISMATCH` 의 `expected` 와 `actual` 은 타입 이름 문자열이므로 작은따옴표가 붙어

@@ -46,16 +46,29 @@ export interface SpecFindingsResult {
 }
 
 /**
+ * 문장에 넣을 문자열에서 한 줄 계약을 깨는 문자를 이스케이프한다.
+ *
+ * 툴 이름, 필드 이름, enum 값, 스키마 프로퍼티 이름은 모두 **남의 서버나 남이 쓴 명세**에서
+ * 온다. 개행이나 제어 문자가 들어 있으면 `describeSpecFinding`이 내세우는 "반환에 줄바꿈이
+ * 없다" 계약이 깨지고, 소비자가 붙이는 들여쓰기와 화살표 정렬도 무너진다.
+ *
+ * `JSON.stringify`가 제어 문자와 역슬래시를 이미 이스케이프하므로 그 결과의 바깥 큰따옴표만
+ * 벗긴다. 작은따옴표는 우리가 감싸는 문자라 따로 이스케이프한다.
+ */
+const escapeInline = (value: string): string =>
+  JSON.stringify(value).slice(1, -1).replaceAll("'", "\\'");
+
+/**
  * 값을 문장에 넣을 표기로 만든다. 설계 문서 §7의 규칙이다.
  * 문자열은 작은따옴표로 감싸고, 그 외 JSON 값은 JSON.stringify 결과를 그대로 쓴다.
  * 로캘에 의존하지 않으며 같은 값은 항상 같은 문자열이 된다.
  */
 const literal = (value: JsonValue | undefined): string =>
-  typeof value === "string" ? `'${value}'` : JSON.stringify(value);
+  typeof value === "string" ? `'${escapeInline(value)}'` : JSON.stringify(value);
 
 /** suggestion은 언제나 문자열이므로 작은따옴표만 붙인다. */
 const suggest = (finding: SpecFinding, tail: string): string =>
-  finding.suggestion === undefined ? "" : `. ${tail}: '${finding.suggestion}'`;
+  finding.suggestion === undefined ? "" : `. ${tail}: '${escapeInline(finding.suggestion)}'`;
 
 /**
  * finding 한 건을 사용자가 읽는 한 문장으로 만든다.
@@ -63,7 +76,9 @@ const suggest = (finding: SpecFinding, tail: string): string =>
  * 반환에 줄바꿈이 없다. 들여쓰기와 화살표는 소비자가 붙인다.
  */
 export function describeSpecFinding(finding: SpecFinding): string {
-  const { path, expected, actual } = finding;
+  const { expected, actual } = finding;
+  // path에도 스키마 프로퍼티 이름이 그대로 들어간다. 같은 규칙으로 이스케이프한다.
+  const path = escapeInline(finding.path);
   switch (finding.code) {
     case "TOOL_NOT_DECLARED":
       return `서버가 선언하지 않은 툴입니다: ${literal(actual)}${suggest(finding, "비슷한 툴")}`;

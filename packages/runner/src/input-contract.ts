@@ -98,7 +98,13 @@ function normalizeInputSchema(schema: unknown): NormalizedInputSchema | null {
       fields.set(name, { type: null, enumValues: null });
       continue;
     }
-    // type 이 배열이면(["string","null"]) 합집합이라 판정하지 않는다.
+    // type 이 배열이면(["string","null"]) 합집합이라 그 필드를 통째로 포기한다.
+    // type 만 끄고 enum 을 남기면 { type: ["string","null"], enum: ["x"] } 에 3 을 넣었을 때
+    // ENUM_MISMATCH 가 난다. 합집합의 다른 갈래가 그 값을 허용할 수 있으므로 오탐이다.
+    if (Array.isArray(field.type)) {
+      fields.set(name, { type: null, enumValues: null });
+      continue;
+    }
     const type = declaredType(field.type);
     const rawEnum = field.enum;
     const enumValues =
@@ -186,6 +192,16 @@ export function checkInputContract(options: InputContractOptions): SpecFindingsR
   const { suite, tools } = options;
 
   // 이름으로만 조회한다. 배열 순서를 쓰지 않아야 tools 순서가 결과를 바꾸지 않는다.
+  //
+  // 같은 이름이 두 번 오면 첫 선언을 쓰는 것이 순서 의존이다. 두 선언의 inputSchema 가 다르면
+  // tools 를 뒤집는 것만으로 blocking 과 advisory 가 뒤바뀐다. 어느 선언이 참인지 알 방법이
+  // 없으므로 해석 불가로 처리한다. 모르면 침묵한다는 ADR-0015 의 원칙과 같다.
+  const seen = new Set<string>();
+  const duplicated = new Set<string>();
+  for (const tool of tools) {
+    if (seen.has(tool.name)) duplicated.add(tool.name);
+    seen.add(tool.name);
+  }
   const declaredTools = new Map<string, ToolDef>();
   for (const tool of tools) if (!declaredTools.has(tool.name)) declaredTools.set(tool.name, tool);
   const toolNames = [...declaredTools.keys()].sort(byCodeUnit);
@@ -193,7 +209,10 @@ export function checkInputContract(options: InputContractOptions): SpecFindingsR
   const normalized = new Map<string, NormalizedInputSchema | null>();
   const normalizeOnce = (tool: ToolDef): NormalizedInputSchema | null => {
     if (!normalized.has(tool.name))
-      normalized.set(tool.name, normalizeInputSchema(tool.inputSchema));
+      normalized.set(
+        tool.name,
+        duplicated.has(tool.name) ? null : normalizeInputSchema(tool.inputSchema),
+      );
     return normalized.get(tool.name) ?? null;
   };
 

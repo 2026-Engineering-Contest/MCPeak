@@ -435,9 +435,18 @@ stdout 과 stderr 가 다른 스트림이므로 앞에 빈 줄을 넣지 않는�
 
 ### 8.3 `packages/cli/tests/cli-integration.test.ts` (수정)
 
-- `--stderr-lines 0 은 변경 전과 같은 바이트를 낸다`: 같은 명세로 두 번 실행해
-  (옵션 없음 → 블록 있음, `--stderr-lines 0` → 블록 없음) stdout 이 두 경우 모두 같고
-  후자의 stderr 가 비어 있다
+두 갈래로 나눈다. `examples/weather-server` 는 정상 종료하고 stderr 를 남기지 않아 §4.3 의 빈
+진단 생략 규칙에 걸린다. 즉 그 서버로는 "옵션 없음 → 블록 있음" 을 만들 수 없다. `examples/` 는
+수정 금지 대상이므로 서버를 고치지 않고 대상을 나눈다.
+
+- `--stderr-lines 0 은 변경 전과 같은 바이트를 낸다`: `examples/weather-server` 에 실패 명세를
+  두 번 실행해 stdout 이 두 경우 모두 같고, `--stderr-lines 0` 쪽 stderr 가 빈 문자열이다
+- `stderr 를 남기고 죽는 서버에는 블록이 붙고 --stderr-lines 0 이면 사라진다`: 임시 디렉터리에
+  stderr 에 표식을 쓰고 즉시 죽는 최소 스크립트를 만들어 두 번 실행한다. 옵션 없음 쪽 stderr 에
+  `서버 프로세스 진단` 과 그 표식이 있고, `--stderr-lines 0` 쪽에는 연결 실패 메시지만 있다
+
+두 번째가 없으면 §9 의 거짓 신호에 걸린다. 블록이 안 붙는 쪽만 단언하면 조건 판정이 잘못돼
+어떤 경우에도 안 붙는 상태와 구분되지 않는다.
 
 ### 8.4 `packages/cli/tests/dist-cli-e2e.mjs` (수정, 실환경 직렬 웨이브)
 

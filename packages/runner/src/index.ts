@@ -1,6 +1,12 @@
 import type { McpClient, ToolResult } from "@ohmymcp/core";
 
 export type { AssertionResult } from "./assertions.js";
+export {
+  type BodyExtraction,
+  type BodyExtractionFailure,
+  type BodyForm,
+  extractResponseBody,
+} from "./body.js";
 export type { RunnerDiagnostic, RunnerDiagnosticCode } from "./diagnostics.js";
 export {
   type OperationResult,
@@ -22,6 +28,13 @@ export {
   type RunnerPayloadLimits,
   type RunnerRedactionOptions,
 } from "./sanitization.js";
+export {
+  MAX_SCHEMA_VIOLATIONS,
+  matchResponseSchema,
+  type SchemaMatchResult,
+  type SchemaViolation,
+  type SchemaViolationCode,
+} from "./schema-match.js";
 export {
   type FinalizeRunnerExecutionOptions,
   finalizeRunnerExecution,

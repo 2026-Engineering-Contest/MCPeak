@@ -1,6 +1,6 @@
 {
   "name": "@ohmymcp/runner",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": false,
   "type": "module",
   "description": "선언형 MCP 테스트 실행 · assertion · 구조화된 리포트",

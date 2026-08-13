@@ -71,10 +71,17 @@ function sanitizeValue(
   if (value === null || typeof value !== "object") return value;
   if (Array.isArray(value)) return value.map((entry) => sanitizeValue(entry, keys, values));
   const copy: JsonObject = {};
+  // copy[key] 대입은 key가 "__proto__"일 때 Object.prototype 세터를 건드려 자기 속성을
+  // 만들지 못한다. 그러면 응답에 있던 키가 조용히 사라진다.
   for (const [key, nestedValue] of Object.entries(value))
-    copy[key] = keys.has(normalizeSensitiveKey(key))
-      ? REDACTED
-      : sanitizeValue(nestedValue, keys, values);
+    Object.defineProperty(copy, key, {
+      value: keys.has(normalizeSensitiveKey(key))
+        ? REDACTED
+        : sanitizeValue(nestedValue, keys, values),
+      enumerable: true,
+      writable: true,
+      configurable: true,
+    });
   return copy;
 }
 export function sanitizeJsonValue(value: JsonValue, options?: RunnerRedactionOptions): JsonValue {

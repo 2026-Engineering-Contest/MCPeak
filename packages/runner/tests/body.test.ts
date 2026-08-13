@@ -78,9 +78,10 @@ describe("extractResponseBody", () => {
   });
 
   it("type이 text인데 text가 문자열이 아니면 실패한다", () => {
+    // 블록 type은 text가 맞으므로 CONTENT_BLOCK_NOT_TEXT가 아니라 전용 코드를 낸다.
     expect(extractResponseBody(resultOf([{ type: "text", text: 42 }]))).toEqual({
       ok: false,
-      failure: { code: "CONTENT_BLOCK_NOT_TEXT", actual: "number" },
+      failure: { code: "CONTENT_TEXT_MISSING", actual: "number" },
     });
   });
 

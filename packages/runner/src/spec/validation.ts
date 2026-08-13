@@ -45,27 +45,31 @@ const RESPONSE_SCHEMA_TYPES = [
   "null",
 ] as const;
 
-/** 각 키워드가 요구하는 type 값. 설계 문서 §4.4. */
-const KEYWORD_TYPES: Readonly<Record<string, readonly string[]>> = {
-  required: ["object"],
-  properties: ["object"],
-  additionalProperties: ["object"],
-  items: ["array"],
-  minItems: ["array"],
-  minLength: ["string"],
-  maxLength: ["string"],
-  stringContains: ["string"],
-  minimum: ["number", "integer"],
-  maximum: ["number", "integer"],
-};
+/** 각 키워드가 요구하는 type 값. 설계 문서 §4.4. 프로토타입 오염을 피해 Map으로 둔다. */
+const KEYWORD_TYPES = new Map<string, readonly string[]>([
+  ["required", ["object"]],
+  ["properties", ["object"]],
+  ["additionalProperties", ["object"]],
+  ["items", ["array"]],
+  ["minItems", ["array"]],
+  ["minLength", ["string"]],
+  ["maxLength", ["string"]],
+  ["stringContains", ["string"]],
+  ["minimum", ["number", "integer"]],
+  ["maximum", ["number", "integer"]],
+]);
 
 const SUPPORTED_KEYWORD_LIST = RESPONSE_SCHEMA_KEYWORDS.join(", ");
 
-/** operation 종류별로 허용하는 단언. */
-const ALLOWED_ASSERTIONS: Readonly<Record<string, readonly string[]>> = {
-  listTools: ["toolExists"],
-  callTool: ["isError", "bodyMatchesSchema"],
-};
+/**
+ * operation 종류별로 허용하는 단언. 색인 키가 사용자 입력이므로 Map을 쓴다.
+ * 객체 리터럴을 쓰면 operation.type이 "toString"일 때 프로토타입의 함수가 잡혀
+ * allowed.includes가 TypeError를 던진다.
+ */
+const ALLOWED_ASSERTIONS = new Map<string, readonly string[]>([
+  ["listTools", ["toolExists"]],
+  ["callTool", ["isError", "bodyMatchesSchema"]],
+]);
 
 const KNOWN_ASSERTIONS = ["toolExists", "isError", "bodyMatchesSchema"] as const;
 
@@ -180,6 +184,17 @@ function validateResponseSchema(
       issue(issues, "INVALID_TYPE", path);
       continue;
     }
+    // 빈 스키마는 어떤 응답에도 위반을 내지 않아 영원히 통과하는 단언을 만든다.
+    if (Object.keys(value).length === 0) {
+      issueWith(
+        issues,
+        "INVALID_VALUE",
+        path,
+        "스키마가 비어 있어 검사할 제약이 없습니다.",
+        `type, required, properties, const, enum 같은 키워드를 하나 이상 넣으세요. 지원 키워드는 ${SUPPORTED_KEYWORD_LIST} 입니다.`,
+      );
+      continue;
+    }
 
     for (const key of Object.keys(value).sort())
       if (!(RESPONSE_SCHEMA_KEYWORDS as readonly string[]).includes(key))
@@ -191,7 +206,7 @@ function validateResponseSchema(
           `지원 키워드는 ${SUPPORTED_KEYWORD_LIST} 입니다.`,
         );
 
-    const declared = "type" in value ? value.type : undefined;
+    const declared = Object.hasOwn(value, "type") ? value.type : undefined;
     if (
       declared !== undefined &&
       (typeof declared !== "string" ||
@@ -199,9 +214,9 @@ function validateResponseSchema(
     )
       issue(issues, "INVALID_VALUE", `${path}.type`);
 
-    for (const keyword of Object.keys(KEYWORD_TYPES).sort()) {
-      if (!(keyword in value)) continue;
-      const allowed = KEYWORD_TYPES[keyword] as readonly string[];
+    for (const keyword of [...KEYWORD_TYPES.keys()].sort()) {
+      const allowed = KEYWORD_TYPES.get(keyword);
+      if (!Object.hasOwn(value, keyword) || allowed === undefined) continue;
       if (typeof declared !== "string" || !allowed.includes(declared))
         issueWith(
           issues,
@@ -223,6 +238,14 @@ function validateResponseSchema(
     }
     if ("required" in value) {
       if (!Array.isArray(value.required)) issue(issues, "INVALID_TYPE", `${path}.required`);
+      else if (value.required.length === 0)
+        issueWith(
+          issues,
+          "INVALID_VALUE",
+          `${path}.required`,
+          "required가 비어 있어 검사할 필드가 없습니다.",
+          "필수 필드 이름을 넣거나 required를 제거하세요.",
+        );
       else
         value.required.forEach((key, index) => {
           if (!nonEmpty(key))
@@ -255,6 +278,14 @@ function validateResponseSchema(
       });
     if ("properties" in value) {
       if (!plain(value.properties)) issue(issues, "INVALID_TYPE", `${path}.properties`);
+      else if (Object.keys(value.properties).length === 0)
+        issueWith(
+          issues,
+          "INVALID_VALUE",
+          `${path}.properties`,
+          "properties가 비어 있어 검사할 필드가 없습니다.",
+          "검사할 필드를 넣거나 properties를 제거하세요.",
+        );
       else {
         const keys = Object.keys(value.properties);
         for (let index = keys.length - 1; index >= 0; index--) {
@@ -396,7 +427,7 @@ function validateAssertions(
     }
     const type = assertion.type;
     if (kind !== undefined) {
-      const allowed = ALLOWED_ASSERTIONS[kind];
+      const allowed = ALLOWED_ASSERTIONS.get(kind);
       if (allowed === undefined || typeof type !== "string" || !allowed.includes(type)) {
         issue(issues, "INCOMPATIBLE_ASSERTION", itemPath);
         return;

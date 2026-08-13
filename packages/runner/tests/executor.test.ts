@@ -384,10 +384,11 @@ const bodySuite = (assertions: unknown[]): TestSuiteSpec =>
     ],
   }) as TestSuiteSpec;
 
+/** 빈 properties와 빈 required는 검사할 제약이 없어 명세 검증이 거부한다. 있을 때만 넣는다. */
 const schemaOf = (properties: Record<string, unknown>, required: string[]) => ({
   type: "object",
-  required,
-  properties,
+  ...(required.length === 0 ? {} : { required }),
+  ...(Object.keys(properties).length === 0 ? {} : { properties }),
 });
 
 describe("runSuite와 bodyMatchesSchema", () => {

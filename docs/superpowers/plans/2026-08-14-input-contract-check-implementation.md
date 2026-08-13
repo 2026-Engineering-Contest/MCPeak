@@ -121,7 +121,7 @@ packages/runner/src/input-contract.ts        (스텁 본문을 실제 구현으�
 
 - `normalizeInputSchema` 는 **부분 성공이 없다.** 해석 불가면 `null` 을 반환하고 호출부는
   `SCHEMA_NOT_ANALYZABLE` 한 건만 낸다 (설계 §4.2 · §4.3)
-- 루트 차단 키워드 12 개: `anyOf` `oneOf` `allOf` `not` `if` `then` `else` `$ref`
+- 루트 차단 키워드 14 개: `anyOf` `oneOf` `allOf` `not` `if` `then` `else` `$ref`
   `$dynamicRef` `patternProperties` `dependentSchemas` `dependentRequired`
   `propertyNames` `unevaluatedProperties`
 - `additionalProperties` 는 **정확히 `false` 일 때만** `UNDECLARED_FIELD` 를 낸다. 없거나

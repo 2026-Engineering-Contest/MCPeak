@@ -445,8 +445,13 @@ VACUOUS_MIN_ITEMS
 ```
 ⚠ weather-ok  입력이 서버 선언과 어긋납니다
   → 필수 필드 'city' 가 입력에 없습니다. 비슷한 필드: 'citi'
-  → input.units 값 'celsius' 는 선언된 값이 아닙니다. 허용: ["c","f"]. 비슷한 값: 'c'
+  → input.units 값 'celsius' 는 선언된 값이 아닙니다. 허용: ["c","f"]
 ```
+
+`units` 쪽에는 `비슷한 값` 이 붙지 않는다. `"celsius"` 와 `"c"` 는 편집 거리가 6 이라
+§5.4 의 거리 2 조건에서 탈락하고, 통과하더라도 `floor(7 / 2) = 3` 조건에 다시 걸린다.
+한 글자짜리 enum 값은 구조적으로 후보가 될 수 없다. `suggestion` 이 붙는 것은
+`enum: ["celsius", "fahrenheit"]` 에 `"celcius"` 를 넣은 것 같은 경우다.
 
 `cli test`의 실패 케이스 뒤:
 

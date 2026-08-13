@@ -1,5 +1,12 @@
 # @ohmymcp/generate
 
+## 0.3.1
+
+### Patch Changes
+
+- Updated dependencies [a1f9bb4]
+  - @ohmymcp/runner@0.2.0
+
 ## 0.3.0
 
 ### Minor Changes

@@ -478,7 +478,20 @@ VACUOUS_MIN_ITEMS
 
 `Object.keys` 순회 순서에 기대지 않는다. 키를 모아 정렬한 뒤 순회한다.
 
-### 9.3 상한
+### 9.3 스택 안전
+
+중첩 스키마를 순회할 때 **재귀를 쓰지 않는다.** `schema-match.ts:125` 의 `frames` 패턴대로
+명시적 스택과 `while` 루프로 돈다.
+
+`validateMcpSuite` 에는 스키마 깊이 제한이 없다. 깊이 20000 짜리 중첩 `properties` 를 가진
+명세가 `valid: true` 로 통과한다. 그것을 `matchResponseSchema` 는 처리하는데 여기서 재귀를
+쓰면 `RangeError: Maximum call stack size exceeded` 로 죽는다. 같은 명세를 한쪽은 처리하고
+한쪽은 못 하는 비대칭이 생긴다.
+
+`tests/deep-and-cyclic-input.test.ts` 가 이 계약의 기존 회귀 테스트다. 파일 이름의
+"결함 1" · "결함 2" 가 가리키듯 과거에 실제로 밟은 문제다.
+
+### 9.4 상한
 
 한 케이스에서 `MAX_FINDINGS_PER_CASE`(10)를 넘으면 자르고 `totalFindings`에는 자르기 전 총합을
 센다. `schema-match.ts`의 `MAX_SCHEMA_VIOLATIONS`와 같은 값이고 같은 이유다. 상한을 넘은 사실을

@@ -130,7 +130,7 @@ packages/runner/src/input-contract.ts        (스텁 본문을 실제 구현으�
 - `integer` 는 `Number.isInteger` 로 따로 본다. `number` 선언에 정수 값은 위반이 아니다
 - 오타 후보 6 단계 규칙 (설계 §5.4). 거리 2 이하 **그리고** `floor(긴 쪽 길이 / 2)` 이하.
   동점이면 UTF-16 코드 단위 오름차순
-- 정렬 순서 (설계 §9.2) 와 상한 `MAX_FINDINGS_PER_CASE` (설계 §9.3)
+- 정렬 순서 (설계 §9.2), 스택 안전 (설계 §9.3), 상한 `MAX_FINDINGS_PER_CASE` (설계 §9.4)
 
 **재사용 (새로 구현하지 말 것).** `packages/runner/src/schema-match.ts` 의 `typeName`(39행),
 `plainObject`(33행), `jsonEqual`(54행), `byCodeUnit` 기준(43행). 두 벌을 두면 `null` 과 배열

@@ -1,5 +1,6 @@
 import type { McpClient, ToolResult } from "@ohmymcp/core";
 
+export { checkAssertionSubstance } from "./assertion-substance.js";
 export { type AssertionResult, assertBodyMatchesSchema } from "./assertions.js";
 export {
   type BodyExtraction,
@@ -27,6 +28,7 @@ export {
   runSuite,
   type TestCaseResult,
 } from "./executor.js";
+export { checkInputContract, type InputContractOptions } from "./input-contract.js";
 export { type RenderReportOptions, renderReport } from "./reporter.js";
 export {
   DEFAULT_MAX_CASE_BYTES,
@@ -76,6 +78,13 @@ export type {
 } from "./spec/types.js";
 export { SuiteValidationError } from "./spec/types.js";
 export { defineMcpSuite, validateMcpSuite } from "./spec/validation.js";
+export {
+  describeSpecFinding,
+  MAX_FINDINGS_PER_CASE,
+  type SpecFinding,
+  type SpecFindingCode,
+  type SpecFindingsResult,
+} from "./spec-findings.js";
 
 /** `createMcpTest` 에 넘기는 설정. */
 export interface McpTestConfig {

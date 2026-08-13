@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "id": "weather-body",
+  "name": "날씨 서버 응답 본문 검증",
+  "defaultTimeoutMs": 10000,
+  "cases": [
+    {
+      "id": "weather-seoul",
+      "name": "서울 날씨를 계약대로 반환한다",
+      "operation": { "type": "callTool", "tool": "get_weather", "input": { "city": "서울" } },
+      "assertions": [
+        { "type": "isError", "expected": false },
+        {
+          "type": "bodyMatchesSchema",
+          "schema": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["city", "temp", "condition"],
+            "properties": {
+              "city": { "type": "string", "const": "서울" },
+              "temp": { "type": "number", "minimum": -90, "maximum": 60 },
+              "condition": { "type": "string", "enum": ["맑음", "흐림", "비"] }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "weather-unknown-city",
+      "name": "없는 도시는 사용 가능한 목록을 안내한다",
+      "operation": { "type": "callTool", "tool": "get_weather", "input": { "city": "평양" } },
+      "assertions": [
+        { "type": "isError", "expected": true },
+        {
+          "type": "bodyMatchesSchema",
+          "schema": { "type": "string", "stringContains": "사용 가능한 도시" }
+        }
+      ]
+    },
+    {
+      "id": "weather-invalid-type",
+      "name": "city가 문자열이 아니면 타입을 안내한다",
+      "operation": { "type": "callTool", "tool": "get_weather", "input": { "city": 123 } },
+      "assertions": [
+        { "type": "isError", "expected": true },
+        {
+          "type": "bodyMatchesSchema",
+          "schema": { "type": "string", "stringContains": "문자열이어야 합니다" }
+        }
+      ]
+    }
+  ]
+}

@@ -110,6 +110,11 @@ for (const [fixture, expectedStatus, expectedSummary] of [
     "failed",
     { total: 1, passed: 0, failed: 1, timedOut: 0, cancelled: 0, notRun: 0 },
   ],
+  [
+    "weather-body-assertion.suite.json",
+    "passed",
+    { total: 3, passed: 3, failed: 0, timedOut: 0, cancelled: 0, notRun: 0 },
+  ],
 ]) {
   const dir = await mkdtemp(join(tmpdir(), "ohmymcp-dist-"));
   const pidFile = join(dir, "pid");
@@ -191,6 +196,51 @@ for (const [fixture, expectedStatus, expectedSummary] of [
       cancelled: 0,
       notRun: 0,
     });
+    await expectExited(pidFile);
+  } finally {
+    await cleanupPid(pidFile);
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+{
+  const dir = await mkdtemp(join(tmpdir(), "ohmymcp-dist-body-"));
+  const pidFile = join(dir, "pid");
+  const args = [
+    "test",
+    join(here, "fixtures", "weather-body-assertion-failing.suite.json"),
+    "--command",
+    process.execPath,
+    "--arg",
+    wrapper,
+    "--arg",
+    pidFile,
+    "--arg",
+    server,
+  ];
+  try {
+    const first = await execute(args);
+    assert.equal(first.code, 1);
+    assert.equal(first.err, "");
+    const report = JSON.parse(first.out);
+    assert.equal(report.status, "failed");
+
+    const diagnostic = report.cases[0].assertions[0].diagnostic;
+    assert.equal(diagnostic.code, "BODY_SCHEMA_MISMATCH");
+    assert.equal(diagnostic.totalViolations, 1);
+    assert.equal(diagnostic.violations.length, 1);
+    assert.equal(diagnostic.violations[0].code, "REQUIRED_MISSING");
+    assert.equal(diagnostic.violations[0].path, "$.temperature");
+    // 실패 메시지가 곧 제품이다. 문장 전문을 고정한다.
+    assert.equal(
+      diagnostic.violations[0].message,
+      "$.temperature: 필수 필드가 없습니다. 발견된 필드: 'city', 'condition', 'temp'",
+    );
+    await expectExited(pidFile);
+
+    // 결정론성: 같은 입력 2회 실행의 표준 출력 바이트가 같아야 한다.
+    const second = await execute(args);
+    assert.equal(second.out, first.out);
     await expectExited(pidFile);
   } finally {
     await cleanupPid(pidFile);

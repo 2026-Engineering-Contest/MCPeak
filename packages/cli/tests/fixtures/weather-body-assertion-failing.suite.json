@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "weather-body-failing",
+  "name": "날씨 서버 응답 본문 불일치",
+  "defaultTimeoutMs": 10000,
+  "cases": [
+    {
+      "id": "weather-renamed-field",
+      "name": "temperature 필드를 기대하지만 서버는 temp를 반환한다",
+      "operation": { "type": "callTool", "tool": "get_weather", "input": { "city": "서울" } },
+      "assertions": [
+        {
+          "type": "bodyMatchesSchema",
+          "schema": { "type": "object", "required": ["temperature"] }
+        }
+      ]
+    }
+  ]
+}

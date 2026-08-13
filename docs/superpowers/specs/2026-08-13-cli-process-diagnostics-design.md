@@ -74,7 +74,11 @@ CLI 가 `connectStdio()` 의 반환값을 이미 손에 들고 있다(`packages/
 ### 완료 조건
 
 - `pnpm test`, `pnpm typecheck`, `pnpm lint`, `pnpm build` 전부 통과
-- 변경 전 존재하던 테스트가 하나도 수정 없이 통과한다. 새 단언만 추가된다.
+- 판정, 종료 코드, stdout 바이트가 바뀌지 않는다. 이 셋을 검증하는 기존 단언은 수정 없이
+  통과한다.
+- 기존 테스트의 수정은 **공개 계약이 실제로 늘어난 세 곳**에만 허용한다. `TestCommandInput` 에
+  `stderrLines` 가 생겨 파싱 결과를 전량 비교하는 단언 2곳, `usage` 문자열 1곳이다. 그 밖의
+  기존 단언을 고쳐야 통과한다면 그것은 회귀다.
 - `--stderr-lines 0` 을 준 실행의 stdout·stderr 바이트가 변경 전과 같다.
 - `--json` 실행의 stdout 바이트가 변경 전과 같다.
 - 실환경 E2E 가 예외로 죽는 예제 서버에 대해 stderr 에서 `TypeError` 문자열과 종료 코드 줄을
@@ -175,6 +179,14 @@ Runner 설계의 완료 조건은 "동일한 suite 와 결정론적 fake client 
 - 연결 실패 경로: `MCP_CONNECTION_FAILED` 중 진단에 내용이 있는 경우(§4.3.1)
 
 `--stderr-lines 0` 이면 위 조건과 무관하게 아무것도 쓰지 않는다.
+
+**모든 경로 공통 조건: 진단에 내용이 없으면 쓰지 않는다.** `stderr` 가 빈 문자열이고
+`isAbnormalExit` 이 거짓이면 블록에 남는 것은 `종료 코드: 0  시그널: 없음` 과
+`stderr: (비어 있음)` 뿐이다. 정보가 0인 블록은 소음이고, 특히 케이스는 실패했지만 서버는
+정상 종료한 실행에서 매번 붙는다. 그 경우 실패 원인은 단언 진단이 이미 설명하고 있다.
+
+이 규칙은 렌더러가 아니라 호출부에 둔다. `renderProcessDiagnostics` 는 요청받은 것을 그대로
+그리고, 무엇을 그릴 가치가 있는지는 CLI 가 판단한다.
 
 #### 4.3.1 연결 실패 경로의 진단 출처
 
@@ -321,8 +333,9 @@ ohmymcp test <suite.json> --command <executable> [--arg <value> ...] [--json] [-
 |---|---|---|
 | 정상 통과, 정상 종료 | 보고서만 | 동일 (블록 없음) |
 | 정상 통과, 비정상 종료 | 보고서만 | 보고서 + 진단 블록 |
-| 케이스 실패 | 보고서만 | 보고서 + 진단 블록 |
-| 타임아웃·중단 | 보고서만 | 보고서 + 진단 블록 |
+| 케이스 실패, 서버가 stderr 를 남겼거나 비정상 종료 | 보고서만 | 보고서 + 진단 블록 |
+| 케이스 실패, 서버는 정상 종료하고 stderr 도 비어 있음 | 보고서만 | 동일 (보여줄 근거가 없다) |
+| 타임아웃·중단 | 보고서만 | 진단에 내용이 있으면 보고서 + 진단 블록 |
 | `RUNNER_EXECUTION_FAILED` | 오류 메시지 | 오류 메시지 + 진단 블록 |
 | `RUNNER_FINALIZATION_FAILED` | 오류 메시지 | 오류 메시지 + 진단 블록 |
 | `MCP_CONNECTION_FAILED` (서버가 기동 후 죽음, 핸드셰이크 실패) | 오류 메시지 | 오류 메시지 + 진단 블록 (출처는 `McpClientError.diagnostics`) |
@@ -394,6 +407,9 @@ stdout 과 stderr 가 다른 스트림이므로 앞에 빈 줄을 넣지 않는�
   `writes.err` 를 이은 문자열에 `"서버 프로세스 진단"`, `"종료 코드: 1"`, `"boom"` 포함
 - `전부 통과하고 정상 종료면 아무것도 쓰지 않는다`: 통과 보고서 + `{ exitCode: 0, signal: null }`
   → `writes.err` 가 빈 배열
+- `실패해도 진단이 비어 있으면 쓰지 않는다`: 실패 보고서 +
+  `{ stderr: "", stderrTruncated: false, exitCode: 0, signal: null }` → `writes.err` 가 빈 배열,
+  반환값은 `1`
 - `전부 통과여도 비정상 종료면 쓴다`: 통과 보고서 + `{ exitCode: null, signal: "SIGSEGV" }` →
   `writes.err` 에 `"시그널: SIGSEGV"` 포함, 반환값은 `0`
 - `--stderr-lines 0 이면 실패해도 쓰지 않는다`: 실패 보고서 + `{ exitCode: 1 }` →

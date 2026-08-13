@@ -24,8 +24,13 @@
 완료 조건.
 
 - 위 다섯 명령 전부 통과.
-- 변경 전 존재하던 테스트가 **수정 없이** 통과한다. 기존 단언을 고쳐야 통과한다면 그것은
-  회귀이므로 `BLOCKED` 로 보고한다.
+- 판정, 종료 코드, stdout 바이트가 바뀌지 않는다. 이 셋을 검증하는 기존 단언은 수정 없이
+  통과한다.
+- 기존 테스트 수정은 공개 계약이 실제로 늘어난 세 곳에만 허용한다. `TestCommandInput` 에
+  `stderrLines` 가 생겨 파싱 결과를 전량 비교하는 단언 2곳(`test 명세, command와 반복 arg를
+  입력 순서대로 파싱한다`, `equals 형식과 하이픈·빈 문자열 arg를 보존한다`)과 `usage` 문자열
+  1곳(`각 사용법 오류를 고정 message와 usage hint로 출력하고 읽기 전에 종료한다`)이다. 그 밖의
+  기존 단언을 고쳐야 통과한다면 회귀이므로 `BLOCKED` 로 보고한다.
 - `--stderr-lines 0` 실행의 stdout·stderr 바이트가 변경 전과 같다.
 - `--json` 실행의 stdout 바이트가 변경 전과 같다.
 
@@ -166,12 +171,24 @@ export interface TestCommandInput {
 ```ts
 const writeDiagnostics = (leadingBlank: boolean): void => {
   if (input.stderrLines === 0) return;
-  const diagnostics = connection.getDiagnostics();
+  let diagnostics: ProcessDiagnosticsInput;
+  try {
+    diagnostics = connection.getDiagnostics();
+  } catch {
+    return;
+  }
+  // 정보가 없는 블록은 소음이다. 설계 문서 §4.3.
+  if (diagnostics.stderr === "" && !isAbnormalExit(diagnostics)) return;
   const block = renderProcessDiagnostics(diagnostics, { maxLines: input.stderrLines });
   if (block === "") return;
   dependencies.writeStderr(leadingBlank ? `\n${block}` : block);
 };
 ```
+
+**빈 진단 생략은 모든 경로에 적용한다.** `stderr` 가 빈 문자열이고 `isAbnormalExit` 이 거짓이면
+블록에 남는 것은 `종료 코드: 0  시그널: 없음` 과 `stderr: (비어 있음)` 뿐이다. 케이스는 실패했지만
+서버는 정상 종료한 실행에서 매번 붙게 되고, 그 경우 실패 원인은 단언 진단이 이미 설명한다.
+이 판정은 렌더러가 아니라 호출부에 둔다.
 
 호출 지점 넷.
 

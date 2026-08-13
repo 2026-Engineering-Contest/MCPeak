@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canonicalJson, sha256 } from "../src/index.js";
+import { canonicalJson, deepFreeze, sha256 } from "../src/index.js";
 
 describe("canonicalJson · sha256 (generate 에서 이관)", () => {
   it("sha256은 같은 값에 항상 같은 해시를 준다", () => {
@@ -61,5 +61,70 @@ describe("canonicalJson 방어 계약", () => {
       id = "weather";
     }
     expect(() => canonicalJson(new Suite())).toThrow(TypeError);
+  });
+
+  it("Array.prototype 에 인덱스가 정의돼 있어도 hole 을 거절한다", () => {
+    // 프로토타입 체인까지 보면 hole 이 상속값으로 채워져 지문이 전역 상태에 따라 달라진다.
+    const sparse = [1, 2, 3];
+    delete sparse[1];
+    try {
+      Object.defineProperty(Array.prototype, "1", {
+        value: 99,
+        configurable: true,
+        writable: true,
+      });
+      expect(sparse[1]).toBe(99);
+      expect(() => canonicalJson(sparse)).toThrow(TypeError);
+    } finally {
+      // 되돌리지 않으면 이 프로세스의 다른 테스트 파일이 오염된다.
+      delete (Array.prototype as unknown as Record<string, unknown>)["1"];
+    }
+    expect(1 in Array.prototype).toBe(false);
+  });
+});
+
+/**
+ * validateMcpSuite 는 깊이 10000 짜리 입력을 통과시킨다(deep-and-cyclic-input.test.ts).
+ * 직렬화가 재귀였을 때는 그 깊이에서 RangeError 로 죽어서, 검증을 통과한 명세가 지문 계산에서만
+ * 죽었다. 명시적 스택으로 바꾼 이유가 이것이므로 여기서 고정한다.
+ */
+describe("canonicalJson 깊이 회귀", () => {
+  /** 깊이 n 의 {"next":...} 중첩. 기대 문자열을 직렬화기와 무관하게 따로 만든다. */
+  const deepObject = (depth: number) => {
+    let value: Record<string, unknown> = { leaf: true };
+    for (let index = 0; index < depth; index++) value = { next: value };
+    return value;
+  };
+  const expectedObject = (depth: number) =>
+    `${'{"next":'.repeat(depth)}{"leaf":true}${"}".repeat(depth)}`;
+
+  const deepArray = (depth: number) => {
+    let value: unknown[] = [0];
+    for (let index = 0; index < depth; index++) value = [value];
+    return value;
+  };
+  const expectedArray = (depth: number) => `${"[".repeat(depth)}[0]${"]".repeat(depth)}`;
+
+  it("깊이 10000 객체를 던지지 않고 직렬화한다", () => {
+    expect(canonicalJson(deepObject(10_000))).toBe(expectedObject(10_000));
+  });
+
+  it("깊이 20000 객체를 던지지 않고 직렬화한다", () => {
+    expect(canonicalJson(deepObject(20_000))).toBe(expectedObject(20_000));
+  });
+
+  it("깊이 20000 배열을 던지지 않고 직렬화한다", () => {
+    expect(canonicalJson(deepArray(20_000))).toBe(expectedArray(20_000));
+  });
+
+  it("깊이 20000 에서도 sha256 이 hex 64자를 낸다", () => {
+    expect(sha256(deepObject(20_000))).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it("깊이 20000 객체를 deepFreeze 해도 던지지 않는다", () => {
+    const deep = deepObject(20_000);
+    expect(() => deepFreeze(deep)).not.toThrow();
+    expect(Object.isFrozen(deep)).toBe(true);
+    expect(Object.isFrozen(deep.next)).toBe(true);
   });
 });

@@ -39,7 +39,9 @@ function runnerImports(source: string): string[] {
   // clause에 따옴표와 세미콜론을 허용하지 않아 앞선 import 문으로도 넘어가지 않는다.
   // export ... from 도 같이 센다. 재수출도 이 패키지가 runner에서 가져오는 심볼이기 때문이다.
   // import만 세면 canonical.ts의 재수출 한 줄로 ADR-0009의 경계를 우회할 수 있다.
-  const statement = /^(?:import|export)\s+([^"';]*?)\s+from\s+"@ohmymcp\/runner"/gm;
+  // 인용부호는 캡처해서 backreference로 짝을 맞춘다. 큰따옴표만 보면 작은따옴표로 쓴 구문이
+  // 빠져나간다. biome이 큰따옴표로 포매팅한다고 해도 경계 장치에 우회 경로를 두지 않는다.
+  const statement = /^(?:import|export)\s+([^"';]*?)\s+from\s+(["'])@ohmymcp\/runner\2/gm;
   for (const match of source.matchAll(statement)) {
     const clause = match[1] ?? "";
     const braces = clause.match(/\{([\s\S]*?)\}/);
@@ -73,6 +75,15 @@ describe("dependency boundary", () => {
   it('export ... from "@ohmymcp/runner" 구문의 심볼도 수집한다', () => {
     const source = 'export { canonicalJson, deepFreeze, sha256 } from "@ohmymcp/runner";\n';
     expect(runnerImports(source).sort()).toEqual(["canonicalJson", "deepFreeze", "sha256"]);
+  });
+
+  it("작은따옴표로 쓴 재수출도 수집한다", () => {
+    const source = "export { runSuite } from '@ohmymcp/runner';\n";
+    expect(runnerImports(source)).toContain("runSuite");
+  });
+
+  it("인용부호 짝이 맞지 않는 구문은 수집하지 않는다", () => {
+    expect(runnerImports("export { runSuite } from \"@ohmymcp/runner';\n")).toEqual([]);
   });
 
   it("목록에 없는 심볼을 재수출하면 수집 결과에 잡힌다", () => {

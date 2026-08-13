@@ -101,4 +101,22 @@ describe("suiteFingerprint", () => {
     const frozen = Object.freeze({ ...baseSuite(), approval: { fingerprint: FINGERPRINT } });
     expect(() => suiteFingerprint(frozen)).not.toThrow();
   });
+
+  it("깊이 20000 스키마를 담은 suite 에서도 지문을 낸다", () => {
+    // validateMcpSuite 가 통과시키는 깊이다. 지문 계산만 죽으면 정상 명세가 실행되지 않는다.
+    let schema: Record<string, unknown> = { type: "string" };
+    for (let depth = 0; depth < 20_000; depth++)
+      schema = { type: "object", properties: { next: schema } };
+    const suite = baseSuite();
+    suite.cases = [
+      {
+        id: "body",
+        name: "본문",
+        operation: { type: "callTool", tool: "get_weather", input: { city: "서울" } },
+        assertions: [{ type: "bodyMatchesSchema", schema }],
+      } as unknown as TestSuiteSpec["cases"][number],
+    ];
+
+    expect(suiteFingerprint(suite)).toMatch(/^[0-9a-f]{64}$/);
+  });
 });

@@ -573,11 +573,11 @@ describeSpecFinding
 ### 10.6 회귀
 
 ```
-· pnpm --filter @ohmymcp/runner test 전체 통과
+· pnpm test packages/runner 전체 통과
 · 기존 spec-validation.test.ts · schema-match.test.ts 단언 변경 0건
 ```
 
-표적 검증: `pnpm --filter @ohmymcp/runner test`
+표적 검증: `pnpm test packages/runner`
 전체 회귀: `pnpm test`, `pnpm typecheck`, `pnpm lint`
 
 ## 11. ADR

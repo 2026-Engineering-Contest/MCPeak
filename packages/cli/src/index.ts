@@ -21,6 +21,10 @@ const unavailableDependencies = {
   finalize: async (): Promise<never> => {
     throw new Error("runtime dependencies unavailable");
   },
+  renderReport: (): never => {
+    throw new Error("runtime dependencies unavailable");
+  },
+  colorEnabled: false,
   writeStdout: (text: string): boolean => process.stdout.write(text),
   writeStderr: (text: string): boolean => process.stderr.write(text),
 };
@@ -93,6 +97,9 @@ export async function run(argv: string[]): Promise<number> {
     connect: core.connectStdio,
     startRunner: runner.runSuite,
     finalize: runner.finalizeRunnerExecution,
+    renderReport: runner.renderReport,
+    // process 를 읽는 유일한 지점이다. renderReport 는 순수 함수로 남는다.
+    colorEnabled: process.stdout.isTTY === true && process.env.NO_COLOR === undefined,
     writeStdout: (text) => process.stdout.write(text),
     writeStderr: (text) => process.stderr.write(text),
   });

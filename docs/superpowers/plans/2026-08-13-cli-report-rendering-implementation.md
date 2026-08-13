@@ -480,6 +480,7 @@ colorEnabled: process.stdout.isTTY === true && process.env.NO_COLOR === undefine
 **Files**
 
 - 수정: `packages/cli/tests/cli-integration.test.ts`
+- 수정: `packages/cli/tests/generate-integration.test.ts`
 - 수정: `packages/cli/tests/dist-cli-e2e.mjs`
 
 **입력** T1과 T2의 산출 전부. 빌드된 `packages/cli/dist/cli.mjs` 가 필요하므로 반드시
@@ -501,6 +502,13 @@ colorEnabled: process.stdout.isTTY === true && process.env.NO_COLOR === undefine
 
 이 테스트가 쓰는 스위트는 `packages/cli/tests/fixtures/weather-body-assertion-failing.suite.json`
 이다. 응답 본문 단언 웨이브가 만든 파일이며 새로 만들지 않는다.
+
+**`generate-integration.test.ts` 변경**
+
+이 파일도 `test` 서브커맨드의 stdout을 `JSON.parse` 한다. 계획서 초판이 놓쳤고 T2 실행 중에
+발견해 여기에 더한다. `run([...])` 의 인자 배열 두 곳(`:154`, `:296`) 끝에 `"--json"` 을
+추가한다. `:111` 의 `JSON.parse` 는 생성된 스위트 **파일**을 읽는 것이라 손대지 않는다.
+`generate` 서브커맨드 호출에는 `--json` 을 붙이지 않는다.
 
 **`dist-cli-e2e.mjs` 변경**
 

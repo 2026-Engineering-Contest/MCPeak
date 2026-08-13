@@ -161,6 +161,7 @@ describe.sequential("generate 실제 weather-server", () => {
           pidFile,
           "--arg",
           server,
+          "--json",
         ]),
       ).toBe(1);
       const report = JSON.parse(out.mock.calls.map(([value]) => String(value)).join(""));
@@ -303,6 +304,7 @@ describe.sequential("generate 실제 weather-server", () => {
             pidFile,
             "--arg",
             server,
+            "--json",
           ]),
         ).toBe(0);
         expect(JSON.parse(outputs.join("")).summary).toEqual({

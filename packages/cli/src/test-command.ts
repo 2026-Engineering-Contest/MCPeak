@@ -13,6 +13,7 @@ export interface TestCommandInput {
   readonly suitePath: string;
   readonly command: string;
   readonly args: readonly string[];
+  readonly json: boolean;
 }
 export type CliErrorCode =
   | "CLI_USAGE"
@@ -39,6 +40,8 @@ export interface TestCommandDependencies {
   connect(options: { command: string; args: readonly string[] }): Promise<McpStdioConnection>;
   startRunner(options: RunSuiteOptions): RunnerExecution;
   finalize(options: FinalizeRunnerExecutionOptions): Promise<RunnerReport>;
+  renderReport(report: RunnerReport, options?: { color?: boolean }): string;
+  colorEnabled: boolean;
   writeStdout(text: string): void;
   writeStderr(text: string): void;
 }
@@ -96,6 +99,7 @@ export function parseTestCommand(argv: readonly string[]): TestCommandInput {
   const suitePath = argv[0] ?? "";
   if (suitePath === "") fail("테스트 명세 JSON 경로가 필요합니다.");
   let command: string | undefined;
+  let json = false;
   const args: string[] = [];
   for (let index = 1; index < argv.length; index += 1) {
     const token = argv[index] ?? "";
@@ -129,6 +133,11 @@ export function parseTestCommand(argv: readonly string[]): TestCommandInput {
         if (value.startsWith("-")) fail("`--arg` 옵션 값이 필요합니다.");
       } else value = token.slice("--arg=".length);
       args.push(value);
+    } else if (token === "--json") {
+      if (json) fail("`--json`은 한 번만 사용할 수 있습니다.");
+      json = true;
+    } else if (token.startsWith("--json=")) {
+      fail("`--json`은 값을 받지 않습니다.");
     } else if (token.startsWith("-")) fail(`지원하지 않는 test 옵션 '${token}'입니다.`);
     else fail(`추가 위치 인자 '${token}'는 허용되지 않습니다.`);
   }
@@ -138,12 +147,16 @@ export function parseTestCommand(argv: readonly string[]): TestCommandInput {
       message: "`--command` 옵션이 필요합니다.",
       hint: usage,
     });
-  return Object.freeze({ suitePath, command, args: Object.freeze(args) });
+  return Object.freeze({ suitePath, command, args: Object.freeze(args), json });
 }
 const escapeTerminalText = (value: string): string =>
   Array.from(value, (character) => {
     const codePoint = character.codePointAt(0) ?? 0;
-    return codePoint <= 0x1f || codePoint === 0x7f || codePoint === 0x2028 || codePoint === 0x2029
+    // 0x7f..0x9f 는 DEL 과 C1 제어 문자다. U+009B 를 8비트 CSI 로 해석하는 터미널이 있다.
+    return codePoint <= 0x1f ||
+      (codePoint >= 0x7f && codePoint <= 0x9f) ||
+      codePoint === 0x2028 ||
+      codePoint === 0x2029
       ? `\\u${codePoint.toString(16).padStart(4, "0")}`
       : character;
   }).join("");
@@ -312,7 +325,11 @@ export async function runCli(
     });
   }
   try {
-    dependencies.writeStdout(`${JSON.stringify(finalReport, null, 2)}\n`);
+    dependencies.writeStdout(
+      input.json
+        ? `${JSON.stringify(finalReport, null, 2)}\n`
+        : dependencies.renderReport(finalReport, { color: dependencies.colorEnabled }),
+    );
   } catch {
     return writeFailure(dependencies, {
       code: "CLI_INTERNAL_ERROR",

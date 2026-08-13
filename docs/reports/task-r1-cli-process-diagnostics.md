@@ -8,7 +8,7 @@
 ## 실행 환경
 
 ```
-pwd:  /Users/doo._.hyun/Study/Project/OhMyMCP   (worktree 아님, 저장소 루트)
+pwd:  <repository-root>   (worktree 아님, 저장소 루트)
 HEAD: f4a78b0 (chore(cli): 프로세스 진단 출력 changeset 추가)
 브랜치: feat/cli-process-diagnostics
 ```

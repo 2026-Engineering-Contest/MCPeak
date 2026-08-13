@@ -303,8 +303,10 @@ for (const [fixture, expectedStatus, expectedSummary] of [
   // examples/ 를 오염시키지 않기 위해 임시 디렉터리에 만든다.
   await writeFile(
     dying,
+    // process.exit 은 stderr 가 파이프일 때 write 버퍼를 버릴 수 있다. exitCode 만 정하고
+    // 이벤트 루프가 비어 자연 종료하게 둔다. 종료 코드는 1 그대로다.
     "process.stderr.write(\"TypeError: Cannot read properties of undefined (reading 'temp')\\n\");\n" +
-      "process.exit(1);\n",
+      "process.exitCode = 1;\n",
   );
   const suite = join(here, "fixtures", "weather-suite.json");
   try {

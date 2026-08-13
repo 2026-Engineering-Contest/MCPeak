@@ -188,6 +188,30 @@ describe("renderProcessDiagnostics", () => {
     expect(body[0]).toBe(`    ${"x".repeat(1000)} …(200자 생략)`);
   });
 
+  it("이스케이프한 결과를 기준으로 상한을 지킨다", () => {
+    // 제어문자 하나가 6자로 부풀므로 원문 기준으로 자르면 상한이 상한 노릇을 못 한다.
+    const rendered = renderProcessDiagnostics(input({ stderr: `${"\u0001".repeat(300)}\n` }), {
+      maxLines: 20,
+    });
+    const line = bodyLines(rendered)[0] ?? "";
+    const [kept = "", omission = ""] = line.slice(4).split(" …");
+    // 자르는 지점이 이스케이프 시퀀스 중간이면 안 된다.
+    expect(kept).toMatch(/^(\\u0001)+$/);
+    expect(kept.length).toBeLessThanOrEqual(1000);
+    // 300 * 6 = 1800 자 중 166 개(996자)만 남는다.
+    expect(kept.length).toBe(996);
+    expect(omission).toBe("(804자 생략)");
+  });
+
+  it("탭은 이스케이프하지 않는다", () => {
+    // 스택 트레이스의 들여쓰기다. 이스케이프하면 이 기능이 보여주려던 것이 읽기 어려워진다.
+    const rendered = renderProcessDiagnostics(input({ stderr: "\tat Foo.bar(Foo.java:42)\n" }), {
+      maxLines: 20,
+    });
+    expect(rendered).not.toContain("\\u0009");
+    expect(bodyLines(rendered)[0]).toBe("    \tat Foo.bar(Foo.java:42)");
+  });
+
   it("상한 이하의 줄은 그대로 둔다", () => {
     const rendered = renderProcessDiagnostics(input({ stderr: `${"x".repeat(1000)}\n` }), {
       maxLines: 20,

@@ -9,6 +9,7 @@ import type {
   SuiteValidationResult,
 } from "@ohmymcp/runner";
 import {
+  hasDiagnosticContent,
   isAbnormalExit,
   type ProcessDiagnosticsInput,
   renderProcessDiagnostics,
@@ -52,7 +53,7 @@ export interface TestCommandDependencies {
   writeStderr(text: string): void;
 }
 const usage =
-  "사용법: ohmymcp test <suite.json> --command <executable> [--arg <value> ...] [--stderr-lines <N>]";
+  "사용법: ohmymcp test <suite.json> --command <executable> [--arg <value> ...] [--json] [--stderr-lines <N>]";
 /** --stderr-lines 기본값. 설계 문서 §6. */
 const DEFAULT_STDERR_LINES = 20;
 const dictionary: Record<
@@ -360,24 +361,26 @@ export async function runCli(
             coreCode: core.code,
           },
     );
-    // 이 경로에만 있는 조건이다. spawn 자체가 실패하면 진단이 전부 비어 소음만 남는다. §4.3.1.
+    // 억제 조건은 writeDiagnostics 와 같은 함수를 쓴다. 규칙이 갈라지면 spawn 실패처럼 진단이
+    // 가장 필요한 경로에만 조용히 미적용된다. §4.3, §4.3.1.
     const diagnostics = core?.diagnostics;
-    if (
-      input.stderrLines > 0 &&
-      diagnostics !== undefined &&
-      (diagnostics.stderr !== "" || isAbnormalExit(diagnostics))
-    ) {
+    if (input.stderrLines > 0 && diagnostics !== undefined && hasDiagnosticContent(diagnostics)) {
       const block = renderProcessDiagnostics(diagnostics, { maxLines: input.stderrLines });
       if (block !== "") dependencies.writeStderr(`\n${block}`);
     }
     return failed;
   }
+  /**
+   * 진단 스냅샷. 읽기를 시도했다는 사실과 그 결과를 함께 담는다. `undefined` 를 센티널로 쓰면
+   * "아직 안 읽었다" 와 "읽다 실패했다" 가 섞여, 실패했을 때 다시 읽는 일이 생긴다. §4.3.1.
+   */
+  type DiagnosticsSnapshot = { readonly value: ProcessDiagnosticsInput | undefined };
   /** 진단 출력 실패가 판정을 바꾸면 안 된다. getDiagnostics 가 던지면 삼킨다. §4.3.1. */
-  const snapshotDiagnostics = (): ProcessDiagnosticsInput | undefined => {
+  const snapshotDiagnostics = (): DiagnosticsSnapshot => {
     try {
-      return connection.getDiagnostics();
+      return { value: connection.getDiagnostics() };
     } catch {
-      return undefined;
+      return { value: undefined };
     }
   };
   /**
@@ -386,12 +389,14 @@ export async function runCli(
    * snapshot 을 주면 그 값을 쓴다. 우리가 프로세스를 정리한 뒤의 상태를 서버 탓으로 보고하지
    * 않기 위해서다(설계 문서 §4.3).
    */
-  const writeDiagnostics = (snapshot?: ProcessDiagnosticsInput): void => {
+  const writeDiagnostics = (snapshot?: DiagnosticsSnapshot): void => {
     if (input.stderrLines === 0) return;
-    const diagnostics = snapshot ?? snapshotDiagnostics();
+    // 스냅샷을 받았으면 그 결과가 전부다. 실패했더라도 다시 읽지 않는다. 다시 읽으면 우리가
+    // 프로세스를 정리한 뒤의 상태를 서버 탓으로 보고하게 된다.
+    const diagnostics = (snapshot ?? snapshotDiagnostics()).value;
     if (diagnostics === undefined) return;
     // 정보가 없는 블록은 소음이다. 설계 문서 §4.3. 판정은 렌더러가 아니라 여기에 둔다.
-    if (diagnostics.stderr === "" && !isAbnormalExit(diagnostics)) return;
+    if (!hasDiagnosticContent(diagnostics)) return;
     const block = renderProcessDiagnostics(diagnostics, { maxLines: input.stderrLines });
     if (block === "") return;
     dependencies.writeStderr(`\n${block}`);
@@ -444,7 +449,10 @@ export async function runCli(
   }
   const settled = snapshotDiagnostics();
   // 전부 통과여도 비정상 종료면 쓴다. 종료 경로의 결함을 숨기지 않는다. 설계 문서 §4.3.
-  if (finalReport.status !== "passed" || (settled !== undefined && isAbnormalExit(settled)))
+  if (
+    finalReport.status !== "passed" ||
+    (settled.value !== undefined && isAbnormalExit(settled.value))
+  )
     writeDiagnostics(settled);
   return finalReport.status === "passed" ? 0 : 1;
 }

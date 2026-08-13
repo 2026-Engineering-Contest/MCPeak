@@ -16,14 +16,30 @@ export interface RenderProcessDiagnosticsOptions {
   readonly maxLines: number;
 }
 
+/** TAB. 이 모듈만 이스케이프 대상에서 빼는 문자다. 아래 escapeTokens 주석에 근거가 있다. */
+const TAB = 0x09;
+
 /**
- * 터미널 제어 문자를 무해한 문자열로 바꾼다. 설계 문서 §5.5.
- * packages/runner/src/reporter.ts:38 및 packages/cli/src/test-command.ts:143 과 같은 값이다.
- * 그 함수들을 import 하지 않고 사본을 둔다. 근거는 ADR-0013 과 같다.
+ * 터미널 제어 문자를 무해한 문자열로 바꾼다. 문자 하나가 토큰 하나가 된다. 설계 문서 §5.5.
+ *
+ * `packages/runner/src/reporter.ts` 의 `escapeTerminalText`,
+ * `packages/cli/src/test-command.ts` 의 `escapeTerminalText` 와 같은 계열이다. 그 함수들을
+ * import 하지 않고 사본을 두는 근거는 ADR-0013 과 같다. (줄 번호로 가리키면 금방 낡으므로
+ * 심볼 이름으로 가리킨다.)
+ *
+ * **다만 이 사본만 TAB(0x09)을 이스케이프하지 않는다.** 다른 두 사본은 우리가 만든 메시지
+ * 문자열만 다루므로 TAB 이 들어올 일이 없다. 이 모듈은 서버 stderr 를 그대로 그리는데, Java 의
+ * `\tat com.example.Foo.bar(Foo.java:42)` 나 Go 패닉 트레이스의 파일·줄 행이 전부 TAB
+ * 들여쓰기다. 그것을 `	` 로 바꾸면 이 기능이 보여주려던 스택 트레이스가 도리어 읽기
+ * 어려워진다. TAB 은 커서를 옮길 뿐이라 터미널 주입 벡터가 아니다.
+ *
+ * 문자열이 아니라 토큰 배열을 돌려주는 이유는 자를 때 이스케이프 시퀀스 중간을 끊지 않기
+ * 위해서다. `clampTokens` 를 봐라.
  */
-const escapeTerminalText = (value: string): string =>
-  Array.from(value, (character) => {
+function escapeTokens(value: string): readonly string[] {
+  return Array.from(value, (character) => {
     const codePoint = character.codePointAt(0) ?? 0;
+    if (codePoint === TAB) return character;
     // 0x7f..0x9f 는 DEL 과 C1 제어 문자다. U+009B 를 8비트 CSI 로 해석하는 터미널이 있다.
     return codePoint <= 0x1f ||
       (codePoint >= 0x7f && codePoint <= 0x9f) ||
@@ -31,7 +47,8 @@ const escapeTerminalText = (value: string): string =>
       codePoint === 0x2029
       ? `\\u${codePoint.toString(16).padStart(4, "0")}`
       : character;
-  }).join("");
+  });
+}
 
 /**
  * 우리 종료 절차가 보내는 시그널. `packages/core/src/lifecycle.ts` 가 stdin EOF 뒤
@@ -57,6 +74,18 @@ export function isAbnormalExit(diagnostics: ProcessDiagnosticsInput): boolean {
 }
 
 /**
+ * 블록에 담을 내용이 있는지 판정한다. 설계 문서 §4.3 의 "진단에 내용이 없으면 쓰지 않는다".
+ * stderr 가 비고 비정상 종료도 아니면 남는 것은 `종료 코드: 0  시그널: 없음` 과
+ * `stderr: (비어 있음)` 뿐이라 정보량이 0이다.
+ *
+ * 이 판정을 호출부마다 다시 쓰지 않고 여기 한 곳에 둔다. 억제 규칙이 갈라지면 진단이 가장
+ * 필요한 경로에만 조용히 미적용되는 일이 생긴다.
+ */
+export function hasDiagnosticContent(diagnostics: ProcessDiagnosticsInput): boolean {
+  return diagnostics.stderr !== "" || isAbnormalExit(diagnostics);
+}
+
+/**
  * stderr 를 줄로 나눈다. 설계 문서 §5.4.
  * 개행 하나로 끝나는 경우에 생기는 마지막 빈 줄만 하나 버린다. 그 외의 빈 줄은 정보다.
  */
@@ -68,17 +97,33 @@ function splitLines(stderr: string): readonly string[] {
 
 /**
  * 한 줄에 표시할 문자 수 상한. 구조화 로거는 크래시마다 수십 KB JSON 을 한 줄로 뱉는다.
- * 줄 수만 제한하면 그 한 줄이 통째로 터미널에 쏟아지고, 이스케이프가 제어문자마다 6배로
- * 부풀린다. 1000자면 스택 프레임 한 줄과 긴 경로를 담고도 터미널 몇 줄에 들어간다.
+ * 줄 수만 제한하면 그 한 줄이 통째로 터미널에 쏟아진다. 1000자면 스택 프레임 한 줄과 긴 경로를
+ * 담고도 터미널 몇 줄에 들어간다.
  */
 const MAX_LINE_CHARACTERS = 1000;
 
-/** 상한을 넘는 줄을 자르고 생략한 문자 수를 알린다. 이스케이프 전 원문 기준이다. 설계 문서 §5.4. */
-function clampLine(line: string): string {
-  const characters = Array.from(line);
-  if (characters.length <= MAX_LINE_CHARACTERS) return line;
-  const omitted = characters.length - MAX_LINE_CHARACTERS;
-  return `${characters.slice(0, MAX_LINE_CHARACTERS).join("")} …(${omitted}자 생략)`;
+/**
+ * 상한을 넘는 줄을 자르고 생략한 문자 수를 알린다. 설계 문서 §5.4.
+ *
+ * **이스케이프 뒤에 자른다.** 이스케이프는 제어문자 하나를 `\uXXXX` 6자로 부풀리므로, 원문
+ * 기준으로 자르면 상한이 상한 노릇을 못 한다. 제어문자로 채운 1000자가 6000자가 된다.
+ * 그래서 세는 단위도 이스케이프된 문자다.
+ *
+ * 자르는 지점이 `	` 같은 시퀀스 중간이 되면 안 되므로 문자열이 아니라 토큰 배열을 받는다.
+ * 토큰 하나는 원문 문자 하나에 대응하고 절대 쪼개지 않는다.
+ */
+function clampTokens(tokens: readonly string[]): string {
+  let total = 0;
+  for (const token of tokens) total += token.length;
+  if (total <= MAX_LINE_CHARACTERS) return tokens.join("");
+  let kept = 0;
+  const head: string[] = [];
+  for (const token of tokens) {
+    if (kept + token.length > MAX_LINE_CHARACTERS) break;
+    head.push(token);
+    kept += token.length;
+  }
+  return `${head.join("")} …(${total - kept}자 생략)`;
 }
 
 /**
@@ -109,6 +154,7 @@ export function renderProcessDiagnostics(
   if (diagnostics.stderrTruncated) notes.push("앞부분이 수집 상한으로 잘렸습니다");
 
   // 이스케이프는 줄을 나눈 뒤 각 줄에 적용한다. 개행이 이스케이프되면 줄 구조가 뭉개진다.
-  const body = shown.map((line) => `    ${escapeTerminalText(clampLine(line))}\n`).join("");
+  // 자르기는 이스케이프 다음이다. 근거는 clampTokens 주석에 있다.
+  const body = shown.map((line) => `    ${clampTokens(escapeTokens(line))}\n`).join("");
   return `${head}  stderr (${notes.join(", ")}):\n${body}`;
 }

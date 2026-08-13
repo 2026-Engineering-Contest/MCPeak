@@ -8,7 +8,7 @@
 ## 실행 환경
 
 ```
-pwd:  /Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/ohmymcp-cli-process-diagnostics
+pwd:  <repository-root>
 HEAD: e5f2f7225da5f987db2269c16181e22f2b18d1e8
 브랜치: feat/cli-process-diagnostics
 ```
@@ -54,7 +54,7 @@ HEAD: e5f2f7225da5f987db2269c16181e22f2b18d1e8
 ```
 $ pnpm vitest run packages/cli/tests/process-diagnostics.test.ts
 
- RUN  v4.1.10 /Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/ohmymcp-cli-process-diagnostics
+ RUN  v4.1.10 <repository-root>
 
  Test Files  1 passed (1)
       Tests  20 passed (20)

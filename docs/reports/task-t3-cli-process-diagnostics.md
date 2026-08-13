@@ -8,7 +8,7 @@
 ## 실행 환경
 
 ```
-pwd:  /Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/ohmymcp-cli-process-diagnostics
+pwd:  <repository-root>
 HEAD: bd99647 (docs(cli): T2 통합 SHA를 대장에 기록한다)
 브랜치: feat/cli-process-diagnostics
 ```

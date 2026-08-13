@@ -247,7 +247,9 @@ describe.sequential("CLI 실제 weather-server", () => {
     const runDeadServer = async (extra: readonly string[]) => {
       const dir = await mkdtemp(join(tmpdir(), "ohmymcp-cli-"));
       const script = join(dir, "dies.mjs");
-      await writeFile(script, 'process.stderr.write("BOOT_MARKER\\n");\nprocess.exit(1);\n');
+      // process.exit 은 stderr 가 파이프일 때 write 버퍼를 버릴 수 있다. exitCode 만 정하고
+      // 이벤트 루프가 비어 자연 종료하게 둔다. 종료 코드는 1 그대로다.
+      await writeFile(script, 'process.stderr.write("BOOT_MARKER\\n");\nprocess.exitCode = 1;\n');
       const out = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
       const err = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
       try {
@@ -278,7 +280,10 @@ describe.sequential("CLI 실제 weather-server", () => {
     expect(withoutBlock.code).toBe(1);
     // stdout 은 보고서 전용 채널이다. 옵션이 바이트를 바꾸면 안 된다.
     expect(withoutBlock.stdout).toBe(withBlock.stdout);
-    expect(withoutBlock.stderr).toBe("");
+    // weather-server 는 정상 종료하고 stderr 도 비어서 기본 실행에도 블록이 없어야 한다.
+    // 옵션 쪽만 보면 빈 진단이 잘못 붙어도 통과한다.
+    expect(withBlock.stderr).toBe("");
+    expect(withoutBlock.stderr).toBe(withBlock.stderr);
     // 통과 케이스만으로는 조건 판정이 잘못돼 안 붙은 것과 구분되지 않는다. 붙는 쪽도 함께 본다.
     const deadDefault = await runDeadServer([]);
     const deadSilent = await runDeadServer(["--stderr-lines", "0"]);

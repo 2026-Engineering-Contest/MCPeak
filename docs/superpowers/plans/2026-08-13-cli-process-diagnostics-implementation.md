@@ -362,11 +362,11 @@ git status --short
 를 실행한 뒤 그 경로로 세션을 옮겨라. 이어서 루트의 로컬 문서를 worktree 로 복사해라
 (gitignore 대상이라 worktree 에 따라오지 않는다).
 
-  cp /Users/doo._.hyun/Study/Project/OhMyMCP/ROADMAP.local.md .claude/worktrees/ohmymcp-cli-process-diagnostics/ 2>/dev/null || true
-  cp /Users/doo._.hyun/Study/Project/OhMyMCP/CLAUDE.local.md .claude/worktrees/ohmymcp-cli-process-diagnostics/ 2>/dev/null || true
+  cp ROADMAP.local.md .claude/worktrees/ohmymcp-cli-process-diagnostics/ 2>/dev/null || true
+  cp CLAUDE.local.md .claude/worktrees/ohmymcp-cli-process-diagnostics/ 2>/dev/null || true
 
 진입 후 아래를 확인하고, 하나라도 어긋나면 중단하고 BLOCKED 로 보고해라.
-  - pwd 가 /Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/ohmymcp-cli-process-diagnostics 인지
+  - pwd 가 <repository-root>/.claude/worktrees/ohmymcp-cli-process-diagnostics 인지
   - git log --oneline -1 이 루트에서 본 기점 커밋과 같은지
   - docs/superpowers/specs/2026-08-13-cli-process-diagnostics-design.md 와
     docs/superpowers/plans/2026-08-13-cli-process-diagnostics-implementation.md 가 존재하는지

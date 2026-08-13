@@ -171,7 +171,7 @@ describe("runCli", () => {
       expect(await runCli(argv, d.value)).toBe(1);
       expect(d.writes.out).toEqual([]);
       expect(d.writes.err.join("")).toBe(
-        `오류 [CLI_USAGE]: ${message}\n해결: 사용법: ohmymcp test <suite.json> --command <executable> [--arg <value> ...] [--stderr-lines <N>]\n`,
+        `오류 [CLI_USAGE]: ${message}\n해결: 사용법: ohmymcp test <suite.json> --command <executable> [--arg <value> ...] [--json] [--stderr-lines <N>]\n`,
       );
       expect(d.value.readFile).not.toHaveBeenCalled();
       expect(d.value.connect).not.toHaveBeenCalled();
@@ -559,6 +559,26 @@ describe("runCli", () => {
     const text = d.writes.err.join("");
     expect(text).toContain("종료 코드: 없음  시그널: 없음");
     expect(text).not.toContain("SIGKILL");
+  });
+  it("실행 실패 경로의 사전 스냅샷이 실패하면 다시 읽지 않는다", async () => {
+    const d = deps({
+      startRunner: () => {
+        throw new Error("start");
+      },
+    });
+    // 첫 호출(forceClose 이전)은 던지고, 두 번째는 우리가 죽인 뒤의 값을 준다.
+    // 다시 읽으면 그 값이 출력돼 서버 탓으로 오인시킨다.
+    let calls = 0;
+    d.conn.getDiagnostics = () => {
+      calls += 1;
+      if (calls === 1) throw new Error("diagnostics unavailable");
+      return diagnostics({ exitCode: null, signal: "SIGKILL", stderr: "boom\n" });
+    };
+    expect(await runCli(["test", "x.json", "--command", "node"], d.value)).toBe(1);
+    const text = d.writes.err.join("");
+    expect(text).toContain("RUNNER_EXECUTION_FAILED");
+    expect(text).not.toContain("서버 프로세스 진단");
+    expect(calls).toBe(1);
   });
   it("RUNNER_FINALIZATION_FAILED 경로에도 붙인다", async () => {
     const d = deps({

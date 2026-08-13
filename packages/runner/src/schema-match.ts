@@ -45,24 +45,42 @@ const byCodeUnit = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0
 /** 문자열 길이는 코드 포인트로 센다. JSON Schema의 minLength 정의가 코드 포인트 기준이다. */
 const charCount = (value: string): number => Array.from(value).length;
 
+/**
+ * 깊은 비교. 재귀가 아니라 명시적 비교 프레임 스택으로 순회한다.
+ * const와 enum은 사용자가 적은 값과 서버 응답을 통째로 맞대므로 깊이가 제한되지 않는다.
+ * 재귀로 두면 깊이 수천에서 스택이 넘쳐 이 파일이 내세우는 스택 안전 계약이 깨진다.
+ * 키 정렬과 단락 판정(길이 불일치, 키 이름 불일치는 즉시 false)은 재귀판과 같다.
+ */
 function jsonEqual(left: JsonValue, right: JsonValue): boolean {
-  if (left === right) return true;
-  if (Array.isArray(left) || Array.isArray(right))
-    return (
-      Array.isArray(left) &&
-      Array.isArray(right) &&
-      left.length === right.length &&
-      left.every((v, i) => jsonEqual(v, right[i] as JsonValue))
-    );
-  if (plainObject(left) && plainObject(right)) {
-    const l = Object.keys(left).sort();
-    const r = Object.keys(right).sort();
-    return (
-      l.length === r.length &&
-      l.every((k, i) => k === r[i] && jsonEqual(left[k] as JsonValue, right[k] as JsonValue))
-    );
+  const pairs: { left: JsonValue; right: JsonValue }[] = [{ left, right }];
+  while (pairs.length > 0) {
+    const pair = pairs.pop();
+    if (pair === undefined) break;
+    const { left: l, right: r } = pair;
+    if (l === r) continue;
+
+    if (Array.isArray(l) || Array.isArray(r)) {
+      if (!Array.isArray(l) || !Array.isArray(r) || l.length !== r.length) return false;
+      for (let index = l.length - 1; index >= 0; index--)
+        pairs.push({ left: l[index] as JsonValue, right: r[index] as JsonValue });
+      continue;
+    }
+
+    if (plainObject(l) && plainObject(r)) {
+      const leftKeys = Object.keys(l).sort();
+      const rightKeys = Object.keys(r).sort();
+      if (leftKeys.length !== rightKeys.length) return false;
+      for (let index = leftKeys.length - 1; index >= 0; index--) {
+        const key = leftKeys[index];
+        if (key === undefined || key !== rightKeys[index]) return false;
+        pairs.push({ left: l[key] as JsonValue, right: r[key] as JsonValue });
+      }
+      continue;
+    }
+
+    return false;
   }
-  return false;
+  return true;
 }
 
 /** 선언한 type이 값과 맞는지 본다. number는 유한수만 인정한다. */

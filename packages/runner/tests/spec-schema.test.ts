@@ -148,6 +148,18 @@ describe("MCP_SUITE_JSON_SCHEMA", () => {
     expect(evaluateSchema(MCP_SUITE_JSON_SCHEMA, fixture).valid).toBe(true);
   });
 
+  it("안전 정수 상한을 두 계약이 같이 본다", () => {
+    // 런타임 검증은 Number.isSafeInteger를 쓴다. 공개 스키마에 maximum이 없으면
+    // 2^53이 공개 스키마만 통과해 두 계약이 갈린다.
+    const beyond = bodyFixture({ type: "array", minItems: 2 ** 53 });
+    expect(validateMcpSuite(beyond).valid).toBe(false);
+    expect(evaluateSchema(MCP_SUITE_JSON_SCHEMA, beyond).valid).toBe(false);
+
+    const boundary = bodyFixture({ type: "array", minItems: Number.MAX_SAFE_INTEGER });
+    expect(validateMcpSuite(boundary).valid).toBe(true);
+    expect(evaluateSchema(MCP_SUITE_JSON_SCHEMA, boundary).valid).toBe(true);
+  });
+
   it("타입 짝 요구는 대조 대상이 아니다", () => {
     // 설계 문서 §10.5: 키워드와 type의 짝 요구는 if/then이 필요해 공개 JSON Schema에
     // 표현하지 않는다. validator만 잡고 evaluator는 통과시키는 의도적 불일치다.

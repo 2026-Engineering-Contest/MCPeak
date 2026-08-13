@@ -50,7 +50,9 @@ export const MCP_SUITE_JSON_SCHEMA: ReadonlyJsonObject = freeze<ReadonlyJsonObje
       required: ["type", "expected"],
       properties: { type: { const: "isError" }, expected: { type: "boolean" } },
     },
-    nonNegativeInteger: { type: "integer", minimum: 0 },
+    // 런타임 검증이 Number.isSafeInteger를 쓰므로 상한을 함께 적는다.
+    // 없으면 2^53 이상이 공개 스키마만 통과해 두 계약이 갈린다.
+    nonNegativeInteger: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
     responseSchema: {
       type: "object",
       additionalProperties: false,

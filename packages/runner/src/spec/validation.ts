@@ -175,15 +175,36 @@ function validateResponseSchema(
   rootPath: string,
   issues: SuiteValidationIssue[],
 ): void {
-  const frames: { value: unknown; path: string }[] = [{ value: root, path: rootPath }];
+  type Frame = { type: "visit"; value: unknown; path: string } | { type: "leave"; value: object };
+  const frames: Frame[] = [{ type: "visit", value: root, path: rootPath }];
+  // 지금 내려가고 있는 조상 스키마들. json()과 같은 방식으로 순환을 잡는다.
+  const active = new Set<object>();
+
   while (frames.length > 0) {
     const frame = frames.pop();
     if (frame === undefined) break;
+    if (frame.type === "leave") {
+      active.delete(frame.value);
+      continue;
+    }
     const { value, path } = frame;
     if (!plain(value)) {
       issue(issues, "INVALID_TYPE", path);
       continue;
     }
+    // 순환하는 스키마는 프레임이 무한히 늘고 경로 문자열이 계속 길어져 결국 프로세스가 죽는다.
+    if (active.has(value)) {
+      issueWith(
+        issues,
+        "INVALID_JSON_VALUE",
+        path,
+        "스키마가 자기 자신을 참조해 순환합니다.",
+        "순환 참조를 없애세요. 명세는 JSON으로 직렬화할 수 있어야 합니다.",
+      );
+      continue;
+    }
+    active.add(value);
+    frames.push({ type: "leave", value });
     // 빈 스키마는 어떤 응답에도 위반을 내지 않아 영원히 통과하는 단언을 만든다.
     if (Object.keys(value).length === 0) {
       issueWith(
@@ -270,9 +291,10 @@ function validateResponseSchema(
       );
 
     // 역순으로 push해 pop 순서가 properties, additionalProperties, items 가 되게 한다.
-    if ("items" in value) frames.push({ value: value.items, path: `${path}.items` });
+    if ("items" in value) frames.push({ type: "visit", value: value.items, path: `${path}.items` });
     if ("additionalProperties" in value && typeof value.additionalProperties !== "boolean")
       frames.push({
+        type: "visit",
         value: value.additionalProperties,
         path: `${path}.additionalProperties`,
       });
@@ -292,6 +314,7 @@ function validateResponseSchema(
           const key = keys[index];
           if (key !== undefined)
             frames.push({
+              type: "visit",
               value: (value.properties as Record<string, unknown>)[key],
               path: `${path}.properties.${key}`,
             });

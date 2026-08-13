@@ -1,9 +1,24 @@
 import type { McpStdioConnection } from "@ohmymcp/core";
 import type { RunnerExecution, RunnerReport, TestSuiteSpec } from "@ohmymcp/runner";
+import { suiteFingerprint } from "@ohmymcp/runner";
 import { describe, expect, it, vi } from "vitest";
 import { parseTestCommand, runCli, type TestCommandDependencies } from "../src/test-command.js";
 
 const suite: TestSuiteSpec = { schemaVersion: 1, id: "suite", name: "Suite", cases: [] };
+/**
+ * 지문은 상수로 박지 않고 계산해서 쓴다. 위 명세 리터럴이 바뀌면 단언도 같이 깨져야 한다.
+ * approval 은 계산에서 제외되므로 approval 을 붙인 명세도 같은 값을 낸다.
+ */
+const fingerprint = suiteFingerprint(suite);
+const WRONG_FINGERPRINT = "0".repeat(64);
+const approvedSuite = (approvalFingerprint: string): TestSuiteSpec => ({
+  ...suite,
+  approval: { fingerprint: approvalFingerprint },
+});
+/** 지문이 없는 기본 명세로 --json 을 돌렸을 때의 spec 블록. */
+const absentSpec = { approval: "absent", fingerprint };
+const jsonOut = (value: RunnerReport, spec: unknown = absentSpec): string =>
+  `${JSON.stringify({ ...value, spec }, null, 2)}\n`;
 const report = (status: RunnerReport["status"] = "passed"): RunnerReport => ({
   schemaVersion: 1,
   suite: { id: "suite", name: "Suite" },
@@ -263,7 +278,7 @@ describe("runCli", () => {
       expect(await runCli(["test", "x.json", "--command", "node", "--json"], d.value)).toBe(
         status === "passed" ? 0 : 1,
       );
-      expect(d.writes.out.join("")).toBe(`${JSON.stringify(report(status), null, 2)}\n`);
+      expect(d.writes.out.join("")).toBe(jsonOut(report(status)));
       expect(d.writes.err).toEqual([]);
     }
   });
@@ -276,7 +291,7 @@ describe("runCli", () => {
   it("--json이면 기존 JSON 바이트를 쓴다", async () => {
     const d = deps();
     await runCli(["test", "x.json", "--command", "node", "--json"], d.value);
-    expect(d.writes.out.join("")).toBe(`${JSON.stringify(report(), null, 2)}\n`);
+    expect(d.writes.out.join("")).toBe(jsonOut(report()));
   });
   it("--json이면 renderReport를 호출하지 않는다", async () => {
     const d = deps();
@@ -523,7 +538,7 @@ describe("runCli", () => {
     const d = deps({ finalize: async () => report("failed") });
     d.conn.getDiagnostics = () => diagnostics({ exitCode: 1, stderr: "boom\n" });
     await runCli(["test", "x.json", "--command", "node", "--json"], d.value);
-    expect(d.writes.out.join("")).toBe(`${JSON.stringify(report("failed"), null, 2)}\n`);
+    expect(d.writes.out.join("")).toBe(jsonOut(report("failed")));
     expect(() => JSON.parse(d.writes.out.join(""))).not.toThrow();
     expect(d.writes.err.join("")).toContain("서버 프로세스 진단");
   });
@@ -653,5 +668,128 @@ describe("runCli", () => {
     failed.conn.getDiagnostics = () => diagnostics({ exitCode: 1, stderr: "boom\n" });
     expect(await runCli(["test", "x.json", "--command", "node"], failed.value)).toBe(1);
     expect(failed.writes.err.join("")).toContain("서버 프로세스 진단");
+  });
+});
+
+describe("승인 지문 대조 표시", () => {
+  /** 지문 시나리오는 validateSuite 가 돌려주는 명세에 approval 을 붙이거나 빼서 만든다. */
+  const specDeps = (value: TestSuiteSpec, status: RunnerReport["status"] = "passed") =>
+    deps({
+      validateSuite: vi.fn(() => ({ valid: true as const, value })),
+      finalize: async () => report(status),
+    });
+  const runText = async (value: TestSuiteSpec, status: RunnerReport["status"] = "passed") => {
+    const d = specDeps(value, status);
+    const code = await runCli(["test", "x.json", "--command", "node"], d.value);
+    return { code, out: d.writes.out.join(""), err: d.writes.err.join("") };
+  };
+
+  it("전부 통과 + 지문 일치면 stdout 에 명세 줄이 없다", async () => {
+    expect((await runText(approvedSuite(fingerprint))).out).not.toContain("명세:");
+  });
+  it("전부 통과 + 지문 없음이면 stdout 에 명세 줄이 없다", async () => {
+    expect((await runText(suite)).out).not.toContain("명세:");
+  });
+  it("전부 통과 + 지문 불일치면 변경 사실을 알린다", async () => {
+    expect((await runText(approvedSuite(WRONG_FINGERPRINT))).out).toContain(
+      "승인 시점 이후 변경됨",
+    );
+  });
+  it("실패가 있으면 지문이 일치해도 알린다", async () => {
+    expect((await runText(approvedSuite(fingerprint), "failed")).out).toContain("승인 시점과 동일");
+  });
+  it("실패가 있으면 지문이 없다는 사실도 알린다", async () => {
+    expect((await runText(suite, "failed")).out).toContain("승인 지문이 없습니다 (미고정)");
+  });
+  it("실패 + 지문 불일치면 승인 값과 현재 값을 각각 앞 12자로 찍는다", async () => {
+    const { out } = await runText(approvedSuite(WRONG_FINGERPRINT), "failed");
+    expect(out).toContain(
+      `승인 ${WRONG_FINGERPRINT.slice(0, 12)}…   현재 ${fingerprint.slice(0, 12)}…`,
+    );
+    expect(out).not.toContain(WRONG_FINGERPRINT);
+    expect(out).not.toContain(fingerprint);
+  });
+  it("명세 줄은 보고서 뒤에 오고 그 앞에 빈 줄이 하나 있다", async () => {
+    const { out } = await runText(suite, "failed");
+    expect(out.startsWith(RENDERED)).toBe(true);
+    expect(out).toBe(
+      `${RENDERED}\n명세: 승인 지문이 없습니다 (미고정)\n  → ohmymcp generate 로 승인한 명세가 아니거나 승인 이전 버전으로 만든 파일입니다.\n`,
+    );
+  });
+  it("명세 줄은 stdout 이고 stderr 에 없다", async () => {
+    const { err } = await runText(approvedSuite(WRONG_FINGERPRINT), "failed");
+    expect(err).not.toContain("명세:");
+  });
+});
+
+describe("승인 지문은 판정을 바꾸지 않는다", () => {
+  const run = async (value: TestSuiteSpec, status: RunnerReport["status"]) =>
+    runCli(
+      ["test", "x.json", "--command", "node"],
+      deps({
+        validateSuite: vi.fn(() => ({ valid: true as const, value })),
+        finalize: async () => report(status),
+      }).value,
+    );
+
+  it("지문 불일치 + 전부 통과면 종료 코드가 0 이다", async () => {
+    expect(await run(approvedSuite(WRONG_FINGERPRINT), "passed")).toBe(0);
+  });
+  it("지문 일치 + 실패가 있으면 종료 코드가 1 이다", async () => {
+    expect(await run(approvedSuite(fingerprint), "failed")).toBe(1);
+  });
+  it("같은 케이스 결과에서 지문 상태만 바꿔도 종료 코드가 같다", async () => {
+    for (const status of ["passed", "failed"] as const) {
+      const codes = [
+        await run(suite, status),
+        await run(approvedSuite(fingerprint), status),
+        await run(approvedSuite(WRONG_FINGERPRINT), status),
+      ];
+      expect(new Set(codes).size).toBe(1);
+    }
+  });
+});
+
+describe("승인 지문의 --json 출력", () => {
+  const runJson = async (value: TestSuiteSpec, status: RunnerReport["status"] = "passed") => {
+    const d = deps({
+      validateSuite: vi.fn(() => ({ valid: true as const, value })),
+      finalize: async () => report(status),
+    });
+    await runCli(["test", "x.json", "--command", "node", "--json"], d.value);
+    const text = d.writes.out.join("");
+    return { text, parsed: JSON.parse(text) };
+  };
+
+  it("spec.approval 이 세 상태 중 하나다", async () => {
+    for (const [value, expected] of [
+      [suite, "absent"],
+      [approvedSuite(fingerprint), "matched"],
+      [approvedSuite(WRONG_FINGERPRINT), "mismatched"],
+    ] as const)
+      expect((await runJson(value)).parsed.spec.approval).toBe(expected);
+  });
+  it("전부 통과 + 일치여도 spec 키가 있다", async () => {
+    const { parsed } = await runJson(approvedSuite(fingerprint));
+    expect(parsed.spec).toEqual({
+      approval: "matched",
+      fingerprint,
+      approvedFingerprint: fingerprint,
+    });
+  });
+  it("absent 일 때 approvedFingerprint 키가 없다", async () => {
+    const { parsed } = await runJson(suite);
+    expect(Object.hasOwn(parsed.spec, "approvedFingerprint")).toBe(false);
+  });
+  it("spec.fingerprint 가 64자 hex 다", async () => {
+    expect((await runJson(suite)).parsed.spec.fingerprint).toMatch(/^[0-9a-f]{64}$/);
+  });
+  it("기존 키를 그대로 둔다", async () => {
+    const { parsed } = await runJson(approvedSuite(fingerprint), "failed");
+    const { spec: _spec, ...rest } = parsed;
+    expect(rest).toEqual(report("failed"));
+  });
+  it("--json 이면 명세 텍스트 줄을 쓰지 않는다", async () => {
+    expect((await runJson(approvedSuite(WRONG_FINGERPRINT), "failed")).text).not.toContain("명세:");
   });
 });

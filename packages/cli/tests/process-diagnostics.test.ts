@@ -25,6 +25,17 @@ describe("isAbnormalExit", () => {
     expect(isAbnormalExit(input({ exitCode: null, signal: "SIGSEGV" }))).toBe(true);
   });
 
+  it("우리가 보내는 종료 시그널은 비정상이 아니다", () => {
+    // core 의 lifecycle 이 stdin EOF 뒤 유예를 두고 보내는 시그널이다. 멀쩡한 서버도 받는다.
+    for (const signal of ["SIGTERM", "SIGKILL"])
+      expect(isAbnormalExit(input({ exitCode: null, signal }))).toBe(false);
+  });
+
+  it("우리가 보내지 않는 시그널은 비정상이다", () => {
+    for (const signal of ["SIGSEGV", "SIGABRT", "SIGBUS"])
+      expect(isAbnormalExit(input({ exitCode: null, signal }))).toBe(true);
+  });
+
   it("exitCode 가 0 이 아니면 참이다", () => {
     expect(isAbnormalExit(input({ exitCode: 1, signal: null }))).toBe(true);
   });
@@ -97,7 +108,7 @@ describe("renderProcessDiagnostics", () => {
       input({ stderr: manyLines(3), stderrTruncated: true, exitCode: 1 }),
       { maxLines: 20 },
     );
-    expect(rendered).toContain("  stderr (전체, 앞부분이 수집 상한으로 잘렸습니다):\n");
+    expect(rendered).toContain("  stderr (수집된 전체, 앞부분이 수집 상한으로 잘렸습니다):\n");
   });
 
   it("두 잘림이 동시에 발생하면 둘 다 적는다", () => {
@@ -166,6 +177,23 @@ describe("renderProcessDiagnostics", () => {
     });
     expect(rendered).not.toContain("\\u000a");
     expect(bodyLines(rendered)).toEqual(["    a", "    b"]);
+  });
+
+  it("긴 줄을 잘라 생략 표시를 붙인다", () => {
+    const rendered = renderProcessDiagnostics(input({ stderr: `${"x".repeat(1200)}\n` }), {
+      maxLines: 20,
+    });
+    const body = bodyLines(rendered);
+    expect(body).toHaveLength(1);
+    expect(body[0]).toBe(`    ${"x".repeat(1000)} …(200자 생략)`);
+  });
+
+  it("상한 이하의 줄은 그대로 둔다", () => {
+    const rendered = renderProcessDiagnostics(input({ stderr: `${"x".repeat(1000)}\n` }), {
+      maxLines: 20,
+    });
+    expect(bodyLines(rendered)[0]).toBe(`    ${"x".repeat(1000)}`);
+    expect(rendered).not.toContain("생략");
   });
 
   it("항상 개행으로 끝난다", () => {

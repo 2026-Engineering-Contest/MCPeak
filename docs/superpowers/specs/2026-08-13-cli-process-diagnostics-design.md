@@ -119,8 +119,9 @@ export interface RenderProcessDiagnosticsOptions {
 }
 
 /**
- * 프로세스가 비정상 종료했는지 판정한다.
- * signal 이 있거나, exitCode 가 0 이 아닌 값으로 확정된 경우다.
+ * 프로세스가 비정상 종료했는지 판정한다. 판정 규칙은 §4.3 에 있다.
+ * 우리가 보내는 종료 시그널(SIGTERM·SIGKILL)은 비정상이 아니고, 그 밖의 시그널이거나
+ * exitCode 가 0 이 아닌 값으로 확정된 경우가 비정상이다.
  * exitCode 가 null 이면 아직 종료하지 않았다는 뜻이므로 비정상이 아니다.
  */
 export function isAbnormalExit(diagnostics: ProcessDiagnosticsInput): boolean;
@@ -187,6 +188,28 @@ Runner 설계의 완료 조건은 "동일한 suite 와 결정론적 fake client 
 
 이 규칙은 렌더러가 아니라 호출부에 둔다. `renderProcessDiagnostics` 는 요청받은 것을 그대로
 그리고, 무엇을 그릴 가치가 있는지는 CLI 가 판단한다.
+
+#### 4.3.0 비정상 종료의 정의: 우리가 보낸 시그널은 제외한다
+
+`isAbnormalExit` 은 다음일 때만 참이다.
+
+```
+signal !== null && signal !== "SIGTERM" && signal !== "SIGKILL"   → 비정상
+또는 exitCode 가 null 도 0 도 아님                                  → 비정상
+```
+
+`SIGTERM` 과 `SIGKILL` 을 제외하는 이유는 **그 둘을 우리가 보내기 때문이다.**
+`packages/core/src/lifecycle.ts` 가 stdin 을 닫은 뒤 `STDIN_CLOSE_GRACE_MS`(500ms)가 지나면
+`SIGTERM` 을, 다시 `SIGTERM_GRACE_MS`(500ms) 뒤에 `SIGKILL` 을 보낸다. 타이머나 소켓 핸들을
+들고 있어 유예 안에 못 끝나는 서버는 멀쩡해도 이 경로를 탄다. 그것을 비정상으로 보면 전부 통과한
+실행에서도 `시그널: SIGTERM` 블록이 매번 붙고, 사용자는 서버가 죽었다고 읽는다. 거짓 경보다.
+
+`SIGSEGV`·`SIGABRT`·`SIGBUS` 처럼 우리가 보내지 않는 시그널은 그대로 비정상이다.
+
+**알려진 한계**: OOM killer 가 보낸 `SIGKILL` 을 우리가 보낸 것과 구분하지 못해 놓친다.
+`McpProcessDiagnostics` 에 "우리가 보냈다" 표식이 없어 지금은 구분할 방법이 없다. 표식을 넣으려면
+`core` 를 고쳐야 하므로 이번 범위 밖이다. 매 실행 거짓 경보를 내는 쪽보다 이 한 경우를 놓치는
+쪽이 낫다고 보고 받아들인다.
 
 #### 4.3.1 연결 실패 경로의 진단 출처
 
@@ -271,11 +294,13 @@ Runner 설계의 완료 조건은 "동일한 suite 와 결정론적 fake client 
 - `앞부분이 수집 상한으로 잘렸습니다`: `stderrTruncated === true` 인 경우. core 의
   `maxStderrBytes`(기본 64KB, `packages/core/src/options.ts:34`)에 걸린 것이다.
 
-전체 줄 수가 `maxLines` 이하이고 `stderrTruncated` 가 거짓이면 괄호 안은 `마지막 N줄` 대신
-`전체`로 적는다.
+전체 줄 수가 `maxLines` 이하여서 버린 줄이 없으면 괄호 안은 `마지막 N줄` 대신 `전체`로 적는다.
+다만 `stderrTruncated` 가 참이면 `전체`가 아니라 **`수집된 전체`** 다. 수집 상한에 걸려 앞부분이
+잘린 스트림을 "전체" 라고 부르면 같은 괄호 안에서 모순이 된다.
 
 ```
   stderr (전체):
+  stderr (수집된 전체, 앞부분이 수집 상한으로 잘렸습니다):
 ```
 
 이 규칙의 목적은 하나다. 사용자가 무해한 꼬리 20줄만 보고 "서버 stderr 에 문제 없음" 으로
@@ -287,6 +312,13 @@ Runner 설계의 완료 조건은 "동일한 suite 와 결정론적 fake client 
 2. 마지막 원소가 빈 문자열이면 하나 버린다. 대부분의 stderr 가 개행으로 끝나므로 빈 줄이 하나
    생기는 것을 막는다. 그 외의 빈 줄은 유지한다. 스택 트레이스 사이의 빈 줄도 정보다.
 3. 남은 줄에서 마지막 `maxLines` 개를 취한다. 버려진 개수가 §5.3 의 `N` 이다.
+4. 각 줄이 1000자를 넘으면 앞 1000자만 남기고 뒤에 ` …(N자 생략)` 을 붙인다. `N` 은 생략된
+   문자 수다. 자르는 기준은 **이스케이프 전 원문의 코드포인트 수**다.
+
+4번이 필요한 이유는 줄 수 제한만으로는 출력량이 묶이지 않기 때문이다. 구조화 로거는 크래시마다
+수십 KB JSON 을 한 줄로 뱉는다. `--stderr-lines 20` 이어도 그 한 줄이 통째로 쏟아지고,
+§5.5 의 이스케이프가 제어문자 하나를 6자로 부풀린다. 1000자면 스택 프레임 한 줄과 긴 절대 경로를
+담고도 터미널 몇 줄에 들어간다.
 
 ### 5.5 제어 문자 이스케이프
 
@@ -344,8 +376,13 @@ ohmymcp test <suite.json> --command <executable> [--arg <value> ...] [--json] [-
 | `--json` 지정 | JSON | JSON (stdout 동일) + 진단 블록(stderr) |
 | `--stderr-lines 0` | — | 모든 경우에 블록 없음 |
 
-오류 메시지가 먼저 나가는 경로에서는 그 뒤에 빈 줄 하나를 두고 블록을 쓴다. 보고서 경로에서는
-stdout 과 stderr 가 다른 스트림이므로 앞에 빈 줄을 넣지 않는다.
+**블록 앞에는 모든 경로에서 빈 줄 하나를 둔다.** 오류 메시지 뒤든 보고서 뒤든 사용자가 보는 것은
+같은 터미널이고, 경로마다 레이아웃이 달라질 이유가 없다. stdout 과 stderr 가 다른 스트림이라는
+사실은 구현의 사정이지 사용자가 아는 것이 아니다.
+
+`RUNNER_EXECUTION_FAILED` 경로는 진단을 **`forceClose()` 호출 전에** 찍어 그 스냅샷을 쓴다.
+`forceClose` 는 우리가 `SIGTERM`·`SIGKILL` 을 보내는 경로이므로(§4.3.0), 그 뒤의 값을 보여주면
+로컬의 `startRunner` 실패를 서버가 죽은 것으로 오인시킨다.
 
 ## 8. 테스트
 

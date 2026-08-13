@@ -539,6 +539,27 @@ describe("runCli", () => {
     expect(text).toContain("RUNNER_EXECUTION_FAILED");
     expect(text).toContain("서버 프로세스 진단");
   });
+  it("실행 실패 경로는 forceClose 이전 진단을 쓴다", async () => {
+    const d = deps({
+      startRunner: () => {
+        throw new Error("start");
+      },
+    });
+    // forceClose 는 우리가 SIGKILL 을 보내는 경로다. 그 뒤의 값을 쓰면 서버 탓으로 오인시킨다.
+    let killed = false;
+    d.conn.forceClose = vi.fn(async () => {
+      killed = true;
+    });
+    d.conn.getDiagnostics = () =>
+      killed
+        ? diagnostics({ exitCode: null, signal: "SIGKILL", stderr: "boom\n" })
+        : diagnostics({ exitCode: null, signal: null, stderr: "boom\n" });
+    expect(await runCli(["test", "x.json", "--command", "node"], d.value)).toBe(1);
+    expect(d.conn.forceClose).toHaveBeenCalledTimes(1);
+    const text = d.writes.err.join("");
+    expect(text).toContain("종료 코드: 없음  시그널: 없음");
+    expect(text).not.toContain("SIGKILL");
+  });
   it("RUNNER_FINALIZATION_FAILED 경로에도 붙인다", async () => {
     const d = deps({
       finalize: async () => {

@@ -373,19 +373,28 @@ export async function runCli(
     return failed;
   }
   /** 진단 출력 실패가 판정을 바꾸면 안 된다. getDiagnostics 가 던지면 삼킨다. §4.3.1. */
-  const writeDiagnostics = (leadingBlank: boolean): void => {
-    if (input.stderrLines === 0) return;
-    let diagnostics: ProcessDiagnosticsInput;
+  const snapshotDiagnostics = (): ProcessDiagnosticsInput | undefined => {
     try {
-      diagnostics = connection.getDiagnostics();
+      return connection.getDiagnostics();
     } catch {
-      return;
+      return undefined;
     }
+  };
+  /**
+   * 블록 앞에는 항상 빈 줄을 둔다. 오류 메시지 뒤든 보고서 뒤든 같은 터미널에 이어 나오므로
+   * 경로마다 레이아웃이 달라질 이유가 없다. 설계 문서 §7.
+   * snapshot 을 주면 그 값을 쓴다. 우리가 프로세스를 정리한 뒤의 상태를 서버 탓으로 보고하지
+   * 않기 위해서다(설계 문서 §4.3).
+   */
+  const writeDiagnostics = (snapshot?: ProcessDiagnosticsInput): void => {
+    if (input.stderrLines === 0) return;
+    const diagnostics = snapshot ?? snapshotDiagnostics();
+    if (diagnostics === undefined) return;
     // 정보가 없는 블록은 소음이다. 설계 문서 §4.3. 판정은 렌더러가 아니라 여기에 둔다.
     if (diagnostics.stderr === "" && !isAbnormalExit(diagnostics)) return;
     const block = renderProcessDiagnostics(diagnostics, { maxLines: input.stderrLines });
     if (block === "") return;
-    dependencies.writeStderr(leadingBlank ? `\n${block}` : block);
+    dependencies.writeStderr(`\n${block}`);
   };
   const shutdown = {
     client: connection.client,
@@ -396,6 +405,9 @@ export async function runCli(
   try {
     execution = dependencies.startRunner({ client: connection.client, suite: validated.value });
   } catch {
+    // forceClose 는 우리가 SIGTERM·SIGKILL 을 보내는 경로다. 그 뒤의 진단을 보여주면 서버가
+    // 죽은 것으로 오인된다. 원인은 로컬의 startRunner 실패다. 정리 전 상태를 찍어둔다.
+    const snapshot = snapshotDiagnostics();
     try {
       await connection.forceClose();
     } catch {}
@@ -403,7 +415,7 @@ export async function runCli(
       code: "RUNNER_EXECUTION_FAILED",
       ...dictionary.RUNNER_EXECUTION_FAILED,
     });
-    writeDiagnostics(true);
+    writeDiagnostics(snapshot);
     return failed;
   }
   let finalReport: RunnerReport;
@@ -414,7 +426,7 @@ export async function runCli(
       code: "RUNNER_FINALIZATION_FAILED",
       ...dictionary.RUNNER_FINALIZATION_FAILED,
     });
-    writeDiagnostics(true);
+    writeDiagnostics();
     return failed;
   }
   try {
@@ -430,11 +442,9 @@ export async function runCli(
       ...dictionary.CLI_INTERNAL_ERROR,
     });
   }
-  let abnormal = false;
-  try {
-    abnormal = isAbnormalExit(connection.getDiagnostics());
-  } catch {}
+  const settled = snapshotDiagnostics();
   // 전부 통과여도 비정상 종료면 쓴다. 종료 경로의 결함을 숨기지 않는다. 설계 문서 §4.3.
-  if (finalReport.status !== "passed" || abnormal) writeDiagnostics(false);
+  if (finalReport.status !== "passed" || (settled !== undefined && isAbnormalExit(settled)))
+    writeDiagnostics(settled);
   return finalReport.status === "passed" ? 0 : 1;
 }

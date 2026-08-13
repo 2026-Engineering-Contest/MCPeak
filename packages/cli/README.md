@@ -8,9 +8,11 @@ ohmymcp test packages/cli/tests/fixtures/weather-suite.json \
   --arg examples/weather-server/server.mjs
 ```
 
-문법은 `ohmymcp test <suite.json> --command <executable> [--arg <value> ...]`입니다. 위 예시의 command와 arg는 `node examples/weather-server/server.mjs`로 실행됩니다. `--arg`는 반복할 수 있고, 하이픈으로 시작하는 값은 `--arg=-m`, 빈 값은 `--arg=`로 전달합니다.
+문법은 `ohmymcp test <suite.json> --command <executable> [--arg <value> ...] [--json] [--stderr-lines <N>]`입니다. 위 예시의 command와 arg는 `node examples/weather-server/server.mjs`로 실행됩니다. `--arg`는 반복할 수 있고, 하이픈으로 시작하는 값은 `--arg=-m`, 빈 값은 `--arg=`로 전달합니다.
 
-stdout에는 최종 RunnerReport JSON만 출력하며, CLI 오류는 stderr에만 출력합니다. 모든 테스트가 통과하면 종료 코드 0을, failed 또는 aborted report와 입력, 연결, 종료 오류에는 1을 반환합니다.
+stdout에는 보고서만 나갑니다. 기본은 사람이 읽는 보고서이고, `--json`을 주면 `RunnerReport` JSON이 나갑니다. CLI 오류와 서버 프로세스 진단은 stderr로만 나가므로 `--json > report.json`이 깨지지 않습니다. 모든 테스트가 통과하면 종료 코드 0을, failed 또는 aborted report와 입력, 연결, 종료 오류에는 1을 반환합니다.
+
+`--stderr-lines <N>`은 실패했을 때 stderr에 붙는 서버 프로세스 진단 블록의 stderr 표시 줄 수입니다. 기본값은 20이고, `0`을 주면 블록을 완전히 끕니다(그때 출력 바이트는 이 기능이 없던 때와 같습니다). 블록에는 종료 코드와 시그널, 서버가 남긴 stderr의 마지막 N줄이 담기며 잘린 사실은 헤더에 적힙니다. 서버가 정상 종료했고 stderr도 비어 있으면 보여줄 근거가 없으므로 블록을 쓰지 않습니다.
 
 현재는 UTF-8 JSON 단일 명세와 stdio 서버만 지원합니다. shell 문법, 여러 명세, TypeScript 모듈 명세는 지원하지 않습니다. `record`, `replay`, `mock` 명령은 아직 구현되지 않았습니다.
 

@@ -1,6 +1,6 @@
 {
   "name": "ohmymcp",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": false,
   "type": "module",
   "description": "OhMyMCP 프레임워크의 CLI 진입점 (얇게 유지)",

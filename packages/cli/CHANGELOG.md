@@ -1,5 +1,12 @@
 # ohmymcp
 
+## 0.2.1
+
+### Patch Changes
+
+- Updated dependencies [ed2a3b8]
+  - @ohmymcp/generate@0.3.0
+
 ## 0.2.0
 
 ### Minor Changes

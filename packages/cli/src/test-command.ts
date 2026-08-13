@@ -8,12 +8,18 @@ import type {
   SuiteValidationIssue,
   SuiteValidationResult,
 } from "@ohmymcp/runner";
+import {
+  isAbnormalExit,
+  type ProcessDiagnosticsInput,
+  renderProcessDiagnostics,
+} from "./process-diagnostics.js";
 
 export interface TestCommandInput {
   readonly suitePath: string;
   readonly command: string;
   readonly args: readonly string[];
   readonly json: boolean;
+  readonly stderrLines: number;
 }
 export type CliErrorCode =
   | "CLI_USAGE"
@@ -45,7 +51,10 @@ export interface TestCommandDependencies {
   writeStdout(text: string): void;
   writeStderr(text: string): void;
 }
-const usage = "사용법: ohmymcp test <suite.json> --command <executable> [--arg <value> ...]";
+const usage =
+  "사용법: ohmymcp test <suite.json> --command <executable> [--arg <value> ...] [--stderr-lines <N>]";
+/** --stderr-lines 기본값. 설계 문서 §6. */
+const DEFAULT_STDERR_LINES = 20;
 const dictionary: Record<
   Exclude<CliErrorCode, "CLI_USAGE" | "COMMAND_NOT_IMPLEMENTED">,
   Omit<CliFailure, "code">
@@ -100,6 +109,7 @@ export function parseTestCommand(argv: readonly string[]): TestCommandInput {
   if (suitePath === "") fail("테스트 명세 JSON 경로가 필요합니다.");
   let command: string | undefined;
   let json = false;
+  let stderrLines: number | undefined;
   const args: string[] = [];
   for (let index = 1; index < argv.length; index += 1) {
     const token = argv[index] ?? "";
@@ -133,6 +143,25 @@ export function parseTestCommand(argv: readonly string[]): TestCommandInput {
         if (value.startsWith("-")) fail("`--arg` 옵션 값이 필요합니다.");
       } else value = token.slice("--arg=".length);
       args.push(value);
+    } else if (token === "--stderr-lines" || token.startsWith("--stderr-lines=")) {
+      if (stderrLines !== undefined) fail("`--stderr-lines`는 한 번만 사용할 수 있습니다.");
+      let value: string;
+      if (token === "--stderr-lines") {
+        const next = argv[++index];
+        if (next === undefined)
+          throw new CliCommandError({
+            code: "CLI_USAGE",
+            message: "`--stderr-lines` 옵션 값이 필요합니다.",
+            hint: usage,
+          });
+        // `-1` 처럼 `-` 로 시작해도 값으로 받고 아래 검증에서 거절한다. 설계 문서 §6.
+        value = next;
+      } else value = token.slice("--stderr-lines=".length);
+      if (!/^\d+$/.test(value)) fail("`--stderr-lines` 값은 0 이상의 정수여야 합니다.");
+      const parsedLines = Number.parseInt(value, 10);
+      if (!Number.isSafeInteger(parsedLines))
+        fail("`--stderr-lines` 값은 0 이상의 정수여야 합니다.");
+      stderrLines = parsedLines;
     } else if (token === "--json") {
       if (json) fail("`--json`은 한 번만 사용할 수 있습니다.");
       json = true;
@@ -147,7 +176,13 @@ export function parseTestCommand(argv: readonly string[]): TestCommandInput {
       message: "`--command` 옵션이 필요합니다.",
       hint: usage,
     });
-  return Object.freeze({ suitePath, command, args: Object.freeze(args), json });
+  return Object.freeze({
+    suitePath,
+    command,
+    args: Object.freeze(args),
+    json,
+    stderrLines: stderrLines ?? DEFAULT_STDERR_LINES,
+  });
 }
 const escapeTerminalText = (value: string): string =>
   Array.from(value, (character) => {
@@ -168,7 +203,27 @@ function format(failure: CliFailure): string {
     result += `\n- [${escapeTerminalText(issue.code)}] ${escapeTerminalText(issue.path)}: ${escapeTerminalText(issue.message)}\n  해결: ${escapeTerminalText(issue.hint)}`;
   return `${result}\n`;
 }
-type CoreError = Readonly<{ name: "McpClientError"; code: string; message: string; hint: string }>;
+type CoreError = Readonly<{
+  name: "McpClientError";
+  code: string;
+  message: string;
+  hint: string;
+  diagnostics?: ProcessDiagnosticsInput;
+}>;
+/**
+ * core 의 McpProcessDiagnostics 인지 구조로 확인한다. core 를 import 하지 않는다.
+ * 하나라도 어긋나면 undefined 다. 설계 문서 §4.3.1.
+ */
+function processDiagnostics(value: unknown): ProcessDiagnosticsInput | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  if (!("stderr" in value) || typeof value.stderr !== "string") return undefined;
+  if (!("stderrTruncated" in value) || typeof value.stderrTruncated !== "boolean") return undefined;
+  if (!("exitCode" in value) || !(typeof value.exitCode === "number" || value.exitCode === null))
+    return undefined;
+  if (!("signal" in value) || !(typeof value.signal === "string" || value.signal === null))
+    return undefined;
+  return value as ProcessDiagnosticsInput;
+}
 function coreError(error: unknown): CoreError | undefined {
   const seen = new Set<object>();
   const visit = (value: unknown): CoreError | undefined => {
@@ -184,7 +239,15 @@ function coreError(error: unknown): CoreError | undefined {
       "hint" in value &&
       typeof value.hint === "string"
     )
-      return value as CoreError;
+      return Object.freeze({
+        name: "McpClientError" as const,
+        code: value.code,
+        message: value.message,
+        hint: value.hint,
+        diagnostics: processDiagnostics(
+          "diagnostics" in value ? (value as { diagnostics: unknown }).diagnostics : undefined,
+        ),
+      });
     if (typeof value !== "object" || value === null || seen.has(value)) return undefined;
     seen.add(value);
     if (value instanceof AggregateError)
@@ -286,7 +349,7 @@ export async function runCli(
     connection = await dependencies.connect({ command: input.command, args: input.args });
   } catch (error) {
     const core = coreError(error);
-    return writeFailure(
+    const failed = writeFailure(
       dependencies,
       core === undefined
         ? { code: "MCP_CONNECTION_FAILED", ...dictionary.MCP_CONNECTION_FAILED }
@@ -297,7 +360,33 @@ export async function runCli(
             coreCode: core.code,
           },
     );
+    // 이 경로에만 있는 조건이다. spawn 자체가 실패하면 진단이 전부 비어 소음만 남는다. §4.3.1.
+    const diagnostics = core?.diagnostics;
+    if (
+      input.stderrLines > 0 &&
+      diagnostics !== undefined &&
+      (diagnostics.stderr !== "" || isAbnormalExit(diagnostics))
+    ) {
+      const block = renderProcessDiagnostics(diagnostics, { maxLines: input.stderrLines });
+      if (block !== "") dependencies.writeStderr(`\n${block}`);
+    }
+    return failed;
   }
+  /** 진단 출력 실패가 판정을 바꾸면 안 된다. getDiagnostics 가 던지면 삼킨다. §4.3.1. */
+  const writeDiagnostics = (leadingBlank: boolean): void => {
+    if (input.stderrLines === 0) return;
+    let diagnostics: ProcessDiagnosticsInput;
+    try {
+      diagnostics = connection.getDiagnostics();
+    } catch {
+      return;
+    }
+    // 정보가 없는 블록은 소음이다. 설계 문서 §4.3. 판정은 렌더러가 아니라 여기에 둔다.
+    if (diagnostics.stderr === "" && !isAbnormalExit(diagnostics)) return;
+    const block = renderProcessDiagnostics(diagnostics, { maxLines: input.stderrLines });
+    if (block === "") return;
+    dependencies.writeStderr(leadingBlank ? `\n${block}` : block);
+  };
   const shutdown = {
     client: connection.client,
     close: () => connection.close(),
@@ -310,19 +399,23 @@ export async function runCli(
     try {
       await connection.forceClose();
     } catch {}
-    return writeFailure(dependencies, {
+    const failed = writeFailure(dependencies, {
       code: "RUNNER_EXECUTION_FAILED",
       ...dictionary.RUNNER_EXECUTION_FAILED,
     });
+    writeDiagnostics(true);
+    return failed;
   }
   let finalReport: RunnerReport;
   try {
     finalReport = await dependencies.finalize({ execution, shutdown });
   } catch {
-    return writeFailure(dependencies, {
+    const failed = writeFailure(dependencies, {
       code: "RUNNER_FINALIZATION_FAILED",
       ...dictionary.RUNNER_FINALIZATION_FAILED,
     });
+    writeDiagnostics(true);
+    return failed;
   }
   try {
     dependencies.writeStdout(
@@ -331,10 +424,17 @@ export async function runCli(
         : dependencies.renderReport(finalReport, { color: dependencies.colorEnabled }),
     );
   } catch {
+    // 원인이 서버가 아니라 우리 렌더링이므로 진단을 쓰지 않는다. 계획서 §4 호출 지점 4.
     return writeFailure(dependencies, {
       code: "CLI_INTERNAL_ERROR",
       ...dictionary.CLI_INTERNAL_ERROR,
     });
   }
+  let abnormal = false;
+  try {
+    abnormal = isAbnormalExit(connection.getDiagnostics());
+  } catch {}
+  // 전부 통과여도 비정상 종료면 쓴다. 종료 경로의 결함을 숨기지 않는다. 설계 문서 §4.3.
+  if (finalReport.status !== "passed" || abnormal) writeDiagnostics(false);
   return finalReport.status === "passed" ? 0 : 1;
 }

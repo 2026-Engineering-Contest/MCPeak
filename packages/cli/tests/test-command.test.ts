@@ -30,6 +30,15 @@ const connection = (): McpStdioConnection => ({
   close: vi.fn(async () => {}),
   forceClose: vi.fn(async () => {}),
 });
+type Diagnostics = ReturnType<McpStdioConnection["getDiagnostics"]>;
+/** 진단 시나리오용. 지정하지 않은 필드는 정상 종료값이다. */
+const diagnostics = (overrides: Partial<Diagnostics> = {}): Diagnostics => ({
+  stderr: "",
+  stderrTruncated: false,
+  exitCode: 0,
+  signal: null,
+  ...overrides,
+});
 function deps(overrides: Partial<TestCommandDependencies> = {}) {
   const writes = { out: [] as string[], err: [] as string[], events: [] as string[] };
   const conn = connection();
@@ -69,6 +78,7 @@ describe("parseTestCommand", () => {
       command: "node",
       args: ["a", "b"],
       json: false,
+      stderrLines: 20,
     });
     expect(Object.isFrozen(input)).toBe(true);
     expect(Object.isFrozen(input.args)).toBe(true);
@@ -79,6 +89,7 @@ describe("parseTestCommand", () => {
       command: "node",
       args: ["-m", ""],
       json: false,
+      stderrLines: 20,
     });
   });
   it("parseTestCommand가 json 기본값 false를 낸다", () => {
@@ -86,6 +97,53 @@ describe("parseTestCommand", () => {
   });
   it("parseTestCommand가 json true를 낸다", () => {
     expect(parseTestCommand(["suite.json", "--command", "node", "--json"]).json).toBe(true);
+  });
+  it("--stderr-lines 를 파싱한다", () => {
+    expect(
+      parseTestCommand(["suite.json", "--command", "node", "--stderr-lines", "5"]).stderrLines,
+    ).toBe(5);
+  });
+  it("--stderr-lines=N 형태를 파싱한다", () => {
+    expect(
+      parseTestCommand(["suite.json", "--command", "node", "--stderr-lines=5"]).stderrLines,
+    ).toBe(5);
+  });
+  it("기본값은 20 이다", () => {
+    expect(parseTestCommand(["suite.json", "--command", "node"]).stderrLines).toBe(20);
+  });
+  it("0 을 허용한다", () => {
+    expect(
+      parseTestCommand(["suite.json", "--command", "node", "--stderr-lines", "0"]).stderrLines,
+    ).toBe(0);
+  });
+  it("값이 없으면 CLI_USAGE 로 실패한다", () => {
+    expect(() => parseTestCommand(["suite.json", "--command", "node", "--stderr-lines"])).toThrow(
+      "`--stderr-lines` 옵션 값이 필요합니다.",
+    );
+  });
+  it("중복 지정을 거절한다", () => {
+    expect(() =>
+      parseTestCommand([
+        "suite.json",
+        "--command",
+        "node",
+        "--stderr-lines",
+        "5",
+        "--stderr-lines",
+        "6",
+      ]),
+    ).toThrow("`--stderr-lines`는 한 번만 사용할 수 있습니다.");
+  });
+  it("정수가 아니면 거절한다", () => {
+    for (const value of ["1.5", "abc", ""])
+      expect(() =>
+        parseTestCommand(["suite.json", "--command", "node", "--stderr-lines", value]),
+      ).toThrow("`--stderr-lines` 값은 0 이상의 정수여야 합니다.");
+  });
+  it("음수를 거절한다", () => {
+    expect(() =>
+      parseTestCommand(["suite.json", "--command", "node", "--stderr-lines", "-1"]),
+    ).toThrow("`--stderr-lines` 값은 0 이상의 정수여야 합니다.");
   });
 });
 
@@ -113,7 +171,7 @@ describe("runCli", () => {
       expect(await runCli(argv, d.value)).toBe(1);
       expect(d.writes.out).toEqual([]);
       expect(d.writes.err.join("")).toBe(
-        `오류 [CLI_USAGE]: ${message}\n해결: 사용법: ohmymcp test <suite.json> --command <executable> [--arg <value> ...]\n`,
+        `오류 [CLI_USAGE]: ${message}\n해결: 사용법: ohmymcp test <suite.json> --command <executable> [--arg <value> ...] [--stderr-lines <N>]\n`,
       );
       expect(d.value.readFile).not.toHaveBeenCalled();
       expect(d.value.connect).not.toHaveBeenCalled();
@@ -424,5 +482,135 @@ describe("runCli", () => {
       "오류 [CLI_INTERNAL_ERROR]: 예상하지 못한 CLI 내부 오류가 발생했습니다.\n해결: 다시 실행한 뒤 재현 정보와 함께 이슈를 보고하세요.\n",
     );
     expect(d.writes.err.join("")).not.toContain("OUTPUT_SECRET_STACK");
+  });
+  it("실패가 있으면 stderr 에 진단 블록을 쓴다", async () => {
+    const d = deps({ finalize: async () => report("failed") });
+    d.conn.getDiagnostics = () => diagnostics({ exitCode: 1, stderr: "boom\n" });
+    expect(await runCli(["test", "x.json", "--command", "node"], d.value)).toBe(1);
+    const text = d.writes.err.join("");
+    expect(text).toContain("서버 프로세스 진단");
+    expect(text).toContain("종료 코드: 1");
+    expect(text).toContain("boom");
+  });
+  it("전부 통과하고 정상 종료면 아무것도 쓰지 않는다", async () => {
+    const d = deps();
+    d.conn.getDiagnostics = () => diagnostics({ exitCode: 0, signal: null });
+    expect(await runCli(["test", "x.json", "--command", "node"], d.value)).toBe(0);
+    expect(d.writes.err).toEqual([]);
+  });
+  it("실패해도 진단이 비어 있으면 쓰지 않는다", async () => {
+    const d = deps({ finalize: async () => report("failed") });
+    d.conn.getDiagnostics = () =>
+      diagnostics({ stderr: "", stderrTruncated: false, exitCode: 0, signal: null });
+    expect(await runCli(["test", "x.json", "--command", "node"], d.value)).toBe(1);
+    expect(d.writes.err).toEqual([]);
+  });
+  it("전부 통과여도 비정상 종료면 쓴다", async () => {
+    const d = deps();
+    d.conn.getDiagnostics = () => diagnostics({ exitCode: null, signal: "SIGSEGV" });
+    expect(await runCli(["test", "x.json", "--command", "node"], d.value)).toBe(0);
+    expect(d.writes.err.join("")).toContain("시그널: SIGSEGV");
+  });
+  it("--stderr-lines 0 이면 실패해도 쓰지 않는다", async () => {
+    const d = deps({ finalize: async () => report("failed") });
+    d.conn.getDiagnostics = () => diagnostics({ exitCode: 1, stderr: "boom\n" });
+    expect(
+      await runCli(["test", "x.json", "--command", "node", "--stderr-lines", "0"], d.value),
+    ).toBe(1);
+    expect(d.writes.err).toEqual([]);
+  });
+  it("--json 의 stdout 을 바꾸지 않는다", async () => {
+    const d = deps({ finalize: async () => report("failed") });
+    d.conn.getDiagnostics = () => diagnostics({ exitCode: 1, stderr: "boom\n" });
+    await runCli(["test", "x.json", "--command", "node", "--json"], d.value);
+    expect(d.writes.out.join("")).toBe(`${JSON.stringify(report("failed"), null, 2)}\n`);
+    expect(() => JSON.parse(d.writes.out.join(""))).not.toThrow();
+    expect(d.writes.err.join("")).toContain("서버 프로세스 진단");
+  });
+  it("RUNNER_EXECUTION_FAILED 경로에도 붙인다", async () => {
+    const d = deps({
+      startRunner: () => {
+        throw new Error("start");
+      },
+    });
+    d.conn.getDiagnostics = () => diagnostics({ exitCode: 1, stderr: "boom\n" });
+    expect(await runCli(["test", "x.json", "--command", "node"], d.value)).toBe(1);
+    const text = d.writes.err.join("");
+    expect(text).toContain("RUNNER_EXECUTION_FAILED");
+    expect(text).toContain("서버 프로세스 진단");
+  });
+  it("RUNNER_FINALIZATION_FAILED 경로에도 붙인다", async () => {
+    const d = deps({
+      finalize: async () => {
+        throw new Error("finish");
+      },
+    });
+    d.conn.getDiagnostics = () => diagnostics({ exitCode: 1, stderr: "boom\n" });
+    expect(await runCli(["test", "x.json", "--command", "node"], d.value)).toBe(1);
+    const text = d.writes.err.join("");
+    expect(text).toContain("RUNNER_FINALIZATION_FAILED");
+    expect(text).toContain("서버 프로세스 진단");
+  });
+  it("연결 실패 오류에 담긴 진단을 쓴다", async () => {
+    const d = deps({
+      connect: async () =>
+        Promise.reject({
+          name: "McpClientError" as const,
+          code: "PROCESS_EXITED",
+          message: "요청 완료 전 MCP 서버가 종료되었습니다.",
+          hint: "exit code, signal, bounded stderr를 확인하세요.",
+          diagnostics: {
+            stderr: "ERR_MODULE_NOT_FOUND\n",
+            stderrTruncated: false,
+            exitCode: 1,
+            signal: null,
+          },
+        }),
+    });
+    expect(await runCli(["test", "x.json", "--command", "node"], d.value)).toBe(1);
+    const text = d.writes.err.join("");
+    expect(text).toContain("MCP_CONNECTION_FAILED/PROCESS_EXITED");
+    expect(text).toContain("ERR_MODULE_NOT_FOUND");
+  });
+  it("진단이 비어 있으면 연결 실패에 블록을 붙이지 않는다", async () => {
+    const d = deps({
+      connect: async () =>
+        Promise.reject({
+          name: "McpClientError" as const,
+          code: "PROCESS_START_FAILED",
+          message: "MCP 서버 프로세스를 시작하지 못했습니다.",
+          hint: "command 실행 권한을 확인하세요.",
+          diagnostics: { stderr: "", stderrTruncated: false, exitCode: null, signal: null },
+        }),
+    });
+    expect(await runCli(["test", "x.json", "--command", "node"], d.value)).toBe(1);
+    const text = d.writes.err.join("");
+    expect(text).toContain("MCP_CONNECTION_FAILED/PROCESS_START_FAILED");
+    expect(text).not.toContain("서버 프로세스 진단");
+  });
+  it("McpClientError 가 아닌 거절에는 붙지 않는다", async () => {
+    const d = deps({ connect: async () => Promise.reject(new Error("boom")) });
+    expect(await runCli(["test", "x.json", "--command", "node"], d.value)).toBe(1);
+    expect(d.writes.err.join("")).not.toContain("서버 프로세스 진단");
+  });
+  it("오류 메시지와 진단 사이에 빈 줄을 둔다", async () => {
+    const d = deps({
+      startRunner: () => {
+        throw new Error("start");
+      },
+    });
+    d.conn.getDiagnostics = () => diagnostics({ exitCode: 1, stderr: "boom\n" });
+    await runCli(["test", "x.json", "--command", "node"], d.value);
+    expect(d.writes.err.join("")).toContain("\n\n서버 프로세스 진단");
+  });
+  it("종료 코드는 진단 유무와 무관하다", async () => {
+    const passed = deps();
+    passed.conn.getDiagnostics = () => diagnostics({ exitCode: null, signal: "SIGSEGV" });
+    expect(await runCli(["test", "x.json", "--command", "node"], passed.value)).toBe(0);
+    expect(passed.writes.err.join("")).toContain("서버 프로세스 진단");
+    const failed = deps({ finalize: async () => report("failed") });
+    failed.conn.getDiagnostics = () => diagnostics({ exitCode: 1, stderr: "boom\n" });
+    expect(await runCli(["test", "x.json", "--command", "node"], failed.value)).toBe(1);
+    expect(failed.writes.err.join("")).toContain("서버 프로세스 진단");
   });
 });

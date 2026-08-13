@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -204,5 +204,91 @@ describe.sequential("CLI 실제 weather-server", () => {
       out.mockRestore();
       err.mockRestore();
     }
+  });
+  it("--stderr-lines 0 은 변경 전과 같은 바이트를 낸다", async () => {
+    /** 같은 실패 명세를 한 번 실행하고 stdout·stderr 를 그대로 돌려준다. */
+    const runOnce = async (extra: readonly string[]) => {
+      const dir = await mkdtemp(join(tmpdir(), "ohmymcp-cli-"));
+      const pidFile = join(dir, "server.pid");
+      const out = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+      const err = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+      try {
+        const code = await run([
+          "test",
+          failure,
+          "--command",
+          process.execPath,
+          "--arg",
+          wrapper,
+          "--arg",
+          pidFile,
+          "--arg",
+          server,
+          "--json",
+          ...extra,
+        ]);
+        return {
+          code,
+          stdout: out.mock.calls.map(([value]) => String(value)).join(""),
+          stderr: err.mock.calls.map(([value]) => String(value)).join(""),
+        };
+      } finally {
+        out.mockRestore();
+        err.mockRestore();
+        await expectExited(pidFile);
+        await cleanupPid(pidFile);
+        await rm(dir, { recursive: true, force: true });
+      }
+    };
+    /**
+     * 기동 즉시 stderr 를 남기고 죽는 서버. 진단 블록이 실제로 붙는 실행이 필요하다.
+     * weather-server 는 정상 종료하고 stderr 도 비어서 설계 §4.3 의 빈 진단 생략에 걸린다.
+     */
+    const runDeadServer = async (extra: readonly string[]) => {
+      const dir = await mkdtemp(join(tmpdir(), "ohmymcp-cli-"));
+      const script = join(dir, "dies.mjs");
+      await writeFile(script, 'process.stderr.write("BOOT_MARKER\\n");\nprocess.exit(1);\n');
+      const out = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+      const err = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+      try {
+        const code = await run([
+          "test",
+          success,
+          "--command",
+          process.execPath,
+          "--arg",
+          script,
+          ...extra,
+        ]);
+        return {
+          code,
+          stdout: out.mock.calls.map(([value]) => String(value)).join(""),
+          stderr: err.mock.calls.map(([value]) => String(value)).join(""),
+        };
+      } finally {
+        out.mockRestore();
+        err.mockRestore();
+        await rm(dir, { recursive: true, force: true });
+      }
+    };
+
+    const withBlock = await runOnce([]);
+    const withoutBlock = await runOnce(["--stderr-lines", "0"]);
+    expect(withBlock.code).toBe(1);
+    expect(withoutBlock.code).toBe(1);
+    // stdout 은 보고서 전용 채널이다. 옵션이 바이트를 바꾸면 안 된다.
+    expect(withoutBlock.stdout).toBe(withBlock.stdout);
+    expect(withoutBlock.stderr).toBe("");
+    // 통과 케이스만으로는 조건 판정이 잘못돼 안 붙은 것과 구분되지 않는다. 붙는 쪽도 함께 본다.
+    const deadDefault = await runDeadServer([]);
+    const deadSilent = await runDeadServer(["--stderr-lines", "0"]);
+    expect(deadDefault.code).toBe(1);
+    expect(deadSilent.code).toBe(1);
+    expect(deadDefault.stdout).toBe("");
+    expect(deadSilent.stdout).toBe("");
+    expect(deadDefault.stderr).toContain("서버 프로세스 진단");
+    expect(deadDefault.stderr).toContain("BOOT_MARKER");
+    expect(deadSilent.stderr).not.toContain("서버 프로세스 진단");
+    expect(deadSilent.stderr).toContain("MCP_CONNECTION_FAILED");
   });
 });

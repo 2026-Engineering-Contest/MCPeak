@@ -122,7 +122,9 @@ export function deepFreeze<T>(value: T): T {
       Object.freeze(current as object);
       continue;
     }
-    if (current === null || typeof current !== "object" || Object.isFrozen(current)) continue;
+    // 이미 동결됐다고 건너뛰지 않는다. Object.freeze 는 얕아서 상위만 동결된 입력이 실재하고,
+    // 그때 하위가 변경 가능한 채로 남는다. 순환은 seen 이 막으므로 isFrozen 은 필요 없다.
+    if (current === null || typeof current !== "object") continue;
     if (seen.has(current)) continue;
     seen.add(current);
     frames.push({ type: "freeze", value: current });

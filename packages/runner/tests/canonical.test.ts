@@ -83,6 +83,28 @@ describe("canonicalJson 방어 계약", () => {
   });
 });
 
+describe("deepFreeze", () => {
+  it("상위만 Object.freeze 한 객체를 deepFreeze 하면 자식도 동결된다", () => {
+    // Object.freeze 는 얕다. 이미 동결됐다고 자식 순회를 건너뛰면 하위가 변경 가능한 채로 남는다.
+    const value = Object.freeze({ child: { leaf: [1, 2] } });
+    expect(Object.isFrozen(value.child)).toBe(false);
+
+    deepFreeze(value);
+
+    expect(Object.isFrozen(value.child)).toBe(true);
+    expect(Object.isFrozen(value.child.leaf)).toBe(true);
+  });
+
+  it("순환 참조가 있는 객체를 deepFreeze 해도 끝난다", () => {
+    const cyclic: Record<string, unknown> = { name: "a", child: { leaf: true } };
+    cyclic.self = cyclic;
+
+    expect(() => deepFreeze(cyclic)).not.toThrow();
+    expect(Object.isFrozen(cyclic)).toBe(true);
+    expect(Object.isFrozen(cyclic.child)).toBe(true);
+  });
+});
+
 /**
  * validateMcpSuite 는 깊이 10000 짜리 입력을 통과시킨다(deep-and-cyclic-input.test.ts).
  * 직렬화가 재귀였을 때는 그 깊이에서 RangeError 로 죽어서, 검증을 통과한 명세가 지문 계산에서만

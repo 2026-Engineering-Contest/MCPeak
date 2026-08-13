@@ -1,4 +1,5 @@
-import { lstat, mkdir, writeFile } from "node:fs/promises";
+import { constants } from "node:fs";
+import { lstat, mkdir, open, writeFile } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { ToolDef } from "@ohmymcp/core";
 import { nameDiscriminator, safeBaseName } from "./filename.js";
@@ -118,10 +119,43 @@ function assertPathInsideOutDir(outDir: string, path: string): void {
 }
 
 async function writeGeneratedFile(path: string, source: string, overwrite: boolean): Promise<void> {
+  if (overwrite) {
+    if (typeof constants.O_NOFOLLOW !== "number") {
+      fail(
+        "GENERATED_SUITE_INVALID",
+        path,
+        `이 환경에서는 생성 파일을 안전하게 덮어쓸 수 없습니다: ${path}`,
+        "심볼릭 링크를 따라가지 않는 파일 열기를 지원하는 환경을 사용하세요.",
+      );
+    }
+
+    let file: Awaited<ReturnType<typeof open>> | undefined;
+    try {
+      file = await open(
+        path,
+        constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW,
+      );
+      await file.writeFile(source, { encoding: "utf8" });
+    } catch (error) {
+      if (isNodeError(error) && error.code === "ELOOP") {
+        fail(
+          "GENERATED_SUITE_INVALID",
+          path,
+          `심볼릭 링크인 생성 파일을 덮어쓸 수 없습니다: ${path}`,
+          "심볼릭 링크를 제거하고 출력 디렉터리 안의 일반 파일을 사용하세요.",
+        );
+      }
+      throw error;
+    } finally {
+      await file?.close();
+    }
+    return;
+  }
+
   try {
-    await writeFile(path, source, { encoding: "utf8", flag: overwrite ? "w" : "wx" });
+    await writeFile(path, source, { encoding: "utf8", flag: "wx" });
   } catch (error) {
-    if (!overwrite && isNodeError(error) && error.code === "EEXIST") {
+    if (isNodeError(error) && error.code === "EEXIST") {
       fail(
         "OUTPUT_FILE_EXISTS",
         path,

@@ -21,8 +21,16 @@ cli → runner / generate / record / mock → core
 | 종류 | 심볼 |
 |---|---|
 | 타입 | `TestSuiteSpec`, `TestCaseSpec`, `SuiteValidationIssue`, `RunnerRedactionOptions` |
-| 함수 | `validateMcpSuite` |
+| 함수 | `validateMcpSuite`, `canonicalJson`, `sha256`, `deepFreeze` |
 | 상수 | `MCP_SUITE_JSON_SCHEMA`, `DEFAULT_SENSITIVE_KEYS`, `REDACTED` |
+
+`canonicalJson` · `sha256` · `deepFreeze` 세 개는 2026-08-14 에 추가했다. 원래 `generate` 에
+있던 구현인데 `runner` 로 옮겼고, `generate` 는 `packages/generate/src/canonical.ts` 한 줄
+재수출로 그것을 다시 쓴다. 승인 지문(단계 8)을 `ohmymcp test` 실행 경로에서 계산해야 하는데
+그 경로는 `cli` 와 `runner` 만 쓰고, 의존 방향이 `generate → runner` 라 `runner` 가
+`generate` 를 부를 수 없기 때문이다. canonical JSON 구현을 두 벌로 만들면 저장 시점 지문과
+실행 시점 지문이 조용히 갈린다. 구현을 한 벌로 유지하려고 낮은 층으로 옮긴 것이고, 의존이
+새로 늘어난 것이 아니라 같은 코드의 소유 패키지가 바뀐 것이다.
 
 이 의존은 AI 보조 작성 기능 이전부터 있었고, PR #37이 `MCP_SUITE_JSON_SCHEMA`를 하나 더 참조하면서
 코드 리뷰에서 지적됐다.

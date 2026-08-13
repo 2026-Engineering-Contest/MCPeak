@@ -461,9 +461,11 @@ export 한다. export 를 늘리는 것이 부담이면 임시 파일 대신 `so
 
 - 표적: `pnpm test packages/runner`, `pnpm test packages/generate`
 - 전체: `pnpm build`, `pnpm test`, `pnpm typecheck`, `pnpm lint`
-- 구현이 한 벌인지 확인: `grep -rn "createHash(\"sha256\")" packages/*/src` 의 결과가
-  `packages/runner/src/canonical.ts` 와 `packages/generate/src/filename.ts` 두 줄이어야 한다.
-  `filename.ts` 는 파일명 판별자용으로 용도가 다르며 이 작업의 대상이 아니다.
+- 구현이 한 벌인지 확인: `grep -rn "createHash(\"sha256\")" packages/*/src` 의 결과가 세 줄이고,
+  그중 canonical JSON 지문은 `packages/runner/src/canonical.ts` 한 줄뿐이어야 한다. 나머지 두
+  줄은 `packages/generate/src/filename.ts:6` 과 `:12` 다. 파일명 판별자용으로 NFC 정규화본과
+  원본을 각각 해싱하며 용도가 다르고 이 작업의 대상이 아니다. 작업 전에도 세 줄이었으므로
+  줄 수는 그대로이고 소유 패키지만 옮겨간다.
 - `packages/generate` 의 기존 테스트 단언이 위에 명시한 삭제 4건 말고는 변경 0건이어야 한다.
 
 ### 5.6 커밋 (사람이 한다)

@@ -97,7 +97,9 @@ export interface MatchResult {
 /**
  * MCP 서버에 대한 테스트 스위트를 정의한다.
  *
- * 아직 구현되지 않음 — `runner` 오너가 채운다.
+ * @deprecated ADR-0002 에 따라 구현하지 않는다. 선언형 {@link defineMcpSuite} 로 명세를
+ * 만들고 {@link runSuite} 로 실행하라. 호출하면 `not implemented` 를 던지며 이는 의도된
+ * 동작이다. minor 에서 제거하지 않고, 제거는 major 릴리스와 migration 문서를 동반한다.
  */
 export function createMcpTest(config: McpTestConfig, body: TestBody): void {
   throw new Error("not implemented");
@@ -105,9 +107,11 @@ export function createMcpTest(config: McpTestConfig, body: TestBody): void {
 
 /**
  * matcher: 툴 목록에 주어진 이름의 툴이 있는지 단언한다.
- * 실패 메시지가 곧 제품이다 — 무엇이 왜 다른지 보여줘야 한다 (CLAUDE.md).
  *
- * 아직 구현되지 않음 — `runner` 오너가 채운다.
+ * @deprecated ADR-0002 에 따라 구현하지 않는다. 툴 존재 검사는 선언형 명세의
+ * `{ type: "toolExists", tool }` assertion 을 쓰고, 실패 진단은 `diagnostics.ts` 가
+ * 소유한다. 호출하면 `not implemented` 를 던지며 이는 의도된 동작이다. 제거는 major
+ * 릴리스와 migration 문서를 동반한다.
  */
 export function toContainTool(result: ToolResult, name: string): MatchResult {
   throw new Error("not implemented");

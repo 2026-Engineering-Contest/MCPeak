@@ -524,17 +524,26 @@ export async function runCli(
    * 진단의 결함이지 대상 서버의 결함이 아니다.
    */
   const specFindings: readonly SpecFinding[] = (() => {
-    const failedCaseIds = new Set(
-      finalReport.cases.filter((item) => item.status !== "passed").map((item) => item.spec.id),
-    );
+    /**
+     * 실패한 케이스의 버킷을 보고서의 케이스 순서로 먼저 만든다. 두 검사 결과를 이어 붙인
+     * 뒤에 `caseId` 로 묶으면 앞 케이스에 단언 finding 만 있고 뒤 케이스에 입력 계약 finding
+     * 이 있을 때 뒤 케이스가 먼저 들어와 순서가 뒤집힌다. 케이스 사이 순서는 검사 종류가
+     * 아니라 보고서가 정한다. 한 케이스 안의 블록 순서는 `FINDING_GROUP_ORDER` 가 맡는다.
+     * 없는 키를 만들지 않으므로 버킷에 없는 caseId 는 그대로 걸러진다.
+     */
+    const buckets = new Map<string, SpecFinding[]>();
+    for (const item of finalReport.cases)
+      if (item.status !== "passed") buckets.set(item.spec.id, []);
     try {
       const inputContract = dependencies.checkInputContract ?? runnerCheckInputContract;
       const assertionSubstance =
         dependencies.checkAssertionSubstance ?? runnerCheckAssertionSubstance;
-      return [
+      const found = [
         ...(tools.length === 0 ? [] : inputContract({ suite: validated.value, tools }).findings),
         ...assertionSubstance(validated.value).findings,
-      ].filter((finding) => failedCaseIds.has(finding.caseId));
+      ];
+      for (const finding of found) buckets.get(finding.caseId)?.push(finding);
+      return [...buckets.values()].flat();
     } catch {
       return [];
     }

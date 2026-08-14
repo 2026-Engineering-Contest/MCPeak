@@ -998,6 +998,24 @@ describe("입력 계약 참고 문장", () => {
     expect(substance).toBeGreaterThan(0);
     expect(skipped).toBeGreaterThan(substance);
   });
+  it("케이스 사이 순서는 검사 종류와 무관하게 보고서의 케이스 순서다", async () => {
+    // 두 검사 결과를 이어 붙이는 순서로 블록을 만들면, 앞 케이스에 단언 finding 만 있고 뒤
+    // 케이스에 입력 계약 finding 이 있을 때 뒤 케이스가 먼저 나온다. 케이스 순서는 검사
+    // 종류가 아니라 보고서가 정한다.
+    const out = await runTest({
+      suite: suiteOf(
+        callCase("first-case", { city: "Seoul" }, 0),
+        callCase("second-case", { citi: "Busan" }, 1),
+      ),
+      tools: weatherTools,
+      statuses: { "first-case": "failed", "second-case": "failed" },
+    });
+    const first = out.stdout.indexOf("참고: first-case");
+    const second = out.stdout.indexOf("참고: second-case");
+    expect(first).toBeGreaterThan(0);
+    expect(second).toBeGreaterThan(0);
+    expect(first).toBeLessThan(second);
+  });
   it("케이스가 여럿이면 케이스별로 세 머리글이 각자 나온다", async () => {
     // 한 케이스는 툴 하나만 부르므로 위반과 건너뜀이 같은 케이스에 함께 오지 않는다.
     // 그래서 세 머리글의 순서는 케이스를 갈라 확인한다.

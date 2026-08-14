@@ -74,6 +74,7 @@ export {
 } from "./providers.js";
 export type { GenerateTestsErrorCode } from "./schema.js";
 export { GenerateTestsError } from "./schema.js";
+export { buildViolationCases, type GeneratedCase } from "./violation-cases.js";
 
 /** 테스트 코드를 생성할 때의 옵션. */
 export interface GenerateOptions {

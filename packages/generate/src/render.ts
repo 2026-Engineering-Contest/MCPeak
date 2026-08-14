@@ -1,18 +1,14 @@
 import type { ToolDef } from "@ohmymcp/core";
 import { fail, type JsonObject, plainObject, validateSchema } from "./schema.js";
 import { synthesizeValue } from "./synthesize.js";
+import type { GeneratedCase } from "./violation-cases.js";
 
 type GeneratedSuiteSpec = {
   schemaVersion: 1;
   id: string;
   name: string;
   defaultTimeoutMs: number;
-  cases: Array<{
-    id: string;
-    name: string;
-    operation: { type: "callTool"; tool: string; input: JsonObject };
-    assertions: [{ type: "isError"; expected: false }];
-  }>;
+  cases: GeneratedCase[];
 };
 
 function buildSuite(tool: ToolDef, index: number, baseName: string): GeneratedSuiteSpec {
@@ -90,10 +86,6 @@ export function renderTool(tool: ToolDef, index: number, baseName: string): stri
  * 파일 생성과 baseline이 함께 쓰는 단일 도구 case 합성 단계다.
  * 파일로 쓰는 suite와 baseline suite가 같은 case를 만들도록 buildSuite 하나만 쓴다.
  */
-export function buildGeneratedCase(
-  tool: ToolDef,
-  index: number,
-  baseName: string,
-): GeneratedSuiteSpec["cases"][number] {
-  return buildSuite(tool, index, baseName).cases[0] as GeneratedSuiteSpec["cases"][number];
+export function buildGeneratedCase(tool: ToolDef, index: number, baseName: string): GeneratedCase {
+  return buildSuite(tool, index, baseName).cases[0] as GeneratedCase;
 }

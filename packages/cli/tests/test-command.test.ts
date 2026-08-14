@@ -1,5 +1,11 @@
-import type { McpStdioConnection } from "@ohmymcp/core";
-import type { RunnerExecution, RunnerReport, TestSuiteSpec } from "@ohmymcp/runner";
+import type { McpStdioConnection, ToolDef } from "@ohmymcp/core";
+import type {
+  RunnerExecution,
+  RunnerReport,
+  TestCaseResult,
+  TestCaseSpec,
+  TestSuiteSpec,
+} from "@ohmymcp/runner";
 import { suiteFingerprint } from "@ohmymcp/runner";
 import { describe, expect, it, vi } from "vitest";
 import { parseTestCommand, runCli, type TestCommandDependencies } from "../src/test-command.js";
@@ -15,8 +21,12 @@ const approvedSuite = (approvalFingerprint: string): TestSuiteSpec => ({
   ...suite,
   approval: { fingerprint: approvalFingerprint },
 });
-/** 지문이 없는 기본 명세로 --json 을 돌렸을 때의 spec 블록. */
-const absentSpec = { approval: "absent", fingerprint };
+/**
+ * 지문이 없는 기본 명세로 --json 을 돌렸을 때의 spec 블록.
+ * `findings` 는 억제 규칙과 무관하게 항상 있으므로 빈 배열도 들어간다. 키 순서는 구현의
+ * 삽입 순서와 같아야 한다. jsonOut 이 문자열을 그대로 비교한다.
+ */
+const absentSpec = { approval: "absent", fingerprint, findings: [] };
 const jsonOut = (value: RunnerReport, spec: unknown = absentSpec): string =>
   `${JSON.stringify({ ...value, spec }, null, 2)}\n`;
 const report = (status: RunnerReport["status"] = "passed"): RunnerReport => ({
@@ -775,6 +785,7 @@ describe("승인 지문의 --json 출력", () => {
       approval: "matched",
       fingerprint,
       approvedFingerprint: fingerprint,
+      findings: [],
     });
   });
   it("absent 일 때 approvedFingerprint 키가 없다", async () => {
@@ -791,5 +802,217 @@ describe("승인 지문의 --json 출력", () => {
   });
   it("--json 이면 명세 텍스트 줄을 쓰지 않는다", async () => {
     expect((await runJson(approvedSuite(WRONG_FINGERPRINT), "failed")).text).not.toContain("명세:");
+  });
+});
+
+describe("입력 계약 참고 문장", () => {
+  /**
+   * `additionalProperties: false` 가 없으면 선언 밖 필드는 위반이 아니라서 UNDECLARED_FIELD 가
+   * 나지 않는다. 아래 기대값은 checkInputContract 를 이 입력으로 직접 불러 확인한 값이다.
+   */
+  const weatherTools: ToolDef[] = [
+    {
+      name: "get_weather",
+      inputSchema: {
+        type: "object",
+        properties: { city: { type: "string" }, units: { enum: ["c", "f"] } },
+        required: ["city"],
+        additionalProperties: false,
+      },
+    },
+  ];
+  const callCase = (
+    id: string,
+    input: Record<string, string>,
+    minLength: number,
+  ): TestCaseSpec => ({
+    id,
+    name: id,
+    operation: { type: "callTool", tool: "get_weather", input },
+    assertions: [{ type: "bodyMatchesSchema", schema: { type: "string", minLength } }],
+  });
+  const suiteOf = (...cases: TestCaseSpec[]): TestSuiteSpec => ({
+    schemaVersion: 1,
+    id: "suite",
+    name: "Suite",
+    cases,
+  });
+  /** 'city' 를 'citi' 로 잘못 쓴 케이스와 올바른 케이스가 함께 있다. */
+  const seoulSuiteWithTypo = suiteOf(
+    callCase("seoul-weather", { citi: "Seoul" }, 1),
+    callCase("busan-weather", { city: "Busan" }, 1),
+  );
+  const suiteWithVacuousAssertion = suiteOf(callCase("vacuous-case", { city: "Seoul" }, 0));
+  const cleanSuite = suiteOf(callCase("clean-case", { city: "Seoul" }, 1));
+  /** 케이스별 status 만 주면 나머지는 그 결과에서 따라 나온다. */
+  const reportWith = (
+    value: TestSuiteSpec,
+    statuses: Record<string, TestCaseResult["status"]>,
+  ): RunnerReport => {
+    const cases: TestCaseResult[] = value.cases.map((spec) => ({
+      spec,
+      status: statuses[spec.id] ?? "passed",
+      operation: { status: "completed" },
+      assertions: [],
+    }));
+    const failed = cases.filter((item) => item.status !== "passed").length;
+    return {
+      schemaVersion: 1,
+      suite: { id: value.id, name: value.name },
+      status: failed === 0 ? "passed" : "failed",
+      cases,
+      summary: {
+        total: cases.length,
+        passed: cases.length - failed,
+        failed,
+        timedOut: 0,
+        cancelled: 0,
+        notRun: 0,
+      },
+    };
+  };
+  const runTest = async (options: {
+    suite: TestSuiteSpec;
+    statuses: Record<string, TestCaseResult["status"]>;
+    tools?: readonly ToolDef[];
+    listTools?: () => Promise<ToolDef[]>;
+    json?: boolean;
+  }) => {
+    const finalReport = reportWith(options.suite, options.statuses);
+    const d = deps({
+      validateSuite: vi.fn(() => ({ valid: true as const, value: options.suite })),
+      finalize: async () => finalReport,
+    });
+    d.conn.client.listTools = options.listTools ?? (async () => [...(options.tools ?? [])]);
+    const exitCode = await runCli(
+      ["test", "x.json", "--command", "node", ...(options.json === true ? ["--json"] : [])],
+      d.value,
+    );
+    return { exitCode, stdout: d.writes.out.join(""), stderr: d.writes.err.join("") };
+  };
+
+  it("실패한 케이스에만 참고 문장을 붙인다", async () => {
+    const out = await runTest({
+      suite: seoulSuiteWithTypo,
+      tools: weatherTools,
+      statuses: { "seoul-weather": "failed", "busan-weather": "passed" },
+    });
+    expect(out.stdout).toContain("참고: seoul-weather 의 입력이 서버 선언과 다릅니다");
+    expect(out.stdout).toContain("→ 필수 필드 'city' 가 입력에 없습니다. 비슷한 필드: 'citi'");
+    expect(out.stdout).toContain(
+      "→ 'citi' 는 서버가 선언하지 않은 필드입니다. 비슷한 필드: 'city'",
+    );
+    expect(out.stdout).not.toContain("busan-weather 의 입력이");
+    expect(out.exitCode).toBe(1);
+  });
+  it("전부 통과면 참고 문장이 없다", async () => {
+    const out = await runTest({
+      suite: seoulSuiteWithTypo,
+      tools: weatherTools,
+      statuses: { "seoul-weather": "passed", "busan-weather": "passed" },
+    });
+    expect(out.stdout).not.toContain("참고:");
+    expect(out.exitCode).toBe(0);
+  });
+  it("listTools 가 던지면 추가 줄이 없고 판정도 그대로다", async () => {
+    const out = await runTest({
+      suite: seoulSuiteWithTypo,
+      listTools: () => Promise.reject(new Error("boom")),
+      statuses: { "seoul-weather": "failed" },
+    });
+    expect(out.stdout).not.toContain("입력이 서버 선언과 다릅니다");
+    expect(out.exitCode).toBe(1);
+  });
+  it("listTools 가 빈 배열이면 입력 계약 대조를 건너뛴다", async () => {
+    // 빈 목록으로 대조하면 모든 케이스가 TOOL_NOT_DECLARED 로 걸려 소음만 남는다.
+    const out = await runTest({
+      suite: seoulSuiteWithTypo,
+      tools: [],
+      statuses: { "seoul-weather": "failed" },
+    });
+    expect(out.stdout).not.toContain("입력이 서버 선언과 다릅니다");
+  });
+  it("항상 참인 단언은 툴 목록 없이도 참고 문장이 나온다", async () => {
+    const out = await runTest({
+      suite: suiteWithVacuousAssertion,
+      listTools: () => Promise.reject(new Error("boom")),
+      statuses: { "vacuous-case": "failed" },
+    });
+    expect(out.stdout).toContain("는 0이라 모든 문자열이 통과합니다");
+  });
+  it("참고 문장은 보고서 뒤, 명세 승인 블록 앞이다", async () => {
+    const out = await runTest({
+      suite: seoulSuiteWithTypo,
+      tools: weatherTools,
+      statuses: { "seoul-weather": "failed" },
+    });
+    expect(out.stdout.startsWith(RENDERED)).toBe(true);
+    // indexOf 만 비교하면 참고 문장이 아예 없을 때(-1) 도 통과한다. 존재를 먼저 고정한다.
+    const note = out.stdout.indexOf("참고: seoul-weather");
+    const approval = out.stdout.indexOf("명세:");
+    expect(note).toBeGreaterThan(0);
+    expect(approval).toBeGreaterThan(0);
+    expect(note).toBeLessThan(approval);
+  });
+  it("참고 문장은 stdout 이고 stderr 에 없다", async () => {
+    const out = await runTest({
+      suite: seoulSuiteWithTypo,
+      tools: weatherTools,
+      statuses: { "seoul-weather": "failed" },
+    });
+    expect(out.stderr).not.toContain("참고:");
+  });
+  it("--json 은 findings 를 구조로 담고 문장을 담지 않는다", async () => {
+    const out = await runTest({
+      json: true,
+      suite: seoulSuiteWithTypo,
+      tools: weatherTools,
+      statuses: { "seoul-weather": "failed", "busan-weather": "passed" },
+    });
+    expect(JSON.parse(out.stdout).spec.findings).toEqual([
+      {
+        code: "REQUIRED_MISSING",
+        severity: "blocking",
+        caseId: "seoul-weather",
+        path: "input.city",
+      },
+      {
+        code: "UNDECLARED_FIELD",
+        severity: "blocking",
+        caseId: "seoul-weather",
+        path: "input.citi",
+      },
+    ]);
+    expect(out.stdout).not.toContain("비슷한 필드");
+  });
+  it("--json 의 findings 키는 finding 이 없어도 있다", async () => {
+    const out = await runTest({
+      json: true,
+      suite: cleanSuite,
+      tools: weatherTools,
+      statuses: { "clean-case": "passed" },
+    });
+    expect(JSON.parse(out.stdout).spec.findings).toEqual([]);
+  });
+  it("참고 문장 유무가 exit code 를 바꾸지 않는다", async () => {
+    const withFindings = await runTest({
+      suite: seoulSuiteWithTypo,
+      tools: weatherTools,
+      statuses: { "seoul-weather": "failed" },
+    });
+    const withoutFindings = await runTest({
+      suite: cleanSuite,
+      tools: weatherTools,
+      statuses: { "clean-case": "failed" },
+    });
+    expect(withFindings.stdout).toContain("참고:");
+    expect(withoutFindings.stdout).not.toContain("참고:");
+    expect(withFindings.exitCode).toBe(withoutFindings.exitCode);
+  });
+  it("caseId 의 제어 문자를 이스케이프한다", async () => {
+    // caseId 는 남이 쓴 명세에서 온다. 다른 표시 항목과 같은 규칙을 쓴다.
+    const suite = suiteOf(callCase("bad\nid", { citi: "Seoul" }, 1));
+    const out = await runTest({ suite, tools: weatherTools, statuses: { "bad\nid": "failed" } });
+    expect(out.stdout).toContain("참고: bad\\u000aid 의 입력이");
   });
 });

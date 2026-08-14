@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "id": "mock-stdio-cli",
+  "name": "목 서버(stdio) CLI E2E",
+  "defaultTimeoutMs": 10000,
+  "cases": [
+    {
+      "id": "declared-tools-are-listed",
+      "name": "정의 파일에 선언한 툴을 그대로 노출한다",
+      "operation": { "type": "listTools" },
+      "assertions": [
+        { "type": "toolExists", "tool": "get_weather" },
+        { "type": "toolExists", "tool": "add" }
+      ]
+    },
+    {
+      "id": "exact-args-hit",
+      "name": "인자를 지정한 응답이 잡힌다",
+      "operation": { "type": "callTool", "tool": "add", "input": { "a": 1, "b": 2 } },
+      "assertions": [{ "type": "isError", "expected": false }]
+    },
+    {
+      "id": "any-args-hit",
+      "name": "args 를 생략한 응답이 나머지 인자를 받는다",
+      "operation": { "type": "callTool", "tool": "get_weather", "input": { "city": "제주" } },
+      "assertions": [{ "type": "isError", "expected": false }]
+    },
+    {
+      "id": "unmatched-args-miss",
+      "name": "주입되지 않은 인자 조합은 도구 오류가 된다",
+      "operation": { "type": "callTool", "tool": "add", "input": { "a": 9, "b": 9 } },
+      "assertions": [{ "type": "isError", "expected": true }]
+    }
+  ]
+}

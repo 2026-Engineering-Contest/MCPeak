@@ -10,6 +10,13 @@ export {
 } from "./body.js";
 export { canonicalJson, deepFreeze, sha256 } from "./canonical.js";
 export {
+  type ContractAxesResult,
+  type ContractAxis,
+  type ContractAxisKind,
+  type ContractDeclaredType,
+  deriveContractAxes,
+} from "./contract-axes.js";
+export {
   bodyExtractionFailedDiagnostic,
   bodySchemaMismatchDiagnostic,
   MAX_OBSERVED_KEYS,

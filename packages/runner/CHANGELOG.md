@@ -1,5 +1,52 @@
 # @ohmymcp/runner
 
+## 0.5.0
+
+### Minor Changes
+
+- c728f02: runner: canonical JSON 구현(`canonicalJson` · `sha256` · `deepFreeze`)을 `generate` 에서
+  이관하고, 승인 지문을 계산하는 `suiteFingerprint` 를 추가합니다. 지문은 `approval` 블록을
+  제외한 명세 전체의 sha256 이며, 제외 규칙은 이 함수 하나가 소유합니다. 파일에 적힌 지문이
+  다음 계산의 대상에 들어가면 승인 시점의 값과 절대 같아질 수 없기 때문입니다.
+
+  이관하면서 `canonicalJson` 과 `deepFreeze` 의 재귀 순회를 명시적 스택으로 바꿨습니다. 재귀판은
+  깊이 1500 부근에서 `RangeError` 로 죽었는데 `validateMcpSuite` 는 그 깊이를 통과시켜서, 검증을
+  통과한 명세가 지문 계산에서만 죽었습니다. 출력 문자열은 재귀판과 바이트 단위로 같습니다.
+  sparse array 판정도 own property 기준으로 바꿨습니다. 프로토타입 체인까지 보면
+  `Array.prototype` 에 인덱스가 정의됐을 때 hole 이 상속값으로 채워져 지문이 전역 상태에 따라
+  달라집니다.
+
+  generate: `canonical.ts` 가 `@ohmymcp/runner` 재수출 한 줄이 됩니다. 공개 API
+  (`canonicalJson` · `sha256`)는 그대로이며 동작도 같습니다. 구현이 한 벌로 유지되어야
+  저장 시점 지문과 실행 시점 지문이 갈리지 않습니다.
+
+- 9803c19: `RunnerReport` 를 JUnit XML 로 그리는 `renderJUnit(report, options?)` 을 추가합니다. CI 가 테스트
+  결과를 화면에 렌더하려면 이 포맷이 필요합니다. CONTRIBUTING §2.1 이 JUnit XML 을 `runner` 책임으로
+  규정하고, CLI 보고서 렌더링 설계 §9.3 이 `junit.ts` 자리를 열어 둔 것을 채웁니다.
+
+  `renderReport` 와 같은 순수성 경계를 지킵니다 — `process` · `Date` · 로케일 · 난수를 읽지 않으므로
+  같은 보고서는 항상 같은 바이트를 냅니다.
+
+  케이스 상태는 JUnit 관례대로 나눕니다. 단언이 틀린 경우는 `<failure>`, 작업이 실행되지 못한 경우
+  (작업 실패 · 시간 초과)는 `<error>`, `cancelled` 와 `notRun` 은 `<skipped/>` 입니다. CI 화면에서
+  "서버가 죽었다" 와 "응답이 다르다" 가 구별됩니다. 실패 본문에는 `diagnostics.ts` 가 만든 문장을
+  그대로 싣고 `expected` · `actual` · 스키마 위반 목록 · `hint` 를 함께 담습니다.
+
+  서버 응답 문자열이 그대로 XML 에 들어가므로 두 단계를 거칩니다. `&` `<` `>` `"` 는 이스케이프하고,
+  XML 1.0 이 허용하지 않는 제어문자와 짝 없는 서로게이트는 제거합니다. 후자는 수치 참조로도 담을 수
+  없어 제거가 유일한 방법이며, 빠뜨리면 서버가 뱉은 제어문자 하나로 리포트 파일 전체가 파싱 불가가
+  됩니다.
+
+  `time` 속성은 항상 `0` 입니다. `RunnerReport` 는 결정론성을 위해 시간 필드를 갖지 않으므로
+  `0` 은 "0초 걸렸다" 가 아니라 "시간 정보가 없다" 의 표현입니다. 실제 경과 시간이 필요해지면
+  `RunnerReport` 를 바꾸지 않고 `JUnitRenderOptions` 를 확장합니다.
+
+- cfa921d: runner: 명세에 선택 필드 `approval: { fingerprint }` 를 추가합니다. 승인 시점의 명세 지문을
+  파일에 남겨 두기 위한 자리이며, 검증은 형식(sha256 hex 64자, 소문자)만 봅니다. 값이 실제
+  명세와 맞는지 대조하는 것은 실행 시점의 관심사라 여기서 하지 않습니다. `approval` 이 없는 기존
+  명세는 그대로 유효합니다. 공개 JSON Schema(`MCP_SUITE_JSON_SCHEMA`)에도 같은 규칙이
+  들어가 런타임 검증과 갈라지지 않습니다.
+
 ## 0.4.0
 
 ### Minor Changes

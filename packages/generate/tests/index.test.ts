@@ -3,8 +3,16 @@ import { mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ToolDef } from "@ohmymcp/core";
+import * as runner from "@ohmymcp/runner";
 import { afterEach, describe, expect, it } from "vitest";
-import { createBaselineSuite, GenerateTestsError, generateTests } from "../src/index.js";
+import { deepFreeze } from "../src/canonical.js";
+import {
+  canonicalJson,
+  createBaselineSuite,
+  GenerateTestsError,
+  generateTests,
+  sha256,
+} from "../src/index.js";
 
 const temporaryDirectories: string[] = [];
 
@@ -20,6 +28,18 @@ afterEach(async () => {
       .splice(0)
       .map((directory) => rm(directory, { recursive: true, force: true })),
   );
+});
+
+describe("canonical 재수출", () => {
+  // 구현이 두 벌이 되면 저장 시점과 실행 시점의 지문이 조용히 갈린다. 같은 함수 참조여야 한다.
+  it("generate 의 sha256 이 runner 의 sha256 과 같은 함수다", () => {
+    expect(sha256).toBe(runner.sha256);
+  });
+
+  it("canonicalJson · deepFreeze 도 runner 의 것과 같은 함수다", () => {
+    expect(canonicalJson).toBe(runner.canonicalJson);
+    expect(deepFreeze).toBe(runner.deepFreeze);
+  });
 });
 
 describe("generateTests", () => {

@@ -145,9 +145,11 @@ describe("createBaselineSuite", () => {
     expect(packageJson.dependencies?.["@ohmymcp/runner"]).toBe("workspace:*");
   });
 
-  it("sha256은 같은 값에 항상 같은 해시를 준다", () => {
+  // sha256 자체의 동작 단언은 packages/runner/tests/canonical.test.ts 로 옮겼다.
+  // 구현이 runner 로 이관됐기 때문이다. 아래는 baseline 이 그 함수로 지문을 만든다는
+  // baseline 자신의 단언이라 여기 남긴다.
+  it("baseline의 suiteFingerprint는 suite의 sha256과 같다", () => {
     const suite = createBaselineSuite(tools, { suiteId: "weather", suiteName: "날씨" }).suite;
-    expect(sha256(suite)).toBe(sha256(structuredClone(suite)));
     expect(sha256(suite)).toBe(
       suite &&
         createBaselineSuite(tools, {
@@ -155,11 +157,5 @@ describe("createBaselineSuite", () => {
           suiteName: "날씨",
         }).suiteFingerprint,
     );
-    expect(sha256("x")).toMatch(/^[0-9a-f]{64}$/);
-  });
-  it("sha256은 key 순서가 다른 동등한 객체에 같은 해시를 준다", () => {
-    expect(sha256({ a: 1, b: { c: 2, d: [3, 4] } })).toBe(sha256({ b: { d: [3, 4], c: 2 }, a: 1 }));
-    // 배열 순서는 의미가 있으므로 달라야 한다.
-    expect(sha256([1, 2])).not.toBe(sha256([2, 1]));
   });
 });

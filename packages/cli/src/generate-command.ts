@@ -12,6 +12,7 @@ import type {
   SanitizedAuthoringCandidate,
 } from "@ohmymcp/generate";
 import type { SuiteValidationResult, TestSuiteSpec } from "@ohmymcp/runner";
+import { suiteFingerprint } from "@ohmymcp/runner";
 
 export const GENERATE_USAGE =
   "사용법: ohmymcp generate --suite-id <id> --name <name> --out <suite.json> --command <executable> [--arg <value> ...] [--baseline-only] [--provider <codex|claude>] [--model <model>]";
@@ -196,29 +197,21 @@ export function parseGenerateCommand(argv: readonly string[]): GenerateCommandIn
   });
 }
 
-function renderSuite(suite: TestSuiteSpec): string {
+/**
+ * 저장 키 순서는 설계 문서 §3.3이 고정한다. `approval`을 `cases` 앞에 두는 이유는 사람이
+ * 파일을 열었을 때 첫 화면에서 보이게 하기 위해서다. 지문 계산은 `canonicalJson`이 키를
+ * 정렬하므로 이 순서에 영향받지 않는다. 즉 가독성 결정이지 계약이 아니다.
+ */
+function renderSuite(suite: TestSuiteSpec, fingerprint: string): string {
   const ordered: Record<string, unknown> = {
     schemaVersion: suite.schemaVersion,
     id: suite.id,
     name: suite.name,
+    approval: { fingerprint },
   };
   if (suite.defaultTimeoutMs !== undefined) ordered.defaultTimeoutMs = suite.defaultTimeoutMs;
   ordered.cases = suite.cases;
   return `${JSON.stringify(ordered, null, 2)}\n`;
-}
-/**
- * fingerprint는 generate의 `sha256`을 그대로 쓴다. 두 벌을 두면 갈라지는 순간 승인 검증
- * (`approval.fingerprint` 대조)이 조용히 깨진다. 여기서 다시 구현하지 마라.
- *
- * 정적 import가 아니라 동적 import인 이유: `index.ts`가 `@ohmymcp/generate`를 동적으로 불러
- * 실패하면 안내 메시지로 떨어뜨린다. 이 모듈이 generate를 정적으로 묶으면 모듈 로드 시점에
- * 터져 그 경로가 죽고, generate와 무관한 `ohmymcp test`까지 함께 죽는다. 빌드 산출물에
- * node 내장 모듈 말고는 top-level import가 없는 현재 상태를 유지한다.
- */
-let sha256Impl: ((value: unknown) => string) | undefined;
-async function suiteFingerprint(suite: TestSuiteSpec): Promise<string> {
-  sha256Impl ??= (await import("@ohmymcp/generate")).sha256;
-  return sha256Impl(suite);
 }
 let temporarySequence = 0;
 /**
@@ -248,7 +241,7 @@ async function saveSuite(
     const handle = await deps.openTemp(temporary);
     created = true;
     try {
-      await handle.writeFile(renderSuite(suite), "utf8");
+      await handle.writeFile(renderSuite(suite, fingerprint), "utf8");
       await handle.sync();
     } finally {
       await handle.close();
@@ -256,7 +249,14 @@ async function saveSuite(
     const bytes = await deps.readFile(temporary);
     const parsed = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
     const validated = deps.validateSuite(parsed);
-    if (!validated.valid || (await suiteFingerprint(validated.value)) !== fingerprint)
+    // 셋째 조건이 필요한 이유. 둘째 조건은 `approval`을 제외해 계산하므로 파일에 적힌 지문이
+    // 틀려도 통과한다. 즉 renderSuite가 지문을 잘못 써넣는 결함을 둘째 조건만으로는 못 잡는다.
+    // 설계 문서 §8.
+    if (
+      !validated.valid ||
+      suiteFingerprint(validated.value) !== fingerprint ||
+      validated.value.approval?.fingerprint !== fingerprint
+    )
       throw new Error("invalid saved suite");
     // 커밋. link는 대상이 있으면 EEXIST로 실패한다. rename처럼 남의 파일을 덮어쓰지 않는다.
     //

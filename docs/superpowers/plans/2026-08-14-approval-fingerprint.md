@@ -461,9 +461,11 @@ export 한다. export 를 늘리는 것이 부담이면 임시 파일 대신 `so
 
 - 표적: `pnpm test packages/runner`, `pnpm test packages/generate`
 - 전체: `pnpm build`, `pnpm test`, `pnpm typecheck`, `pnpm lint`
-- 구현이 한 벌인지 확인: `grep -rn "createHash(\"sha256\")" packages/*/src` 의 결과가
-  `packages/runner/src/canonical.ts` 와 `packages/generate/src/filename.ts` 두 줄이어야 한다.
-  `filename.ts` 는 파일명 판별자용으로 용도가 다르며 이 작업의 대상이 아니다.
+- 구현이 한 벌인지 확인: `grep -rn "createHash(\"sha256\")" packages/*/src` 의 결과가 세 줄이고,
+  그중 canonical JSON 지문은 `packages/runner/src/canonical.ts` 한 줄뿐이어야 한다. 나머지 두
+  줄은 `packages/generate/src/filename.ts:6` 과 `:12` 다. 파일명 판별자용으로 NFC 정규화본과
+  원본을 각각 해싱하며 용도가 다르고 이 작업의 대상이 아니다. 작업 전에도 세 줄이었으므로
+  줄 수는 그대로이고 소유 패키지만 옮겨간다.
 - `packages/generate` 의 기존 테스트 단언이 위에 명시한 삭제 4건 말고는 변경 0건이어야 한다.
 
 ### 5.6 커밋 (사람이 한다)
@@ -901,7 +903,7 @@ T3-approval-fingerprint	<SHA>	2026-08-XX
 | §12 거짓 신호 | §0 검증 명령, §8 머지 직전 재확인 |
 | §13 PR | §3 웨이브 표, §4.7·§5.6·§6.7 |
 
-**ADR-0016 은 사람이 쓴다.** `docs/adr/0016-승인-지문-계산-범위.md`. 배경 / 선택지 / 결정 /
+**ADR-0017 은 사람이 쓴다.** `docs/adr/0017-승인-지문-계산-범위.md`. 배경 / 선택지 / 결정 /
 이유 / 결과 다섯 항목이고 내용은 설계서 §11 에 있다. 서브에이전트에 넘기지 않는 이유는 설계
 결정의 기록이라 판단의 소유자가 써야 하기 때문이다. PR 1 에 포함한다.
 

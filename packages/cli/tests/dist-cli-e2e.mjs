@@ -174,20 +174,27 @@ for (const [fixture, expectedStatus, expectedSummary] of [
     assert.equal(generated.err, "");
     const value = JSON.parse(await readFile(suite, "utf8"));
     assert.equal(value.cases.length, 2);
+    // 저장한 명세에는 승인 지문이 들어간다. 설계 문서 §3.
+    assert.match(value.approval?.fingerprint ?? "", /^[0-9a-f]{64}$/);
     await expectExited(pidFile);
-    const result = await execute([
-      "test",
-      suite,
-      "--command",
-      process.execPath,
-      "--arg",
-      wrapper,
-      "--arg",
-      pidFile,
-      "--arg",
-      server,
-      "--json",
-    ]);
+    const runTest = async (path, extra = []) => {
+      const outcome = await execute([
+        "test",
+        path,
+        "--command",
+        process.execPath,
+        "--arg",
+        wrapper,
+        "--arg",
+        pidFile,
+        "--arg",
+        server,
+        ...extra,
+      ]);
+      await expectExited(pidFile);
+      return outcome;
+    };
+    const result = await runTest(suite, ["--json"]);
     assert.equal(result.code, 1);
     assert.equal(result.err, "");
     assert.deepEqual(JSON.parse(result.out).summary, {
@@ -198,7 +205,27 @@ for (const [fixture, expectedStatus, expectedSummary] of [
       cancelled: 0,
       notRun: 0,
     });
-    await expectExited(pidFile);
+    // baseline 은 실패하는 케이스를 포함하므로 지문이 일치해도 규칙표상 표시된다. 설계 §7.1.
+    const matched = await runTest(suite);
+    assert.equal(matched.code, 1);
+    assert.ok(matched.out.includes("승인 시점과 동일"), matched.out);
+    // 케이스 name 한 글자를 바꾸면 명세의 의미가 바뀐 것이고 지문이 달라진다.
+    const changed = join(dir, "changed.json");
+    const changedValue = JSON.parse(JSON.stringify(value));
+    changedValue.cases[0].name = `${changedValue.cases[0].name}x`;
+    await writeFile(changed, `${JSON.stringify(changedValue, null, 2)}\n`, "utf8");
+    const mismatched = await runTest(changed);
+    assert.ok(mismatched.out.includes("승인 시점 이후 변경됨"), mismatched.out);
+    // 판정은 케이스 결과로만 정해진다. 지문이 달라도 종료 코드가 바뀌지 않는다. 설계 §6.
+    assert.equal(mismatched.code, matched.code);
+    // 하위 호환의 실측. 지문 없는 명세도 검증을 통과하고 그대로 실행된다.
+    const legacy = join(dir, "legacy.json");
+    const legacyValue = JSON.parse(JSON.stringify(value));
+    delete legacyValue.approval;
+    await writeFile(legacy, `${JSON.stringify(legacyValue, null, 2)}\n`, "utf8");
+    const absent = await runTest(legacy);
+    assert.equal(absent.code, matched.code);
+    assert.ok(absent.out.includes("승인 지문이 없습니다 (미고정)"), absent.out);
   } finally {
     await cleanupPid(pidFile);
     await rm(dir, { recursive: true, force: true });
@@ -402,7 +429,7 @@ for (const [fixture, expectedStatus, expectedSummary] of [
   });
 }
 
-// JUnit 리포터 (ADR-0017). 빌드 산출물이 실제 파일을 만드는지, 실패가 XML 에 드러나는지 본다.
+// JUnit 리포터 (ADR-0018). 빌드 산출물이 실제 파일을 만드는지, 실패가 XML 에 드러나는지 본다.
 {
   const dir = await mkdtemp(join(tmpdir(), "ohmymcp-dist-junit-"));
   const pidFile = join(dir, "pid");

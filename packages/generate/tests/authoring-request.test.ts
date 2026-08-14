@@ -28,21 +28,27 @@ const options = () => ({
 });
 
 /**
- * provider 가 providerSuite 를 그대로 돌려주는 dispatch 를 한 번 돌린다. session 을 넘기지
- * 않으므로 결과는 provider 경로 candidate(validateAuthoringProviderResult) 다.
- * baseline 은 별도 목록으로 만든다. createBaselineSuite 가 additionalProperties 를 거부하는데
- * UNDECLARED_FIELD 는 그 키워드가 정확히 false 일 때만 나기 때문이다.
+ * provider 가 providerSuite 를 그대로 돌려주는 dispatch 를 한 번 돌린다.
+ *
+ * `withSession` 이 없으면 결과는 provider 경로 candidate(validateAuthoringProviderResult) 다.
+ * `withSession: true` 면 dispatch 가 reviewLocalAuthoringCandidate 로 빠져 **세션 경로**를 탄다.
+ * 두 경로는 검사에 쓰는 도구 목록을 각자 고르므로 회귀도 따로 고정해야 한다.
+ *
+ * baseline 은 별도 목록으로 만들 수 있다. createBaselineSuite 가 additionalProperties 를
+ * 거부하는데 UNDECLARED_FIELD 는 그 키워드가 정확히 false 일 때만 나기 때문이다.
  */
 const dispatchWithProviderSuite = async (input: {
   tools: ToolDef[];
   baselineTools?: ToolDef[];
   providerSuite: unknown;
   redaction?: { sensitiveValues?: readonly string[] };
+  withSession?: boolean;
 }) => {
-  const base = createBaselineSuite(input.baselineTools ?? input.tools, {
+  const baseline = createBaselineSuite(input.baselineTools ?? input.tools, {
     suiteId: "weather",
     suiteName: "날씨",
-  }).suite;
+  });
+  const base = baseline.suite;
   const preview = prepareAuthoringRequest({
     ...options(),
     baseline: base,
@@ -63,6 +69,8 @@ const dispatchWithProviderSuite = async (input: {
     },
     preview,
     approval: { approved: true, fingerprint: preview.fingerprint },
+    // 같은 baseline 으로 만든 세션이어야 suite identity 대조를 통과한다.
+    ...(input.withSession === true ? { session: createAuthoringSession(baseline) } : {}),
   });
 };
 
@@ -693,7 +701,49 @@ describe("authoring request", () => {
           {
             id: "units-case",
             name: "단위",
-            operation: { type: "callTool", tool: "get_weather", input: { units: "f" } },
+            // 민감 값으로 지정한 'c' 를 그대로 입력에 쓴다. 치환된 도구 목록으로 대조하면
+            // 선언 enum 이 ["[REDACTED]", "f"] 가 되어 이 정상 입력이 위반으로 뒤집힌다.
+            // 'f' 를 쓰면 치환 여부와 무관하게 enum 에 남아 있어 회귀를 못 잡는다.
+            operation: { type: "callTool", tool: "get_weather", input: { units: "c" } },
+            assertions: [{ type: "bodyMatchesSchema", schema: { type: "string", minLength: 1 } }],
+          },
+        ],
+      },
+    });
+    if (result.status !== "preview") throw new Error(`preview 가 아니다: ${result.status}`);
+    expect(result.preview.specFindings.inputContract.findings).toEqual([]);
+  });
+
+  it("session 을 넘긴 경로에서도 ENUM_MISMATCH 가 나지 않는다", async () => {
+    // 위 테스트의 세션 경로 변형이다. session 이 있으면 dispatch 가
+    // reviewLocalAuthoringCandidate 로 빠지고 검사에 쓸 도구 목록을 그쪽에서 다시 고른다.
+    // 거기에 치환 사본(state.tools)을 넘기면 선언 enum 이 '[REDACTED]' 가 되어 정상 입력이
+    // 위반으로 뒤집힌다. 두 경로가 각자 목록을 고르므로 회귀도 두 벌로 고정한다.
+    const unitsTools: ToolDef[] = [
+      {
+        name: "get_weather",
+        inputSchema: {
+          type: "object",
+          properties: { units: { type: "string", enum: ["c", "f"] } },
+          required: ["units"],
+        },
+      },
+    ];
+    const base = createBaselineSuite(unitsTools, { suiteId: "weather", suiteName: "날씨" }).suite;
+    const result = await dispatchWithProviderSuite({
+      withSession: true,
+      redaction: { sensitiveValues: ["c"] },
+      tools: unitsTools,
+      providerSuite: {
+        ...base,
+        cases: [
+          {
+            id: "units-case",
+            name: "단위",
+            // 민감 값으로 지정한 'c' 를 그대로 입력에 쓴다. 치환된 도구 목록으로 대조하면
+            // 선언 enum 이 ["[REDACTED]", "f"] 가 되어 이 정상 입력이 위반으로 뒤집힌다.
+            // 'f' 를 쓰면 치환 여부와 무관하게 enum 에 남아 있어 회귀를 못 잡는다.
+            operation: { type: "callTool", tool: "get_weather", input: { units: "c" } },
             assertions: [{ type: "bodyMatchesSchema", schema: { type: "string", minLength: 1 } }],
           },
         ],

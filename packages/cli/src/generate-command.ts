@@ -11,8 +11,8 @@ import type {
   PublicProviderFailure,
   SanitizedAuthoringCandidate,
 } from "@ohmymcp/generate";
-import type { SuiteValidationResult, TestSuiteSpec } from "@ohmymcp/runner";
-import { suiteFingerprint } from "@ohmymcp/runner";
+import type { SpecFinding, SuiteValidationResult, TestSuiteSpec } from "@ohmymcp/runner";
+import { describeSpecFinding, suiteFingerprint } from "@ohmymcp/runner";
 
 export const GENERATE_USAGE =
   "사용법: ohmymcp generate --suite-id <id> --name <name> --out <suite.json> --command <executable> [--arg <value> ...] [--baseline-only] [--provider <codex|claude>] [--model <model>]";
@@ -359,6 +359,69 @@ function showDiff(io: ReviewIO, preview: AuthoringDiffPreview): void {
     );
   }
 }
+/** 위반으로 세는 것만 남긴다. SCHEMA_NOT_ANALYZABLE 은 건너뜀이라 위반이 아니다. */
+const isViolation = (finding: SpecFinding): boolean => finding.code !== "SCHEMA_NOT_ANALYZABLE";
+
+/**
+ * 선택한 change 의 caseId 집합에 걸린 finding 만 뽑는다. 순서는 재정렬하지 않는다.
+ * runner 가 정한 순서가 곧 사양이고, 여기서 다시 정렬하면 화면마다 순서가 갈린다.
+ *
+ * caseId 가 없는 change 종류(suiteMetadata · caseOrder)는 집합에 아무것도 넣지 않는다.
+ * 위반 케이스를 선택에서 뺐으면 경고할 이유가 없다.
+ */
+function findingsForSelection(
+  candidate: SanitizedAuthoringCandidate,
+  preview: AuthoringDiffPreview,
+  selectedChangeIds: readonly string[],
+): readonly SpecFinding[] {
+  const ids = new Set(selectedChangeIds);
+  const caseIds = new Set(
+    preview.changes
+      .filter((change) => ids.has(change.id) && "caseId" in change)
+      .map((change) => (change as { caseId: string }).caseId),
+  );
+  return [
+    ...candidate.specFindings.inputContract.findings,
+    ...candidate.specFindings.assertionSubstance.findings,
+  ].filter((finding) => caseIds.has(finding.caseId));
+}
+
+/**
+ * 선택한 변경에 걸린 입력 계약 위반을 찍고, 위반이 있으면 재확인을 하나 더 받는다.
+ * 반환값이 false 면 적용을 멈추고 메뉴로 돌아간다.
+ *
+ * 거부하지 않고 재확인만 받는다. 서버가 inputSchema 를 느슨하게 선언하면 정상 명세도
+ * UNDECLARED_FIELD 로 걸리므로, 거부하면 옳은 명세를 저장할 길이 막힌다.
+ */
+async function confirmSpecFindings(
+  io: ReviewIO,
+  candidate: SanitizedAuthoringCandidate,
+  diff: AuthoringDiffPreview,
+  selected: readonly string[],
+): Promise<boolean> {
+  const findings = findingsForSelection(candidate, diff, selected);
+  const violations = findings.filter(isViolation);
+  const skipped = findings.length - violations.length;
+  if (violations.length > 0) {
+    // 삽입 순서가 곧 runner 의 finding 순서다. 정렬하지 않는다.
+    const byCase = new Map<string, SpecFinding[]>();
+    for (const finding of violations) {
+      const list = byCase.get(finding.caseId) ?? [];
+      list.push(finding);
+      byCase.set(finding.caseId, list);
+    }
+    io.write(`입력 계약 위반 ${violations.length}건 (선택한 변경 기준)\n`);
+    for (const [caseId, list] of byCase) {
+      const change = diff.changes.find((item) => "caseId" in item && item.caseId === caseId);
+      io.write(`  → ${change?.id ?? ""} ${caseId}\n`);
+      // 문장은 describeSpecFinding 만 만든다. 여기서는 들여쓰기만 붙인다.
+      for (const finding of list) io.write(`     ${describeSpecFinding(finding)}\n`);
+    }
+  }
+  if (skipped > 0) io.write(`  → 해석하지 못한 서버 스키마 ${skipped}건은 검사에서 빠졌습니다.\n`);
+  if (violations.length === 0) return true;
+  return io.confirm(`위반 ${violations.length}건이 남아 있습니다. 그래도 적용합니까?`);
+}
 function safeFailure(deps: GenerateCommandDependencies, code: string): void {
   deps.writeStderr(
     `오류 [GENERATE_${code}]: AI 검토 요청을 완료하지 못했습니다.\n해결: 입력과 provider 상태를 확인한 뒤 메뉴에서 다시 요청하세요.\n`,
@@ -508,6 +571,7 @@ async function runInteractiveReview(
                 .split(",")
                 .map((id) => id.trim())
                 .filter(Boolean);
+        if (!(await confirmSpecFindings(io, candidate, diff, selected))) continue;
         if (!(await io.confirm("선택한 변경을 적용할까요?"))) continue;
         const result = apply({
           session,

@@ -1,5 +1,6 @@
+import type { ToolDef } from "@ohmymcp/core";
 import type { TestCaseSpec, TestSuiteSpec } from "@ohmymcp/runner";
-import { validateMcpSuite } from "@ohmymcp/runner";
+import { checkAssertionSubstance, checkInputContract, validateMcpSuite } from "@ohmymcp/runner";
 import type {
   ApplyAuthoringChangesResult,
   AuthoringCandidateBinding,
@@ -110,6 +111,18 @@ function candidateFor(options: LocalCandidateReviewOptions): LocalCandidateRevie
     };
   const toolIssues = knownTools(value, options.tools);
   if (toolIssues.length > 0) return { status: "invalid", issues: toolIssues };
+  // 검사는 값 치환 이전 객체로 한다. 치환 후에 하면 숫자 필드가 '[REDACTED]' 문자열이 되어
+  // TYPE_MISMATCH 거짓 양성이 난다. 설계 문서 §3.
+  // value 는 여기서 이미 validateMcpSuite · identity · 툴 allowlist 를 통과했다. 그 앞으로
+  // 옮기면 검증 안 된 객체가 검사 안으로 들어가 던진다.
+  const contractTools: ToolDef[] = options.tools.map((tool) => ({
+    name: tool.name,
+    inputSchema: tool.inputSchema,
+  }));
+  const specFindings = deepFreeze({
+    inputContract: checkInputContract({ suite: value, tools: contractTools }),
+    assertionSubstance: checkAssertionSubstance(value),
+  });
   const redacted = redactAuthoringSuite(value, {
     ...options.redaction,
     sensitiveValues: options.sensitiveValues ?? options.redaction?.sensitiveValues,
@@ -122,6 +135,7 @@ function candidateFor(options: LocalCandidateReviewOptions): LocalCandidateRevie
     executable: redacted.redactedPaths.length === 0,
     requiresApproval: true as const,
     fingerprint: sha256(frozenSuite),
+    specFindings,
     binding: binding(),
   });
   candidates.set(preview, {

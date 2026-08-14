@@ -1,9 +1,22 @@
 import type {
   RunnerRedactionOptions,
+  SpecFindingsResult,
   SuiteValidationIssue,
   TestCaseSpec,
   TestSuiteSpec,
 } from "@ohmymcp/runner";
+
+/**
+ * 승인 화면이 읽는 비차단 진단. 두 검사를 병합하지 않고 따로 담는다. 병합하면 두 검사 사이의
+ * 정렬 정책을 새로 정해야 하고 totalFindings 둘을 어떻게 합칠지가 애매해진다. 나누면 각 검사의
+ * 기존 정렬과 totalFindings 가 뜻을 그대로 유지한다.
+ *
+ * 지문(fingerprint) 계산 대상이 아니다. 계산에 넣으면 승인된 지문이 전부 어긋난다.
+ */
+export interface CandidateSpecFindings {
+  readonly inputContract: SpecFindingsResult;
+  readonly assertionSubstance: SpecFindingsResult;
+}
 
 export type TestCaseOrigin = "schemaBaseline" | "ai" | "user";
 export interface CaseProvenance {
@@ -37,6 +50,11 @@ export interface SanitizedAuthoringCandidate {
   readonly executable: boolean;
   readonly requiresApproval: true;
   readonly fingerprint: string;
+  /**
+   * 값 치환 이전 객체로 돌린 비차단 진단. result 안에 두지 않는다. fingerprint 가 result 의
+   * suite 로 계산되므로 안에 넣으면 이미 승인된 지문이 전부 어긋난다.
+   */
+  readonly specFindings: CandidateSpecFindings;
   readonly binding: AuthoringCandidateBinding;
 }
 export interface AuthoringSessionView {
@@ -111,7 +129,16 @@ export interface LocalCandidateReviewOptions {
   readonly session: AuthoringSessionView;
   readonly candidate?: unknown;
   readonly questions?: readonly string[];
-  readonly tools: readonly { readonly name: string }[];
+  /**
+   * 서버가 선언한 도구 목록. 입력 계약 대조에 inputSchema 가 필요해 optional 로 열어 뒀다.
+   * 없으면 그 도구는 SCHEMA_NOT_ANALYZABLE 하나만 나고 다른 검사를 건너뛴다. 기존 호출자가
+   * 이름만 넘기던 계약은 그대로 유효하다.
+   */
+  readonly tools: readonly {
+    readonly name: string;
+    readonly description?: string;
+    readonly inputSchema?: unknown;
+  }[];
   readonly providerId?: "codex" | "claude";
   readonly sensitiveValues?: readonly string[];
   readonly redaction?: RunnerRedactionOptions;

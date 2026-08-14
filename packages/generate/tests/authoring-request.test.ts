@@ -27,6 +27,56 @@ const options = () => ({
   model: "test",
 });
 
+/**
+ * provider 가 providerSuite 를 그대로 돌려주는 dispatch 를 한 번 돌린다. session 을 넘기지
+ * 않으므로 결과는 provider 경로 candidate(validateAuthoringProviderResult) 다.
+ * baseline 은 별도 목록으로 만든다. createBaselineSuite 가 additionalProperties 를 거부하는데
+ * UNDECLARED_FIELD 는 그 키워드가 정확히 false 일 때만 나기 때문이다.
+ */
+const dispatchWithProviderSuite = async (input: {
+  tools: ToolDef[];
+  baselineTools?: ToolDef[];
+  providerSuite: unknown;
+  redaction?: { sensitiveValues?: readonly string[] };
+}) => {
+  const base = createBaselineSuite(input.baselineTools ?? input.tools, {
+    suiteId: "weather",
+    suiteName: "날씨",
+  }).suite;
+  const preview = prepareAuthoringRequest({
+    ...options(),
+    baseline: base,
+    candidate: base,
+    tools: input.tools,
+    ...(input.redaction === undefined ? {} : { redaction: input.redaction }),
+  });
+  return dispatchAuthoringRequest({
+    provider: {
+      id: "codex" as const,
+      author: async () => ({
+        status: "candidate",
+        suite: input.providerSuite,
+        summary: "요약",
+        questions: [],
+        warnings: [],
+      }),
+    },
+    preview,
+    approval: { approved: true, fingerprint: preview.fingerprint },
+  });
+};
+
+/** baseline suite 를 그대로 돌려주는 provider 응답. 위반이 하나도 없는 대조군이다. */
+const cleanProviderSuite = () =>
+  createBaselineSuite(tools, { suiteId: "weather", suiteName: "날씨" }).suite;
+
+/**
+ * 손대지 않은 provider candidate 의 지문. T3 구현 **이전** 값을 그대로 박았다.
+ * specFindings 를 candidate 에 실어도 이 값이 유지돼야 한다.
+ */
+const KNOWN_PROVIDER_FINGERPRINT =
+  "77840d3e4dd6f4ccb1048a05deae403302d9c95723266fb428eed1394fa01b61";
+
 describe("authoring request", () => {
   it("initial 요청은 baseline을 candidate로 고정한다", () => {
     const preview = prepareAuthoringRequest(options());
@@ -571,5 +621,94 @@ describe("authoring request", () => {
     );
     expect(JSON.stringify(result)).not.toContain("RAW_SENTINEL");
     expect(JSON.stringify(result)).not.toContain("secretKey");
+  });
+
+  it("provider 후보에도 specFindings 가 붙는다", async () => {
+    const contractTools: ToolDef[] = [
+      {
+        name: "get_weather",
+        inputSchema: {
+          type: "object",
+          properties: { city: { type: "string" } },
+          required: ["city"],
+          additionalProperties: false,
+        },
+      },
+    ];
+    const baselineTools: ToolDef[] = [
+      {
+        name: "get_weather",
+        inputSchema: {
+          type: "object",
+          properties: { city: { type: "string" } },
+          required: ["city"],
+        },
+      },
+    ];
+    const base = createBaselineSuite(baselineTools, {
+      suiteId: "weather",
+      suiteName: "날씨",
+    }).suite;
+    const result = await dispatchWithProviderSuite({
+      tools: contractTools,
+      baselineTools,
+      providerSuite: {
+        ...base,
+        cases: [
+          {
+            id: "seoul-weather",
+            name: "서울 날씨",
+            operation: { type: "callTool", tool: "get_weather", input: { citi: "Seoul" } },
+            assertions: [{ type: "bodyMatchesSchema", schema: { type: "string", minLength: 1 } }],
+          },
+        ],
+      },
+    });
+    if (result.status !== "preview") throw new Error(`preview 가 아니다: ${result.status}`);
+    expect(result.preview.specFindings.inputContract.findings.map((f) => f.code)).toEqual([
+      "REQUIRED_MISSING",
+      "UNDECLARED_FIELD",
+    ]);
+  });
+
+  it("enum 값이 민감 값과 같아도 ENUM_MISMATCH 가 나지 않는다", async () => {
+    // 검사에 치환된 tools 를 쓰면 선언 enum 이 '[REDACTED]' 가 되어 정상 입력이 위반으로 뒤집힌다.
+    const unitsTools: ToolDef[] = [
+      {
+        name: "get_weather",
+        inputSchema: {
+          type: "object",
+          properties: { units: { type: "string", enum: ["c", "f"] } },
+          required: ["units"],
+        },
+      },
+    ];
+    const base = createBaselineSuite(unitsTools, { suiteId: "weather", suiteName: "날씨" }).suite;
+    const result = await dispatchWithProviderSuite({
+      redaction: { sensitiveValues: ["c"] },
+      tools: unitsTools,
+      providerSuite: {
+        ...base,
+        cases: [
+          {
+            id: "units-case",
+            name: "단위",
+            operation: { type: "callTool", tool: "get_weather", input: { units: "f" } },
+            assertions: [{ type: "bodyMatchesSchema", schema: { type: "string", minLength: 1 } }],
+          },
+        ],
+      },
+    });
+    if (result.status !== "preview") throw new Error(`preview 가 아니다: ${result.status}`);
+    expect(result.preview.specFindings.inputContract.findings).toEqual([]);
+  });
+
+  it("specFindings 는 provider candidate 의 fingerprint 를 바꾸지 않는다", async () => {
+    const before = await dispatchWithProviderSuite({
+      tools,
+      providerSuite: cleanProviderSuite(),
+    });
+    if (before.status !== "preview") throw new Error("preview 가 아니다");
+    expect(before.preview.fingerprint).toBe(KNOWN_PROVIDER_FINGERPRINT);
   });
 });

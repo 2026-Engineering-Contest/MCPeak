@@ -1,4 +1,6 @@
 import {
+  checkAssertionSubstance,
+  checkInputContract,
   DEFAULT_SENSITIVE_KEYS,
   REDACTED,
   type RunnerRedactionOptions,
@@ -106,6 +108,12 @@ type RequestState = {
   timeoutMs: number;
   maxResultBytes: number;
   tools: readonly McpToolContext[];
+  /**
+   * 검사용 원본 도구 목록이다. provider 로 보내는 `tools` 사본은 치환돼 있어 inputSchema 안의
+   * enum 값이 바뀔 수 있고, 그것으로 대조하면 정상 입력이 ENUM_MISMATCH 로 뒤집힌다.
+   * `TOOL_CONTRACT_PATHS` 가 지켜주는 것은 `[i].name` 뿐이다. payload 에는 넣지 않는다.
+   */
+  unredactedTools: readonly McpToolContext[];
   redaction?: RunnerRedactionOptions;
 };
 const requests = new WeakMap<AuthoringRequestPreview, RequestState>();
@@ -303,6 +311,9 @@ export function prepareAuthoringRequest(options: {
     timeoutMs: preview.providerTimeoutMs,
     maxResultBytes: preview.maxResultBytes,
     tools: request.tools,
+    // byte(request) · assertJson 대상 밖이다. 넣으면 MAX_TOOLS_BYTES 판정이 두 배로 세어져
+    // 정상 요청이 거부된다.
+    unredactedTools: options.tools,
     redaction: options.redaction,
   });
   return preview;
@@ -391,6 +402,14 @@ export function validateAuthoringProviderResult(
       });
   });
   if (contextIssues.length) return { status: "invalid", issues: contextIssues.slice(0, 100) };
+  // 검사는 값 치환 이전 suite 로 한다. sanitized.suite 를 쓰면 숫자 필드가 '[REDACTED]' 문자열이
+  // 되어 TYPE_MISMATCH 거짓 양성이 난다. 도구 목록도 치환된 state.tools 가 아니라 원본을 쓴다.
+  // 이 지점의 suite 는 validateMcpSuite · identity · 도구 allowlist 를 이미 통과했다.
+  // 그 앞으로 옮기면 검증 안 된 객체가 검사 안으로 들어가 던진다. 설계 문서 §3.
+  const specFindings = frozen({
+    inputContract: checkInputContract({ suite, tools: state.unredactedTools }),
+    assertionSubstance: checkAssertionSubstance(suite),
+  });
   const sanitized = redactAuthoringSuite(suite, state.redaction);
   const result: AuthoringProviderResult = {
     status: "candidate",
@@ -418,6 +437,7 @@ export function validateAuthoringProviderResult(
     executable: sanitized.redactedPaths.length === 0,
     requiresApproval: true as const,
     fingerprint: sha256(result),
+    specFindings,
     binding: frozen({} as never),
   });
   candidates.set(candidate, result.suite);
@@ -455,7 +475,10 @@ export async function dispatchAuthoringRequest(options: {
     return reviewLocalAuthoringCandidate({
       session: options.session,
       candidate,
-      tools: state.tools,
+      // 치환 사본이 아니라 원본을 넘긴다. 세션 경로도 안에서 같은 대조를 돌리므로 치환된
+      // enum 값으로 대조하면 정상 입력이 ENUM_MISMATCH 로 뒤집힌다. 도구 이름 allowlist 는
+      // TOOL_CONTRACT_PATHS 덕분에 두 목록에서 같다.
+      tools: state.unredactedTools,
       providerId: state.providerId,
       redaction: state.redaction,
       sensitiveValues: state.redaction?.sensitiveValues,

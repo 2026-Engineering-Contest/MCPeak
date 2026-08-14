@@ -25,6 +25,58 @@ const candidate = (session = createAuthoringSession(baseline())) =>
   structuredClone(session.approvedDraft.suite);
 const approve = (fingerprint: string) => ({ approved: true as const, fingerprint });
 
+/**
+ * 손대지 않은 baseline candidate 의 지문. T2 구현 **이전** 값을 그대로 박았다.
+ * specFindings 를 candidate 에 실어도 이 값이 유지돼야 한다. 바뀌면 이미 승인된 지문이
+ * 전부 어긋난다는 뜻이다.
+ */
+const KNOWN_CLEAN_FINGERPRINT = "45dc074424110a20527c3856a026adc017013d25fc403f783f9eeab3a93ccc1c";
+
+/**
+ * baseline 생성용 도구 목록. createBaselineSuite 가 지원하는 키워드만 쓴다. type 없는 필드와
+ * additionalProperties 를 거부하므로 enum 옆에 type 을 적고 additionalProperties 는 뺀다.
+ */
+const weatherBaselineTools: ToolDef[] = [
+  {
+    name: "get_weather",
+    inputSchema: {
+      type: "object",
+      properties: { city: { type: "string" }, units: { type: "string", enum: ["c", "f"] } },
+      required: ["city"],
+    },
+  },
+];
+
+/**
+ * 입력 계약 대조에 넘기는 도구 목록. baseline 용과 같은 스키마에 additionalProperties 만 더했다.
+ * UNDECLARED_FIELD 는 additionalProperties 가 정확히 false 일 때만 나기 때문이다(설계 문서 §5.3).
+ * baseline 생성기가 지원하는 키워드 부분집합이 대조 검사보다 좁아서 목록을 둘로 나눈다.
+ */
+const weatherTools: ToolDef[] = [
+  {
+    name: "get_weather",
+    inputSchema: {
+      type: "object",
+      properties: { city: { type: "string" }, units: { type: "string", enum: ["c", "f"] } },
+      required: ["city"],
+      additionalProperties: false,
+    },
+  },
+];
+
+/**
+ * toolList 로 baseline 세션을 만들고, 그 승인 suite 의 case 를 testCase 하나로 갈아끼운
+ * candidate 를 함께 돌려준다. suite identity(id · schemaVersion)는 그대로 유지된다.
+ */
+const sessionWithCase = (toolList: ToolDef[], testCase: unknown) => {
+  const session = createAuthoringSession(
+    createBaselineSuite(toolList, { suiteId: "weather", suiteName: "날씨" }),
+  );
+  const next = candidate(session);
+  next.cases = [testCase as (typeof next.cases)[number]];
+  return { session, next };
+};
+
 describe("authoring session", () => {
   it("baseline으로 revision 0 authoring session을 만든다", () => {
     const source = baseline();
@@ -285,6 +337,67 @@ describe("authoring session", () => {
     expect(
       reviewLocalAuthoringCandidate({ session, candidate: { ...valid, cases: [] }, tools }),
     ).toMatchObject({ status: "invalid", issues: expect.any(Array) });
+  });
+
+  it("오타·enum 위반·항상 참인 단언을 specFindings 로 보고한다", () => {
+    const { session, next } = sessionWithCase(weatherBaselineTools, {
+      id: "seoul-weather",
+      name: "서울 날씨",
+      operation: {
+        type: "callTool",
+        tool: "get_weather",
+        input: { citi: "Seoul", units: "celsius" },
+      },
+      assertions: [{ type: "bodyMatchesSchema", schema: { type: "string", minLength: 0 } }],
+    });
+    const result = reviewLocalAuthoringCandidate({
+      session,
+      candidate: next,
+      tools: weatherTools,
+    });
+    if (result.status !== "preview") throw new Error(`preview 가 아니다: ${result.status}`);
+    expect(result.preview.specFindings.inputContract.findings.map((f) => f.code)).toEqual([
+      "REQUIRED_MISSING",
+      "UNDECLARED_FIELD",
+      "ENUM_MISMATCH",
+    ]);
+    expect(result.preview.specFindings.assertionSubstance.findings.map((f) => f.code)).toEqual([
+      "VACUOUS_MIN_LENGTH",
+    ]);
+  });
+
+  it("치환된 민감 필드 때문에 TYPE_MISMATCH 가 나지 않는다", () => {
+    // 이 테스트가 '검사를 치환 이전에 돌린다'는 설계의 유일한 근거다. 치환 이후로 옮기면
+    // token 값이 '[REDACTED]' 문자열이 되어 number 선언과 어긋나 거짓 양성이 난다.
+    const authTools: ToolDef[] = [
+      {
+        name: "auth",
+        inputSchema: {
+          type: "object",
+          properties: { token: { type: "number" } },
+          required: ["token"],
+        },
+      },
+    ];
+    const { session, next } = sessionWithCase(authTools, {
+      id: "auth-case",
+      name: "인증",
+      operation: { type: "callTool", tool: "auth", input: { token: 12345 } },
+      assertions: [{ type: "bodyMatchesSchema", schema: { type: "string", minLength: 1 } }],
+    });
+    const result = reviewLocalAuthoringCandidate({ session, candidate: next, tools: authTools });
+    if (result.status !== "preview") throw new Error(`preview 가 아니다: ${result.status}`);
+    expect(result.preview.specFindings.inputContract.findings).toEqual([]);
+    // 치환이 실제로 일어났음을 함께 고정한다. 안 일어나면 이 회귀 테스트가 아무것도 안 지킨다.
+    expect(result.preview.redactedPaths).toEqual(["cases[0].operation.input"]);
+  });
+
+  it("specFindings 는 fingerprint 를 바꾸지 않는다", () => {
+    // 승인 지문 계약이 깨지지 않는 것을 고정한다. 상수는 T2 구현 이전 값이다.
+    const session = createAuthoringSession(baseline());
+    const result = reviewLocalAuthoringCandidate({ session, candidate: candidate(session), tools });
+    if (result.status !== "preview") throw new Error(`preview 가 아니다: ${result.status}`);
+    expect(result.preview.fingerprint).toBe(KNOWN_CLEAN_FINGERPRINT);
   });
 
   it("승인 fingerprint가 같은 draft만 execution snapshot으로 만든다", () => {

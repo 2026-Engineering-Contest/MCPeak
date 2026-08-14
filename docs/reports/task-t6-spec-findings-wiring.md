@@ -381,3 +381,104 @@ E2E 가 지켜야 할 것이 그것이다.
 - **새 블록은 `참고:` 세 머리글 중 하나만 덮는다.** 단언 실질성(`… 의 단언은 무엇이 와도
   통과합니다`)은 예제 서버 없이도 재현 가능하므로 같은 블록에 하나 더 넣을 수 있었다. 지시가
   "더할 것은 하나다" 였고 오타 명세만 명시해서 범위를 넘기지 않았다. 넣을지는 판단해 달라.
+
+---
+
+## T7b: 단언 실질성 머리글도 E2E 에 더한다
+
+T7 이 남긴 구멍을 닫았다. 단언 실질성은 툴 목록이 없어도 항상 도는 경로다. `listTools()` 가
+죽어도 나와야 하는 문장인데 CI 그물 밖에 있었다.
+
+### 바꾼 파일
+
+`packages/cli/tests/dist-cli-e2e.mjs` 와 이 보고서다. `examples/` 는 건드리지 않았고
+`git diff --stat -- packages/cli/src` 는 빈 출력이다.
+
+T7 이 만든 블록 안에 이어 붙였다. 새 블록을 만들지 않았다. 같은 임시 디렉터리와 같은
+`runTest` 를 그대로 쓴다.
+
+### `suiteOf` 를 재사용했다
+
+지시가 "억지가 되면 헬퍼를 하나 더" 였는데 억지가 아니었다. 기존 `suiteOf(input)` 에 두 번째
+인자를 더해 `suiteOf(input, extraAssertions = [])` 로 넓혔다. 네 명세가 전부 같은 케이스에서
+입력과 단언만 갈리므로 한 함수로 만드는 편이 차이를 더 잘 드러낸다.
+
+| 명세 | 입력 | 추가 단언 | 무엇을 보나 |
+|---|---|---|---|
+| `typo.json` | `{ citi: "서울" }` | 없음 | 입력 계약 머리글 (T7) |
+| `correct.json` | `{ city: "서울" }` | 없음 | 부재 단언 (T7) |
+| `vacuous.json` | `{ city: "없는도시" }` | `minLength: 0` | 단언 실질성 머리글 **단독** |
+| `combined.json` | `{ citi: "서울" }` | `minLength: 0` | 두 머리글이 갈리고 순서가 맞는지 |
+
+`vacuous.json` 의 입력이 `없는도시` 인 이유는 둘이다. 필드 이름이 맞아 입력 계약 finding 이
+하나도 안 나야 머리글이 단독으로 나오는 것을 볼 수 있고, 서버가 그 도시에 오류를 돌려줘야
+케이스가 실패한다(표시는 실패 케이스 한정이다).
+
+### 더한 단언
+
+1. `vacuous.json` → exit code **1**, stderr 비어 있음.
+2. `참고: seoul-weather 의 단언은 무엇이 와도 통과합니다` 와
+   `assertions[1].schema.minLength 는 0이라 모든 문자열이 통과합니다` 가 stdout 에 있음.
+3. 같은 실행에 `의 입력이 서버 선언과 다릅니다` 가 **없음**. 입력이 멀쩡한데 입력 계약 머리글이
+   붙는 회귀를 잡는다.
+4. `combined.json` → exit code **1**, 두 머리글이 **둘 다** 있고 `indexOf` 비교로 입력 계약이
+   **먼저**임.
+
+T6 에서 `/tmp/t6-combined.json` 으로 눈으로만 봤던 순서 계약이 이제 CI 에 들어왔다.
+
+### 무는지 확인했다 (두 번)
+
+**프로브 1 — 단언 실질성 결과를 버린다.** `test-command.ts:535` 의
+`...assertionSubstance(validated.value).findings,` 를 빈 배열이 되게 바꿨다.
+
+```
+AssertionError [ERR_ASSERTION]: stdout 에 '참고: seoul-weather 의 단언은 무엇이 와도 통과합니다'
+가 없습니다. 실제 출력:
+명세: 승인 지문이 없습니다 (미고정)
+    at .../packages/cli/tests/dist-cli-e2e.mjs:425:14
+```
+
+**프로브 2 — 블록 순서를 뒤집는다.** `FINDING_GROUP_ORDER`(255행)에서
+`"inputContract"` 와 `"assertionSubstance"` 자리를 바꿨다.
+
+```
+AssertionError [ERR_ASSERTION]: 입력 계약 블록이 단언 실질성보다 뒤에 있습니다.
+    at .../packages/cli/tests/dist-cli-e2e.mjs:448:12
+```
+
+순서 단언이 단순 존재 확인이 아니라 실제로 순서를 지킨다는 증거다. 두 프로브 모두 원복했고
+`git diff --stat -- packages/cli/src` 가 빈 출력임을 확인했다.
+
+### 검증
+
+| 명령 | 판정 줄 |
+|---|---|
+| `pnpm build` → `node ./tests/dist-cli-e2e.mjs` | `EXIT=0` |
+| `pnpm test` | `Test Files  43 passed (43)` / `Tests  850 passed \| 1 skipped (851)` |
+| `npx turbo typecheck --force` | `Tasks:    6 successful, 6 total` / `Cached:    0 cached, 6 total` |
+| `pnpm lint` | `Checked 134 files in 27ms. No fixes applied.` |
+| `git diff --stat -- packages/cli/src` | 빈 출력 |
+
+`pnpm lint` 가 처음에 한 번 걸렸다. `indexOf` 인자 줄이 폭을 넘어 biome 이 줄바꿈을 요구했다.
+`biome check --write` 로 포맷만 적용하고 E2E 를 다시 돌려 `EXIT=0` 을 확인했다.
+
+### 임의로 판단한 지점
+
+1. **명세를 둘 더했다.** 지시의 필수는 단언 실질성 하나이고 복합은 "가능하면" 이었다. 둘 다
+   넣었다. 복합만 두면 머리글이 단독으로 나오는 경우를 못 덮고, 단독만 두면 순서 계약을 못
+   덮는다. 실행이 두 번 느는 대신 두 사양이 각각 고정된다.
+2. **순서 단언을 `indexOf` 비교로 했다.** 두 머리글이 있다는 것만 확인하면 순서가 뒤집혀도
+   통과한다. 프로브 2 가 그것을 실증한다.
+3. **`vacuous.json` 에 `없는도시` 를 썼다.** 표시가 실패 케이스 한정이므로 케이스를 실패시켜야
+   하는데, 입력 계약을 어기지 않으면서 실패시키는 방법이 이것뿐이다. 필드 이름을 틀리면 입력
+   계약 finding 이 함께 나서 단독 확인이 안 된다.
+4. **세 번째 머리글은 안 넣었다.** 지시대로다. `SCHEMA_NOT_ANALYZABLE` 은 예제 서버로 재현
+   불가다(6절 참고).
+
+### T7b 이후 남은 위험
+
+- `참고:` 세 머리글 중 둘이 CI 에 들어왔다. 셋째(`… 의 입력 검사를 건너뛰었습니다`)는 여전히
+  유닛테스트만 덮는다. 예제 서버에 `anyOf` 를 쓰는 툴이 없어서이고 그쪽은 다른 오너 영역이다.
+- `UNDECLARED_FIELD` 도 여전히 실환경 미확인이다. 같은 이유다.
+- `generate` 승인 화면은 CI 에 없다. TTY 가 필요해 이 E2E 로는 못 띄운다. T6 에서 수동으로
+  확인했다.

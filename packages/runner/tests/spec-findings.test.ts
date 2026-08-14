@@ -53,10 +53,10 @@ describe("describeSpecFinding 문안 (설계 문서 §7)", () => {
     ).toBe("'citi' 는 서버가 선언하지 않은 필드입니다. 비슷한 필드: 'city'");
   });
 
-  it("TYPE_MISMATCH", () => {
+  it("TYPE_MISMATCH 는 어느 쪽이 서버인지 낱말로 구분한다", () => {
     expect(
       describeSpecFinding(finding({ code: "TYPE_MISMATCH", expected: "string", actual: "number" })),
-    ).toBe("input.city 의 타입이 다릅니다. 선언: 'string', 명세: 'number'");
+    ).toBe("input.city 의 타입이 다릅니다. 서버 선언: 'string', 명세: 'number'");
   });
 
   it("ENUM_MISMATCH", () => {
@@ -92,18 +92,6 @@ describe("describeSpecFinding 문안 (설계 문서 §7)", () => {
         finding({ code: "SCHEMA_NOT_ANALYZABLE", severity: "advisory", actual: "get_weather" }),
       ),
     ).toBe("'get_weather' 의 입력 스키마를 해석하지 못해 이 툴의 입력 검사를 건너뜁니다");
-  });
-
-  it("UNCONSTRAINED_SCHEMA", () => {
-    expect(
-      describeSpecFinding(
-        finding({
-          code: "UNCONSTRAINED_SCHEMA",
-          severity: "advisory",
-          path: "assertions[0].schema",
-        }),
-      ),
-    ).toBe("assertions[0].schema 스키마에 제약이 없어 어떤 응답이든 통과합니다");
   });
 
   it("VACUOUS_MIN_LENGTH", () => {
@@ -147,7 +135,7 @@ describe("describeSpecFinding 표기 규칙", () => {
       finding({ code: "TYPE_MISMATCH", expected: "string", actual: "number" }),
       finding({ code: "ENUM_MISMATCH", expected: ["c", "f"], actual: "celsius", suggestion: "c" }),
       finding({ code: "SCHEMA_NOT_ANALYZABLE", actual: "get_weather" }),
-      finding({ code: "UNCONSTRAINED_SCHEMA", path: "assertions[0].schema" }),
+      finding({ code: "VACUOUS_MIN_LENGTH", path: "assertions[0].schema.minLength" }),
       finding({ code: "VACUOUS_MIN_LENGTH", path: "assertions[0].schema.minLength" }),
       finding({ code: "VACUOUS_MIN_ITEMS", path: "assertions[0].schema.minItems" }),
     ];
@@ -203,7 +191,10 @@ describe("리뷰 회귀: 한 줄 계약", () => {
 
   it("path 의 제어 문자도 이스케이프한다", () => {
     const text = describeSpecFinding(
-      finding({ code: "UNCONSTRAINED_SCHEMA", path: "assertions[0].schema.properties.a\nb" }),
+      finding({
+        code: "VACUOUS_MIN_LENGTH",
+        path: "assertions[0].schema.properties.a\nb.minLength",
+      }),
     );
     expect(text).not.toContain("\n");
     expect(text).toContain("properties.a\\nb");

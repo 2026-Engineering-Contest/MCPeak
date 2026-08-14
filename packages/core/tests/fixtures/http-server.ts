@@ -1,4 +1,4 @@
-import { createServer, type Server as NodeHttpServer } from "node:http";
+import { createServer, type Server as NodeHttpServer, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { Server as McpSdkServer } from "@modelcontextprotocol/sdk/server/index.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
@@ -33,10 +33,23 @@ async function listen(server: NodeHttpServer): Promise<string> {
   return `http://127.0.0.1:${address.port}/mcp`;
 }
 
+/** 멱등이다. 이미 닫힌 서버를 다시 닫아도 거부하지 않는다. */
 function closeNodeServer(server: NodeHttpServer): Promise<void> {
+  if (!server.listening) return Promise.resolve();
   return new Promise<void>((resolve, reject) => {
     server.closeAllConnections();
     server.close((error) => (error ? reject(error) : resolve()));
+  });
+}
+
+/**
+ * 요청 처리 Promise 의 거부를 삼킨다.
+ * 클라이언트가 응답 도중 끊거나 서버가 닫히는 중이면 거부가 나는데, 그대로 두면 Vitest 가
+ * 관련 없는 테스트의 unhandled rejection 으로 보고한다.
+ */
+function settleResponse(work: Promise<unknown>, response: ServerResponse): void {
+  work.catch(() => {
+    if (!response.writableEnded) response.destroy();
   });
 }
 
@@ -120,16 +133,19 @@ export async function startMcpHttpServer(options: {
       return;
     }
     if (sharedTransport !== undefined) {
-      void sharedTransport.handleRequest(request, response);
+      settleResponse(sharedTransport.handleRequest(request, response), response);
       return;
     }
     const mcp = createServerInstance();
     const transport = createTransport();
     response.on("close", () => {
-      void transport.close();
-      void mcp.close();
+      void transport.close().catch(() => undefined);
+      void mcp.close().catch(() => undefined);
     });
-    void mcp.connect(transport).then(() => transport.handleRequest(request, response));
+    settleResponse(
+      mcp.connect(transport).then(() => transport.handleRequest(request, response)),
+      response,
+    );
   });
 
   const url = await listen(httpServer);

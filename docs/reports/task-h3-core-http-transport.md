@@ -41,7 +41,7 @@
 - `McpHttpConnection` 추가 (`client` · `getDiagnostics` · `close`. `forceClose` 없음)
 - `connect` 가 `isHttpConnectOptions` 로 분기. 반환 타입은 `Promise<McpClient>` 그대로
 - `connectStdio` 의 매개변수를 `StdioConnectOptions` 로 좁힘. 본문은 한 줄도 바뀌지 않았다
-- `McpStdioConnection.getDiagnostics` 의 반환 타입에 `transport: "stdio"` 태그를 붙임
+- `McpStdioConnection.getDiagnostics` 의 반환 타입은 `McpProcessDiagnostics` 그대로 둠(§5.6)
 - `McpDiagnostics` · `McpHttpDiagnostics` · `HttpConnectOptions` · `StdioConnectOptions` 재수출
 
 ### `packages/core/tests/fixtures/http-server.ts` (신규)
@@ -57,9 +57,12 @@
 |---|---|---|
 | `pnpm test packages/core` (1회차) | 통과 | `Test Files 8 passed (8)`, `Tests 86 passed (86)` |
 | `pnpm test packages/core` (2회차) | 통과 | 같은 `8 / 86`. 두 번 다 같은 결과 |
-| `pnpm typecheck` | 통과 | `Tasks: 6 successful, 6 total` |
-| `pnpm lint` | 통과 | `Checked 137 files in 30ms. No fixes applied.` |
-| `pnpm build` | 통과 | `Tasks: 6 successful, 6 total`, `Cached: 0 cached` |
+| `pnpm typecheck --force` | 통과 | `Tasks: 6 successful, 6 total` |
+| `pnpm lint` | 통과 | `Checked 137 files in 46ms. No fixes applied.` |
+| `pnpm build --force` | 통과 | `Tasks: 6 successful, 6 total`, `Cached: 0 cached` |
+
+typecheck 와 build 는 반드시 `--force` 로 돌린다. `turbo` 캐시가 이전 성공을 재사용해 실제
+실패를 녹색으로 보여 준 적이 있다(§5.6).
 
 인계받은 기준선은 `Tests 65 passed (65)` 와 `src/index.ts(25,76)` typecheck 실패 1건이었다.
 그 오류는 사라졌고 테스트는 21개 늘었다.
@@ -117,18 +120,38 @@
    시그니처를 못 바꾼다. 그래서 `trackOperationFailures` 가 `listTools` · `callTool` 을 감싸
    마지막 실패를 기록하고 오류는 그대로 다시 던진다. `client.ts` 를 고치지 않고 §8.3 의 판정을
    만족시키는 유일한 길이었다.
-6. **`McpStdioConnection.getDiagnostics` 의 태그를 단언으로 좁혔다.**
-   `controlled-stdio.ts` 의 `getDiagnostics()` 선언 타입에는 태그가 없지만 런타임 값은 항상
-   `transport: "stdio"` 를 달고 온다. 그 파일은 이 태스크의 소유가 아니라 선언을 넓힐 수 없어
-   `tagDiagnostics(...) as StdioDiagnostics` 로 좁혔다. `tagDiagnostics` 는 태그가 이미 있으면
-   같은 객체를 그대로 돌려주므로 `connectStdio` 의 런타임 동작과 객체 동일성이 유지된다.
-   근본 해결은 `controlled-stdio.ts` 의 반환 타입을 태그 있는 타입으로 넓히는 것이고, 후속으로
-   남긴다.
+6. **연결 인터페이스의 진단 반환 타입에 `transport` 태그를 붙이지 않는다.**
+   처음에는 `McpStdioConnection.getDiagnostics` 를 `{ transport: "stdio" } & McpProcessDiagnostics`
+   로 좁혔다. 그러면 `packages/cli` 의 test double 이 타입체크에서 깨진다. 인터페이스를 구현하는
+   쪽에서는 반환 타입이 반공변이라, 좁히는 순간 기존 구현이 전부 계약 위반이 된다. 설계 §4 가
+   "기존 표면은 유지한다"고 못 박은 이유가 이것이다. 되돌려서 `McpProcessDiagnostics` 로 두었고,
+   같은 함정을 피하려고 `McpHttpConnection.getDiagnostics` 도 설계 §4 의 문구 그대로
+   `McpHttpDiagnostics` 로 선언했다. 런타임 값에는 두 경우 다 태그가 실려 있고,
+   `McpClientError.diagnostics` 는 `McpDiagnostics` 유니온이라 태그로 분기할 수 있다.
+   이 함정은 `turbo` 캐시가 typecheck 실패를 가려서 `pnpm typecheck --force` 를 돌리기 전까지
+   보이지 않았다.
 7. **연결 실패 정리에서 `abort()` 가 오류를 삼킨다.** stdio 경로는 정리 실패를
    `AggregateError` 로 합치지만, HTTP 에는 죽일 프로세스가 없어 정리 실패가 사용자에게 알릴
    내용이 없다. 원래 실패 원인을 덮지 않는 쪽을 택했다.
 
-## 6. 남은 위험
+## 6. PR #83 리뷰 반영
+
+CodeRabbit 지적 2건과 통합 과정에서 드러난 1건을 고쳤다.
+
+1. **fixture 의 처리되지 않은 Promise 거부.** `sharedTransport.handleRequest` ·
+   `mcp.connect(...).then(handleRequest)` 를 `settleResponse` 로 감싸 거부를 삼키고, 응답이 아직
+   안 끝났으면 `response.destroy()` 한다. 클라이언트가 응답 도중 끊기면(테스트 12번이 실제로
+   그렇게 한다) Vitest 가 관련 없는 테스트의 unhandled rejection 으로 보고했을 경로다.
+   `response.on("close")` 안의 `transport.close()` · `mcp.close()` 도 같은 이유로 `.catch` 를
+   붙였다. 지적에는 없었지만 같은 종류다.
+2. **`closeNodeServer` 를 멱등으로.** `server.listening` 이 false 면 즉시 resolve 한다. 덕분에
+   테스트 12번이 서버를 직접 닫으면서도 `track()` 에 등록할 수 있고, `afterEach` 가 같은 서버를
+   다시 닫아도 안전하다.
+3. **`afterEach` 의 서버 정리 루프에 `.catch`.** 한 서버의 `close()` 가 거부해도 나머지가 닫힌다.
+   전에는 거기서 멈춰 포트와 핸들이 남았다.
+4. **진단 반환 타입 되돌림.** §5.6 에 적었다.
+
+## 7. 남은 위험
 
 - **11번의 시간 단언.** "2초 미만"은 시계에 의존한다. `connectTimeoutMs` 200ms 대비 여유가 10배라
   실측 여유는 크지만, 극단적으로 느린 CI 에서 흔들릴 수 있는 유일한 케이스다.

@@ -34,7 +34,8 @@ afterEach(async () => {
   for (const connection of connections.splice(0)) {
     await connection.close().catch(() => undefined);
   }
-  for (const server of servers.splice(0)) await server.close();
+  // 한 서버의 close 가 거부해도 나머지가 닫혀야 한다. 안 그러면 포트와 핸들이 남는다.
+  for (const server of servers.splice(0)) await server.close().catch(() => undefined);
 });
 
 async function expectMcpError(promise: Promise<unknown>): Promise<McpClientError> {
@@ -148,8 +149,9 @@ describe("connectHttp", () => {
   });
 
   it("12. 연결 뒤 서버가 사라져도 프로세스 오류로 보고하지 않는다", async () => {
-    const server = await startMcpHttpServer({ tools: ECHO_TOOLS });
+    const server = track(await startMcpHttpServer({ tools: ECHO_TOOLS }));
     const connection = trackConnection(await connectHttp({ url: server.url }));
+    // closeNodeServer 가 멱등이라 afterEach 가 같은 서버를 다시 닫아도 안전하다.
     await server.close();
     const error = await expectMcpError(connection.client.callTool("echo", { text: "hi" }));
     expect(["PROCESS_EXITED", "PROCESS_START_FAILED", "TRANSPORT_FAILED"]).not.toContain(

@@ -2,11 +2,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { createMcpClientAdapter } from "./client.js";
 import { NodeControlledStdioTransport } from "./controlled-stdio.js";
-import {
-  type McpHttpDiagnostics,
-  type McpProcessDiagnostics,
-  tagDiagnostics,
-} from "./diagnostics.js";
+import type { McpHttpDiagnostics, McpProcessDiagnostics } from "./diagnostics.js";
 import { McpClientError } from "./errors.js";
 import { HttpConnectionState, trackOperationFailures } from "./http-transport.js";
 import type { ConnectOptions, HttpConnectOptions, StdioConnectOptions } from "./options.js";
@@ -27,18 +23,16 @@ export { McpClientError } from "./errors.js";
 export type { ConnectOptions, HttpConnectOptions, StdioConnectOptions } from "./options.js";
 export type { McpClient, ToolDef, ToolResult } from "./types.js";
 
-type StdioDiagnostics = { readonly transport: "stdio" } & McpProcessDiagnostics;
-
 export interface McpStdioConnection {
   readonly client: McpClient;
-  getDiagnostics(): StdioDiagnostics;
+  getDiagnostics(): McpProcessDiagnostics;
   close(): Promise<void>;
   forceClose(): Promise<void>;
 }
 
 export interface McpHttpConnection {
   readonly client: McpClient;
-  getDiagnostics(): { readonly transport: "http" } & McpHttpDiagnostics;
+  getDiagnostics(): McpHttpDiagnostics;
   close(): Promise<void>;
 }
 
@@ -117,9 +111,7 @@ export async function connectStdio(options: StdioConnectOptions): Promise<McpStd
       close,
       operationFailureKind,
     ),
-    // controlled-stdio 의 선언 타입에는 transport 태그가 없지만 런타임 값은 항상 달고 온다.
-    // 그 파일은 이 태스크의 소유가 아니라 선언을 넓히지 못하므로 여기서 좁힌다.
-    getDiagnostics: () => tagDiagnostics(transport.getDiagnostics()) as StdioDiagnostics,
+    getDiagnostics: () => transport.getDiagnostics(),
     close,
     forceClose: () => transport.forceClose(),
   };

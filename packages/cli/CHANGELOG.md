@@ -1,5 +1,51 @@
 # ohmymcp
 
+## 0.6.0
+
+### Minor Changes
+
+- fb40da5: `ohmymcp test` 에 `--junit <path>` 를 추가합니다. runner 가 만든 JUnit XML 을 그 경로에 파일로
+  써서, CI 도구가 테스트 결과를 화면에 렌더할 수 있게 합니다. `renderJUnit` 은 공개 API 였지만
+  CLI 에 리포터를 고르는 수단이 없어 사용자가 쓸 방법이 없었습니다. 이 플래그가 그 연결입니다.
+
+  `--junit=<path>` 형태도 받습니다. 중복 지정, 값 없음, 빈 값, `--` 로 시작하는 값은 거절합니다.
+  경로 자리의 플래그는 값을 빠뜨린 오타이지 그 이름의 파일을 만들라는 뜻이 아니기 때문입니다.
+
+  **`--json` 과 함께 쓸 수 있습니다.** 둘은 경쟁하지 않습니다 — `--json` 은 stdout 형식을,
+  `--junit` 은 별도 산출물을 정합니다. `--junit` 은 stdout 을 바꾸지 않으므로 사람이 읽는 보고서를
+  보면서 CI 용 XML 을 함께 만들 수 있습니다. 플래그 형태와 출력 대상을 고른 근거는 ADR-0019 에
+  있습니다.
+
+  XML 은 stdout 보다 먼저 씁니다. `| head` 같은 파이프에서 stdout 이 EPIPE 로 끊겨도 요청한
+  산출물은 디스크에 남습니다. 파일을 쓰지 못하면 모든 테스트가 통과했더라도 `JUNIT_WRITE_FAILED`
+  와 함께 종료 코드 1 을 냅니다. 조용히 0 을 내면 CI 는 리포트 없이 초록이 되고, 사용자는 리포트가
+  필요한 순간에야 없다는 것을 알게 되기 때문입니다.
+
+  `--junit` 을 주지 않으면 출력 바이트와 종료 코드가 이전과 동일합니다.
+
+- d31c26e: 입력 계약 대조 결과를 승인 화면과 `test` 출력에 배선한다.
+
+  `runner` 가 이미 갖고 있던 `checkInputContract` · `checkAssertionSubstance` 를 두 소비자에 연결해,
+  오타·타입 불일치·항상 참인 단언이 승인 전과 실패 직후에 문장으로 보인다.
+
+  - `ohmymcp generate` 승인 화면은 선택한 변경에 걸린 위반을 세어 보여 주고, 위반이 있으면 확인을
+    한 번 더 받는다. 거부하지는 않는다.
+  - `ohmymcp test` 는 실패한 케이스에만 참고 문장을 붙인다. 판정과 exit code 는 바뀌지 않는다.
+    `--json` 은 `spec.findings` 에 구조로 담는다.
+
+  공개 타입 변경 둘이 있다.
+
+  - `@ohmymcp/runner` 의 `SpecFindingCode` 에서 `UNCONSTRAINED_SCHEMA` 가 사라진다. 소비자 경로에서
+    `validateMcpSuite` 가 먼저 거부해 도달할 수 없는 코드였다.
+  - `@ohmymcp/generate` 의 `SanitizedAuthoringCandidate` 에 `specFindings` 필드가 생긴다. 승인
+    지문 계산 대상 밖이라 이미 승인된 지문은 그대로다.
+
+### Patch Changes
+
+- Updated dependencies [d31c26e]
+  - @ohmymcp/generate@0.4.0
+  - @ohmymcp/runner@0.6.0
+
 ## 0.5.0
 
 ### Minor Changes

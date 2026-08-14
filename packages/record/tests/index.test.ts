@@ -285,6 +285,7 @@ describe("cassetteClient", () => {
 
   it("onFlush 가 실패해도 inner.close 는 실행된다", async () => {
     const events: string[] = [];
+    const flushError = new Error("flush 실패");
     const inner: McpClient = {
       async listTools() {
         return [];
@@ -301,16 +302,17 @@ describe("cassetteClient", () => {
       mode: "record",
       onFlush: async () => {
         events.push("flush");
-        throw new Error("flush 실패");
+        throw flushError;
       },
     });
 
-    await expect(client.close()).rejects.toThrow("flush 실패");
+    await expect(client.close()).rejects.toBe(flushError);
     expect(events).toStrictEqual(["flush", "close"]);
   });
 
   it("inner.close 가 실패하면 그 오류가 전달된다", async () => {
     const events: string[] = [];
+    const closeError = new Error("close 실패");
     const inner: McpClient = {
       async listTools() {
         return [];
@@ -320,7 +322,7 @@ describe("cassetteClient", () => {
       },
       async close() {
         events.push("close");
-        throw new Error("close 실패");
+        throw closeError;
       },
     };
     const client = cassetteClient(inner, {
@@ -331,12 +333,14 @@ describe("cassetteClient", () => {
       },
     });
 
-    await expect(client.close()).rejects.toThrow("close 실패");
+    await expect(client.close()).rejects.toBe(closeError);
     expect(events).toStrictEqual(["flush", "close"]);
   });
 
   it("onFlush 와 inner.close 가 동시에 실패하면 inner.close 의 오류가 우선한다", async () => {
     const events: string[] = [];
+    const flushError = new Error("flush 실패");
+    const closeError = new Error("close 실패");
     const inner: McpClient = {
       async listTools() {
         return [];
@@ -346,7 +350,7 @@ describe("cassetteClient", () => {
       },
       async close() {
         events.push("close");
-        throw new Error("close 실패");
+        throw closeError;
       },
     };
     const client = cassetteClient(inner, {
@@ -354,11 +358,11 @@ describe("cassetteClient", () => {
       mode: "record",
       onFlush: async () => {
         events.push("flush");
-        throw new Error("flush 실패");
+        throw flushError;
       },
     });
 
-    await expect(client.close()).rejects.toThrow("close 실패");
+    await expect(client.close()).rejects.toBe(closeError);
     expect(events).toStrictEqual(["flush", "close"]);
   });
 });

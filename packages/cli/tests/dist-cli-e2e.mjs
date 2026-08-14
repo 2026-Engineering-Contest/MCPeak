@@ -369,6 +369,39 @@ for (const [fixture, expectedStatus, expectedSummary] of [
   }
 }
 
+// 목 서버(stdio) 경로 — 우리 CLI 로 우리 목 서버를 테스트한다 (CONTRIBUTING §6, ADR-0007).
+// dist 산출물끼리 붙인다: packages/cli/dist/cli.mjs → packages/mock/dist/stdio.mjs.
+// 위 케이스들과 달리 PID 래퍼를 끼우지 않는다. 좀비 프로세스 판정은 CLI 의 종료 경로를
+// 보는 것이고 그건 weather 케이스가 이미 덮는다. 목이 stdin EOF 에 종료하는지는
+// packages/mock/tests/stdio.test.ts 가 본다.
+{
+  const result = await execute([
+    "test",
+    join(here, "fixtures", "mock-suite.json"),
+    "--command",
+    process.execPath,
+    "--arg",
+    join(root, "packages/mock/dist/stdio.mjs"),
+    "--arg",
+    join(here, "fixtures", "mock-definition.json"),
+    "--json",
+  ]);
+  assert.equal(result.code, 0);
+  assert.equal(result.signal, null);
+  assert.equal(result.err, "");
+  const report = JSON.parse(result.out);
+  assert.equal(report.schemaVersion, 1);
+  assert.equal(report.status, "passed");
+  assert.deepEqual(report.summary, {
+    total: 4,
+    passed: 4,
+    failed: 0,
+    timedOut: 0,
+    cancelled: 0,
+    notRun: 0,
+  });
+}
+
 // JUnit 리포터 (ADR-0017). 빌드 산출물이 실제 파일을 만드는지, 실패가 XML 에 드러나는지 본다.
 {
   const dir = await mkdtemp(join(tmpdir(), "ohmymcp-dist-junit-"));

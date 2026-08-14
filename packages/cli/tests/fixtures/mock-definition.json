@@ -1,0 +1,26 @@
+{
+  "tools": [
+    {
+      "name": "get_weather",
+      "description": "지정한 도시의 현재 날씨를 반환한다 (목).",
+      "inputSchema": {
+        "type": "object",
+        "properties": { "city": { "type": "string" } },
+        "required": ["city"]
+      }
+    },
+    {
+      "name": "add",
+      "description": "두 수를 더한다 (목).",
+      "inputSchema": {
+        "type": "object",
+        "properties": { "a": { "type": "number" }, "b": { "type": "number" } },
+        "required": ["a", "b"]
+      }
+    }
+  ],
+  "responses": [
+    { "tool": "add", "args": { "a": 1, "b": 2 }, "result": { "sum": 3 } },
+    { "tool": "get_weather", "result": { "city": "서울", "tempC": 21 } }
+  ]
+}

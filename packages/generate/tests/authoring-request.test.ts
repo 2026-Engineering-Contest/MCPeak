@@ -87,11 +87,17 @@ const cleanProviderSuite = () =>
   createBaselineSuite(tools, { suiteId: "weather", suiteName: "날씨" }).suite;
 
 /**
- * 손대지 않은 provider candidate 의 지문. T3 구현 **이전** 값을 그대로 박았다.
- * specFindings 를 candidate 에 실어도 이 값이 유지돼야 한다.
+ * 손대지 않은 provider candidate 의 지문.
+ *
+ * 이 상수가 고정하는 것은 **specFindings 가 지문에 들어가지 않는다는 계약**이다. 대조 결과를
+ * candidate 에 실어도 지문이 그대로여야 한다.
+ *
+ * 2026-08-15 에 값이 한 번 갈렸다. baseline 정책이 v2 로 올라 툴당 케이스가 정상 1개에서
+ * 정상 1개 + 위반 N개로 늘었기 때문이다(ADR-0022). suite 내용이 바뀌었으니 지문이 바뀌는 것이
+ * 정상이다. 위 계약이 깨진 것이 아니다. 값은 손으로 계산하지 않고 실제 실행 결과를 넣었다.
  */
 const KNOWN_PROVIDER_FINGERPRINT =
-  "77840d3e4dd6f4ccb1048a05deae403302d9c95723266fb428eed1394fa01b61";
+  "54c9288ac9c17b57efc18c5bb2c1819052d79ecfdc0980895d5a4f81e54ec7d3";
 
 describe("authoring request", () => {
   it("initial 요청은 baseline을 candidate로 고정한다", () => {

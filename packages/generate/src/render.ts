@@ -1,7 +1,7 @@
 import type { ToolDef } from "@ohmymcp/core";
 import { fail, type JsonObject, plainObject, validateSchema } from "./schema.js";
 import { synthesizeValue } from "./synthesize.js";
-import type { GeneratedCase } from "./violation-cases.js";
+import { buildViolationCases, type GeneratedCase } from "./violation-cases.js";
 
 type GeneratedSuiteSpec = {
   schemaVersion: 1;
@@ -62,6 +62,10 @@ function buildSuite(tool: ToolDef, index: number, baseName: string): GeneratedSu
         operation: { type: "callTool", tool: tool.name, input: input as JsonObject },
         assertions: [{ type: "isError", expected: false }],
       },
+      // 위반 케이스는 정상 입력을 한 군데만 고친 것이다. 정상 입력을 따로 합성하지 않는다.
+      // 두 벌이면 "정상 케이스는 통과하는데 위반 케이스는 다른 이유로 실패" 하는 상황을
+      // 디버깅할 수 없다.
+      ...buildViolationCases({ tool, happyInput: input as JsonObject, baseName }),
     ],
   };
 }
@@ -85,7 +89,12 @@ export function renderTool(tool: ToolDef, index: number, baseName: string): stri
 /**
  * 파일 생성과 baseline이 함께 쓰는 단일 도구 case 합성 단계다.
  * 파일로 쓰는 suite와 baseline suite가 같은 case를 만들도록 buildSuite 하나만 쓴다.
+ * 도구 하나가 정상 케이스 1개와 위반 케이스 여러 개를 낸다.
  */
-export function buildGeneratedCase(tool: ToolDef, index: number, baseName: string): GeneratedCase {
-  return buildSuite(tool, index, baseName).cases[0] as GeneratedCase;
+export function buildGeneratedCases(
+  tool: ToolDef,
+  index: number,
+  baseName: string,
+): GeneratedCase[] {
+  return buildSuite(tool, index, baseName).cases;
 }

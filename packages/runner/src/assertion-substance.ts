@@ -1,3 +1,4 @@
+import { byCodeUnit } from "./ordering.js";
 import type { AssertionSpec, ResponseSchema, TestSuiteSpec } from "./spec/types.js";
 import type { SpecFinding, SpecFindingCode, SpecFindingsResult } from "./spec-findings.js";
 import { MAX_FINDINGS_PER_CASE } from "./spec-findings.js";
@@ -10,9 +11,6 @@ const CODE_ORDER: Readonly<Partial<Record<SpecFindingCode, number>>> = {
   VACUOUS_MIN_LENGTH: 0,
   VACUOUS_MIN_ITEMS: 1,
 };
-
-/** UTF-16 코드 단위 안정 비교. 로캘에 의존하지 않는다. `schema-match.ts`의 것과 같다. */
-const byCodeUnit = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
 /** 프레임 스택의 원소. 스키마 한 개와 그것이 놓인 경로다. */
 interface Frame {

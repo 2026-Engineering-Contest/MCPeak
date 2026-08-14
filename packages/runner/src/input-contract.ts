@@ -1,4 +1,5 @@
 import type { ToolDef } from "@ohmymcp/core";
+import { byCodeUnit } from "./ordering.js";
 import { matchResponseSchema, plainObject, typeName } from "./schema-match.js";
 import type { JsonValue, ResponseSchema, TestSuiteSpec } from "./spec/types.js";
 import type { SpecFinding, SpecFindingCode, SpecFindingsResult } from "./spec-findings.js";
@@ -67,9 +68,6 @@ const CODE_ORDER: Record<string, number> = {
   TYPE_MISMATCH: 4,
   ENUM_MISMATCH: 5,
 };
-
-/** UTF-16 코드 단위 안정 비교. 로캘에 의존하지 않는다. schema-match.ts 의 byCodeUnit 과 같다. */
-const byCodeUnit = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
 const hasBlockingKeyword = (schema: Record<string, unknown>): boolean =>
   BLOCKING_KEYWORDS.some((keyword) => Object.hasOwn(schema, keyword));

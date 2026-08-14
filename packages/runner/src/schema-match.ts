@@ -1,3 +1,4 @@
+import { byCodeUnit } from "./ordering.js";
 import type { JsonValue, ResponseSchema } from "./spec/types.js";
 
 /** 한 번의 평가에서 목록에 담는 위반의 최대 개수. 총합은 totalViolations가 따로 센다. */
@@ -38,9 +39,6 @@ export const plainObject = (v: unknown): v is Record<string, unknown> =>
 
 export const typeName = (v: unknown): string =>
   v === null ? "null" : Array.isArray(v) ? "array" : typeof v;
-
-/** UTF-16 코드 단위 안정 비교. 로캘에 의존하지 않는다. assertions.ts의 assertToolExists와 같다. */
-const byCodeUnit = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
 /** 문자열 길이는 코드 포인트로 센다. JSON Schema의 minLength 정의가 코드 포인트 기준이다. */
 const charCount = (value: string): number => Array.from(value).length;

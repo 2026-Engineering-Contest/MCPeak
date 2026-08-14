@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -291,6 +291,80 @@ for (const [fixture, expectedStatus, expectedSummary] of [
     await expectExited(pidFile);
   } finally {
     await cleanupPid(pidFile);
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+// 서버 프로세스 진단 (설계 문서 §8.4). 기동 즉시 죽는 서버와 실행 불가능한 command 를 본다.
+{
+  const dir = await mkdtemp(join(tmpdir(), "ohmymcp-dist-diagnostics-"));
+  const dying = join(dir, "dying-server.mjs");
+  // SDK 를 쓰지 않는 최소 스크립트다. 핸드셰이크 실패 경로라 MCP 구현이 필요 없다.
+  // examples/ 를 오염시키지 않기 위해 임시 디렉터리에 만든다.
+  await writeFile(
+    dying,
+    // process.exit 은 stderr 가 파이프일 때 write 버퍼를 버릴 수 있다. exitCode 만 정하고
+    // 이벤트 루프가 비어 자연 종료하게 둔다. 종료 코드는 1 그대로다.
+    "process.stderr.write(\"TypeError: Cannot read properties of undefined (reading 'temp')\\n\");\n" +
+      "process.exitCode = 1;\n",
+  );
+  const suite = join(here, "fixtures", "weather-suite.json");
+  try {
+    // 1. 기동 즉시 죽는 서버: 오류 메시지만 나오던 경로에 진단이 붙는다.
+    const dead = await execute(["test", suite, "--command", process.execPath, "--arg", dying]);
+    assert.equal(dead.code, 1);
+    assert.equal(dead.out, "");
+    for (const expected of [
+      "MCP_CONNECTION_FAILED",
+      "서버 프로세스 진단",
+      "TypeError: Cannot read properties of undefined (reading 'temp')",
+      "종료 코드: 1",
+    ])
+      assert.ok(
+        dead.err.includes(expected),
+        `stderr 에 '${expected}' 가 없습니다. 실제 출력:\n${dead.err}`,
+      );
+
+    // 2. --stderr-lines 0: 진단만 사라지고 기존 오류 메시지는 그대로다.
+    const silent = await execute([
+      "test",
+      suite,
+      "--command",
+      process.execPath,
+      "--arg",
+      dying,
+      "--stderr-lines",
+      "0",
+    ]);
+    assert.equal(silent.code, 1);
+    assert.equal(silent.out, "");
+    assert.ok(
+      silent.err.includes("MCP_CONNECTION_FAILED"),
+      `stderr 에 'MCP_CONNECTION_FAILED' 가 없습니다. 실제 출력:\n${silent.err}`,
+    );
+    assert.ok(
+      !silent.err.includes("서버 프로세스 진단"),
+      `--stderr-lines 0 인데 진단 블록이 있습니다. 실제 출력:\n${silent.err}`,
+    );
+
+    // 3. 실행 불가능한 command: spawn 자체가 실패해 진단이 전부 비므로 블록을 쓰지 않는다.
+    const missing = await execute([
+      "test",
+      suite,
+      "--command",
+      "ohmymcp-command-that-does-not-exist",
+    ]);
+    assert.equal(missing.code, 1);
+    assert.equal(missing.out, "");
+    assert.ok(
+      missing.err.includes("PROCESS_START_FAILED"),
+      `stderr 에 'PROCESS_START_FAILED' 가 없습니다. 실제 출력:\n${missing.err}`,
+    );
+    assert.ok(
+      !missing.err.includes("서버 프로세스 진단"),
+      `정보가 없는 진단 블록이 붙었습니다. 실제 출력:\n${missing.err}`,
+    );
+  } finally {
     await rm(dir, { recursive: true, force: true });
   }
 }

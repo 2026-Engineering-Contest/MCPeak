@@ -22,7 +22,7 @@ const cassette = await loadCassette(path);
 
 const client = cassetteClient(realClient, {
   cassette,
-  mode: "auto",
+  cassettePath: path,
   onFlush: (next) => saveCassette(path, next),
 });
 
@@ -42,6 +42,9 @@ try {
 | `record` | 항상 실제 client를 호출하고 새 카세트를 만든다. |
 | `replay` | 카세트에 저장된 `listTools`와 `callTool` 응답만 돌려준다. 누락되면 에러다. |
 | `auto` | 카세트에 있으면 재생하고, 없으면 실제 호출 뒤 카세트에 추가한다. |
+
+`mode`를 생략하면 `auto`로 동작한다. `cassettePath`는 파일 IO를 수행하지 않고, 실패 메시지에
+표시할 경로로만 사용한다.
 
 `close()`는 `onFlush`가 있으면 현재 카세트를 넘긴 뒤 `inner.close()`를 호출한다. 파일 IO는
 `loadCassette`와 `saveCassette`로 분리되어 있고, 테스트에서는 `onFlush`에 인메모리 저장 함수를
@@ -67,6 +70,10 @@ try {
 
 `snapshotContract(result)`는 `ToolResult.raw`를 깊게 순회해 `id`, `requestId`, `sessionId`,
 `timestamp`, `createdAt`, `updatedAt`, `expiresAt` 필드를 제거한 뒤 비밀값을 마스킹한다.
+
+마스킹은 저장 직전 `interactions`와 `tools`에 적용된다. 인메모리 카세트 응답은 원문을 유지해
+`auto` 모드의 miss와 hit가 같은 값을 돌려준다. 값이 JSON 문자열이면 저장 직전에만 파싱 가능한
+경우 구조화해 마스킹하고 stable JSON 문자열로 저장한다.
 
 ## 제외 범위
 

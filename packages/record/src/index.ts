@@ -29,7 +29,10 @@ export interface Cassette {
 
 export interface CassetteClientOptions {
   cassette: Cassette | null;
-  mode: CassetteMode;
+  /** 생략하면 auto 모드로 동작한다. */
+  mode?: CassetteMode;
+  /** 사용자 메시지에 표시할 카세트 파일 경로. */
+  cassettePath?: string;
   /** close() 시 호출한다. 테스트에서는 인메모리 flush 함수를 넣으면 된다. */
   onFlush?: (cassette: Cassette) => Promise<void>;
   /** 같은 키에 다른 응답이 녹화될 때 호출한다. */
@@ -197,7 +200,7 @@ export async function saveCassette(path: string, cassette: Cassette): Promise<vo
 }
 
 export function cassetteClient(inner: McpClient, options: CassetteClientOptions): McpClient {
-  const mode = options.mode;
+  const mode = options.mode ?? "auto";
   if (mode !== "record" && mode !== "replay" && mode !== "auto") {
     throw new TypeError(`알 수 없는 카세트 모드입니다: ${String(mode)}`);
   }
@@ -211,7 +214,11 @@ export function cassetteClient(inner: McpClient, options: CassetteClientOptions)
       if (mode === "replay") {
         if (cassette.tools === undefined) {
           throw new Error(
-            "→ 카세트에 listTools 응답이 없습니다.\n  → --record 로 한 번 실행해 tools 목록을 녹화하세요.",
+            [
+              "→ 카세트에 listTools 응답이 없습니다.",
+              `  카세트: ${cassetteDescription(cassette, options.cassettePath)}`,
+              "  → --record 로 한 번 실행해 tools 목록을 녹화하세요.",
+            ].join("\n"),
           );
         }
         return cloneJson(cassette.tools) as ToolDef[];
@@ -235,7 +242,7 @@ export function cassetteClient(inner: McpClient, options: CassetteClientOptions)
       }
 
       if (mode === "replay") {
-        throw new Error(replayMissMessage(toolName, args, cassette));
+        throw new Error(replayMissMessage(toolName, args, cassette, options.cassettePath));
       }
 
       const result = await inner.callTool(toolName, args);
@@ -281,9 +288,9 @@ function toInteraction(
     key,
     request: { toolName, args: redact(args === undefined ? {} : args) },
     response: {
-      content: redact(result.content),
+      content: cloneJson(result.content),
       isError: result.isError,
-      raw: redact(result.raw),
+      raw: cloneJson(result.raw),
     },
   };
 }
@@ -325,7 +332,7 @@ function prepareCassetteForWrite(cassette: Cassette): Cassette {
         raw: redact(interaction.response.raw),
       },
     })),
-    ...(cassette.tools === undefined ? {} : { tools: cloneJson(cassette.tools) as ToolDef[] }),
+    ...(cassette.tools === undefined ? {} : { tools: redact(cassette.tools) as ToolDef[] }),
   };
 }
 
@@ -454,18 +461,31 @@ function arrayOrFail(value: unknown, fail: () => never): unknown[] {
   return value as unknown[];
 }
 
-function replayMissMessage(toolName: string, args: unknown, cassette: Cassette): string {
+function cassetteDescription(cassette: Cassette, cassettePath?: string): string {
+  const count = `상호작용 ${cassette.interactions.length}개`;
+  return cassettePath === undefined ? count : `${cassettePath} (${count})`;
+}
+
+function replayMissMessage(
+  toolName: string,
+  args: unknown,
+  cassette: Cassette,
+  cassettePath?: string,
+): string {
   const display = displayRequest(toolName, args);
   const lines = [
     `→ 카세트에 없는 호출입니다: ${display}`,
-    `  카세트 상호작용: ${cassette.interactions.length}개`,
+    `  카세트: ${cassetteDescription(cassette, cassettePath)}`,
   ];
   const sameTool = cassette.interactions
     .filter((interaction) => interaction.request.toolName === toolName)
     .map((interaction) => displayRequest(interaction.request.toolName, interaction.request.args));
 
   if (sameTool.length > 0) {
-    lines.push(`  같은 툴의 저장된 요청: ${sameTool.slice(0, 3).join(", ")}`);
+    lines.push(`  비슷한 키: ${sameTool[0]}`);
+    if (sameTool.length > 1) {
+      lines.push(`  같은 툴의 다른 저장된 요청: ${sameTool.slice(1, 4).join(", ")}`);
+    }
   } else {
     const tools = [
       ...new Set(cassette.interactions.map((interaction) => interaction.request.toolName)),
@@ -480,19 +500,119 @@ function replayMissMessage(toolName: string, args: unknown, cassette: Cassette):
   return lines.join("\n");
 }
 
+interface JsonDiff {
+  path: string;
+  left: unknown;
+  right: unknown;
+  leftMissing?: boolean;
+  rightMissing?: boolean;
+}
+
+const MAX_DIFF_LINES = 5;
+const MAX_VALUE_DISPLAY = 160;
+
 function duplicateResponseMessage(
   toolName: string,
   args: unknown,
   existing: CassetteInteraction,
   next: CassetteInteraction,
 ): string {
+  const rawDiffs = describeJsonDiffs(existing.response.raw, next.response.raw, "raw");
+  const contentDiffs =
+    rawDiffs.length === 0
+      ? describeJsonDiffs(existing.response.content, next.response.content, "content")
+      : [];
+  const responseDiffs =
+    rawDiffs.length === 0 && contentDiffs.length === 0
+      ? describeJsonDiffs(existing.response, next.response, "response")
+      : [];
+  const diffs = [...rawDiffs, ...contentDiffs, ...responseDiffs];
+  const diffLines =
+    diffs.length > 0
+      ? diffs.map(
+          (diff) =>
+            `  1회차 ${diff.path}: ${formatDiffValue(
+              diff.left,
+              diff.leftMissing,
+            )} / 2회차 ${diff.path}: ${formatDiffValue(diff.right, diff.rightMissing)}`,
+        )
+      : [
+          `  1회차 응답: ${formatDiffValue(existing.response)}`,
+          `  2회차 응답: ${formatDiffValue(next.response)}`,
+        ];
+
   return [
     `→ 같은 요청에 다른 응답이 왔습니다: ${displayRequest(toolName, args)}`,
-    `  기존 응답: ${stableStringify(existing.response)}`,
-    `  새 응답: ${stableStringify(next.response)}`,
+    ...diffLines,
     "  → 시세나 시간처럼 매번 바뀌는 값이라면 이 툴은 오라클로 쓸 수 없습니다.",
     "  → 의도된 변화라면 --record 로 카세트를 다시 만드세요.",
   ].join("\n");
+}
+
+function describeJsonDiffs(left: unknown, right: unknown, path: string): JsonDiff[] {
+  const diffs: JsonDiff[] = [];
+  collectJsonDiffs(left, right, path, diffs);
+  return diffs;
+}
+
+function collectJsonDiffs(left: unknown, right: unknown, path: string, diffs: JsonDiff[]): void {
+  if (diffs.length >= MAX_DIFF_LINES || sameJson(left, right)) return;
+
+  if (plainObject(left) && plainObject(right)) {
+    const keys = [...new Set([...Object.keys(left), ...Object.keys(right)])].sort();
+    for (const key of keys) {
+      if (diffs.length >= MAX_DIFF_LINES) return;
+      const leftHas = Object.hasOwn(left, key);
+      const rightHas = Object.hasOwn(right, key);
+      const nextPath = jsonPath(path, key);
+      if (!leftHas || !rightHas) {
+        diffs.push({
+          path: nextPath,
+          left: leftHas ? left[key] : undefined,
+          right: rightHas ? right[key] : undefined,
+          leftMissing: !leftHas,
+          rightMissing: !rightHas,
+        });
+        continue;
+      }
+      collectJsonDiffs(left[key], right[key], nextPath, diffs);
+    }
+    return;
+  }
+
+  if (Array.isArray(left) && Array.isArray(right)) {
+    const length = Math.max(left.length, right.length);
+    for (let index = 0; index < length; index++) {
+      if (diffs.length >= MAX_DIFF_LINES) return;
+      const leftHas = Object.hasOwn(left, index);
+      const rightHas = Object.hasOwn(right, index);
+      const nextPath = `${path}[${index}]`;
+      if (!leftHas || !rightHas) {
+        diffs.push({
+          path: nextPath,
+          left: leftHas ? left[index] : undefined,
+          right: rightHas ? right[index] : undefined,
+          leftMissing: !leftHas,
+          rightMissing: !rightHas,
+        });
+        continue;
+      }
+      collectJsonDiffs(left[index], right[index], nextPath, diffs);
+    }
+    return;
+  }
+
+  diffs.push({ path, left, right });
+}
+
+function jsonPath(base: string, key: string): string {
+  return /^[A-Za-z_$][\w$]*$/.test(key) ? `${base}.${key}` : `${base}[${JSON.stringify(key)}]`;
+}
+
+function formatDiffValue(value: unknown, missing = false): string {
+  if (missing) return "<없음>";
+  const text = stableStringify(value);
+  return text.length <= MAX_VALUE_DISPLAY ? text : `${text.slice(0, MAX_VALUE_DISPLAY - 1)}…`;
 }
 
 function displayRequest(toolName: string, args: unknown): string {

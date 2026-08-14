@@ -79,7 +79,8 @@ export type CassetteMode = "record" | "replay" | "auto";
 
 export interface CassetteClientOptions {
   cassette: Cassette | null;
-  mode: CassetteMode;
+  mode?: CassetteMode;
+  cassettePath?: string;
   onFlush?: (cassette: Cassette) => Promise<void>;
   onWarning?: (message: string) => void;
 }
@@ -92,6 +93,9 @@ export function cassetteClient(inner: McpClient, options: CassetteClientOptions)
 - `record`: 항상 실제 `inner`를 호출하고 새 카세트를 만든다.
 - `replay`: 항상 카세트에서만 응답한다. 키가 없으면 에러를 낸다.
 - `auto`: 카세트에 키가 있으면 재생하고, 없으면 실제 호출 뒤 카세트에 추가한다.
+
+`mode`를 생략하면 `auto`로 동작한다. `cassettePath`는 파일 IO를 직접 하지 않는
+`cassetteClient`가 실패 메시지에 경로를 표시할 수 있도록 받는 표시용 값이다.
 
 `listTools`도 카세트에 저장한다. 재생 모드에서 `listTools`만 실제 서버로 나가면 서버가
 떠 있지 않은 상황을 검증할 수 없고, 입력 계약 대조가 쓰는 `inputSchema`도 재현되지
@@ -142,6 +146,12 @@ export interface Cassette {
 - `secret`
 - `password`
 
+저장 직전 마스킹은 `interactions`와 `tools`에 모두 적용한다. MCP 응답의
+`content[].text`처럼 값이 JSON 문자열 자체로 들어오는 경우에는 그 문자열을 JSON으로
+파싱할 수 있을 때만 구조화해 마스킹한 뒤 stable JSON 문자열로 저장한다. 이는 카세트
+파일에 비밀값이 남지 않는 것을 우선한 선택이며, 런타임 인메모리 카세트의 응답 원문은
+바꾸지 않는다.
+
 첫 버전에서는 사용자 정의 매칭 함수, 사용자 정의 ignore 목록, TTL, 부분 매칭,
 사용자 정의 마스킹 규칙을 제공하지 않는다.
 
@@ -180,7 +190,9 @@ export interface Cassette {
 - `replay` 모드는 외부 호출 0회를 강제한다. 카세트에 없는 `callTool` 또는 저장되지
   않은 `listTools`는 에러다.
 - `auto` 모드는 기존 카세트에 없는 호출만 실제 서버에 위임한다.
+- `mode`를 생략하면 기본값은 `auto`다.
 - `record` 모드는 기존 카세트를 덮어쓸 새 카세트를 만든다.
+- `saveCassette()`는 상호작용과 `tools`를 모두 마스킹한 뒤 stable JSON으로 저장한다.
 - `close()`는 `onFlush`가 있으면 카세트를 넘겨 저장 기회를 준 뒤 `inner.close()`를
   호출한다.
 - 배열 순서는 의미 있는 입력으로 보고 유지한다. 배열 순서가 다르면 다른 요청으로

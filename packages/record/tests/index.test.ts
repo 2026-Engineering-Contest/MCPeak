@@ -174,15 +174,50 @@ describe("cassetteClient", () => {
     expect(flushed[0]?.interactions).toHaveLength(2);
   });
 
+  it("기본 auto 모드는 miss 뒤 hit 에서도 인메모리 응답 원문을 유지한다", async () => {
+    const result = ok({ id: "run-1", token: "secret-token", value: 7 });
+    const flushed: Cassette[] = [];
+    const inner = fakeClient([result]);
+    const client = cassetteClient(inner, {
+      cassette: null,
+      onFlush: async (next) => {
+        flushed.push(next);
+      },
+    });
+
+    await expect(client.callTool("get_secret", { id: 1 })).resolves.toStrictEqual(result);
+    await expect(client.callTool("get_secret", { id: 1 })).resolves.toStrictEqual(result);
+    await client.close();
+
+    expect(inner.calls.callTool).toBe(1);
+    expect(flushed[0]?.interactions[0]?.response.raw).toStrictEqual({
+      id: "run-1",
+      token: "secret-token",
+      value: 7,
+    });
+  });
+
   it("replay miss 는 카세트 갱신 안내를 포함한 오류를 낸다", async () => {
+    const cassette = cassetteWith({
+      toolName: "get_stock",
+      args: { ticker: "MSFT" },
+      result: ok({ price: 330 }),
+    });
     const inner = fakeClient([]);
     const client = cassetteClient(inner, {
-      cassette: { version: 1, interactions: [] },
+      cassette,
+      cassettePath: "fixtures/stock.cassette.json",
       mode: "replay",
     });
 
     await expect(client.callTool("get_stock", { ticker: "AAPL" })).rejects.toThrow(
       "카세트에 없는 호출입니다",
+    );
+    await expect(client.callTool("get_stock", { ticker: "AAPL" })).rejects.toThrow(
+      "카세트: fixtures/stock.cassette.json (상호작용 1개)",
+    );
+    await expect(client.callTool("get_stock", { ticker: "AAPL" })).rejects.toThrow(
+      '비슷한 키: get_stock({"ticker":"MSFT"})',
     );
     expect(inner.calls.callTool).toBe(0);
   });
@@ -217,6 +252,8 @@ describe("cassetteClient", () => {
 
     expect(warnings).toHaveLength(1);
     expect(warnings[0]).toContain("같은 요청에 다른 응답");
+    expect(warnings[0]).toContain("1회차 raw.price: 187.4 / 2회차 raw.price: 187.9");
+    expect(warnings[0]).not.toContain("기존 응답:");
     expect(flushed[0]?.interactions).toHaveLength(1);
     expect(flushed[0]?.interactions[0]?.response.raw).toStrictEqual({ price: 187.4 });
   });
@@ -265,6 +302,18 @@ describe("cassette IO", () => {
       args: { ticker: "AAPL", apiKey: "sk-live-abc123" },
       result: ok({ price: 187.4, token: "secret" }),
     });
+    cassette.tools = [
+      {
+        name: "fetch_data",
+        inputSchema: {
+          type: "object",
+          properties: {
+            apiKey: { type: "string", default: "sk-schema-secret" },
+            ticker: { type: "string" },
+          },
+        },
+      },
+    ];
 
     try {
       await saveCassette(path, cassette);
@@ -275,11 +324,16 @@ describe("cassette IO", () => {
 
       expect(first).toBe(second);
       expect(first).not.toContain("sk-live-abc123");
+      expect(first).not.toContain("sk-schema-secret");
       expect(first).not.toContain("secret");
       expect(loaded?.interactions[0]?.request.args).toStrictEqual({
         ticker: "AAPL",
         apiKey: "[redacted]",
       });
+      const loadedSchema = loaded?.tools?.[0]?.inputSchema as
+        | { properties?: Record<string, unknown> }
+        | undefined;
+      expect(loadedSchema?.properties?.apiKey).toBe("[redacted]");
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -297,9 +351,9 @@ function cassetteWith(options: { toolName: string; args: unknown; result: ToolRe
           args: redact(options.args),
         },
         response: {
-          content: redact(options.result.content),
+          content: options.result.content,
           isError: options.result.isError,
-          raw: redact(options.result.raw),
+          raw: options.result.raw,
         },
       },
     ],

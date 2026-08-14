@@ -1,7 +1,7 @@
 # Core Streamable HTTP transport 구현 계획 (2026-08-14)
 
 - 설계 문서: `docs/superpowers/specs/2026-08-14-core-streamable-http-transport-design.md`
-- 선행 결정: `docs/adr/0019-streamable-http-transport.md`
+- 선행 결정: `docs/adr/0020-streamable-http-transport.md`
 - 대상 패키지: `packages/core` 단독 (그 밖에는 `docs/` 와 `.changeset/` 만)
 - 해결 이슈: [#16](https://github.com/2026-Engineering-Contest/OhMyMCP/issues/16)
 
@@ -27,7 +27,7 @@
   (§12.5 의 19 · 20번)
 - `packages/core` 밖의 소스 변경 0 건. `packages/core/src/types.ts` 변경 0 건
 - `package.json` 의 `@modelcontextprotocol/sdk` 항목 변경 0 건
-- `docs/adr/0019-streamable-http-transport.md` 의 상태가 `제안` 이고 색인과 일치
+- `docs/adr/0020-streamable-http-transport.md` 의 상태가 `제안` 이고 색인과 일치
 
 ## 3. 공유 계약 (전량, H1 이 만들고 이후 수정 금지)
 
@@ -192,7 +192,7 @@ packages/core/src/index.ts
 
 **Files (수정).**
 ```
-docs/adr/0019-streamable-http-transport.md   상태를 초안에서 제안으로
+docs/adr/0020-streamable-http-transport.md   상태를 초안에서 제안으로
 docs/adr/README.md                            색인 행의 상태를 제안으로
 docs/architecture.md                          2절 표의 core 입력 칸
 packages/core/README.md                       HTTP 연결 사용법 절 추가
@@ -202,7 +202,7 @@ packages/core/README.md                       HTTP 연결 사용법 절 추가
 .changeset/core-streamable-http.md
 ```
 
-**입력 계약.** 설계 문서 §14, ADR-0019 의 결정 절.
+**입력 계약.** 설계 문서 §14, ADR-0020 의 결정 절.
 
 **산출 계약.**
 - `docs/architecture.md` 2절 표의 `core` 입력 칸이
@@ -216,8 +216,9 @@ packages/core/README.md                       HTTP 연결 사용법 절 추가
 **보고서.** `docs/reports/task-h4-core-http-transport.md`
 
 **경계.** ADR-0001 을 수정하지 않는다. 승인된 결정이고, 이번 ADR 이 그것이 예고한 후속이다.
-`docs/adr/README.md` 의 번호 충돌 경고 문단을 건드리지 않는다. 0019 는 현재 비어 있는 번호이며,
-머지 시점에 다른 브랜치가 0019 를 집었으면 이 태스크가 아니라 통합 게이트에서 재번호한다.
+`docs/adr/README.md` 의 번호 충돌 경고 문단을 건드리지 않는다. 이 ADR 은 0019 로 시작했다가
+JUnit 리포터 ADR 이 먼저 main 에 들어오면서 0020 으로 한 번 밀렸다. 머지 시점에 또 밀리면 이
+태스크가 아니라 통합 게이트에서 재번호한다.
 코드 파일을 열지 않는다.
 
 ## 5. 의존성과 웨이브
@@ -274,7 +275,7 @@ git status --short          # 비어 있어야 한다
 ```
 docs/superpowers/specs/2026-08-14-core-streamable-http-transport-design.md
 docs/superpowers/plans/2026-08-14-core-streamable-http-transport-implementation.md
-docs/adr/0019-streamable-http-transport.md
+docs/adr/0020-streamable-http-transport.md
 ```
 
 프롬프트는 기점을 SHA 가 아니라 `main` 으로 적는다. 커밋 직후 SHA 가 바뀌므로 계획서에 SHA 를
@@ -441,7 +442,7 @@ git status --short 결과, 실행한 검증 명령과 출력 요약, 임의로 �
   - pwd 가 .claude/worktrees/ohmymcp-h4-core-http 로 끝나는지
   - git log --oneline -1 이 루트의 main HEAD 와 같은지
   - docs/superpowers/specs/2026-08-14-core-streamable-http-transport-design.md 가 존재하는지
-  - docs/adr/0019-streamable-http-transport.md 가 존재하는지
+  - docs/adr/0020-streamable-http-transport.md 가 존재하는지
   - git status --short 가 비어 있는지
 부트스트랩은 pnpm install 까지만 해라. 이 태스크는 코드를 건드리지 않으므로 빌드가 필요 없다.
 pnpm lint 가 실행되는지만 확인해라. 안 되면 status: BLOCKED 로 보고하고 멈춰라.
@@ -449,11 +450,11 @@ pnpm lint 가 실행되는지만 확인해라. 안 되면 status: BLOCKED 로 �
 [2단계: 실행] Task H4 — 문서와 changeset
 
 설계 문서 docs/superpowers/specs/2026-08-14-core-streamable-http-transport-design.md §14 와
-docs/adr/0019-streamable-http-transport.md 의 결정 절을 먼저 읽어라.
+docs/adr/0020-streamable-http-transport.md 의 결정 절을 먼저 읽어라.
 
 수정할 것:
-  docs/adr/0019-streamable-http-transport.md  머리의 상태를 "초안" 에서 "제안" 으로
-  docs/adr/README.md                          0019 행의 상태를 "초안" 에서 "제안" 으로
+  docs/adr/0020-streamable-http-transport.md  머리의 상태를 "초안" 에서 "제안" 으로
+  docs/adr/README.md                          0020 행의 상태를 "초안" 에서 "제안" 으로
   docs/architecture.md                        2 절 표의 core 입력 칸을
                                               ConnectOptions (command·args·env·cwd 또는 url·headers)
                                               로 바꾼다
@@ -465,7 +466,7 @@ docs/adr/0019-streamable-http-transport.md 의 결정 절을 먼저 읽어라.
 
 절대 하지 마라:
   - docs/adr/0001-transport-strategy.md 수정. 승인된 결정이고 이번 ADR 이 그것이 예고한 후속이다
-  - docs/adr/README.md 의 번호 충돌 경고 문단 수정. 0019 행의 상태 한 칸만 고친다
+  - docs/adr/README.md 의 번호 충돌 경고 문단 수정. 0020 행의 상태 한 칸만 고친다
   - 코드 파일(.ts) 열기. 이 태스크는 문서 전용이다
   - 다른 ADR, 다른 패키지 README 수정
 
@@ -601,9 +602,10 @@ H3-core-http-transport	<sha>	2026-08-14
 9. 웨이브 2 를 시작하기 전에 H1 과 H2 의 SHA 가 대장에 있고 실제 커밋으로 존재하며 현재 HEAD 의
    조상인지 `git cat-file -e` 와 `git merge-base --is-ancestor` 로 확인한다. **브랜치나
    worktree 가 존재한다는 사실을 완료 근거로 쓰지 않는다**
-10. H4 머지 직전에 `docs/adr/` 에 다른 브랜치가 만든 0019 가 들어왔는지 다시 본다. 있으면 이
-    ADR 을 0020 으로 재번호하고 색인과 설계 문서의 링크를 함께 고친다. 이 저장소는 같은 사고를
-    세 번 겪었다 (`docs/adr/README.md`)
+10. H4 머지 직전에 `docs/adr/` 에 다른 브랜치가 만든 0020 이 들어왔는지 다시 본다. 있으면 이
+    ADR 을 다음 빈 번호로 재번호하고 색인, 설계 문서, 이 계획서의 링크를 함께 고친다. 이 ADR 은
+    이미 0019 에서 0020 으로 한 번 밀렸고, 저장소 전체로는 네 번째 사고다
+    (`docs/adr/README.md`)
 
 전체 통합 후 최종 게이트로 루트에서 `pnpm test` · `pnpm typecheck` · `pnpm lint` · `pnpm build`
 를 한 번 더 돌린다.

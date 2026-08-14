@@ -4,7 +4,7 @@
 - 작성일: 2026-08-14
 - 구현 대상: `@ohmymcp/core`
 - 해결 이슈: [#16 core.connect() 가 Streamable HTTP 를 지원해야 한다](https://github.com/2026-Engineering-Contest/OhMyMCP/issues/16)
-- 선행 결정: [ADR-0001](../../adr/0001-transport-strategy.md), [ADR-0019](../../adr/0019-streamable-http-transport.md)
+- 선행 결정: [ADR-0001](../../adr/0001-transport-strategy.md), [ADR-0020](../../adr/0020-streamable-http-transport.md)
 - 선행 설계: [Core stdio transport 및 프로세스 수명주기 설계](./2026-08-12-core-stdio-transport-design.md)
 
 ## 1. 목적
@@ -92,7 +92,7 @@ export interface McpClient {
 이슈 5번("ADR-0001 에 세 번째 선택지 추가")도 따르지 않는다. ADR-0001 은 이미 선택지 C 로
 Streamable HTTP 를 검토해 기각했고, 결과 절에서 "stdio E2E 와 도그푸딩 결과가 쌓이면 Streamable
 HTTP 지원 여부와 transport 공통 인터페이스를 별도 ADR 에서 결정한다"고 예고했다. 승인된 ADR 을
-고치지 않고 예고된 후속 ADR-0019 를 새로 쓴다.
+고치지 않고 예고된 후속 ADR-0020 를 새로 쓴다.
 
 ### 3.3 설치된 SDK 1.30.0 실측
 
@@ -580,7 +580,7 @@ packages/core/tests/
   errors.test.ts             수정
 
 docs/
-  adr/0019-streamable-http-transport.md   신규
+  adr/0020-streamable-http-transport.md   신규
   adr/README.md                            수정 (색인 한 줄)
   architecture.md                          수정 (2절 core 입력 칸)
 packages/core/README.md                    수정

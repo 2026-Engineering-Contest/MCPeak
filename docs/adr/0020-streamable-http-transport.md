@@ -1,4 +1,4 @@
-# ADR-0019: 두 번째 transport 로 Streamable HTTP 를 추가하고, 진단을 transport 별 유니온으로 나눈다
+# ADR-0020: 두 번째 transport 로 Streamable HTTP 를 추가하고, 진단을 transport 별 유니온으로 나눈다
 
 - 상태: 초안
 - 날짜: 2026-08-14

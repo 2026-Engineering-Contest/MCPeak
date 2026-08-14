@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { nodeGenerateDependencies, nodeReviewIO, runGenerateCommand } from "./generate-command.js";
 import { parseTestCommand, runCli } from "./test-command.js";
 
@@ -22,6 +22,12 @@ const unavailableDependencies = {
     throw new Error("runtime dependencies unavailable");
   },
   renderReport: (): never => {
+    throw new Error("runtime dependencies unavailable");
+  },
+  renderJUnit: (): never => {
+    throw new Error("runtime dependencies unavailable");
+  },
+  writeFile: async (): Promise<never> => {
     throw new Error("runtime dependencies unavailable");
   },
   colorEnabled: false,
@@ -98,6 +104,8 @@ export async function run(argv: string[]): Promise<number> {
     startRunner: runner.runSuite,
     finalize: runner.finalizeRunnerExecution,
     renderReport: runner.renderReport,
+    renderJUnit: runner.renderJUnit,
+    writeFile: (path, text) => writeFile(path, text, "utf8"),
     // process 를 읽는 유일한 지점이다. renderReport 는 순수 함수로 남는다.
     colorEnabled: process.stdout.isTTY === true && process.env.NO_COLOR === undefined,
     writeStdout: (text) => process.stdout.write(text),

@@ -8,6 +8,7 @@ import {
   type RunnerDiagnostic,
   toolNotFoundDiagnostic,
 } from "./diagnostics.js";
+import { byCodeUnit } from "./ordering.js";
 import type { RunnerRedactionOptions } from "./sanitization.js";
 import { matchResponseSchema } from "./schema-match.js";
 import type {
@@ -31,9 +32,7 @@ export function assertToolExists(
     return { spec, status: "passed" };
   }
 
-  const actual = [...new Set(tools.map((tool) => tool.name))].sort((left, right) =>
-    left < right ? -1 : left > right ? 1 : 0,
-  );
+  const actual = [...new Set(tools.map((tool) => tool.name))].sort(byCodeUnit);
   return { spec, status: "failed", diagnostic: toolNotFoundDiagnostic(spec.tool, actual) };
 }
 

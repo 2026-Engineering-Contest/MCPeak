@@ -20,8 +20,8 @@ cli → runner / generate / record / mock → core
 
 | 종류 | 심볼 |
 |---|---|
-| 타입 | `TestSuiteSpec`, `TestCaseSpec`, `SuiteValidationIssue`, `RunnerRedactionOptions`, `SpecFindingsResult`, `ContractAxis`, `ContractDeclaredType` |
-| 함수 | `validateMcpSuite`, `canonicalJson`, `sha256`, `deepFreeze`, `checkInputContract`, `checkAssertionSubstance`, `deriveContractAxes` |
+| 타입 | `TestSuiteSpec`, `TestCaseSpec`, `SuiteValidationIssue`, `RunnerRedactionOptions`, `SpecFindingsResult`, `ContractAxis`, `ContractAxisKind`, `ContractDeclaredType` |
+| 함수 | `validateMcpSuite`, `canonicalJson`, `sha256`, `deepFreeze`, `checkInputContract`, `checkAssertionSubstance`, `deriveContractAxes`, `matchCoveredAxes` |
 | 상수 | `MCP_SUITE_JSON_SCHEMA`, `DEFAULT_SENSITIVE_KEYS`, `REDACTED` |
 
 `checkInputContract` · `checkAssertionSubstance` · `SpecFindingsResult` 세 개는 2026-08-14 에
@@ -49,6 +49,7 @@ cli → runner / generate / record / mock → core
 `generate` 파서에 통과시키지 않는다(`authoring-session.ts` 가 서버 `tools` 를
 `checkInputContract` 에 그대로 넘긴다). `anyOf` 하나 쓴 서버를 만나면 `generate` 파서 기반 도출은
 화면 전체를 죽이고, `runner` 파서 기반 도출은 그 툴만 해석 불가로 빼고 나머지를 정상 표시한다.
+같은 이유로 커버리지 판정이 `matchCoveredAxes` 와 `ContractAxisKind` 를 쓴다.
 
 이 의존은 AI 보조 작성 기능 이전부터 있었고, PR #37이 `MCP_SUITE_JSON_SCHEMA`를 하나 더 참조하면서
 코드 리뷰에서 지적됐다.

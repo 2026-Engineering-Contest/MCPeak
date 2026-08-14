@@ -11,6 +11,7 @@ const sourceDir = fileURLToPath(new URL("../src", import.meta.url));
  */
 const APPROVED_RUNNER_SYMBOLS = [
   "ContractAxis",
+  "ContractAxisKind",
   "ContractDeclaredType",
   "DEFAULT_SENSITIVE_KEYS",
   "MCP_SUITE_JSON_SCHEMA",
@@ -25,6 +26,7 @@ const APPROVED_RUNNER_SYMBOLS = [
   "checkInputContract",
   "deepFreeze",
   "deriveContractAxes",
+  "matchCoveredAxes",
   "sha256",
   "validateMcpSuite",
 ];

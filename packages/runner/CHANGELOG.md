@@ -1,5 +1,12 @@
 # @ohmymcp/runner
 
+## 0.6.1
+
+### Patch Changes
+
+- Updated dependencies [0d92470]
+  - @ohmymcp/core@0.2.0
+
 ## 0.6.0
 
 ### Minor Changes

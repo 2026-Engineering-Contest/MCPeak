@@ -26,7 +26,7 @@ Step 1~6 그대로 구현했다. 규칙은 설계서 §6.3 · §11.1 이다.
 
 | 명령 | 판정 줄 |
 |---|---|
-| `pnpm vitest run packages/runner/tests/input-contract.test.ts` (구현 전) | `Tests  6 failed | 61 passed (67)` |
+| `pnpm vitest run packages/runner/tests/input-contract.test.ts` (구현 전) | `Tests  6 failed \| 61 passed (67)` |
 | `pnpm vitest run packages/runner/tests/input-contract.test.ts` (구현 후) | `Test Files  1 passed (1)` / `Tests  67 passed (67)` |
 | `pnpm vitest run packages/runner/tests/contract-axes.test.ts` | `Test Files  1 passed (1)` / `Tests  33 passed (33)` (todo 0개) |
 | `pnpm vitest run packages/runner` | `Test Files  21 passed (21)` / `Tests  461 passed (461)` |

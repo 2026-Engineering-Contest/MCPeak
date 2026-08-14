@@ -20,9 +20,9 @@ Step 1~6 그대로 구현했다. 판정 규칙은 설계서 §6.2 다.
 
 | 명령 | 판정 줄 |
 |---|---|
-| `pnpm vitest run packages/runner/tests/contract-axes.test.ts` (구현 전) | `Tests  12 failed | 20 passed | 1 todo (33)` |
-| `pnpm vitest run packages/runner/tests/contract-axes.test.ts` (구현 후) | `Test Files  1 passed (1)` / `Tests  32 passed | 1 todo (33)` |
-| `pnpm vitest run packages/runner` | `Test Files  21 passed (21)` / `Tests  449 passed | 1 todo (450)` |
+| `pnpm vitest run packages/runner/tests/contract-axes.test.ts` (구현 전) | `Tests  12 failed \| 20 passed \| 1 todo (33)` |
+| `pnpm vitest run packages/runner/tests/contract-axes.test.ts` (구현 후) | `Test Files  1 passed (1)` / `Tests  32 passed \| 1 todo (33)` |
+| `pnpm vitest run packages/runner` | `Test Files  21 passed (21)` / `Tests  449 passed \| 1 todo (450)` |
 | `pnpm typecheck --force` | `Tasks:    6 successful, 6 total` / `Cached:    0 cached, 6 total` |
 | `pnpm lint` | `Checked 143 files in 29ms. No fixes applied.` |
 

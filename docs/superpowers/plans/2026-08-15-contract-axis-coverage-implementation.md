@@ -1626,6 +1626,15 @@ Expected: PASS
 - Modify: `packages/cli/src/index.ts` (의존성 주입 한 줄)
 - Test: `packages/cli/tests/generate-command.test.ts`
 - Test: `packages/cli/tests/generate-integration.test.ts`
+- Test: `packages/cli/tests/dist-cli-e2e.mjs` (실행 중 추가. 아래 사유)
+
+**`dist-cli-e2e.mjs` 는 계획 시점에 빠져 있었다.** CI 의 `build` job 이 `pnpm test:e2e` 로 이 파일만
+따로 돌린다. `pnpm test`(vitest)의 수집 대상이 아니라 **로컬 전체 검증이 녹색인데 CI 가 빨간불**이
+된다. 실제로 PR 을 올린 뒤 `build` job 이 `8 !== 2` 로 실패해서 발견했다.
+
+계획을 쓸 때 `packages/cli/tests` 를 vitest 파일로만 셌다. `package.json` 의 스크립트를 보지 않은 것이
+누락의 원인이다. **다음에 출력 형태를 바꾸는 계획에서는 `pnpm test` 밖에서 도는 검증 스크립트를 먼저
+세야 한다.** CLAUDE.local.md 거짓 신호 표의 "유닛테스트 녹색, 실행 시 실패" 와 같은 유형이다.
 
 **Interfaces**
 - Consumes: T7 의 `computeCoverage`·`CoverageResult`·`ToolCoverage`·`AxisCoverage`

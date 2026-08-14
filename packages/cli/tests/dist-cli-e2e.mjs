@@ -173,7 +173,35 @@ for (const [fixture, expectedStatus, expectedSummary] of [
     assert.equal(generated.code, 0);
     assert.equal(generated.err, "");
     const value = JSON.parse(await readFile(suite, "utf8"));
-    assert.equal(value.cases.length, 2);
+    // 툴당 정상 케이스 1개 + 서버 선언에서 도출한 위반 케이스다(ADR-0022).
+    // weather-server 는 get_weather 3개(정상·city 누락·city 타입)와 add 5개(정상·a 누락·
+    // b 누락·a 타입·b 타입)를 만든다.
+    assert.equal(value.cases.length, 8);
+    assert.deepEqual(
+      value.cases.map((item) => item.id),
+      [
+        "get-weather-success",
+        "get-weather-missing-city",
+        "get-weather-type-city",
+        "add-success",
+        "add-missing-a",
+        "add-missing-b",
+        "add-type-a",
+        "add-type-b",
+      ],
+    );
+    // 위반 케이스의 단언은 isError: true 하나다. 서버가 거절하면 통과다.
+    assert.deepEqual(
+      value.cases.filter((item) => item.assertions[0].expected === true).map((item) => item.id),
+      [
+        "get-weather-missing-city",
+        "get-weather-type-city",
+        "add-missing-a",
+        "add-missing-b",
+        "add-type-a",
+        "add-type-b",
+      ],
+    );
     // 저장한 명세에는 승인 지문이 들어간다. 설계 문서 §3.
     assert.match(value.approval?.fingerprint ?? "", /^[0-9a-f]{64}$/);
     await expectExited(pidFile);
@@ -197,9 +225,12 @@ for (const [fixture, expectedStatus, expectedSummary] of [
     const result = await runTest(suite, ["--json"]);
     assert.equal(result.code, 1);
     assert.equal(result.err, "");
+    // 위반 케이스 6개는 weather-server 가 입력을 검증하므로 전부 통과한다.
+    // 실패 1건은 get-weather-success 다. city "example" 이 그 서버의 고정 데이터에 없다.
+    // 값의 도메인은 선언에 없어서 규칙 기반 생성이 알 수 없다(설계 §2 비범위).
     assert.deepEqual(JSON.parse(result.out).summary, {
-      total: 2,
-      passed: 1,
+      total: 8,
+      passed: 7,
       failed: 1,
       timedOut: 0,
       cancelled: 0,

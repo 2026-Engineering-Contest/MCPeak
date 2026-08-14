@@ -159,3 +159,97 @@ Tests  4 failed | 83 passed (87)
 4. **동시 작업 중인 T5 파일 때문에 `pnpm lint` 전체가 빨간불이다.** 내 파일은 통과하고
    `npx turbo typecheck --force` 는 6/6 녹색이다. 통합 시점에 T5 가 자기 파일을 정리하면 함께
    녹색이 된다.
+
+---
+
+## T4b: 단언 실질성 finding 을 입력 계약과 갈라 세기
+
+`ohmymcp-a3` 가 T4·T5 양쪽에 걸쳐 짚은 문안 결함을 고쳤다. 설계 문서 §6 수정은 오케스트레이터가
+승인했다.
+
+### 무엇이 문제였나
+
+T4 의 `confirmSpecFindings` 는 `inputContract` 와 `assertionSubstance` 를 한 배열로 합친 뒤
+전부 `입력 계약 위반 N건` 아래 찍었다. `VACUOUS_MIN_LENGTH` 는 입력 문제가 아니라 단언 문제다.
+그 문장이 입력 계약 머리글 아래 붙으면 읽는 사람이 입력을 고치러 간다. 고칠 자리를 잘못
+가리키는 문장은 이 프로젝트에서 결함이다.
+
+### 바꾼 파일
+
+| 파일 | 내용 |
+|---|---|
+| `packages/cli/src/generate-command.ts` | `isViolation` 을 `FINDING_GROUP` 레코드로 교체, 머리글 블록을 찍는 `writeFindingBlock` 추출, `confirmSpecFindings` 를 두 블록 + 합계 재확인으로 재작성, `SpecFindingCode` 타입 import |
+| `packages/cli/tests/generate-command.test.ts` | 기존 `assertionSubstance finding 도 같은 목록에 함께 센다` 를 새 사양으로 갱신, 단언 실질성 단독 케이스 테스트 추가 |
+| `docs/superpowers/specs/2026-08-14-spec-findings-wiring-design.md` | §6.2 · §6.3 갱신 |
+
+§7.2 는 건드리지 않았다(T5b 가 동시에 고치는 절이다). 저장 직전에 파일을 다시 읽어 그쪽 변경
+위에 얹었다. `packages/cli/src/test-command.ts` 와 그 테스트도 손대지 않았다.
+
+### 새 화면
+
+```
+입력 계약 위반 1건 (선택한 변경 기준)
+  → change-002 seoul-weather
+     필수 필드 'city' 가 입력에 없습니다
+항상 통과하는 단언 1건 (선택한 변경 기준)
+  → change-002 seoul-weather
+     assertions[0].schema.minLength 는 0이라 모든 문자열이 통과합니다
+```
+
+재확인은 합계로 한 번만 받는다: `위반 2건이 남아 있습니다. 그래도 적용합니까?`
+
+### 검증
+
+| 명령 | 판정 줄 |
+|---|---|
+| `pnpm vitest run packages/cli/tests/generate-command.test.ts packages/cli/tests/generate-integration.test.ts` | `Test Files  2 passed (2)` / `Tests  92 passed (92)` |
+| `npx turbo typecheck --force` | `Tasks:    6 successful, 6 total` / `Cached:    0 cached, 6 total` |
+| `npx biome check` (내 파일 둘) | `Checked 2 files in 16ms. No fixes applied.` |
+
+전체 `pnpm test` · `pnpm lint` 는 T5b 중간 상태가 섞여 판정 근거로 쓰지 않았다.
+
+### `Record` 가 실제로 무는지 확인했다
+
+지시가 "코드가 늘면 타입 오류로 잡히게" 였으므로 실제로 확인했다. `SpecFindingCode` 에
+`"PROBE_NEW_CODE"` 를 임시로 더하고 `packages/cli` 를 타입체크했다.
+
+```
+src/generate-command.ts(375,7): error TS2741: Property 'PROBE_NEW_CODE' is missing in type
+  '{ ... }' but required in type 'Readonly<Record<SpecFindingCode, FindingGroup>>'.
+```
+
+확인 뒤 `packages/runner/src/spec-findings.ts` 를 원래대로 돌려놨고
+`git diff --stat -- packages/runner` 가 빈 출력임을 확인했다.
+
+같은 프로브에서 `src/test-command.ts(227,7)` 도 같은 오류를 냈다. `ohmymcp-a3` 가 T5 에서
+독립적으로 같은 `Record<SpecFindingCode, ...>` 패턴을 썼다는 뜻이다. 두 화면이 같은 방식으로
+누락을 막고 있다.
+
+### 임의로 판단한 지점
+
+**1) 분류를 배열 origin 이 아니라 코드로 한다.** `candidate.specFindings` 는 이미 두 배열로
+갈려 있으므로 그 출처로 나눌 수도 있었다. 그러면 `Record` 가 필요 없다. 그런데 지시가 "코드가
+늘면 타입 오류로 잡히게" 였고, 출처 기반은 새 코드가 어느 배열에 담기든 조용히 통과한다.
+`FINDING_GROUP` 을 단일 권위로 두어 `runner` 가 코드를 늘리면 이 화면이 먼저 깨지게 했다.
+
+**2) 머리글 문안을 `항상 통과하는 단언 M건 (선택한 변경 기준)` 으로 확정했다.** 지시대로다.
+`ohmymcp-a3` 가 `test-command` 에서 쓰는 `참고: <caseId> 의 단언은 무엇이 와도 통과합니다` 와
+문장 형태는 다르지만 둘 다 "이 단언은 아무것도 안 막는다" 를 말한다. 승인 화면은 개수 머리글
+형식이고 `test` 화면은 케이스별 참고 문장 형식이라 형태가 갈리는 것이 맞다. 개별 finding 문장은
+양쪽 다 `describeSpecFinding` 것을 그대로 쓴다.
+
+**3) 테스트를 하나 더 늘렸다.** 지시는 기존 테스트 갱신만 요구했다. 단언 실질성만 있고 입력
+계약이 0건일 때 입력 계약 머리글이 안 나오는 것을 고정하는 테스트를 더했다. 갱신한 테스트는 둘
+다 있는 경우만 덮어서, 한쪽이 0건일 때 빈 머리글이 찍히는 회귀를 못 잡는다.
+
+**4) 블록 순서를 단언으로 고정했다.** `out.indexOf("입력 계약 위반") < out.indexOf("항상 통과하는 단언")`
+로 확인한다. 두 머리글이 있다는 것만 확인하면 순서가 뒤집혀도 통과한다.
+
+### 남은 위험 갱신
+
+- 위 1·2·4번은 그대로다.
+- 3번(`byCase` 순서)은 오케스트레이터가 비범위로 정리했다. 지금 구현은 재정렬을 안 하므로 순서가
+  `runner` 것 그대로다.
+- **새로 는 것:** `FINDING_GROUP` 은 코드를 **빠뜨리는** 것만 막는다. 새 코드를 엉뚱한 블록에
+  넣는 실수는 못 잡는다. 예를 들어 입력 계약 코드를 `assertionSubstance` 로 적어도 타입은
+  통과한다. 코드가 늘 때 사람이 한 번 봐야 한다.

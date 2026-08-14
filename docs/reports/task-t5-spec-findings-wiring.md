@@ -139,3 +139,165 @@ path: "assertions[0].schema.minLength" }` 를 내고, 문장은
 ```
 feat(cli): test 실패 케이스에 입력 계약 참고 문장을 덧붙인다
 ```
+
+---
+
+# T5b 추가 보고: 참고 문장 머리글을 검사 종류별로 가른다
+
+T5 의 "남은 위험 1" 을 오케스트레이터가 승인해 이 태스크에서 고쳤다. 기점 HEAD `26d0819`.
+
+## 바꾼 파일
+
+- `packages/cli/src/test-command.ts`
+- `packages/cli/tests/test-command.test.ts`
+- `docs/superpowers/specs/2026-08-14-spec-findings-wiring-design.md` (§7.2 만, 21줄 추가)
+- `docs/reports/task-t5-spec-findings-wiring.md` (이 절)
+
+같은 worktree 에서 T4b 가 고치는 `packages/cli/src/generate-command.ts` ·
+`packages/cli/tests/generate-command.test.ts` 와 설계 문서 §6 은 건드리지 않았다. 설계 문서는
+Edit 로 §7.2 구간만 치환했고, `git diff` 의 hunk 헤더가 `@@ -170,11 +170,32 @@` 한 개인 것으로
+다른 절이 안 바뀌었음을 확인했다.
+
+## 무엇을 바꿨나
+
+- `FINDING_GROUP: Readonly<Record<SpecFindingCode, FindingGroup>>` 로 코드를 두 종류로 가른다.
+  `SpecFindingCode` 전체를 키로 갖는 `Record` 라서 `runner` 가 코드를 늘리면 이 표에서 타입
+  오류가 난다. 문자열 배열이면 새 코드가 조용히 입력 계약 쪽으로 흘러간다.
+- `FINDING_HEADING` 이 종류별 머리글을 만든다.
+  - 입력 계약: `참고: <caseId> 의 입력이 서버 선언과 다릅니다` (기존 문안 유지)
+  - 단언 실질성: `참고: <caseId> 의 단언은 무엇이 와도 통과합니다` (신규)
+- `FINDING_GROUP_ORDER` 가 블록 순서를 정한다. 한 케이스에 둘 다 있으면 입력 계약이 먼저다.
+- 케이스 사이 순서와 블록 안 순서는 그대로 `runner` 가 준 순서다. 재정렬하지 않는다.
+- `escapeTerminalText(caseId)` 는 두 머리글 모두에 그대로 적용된다.
+- `--json` 의 `spec.findings` 는 한 배열 그대로다. 한 줄도 바꾸지 않았다.
+
+## 추가·갱신한 테스트
+
+- 갱신: "항상 참인 단언은 툴 목록 없이도 참고 문장이 나온다" 에 새 머리글 기대를 넣고,
+  입력 머리글이 **없다는** 것도 함께 고정했다.
+- 신규: "한 케이스에 둘 다 있으면 머리글을 갈라 찍고 입력 계약이 먼저다". `both-case`
+  (입력 `{ citi: "Seoul" }` + `minLength: 0`) 로 두 머리글의 위치를 비교하고, 머리글 경계로
+  출력을 잘라 각 finding 이 맞는 블록 안에 있는지 확인한다.
+- 신규: "`--json` 의 findings 는 한 배열로 그대로 둔다". 같은 입력에서 코드 순서가
+  `REQUIRED_MISSING` · `UNDECLARED_FIELD` · `VACUOUS_MIN_LENGTH` 인 것을 고정한다.
+
+## 검증
+
+| 명령 | 판정 줄 |
+|---|---|
+| `pnpm vitest run packages/cli/tests/test-command.test.ts` | `Test Files  1 passed (1)` / `Tests  84 passed (84)` |
+| `npx turbo typecheck --force` | `Tasks: 6 successful, 6 total` / `Cached: 0 cached, 6 total` |
+| `npx biome check packages/cli/src/test-command.ts packages/cli/tests/test-command.test.ts` | `Checked 2 files in 29ms. No fixes applied.` |
+
+새 테스트가 실제로 이 분기에 걸려 있는지도 확인했다. `FINDING_GROUP` 의
+`VACUOUS_MIN_LENGTH` 를 잠시 `"inputContract"` 로 바꾸니 `2 failed | 82 passed` 가 되고,
+실패한 것이 위의 갱신 테스트와 신규 혼합 테스트였다. 확인 뒤 원복했다(`grep -c` 로 확인).
+
+전체 `pnpm test` 와 `pnpm lint` 는 T4b 중간 상태가 섞이므로 돌리지 않았다.
+
+## 임의로 판단한 지점
+
+1. **분류를 `Record` 표로 뒀다.** "union 을 좁히는 방식" 요구를 `Record<SpecFindingCode, …>`
+   로 읽었다. `switch` 문으로 짜도 exhaustiveness 는 같지만, 표는 두 종류의 대응이 한눈에
+   보이고 머리글 함수와 나란히 둘 수 있다.
+2. **머리글 문안에 `caseId` 위치를 그대로 유지했다.** `참고: <caseId> 의 …` 형태를 두 문안이
+   공유하므로 사용자가 케이스 이름을 같은 자리에서 찾는다.
+3. **블록 사이에 빈 줄이 하나 들어간다.** 각 블록이 `\n` 으로 시작하는 기존 레이아웃 규칙을
+   그대로 따른 결과다. 같은 케이스의 두 블록도 빈 줄로 갈린다. 별도 규칙을 만들지 않았다.
+
+## 남은 위험
+
+1. **`SCHEMA_NOT_ANALYZABLE` 이 입력 계약 머리글 아래 붙는다.** 이것은 위반이 아니라 건너뜀
+   이므로 `… 의 입력이 서버 선언과 다릅니다` 가 정확하지 않다. T4 승인 화면은 이 코드를 개수
+   에서 빼고 별도 줄로 알리는데, `cli test` 에는 그런 규칙이 설계 문서에 없다. 세 번째 머리글
+   (건너뜀)을 둘지는 별도 결정이 필요하다. 이번 태스크의 지시 범위 밖이라 손대지 않았다.
+2. **실환경 미확인.** 새 머리글이 실제 서버 상대로 나오는 것은 T6 에서 확인한다.
+
+## T5b 커밋 제안 (사람이 실행)
+
+```
+fix(cli): test 참고 문장 머리글을 검사 종류별로 가른다
+```
+
+---
+
+# T5c 추가 보고: 건너뜀을 세 번째 그룹으로 가른다
+
+T5b 의 "남은 위험 1" 을 오케스트레이터가 승인해 이 태스크에서 닫았다. T5b 미커밋 변경 위에
+이어서 작업했다.
+
+## 바꾼 파일
+
+- `packages/cli/src/test-command.ts`
+- `packages/cli/tests/test-command.test.ts`
+- `docs/superpowers/specs/2026-08-14-spec-findings-wiring-design.md` (§7.2 만)
+- `docs/reports/task-t5-spec-findings-wiring.md` (이 절)
+
+설계 문서의 `git diff` hunk 는 둘이다. `@@ -133,20 +133,36 @@`(§6, ohmymcp-0a 의 T4b)와
+`@@ -170,11 +186,46 @@`(§7.2, 내 것). 그쪽 변경 위에 얹혔고 되돌리지 않았다.
+
+## 무엇을 바꿨나
+
+- `FindingGroup` 에 `"skipped"` 를 더하고 `SCHEMA_NOT_ANALYZABLE` 을 그 그룹으로 옮겼다.
+  `Record<SpecFindingCode, FindingGroup>` 이라 옮기는 순간 컴파일러가 빠짐을 잡는다.
+- 머리글: `참고: <caseId> 의 입력 검사를 건너뛰었습니다`
+- `FINDING_GROUP_ORDER` 는 입력 계약, 단언 실질성, 건너뜀 순이다.
+- `--json` 의 `spec.findings` 는 이번에도 손대지 않았다. 한 배열 그대로다.
+
+## 추가한 테스트
+
+- "해석하지 못한 스키마는 건너뜀 머리글만 낸다". 입력 머리글이 **없다는** 것도 함께 고정한다.
+- "건너뜀 블록은 단언 실질성 블록 뒤에 온다".
+- "케이스가 여럿이면 케이스별로 세 머리글이 각자 나온다".
+
+픽스처는 `unanalyzableTools`(루트에 `anyOf` 가 있는 `inputSchema`)다. `checkInputContract` 를
+그 입력으로 직접 불러 확인한 실제 결과는 finding 한 건이다.
+
+```
+{ code: "SCHEMA_NOT_ANALYZABLE", severity: "advisory", caseId: "…", path: "operation.tool" }
+문장: 'get_weather' 의 입력 스키마를 해석하지 못해 이 툴의 입력 검사를 건너뜁니다
+```
+
+## 임의로 판단한 지점
+
+**"세 그룹이 한 케이스에 다 있을 때의 순서" 테스트는 만들 수 없어서 만들지 않았다.** 대신
+케이스를 갈라 세 머리글이 각자 나오는 것을 고정했다.
+
+이유는 실제로 확인했다. 한 케이스는 툴 하나만 부르고, 루트 스키마를 해석하지 못하면 그 툴의
+입력 검사가 통째로 빠진다(ADR-0015). 그래서 같은 케이스에서 `SCHEMA_NOT_ANALYZABLE` 과
+`REQUIRED_MISSING` 이 함께 나오는 입력이 존재하지 않는다. 필드 수준에 `anyOf` 를 두는 경우도
+직접 확인했는데, 그 필드만 조용히 빠지고 `SCHEMA_NOT_ANALYZABLE` 은 나오지 않는다. 도달 불가한
+조합을 테스트로 박으면 그 테스트가 실제로 무엇을 지키는지 아무도 모르게 된다. 이 사실을 설계
+문서 §7.2 에도 한 문단으로 적었다.
+
+대신 도달 가능한 두 조합을 테스트로 고정했다. 입력 계약 + 단언 실질성(T5b 의 `both-case`),
+건너뜀 + 단언 실질성(T5c 의 `skipped-case` with `minLength: 0`).
+
+## 검증
+
+| 명령 | 판정 줄 |
+|---|---|
+| `pnpm vitest run packages/cli/tests/test-command.test.ts` | `Test Files  1 passed (1)` / `Tests  87 passed (87)` |
+| `npx turbo typecheck --force` | `Tasks: 6 successful, 6 total` / `Cached: 0 cached, 6 total` |
+| `npx biome check packages/cli/src/test-command.ts packages/cli/tests/test-command.test.ts` | `Checked 2 files in 30ms. No fixes applied.` |
+
+부하 확인: `SCHEMA_NOT_ANALYZABLE` 을 잠시 `"inputContract"` 로 되돌리니
+`3 failed | 84 passed` 가 되고 실패한 것이 위의 신규 세 테스트였다. 확인 뒤 원복했다.
+
+전체 `pnpm test` 와 `pnpm lint` 는 T4b 중간 상태가 섞이므로 돌리지 않았다.
+
+## 남은 위험
+
+1. **`cli test` 와 승인 화면의 건너뜀 문안이 다르다.** `cli test` 는
+   `참고: <caseId> 의 입력 검사를 건너뛰었습니다` 이고, 승인 화면(§6.1)은
+   `해석하지 못한 서버 스키마 N건은 검사에서 빠졌습니다` 다. 화면 구조가 다르므로(승인 화면은
+   개수 집계, `cli test` 는 케이스별 블록) 지금은 의도된 차이로 본다. 두 화면의 문안을 하나로
+   맞출지는 별도 결정이다.
+2. **실환경 미확인.** 세 머리글이 실제 서버 상대로 나오는 것은 T6 에서 확인한다. 특히
+   `SCHEMA_NOT_ANALYZABLE` 은 `anyOf` 나 `$ref` 를 쓰는 실제 서버에서 자주 나올 것이다.
+
+## T5c 커밋 제안 (사람이 실행)
+
+```
+fix(cli): test 참고 문장에서 건너뜀을 위반과 가른다
+```

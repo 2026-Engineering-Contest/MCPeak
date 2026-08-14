@@ -890,7 +890,9 @@ describe("AI 대화형 검토", () => {
     expect(out).not.toContain("입력 계약 위반");
   });
 
-  it("assertionSubstance finding 도 같은 목록에 함께 센다", async () => {
+  it("단언 실질성 finding 은 입력 계약과 갈라 세고 재확인은 합계로 한 번만 받는다", async () => {
+    // VACUOUS_MIN_LENGTH 는 입력 문제가 아니다. '입력 계약 위반' 머리글 아래 붙으면 읽는
+    // 사람이 입력을 고치러 간다. 머리글을 갈라 어디를 고쳐야 하는지가 보이게 한다.
     const d = findingsDeps(
       ["edit", "select", "cancel"],
       ["candidate.json", "change-002"],
@@ -908,8 +910,43 @@ describe("AI 대화형 검토", () => {
     );
     await runGenerateCommand(interactiveArgv, d.value);
     const out = writtenText(d.io.write.mock.calls);
-    expect(out).toContain("입력 계약 위반 2건 (선택한 변경 기준)");
+    expect(out).toContain("입력 계약 위반 1건 (선택한 변경 기준)");
+    expect(out).toContain("항상 통과하는 단언 1건 (선택한 변경 기준)");
+    expect(out).toContain("필수 필드 'city' 가 입력에 없습니다");
     expect(out).toContain("assertions[0].schema.minLength 는 0이라 모든 문자열이 통과합니다");
+    // 입력 계약 블록이 먼저다.
+    expect(out.indexOf("입력 계약 위반")).toBeLessThan(out.indexOf("항상 통과하는 단언"));
+    // 종류가 둘이어도 판단은 하나다. 확인을 두 번 받지 않는다.
+    expect(confirmMessages(d.io.confirm.mock.calls)).toEqual([
+      "위반 2건이 남아 있습니다. 그래도 적용합니까?",
+      "선택한 변경을 적용할까요?",
+    ]);
+  });
+
+  it("단언 실질성 finding 만 있으면 입력 계약 머리글이 안 나온다", async () => {
+    const d = findingsDeps(
+      ["edit", "select", "cancel"],
+      ["candidate.json", "change-002"],
+      [true, true],
+      {
+        inputContract: [],
+        assertionSubstance: [
+          finding({
+            code: "VACUOUS_MIN_ITEMS",
+            severity: "advisory",
+            path: "assertions[0].schema.minItems",
+          }),
+        ],
+      },
+    );
+    await runGenerateCommand(interactiveArgv, d.value);
+    const out = writtenText(d.io.write.mock.calls);
+    expect(out).not.toContain("입력 계약 위반");
+    expect(out).toContain("항상 통과하는 단언 1건 (선택한 변경 기준)");
+    expect(confirmMessages(d.io.confirm.mock.calls)).toEqual([
+      "위반 1건이 남아 있습니다. 그래도 적용합니까?",
+      "선택한 변경을 적용할까요?",
+    ]);
   });
 
   it("최종 fingerprint 승인 뒤에만 JSON을 저장한다", async () => {

@@ -11,7 +11,12 @@ import type {
   PublicProviderFailure,
   SanitizedAuthoringCandidate,
 } from "@ohmymcp/generate";
-import type { SpecFinding, SuiteValidationResult, TestSuiteSpec } from "@ohmymcp/runner";
+import type {
+  SpecFinding,
+  SpecFindingCode,
+  SuiteValidationResult,
+  TestSuiteSpec,
+} from "@ohmymcp/runner";
 import { describeSpecFinding, suiteFingerprint } from "@ohmymcp/runner";
 
 export const GENERATE_USAGE =
@@ -359,8 +364,51 @@ function showDiff(io: ReviewIO, preview: AuthoringDiffPreview): void {
     );
   }
 }
-/** 위반으로 세는 것만 남긴다. SCHEMA_NOT_ANALYZABLE 은 건너뜀이라 위반이 아니다. */
-const isViolation = (finding: SpecFinding): boolean => finding.code !== "SCHEMA_NOT_ANALYZABLE";
+/**
+ * finding 이 어느 블록에 들어가는지. `Record<SpecFindingCode, ...>` 라서 `runner` 가 코드를
+ * 늘리면 여기서 타입 오류가 난다. 문자열 배열로 두면 새 코드가 어느 블록에도 못 들어간 채
+ * 조용히 사라진다. 이 화면에서 누락은 "위반이 없다" 로 읽히므로 가장 나쁜 실패다.
+ *
+ * `skipped` 는 위반이 아니다. 서버 스키마를 우리가 못 읽은 것이지 명세가 틀린 게 아니다.
+ */
+type FindingGroup = "inputContract" | "assertionSubstance" | "skipped";
+const FINDING_GROUP: Readonly<Record<SpecFindingCode, FindingGroup>> = {
+  TOOL_NOT_DECLARED: "inputContract",
+  REQUIRED_MISSING: "inputContract",
+  UNDECLARED_FIELD: "inputContract",
+  TYPE_MISMATCH: "inputContract",
+  ENUM_MISMATCH: "inputContract",
+  SCHEMA_NOT_ANALYZABLE: "skipped",
+  VACUOUS_MIN_LENGTH: "assertionSubstance",
+  VACUOUS_MIN_ITEMS: "assertionSubstance",
+};
+
+/**
+ * 머리글 하나와 그 아래 케이스별 문장을 찍는다. finding 이 없으면 아무것도 안 찍는다.
+ * `byCase` 순회는 `Map` 삽입 순서이고 그것이 곧 `runner` 가 정한 finding 순서다. 정렬하지
+ * 않는다. 여기서 다시 정렬하면 같은 명세가 화면마다 다른 순서로 보인다.
+ */
+function writeFindingBlock(
+  io: ReviewIO,
+  diff: AuthoringDiffPreview,
+  heading: string,
+  findings: readonly SpecFinding[],
+): void {
+  if (findings.length === 0) return;
+  const byCase = new Map<string, SpecFinding[]>();
+  for (const finding of findings) {
+    const list = byCase.get(finding.caseId) ?? [];
+    list.push(finding);
+    byCase.set(finding.caseId, list);
+  }
+  io.write(`${heading} ${findings.length}건 (선택한 변경 기준)\n`);
+  for (const [caseId, list] of byCase) {
+    const change = diff.changes.find((item) => "caseId" in item && item.caseId === caseId);
+    io.write(`  → ${change?.id ?? ""} ${caseId}\n`);
+    // 문장은 describeSpecFinding 만 만든다. 여기서는 들여쓰기만 붙인다.
+    for (const finding of list) io.write(`     ${describeSpecFinding(finding)}\n`);
+  }
+}
 
 /**
  * 선택한 change 의 caseId 집합에 걸린 finding 만 뽑는다. 순서는 재정렬하지 않는다.
@@ -387,8 +435,15 @@ function findingsForSelection(
 }
 
 /**
- * 선택한 변경에 걸린 입력 계약 위반을 찍고, 위반이 있으면 재확인을 하나 더 받는다.
+ * 선택한 변경에 걸린 위반을 두 블록으로 갈라 찍고, 위반이 있으면 재확인을 하나 더 받는다.
  * 반환값이 false 면 적용을 멈추고 메뉴로 돌아간다.
+ *
+ * 두 검사를 한 머리글 아래 합치지 않는다. `VACUOUS_MIN_LENGTH` 는 입력 문제가 아니라 단언
+ * 문제인데 `입력 계약 위반` 아래 붙으면 읽는 사람이 입력을 고치러 간다. 화면에 찍히는 문장이
+ * 곧 제품이므로 어디를 고쳐야 하는지가 머리글에서 갈려야 한다.
+ *
+ * 재확인은 하나만 받는다. 개수는 두 종류의 합이다. 종류마다 확인을 받으면 화면만 길어지고
+ * 사용자가 내리는 판단은 여전히 "그래도 적용할까" 하나다.
  *
  * 거부하지 않고 재확인만 받는다. 서버가 inputSchema 를 느슨하게 선언하면 정상 명세도
  * UNDECLARED_FIELD 로 걸리므로, 거부하면 옳은 명세를 저장할 길이 막힌다.
@@ -400,27 +455,18 @@ async function confirmSpecFindings(
   selected: readonly string[],
 ): Promise<boolean> {
   const findings = findingsForSelection(candidate, diff, selected);
-  const violations = findings.filter(isViolation);
-  const skipped = findings.length - violations.length;
-  if (violations.length > 0) {
-    // 삽입 순서가 곧 runner 의 finding 순서다. 정렬하지 않는다.
-    const byCase = new Map<string, SpecFinding[]>();
-    for (const finding of violations) {
-      const list = byCase.get(finding.caseId) ?? [];
-      list.push(finding);
-      byCase.set(finding.caseId, list);
-    }
-    io.write(`입력 계약 위반 ${violations.length}건 (선택한 변경 기준)\n`);
-    for (const [caseId, list] of byCase) {
-      const change = diff.changes.find((item) => "caseId" in item && item.caseId === caseId);
-      io.write(`  → ${change?.id ?? ""} ${caseId}\n`);
-      // 문장은 describeSpecFinding 만 만든다. 여기서는 들여쓰기만 붙인다.
-      for (const finding of list) io.write(`     ${describeSpecFinding(finding)}\n`);
-    }
-  }
+  const grouped = (group: FindingGroup): readonly SpecFinding[] =>
+    findings.filter((finding) => FINDING_GROUP[finding.code] === group);
+  const inputContract = grouped("inputContract");
+  const assertionSubstance = grouped("assertionSubstance");
+  const skipped = grouped("skipped").length;
+  // 입력 계약 블록이 먼저다. 명세를 고칠 때 입력이 먼저 맞아야 단언을 볼 수 있다.
+  writeFindingBlock(io, diff, "입력 계약 위반", inputContract);
+  writeFindingBlock(io, diff, "항상 통과하는 단언", assertionSubstance);
   if (skipped > 0) io.write(`  → 해석하지 못한 서버 스키마 ${skipped}건은 검사에서 빠졌습니다.\n`);
-  if (violations.length === 0) return true;
-  return io.confirm(`위반 ${violations.length}건이 남아 있습니다. 그래도 적용합니까?`);
+  const total = inputContract.length + assertionSubstance.length;
+  if (total === 0) return true;
+  return io.confirm(`위반 ${total}건이 남아 있습니다. 그래도 적용합니까?`);
 }
 function safeFailure(deps: GenerateCommandDependencies, code: string): void {
   deps.writeStderr(

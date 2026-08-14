@@ -843,6 +843,15 @@ describe("입력 계약 참고 문장", () => {
     callCase("busan-weather", { city: "Busan" }, 1),
   );
   const suiteWithVacuousAssertion = suiteOf(callCase("vacuous-case", { city: "Seoul" }, 0));
+  /** 한 케이스가 입력 계약과 단언 실질성에 동시에 걸린다. 머리글이 둘 다 나와야 한다. */
+  const suiteWithBothKinds = suiteOf(callCase("both-case", { citi: "Seoul" }, 0));
+  /**
+   * 루트에 `anyOf` 가 있으면 이 툴의 입력 검사를 통째로 건너뛴다(ADR-0015). 그 결과가
+   * SCHEMA_NOT_ANALYZABLE 하나이고 다른 입력 계약 finding 은 나오지 않는다. 직접 확인했다.
+   */
+  const unanalyzableTools: ToolDef[] = [
+    { name: "get_weather", inputSchema: { anyOf: [{ type: "object" }] } },
+  ];
   const cleanSuite = suiteOf(callCase("clean-case", { city: "Seoul" }, 1));
   /** 케이스별 status 만 주면 나머지는 그 결과에서 따라 나온다. */
   const reportWith = (
@@ -938,7 +947,88 @@ describe("입력 계약 참고 문장", () => {
       listTools: () => Promise.reject(new Error("boom")),
       statuses: { "vacuous-case": "failed" },
     });
+    expect(out.stdout).toContain("참고: vacuous-case 의 단언은 무엇이 와도 통과합니다");
     expect(out.stdout).toContain("는 0이라 모든 문자열이 통과합니다");
+    // 입력 문제가 아니므로 입력 머리글이 붙으면 읽는 사람이 입력을 고치러 간다.
+    expect(out.stdout).not.toContain("의 입력이 서버 선언과 다릅니다");
+  });
+  it("한 케이스에 둘 다 있으면 머리글을 갈라 찍고 입력 계약이 먼저다", async () => {
+    const out = await runTest({
+      suite: suiteWithBothKinds,
+      tools: weatherTools,
+      statuses: { "both-case": "failed" },
+    });
+    const input = out.stdout.indexOf("참고: both-case 의 입력이 서버 선언과 다릅니다");
+    const substance = out.stdout.indexOf("참고: both-case 의 단언은 무엇이 와도 통과합니다");
+    expect(input).toBeGreaterThan(0);
+    expect(substance).toBeGreaterThan(input);
+    // 각 finding 이 맞는 머리글 아래에 있어야 한다. 블록 경계로 잘라 확인한다.
+    const inputBlock = out.stdout.slice(input, substance);
+    const substanceBlock = out.stdout.slice(substance);
+    expect(inputBlock).toContain("필수 필드 'city' 가 입력에 없습니다. 비슷한 필드: 'citi'");
+    expect(inputBlock).toContain("'citi' 는 서버가 선언하지 않은 필드입니다. 비슷한 필드: 'city'");
+    expect(inputBlock).not.toContain("모든 문자열이 통과합니다");
+    expect(substanceBlock).toContain(
+      "assertions[0].schema.minLength 는 0이라 모든 문자열이 통과합니다",
+    );
+    expect(substanceBlock).not.toContain("입력에 없습니다");
+  });
+  it("해석하지 못한 스키마는 건너뜀 머리글만 낸다", async () => {
+    // 명세가 틀린 것이 아니라 서버 스키마를 못 읽은 것이다. 입력 머리글 아래 두면 읽는 사람이
+    // 고칠 것도 없는 입력을 고치러 간다.
+    const out = await runTest({
+      suite: suiteOf(callCase("skipped-case", { city: "Seoul" }, 1)),
+      tools: unanalyzableTools,
+      statuses: { "skipped-case": "failed" },
+    });
+    expect(out.stdout).toContain("참고: skipped-case 의 입력 검사를 건너뛰었습니다");
+    expect(out.stdout).toContain(
+      "→ 'get_weather' 의 입력 스키마를 해석하지 못해 이 툴의 입력 검사를 건너뜁니다",
+    );
+    expect(out.stdout).not.toContain("의 입력이 서버 선언과 다릅니다");
+  });
+  it("건너뜀 블록은 단언 실질성 블록 뒤에 온다", async () => {
+    const out = await runTest({
+      suite: suiteOf(callCase("skipped-case", { city: "Seoul" }, 0)),
+      tools: unanalyzableTools,
+      statuses: { "skipped-case": "failed" },
+    });
+    const substance = out.stdout.indexOf("참고: skipped-case 의 단언은 무엇이 와도 통과합니다");
+    const skipped = out.stdout.indexOf("참고: skipped-case 의 입력 검사를 건너뛰었습니다");
+    expect(substance).toBeGreaterThan(0);
+    expect(skipped).toBeGreaterThan(substance);
+  });
+  it("케이스가 여럿이면 케이스별로 세 머리글이 각자 나온다", async () => {
+    // 한 케이스는 툴 하나만 부르므로 위반과 건너뜀이 같은 케이스에 함께 오지 않는다.
+    // 그래서 세 머리글의 순서는 케이스를 갈라 확인한다.
+    const out = await runTest({
+      suite: suiteOf(callCase("both-case", { citi: "Seoul" }, 0)),
+      tools: weatherTools,
+      statuses: { "both-case": "failed" },
+    });
+    const skippedOut = await runTest({
+      suite: suiteOf(callCase("skipped-case", { city: "Seoul" }, 1)),
+      tools: unanalyzableTools,
+      statuses: { "skipped-case": "failed" },
+    });
+    expect(out.stdout).toContain("참고: both-case 의 입력이 서버 선언과 다릅니다");
+    expect(out.stdout).toContain("참고: both-case 의 단언은 무엇이 와도 통과합니다");
+    expect(out.stdout).not.toContain("건너뛰었습니다");
+    expect(skippedOut.stdout).toContain("참고: skipped-case 의 입력 검사를 건너뛰었습니다");
+  });
+  it("--json 의 findings 는 한 배열로 그대로 둔다", async () => {
+    // 머리글을 갈라도 기계가 읽는 출력은 나누지 않는다. 기계는 code 로 분기한다.
+    const out = await runTest({
+      json: true,
+      suite: suiteWithBothKinds,
+      tools: weatherTools,
+      statuses: { "both-case": "failed" },
+    });
+    expect(JSON.parse(out.stdout).spec.findings.map((f: { code: string }) => f.code)).toEqual([
+      "REQUIRED_MISSING",
+      "UNDECLARED_FIELD",
+      "VACUOUS_MIN_LENGTH",
+    ]);
   });
   it("참고 문장은 보고서 뒤, 명세 승인 블록 앞이다", async () => {
     const out = await runTest({

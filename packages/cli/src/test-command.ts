@@ -7,6 +7,7 @@ import type {
   RunnerReport,
   RunSuiteOptions,
   SpecFinding,
+  SpecFindingCode,
   SpecFindingsResult,
   SuiteValidationIssue,
   SuiteValidationResult,
@@ -217,6 +218,45 @@ const escapeTerminalText = (value: string): string =>
       ? `\\u${codePoint.toString(16).padStart(4, "0")}`
       : character;
   }).join("");
+/**
+ * 참고 문장의 머리글 종류. 검사 종류가 곧 사용자가 고칠 곳이다. `skipped` 는 고칠 것이 없다는
+ * 사실 자체를 알리는 종류라서 위반 둘과 갈린다.
+ */
+type FindingGroup = "inputContract" | "assertionSubstance" | "skipped";
+/**
+ * finding 코드를 검사 종류로 가른다. `Record<SpecFindingCode, …>` 라서 `runner` 가 코드를
+ * 늘리면 여기서 타입 오류가 난다. 문자열 배열로 두면 새 코드가 조용히 한쪽으로 흘러간다.
+ */
+const FINDING_GROUP: Readonly<Record<SpecFindingCode, FindingGroup>> = {
+  TOOL_NOT_DECLARED: "inputContract",
+  REQUIRED_MISSING: "inputContract",
+  UNDECLARED_FIELD: "inputContract",
+  TYPE_MISMATCH: "inputContract",
+  ENUM_MISMATCH: "inputContract",
+  SCHEMA_NOT_ANALYZABLE: "skipped",
+  VACUOUS_MIN_LENGTH: "assertionSubstance",
+  VACUOUS_MIN_ITEMS: "assertionSubstance",
+};
+/**
+ * 머리글은 검사 종류마다 다르다. `minLength: 0` 은 입력이 아니라 단언의 문제이고,
+ * `SCHEMA_NOT_ANALYZABLE` 은 명세가 아니라 서버 스키마를 못 읽었다는 뜻이다. 둘 중 어느
+ * 것이든 입력 머리글 아래 붙이면 읽는 사람이 멀쩡한 입력을 고치러 간다. 설계 문서 §7.2.
+ */
+const FINDING_HEADING: Readonly<Record<FindingGroup, (caseId: string) => string>> = {
+  inputContract: (caseId) => `참고: ${caseId} 의 입력이 서버 선언과 다릅니다`,
+  assertionSubstance: (caseId) => `참고: ${caseId} 의 단언은 무엇이 와도 통과합니다`,
+  skipped: (caseId) => `참고: ${caseId} 의 입력 검사를 건너뛰었습니다`,
+};
+/**
+ * 위반이 먼저, 건너뜀이 맨 뒤다. 위반 사이에서는 입력 계약이 먼저다. 명세를 고칠 때 입력이
+ * 먼저 맞아야 단언을 볼 수 있다. 건너뜀이 맨 뒤인 이유는 그것만 있을 때 위에 아무 위반도
+ * 없다는 사실이 먼저 읽혀야 하기 때문이다.
+ */
+const FINDING_GROUP_ORDER: readonly FindingGroup[] = [
+  "inputContract",
+  "assertionSubstance",
+  "skipped",
+];
 function format(failure: CliFailure): string {
   const code =
     failure.coreCode === undefined ? failure.code : `${failure.code}/${failure.coreCode}`;
@@ -542,13 +582,17 @@ export async function runCli(
           list.push(finding);
           byCase.set(finding.caseId, list);
         }
-        // caseId 는 남이 쓴 명세에서 온다. 다른 표시 항목과 같은 이스케이프를 쓴다.
         for (const [caseId, list] of byCase)
-          dependencies.writeStdout(
-            `\n참고: ${escapeTerminalText(caseId)} 의 입력이 서버 선언과 다릅니다\n${list
-              .map((finding) => `  → ${describeSpecFinding(finding)}\n`)
-              .join("")}`,
-          );
+          for (const group of FINDING_GROUP_ORDER) {
+            const grouped = list.filter((finding) => FINDING_GROUP[finding.code] === group);
+            if (grouped.length === 0) continue;
+            // caseId 는 남이 쓴 명세에서 온다. 다른 표시 항목과 같은 이스케이프를 쓴다.
+            dependencies.writeStdout(
+              `\n${FINDING_HEADING[group](escapeTerminalText(caseId))}\n${grouped
+                .map((finding) => `  → ${describeSpecFinding(finding)}\n`)
+                .join("")}`,
+            );
+          }
       }
       // 지문은 우리가 만든 hex 라 제어 문자가 섞일 수 없다. 이스케이프가 필요 없는 유일한
       // 표시 항목이다. 앞의 빈 줄은 진단 블록과 같은 레이아웃 규칙이다. 설계 문서 §7.2.

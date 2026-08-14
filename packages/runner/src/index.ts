@@ -15,6 +15,7 @@ export {
   type ContractAxisKind,
   type ContractDeclaredType,
   deriveContractAxes,
+  matchCoveredAxes,
 } from "./contract-axes.js";
 export {
   bodyExtractionFailedDiagnostic,

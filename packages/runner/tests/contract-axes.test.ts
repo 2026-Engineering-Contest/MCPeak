@@ -1,6 +1,7 @@
 import type { ToolDef } from "@ohmymcp/core";
 import { describe, expect, it } from "vitest";
-import { deriveContractAxes } from "../src/index.js";
+import type { JsonObject, TestCaseSpec } from "../src/index.js";
+import { deriveContractAxes, matchCoveredAxes } from "../src/index.js";
 
 const tool = (name: string, inputSchema: unknown): ToolDef => ({ name, inputSchema });
 const weather = tool("get_weather", {
@@ -246,4 +247,158 @@ describe("deriveContractAxes", () => {
   it("analyzable 이 true 면 unanalyzableReason 이 null 이다", () => {
     expect(deriveContractAxes(weather).unanalyzableReason).toBeNull();
   });
+});
+
+const callCase = (id: string, input: JsonObject, expected: boolean): TestCaseSpec => ({
+  id,
+  name: id,
+  operation: { type: "callTool", tool: "get_weather", input },
+  assertions: [{ type: "isError", expected }],
+});
+
+/** enum 축과 필수 둘을 함께 보기 위한 툴. 이름은 케이스의 tool 과 맞춰야 한다. */
+const units = tool("get_weather", {
+  type: "object",
+  properties: {
+    a: { type: "string" },
+    b: { type: "string" },
+    units: { type: "string", enum: ["c", "f"] },
+  },
+  required: ["a", "b"],
+});
+
+describe("matchCoveredAxes", () => {
+  it("선언을 지킨 입력 + isError false 는 HAPPY_PATH 를 덮는다", () => {
+    const covered = matchCoveredAxes({
+      testCase: callCase("ok", { city: "서울" }, false),
+      tool: weather,
+    });
+    expect(covered).toEqual([
+      {
+        kind: "HAPPY_PATH",
+        tool: "get_weather",
+        field: null,
+        declaredType: null,
+        declaredEnum: null,
+      },
+    ]);
+  });
+
+  it("선언을 어긴 입력 + isError false 는 아무 축도 덮지 않는다", () => {
+    expect(matchCoveredAxes({ testCase: callCase("bad", {}, false), tool: weather })).toEqual([]);
+  });
+
+  it("required 를 뺀 입력 + isError true 는 REQUIRED_OMITTED 를 덮는다", () => {
+    const covered = matchCoveredAxes({ testCase: callCase("miss", {}, true), tool: weather });
+    expect(covered).toEqual([
+      {
+        kind: "REQUIRED_OMITTED",
+        tool: "get_weather",
+        field: "city",
+        declaredType: null,
+        declaredEnum: null,
+      },
+    ]);
+  });
+
+  it("타입을 어긴 입력 + isError true 는 TYPE_VIOLATION 을 덮는다", () => {
+    const covered = matchCoveredAxes({
+      testCase: callCase("type", { city: 0 }, true),
+      tool: weather,
+    });
+    expect(covered).toEqual([
+      {
+        kind: "TYPE_VIOLATION",
+        tool: "get_weather",
+        field: "city",
+        declaredType: "string",
+        declaredEnum: null,
+      },
+    ]);
+  });
+
+  it("enum 밖 값 + isError true 는 ENUM_VIOLATION 을 덮는다", () => {
+    const covered = matchCoveredAxes({
+      testCase: callCase("enum", { a: "x", b: "y", units: "k" }, true),
+      tool: units,
+    });
+    expect(covered).toEqual([
+      {
+        kind: "ENUM_VIOLATION",
+        tool: "get_weather",
+        field: "units",
+        declaredType: null,
+        declaredEnum: ["c", "f"],
+      },
+    ]);
+  });
+
+  it("필수 필드 둘을 동시에 뺀 케이스는 REQUIRED_OMITTED 둘을 덮는다", () => {
+    const covered = matchCoveredAxes({ testCase: callCase("miss2", {}, true), tool: units });
+    expect(covered.map((axis) => `${axis.kind}:${axis.field ?? ""}`)).toEqual([
+      "REQUIRED_OMITTED:a",
+      "REQUIRED_OMITTED:b",
+    ]);
+  });
+
+  it("반환 배열이 kind 우선, 같은 kind 안에서 field 코드 단위 순서다", () => {
+    const covered = matchCoveredAxes({
+      testCase: callCase("mixed", { b: 0, units: "k" }, true),
+      tool: units,
+    });
+    expect(covered.map((axis) => `${axis.kind}:${axis.field ?? ""}`)).toEqual([
+      "REQUIRED_OMITTED:a",
+      "TYPE_VIOLATION:b",
+      "ENUM_VIOLATION:units",
+    ]);
+  });
+
+  it("isError 단언이 없으면 빈 배열이다", () => {
+    const testCase: TestCaseSpec = {
+      id: "no-iserror",
+      name: "no-iserror",
+      operation: { type: "callTool", tool: "get_weather", input: { city: "서울" } },
+      assertions: [{ type: "bodyMatchesSchema", schema: { type: "object" } }],
+    };
+    expect(matchCoveredAxes({ testCase, tool: weather })).toEqual([]);
+  });
+
+  it("isError expected 가 서로 다른 단언이 둘 있으면 빈 배열이다", () => {
+    const testCase: TestCaseSpec = {
+      id: "contradiction",
+      name: "contradiction",
+      operation: { type: "callTool", tool: "get_weather", input: {} },
+      assertions: [
+        { type: "isError", expected: true },
+        { type: "isError", expected: false },
+      ],
+    };
+    expect(matchCoveredAxes({ testCase, tool: weather })).toEqual([]);
+  });
+
+  it("listTools 케이스는 빈 배열이다", () => {
+    const testCase: TestCaseSpec = {
+      id: "list",
+      name: "list",
+      operation: { type: "listTools" },
+      assertions: [{ type: "toolExists", tool: "get_weather" }],
+    };
+    expect(matchCoveredAxes({ testCase, tool: weather })).toEqual([]);
+  });
+
+  it("다른 툴을 부르는 케이스는 빈 배열이다", () => {
+    const other = tool("get_forecast", {
+      type: "object",
+      properties: { city: { type: "string" } },
+      required: ["city"],
+    });
+    expect(matchCoveredAxes({ testCase: callCase("miss", {}, true), tool: other })).toEqual([]);
+  });
+
+  it("해석하지 못하는 스키마의 툴이면 빈 배열이다", () => {
+    const opaque = tool("get_weather", { anyOf: [{ type: "object" }] });
+    expect(matchCoveredAxes({ testCase: callCase("miss", {}, true), tool: opaque })).toEqual([]);
+  });
+
+  it.todo("checkInputContract 가 침묵하는 케이스에서도 축을 낸다 (T4 에서 켠다)");
 });

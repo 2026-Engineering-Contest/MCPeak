@@ -1,7 +1,10 @@
 import type { ToolDef } from "@ohmymcp/core";
-import { analyzeInputSchema } from "./input-schema.js";
+import { expectedIsError } from "./case-expectation.js";
+import type { NormalizedInputSchema } from "./input-schema.js";
+import { analyzeInputSchema, judgeField } from "./input-schema.js";
 import { byCodeUnit } from "./ordering.js";
-import type { JsonValue } from "./spec/types.js";
+import { plainObject } from "./schema-match.js";
+import type { JsonValue, TestCaseSpec } from "./spec/types.js";
 
 /**
  * 서버 선언에서 도출되는 검증 축의 종류.
@@ -110,4 +113,76 @@ export function deriveContractAxes(
     unanalyzableReason: null,
     unanalyzedFields: analysis.unanalyzedFields,
   };
+}
+
+/**
+ * 축 객체 하나를 만든다. `tool` 을 인자로 받는다. 모듈 수준 클로저로 툴을 잡아 두면
+ * 두 공개 함수가 서로의 상태를 보게 된다.
+ */
+const contractAxis = (
+  tool: ToolDef,
+  kind: ContractAxisKind,
+  field: string | null,
+  declaredType: ContractDeclaredType | null,
+  declaredEnum: readonly JsonValue[] | null,
+): ContractAxis => ({ kind, tool: tool.name, field, declaredType, declaredEnum });
+
+/** 입력이 선언을 어긴 지점을 축으로 바꾼다. §4.4 순서로 낸다. */
+function violatedAxes(
+  tool: ToolDef,
+  schema: NormalizedInputSchema,
+  input: Record<string, unknown>,
+): ContractAxis[] {
+  const axes: ContractAxis[] = [];
+  // deriveContractAxes 와 같은 이유로 중복을 제거하고 정렬한다. 같은 이름이 required 에 두 번
+  // 있어도 덮는 축은 하나다.
+  for (const name of [...new Set(schema.required)].sort(byCodeUnit))
+    if (!Object.hasOwn(input, name))
+      axes.push(contractAxis(tool, "REQUIRED_OMITTED", name, null, null));
+  const typeAxes: ContractAxis[] = [];
+  const enumAxes: ContractAxis[] = [];
+  // fields 는 analyzeInputSchema 가 이미 코드 단위로 정렬해 넣은 Map 이다. 다시 정렬하지 않는다.
+  for (const [name, field] of schema.fields) {
+    if (!Object.hasOwn(input, name)) continue;
+    const code = judgeField(field, input[name] as JsonValue);
+    // judgeField 는 타입 위반이면 enum 을 보지 않는다. 그래서 한 케이스가 같은 필드의 타입 축과
+    // enum 축을 동시에 덮지 않는다. 우리 생성기도 케이스를 따로 만든다.
+    if (code === "TYPE_MISMATCH")
+      typeAxes.push(contractAxis(tool, "TYPE_VIOLATION", name, field.type, null));
+    else if (code === "ENUM_MISMATCH")
+      enumAxes.push(
+        contractAxis(tool, "ENUM_VIOLATION", name, null, [...(field.enumValues ?? [])]),
+      );
+  }
+  return [...axes, ...typeAxes, ...enumAxes];
+}
+
+/**
+ * 케이스 하나가 어느 축을 덮는지 판정한다. 서버를 호출하지 않는다.
+ * 판정 규칙은 §6.2 다. 덮는 축이 없으면 빈 배열이다.
+ *
+ * checkInputContract 의 결과를 재료로 쓰지 않는다. 그쪽은 §11.1 규칙 때문에 거절 기대 케이스의
+ * REQUIRED_MISSING · TYPE_MISMATCH · ENUM_MISMATCH 를 내지 않는데, 커버리지가 판정해야 하는 것이
+ * 정확히 그 케이스들이다. 두 함수가 analyzeInputSchema 와 필드 판정을 내부에서 공유하고
+ * 출력만 다르게 낸다.
+ */
+export function matchCoveredAxes(options: {
+  readonly testCase: TestCaseSpec;
+  readonly tool: ToolDef;
+}): readonly ContractAxis[] {
+  const { testCase, tool } = options;
+  if (testCase.operation.type !== "callTool") return [];
+  if (testCase.operation.tool !== tool.name) return [];
+  // isError 단언이 없거나 expected 가 서로 다른 단언이 둘 있으면 이 케이스는 서버가 거절했는지를
+  // 판정하지 않는다. 어떤 축도 덮지 못한다.
+  const expected = expectedIsError(testCase);
+  if (expected === null) return [];
+  const analysis = analyzeInputSchema(tool.inputSchema);
+  if (analysis.schema === null) return [];
+  const input = testCase.operation.input;
+  if (!plainObject(input)) return [];
+  const violated = violatedAxes(tool, analysis.schema, input);
+  if (expected === false)
+    return violated.length === 0 ? [contractAxis(tool, "HAPPY_PATH", null, null, null)] : [];
+  return violated;
 }

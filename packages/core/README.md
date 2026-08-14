@@ -74,7 +74,7 @@ Windows에서는 `.cmd`와 `.bat` command를 거절한다. 운영체제가 직�
 `command`로 주고, script 경로와 script 인자는 `args`로 전달한다. Windows command wrapping과
 command-line quoting은 이 transport의 범위가 아니다.
 
-SSE, WebSocket, 원격 MCP 인증은 후속 설계와 ADR에서 별도로 결정한다.
+SSE, WebSocket, OAuth 기반 원격 인증은 후속 설계와 ADR에서 별도로 결정한다.
 
 ## Streamable HTTP로 연결하기
 
@@ -84,9 +84,12 @@ URL로만 접근할 수 있는 MCP 서버에는 `command` 대신 `url`을 준다
 ```ts
 import { connect } from "@ohmymcp/core";
 
+const token = process.env.MCP_TOKEN;
+if (!token) throw new Error("MCP_TOKEN is required");
+
 const client = await connect({
   url: "https://mcp.example.com/mcp",
-  headers: { Authorization: `Bearer ${process.env.MCP_TOKEN}` },
+  headers: { Authorization: `Bearer ${token}` },
   connectTimeoutMs: 10_000,
 });
 
@@ -105,7 +108,8 @@ try {
 
 **OAuth와 재연결은 지원하지 않는다.** 인증은 직접 만든 `headers`로만 붙이고 401은
 `HTTP_UNAUTHORIZED`로 끝나며, 연결이 끊기면 재시도 없이 즉시 실패한다(자세한 이유는
-[ADR-0020](../../docs/adr/0020-streamable-http-transport.md) 참조).
+[ADR-0020](https://github.com/2026-Engineering-Contest/OhMyMCP/blob/main/docs/adr/0020-streamable-http-transport.md)
+참조).
 
 Core는 Runner를 import하지 않는다. Runner는 `McpClient`를 주입받고, CLI가 `connectStdio`의
 `client`, `close`, `forceClose`를 Runner의 shutdown 경계에 조립하는 composition root다.

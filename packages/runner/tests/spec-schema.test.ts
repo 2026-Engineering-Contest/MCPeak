@@ -160,6 +160,51 @@ describe("MCP_SUITE_JSON_SCHEMA", () => {
     expect(evaluateSchema(MCP_SUITE_JSON_SCHEMA, boundary).valid).toBe(true);
   });
 
+  it("approval 이 suiteApproval 정의를 가리킨다", () => {
+    const properties = MCP_SUITE_JSON_SCHEMA.properties as ReadonlyJsonObject;
+    expect(properties.approval).toEqual({ $ref: "#/$defs/suiteApproval" });
+  });
+
+  it("suiteApproval 의 required 가 fingerprint 하나다", () => {
+    const approval = (MCP_SUITE_JSON_SCHEMA.$defs as ReadonlyJsonObject)
+      .suiteApproval as ReadonlyJsonObject;
+    expect(approval.required).toEqual(["fingerprint"]);
+  });
+
+  it("suiteApproval 이 모르는 키를 받지 않는다", () => {
+    const approval = (MCP_SUITE_JSON_SCHEMA.$defs as ReadonlyJsonObject)
+      .suiteApproval as ReadonlyJsonObject;
+    expect(approval.additionalProperties).toBe(false);
+  });
+
+  it("suiteApproval 의 fingerprint 가 소문자 hex 64자를 요구한다", () => {
+    const fingerprint = (
+      (MCP_SUITE_JSON_SCHEMA.$defs as ReadonlyJsonObject).suiteApproval as ReadonlyJsonObject
+    ).properties as ReadonlyJsonObject;
+    expect((fingerprint.fingerprint as ReadonlyJsonObject).pattern).toBe("^[0-9a-f]{64}$");
+  });
+
+  it("approval 이 있는 유효한 fixture가 두 계약에서 같은 판정을 낸다", () => {
+    const fixture = { ...valid, approval: { fingerprint: "a".repeat(64) } };
+    expect(validateMcpSuite(fixture).valid).toBe(true);
+    expect(evaluateSchema(MCP_SUITE_JSON_SCHEMA, fixture).valid).toBe(true);
+  });
+
+  it("63자 fingerprint fixture가 두 계약에서 같은 판정을 낸다", () => {
+    const fixture = { ...valid, approval: { fingerprint: "a".repeat(63) } };
+    expect(validateMcpSuite(fixture).valid).toBe(false);
+    expect(evaluateSchema(MCP_SUITE_JSON_SCHEMA, fixture).valid).toBe(false);
+  });
+
+  it("approval 에 모르는 키가 있는 fixture가 두 계약에서 같은 판정을 낸다", () => {
+    const fixture = {
+      ...valid,
+      approval: { fingerprint: "a".repeat(64), approvedAt: "2026-08-14" },
+    };
+    expect(validateMcpSuite(fixture).valid).toBe(false);
+    expect(evaluateSchema(MCP_SUITE_JSON_SCHEMA, fixture).valid).toBe(false);
+  });
+
   it("타입 짝 요구는 대조 대상이 아니다", () => {
     // 설계 문서 §10.5: 키워드와 type의 짝 요구는 if/then이 필요해 공개 JSON Schema에
     // 표현하지 않는다. validator만 잡고 evaluator는 통과시키는 의도적 불일치다.

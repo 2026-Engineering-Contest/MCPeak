@@ -8,6 +8,7 @@ export {
   type BodyForm,
   extractResponseBody,
 } from "./body.js";
+export { canonicalJson, deepFreeze, sha256 } from "./canonical.js";
 export {
   bodyExtractionFailedDiagnostic,
   bodySchemaMismatchDiagnostic,
@@ -28,6 +29,7 @@ export {
   runSuite,
   type TestCaseResult,
 } from "./executor.js";
+export { suiteFingerprint } from "./fingerprint.js";
 export { checkInputContract, type InputContractOptions } from "./input-contract.js";
 export { type JUnitRenderOptions, renderJUnit } from "./junit.js";
 export { type RenderReportOptions, renderReport } from "./reporter.js";
@@ -67,6 +69,7 @@ export type {
   ReadonlyJsonObject,
   ReadonlyJsonValue,
   ResponseSchema,
+  SuiteApproval,
   SuiteValidationIssue,
   SuiteValidationIssueCode,
   SuiteValidationResult,

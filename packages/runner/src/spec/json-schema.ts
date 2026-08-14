@@ -18,6 +18,7 @@ export const MCP_SUITE_JSON_SCHEMA: ReadonlyJsonObject = freeze<ReadonlyJsonObje
     schemaVersion: { const: 1 },
     id: { $ref: "#/$defs/nonEmptyString" },
     name: { $ref: "#/$defs/nonEmptyString" },
+    approval: { $ref: "#/$defs/suiteApproval" },
     defaultTimeoutMs: { $ref: "#/$defs/timeoutMs" },
     cases: {
       type: "array",
@@ -28,6 +29,14 @@ export const MCP_SUITE_JSON_SCHEMA: ReadonlyJsonObject = freeze<ReadonlyJsonObje
   $defs: {
     nonEmptyString: { type: "string", minLength: 1, pattern: "\\S" },
     timeoutMs: { type: "integer", minimum: 1, maximum: 2_147_483_647 },
+    // 런타임 검증과 같은 형식 규칙을 적는다. 이 스키마는 additionalProperties가 false라
+    // 여기에 없으면 공개 스키마가 approval이 있는 파일을 통째로 거부한다.
+    suiteApproval: {
+      type: "object",
+      additionalProperties: false,
+      required: ["fingerprint"],
+      properties: { fingerprint: { type: "string", pattern: "^[0-9a-f]{64}$" } },
+    },
     jsonValue: {
       oneOf: [
         { type: "null" },

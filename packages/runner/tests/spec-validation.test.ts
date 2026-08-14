@@ -539,3 +539,101 @@ describe("bodyMatchesSchema 단언 검증", () => {
     ]);
   });
 });
+
+/** 형식만 보는 검사이므로 실제 해시값 대신 형식이 유효한 리터럴을 쓴다. */
+const FINGERPRINT = "a".repeat(64);
+
+/** validSuite 에 approval 값 하나만 얹은 스위트를 만든다. */
+const approvalSuite = (approval: unknown) => ({ ...validSuite, approval });
+
+describe("approval 검증", () => {
+  it("approval 이 없는 기존 명세가 그대로 유효하다", () => {
+    expect(validateMcpSuite(validSuite).valid).toBe(true);
+  });
+
+  it("64자 소문자 hex 지문을 받는다", () => {
+    expect(validateMcpSuite(approvalSuite({ fingerprint: FINGERPRINT })).valid).toBe(true);
+  });
+
+  it("approval 이 배열이면 INVALID_TYPE 을 낸다", () => {
+    expect(issuesOf(approvalSuite([]))).toContainEqual(
+      expect.objectContaining({ code: "INVALID_TYPE", path: "approval" }),
+    );
+  });
+
+  it("approval 이 문자열이면 INVALID_TYPE 을 낸다", () => {
+    expect(issuesOf(approvalSuite(FINGERPRINT))).toContainEqual(
+      expect.objectContaining({ code: "INVALID_TYPE", path: "approval" }),
+    );
+  });
+
+  it("approval 이 null 이면 INVALID_TYPE 을 낸다", () => {
+    expect(issuesOf(approvalSuite(null))).toContainEqual(
+      expect.objectContaining({ code: "INVALID_TYPE", path: "approval" }),
+    );
+  });
+
+  it("fingerprint 가 없으면 MISSING_REQUIRED_FIELD 를 낸다", () => {
+    expect(issuesOf(approvalSuite({}))).toContainEqual(
+      expect.objectContaining({ code: "MISSING_REQUIRED_FIELD", path: "approval.fingerprint" }),
+    );
+  });
+
+  it("fingerprint 가 문자열이 아니면 INVALID_TYPE 을 낸다", () => {
+    expect(issuesOf(approvalSuite({ fingerprint: 1 }))).toContainEqual(
+      expect.objectContaining({ code: "INVALID_TYPE", path: "approval.fingerprint" }),
+    );
+  });
+
+  it("fingerprint 가 63자면 INVALID_VALUE 를 낸다", () => {
+    expect(issuesOf(approvalSuite({ fingerprint: "a".repeat(63) }))).toContainEqual(
+      expect.objectContaining({ code: "INVALID_VALUE", path: "approval.fingerprint" }),
+    );
+  });
+
+  it("fingerprint 가 65자면 INVALID_VALUE 를 낸다", () => {
+    expect(issuesOf(approvalSuite({ fingerprint: "a".repeat(65) }))).toContainEqual(
+      expect.objectContaining({ code: "INVALID_VALUE", path: "approval.fingerprint" }),
+    );
+  });
+
+  it("fingerprint 에 대문자가 섞이면 INVALID_VALUE 를 낸다", () => {
+    expect(issuesOf(approvalSuite({ fingerprint: `A${"a".repeat(63)}` }))).toContainEqual(
+      expect.objectContaining({ code: "INVALID_VALUE", path: "approval.fingerprint" }),
+    );
+  });
+
+  it("fingerprint 에 hex 가 아닌 글자가 있으면 INVALID_VALUE 를 낸다", () => {
+    expect(issuesOf(approvalSuite({ fingerprint: `z${"a".repeat(63)}` }))).toContainEqual(
+      expect.objectContaining({ code: "INVALID_VALUE", path: "approval.fingerprint" }),
+    );
+  });
+
+  it("fingerprint 가 빈 문자열이면 INVALID_VALUE 를 낸다", () => {
+    expect(issuesOf(approvalSuite({ fingerprint: "" }))).toContainEqual(
+      expect.objectContaining({ code: "INVALID_VALUE", path: "approval.fingerprint" }),
+    );
+  });
+
+  it("approval 안의 모르는 키를 UNKNOWN_FIELD 로 낸다", () => {
+    expect(
+      issuesOf(approvalSuite({ fingerprint: FINGERPRINT, approvedAt: "2026-08-14" })),
+    ).toContainEqual(
+      expect.objectContaining({ code: "UNKNOWN_FIELD", path: "approval.approvedAt" }),
+    );
+  });
+
+  it("approval 이 잘못돼도 cases 검증 결과가 함께 나온다", () => {
+    const issues = issuesOf({
+      ...validSuite,
+      approval: { fingerprint: "" },
+      cases: [{ ...validSuite.cases[0], assertions: [] }],
+    });
+    expect(issues).toContainEqual(
+      expect.objectContaining({ code: "INVALID_VALUE", path: "approval.fingerprint" }),
+    );
+    expect(issues).toContainEqual(
+      expect.objectContaining({ code: "EMPTY_ASSERTIONS", path: "cases[0].assertions" }),
+    );
+  });
+});

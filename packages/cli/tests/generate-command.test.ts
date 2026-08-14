@@ -16,6 +16,7 @@ import {
   sha256,
 } from "@ohmymcp/generate";
 import type { CallToolCaseSpec, TestCaseSpec, TestSuiteSpec } from "@ohmymcp/runner";
+import { suiteFingerprint, validateMcpSuite } from "@ohmymcp/runner";
 import { describe, expect, it, vi } from "vitest";
 import {
   type GenerateCommandDependencies,
@@ -35,6 +36,11 @@ const suite: TestSuiteSpec = {
 const fingerprint = createHash("sha256")
   .update('{"cases":[],"defaultTimeoutMs":10000,"id":"weather","name":"Weather","schemaVersion":1}')
   .digest("hex");
+/**
+ * 저장된 파일을 다시 읽었을 때의 모습. renderSuite 가 approval 블록을 써넣으므로 왕복
+ * 재검증에 들어오는 값에도 그 블록이 있다. 지문 계산은 approval 을 제외하므로 값은 그대로다.
+ */
+const savedSuite: TestSuiteSpec = { ...suite, approval: { fingerprint } };
 
 /** 임시 파일 이름은 실행마다 고유하므로 open 이벤트의 경로는 비교에서 제외한다. */
 const normalizedEvents = (events: readonly string[]): string[] =>
@@ -87,7 +93,7 @@ function deps(overrides: Partial<GenerateCommandDependencies> = {}) {
       return { finalized: true, snapshot: { fingerprint } } as never;
     }),
     getAuthoringExecutionSuite: vi.fn(() => suite),
-    validateSuite: vi.fn(() => ({ valid: true as const, value: suite })),
+    validateSuite: vi.fn(() => ({ valid: true as const, value: savedSuite })),
     exists: vi.fn(async () => false),
     openTemp: vi.fn(async (path: string) => {
       events.push(`open:${path}`);
@@ -105,7 +111,7 @@ function deps(overrides: Partial<GenerateCommandDependencies> = {}) {
     }),
     readFile: vi.fn(async () => {
       events.push("read");
-      return new TextEncoder().encode(JSON.stringify(suite));
+      return new TextEncoder().encode(JSON.stringify(savedSuite));
     }),
     link: vi.fn(async () => {
       events.push("link");
@@ -429,15 +435,78 @@ describe("runGenerateCommand", () => {
     expect(sha256(permuted)).toBe(sha256(suite));
     expect(sha256(permuted)).toBe(fingerprint);
   });
-  it("저장 JSON은 고정 필드 순서, 2칸 indent와 마지막 newline을 쓴다", async () => {
+  /** 저장 경로가 실제로 임시 파일에 쓴 텍스트. 키 순서와 approval 블록을 여기서 본다. */
+  async function savedText(overrides: Partial<GenerateCommandDependencies> = {}): Promise<string> {
     const writeFile = vi.fn<(data: string, encoding: "utf8") => Promise<void>>(
       async () => undefined,
     );
-    const d = deps({ openTemp: vi.fn(async () => ({ writeFile, sync: vi.fn(), close: vi.fn() })) });
+    const d = deps({
+      openTemp: vi.fn(async () => ({ writeFile, sync: vi.fn(), close: vi.fn() })),
+      ...overrides,
+    });
     await runGenerateCommand(argv, d.value);
-    expect(writeFile.mock.calls[0]?.[0]).toBe(
-      '{\n  "schemaVersion": 1,\n  "id": "weather",\n  "name": "Weather",\n  "defaultTimeoutMs": 10000,\n  "cases": []\n}\n',
+    const text = writeFile.mock.calls[0]?.[0];
+    if (text === undefined) throw new Error("저장 경로가 임시 파일에 쓰지 않았습니다.");
+    return text;
+  }
+
+  it("저장 JSON은 고정 필드 순서, 2칸 indent와 마지막 newline을 쓴다", async () => {
+    expect(await savedText()).toBe(
+      `{\n  "schemaVersion": 1,\n  "id": "weather",\n  "name": "Weather",\n  "approval": {\n    "fingerprint": "${fingerprint}"\n  },\n  "defaultTimeoutMs": 10000,\n  "cases": []\n}\n`,
     );
+  });
+  it("저장된 JSON의 approval.fingerprint가 finalize가 낸 값과 같다", async () => {
+    expect(JSON.parse(await savedText()).approval).toEqual({ fingerprint });
+  });
+  it("저장된 JSON의 키 순서가 schemaVersion, id, name, approval, defaultTimeoutMs, cases다", async () => {
+    expect(Object.keys(JSON.parse(await savedText()))).toEqual([
+      "schemaVersion",
+      "id",
+      "name",
+      "approval",
+      "defaultTimeoutMs",
+      "cases",
+    ]);
+  });
+  /**
+   * 실제 baseline 으로 왕복을 본다. 위 `suite` 리터럴은 `cases` 가 비어 있어 스텁이 아닌
+   * 진짜 `validateMcpSuite` 를 통과하지 못한다(EMPTY_CASES). 파일 형식 자체를 확인하는
+   * 아래 두 단언에는 유효한 명세가 필요하다.
+   */
+  const baselineSuite = createBaselineSuite(tools, {
+    suiteId: "weather",
+    suiteName: "Weather",
+  }).suite;
+  const baselineFingerprint = suiteFingerprint(baselineSuite);
+  const baselineOverrides = {
+    getAuthoringExecutionSuite: vi.fn(() => baselineSuite),
+    finalizeAuthoringDraft: vi.fn(
+      () => ({ finalized: true, snapshot: { fingerprint: baselineFingerprint } }) as never,
+    ),
+  };
+
+  it("저장된 파일을 다시 읽어 validateMcpSuite에 넣으면 valid: true다", async () => {
+    const validated = validateMcpSuite(JSON.parse(await savedText(baselineOverrides)));
+    expect(validated.valid).toBe(true);
+  });
+  it("저장 전 지문과 저장된 파일로 계산한 suiteFingerprint가 같다", async () => {
+    const validated = validateMcpSuite(JSON.parse(await savedText(baselineOverrides)));
+    if (!validated.valid) throw new Error("저장된 파일이 유효해야 합니다.");
+    expect(suiteFingerprint(validated.value)).toBe(baselineFingerprint);
+    expect(validated.value.approval?.fingerprint).toBe(baselineFingerprint);
+  });
+  it("renderSuite가 approval에 틀린 값을 쓰면 saveSuite가 link를 부르지 않는다", async () => {
+    // renderSuite 는 내부 함수라 직접 못 바꾼다. 다시 읽은 파일의 approval 만 틀리게 만들어
+    // 같은 결함(파일에 적힌 지문이 계산값과 다름)을 재현한다. 왕복 재검증의 셋째 조건이
+    // 없으면 이 시나리오가 통과해 버린다.
+    const d = deps({
+      validateSuite: vi.fn(() => ({
+        valid: true as const,
+        value: { ...suite, approval: { fingerprint: "0".repeat(64) } },
+      })),
+    });
+    expect(await runGenerateCommand(argv, d.value)).toBe(1);
+    expect(d.value.link).not.toHaveBeenCalled();
   });
   it("generate dispatch 실패를 raw 오류 없이 정규화한다", async () => {
     const d = deps({

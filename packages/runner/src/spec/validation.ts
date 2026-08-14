@@ -19,6 +19,13 @@ const issue = (issues: SuiteValidationIssue[], code: SuiteValidationIssueCode, p
     hint: "명세 계약에 맞게 필드와 값을 확인하세요.",
   });
 const nonEmpty = (v: unknown) => typeof v === "string" && /\S/.test(v);
+/**
+ * 승인 지문의 형식. sha256 hex 64자, 소문자만 받는다.
+ * 대문자 hex 는 sha256 이 내지 않는 값이므로 사람이 손으로 넣었거나 다른 도구가 만든 것이다.
+ * 받아주면 지문이 절대 일치하지 않는데 원인이 보이지 않는다.
+ * 값이 맞는지는 여기서 보지 않는다. 대조는 실행 시점의 관심사다.
+ */
+const HEX64 = /^[0-9a-f]{64}$/;
 const RESPONSE_SCHEMA_KEYWORDS = [
   "type",
   "const",
@@ -337,7 +344,25 @@ export function validateMcpSuite(input: unknown): SuiteValidationResult {
       issue(issues, typeof input[key] === "string" ? "INVALID_VALUE" : "INVALID_TYPE", key);
   if ("defaultTimeoutMs" in input && !timeout(input.defaultTimeoutMs))
     issue(issues, "INVALID_TIMEOUT", "defaultTimeoutMs");
-  unknowns(input, ["schemaVersion", "id", "name", "defaultTimeoutMs", "cases"], "", issues);
+  if ("approval" in input) {
+    const approval = input.approval;
+    if (!plain(approval)) issue(issues, "INVALID_TYPE", "approval");
+    else {
+      if (!("fingerprint" in approval))
+        issue(issues, "MISSING_REQUIRED_FIELD", "approval.fingerprint");
+      else if (typeof approval.fingerprint !== "string")
+        issue(issues, "INVALID_TYPE", "approval.fingerprint");
+      else if (!HEX64.test(approval.fingerprint))
+        issue(issues, "INVALID_VALUE", "approval.fingerprint");
+      unknowns(approval, ["fingerprint"], "approval", issues);
+    }
+  }
+  unknowns(
+    input,
+    ["schemaVersion", "id", "name", "approval", "defaultTimeoutMs", "cases"],
+    "",
+    issues,
+  );
   if (!("cases" in input)) {
     issue(issues, "MISSING_REQUIRED_FIELD", "cases");
     return { valid: false, issues };

@@ -14,6 +14,12 @@ import {
   type ProcessDiagnosticsInput,
   renderProcessDiagnostics,
 } from "./process-diagnostics.js";
+import {
+  checkSpecApproval,
+  renderSpecApproval,
+  type SpecApprovalState,
+  shouldShowSpecApproval,
+} from "./spec-approval.js";
 
 export interface TestCommandInput {
   readonly suitePath: string;
@@ -345,6 +351,12 @@ export async function runCli(
       ...dictionary.SUITE_VALIDATION_FAILED,
       issues: validated.issues,
     });
+  /**
+   * 지문 대조는 서버 연결 전에 끝낸다. 연결이 실패해도 파일에 대한 사실은 변하지 않는다.
+   * dependencies 에 주입 지점을 두지 않는다. 순수 함수이고 외부 자원을 안 쓰므로, 주입하면
+   * 테스트가 실제 대조 로직을 안 거치게 된다. 설계 문서 §7.
+   */
+  const specApproval = checkSpecApproval(validated.value);
   let connection: McpStdioConnection;
   try {
     connection = await dependencies.connect({ command: input.command, args: input.args });
@@ -434,12 +446,31 @@ export async function runCli(
     writeDiagnostics();
     return failed;
   }
+  const allPassed = finalReport.status === "passed";
   try {
-    dependencies.writeStdout(
-      input.json
-        ? `${JSON.stringify(finalReport, null, 2)}\n`
-        : dependencies.renderReport(finalReport, { color: dependencies.colorEnabled }),
-    );
+    if (input.json) {
+      /**
+       * `spec` 은 억제 규칙과 무관하게 항상 넣는다. 기계가 읽는 출력에서 키가 조건부로
+       * 사라지면 소비자가 분기를 하나 더 써야 한다. 설계 문서 §7.3.
+       * `approvedFingerprint` 는 absent 일 때 키 자체가 없어야 하므로 조건부로 넣는다.
+       */
+      const spec: {
+        approval: SpecApprovalState;
+        fingerprint: string;
+        approvedFingerprint?: string;
+      } = { approval: specApproval.state, fingerprint: specApproval.fingerprint };
+      if (specApproval.approvedFingerprint !== undefined)
+        spec.approvedFingerprint = specApproval.approvedFingerprint;
+      dependencies.writeStdout(`${JSON.stringify({ ...finalReport, spec }, null, 2)}\n`);
+    } else {
+      dependencies.writeStdout(
+        dependencies.renderReport(finalReport, { color: dependencies.colorEnabled }),
+      );
+      // 지문은 우리가 만든 hex 라 제어 문자가 섞일 수 없다. 이스케이프가 필요 없는 유일한
+      // 표시 항목이다. 앞의 빈 줄은 진단 블록과 같은 레이아웃 규칙이다. 설계 문서 §7.2.
+      if (shouldShowSpecApproval(specApproval, allPassed))
+        dependencies.writeStdout(`\n${renderSpecApproval(specApproval)}`);
+    }
   } catch {
     // 원인이 서버가 아니라 우리 렌더링이므로 진단을 쓰지 않는다. 계획서 §4 호출 지점 4.
     return writeFailure(dependencies, {
@@ -449,10 +480,8 @@ export async function runCli(
   }
   const settled = snapshotDiagnostics();
   // 전부 통과여도 비정상 종료면 쓴다. 종료 경로의 결함을 숨기지 않는다. 설계 문서 §4.3.
-  if (
-    finalReport.status !== "passed" ||
-    (settled.value !== undefined && isAbnormalExit(settled.value))
-  )
+  if (!allPassed || (settled.value !== undefined && isAbnormalExit(settled.value)))
     writeDiagnostics(settled);
-  return finalReport.status === "passed" ? 0 : 1;
+  // 판정은 케이스 결과로만 정한다. 지문이 달라도 종료 코드는 바뀌지 않는다. 설계 문서 §6.
+  return allPassed ? 0 : 1;
 }

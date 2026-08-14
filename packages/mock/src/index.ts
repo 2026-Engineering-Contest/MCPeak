@@ -56,12 +56,19 @@ export interface MockServer {
  * 객체 키 순서와 무관하게 같은 값이면 같은 문자열을 만든다.
  * `JSON.stringify` 는 키 삽입 순서를 따라가므로 매칭 키로 쓸 수 없다 —
  * 같은 인자인데 매칭에 실패하면 결정론성이 깨진다.
+ *
+ * 값이 `undefined` 인 키는 뺀다. JSON-RPC 를 건너온 인자에는 `undefined` 가 있을 수 없으므로
+ * (`JSON.stringify` 가 지운다), 남겨두면 `on(tool, { a: 1, b: undefined }, ...)` 로 주입한
+ * 응답이 실제 호출 `{ a: 1 }` 과 다른 키가 되어 영영 잡히지 않는다.
+ * `record` 의 ADR-0003(카세트 매칭 키)도 같은 규칙이다 — 두 패키지가 갈리면 안 된다.
+ * 배열 안의 `undefined` 는 `JSON.stringify` 와 같이 `null` 로 남긴다 (자리가 의미를 갖는다).
  */
 function stableKey(value: unknown): string {
   if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
   if (Array.isArray(value)) return `[${value.map(stableKey).join(",")}]`;
   const obj = value as Record<string, unknown>;
   return `{${Object.keys(obj)
+    .filter((k) => obj[k] !== undefined)
     .sort()
     .map((k) => `${JSON.stringify(k)}:${stableKey(obj[k])}`)
     .join(",")}}`;

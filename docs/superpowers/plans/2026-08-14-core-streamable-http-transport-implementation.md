@@ -132,7 +132,14 @@ packages/core/tests/options.test.ts
 **테스트.** 설계 문서 §12.1 전량.
 
 **표적 검증.** `pnpm test packages/core`
-**회귀 검증.** `pnpm typecheck`, `pnpm lint`
+**회귀 검증.** `pnpm lint`
+
+`pnpm typecheck` 는 **H2 단독 게이트에서 뺀다.** 설계 §5.1 이 요구하는 두 가지, 즉
+`ConnectOptions` 를 유니온으로 만드는 것과 `resolveConnectOptions` 의 매개변수를
+`StdioConnectOptions` 로 좁히는 것을 함께 하면 `src/index.ts:25` 의
+`connectStdio(options: ConnectOptions)` 호출이 반드시 깨진다. 그 파일은 H3 단독 소유라
+H2 가 고칠 수 없다. H2 브랜치 단독으로 녹색을 만들 방법이 없으므로 typecheck 는 H3 통합
+후 통합 브랜치에서 한 번에 판정한다. H1 도 같은 이유로 걸릴 수 있으면 동일하게 다룬다.
 
 **보고서.** `docs/reports/task-h2-core-http-transport.md`
 

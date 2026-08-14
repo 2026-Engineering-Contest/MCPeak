@@ -1,8 +1,9 @@
 # @ohmymcp/core
 
-`@ohmymcp/core`는 로컬 MCP 서버 프로세스를 stdio로 시작하고 MCP handshake를 완료한 뒤,
-동결된 `McpClient`를 제공한다. 서버 프로세스, stdin/stdout, bounded stderr와 종료 수명주기는
-Core가 소유한다.
+`@ohmymcp/core`는 MCP 서버에 붙어 handshake를 완료한 뒤 동결된 `McpClient`를 제공한다.
+transport는 두 가지다. 로컬 서버는 프로세스를 stdio로 시작해서 붙고, 원격 서버는 URL에
+Streamable HTTP로 붙는다. stdio 경로에서 서버 프로세스, stdin/stdout, bounded stderr와 종료
+수명주기는 Core가 소유한다.
 
 ## 공개 API
 
@@ -73,8 +74,42 @@ Windows에서는 `.cmd`와 `.bat` command를 거절한다. 운영체제가 직�
 `command`로 주고, script 경로와 script 인자는 `args`로 전달한다. Windows command wrapping과
 command-line quoting은 이 transport의 범위가 아니다.
 
-첫 공개 transport는 로컬 stdio뿐이다. Streamable HTTP, SSE, WebSocket, OAuth와 원격 MCP 인증은
-후속 설계와 ADR에서 별도로 결정한다.
+SSE, WebSocket, OAuth 기반 원격 인증은 후속 설계와 ADR에서 별도로 결정한다.
+
+## Streamable HTTP로 연결하기
+
+URL로만 접근할 수 있는 MCP 서버에는 `command` 대신 `url`을 준다. 같은 `connect`가 옵션 모양을
+보고 transport를 고른다.
+
+```ts
+import { connect } from "@ohmymcp/core";
+
+const token = process.env.MCP_TOKEN;
+if (!token) throw new Error("MCP_TOKEN is required");
+
+const client = await connect({
+  url: "https://mcp.example.com/mcp",
+  headers: { Authorization: `Bearer ${token}` },
+  connectTimeoutMs: 10_000,
+});
+
+try {
+  const tools = await client.listTools();
+  console.log(tools);
+} finally {
+  await client.close();
+}
+```
+
+`HttpConnectOptions`는 `url`, 선택적 `headers`, 선택적 `connectTimeoutMs`만 받는다. 프로세스가
+없으므로 `forceClose`도 없고, `close()`가 내부 abort로 pending 요청을 끊는다. 실패 진단은
+`transport: "http"`로 태그되며 `url`, `status`, `statusText`, `sessionId`를 싣는다. 헤더 값은
+진단이나 오류 JSON 어디에도 실리지 않는다.
+
+**OAuth와 재연결은 지원하지 않는다.** 인증은 직접 만든 `headers`로만 붙이고 401은
+`HTTP_UNAUTHORIZED`로 끝나며, 연결이 끊기면 재시도 없이 즉시 실패한다(자세한 이유는
+[ADR-0020](https://github.com/2026-Engineering-Contest/OhMyMCP/blob/main/docs/adr/0020-streamable-http-transport.md)
+참조).
 
 Core는 Runner를 import하지 않는다. Runner는 `McpClient`를 주입받고, CLI가 `connectStdio`의
 `client`, `close`, `forceClose`를 Runner의 shutdown 경계에 조립하는 composition root다.

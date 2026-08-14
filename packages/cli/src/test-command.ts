@@ -20,6 +20,8 @@ export interface TestCommandInput {
   readonly command: string;
   readonly args: readonly string[];
   readonly json: boolean;
+  /** `--junit` 로 받은 XML 출력 경로. 지정하지 않으면 undefined 이고 XML 을 만들지 않는다. */
+  readonly junitPath: string | undefined;
   readonly stderrLines: number;
 }
 export type CliErrorCode =
@@ -33,6 +35,7 @@ export type CliErrorCode =
   | "MCP_CONNECTION_FAILED"
   | "RUNNER_EXECUTION_FAILED"
   | "RUNNER_FINALIZATION_FAILED"
+  | "JUNIT_WRITE_FAILED"
   | "CLI_INTERNAL_ERROR";
 export interface CliFailure {
   readonly code: CliErrorCode;
@@ -48,12 +51,19 @@ export interface TestCommandDependencies {
   startRunner(options: RunSuiteOptions): RunnerExecution;
   finalize(options: FinalizeRunnerExecutionOptions): Promise<RunnerReport>;
   renderReport(report: RunnerReport, options?: { color?: boolean }): string;
+  /**
+   * runner 의 `renderJUnit`. 두 번째 인자를 선언하지 않는다 — CLI 는 `suiteName` 을 넘길 이유가
+   * 없고(기본값이 `report.suite.name` 이다), 선택 인자를 가진 실제 함수는 이 시그니처에 그대로
+   * 할당된다. ADR-0016 이 예약한 `JUnitRenderOptions` 확장 경로도 막지 않는다.
+   */
+  renderJUnit(report: RunnerReport): string;
+  writeFile(path: string, text: string): Promise<void>;
   colorEnabled: boolean;
   writeStdout(text: string): void;
   writeStderr(text: string): void;
 }
 const usage =
-  "사용법: ohmymcp test <suite.json> --command <executable> [--arg <value> ...] [--json] [--stderr-lines <N>]";
+  "사용법: ohmymcp test <suite.json> --command <executable> [--arg <value> ...] [--json] [--junit <path>] [--stderr-lines <N>]";
 /** --stderr-lines 기본값. 설계 문서 §6. */
 const DEFAULT_STDERR_LINES = 20;
 const dictionary: Record<
@@ -92,6 +102,10 @@ const dictionary: Record<
     message: "Runner 실행 또는 MCP 서버 종료에 실패했습니다.",
     hint: "서버 응답과 종료 상태를 확인하세요.",
   },
+  JUNIT_WRITE_FAILED: {
+    message: "JUnit XML 파일을 쓰지 못했습니다.",
+    hint: "`--junit` 경로의 디렉터리가 존재하는지와 쓰기 권한을 확인하세요.",
+  },
   CLI_INTERNAL_ERROR: {
     message: "예상하지 못한 CLI 내부 오류가 발생했습니다.",
     hint: "다시 실행한 뒤 재현 정보와 함께 이슈를 보고하세요.",
@@ -110,6 +124,7 @@ export function parseTestCommand(argv: readonly string[]): TestCommandInput {
   if (suitePath === "") fail("테스트 명세 JSON 경로가 필요합니다.");
   let command: string | undefined;
   let json = false;
+  let junitPath: string | undefined;
   let stderrLines: number | undefined;
   const args: string[] = [];
   for (let index = 1; index < argv.length; index += 1) {
@@ -144,6 +159,24 @@ export function parseTestCommand(argv: readonly string[]): TestCommandInput {
         if (value.startsWith("-")) fail("`--arg` 옵션 값이 필요합니다.");
       } else value = token.slice("--arg=".length);
       args.push(value);
+    } else if (token === "--junit" || token.startsWith("--junit=")) {
+      // 값 검사는 `--command` 와 같은 규칙이다. 경로 자리에 플래그가 들어온 것은 값을 빠뜨린
+      // 오타이지 `--junit` 이라는 이름의 파일을 만들라는 뜻이 아니다.
+      if (junitPath !== undefined) fail("`--junit`은 한 번만 사용할 수 있습니다.");
+      let value: string;
+      if (token === "--junit") {
+        const next = argv[++index];
+        if (next === undefined)
+          throw new CliCommandError({
+            code: "CLI_USAGE",
+            message: "`--junit` 옵션 값이 필요합니다.",
+            hint: usage,
+          });
+        value = next;
+      } else value = token.slice("--junit=".length);
+      if (value === "") fail("`--junit` 옵션 값이 필요합니다.");
+      if (value.startsWith("--")) fail("`--junit` 옵션 값이 필요합니다.");
+      junitPath = value;
     } else if (token === "--stderr-lines" || token.startsWith("--stderr-lines=")) {
       if (stderrLines !== undefined) fail("`--stderr-lines`는 한 번만 사용할 수 있습니다.");
       let value: string;
@@ -182,6 +215,7 @@ export function parseTestCommand(argv: readonly string[]): TestCommandInput {
     command,
     args: Object.freeze(args),
     json,
+    junitPath,
     stderrLines: stderrLines ?? DEFAULT_STDERR_LINES,
   });
 }
@@ -433,6 +467,33 @@ export async function runCli(
     });
     writeDiagnostics();
     return failed;
+  }
+  /**
+   * XML 파일을 stdout 보다 **먼저** 쓴다. stdout 은 `| head` 같은 파이프에서 EPIPE 로 깨질 수
+   * 있는데, 그때 사용자가 `--junit` 으로 명시적으로 요청한 산출물까지 함께 잃을 이유가 없다.
+   * `--junit` 을 주지 않으면 이 블록을 통째로 건너뛰므로 기존 순서와 동일하다. ADR-0017.
+   */
+  if (input.junitPath !== undefined) {
+    let xml: string;
+    try {
+      xml = dependencies.renderJUnit(finalReport);
+    } catch {
+      // 렌더링 실패는 우리 결함이다. 서버 진단을 붙이면 원인을 서버로 오인하게 만든다.
+      return writeFailure(dependencies, {
+        code: "CLI_INTERNAL_ERROR",
+        ...dictionary.CLI_INTERNAL_ERROR,
+      });
+    }
+    try {
+      await dependencies.writeFile(input.junitPath, xml);
+    } catch {
+      // 전부 통과여도 1 이다. 조용히 0 을 내면 CI 는 리포트 파일 없이 초록이 되고, 사용자는
+      // 리포트가 사라진 것을 한참 뒤에야 안다. 원인이 로컬 I/O 이므로 진단은 쓰지 않는다.
+      return writeFailure(dependencies, {
+        code: "JUNIT_WRITE_FAILED",
+        ...dictionary.JUNIT_WRITE_FAILED,
+      });
+    }
   }
   try {
     dependencies.writeStdout(

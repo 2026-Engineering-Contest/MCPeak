@@ -13,6 +13,8 @@ const report = (status: RunnerReport["status"] = "passed"): RunnerReport => ({
 });
 /** 주입한 renderReport 가 돌려주는 값. 렌더링 문안은 runner 의 reporter.test.ts 가 고정한다. */
 const RENDERED = "렌더링 결과\n";
+/** 주입한 renderJUnit 이 돌려주는 값. XML 문법은 runner 의 junit.test.ts 가 고정한다. */
+const XML = "<testsuites/>\n";
 const connection = (): McpStdioConnection => ({
   client: {
     listTools: async () => [],
@@ -62,6 +64,8 @@ function deps(overrides: Partial<TestCommandDependencies> = {}) {
       return report();
     }),
     renderReport: vi.fn(() => RENDERED),
+    renderJUnit: vi.fn(() => XML),
+    writeFile: vi.fn(async () => {}),
     colorEnabled: false,
     writeStdout: (text) => writes.out.push(text),
     writeStderr: (text) => writes.err.push(text),
@@ -78,6 +82,7 @@ describe("parseTestCommand", () => {
       command: "node",
       args: ["a", "b"],
       json: false,
+      junitPath: undefined,
       stderrLines: 20,
     });
     expect(Object.isFrozen(input)).toBe(true);
@@ -89,6 +94,7 @@ describe("parseTestCommand", () => {
       command: "node",
       args: ["-m", ""],
       json: false,
+      junitPath: undefined,
       stderrLines: 20,
     });
   });
@@ -97,6 +103,46 @@ describe("parseTestCommand", () => {
   });
   it("parseTestCommand가 json true를 낸다", () => {
     expect(parseTestCommand(["suite.json", "--command", "node", "--json"]).json).toBe(true);
+  });
+  it("--junit <path> 를 파싱한다", () => {
+    expect(
+      parseTestCommand(["suite.json", "--command", "node", "--junit", "reports/junit.xml"])
+        .junitPath,
+    ).toBe("reports/junit.xml");
+  });
+  it("--junit=<path> 형태를 파싱한다", () => {
+    expect(
+      parseTestCommand(["suite.json", "--command", "node", "--junit=reports/junit.xml"]).junitPath,
+    ).toBe("reports/junit.xml");
+  });
+  it("--junit 을 주지 않으면 junitPath 가 undefined 다", () => {
+    expect(parseTestCommand(["suite.json", "--command", "node"]).junitPath).toBeUndefined();
+  });
+  it("--junit 중복 지정을 거절한다", () => {
+    expect(() =>
+      parseTestCommand(["suite.json", "--command", "node", "--junit", "a.xml", "--junit", "b.xml"]),
+    ).toThrow("`--junit`은 한 번만 사용할 수 있습니다.");
+  });
+  it("--junit 값이 없거나 비어 있거나 플래그면 거절한다", () => {
+    for (const argv of [
+      ["suite.json", "--command", "node", "--junit"],
+      ["suite.json", "--command", "node", "--junit="],
+      // 경로 자리의 플래그는 값을 빠뜨린 오타다. `--json` 이라는 이름의 파일을 만들지 않는다.
+      ["suite.json", "--command", "node", "--junit", "--json"],
+    ])
+      expect(() => parseTestCommand(argv)).toThrow("`--junit` 옵션 값이 필요합니다.");
+  });
+  it("--json 과 --junit 을 함께 파싱한다", () => {
+    const input = parseTestCommand([
+      "suite.json",
+      "--command",
+      "node",
+      "--json",
+      "--junit",
+      "out.xml",
+    ]);
+    expect(input.json).toBe(true);
+    expect(input.junitPath).toBe("out.xml");
   });
   it("--stderr-lines 를 파싱한다", () => {
     expect(
@@ -171,7 +217,7 @@ describe("runCli", () => {
       expect(await runCli(argv, d.value)).toBe(1);
       expect(d.writes.out).toEqual([]);
       expect(d.writes.err.join("")).toBe(
-        `오류 [CLI_USAGE]: ${message}\n해결: 사용법: ohmymcp test <suite.json> --command <executable> [--arg <value> ...] [--json] [--stderr-lines <N>]\n`,
+        `오류 [CLI_USAGE]: ${message}\n해결: 사용법: ohmymcp test <suite.json> --command <executable> [--arg <value> ...] [--json] [--junit <path>] [--stderr-lines <N>]\n`,
       );
       expect(d.value.readFile).not.toHaveBeenCalled();
       expect(d.value.connect).not.toHaveBeenCalled();
@@ -317,6 +363,92 @@ describe("runCli", () => {
     expect(await runCli(["test", "x.json", "--command", "node"], plain.value)).toBe(1);
     const json = deps({ finalize: async () => report("failed") });
     expect(await runCli(["test", "x.json", "--command", "node", "--json"], json.value)).toBe(1);
+  });
+  it("--junit 이면 renderJUnit 결과를 그 경로에 쓴다", async () => {
+    const d = deps();
+    expect(
+      await runCli(["test", "x.json", "--command", "node", "--junit", "out.xml"], d.value),
+    ).toBe(0);
+    expect(d.value.renderJUnit).toHaveBeenCalledWith(report());
+    expect(d.value.writeFile).toHaveBeenCalledTimes(1);
+    expect(d.value.writeFile).toHaveBeenCalledWith("out.xml", XML);
+  });
+  it("--junit 이어도 stdout 은 사람용 보고서 그대로다", async () => {
+    const d = deps();
+    await runCli(["test", "x.json", "--command", "node", "--junit", "out.xml"], d.value);
+    expect(d.writes.out.join("")).toBe(RENDERED);
+    expect(d.writes.err).toEqual([]);
+  });
+  it("--json 과 --junit 은 함께 쓸 수 있다. stdout 은 JSON, XML 은 파일이다", async () => {
+    const d = deps();
+    expect(
+      await runCli(
+        ["test", "x.json", "--command", "node", "--json", "--junit", "out.xml"],
+        d.value,
+      ),
+    ).toBe(0);
+    expect(d.writes.out.join("")).toBe(`${JSON.stringify(report(), null, 2)}\n`);
+    expect(d.value.writeFile).toHaveBeenCalledWith("out.xml", XML);
+  });
+  it("--junit 없이는 renderJUnit 도 writeFile 도 부르지 않는다", async () => {
+    const d = deps();
+    await runCli(["test", "x.json", "--command", "node"], d.value);
+    expect(d.value.renderJUnit).not.toHaveBeenCalled();
+    expect(d.value.writeFile).not.toHaveBeenCalled();
+  });
+  it("XML 파일을 stdout 보다 먼저 쓴다", async () => {
+    // stdout 이 EPIPE 로 깨져도 사용자가 요청한 산출물은 이미 디스크에 있다. ADR-0017.
+    const order: string[] = [];
+    const d = deps({
+      writeFile: async () => {
+        order.push("writeFile");
+      },
+      writeStdout: () => {
+        order.push("writeStdout");
+      },
+    });
+    await runCli(["test", "x.json", "--command", "node", "--junit", "out.xml"], d.value);
+    expect(order).toEqual(["writeFile", "writeStdout"]);
+  });
+  it("writeFile 이 실패하면 전부 통과여도 JUNIT_WRITE_FAILED 로 1 을 낸다", async () => {
+    const d = deps({
+      writeFile: async () => {
+        throw new Error("EACCES");
+      },
+    });
+    expect(
+      await runCli(["test", "x.json", "--command", "node", "--junit", "out.xml"], d.value),
+    ).toBe(1);
+    expect(d.writes.err.join("")).toBe(
+      "오류 [JUNIT_WRITE_FAILED]: JUnit XML 파일을 쓰지 못했습니다.\n" +
+        "해결: `--junit` 경로의 디렉터리가 존재하는지와 쓰기 권한을 확인하세요.\n",
+    );
+    // 파일을 못 썼으면 보고서도 내지 않는다. 성공한 것처럼 보이는 stdout 을 남기지 않는다.
+    expect(d.writes.out).toEqual([]);
+  });
+  it("renderJUnit 이 던지면 CLI_INTERNAL_ERROR 가 되고 파일을 쓰지 않는다", async () => {
+    const d = deps({
+      renderJUnit: () => {
+        throw new Error("JUNIT_SECRET_STACK");
+      },
+    });
+    expect(
+      await runCli(["test", "x.json", "--command", "node", "--junit", "out.xml"], d.value),
+    ).toBe(1);
+    expect(d.writes.err.join("")).toContain("CLI_INTERNAL_ERROR");
+    expect(d.writes.err.join("")).not.toContain("JUNIT_SECRET_STACK");
+    expect(d.value.writeFile).not.toHaveBeenCalled();
+  });
+  it("쓰기가 성공하면 종료 코드는 보고서 상태를 따른다", async () => {
+    const passed = deps();
+    expect(
+      await runCli(["test", "x.json", "--command", "node", "--junit", "out.xml"], passed.value),
+    ).toBe(0);
+    const failed = deps({ finalize: async () => report("failed") });
+    expect(
+      await runCli(["test", "x.json", "--command", "node", "--junit", "out.xml"], failed.value),
+    ).toBe(1);
+    expect(failed.value.writeFile).toHaveBeenCalledWith("out.xml", XML);
   });
   it("renderReport가 던지면 CLI_INTERNAL_ERROR가 된다", async () => {
     const d = deps({

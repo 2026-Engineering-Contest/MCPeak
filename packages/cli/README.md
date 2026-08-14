@@ -8,9 +8,21 @@ ohmymcp test packages/cli/tests/fixtures/weather-suite.json \
   --arg examples/weather-server/server.mjs
 ```
 
-문법은 `ohmymcp test <suite.json> --command <executable> [--arg <value> ...] [--json] [--stderr-lines <N>]`입니다. 위 예시의 command와 arg는 `node examples/weather-server/server.mjs`로 실행됩니다. `--arg`는 반복할 수 있고, 하이픈으로 시작하는 값은 `--arg=-m`, 빈 값은 `--arg=`로 전달합니다.
+문법은 `ohmymcp test <suite.json> --command <executable> [--arg <value> ...] [--json] [--junit <path>] [--stderr-lines <N>]`입니다. 위 예시의 command와 arg는 `node examples/weather-server/server.mjs`로 실행됩니다. `--arg`는 반복할 수 있고, 하이픈으로 시작하는 값은 `--arg=-m`, 빈 값은 `--arg=`로 전달합니다.
 
 stdout에는 보고서만 나갑니다. 기본은 사람이 읽는 보고서이고, `--json`을 주면 `RunnerReport` JSON이 나갑니다. CLI 오류와 서버 프로세스 진단은 stderr로만 나가므로 `--json > report.json`이 깨지지 않습니다. 모든 테스트가 통과하면 종료 코드 0을, failed 또는 aborted report와 입력, 연결, 종료 오류에는 1을 반환합니다.
+
+`--junit <path>`는 CI 도구가 읽는 JUnit XML 리포트를 그 경로에 씁니다.
+
+```bash
+ohmymcp test weather.json \
+  --command node --arg examples/weather-server/server.mjs \
+  --junit reports/junit.xml
+```
+
+stdout은 그대로 두고 파일만 더하므로 `--json`과 함께 쓸 수 있습니다. 둘의 역할이 다릅니다 — `--json`은 stdout 형식을, `--junit`은 별도 산출물을 정합니다. 경로의 디렉터리는 미리 있어야 하며, 파일을 쓰지 못하면 모든 테스트가 통과했더라도 `JUNIT_WRITE_FAILED`와 함께 종료 코드 1을 냅니다. 리포트 없이 CI가 초록이 되지 않게 하려는 것입니다. XML은 stdout보다 먼저 쓰므로 stdout이 파이프에서 끊겨도 파일은 남습니다.
+
+`RunnerReport`에는 시간 정보가 없어 모든 `time` 속성은 `0`입니다. "0초 걸렸다"가 아니라 "시간 정보를 갖고 있지 않다"는 뜻입니다. 근거는 [ADR-0016](../../docs/adr/0016-junit-time-속성-고정.md), 플래그 설계는 [ADR-0017](../../docs/adr/0017-junit-리포터-cli-노출-방식.md)에 있습니다.
 
 `--stderr-lines <N>`은 실패했거나 서버가 비정상 종료·중단했을 때, 진단 내용이 있으면 stderr에 붙는 서버 프로세스 진단 블록의 stderr 표시 줄 수입니다. 기본값은 20이고, `0`을 주면 블록을 완전히 끕니다(그때 출력 바이트는 이 기능이 없던 때와 같습니다). 블록에는 종료 코드와 시그널, 서버가 남긴 stderr의 마지막 N줄이 담기며 잘린 사실은 헤더에 적힙니다. 서버가 정상 종료했고 stderr도 비어 있으면 보여줄 근거가 없으므로 블록을 쓰지 않습니다.
 

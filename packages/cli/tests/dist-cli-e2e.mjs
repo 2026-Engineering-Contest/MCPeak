@@ -368,3 +368,94 @@ for (const [fixture, expectedStatus, expectedSummary] of [
     await rm(dir, { recursive: true, force: true });
   }
 }
+
+// JUnit 리포터 (ADR-0017). 빌드 산출물이 실제 파일을 만드는지, 실패가 XML 에 드러나는지 본다.
+{
+  const dir = await mkdtemp(join(tmpdir(), "ohmymcp-dist-junit-"));
+  const pidFile = join(dir, "pid");
+  const xmlPath = join(dir, "junit.xml");
+  const args = (fixture, xml, extra = []) => [
+    "test",
+    join(here, "fixtures", fixture),
+    "--command",
+    process.execPath,
+    "--arg",
+    wrapper,
+    "--arg",
+    pidFile,
+    "--arg",
+    server,
+    "--junit",
+    xml,
+    ...extra,
+  ];
+  try {
+    // 1. 통과하는 명세: 파일이 생기고 stdout 은 사람용 보고서 그대로다.
+    const passed = await execute(args("weather-suite.json", xmlPath));
+    assert.equal(passed.code, 0);
+    assert.equal(passed.err, "");
+    const xml = await readFile(xmlPath, "utf8");
+    for (const expected of [
+      '<?xml version="1.0" encoding="UTF-8"?>',
+      "<testsuite name=",
+      'tests="3"',
+      'failures="0"',
+      'errors="0"',
+    ])
+      assert.ok(
+        xml.includes(expected),
+        `JUnit XML 에 '${expected}' 가 없습니다. 실제 파일:\n${xml}`,
+      );
+    assert.ok(
+      xml.endsWith("</testsuites>\n"),
+      `JUnit XML 이 닫히지 않았습니다. 실제 파일:\n${xml}`,
+    );
+    // stdout 은 XML 이 아니다. --junit 은 파일만 더할 뿐 사람용 출력을 바꾸지 않는다.
+    assert.ok(
+      !passed.out.includes("<testsuite"),
+      `--junit 인데 XML 이 stdout 에 섞였습니다. 실제 출력:\n${passed.out}`,
+    );
+    await expectExited(pidFile);
+
+    // 2. 결정론성: 같은 입력 2회 실행의 파일 바이트가 같아야 한다.
+    const again = await execute(args("weather-suite.json", xmlPath));
+    assert.equal(again.code, 0);
+    assert.equal(await readFile(xmlPath, "utf8"), xml);
+    await expectExited(pidFile);
+
+    // 3. 실패는 <failure> 로 드러난다. --json 과 함께 쓰면 stdout 은 JSON, XML 은 파일이다.
+    const failed = await execute(
+      args("weather-body-assertion-failing.suite.json", xmlPath, ["--json"]),
+    );
+    assert.equal(failed.code, 1);
+    assert.equal(failed.err, "");
+    assert.equal(JSON.parse(failed.out).status, "failed");
+    const failedXml = await readFile(xmlPath, "utf8");
+    for (const expected of [
+      "<failure message=",
+      'failures="1"',
+      // 실패 메시지가 곧 제품이다. CI 화면에 오는 문장이 터미널과 같은지 본다.
+      "$.temperature: 필수 필드가 없습니다. 발견된 필드: 'city', 'condition', 'temp'",
+    ])
+      assert.ok(
+        failedXml.includes(expected),
+        `JUnit XML 에 '${expected}' 가 없습니다. 실제 파일:\n${failedXml}`,
+      );
+    await expectExited(pidFile);
+
+    // 4. 쓸 수 없는 경로: 전부 통과여도 1 이다. 리포트 없이 초록이 되면 안 된다.
+    const unwritable = await execute(
+      args("weather-suite.json", join(dir, "no-such-dir", "junit.xml")),
+    );
+    assert.equal(unwritable.code, 1);
+    assert.equal(unwritable.out, "");
+    assert.ok(
+      unwritable.err.includes("JUNIT_WRITE_FAILED"),
+      `stderr 에 'JUNIT_WRITE_FAILED' 가 없습니다. 실제 출력:\n${unwritable.err}`,
+    );
+    await expectExited(pidFile);
+  } finally {
+    await cleanupPid(pidFile);
+    await rm(dir, { recursive: true, force: true });
+  }
+}

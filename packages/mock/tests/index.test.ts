@@ -86,6 +86,20 @@ describe("@ohmymcp/mock", () => {
     await client.close();
   });
 
+  it("값이 undefined 인 키는 없는 것으로 친다", async () => {
+    const server = await start();
+    // 와이어를 건너온 인자에는 undefined 가 없다. 주입에서만 생길 수 있고,
+    // 그것을 키에 남기면 실제 호출과 영영 만나지 못한다.
+    server.on("add", { a: 1, b: undefined }, { sum: 1 });
+    const client = await connect(server);
+
+    const result = await client.callTool({ name: "add", arguments: { a: 1 } });
+    expect(result.isError).toBeFalsy();
+    expect(JSON.parse(text(result))).toEqual({ sum: 1 });
+
+    await client.close();
+  });
+
   it("같은 호출 3회가 바이트 단위로 동일하다", async () => {
     const server = await start();
     server.on("add", { a: 1, b: 2 }, { sum: 3 });

@@ -1,4 +1,4 @@
-import type { McpProcessDiagnostics } from "./diagnostics.js";
+import type { McpDiagnosticsInput } from "./diagnostics.js";
 import { McpClientError } from "./errors.js";
 import type { McpClient, ToolDef, ToolResult } from "./types.js";
 
@@ -12,7 +12,7 @@ type SdkClient = {
   callTool(params: { name: string; arguments: Record<string, unknown> }): Promise<unknown>;
 };
 
-export type OperationFailureKind = "process" | "transport" | undefined;
+export type OperationFailureKind = "process" | "transport" | "httpSession" | undefined;
 
 function isCoreError(value: unknown): value is McpClientError {
   return (
@@ -26,7 +26,7 @@ function isCoreError(value: unknown): value is McpClientError {
   );
 }
 
-function invalidArguments(diagnostics: () => McpProcessDiagnostics): McpClientError {
+function invalidArguments(diagnostics: () => McpDiagnosticsInput): McpClientError {
   return new McpClientError({
     code: "INVALID_TOOL_ARGUMENTS",
     phase: "callTool",
@@ -38,7 +38,7 @@ function invalidArguments(diagnostics: () => McpProcessDiagnostics): McpClientEr
 export function assertToolArguments(
   name: string,
   args: unknown,
-  diagnostics: () => McpProcessDiagnostics,
+  diagnostics: () => McpDiagnosticsInput,
 ): asserts args is Record<string, unknown> {
   if (
     typeof name !== "string" ||
@@ -89,7 +89,7 @@ export function assertToolArguments(
 
 export function createMcpClientAdapter(
   sdk: SdkClient,
-  diagnostics: () => McpProcessDiagnostics,
+  diagnostics: () => McpDiagnosticsInput,
   close: () => Promise<void> = () => Promise.resolve(),
   operationFailureKind: () => OperationFailureKind = () => undefined,
 ): McpClient {
@@ -105,6 +105,13 @@ export function createMcpClientAdapter(
     if (kind === "transport")
       return new McpClientError({
         code: "TRANSPORT_FAILED",
+        phase: "transport",
+        diagnostics: diagnostics(),
+        cause,
+      });
+    if (kind === "httpSession")
+      return new McpClientError({
+        code: "HTTP_SESSION_LOST",
         phase: "transport",
         diagnostics: diagnostics(),
         cause,

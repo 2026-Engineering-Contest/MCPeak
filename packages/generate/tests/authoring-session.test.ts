@@ -1,4 +1,5 @@
 import type { ToolDef } from "@ohmymcp/core";
+import { describeSpecFinding, REDACTED } from "@ohmymcp/runner";
 import { describe, expect, it } from "vitest";
 import {
   applyAuthoringChanges,
@@ -424,5 +425,44 @@ describe("authoring session", () => {
         fingerprint: finalized.snapshot.fingerprint,
       } as typeof finalized.snapshot),
     ).toThrow();
+  });
+
+  it("로컬 경로의 specFindings 에 민감 값 원문이 남지 않는다", async () => {
+    // 검사는 치환 이전 객체로 해야 거짓 양성이 안 나지만(ADR-0018), 그 결과를 그대로 실으면
+    // 치환해서 감춘 값이 승인 화면의 경고 문장으로 되살아난다. provider 경로와 같은 함수로
+    // 거른다.
+    const leakyTools: ToolDef[] = [
+      {
+        name: "get_weather",
+        inputSchema: {
+          type: "object",
+          properties: { units: { type: "string", enum: ["c", "f"] } },
+          required: ["units"],
+        },
+      },
+    ];
+    const { session, next } = sessionWithCase(leakyTools, {
+      id: "units-case",
+      name: "단위",
+      operation: { type: "callTool", tool: "get_weather", input: { units: "secret-unit" } },
+      assertions: [{ type: "bodyMatchesSchema", schema: { type: "string", minLength: 1 } }],
+    });
+    const result = reviewLocalAuthoringCandidate({
+      session,
+      candidate: next,
+      tools: leakyTools,
+      sensitiveValues: ["c", "secret-unit"],
+    });
+    if (result.status !== "preview") throw new Error(`preview 가 아니다: ${result.status}`);
+    const finding = result.preview.specFindings.inputContract.findings[0];
+    if (finding === undefined) throw new Error("ENUM_MISMATCH finding 이 필요합니다.");
+    expect(finding.code).toBe("ENUM_MISMATCH");
+    // 값 필드는 치환된다. expected 는 서버가 선언한 enum 목록이라 그 안의 'c' 도 샌다.
+    expect(finding.expected).toEqual([REDACTED, "f"]);
+    expect(finding.actual).toBe(REDACTED);
+    // 이름은 치환하지 않는다. 무엇을 고쳐야 하는지가 사라지면 문장이 쓸모를 잃는다.
+    expect(finding.path).toBe("input.units");
+    expect(JSON.stringify(result.preview)).not.toContain("secret-unit");
+    expect(describeSpecFinding(finding)).not.toContain("secret-unit");
   });
 });

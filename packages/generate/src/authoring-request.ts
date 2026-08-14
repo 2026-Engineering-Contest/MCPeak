@@ -7,7 +7,7 @@ import {
   type TestSuiteSpec,
   validateMcpSuite,
 } from "@ohmymcp/runner";
-import { reviewLocalAuthoringCandidate } from "./authoring-session.js";
+import { redactSpecFindings, reviewLocalAuthoringCandidate } from "./authoring-session.js";
 import type {
   AuthoringSessionView,
   GenerateReviewApproval,
@@ -313,7 +313,11 @@ export function prepareAuthoringRequest(options: {
     tools: request.tools,
     // byte(request) · assertJson 대상 밖이다. 넣으면 MAX_TOOLS_BYTES 판정이 두 배로 세어져
     // 정상 요청이 거부된다.
-    unredactedTools: options.tools,
+    //
+    // 참조가 아니라 깊은 복사 스냅샷이다. 참조로 들면 요청 준비 뒤 호출자가 배열이나
+    // inputSchema 를 바꿨을 때 승인 시점의 검사 결과가 달라진다. 요청 지문은 치환된 request
+    // 만 고정하므로 그 변화를 못 잡는다. 결정론성이 이 프로젝트의 핵심 가치다.
+    unredactedTools: frozen(options.tools),
     redaction: options.redaction,
   });
   return preview;
@@ -406,9 +410,14 @@ export function validateAuthoringProviderResult(
   // 되어 TYPE_MISMATCH 거짓 양성이 난다. 도구 목록도 치환된 state.tools 가 아니라 원본을 쓴다.
   // 이 지점의 suite 는 validateMcpSuite · identity · 도구 allowlist 를 이미 통과했다.
   // 그 앞으로 옮기면 검증 안 된 객체가 검사 안으로 들어가 던진다. 설계 문서 §3.
+  // 검사는 치환 이전 suite·도구로 하고, 결과를 싣기 직전에 값 필드만 치환한다. 안 하면
+  // 치환해서 감춘 값이 승인 화면의 경고 문장으로 되살아난다. 로컬 경로와 같은 함수를 쓴다.
   const specFindings = frozen({
-    inputContract: checkInputContract({ suite, tools: state.unredactedTools }),
-    assertionSubstance: checkAssertionSubstance(suite),
+    inputContract: redactSpecFindings(
+      checkInputContract({ suite, tools: state.unredactedTools }),
+      state.redaction,
+    ),
+    assertionSubstance: redactSpecFindings(checkAssertionSubstance(suite), state.redaction),
   });
   const sanitized = redactAuthoringSuite(suite, state.redaction);
   const result: AuthoringProviderResult = {

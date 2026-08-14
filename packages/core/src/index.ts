@@ -2,26 +2,47 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { createMcpClientAdapter } from "./client.js";
 import { NodeControlledStdioTransport } from "./controlled-stdio.js";
-import type { McpProcessDiagnostics } from "./diagnostics.js";
+import {
+  type McpHttpDiagnostics,
+  type McpProcessDiagnostics,
+  tagDiagnostics,
+} from "./diagnostics.js";
 import { McpClientError } from "./errors.js";
-import type { ConnectOptions } from "./options.js";
-import { resolveConnectOptions } from "./options.js";
+import { HttpConnectionState, trackOperationFailures } from "./http-transport.js";
+import type { ConnectOptions, HttpConnectOptions, StdioConnectOptions } from "./options.js";
+import {
+  isHttpConnectOptions,
+  resolveConnectOptions,
+  resolveHttpConnectOptions,
+} from "./options.js";
 import type { McpClient } from "./types.js";
 
-export type { McpProcessDiagnostics } from "./diagnostics.js";
+export type {
+  McpDiagnostics,
+  McpHttpDiagnostics,
+  McpProcessDiagnostics,
+} from "./diagnostics.js";
 export type { McpClientErrorCode, McpClientErrorPhase } from "./errors.js";
 export { McpClientError } from "./errors.js";
-export type { ConnectOptions } from "./options.js";
+export type { ConnectOptions, HttpConnectOptions, StdioConnectOptions } from "./options.js";
 export type { McpClient, ToolDef, ToolResult } from "./types.js";
+
+type StdioDiagnostics = { readonly transport: "stdio" } & McpProcessDiagnostics;
 
 export interface McpStdioConnection {
   readonly client: McpClient;
-  getDiagnostics(): McpProcessDiagnostics;
+  getDiagnostics(): StdioDiagnostics;
   close(): Promise<void>;
   forceClose(): Promise<void>;
 }
 
-export async function connectStdio(options: ConnectOptions): Promise<McpStdioConnection> {
+export interface McpHttpConnection {
+  readonly client: McpClient;
+  getDiagnostics(): { readonly transport: "http" } & McpHttpDiagnostics;
+  close(): Promise<void>;
+}
+
+export async function connectStdio(options: StdioConnectOptions): Promise<McpStdioConnection> {
   const transport = new NodeControlledStdioTransport(resolveConnectOptions(options));
   const sdk = new Client({ name: "ohmymcp", version: "0.0.0" });
   // SDK close는 facade에서 끝내고, 실제 child 종료는 lifecycle controller가 한 번만 수행한다.
@@ -96,15 +117,46 @@ export async function connectStdio(options: ConnectOptions): Promise<McpStdioCon
       close,
       operationFailureKind,
     ),
-    getDiagnostics: () => transport.getDiagnostics(),
+    // controlled-stdio 의 선언 타입에는 transport 태그가 없지만 런타임 값은 항상 달고 온다.
+    // 그 파일은 이 태스크의 소유가 아니라 선언을 넓히지 못하므로 여기서 좁힌다.
+    getDiagnostics: () => tagDiagnostics(transport.getDiagnostics()) as StdioDiagnostics,
     close,
     forceClose: () => transport.forceClose(),
   };
 }
 
 /**
- * MCP 서버 프로세스를 기동하고 핸드셰이크를 완료한 뒤 클라이언트를 반환한다.
+ * Streamable HTTP MCP 서버에 연결하고 handshake 를 완료한 뒤 연결을 반환한다.
+ * 프로세스를 띄우지 않으므로 죽일 대상이 없다. `forceClose` 를 두지 않는 이유다(설계 §9).
+ */
+export async function connectHttp(options: HttpConnectOptions): Promise<McpHttpConnection> {
+  const resolved = resolveHttpConnectOptions(options);
+  const state = new HttpConnectionState(resolved);
+  const sdk = new Client({ name: "ohmymcp", version: "0.0.0" });
+  try {
+    await sdk.connect(state.transport, { timeout: resolved.connectTimeoutMs });
+  } catch (cause) {
+    await state.abort();
+    throw state.toConnectError(cause);
+  }
+  const close = () => state.close(() => sdk.close());
+  return {
+    client: createMcpClientAdapter(
+      trackOperationFailures(sdk, state),
+      () => state.getDiagnostics(),
+      close,
+      () => state.operationFailureKind(),
+    ),
+    getDiagnostics: () => state.getDiagnostics(),
+    close,
+  };
+}
+
+/**
+ * command 면 stdio, url 이면 Streamable HTTP 로 분기한다.
+ * 반환 타입이 `McpClient` 그대로이므로 상위 패키지는 어느 transport 인지 알 필요가 없다.
  */
 export async function connect(options: ConnectOptions): Promise<McpClient> {
+  if (isHttpConnectOptions(options)) return (await connectHttp(options)).client;
   return (await connectStdio(options)).client;
 }

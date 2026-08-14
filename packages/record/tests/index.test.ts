@@ -282,6 +282,85 @@ describe("cassetteClient", () => {
     await client.close();
     expect(events).toStrictEqual(["flush", "close"]);
   });
+
+  it("onFlush 가 실패해도 inner.close 는 실행된다", async () => {
+    const events: string[] = [];
+    const inner: McpClient = {
+      async listTools() {
+        return [];
+      },
+      async callTool() {
+        return ok({});
+      },
+      async close() {
+        events.push("close");
+      },
+    };
+    const client = cassetteClient(inner, {
+      cassette: null,
+      mode: "record",
+      onFlush: async () => {
+        events.push("flush");
+        throw new Error("flush 실패");
+      },
+    });
+
+    await expect(client.close()).rejects.toThrow("flush 실패");
+    expect(events).toStrictEqual(["flush", "close"]);
+  });
+
+  it("inner.close 가 실패하면 그 오류가 전달된다", async () => {
+    const events: string[] = [];
+    const inner: McpClient = {
+      async listTools() {
+        return [];
+      },
+      async callTool() {
+        return ok({});
+      },
+      async close() {
+        events.push("close");
+        throw new Error("close 실패");
+      },
+    };
+    const client = cassetteClient(inner, {
+      cassette: null,
+      mode: "record",
+      onFlush: async () => {
+        events.push("flush");
+      },
+    });
+
+    await expect(client.close()).rejects.toThrow("close 실패");
+    expect(events).toStrictEqual(["flush", "close"]);
+  });
+
+  it("onFlush 와 inner.close 가 동시에 실패하면 inner.close 의 오류가 우선한다", async () => {
+    const events: string[] = [];
+    const inner: McpClient = {
+      async listTools() {
+        return [];
+      },
+      async callTool() {
+        return ok({});
+      },
+      async close() {
+        events.push("close");
+        throw new Error("close 실패");
+      },
+    };
+    const client = cassetteClient(inner, {
+      cassette: null,
+      mode: "record",
+      onFlush: async () => {
+        events.push("flush");
+        throw new Error("flush 실패");
+      },
+    });
+
+    await expect(client.close()).rejects.toThrow("close 실패");
+    expect(events).toStrictEqual(["flush", "close"]);
+  });
 });
 
 describe("cassette IO", () => {

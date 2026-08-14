@@ -50,6 +50,10 @@ try {
 `loadCassette`와 `saveCassette`로 분리되어 있고, 테스트에서는 `onFlush`에 인메모리 저장 함수를
 넣으면 된다.
 
+`inner.close()`는 `onFlush`가 실패해도 `finally`로 항상 실행된다. `onFlush`와
+`inner.close()`가 동시에 실패하면 `inner.close()`의 오류가 우선한다 — `onFlush`의 오류는
+버려지고 호출자에게 전달되지 않는다 (JS `try`/`finally` 기본 동작).
+
 ## 매칭과 저장 규칙
 
 `matchKey(toolName, args)`는 `toolName`과 stable JSON 인자를 SHA-256 hex로 해시한다. 원본
@@ -74,6 +78,10 @@ try {
 마스킹은 저장 직전 `interactions`와 `tools`에 적용된다. 인메모리 카세트 응답은 원문을 유지해
 `auto` 모드의 miss와 hit가 같은 값을 돌려준다. 값이 JSON 문자열이면 저장 직전에만 파싱 가능한
 경우 구조화해 마스킹하고 stable JSON 문자열로 저장한다.
+
+**`onFlush`가 받는 카세트는 마스킹되지 않은 원문이다.** 파일에 쓸 때는 반드시 `saveCassette`를
+거쳐야 하며 (`prepareCassetteForWrite`가 저장 직전에 마스킹한다), `onFlush`가 넘겨준 카세트를
+그대로 커밋하거나 다른 곳에 저장하지 않는다.
 
 ## 제외 범위
 

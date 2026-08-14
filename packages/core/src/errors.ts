@@ -1,4 +1,4 @@
-import type { McpProcessDiagnostics } from "./diagnostics.js";
+import { type McpDiagnostics, type McpDiagnosticsInput, tagDiagnostics } from "./diagnostics.js";
 
 export type McpClientErrorCode =
   | "PROCESS_START_FAILED"
@@ -11,10 +11,17 @@ export type McpClientErrorCode =
   | "PAGINATION_CURSOR_REPEATED"
   | "CLOSE_FAILED"
   | "FORCE_CLOSE_FAILED"
-  | "FORCE_CLOSE_TIMEOUT";
+  | "FORCE_CLOSE_TIMEOUT"
+  | "HTTP_CONNECT_FAILED"
+  | "HTTP_STATUS_ERROR"
+  | "HTTP_UNAUTHORIZED"
+  | "HTTP_RESPONSE_INVALID"
+  | "HTTP_HANDSHAKE_TIMEOUT"
+  | "HTTP_SESSION_LOST";
 
 export type McpClientErrorPhase =
   | "spawn"
+  | "connect"
   | "handshake"
   | "process"
   | "transport"
@@ -82,6 +89,36 @@ export const MCP_CLIENT_ERROR_DETAILS: Readonly<Record<McpClientErrorCode, Error
       message: "SIGKILL 뒤 close event가 상한 안에 오지 않았습니다.",
       hint: "process 잔존 여부와 운영체제 상태를 확인하세요.",
     },
+    HTTP_CONNECT_FAILED: {
+      phase: "connect",
+      message: "MCP 서버 URL 에 연결하지 못했습니다.",
+      hint: "서버가 떠 있는지, url 의 host 와 port 가 맞는지 확인하세요.",
+    },
+    HTTP_STATUS_ERROR: {
+      phase: "connect",
+      message: "MCP 엔드포인트가 오류 상태 코드를 반환했습니다.",
+      hint: "status 와 경로를 확인하세요. Streamable HTTP 엔드포인트는 보통 `/mcp` 입니다.",
+    },
+    HTTP_UNAUTHORIZED: {
+      phase: "connect",
+      message: "MCP 엔드포인트가 인증을 요구합니다.",
+      hint: "headers 옵션으로 토큰을 전달하세요. OAuth 자동 흐름은 아직 지원하지 않습니다.",
+    },
+    HTTP_RESPONSE_INVALID: {
+      phase: "connect",
+      message: "MCP 엔드포인트가 JSON 도 SSE 도 아닌 응답을 반환했습니다.",
+      hint: "url 이 MCP 엔드포인트인지 확인하세요. 프록시나 로그인 페이지가 HTML 을 돌려주는 경우가 흔합니다.",
+    },
+    HTTP_HANDSHAKE_TIMEOUT: {
+      phase: "handshake",
+      message: "제한 시간 안에 MCP 초기화를 마치지 못했습니다.",
+      hint: "서버가 Streamable HTTP MCP 인지와 connectTimeoutMs 를 확인하세요.",
+    },
+    HTTP_SESSION_LOST: {
+      phase: "transport",
+      message: "서버가 이 연결의 세션을 더 이상 알지 못합니다.",
+      hint: "서버 재시작이나 세션 만료 여부를 확인하세요. 재연결은 지원하지 않으므로 다시 connect 하세요.",
+    },
   });
 
 export class McpClientError extends Error {
@@ -89,14 +126,14 @@ export class McpClientError extends Error {
   readonly code: McpClientErrorCode;
   readonly phase: McpClientErrorPhase;
   readonly hint: string;
-  readonly diagnostics: McpProcessDiagnostics;
+  readonly diagnostics: McpDiagnostics;
   override readonly cause?: unknown;
   readonly #json: Readonly<Record<string, unknown>>;
 
   constructor(options: {
     code: McpClientErrorCode;
     phase: McpClientErrorPhase;
-    diagnostics: McpProcessDiagnostics;
+    diagnostics: McpDiagnosticsInput;
     cause?: unknown;
   }) {
     const detail = MCP_CLIENT_ERROR_DETAILS[options.code];
@@ -104,18 +141,33 @@ export class McpClientError extends Error {
     this.code = options.code;
     this.phase = options.phase;
     this.hint = detail.hint;
-    this.diagnostics = Object.freeze({ ...options.diagnostics });
+    const diagnostics: McpDiagnostics = Object.freeze(tagDiagnostics(options.diagnostics));
+    this.diagnostics = diagnostics;
     this.cause = options.cause;
-    this.#json = Object.freeze({
+    const common = {
       name: this.name,
       code: this.code,
       phase: this.phase,
       message: this.message,
       hint: this.hint,
-      exitCode: this.diagnostics.exitCode,
-      signal: this.diagnostics.signal,
-      stderrTruncated: this.diagnostics.stderrTruncated,
-    });
+      transport: diagnostics.transport,
+    };
+    this.#json = Object.freeze(
+      diagnostics.transport === "http"
+        ? {
+            ...common,
+            url: diagnostics.url,
+            status: diagnostics.status,
+            statusText: diagnostics.statusText,
+            sessionId: diagnostics.sessionId,
+          }
+        : {
+            ...common,
+            exitCode: diagnostics.exitCode,
+            signal: diagnostics.signal,
+            stderrTruncated: diagnostics.stderrTruncated,
+          },
+    );
   }
 
   toJSON(): Readonly<Record<string, unknown>> {

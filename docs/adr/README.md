@@ -6,14 +6,33 @@
 - 항목: 배경 / 선택지 / 결정 / 이유 / 결과 (CONTRIBUTING §8)
 - **오너 1인당 최소 2건**을 마감까지 작성합니다.
 
-아래는 초기 후보 목록입니다. 결정이 필요한 시점에 담당 오너가 내용을 채우고 승인 상태를
-갱신합니다.
+아래는 현재 저장소에 있는 ADR 전체 색인입니다. ADR 을 추가하면 이 표에 한 줄을 더하고,
+파일 머리의 상태가 바뀌면 표의 상태도 함께 갱신합니다.
 
-| 번호 | 주제 | 담당 |
-|---|---|---|
-| [0001](./0001-transport-strategy.md) | 트랜스포트 전략: stdio 프로세스 기동 vs 인프로세스 연결 | core |
-| [0002](./0002-matcher-strategy.md) | matcher: 기존 러너 확장 vs 독립 구현 | runner |
-| [0003](./0003-cassette-matching-key.md) | 카세트 매칭 키 · 비결정 필드 처리 | record |
-| [0004](./0004-generation-scope.md) | 생성 테스트의 범위 | generate |
-| [0005](./0005-mock-data-strategy.md) | 목 데이터 생성 전략: 스키마 랜덤 vs 고정 시드 | mock |
-| [0006](./0006-ai-assisted-test-authoring.md) | 결정론적 baseline과 AI 테스트 후보의 공존 방식 | generate |
+| 번호 | 주제 | 담당 | 상태 |
+|---|---|---|---|
+| [0001](./0001-transport-strategy.md) | 첫 MCP transport로 stdio 프로세스 연결을 사용한다 | core | 승인 |
+| [0002](./0002-matcher-strategy.md) | matcher를 독립 구현으로 유지하고 외부 테스트 러너 확장은 제공하지 않는다 | runner | 제안 |
+| [0003](./0003-cassette-matching-key.md) | 카세트 매칭 키 설계와 비결정 필드(타임스탬프 등) 처리 | record | 제안 |
+| [0004](./0004-generation-scope.md) | 생성 테스트의 자동화 범위 | generate | 제안 |
+| [0005](./0005-mock-data-strategy.md) | 목 데이터 생성 전략 — 사람이 작성 vs 스키마 기반 생성 | mock | 제안 |
+| [0006](./0006-ai-assisted-test-authoring.md) | 결정론적 baseline과 AI 테스트 후보의 공존 방식 | generate | 승인 |
+| [0007](./0007-mock-stdio-transport.md) ⚠ | 목 서버의 두 번째 트랜스포트 — stdio 진입점을 낼 것인가 | mock | 제안 |
+| [0007](./0007-provider-전송-스키마-분리.md) ⚠ | provider 전송 스키마를 로컬 검증 스키마와 분리한다 | generate | 제안 |
+| [0008](./0008-승인-화면-redaction-범위.md) | 승인 화면 redaction 범위를 넓히지 않는다 | generate, cli | 제안 |
+| [0009](./0009-generate가-runner에-의존하는-예외.md) | `generate`가 `runner`에 의존하는 예외를 명시적으로 승인한다 | generate, runner | 제안 |
+| [0010](./0010-응답-스키마-부분집합-경계.md) | 응답 스키마는 JSON Schema의 고정된 부분집합만 지원한다 | runner | 제안 |
+| [0011](./0011-응답-본문-추출-규칙.md) | 응답 본문은 JSON 객체와 배열만 구조로 해석한다 | runner | 제안 |
+| [0012](./0012-cli-기본-출력-전환.md) | CLI 기본 출력 전환 | cli | 초안 |
+| [0013](./0013-렌더러-배치와-진단-무분기.md) | 렌더러 배치와 진단 무분기 | runner | 초안 |
+| [0014](./0014-진단-출력-채널.md) | 진단 출력 채널 | cli | 초안 |
+| [0015](./0015-입력-스키마-부분집합-경계.md) | 서버 입력 스키마는 해석 가능한 부분집합만 검사하고 나머지는 침묵한다 | runner | 제안 |
+| [0016](./0016-junit-time-속성-고정.md) | JUnit XML 의 `time` 속성을 `0` 으로 고정한다 | runner | 제안 |
+
+**상태** — `승인` 만 확정된 결정입니다. `제안` 과 `초안` 은 아직 확정되지 않았으므로 이 결정에
+기대어 구현하지 마세요. 값은 각 파일 머리의 `상태` 를 그대로 옮긴 것입니다.
+
+⚠ **0007 번호 중복** — `0007-mock-stdio-transport.md` 와 `0007-provider-전송-스키마-분리.md` 가
+같은 번호를 씁니다. 서로 다른 파트가 같은 시점에 번호를 잡아 생긴 충돌이며 아직 해소되지
+않았습니다. 같은 유형의 충돌이 한 번 더 있었고 그때는 뒤에 온 ADR 을 [0016](./0016-junit-time-속성-고정.md)
+으로 재번호해 해소했습니다.

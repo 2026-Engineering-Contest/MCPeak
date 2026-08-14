@@ -1,5 +1,17 @@
 # ohmymcp
 
+## 0.6.1
+
+### Patch Changes
+
+- Updated dependencies [0d92470]
+- Updated dependencies [38ec704]
+  - @ohmymcp/core@0.2.0
+  - @ohmymcp/record@0.1.0
+  - @ohmymcp/generate@0.4.1
+  - @ohmymcp/mock@0.1.2
+  - @ohmymcp/runner@0.6.1
+
 ## 0.6.0
 
 ### Minor Changes

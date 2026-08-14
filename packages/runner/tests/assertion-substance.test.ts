@@ -21,18 +21,18 @@ const suiteWith = (assertions: ToolResultAssertionSpec[]): TestSuiteSpec => ({
 const suiteWithSchema = (schema: ResponseSchema): TestSuiteSpec =>
   suiteWith([{ type: "bodyMatchesSchema", schema }]);
 
-/** 깊이 depth의 properties 중첩 스키마. 맨 안쪽만 빈 스키마다. */
+/** 깊이 depth의 properties 중첩 스키마. 맨 안쪽만 항상 참인 minLength: 0 이다. */
 const deepProperties = (depth: number): ResponseSchema => {
-  let schema: ResponseSchema = {};
+  let schema: ResponseSchema = { type: "string", minLength: 0 };
   for (let index = 0; index < depth; index++) {
     schema = { type: "object", properties: { a: schema } };
   }
   return schema;
 };
 
-/** 깊이 depth의 items 중첩 스키마. 맨 안쪽만 빈 스키마다. */
+/** 깊이 depth의 items 중첩 스키마. 맨 안쪽만 항상 참인 minItems: 0 이다. */
 const deepItems = (depth: number): ResponseSchema => {
-  let schema: ResponseSchema = {};
+  let schema: ResponseSchema = { type: "array", minItems: 0 };
   for (let index = 0; index < depth; index++) {
     schema = { type: "array", items: schema };
   }
@@ -48,35 +48,32 @@ const codesAndPaths = (suite: TestSuiteSpec): [string, string][] =>
   checkAssertionSubstance(suite).findings.map((finding) => [finding.code, finding.path]);
 
 describe("checkAssertionSubstance (설계 문서 §5.7)", () => {
-  it("schema {} 는 UNCONSTRAINED_SCHEMA", () => {
-    expect(codesAndPaths(suiteWithSchema({}))).toEqual([
-      ["UNCONSTRAINED_SCHEMA", "assertions[0].schema"],
-    ]);
+  it("제약이 없는 schema {} 는 finding 이 없다", () => {
+    // 제약 없는 스키마 코드를 제거한 뒤의 사양이다. 이 스키마는 validateMcpSuite 가 이미 거부한다.
+    expect(codesAndPaths(suiteWithSchema({}))).toEqual([]);
   });
 
   it('schema { type: "array" } 는 finding 0건', () => {
     expect(checkAssertionSubstance(suiteWithSchema({ type: "array" })).findings).toEqual([]);
   });
 
-  it("schema { required: [] } 는 UNCONSTRAINED_SCHEMA", () => {
-    expect(codesAndPaths(suiteWithSchema({ required: [] }))).toEqual([
-      ["UNCONSTRAINED_SCHEMA", "assertions[0].schema"],
-    ]);
+  it("schema { required: [] } 는 finding 이 없다", () => {
+    expect(codesAndPaths(suiteWithSchema({ required: [] }))).toEqual([]);
   });
 
-  it("schema { properties: {} } 는 UNCONSTRAINED_SCHEMA", () => {
-    expect(codesAndPaths(suiteWithSchema({ properties: {} }))).toEqual([
-      ["UNCONSTRAINED_SCHEMA", "assertions[0].schema"],
-    ]);
+  it("schema { properties: {} } 는 finding 이 없다", () => {
+    expect(codesAndPaths(suiteWithSchema({ properties: {} }))).toEqual([]);
   });
 
-  it("schema { minLength: 0 } 는 UNCONSTRAINED_SCHEMA 만, VACUOUS_MIN_LENGTH 는 안 난다", () => {
+  it("schema { minLength: 0 } 은 type 없이도 VACUOUS_MIN_LENGTH", () => {
+    // hasConstraint 게이트를 없앤 결과다. 검증을 안 거친 입력에서만 도달하며,
+    // 그 경우에도 '이 단언은 아무것도 안 한다'가 참이므로 알리는 편이 맞다.
     expect(codesAndPaths(suiteWithSchema({ minLength: 0 }))).toEqual([
-      ["UNCONSTRAINED_SCHEMA", "assertions[0].schema"],
+      ["VACUOUS_MIN_LENGTH", "assertions[0].schema.minLength"],
     ]);
   });
 
-  it('schema { type: "string", minLength: 0 } 는 VACUOUS_MIN_LENGTH 만 난다', () => {
+  it("type 이 있는 schema 의 minLength: 0 은 VACUOUS_MIN_LENGTH", () => {
     expect(codesAndPaths(suiteWithSchema({ type: "string", minLength: 0 }))).toEqual([
       ["VACUOUS_MIN_LENGTH", "assertions[0].schema.minLength"],
     ]);
@@ -100,15 +97,45 @@ describe("checkAssertionSubstance (설계 문서 §5.7)", () => {
     ).toEqual([]);
   });
 
-  it("중첩 properties 안의 빈 스키마도 잡고 path 가 assertions[0].schema.properties.temp 다", () => {
-    expect(codesAndPaths(suiteWithSchema({ type: "object", properties: { temp: {} } }))).toEqual([
-      ["UNCONSTRAINED_SCHEMA", "assertions[0].schema.properties.temp"],
-    ]);
+  it("중첩 properties 의 제약 없는 스키마도 finding 이 없다", () => {
+    expect(codesAndPaths(suiteWithSchema({ type: "object", properties: { temp: {} } }))).toEqual(
+      [],
+    );
   });
 
-  it("items 안의 빈 스키마도 잡는다", () => {
-    expect(codesAndPaths(suiteWithSchema({ type: "array", items: {} }))).toEqual([
-      ["UNCONSTRAINED_SCHEMA", "assertions[0].schema.items"],
+  it("items 의 제약 없는 스키마도 finding 이 없다", () => {
+    expect(codesAndPaths(suiteWithSchema({ type: "array", items: {} }))).toEqual([]);
+  });
+
+  it("중첩 properties 안의 VACUOUS_MIN_LENGTH 를 잡고 path 가 중첩 경로다", () => {
+    // 중첩을 실제로 순회한다는 증거를 남긴다. 빈 스키마로는 더 이상 확인할 수 없다.
+    expect(
+      codesAndPaths(
+        suiteWithSchema({
+          type: "object",
+          properties: { temp: { type: "string", minLength: 0 } },
+        }),
+      ),
+    ).toEqual([["VACUOUS_MIN_LENGTH", "assertions[0].schema.properties.temp.minLength"]]);
+  });
+
+  it("items 안의 VACUOUS_MIN_ITEMS 도 잡는다", () => {
+    expect(
+      codesAndPaths(suiteWithSchema({ type: "array", items: { type: "array", minItems: 0 } })),
+    ).toEqual([["VACUOUS_MIN_ITEMS", "assertions[0].schema.items.minItems"]]);
+  });
+
+  it("VACUOUS_MIN_LENGTH 가 VACUOUS_MIN_ITEMS 보다 앞에 온다", () => {
+    const schema: ResponseSchema = {
+      type: "object",
+      properties: {
+        b: { type: "array", minItems: 0 },
+        a: { type: "string", minLength: 0 },
+      },
+    };
+    expect(codesAndPaths(suiteWithSchema(schema))).toEqual([
+      ["VACUOUS_MIN_LENGTH", "assertions[0].schema.properties.a.minLength"],
+      ["VACUOUS_MIN_ITEMS", "assertions[0].schema.properties.b.minItems"],
     ]);
   });
 
@@ -138,13 +165,13 @@ describe("checkAssertionSubstance (설계 문서 §5.7)", () => {
   it("깊이 20000 properties 중첩 스키마에서 예외가 없다", () => {
     const suite = suiteWithSchema(deepProperties(20_000));
     expect(() => checkAssertionSubstance(suite)).not.toThrow();
-    // 맨 안쪽 빈 스키마까지 실제로 순회했다는 증거다.
+    // 맨 안쪽 스키마까지 실제로 순회했다는 증거다.
     expect(checkAssertionSubstance(suite).findings).toEqual([
       {
-        code: "UNCONSTRAINED_SCHEMA",
+        code: "VACUOUS_MIN_LENGTH",
         severity: "advisory",
         caseId: "weather-ok",
-        path: leafPath(20_000, "properties.a"),
+        path: `${leafPath(20_000, "properties.a")}.minLength`,
       },
     ]);
   });
@@ -154,10 +181,10 @@ describe("checkAssertionSubstance (설계 문서 §5.7)", () => {
     expect(() => checkAssertionSubstance(suite)).not.toThrow();
     expect(checkAssertionSubstance(suite).findings).toEqual([
       {
-        code: "UNCONSTRAINED_SCHEMA",
+        code: "VACUOUS_MIN_ITEMS",
         severity: "advisory",
         caseId: "weather-ok",
-        path: leafPath(10_000, "items"),
+        path: `${leafPath(10_000, "items")}.minItems`,
       },
     ]);
   });

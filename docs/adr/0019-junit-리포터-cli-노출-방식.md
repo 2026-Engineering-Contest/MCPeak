@@ -1,4 +1,4 @@
-# ADR-0018: JUnit 리포터를 `--junit <path>` 로 노출한다
+# ADR-0019: JUnit 리포터를 `--junit <path>` 로 노출한다
 
 - 상태: 제안
 - 날짜: 2026-08-14

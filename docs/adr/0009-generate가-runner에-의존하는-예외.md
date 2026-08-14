@@ -20,9 +20,15 @@ cli → runner / generate / record / mock → core
 
 | 종류 | 심볼 |
 |---|---|
-| 타입 | `TestSuiteSpec`, `TestCaseSpec`, `SuiteValidationIssue`, `RunnerRedactionOptions` |
-| 함수 | `validateMcpSuite`, `canonicalJson`, `sha256`, `deepFreeze` |
+| 타입 | `TestSuiteSpec`, `TestCaseSpec`, `SuiteValidationIssue`, `RunnerRedactionOptions`, `SpecFindingsResult` |
+| 함수 | `validateMcpSuite`, `canonicalJson`, `sha256`, `deepFreeze`, `checkInputContract`, `checkAssertionSubstance` |
 | 상수 | `MCP_SUITE_JSON_SCHEMA`, `DEFAULT_SENSITIVE_KEYS`, `REDACTED` |
+
+`checkInputContract` · `checkAssertionSubstance` · `SpecFindingsResult` 세 개는 2026-08-14 에
+입력 계약 대조 결과를 승인 화면에 싣기 위해 추가했다. 두 검사는 명세와 서버 선언을 대조하는
+`runner` 의 규칙이고, `generate` 는 후보를 만드는 시점에 그 결과를 candidate 에 실어 `cli`
+승인 화면으로 넘긴다. 검사 로직을 `generate` 에 복제하면 `cli test` 가 쓰는 `runner` 쪽 구현과
+갈려 같은 명세에 대해 두 화면이 다른 문장을 낸다.
 
 `canonicalJson` · `sha256` · `deepFreeze` 세 개는 2026-08-14 에 추가했다. 원래 `generate` 에
 있던 구현인데 `runner` 로 옮겼고, `generate` 는 `packages/generate/src/canonical.ts` 한 줄

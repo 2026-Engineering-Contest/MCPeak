@@ -7,9 +7,8 @@ import { MAX_FINDINGS_PER_CASE } from "./spec-findings.js";
  * 낮은 값이 앞에 온다.
  */
 const CODE_ORDER: Readonly<Partial<Record<SpecFindingCode, number>>> = {
-  UNCONSTRAINED_SCHEMA: 0,
-  VACUOUS_MIN_LENGTH: 1,
-  VACUOUS_MIN_ITEMS: 2,
+  VACUOUS_MIN_LENGTH: 0,
+  VACUOUS_MIN_ITEMS: 1,
 };
 
 /** UTF-16 코드 단위 안정 비교. 로캘에 의존하지 않는다. `schema-match.ts`의 것과 같다. */
@@ -19,30 +18,6 @@ const byCodeUnit = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0
 interface Frame {
   readonly schema: ResponseSchema;
   readonly path: string;
-}
-
-/**
- * 스키마에 제약이 하나라도 있는지 본다. 설계 문서 §5.7의 12개 키워드다.
- *
- * `minLength: 0`과 `minItems: 0`은 모든 값이 통과하므로 제약으로 세지 않는다.
- * `required: []`와 `properties: {}`도 아무것도 요구하지 않으므로 제약이 아니다.
- */
-function hasConstraint(schema: ResponseSchema): boolean {
-  return (
-    schema.type !== undefined ||
-    schema.const !== undefined ||
-    schema.enum !== undefined ||
-    (schema.required !== undefined && schema.required.length >= 1) ||
-    (schema.properties !== undefined && Object.keys(schema.properties).length >= 1) ||
-    schema.items !== undefined ||
-    (schema.minItems !== undefined && schema.minItems >= 1) ||
-    (schema.minLength !== undefined && schema.minLength >= 1) ||
-    schema.maxLength !== undefined ||
-    schema.stringContains !== undefined ||
-    schema.minimum !== undefined ||
-    schema.maximum !== undefined ||
-    schema.additionalProperties === false
-  );
 }
 
 /**
@@ -80,15 +55,10 @@ export function checkAssertionSubstance(suite: TestSuiteSpec): SpecFindingsResul
         if (frame === undefined) break;
         const { schema, path } = frame;
 
-        if (hasConstraint(schema)) {
-          // 제약이 있는 스키마에서만 무의미한 키워드를 따로 본다. 제약이 없으면
-          // UNCONSTRAINED_SCHEMA 하나만 내고 VACUOUS_*는 내지 않는다. 둘은 같은 스키마에서
-          // 동시에 나지 않는다. 설계 문서 §5.7.
-          if (schema.minLength === 0) add("VACUOUS_MIN_LENGTH", `${path}.minLength`);
-          if (schema.minItems === 0) add("VACUOUS_MIN_ITEMS", `${path}.minItems`);
-        } else {
-          add("UNCONSTRAINED_SCHEMA", path);
-        }
+        // 제약 유무를 따지지 않는다. minLength: 0 · minItems: 0 은 그 자체로 통과가 보장된
+        // 단언이고, 그 사실은 같은 스키마에 다른 제약이 있든 없든 참이다.
+        if (schema.minLength === 0) add("VACUOUS_MIN_LENGTH", `${path}.minLength`);
+        if (schema.minItems === 0) add("VACUOUS_MIN_ITEMS", `${path}.minItems`);
 
         // 역순으로 push해 pop 순서가 properties(키 오름차순), items 가 되게 한다.
         if (schema.items !== undefined) {

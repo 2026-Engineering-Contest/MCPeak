@@ -34,6 +34,8 @@ add-success  add-missing-a  add-missing-b  add-type-a  add-type-b
 - Modify: `packages/generate/src/render.ts`
 - Modify: `packages/generate/src/baseline.ts`
 - Modify: `packages/generate/tests/baseline.test.ts`
+- Modify: `packages/generate/tests/authoring-session.test.ts` (범위 확장분)
+- Modify: `packages/generate/tests/authoring-request.test.ts` (범위 확장분)
 - Create: `docs/reports/task-t8-contract-axes.md`
 
 `index.test.ts` 는 건드리지 않았다. 생성 파일을 `toContain` 으로만 보는 테스트라 케이스가 늘어도
@@ -102,9 +104,10 @@ ohmymcp:typecheck: tests/generate-command.test.ts(81,5): error TS2322:
 ```
 
 `cli` 테스트의 `createBaselineSuite` 목이 `policyVersion: "schema-baseline-v1"` 을 내고 `coverage`
-가 없다. `packages/cli` 는 T9 의 것이라 고치지 않았다.
+가 없다. `packages/cli` 는 T9 의 것이라 고치지 않았다. **`typecheck` 에 남은 오류는 이것
+하나뿐이다**(`Tasks: 5 successful, 6 total`, `Cached: 0 cached`).
 
-`pnpm lint` 는 통과한다(`Checked 148 files in 30ms. No fixes applied.`).
+`pnpm lint` 는 통과한다(`Checked 148 files in 56ms. No fixes applied.`).
 
 ### `packages/cli` 실패 목록 (T9 프롬프트용)
 
@@ -130,9 +133,10 @@ Test Files  1 failed | 6 passed (7)
 |---|---|
 | `pnpm vitest run packages/generate/tests/baseline.test.ts` (구현 전) | `Tests  3 failed \| 9 passed (12)` |
 | `pnpm vitest run packages/generate/tests/baseline.test.ts` | `Test Files  1 passed (1)` / `Tests  12 passed (12)` |
-| `pnpm vitest run packages/generate` | `Test Files  2 failed \| 8 passed (10)` / `Tests  5 failed \| 182 passed \| 1 skipped (188)` |
-| `pnpm typecheck --force` | 실패. `Failed: ohmymcp#typecheck` (`cli` 테스트 목) |
-| `pnpm lint` | `Checked 148 files in 30ms. No fixes applied.` |
+| `pnpm vitest run packages/generate` (범위 확장 전) | `Test Files  2 failed \| 8 passed (10)` / `Tests  5 failed \| 182 passed \| 1 skipped (188)` |
+| `pnpm vitest run packages/generate` | `Test Files  10 passed (10)` / `Tests  187 passed \| 1 skipped (188)` |
+| `pnpm typecheck --force` | `Tasks: 5 successful, 6 total` / `Cached: 0 cached, 6 total`. 남은 오류는 `cli` 하나 |
+| `pnpm lint` | `Checked 148 files in 56ms. No fixes applied.` |
 | `pnpm vitest run packages/cli` | `Test Files  1 failed \| 6 passed (7)` / `Tests  3 failed \| 241 passed (244)` |
 
 ## 임의로 판단한 지점
@@ -150,8 +154,9 @@ Test Files  1 failed | 6 passed (7)
 - `baselineFingerprint` 가 전부 바뀐다. 정책 버전을 올린 목적이 그것이지만, 기존 사용자가
   승인해 둔 지문이 전부 무효가 된다는 뜻이다. 재승인 흐름이 이 변화를 어떻게 안내하는지는
   T9 화면의 몫이다.
-- `authoring-session` 의 지문 상수 둘이 낡은 채로 남아 있다. 고치기 전까지 `packages/generate`
-  게이트는 빨간불이다.
+- 지문 상수를 박아 둔 테스트가 두 파일에 있었고 계획서가 그것을 세지 않았다. 앞으로 baseline
+  출력을 바꾸는 변경마다 같은 곳이 깨진다. 지문 상수의 소재를 한 곳에 적어 두지 않으면 다음에도
+  같은 누락이 난다.
 
 ## 커밋 제안
 

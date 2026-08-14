@@ -24,6 +24,8 @@ import {
   type GenerateCommandDependencies,
   nodeReviewIO,
   parseGenerateCommand,
+  renderCaseCountNotice,
+  renderCoverage,
   runGenerateCommand,
 } from "../src/generate-command.js";
 
@@ -84,7 +86,9 @@ function deps(overrides: Partial<GenerateCommandDependencies> = {}) {
         suite,
         baselineFingerprint: "baseline",
         suiteFingerprint: "suite",
-        policyVersion: "schema-baseline-v1" as const,
+        policyVersion: "schema-baseline-v2" as const,
+        // 이 스텁의 suite 는 케이스가 0개다. 커버리지도 그에 맞춰 비운다.
+        coverage: { tools: [], verified: 0, total: 0 },
       };
     }),
     createAuthoringSession: vi.fn(
@@ -1503,5 +1507,171 @@ describe("AI 대화형 검토", () => {
       };
     });
     expect(output).toContain('+ name: "PLAINTEXT_CASE_NAME"');
+  });
+});
+
+describe("커버리지 화면", () => {
+  const axis = (
+    kind: "HAPPY_PATH" | "REQUIRED_OMITTED" | "TYPE_VIOLATION" | "ENUM_VIOLATION",
+    field: string | null,
+    caseId: string | null,
+  ) => ({ kind, field, caseId });
+  const toolCoverage = (
+    name: string,
+    axes: ReturnType<typeof axis>[],
+    extra: { analyzable?: boolean; unanalyzableReason?: string; unanalyzedFields?: string[] } = {},
+  ) => ({
+    tool: name,
+    analyzable: extra.analyzable ?? true,
+    unanalyzableReason: extra.unanalyzableReason ?? null,
+    axes,
+    verified: axes.filter((item) => item.caseId !== null).length,
+    total: axes.length,
+    unanalyzedFields: extra.unanalyzedFields ?? [],
+  });
+  const result = (tools: ReturnType<typeof toolCoverage>[]) => ({
+    tools,
+    verified: tools.reduce((sum, item) => sum + item.verified, 0),
+    total: tools.reduce((sum, item) => sum + item.total, 0),
+  });
+  const verifiedAxes = (count: number) =>
+    Array.from({ length: count }, (_, index) => axis("TYPE_VIOLATION", `f${index}`, `c${index}`));
+
+  it("전부 검증되면 한 줄이다", () => {
+    const coverage = result([
+      toolCoverage("add", verifiedAxes(5)),
+      toolCoverage("get_weather", verifiedAxes(3)),
+    ]);
+    expect(renderCoverage(coverage)).toBe("커버리지  2 tools, 8 axes 전부 검증\n");
+  });
+
+  it("미검증이 있으면 툴별 줄이 나오고 미검증 축만 ? 로 들여쓴다", () => {
+    const coverage = result([
+      toolCoverage("add", verifiedAxes(5)),
+      toolCoverage("get_weather", verifiedAxes(3)),
+      toolCoverage("search_docs", [
+        ...verifiedAxes(4),
+        axis("TYPE_VIOLATION", "filters", null),
+        axis("ENUM_VIOLATION", "filters", null),
+      ]),
+    ]);
+    expect(renderCoverage(coverage)).toBe(
+      [
+        "커버리지  3 tools, 12/14 axes 검증",
+        "  add           5/5",
+        "  get_weather   3/3",
+        "  search_docs   4/6",
+        "    ? filters 의 타입 위반 거절            미검증",
+        "    ? filters 의 선언되지 않은 값 거절     미검증",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  it("해석 불가 툴은 사유 괄호가 붙고 커버리지 숫자에서 빠진다", () => {
+    const coverage = result([
+      toolCoverage("add", verifiedAxes(5)),
+      toolCoverage("get_weather", verifiedAxes(3)),
+      toolCoverage("search_docs", [], { analyzable: false, unanalyzableReason: "anyOf" }),
+    ]);
+    expect(renderCoverage(coverage)).toBe(
+      [
+        "커버리지  3 tools, 8/8 axes 검증",
+        "  add           5/5",
+        "  get_weather   3/3",
+        "  search_docs   해석 불가",
+        "    → 입력 스키마를 해석하지 못해 이 툴의 축을 세지 못했습니다 (anyOf)",
+        "    → 이 툴은 커버리지 숫자에 들어가지 않습니다",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  it("해석 못 한 필드가 있으면 이름을 나열한 줄이 붙는다", () => {
+    const coverage = result([
+      toolCoverage("search_docs", [...verifiedAxes(4), axis("TYPE_VIOLATION", "query", null)], {
+        unanalyzedFields: ["filters"],
+      }),
+    ]);
+    expect(renderCoverage(coverage)).toBe(
+      [
+        "커버리지  1 tools, 4/5 axes 검증",
+        "  search_docs   4/5",
+        "    ? query 의 타입 위반 거절     미검증",
+        "    → 해석 못 한 필드 1개: filters. 이 필드의 축은 세지 않았습니다",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  it("툴이 0개면 아무것도 찍지 않는다", () => {
+    expect(renderCoverage(result([]))).toBe("");
+  });
+
+  it("축이 0개인 툴만 있으면 전부 검증이라고 쓰지 않는다", () => {
+    // 0/0 은 검증이 아니다. verified === total 이 참이어도 "전부 검증" 은 거짓 화면이다.
+    const coverage = result([
+      toolCoverage("a", [], { analyzable: false, unanalyzableReason: "anyOf" }),
+    ]);
+    expect(coverage.verified).toBe(coverage.total);
+    expect(renderCoverage(coverage)).not.toContain("전부 검증");
+    expect(renderCoverage(coverage)).toContain("커버리지  1 tools, 0/0 axes 검증");
+  });
+
+  it("HAPPY_PATH 축은 필드 없이 종류만 적는다", () => {
+    const coverage = result([toolCoverage("a", [axis("HAPPY_PATH", null, null)])]);
+    expect(renderCoverage(coverage)).toContain("? 선언을 지킨 입력에 정상 응답");
+  });
+});
+
+describe("케이스 수 고지", () => {
+  it("1500개 미만이면 고지가 없다", () => {
+    expect(renderCaseCountNotice(1499)).toBe("");
+  });
+
+  it("1500개 이상이면 두 줄 고지가 나온다", () => {
+    expect(renderCaseCountNotice(1842)).toBe(
+      [
+        "→ 케이스 1842개를 만들었습니다. runner 보고서 상한(1MB)에 가까워 test 실행이",
+        "  RunnerPayloadLimitError 로 실패할 수 있습니다.",
+        "→ 툴을 나눠 여러 명세 파일로 생성하면 피할 수 있습니다.",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  it("고지가 있어도 exit code 는 0 이다", async () => {
+    const many: TestCaseSpec[] = Array.from({ length: 1500 }, (_, index) => ({
+      id: `case-${index}`,
+      name: `case ${index}`,
+      operation: { type: "callTool", tool: "weather", input: {} },
+      assertions: [{ type: "isError", expected: false }],
+    }));
+    const bigSuite: TestSuiteSpec = { ...suite, cases: many };
+    const stdout: string[] = [];
+    const d = deps({
+      getAuthoringExecutionSuite: vi.fn(() => bigSuite),
+      writeStdout: (text: string) => {
+        stdout.push(text);
+      },
+    });
+    await expect(
+      runGenerateCommand(
+        [
+          "generate",
+          "--suite-id",
+          "weather",
+          "--name",
+          "Weather",
+          "--out",
+          "/tmp/out.json",
+          "--command",
+          "node",
+          "--baseline-only",
+        ],
+        d.value,
+      ),
+    ).resolves.toBe(0);
+    expect(stdout.join("")).toContain("케이스 1500개를 만들었습니다");
   });
 });

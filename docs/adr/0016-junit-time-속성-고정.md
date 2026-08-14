@@ -1,4 +1,4 @@
-# ADR-0014: JUnit XML 의 `time` 속성을 `0` 으로 고정한다
+# ADR-0016: JUnit XML 의 `time` 속성을 `0` 으로 고정한다
 
 - 상태: 제안
 - 날짜: 2026-08-14
@@ -108,8 +108,9 @@ JUnit XML 스키마는 `<testsuite>` 와 `<testcase>` 에 `time` 속성을 기�
 
 ## 결과
 
-- `renderJUnit` 은 `RunnerReport` 만 받는 순수 함수로 유지된다. `process` · `Date` · 로케일 ·
-  난수를 읽지 않으므로 같은 보고서는 항상 같은 바이트를 낸다.
+- `renderJUnit` 은 `RunnerReport` 와 명시적으로 넘긴 `JUnitRenderOptions` 만 읽는 순수 함수로
+  유지된다. `process` · `Date` · 로케일 · 난수를 읽지 않으므로 같은 인자에는 항상 같은 바이트를
+  낸다. 시간을 스스로 측정하거나 생성하지 않는다는 뜻이며, 옵션을 받지 않는다는 뜻이 아니다.
 - CI 도구에서 소요 시간 기반 기능을 쓸 수 없다. 느린 테스트 탐지가 필요한 사용자는 당분간
   터미널 출력이나 별도 수단을 써야 한다.
 - 확장 경로는 `JUnitRenderOptions` 다. `cli` 가 경과 시간을 재게 되면 선택 필드를 더한다.

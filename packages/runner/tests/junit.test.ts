@@ -266,6 +266,24 @@ describe("renderJUnit", () => {
     expect(xml).toContain('message="첫 줄 둘째 줄 셋째 줄"');
   });
 
+  it("속성값의 앞뒤 공백을 자르지 않는다", () => {
+    // suite.id 와 spec.name 은 실행 결과를 명세와 잇는 계약 식별자다. 리포터가 조용히 바꾸면
+    // 보고서와 XML 이 서로 다른 이름을 갖는다. XML 파서의 속성값 정규화도 앞뒤를 자르지 않는다.
+    const report = buildReport([passed(callToolCase("c1", "  앞뒤 공백  "))], {
+      suite: { id: " weather ", name: "날씨 서버" },
+    });
+    const xml = renderJUnit(report);
+
+    expect(xml).toContain('name="  앞뒤 공백  "');
+    expect(xml).toContain('classname=" weather "');
+  });
+
+  it("가장자리 개행은 잘리지 않고 공백으로 접힌다", () => {
+    const report = buildReport([passed(callToolCase("c1", "\n선행 개행\t"))]);
+
+    expect(renderJUnit(report)).toContain('name=" 선행 개행 "');
+  });
+
   it("time 은 항상 0 이다. RunnerReport 가 시간 정보를 갖지 않는다 (ADR)", () => {
     const xml = renderJUnit(
       buildReport([passed(listToolsCase("c1", "툴")), timedOut(callToolCase("c2", "느림"))]),

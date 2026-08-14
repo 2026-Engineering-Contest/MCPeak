@@ -7,7 +7,7 @@ export interface JUnitRenderOptions {
 }
 
 /**
- * 모든 `time` 속성의 값. 근거는 ADR-0014 에 있다.
+ * 모든 `time` 속성의 값. 근거는 ADR-0016 에 있다.
  *
  * `RunnerReport` 는 경과 시간을 갖지 않는다. 같은 입력에 같은 바이트를 내기 위해 시간 필드를
  * 의도적으로 제외했기 때문이다(Runner 설계의 확정 사항). 반면 JUnit 스키마는 `time` 을
@@ -15,7 +15,7 @@ export interface JUnitRenderOptions {
  * 표현이다.
  *
  * 실제 시간이 필요해지면 `RunnerReport` 에 필드를 더하지 마라. 그것은 `--json` 출력 바이트와
- * `renderReport` 의 결정론성까지 흔든다. ADR-0014 가 그 선택지를 배제했다. 대신 측정 책임을
+ * `renderReport` 의 결정론성까지 흔든다. ADR-0016 가 그 선택지를 배제했다. 대신 측정 책임을
  * 가진 `cli` 가 `JUnitRenderOptions` 에 경과 시간을 넘기도록 확장한다.
  */
 const TIME = "0";
@@ -60,11 +60,15 @@ const escapeText = (value: string): string =>
 /**
  * 속성값. 줄바꿈과 탭을 공백 하나로 접는다.
  *
- * XML 파서는 속성값 안의 개행·탭을 공백으로 정규화한다. 접지 않고 넘기면 도구마다 다른
- * 문자열을 보게 되므로, 우리가 먼저 접어서 어디서든 같은 값이 되게 한다.
+ * XML 파서는 속성값 안의 개행·탭을 공백으로 정규화한다(XML 1.0 §3.3.3). 접지 않고 넘기면
+ * 도구마다 다른 문자열을 보게 되므로, 우리가 먼저 접어서 어디서든 같은 값이 되게 한다.
+ *
+ * **앞뒤 공백은 자르지 않는다.** 파서의 정규화 규칙도 자르지 않으므로, 우리가 자르면 오히려
+ * 파서가 만드는 값과 어긋난다. 게다가 `suite.id` 와 `spec.name` 은 실행 결과를 명세와 잇는
+ * 계약 식별자다. 리포터가 식별자를 조용히 바꾸면 보고서와 XML 이 서로 다른 이름을 갖는다.
  */
 const escapeAttribute = (value: string): string =>
-  escapeText(value.replace(/[\r\n\t]+/g, " ").trim()).replaceAll('"', "&quot;");
+  escapeText(value.replace(/[\r\n\t]+/g, " ")).replaceAll('"', "&quot;");
 
 /**
  * 케이스 하나가 JUnit 에서 무엇이 되는지.
@@ -158,8 +162,8 @@ function stopReasonText(stopReason: NonNullable<RunnerReport["stopReason"]>): st
 /**
  * `RunnerReport` 를 JUnit XML 문자열로 만든다.
  *
- * 순수 함수다. `process` · `Date` · 로케일 · 난수를 읽지 않으므로 같은 보고서는 항상 같은
- * 바이트를 낸다. 환경 판정과 파일 쓰기는 호출자(`cli`)의 몫이다.
+ * 순수 함수다. `report` 와 `options` 만 읽는다. `process` · `Date` · 로케일 · 난수를 읽지
+ * 않으므로 같은 인자에는 항상 같은 바이트를 낸다. 환경 판정과 파일 쓰기는 호출자(`cli`)의 몫이다.
  */
 export function renderJUnit(report: RunnerReport, options?: JUnitRenderOptions): string {
   const outcomes = report.cases.map((result) => [result, classify(result)] as const);

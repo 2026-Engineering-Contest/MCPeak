@@ -20,8 +20,8 @@ cli → runner / generate / record / mock → core
 
 | 종류 | 심볼 |
 |---|---|
-| 타입 | `TestSuiteSpec`, `TestCaseSpec`, `SuiteValidationIssue`, `RunnerRedactionOptions`, `SpecFindingsResult` |
-| 함수 | `validateMcpSuite`, `canonicalJson`, `sha256`, `deepFreeze`, `checkInputContract`, `checkAssertionSubstance` |
+| 타입 | `TestSuiteSpec`, `TestCaseSpec`, `SuiteValidationIssue`, `RunnerRedactionOptions`, `SpecFindingsResult`, `ContractAxis`, `ContractDeclaredType` |
+| 함수 | `validateMcpSuite`, `canonicalJson`, `sha256`, `deepFreeze`, `checkInputContract`, `checkAssertionSubstance`, `deriveContractAxes` |
 | 상수 | `MCP_SUITE_JSON_SCHEMA`, `DEFAULT_SENSITIVE_KEYS`, `REDACTED` |
 
 `checkInputContract` · `checkAssertionSubstance` · `SpecFindingsResult` 세 개는 2026-08-14 에
@@ -37,6 +37,18 @@ cli → runner / generate / record / mock → core
 `generate` 를 부를 수 없기 때문이다. canonical JSON 구현을 두 벌로 만들면 저장 시점 지문과
 실행 시점 지문이 조용히 갈린다. 구현을 한 벌로 유지하려고 낮은 층으로 옮긴 것이고, 의존이
 새로 늘어난 것이 아니라 같은 코드의 소유 패키지가 바뀐 것이다.
+
+`deriveContractAxes` · `ContractAxis` · `ContractDeclaredType` 세 개는 2026-08-15 에 계약 축
+커버리지를 위해 추가했다. 축 도출을 `runner` 에 두는 이유가 둘이다. 첫째, 정규화를 한 벌로
+유지해야 한다. `input-contract.ts` 의 `normalizeInputSchema` 가 이미 `required` · 필드 `type` ·
+`enum` · 차단 키워드를 정규화하고, 축 도출이 필요한 것이 정확히 그 구조체다. 두 벌이 되면 입력
+계약 대조는 "이 툴 스키마는 해석 못 했다" 며 침묵하는데 커버리지는 "축 3개 미검증" 이라고 세는
+상태가 만들어진다. 같은 화면의 두 줄이 서로를 부정한다. 둘째, `generate` 의 파서로는 이 일을 할
+수 없다. `validateSchema` 는 허용 키워드 밖(`anyOf` 등)을 만나면 **던진다**. 커버리지 표시는
+규칙 기반 baseline 뿐 아니라 AI 가 만든 명세와 손으로 쓴 명세에도 필요한데, 그 경로는 서버 선언을
+`generate` 파서에 통과시키지 않는다(`authoring-session.ts` 가 서버 `tools` 를
+`checkInputContract` 에 그대로 넘긴다). `anyOf` 하나 쓴 서버를 만나면 `generate` 파서 기반 도출은
+화면 전체를 죽이고, `runner` 파서 기반 도출은 그 툴만 해석 불가로 빼고 나머지를 정상 표시한다.
 
 이 의존은 AI 보조 작성 기능 이전부터 있었고, PR #37이 `MCP_SUITE_JSON_SCHEMA`를 하나 더 참조하면서
 코드 리뷰에서 지적됐다.

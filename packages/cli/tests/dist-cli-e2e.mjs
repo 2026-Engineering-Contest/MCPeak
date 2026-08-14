@@ -322,6 +322,150 @@ for (const [fixture, expectedStatus, expectedSummary] of [
   }
 }
 
+// 입력 계약 대조 참고 문장 (설계 문서 §7.2). 명세의 입력이 서버 선언과 어긋날 때 실패 보고서
+// 뒤에 참고 문장이 붙는지, 그리고 그것이 판정을 바꾸지 않는지 본다. 판정 불변이 사양의 핵심이다.
+// weather-server 는 additionalProperties 를 닫지 않으므로 UNDECLARED_FIELD 는 나지 않는다.
+// 오타는 REQUIRED_MISSING 으로 걸린다.
+{
+  const dir = await mkdtemp(join(tmpdir(), "ohmymcp-dist-contract-"));
+  const pidFile = join(dir, "pid");
+  // 항상 참인 단언. minLength 0 은 어떤 문자열이든 통과시킨다. isError 뒤에 두므로
+  // finding 의 path 는 assertions[1] 이 된다.
+  const vacuousAssertion = {
+    type: "bodyMatchesSchema",
+    schema: { type: "string", minLength: 0 },
+  };
+  const suiteOf = (input, extraAssertions = []) => ({
+    schemaVersion: 1,
+    id: "weather-contract",
+    name: "입력 계약 대조",
+    defaultTimeoutMs: 10_000,
+    cases: [
+      {
+        id: "seoul-weather",
+        name: "서울 날씨",
+        operation: { type: "callTool", tool: "get_weather", input },
+        assertions: [{ type: "isError", expected: false }, ...extraAssertions],
+      },
+    ],
+  });
+  const typo = join(dir, "typo.json");
+  const correct = join(dir, "correct.json");
+  // 입력은 멀쩡하고 단언만 무의미한 명세. 입력 계약 finding 이 없어야 단언 실질성 머리글이
+  // 단독으로 나오는 것을 볼 수 있다. 없는 도시를 넣어 케이스를 실패시킨다(표시는 실패 케이스
+  // 한정이다).
+  const vacuous = join(dir, "vacuous.json");
+  // 한 케이스에 두 종류가 함께 있는 명세. 머리글이 갈리는지와 순서를 본다.
+  const combined = join(dir, "combined.json");
+  await writeFile(typo, `${JSON.stringify(suiteOf({ citi: "서울" }), null, 2)}\n`, "utf8");
+  await writeFile(correct, `${JSON.stringify(suiteOf({ city: "서울" }), null, 2)}\n`, "utf8");
+  await writeFile(
+    vacuous,
+    `${JSON.stringify(suiteOf({ city: "없는도시" }, [vacuousAssertion]), null, 2)}\n`,
+    "utf8",
+  );
+  await writeFile(
+    combined,
+    `${JSON.stringify(suiteOf({ citi: "서울" }, [vacuousAssertion]), null, 2)}\n`,
+    "utf8",
+  );
+  const runTest = async (path, extra = []) => {
+    const outcome = await execute([
+      "test",
+      path,
+      "--command",
+      process.execPath,
+      "--arg",
+      wrapper,
+      "--arg",
+      pidFile,
+      "--arg",
+      server,
+      ...extra,
+    ]);
+    await expectExited(pidFile);
+    return outcome;
+  };
+  try {
+    const typoRun = await runTest(typo);
+    // 판정은 케이스 결과로만 정해진다. 참고 문장이 붙어도 종료 코드가 바뀌지 않는다.
+    assert.equal(typoRun.code, 1);
+    assert.equal(typoRun.err, "");
+    // 실패 메시지가 곧 제품이다. 머리글과 문장 전문을 고정한다.
+    for (const expected of [
+      "참고: seoul-weather 의 입력이 서버 선언과 다릅니다",
+      "필수 필드 'city' 가 입력에 없습니다. 비슷한 필드: 'citi'",
+    ])
+      assert.ok(
+        typoRun.out.includes(expected),
+        `stdout 에 '${expected}' 가 없습니다. 실제 출력:\n${typoRun.out}`,
+      );
+
+    // --json 은 문장이 아니라 구조로 담는다. 기계는 code 로 분기한다.
+    const jsonRun = await runTest(typo, ["--json"]);
+    assert.equal(jsonRun.code, 1);
+    assert.deepEqual(JSON.parse(jsonRun.out).spec.findings, [
+      {
+        code: "REQUIRED_MISSING",
+        severity: "blocking",
+        caseId: "seoul-weather",
+        path: "input.city",
+      },
+    ]);
+
+    // 단언 실질성은 툴 목록이 없어도 항상 도는 경로다. 입력 계약 finding 이 하나도 없을 때
+    // 이 머리글이 단독으로 나오는지 본다. 코드 경로가 입력 계약 쪽과 다르다.
+    const vacuousRun = await runTest(vacuous);
+    assert.equal(vacuousRun.code, 1);
+    assert.equal(vacuousRun.err, "");
+    for (const expected of [
+      "참고: seoul-weather 의 단언은 무엇이 와도 통과합니다",
+      "assertions[1].schema.minLength 는 0이라 모든 문자열이 통과합니다",
+    ])
+      assert.ok(
+        vacuousRun.out.includes(expected),
+        `stdout 에 '${expected}' 가 없습니다. 실제 출력:\n${vacuousRun.out}`,
+      );
+    assert.ok(
+      !vacuousRun.out.includes("의 입력이 서버 선언과 다릅니다"),
+      `입력은 멀쩡한데 입력 계약 머리글이 붙었습니다. 실제 출력:\n${vacuousRun.out}`,
+    );
+
+    // 두 종류가 한 케이스에 함께 있으면 머리글이 갈리고 입력 계약이 먼저다. 설계 문서 §7.2.
+    const combinedRun = await runTest(combined);
+    assert.equal(combinedRun.code, 1);
+    const contractAt = combinedRun.out.indexOf(
+      "참고: seoul-weather 의 입력이 서버 선언과 다릅니다",
+    );
+    const substanceAt = combinedRun.out.indexOf(
+      "참고: seoul-weather 의 단언은 무엇이 와도 통과합니다",
+    );
+    assert.notEqual(contractAt, -1, `입력 계약 머리글이 없습니다. 실제 출력:\n${combinedRun.out}`);
+    assert.notEqual(
+      substanceAt,
+      -1,
+      `단언 실질성 머리글이 없습니다. 실제 출력:\n${combinedRun.out}`,
+    );
+    // 한 머리글 아래 두 종류를 합치면 읽는 사람이 엉뚱한 곳을 고치러 간다.
+    assert.ok(
+      contractAt < substanceAt,
+      `입력 계약 블록이 단언 실질성보다 뒤에 있습니다. 실제 출력:\n${combinedRun.out}`,
+    );
+
+    // 부재 단언이 없으면 항상 찍는 회귀를 못 잡는다.
+    const correctRun = await runTest(correct);
+    assert.equal(correctRun.code, 0);
+    assert.equal(correctRun.err, "");
+    assert.ok(
+      !correctRun.out.includes("참고:"),
+      `옳은 명세인데 참고 문장이 붙었습니다. 실제 출력:\n${correctRun.out}`,
+    );
+  } finally {
+    await cleanupPid(pidFile);
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
 // 서버 프로세스 진단 (설계 문서 §8.4). 기동 즉시 죽는 서버와 실행 불가능한 command 를 본다.
 {
   const dir = await mkdtemp(join(tmpdir(), "ohmymcp-dist-diagnostics-"));

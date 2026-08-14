@@ -31,7 +31,6 @@ export type SpecFindingCode =
   | "ENUM_MISMATCH" // 선언된 enum 밖의 값이다
   | "SCHEMA_NOT_ANALYZABLE" // 서버 스키마를 해석하지 못했다. 위반이 아니다
   // 단언 실질성
-  | "UNCONSTRAINED_SCHEMA" // 제약이 하나도 없는 스키마
   | "VACUOUS_MIN_LENGTH" // minLength: 0
   | "VACUOUS_MIN_ITEMS"; // minItems: 0
 
@@ -87,13 +86,11 @@ export function describeSpecFinding(finding: SpecFinding): string {
     case "UNDECLARED_FIELD":
       return `${literal(actual)} 는 서버가 선언하지 않은 필드입니다${suggest(finding, "비슷한 필드")}`;
     case "TYPE_MISMATCH":
-      return `${path} 의 타입이 다릅니다. 선언: ${literal(expected)}, 명세: ${literal(actual)}`;
+      return `${path} 의 타입이 다릅니다. 서버 선언: ${literal(expected)}, 명세: ${literal(actual)}`;
     case "ENUM_MISMATCH":
       return `${path} 값 ${literal(actual)} 는 선언된 값이 아닙니다. 허용: ${literal(expected)}${suggest(finding, "비슷한 값")}`;
     case "SCHEMA_NOT_ANALYZABLE":
       return `${literal(actual)} 의 입력 스키마를 해석하지 못해 이 툴의 입력 검사를 건너뜁니다`;
-    case "UNCONSTRAINED_SCHEMA":
-      return `${path} 스키마에 제약이 없어 어떤 응답이든 통과합니다`;
     case "VACUOUS_MIN_LENGTH":
       return `${path} 는 0이라 모든 문자열이 통과합니다`;
     case "VACUOUS_MIN_ITEMS":

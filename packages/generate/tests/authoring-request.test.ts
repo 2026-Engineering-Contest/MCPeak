@@ -1,5 +1,10 @@
 import type { ToolDef } from "@ohmymcp/core";
-import { DEFAULT_SENSITIVE_KEYS, MCP_SUITE_JSON_SCHEMA } from "@ohmymcp/runner";
+import {
+  DEFAULT_SENSITIVE_KEYS,
+  describeSpecFinding,
+  MCP_SUITE_JSON_SCHEMA,
+  REDACTED,
+} from "@ohmymcp/runner";
 import { describe, expect, it, vi } from "vitest";
 import {
   AUTHORING_OUTPUT_SCHEMA,
@@ -26,6 +31,67 @@ const options = () => ({
   providerId: "codex" as const,
   model: "test",
 });
+
+/**
+ * provider 가 providerSuite 를 그대로 돌려주는 dispatch 를 한 번 돌린다.
+ *
+ * `withSession` 이 없으면 결과는 provider 경로 candidate(validateAuthoringProviderResult) 다.
+ * `withSession: true` 면 dispatch 가 reviewLocalAuthoringCandidate 로 빠져 **세션 경로**를 탄다.
+ * 두 경로는 검사에 쓰는 도구 목록을 각자 고르므로 회귀도 따로 고정해야 한다.
+ *
+ * baseline 은 별도 목록으로 만들 수 있다. createBaselineSuite 가 additionalProperties 를
+ * 거부하는데 UNDECLARED_FIELD 는 그 키워드가 정확히 false 일 때만 나기 때문이다.
+ */
+const dispatchWithProviderSuite = async (input: {
+  tools: ToolDef[];
+  baselineTools?: ToolDef[];
+  providerSuite: unknown;
+  redaction?: { sensitiveValues?: readonly string[] };
+  withSession?: boolean;
+  /** 요청 준비 **뒤** 호출자가 원본 tools 를 손대는 상황을 흉내낸다. 결정론성 회귀용이다. */
+  mutateToolsAfterPrepare?: (tools: ToolDef[]) => void;
+}) => {
+  const baseline = createBaselineSuite(input.baselineTools ?? input.tools, {
+    suiteId: "weather",
+    suiteName: "날씨",
+  });
+  const base = baseline.suite;
+  const preview = prepareAuthoringRequest({
+    ...options(),
+    baseline: base,
+    candidate: base,
+    tools: input.tools,
+    ...(input.redaction === undefined ? {} : { redaction: input.redaction }),
+  });
+  input.mutateToolsAfterPrepare?.(input.tools);
+  return dispatchAuthoringRequest({
+    provider: {
+      id: "codex" as const,
+      author: async () => ({
+        status: "candidate",
+        suite: input.providerSuite,
+        summary: "요약",
+        questions: [],
+        warnings: [],
+      }),
+    },
+    preview,
+    approval: { approved: true, fingerprint: preview.fingerprint },
+    // 같은 baseline 으로 만든 세션이어야 suite identity 대조를 통과한다.
+    ...(input.withSession === true ? { session: createAuthoringSession(baseline) } : {}),
+  });
+};
+
+/** baseline suite 를 그대로 돌려주는 provider 응답. 위반이 하나도 없는 대조군이다. */
+const cleanProviderSuite = () =>
+  createBaselineSuite(tools, { suiteId: "weather", suiteName: "날씨" }).suite;
+
+/**
+ * 손대지 않은 provider candidate 의 지문. T3 구현 **이전** 값을 그대로 박았다.
+ * specFindings 를 candidate 에 실어도 이 값이 유지돼야 한다.
+ */
+const KNOWN_PROVIDER_FINGERPRINT =
+  "77840d3e4dd6f4ccb1048a05deae403302d9c95723266fb428eed1394fa01b61";
 
 describe("authoring request", () => {
   it("initial 요청은 baseline을 candidate로 고정한다", () => {
@@ -571,5 +637,250 @@ describe("authoring request", () => {
     );
     expect(JSON.stringify(result)).not.toContain("RAW_SENTINEL");
     expect(JSON.stringify(result)).not.toContain("secretKey");
+  });
+
+  it("provider 후보에도 specFindings 가 붙는다", async () => {
+    const contractTools: ToolDef[] = [
+      {
+        name: "get_weather",
+        inputSchema: {
+          type: "object",
+          properties: { city: { type: "string" } },
+          required: ["city"],
+          additionalProperties: false,
+        },
+      },
+    ];
+    const baselineTools: ToolDef[] = [
+      {
+        name: "get_weather",
+        inputSchema: {
+          type: "object",
+          properties: { city: { type: "string" } },
+          required: ["city"],
+        },
+      },
+    ];
+    const base = createBaselineSuite(baselineTools, {
+      suiteId: "weather",
+      suiteName: "날씨",
+    }).suite;
+    const result = await dispatchWithProviderSuite({
+      tools: contractTools,
+      baselineTools,
+      providerSuite: {
+        ...base,
+        cases: [
+          {
+            id: "seoul-weather",
+            name: "서울 날씨",
+            operation: { type: "callTool", tool: "get_weather", input: { citi: "Seoul" } },
+            assertions: [{ type: "bodyMatchesSchema", schema: { type: "string", minLength: 1 } }],
+          },
+        ],
+      },
+    });
+    if (result.status !== "preview") throw new Error(`preview 가 아니다: ${result.status}`);
+    expect(result.preview.specFindings.inputContract.findings.map((f) => f.code)).toEqual([
+      "REQUIRED_MISSING",
+      "UNDECLARED_FIELD",
+    ]);
+  });
+
+  it("enum 값이 민감 값과 같아도 ENUM_MISMATCH 가 나지 않는다", async () => {
+    // 검사에 치환된 tools 를 쓰면 선언 enum 이 '[REDACTED]' 가 되어 정상 입력이 위반으로 뒤집힌다.
+    const unitsTools: ToolDef[] = [
+      {
+        name: "get_weather",
+        inputSchema: {
+          type: "object",
+          properties: { units: { type: "string", enum: ["c", "f"] } },
+          required: ["units"],
+        },
+      },
+    ];
+    const base = createBaselineSuite(unitsTools, { suiteId: "weather", suiteName: "날씨" }).suite;
+    const result = await dispatchWithProviderSuite({
+      redaction: { sensitiveValues: ["c"] },
+      tools: unitsTools,
+      providerSuite: {
+        ...base,
+        cases: [
+          {
+            id: "units-case",
+            name: "단위",
+            // 민감 값으로 지정한 'c' 를 그대로 입력에 쓴다. 치환된 도구 목록으로 대조하면
+            // 선언 enum 이 ["[REDACTED]", "f"] 가 되어 이 정상 입력이 위반으로 뒤집힌다.
+            // 'f' 를 쓰면 치환 여부와 무관하게 enum 에 남아 있어 회귀를 못 잡는다.
+            operation: { type: "callTool", tool: "get_weather", input: { units: "c" } },
+            assertions: [{ type: "bodyMatchesSchema", schema: { type: "string", minLength: 1 } }],
+          },
+        ],
+      },
+    });
+    if (result.status !== "preview") throw new Error(`preview 가 아니다: ${result.status}`);
+    expect(result.preview.specFindings.inputContract.findings).toEqual([]);
+  });
+
+  it("session 을 넘긴 경로에서도 ENUM_MISMATCH 가 나지 않는다", async () => {
+    // 위 테스트의 세션 경로 변형이다. session 이 있으면 dispatch 가
+    // reviewLocalAuthoringCandidate 로 빠지고 검사에 쓸 도구 목록을 그쪽에서 다시 고른다.
+    // 거기에 치환 사본(state.tools)을 넘기면 선언 enum 이 '[REDACTED]' 가 되어 정상 입력이
+    // 위반으로 뒤집힌다. 두 경로가 각자 목록을 고르므로 회귀도 두 벌로 고정한다.
+    const unitsTools: ToolDef[] = [
+      {
+        name: "get_weather",
+        inputSchema: {
+          type: "object",
+          properties: { units: { type: "string", enum: ["c", "f"] } },
+          required: ["units"],
+        },
+      },
+    ];
+    const base = createBaselineSuite(unitsTools, { suiteId: "weather", suiteName: "날씨" }).suite;
+    const result = await dispatchWithProviderSuite({
+      withSession: true,
+      redaction: { sensitiveValues: ["c"] },
+      tools: unitsTools,
+      providerSuite: {
+        ...base,
+        cases: [
+          {
+            id: "units-case",
+            name: "단위",
+            // 민감 값으로 지정한 'c' 를 그대로 입력에 쓴다. 치환된 도구 목록으로 대조하면
+            // 선언 enum 이 ["[REDACTED]", "f"] 가 되어 이 정상 입력이 위반으로 뒤집힌다.
+            // 'f' 를 쓰면 치환 여부와 무관하게 enum 에 남아 있어 회귀를 못 잡는다.
+            operation: { type: "callTool", tool: "get_weather", input: { units: "c" } },
+            assertions: [{ type: "bodyMatchesSchema", schema: { type: "string", minLength: 1 } }],
+          },
+        ],
+      },
+    });
+    if (result.status !== "preview") throw new Error(`preview 가 아니다: ${result.status}`);
+    expect(result.preview.specFindings.inputContract.findings).toEqual([]);
+  });
+
+  it("specFindings 는 provider candidate 의 fingerprint 를 바꾸지 않는다", async () => {
+    const before = await dispatchWithProviderSuite({
+      tools,
+      providerSuite: cleanProviderSuite(),
+    });
+    if (before.status !== "preview") throw new Error("preview 가 아니다");
+    expect(before.preview.fingerprint).toBe(KNOWN_PROVIDER_FINGERPRINT);
+  });
+
+  /**
+   * enum 불일치를 일으키면서 민감 값을 양쪽(선언 enum · 입력)에 심는 도구 목록.
+   * 'c' 는 서버가 선언한 enum 안에 있고 'secret-unit' 은 명세가 쓴 입력 값이다.
+   * ENUM_MISMATCH 는 expected 에 enum 목록 전체를, actual 에 입력 값을 담으므로 둘 다 샌다.
+   */
+  const leakyTools: ToolDef[] = [
+    {
+      name: "get_weather",
+      inputSchema: {
+        type: "object",
+        properties: { units: { type: "string", enum: ["c", "f"] } },
+        required: ["units"],
+      },
+    },
+  ];
+  const leakySuite = () => {
+    const base = createBaselineSuite(leakyTools, { suiteId: "weather", suiteName: "날씨" }).suite;
+    return {
+      ...base,
+      cases: [
+        {
+          id: "units-case",
+          name: "단위",
+          operation: { type: "callTool", tool: "get_weather", input: { units: "secret-unit" } },
+          assertions: [{ type: "bodyMatchesSchema", schema: { type: "string", minLength: 1 } }],
+        },
+      ],
+    };
+  };
+
+  it("provider 경로의 specFindings 에 민감 값 원문이 남지 않는다", async () => {
+    // 검사는 치환 이전 객체로 해야 거짓 양성이 안 나지만(ADR-0018), 그 결과를 그대로 실으면
+    // 치환해서 감춘 값이 승인 화면의 경고 문장으로 되살아난다.
+    const result = await dispatchWithProviderSuite({
+      redaction: { sensitiveValues: ["c", "secret-unit"] },
+      tools: leakyTools,
+      providerSuite: leakySuite(),
+    });
+    if (result.status !== "preview") throw new Error(`preview 가 아니다: ${result.status}`);
+    const finding = result.preview.specFindings.inputContract.findings[0];
+    if (finding === undefined) throw new Error("ENUM_MISMATCH finding 이 필요합니다.");
+    expect(finding.code).toBe("ENUM_MISMATCH");
+    // 값 필드는 치환된다.
+    expect(finding.expected).toEqual([REDACTED, "f"]);
+    expect(finding.actual).toBe(REDACTED);
+    // 이름은 치환하지 않는다. 무엇을 고쳐야 하는지가 사라지면 문장이 쓸모를 잃는다.
+    expect(finding.path).toBe("input.units");
+    // preview 전체 어디에도 원문이 없다.
+    expect(JSON.stringify(result.preview)).not.toContain("secret-unit");
+    // 사람이 읽는 문장에도 없다.
+    expect(describeSpecFinding(finding)).not.toContain("secret-unit");
+  });
+
+  it("세션 경로의 specFindings 에도 민감 값 원문이 남지 않는다", async () => {
+    const result = await dispatchWithProviderSuite({
+      withSession: true,
+      redaction: { sensitiveValues: ["c", "secret-unit"] },
+      tools: leakyTools,
+      providerSuite: leakySuite(),
+    });
+    if (result.status !== "preview") throw new Error(`preview 가 아니다: ${result.status}`);
+    const finding = result.preview.specFindings.inputContract.findings[0];
+    if (finding === undefined) throw new Error("ENUM_MISMATCH finding 이 필요합니다.");
+    expect(finding.code).toBe("ENUM_MISMATCH");
+    expect(finding.expected).toEqual([REDACTED, "f"]);
+    expect(finding.actual).toBe(REDACTED);
+    expect(JSON.stringify(result.preview)).not.toContain("secret-unit");
+    expect(describeSpecFinding(finding)).not.toContain("secret-unit");
+  });
+
+  it("요청 준비 뒤 호출자가 tools 를 바꿔도 검사 결과가 그대로다", async () => {
+    // unredactedTools 를 참조로 들면 여기서 결과가 뒤집힌다. 요청 지문은 치환된 request 만
+    // 고정하므로 이 변화를 못 잡는다. 결정론성이 이 프로젝트의 핵심 가치다.
+    const mutable: ToolDef[] = [
+      {
+        name: "get_weather",
+        inputSchema: {
+          type: "object",
+          properties: { city: { type: "string" } },
+          required: ["city"],
+        },
+      },
+    ];
+    const base = createBaselineSuite(mutable, { suiteId: "weather", suiteName: "날씨" }).suite;
+    const result = await dispatchWithProviderSuite({
+      tools: mutable,
+      providerSuite: {
+        ...base,
+        cases: [
+          {
+            id: "seoul-weather",
+            name: "서울 날씨",
+            operation: { type: "callTool", tool: "get_weather", input: { citi: "서울" } },
+            assertions: [{ type: "bodyMatchesSchema", schema: { type: "string", minLength: 1 } }],
+          },
+        ],
+      },
+      mutateToolsAfterPrepare: (current) => {
+        // 오타를 정답으로 만드는 변형이다. 참조를 들고 있으면 REQUIRED_MISSING 이 사라진다.
+        const schema = current[0]?.inputSchema as {
+          properties: Record<string, unknown>;
+          required: string[];
+        };
+        schema.required = ["citi"];
+        schema.properties.citi = { type: "string" };
+        current.push({ name: "나중에 끼워 넣은 도구", inputSchema: { type: "object" } });
+      },
+    });
+    if (result.status !== "preview") throw new Error(`preview 가 아니다: ${result.status}`);
+    expect(result.preview.specFindings.inputContract.findings.map((f) => f.code)).toEqual([
+      "REQUIRED_MISSING",
+    ]);
   });
 });

@@ -156,7 +156,6 @@ export type SpecFindingCode =
   | "ENUM_MISMATCH"          // 선언된 enum 밖의 값이다
   | "SCHEMA_NOT_ANALYZABLE"  // 서버 스키마를 해석하지 못했다. 위반이 아니다
   // 단언 실질성
-  | "UNCONSTRAINED_SCHEMA"   // 제약이 하나도 없는 스키마
   | "VACUOUS_MIN_LENGTH"     // minLength: 0
   | "VACUOUS_MIN_ITEMS";     // minItems: 0
 
@@ -346,25 +345,24 @@ function normalizeInputSchema(schema: unknown): NormalizedInputSchema | null;
 
 `bodyMatchesSchema` 단언만 대상이다.
 
-**`UNCONSTRAINED_SCHEMA`** (`advisory`): 스키마에 아래 중 **하나도** 없을 때.
-
-```
-type  const  enum  required(길이 1 이상)  properties(키 1개 이상)  items
-minItems(1 이상)  minLength(1 이상)  maxLength  stringContains
-minimum  maximum  additionalProperties가 false
-```
-
-`type`만 있는 스키마는 실질적이다. 응답이 배열인지 객체인지 확인하는 것은 진짜 검증이다.
-`required: []`와 `properties: {}`는 제약으로 세지 않는다. 아무것도 요구하지 않기 때문이다.
-
 **`VACUOUS_MIN_LENGTH`** (`advisory`): `minLength`가 정확히 `0`. 모든 문자열이 통과한다.
 
 **`VACUOUS_MIN_ITEMS`** (`advisory`): `minItems`가 정확히 `0`. 모든 배열이 통과한다.
 
 두 경우 모두 다른 제약이 함께 있으면 스키마 전체는 실질적일 수 있다. 그래도 해당 키워드
-자체는 무의미하므로 `path`를 그 키워드로 찍어 낸다. `UNCONSTRAINED_SCHEMA`와 동시에 나지는
-않는다. `minLength: 0`이 있어도 제약으로 안 세므로 다른 제약이 없으면
-`UNCONSTRAINED_SCHEMA`만 나고, 다른 제약이 있으면 `VACUOUS_MIN_LENGTH`만 난다.
+자체는 무의미하므로 `path`를 그 키워드로 찍어 낸다. 제약 유무를 따지는 게이트는 없다. 위 두
+키워드는 그 자체로 통과가 보장된 단언이고, 그 사실은 같은 스키마에 다른 제약이 있든 없든
+참이기 때문이다.
+
+**제거된 코드: `UNCONSTRAINED_SCHEMA`**
+
+제약이 하나도 없는 스키마를 알리는 `UNCONSTRAINED_SCHEMA`(`advisory`)가 이 절의 초안에
+있었다. 소비자 경로에서 도달 불가라 제거했다. `packages/generate/src/authoring-session.ts:93`
+과 `packages/generate/src/baseline.ts:80` 이 후보를 받자마자 `validateMcpSuite`를 돌리고 위반이
+있으면 후보를 버리는데, `validateMcpSuite`는 빈 스키마를 중첩 레벨까지 거부한다(`{}`,
+`{minLength:0}`, `{required:[]}`, `{properties:{}}`, `{type:"object",properties:{a:{}}}` 전부
+거부). 즉 이 코드가 붙을 수 있는 명세는 검사에 도달하기 전에 이미 탈락한다. 판정 게이트였던
+`hasConstraint`도 이 코드가 유일한 목적이었으므로 함께 사라졌다.
 
 중첩 스키마(`properties.*`, `items`)도 순회한다. `path`는 `assertions[0].schema.properties.temp`
 처럼 전체 경로를 적는다.
@@ -405,7 +403,7 @@ UNDECLARED_FIELD
   (suggestion 있으면) {actual} 는 서버가 선언하지 않은 필드입니다. 비슷한 필드: {suggestion}
 
 TYPE_MISMATCH
-  {path} 의 타입이 다릅니다. 선언: {expected}, 명세: {actual}
+  {path} 의 타입이 다릅니다. 서버 선언: {expected}, 명세: {actual}
 
 ENUM_MISMATCH
   {path} 값 {actual} 는 선언된 값이 아닙니다. 허용: {expected}
@@ -413,9 +411,6 @@ ENUM_MISMATCH
 
 SCHEMA_NOT_ANALYZABLE
   {actual} 의 입력 스키마를 해석하지 못해 이 툴의 입력 검사를 건너뜁니다
-
-UNCONSTRAINED_SCHEMA
-  {path} 스키마에 제약이 없어 어떤 응답이든 통과합니다
 
 VACUOUS_MIN_LENGTH
   {path} 는 0이라 모든 문자열이 통과합니다
@@ -547,17 +542,20 @@ checkInputContract
 
 ```
 checkAssertionSubstance
-  · schema {} 는 UNCONSTRAINED_SCHEMA
+  · 제약이 없는 schema {} 는 finding 이 없다
   · schema { type: "array" } 는 finding 0건
-  · schema { required: [] } 는 UNCONSTRAINED_SCHEMA
-  · schema { properties: {} } 는 UNCONSTRAINED_SCHEMA
-  · schema { minLength: 0 } 는 UNCONSTRAINED_SCHEMA 만, VACUOUS_MIN_LENGTH 는 안 난다
-  · schema { type: "string", minLength: 0 } 는 VACUOUS_MIN_LENGTH 만 난다
+  · schema { required: [] } 는 finding 이 없다
+  · schema { properties: {} } 는 finding 이 없다
+  · schema { minLength: 0 } 은 type 없이도 VACUOUS_MIN_LENGTH
+  · type 이 있는 schema 의 minLength: 0 은 VACUOUS_MIN_LENGTH
   · schema { type: "array", minItems: 0 } 는 VACUOUS_MIN_ITEMS
   · schema { type: "array", minItems: 1 } 는 finding 0건
   · schema { additionalProperties: false } 는 finding 0건
-  · 중첩 properties 안의 빈 스키마도 잡고 path 가 assertions[0].schema.properties.temp 다
-  · items 안의 빈 스키마도 잡는다
+  · 중첩 properties 의 제약 없는 스키마도 finding 이 없다
+  · items 의 제약 없는 스키마도 finding 이 없다
+  · 중첩 properties 안의 VACUOUS_MIN_LENGTH 를 잡고 path 가 중첩 경로다
+  · items 안의 VACUOUS_MIN_ITEMS 도 잡는다
+  · VACUOUS_MIN_LENGTH 가 VACUOUS_MIN_ITEMS 보다 앞에 온다
   · isError 단언만 있는 케이스는 finding 0건
   · toolExists 단언만 있는 케이스는 finding 0건
   · 모든 finding 의 severity 가 "advisory"
@@ -592,7 +590,7 @@ checkAssertionSubstance
 
 ```
 describeSpecFinding
-  · 9개 코드 각각이 §7 의 문장과 정확히 일치한다
+  · 8개 코드 각각이 §7 의 문장과 정확히 일치한다
   · suggestion 이 있을 때와 없을 때 문장이 다르다
   · 반환 문자열에 개행이 없다
   · 문자열 expected 는 작은따옴표로 감싸이고 배열 expected 는 JSON 표기다

@@ -2,11 +2,21 @@ import { extname } from "node:path";
 import type { McpStdioConnection } from "@ohmymcp/core";
 import type {
   FinalizeRunnerExecutionOptions,
+  InputContractOptions,
   RunnerExecution,
   RunnerReport,
   RunSuiteOptions,
+  SpecFinding,
+  SpecFindingCode,
+  SpecFindingsResult,
   SuiteValidationIssue,
   SuiteValidationResult,
+  TestSuiteSpec,
+} from "@ohmymcp/runner";
+import {
+  describeSpecFinding,
+  checkAssertionSubstance as runnerCheckAssertionSubstance,
+  checkInputContract as runnerCheckInputContract,
 } from "@ohmymcp/runner";
 import {
   hasDiagnosticContent,
@@ -54,6 +64,12 @@ export interface TestCommandDependencies {
   startRunner(options: RunSuiteOptions): RunnerExecution;
   finalize(options: FinalizeRunnerExecutionOptions): Promise<RunnerReport>;
   renderReport(report: RunnerReport, options?: { color?: boolean }): string;
+  /**
+   * 비차단 진단의 주입 지점. 생략하면 `runner` 의 실제 함수를 쓴다. 필수로 두면 진입점의
+   * "런타임 의존성 없음" 경로가 이 두 필드를 채울 수 없다. 설계 문서 §7.
+   */
+  checkInputContract?(options: InputContractOptions): SpecFindingsResult;
+  checkAssertionSubstance?(suite: TestSuiteSpec): SpecFindingsResult;
   colorEnabled: boolean;
   writeStdout(text: string): void;
   writeStderr(text: string): void;
@@ -202,6 +218,45 @@ const escapeTerminalText = (value: string): string =>
       ? `\\u${codePoint.toString(16).padStart(4, "0")}`
       : character;
   }).join("");
+/**
+ * 참고 문장의 머리글 종류. 검사 종류가 곧 사용자가 고칠 곳이다. `skipped` 는 고칠 것이 없다는
+ * 사실 자체를 알리는 종류라서 위반 둘과 갈린다.
+ */
+type FindingGroup = "inputContract" | "assertionSubstance" | "skipped";
+/**
+ * finding 코드를 검사 종류로 가른다. `Record<SpecFindingCode, …>` 라서 `runner` 가 코드를
+ * 늘리면 여기서 타입 오류가 난다. 문자열 배열로 두면 새 코드가 조용히 한쪽으로 흘러간다.
+ */
+const FINDING_GROUP: Readonly<Record<SpecFindingCode, FindingGroup>> = {
+  TOOL_NOT_DECLARED: "inputContract",
+  REQUIRED_MISSING: "inputContract",
+  UNDECLARED_FIELD: "inputContract",
+  TYPE_MISMATCH: "inputContract",
+  ENUM_MISMATCH: "inputContract",
+  SCHEMA_NOT_ANALYZABLE: "skipped",
+  VACUOUS_MIN_LENGTH: "assertionSubstance",
+  VACUOUS_MIN_ITEMS: "assertionSubstance",
+};
+/**
+ * 머리글은 검사 종류마다 다르다. `minLength: 0` 은 입력이 아니라 단언의 문제이고,
+ * `SCHEMA_NOT_ANALYZABLE` 은 명세가 아니라 서버 스키마를 못 읽었다는 뜻이다. 둘 중 어느
+ * 것이든 입력 머리글 아래 붙이면 읽는 사람이 멀쩡한 입력을 고치러 간다. 설계 문서 §7.2.
+ */
+const FINDING_HEADING: Readonly<Record<FindingGroup, (caseId: string) => string>> = {
+  inputContract: (caseId) => `참고: ${caseId} 의 입력이 서버 선언과 다릅니다`,
+  assertionSubstance: (caseId) => `참고: ${caseId} 의 단언은 무엇이 와도 통과합니다`,
+  skipped: (caseId) => `참고: ${caseId} 의 입력 검사를 건너뛰었습니다`,
+};
+/**
+ * 위반이 먼저, 건너뜀이 맨 뒤다. 위반 사이에서는 입력 계약이 먼저다. 명세를 고칠 때 입력이
+ * 먼저 맞아야 단언을 볼 수 있다. 건너뜀이 맨 뒤인 이유는 그것만 있을 때 위에 아무 위반도
+ * 없다는 사실이 먼저 읽혀야 하기 때문이다.
+ */
+const FINDING_GROUP_ORDER: readonly FindingGroup[] = [
+  "inputContract",
+  "assertionSubstance",
+  "skipped",
+];
 function format(failure: CliFailure): string {
   const code =
     failure.coreCode === undefined ? failure.code : `${failure.code}/${failure.coreCode}`;
@@ -413,6 +468,18 @@ export async function runCli(
     if (block === "") return;
     dependencies.writeStderr(`\n${block}`);
   };
+  /**
+   * 비차단 진단용 툴 목록. 실패하면 조용히 빈 배열로 둔다. 로그도 남기지 않는다. 진단이 실행을
+   * 깨뜨리면 안 되고, 실패 원인과 무관한 줄이 보고서에 섞이면 정작 필요한 줄이 안 읽힌다.
+   * 설계 문서 §7.1.
+   */
+  const tools = await (async () => {
+    try {
+      return await connection.client.listTools();
+    } catch {
+      return [];
+    }
+  })();
   const shutdown = {
     client: connection.client,
     close: () => connection.close(),
@@ -447,6 +514,40 @@ export async function runCli(
     return failed;
   }
   const allPassed = finalReport.status === "passed";
+  /**
+   * 툴 목록이 비면 입력 계약 대조는 건너뛴다. 목록이 비었을 때 대조하면 모든 케이스가
+   * `TOOL_NOT_DECLARED` 로 걸려 실패 원인과 무관한 줄만 늘어난다. 단언 실질성은 툴이 필요
+   * 없으므로 항상 돈다. 표시는 실패한 케이스에 한한다. 설계 문서 §7.
+   *
+   * 검사가 던져도 판정과 exit code 는 바뀌지 않아야 하므로 삼킨다. `validated.value` 는 이미
+   * `validateMcpSuite` 를 통과했으니 도달할 일이 없는 경로이고, 도달했다면 그것은 비차단
+   * 진단의 결함이지 대상 서버의 결함이 아니다.
+   */
+  const specFindings: readonly SpecFinding[] = (() => {
+    /**
+     * 실패한 케이스의 버킷을 보고서의 케이스 순서로 먼저 만든다. 두 검사 결과를 이어 붙인
+     * 뒤에 `caseId` 로 묶으면 앞 케이스에 단언 finding 만 있고 뒤 케이스에 입력 계약 finding
+     * 이 있을 때 뒤 케이스가 먼저 들어와 순서가 뒤집힌다. 케이스 사이 순서는 검사 종류가
+     * 아니라 보고서가 정한다. 한 케이스 안의 블록 순서는 `FINDING_GROUP_ORDER` 가 맡는다.
+     * 없는 키를 만들지 않으므로 버킷에 없는 caseId 는 그대로 걸러진다.
+     */
+    const buckets = new Map<string, SpecFinding[]>();
+    for (const item of finalReport.cases)
+      if (item.status !== "passed") buckets.set(item.spec.id, []);
+    try {
+      const inputContract = dependencies.checkInputContract ?? runnerCheckInputContract;
+      const assertionSubstance =
+        dependencies.checkAssertionSubstance ?? runnerCheckAssertionSubstance;
+      const found = [
+        ...(tools.length === 0 ? [] : inputContract({ suite: validated.value, tools }).findings),
+        ...assertionSubstance(validated.value).findings,
+      ];
+      for (const finding of found) buckets.get(finding.caseId)?.push(finding);
+      return [...buckets.values()].flat();
+    } catch {
+      return [];
+    }
+  })();
   try {
     if (input.json) {
       /**
@@ -458,7 +559,20 @@ export async function runCli(
         approval: SpecApprovalState;
         fingerprint: string;
         approvedFingerprint?: string;
-      } = { approval: specApproval.state, fingerprint: specApproval.fingerprint };
+        findings: readonly { code: string; severity: string; caseId: string; path: string }[];
+      } = {
+        approval: specApproval.state,
+        fingerprint: specApproval.fingerprint,
+        // 문장은 담지 않는다. 문장은 사람이 읽는 출력의 것이고 기계는 code 로 분기한다.
+        // 키는 억제 규칙과 무관하게 항상 있다. 조건부로 사라지면 소비자가 분기를 하나 더 쓴다.
+        // 설계 문서 §7.3.
+        findings: specFindings.map(({ code, severity, caseId, path }) => ({
+          code,
+          severity,
+          caseId,
+          path,
+        })),
+      };
       if (specApproval.approvedFingerprint !== undefined)
         spec.approvedFingerprint = specApproval.approvedFingerprint;
       dependencies.writeStdout(`${JSON.stringify({ ...finalReport, spec }, null, 2)}\n`);
@@ -466,6 +580,29 @@ export async function runCli(
       dependencies.writeStdout(
         dependencies.renderReport(finalReport, { color: dependencies.colorEnabled }),
       );
+      /**
+       * 참고 문장은 보고서 뒤, 명세 승인 블록 앞이다. 케이스마다 한 블록으로 묶는다.
+       * 순서는 `runner` 가 정한 finding 순서이고 여기서 다시 정렬하지 않는다. 설계 문서 §7.2.
+       */
+      if (specFindings.length > 0) {
+        const byCase = new Map<string, SpecFinding[]>();
+        for (const finding of specFindings) {
+          const list = byCase.get(finding.caseId) ?? [];
+          list.push(finding);
+          byCase.set(finding.caseId, list);
+        }
+        for (const [caseId, list] of byCase)
+          for (const group of FINDING_GROUP_ORDER) {
+            const grouped = list.filter((finding) => FINDING_GROUP[finding.code] === group);
+            if (grouped.length === 0) continue;
+            // caseId 는 남이 쓴 명세에서 온다. 다른 표시 항목과 같은 이스케이프를 쓴다.
+            dependencies.writeStdout(
+              `\n${FINDING_HEADING[group](escapeTerminalText(caseId))}\n${grouped
+                .map((finding) => `  → ${describeSpecFinding(finding)}\n`)
+                .join("")}`,
+            );
+          }
+      }
       // 지문은 우리가 만든 hex 라 제어 문자가 섞일 수 없다. 이스케이프가 필요 없는 유일한
       // 표시 항목이다. 앞의 빈 줄은 진단 블록과 같은 레이아웃 규칙이다. 설계 문서 §7.2.
       if (shouldShowSpecApproval(specApproval, allPassed))

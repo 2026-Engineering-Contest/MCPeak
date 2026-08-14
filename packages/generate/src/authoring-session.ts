@@ -1,5 +1,6 @@
+import type { ToolDef } from "@ohmymcp/core";
 import type { TestCaseSpec, TestSuiteSpec } from "@ohmymcp/runner";
-import { validateMcpSuite } from "@ohmymcp/runner";
+import { checkAssertionSubstance, checkInputContract, validateMcpSuite } from "@ohmymcp/runner";
 import type {
   ApplyAuthoringChangesResult,
   AuthoringCandidateBinding,
@@ -8,6 +9,7 @@ import type {
   AuthoringDraft,
   AuthoringExecutionSnapshot,
   AuthoringSessionView,
+  CandidateSpecFindings,
   CaseProvenance,
   FinalizeAuthoringResult,
   GenerateReviewApproval,
@@ -18,7 +20,73 @@ import type {
 } from "./authoring-types.js";
 import type { BaselineGenerationResult } from "./baseline.js";
 import { deepFreeze, sha256 } from "./canonical.js";
-import { redactAuthoringSuite } from "./redaction.js";
+import { redactAuthoringSuite, sanitizeRedactable } from "./redaction.js";
+
+/**
+ * finding 한 건과 그 코드. `SpecFindingsResult` 에서 뽑아 쓴다. `runner` 에서 새 심볼을
+ * 가져오면 ADR-0009 의 승인 목록을 넓혀야 하는데, 이미 승인된 타입에서 파생되는 것이라
+ * 새 의존이 아니다.
+ */
+type SpecFinding = CandidateSpecFindings["inputContract"]["findings"][number];
+type SpecFindingCode = SpecFinding["code"];
+
+/**
+ * 코드의 `expected` · `actual` · `suggestion` 이 **값**을 담는지. `Record` 라서 `runner` 가
+ * 코드를 늘리면 여기서 타입 오류가 난다. 배열로 두면 값을 담는 새 코드가 조용히 치환을
+ * 빠져나가고, 그것은 치환해서 감춘 값이 화면에 뜨는 결과가 된다.
+ *
+ * 값을 담는 것은 `ENUM_MISMATCH` 하나다. `expected` 는 서버가 선언한 enum 값 목록,
+ * `actual` 은 명세에 적힌 입력 값, `suggestion` 은 그 목록에서 고른 문자열이다. 나머지는
+ * 전부 툴 이름·필드 이름·타입 이름이라 치환 대상이 아니다. 이름까지 가리면 무엇을 고쳐야
+ * 하는지가 사라져 문장이 쓸모를 잃는다. `path` 도 같은 이유로 건드리지 않는다.
+ */
+const CARRIES_VALUE: Readonly<Record<SpecFindingCode, boolean>> = {
+  TOOL_NOT_DECLARED: false,
+  SCHEMA_NOT_ANALYZABLE: false,
+  REQUIRED_MISSING: false,
+  UNDECLARED_FIELD: false,
+  TYPE_MISMATCH: false,
+  ENUM_MISMATCH: true,
+  VACUOUS_MIN_LENGTH: false,
+  VACUOUS_MIN_ITEMS: false,
+};
+
+/** 치환 옵션. `redactAuthoringSuite` 에 넘기는 것과 같은 값을 그대로 쓴다. */
+type RedactionOptions = Parameters<typeof redactAuthoringSuite>[1];
+
+/**
+ * finding 의 값 필드를 치환한다. 검사 자체는 값 치환 **이전** 객체로 해야 `TYPE_MISMATCH` ·
+ * `ENUM_MISMATCH` 거짓 양성이 안 난다(ADR-0018). 그런데 그 결과를 그대로 candidate 에 실으면
+ * 치환해서 감춘 값이 승인 화면의 경고 문장으로 되살아난다. 검사와 표시 사이에서 한 번 걸러
+ * 둘을 모두 만족시킨다.
+ *
+ * 치환 정책을 새로 만들지 않는다. `redactAuthoringSuite` 가 쓰는 것과 같은
+ * `sanitizeRedactable` 을 부르므로 `sensitiveValues` 와 `DEFAULT_SENSITIVE_KEYS` 가 그대로
+ * 적용된다. 두 후보 경로(로컬 · provider)가 이 함수 하나를 공유한다.
+ */
+export function redactSpecFindings(
+  result: CandidateSpecFindings["inputContract"],
+  options: RedactionOptions,
+): CandidateSpecFindings["inputContract"] {
+  const value = (input: SpecFinding["actual"]): SpecFinding["actual"] =>
+    input === undefined ? undefined : (sanitizeRedactable(input, options) as SpecFinding["actual"]);
+  return {
+    findings: result.findings.map((finding) => {
+      if (!CARRIES_VALUE[finding.code]) return finding;
+      // 키가 없던 것을 만들지 않는다. 소비자가 존재 여부로 분기한다(input-contract.ts 의
+      // withSuggestion 과 같은 계약이다).
+      return {
+        ...finding,
+        ...(finding.expected === undefined ? {} : { expected: value(finding.expected) }),
+        ...(finding.actual === undefined ? {} : { actual: value(finding.actual) }),
+        ...(finding.suggestion === undefined
+          ? {}
+          : { suggestion: String(sanitizeRedactable(finding.suggestion, options)) }),
+      };
+    }),
+    totalFindings: result.totalFindings,
+  };
+}
 
 type SessionState = {
   baseline: AuthoringDraft;
@@ -110,10 +178,29 @@ function candidateFor(options: LocalCandidateReviewOptions): LocalCandidateRevie
     };
   const toolIssues = knownTools(value, options.tools);
   if (toolIssues.length > 0) return { status: "invalid", issues: toolIssues };
-  const redacted = redactAuthoringSuite(value, {
+  // 검사는 값 치환 이전 객체로 한다. 치환 후에 하면 숫자 필드가 '[REDACTED]' 문자열이 되어
+  // TYPE_MISMATCH 거짓 양성이 난다. 설계 문서 §3.
+  // value 는 여기서 이미 validateMcpSuite · identity · 툴 allowlist 를 통과했다. 그 앞으로
+  // 옮기면 검증 안 된 객체가 검사 안으로 들어가 던진다.
+  const contractTools: ToolDef[] = options.tools.map((tool) => ({
+    name: tool.name,
+    inputSchema: tool.inputSchema,
+  }));
+  // suite 치환과 finding 치환이 같은 옵션을 써야 한다. 두 벌로 두면 한쪽만 고쳐져 조용히
+  // 어긋난다.
+  const redaction = {
     ...options.redaction,
     sensitiveValues: options.sensitiveValues ?? options.redaction?.sensitiveValues,
+  };
+  // 검사는 치환 이전 객체로 하고(ADR-0018), 결과를 싣기 직전에 값 필드만 치환한다.
+  const specFindings = deepFreeze({
+    inputContract: redactSpecFindings(
+      checkInputContract({ suite: value, tools: contractTools }),
+      redaction,
+    ),
+    assertionSubstance: redactSpecFindings(checkAssertionSubstance(value), redaction),
   });
+  const redacted = redactAuthoringSuite(value, redaction);
   const frozenSuite = cloneFreeze(redacted.suite);
   const preview = deepFreeze({
     result: { status: "candidate" as const, suite: frozenSuite, questions: [] },
@@ -122,6 +209,7 @@ function candidateFor(options: LocalCandidateReviewOptions): LocalCandidateRevie
     executable: redacted.redactedPaths.length === 0,
     requiresApproval: true as const,
     fingerprint: sha256(frozenSuite),
+    specFindings,
     binding: binding(),
   });
   candidates.set(preview, {

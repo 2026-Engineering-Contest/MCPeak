@@ -3,6 +3,7 @@ import { basename, dirname, normalize } from "node:path";
 import { Readable, Writable } from "node:stream";
 import type { McpStdioConnection, ToolDef } from "@ohmymcp/core";
 import {
+  type AuthoringDiffPreview,
   applyAuthoringChanges,
   createAuthoringDiff,
   createAuthoringSession,
@@ -13,9 +14,10 @@ import {
   type PublicProviderFailure,
   prepareAuthoringRequest,
   reviewLocalAuthoringCandidate,
+  type SanitizedAuthoringCandidate,
   sha256,
 } from "@ohmymcp/generate";
-import type { CallToolCaseSpec, TestCaseSpec, TestSuiteSpec } from "@ohmymcp/runner";
+import type { CallToolCaseSpec, SpecFinding, TestCaseSpec, TestSuiteSpec } from "@ohmymcp/runner";
 import { suiteFingerprint, validateMcpSuite } from "@ohmymcp/runner";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -705,6 +707,248 @@ describe("AI 대화형 검토", () => {
     expect(d.io.write).toHaveBeenCalledWith("변경을 적용하지 않았습니다: redactionRequired\n");
     expect(d.value.openTemp).not.toHaveBeenCalled();
   });
+  /**
+   * 가짜 ReviewIO 의 mock 호출 인자를 문자열로 모은다. reviewDeps 의 vi.fn 은 파라미터를
+   * 선언하지 않아 calls 원소가 빈 튜플로 추론된다. 여기서 한 번만 좁힌다.
+   */
+  const writtenText = (calls: readonly unknown[][]): string =>
+    calls.map((call) => String(call[0])).join("");
+  const confirmMessages = (calls: readonly unknown[][]): string[] =>
+    calls.map((call) => String(call[0]));
+
+  /** 문장 검사에 필요한 필드만 넘기고 나머지는 기본값을 쓴다. */
+  const finding = (over: Partial<SpecFinding> & Pick<SpecFinding, "code">): SpecFinding => ({
+    severity: "blocking",
+    caseId: "seoul-weather",
+    path: "input.city",
+    ...over,
+  });
+
+  /**
+   * specFindings 표시 분기만 태우기 위한 준비. candidate 와 diff 를 리터럴로 만들고 주입한다.
+   * 실제 generate 함수를 부르면 findings 를 원하는 caseId 로 고정할 수 없고, 이 테스트가
+   * 지키려는 것은 표시와 게이트 조건이지 검사 로직이 아니다(그쪽은 runner 테스트가 덮는다).
+   *
+   * diff 는 change-001(다른 케이스) 과 change-002(seoul-weather) 를 낸다.
+   */
+  function findingsDeps(
+    choices: string[],
+    inputs: string[],
+    confirms: boolean[],
+    specFindings: { inputContract: SpecFinding[]; assertionSubstance: SpecFinding[] },
+  ) {
+    const d = reviewDeps(choices, inputs, confirms);
+    const source = d.baseline.suite.cases[0];
+    if (source === undefined) throw new Error("baseline case가 필요합니다.");
+    const busan: TestCaseSpec = { ...source, id: "busan-weather" };
+    const seoul: TestCaseSpec = { ...source, id: "seoul-weather" };
+    const candidate = {
+      result: { status: "candidate" as const, suite: d.baseline.suite, questions: [] },
+      byteLength: 0,
+      redactedPaths: [],
+      executable: true,
+      requiresApproval: true as const,
+      fingerprint: "f".repeat(64),
+      specFindings: {
+        inputContract: { findings: specFindings.inputContract, totalFindings: 0 },
+        assertionSubstance: { findings: specFindings.assertionSubstance, totalFindings: 0 },
+      },
+      binding: {},
+    } as unknown as SanitizedAuthoringCandidate;
+    const diff = {
+      changes: [
+        {
+          id: "change-001",
+          type: "replaceCase" as const,
+          caseId: "busan-weather",
+          approvedIndex: 0,
+          before: busan,
+          after: busan,
+        },
+        {
+          id: "change-002",
+          type: "replaceCase" as const,
+          caseId: "seoul-weather",
+          approvedIndex: 1,
+          before: seoul,
+          after: seoul,
+        },
+      ],
+      candidate: d.baseline.suite,
+      candidateFingerprint: candidate.fingerprint,
+      requiresApproval: true as const,
+      binding: candidate.binding,
+    } as unknown as AuthoringDiffPreview;
+    let applied = 0;
+    Object.assign(d.value, {
+      reviewLocalAuthoringCandidate: vi.fn(() => ({ status: "preview", preview: candidate })),
+      createAuthoringDiff: vi.fn(() => diff),
+      applyAuthoringChanges: vi.fn(() => {
+        applied += 1;
+        return { applied: true, draft: { revision: 1 } };
+      }),
+    });
+    d.value.readFile = vi.fn(async () =>
+      new TextEncoder().encode(JSON.stringify(d.baseline.suite)),
+    );
+    return { ...d, appliedCount: () => applied };
+  }
+
+  /** seoul-weather 케이스에만 걸린 위반 둘. change-001 쪽 케이스는 깨끗하다. */
+  const twoViolations = {
+    inputContract: [
+      finding({ code: "REQUIRED_MISSING", expected: "city", suggestion: "citi" }),
+      finding({ code: "UNDECLARED_FIELD", actual: "citi", suggestion: "city", path: "input.citi" }),
+    ],
+    assertionSubstance: [],
+  };
+
+  it("선택한 change 의 케이스에 걸린 finding 만 센다", async () => {
+    // change-001 은 깨끗하고 change-002 만 위반이다. change-001 만 고르면 경고가 없다.
+    const d = findingsDeps(
+      ["edit", "select", "cancel"],
+      ["candidate.json", "change-001"],
+      [true],
+      twoViolations,
+    );
+    await runGenerateCommand(interactiveArgv, d.value);
+    const out = writtenText(d.io.write.mock.calls);
+    expect(out).not.toContain("입력 계약 위반");
+    expect(confirmMessages(d.io.confirm.mock.calls)).toEqual(["선택한 변경을 적용할까요?"]);
+  });
+
+  it("위반 케이스를 고르면 문장과 재확인이 나온다", async () => {
+    const d = findingsDeps(
+      ["edit", "select", "cancel"],
+      ["candidate.json", "change-002"],
+      [true, true],
+      twoViolations,
+    );
+    await runGenerateCommand(interactiveArgv, d.value);
+    const out = writtenText(d.io.write.mock.calls);
+    expect(out).toContain("입력 계약 위반 2건 (선택한 변경 기준)");
+    expect(out).toContain("  → change-002 seoul-weather\n");
+    expect(out).toContain("필수 필드 'city' 가 입력에 없습니다. 비슷한 필드: 'citi'");
+    expect(out).toContain("'citi' 는 서버가 선언하지 않은 필드입니다. 비슷한 필드: 'city'");
+    expect(confirmMessages(d.io.confirm.mock.calls)).toEqual([
+      "위반 2건이 남아 있습니다. 그래도 적용합니까?",
+      "선택한 변경을 적용할까요?",
+    ]);
+  });
+
+  it("재확인에서 거부하면 적용하지 않는다", async () => {
+    const d = findingsDeps(
+      ["edit", "select", "cancel"],
+      ["candidate.json", "change-002"],
+      [false],
+      twoViolations,
+    );
+    await runGenerateCommand(interactiveArgv, d.value);
+    expect(d.appliedCount()).toBe(0);
+    expect(confirmMessages(d.io.confirm.mock.calls)).toEqual([
+      "위반 2건이 남아 있습니다. 그래도 적용합니까?",
+    ]);
+  });
+
+  it("SCHEMA_NOT_ANALYZABLE 은 위반 개수에서 빠지고 별도 줄로 나온다", async () => {
+    const d = findingsDeps(["edit", "apply-all", "cancel"], ["candidate.json"], [true], {
+      inputContract: [
+        finding({ code: "SCHEMA_NOT_ANALYZABLE", severity: "advisory", actual: "weather" }),
+      ],
+      assertionSubstance: [],
+    });
+    await runGenerateCommand(interactiveArgv, d.value);
+    const out = writtenText(d.io.write.mock.calls);
+    expect(out).toContain("해석하지 못한 서버 스키마 1건은 검사에서 빠졌습니다.");
+    expect(out).not.toContain("입력 계약 위반");
+    expect(confirmMessages(d.io.confirm.mock.calls)).toEqual(["선택한 변경을 적용할까요?"]);
+  });
+
+  it("finding 이 없으면 아무 줄도 늘지 않는다", async () => {
+    const d = findingsDeps(["edit", "apply-all", "cancel"], ["candidate.json"], [true], {
+      inputContract: [],
+      assertionSubstance: [],
+    });
+    await runGenerateCommand(interactiveArgv, d.value);
+    const out = writtenText(d.io.write.mock.calls);
+    expect(out).not.toContain("입력 계약");
+    expect(out).not.toContain("검사에서 빠졌습니다");
+    expect(confirmMessages(d.io.confirm.mock.calls)).toEqual(["선택한 변경을 적용할까요?"]);
+  });
+
+  it("caseId 가 없는 change 만 고르면 경고가 없다", async () => {
+    // suiteMetadata · caseOrder 는 caseId 집합에 아무것도 넣지 않는다. 존재하지 않는 change ID
+    // 를 골라 같은 상태(빈 집합)를 만든다.
+    const d = findingsDeps(
+      ["edit", "select", "cancel"],
+      ["candidate.json", "change-999"],
+      [true],
+      twoViolations,
+    );
+    await runGenerateCommand(interactiveArgv, d.value);
+    const out = writtenText(d.io.write.mock.calls);
+    expect(out).not.toContain("입력 계약 위반");
+  });
+
+  it("단언 실질성 finding 은 입력 계약과 갈라 세고 재확인은 합계로 한 번만 받는다", async () => {
+    // VACUOUS_MIN_LENGTH 는 입력 문제가 아니다. '입력 계약 위반' 머리글 아래 붙으면 읽는
+    // 사람이 입력을 고치러 간다. 머리글을 갈라 어디를 고쳐야 하는지가 보이게 한다.
+    const d = findingsDeps(
+      ["edit", "select", "cancel"],
+      ["candidate.json", "change-002"],
+      [true, true],
+      {
+        inputContract: [finding({ code: "REQUIRED_MISSING", expected: "city" })],
+        assertionSubstance: [
+          finding({
+            code: "VACUOUS_MIN_LENGTH",
+            severity: "advisory",
+            path: "assertions[0].schema.minLength",
+          }),
+        ],
+      },
+    );
+    await runGenerateCommand(interactiveArgv, d.value);
+    const out = writtenText(d.io.write.mock.calls);
+    expect(out).toContain("입력 계약 위반 1건 (선택한 변경 기준)");
+    expect(out).toContain("항상 통과하는 단언 1건 (선택한 변경 기준)");
+    expect(out).toContain("필수 필드 'city' 가 입력에 없습니다");
+    expect(out).toContain("assertions[0].schema.minLength 는 0이라 모든 문자열이 통과합니다");
+    // 입력 계약 블록이 먼저다.
+    expect(out.indexOf("입력 계약 위반")).toBeLessThan(out.indexOf("항상 통과하는 단언"));
+    // 종류가 둘이어도 판단은 하나다. 확인을 두 번 받지 않는다.
+    expect(confirmMessages(d.io.confirm.mock.calls)).toEqual([
+      "위반 2건이 남아 있습니다. 그래도 적용합니까?",
+      "선택한 변경을 적용할까요?",
+    ]);
+  });
+
+  it("단언 실질성 finding 만 있으면 입력 계약 머리글이 안 나온다", async () => {
+    const d = findingsDeps(
+      ["edit", "select", "cancel"],
+      ["candidate.json", "change-002"],
+      [true, true],
+      {
+        inputContract: [],
+        assertionSubstance: [
+          finding({
+            code: "VACUOUS_MIN_ITEMS",
+            severity: "advisory",
+            path: "assertions[0].schema.minItems",
+          }),
+        ],
+      },
+    );
+    await runGenerateCommand(interactiveArgv, d.value);
+    const out = writtenText(d.io.write.mock.calls);
+    expect(out).not.toContain("입력 계약 위반");
+    expect(out).toContain("항상 통과하는 단언 1건 (선택한 변경 기준)");
+    expect(confirmMessages(d.io.confirm.mock.calls)).toEqual([
+      "위반 1건이 남아 있습니다. 그래도 적용합니까?",
+      "선택한 변경을 적용할까요?",
+    ]);
+  });
+
   it("최종 fingerprint 승인 뒤에만 JSON을 저장한다", async () => {
     const d = reviewDeps(["save", "cancel"], [], [false]);
     await runGenerateCommand(interactiveArgv, d.value);

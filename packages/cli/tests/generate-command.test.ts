@@ -256,6 +256,38 @@ describe("runGenerateCommand", () => {
       "unlink",
     ]);
   });
+  /**
+   * 저장이 끝난 뒤에 커버리지가 실패하면 저장 실패로 보고하면 안 된다. 그러면 사용자가 저장을
+   * 다시 시도하고 이번에는 OUTPUT_EXISTS 를 만난다. 파일은 이미 있다.
+   */
+  it("커버리지 렌더링이 실패해도 저장은 성공으로 보고한다", async () => {
+    const d = deps({
+      createBaselineSuite: vi.fn(
+        () =>
+          ({
+            suite,
+            baselineFingerprint: "baseline",
+            suiteFingerprint: "suite",
+            policyVersion: "schema-baseline-v2" as const,
+            // renderCoverage 가 순회하다 던지는 모양. tools 가 배열이 아니다.
+            coverage: { tools: null, verified: 0, total: 0 },
+          }) as never,
+      ),
+    });
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    d.value.writeStdout = (text) => stdout.push(text);
+    d.value.writeStderr = (text) => stderr.push(text);
+    expect(await runGenerateCommand(argv, d.value)).toBe(0);
+    expect(stdout.join("")).toContain("baseline suite를 저장했습니다");
+    const output = stderr.join("");
+    expect(output).toContain("GENERATE_COVERAGE_UNAVAILABLE");
+    expect(output).toContain("명세는 저장했지만");
+    expect(output).not.toContain("GENERATE_FAILED");
+    // 저장은 끝까지 갔다. link 와 unlink 가 그 증거다.
+    expect(normalizedEvents(d.events)).toContain("link");
+    expect(normalizedEvents(d.events)).toContain("unlink");
+  });
   it("listTools 실패는 열린 connection을 강제 종료한다", async () => {
     const d = deps();
     d.connection.client.listTools = vi.fn(async () => {

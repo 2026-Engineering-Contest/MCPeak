@@ -55,6 +55,10 @@ Step 에서 켠다.
 - `matchCoveredAxes` 는 `analyzeInputSchema` 를 케이스마다 다시 부른다. T7 이 케이스 N개를
   돌리면 같은 툴 스키마를 N번 정규화한다. 결정론에는 영향이 없고 성능만의 문제다. 필요하면
   T7 에서 호출자가 캐시한다.
-- 중복 툴 이름(`duplicateTool`)은 이 함수가 모른다. 툴 하나만 받기 때문이다. T7 이 중복 툴의
-  케이스를 이 함수에 넘기면 축을 덮은 것으로 세어진다. 축 분모 쪽은 `deriveContractAxes` 가
-  `duplicated` 로 0을 내므로, 호출자가 중복 툴을 아예 건너뛰지 않으면 분자만 늘어난다.
+- 중복 툴 이름(`duplicateTool`)은 이 함수가 모른다. 툴 하나만 받기 때문이다.
+  **T7 구현으로 무해함이 확인됐다.** `coverage.ts` 의 `computeCoverage` 는 `AxisCoverage` 를
+  `derived.axes` 로만 만들고 `matchCoveredAxes` 결과는 그 축에 `caseId` 를 채우는 데만 쓴다.
+  `verified` 와 `total` 도 그 배열에서 세므로 중복 툴이면 축이 빈 배열이라 채울 자리가 없고
+  분자도 0이다. 즉 분자만 늘어나는 상황은 `computeCoverage` 경로에서는 생기지 않는다.
+  남는 위험은 **이 함수를 직접 부르는 다른 호출자**다. 축 목록과 짝지어 쓰지 않고 반환 개수를
+  그대로 세면 중복 툴에서 과대 집계가 된다. `computeCoverage` 의 구조가 그 짝지음을 강제한다.

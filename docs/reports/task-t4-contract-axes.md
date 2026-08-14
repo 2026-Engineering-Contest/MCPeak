@@ -20,7 +20,8 @@ Step 1~6 그대로 구현했다. 규칙은 설계서 §6.3 · §11.1 이다.
 - 수정 `packages/runner/tests/contract-axes.test.ts`
   - T3 에서 `it.todo` 로 남긴 "checkInputContract 가 침묵하는 케이스에서도 축을 낸다" 를 `it` 으로
     켰다. 그 테스트가 쓰는 `checkInputContract` import 를 추가했다. 다른 단언은 안 고쳤다.
-- 신규 `docs/adr/0021-거절-기대-케이스의-입력-계약-대조-제외.md` (상태 `제안`)
+- 신규 `docs/adr/0021-거절-기대-케이스의-입력-계약-대조-제외.md` (작성 시점 상태 `제안`.
+  이후 파트 ① 오너 승인으로 `채택` 이 됐다. 근거는 그 ADR 의 승인 절에 있다)
 
 ## 검증
 

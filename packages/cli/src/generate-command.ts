@@ -596,9 +596,12 @@ async function runInteractiveReview(
           await saveSuite(input, finalSuite, final.snapshot.fingerprint, deps);
           // 최종 suite 는 baseline 과 다르다. 사용자가 케이스를 지웠거나 AI 후보를 적용했을 수
           // 있으므로 저장한 그 suite 로 다시 계산한다.
-          writeCoverageReport(
+          //
+          // 저장 뒤이므로 커버리지 실패를 저장 실패로 보고하지 않는다. reportCoverageSafely 가
+          // 자기 오류 경계를 갖는다.
+          reportCoverageSafely(
             deps,
-            deps.computeCoverage?.({ suite: finalSuite, tools }),
+            () => deps.computeCoverage?.({ suite: finalSuite, tools }),
             finalSuite,
           );
           return 0;
@@ -837,6 +840,31 @@ function writeCoverageReport(
   if (notice !== "") deps.writeStdout(notice);
 }
 
+/**
+ * 커버리지 보고를 저장과 다른 오류 경계에 둔다.
+ *
+ * 파일을 저장한 **뒤에** 커버리지 계산이나 렌더링이 실패할 수 있다. 그것을 저장 실패로 보고하면
+ * 사용자가 저장을 다시 시도하고 이번에는 `OUTPUT_EXISTS` 를 만난다. 저장은 성공했고 부가 정보만
+ * 못 만든 것이므로 종료 코드를 바꾸지 않고 경고만 낸다.
+ *
+ * coverage 를 값이 아니라 thunk 로 받는 이유는 `computeCoverage` 자체가 던지는 경우까지 이 경계
+ * 안에 넣기 위해서다.
+ */
+function reportCoverageSafely(
+  deps: GenerateCommandDependencies,
+  coverage: () => CoverageResult | undefined,
+  suite: TestSuiteSpec,
+): void {
+  try {
+    writeCoverageReport(deps, coverage(), suite);
+  } catch {
+    deps.writeStderr(
+      "경고 [GENERATE_COVERAGE_UNAVAILABLE]: 명세는 저장했지만 커버리지를 계산하지 못했습니다.\n" +
+        "해결: 저장된 명세는 그대로 `ohmymcp test` 로 쓸 수 있습니다. 커버리지만 다시 보려면 다른 --out 경로로 generate 를 실행하세요.\n",
+    );
+  }
+}
+
 export async function runGenerateCommand(
   argv: readonly string[],
   deps: GenerateCommandDependencies,
@@ -877,7 +905,8 @@ export async function runGenerateCommand(
     await saveSuite(input, finalSuite, final.snapshot.fingerprint, deps);
     deps.writeStdout(`baseline suite를 저장했습니다: ${input.outPath}\n`);
     // baseline 경로는 저장한 suite 가 baseline 그대로이므로 다시 계산하지 않는다.
-    writeCoverageReport(deps, baseline.coverage, finalSuite);
+    // 저장 뒤이므로 렌더링 실패를 GENERATE_FAILED 로 보고하지 않는다.
+    reportCoverageSafely(deps, () => baseline.coverage, finalSuite);
     return 0;
   } catch (error) {
     if (connection !== undefined) await connection.forceClose().catch(() => undefined);

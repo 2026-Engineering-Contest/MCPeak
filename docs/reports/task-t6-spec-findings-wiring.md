@@ -280,3 +280,104 @@ T1 이 고친 `서버 선언:` 문안도 실환경에서 확인됐다.
    `confirmSpecFindings` 를 깨뜨리면 잡는 것은 리터럴 주입 유닛테스트뿐이다. 그 테스트가 실제
    모양과 어긋날 수 있다는 위험은 오늘 확인으로 "지금은 맞다" 까지만 닫혔고, 앞으로도 맞다는
    보장은 아니다.
+
+---
+
+## T7: `dist-cli-e2e.mjs` 에 입력 계약 참고 문장 확인 추가
+
+T6 남은 위험 1번을 닫았다. 이 프로젝트는 "우리 도구로 우리를 검증한다" 를 가치로 걸었는데
+이번에 넣은 출력이 그 그물에 안 걸리고 있었다.
+
+### 바꾼 파일
+
+`packages/cli/tests/dist-cli-e2e.mjs` 하나와 이 보고서다. `examples/` 는 건드리지 않았다.
+`git diff --stat -- packages/cli/src` 가 빈 출력임을 확인했다(아래 원복 확인 참고).
+
+새 블록은 서버 프로세스 진단 블록 **앞**에 넣었다. 사람이 읽는 출력을 보는 기존 블록들
+(`ohmymcp-dist-body-` · `ohmymcp-dist-render-`) 바로 뒤라 성격이 같은 것끼리 모인다.
+
+기존 방식을 그대로 썼다. 새 헬퍼를 만들지 않았다.
+
+| 재사용한 것 | 용도 |
+|---|---|
+| `mkdtemp` + `try/finally` + `rm` | 임시 디렉터리 수명 |
+| `wrapper` + `pidFile` + `expectExited` | 좀비 프로세스 판정 |
+| `execute([...])` | dist 진입점 실행 |
+| `cleanupPid` | 실패 시 정리 |
+| 지역 `runTest(path, extra)` | `generate` 블록(180행)에 있는 것과 같은 모양 |
+
+명세는 `fixtures/` 에 새 파일을 만들지 않고 임시 디렉터리에 썼다. `changed.json` ·
+`legacy.json` · `dying-server.mjs` 가 이미 쓰는 방식이다.
+
+### 단언한 것
+
+1. 오타 명세(`citi`)로 `test` → exit code **1**, stderr 비어 있음.
+2. stdout 에 `참고: seoul-weather 의 입력이 서버 선언과 다릅니다` 와
+   `필수 필드 'city' 가 입력에 없습니다. 비슷한 필드: 'citi'` 가 있음.
+3. `--json` 의 `spec.findings` 가 정확히 아래와 같음. 값은 추측이 아니라 T6 2절에서 실제로
+   확인한 출력 그대로다.
+
+   ```json
+   [{ "code": "REQUIRED_MISSING", "severity": "blocking",
+      "caseId": "seoul-weather", "path": "input.city" }]
+   ```
+4. 옳은 명세로 돌리면 `참고:` 가 **없고** exit code **0**.
+
+exit code 단언을 양쪽(1과 0) 다 넣었다. 이 기능이 판정을 안 바꾼다는 것이 사양의 핵심이고,
+E2E 가 지켜야 할 것이 그것이다.
+
+### 무는지 확인했다
+
+`packages/cli/src/test-command.ts:578` 의 표시 블록 조건을 `if (false && …)` 로 잠시 막고
+`pnpm build` 후 돌렸다.
+
+```
+✗ seoul-weather  서울 날씨
+    isError  정상 응답을 기대했지만 오류 응답을 받았습니다.
+
+1 failed  (1 total)
+
+명세: 승인 지문이 없습니다 (미고정)
+
+    at .../packages/cli/tests/dist-cli-e2e.mjs:377:14 {
+  code: 'ERR_ASSERTION',
+  actual: false,
+  expected: true,
+```
+
+참고 문장 블록이 통째로 사라지고 새 단언이 정확히 그것을 잡았다. 원복 뒤
+`git diff --stat -- packages/cli/src` 가 빈 출력임을 확인했고 다시 `pnpm build` 후 E2E 가
+`EXIT=0` 이다.
+
+### 검증
+
+| 명령 | 판정 줄 |
+|---|---|
+| `pnpm build` → `node ./tests/dist-cli-e2e.mjs` | `EXIT=0` |
+| `pnpm test` | `Test Files  43 passed (43)` / `Tests  850 passed \| 1 skipped (851)` |
+| `npx turbo typecheck --force` | `Tasks:    6 successful, 6 total` / `Cached:    0 cached, 6 total` |
+| `pnpm lint` | `Checked 134 files in 52ms. No fixes applied.` |
+| `git diff --stat -- packages/cli/src` | 빈 출력 (소스 변경 0) |
+
+### 임의로 판단한 지점
+
+1. **블록 위치를 진단 블록 앞으로 정했다.** 지시에 위치가 없었다. 사람이 읽는 출력을 보는 기존
+   두 블록 바로 뒤에 두어 성격이 같은 것끼리 모이게 했다.
+2. **`fixtures/` 에 파일을 안 만들었다.** 지시가 "임시 디렉터리에 명세를 쓰고" 였고, 그 파일도
+   내 허용 목록 밖이다. `suiteOf(input)` 지역 함수로 오타본과 정상본을 같은 모양에서 만들어
+   둘의 차이가 입력 필드 이름 하나뿐임이 코드에 드러나게 했다.
+3. **`assert.deepEqual` 로 `spec.findings` 배열 전체를 고정했다.** `assert.ok(includes)` 로
+   느슨하게 두면 findings 가 하나 더 늘어도 통과한다. 지금 이 명세에서 나오는 finding 은 정확히
+   하나이므로 전체 일치가 맞다.
+4. **`--json` 실행에서도 `expectExited` 를 탄다.** 지역 `runTest` 가 매번 부르므로 새로 더한
+   세 번의 실행 전부 좀비 판정을 거친다.
+
+### T7 이후 남은 위험
+
+- T6 남은 위험 2·3(`SCHEMA_NOT_ANALYZABLE` · `UNDECLARED_FIELD` 실환경 미확인)은 그대로다.
+  예제 서버가 단순해서이고 예제 서버 수정은 다른 오너 영역이다.
+- T6 남은 위험 4(승인 화면 확인이 CI 에 없음)도 그대로다. 이번에 더한 것은 `cli test` 화면이다.
+  `generate` 승인 화면은 TTY 가 필요해 이 E2E 로는 못 띄운다.
+- **새 블록은 `참고:` 세 머리글 중 하나만 덮는다.** 단언 실질성(`… 의 단언은 무엇이 와도
+  통과합니다`)은 예제 서버 없이도 재현 가능하므로 같은 블록에 하나 더 넣을 수 있었다. 지시가
+  "더할 것은 하나다" 였고 오타 명세만 명시해서 범위를 넘기지 않았다. 넣을지는 판단해 달라.

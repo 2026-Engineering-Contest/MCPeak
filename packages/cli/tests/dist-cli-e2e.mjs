@@ -322,6 +322,89 @@ for (const [fixture, expectedStatus, expectedSummary] of [
   }
 }
 
+// 입력 계약 대조 참고 문장 (설계 문서 §7.2). 명세의 입력이 서버 선언과 어긋날 때 실패 보고서
+// 뒤에 참고 문장이 붙는지, 그리고 그것이 판정을 바꾸지 않는지 본다. 판정 불변이 사양의 핵심이다.
+// weather-server 는 additionalProperties 를 닫지 않으므로 UNDECLARED_FIELD 는 나지 않는다.
+// 오타는 REQUIRED_MISSING 으로 걸린다.
+{
+  const dir = await mkdtemp(join(tmpdir(), "ohmymcp-dist-contract-"));
+  const pidFile = join(dir, "pid");
+  const suiteOf = (input) => ({
+    schemaVersion: 1,
+    id: "weather-contract",
+    name: "입력 계약 대조",
+    defaultTimeoutMs: 10_000,
+    cases: [
+      {
+        id: "seoul-weather",
+        name: "서울 날씨",
+        operation: { type: "callTool", tool: "get_weather", input },
+        assertions: [{ type: "isError", expected: false }],
+      },
+    ],
+  });
+  const typo = join(dir, "typo.json");
+  const correct = join(dir, "correct.json");
+  await writeFile(typo, `${JSON.stringify(suiteOf({ citi: "서울" }), null, 2)}\n`, "utf8");
+  await writeFile(correct, `${JSON.stringify(suiteOf({ city: "서울" }), null, 2)}\n`, "utf8");
+  const runTest = async (path, extra = []) => {
+    const outcome = await execute([
+      "test",
+      path,
+      "--command",
+      process.execPath,
+      "--arg",
+      wrapper,
+      "--arg",
+      pidFile,
+      "--arg",
+      server,
+      ...extra,
+    ]);
+    await expectExited(pidFile);
+    return outcome;
+  };
+  try {
+    const typoRun = await runTest(typo);
+    // 판정은 케이스 결과로만 정해진다. 참고 문장이 붙어도 종료 코드가 바뀌지 않는다.
+    assert.equal(typoRun.code, 1);
+    assert.equal(typoRun.err, "");
+    // 실패 메시지가 곧 제품이다. 머리글과 문장 전문을 고정한다.
+    for (const expected of [
+      "참고: seoul-weather 의 입력이 서버 선언과 다릅니다",
+      "필수 필드 'city' 가 입력에 없습니다. 비슷한 필드: 'citi'",
+    ])
+      assert.ok(
+        typoRun.out.includes(expected),
+        `stdout 에 '${expected}' 가 없습니다. 실제 출력:\n${typoRun.out}`,
+      );
+
+    // --json 은 문장이 아니라 구조로 담는다. 기계는 code 로 분기한다.
+    const jsonRun = await runTest(typo, ["--json"]);
+    assert.equal(jsonRun.code, 1);
+    assert.deepEqual(JSON.parse(jsonRun.out).spec.findings, [
+      {
+        code: "REQUIRED_MISSING",
+        severity: "blocking",
+        caseId: "seoul-weather",
+        path: "input.city",
+      },
+    ]);
+
+    // 부재 단언이 없으면 항상 찍는 회귀를 못 잡는다.
+    const correctRun = await runTest(correct);
+    assert.equal(correctRun.code, 0);
+    assert.equal(correctRun.err, "");
+    assert.ok(
+      !correctRun.out.includes("참고:"),
+      `옳은 명세인데 참고 문장이 붙었습니다. 실제 출력:\n${correctRun.out}`,
+    );
+  } finally {
+    await cleanupPid(pidFile);
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
 // 서버 프로세스 진단 (설계 문서 §8.4). 기동 즉시 죽는 서버와 실행 불가능한 command 를 본다.
 {
   const dir = await mkdtemp(join(tmpdir(), "ohmymcp-dist-diagnostics-"));

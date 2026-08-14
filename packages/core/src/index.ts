@@ -26,7 +26,7 @@ export type { McpClient, ToolDef, ToolResult } from "./types.js";
 export interface McpStdioConnection {
   readonly client: McpClient;
   // 반환 타입은 설계 §4 에 따라 좁히지 않는다. 런타임 값에는 transport: "stdio" 가 붙어
-  // 있지만, 선언까지 좁히면 이 타입에 결합된 다른 패키지의 test double 이 깨진다.
+  // 있지만, 선언까지 좁히면 이 인터페이스를 구현하는 다른 패키지의 test double 이 깨진다.
   getDiagnostics(): McpProcessDiagnostics;
   close(): Promise<void>;
   forceClose(): Promise<void>;
@@ -34,7 +34,7 @@ export interface McpStdioConnection {
 
 export interface McpHttpConnection {
   readonly client: McpClient;
-  getDiagnostics(): { readonly transport: "http" } & McpHttpDiagnostics;
+  getDiagnostics(): McpHttpDiagnostics;
   close(): Promise<void>;
 }
 

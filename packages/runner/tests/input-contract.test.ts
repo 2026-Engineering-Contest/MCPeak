@@ -498,3 +498,142 @@ describe("리뷰 회귀: type 배열과 중복 툴 이름", () => {
     );
   });
 });
+
+describe("거절 기대 케이스 제외 (설계 §10.3, ADR-0021)", () => {
+  const weather = tool(
+    "get_weather",
+    objectSchema({
+      properties: { city: { type: "string" }, units: { enum: ["c", "f"] } },
+      required: ["city"],
+      additionalProperties: false,
+    }),
+  );
+
+  /** 거절을 기대하는 케이스 하나짜리 스위트. */
+  const rejecting = (input: JsonObject): TestSuiteSpec =>
+    suiteOf({
+      id: "reject",
+      name: "reject",
+      operation: { type: "callTool", tool: "get_weather", input },
+      assertions: [{ type: "isError", expected: true }],
+    });
+
+  const codesOf = (suite: TestSuiteSpec, tools: ToolDef[] = [weather]) =>
+    checkInputContract({ suite, tools }).findings.map((finding) => finding.code);
+
+  it("isError true 케이스는 REQUIRED_MISSING 을 내지 않는다", () => {
+    const result = checkInputContract({ suite: rejecting({}), tools: [weather] });
+    expect(result.findings).toEqual([]);
+    expect(result.totalFindings).toBe(0);
+  });
+
+  it("isError true 케이스는 TYPE_MISMATCH 를 내지 않는다", () => {
+    expect(codesOf(rejecting({ city: 0 }))).toEqual([]);
+  });
+
+  it("isError true 케이스는 ENUM_MISMATCH 를 내지 않는다", () => {
+    expect(codesOf(rejecting({ city: "서울", units: "k" }))).toEqual([]);
+  });
+
+  it("isError true 케이스는 UNDECLARED_FIELD 를 내지 않는다", () => {
+    expect(codesOf(rejecting({ city: "서울", nope: 1 }))).toEqual([]);
+  });
+
+  it("isError true 케이스도 TOOL_NOT_DECLARED 는 낸다", () => {
+    const tools = [tool("other", objectSchema({}))];
+    expect(codesOf(rejecting({ city: "서울" }), tools)).toEqual(["TOOL_NOT_DECLARED"]);
+  });
+
+  it("isError true 케이스도 SCHEMA_NOT_ANALYZABLE 은 낸다", () => {
+    const tools = [tool("get_weather", { anyOf: [{ type: "object" }] })];
+    expect(codesOf(rejecting({ city: "서울" }), tools)).toEqual(["SCHEMA_NOT_ANALYZABLE"]);
+  });
+
+  it("isError false 케이스는 기존과 같이 전부 낸다", () => {
+    const suite = suiteOf({
+      id: "accept",
+      name: "accept",
+      operation: { type: "callTool", tool: "get_weather", input: {} },
+      assertions: [{ type: "isError", expected: false }],
+    });
+    expect(codesOf(suite)).toEqual(["REQUIRED_MISSING"]);
+  });
+
+  it("isError 단언이 없는 케이스는 기존과 같이 전부 낸다", () => {
+    const suite = suiteOf({
+      id: "no-iserror",
+      name: "no-iserror",
+      operation: { type: "callTool", tool: "get_weather", input: {} },
+      assertions: [{ type: "bodyMatchesSchema", schema: { type: "object" } }],
+    });
+    expect(codesOf(suite)).toEqual(["REQUIRED_MISSING"]);
+  });
+
+  it("expected 가 서로 다른 isError 단언이 한 케이스에 있으면 전부 낸다", () => {
+    const suite = suiteOf({
+      id: "contradiction",
+      name: "contradiction",
+      operation: { type: "callTool", tool: "get_weather", input: {} },
+      assertions: [
+        { type: "isError", expected: true },
+        { type: "isError", expected: false },
+      ],
+    });
+    expect(codesOf(suite)).toEqual(["REQUIRED_MISSING"]);
+  });
+
+  it("침묵시킨 finding 은 totalFindings 에도 남지 않는다", () => {
+    // 필수 누락 + 선언되지 않은 필드 + enum 위반이 한 케이스에 겹친 입력이다.
+    const result = checkInputContract({
+      suite: rejecting({ units: "k", nope: 1 }),
+      tools: [weather],
+    });
+    expect(result).toEqual({ findings: [], totalFindings: 0 });
+  });
+
+  /**
+   * 두 패키지를 잇는 계약 테스트다. 설계서 §5.5 의 케이스 8개를 리터럴로 적는다.
+   * `generate` 를 import 하면 의존 방향이 뒤집히므로 같은 값을 두 곳에 두는 것이 의도이고,
+   * 어긋나면 이 테스트가 깨져 알린다.
+   */
+  it("buildViolationCases 가 만드는 케이스 전량을 넣으면 finding 이 0건이다", () => {
+    const sampleTools = [
+      tool(
+        "get_weather",
+        objectSchema({ properties: { city: { type: "string" } }, required: ["city"] }),
+      ),
+      tool(
+        "add",
+        objectSchema({
+          properties: { a: { type: "number" }, b: { type: "number" } },
+          required: ["a", "b"],
+        }),
+      ),
+    ];
+    const violationCase = (
+      id: string,
+      toolName: string,
+      input: JsonObject,
+      expected: boolean,
+    ): TestCaseSpec => ({
+      id,
+      name: id,
+      operation: { type: "callTool", tool: toolName, input },
+      assertions: [{ type: "isError", expected }],
+    });
+    const suite = suiteOf(
+      violationCase("get-weather-success", "get_weather", { city: "example" }, false),
+      violationCase("get-weather-missing-city", "get_weather", {}, true),
+      violationCase("get-weather-type-city", "get_weather", { city: 0 }, true),
+      violationCase("add-success", "add", { a: 0, b: 0 }, false),
+      violationCase("add-missing-a", "add", { b: 0 }, true),
+      violationCase("add-missing-b", "add", { a: 0 }, true),
+      violationCase("add-type-a", "add", { a: "example", b: 0 }, true),
+      violationCase("add-type-b", "add", { a: 0, b: "example" }, true),
+    );
+    expect(checkInputContract({ suite, tools: sampleTools })).toEqual({
+      findings: [],
+      totalFindings: 0,
+    });
+  });
+});

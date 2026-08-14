@@ -1,7 +1,7 @@
 import type { ToolDef } from "@ohmymcp/core";
 import { describe, expect, it } from "vitest";
 import type { JsonObject, TestCaseSpec } from "../src/index.js";
-import { deriveContractAxes, matchCoveredAxes } from "../src/index.js";
+import { checkInputContract, deriveContractAxes, matchCoveredAxes } from "../src/index.js";
 
 const tool = (name: string, inputSchema: unknown): ToolDef => ({ name, inputSchema });
 const weather = tool("get_weather", {
@@ -400,5 +400,16 @@ describe("matchCoveredAxes", () => {
     expect(matchCoveredAxes({ testCase: callCase("miss", {}, true), tool: opaque })).toEqual([]);
   });
 
-  it.todo("checkInputContract 가 침묵하는 케이스에서도 축을 낸다 (T4 에서 켠다)");
+  it("checkInputContract 가 침묵하는 케이스에서도 축을 낸다", () => {
+    const testCase = callCase("miss", {}, true);
+    const suite = {
+      schemaVersion: 1 as const,
+      id: "s",
+      name: "s",
+      defaultTimeoutMs: 1000,
+      cases: [testCase],
+    };
+    expect(checkInputContract({ suite, tools: [weather] }).findings).toEqual([]);
+    expect(matchCoveredAxes({ testCase, tool: weather })).toHaveLength(1);
+  });
 });

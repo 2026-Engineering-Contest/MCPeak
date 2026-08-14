@@ -1,10 +1,11 @@
 import type { ToolDef } from "@ohmymcp/core";
+import { expectedIsError } from "./case-expectation.js";
 import type { NormalizedInputSchema } from "./input-schema.js";
 import { analyzeInputSchema, judgeField } from "./input-schema.js";
 import { byCodeUnit } from "./ordering.js";
 import { plainObject, typeName } from "./schema-match.js";
 import type { JsonValue, TestSuiteSpec } from "./spec/types.js";
-import type { SpecFinding, SpecFindingsResult } from "./spec-findings.js";
+import type { SpecFinding, SpecFindingCode, SpecFindingsResult } from "./spec-findings.js";
 import { MAX_FINDINGS_PER_CASE } from "./spec-findings.js";
 
 export interface InputContractOptions {
@@ -12,6 +13,23 @@ export interface InputContractOptions {
   /** McpClient.listTools()의 결과를 그대로 넘긴다. 순서는 결과에 영향을 주지 않는다. */
   readonly tools: readonly ToolDef[];
 }
+
+/**
+ * 거절을 기대하는 케이스에서 침묵시키는 코드. ADR-0021.
+ *
+ * 그 케이스는 선언을 어긴 입력을 보내는 것이 목적이다. 어긴 사실을 위반으로 신고하면 도구가
+ * 스스로 만든 케이스를 스스로 고발한다.
+ *
+ * TOOL_NOT_DECLARED 는 빼지 않는다. 서버가 모르는 툴 이름은 거절 기대와 무관하게 오타다.
+ * SCHEMA_NOT_ANALYZABLE 도 빼지 않는다. 위반이 아니라 "검사를 못 했다" 는 보고이고, 삼키면
+ * "검사했는데 깨끗함" 과 구분되지 않는다.
+ */
+const SUPPRESSED_WHEN_REJECTION_EXPECTED: ReadonlySet<SpecFindingCode> = new Set([
+  "REQUIRED_MISSING",
+  "UNDECLARED_FIELD",
+  "TYPE_MISMATCH",
+  "ENUM_MISMATCH",
+]);
 
 /** 설계 §9.2 의 검사 종류 순서. 낮을수록 앞에 온다. */
 const CODE_ORDER: Record<string, number> = {
@@ -221,14 +239,23 @@ export function checkInputContract(options: InputContractOptions): SpecFindingsR
       }
     }
 
-    caseFindings.sort(
+    // expectedIsError 가 null 이면(isError 단언이 없거나 expected 가 서로 다른 단언이 둘인
+    // 모순된 명세) 침묵시키지 않는다. 모순을 숨기지 않는다.
+    const kept =
+      expectedIsError(testCase) === true
+        ? caseFindings.filter((finding) => !SUPPRESSED_WHEN_REJECTION_EXPECTED.has(finding.code))
+        : caseFindings;
+
+    kept.sort(
       (left, right) =>
         (CODE_ORDER[left.code] ?? 0) - (CODE_ORDER[right.code] ?? 0) ||
         byCodeUnit(left.path, right.path),
     );
-    totalFindings += caseFindings.length;
+    // 총합은 침묵 후 개수다. 침묵시킨 것을 총합에 남기면 소비자가 "위반 N건이 있는데 목록은
+    // 비어 있다" 를 보고 버그로 읽는다.
+    totalFindings += kept.length;
     // 상한을 넘으면 목록에서 자르되 총합은 자르기 전 개수로 센다.
-    findings.push(...caseFindings.slice(0, MAX_FINDINGS_PER_CASE));
+    findings.push(...kept.slice(0, MAX_FINDINGS_PER_CASE));
   }
 
   return { findings, totalFindings };

@@ -13,7 +13,7 @@
 |---|---|---|---|
 | [0001](./0001-transport-strategy.md) | 첫 MCP transport로 stdio 프로세스 연결을 사용한다 | core | 승인 |
 | [0002](./0002-matcher-strategy.md) | matcher를 독립 구현으로 유지하고 외부 테스트 러너 확장은 제공하지 않는다 | runner | 제안 |
-| [0003](./0003-cassette-matching-key.md) | 카세트 매칭 키 설계와 비결정 필드(타임스탬프 등) 처리 | record | 제안 |
+| [0003](./0003-cassette-matching-key.md) | 카세트 매칭 키 설계와 비결정 필드(타임스탬프 등) 처리 | record | 승인 |
 | [0004](./0004-generation-scope.md) | 생성 테스트의 자동화 범위 | generate | 제안 |
 | [0005](./0005-mock-data-strategy.md) | 목 데이터 생성 전략 — 사람이 작성 vs 스키마 기반 생성 | mock | 제안 |
 | [0006](./0006-ai-assisted-test-authoring.md) | 결정론적 baseline과 AI 테스트 후보의 공존 방식 | generate | 승인 |

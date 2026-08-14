@@ -32,7 +32,7 @@ flowchart LR
 
 | 패키지 | 입력 | 출력 | 핵심 책임 |
 |---|---|---|---|
-| `core` | `ConnectOptions` (command, args, env, cwd) | `McpClient` | 프로세스 기동·종료, 핸드셰이크, 타임아웃, stderr 수집 |
+| `core` | `ConnectOptions` (command·args·env·cwd 또는 url·headers) | `McpClient` | 프로세스 기동·종료, 핸드셰이크, 타임아웃, stderr 수집 |
 | `runner` | `McpClient` (**주입받음**) | 실패 메시지 · 리포트 · JUnit XML | 공개 API, matcher, **실패 메시지 품질** |
 | `generate` | `ToolDef[]` (**주입받음**) | 테스트 소스 파일 경로 · 승인된 suite snapshot | 결정론적 baseline 합성, AI authoring 검토·승인 |
 | `record` | `ToolResult` (**주입받음**) | 카세트 파일 · 계약 스냅샷 | 매칭 키, 비결정 필드 처리, 비밀값 마스킹 |

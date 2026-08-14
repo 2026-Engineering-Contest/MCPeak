@@ -1,6 +1,6 @@
 # ADR-0020: 두 번째 transport 로 Streamable HTTP 를 추가하고, 진단을 transport 별 유니온으로 나눈다
 
-- 상태: 초안
+- 상태: 제안
 - 날짜: 2026-08-14
 - 작성자: core 오너
 - 관련 결정: [ADR-0001](./0001-transport-strategy.md), [ADR-0007](./0007-mock-stdio-transport.md)

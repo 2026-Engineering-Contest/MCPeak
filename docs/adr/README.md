@@ -31,7 +31,7 @@
 | [0017](./0017-승인-지문-계산-범위.md) | 승인 지문은 파싱된 명세 객체에서 approval 블록을 통째로 뺀 값으로 계산한다 | cli | 제안 |
 | [0018](./0018-입력-계약-대조-소비자-배선.md) | 입력 계약 대조는 값 치환 이전에 돌리고, 위반은 거부가 아니라 재확인으로 다룬다 | generate, cli | 제안 |
 | [0019](./0019-junit-리포터-cli-노출-방식.md) | JUnit 리포터를 `--junit <path>` 로 노출한다 | cli | 제안 |
-| [0020](./0020-streamable-http-transport.md) | 두 번째 transport 로 Streamable HTTP 를 추가하고, 진단을 transport 별 유니온으로 나눈다 | core | 초안 |
+| [0020](./0020-streamable-http-transport.md) | 두 번째 transport 로 Streamable HTTP 를 추가하고, 진단을 transport 별 유니온으로 나눈다 | core | 제안 |
 
 **상태** — `승인` 만 확정된 결정입니다. `제안` 과 `초안` 은 아직 확정되지 않았으므로 이 결정에
 기대어 구현하지 마세요. 값은 각 파일 머리의 `상태` 를 그대로 옮긴 것입니다.

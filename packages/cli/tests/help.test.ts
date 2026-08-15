@@ -8,12 +8,22 @@ import { commandHelp, GENERATE_USAGE, GENERATE_USAGE_HINT } from "../src/help.js
 describe("generate 도움말", () => {
   const help = commandHelp("generate");
 
-  it.each([["--no-dry-run"], ["--cassette <path>"], ["--record"], ["--reset-cmd <command>"]])(
-    "%s 가 사용법 줄에 나온다",
-    (option) => {
-      expect(GENERATE_USAGE).toContain(`[${option}]`);
-    },
-  );
+  it.each([
+    ["--no-dry-run"],
+    ["--cassette <path>"],
+    ["--record"],
+    ["--reset-cmd <command>"],
+    ["--no-repair"],
+  ])("%s 가 사용법 줄에 나온다", (option) => {
+    expect(GENERATE_USAGE).toContain(`[${option}]`);
+  });
+
+  it("--no-repair 설명이 도움말에 있다", () => {
+    expect(help).toContain(
+      "--no-repair           시험 실행이 실패해도 입력값을 고쳐 다시 시도하지 않습니다.",
+    );
+    expect(help).toContain("실패가 곧바로 분류 화면으로 갑니다");
+  });
 
   it("네 옵션의 설명이 도움말에 있다", () => {
     expect(help).toContain("--no-dry-run          승인 전 시험 실행을 건너뜁니다.");

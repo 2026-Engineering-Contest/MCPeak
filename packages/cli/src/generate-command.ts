@@ -15,21 +15,29 @@ import type {
 } from "@ohmymcp/generate";
 import type { Cassette } from "@ohmymcp/record";
 import type {
+  CallToolCaseSpec,
   ContractAxisKind,
+  JsonObject,
+  JsonValue,
   SpecFinding,
   SpecFindingCode,
   SuiteCaseApproval,
   SuiteValidationResult,
+  TestCaseSpec,
   TestSuiteSpec,
 } from "@ohmymcp/runner";
 import { describeSpecFinding, suiteFingerprint } from "@ohmymcp/runner";
 import { wireCassette } from "./cassette-wiring.js";
-import type { DryRunResult } from "./dry-run.js";
+import type { DryRunCaseOutcome, DryRunResult } from "./dry-run.js";
 import { runDryRun } from "./dry-run.js";
 import { reviewDryRun } from "./dry-run-review.js";
 import { GENERATE_USAGE_HINT } from "./help.js";
+import { repairInputs } from "./input-repair.js";
 import type { ProcessDiagnosticsInput } from "./process-diagnostics.js";
 import { hasDiagnosticContent, renderProcessDiagnostics } from "./process-diagnostics.js";
+import { proposeRepair } from "./repair-proposal.js";
+import type { RepairAttempt } from "./repair-target.js";
+import { selectRepairTargets } from "./repair-target.js";
 import { ResetCommandError, runResetCommand } from "./reset-hook.js";
 
 export { GENERATE_USAGE } from "./help.js";
@@ -51,6 +59,8 @@ export interface GenerateCommandInput {
   readonly forceRecord: boolean;
   /** `--reset-cmd`. 시험 실행 직전 1회 실행한다. */
   readonly resetCmd?: string;
+  /** 입력값 교정 단계를 돌릴지 여부. 기본은 실행이고 `--no-repair` 가 끈다. 설계 문서 §7. */
+  readonly repair: boolean;
 }
 export interface GenerateCommandDependencies {
   connect(options: { command: string; args: readonly string[] }): Promise<McpStdioConnection>;
@@ -175,9 +185,10 @@ const optionNames = new Set([
   "--cassette",
   "--record",
   "--reset-cmd",
+  "--no-repair",
 ]);
 /** 값을 받지 않는 옵션. `=` 를 붙여 쓸 수 없고 두 번 쓸 수 없다. */
-const flagNames = new Set(["--baseline-only", "--no-dry-run", "--record"]);
+const flagNames = new Set(["--baseline-only", "--no-dry-run", "--record", "--no-repair"]);
 function optionValue(argv: readonly string[], index: number, option: string): [string, number] {
   const item = argv[index];
   if (item === undefined) throw new UsageError(`\`${option}\` 옵션 값이 필요합니다.`);
@@ -227,6 +238,11 @@ export function parseGenerateCommand(argv: readonly string[]): GenerateCommandIn
   if (values.has("--model") && rawProvider === undefined)
     throw new UsageError("`--model`은 `--provider`와 함께만 사용할 수 있습니다.");
   const dryRun = !flags.has("--no-dry-run");
+  const repair = !flags.has("--no-repair");
+  // 교정은 시험 실행 안에서만 일어난다. 실행을 끈 채로 교정을 끄면 끄는 대상이 없고, 그 조합은
+  // 사용자가 둘 중 하나를 착각한 것이다. 조용히 무시하는 대신 사용 오류로 돌려준다.
+  if (!dryRun && !repair)
+    throw new UsageError("`--no-dry-run`과 `--no-repair`는 함께 사용할 수 없습니다.");
   const cassettePath = values.get("--cassette");
   const resetCmd = values.get("--reset-cmd");
   // 시험 실행을 끄면 서버를 접촉하지 않는다. 카세트와 초기화는 접촉을 전제한 옵션이므로 함께
@@ -252,6 +268,7 @@ export function parseGenerateCommand(argv: readonly string[]): GenerateCommandIn
     cassettePath,
     forceRecord: flags.has("--record"),
     resetCmd,
+    repair,
   });
 }
 
@@ -636,6 +653,8 @@ function writeDryRunNotice(
     readonly target: string;
     readonly cassette?: { readonly path: string; readonly fresh: boolean };
     readonly resetCmd?: string;
+    /** 교정 단계가 켜져 있는가. 켜져 있으면 실제 호출 수가 케이스 수보다 많을 수 있다(§10). */
+    readonly repair: boolean;
   },
 ): void {
   io.write(`시험 실행: 케이스 ${notice.caseCount}개를 실제 서버에 보냅니다.\n`);
@@ -645,6 +664,7 @@ function writeDryRunNotice(
       `  카세트: ${notice.cassette.path} (${notice.cassette.fresh ? "신규 녹화" : "재생"})\n`,
     );
   if (notice.resetCmd !== undefined) io.write(`  초기화: ${notice.resetCmd}\n`);
+  if (notice.repair) io.write("  실패한 케이스는 값을 고쳐 최대 2회까지 다시 호출합니다.\n");
   io.write(
     "\n이 실행은 서버 상태를 바꿀 수 있습니다. 입력 검증이 없는 서버라면 외부 API 호출도\n그대로 나갑니다.\n",
   );
@@ -666,6 +686,79 @@ function writeDryRunResult(io: ReviewIO, result: DryRunResult): void {
   // 것처럼 보인다.
   if (failures.length > 0) io.write("\n");
 }
+
+/** 교정으로 바뀐 값 한 줄. 반영 요약(§8.8)이 쓴다. */
+interface RepairApplication {
+  readonly tool: string;
+  readonly field: string;
+  readonly before: JsonValue;
+  readonly after: JsonValue;
+}
+
+/**
+ * 반영 요약(§8.8). 저장 확인 직전에 찍는다. 교정이 0건이면 아무것도 찍지 않는다.
+ * 지문이 바뀐 이유가 화면에 남아야 사용자가 나중에 diff 를 보고 놀라지 않는다(§5.4).
+ */
+function writeRepairSummary(
+  io: ReviewIO,
+  repairedCases: number,
+  changes: readonly RepairApplication[],
+): void {
+  if (repairedCases === 0) return;
+  io.write(`  입력값 교정 ${repairedCases}건이 명세에 반영되었습니다.\n`);
+  for (const change of changes)
+    io.write(
+      `    ${change.tool}.${change.field}: ${JSON.stringify(change.before)} → ${JSON.stringify(change.after)}\n`,
+    );
+}
+
+/**
+ * 교정 대상 판별에 넘길 provenance. `approvedDraft.provenance` 가 유일한 출처다.
+ * 여기서 비면 사용자가 손으로 쓴 케이스까지 교정 대상이 되므로(§4.2 의 기본값이
+ * `schemaBaseline` 이다) 세션이 실제로 싣는 값을 그대로 쓴다.
+ */
+const originsOf = (
+  session: AuthoringSessionView,
+): ReadonlyMap<string, "schemaBaseline" | "ai" | "user"> =>
+  new Map(session.approvedDraft.provenance.map((item) => [item.caseId, item.origin]));
+
+/**
+ * 입력값을 가진 케이스인가. 중첩 필드로는 판별 유니온이 좁혀지지 않아 술어로 뽑는다.
+ * 교정은 `callTool` 케이스에만 있다(§4.2).
+ */
+const isCallTool = (spec: TestCaseSpec): spec is CallToolCaseSpec =>
+  spec.operation.type === "callTool";
+
+/** 실제로 값이 바뀐 필드만 §8.8 줄로 만든다. 안 바뀐 필드까지 적으면 요약이 사실과 달라진다. */
+const repairApplications = (
+  suite: TestSuiteSpec,
+  repaired: ReadonlyMap<string, Readonly<Record<string, JsonValue>>>,
+): readonly RepairApplication[] => {
+  const changes: RepairApplication[] = [];
+  for (const item of suite.cases) {
+    const input = repaired.get(item.id);
+    if (input === undefined || !isCallTool(item)) continue;
+    for (const [field, after] of Object.entries(input)) {
+      const before = item.operation.input[field] as JsonValue;
+      if (JSON.stringify(before) === JSON.stringify(after)) continue;
+      changes.push({ tool: item.operation.tool, field, before, after });
+    }
+  }
+  return changes;
+};
+
+/** 교정으로 통과한 값을 케이스에 얹은 후보 명세. `cli` 는 이 객체를 만들기만 하고 반영은 §5 의 3단 경로가 한다. */
+const withRepairedInputs = (
+  suite: TestSuiteSpec,
+  repaired: ReadonlyMap<string, Readonly<Record<string, JsonValue>>>,
+): TestSuiteSpec => ({
+  ...suite,
+  cases: suite.cases.map((item) => {
+    const input = repaired.get(item.id);
+    if (input === undefined || !isCallTool(item)) return item;
+    return { ...item, operation: { ...item.operation, input: input as JsonObject } };
+  }),
+});
 
 /**
  * 시험 실행이 끝까지 못 간 경우(§8.4). stderr 블록은 단계 1 의 `renderProcessDiagnostics` 를
@@ -776,11 +869,12 @@ async function runInteractiveReview(
       ]);
       if (action === "cancel") return 0;
       if (action === "save") {
-        const fingerprint = session.approvedDraft.suiteFingerprint;
-        io.write(`Final fingerprint: ${fingerprint}\n`);
         const dryRunSuite = session.approvedDraft.suite;
         const caseCount = dryRunSuite.cases.length;
         let approvals: readonly SuiteCaseApproval[] = [];
+        /** 교정으로 통과한 케이스 수와 바뀐 값. 반영 요약(§8.8)이 쓴다. */
+        let repairedCases = 0;
+        let repairChanges: readonly RepairApplication[] = [];
         if (!input.dryRun) {
           // §8.5. 시험 실행을 건너뛰면 approval.cases 가 없는 파일이 되고, 그 사실을 저장 직전에
           // 한 번 더 보여준다.
@@ -808,6 +902,7 @@ async function runInteractiveReview(
                   },
                 }),
             resetCmd: input.resetCmd,
+            repair: input.repair,
           });
           if (!(await io.confirm("계속할까요?"))) continue;
           if (input.resetCmd !== undefined) {
@@ -837,13 +932,120 @@ async function runInteractiveReview(
             continue;
           }
           writeDryRunResult(io, result);
-          const review = await reviewDryRun(io, result);
+          // 9. 입력값 교정(§4). 대상이 없으면 아무것도 묻지 않는다.
+          // AI 제안은 `--provider` 가 있을 때만 쓴다. 별도 옵션을 두지 않는다(§7).
+          const repairProvider =
+            preferred === undefined
+              ? undefined
+              : deps.providers?.[preferred]?.(model ?? defaultModel(preferred));
+          const wired = cassette;
+          const targets = input.repair
+            ? selectRepairTargets({
+                suite: dryRunSuite,
+                outcomes: result.outcomes,
+                origins: originsOf(session),
+              })
+            : [];
+          let attempts: ReadonlyMap<string, readonly RepairAttempt[]> | undefined;
+          let effective = result;
+          if (targets.length > 0) {
+            const repairs = await repairInputs({
+              io,
+              suite: dryRunSuite,
+              targets,
+              tools,
+              // 케이스 하나만 담은 스위트로 부른다. 전량을 다시 돌리면 앞서 통과한 케이스가
+              // 상태 변화로 뒤집힌다(설계 §9).
+              rerun: async (caseId, value) => {
+                const spec = dryRunSuite.cases.find((item) => item.id === caseId);
+                if (spec === undefined || !isCallTool(spec)) return { passed: false, detail: "" };
+                const one = await runDryRun({
+                  client: wired.client,
+                  suite: {
+                    ...dryRunSuite,
+                    cases: [
+                      { ...spec, operation: { ...spec.operation, input: value as JsonObject } },
+                    ],
+                  },
+                });
+                // 끝까지 못 간 실행은 통과가 아니다. 판정을 모르는 것과 통과는 다르다.
+                if (one.aborted !== undefined) return { passed: false, detail: "" };
+                const outcome = one.outcomes[0];
+                return { passed: outcome?.status === "passed", detail: outcome?.detail ?? "" };
+              },
+              // provider 가 없으면 제안 없이 사람 입력만 쓴다. AI 제안은 선택이지 전제가 아니다.
+              propose:
+                repairProvider === undefined
+                  ? undefined
+                  : (target) =>
+                      proposeRepair({
+                        target,
+                        session,
+                        tools,
+                        provider: repairProvider,
+                        prepare,
+                        dispatch,
+                      }),
+            });
+            const repaired = new Map(
+              repairs
+                .filter((item) => item.repaired && item.input !== undefined)
+                .map((item) => [item.caseId, item.input as Readonly<Record<string, JsonValue>>]),
+            );
+            attempts = new Map(
+              repairs
+                .filter((item) => !item.repaired && item.attempts.length > 0)
+                .map((item) => [item.caseId, item.attempts]),
+            );
+            // 10. 교정 결과를 후보 명세에 반영(§5). 케이스마다가 아니라 한 번만 탄다.
+            if (repaired.size > 0) {
+              repairedCases = repaired.size;
+              repairChanges = repairApplications(dryRunSuite, repaired);
+              const local = reviewLocal({
+                session,
+                candidate: withRepairedInputs(dryRunSuite, repaired),
+                tools,
+              });
+              if (local.status !== "preview") {
+                io.write("교정한 값을 명세에 반영하지 못했습니다.\n");
+                continue;
+              }
+              const diff = makeDiff({ session, candidate: local.preview });
+              const applied = apply({
+                session,
+                preview: diff,
+                selectedChangeIds: diff.changes.map((change) => change.id),
+                approval: { approved: true, fingerprint: diff.candidateFingerprint },
+              });
+              if (!applied.applied) {
+                io.write("교정한 값을 명세에 반영하지 못했습니다.\n");
+                continue;
+              }
+            }
+            // 교정으로 통과한 케이스는 실패가 아니다. 분류 화면에 다시 올리지 않는다(§6.3).
+            effective = {
+              ...result,
+              outcomes: result.outcomes.map(
+                (outcome): DryRunCaseOutcome =>
+                  repaired.has(outcome.caseId)
+                    ? { ...outcome, status: "passed", detail: "" }
+                    : outcome,
+              ),
+            };
+          }
+          // 11. 남은 실패를 분류(§8.3). 교정을 시도했던 케이스는 이력이 함께 나온다(§8.7).
+          const review = await reviewDryRun(io, effective, attempts);
           if (!review.cleared) {
             writeReviewBlocked(io, review.specErrors.length, caseCount, input.cassettePath);
             continue;
           }
           approvals = review.approvals;
         }
+        // 12. 최종 지문 표시(§6). 교정이 명세를 바꿨을 수 있으므로 반영이 끝난 뒤에 읽는다.
+        // 화면에 찍은 값과 저장되는 approval.fingerprint 는 언제나 같아야 한다.
+        const fingerprint = session.approvedDraft.suiteFingerprint;
+        io.write(`Final fingerprint: ${fingerprint}\n`);
+        writeRepairSummary(io, repairedCases, repairChanges);
         if (!(await io.confirm("최종 JSON을 저장할까요?"))) continue;
         const final = deps.finalizeAuthoringDraft({
           session,

@@ -87,7 +87,7 @@ ohmymcp test suite.json --command ohmymcp-mock --arg definition.json
 
 거부 집합은 `record` 의 카세트 매칭 키(ADR-0003)와 같습니다. 다만 `record` 는 키를 SHA-256 으로
 해시하고 목은 하지 않습니다 — 목의 키는 파일에 남지 않고 실패 메시지에 그대로 찍히기 때문입니다.
-배경은 ADR-0027.
+배경은 ADR-0029.
 
 ## 설계 메모
 

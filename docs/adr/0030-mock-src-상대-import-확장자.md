@@ -1,4 +1,4 @@
-# ADR-0028: `packages/mock/src` 의 상대 import 확장자
+# ADR-0030: `packages/mock/src` 의 상대 import 확장자
 
 - 상태: 제안
 - 날짜: 2026-08-15

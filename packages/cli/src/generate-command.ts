@@ -1048,6 +1048,11 @@ async function runInteractiveReview(
               ),
             };
           }
+          // 교정 재실행도 서버를 부르므로 카세트가 새 경고를 붙일 수 있다. 여기서 비우지
+          // 않으면 그 경고는 다음 save 회차에서만 나오고, 저장으로 끝나면 영영 안 나온다.
+          // 재생 중 교정한 입력값이 카세트에 없어 실제 서버로 나갔다는 사실이 이 경고다.
+          for (const warning of cassette.warnings.slice(printedWarnings)) io.write(`${warning}\n`);
+          printedWarnings = cassette.warnings.length;
           // 11. 남은 실패를 분류(§8.3). 교정을 시도했던 케이스는 이력이 함께 나온다(§8.7).
           const review = await reviewDryRun(io, effective, attempts);
           if (!review.cleared) {

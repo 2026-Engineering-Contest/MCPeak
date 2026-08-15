@@ -144,12 +144,14 @@ generate 도움말
 ```
 [1단계: 작업 공간 만들기] 다른 무엇보다 먼저 이것부터 해라.
 
-  git worktree add /Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/ohmymcp-out-precheck -b feat/generate-out-precheck main
+  cd "$(git rev-parse --show-toplevel)"
+  git worktree add .claude/worktrees/ohmymcp-out-precheck -b feat/generate-out-precheck main
 
 를 실행한 뒤 그 경로로 세션을 옮겨라. 옮긴 다음 아래를 확인하고, 하나라도 어긋나면 중단하고
 BLOCKED 로 보고해라.
 
-  - pwd 가 /Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/ohmymcp-out-precheck 인지
+  - pwd 가 저장소 루트의 .claude/worktrees/ohmymcp-out-precheck 인지
+    (git rev-parse --show-toplevel 이 그 경로를 가리키는지로 확인한다)
   - git log --oneline -1 이 루트의 main HEAD 와 같은지
   - docs/superpowers/specs/2026-08-15-generate-out-precheck-design.md 가 있는지
   - docs/superpowers/plans/2026-08-15-generate-out-precheck-implementation.md 가 있는지
@@ -219,10 +221,13 @@ packages/core/tests/stdio-integration.test.ts 는 첫 실행에 종종 실패하
    설계서 §6 의 두 문안이 그대로인가. 선검사가 `connect` 앞인가.
 3. 계획서에 적힌 검증 명령을 **다시 실행한다.** `pnpm typecheck --force` 출력에서
    `Cached: 0 cached` 를 확인한다.
-4. 통과하면 커밋하고 `--no-ff` 로 머지한다. 머지된 `main` 에서 전체 테스트를 **새로** 돌린다.
-5. 통합 SHA 를 `docs/task-integration-ledger.tsv` 에 `R9-out-precheck` 로 기록하고 별도 문서
-   커밋으로 보존한다.
-6. worktree 가 깨끗한지 확인한 뒤 그 worktree 만 제거하고 그 브랜치만 삭제한다.
+4. 통과하면 **오케스트레이터 세션이** 태스크 단위로 커밋한다. 구현 세션은 커밋하지 않는다.
+   실행 프롬프트의 `커밋은 하지 마라` 와 이 줄은 같은 규칙의 양면이다.
+5. 통합 브랜치를 `--no-ff` 로 합친 뒤 **PR 을 열어 머지한다. `main` 에 직접 푸시하지 않는다.**
+   저장소 규칙상 모든 변경은 PR 을 거친다. 통합 대장 기록도 그 PR 에 함께 싣는다. 로컬 `main`
+   병합은 검증용이고 원격 반영이 아니다.
+6. 통합 SHA 를 `docs/task-integration-ledger.tsv` 에 `R9-out-precheck` 로 기록한다.
+7. worktree 가 깨끗한지 확인한 뒤 그 worktree 만 제거하고 그 브랜치만 삭제한다.
 
 ## 7. 완료 판정
 

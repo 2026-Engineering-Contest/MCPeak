@@ -13,15 +13,24 @@ import type {
   SanitizedAuthoringCandidate,
   ToolCoverage,
 } from "@ohmymcp/generate";
+import type { Cassette, CassetteMode } from "@ohmymcp/record";
 import type {
   ContractAxisKind,
   SpecFinding,
   SpecFindingCode,
+  SuiteCaseApproval,
   SuiteValidationResult,
   TestSuiteSpec,
 } from "@ohmymcp/runner";
 import { describeSpecFinding, suiteFingerprint } from "@ohmymcp/runner";
+import { wireCassette } from "./cassette-wiring.js";
+import type { DryRunResult } from "./dry-run.js";
+import { runDryRun } from "./dry-run.js";
+import { reviewDryRun } from "./dry-run-review.js";
 import { GENERATE_USAGE_HINT } from "./help.js";
+import type { ProcessDiagnosticsInput } from "./process-diagnostics.js";
+import { hasDiagnosticContent, renderProcessDiagnostics } from "./process-diagnostics.js";
+import { ResetCommandError, runResetCommand } from "./reset-hook.js";
 
 export { GENERATE_USAGE } from "./help.js";
 
@@ -34,6 +43,14 @@ export interface GenerateCommandInput {
   readonly baselineOnly: boolean;
   readonly provider?: "codex" | "claude";
   readonly model?: string;
+  /** 승인 전 시험 실행 여부. 기본은 실행이고 `--no-dry-run` 이 끈다. 설계 문서 §4.3. */
+  readonly dryRun: boolean;
+  /** `--cassette` 경로. 없으면 서버를 직접 부른다. */
+  readonly cassettePath?: string;
+  /** `--record`. 카세트 파일이 있어도 새로 녹화한다. */
+  readonly forceRecord: boolean;
+  /** `--reset-cmd`. 시험 실행 직전 1회 실행한다. */
+  readonly resetCmd?: string;
 }
 export interface GenerateCommandDependencies {
   connect(options: { command: string; args: readonly string[] }): Promise<McpStdioConnection>;
@@ -74,6 +91,15 @@ export interface GenerateCommandDependencies {
   applyAuthoringChanges?: typeof import("@ohmymcp/generate").applyAuthoringChanges;
   reviewLocalAuthoringCandidate?: typeof import("@ohmymcp/generate").reviewLocalAuthoringCandidate;
   computeCoverage?: typeof import("@ohmymcp/generate").computeCoverage;
+  /**
+   * 카세트 파일 입출력. 주입점을 여기 하나만 두는 이유는 시험 실행 경로에서 파일시스템을
+   * 만지는 곳이 이것뿐이기 때문이다. 나머지(`runDryRun`·`reviewDryRun`)는 주입한 client 와
+   * io 만 쓰므로 테스트가 실제 구현을 그대로 돌린다.
+   */
+  cassetteIo?: {
+    load(path: string): Promise<Cassette | null>;
+    save(path: string, cassette: Cassette): Promise<void>;
+  };
 }
 export interface ReviewIO {
   input(message: string): Promise<string>;
@@ -145,7 +171,13 @@ const optionNames = new Set([
   "--baseline-only",
   "--provider",
   "--model",
+  "--no-dry-run",
+  "--cassette",
+  "--record",
+  "--reset-cmd",
 ]);
+/** 값을 받지 않는 옵션. `=` 를 붙여 쓸 수 없고 두 번 쓸 수 없다. */
+const flagNames = new Set(["--baseline-only", "--no-dry-run", "--record"]);
 function optionValue(argv: readonly string[], index: number, option: string): [string, number] {
   const item = argv[index];
   if (item === undefined) throw new UsageError(`\`${option}\` 옵션 값이 필요합니다.`);
@@ -160,7 +192,7 @@ function optionValue(argv: readonly string[], index: number, option: string): [s
 export function parseGenerateCommand(argv: readonly string[]): GenerateCommandInput {
   const values = new Map<string, string>();
   const args: string[] = [];
-  let baselineOnly = false;
+  const flags = new Set<string>();
   for (let index = 0; index < argv.length; index++) {
     const item = argv[index];
     if (item === undefined) continue;
@@ -169,10 +201,10 @@ export function parseGenerateCommand(argv: readonly string[]): GenerateCommandIn
       throw new UsageError(`추가 위치 인자 '${item}'는 허용되지 않습니다.`);
     if (!optionNames.has(option))
       throw new UsageError(`지원하지 않는 generate 옵션 '${option}'입니다.`);
-    if (option === "--baseline-only") {
-      if (item !== option || baselineOnly)
-        throw new UsageError("`--baseline-only`는 한 번만 사용할 수 있습니다.");
-      baselineOnly = true;
+    if (flagNames.has(option)) {
+      if (item !== option || flags.has(option))
+        throw new UsageError(`\`${option}\`는 한 번만 사용할 수 있습니다.`);
+      flags.add(option);
       continue;
     }
     const [value, consumed] = optionValue(argv, index, option);
@@ -194,15 +226,32 @@ export function parseGenerateCommand(argv: readonly string[]): GenerateCommandIn
     throw new UsageError("`--provider`는 codex 또는 claude여야 합니다.");
   if (values.has("--model") && rawProvider === undefined)
     throw new UsageError("`--model`은 `--provider`와 함께만 사용할 수 있습니다.");
+  const dryRun = !flags.has("--no-dry-run");
+  const cassettePath = values.get("--cassette");
+  const resetCmd = values.get("--reset-cmd");
+  // 시험 실행을 끄면 서버를 접촉하지 않는다. 카세트와 초기화는 접촉을 전제한 옵션이므로 함께
+  // 주면 둘 중 하나가 조용히 무시된다. 무시하는 대신 사용 오류로 돌려준다.
+  if (!dryRun && cassettePath !== undefined)
+    throw new UsageError("`--no-dry-run`과 `--cassette`는 함께 사용할 수 없습니다.");
+  if (!dryRun && resetCmd !== undefined)
+    throw new UsageError("`--no-dry-run`과 `--reset-cmd`는 함께 사용할 수 없습니다.");
+  if (flags.has("--record") && cassettePath === undefined)
+    throw new UsageError("`--record`는 `--cassette`와 함께만 사용할 수 있습니다.");
+  if (resetCmd !== undefined && resetCmd.trim() === "")
+    throw new UsageError("`--reset-cmd` 옵션 값이 필요합니다.");
   return Object.freeze({
     suiteId: values.get("--suite-id") as string,
     name: values.get("--name") as string,
     outPath,
     command: values.get("--command") as string,
     args: Object.freeze(args),
-    baselineOnly,
+    baselineOnly: flags.has("--baseline-only"),
     provider: rawProvider,
     model: values.get("--model"),
+    dryRun,
+    cassettePath,
+    forceRecord: flags.has("--record"),
+    resetCmd,
   });
 }
 
@@ -211,12 +260,18 @@ export function parseGenerateCommand(argv: readonly string[]): GenerateCommandIn
  * 파일을 열었을 때 첫 화면에서 보이게 하기 위해서다. 지문 계산은 `canonicalJson`이 키를
  * 정렬하므로 이 순서에 영향받지 않는다. 즉 가독성 결정이지 계약이 아니다.
  */
-function renderSuite(suite: TestSuiteSpec, fingerprint: string): string {
+function renderSuite(
+  suite: TestSuiteSpec,
+  fingerprint: string,
+  cases: readonly SuiteCaseApproval[],
+): string {
   const ordered: Record<string, unknown> = {
     schemaVersion: suite.schemaVersion,
     id: suite.id,
     name: suite.name,
-    approval: { fingerprint },
+    // 빈 배열이면 키를 넣지 않는다. `[]` 는 "시험 실행을 했는데 케이스가 0개" 와 "시험 실행을
+    // 하지 않았다" 를 구분하지 못한다. 키가 없는 것이 후자의 표현이다.
+    approval: cases.length === 0 ? { fingerprint } : { fingerprint, cases },
   };
   if (suite.defaultTimeoutMs !== undefined) ordered.defaultTimeoutMs = suite.defaultTimeoutMs;
   ordered.cases = suite.cases;
@@ -240,6 +295,7 @@ async function saveSuite(
   suite: TestSuiteSpec,
   fingerprint: string,
   deps: GenerateCommandDependencies,
+  approvals: readonly SuiteCaseApproval[] = [],
 ): Promise<void> {
   // 선검사는 사용자에게 더 빨리 알려주기 위한 것이고 **보장이 아니다.** 여기서 통과해도
   // 커밋 직전에 다른 프로세스가 같은 경로를 만들 수 있다. no-clobber 보장은 아래 link에 있다.
@@ -250,7 +306,7 @@ async function saveSuite(
     const handle = await deps.openTemp(temporary);
     created = true;
     try {
-      await handle.writeFile(renderSuite(suite, fingerprint), "utf8");
+      await handle.writeFile(renderSuite(suite, fingerprint, approvals), "utf8");
       await handle.sync();
     } finally {
       await handle.close();
@@ -547,11 +603,148 @@ function providerFailure(
   else deps.writeStderr(message);
 }
 
+/**
+ * 시험 실행 화면이 쓰는 서버 stderr 줄 수. `test` 의 `--stderr-lines` 기본값과 같은 값이다.
+ * `generate` 에는 그 옵션이 없으므로 기본값 하나만 둔다.
+ */
+const DRY_RUN_STDERR_LINES = 20;
+
+/**
+ * 실패 케이스 머리글. 결과 화면(§8.2)과 분류 화면(dry-run-review.ts, §8.3)이 **같은 모양**이어야
+ * 한다. 두 화면이 같은 케이스를 다르게 부르면 사용자가 둘을 대조하지 못한다.
+ */
+const failureHeading = (index: number, caseName: string): string =>
+  `  [${index + 1}] ${caseName}\n`;
+
+/**
+ * `renderReport` 가 만든 케이스 블록을 이 화면 들여쓰기로 옮긴다. 두 칸을 앞에 붙이기만 하고
+ * 문장은 건드리지 않는다. dry-run-review.ts 의 같은 처리와 규칙이 같다.
+ */
+const detailBlock = (detail: string): string =>
+  detail === ""
+    ? ""
+    : `${detail
+        .split("\n")
+        .map((line) => `  ${line}`)
+        .join("\n")}\n`;
+
+/** 시험 실행 고지(§8.1). 카세트와 초기화는 값이 있을 때만 줄이 나간다. */
+function writeDryRunNotice(
+  io: ReviewIO,
+  notice: {
+    readonly caseCount: number;
+    readonly target: string;
+    readonly cassette?: { readonly path: string; readonly fresh: boolean };
+    readonly resetCmd?: string;
+  },
+): void {
+  io.write(`시험 실행: 케이스 ${notice.caseCount}개를 실제 서버에 보냅니다.\n`);
+  io.write(`  대상: ${notice.target}\n`);
+  if (notice.cassette !== undefined)
+    io.write(
+      `  카세트: ${notice.cassette.path} (${notice.cassette.fresh ? "신규 녹화" : "재생"})\n`,
+    );
+  if (notice.resetCmd !== undefined) io.write(`  초기화: ${notice.resetCmd}\n`);
+  io.write(
+    "\n이 실행은 서버 상태를 바꿀 수 있습니다. 입력 검증이 없는 서버라면 외부 API 호출도\n그대로 나갑니다.\n",
+  );
+}
+
+/** 시험 실행 결과(§8.2). 0건인 종류는 찍지 않는다. */
+function writeDryRunResult(io: ReviewIO, result: DryRunResult): void {
+  const failures = result.outcomes.filter((outcome) => outcome.status !== "passed");
+  const passed = result.outcomes.length - failures.length;
+  io.write("\n");
+  if (passed > 0) io.write(`  ✓ 통과 ${passed}건\n`);
+  if (failures.length > 0) io.write(`  ✗ 실패 ${failures.length}건\n`);
+  for (const [index, outcome] of failures.entries()) {
+    io.write("\n");
+    io.write(failureHeading(index, outcome.caseName));
+    io.write(detailBlock(outcome.detail));
+  }
+  // 결과 목록과 그 뒤에 이어지는 분류 질문 사이를 띄운다. 붙으면 같은 케이스가 두 번 찍힌
+  // 것처럼 보인다.
+  if (failures.length > 0) io.write("\n");
+}
+
+/**
+ * 시험 실행이 끝까지 못 간 경우(§8.4). stderr 블록은 단계 1 의 `renderProcessDiagnostics` 를
+ * 그대로 쓴다. 여기서 새 렌더러를 만들지 않는다.
+ *
+ * `outcomes.length` 가 곧 "몇 번째에서 끊겼는가" 다. dry-run.ts 가 끊긴 케이스까지 담아 주므로
+ * 여기서 더하거나 빼지 않는다.
+ */
+function writeDryRunAborted(
+  io: ReviewIO,
+  result: DryRunResult,
+  totalCases: number,
+  diagnostics: ProcessDiagnosticsInput | undefined,
+): void {
+  const aborted = result.aborted;
+  if (aborted === undefined) return;
+  const progress = `${result.outcomes.length}/${totalCases}`;
+  io.write(
+    aborted.reason === "connectionLost"
+      ? `✗ 시험 실행을 마치지 못했습니다. ${progress} 케이스에서 연결이 끊겼습니다.\n`
+      : aborted.reason === "stopped"
+        ? `✗ 시험 실행을 마치지 못했습니다. ${progress} 케이스에서 멈췄습니다.\n`
+        : "✗ 시험 실행을 마치지 못했습니다.\n",
+  );
+  io.write(`  → ${aborted.detail}\n`);
+  if (diagnostics !== undefined && hasDiagnosticContent(diagnostics)) {
+    const block = renderProcessDiagnostics(diagnostics, { maxLines: DRY_RUN_STDERR_LINES });
+    if (block !== "") io.write(`\n${block}`);
+  }
+  io.write("\n저장하지 않았습니다. 서버를 고친 뒤 다시 save 를 고르세요.\n");
+}
+
+/**
+ * 분류가 저장을 막았을 때의 안내(§8.3). 마지막 줄은 **실제 카세트 모드**로 갈린다.
+ *
+ * 재생은 `auto` 에서만 일어난다. 신규 녹화(`record`)는 회차마다 전량을 다시 서버로 보내므로
+ * "나머지는 카세트에서 재생됩니다" 가 거짓이 된다. 그래서 경로 유무가 아니라 `wireCassette`
+ * 가 정한 모드를 받는다.
+ */
+function writeReviewBlocked(
+  io: ReviewIO,
+  specErrors: number,
+  caseCount: number,
+  cassetteMode: CassetteMode | undefined,
+): void {
+  io.write("\n");
+  if (specErrors > 0) {
+    io.write(`  명세 오류 ${specErrors}건이 있어 저장할 수 없습니다.\n`);
+    io.write("  → 검토 메뉴의 revise 또는 edit 으로 고친 뒤 다시 save 를 고르세요.\n");
+  } else {
+    // 보류는 고칠 것이 없다. revise·edit 으로 보내면 사용자가 고칠 데를 찾다 만다.
+    io.write("  분류하지 않은 케이스가 있어 저장할 수 없습니다.\n");
+  }
+  if (cassetteMode === "auto") {
+    io.write("  → 고친 케이스만 서버에 다시 나갑니다. 나머지는 카세트에서 재생됩니다.\n");
+    return;
+  }
+  io.write(`  → 다시 save 를 고르면 케이스 ${caseCount}개가 모두 서버에 다시 나갑니다.\n`);
+  io.write(
+    cassetteMode === undefined
+      ? "    반복 비용이 부담되면 --cassette 를 쓰세요.\n"
+      : "    신규 녹화 중이라 이번 세션에서는 재생하지 않습니다.\n",
+  );
+}
+
+/** 초기화 명령 실패 안내. stderr 은 마지막 3줄만 보여준다. 설계 문서 §6. */
+function writeResetFailure(io: ReviewIO, error: ResetCommandError): void {
+  const exit = error.exitCode === null ? "없음" : String(error.exitCode);
+  io.write(`✗ 초기화 명령이 실패했습니다. 명령: ${error.command} (종료 코드: ${exit})\n`);
+  for (const line of error.stderr.split("\n").filter(Boolean).slice(-3)) io.write(`  → ${line}\n`);
+  io.write("저장하지 않았습니다. 초기화 명령을 고친 뒤 다시 save 를 고르세요.\n");
+}
+
 async function runInteractiveReview(
   input: GenerateCommandInput,
   tools: readonly ToolDef[],
   session: AuthoringSessionView,
   deps: GenerateCommandDependencies,
+  connection: McpStdioConnection,
 ): Promise<number> {
   const io = deps.reviewIO;
   const prepare = deps.prepareAuthoringRequest;
@@ -566,6 +759,22 @@ async function runInteractiveReview(
   let candidate: SanitizedAuthoringCandidate | undefined = session.workingCandidate;
   let preferred = input.provider;
   let model = input.model;
+  /**
+   * 카세트 배선은 검토 세션에 하나뿐이고 `save` 를 여러 번 골라도 같은 것을 쓴다. 시도마다 새로
+   * 만들면 저장이 막힌 첫 시도의 녹화가 통째로 버려지고, "고친 케이스만 서버에 다시 나갑니다"
+   * (§8.3)가 거짓이 된다. flush 는 저장에 성공한 뒤 한 번만 부른다.
+   */
+  let cassette: Awaited<ReturnType<typeof wireCassette>> | undefined;
+  /** 이미 화면에 낸 카세트 경고 수. 배선이 세션당 하나라 경고도 누적된다. 회차마다 새것만 낸다. */
+  let printedWarnings = 0;
+  /** 진단 읽기가 판정을 바꾸면 안 된다. getDiagnostics 가 던지면 삼킨다. */
+  const diagnostics = (): ProcessDiagnosticsInput | undefined => {
+    try {
+      return connection.getDiagnostics();
+    } catch {
+      return undefined;
+    }
+  };
   try {
     while (true) {
       const action = await io.choose("검토 메뉴", [
@@ -582,6 +791,74 @@ async function runInteractiveReview(
       if (action === "save") {
         const fingerprint = session.approvedDraft.suiteFingerprint;
         io.write(`Final fingerprint: ${fingerprint}\n`);
+        const dryRunSuite = session.approvedDraft.suite;
+        const caseCount = dryRunSuite.cases.length;
+        let approvals: readonly SuiteCaseApproval[] = [];
+        if (!input.dryRun) {
+          // §8.5. 시험 실행을 건너뛰면 approval.cases 가 없는 파일이 되고, 그 사실을 저장 직전에
+          // 한 번 더 보여준다.
+          io.write(
+            `⚠ 시험 실행을 건너뜁니다. 케이스 ${caseCount}건이 실제 서버에서 확인되지 않은 채 저장됩니다.\n` +
+              "   저장된 명세에 승인 기록(approval.cases)이 남지 않습니다.\n",
+          );
+          if (!(await io.confirm("   계속할까요?"))) continue;
+        } else {
+          const path = input.cassettePath;
+          writeDryRunNotice(io, {
+            caseCount,
+            target: [input.command, ...input.args].join(" "),
+            // 배선이 이미 있으면 그것이 정한 모드를 그대로 쓴다. 첫 회차는 아직 배선 전이라
+            // 파일 존재로 정하는데, 이는 `wireCassette` 의 규칙(§5.2)과 같은 판정이다.
+            // `loadCassette` 는 파일이 없을 때만 null 을 주고 나머지는 던지기 때문이다.
+            ...(path === undefined
+              ? {}
+              : {
+                  cassette: {
+                    path,
+                    fresh:
+                      cassette === undefined
+                        ? input.forceRecord || !(await deps.exists(path))
+                        : cassette.mode === "record",
+                  },
+                }),
+            resetCmd: input.resetCmd,
+          });
+          if (!(await io.confirm("계속할까요?"))) continue;
+          if (input.resetCmd !== undefined) {
+            try {
+              await runResetCommand(input.resetCmd);
+            } catch (error) {
+              if (!(error instanceof ResetCommandError)) throw error;
+              writeResetFailure(io, error);
+              continue;
+            }
+            io.write(`▸ 초기화: ${input.resetCmd}\n`);
+          }
+          if (cassette === undefined)
+            cassette = await wireCassette({
+              inner: connection.client,
+              path: input.cassettePath,
+              forceRecord: input.forceRecord,
+              io: deps.cassetteIo,
+            });
+          // 진행 표시는 한 번만 나간다. 중간 갱신에 터미널 제어 문자를 쓰면 파이프로 받은
+          // 출력이 깨지고 그 출력을 E2E 가 비교한다.
+          io.write(`▸ 시험 실행 중... ${caseCount}/${caseCount}\n`);
+          const result = await runDryRun({ client: cassette.client, suite: dryRunSuite });
+          for (const warning of cassette.warnings.slice(printedWarnings)) io.write(`${warning}\n`);
+          printedWarnings = cassette.warnings.length;
+          if (result.aborted !== undefined) {
+            writeDryRunAborted(io, result, caseCount, diagnostics());
+            continue;
+          }
+          writeDryRunResult(io, result);
+          const review = await reviewDryRun(io, result);
+          if (!review.cleared) {
+            writeReviewBlocked(io, review.specErrors.length, caseCount, cassette.mode);
+            continue;
+          }
+          approvals = review.approvals;
+        }
         if (!(await io.confirm("최종 JSON을 저장할까요?"))) continue;
         const final = deps.finalizeAuthoringDraft({
           session,
@@ -593,7 +870,18 @@ async function runInteractiveReview(
         }
         try {
           const finalSuite = deps.getAuthoringExecutionSuite(final.snapshot);
-          await saveSuite(input, finalSuite, final.snapshot.fingerprint, deps);
+          await saveSuite(input, finalSuite, final.snapshot.fingerprint, deps, approvals);
+          // 저장이 끝난 뒤에만 부른다. flush 는 내부에서 inner.close() 까지 부르므로 이보다
+          // 앞이면 저장 직전에 연결이 죽는다.
+          //
+          // 오류 경계를 저장과 분리한다. 카세트 저장 실패는 명세 저장 실패가 아니다. 같이 묶으면
+          // 이미 파일이 만들어진 뒤에 SAVE_FAILED 를 말하고, 이어지는 재시도는 OUTPUT_EXISTS 로
+          // 막히는데 그때 연결은 flush 가 이미 닫아 놓은 상태다.
+          try {
+            await cassette?.flush();
+          } catch {
+            io.write("⚠ 카세트를 저장하지 못했습니다. 명세는 저장됐습니다.\n");
+          }
           // 최종 suite 는 baseline 과 다르다. 사용자가 케이스를 지웠거나 AI 후보를 적용했을 수
           // 있으므로 저장한 그 suite 로 다시 계산한다.
           //
@@ -885,29 +1173,51 @@ export async function runGenerateCommand(
     return 1;
   }
   let connection: McpStdioConnection | undefined;
+  /**
+   * 대화형 검토는 아래 try 밖에서 돌린다. 검토가 던지는 오류를 여기 catch 가 삼키면
+   * `GENERATE_FAILED` 로 뭉개지는데, 그 경로는 원래 호출자에게 그대로 올라가야 한다.
+   */
+  let review:
+    | {
+        readonly active: McpStdioConnection;
+        readonly session: AuthoringSessionView;
+        readonly tools: readonly ToolDef[];
+      }
+    | undefined;
   try {
     connection = await deps.connect({ command: input.command, args: input.args });
-    const tools = await connection.client.listTools();
-    await connection.close();
-    connection = undefined;
+    const active = connection;
+    const tools = await active.client.listTools();
+    // 시험 실행이 검토 메뉴 안쪽에서 일어나므로 대화형 경로는 여기서 닫지 않는다. 검토가 끝난
+    // 뒤 finally 에서 닫는다. 설계 문서 §4.1. `--baseline-only` 는 서버를 더 쓰지 않으므로
+    // 지금까지와 같이 여기서 닫는다.
+    if (input.baselineOnly) {
+      await active.close();
+      connection = undefined;
+    }
     const baseline = deps.createBaselineSuite(tools, {
       suiteId: input.suiteId,
       suiteName: input.name,
     });
     const session = deps.createAuthoringSession(baseline);
-    if (!input.baselineOnly) return runInteractiveReview(input, tools, session, deps);
-    const final = deps.finalizeAuthoringDraft({
-      session,
-      approval: { approved: true, fingerprint: session.approvedDraft.suiteFingerprint },
-    });
-    if (!final.finalized) throw new Error("finalize failed");
-    const finalSuite = deps.getAuthoringExecutionSuite(final.snapshot);
-    await saveSuite(input, finalSuite, final.snapshot.fingerprint, deps);
-    deps.writeStdout(`baseline suite를 저장했습니다: ${input.outPath}\n`);
-    // baseline 경로는 저장한 suite 가 baseline 그대로이므로 다시 계산하지 않는다.
-    // 저장 뒤이므로 렌더링 실패를 GENERATE_FAILED 로 보고하지 않는다.
-    reportCoverageSafely(deps, () => baseline.coverage, finalSuite);
-    return 0;
+    if (!input.baselineOnly) {
+      // 아래 finally 가 닫는 것으로 소유권을 옮긴다. catch 의 forceClose 와 겹치지 않게 한다.
+      connection = undefined;
+      review = { active, session, tools };
+    } else {
+      const final = deps.finalizeAuthoringDraft({
+        session,
+        approval: { approved: true, fingerprint: session.approvedDraft.suiteFingerprint },
+      });
+      if (!final.finalized) throw new Error("finalize failed");
+      const finalSuite = deps.getAuthoringExecutionSuite(final.snapshot);
+      await saveSuite(input, finalSuite, final.snapshot.fingerprint, deps);
+      deps.writeStdout(`baseline suite를 저장했습니다: ${input.outPath}\n`);
+      // baseline 경로는 저장한 suite 가 baseline 그대로이므로 다시 계산하지 않는다.
+      // 저장 뒤이므로 렌더링 실패를 GENERATE_FAILED 로 보고하지 않는다.
+      reportCoverageSafely(deps, () => baseline.coverage, finalSuite);
+      return 0;
+    }
   } catch (error) {
     if (connection !== undefined) await connection.forceClose().catch(() => undefined);
     // 같은 결함이 비대화형 경로에도 있었다. 여기서도 원인이 뭉개지면 안 된다.
@@ -919,6 +1229,12 @@ export async function runGenerateCommand(
         "오류 [GENERATE_FAILED]: baseline suite를 생성하거나 저장하지 못했습니다.\n해결: MCP 서버와 출력 경로를 확인한 뒤 다시 실행하세요.\n",
       );
     return 1;
+  }
+  // 검토는 위 catch 밖에서 돈다. 연결은 검토가 끝난 뒤 여기서 닫는다(설계 문서 §4.1).
+  try {
+    return await runInteractiveReview(input, review.tools, review.session, deps, review.active);
+  } finally {
+    await review.active.close().catch(() => undefined);
   }
 }
 

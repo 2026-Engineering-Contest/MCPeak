@@ -9,6 +9,7 @@ import type {
   SpecFinding,
   SpecFindingCode,
   SpecFindingsResult,
+  SuiteCaseApproval,
   SuiteValidationIssue,
   SuiteValidationResult,
   TestSuiteSpec,
@@ -26,8 +27,10 @@ import {
   renderProcessDiagnostics,
 } from "./process-diagnostics.js";
 import {
+  caseApprovalStatuses,
   checkSpecApproval,
   renderSpecApproval,
+  SERVER_DEFECT_NOTE_LINE,
   type SpecApprovalState,
   shouldShowSpecApproval,
 } from "./spec-approval.js";
@@ -608,6 +611,24 @@ export async function runCli(
       return [];
     }
   })();
+  /**
+   * 참고 문장을 붙일 케이스. 승인 시점에 `serverDefect` 로 표시했는데 지금 또 실패한 것들이다.
+   * 설계 문서 §9.
+   *
+   * **지문이 일치할 때만 본다.** 명세가 바뀌었으면 승인 시점의 판정이 지금 케이스에 해당하는지
+   * 알 수 없다. 지문이 없으면 `approval.cases` 도 없으므로 이 집합은 비어 있다.
+   * `serverDefect` 케이스가 통과하면 침묵한다. `test` 화면은 실패를 보는 자리다.
+   */
+  const serverDefectCases: ReadonlySet<string> = (() => {
+    if (specApproval.state !== "matched") return new Set<string>();
+    const statuses = caseApprovalStatuses(validated.value);
+    if (statuses.size === 0) return new Set<string>();
+    return new Set(
+      finalReport.cases
+        .filter((item) => item.status !== "passed" && statuses.get(item.spec.id) === "serverDefect")
+        .map((item) => item.spec.id),
+    );
+  })();
   try {
     if (input.json) {
       /**
@@ -620,6 +641,7 @@ export async function runCli(
         fingerprint: string;
         approvedFingerprint?: string;
         findings: readonly { code: string; severity: string; caseId: string; path: string }[];
+        cases?: readonly SuiteCaseApproval[];
       } = {
         approval: specApproval.state,
         fingerprint: specApproval.fingerprint,
@@ -635,6 +657,14 @@ export async function runCli(
       };
       if (specApproval.approvedFingerprint !== undefined)
         spec.approvedFingerprint = specApproval.approvedFingerprint;
+      /**
+       * 승인 시점 판정은 파일에 적힌 그대로 싣는다. 지문이 불일치여도 억제하지 않는다.
+       * 텍스트 참고 문장을 지문 불일치에 억제하는 것은 사람이 읽는 화면의 규칙이고, 기계는
+       * `spec.approval` 로 불일치를 이미 안다. 설계 문서 §9.
+       * `approvedFingerprint` 와 같은 이유로 없을 때는 키 자체를 만들지 않는다.
+       */
+      const approvedCases = validated.value.approval?.cases;
+      if (approvedCases !== undefined) spec.cases = approvedCases;
       dependencies.writeStdout(`${JSON.stringify({ ...finalReport, spec }, null, 2)}\n`);
     } else {
       dependencies.writeStdout(
@@ -644,14 +674,22 @@ export async function runCli(
        * 참고 문장은 보고서 뒤, 명세 승인 블록 앞이다. 케이스마다 한 블록으로 묶는다.
        * 순서는 `runner` 가 정한 finding 순서이고 여기서 다시 정렬하지 않는다. 설계 문서 §7.2.
        */
-      if (specFindings.length > 0) {
+      if (specFindings.length > 0 || serverDefectCases.size > 0) {
         const byCase = new Map<string, SpecFinding[]>();
         for (const finding of specFindings) {
           const list = byCase.get(finding.caseId) ?? [];
           list.push(finding);
           byCase.set(finding.caseId, list);
         }
-        for (const [caseId, list] of byCase)
+        /**
+         * 케이스 순서는 보고서가 정한다. `specFindings` 의 순서도 같은 출처에서 나오므로
+         * 여기서 다시 정렬해도 기존 순서가 그대로다. 승인 판정만 있고 finding 이 없는 케이스는
+         * `byCase` 에 없어서 이 목록으로 순회해야 빠지지 않는다.
+         */
+        for (const item of finalReport.cases) {
+          if (item.status === "passed") continue;
+          const caseId = item.spec.id;
+          const list = byCase.get(caseId) ?? [];
           for (const group of FINDING_GROUP_ORDER) {
             const grouped = list.filter((finding) => FINDING_GROUP[finding.code] === group);
             if (grouped.length === 0) continue;
@@ -662,6 +700,9 @@ export async function runCli(
                 .join("")}`,
             );
           }
+          if (serverDefectCases.has(caseId))
+            dependencies.writeStdout(`\n${SERVER_DEFECT_NOTE_LINE}`);
+        }
       }
       // 지문은 우리가 만든 hex 라 제어 문자가 섞일 수 없다. 이스케이프가 필요 없는 유일한
       // 표시 항목이다. 앞의 빈 줄은 진단 블록과 같은 레이아웃 규칙이다. 설계 문서 §7.2.

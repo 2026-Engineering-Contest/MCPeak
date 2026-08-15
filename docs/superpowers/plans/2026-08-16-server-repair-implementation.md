@@ -262,8 +262,15 @@ T12 까지 끝나면 pnpm test 를 --force 로 한 번 돌리고 `Cached: 0 cach
 
 **계약 (전량 고정. 여기서 한 글자라도 바뀌면 T2·T3·T4 와 터미널 B 가 전부 어긋난다)**
 
+> **정정 (2026-08-16, 실행 중 확인).** 초안은 `JsonValue` 를 `@ohmymcp/runner` 에서 가져왔으나
+> 그것은 전역 제약("`runner` 에서 새 심볼을 import 하지 않는다")과 충돌한다.
+> `dependency-boundary.test.ts` 의 승인 목록은 부분집합이 아니라 정확한 일치를 단언하므로
+> 목록을 넓히지 않고는 초록이 되지 않는다. `packages/generate/src/schema.ts:1` 의 `JsonValue` 가
+> 구조적으로 같은 정의이고 형제 모듈 `authoring-request.ts` 도 runner 의 것을 쓰지 않는다.
+> **T2·T3·T4 와 터미널 B 도 이 결정을 따른다.**
+
 ```ts
-import type { JsonValue } from "@ohmymcp/runner";
+import type { JsonValue } from "./schema.js";
 import type { McpToolContext } from "./authoring-request.js";
 
 export interface DiagnosisDiagnostic {

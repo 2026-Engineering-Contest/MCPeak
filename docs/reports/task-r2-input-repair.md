@@ -99,7 +99,8 @@ Cached:    0 cached, 6 total
 Checked 162 files in 40ms. No fixes applied.
 ```
 
-첫 실행에서 신규 테스트 파일 포매팅 1건이 났고 `biome check --write` 로 그 파일만 고쳤다.
+최초 구현 때 첫 실행에서 신규 테스트 파일 포매팅 1건이 났고 `biome check --write` 로 그 파일만
+고쳤다. 캐시 수정 뒤 다시 돌렸을 때는 위반이 없었다.
 
 ### 뮤테이션 점검
 
@@ -111,9 +112,10 @@ Checked 162 files in 40ms. No fixes applied.
 | 전부 엔터일 때 조기 종료 제거 | 1 failed |
 | 캐시 재사용 제거 | 3 failed |
 | 스키마 타입 검사 제거 | 1 failed |
-| 2회차 진입 조건 제거 | 2 failed |
+| 2회차 진입 조건 제거 | 3 failed |
+| 판정 전 무조건 캐시(수정 전 동작 복원) | 1 failed |
 
-전부 되돌린 뒤 20건 통과를 다시 확인했다.
+전부 되돌린 뒤 21건 통과를 다시 확인했다.
 
 ## 임의로 판단한 지점
 

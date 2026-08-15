@@ -241,16 +241,7 @@ export interface GeneratedCase {
   readonly id: string;
   readonly name: string;
   readonly operation: { readonly type: "callTool"; readonly tool: string; readonly input: JsonObject };
-  /**
-   * 튜플의 배열 자체에는 readonly 를 걸지 않는다. baseline.ts 가 이 케이스를 runner 의
-   * TestSuiteSpec(`cases: TestCaseSpec[]`, 그 안의 `assertions` 도 가변 배열)에 그대로 싣는데,
-   * 읽기 전용 배열은 가변 배열에 대입되지 않아 거기서 컴파일이 깨진다(TS2322). 구현 중
-   * 실측으로 확인해 고쳤다.
-   *
-   * expected 는 두 리터럴의 유니온으로 남는다. boolean 으로 넓히면 정상 케이스에 true 를
-   * 넣는 실수를 컴파일러가 못 잡는다.
-   */
-  readonly assertions: [
+  readonly assertions: readonly [
     { readonly type: "isError"; readonly expected: true } | { readonly type: "isError"; readonly expected: false },
   ];
 }
@@ -328,19 +319,10 @@ deriveContractAxes
 matchCoveredAxes
 ContractAxis
 ContractAxisKind
-ContractDeclaredType
 ```
 
-`ContractAxesResult` 는 넣지 않는다. `deriveContractAxes` 의 반환을 구조 분해로만 쓰고 타입
-이름을 적을 자리가 없다.
-
-`ContractDeclaredType` 은 착수 전 예상에서 빠져 있었는데 실제로 필요하다. 위반값 표를
-`Readonly<Record<ContractDeclaredType, JsonValue>>` 로 두고 `declaredTypeByField` 맵의 값 타입에
-쓰려면 이름을 적어야 한다. 구현 중 실측으로 확인해 고쳤다.
-
-**목록은 한 번에 넓히지 않는다.** 경계 테스트가 정확한 일치를 요구하므로, 아직 import 하는 코드가
-없는 심볼을 미리 넣으면 반대 방향으로 깨진다. 심볼을 실제로 쓰기 시작하는 태스크에서 그때그때
-ADR 을 먼저 고치고 목록을 넓힌다.
+`ContractAxesResult` 와 `ContractDeclaredType` 은 넣지 않는다. `deriveContractAxes` 의 반환을
+구조 분해로만 쓰고 타입 이름을 적을 자리가 없다.
 
 **승인 목록은 실제 import 문에서 수집되고 테스트가 정확한 일치를 요구한다**
 (`dependency-boundary.test.ts` 의 `expect([...used].sort()).toEqual(APPROVED_RUNNER_SYMBOLS)`).
@@ -621,10 +603,6 @@ isError expected true 단언이 있으면 입력을 선언과 대조해
 한 줄이다. 툴별 상세를 찍지 않는다. 기본 생성이 축을 다 채우므로 이것이 대다수 실행의 모습이고,
 여기서 툴 30개를 나열하면 매 실행 30줄이 영구 소음이 된다. 단계 8 의 조건부 표시와 같은 판단이다.
 
-**한 줄로 줄이는 조건은 "숨길 것이 하나도 없을 때" 다.** `verified === total` 만으로는 부족하다.
-해석 불가 툴이나 해석 못 한 필드가 있으면 숫자가 다 차 있어도 상세를 찍는다. 그 사실이 화면에서
-사라지면 "전부 확인했다" 로 읽히고, 그것이 §6.4 가 막으려는 상태다. 구현 중 발견해 고쳤다.
-
 ### 7.2 미검증이 있는 경우
 
 ```
@@ -632,7 +610,7 @@ isError expected true 단언이 있으면 입력을 선언과 대조해
   add           5/5
   get_weather   3/3
   search_docs   4/6
-    ? filters 의 타입 위반 거절             미검증
+    ? filters 의 타입 위반 거절            미검증
     ? filters 의 선언되지 않은 값 거절      미검증
 ```
 
@@ -698,10 +676,6 @@ isError expected true 단언이 있으면 입력을 선언과 대조해
 돌리면 이전과 다른 파일이 나온다. `BASELINE_POLICY_VERSION` 을 `"schema-baseline-v1"` 에서
 `"schema-baseline-v2"` 로 올린다. 이 값이 `baselineFingerprint` 계산에 들어가 있어
 (`baseline.ts:93`) 정책이 바뀐 사실이 지문에 남는다.
-
-`coverage` 는 지문 계산에 넣지 않는다. 커버리지는 명세에서 파생되는 값이라 지문 재료가 되면
-순환이다. 명세가 바뀌면 커버리지가 바뀌고, 커버리지가 지문에 들어가면 지문이 또 바뀐다.
-지문이 답해야 할 질문은 "테스트의 의미가 바뀌었나" 이고 커버리지는 그 의미의 결과다.
 
 이미 저장된 사용자 명세 파일은 영향을 받지 않는다. 그 파일의 `approval.fingerprint` 는 그 파일
 내용으로 계산돼 있고 우리가 그 파일을 다시 쓰지 않는다.
@@ -1020,11 +994,5 @@ feat(cli): generate 화면에 커버리지를 표시한다
   `additionalProperties` 를 넣는 선행 작업이 있어야 한다. 지금은 그 키워드를 쓴 서버가 `generate`
   자체를 못 쓴다. 이것은 이 작업과 별개의 기존 제약이고 이슈로 올린다.
 - **케이스 이름의 조사 문제**: §5.6. 기존 형식까지 함께 바꾸는 별도 작업이다.
-- **지문 상수의 소재를 한 곳에 적는다**: baseline 출력이 바뀌면 후보 지문 상수를 박아 둔 테스트가
-  함께 깨진다. 이 작업에서 실제로 두 곳이 깨졌다(`authoring-session.test.ts` 의
-  `KNOWN_CLEAN_FINGERPRINT`, `authoring-request.test.ts` 의 `KNOWN_PROVIDER_FINGERPRINT`).
-  계획서가 그 소재를 세지 않아 태스크 범위에서 빠졌다. 앞으로 출력 형태를 바꾸는 계획을 쓸 때는
-  파생 상수를 `grep` 으로 먼저 세고, 그 목록을 한 곳에 적어 둔다.
-
 - **로드맵 갱신**: 단계 5·6 을 완료로 옮기고, 웨이브 표의 "이후 단계 5·6·7" 에서 5·6 을 뺀다.
   단계 2 의 "남은 정리" 에 적힌 실패 문안 개선 3건은 이 작업 범위가 아니다(단계 3 화면 작업).

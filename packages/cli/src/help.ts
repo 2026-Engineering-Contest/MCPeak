@@ -21,9 +21,25 @@ const GENERATE_DRY_RUN_OPTIONS = `옵션:
   --force               \`--out\` 경로에 파일이 있으면 지우고 새로 씁니다. 기본은 저장을
                         멈추는 것입니다`;
 
+export const REPLAY_USAGE = "사용법: ohmymcp replay <suite.json> --cassette <path>";
+
+/**
+ * 재생이 무엇을 하지 않는지가 이 명령의 핵심이다. 서버를 안 띄운다는 것과, 마스킹된 값에서는
+ * 판정이 실제와 갈릴 수 있다는 것을 한 줄 사용법으로는 알 수 없다. ADR-0028.
+ */
+const REPLAY_OPTIONS = `옵션:
+  --cassette <path>  재생할 카세트 파일입니다. 필수입니다.
+
+replay 는 MCP 서버를 실행하지 않고 카세트에 녹화된 응답만 돌려줍니다. 카세트에 없는 호출을
+만나면 실패합니다. 녹화는 \`ohmymcp generate --cassette <path> --record\` 로 합니다.
+
+카세트는 저장할 때 \`token\`·\`apiKey\` 같은 이름의 값을 가립니다. 그 자리의 판정은 실제 서버와
+다를 수 있어 재생 시 경고합니다.`;
+
 const COMMANDS = `명령:
   test      JSON 테스트 명세로 MCP 서버를 실행하고 검증합니다.
-  generate  MCP 서버의 툴 스키마에서 테스트 명세를 생성합니다.`;
+  generate  MCP 서버의 툴 스키마에서 테스트 명세를 생성합니다.
+  replay    녹화된 카세트로 서버 없이 테스트 명세를 재생합니다.`;
 
 export const GLOBAL_HELP = `OhMyMCP — MCP 서버 테스트 프레임워크
 
@@ -41,17 +57,26 @@ ${COMMANDS}
   ohmymcp <명령> --help
 `;
 
-const commandDiscovery = "사용 가능한 명령: test, generate. 전체 도움말: ohmymcp --help";
+const commandDiscovery = "사용 가능한 명령: test, generate, replay. 전체 도움말: ohmymcp --help";
 
 export const TEST_USAGE_HINT = `${TEST_USAGE} ${commandDiscovery}`;
 
 export const GENERATE_USAGE_HINT = `${GENERATE_USAGE} ${commandDiscovery}`;
 
-export function commandHelp(command: "test" | "generate"): string {
+export const REPLAY_USAGE_HINT = `${REPLAY_USAGE} ${commandDiscovery}`;
+
+export function commandHelp(command: "test" | "generate" | "replay"): string {
   if (command === "test")
     return `test — JSON 테스트 명세로 MCP 서버를 실행하고 검증합니다.
 
 ${TEST_USAGE}
+`;
+  if (command === "replay")
+    return `replay — 녹화된 카세트로 서버 없이 테스트 명세를 재생합니다.
+
+${REPLAY_USAGE}
+
+${REPLAY_OPTIONS}
 `;
   return `generate — MCP 서버의 툴 스키마에서 테스트 명세를 생성합니다.
 

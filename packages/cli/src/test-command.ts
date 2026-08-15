@@ -372,7 +372,8 @@ export async function runCli(
       hint: TEST_USAGE_HINT,
     });
   if (argv[0] !== "test") {
-    if (["generate", "record", "replay", "mock"].includes(argv[0] ?? ""))
+    // replay 는 index.ts 가 가로챈다. 여기 남겨 두면 구현된 명령을 미구현이라고 말하게 된다.
+    if (["generate", "record", "mock"].includes(argv[0] ?? ""))
       return writeFailure(dependencies, {
         code: "COMMAND_NOT_IMPLEMENTED",
         message: `'${argv[0]}' 명령은 아직 구현되지 않았습니다.`,

@@ -2,6 +2,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import packageMetadata from "../package.json";
 import { nodeGenerateDependencies, nodeReviewIO, runGenerateCommand } from "./generate-command.js";
 import { commandHelp, GLOBAL_HELP } from "./help.js";
+import { type ReplayCommandDependencies, runReplayCommand } from "./replay-command.js";
 import { parseTestCommand, runCli } from "./test-command.js";
 
 export type Command = (argv: string[]) => Promise<number>;
@@ -42,6 +43,17 @@ const unavailableRuntimeDependencies = {
   readFile,
 };
 
+/**
+ * replay 는 `connect` 를 쓰지 않는다. 대신 카세트 로더가 필요하다. 런타임 의존성을 못 불러도
+ * 사용 오류는 정상적으로 내야 하므로, 실제로 쓰이기 전에 끝나는 경로를 위해 자리만 채운다.
+ */
+const unavailableReplayDependencies: ReplayCommandDependencies = {
+  ...unavailableRuntimeDependencies,
+  loadCassette: async (): Promise<never> => {
+    throw new Error("runtime dependencies unavailable");
+  },
+};
+
 export async function run(argv: string[]): Promise<number> {
   if (
     argv.length === 0 ||
@@ -52,7 +64,7 @@ export async function run(argv: string[]): Promise<number> {
   }
   if (argv.length === 2) {
     const command = argv[0] === "help" ? argv[1] : argv[1] === "--help" ? argv[0] : undefined;
-    if (command === "test" || command === "generate") {
+    if (command === "test" || command === "generate" || command === "replay") {
       process.stdout.write(commandHelp(command));
       return 0;
     }
@@ -101,6 +113,26 @@ export async function run(argv: string[]): Promise<number> {
       applyAuthoringChanges: generate.applyAuthoringChanges,
       reviewLocalAuthoringCandidate: generate.reviewLocalAuthoringCandidate,
       computeCoverage: generate.computeCoverage,
+    });
+  }
+  if (argv[0] === "replay") {
+    let runner: typeof import("@ohmymcp/runner");
+    let record: typeof import("@ohmymcp/record");
+    try {
+      [runner, record] = await Promise.all([import("@ohmymcp/runner"), import("@ohmymcp/record")]);
+    } catch {
+      return runReplayCommand(argv.slice(1), unavailableReplayDependencies);
+    }
+    return runReplayCommand(argv.slice(1), {
+      readFile,
+      validateSuite: runner.validateMcpSuite,
+      loadCassette: record.loadCassette,
+      startRunner: runner.runSuite,
+      finalize: runner.finalizeRunnerExecution,
+      renderReport: runner.renderReport,
+      colorEnabled: process.stdout.isTTY === true && process.env.NO_COLOR === undefined,
+      writeStdout: (text) => process.stdout.write(text),
+      writeStderr: (text) => process.stderr.write(text),
     });
   }
   if (argv[0] !== "test") return runCli(argv, unavailableDependencies);

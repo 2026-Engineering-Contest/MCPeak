@@ -7,6 +7,9 @@ MCP(Model Context Protocol) 서버를 **코드로 자동 테스트**하는 오�
 
 > ⚠️ **아직 npm 에 배포되지 않았습니다.** 여섯 패키지 모두 동작하지만 공개 배포 전이라,
 > 지금은 저장소를 클론해 [개발](#개발) 절차로 써야 합니다.
+>
+> 아래 예제의 `ohmymcp` · `ohmymcp-mock` 은 **배포 후의 호출 형태**입니다. 배포 전에는 같은 명령을
+> 빌드 산출물 경로로 부릅니다 — [개발](#개발) 절에 세 명령 모두 적어뒀습니다.
 
 ## 30초 예제
 
@@ -49,7 +52,19 @@ ohmymcp test weather.suite.json --command node --arg ./server.js
 2 passed  (2 total)
 ```
 
-실패하면 종료 코드가 `1` 이고, **무엇이 왜 다른지**가 출력됩니다.
+실패는 전부 종료 코드 `1` 이지만 출력은 두 갈래입니다.
+
+- **케이스가 실패하면** 어느 단언이 무엇과 왜 다른지, 그리고 어떻게 고치는지가 나옵니다.
+  ```
+  ✗ missing-tool  존재하지 않는 도구를 요구한다
+      toolExists  툴 'missing_weather_tool'를 찾을 수 없습니다.
+      해결: 서버의 tools/list 응답과 테스트 명세를 확인하세요.
+  ```
+- **명세를 못 읽거나 서버에 못 붙는 등 실행 자체가 실패하면** 원인 코드와 해결 방법이 나옵니다.
+  ```
+  오류 [MCP_CONNECTION_FAILED/PROCESS_START_FAILED]: MCP 서버 프로세스를 시작하지 못했습니다.
+  해결: command 실행 가능 여부와 cwd를 확인하세요.
+  ```
 
 ## 명세를 직접 안 써도 됩니다
 
@@ -134,10 +149,19 @@ pnpm test
 pnpm lint
 ```
 
-배포 전이라 CLI 는 빌드 산출물로 직접 부릅니다.
+배포 전이라 실행 파일이 `PATH` 에 없습니다. 위 예제의 명령들은 빌드 산출물로 직접 부릅니다.
 
 ```bash
+# ohmymcp test ...
 node packages/cli/dist/cli.mjs test <suite.json> --command node --arg ./server.js
+
+# ohmymcp generate ...
+node packages/cli/dist/cli.mjs generate --suite-id <id> --name <name> --out <suite.json> \
+  --command node --arg ./server.js
+
+# --command ohmymcp-mock --arg mock.json
+node packages/cli/dist/cli.mjs test <suite.json> \
+  --command node --arg packages/mock/dist/stdio.mjs --arg mock.json
 ```
 
 Node 20 · 22 · 24 에서 검사하며, 빌드는 Node 22 이상이 필요합니다.

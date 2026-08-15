@@ -1,7 +1,10 @@
 import type { ToolDef } from "@ohmymcp/core";
+import { expectedIsError } from "./case-expectation.js";
+import type { NormalizedInputSchema } from "./input-schema.js";
+import { analyzeInputSchema, judgeField } from "./input-schema.js";
 import { byCodeUnit } from "./ordering.js";
-import { matchResponseSchema, plainObject, typeName } from "./schema-match.js";
-import type { JsonValue, ResponseSchema, TestSuiteSpec } from "./spec/types.js";
+import { plainObject, typeName } from "./schema-match.js";
+import type { JsonValue, TestSuiteSpec } from "./spec/types.js";
 import type { SpecFinding, SpecFindingCode, SpecFindingsResult } from "./spec-findings.js";
 import { MAX_FINDINGS_PER_CASE } from "./spec-findings.js";
 
@@ -11,53 +14,22 @@ export interface InputContractOptions {
   readonly tools: readonly ToolDef[];
 }
 
-type DeclaredType = "object" | "array" | "string" | "number" | "integer" | "boolean" | "null";
-
-interface NormalizedField {
-  /** 선언된 타입. 판정하지 않기로 한 필드는 null이다. */
-  readonly type: DeclaredType | null;
-  /** 선언된 enum. 없거나 판정하지 않기로 했으면 null이다. */
-  readonly enumValues: readonly JsonValue[] | null;
-}
-
-interface NormalizedInputSchema {
-  readonly fields: ReadonlyMap<string, NormalizedField>;
-  readonly required: readonly string[];
-  /** additionalProperties가 정확히 false일 때만 true. */
-  readonly rejectsUndeclared: boolean;
-}
-
 /**
- * 이것이 하나라도 있으면 해석을 포기한다. 조합자·참조 계열은 "이 필드는 없어도 된다" 를
- * 말하고 있을 수 있고, 무시하면 스키마의 뜻이 뒤집혀 오탐이 된다. ADR-0015 참고.
- * 루트에 있으면 그 툴 전체를, 필드 안에 있으면 그 필드만 포기한다.
+ * 거절을 기대하는 케이스에서 침묵시키는 코드. ADR-0021.
+ *
+ * 그 케이스는 선언을 어긴 입력을 보내는 것이 목적이다. 어긴 사실을 위반으로 신고하면 도구가
+ * 스스로 만든 케이스를 스스로 고발한다.
+ *
+ * TOOL_NOT_DECLARED 는 빼지 않는다. 서버가 모르는 툴 이름은 거절 기대와 무관하게 오타다.
+ * SCHEMA_NOT_ANALYZABLE 도 빼지 않는다. 위반이 아니라 "검사를 못 했다" 는 보고이고, 삼키면
+ * "검사했는데 깨끗함" 과 구분되지 않는다.
  */
-const BLOCKING_KEYWORDS = [
-  "anyOf",
-  "oneOf",
-  "allOf",
-  "not",
-  "if",
-  "then",
-  "else",
-  "$ref",
-  "$dynamicRef",
-  "patternProperties",
-  "dependentSchemas",
-  "dependentRequired",
-  "propertyNames",
-  "unevaluatedProperties",
-] as const;
-
-const DECLARED_TYPES = [
-  "object",
-  "array",
-  "string",
-  "number",
-  "integer",
-  "boolean",
-  "null",
-] as const;
+const SUPPRESSED_WHEN_REJECTION_EXPECTED: ReadonlySet<SpecFindingCode> = new Set([
+  "REQUIRED_MISSING",
+  "UNDECLARED_FIELD",
+  "TYPE_MISMATCH",
+  "ENUM_MISMATCH",
+]);
 
 /** 설계 §9.2 의 검사 종류 순서. 낮을수록 앞에 온다. */
 const CODE_ORDER: Record<string, number> = {
@@ -68,55 +40,6 @@ const CODE_ORDER: Record<string, number> = {
   TYPE_MISMATCH: 4,
   ENUM_MISMATCH: 5,
 };
-
-const hasBlockingKeyword = (schema: Record<string, unknown>): boolean =>
-  BLOCKING_KEYWORDS.some((keyword) => Object.hasOwn(schema, keyword));
-
-const declaredType = (value: unknown): DeclaredType | null =>
-  DECLARED_TYPES.includes(value as DeclaredType) ? (value as DeclaredType) : null;
-
-/**
- * 서버가 선언한 임의의 JSON Schema 를 우리가 이해하는 구조로 줄인다.
- * 줄이면서 정보를 잃으면 그 부분의 검사를 포기한다. 부분 성공은 없고 해석 불가면 null 이다.
- * 설계 §4.2 · §4.3, ADR-0015.
- */
-function normalizeInputSchema(schema: unknown): NormalizedInputSchema | null {
-  if (!plainObject(schema)) return null;
-  if (hasBlockingKeyword(schema)) return null;
-  // MCP 의 툴 입력은 객체지만 서버가 다르게 선언할 자유가 있다. 객체가 아니면 대조할 수 없다.
-  if (schema.type !== "object") return null;
-  const properties = schema.properties;
-  if (!plainObject(properties)) return null;
-
-  const fields = new Map<string, NormalizedField>();
-  for (const name of Object.keys(properties).sort(byCodeUnit)) {
-    const field = properties[name];
-    // 필드 스키마가 객체가 아니거나 차단 키워드를 쓰면 그 필드만 포기한다. required 검사는 계속한다.
-    if (!plainObject(field) || hasBlockingKeyword(field)) {
-      fields.set(name, { type: null, enumValues: null });
-      continue;
-    }
-    // type 이 배열이면(["string","null"]) 합집합이라 그 필드를 통째로 포기한다.
-    // type 만 끄고 enum 을 남기면 { type: ["string","null"], enum: ["x"] } 에 3 을 넣었을 때
-    // ENUM_MISMATCH 가 난다. 합집합의 다른 갈래가 그 값을 허용할 수 있으므로 오탐이다.
-    if (Array.isArray(field.type)) {
-      fields.set(name, { type: null, enumValues: null });
-      continue;
-    }
-    const type = declaredType(field.type);
-    const rawEnum = field.enum;
-    const enumValues =
-      Array.isArray(rawEnum) && rawEnum.length > 0 ? (rawEnum as readonly JsonValue[]) : null;
-    fields.set(name, { type, enumValues });
-  }
-
-  const rawRequired = schema.required;
-  const required = Array.isArray(rawRequired)
-    ? rawRequired.filter((name): name is string => typeof name === "string")
-    : [];
-
-  return { fields, required, rejectsUndeclared: schema.additionalProperties === false };
-}
 
 /** 코드 포인트 기준 레벤슈타인 거리. 두 행만 들고 돌아 입력 길이에 선형인 메모리를 쓴다. */
 function levenshtein(left: string, right: string): number {
@@ -165,21 +88,6 @@ const withSuggestion = (finding: SpecFinding, suggestion: string | undefined): S
   suggestion === undefined ? finding : { ...finding, suggestion };
 
 /**
- * 선언한 type 과 enum 판정을 schema-match.ts 에 위임한다. 두 벌을 두면 null·배열 판정과
- * 깊은 비교가 갈라진다. 위임하면 type 위반 시 enum 을 보지 않는 단락 순서까지 그대로 따른다.
- */
-function judgeField(field: NormalizedField, value: JsonValue): SpecFindingCode | null {
-  const probe: ResponseSchema = {};
-  if (field.type !== null) probe.type = field.type;
-  if (field.enumValues !== null) probe.enum = [...field.enumValues];
-  if (probe.type === undefined && probe.enum === undefined) return null;
-
-  const violation = matchResponseSchema(probe, value).violations[0];
-  if (violation === undefined) return null;
-  return violation.code === "TYPE_MISMATCH" ? "TYPE_MISMATCH" : "ENUM_MISMATCH";
-}
-
-/**
  * 명세의 callTool 입력을 서버가 선언한 inputSchema와 대조한다. 서버를 호출하지 않는다.
  * 해석하지 못하는 스키마는 SCHEMA_NOT_ANALYZABLE 하나만 내고 그 툴의 다른 검사를 전부 건너뛴다.
  *
@@ -209,7 +117,7 @@ export function checkInputContract(options: InputContractOptions): SpecFindingsR
     if (!normalized.has(tool.name))
       normalized.set(
         tool.name,
-        duplicated.has(tool.name) ? null : normalizeInputSchema(tool.inputSchema),
+        duplicated.has(tool.name) ? null : analyzeInputSchema(tool.inputSchema).schema,
       );
     return normalized.get(tool.name) ?? null;
   };
@@ -331,14 +239,23 @@ export function checkInputContract(options: InputContractOptions): SpecFindingsR
       }
     }
 
-    caseFindings.sort(
+    // expectedIsError 가 null 이면(isError 단언이 없거나 expected 가 서로 다른 단언이 둘인
+    // 모순된 명세) 침묵시키지 않는다. 모순을 숨기지 않는다.
+    const kept =
+      expectedIsError(testCase) === true
+        ? caseFindings.filter((finding) => !SUPPRESSED_WHEN_REJECTION_EXPECTED.has(finding.code))
+        : caseFindings;
+
+    kept.sort(
       (left, right) =>
         (CODE_ORDER[left.code] ?? 0) - (CODE_ORDER[right.code] ?? 0) ||
         byCodeUnit(left.path, right.path),
     );
-    totalFindings += caseFindings.length;
+    // 총합은 침묵 후 개수다. 침묵시킨 것을 총합에 남기면 소비자가 "위반 N건이 있는데 목록은
+    // 비어 있다" 를 보고 버그로 읽는다.
+    totalFindings += kept.length;
     // 상한을 넘으면 목록에서 자르되 총합은 자르기 전 개수로 센다.
-    findings.push(...caseFindings.slice(0, MAX_FINDINGS_PER_CASE));
+    findings.push(...kept.slice(0, MAX_FINDINGS_PER_CASE));
   }
 
   return { findings, totalFindings };

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { DryRunCaseOutcome, DryRunResult } from "../src/dry-run.js";
 import { reviewDryRun } from "../src/dry-run-review.js";
 import type { ReviewIO } from "../src/generate-command.js";
+import type { RepairAttempt } from "../src/repair-target.js";
 
 interface FakeIO extends ReviewIO {
   /** 화면에 찍힌 전문. */
@@ -179,5 +180,135 @@ describe("reviewDryRun", () => {
         "  분류: 서버 결함 1건\n",
       ].join(""),
     );
+  });
+});
+
+const attempt = (field: string, value: RepairAttempt["value"]): RepairAttempt => ({
+  field,
+  value,
+  passed: false,
+});
+
+const historyOf = (
+  entries: Readonly<Record<string, readonly RepairAttempt[]>>,
+): ReadonlyMap<string, readonly RepairAttempt[]> => new Map(Object.entries(entries));
+
+/** 실패 케이스 한 건짜리 실행. 이력 블록만 떼어 보기 좋게 고정한다. */
+const oneFailure = (caseId = "b"): DryRunResult =>
+  resultOf([outcome(caseId, "failed", "    isError  기대와 다릅니다.")]);
+
+describe("reviewDryRun / 시도 이력", () => {
+  it("attempts 를 안 넘기면 화면이 지금과 같다", async () => {
+    const io = fakeIO(["s"]);
+    await reviewDryRun(io, oneFailure());
+
+    expect(io.output()).toBe(
+      [
+        "  [1] b 케이스\n",
+        "      [s] 서버 결함  명세가 옳다. 이 케이스를 회귀 테스트로 남긴다\n",
+        "      [m] 명세 오류  추측이 틀렸다. 저장 전에 고친다\n",
+        "      [?] 판단 보류  분류를 미룬다. 저장은 막힌다\n",
+        "      선택: ",
+        "\n",
+        "  분류: 서버 결함 1건\n",
+      ].join(""),
+    );
+  });
+
+  it("이력이 있으면 선택지 위에 이력 블록이 나온다", async () => {
+    const io = fakeIO(["s"]);
+    await reviewDryRun(
+      io,
+      oneFailure(),
+      historyOf({ b: [attempt("city", "example"), attempt("city", "서울")] }),
+    );
+
+    expect(io.output()).toBe(
+      [
+        "  [1] b 케이스\n",
+        "      입력값을 두 번 고쳐 봤지만 결과가 같습니다.\n",
+        '        city: "example" → 오류\n',
+        '        city: "서울" → 오류\n',
+        "\n",
+        "      [s] 서버 결함  명세가 옳다. 이 케이스를 회귀 테스트로 남긴다\n",
+        "      [m] 명세 오류  추측이 틀렸다. 저장 전에 고친다\n",
+        "      [?] 판단 보류  분류를 미룬다. 저장은 막힌다\n",
+        "      선택: ",
+        "\n",
+        "  분류: 서버 결함 1건\n",
+      ].join(""),
+    );
+  });
+
+  it("시도가 1건이면 '한 번' 이라고 나온다", async () => {
+    const io = fakeIO(["s"]);
+    await reviewDryRun(io, oneFailure(), historyOf({ b: [attempt("city", "example")] }));
+
+    expect(io.output()).toContain("      입력값을 한 번 고쳐 봤지만 결과가 같습니다.\n");
+  });
+
+  it("시도가 2건이면 '두 번' 이라고 나온다", async () => {
+    const io = fakeIO(["s"]);
+    await reviewDryRun(
+      io,
+      oneFailure(),
+      historyOf({ b: [attempt("city", "example"), attempt("city", "서울")] }),
+    );
+
+    expect(io.output()).toContain("      입력값을 두 번 고쳐 봤지만 결과가 같습니다.\n");
+  });
+
+  it("값이 JSON.stringify 형태로 나온다", async () => {
+    const io = fakeIO(["s"]);
+    await reviewDryRun(
+      io,
+      oneFailure(),
+      historyOf({ b: [attempt("city", "서울"), attempt("days", 3)] }),
+    );
+
+    expect(io.output()).toContain('"서울" → 오류\n');
+    expect(io.output()).toContain("3 → 오류\n");
+  });
+
+  it("필드명 길이가 다르면 콜론이 세로로 맞는다", async () => {
+    const io = fakeIO(["s"]);
+    await reviewDryRun(
+      io,
+      oneFailure(),
+      historyOf({ b: [attempt("city", "서울"), attempt("timezone", "KST")] }),
+    );
+
+    expect(io.output()).toContain('        city    : "서울" → 오류\n');
+    expect(io.output()).toContain('        timezone: "KST" → 오류\n');
+  });
+
+  it("이력이 없는 케이스에는 블록이 안 나온다", async () => {
+    const io = fakeIO(["s", "s"]);
+    await reviewDryRun(
+      io,
+      resultOf([outcome("a", "failed"), outcome("b", "failed")]),
+      historyOf({ b: [attempt("city", "서울")] }),
+    );
+
+    const first = io.output().slice(0, io.output().indexOf("  [2]"));
+    expect(first).not.toContain("입력값을");
+    expect(io.output()).toContain("  [2] b 케이스\n      입력값을 한 번 고쳐 봤지만");
+  });
+
+  it("이력이 붙어도 반환값 규칙이 그대로다", async () => {
+    const result = await reviewDryRun(
+      fakeIO(["s"]),
+      resultOf([outcome("a", "passed"), outcome("b", "failed")]),
+      historyOf({ b: [attempt("city", "서울")] }),
+    );
+
+    expect(result).toEqual({
+      cleared: true,
+      approvals: [
+        { id: "a", status: "passed" },
+        { id: "b", status: "serverDefect" },
+      ],
+      specErrors: [],
+    });
   });
 });

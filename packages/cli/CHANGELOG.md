@@ -1,5 +1,34 @@
 # ohmymcp
 
+## 0.7.0
+
+### Minor Changes
+
+- b6658b9: CLI에 전체·서브커맨드 도움말과 버전 출력을 추가합니다. 인자 없음, `--help`, `-h`, `help`는
+  사용 가능한 `test`·`generate` 명령을 stdout에 안내하고, `help <command>`와
+  `<command> --help`는 해당 명령의 사용법을 표시합니다. 사용법 오류에서도 두 명령과 전체 도움말을
+  발견할 수 있습니다.
+- 0dd2a02: cli: `generate` 의 시험 실행이 실패한 케이스의 입력값을 고쳐 다시 호출합니다. 스키마에 힌트가
+  없어 합성된 값(`"example"` 같은 것)이 서버에 거절당한 실패는 이제 분류 화면에 도달하지 않고
+  교정 단계에서 닫힙니다. 케이스 하나당 최대 2회 고치고, 통과한 값은 기존 3단 경로를 거쳐 저장될
+  명세에 반영됩니다. `--provider` 가 있으면 서버의 오류 응답을 근거로 값 후보를 받고, AI 가 값
+  말고 다른 것을 건드린 응답은 통째로 폐기합니다. 두 번 고쳐도 실패하면 분류 화면으로 가고 시도
+  이력이 함께 나옵니다. `--no-repair` 로 이 단계를 끌 수 있습니다.
+
+  `Final fingerprint:` 표시가 시험 실행과 분류 뒤로 옮겨집니다. 교정이 명세를 바꾸므로 앞에서
+  찍으면 사용자가 승인한 지문과 저장되는 `approval.fingerprint` 가 갈립니다. 교정이 없으면 찍히는
+  값은 이전과 같고 화면 순서만 바뀝니다.
+
+### Patch Changes
+
+- Updated dependencies [81579f1]
+- Updated dependencies [81579f1]
+- Updated dependencies [ec99eab]
+- Updated dependencies [0f4e5fd]
+  - @ohmymcp/record@0.1.1
+  - @ohmymcp/runner@0.7.0
+  - @ohmymcp/generate@0.4.2
+
 ## 0.6.1
 
 ### Patch Changes

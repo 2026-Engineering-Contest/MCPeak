@@ -5,6 +5,8 @@ import type { McpStdioConnection, ToolDef, ToolResult } from "@ohmymcp/core";
 import {
   type AuthoringDiffPreview,
   applyAuthoringChanges,
+  BASELINE_POLICY_VERSION,
+  type BaselineGenerationResult,
   createAuthoringDiff,
   createAuthoringSession,
   createBaselineSuite,
@@ -164,6 +166,7 @@ describe("parseGenerateCommand", () => {
       cassettePath: undefined,
       forceRecord: false,
       resetCmd: undefined,
+      repair: true,
     });
   });
   it("시험 실행 옵션 넷을 파싱한다", () => {
@@ -214,6 +217,25 @@ describe("parseGenerateCommand", () => {
       [...base, "--cassette", "a.json", "--cassette", "b.json"],
     ];
     for (const argv of cases) expect(() => parseGenerateCommand(argv)).toThrow();
+  });
+  it("--no-repair 를 두 번 주면 사용 오류다", () => {
+    const base = ["--suite-id=x", "--name=n", "--out=x.json", "--command=node"];
+    expect(() => parseGenerateCommand([...base, "--no-repair", "--no-repair"])).toThrow();
+  });
+  it("--no-repair 와 --no-dry-run 을 함께 주면 사용 오류다", () => {
+    const base = ["--suite-id=x", "--name=n", "--out=x.json", "--command=node"];
+    expect(() => parseGenerateCommand([...base, "--no-repair", "--no-dry-run"])).toThrow();
+  });
+  it("--no-repair 를 주면 repair 가 꺼진다", () => {
+    expect(
+      parseGenerateCommand([
+        "--suite-id=weather",
+        "--name=Weather",
+        "--out=out.json",
+        "--command=node",
+        "--no-repair",
+      ]),
+    ).toMatchObject({ repair: false, dryRun: true });
   });
   it("equals 형식, 하이픈 arg와 빈 arg를 보존한다", () => {
     expect(
@@ -1818,6 +1840,16 @@ describe("generate 시험 실행 게이트", () => {
         };
     /** 카세트 파일 대용. 두 번의 save 사이에 살아남아야 하므로 밖에서 넘긴다. */
     readonly cassetteStore?: Map<string, Cassette>;
+    /** 서버가 선언하는 툴. 교정 대상이 둘 이상인 경우를 만들 때 바꾼다. */
+    readonly tools?: ToolDef[];
+    /** baseline 생성 결과를 통째로 갈아 끼운다. 본문 단언이 달린 케이스를 만들 때 쓴다. */
+    readonly baseline?: BaselineGenerationResult;
+    /** AI 제안용 provider. 없으면 교정이 사람 입력만 쓴다. */
+    readonly providers?: GenerateCommandDependencies["providers"];
+    /** 반영 경로 호출 횟수를 세려고 감싼 구현. */
+    readonly applyAuthoringChanges?: typeof applyAuthoringChanges;
+    /** `edit` 메뉴가 읽을 로컬 JSON. 경로 `candidate.json` 으로만 읽힌다. */
+    readonly localCandidate?: TestSuiteSpec;
   }
 
   function gateDeps(options: GateOptions) {
@@ -1845,9 +1877,10 @@ describe("generate 시험 실행 게이트", () => {
       }),
       close: vi.fn(),
     };
+    const serverTools = options.tools ?? gateTools;
     const connection: McpStdioConnection = {
       client: {
-        listTools: async () => gateTools,
+        listTools: async () => serverTools,
         callTool: async (name, args) => {
           const call = calls.filter((item) => item === name).length;
           calls.push(name);
@@ -1867,7 +1900,10 @@ describe("generate 시험 실행 게이트", () => {
     const store = options.cassetteStore ?? new Map<string, Cassette>();
     const value: GenerateCommandDependencies = {
       connect: vi.fn(async () => connection),
-      createBaselineSuite,
+      createBaselineSuite:
+        options.baseline === undefined
+          ? createBaselineSuite
+          : () => options.baseline as BaselineGenerationResult,
       createAuthoringSession,
       finalizeAuthoringDraft,
       getAuthoringExecutionSuite,
@@ -1880,7 +1916,13 @@ describe("generate 시험 실행 게이트", () => {
         sync: vi.fn(async () => undefined),
         close: vi.fn(async () => undefined),
       })),
-      readFile: vi.fn(async () => new TextEncoder().encode(saved)),
+      readFile: vi.fn(async (path: string) =>
+        new TextEncoder().encode(
+          path === "candidate.json" && options.localCandidate !== undefined
+            ? JSON.stringify(options.localCandidate)
+            : saved,
+        ),
+      ),
       link: vi.fn(async () => undefined),
       unlink: vi.fn(async () => undefined),
       writeStdout: vi.fn(),
@@ -1891,8 +1933,9 @@ describe("generate 시험 실행 게이트", () => {
       prepareAuthoringRequest,
       dispatchAuthoringRequest,
       createAuthoringDiff,
-      applyAuthoringChanges,
+      applyAuthoringChanges: options.applyAuthoringChanges ?? applyAuthoringChanges,
       reviewLocalAuthoringCandidate,
+      providers: options.providers,
       cassetteIo: {
         load: async (path) => store.get(path) ?? null,
         save: async (path, cassette) => {
@@ -2209,5 +2252,393 @@ describe("generate 시험 실행 게이트", () => {
     const d = gateDeps({ choices: ["cancel"] });
     await expect(runGenerateCommand(gateArgv, d.value)).resolves.toBe(0);
     expect(d.closeCount()).toBe(1);
+  });
+
+  /** 정상 입력 케이스. 단언이 `isError: false` 하나뿐인 것이 그 표시다. */
+  const happyCase = baselineCases.find((item) =>
+    (item.assertions as readonly { type: string; expected?: unknown }[]).every(
+      (assertion) => assertion.type === "isError" && assertion.expected === false,
+    ),
+  ) as CallToolCaseSpec;
+  /** baseline 이 합성한 값. 숫자나 문자열을 테스트에 박지 않는다. */
+  const synthesized = happyCase.operation.input.city as string;
+
+  /** 교정 대상이 둘이 되도록 툴을 하나 더 둔 선언. */
+  const twoTools: ToolDef[] = [
+    ...gateTools,
+    {
+      name: "forecast",
+      inputSchema: { type: "object", properties: { city: { type: "string" } }, required: ["city"] },
+    },
+  ];
+
+  /**
+   * 정상 케이스에 본문 단언을 하나 더 단 baseline. 서버 오류 본문이 위반 줄로 나와야
+   * `RepairTarget.serverMessage` 가 차고, 그래야 AI 제안 경로가 돈다(설계 §4.4).
+   */
+  const bodySchemaBaseline = (): BaselineGenerationResult => {
+    const base = createBaselineSuite(gateTools, { suiteId: "weather", suiteName: "Weather" });
+    const suite: TestSuiteSpec = {
+      ...base.suite,
+      cases: base.suite.cases.map((item) =>
+        item.id !== happyCase.id
+          ? item
+          : ({
+              ...item,
+              assertions: [
+                ...item.assertions,
+                {
+                  type: "bodyMatchesSchema",
+                  schema: {
+                    type: "object",
+                    required: ["temp"],
+                    properties: { temp: { type: "number" } },
+                  },
+                },
+              ],
+            } as TestCaseSpec),
+      ),
+    };
+    return {
+      ...base,
+      suite,
+      suiteFingerprint: suiteFingerprint(suite),
+      baselineFingerprint: sha256(suite),
+      policyVersion: BASELINE_POLICY_VERSION,
+    };
+  };
+
+  /** 정상 케이스의 `city` 만 고쳐 돌려주는 가짜 provider. 프로세스를 띄우지 않는다. */
+  const proposingProvider = (
+    city: string,
+    suiteOf: () => TestSuiteSpec = () => bodySchemaBaseline().suite,
+  ): GenerateCommandDependencies["providers"] => ({
+    codex: () => ({
+      id: "codex" as const,
+      model: "test-model",
+      author: async () => {
+        const base = suiteOf();
+        return {
+          status: "candidate",
+          suite: {
+            ...base,
+            cases: base.cases.map((item) =>
+              item.id !== happyCase.id
+                ? item
+                : ({
+                    ...item,
+                    operation: { ...(item as CallToolCaseSpec).operation, input: { city } },
+                  } as TestCaseSpec),
+            ),
+          },
+          summary: "입력값을 고쳤습니다.",
+          warnings: [],
+          questions: [],
+        };
+      },
+    }),
+  });
+
+  const proposalArgv = [...gateArgv, "--provider", "codex", "--model", "test-model"];
+
+  /** `city` 가 그 값일 때만 정상 응답. 그 밖에는 오류라서 정상 케이스만 실패한다. */
+  const onlyAccepts =
+    (city: string, body: unknown = { temp: 20 }) =>
+    (_name: string, args: unknown): ToolResult =>
+      (args as { city?: unknown })?.city === city
+        ? { content: [{ type: "text", text: JSON.stringify(body) }], isError: false, raw: body }
+        : {
+            content: [
+              { type: "text", text: JSON.stringify({ error: "city 는 서울/부산 중 하나입니다." }) },
+            ],
+            isError: true,
+            raw: { error: true },
+          };
+
+  describe("generate 교정 경로", () => {
+    it("입력값 실패가 교정으로 통과하면 분류를 묻지 않는다", async () => {
+      const d = gateDeps({
+        choices: ["save"],
+        inputs: ["서울"],
+        confirms: [true, true],
+        respond: onlyAccepts("서울"),
+      });
+      await expect(runGenerateCommand(gateArgv, d.value)).resolves.toBe(0);
+      expect(d.output()).toContain("✓ 통과\n");
+      expect(d.output()).not.toContain("[s] 서버 결함");
+    });
+
+    it("교정으로 통과한 값이 저장된 명세의 operation.input 에 들어간다", async () => {
+      const d = gateDeps({
+        choices: ["save"],
+        inputs: ["서울"],
+        confirms: [true, true],
+        respond: onlyAccepts("서울"),
+      });
+      await runGenerateCommand(gateArgv, d.value);
+      const saved = d.savedSuite();
+      const item = saved?.cases.find((entry) => entry.id === happyCase.id) as CallToolCaseSpec;
+      expect(item.operation.input).toEqual({ city: "서울" });
+    });
+
+    it("교정으로 통과한 케이스가 approval.cases 에 passed 로 실린다", async () => {
+      const d = gateDeps({
+        choices: ["save"],
+        inputs: ["서울"],
+        confirms: [true, true],
+        respond: onlyAccepts("서울"),
+      });
+      await runGenerateCommand(gateArgv, d.value);
+      const cases = d.savedSuite()?.approval.cases ?? [];
+      expect(cases.find((item) => item.id === happyCase.id)?.status).toBe("passed");
+    });
+
+    it("위반 케이스의 실패는 교정을 시도하지 않고 바로 분류로 간다", async () => {
+      // 기본 서버는 항상 정상 응답이라 위반 케이스만 실패한다.
+      const d = gateDeps({
+        choices: ["save"],
+        inputs: Array.from({ length: failingCases }, () => "s"),
+        confirms: [true, true],
+      });
+      await runGenerateCommand(gateArgv, d.value);
+      expect(d.output()).not.toContain("입력값이 거절된 것으로 보입니다");
+      expect(d.output()).toContain("[s] 서버 결함");
+    });
+
+    it("본문 스키마 불일치 실패는 교정을 시도하지 않는다", async () => {
+      const d = gateDeps({
+        choices: ["save"],
+        baseline: bodySchemaBaseline(),
+        inputs: Array.from({ length: baselineCases.length }, () => "s"),
+        confirms: [true, true],
+        // 정상 응답이되 본문에 temp 가 없다. isError 는 통과하고 본문 단언만 깨진다.
+        respond: () => ({
+          content: [{ type: "text", text: JSON.stringify({ ok: true }) }],
+          isError: false,
+          raw: { ok: true },
+        }),
+      });
+      await runGenerateCommand(gateArgv, d.value);
+      expect(d.output()).not.toContain("입력값이 거절된 것으로 보입니다");
+    });
+
+    it("--no-repair 면 실패가 곧바로 분류로 간다", async () => {
+      const d = gateDeps({
+        choices: ["save"],
+        inputs: ["s"],
+        confirms: [true, true],
+        respond: onlyAccepts("서울"),
+      });
+      await expect(runGenerateCommand([...gateArgv, "--no-repair"], d.value)).resolves.toBe(0);
+      expect(d.output()).not.toContain("입력값이 거절된 것으로 보입니다");
+      expect(d.savedSuite()?.approval.cases?.find((item) => item.id === happyCase.id)?.status).toBe(
+        "serverDefect",
+      );
+    });
+
+    it("--no-repair 면 고지에 재호출 줄이 안 나온다", async () => {
+      const d = gateDeps({ choices: ["save", "cancel"], confirms: [false] });
+      await runGenerateCommand([...gateArgv, "--no-repair"], d.value);
+      expect(d.output()).not.toContain("최대 2회까지 다시 호출합니다");
+
+      const on = gateDeps({ choices: ["save", "cancel"], confirms: [false] });
+      await runGenerateCommand(gateArgv, on.value);
+      expect(on.output()).toContain("  실패한 케이스는 값을 고쳐 최대 2회까지 다시 호출합니다.\n");
+    });
+
+    it("provider 가 없으면 AI 제안 없이 사람에게 묻는다", async () => {
+      const d = gateDeps({
+        choices: ["save"],
+        inputs: ["서울"],
+        confirms: [true, true],
+        respond: onlyAccepts("서울"),
+      });
+      await runGenerateCommand(gateArgv, d.value);
+      expect(d.output()).toContain("서버 응답에 쓸 만한 값이 없어 직접 받습니다");
+      expect(d.output()).not.toContain("서버 응답에서 값을 찾았습니다");
+    });
+
+    it("교정 0건이면 applyAuthoringChanges 를 부르지 않는다", async () => {
+      const apply = vi.fn(applyAuthoringChanges);
+      const d = gateDeps({
+        choices: ["save"],
+        inputs: Array.from({ length: failingCases }, () => "s"),
+        confirms: [true, true],
+        applyAuthoringChanges: apply,
+      });
+      await runGenerateCommand(gateArgv, d.value);
+      expect(apply).not.toHaveBeenCalled();
+    });
+
+    it("교정 2건이어도 applyAuthoringChanges 를 한 번만 부른다", async () => {
+      const apply = vi.fn(applyAuthoringChanges);
+      const d = gateDeps({
+        choices: ["save"],
+        tools: twoTools,
+        inputs: ["서울", "서울"],
+        confirms: [true, true],
+        applyAuthoringChanges: apply,
+        respond: onlyAccepts("서울"),
+      });
+      await expect(runGenerateCommand(gateArgv, d.value)).resolves.toBe(0);
+      expect(d.output()).not.toContain("[s] 서버 결함");
+      expect(apply).toHaveBeenCalledOnce();
+    });
+
+    it("재실행이 케이스 하나만 담은 스위트로 나간다", async () => {
+      const d = gateDeps({
+        choices: ["save"],
+        inputs: ["서울"],
+        confirms: [true, true],
+        respond: onlyAccepts("서울"),
+      });
+      await runGenerateCommand(gateArgv, d.value);
+      // 시험 실행 전량 + 재실행 1건. 스위트를 통째로 다시 돌리면 이 값이 두 배가 된다.
+      expect(d.calls).toHaveLength(baselineCases.length + 1);
+    });
+
+    it("provenance 가 user 인 케이스는 교정 대상이 아니다", async () => {
+      // apply-all 로 반영한 케이스는 origin 이 user 가 된다(설계 §5.2). 사람이 직접 쓴 값을
+      // 교정 대상으로 삼으면 사용자가 정한 것을 기계가 되돌린다.
+      const base = createBaselineSuite(gateTools, {
+        suiteId: "weather",
+        suiteName: "Weather",
+      }).suite;
+      const d = gateDeps({
+        choices: ["edit", "apply-all", "save"],
+        localCandidate: {
+          ...base,
+          cases: base.cases.map((item) =>
+            item.id !== happyCase.id
+              ? item
+              : ({
+                  ...item,
+                  operation: { ...(item as CallToolCaseSpec).operation, input: { city: "부산" } },
+                } as TestCaseSpec),
+          ),
+        },
+        // 편집 파일 경로, 분류 한 건.
+        inputs: ["candidate.json", "s"],
+        confirms: Array.from({ length: 8 }, () => true),
+        respond: onlyAccepts("서울"),
+      });
+      await expect(runGenerateCommand(gateArgv, d.value)).resolves.toBe(0);
+      expect(d.output()).not.toContain("입력값이 거절된 것으로 보입니다");
+      expect(d.savedSuite()?.approval.cases?.find((item) => item.id === happyCase.id)?.status).toBe(
+        "serverDefect",
+      );
+    });
+
+    it("교정이 두 번 실패하면 분류 화면이 뜨고 시도 이력이 함께 나온다", async () => {
+      const d = gateDeps({
+        choices: ["save"],
+        baseline: bodySchemaBaseline(),
+        providers: proposingProvider("부산"),
+        // 1회차는 AI 제안에 엔터, 2회차는 사람이 다른 값, 마지막은 분류.
+        inputs: ["", "대전", "s"],
+        confirms: [true, true],
+        respond: onlyAccepts("서울"),
+      });
+      await expect(runGenerateCommand(proposalArgv, d.value)).resolves.toBe(0);
+      expect(d.output()).toContain("서버 응답에서 값을 찾았습니다");
+      expect(d.output()).toContain("입력값을 두 번 고쳐 봤지만 결과가 같습니다.");
+      expect(d.output()).toContain('city: "부산" → 오류');
+      expect(d.output()).toContain('city: "대전" → 오류');
+    });
+
+    it("교정이 두 번 실패하면 저장된 입력값이 원래 합성값이다", async () => {
+      const d = gateDeps({
+        choices: ["save"],
+        baseline: bodySchemaBaseline(),
+        providers: proposingProvider("부산"),
+        inputs: ["", "대전", "s"],
+        confirms: [true, true],
+        respond: onlyAccepts("서울"),
+      });
+      await runGenerateCommand(proposalArgv, d.value);
+      const item = d.savedSuite()?.cases.find((entry) => entry.id === happyCase.id) as
+        | CallToolCaseSpec
+        | undefined;
+      expect(item?.operation.input).toEqual({ city: synthesized });
+    });
+  });
+
+  describe("generate 지문 표시", () => {
+    const printedFingerprint = (output: string): string =>
+      output
+        .slice(output.indexOf("Final fingerprint: ") + "Final fingerprint: ".length)
+        .split("\n")[0] ?? "";
+
+    it("최종 지문이 시험 실행 뒤에 찍힌다", async () => {
+      const d = gateDeps({
+        choices: ["save"],
+        inputs: Array.from({ length: failingCases }, () => "s"),
+        confirms: [true, true],
+      });
+      await runGenerateCommand(gateArgv, d.value);
+      const output = d.output();
+      expect(output.indexOf("Final fingerprint: ")).toBeGreaterThan(output.indexOf("시험 실행 중"));
+      expect(output.indexOf("Final fingerprint: ")).toBeGreaterThan(
+        output.indexOf("[s] 서버 결함"),
+      );
+    });
+
+    it("교정이 있으면 찍힌 지문이 저장된 approval.fingerprint 와 같다", async () => {
+      const d = gateDeps({
+        choices: ["save"],
+        inputs: ["서울"],
+        confirms: [true, true],
+        respond: onlyAccepts("서울"),
+      });
+      await runGenerateCommand(gateArgv, d.value);
+      expect(printedFingerprint(d.output())).toBe(d.savedSuite()?.approval.fingerprint);
+    });
+
+    it("교정이 없으면 찍힌 지문이 기존과 같은 값이다", async () => {
+      const d = gateDeps({
+        choices: ["save"],
+        inputs: Array.from({ length: failingCases }, () => "s"),
+        confirms: [true, true],
+      });
+      await runGenerateCommand(gateArgv, d.value);
+      expect(printedFingerprint(d.output())).toBe(
+        createBaselineSuite(gateTools, { suiteId: "weather", suiteName: "Weather" })
+          .suiteFingerprint,
+      );
+    });
+
+    it("--no-dry-run 이어도 지문이 저장 확인 직전에 찍힌다", async () => {
+      const d = gateDeps({ choices: ["save"], confirms: [true, true] });
+      await expect(runGenerateCommand([...gateArgv, "--no-dry-run"], d.value)).resolves.toBe(0);
+      const output = d.output();
+      expect(output.indexOf("Final fingerprint: ")).toBeGreaterThan(
+        output.indexOf("시험 실행을 건너뜁니다"),
+      );
+      expect(output.indexOf("Final fingerprint: ")).toBeLessThan(
+        output.indexOf("최종 JSON을 저장할까요?"),
+      );
+    });
+
+    it("반영 요약이 교정 0건이면 안 나온다", async () => {
+      const d = gateDeps({
+        choices: ["save"],
+        inputs: Array.from({ length: failingCases }, () => "s"),
+        confirms: [true, true],
+      });
+      await runGenerateCommand(gateArgv, d.value);
+      expect(d.output()).not.toContain("명세에 반영되었습니다");
+    });
+
+    it("반영 요약에 필드와 전후 값이 나온다", async () => {
+      const d = gateDeps({
+        choices: ["save"],
+        inputs: ["서울"],
+        confirms: [true, true],
+        respond: onlyAccepts("서울"),
+      });
+      await runGenerateCommand(gateArgv, d.value);
+      expect(d.output()).toContain("  입력값 교정 1건이 명세에 반영되었습니다.\n");
+      expect(d.output()).toContain(`    weather.city: ${JSON.stringify(synthesized)} → "서울"\n`);
+    });
   });
 });

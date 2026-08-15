@@ -81,6 +81,11 @@ export function acceptProposal(options: {
 }): Readonly<Record<string, JsonValue>> | undefined {
   const { target, before, after } = options;
 
+  // 케이스 밖의 스위트 메타데이터가 같다. 지금 호출부는 입력값만 꺼내 쓰므로 여기를 뚫려도
+  // 명세에 실릴 경로가 없지만, 이 함수가 권한 경계 자체다. 경계를 넘은 응답을 조금이라도
+  // 수용하면 §4.3 이 금지한 부분 수용이 된다.
+  if (!same({ ...before, cases: [] }, { ...after, cases: [] })) return undefined;
+
   // 케이스 수가 같다. 추가·삭제를 여기서 막는다.
   if (after.cases.length !== before.cases.length) return undefined;
 

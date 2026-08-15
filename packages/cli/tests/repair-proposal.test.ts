@@ -296,6 +296,17 @@ describe("acceptProposal", () => {
     expect(accept(baseSuite())).toBeUndefined();
   });
 
+  it("스위트 메타데이터가 함께 바뀌면 undefined 다", () => {
+    // 입력값은 허용 범위지만 스위트 이름이 함께 바뀌었다. 부분 수용을 하지 않는다(§4.3).
+    const after = repairedSuite("서울");
+    expect(acceptProposal({ target: targetOf(baseSuite()), before: baseSuite(), after })).toEqual({
+      city: "서울",
+    });
+    expect(accept({ ...after, name: "다른 이름" })).toBeUndefined();
+    expect(accept({ ...after, id: "other-suite" })).toBeUndefined();
+    expect(accept({ ...after, defaultTimeoutMs: 1_000 })).toBeUndefined();
+  });
+
   it("대상 케이스의 입력값 하나만 바뀌면 그 입력 전체를 돌려준다", () => {
     const before = suiteOf([
       callCase("c1", "get_weather", { city: "example", unit: "c" }),

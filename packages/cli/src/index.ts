@@ -100,6 +100,7 @@ export async function run(argv: string[]): Promise<number> {
       createAuthoringDiff: generate.createAuthoringDiff,
       applyAuthoringChanges: generate.applyAuthoringChanges,
       reviewLocalAuthoringCandidate: generate.reviewLocalAuthoringCandidate,
+      computeCoverage: generate.computeCoverage,
     });
   }
   if (argv[0] !== "test") return runCli(argv, unavailableDependencies);

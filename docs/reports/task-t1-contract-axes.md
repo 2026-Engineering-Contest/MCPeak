@@ -51,9 +51,15 @@
 
 ## 남은 위험
 
+아래는 **T1 완료 시점의 기록**이다. 이후 태스크가 해소한 항목은 각 줄에 결과를 덧붙였다.
+
 - `unanalyzableReason` 과 `unanalyzedFields` 는 아직 아무도 읽지 않는다. 값의 정확성은 T2 가
   축을 만들면서 처음 검증된다. 지금은 `input-contract.ts` 가 `.schema` 만 보므로 이 두 필드가
   틀려도 기존 테스트는 잡지 못한다.
+  **해소됨(T2).** `contract-axes.ts` 의 `deriveContractAxes` 가 두 필드를 모두 소비하고
+  `contract-axes.test.ts` 가 사유 문자열과 미해석 필드 목록을 단언한다.
 - `case-expectation.ts` 는 소비자가 T4 에서 생긴다. 그때까지 미사용 모듈이다.
+  **정정(T3).** 첫 소비자는 T4 가 아니라 T3 의 `matchCoveredAxes` 다. T4 의
+  `checkInputContract` 가 두 번째 소비자다.
 - `unanalyzedFields` 의 오름차순은 `Object.keys(properties).sort(byCodeUnit)` 순회에 기댄다.
   나중에 이 순회 순서를 바꾸면 정렬도 함께 깨진다.

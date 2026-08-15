@@ -10,6 +10,9 @@ const sourceDir = fileURLToPath(new URL("../src", import.meta.url));
  * 이 목록 밖 심볼을 가져오면 이 테스트가 깨진다. 목록을 늘리려면 ADR을 먼저 고쳐야 한다.
  */
 const APPROVED_RUNNER_SYMBOLS = [
+  "ContractAxis",
+  "ContractAxisKind",
+  "ContractDeclaredType",
   "DEFAULT_SENSITIVE_KEYS",
   "MCP_SUITE_JSON_SCHEMA",
   "REDACTED",
@@ -22,6 +25,8 @@ const APPROVED_RUNNER_SYMBOLS = [
   "checkAssertionSubstance",
   "checkInputContract",
   "deepFreeze",
+  "deriveContractAxes",
+  "matchCoveredAxes",
   "sha256",
   "validateMcpSuite",
 ];

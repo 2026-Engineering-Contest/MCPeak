@@ -1,10 +1,10 @@
 # ADR-0009: `generate`가 `runner`에 의존하는 예외를 명시적으로 승인한다
 
-- 상태: 제안
+- 상태: 채택
 - 날짜: 2026-08-13
 - 담당: generate, runner
 - 작성자: @seodduu (generate·runner 파트)
-- 승인: 미승인. 아래 '승인' 절 참조
+- 승인: 승인 (2026-08-15, @seodduu · 파트 ① 오너). 아래 '승인' 절 참조
 - 참조: `docs/architecture.md`, `CONTRIBUTING.md` §3
 
 ## 배경
@@ -20,8 +20,8 @@ cli → runner / generate / record / mock → core
 
 | 종류 | 심볼 |
 |---|---|
-| 타입 | `TestSuiteSpec`, `TestCaseSpec`, `SuiteValidationIssue`, `RunnerRedactionOptions`, `SpecFindingsResult` |
-| 함수 | `validateMcpSuite`, `canonicalJson`, `sha256`, `deepFreeze`, `checkInputContract`, `checkAssertionSubstance` |
+| 타입 | `TestSuiteSpec`, `TestCaseSpec`, `SuiteValidationIssue`, `RunnerRedactionOptions`, `SpecFindingsResult`, `ContractAxis`, `ContractAxisKind`, `ContractDeclaredType` |
+| 함수 | `validateMcpSuite`, `canonicalJson`, `sha256`, `deepFreeze`, `checkInputContract`, `checkAssertionSubstance`, `deriveContractAxes`, `matchCoveredAxes` |
 | 상수 | `MCP_SUITE_JSON_SCHEMA`, `DEFAULT_SENSITIVE_KEYS`, `REDACTED` |
 
 `checkInputContract` · `checkAssertionSubstance` · `SpecFindingsResult` 세 개는 2026-08-14 에
@@ -37,6 +37,19 @@ cli → runner / generate / record / mock → core
 `generate` 를 부를 수 없기 때문이다. canonical JSON 구현을 두 벌로 만들면 저장 시점 지문과
 실행 시점 지문이 조용히 갈린다. 구현을 한 벌로 유지하려고 낮은 층으로 옮긴 것이고, 의존이
 새로 늘어난 것이 아니라 같은 코드의 소유 패키지가 바뀐 것이다.
+
+`deriveContractAxes` · `ContractAxis` · `ContractDeclaredType` 세 개는 2026-08-15 에 계약 축
+커버리지를 위해 추가했다. 축 도출을 `runner` 에 두는 이유가 둘이다. 첫째, 정규화를 한 벌로
+유지해야 한다. `input-contract.ts` 의 `normalizeInputSchema` 가 이미 `required` · 필드 `type` ·
+`enum` · 차단 키워드를 정규화하고, 축 도출이 필요한 것이 정확히 그 구조체다. 두 벌이 되면 입력
+계약 대조는 "이 툴 스키마는 해석 못 했다" 며 침묵하는데 커버리지는 "축 3개 미검증" 이라고 세는
+상태가 만들어진다. 같은 화면의 두 줄이 서로를 부정한다. 둘째, `generate` 의 파서로는 이 일을 할
+수 없다. `validateSchema` 는 허용 키워드 밖(`anyOf` 등)을 만나면 **던진다**. 커버리지 표시는
+규칙 기반 baseline 뿐 아니라 AI 가 만든 명세와 손으로 쓴 명세에도 필요한데, 그 경로는 서버 선언을
+`generate` 파서에 통과시키지 않는다(`authoring-session.ts` 가 서버 `tools` 를
+`checkInputContract` 에 그대로 넘긴다). `anyOf` 하나 쓴 서버를 만나면 `generate` 파서 기반 도출은
+화면 전체를 죽이고, `runner` 파서 기반 도출은 그 툴만 해석 불가로 빼고 나머지를 정상 표시한다.
+같은 이유로 커버리지 판정이 `matchCoveredAxes` 와 `ContractAxisKind` 를 쓴다.
 
 이 의존은 AI 보조 작성 기능 이전부터 있었고, PR #37이 `MCP_SUITE_JSON_SCHEMA`를 하나 더 참조하면서
 코드 리뷰에서 지적됐다.
@@ -85,11 +98,15 @@ C안은 A안을 막지 않는다. 참조 목록을 검사로 고정하면 의존
 
 ## 승인
 
-- 상태: 미승인. PR #37 리뷰에서 검토 중이다.
+- 상태: 승인 (2026-08-15).
 - 필요한 승인: `generate` 오너와 `runner` 오너. 예외의 대상이 두 패키지의 경계이므로 한쪽 승인으로
   부족하다.
-- 확정 방법: 두 오너가 PR #37에서 승인하면 상태를 `승인`으로 바꾸고 `승인일`과 승인한 오너를
-  적는다. 승인 전까지 이 예외는 제안 상태이며, `packages/generate/tests/dependency-boundary.test.ts`가
-  현재 참조 범위를 고정해 그 사이에 의존이 커지는 것을 막는다.
+- 승인한 사람: @seodduu. `CONTRIBUTING.md` §2.1 의 파트 ① 이 `core`·`runner`·`generate` 를 함께
+  소유하고 "파트가 그 안의 패키지에 대한 설계 결정권과 최종 책임을 가진다" 고 정하므로, 두 패키지의
+  경계에 대한 이 결정을 파트 오너가 승인했다.
+- 남은 절차: 파트 ① 내부의 1인 1패키지 분할이 §2.1 표에 아직 반영되지 않았다. 그 표를 갱신할 때
+  이 승인의 주체 표기도 함께 확인한다. 참조 범위는 승인 이후에도
+  `packages/generate/tests/dependency-boundary.test.ts` 가 코드로 고정하고, 목록을 넓히려면 이 문서를
+  먼저 고쳐야 한다는 규칙도 그대로다.
 - 반대 결론이 나오면: A안(suite 스펙과 검증기를 `core`로 이동)을 별도 PR로 진행한다. 그 경우
   `core/src/types.ts`의 책임 범위가 바뀌므로 오너 전원 승인이 필요하다.

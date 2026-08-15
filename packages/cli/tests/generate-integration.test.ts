@@ -14,7 +14,7 @@ import {
   prepareAuthoringRequest,
   reviewLocalAuthoringCandidate,
 } from "@ohmymcp/generate";
-import { validateMcpSuite } from "@ohmymcp/runner";
+import { deriveContractAxes, validateMcpSuite } from "@ohmymcp/runner";
 import { describe, expect, it, vi } from "vitest";
 import { nodeGenerateDependencies, runGenerateCommand } from "../src/generate-command.js";
 import { run } from "../src/index.js";
@@ -66,6 +66,24 @@ async function exited(pidFile: string): Promise<void> {
   }
 }
 
+/**
+ * 서버 선언에서 직접 센 축 수. 케이스 수를 상수로만 박으면 `examples` 서버 선언이 바뀌었을 때
+ * "선언이 바뀌었다" 와 "생성이 깨졌다" 가 구분되지 않는다. 축 하나에 케이스 하나가 대응하므로
+ * (HAPPY_PATH 축은 정상 케이스에 대응한다) 이 수가 곧 기대 케이스 수다.
+ */
+async function declaredAxisCount(pidFile: string): Promise<number> {
+  const connection = await connectStdio({
+    command: process.execPath,
+    args: [wrapper, pidFile, server],
+  });
+  try {
+    const tools = await connection.client.listTools();
+    return tools.reduce((sum, tool) => sum + deriveContractAxes(tool).axes.length, 0);
+  } finally {
+    await connection.close();
+  }
+}
+
 async function cleanup(pidFile: string): Promise<void> {
   try {
     const pid = Number((await readFile(pidFile, "utf8")).trim());
@@ -86,6 +104,9 @@ describe.sequential("generate 실제 weather-server", () => {
   it("weather-server에서 baseline JSON을 만들고 process를 종료한다", async () => {
     const directory = await mkdtemp(join(tmpdir(), "ohmymcp-generate-"));
     const pidFile = join(directory, "server.pid");
+    // 축 수를 세는 연결은 pid 파일을 따로 쓴다. 같은 파일을 쓰면 아래 exited 가 어느 프로세스를
+    // 본 것인지 흐려진다.
+    const axisPidFile = join(directory, "axis-count.pid");
     const suitePath = join(directory, "baseline.json");
     try {
       expect(
@@ -109,14 +130,26 @@ describe.sequential("generate 실제 weather-server", () => {
         ]),
       ).toBe(0);
       const suite = JSON.parse(await readFile(suitePath, "utf8"));
-      expect(suite.cases).toHaveLength(2);
+      // 케이스 수를 상수로만 박으면 examples 서버 선언이 바뀌었을 때 "선언이 바뀌었다" 와
+      // "생성이 깨졌다" 가 구분되지 않는다. 서버 선언에서 센 축 수와도 맞춰 본다.
+      // HAPPY_PATH 축 하나가 정상 케이스 하나에 대응하므로 축 총수가 곧 케이스 수다.
+      expect(suite.cases).toHaveLength(8);
+      expect(suite.cases).toHaveLength(await declaredAxisCount(axisPidFile));
       expect(suite.cases.map((item: { operation: unknown }) => item.operation)).toEqual([
         { type: "callTool", tool: "get_weather", input: { city: "example" } },
+        { type: "callTool", tool: "get_weather", input: {} },
+        { type: "callTool", tool: "get_weather", input: { city: 0 } },
         { type: "callTool", tool: "add", input: { a: 0, b: 0 } },
+        { type: "callTool", tool: "add", input: { b: 0 } },
+        { type: "callTool", tool: "add", input: { a: 0 } },
+        { type: "callTool", tool: "add", input: { a: "example", b: 0 } },
+        { type: "callTool", tool: "add", input: { a: 0, b: "example" } },
       ]);
       await exited(pidFile);
+      await exited(axisPidFile);
     } finally {
       await cleanup(pidFile);
+      await cleanup(axisPidFile);
       await rm(directory, { recursive: true, force: true });
     }
   });
@@ -166,16 +199,24 @@ describe.sequential("generate 실제 weather-server", () => {
       ).toBe(1);
       const report = JSON.parse(out.mock.calls.map(([value]) => String(value)).join(""));
       expect(report.summary).toEqual({
-        total: 2,
-        passed: 1,
+        total: 8,
+        passed: 7,
         failed: 1,
         timedOut: 0,
         cancelled: 0,
         notRun: 0,
       });
+      // weather-server 는 이미 입력을 검증하므로(typeof city !== "string",
+      // typeof a !== "number" || typeof b !== "number") 위반 케이스 6개가 모두 통과한다.
       expect(report.cases.map((item: { status: string }) => item.status)).toEqual([
-        "failed",
-        "passed",
+        "failed", // get-weather-success  city "example" 이 WEATHER 에 없다. 도메인 값 문제(§2 비범위)
+        "passed", // get-weather-missing-city
+        "passed", // get-weather-type-city
+        "passed", // add-success
+        "passed", // add-missing-a
+        "passed", // add-missing-b
+        "passed", // add-type-a
+        "passed", // add-type-b
       ]);
       expect(err).not.toHaveBeenCalled();
       await exited(pidFile);
@@ -233,10 +274,16 @@ describe.sequential("generate 실제 weather-server", () => {
         status: "candidate" as const,
         suite: {
           ...request.candidate,
+          // 정상 응답을 기대하는 케이스만 고친다. 위반 케이스까지 정상 입력으로 바꾸면
+          // 서버가 거절하지 않아 그 케이스가 실패한다. AI 가 고칠 것은 도메인 값이지
+          // 위반 케이스의 목적이 아니다.
           cases: request.candidate.cases.map((item) =>
             item.operation &&
             typeof item.operation === "object" &&
-            (item.operation as { tool?: string }).tool === "get_weather"
+            (item.operation as { tool?: string }).tool === "get_weather" &&
+            (item.assertions as readonly { type: string; expected?: unknown }[]).some(
+              (assertion) => assertion.type === "isError" && assertion.expected === false,
+            )
               ? { ...item, operation: { ...(item.operation as object), input: { city: "서울" } } }
               : item,
           ),
@@ -308,8 +355,8 @@ describe.sequential("generate 실제 weather-server", () => {
           ]),
         ).toBe(0);
         expect(JSON.parse(outputs.join("")).summary).toEqual({
-          total: 2,
-          passed: 2,
+          total: 8,
+          passed: 8,
           failed: 0,
           timedOut: 0,
           cancelled: 0,

@@ -8,10 +8,13 @@ import type {
   AuthoringRequestPreview,
   AuthoringSessionView,
   BaselineGenerationResult,
+  CoverageResult,
   PublicProviderFailure,
   SanitizedAuthoringCandidate,
+  ToolCoverage,
 } from "@ohmymcp/generate";
 import type {
+  ContractAxisKind,
   SpecFinding,
   SpecFindingCode,
   SuiteValidationResult,
@@ -70,6 +73,7 @@ export interface GenerateCommandDependencies {
   createAuthoringDiff?: typeof import("@ohmymcp/generate").createAuthoringDiff;
   applyAuthoringChanges?: typeof import("@ohmymcp/generate").applyAuthoringChanges;
   reviewLocalAuthoringCandidate?: typeof import("@ohmymcp/generate").reviewLocalAuthoringCandidate;
+  computeCoverage?: typeof import("@ohmymcp/generate").computeCoverage;
 }
 export interface ReviewIO {
   input(message: string): Promise<string>;
@@ -588,11 +592,17 @@ async function runInteractiveReview(
           continue;
         }
         try {
-          await saveSuite(
-            input,
-            deps.getAuthoringExecutionSuite(final.snapshot),
-            final.snapshot.fingerprint,
+          const finalSuite = deps.getAuthoringExecutionSuite(final.snapshot);
+          await saveSuite(input, finalSuite, final.snapshot.fingerprint, deps);
+          // 최종 suite 는 baseline 과 다르다. 사용자가 케이스를 지웠거나 AI 후보를 적용했을 수
+          // 있으므로 저장한 그 suite 로 다시 계산한다.
+          //
+          // 저장 뒤이므로 커버리지 실패를 저장 실패로 보고하지 않는다. reportCoverageSafely 가
+          // 자기 오류 경계를 갖는다.
+          reportCoverageSafely(
             deps,
+            () => deps.computeCoverage?.({ suite: finalSuite, tools }),
+            finalSuite,
           );
           return 0;
         } catch (error) {
@@ -701,6 +711,160 @@ async function runInteractiveReview(
   }
 }
 
+/**
+ * 축 종류를 사람 문장으로 바꾼다. `Record<ContractAxisKind, string>` 이라서 `runner` 가 축을
+ * 늘리면 여기서 타입 오류가 난다. 문자열 배열로 두면 새 축이 화면에서 조용히 사라지고,
+ * **이 화면에서 누락은 "검증했다" 로 읽힌다.** `FINDING_GROUP` 이 같은 이유로 같은 형태다.
+ */
+const AXIS_LABEL: Readonly<Record<ContractAxisKind, string>> = {
+  HAPPY_PATH: "선언을 지킨 입력에 정상 응답",
+  REQUIRED_OMITTED: "필수 필드 누락 거절",
+  TYPE_VIOLATION: "타입 위반 거절",
+  ENUM_VIOLATION: "선언되지 않은 값 거절",
+};
+
+/**
+ * runner 보고서 상한(1MB)에 닿기 전에 알리는 임계.
+ *
+ * 케이스당 보고서가 관측 범위에서 300~600 바이트다. 600 으로 계산해도 1500 케이스면 900KB 로
+ * DEFAULT_MAX_REPORT_BYTES(1MB) 안에 들어간다. 그보다 크면 사용자가 조치할 시간이 필요하다.
+ * 이 상한은 올릴 수 없다(resolvePayloadLimits 가 기본값을 최대치로 쓴다).
+ */
+const CASE_COUNT_WARNING_THRESHOLD = 1500;
+
+/**
+ * 터미널 표시 폭. 한글은 두 칸을 차지하므로 문자 수로 맞추면 열이 어긋난다.
+ * 화면 정렬이 목적이므로 코드 포인트 단위로 세고 넓은 글자만 2로 계산한다.
+ */
+function displayWidth(text: string): number {
+  let width = 0;
+  for (const char of text) {
+    const code = char.codePointAt(0) ?? 0;
+    const wide =
+      (code >= 0x1100 && code <= 0x115f) ||
+      (code >= 0x2e80 && code <= 0xa4cf) ||
+      (code >= 0xac00 && code <= 0xd7a3) ||
+      (code >= 0xf900 && code <= 0xfaff) ||
+      (code >= 0xfe30 && code <= 0xfe6f) ||
+      (code >= 0xff00 && code <= 0xff60) ||
+      (code >= 0xffe0 && code <= 0xffe6);
+    width += wide ? 2 : 1;
+  }
+  return width;
+}
+
+/** 표시 폭 기준 오른쪽 공백 채우기. 이미 넓으면 그대로 둔다. */
+function padToWidth(text: string, width: number): string {
+  const padding = width - displayWidth(text);
+  return padding > 0 ? text + " ".repeat(padding) : text;
+}
+
+/** 축 하나를 사람이 읽는 문장으로. 필드가 없는 축(HAPPY_PATH)은 종류만 적는다. */
+function axisLabel(kind: ContractAxisKind, field: string | null): string {
+  return field === null ? AXIS_LABEL[kind] : `${field} 의 ${AXIS_LABEL[kind]}`;
+}
+
+/** 툴 한 개의 줄과 그 아래 들여쓴 줄들. */
+function coverageToolLines(tool: ToolCoverage, nameWidth: number): string[] {
+  const head = `  ${padToWidth(tool.tool, nameWidth)}`;
+  if (!tool.analyzable) {
+    return [
+      `${head}해석 불가`,
+      `    → 입력 스키마를 해석하지 못해 이 툴의 축을 세지 못했습니다 (${tool.unanalyzableReason ?? "schema"})`,
+      "    → 이 툴은 커버리지 숫자에 들어가지 않습니다",
+    ];
+  }
+  const unverified = tool.axes.filter((axis) => axis.caseId === null);
+  const labels = unverified.map((axis) => axisLabel(axis.kind, axis.field));
+  // 미검증 라벨을 한 열에 맞춘다. 여백은 가장 긴 라벨 기준이라 툴마다 달라질 수 있고, 같은
+  // 입력에는 항상 같은 폭이 나온다.
+  const labelWidth = Math.max(0, ...labels.map(displayWidth)) + 5;
+  const lines = [`${head}${tool.verified}/${tool.total}`];
+  for (const label of labels) lines.push(`    ? ${padToWidth(label, labelWidth)}미검증`);
+  if (tool.unanalyzedFields.length > 0)
+    lines.push(
+      `    → 해석 못 한 필드 ${tool.unanalyzedFields.length}개: ${tool.unanalyzedFields.join(", ")}. 이 필드의 축은 세지 않았습니다`,
+    );
+  return lines;
+}
+
+/**
+ * 커버리지 화면. 순수 함수라서 테스트가 문자열을 그대로 비교한다.
+ *
+ * 전부 검증되면 한 줄이다. 기본 생성이 축을 다 채우므로 그것이 대다수 실행의 모습이고,
+ * 거기서 툴 30개를 나열하면 매 실행 30줄이 영구 소음이 된다.
+ *
+ * `total` 이 0 이면 `verified === total` 이 참이지만 "전부 검증" 이라고 쓰지 않는다. 축을
+ * 하나도 세지 못한 것이지 전부 확인한 것이 아니다. 그 화면은 거짓이다.
+ */
+export function renderCoverage(coverage: CoverageResult): string {
+  if (coverage.tools.length === 0) return "";
+  const count = coverage.tools.length;
+  // 한 줄로 줄이는 것은 숨길 것이 하나도 없을 때뿐이다. 해석 못 한 툴이나 필드가 있으면
+  // 숫자가 다 차 있어도 그 사실을 함께 보여야 한다. 안 보이면 "전부 확인했다" 로 읽힌다.
+  const nothingHidden = coverage.tools.every(
+    (tool) => tool.analyzable && tool.unanalyzedFields.length === 0,
+  );
+  if (coverage.total > 0 && coverage.verified === coverage.total && nothingHidden)
+    return `커버리지  ${count} tools, ${coverage.total} axes 전부 검증\n`;
+  const nameWidth = Math.max(0, ...coverage.tools.map((tool) => displayWidth(tool.tool))) + 3;
+  const lines = [`커버리지  ${count} tools, ${coverage.verified}/${coverage.total} axes 검증`];
+  for (const tool of coverage.tools) lines.push(...coverageToolLines(tool, nameWidth));
+  return `${lines.join("\n")}\n`;
+}
+
+/**
+ * 케이스 수 고지. 임계 아래면 빈 문자열이다.
+ * 생성을 막지 않는다. 이미 존재하는 상한을 사용자에게 보이게 하는 것이 목적이다.
+ */
+export function renderCaseCountNotice(caseCount: number): string {
+  if (caseCount < CASE_COUNT_WARNING_THRESHOLD) return "";
+  return (
+    `→ 케이스 ${caseCount}개를 만들었습니다. runner 보고서 상한(1MB)에 가까워 test 실행이\n` +
+    "  RunnerPayloadLimitError 로 실패할 수 있습니다.\n" +
+    "→ 툴을 나눠 여러 명세 파일로 생성하면 피할 수 있습니다.\n"
+  );
+}
+
+/** 커버리지와 케이스 수 고지를 stdout 에 찍는다. 둘 다 빈 문자열이면 아무것도 안 찍는다. */
+function writeCoverageReport(
+  deps: GenerateCommandDependencies,
+  coverage: CoverageResult | undefined,
+  suite: TestSuiteSpec,
+): void {
+  if (coverage !== undefined) {
+    const text = renderCoverage(coverage);
+    if (text !== "") deps.writeStdout(text);
+  }
+  const notice = renderCaseCountNotice(suite.cases.length);
+  if (notice !== "") deps.writeStdout(notice);
+}
+
+/**
+ * 커버리지 보고를 저장과 다른 오류 경계에 둔다.
+ *
+ * 파일을 저장한 **뒤에** 커버리지 계산이나 렌더링이 실패할 수 있다. 그것을 저장 실패로 보고하면
+ * 사용자가 저장을 다시 시도하고 이번에는 `OUTPUT_EXISTS` 를 만난다. 저장은 성공했고 부가 정보만
+ * 못 만든 것이므로 종료 코드를 바꾸지 않고 경고만 낸다.
+ *
+ * coverage 를 값이 아니라 thunk 로 받는 이유는 `computeCoverage` 자체가 던지는 경우까지 이 경계
+ * 안에 넣기 위해서다.
+ */
+function reportCoverageSafely(
+  deps: GenerateCommandDependencies,
+  coverage: () => CoverageResult | undefined,
+  suite: TestSuiteSpec,
+): void {
+  try {
+    writeCoverageReport(deps, coverage(), suite);
+  } catch {
+    deps.writeStderr(
+      "경고 [GENERATE_COVERAGE_UNAVAILABLE]: 명세는 저장했지만 커버리지를 계산하지 못했습니다.\n" +
+        "해결: 저장된 명세는 그대로 `ohmymcp test` 로 쓸 수 있습니다. 커버리지만 다시 보려면 다른 --out 경로로 generate 를 실행하세요.\n",
+    );
+  }
+}
+
 export async function runGenerateCommand(
   argv: readonly string[],
   deps: GenerateCommandDependencies,
@@ -737,13 +901,12 @@ export async function runGenerateCommand(
       approval: { approved: true, fingerprint: session.approvedDraft.suiteFingerprint },
     });
     if (!final.finalized) throw new Error("finalize failed");
-    await saveSuite(
-      input,
-      deps.getAuthoringExecutionSuite(final.snapshot),
-      final.snapshot.fingerprint,
-      deps,
-    );
+    const finalSuite = deps.getAuthoringExecutionSuite(final.snapshot);
+    await saveSuite(input, finalSuite, final.snapshot.fingerprint, deps);
     deps.writeStdout(`baseline suite를 저장했습니다: ${input.outPath}\n`);
+    // baseline 경로는 저장한 suite 가 baseline 그대로이므로 다시 계산하지 않는다.
+    // 저장 뒤이므로 렌더링 실패를 GENERATE_FAILED 로 보고하지 않는다.
+    reportCoverageSafely(deps, () => baseline.coverage, finalSuite);
     return 0;
   } catch (error) {
     if (connection !== undefined) await connection.forceClose().catch(() => undefined);

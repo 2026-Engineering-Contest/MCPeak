@@ -27,11 +27,16 @@ const candidate = (session = createAuthoringSession(baseline())) =>
 const approve = (fingerprint: string) => ({ approved: true as const, fingerprint });
 
 /**
- * 손대지 않은 baseline candidate 의 지문. T2 구현 **이전** 값을 그대로 박았다.
- * specFindings 를 candidate 에 실어도 이 값이 유지돼야 한다. 바뀌면 이미 승인된 지문이
- * 전부 어긋난다는 뜻이다.
+ * 손대지 않은 baseline candidate 의 지문.
+ *
+ * 이 상수가 고정하는 것은 **specFindings 가 지문에 들어가지 않는다는 계약**이다. 대조 결과를
+ * candidate 에 실어도 지문이 그대로여야 한다. 그렇지 않으면 이미 승인된 지문이 전부 어긋난다.
+ *
+ * 2026-08-15 에 값이 한 번 갈렸다. baseline 정책이 v2 로 올라 툴당 케이스가 정상 1개에서
+ * 정상 1개 + 위반 N개로 늘었기 때문이다(ADR-0022). suite 내용이 바뀌었으니 지문이 바뀌는 것이
+ * 정상이다. 위 계약이 깨진 것이 아니다. 값은 손으로 계산하지 않고 실제 실행 결과를 넣었다.
  */
-const KNOWN_CLEAN_FINGERPRINT = "45dc074424110a20527c3856a026adc017013d25fc403f783f9eeab3a93ccc1c";
+const KNOWN_CLEAN_FINGERPRINT = "5eb8858d23345e8f821025adf3ba01d701171c9c723cd6fb0590a1b196598abe";
 
 /**
  * baseline 생성용 도구 목록. createBaselineSuite 가 지원하는 키워드만 쓴다. type 없는 필드와
@@ -127,15 +132,31 @@ describe("authoring session", () => {
       "change-005:caseOrder",
     ]);
     expect(changes[1]).toMatchObject({ caseId: "weather-success", approvedIndex: 0 });
+    // splice 로 첫 케이스를 지웠으므로 이름을 고친 next.cases[0] 은 승인본의 두 번째 케이스다.
+    // baseline 정책 v2 에서 그것은 weather-missing-city 다.
     expect(changes[2]).toMatchObject({
-      caseId: "echo-success",
+      caseId: "weather-missing-city",
       approvedIndex: 1,
       after: { name: "echo 수정" },
     });
-    expect(changes[3]).toMatchObject({ caseId: "weather-error", candidateIndex: 1 });
+    expect(changes[3]).toMatchObject({ caseId: "weather-error", candidateIndex: 5 });
     expect(changes[4]).toMatchObject({
-      before: ["weather-success", "echo-success"],
-      after: ["echo-success", "weather-error"],
+      before: [
+        "weather-success",
+        "weather-missing-city",
+        "weather-type-city",
+        "echo-success",
+        "echo-missing-text",
+        "echo-type-text",
+      ],
+      after: [
+        "weather-missing-city",
+        "weather-type-city",
+        "echo-success",
+        "echo-missing-text",
+        "echo-type-text",
+        "weather-error",
+      ],
     });
   });
 
@@ -183,7 +204,11 @@ describe("authoring session", () => {
     if (!result.applied) throw new Error("적용되어야 합니다.");
     expect(result.draft.suite.cases.map((item) => item.id)).toEqual([
       "weather-success",
+      "weather-missing-city",
+      "weather-type-city",
       "echo-success",
+      "echo-missing-text",
+      "echo-type-text",
       "weather-error",
     ]);
     expect(result.draft.provenance).toContainEqual(
@@ -262,7 +287,12 @@ describe("authoring session", () => {
     // 서버가 echo 도구를 더는 제공하지 않는 상황. candidate는 echo case를 지웠지만
     // 사용자가 그 삭제를 선택하지 않으면 승인본에 echo case가 그대로 남는다.
     const next = candidate(session);
-    next.cases = next.cases.filter((item) => item.id !== "echo-success");
+    // baseline 정책 v2 는 echo 툴에 정상 1개와 위반 2개를 만든다. 하나만 지우면 남은 케이스가
+    // 선언되지 않은 툴을 부르게 되어 candidate 자체가 invalid 로 막힌다. 이 테스트가 보려는 것은
+    // 그 앞이 아니라 "삭제를 선택하지 않은 승인본" 이므로 echo 케이스를 전부 지운다.
+    next.cases = next.cases.filter(
+      (item) => item.operation.type !== "callTool" || item.operation.tool !== "echo",
+    );
     const review = reviewLocalAuthoringCandidate({
       session,
       candidate: next,
@@ -278,7 +308,14 @@ describe("authoring session", () => {
     });
     expect(result).toMatchObject({ applied: false, reason: "invalid" });
     if (result.applied) throw new Error("거절되어야 합니다.");
-    expect(result.issues?.some((issue) => issue.path === "cases[1].operation.tool")).toBe(true);
+    // 승인본에 남은 echo 케이스는 v2 에서 셋이고 인덱스 3~5 다.
+    expect(result.issues?.map((issue) => issue.path)).toEqual(
+      expect.arrayContaining([
+        "cases[3].operation.tool",
+        "cases[4].operation.tool",
+        "cases[5].operation.tool",
+      ]),
+    );
     expect(session.approvedDraft.revision).toBe(0);
   });
 

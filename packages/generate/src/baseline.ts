@@ -1,11 +1,16 @@
 import type { ToolDef } from "@ohmymcp/core";
 import { type TestSuiteSpec, validateMcpSuite } from "@ohmymcp/runner";
 import { deepFreeze, sha256 } from "./canonical.js";
+import { type CoverageResult, computeCoverage } from "./coverage.js";
 import { safeBaseName } from "./filename.js";
-import { buildGeneratedCase } from "./render.js";
+import { buildGeneratedCases } from "./render.js";
 import { GenerateTestsError } from "./schema.js";
 
-export const BASELINE_POLICY_VERSION = "schema-baseline-v1" as const;
+/**
+ * 위반 케이스를 기본 생성하기 시작해 v2로 올린다(ADR-0022). 이 값이 baselineFingerprint
+ * 계산에 들어가므로 정책이 바뀐 사실이 지문에 남는다.
+ */
+export const BASELINE_POLICY_VERSION = "schema-baseline-v2" as const;
 export const DEFAULT_BASELINE_TIMEOUT_MS = 10_000;
 
 export interface BaselineSuiteOptions {
@@ -19,6 +24,7 @@ export interface BaselineGenerationResult {
   readonly suite: TestSuiteSpec;
   readonly suiteFingerprint: string;
   readonly baselineFingerprint: string;
+  readonly coverage: CoverageResult;
 }
 
 function invalidOption(path: string, message: string, hint: string): never {
@@ -62,13 +68,13 @@ export function createBaselineSuite(
   }
 
   const usedNames = new Set<string>();
-  const cases = tools.map((tool, index) => {
+  const cases = tools.flatMap((tool, index) => {
     const initialName = safeBaseName(typeof tool?.name === "string" ? tool.name : "", index);
     let baseName = initialName;
     for (let occurrence = 2; usedNames.has(baseName); occurrence++)
       baseName = `${initialName}-${occurrence}`;
     usedNames.add(baseName);
-    return buildGeneratedCase(tool, index, baseName);
+    return buildGeneratedCases(tool, index, baseName);
   });
   const suite: TestSuiteSpec = {
     schemaVersion: 1,
@@ -91,6 +97,7 @@ export function createBaselineSuite(
     suite,
     suiteFingerprint,
     baselineFingerprint: sha256({ policyVersion: BASELINE_POLICY_VERSION, suite }),
+    coverage: computeCoverage({ suite, tools }),
   };
   return deepFreeze(result);
 }

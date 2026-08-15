@@ -29,7 +29,58 @@ const tools: ToolDef[] = [
   },
 ];
 
+const fixturePath = new URL("../../../fixtures/tools-list.sample.json", import.meta.url);
+
+function fixtureTools(): ToolDef[] {
+  return (JSON.parse(readFileSync(fixturePath, "utf8")) as { tools: ToolDef[] }).tools;
+}
+
 describe("createBaselineSuite", () => {
+  it("fixtures 두 툴로 만든 baseline 은 케이스 8개다", () => {
+    const result = createBaselineSuite(fixtureTools(), {
+      suiteId: "weather",
+      suiteName: "Weather",
+    });
+    expect(result.suite.cases.map((item) => item.id)).toEqual([
+      "get-weather-success",
+      "get-weather-missing-city",
+      "get-weather-type-city",
+      "add-success",
+      "add-missing-a",
+      "add-missing-b",
+      "add-type-a",
+      "add-type-b",
+    ]);
+  });
+
+  it("정책 버전이 v2 다", () => {
+    expect(BASELINE_POLICY_VERSION).toBe("schema-baseline-v2");
+  });
+
+  it("baseline 결과에 커버리지가 실리고 전부 검증된다", () => {
+    const result = createBaselineSuite(fixtureTools(), {
+      suiteId: "weather",
+      suiteName: "Weather",
+    });
+    expect(result.coverage.verified).toBe(result.coverage.total);
+    expect(result.coverage.total).toBe(8);
+  });
+
+  it("생성한 suite 가 validateMcpSuite 를 통과한다", () => {
+    const result = createBaselineSuite(fixtureTools(), {
+      suiteId: "weather",
+      suiteName: "Weather",
+    });
+    expect(validateMcpSuite(result.suite).valid).toBe(true);
+  });
+
+  it("두 번 만든 suite 가 바이트로 같다", () => {
+    const options = { suiteId: "weather", suiteName: "Weather" };
+    expect(JSON.stringify(createBaselineSuite(fixtureTools(), options).suite)).toBe(
+      JSON.stringify(createBaselineSuite(fixtureTools(), options).suite),
+    );
+  });
+
   it("툴 순서대로 한 baseline suite와 case를 만든다", () => {
     const result = createBaselineSuite(tools, { suiteId: "weather", suiteName: "날씨" });
 
@@ -39,16 +90,24 @@ describe("createBaselineSuite", () => {
       name: "날씨",
       defaultTimeoutMs: DEFAULT_BASELINE_TIMEOUT_MS,
     });
+    // 툴마다 정상 케이스 1개와 위반 케이스가 따라온다(§5.2). 툴 순서는 그대로다.
     expect(result.suite.cases.map((testCase) => testCase.operation)).toEqual([
       { type: "callTool", tool: "get_weather", input: { city: "example" } },
+      { type: "callTool", tool: "get_weather", input: {} },
+      { type: "callTool", tool: "get_weather", input: { city: 0 } },
       { type: "callTool", tool: "add", input: { value: 2 } },
+      { type: "callTool", tool: "add", input: {} },
+      { type: "callTool", tool: "add", input: { value: 1.5 } },
     ]);
-    expect(
-      result.suite.cases.every(
-        (testCase) =>
-          testCase.assertions[0]?.type === "isError" && testCase.assertions[0].expected === false,
-      ),
-    ).toBe(true);
+    // 정상 케이스는 isError false, 위반 케이스는 isError true 하나씩이다.
+    expect(result.suite.cases.map((testCase) => [testCase.id, testCase.assertions])).toEqual([
+      ["get-weather-success", [{ type: "isError", expected: false }]],
+      ["get-weather-missing-city", [{ type: "isError", expected: true }]],
+      ["get-weather-type-city", [{ type: "isError", expected: true }]],
+      ["add-success", [{ type: "isError", expected: false }]],
+      ["add-missing-value", [{ type: "isError", expected: true }]],
+      ["add-type-value", [{ type: "isError", expected: true }]],
+    ]);
     expect(validateMcpSuite(result.suite).valid).toBe(true);
   });
 

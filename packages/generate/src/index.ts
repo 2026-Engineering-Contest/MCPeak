@@ -57,6 +57,12 @@ export {
 } from "./baseline.js";
 /** suite fingerprint 계산의 단일 구현. cli가 자체 구현을 두면 두 벌이 갈라진다. */
 export { canonicalJson, sha256 } from "./canonical.js";
+export {
+  type AxisCoverage,
+  type CoverageResult,
+  computeCoverage,
+  type ToolCoverage,
+} from "./coverage.js";
 export type {
   AuthoringProviderFailureCode,
   AuthoringProviderFailureReason,
@@ -74,6 +80,7 @@ export {
 } from "./providers.js";
 export type { GenerateTestsErrorCode } from "./schema.js";
 export { GenerateTestsError } from "./schema.js";
+export { buildViolationCases, type GeneratedCase } from "./violation-cases.js";
 
 /** 테스트 코드를 생성할 때의 옵션. */
 export interface GenerateOptions {

@@ -53,9 +53,9 @@
 
 - `RunnerDiagnostic` 에 `notes?: string[]` 을 더한다. 리포터는 `violations` 와 같은 `→ ` 형식으로
   줄마다 찍는다.
-- `assertIsError` 가 실패할 때 응답 본문을 `notes` 에 한 줄로 싣는다. 본문은 이미 executor 가
-  케이스당 한 번 계산하는 `extractResponseBody` 결과를 그대로 쓴다. 두 번째 추출 구현을 만들지
-  않는다(ADR-0011).
+- `assertIsError` 가 실패할 때 응답 본문을 `notes` 에 싣는다. 본문이 여러 줄이면 줄마다 항목
+  하나다. 본문은 이미 executor 가 케이스당 한 번 계산하는 `extractResponseBody` 결과를 그대로
+  쓴다. 두 번째 추출 구현을 만들지 않는다(ADR-0011).
 - 본문에는 승인 화면과 같은 redaction 을 적용하고, `MAX_VALUE_STRING_CHARS` 로 자른다. 진단이
   이미 쓰는 규칙을 그대로 쓴다.
 - 추출이 실패하면(본문이 우리가 아는 모양이 아니면) `notes` 를 붙이지 않는다. 모양을 모르는

@@ -38,7 +38,9 @@ ADR-0025(교정 권한 경계), ADR-0027(isError 진단의 서버 응답 본문)
 
 ## 완료 조건
 
-1. `pnpm test`, `pnpm typecheck --force`, `pnpm lint` 전부 통과. `Cached: 0 cached` 확인.
+1. `pnpm test`, `pnpm typecheck --force`, `pnpm lint` 전부 통과. `Cached: 0 cached` 는
+   `typecheck`·`build` 에서만 확인한다. 루트 `test` 스크립트는 turbo 가 아니라 `vitest run` 이라
+   `--force` 를 받지 않고 캐시도 끼지 않는다(2026-08-16 실행 중 확인).
 2. `--repair-bundle` 없이 돌린 `ohmymcp test` 의 stdout·stderr·종료 코드가 이 작업 이전과
    **바이트 단위로 동일**하다. 기존 `packages/cli/tests/` 의 test 명령 스냅샷이 하나도 안 바뀐다.
 3. 같은 번들·같은 옵션으로 `prepareDiagnosisRequest` 를 두 번 부른 결과의

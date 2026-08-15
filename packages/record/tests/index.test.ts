@@ -247,6 +247,71 @@ describe("cassetteClient", () => {
     expect(inner.calls.close).toBe(1);
   });
 
+  it.each(["record", "auto"] as const)(
+    "%s 모드에서 녹화할 수 없는 args 가 실제 호출을 막지 않는다",
+    async (mode) => {
+      const result = ok({ events: [] });
+      const flushed: Cassette[] = [];
+      const inner = fakeClient([result]);
+      const client = cassetteClient(inner, {
+        cassette: null,
+        mode,
+        onFlush: async (next) => {
+          flushed.push(next);
+        },
+      });
+
+      await expect(
+        client.callTool("get_events", { since: new Date("2026-08-15T00:00:00.000Z") }),
+      ).resolves.toBe(result);
+
+      let error: unknown;
+      try {
+        await client.close();
+      } catch (caught) {
+        error = caught;
+      }
+
+      expect(error).toBeInstanceOf(Error);
+      expect((error as Error).message).toContain(
+        "카세트 녹화에 실패했습니다: get_events(<표시할 수 없는 인자>)",
+      );
+      expect((error as Error).message).toContain("실제 MCP 호출은 성공했습니다.");
+      expect((error as Error).message).toContain("기록할 수 없는 값: args.since");
+      expect((error as Error).message).toContain("값 종류: Date");
+      expect(flushed).toStrictEqual([]);
+      expect(inner.calls.callTool).toBe(1);
+      expect(inner.calls.close).toBe(1);
+    },
+  );
+
+  it("replay 모드에서 녹화할 수 없는 args 는 조회 불가 원인을 설명한다", async () => {
+    const inner = fakeClient([]);
+    const client = cassetteClient(inner, {
+      cassette: null,
+      cassettePath: "fixtures/events.cassette.json",
+      mode: "replay",
+    });
+
+    let error: unknown;
+    try {
+      await client.callTool("get_events", { since: new Date("2026-08-15T00:00:00.000Z") });
+    } catch (caught) {
+      error = caught;
+    }
+
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toContain(
+      "이 args 로는 카세트를 조회할 수 없습니다: get_events(<표시할 수 없는 인자>)",
+    );
+    expect((error as Error).message).toContain(
+      "카세트: fixtures/events.cassette.json (상호작용 0개)",
+    );
+    expect((error as Error).message).toContain("조회할 수 없는 값: args.since");
+    expect((error as Error).message).toContain("값 종류: Date");
+    expect(inner.calls.callTool).toBe(0);
+  });
+
   it("replay miss 는 카세트 갱신 안내를 포함한 오류를 낸다", async () => {
     const cassette = cassetteWith({
       toolName: "get_stock",

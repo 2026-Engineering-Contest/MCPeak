@@ -42,19 +42,35 @@ export class ResetCommandError extends Error {
 const tokenize = (command: string): readonly string[] =>
   command.split(/\s+/).filter((token) => token.length > 0);
 
-/** stderr 을 상한까지만 모은다. 상한을 넘은 뒤에는 읽기만 하고 버린다. */
+/**
+ * stderr 의 **마지막** 상한만큼을 모은다. 앞부분을 버리는 것이 요점이다. 화면에 쓰는 것은
+ * 마지막 3줄이고, 실패 원인은 출력의 끝에 있다. 앞에서 잘라 보관하면 긴 출력을 내는 명령에서
+ * 정작 사유가 담긴 마지막 줄이 사라진다.
+ */
 class StderrTail {
-  private readonly chunks: Buffer[] = [];
+  private chunks: Buffer[] = [];
   private size = 0;
 
   push(chunk: Buffer): void {
-    if (this.size >= MAX_STDERR_BYTES) return;
     this.chunks.push(chunk);
     this.size += chunk.byteLength;
+    // 상한을 넘으면 앞쪽 덩어리부터 버린다. 경계에 걸친 덩어리는 뒤쪽만 남긴다.
+    while (this.size > MAX_STDERR_BYTES) {
+      const first = this.chunks[0];
+      if (first === undefined) break;
+      const excess = this.size - MAX_STDERR_BYTES;
+      if (first.byteLength <= excess) {
+        this.chunks.shift();
+        this.size -= first.byteLength;
+      } else {
+        this.chunks[0] = first.subarray(excess);
+        this.size -= excess;
+      }
+    }
   }
 
   text(): string {
-    return Buffer.concat(this.chunks).subarray(0, MAX_STDERR_BYTES).toString("utf8");
+    return Buffer.concat(this.chunks).toString("utf8");
   }
 }
 

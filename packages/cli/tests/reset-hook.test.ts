@@ -85,6 +85,20 @@ describe("runResetCommand", () => {
     );
     expect((error as ResetCommandError).stderr).toHaveLength(8 * 1024);
   });
+
+  it("8KB 를 넘겨도 마지막 줄이 남는다", async () => {
+    // 화면에 쓰는 것은 마지막 3줄이고 실패 사유는 출력의 끝에 있다. 앞에서 잘라 보관하면
+    // 정작 사유가 사라진다.
+    const error = await rejection(
+      runResetCommand(
+        nodeCommand(
+          // 공백을 넣지 않는다. 초기화 명령은 따옴표를 해석하지 않으므로 공백이 인자를 가른다.
+          "process.stderr.write('x'.repeat(20000));process.stderr.write('\\nFATAL:마지막줄\\n');process.exit(1)",
+        ),
+      ),
+    );
+    expect((error as ResetCommandError).stderr).toContain("FATAL:마지막줄");
+  });
 });
 
 /** 구현과 같은 값. 여기서만 쓰므로 모듈에서 내보내지 않는다. */

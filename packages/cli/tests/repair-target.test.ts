@@ -30,6 +30,16 @@ const errorResult = (text: string): ToolResult => ({
   raw: { ok: false },
 });
 
+/**
+ * 본문을 꺼낼 수 없는 오류 응답. `content` 가 배열이 아니라 추출이 실패하고, 그러면
+ * 진단이 서버 본문을 싣지 않는다(ADR-0027). 케이스는 여전히 `isError` 로 실패한다.
+ */
+const unreadableErrorResult = (): ToolResult => ({
+  content: null,
+  isError: true,
+  raw: { ok: false },
+});
+
 /** 툴 이름별 응답을 미리 정해 두는 가짜 클라이언트. 지정이 없으면 정상 응답이다. */
 const fakeClient = (responses: Readonly<Record<string, ToolResult>> = {}): McpClient => ({
   async listTools() {
@@ -211,13 +221,25 @@ describe("selectRepairTargets", () => {
     expect(targets[0]?.serverMessage).toContain("city 는 서울/부산 중 하나여야 합니다.");
   });
 
-  it("서버 오류 본문이 없으면 serverMessage 가 빈 문자열이다", async () => {
+  it("isError 단언만 있어도 serverMessage 에 서버 응답 본문이 들어간다", async () => {
+    // 위의 `serverMessage 에 서버 오류 본문이 들어간다` 는 본문 단언이 붙은 케이스를 본다.
+    // 여기는 단언이 isError 하나뿐인 베이스라인 케이스다. 생성기가 만드는 정상 케이스가
+    // 이 모양이고, 진단이 본문을 싣기 시작하면서 열린 경로다(ADR-0027).
     const targets = await select(
-      [callCase("c1", "get_weather", { city: "서울" })],
+      [callCase("c1", "get_weather", { city: "example" })],
       new Map(),
-      rejects("get_weather", "city 가 필요합니다."),
+      rejects("get_weather", "알 수 없는 도시: example"),
     );
 
+    expect(targets[0]?.serverMessage).toContain("알 수 없는 도시: example");
+  });
+
+  it("서버 오류 본문이 없으면 serverMessage 가 빈 문자열이다", async () => {
+    const targets = await select([callCase("c1", "get_weather", { city: "서울" })], new Map(), {
+      get_weather: unreadableErrorResult(),
+    });
+
+    expect(targets).toHaveLength(1);
     expect(targets[0]?.serverMessage).toBe("");
   });
 

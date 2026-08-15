@@ -140,6 +140,11 @@ export function renderReport(report: RunnerReport, options?: RenderReportOptions
       for (const violation of assertion.diagnostic.violations ?? []) {
         lines.push(`${INDENT}→ ${escapeTerminalText(violation.message)}`);
       }
+      // notes 는 위반 다음이다. 위반은 우리가 낸 판정이고 notes 는 서버가 준 값이라,
+      // 판정을 먼저 읽고 근거를 나중에 읽는 순서가 된다. ADR-0027.
+      for (const note of assertion.diagnostic.notes ?? []) {
+        lines.push(`${INDENT}→ ${escapeTerminalText(note)}`);
+      }
       lines.push(hintLine(assertion.diagnostic.hint));
     }
   }

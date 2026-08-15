@@ -348,14 +348,18 @@ describe("runSuite", () => {
 });
 
 /** 본문 단언 통합 검증용. content 접근 횟수를 세는 ToolResult를 만든다. */
-function bodyResult(text: string, counter: { reads: number }, options?: { throwOnRead?: boolean }) {
+function bodyResult(
+  text: string,
+  counter: { reads: number },
+  options?: { throwOnRead?: boolean; isError?: boolean },
+) {
   return {
     get content() {
       counter.reads++;
       if (options?.throwOnRead) throw new Error("content를 읽으면 안 됩니다.");
       return [{ type: "text", text }];
     },
-    isError: false,
+    isError: options?.isError ?? false,
     raw: null,
   } as unknown as import("@ohmymcp/core").ToolResult;
 }
@@ -427,6 +431,35 @@ describe("runSuite와 bodyMatchesSchema", () => {
       ]),
     }).report;
     expect(report.status).toBe("passed");
+    expect(counter.reads).toBe(1);
+  });
+
+  it("isError가 실패하면 그때 추출해 본문을 진단에 싣는다", async () => {
+    const counter = { reads: 0 };
+    const report = await runSuite({
+      client: bodyClient(() => bodyResult("알 수 없는 도시: example", counter, { isError: true })),
+      suite: bodySuite([{ type: "isError", expected: false }]),
+    }).report;
+
+    expect(report.cases[0]?.assertions[0]?.diagnostic?.notes).toEqual(["알 수 없는 도시: example"]);
+    expect(counter.reads).toBe(1);
+  });
+
+  it("한 케이스의 isError 두 개가 같은 추출을 공유한다", async () => {
+    const counter = { reads: 0 };
+    const result = bodyResult("거절", counter, { isError: true });
+    const report = await runSuite({
+      client: bodyClient(() => result),
+      suite: bodySuite([
+        { type: "isError", expected: false },
+        { type: "isError", expected: false },
+      ]),
+    }).report;
+
+    expect(report.cases[0]?.assertions.map((item) => item.diagnostic?.notes)).toEqual([
+      ["거절"],
+      ["거절"],
+    ]);
     expect(counter.reads).toBe(1);
   });
 

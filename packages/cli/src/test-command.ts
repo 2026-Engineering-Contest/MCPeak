@@ -18,6 +18,7 @@ import {
   checkAssertionSubstance as runnerCheckAssertionSubstance,
   checkInputContract as runnerCheckInputContract,
 } from "@ohmymcp/runner";
+import { TEST_USAGE_HINT } from "./help.js";
 import {
   hasDiagnosticContent,
   isAbnormalExit,
@@ -30,7 +31,6 @@ import {
   type SpecApprovalState,
   shouldShowSpecApproval,
 } from "./spec-approval.js";
-import { TEST_USAGE_HINT } from "./help.js";
 
 export interface TestCommandInput {
   readonly suitePath: string;

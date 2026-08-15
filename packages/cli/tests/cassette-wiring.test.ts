@@ -102,6 +102,8 @@ describe("wireCassette", () => {
     });
     await wiring.client.callTool("get_weather", { city: "서울" });
     expect(inner.calls).toEqual(["get_weather"]);
+    // 화면이 재생 여부를 말할 때 파일 존재로 다시 추정하지 않도록 모드를 그대로 내보낸다.
+    expect(wiring.mode).toBe("record");
   });
 
   it("파일이 있으면 auto 모드로 동작한다", async () => {
@@ -118,6 +120,7 @@ describe("wireCassette", () => {
     // 카세트에 없는 키는 inner 로 간다. 새 케이스가 추가되는 것이 이 경로의 정상 흐름이다.
     await wiring.client.callTool("get_weather", { city: "부산" });
     expect(inner.calls).toEqual(["get_weather"]);
+    expect(wiring.mode).toBe("auto");
   });
 
   it("forceRecord 면 파일이 있어도 전부 inner 로 간다", async () => {

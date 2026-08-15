@@ -17,6 +17,13 @@ import { cassetteClient, loadCassette, saveCassette } from "@ohmymcp/record";
 
 export interface CassetteWiring {
   readonly client: McpClient;
+  /**
+   * 이 배선이 실제로 쓰는 모드. 화면이 재생 여부를 말할 때 이 값을 쓴다. 호출 측이 파일
+   * 존재로 다시 추정하면 근거가 갈리고, 갈리는 순간 화면이 실제 동작과 어긋난다.
+   *
+   * 카세트를 안 쓰면 `undefined` 다.
+   */
+  readonly mode?: CassetteMode;
   /** 시험 실행과 저장이 끝난 뒤 호출한다. 연결이 함께 닫힌다. */
   flush(): Promise<void>;
   /** 같은 키에 다른 응답이 왔다는 경고. `record` 가 만든 문장을 그대로 담는다. */
@@ -54,9 +61,10 @@ export async function wireCassette(options: WireCassetteOptions): Promise<Casset
 
   const warnings: string[] = [];
   let snapshot: Cassette | undefined;
+  const mode = resolveMode(cassette, forceRecord);
   const recorder = cassetteClient(inner, {
     cassette,
-    mode: resolveMode(cassette, forceRecord),
+    mode,
     cassettePath: path,
     onFlush: async (value) => {
       snapshot = value;
@@ -80,5 +88,5 @@ export async function wireCassette(options: WireCassetteOptions): Promise<Casset
     await io.save(path, snapshot);
   };
 
-  return { client, flush, warnings };
+  return { client, mode, flush, warnings };
 }

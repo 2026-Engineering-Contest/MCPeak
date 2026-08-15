@@ -49,8 +49,14 @@ PR 하나다. `runner` 계약 변경과 그 기대값 수정이 한 덩어리라
 - Test: `packages/runner/tests/reporter.test.ts`
 - Test: `packages/runner/tests/executor.test.ts`
 - Test: `packages/cli/tests/input-repair.test.ts`
+- Test: `packages/cli/tests/repair-target.test.ts`
 - Test: `packages/cli/tests/dry-run.test.ts`
 - Test: `packages/cli/tests/generate-command.test.ts`
+
+`repair-target.test.ts` 는 착수 뒤에 더했다. `서버 오류 본문이 없으면 serverMessage 가 빈
+문자열이다` 가 "`isError` 단언만 달린 케이스에는 `→ ` 줄이 없다" 를 전제로 쓰여 있었는데 이
+작업이 그 전제를 없앤다. 테스트가 틀린 것이 아니라 전제가 사라진 것이므로 같은 이름으로 남기고
+상황만 바꾼다.
 
 `packages/cli/src` 는 한 줄도 안 고친다. 고쳐야 할 것 같으면 고치지 말고 보고한다. 그러면 설계가
 틀린 것이다. `core/src/types.ts`, `packages/generate` 전부, 루트 빌드 설정은 공유 계약이다.
@@ -97,6 +103,16 @@ export function assertIsError(
 · 리포터가 notes 를 `→ ` 줄로 찍는다
 · violations 와 notes 가 둘 다 있으면 violations 가 먼저 나온다
 ```
+
+`packages/cli/tests/repair-target.test.ts` 에 두 가지를 한다.
+
+- `서버 오류 본문이 없으면 serverMessage 가 빈 문자열이다` 는 본문 추출이 실패하는 응답을 쓰게
+  바꾼다(`content: null` 이면 `CONTENT_NOT_ARRAY` 로 `ok: false` 다). 케이스는 여전히 `isError`
+  로 실패하므로 교정 대상 판별은 그대로 통과하고 `serverMessage` 만 빈 문자열이 된다. 이름과
+  의도를 바꾸지 않는다.
+- **`isError` 단언만 달린 케이스의 `serverMessage` 에 서버 응답 본문이 들어간다**를 덮는
+  테스트를 하나 더한다. 이것이 이 작업의 성과이고, `runner` 와 `cli` 를 잇는 계약이라 한쪽만
+  고쳐도 조용히 깨진다. 이름은 저장소의 기존 문장 투를 따른다.
 
 기존 테스트를 지우지 않는다. 기대값만 새 출력에 맞게 고친다.
 

@@ -45,15 +45,6 @@ const SUMMARY_LABELS: ReadonlyArray<readonly [string, string]> = [
 /** 실패 케이스인가. 통과가 아닌 것은 전부 사람의 판단이 필요하다. */
 const isFailure = (outcome: DryRunCaseOutcome): boolean => outcome.status !== "passed";
 
-/**
- * `renderReport` 가 만든 케이스 블록을 이 화면의 들여쓰기에 맞춰 찍는다. 두 칸을 앞에 붙이기만
- * 하고 문장은 건드리지 않는다.
- */
-const writeDetail = (io: ReviewIO, detail: string): void => {
-  if (detail === "") return;
-  for (const line of detail.split("\n")) io.write(`  ${line}\n`);
-};
-
 const writeSummary = (io: ReviewIO, chosen: readonly string[]): void => {
   const parts = SUMMARY_LABELS.filter(([key]) => chosen.includes(key)).map(([key, label]) => {
     const count = chosen.filter((value) => value === key).length;
@@ -98,10 +89,12 @@ export async function reviewDryRun(
 
   const chosen: string[] = [];
   for (const [index, outcome] of failures.entries()) {
+    // 실패 사유는 여기서 다시 찍지 않는다. 바로 앞의 결과 화면(§8.2)이 같은 번호로 이미
+    // 보여줬고, 실패가 한 건일 때는 같은 블록이 연달아 두 번 나와 중복으로 읽힌다. 번호와
+    // 이름만 다시 적어 어느 케이스를 묻는지 고정한다.
     io.write(`  [${index + 1}] ${outcome.caseName}\n`);
-    writeDetail(io, outcome.detail);
-    io.write("\n");
     chosen.push(await askChoice(io));
+    io.write("\n");
   }
   writeSummary(io, chosen);
 

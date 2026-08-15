@@ -169,13 +169,13 @@ describe("reviewDryRun", () => {
     await reviewDryRun(io, resultOf([outcome("b", "failed", "    isError  기대와 다릅니다.")]));
     expect(io.output()).toBe(
       [
+        // 실패 사유는 결과 화면(§8.2)이 이미 같은 번호로 보여줬다. 여기서 다시 찍지 않는다.
         "  [1] b 케이스\n",
-        "      isError  기대와 다릅니다.\n",
-        "\n",
         "      [s] 서버 결함  명세가 옳다. 이 케이스를 회귀 테스트로 남긴다\n",
         "      [m] 명세 오류  추측이 틀렸다. 저장 전에 고친다\n",
         "      [?] 판단 보류  분류를 미룬다. 저장은 막힌다\n",
         "      선택: ",
+        "\n",
         "  분류: 서버 결함 1건\n",
       ].join(""),
     );

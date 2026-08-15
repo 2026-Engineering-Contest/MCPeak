@@ -98,3 +98,58 @@ export function findKeyViolation(value: unknown): KeyViolation | undefined {
 
   return walk(value, "args", 0);
 }
+
+/**
+ * 위반을 사람이 읽는 문장으로 바꾼다. 실패 메시지가 곧 제품이다 (CLAUDE.md).
+ *
+ * 변하는 값(`path` · `found`) 뒤에 조사를 붙이지 않는다. 받침 유무가 갈려서
+ * 어느 쪽으로 고정해도 한쪽이 틀린다 — `docs/reports/task-b6.md` 에서 모델 이름으로
+ * 같은 문제를 겪고 내린 결론이다. 그래서 값은 전부 콜론이나 대시 뒤에 둔다.
+ */
+function keyViolationMessage(violation: KeyViolation, source: string): string {
+  const head = `→ ${source} 의 인자로 매칭 키를 만들 수 없습니다`;
+  switch (violation.kind) {
+    case "circular":
+      return [
+        `${head}: 순환 참조`,
+        `→ 위치: ${violation.path}`,
+        "→ JSON 에는 순환 참조가 없어서 이 주입은 어떤 호출과도 맞지 않습니다. 참조를 끊고 값을 펼쳐 넘기세요.",
+      ].join("\n");
+    case "sparse":
+      return [
+        `${head}: 희소 배열`,
+        `→ 위치: ${violation.path} — 비어 있는 자리`,
+        "→ 와이어를 건너오면 빈 자리가 null 로 채워집니다. 빈 자리에 null 을 명시하세요.",
+      ].join("\n");
+    case "nonFinite":
+      return [
+        `${head}: 유한하지 않은 수`,
+        `→ 위치: ${violation.path} — 발견: ${violation.found}`,
+        "→ JSON 에는 NaN · Infinity 가 없습니다. 유한한 수를 쓰거나 그 상태를 나타내는 문자열을 쓰세요.",
+      ].join("\n");
+    case "notJson":
+      return [
+        `${head}: JSON 으로 표현할 수 없는 값`,
+        `→ 위치: ${violation.path} — 발견: ${violation.found}`,
+        "→ 매칭 키가 되는 것은 객체 · 배열 · 문자열 · 유한한 수 · 불리언 · null 뿐입니다. 직렬화한 값으로 바꿔 넘기세요 (예: Date → toISOString()).",
+      ].join("\n");
+    case "tooDeep":
+      return [
+        `${head}: 중첩이 너무 깊습니다`,
+        `→ 위치: 깊이 ${violation.depth} — 상한: ${MAX_KEY_DEPTH}`,
+        "→ 목에 넘기는 인자는 테스트가 읽을 수 있는 크기여야 합니다. 필요한 필드만 넘기세요.",
+      ].join("\n");
+  }
+}
+
+/**
+ * 주입 경로 전용. 키로 만들 수 없는 값이면 던진다.
+ *
+ * `source` 는 문장에 들어갈 진입점 표기다 — `mock.on('add', ...)` 또는
+ * `정의 파일의 responses[0]`. 툴 이름을 따로 받지 않는 이유는 `source` 가 이미 담고 있어
+ * 두 인자가 어긋날 여지만 생기기 때문이다.
+ */
+export function assertKeyable(value: unknown, source: string): void {
+  const violation = findKeyViolation(value);
+  if (violation !== undefined) throw new Error(keyViolationMessage(violation, source));
+}

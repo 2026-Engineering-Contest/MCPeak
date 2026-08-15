@@ -99,6 +99,43 @@ function execute(args) {
     timeout.unref?.();
   });
 }
+
+// 배포 산출물 자체에서 도움말과 package.json 버전이 동작해야 한다. 소스 단위 테스트만으로는
+// JSON 버전이 번들에 포함되는지와 stdout/stderr 채널을 검증할 수 없다.
+{
+  const packageMetadata = JSON.parse(
+    await readFile(join(root, "packages/cli/package.json"), "utf8"),
+  );
+  for (const args of [[], ["--help"], ["-h"], ["help"]]) {
+    const result = await execute(args);
+    assert.equal(result.code, 0);
+    assert.equal(result.err, "");
+    assert.ok(result.out.includes("사용법: ohmymcp <명령> [옵션]"));
+    assert.ok(result.out.includes("test"));
+    assert.ok(result.out.includes("generate"));
+  }
+  for (const [args, usage] of [
+    [["help", "test"], "ohmymcp test <suite.json>"],
+    [["test", "--help"], "ohmymcp test <suite.json>"],
+    [["help", "generate"], "ohmymcp generate --suite-id <id>"],
+    [["generate", "--help"], "ohmymcp generate --suite-id <id>"],
+  ]) {
+    const result = await execute(args);
+    assert.equal(result.code, 0);
+    assert.equal(result.err, "");
+    assert.ok(result.out.includes(usage));
+  }
+  const version = await execute(["--version"]);
+  assert.equal(version.code, 0);
+  assert.equal(version.err, "");
+  assert.equal(version.out, `ohmymcp ${packageMetadata.version}\n`);
+
+  const unknown = await execute(["unknown"]);
+  assert.equal(unknown.code, 1);
+  assert.equal(unknown.out, "");
+  assert.ok(unknown.err.includes("사용 가능한 명령: test, generate"));
+}
+
 for (const [fixture, expectedStatus, expectedSummary] of [
   [
     "weather-suite.json",

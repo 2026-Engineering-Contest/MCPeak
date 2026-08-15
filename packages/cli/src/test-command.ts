@@ -18,6 +18,7 @@ import {
   checkAssertionSubstance as runnerCheckAssertionSubstance,
   checkInputContract as runnerCheckInputContract,
 } from "@ohmymcp/runner";
+import { TEST_USAGE_HINT } from "./help.js";
 import {
   hasDiagnosticContent,
   isAbnormalExit,
@@ -84,8 +85,6 @@ export interface TestCommandDependencies {
   writeStdout(text: string): void;
   writeStderr(text: string): void;
 }
-const usage =
-  "사용법: ohmymcp test <suite.json> --command <executable> [--arg <value> ...] [--json] [--junit <path>] [--stderr-lines <N>]";
 /** --stderr-lines 기본값. 설계 문서 §6. */
 const DEFAULT_STDERR_LINES = 20;
 const dictionary: Record<
@@ -139,7 +138,7 @@ class CliCommandError extends Error {
   }
 }
 const fail = (message: string): never => {
-  throw new CliCommandError({ code: "CLI_USAGE", message, hint: usage });
+  throw new CliCommandError({ code: "CLI_USAGE", message, hint: TEST_USAGE_HINT });
 };
 export function parseTestCommand(argv: readonly string[]): TestCommandInput {
   const suitePath = argv[0] ?? "";
@@ -160,7 +159,7 @@ export function parseTestCommand(argv: readonly string[]): TestCommandInput {
           throw new CliCommandError({
             code: "CLI_USAGE",
             message: "`--command` 옵션 값이 필요합니다.",
-            hint: usage,
+            hint: TEST_USAGE_HINT,
           });
         value = next;
       } else value = token.slice("--command=".length);
@@ -175,7 +174,7 @@ export function parseTestCommand(argv: readonly string[]): TestCommandInput {
           throw new CliCommandError({
             code: "CLI_USAGE",
             message: "`--arg` 옵션 값이 필요합니다.",
-            hint: usage,
+            hint: TEST_USAGE_HINT,
           });
         value = next;
         if (value.startsWith("-")) fail("`--arg` 옵션 값이 필요합니다.");
@@ -192,7 +191,7 @@ export function parseTestCommand(argv: readonly string[]): TestCommandInput {
           throw new CliCommandError({
             code: "CLI_USAGE",
             message: "`--junit` 옵션 값이 필요합니다.",
-            hint: usage,
+            hint: TEST_USAGE_HINT,
           });
         value = next;
       } else value = token.slice("--junit=".length);
@@ -208,7 +207,7 @@ export function parseTestCommand(argv: readonly string[]): TestCommandInput {
           throw new CliCommandError({
             code: "CLI_USAGE",
             message: "`--stderr-lines` 옵션 값이 필요합니다.",
-            hint: usage,
+            hint: TEST_USAGE_HINT,
           });
         // `-1` 처럼 `-` 로 시작해도 값으로 받고 아래 검증에서 거절한다. 설계 문서 §6.
         value = next;
@@ -230,7 +229,7 @@ export function parseTestCommand(argv: readonly string[]): TestCommandInput {
     throw new CliCommandError({
       code: "CLI_USAGE",
       message: "`--command` 옵션이 필요합니다.",
-      hint: usage,
+      hint: TEST_USAGE_HINT,
     });
   return Object.freeze({
     suitePath,
@@ -367,7 +366,7 @@ export async function runCli(
     return writeFailure(dependencies, {
       code: "CLI_USAGE",
       message: "실행할 CLI 명령이 없습니다.",
-      hint: usage,
+      hint: TEST_USAGE_HINT,
     });
   if (argv[0] !== "test") {
     if (["generate", "record", "replay", "mock"].includes(argv[0] ?? ""))
@@ -379,7 +378,7 @@ export async function runCli(
     return writeFailure(dependencies, {
       code: "CLI_USAGE",
       message: `알 수 없는 CLI 명령 '${argv[0]}'입니다.`,
-      hint: usage,
+      hint: TEST_USAGE_HINT,
     });
   }
   let input: TestCommandInput;

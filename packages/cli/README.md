@@ -2,6 +2,20 @@
 
 `ohmymcp test`는 JSON 테스트 명세로 로컬 stdio MCP 서버를 직접 시작하고 종료합니다.
 
+처음 실행하거나 사용 가능한 명령을 확인할 때는 전체 도움말을 표시합니다. 인자 없이 실행해도
+같은 도움말을 stdout에 쓰고 종료 코드 0을 반환합니다.
+
+```bash
+ohmymcp --help
+ohmymcp -h
+ohmymcp help
+ohmymcp --version
+```
+
+`ohmymcp help test`와 `ohmymcp test --help`는 `test` 도움말을, `ohmymcp help generate`와
+`ohmymcp generate --help`는 `generate` 도움말을 표시합니다. 도움말과 버전은 오류가 아니므로
+stderr가 아니라 stdout으로 출력하고 종료 코드 0을 반환합니다.
+
 ```bash
 ohmymcp test packages/cli/tests/fixtures/weather-suite.json \
   --command node \

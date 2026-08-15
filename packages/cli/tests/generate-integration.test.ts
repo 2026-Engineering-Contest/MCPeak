@@ -253,6 +253,100 @@ describe.sequential("generate 실제 weather-server", () => {
     }
   });
 
+  it("입력값 교정으로 고친 값이 실제 서버 명세에 남는다", async () => {
+    // baseline 합성값 city "example" 은 weather-server 가 거절한다. 교정 단계가 사람에게 값을
+    // 받아 그 케이스만 다시 실행하고, 통과한 값이 저장된 명세에 반영되는지 실제 서버로 본다.
+    const directory = await mkdtemp(join(tmpdir(), "ohmymcp-generate-"));
+    const pidFile = join(directory, "server.pid");
+    const suitePath = join(directory, "repaired.json");
+    const outputs: string[] = [];
+    const choices = ["save"];
+    const inputs = ["서울"];
+    const io = {
+      interactive: true,
+      choose: vi.fn(async () => choices.shift() ?? "cancel"),
+      input: vi.fn(async () => inputs.shift() ?? ""),
+      confirm: vi.fn(async () => true),
+      write: vi.fn(),
+    };
+    try {
+      expect(
+        await runGenerateCommand(
+          [
+            "generate",
+            "--suite-id",
+            "weather",
+            "--name",
+            "Weather",
+            "--out",
+            suitePath,
+            "--command",
+            process.execPath,
+            "--arg",
+            wrapper,
+            "--arg",
+            pidFile,
+            "--arg",
+            server,
+          ],
+          {
+            ...nodeGenerateDependencies(),
+            connect: connectStdio,
+            createBaselineSuite,
+            createAuthoringSession,
+            finalizeAuthoringDraft,
+            getAuthoringExecutionSuite,
+            validateSuite: validateMcpSuite,
+            reviewIO: io,
+            prepareAuthoringRequest,
+            dispatchAuthoringRequest,
+            createAuthoringDiff,
+            applyAuthoringChanges,
+            reviewLocalAuthoringCandidate,
+          },
+        ),
+      ).toBe(0);
+      const saved = JSON.parse(await readFile(suitePath, "utf8")) as {
+        cases: { id: string; operation: { tool?: string; input?: { city?: unknown } } }[];
+        approval: { fingerprint: string; cases?: { id: string; status: string }[] };
+      };
+      const repaired = saved.cases.find((item) => item.operation.input?.city !== undefined);
+      expect(repaired?.operation.input?.city).toBe("서울");
+      // 교정으로 통과했으므로 분류를 묻지 않고 전부 passed 로 실린다(§6.3).
+      expect(saved.approval.cases?.every((item) => item.status === "passed")).toBe(true);
+      const out = vi.spyOn(process.stdout, "write").mockImplementation((text) => {
+        outputs.push(String(text));
+        return true;
+      });
+      const err = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+      try {
+        expect(
+          await run([
+            "test",
+            suitePath,
+            "--command",
+            process.execPath,
+            "--arg",
+            wrapper,
+            "--arg",
+            pidFile,
+            "--arg",
+            server,
+            "--json",
+          ]),
+        ).toBe(0);
+        expect(JSON.parse(outputs.join("")).summary.failed).toBe(0);
+      } finally {
+        out.mockRestore();
+        err.mockRestore();
+      }
+      await exited(pidFile);
+    } finally {
+      await cleanup(pidFile);
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it("사용자 지시를 반영한 승인 candidate는 실제 test를 통과한다", async () => {
     const directory = await mkdtemp(join(tmpdir(), "ohmymcp-generate-"));
     const pidFile = join(directory, "server.pid");

@@ -258,7 +258,7 @@ export function cassetteClient(inner: McpClient, options: CassetteClientOptions)
       }
 
       if (mode === "replay") {
-        throw new Error(replayMissMessage(toolName, args, cassette, options.cassettePath));
+        throw new Error(replayMissMessage(toolName, args, key, cassette, options.cassettePath));
       }
 
       const result = await inner.callTool(toolName, args);
@@ -580,6 +580,7 @@ function cassetteDescription(cassette: Cassette, cassettePath?: string): string 
 function replayMissMessage(
   toolName: string,
   args: unknown,
+  key: string,
   cassette: Cassette,
   cassettePath?: string,
 ): string {
@@ -588,14 +589,45 @@ function replayMissMessage(
     `→ 카세트에 없는 호출입니다: ${display}`,
     `  카세트: ${cassetteDescription(cassette, cassettePath)}`,
   ];
+  const visibleArgs = redact(args === undefined ? {} : args);
   const sameTool = cassette.interactions
     .filter((interaction) => interaction.request.toolName === toolName)
-    .map((interaction) => displayRequest(interaction.request.toolName, interaction.request.args));
+    .map((interaction) => {
+      const storedArgs = redact(interaction.request.args);
+      return {
+        interaction,
+        diffs: describeJsonDiffs(visibleArgs, storedArgs, "args"),
+        display: displayRequest(interaction.request.toolName, storedArgs),
+      };
+    })
+    .sort((left, right) => left.diffs.length - right.diffs.length);
 
-  if (sameTool.length > 0) {
-    lines.push(`  비슷한 키: ${sameTool[0]}`);
+  const nearest = sameTool[0];
+  if (nearest !== undefined) {
+    lines.push(`  가장 가까운 저장 요청: ${nearest.display}`);
+    if (nearest.diffs.length === 0) {
+      lines.push("  표시상 동일합니다. 마스킹된 비밀값이 다르거나 카세트의 key가 어긋났습니다.");
+      lines.push(
+        `  요청 key: ${key.slice(0, 8)} / 저장 key: ${nearest.interaction.key.slice(0, 8)}`,
+      );
+    } else {
+      lines.push(
+        ...nearest.diffs.map(
+          (diff) =>
+            `  요청 ${diff.path}: ${formatDiffValue(
+              diff.left,
+              diff.leftMissing,
+            )} / 저장 ${diff.path}: ${formatDiffValue(diff.right, diff.rightMissing)}`,
+        ),
+      );
+    }
     if (sameTool.length > 1) {
-      lines.push(`  같은 툴의 다른 저장된 요청: ${sameTool.slice(1, 4).join(", ")}`);
+      lines.push(
+        `  같은 툴의 다른 저장된 요청: ${sameTool
+          .slice(1, 4)
+          .map((candidate) => candidate.display)
+          .join(", ")}`,
+      );
     }
   } else {
     const tools = [

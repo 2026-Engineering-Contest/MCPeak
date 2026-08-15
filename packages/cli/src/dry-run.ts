@@ -19,11 +19,20 @@ export interface DryRunCaseOutcome {
   readonly detail: string;
 }
 
+/**
+ * 시험 실행이 끝까지 못 간 사유.
+ *
+ * - `connectionLost`: 호출이 오류로 돌아왔다. 그 지점부터 남은 케이스는 믿을 수 없다.
+ * - `payloadLimit`: 케이스나 보고서가 상한을 넘겼다.
+ * - `stopped`: 러너가 중간에 멈췄다(제한 시간 초과·중단 신호). 남은 케이스는 실행되지 않았다.
+ */
+export type DryRunAbortReason = "connectionLost" | "payloadLimit" | "stopped";
+
 export interface DryRunResult {
   readonly outcomes: readonly DryRunCaseOutcome[];
   /** 시험 실행 자체가 끝까지 못 간 경우. 케이스 판정과 다른 실패다. */
   readonly aborted?: {
-    readonly reason: "connectionLost" | "payloadLimit";
+    readonly reason: DryRunAbortReason;
     readonly detail: string;
   };
 }
@@ -34,7 +43,14 @@ export interface RunDryRunOptions {
 }
 
 /** 보고서가 상한을 넘긴 경우의 안내. 케이스 수 말고는 사용자가 손댈 수 있는 것이 없다. */
-const PAYLOAD_LIMIT_DETAIL = "보고서가 1MB 상한을 넘었습니다. 케이스 수를 줄인 뒤 다시 시도하세요.";
+const REPORT_LIMIT_DETAIL = "보고서가 1MB 상한을 넘었습니다. 케이스 수를 줄인 뒤 다시 시도하세요.";
+
+/**
+ * 케이스 하나가 상한을 넘긴 경우의 안내. 케이스 수를 줄이라고 하면 안 된다. 넘긴 것은 그
+ * 케이스 하나이고, 나머지를 지워도 같은 오류가 그대로 난다.
+ */
+const caseLimitDetail = (caseId: string | undefined): string =>
+  `케이스${caseId === undefined ? "" : ` '${caseId}'`} 가 상한을 넘었습니다. 그 케이스의 이름·입력·단언을 줄인 뒤 다시 시도하세요.`;
 
 /** 툴 이름조차 알 수 없을 때의 안내. `runSuite` 가 통째로 던진 경우다. */
 const CONNECTION_LOST_DETAIL = "MCP 서버 연결이 끊겼습니다.";
@@ -82,6 +98,24 @@ const firstConnectionLoss = (
   return undefined;
 };
 
+/**
+ * 러너가 케이스를 다 돌기 전에 멈춘 경우를 찾는다. `stopReason` 이 그 사실을 말한다.
+ *
+ * 이것을 읽지 않으면 실행되지도 않은 `notRun` 케이스가 실패 목록에 섞여 분류 화면으로 간다.
+ * 사용자가 그것을 `서버 결함` 으로 고르면 서버에 보낸 적도 없는 호출이 회귀 테스트가 된다.
+ */
+const stopDetail = (report: RunnerReport): string | undefined => {
+  const stop = report.stopReason;
+  if (stop === undefined) return undefined;
+  const name = report.cases.find((result) => result.spec.id === stop.caseId)?.spec.name;
+  const suffix = "남은 케이스는 실행되지 않았습니다.";
+  if (stop.type === "timeout")
+    return `케이스 '${name ?? stop.caseId}' 가 제한 시간 안에 끝나지 않았습니다. ${suffix}`;
+  return name === undefined
+    ? `실행이 중단됐습니다. ${suffix}`
+    : `케이스 '${name}' 에서 실행이 중단됐습니다. ${suffix}`;
+};
+
 const toResult = (report: RunnerReport): DryRunResult => {
   const blocks = caseBlocks(report);
   const outcomes = report.cases.map((result, index) => ({
@@ -91,12 +125,21 @@ const toResult = (report: RunnerReport): DryRunResult => {
     detail: blocks[index] ?? "",
   }));
   const lost = firstConnectionLoss(report);
-  if (lost === undefined) return { outcomes };
-  return {
-    // 끊긴 케이스까지는 남긴다. 그 길이가 곧 "몇 번째에서 끊겼는가" 이고 호출 측이 화면에 쓴다.
-    outcomes: outcomes.slice(0, lost.index + 1),
-    aborted: { reason: "connectionLost", detail: lost.message },
-  };
+  if (lost !== undefined)
+    return {
+      // 끊긴 케이스까지는 남긴다. 그 길이가 곧 "몇 번째에서 끊겼는가" 이고 호출 측이 화면에 쓴다.
+      outcomes: outcomes.slice(0, lost.index + 1),
+      aborted: { reason: "connectionLost", detail: lost.message },
+    };
+  const stopped = stopDetail(report);
+  if (stopped !== undefined)
+    return {
+      // 실행된 케이스까지만 남긴다. `notRun` 은 러너가 뒤에 채워 넣은 자리표시자이고 판정이
+      // 아니다. 패딩은 언제나 뒤쪽에만 붙으므로 첫 `notRun` 앞에서 자르면 된다.
+      outcomes: outcomes.filter((outcome) => outcome.status !== "notRun"),
+      aborted: { reason: "stopped", detail: stopped },
+    };
+  return { outcomes };
 };
 
 /**
@@ -104,18 +147,30 @@ const toResult = (report: RunnerReport): DryRunResult => {
  * 실행 순서는 `cases` 배열 순서이고 정렬하지 않는다.
  */
 export async function runDryRun(options: RunDryRunOptions): Promise<DryRunResult> {
+  const execution = runSuite({ client: options.client, suite: options.suite });
   let report: RunnerReport;
   try {
-    report = await runSuite({ client: options.client, suite: options.suite }).report;
+    report = await execution.report;
   } catch (error) {
+    if (error instanceof RunnerPayloadLimitError)
+      return {
+        outcomes: [],
+        aborted: {
+          reason: "payloadLimit",
+          detail: error.scope === "report" ? REPORT_LIMIT_DETAIL : caseLimitDetail(error.caseId),
+        },
+      };
     return {
       outcomes: [],
-      aborted: {
-        reason: error instanceof RunnerPayloadLimitError ? "payloadLimit" : "connectionLost",
-        detail:
-          error instanceof RunnerPayloadLimitError ? PAYLOAD_LIMIT_DETAIL : CONNECTION_LOST_DETAIL,
-      },
+      aborted: { reason: "connectionLost", detail: CONNECTION_LOST_DETAIL },
     };
   }
+  // 보고서가 나와도 호출이 남아 있을 수 있다. 제한 시간을 넘긴 케이스의 요청이 그렇다.
+  // 이 경로는 연결을 닫지 않고 검토 메뉴로 돌아가므로, 기다리지 않으면 그 응답이 다음 회차
+  // 도중에 도착해 카세트에 섞인다. 같은 입력에 회차마다 다른 카세트가 나오는 길이다.
+  //
+  // `drain` 은 남은 호출이 없으면 즉시 끝난다. 기다리는 비용은 이미 무언가 잘못된 경로에서만
+  // 든다. 상한을 넘겨도 판정은 바꾸지 않는다. 그때는 보고서에 이미 중단 사유가 들어 있다.
+  await execution.drain;
   return toResult(report);
 }

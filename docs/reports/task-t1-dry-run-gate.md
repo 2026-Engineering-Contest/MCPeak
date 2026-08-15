@@ -35,9 +35,9 @@ export interface SuiteApproval {
 
 ## 검증 규칙
 
-계획서의 표 8줄을 그대로 구현했다. `approval.cases` 아래에서 나는 코드는 전부
-`INVALID_VALUE` 다. `approval.cases[].id` 가 `cases[].id` 에 실재하는지는 검사하지 않는다
-(설계서 §7.3).
+계획서의 표 8줄을 그대로 구현했다. `approval.cases` 아래에서 값이 어긋난 자리는 전부
+`INVALID_VALUE` 로 낸다. 모르는 키만 `unknowns()` 가 `UNKNOWN_FIELD` 로 따로 낸다.
+`approval.cases[].id` 가 `cases[].id` 에 실재하는지는 검사하지 않는다 (설계서 §7.3).
 
 ## 검증
 

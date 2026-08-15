@@ -333,8 +333,9 @@ function validateResponseSchema(
 /**
  * `approval.cases` 를 검증한다. 설계 문서 §7.
  *
- * 여기서 나는 코드는 전부 `INVALID_VALUE` 다. 이 블록은 사람이 손으로 쓰는 자리가 아니라
- * `generate` 의 시험 실행이 적는 자리라서, 형식이 어긋났다는 사실 하나면 고칠 곳이 정해진다.
+ * 값이 어긋난 자리는 전부 `INVALID_VALUE` 로 낸다. 모르는 키만 `unknowns()` 가 `UNKNOWN_FIELD`
+ * 로 따로 낸다. 이 블록은 사람이 손으로 쓰는 자리가 아니라 `generate` 의 시험 실행이 적는
+ * 자리라서, 형식이 어긋났다는 사실 하나면 고칠 곳이 정해진다.
  *
  * **`approval.cases[].id` 가 `cases[].id` 에 실재하는지는 검사하지 않는다.** 케이스를 지우는
  * 정상 편집이 파일을 깨진 것으로 만들면 안 된다. 설계 문서 §7.3.

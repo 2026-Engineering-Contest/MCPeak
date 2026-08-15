@@ -54,6 +54,10 @@ try {
 `inner.close()`가 동시에 실패하면 `inner.close()`의 오류가 우선한다 — `onFlush`의 오류는
 버려지고 호출자에게 전달되지 않는다 (JS `try`/`finally` 기본 동작).
 
+실제 `listTools` 또는 `callTool` 호출은 성공했지만 결과가 JSON 카세트로 복제될 수 없으면
+호출 결과는 그대로 돌려주고, `close()`에서 녹화 실패와 값 경로를 보고한다. 이때 불완전한
+카세트를 저장하지 않도록 `onFlush`는 호출하지 않는다.
+
 ## 매칭과 저장 규칙
 
 `matchKey(toolName, args)`는 `toolName`과 stable JSON 인자를 SHA-256 hex로 해시한다. 원본
@@ -75,13 +79,14 @@ try {
 `snapshotContract(result)`는 `ToolResult.raw`를 깊게 순회해 `id`, `requestId`, `sessionId`,
 `timestamp`, `createdAt`, `updatedAt`, `expiresAt` 필드를 제거한 뒤 비밀값을 마스킹한다.
 
-마스킹은 저장 직전 `interactions`와 `tools`에 적용된다. 인메모리 카세트 응답은 원문을 유지해
-`auto` 모드의 miss와 hit가 같은 값을 돌려준다. 값이 JSON 문자열이면 저장 직전에만 파싱 가능한
-경우 구조화해 마스킹하고 stable JSON 문자열로 저장한다.
+요청 `args`는 녹화 시점에 마스킹되어 인메모리 카세트와 `onFlush`에도 원문 비밀값이 남지
+않는다. 응답 `content`/`raw`와 `tools`는 인메모리에서 원문을 유지하고, 파일에 쓰기 직전
+`saveCassette`가 다시 마스킹한다. 값이 JSON 문자열이면 저장 직전에만 파싱 가능한 경우
+구조화해 마스킹하고 stable JSON 문자열로 저장한다.
 
-**`onFlush`가 받는 카세트는 마스킹되지 않은 원문이다.** 파일에 쓸 때는 반드시 `saveCassette`를
-거쳐야 하며 (`prepareCassetteForWrite`가 저장 직전에 마스킹한다), `onFlush`가 넘겨준 카세트를
-그대로 커밋하거나 다른 곳에 저장하지 않는다.
+**`onFlush`가 받는 카세트의 응답과 tools에는 마스킹 전 원문이 남을 수 있다.** 파일에 쓸 때는
+반드시 `saveCassette`를 거쳐야 하며 (`prepareCassetteForWrite`가 저장 직전에 마스킹한다),
+`onFlush`가 넘겨준 카세트를 그대로 커밋하거나 다른 곳에 저장하지 않는다.
 
 ## 제외 범위
 

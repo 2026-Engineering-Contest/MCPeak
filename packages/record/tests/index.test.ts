@@ -111,6 +111,13 @@ describe("redact / snapshotContract", () => {
     });
   });
 
+  it("마스킹 중 sparse array를 거절한다", () => {
+    const sparse = [1, undefined, 3];
+    delete sparse[1];
+
+    expect(() => redact(sparse)).toThrow("카세트 JSON에는 sparse array를 사용할 수 없습니다.");
+  });
+
   it("비결정 필드는 제거하고 계약 변경 필드는 남긴다", () => {
     const snapshot = snapshotContract(
       ok({
@@ -185,16 +192,59 @@ describe("cassetteClient", () => {
       },
     });
 
-    await expect(client.callTool("get_secret", { id: 1 })).resolves.toStrictEqual(result);
-    await expect(client.callTool("get_secret", { id: 1 })).resolves.toStrictEqual(result);
+    await expect(client.callTool("get_secret", { id: 1, apiKey: "secret-input" })).resolves.toBe(
+      result,
+    );
+    await expect(
+      client.callTool("get_secret", { id: 1, apiKey: "secret-input" }),
+    ).resolves.toStrictEqual(result);
     await client.close();
 
     expect(inner.calls.callTool).toBe(1);
+    expect(flushed[0]?.interactions[0]?.request.args).toStrictEqual({
+      id: 1,
+      apiKey: "[redacted]",
+    });
     expect(flushed[0]?.interactions[0]?.response.raw).toStrictEqual({
       id: "run-1",
       token: "secret-token",
       value: 7,
     });
+  });
+
+  it("녹화할 수 없는 응답은 호출 성공과 녹화 실패를 분리한다", async () => {
+    const result: ToolResult = {
+      content: [],
+      isError: false,
+      raw: { createdAt: new Date("2026-08-15T00:00:00.000Z") },
+    };
+    const flushed: Cassette[] = [];
+    const inner = fakeClient([result]);
+    const client = cassetteClient(inner, {
+      cassette: null,
+      mode: "auto",
+      onFlush: async (next) => {
+        flushed.push(next);
+      },
+    });
+
+    await expect(client.callTool("get_time", { id: 1 })).resolves.toBe(result);
+
+    let error: unknown;
+    try {
+      await client.close();
+    } catch (caught) {
+      error = caught;
+    }
+
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toContain("카세트 녹화에 실패했습니다: get_time");
+    expect((error as Error).message).toContain("실제 MCP 호출은 성공했습니다.");
+    expect((error as Error).message).toContain("response.raw.createdAt");
+    expect((error as Error).message).toContain("값 종류: Date");
+    expect(flushed).toStrictEqual([]);
+    expect(inner.calls.callTool).toBe(1);
+    expect(inner.calls.close).toBe(1);
   });
 
   it("replay miss 는 카세트 갱신 안내를 포함한 오류를 낸다", async () => {

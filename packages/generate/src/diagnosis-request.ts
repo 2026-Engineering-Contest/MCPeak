@@ -5,6 +5,7 @@ import {
   MAX_REQUEST_BYTES,
   type McpToolContext,
   type PublicProviderFailure,
+  publicProviderFailure,
 } from "./authoring-request.js";
 import { deepFreeze, sha256 } from "./canonical.js";
 import {
@@ -17,10 +18,6 @@ import {
   MAX_CAUSE_CHARS,
   type ServerDiagnosisProvider,
 } from "./diagnosis-schema.js";
-import type {
-  AuthoringProviderFailureCode,
-  AuthoringProviderFailureReason,
-} from "./provider-process.js";
 import { sanitizeRedactable, TOOL_CONTRACT_PATHS } from "./redaction.js";
 import type { JsonValue } from "./schema.js";
 
@@ -326,66 +323,6 @@ export type DiagnosisDispatchResult =
   | { readonly status: "invalid" }
   | { readonly status: "diagnosis"; readonly result: DiagnosisResult };
 
-const providerFailureCodes = new Set<AuthoringProviderFailureCode>([
-  "providerUnavailable",
-  "nonZeroExit",
-  "timedOut",
-  "cancelled",
-  "outputLimitExceeded",
-  "invalidUtf8",
-  "invalidJson",
-  "schemaMismatch",
-  "internal",
-]);
-const providerFailureReasons = new Set<AuthoringProviderFailureReason>([
-  "notAuthenticated",
-  "unknownModel",
-  "rateLimited",
-  "badRequest",
-  "serverError",
-]);
-
-/**
- * provider 오류를 화면에 내보낼 수 있는 닫힌 형태로 접는다. 열거형 멤버만 통과시켜
- * 조작된 오류 객체의 임의 문자열이 UI 로 새지 않게 한다. raw stdout·stderr 는 담지 않는다.
- */
-function publicDiagnosisFailure(error: unknown, state: DiagnosisState): PublicProviderFailure {
-  const source = error as {
-    code?: unknown;
-    exitCode?: unknown;
-    reason?: unknown;
-    stderr?: { captured?: unknown; truncated?: unknown };
-  };
-  const code =
-    typeof source?.code === "string" &&
-    providerFailureCodes.has(source.code as AuthoringProviderFailureCode)
-      ? (source.code as AuthoringProviderFailureCode)
-      : "internal";
-  const exitCode =
-    typeof source?.exitCode === "number" &&
-    Number.isInteger(source.exitCode) &&
-    source.exitCode >= 0
-      ? source.exitCode
-      : undefined;
-  const stderr =
-    typeof source?.stderr?.captured === "boolean" && typeof source.stderr.truncated === "boolean"
-      ? { captured: source.stderr.captured, truncated: source.stderr.truncated }
-      : undefined;
-  const reason =
-    typeof source?.reason === "string" &&
-    providerFailureReasons.has(source.reason as AuthoringProviderFailureReason)
-      ? (source.reason as AuthoringProviderFailureReason)
-      : undefined;
-  return {
-    providerId: state.providerId,
-    code,
-    timeoutMs: state.timeoutMs,
-    exitCode,
-    reason,
-    stderr,
-  };
-}
-
 /**
  * 승인된 진단 요청을 provider 로 보낸다.
  *
@@ -419,6 +356,6 @@ export async function dispatchDiagnosisRequest(options: {
     if (validation.status !== "ok") return { status: "invalid" };
     return { status: "diagnosis", result: validation.result };
   } catch (error) {
-    return { status: "providerFailed", failure: publicDiagnosisFailure(error, state) };
+    return { status: "providerFailed", failure: publicProviderFailure(error, state) };
   }
 }

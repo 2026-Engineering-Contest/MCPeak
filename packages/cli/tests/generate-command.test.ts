@@ -2797,6 +2797,24 @@ describe("generate 출력 경로 선검사", () => {
     );
   });
 
+  it("선검사의 exists 가 던지면 종료 코드 1 과 오류 문안으로 끝난다", async () => {
+    // 편의 검사가 명령 전체를 거절로 끝내면 호출자가 보는 것이 종료 코드가 아니라 예외다.
+    const d = deps({
+      exists: vi.fn(async () => {
+        throw Object.assign(new Error("permission denied"), { code: "EACCES" });
+      }),
+      reviewIO: interactiveIO(),
+    });
+    const stderr: string[] = [];
+    d.value.writeStderr = (text) => stderr.push(text);
+
+    expect(await runGenerateCommand(baseArgv, d.value)).toBe(1);
+    expect(stderr.join("")).toBe(
+      `오류 [GENERATE_OUTPUT_CHECK_FAILED]: 출력 경로를 확인하지 못해 시작하지 않았습니다. 경로: ${outPath} (EACCES)\n해결: 그 경로와 상위 디렉터리의 권한을 확인하세요. 다른 \`--out\` 경로를 지정해도 됩니다.\n`,
+    );
+    expect(d.value.connect).not.toHaveBeenCalled();
+  });
+
   it("--out 이 없으면 선검사가 통과하고 connect 를 부른다", async () => {
     const d = deps();
 
@@ -2837,28 +2855,48 @@ describe("generate 덮어쓰기 저장", () => {
   ];
 
   /** 지운 경로를 기록하는 unlink. 임시 파일 정리와 출력 경로 삭제를 갈라 보기 위해서다. */
-  const trackingUnlink = (behavior: (path: string) => void = () => undefined) => {
+  /**
+   * `unlink` 를 가로채되 호출 순서를 잃지 않는다. `events` 를 넘기면 출력 경로를 지운 시점을
+   * `unlink:out` 으로 그 배열에 남긴다. `link` 는 `deps` 가 같은 배열에 `link` 를 남기므로
+   * 두 사건의 **선후**를 한 배열에서 비교할 수 있다. 각각 불렸는지만 보면 `link` 뒤에
+   * `unlink` 하는 회귀도 통과한다.
+   */
+  const trackingUnlink = (
+    behavior: (path: string) => void = () => undefined,
+    events?: string[],
+  ) => {
     const paths: string[] = [];
     return {
       paths,
       unlink: vi.fn(async (path: string) => {
         paths.push(path);
+        events?.push(path === outPath ? "unlink:out" : "unlink");
         behavior(path);
       }),
     };
   };
 
   it("--force 면 기존 파일이 새 명세로 바뀐다", async () => {
-    const tracker = trackingUnlink();
+    const events: string[] = [];
+    const tracker = trackingUnlink(() => undefined, events);
     const d = deps({ exists: vi.fn(async () => true), unlink: tracker.unlink });
+    // deps 가 link 를 자기 events 에 남기므로 같은 배열을 쓰게 바꿔 선후를 한 곳에서 본다.
+    d.value.link = vi.fn(async () => {
+      events.push("link");
+    });
     const stdout: string[] = [];
     d.value.writeStdout = (text) => stdout.push(text);
 
     expect(await runGenerateCommand([...baselineArgv, "--force"], d.value)).toBe(0);
     expect(stdout.join("")).toContain(`baseline suite를 저장했습니다: ${outPath}`);
-    // 출력 경로를 지운 뒤 link 한다. 순서가 뒤집히면 link 가 EEXIST 로 실패한다.
     expect(tracker.paths[0]).toBe(outPath);
-    expect(normalizedEvents(d.events).indexOf("link")).toBeGreaterThan(-1);
+    // 출력 경로를 지운 뒤 link 한다. 뒤집히면 link 가 EEXIST 로 실패한다. 각각 불렸는지만
+    // 보면 link 뒤에 unlink 하는 회귀가 그대로 통과한다.
+    const removed = events.indexOf("unlink:out");
+    const linked = events.indexOf("link");
+    expect(removed).toBeGreaterThan(-1);
+    expect(linked).toBeGreaterThan(-1);
+    expect(removed).toBeLessThan(linked);
   });
 
   it("--force 면 저장 직전 exists 검사를 건너뛴다", async () => {

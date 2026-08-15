@@ -1441,8 +1441,21 @@ export async function runGenerateCommand(
   // 선검사. `--out` 은 파싱 때 이미 아는 값이라 서버에 붙기 전에 끊을 수 있다. 이 뒤로는
   // 후보 검토, provider 승인, 실서버 시험 실행, 입력값 교정이 이어지고 그것을 다 치른 뒤
   // 알려 주면 늦다. 설계 문서 §1·§4. 보장이 아니라 편의이므로 `--force` 면 건너뛴다.
-  if (!input.force && (await deps.exists(input.outPath))) {
-    outputExistsFailure(deps, input.outPath, "start");
+  //
+  // `exists` 가 던지는 경우까지 여기서 받는다. 이 함수는 종료 코드를 돌려주는 자리이고,
+  // 편의 검사가 명령 전체를 거절(reject)로 끝내면 호출자가 보는 것이 종료 코드가 아니라
+  // 예외가 된다.
+  try {
+    if (!input.force && (await deps.exists(input.outPath))) {
+      outputExistsFailure(deps, input.outPath, "start");
+      return 1;
+    }
+  } catch (error) {
+    const code = (error as { code?: unknown } | null)?.code;
+    const suffix = typeof code === "string" ? ` (${code})` : "";
+    deps.writeStderr(
+      `오류 [GENERATE_OUTPUT_CHECK_FAILED]: 출력 경로를 확인하지 못해 시작하지 않았습니다. 경로: ${input.outPath}${suffix}\n해결: 그 경로와 상위 디렉터리의 권한을 확인하세요. 다른 \`--out\` 경로를 지정해도 됩니다.\n`,
+    );
     return 1;
   }
   if (!input.baselineOnly && !deps.reviewIO?.interactive) {

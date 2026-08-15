@@ -1,4 +1,4 @@
-import type { BodyExtractionFailure } from "./body.js";
+import type { BodyExtraction, BodyExtractionFailure } from "./body.js";
 import {
   DEFAULT_SENSITIVE_KEYS,
   normalizeSensitiveKey,
@@ -53,6 +53,11 @@ export interface RunnerDiagnostic {
   hint: string;
   violations?: SchemaViolationDiagnostic[];
   totalViolations?: number;
+  /**
+   * 단언 줄에 덧붙일 사실 그대로의 줄. 리포터가 `violations` 와 같은 `→ ` 형식으로 찍는다.
+   * 우리가 만든 판정 문장이 아니라 서버가 준 값을 옮기는 자리다. ADR-0027.
+   */
+  notes?: string[];
 }
 
 export type NormalizedThrownValue =
@@ -96,7 +101,44 @@ export function toolNotFoundDiagnostic(expected: string, actual: string[]): Runn
   };
 }
 
-export function isErrorMismatchDiagnostic(expected: boolean, actual: boolean): RunnerDiagnostic {
+/**
+ * 응답 본문을 진단 줄로 만든다. ADR-0027.
+ *
+ * 라벨을 붙이지 않는다. 이 줄은 cli 의 교정 요청 문안에 그대로 실리는데, 거기에 이미
+ * `서버 응답: ` 이 붙어 있어 라벨을 여기서 또 붙이면 두 번 나온다.
+ *
+ * `text` 는 사람이 읽을 문장이므로 따옴표 없이 그대로 옮기고 줄마다 항목 하나로 나눈다.
+ * `json` 은 구조가 보여야 하므로 compact JSON 한 줄로 적는다. 두 경로 모두 승인 화면과
+ * 같은 redaction 을 거치고 `MAX_VALUE_STRING_CHARS` 에서 잘린다. 새 규칙을 만들지 않고
+ * 기존 헬퍼를 쓴다.
+ */
+function responseBodyNotes(
+  extraction: BodyExtraction,
+  options?: RunnerRedactionOptions,
+): string[] | undefined {
+  if (!extraction.ok) return undefined;
+  // JSON 은 한 줄이다. structuralValue 의 compact JSON 에는 개행이 없다.
+  if (extraction.form === "json") return [structuralValue(extraction.body, [], options).text];
+  // text 형식의 본문은 항상 문자열이다. body.ts 가 그렇게만 만든다.
+  const safe = sanitizeJsonValue(extraction.body, options);
+  if (typeof safe !== "string") return undefined;
+  // 자르기는 나누기 전 본문 전체에 건다. 줄마다 따로 자르면 긴 응답에서 총량이 안 잡힌다.
+  const { text, chars } = cut(safe);
+  // 줄을 나눠 담는다. 한 줄로 뭉치면 개행이 이스케이프되어 리포터의 들여쓰기 밖으로 튄다.
+  // 줄 안의 글자는 손대지 않는다. 서버가 `→` 를 글머리로 쓰면 그것도 그대로 나온다.
+  const lines = withEllipsis(text, chars)
+    .split(/\r?\n/)
+    .filter((line) => line.trim() !== "");
+  return lines.length === 0 ? undefined : lines;
+}
+
+export function isErrorMismatchDiagnostic(
+  expected: boolean,
+  actual: boolean,
+  extraction?: BodyExtraction,
+  options?: RunnerRedactionOptions,
+): RunnerDiagnostic {
+  const notes = extraction === undefined ? undefined : responseBodyNotes(extraction, options);
   return {
     code: "IS_ERROR_MISMATCH",
     message: expected
@@ -105,6 +147,7 @@ export function isErrorMismatchDiagnostic(expected: boolean, actual: boolean): R
     expected,
     actual,
     hint: "툴 입력값과 서버의 오류 응답을 확인하세요.",
+    ...(notes === undefined ? {} : { notes }),
   };
 }
 

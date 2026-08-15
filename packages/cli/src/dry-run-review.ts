@@ -1,6 +1,7 @@
 import type { SuiteCaseApproval } from "@ohmymcp/runner";
 import type { DryRunCaseOutcome, DryRunResult } from "./dry-run.js";
 import type { ReviewIO } from "./generate-command.js";
+import type { RepairAttempt } from "./repair-target.js";
 
 /**
  * 시험 실행에서 실패한 케이스를 사람이 분류하는 화면. 문안은 설계 문서 §8.3 이 전량 고정한다.
@@ -54,6 +55,32 @@ const writeSummary = (io: ReviewIO, chosen: readonly string[]): void => {
 };
 
 /**
+ * 시도 횟수를 세는 낱말. 교정은 케이스당 최대 2회라서(설계 §4.1) 두 개면 충분하다.
+ * 그보다 많이 들어오면 숫자로 적는다. 화면이 조용히 틀린 낱말을 쓰는 것보다 낫다.
+ */
+const COUNT_WORDS: readonly string[] = ["한 번", "두 번"];
+
+const countWord = (count: number): string => COUNT_WORDS[count - 1] ?? `${count}번`;
+
+/**
+ * 교정 시도 이력을 찍는다. 문안은 설계 문서 §8.7 이 전량 고정한다. 이력이 없는 케이스는
+ * 이 블록이 통째로 없고 기존 화면 그대로다.
+ *
+ * 결과를 `오류` 로 고정하는 이유. 이 화면에 닿은 케이스는 교정이 전부 실패한 것이다.
+ * 통과한 케이스는 애초에 실패 목록에 없다. §8.7 이 고정한 낱말도 `오류` 하나뿐이다.
+ */
+const writeAttempts = (io: ReviewIO, attempts: readonly RepairAttempt[]): void => {
+  if (attempts.length === 0) return;
+  // 콜론을 세로로 맞춘다. 기준은 가장 긴 필드명이다.
+  const width = Math.max(...attempts.map((attempt) => attempt.field.length));
+  io.write(`      입력값을 ${countWord(attempts.length)} 고쳐 봤지만 결과가 같습니다.\n`);
+  for (const attempt of attempts) {
+    io.write(`        ${attempt.field.padEnd(width)}: ${JSON.stringify(attempt.value)} → 오류\n`);
+  }
+  io.write("\n");
+};
+
+/**
  * 한 글자를 받는다. 대소문자를 구분하지 않고 앞뒤 공백을 버린다. 아는 글자가 나올 때까지
  * 같은 질문을 다시 묻는다. 기본값으로 넘기지 않는다. 모르는 채로 눌린 엔터가 없는 버그를
  * 회귀 테스트로 굳히면 안 된다.
@@ -73,10 +100,14 @@ const askChoice = async (io: ReviewIO): Promise<string> => {
  *
  * `cleared` 가 false 면 `approvals` 를 비운다. 반쯤 채워 넘기면 호출 측이 그것을 저장할 여지가
  * 생기고, 그 파일은 사람이 판단하지 않은 판정을 담게 된다.
+ *
+ * `attempts` 는 입력값 교정을 시도했던 케이스의 이력이다(§8.7). 선택이고, 안 넘기면 화면과
+ * 반환값이 지금과 완전히 같다.
  */
 export async function reviewDryRun(
   io: ReviewIO,
   result: DryRunResult,
+  attempts?: ReadonlyMap<string, readonly RepairAttempt[]>,
 ): Promise<DryRunReviewResult> {
   const blocked: DryRunReviewResult = { cleared: false, approvals: [], specErrors: [] };
   // 끝까지 못 간 실행은 분류할 대상이 아니다. 남은 케이스가 통과인지 아닌지를 모른다.
@@ -93,6 +124,7 @@ export async function reviewDryRun(
     // 보여줬고, 실패가 한 건일 때는 같은 블록이 연달아 두 번 나와 중복으로 읽힌다. 번호와
     // 이름만 다시 적어 어느 케이스를 묻는지 고정한다.
     io.write(`  [${index + 1}] ${outcome.caseName}\n`);
+    writeAttempts(io, attempts?.get(outcome.caseId) ?? []);
     chosen.push(await askChoice(io));
     io.write("\n");
   }

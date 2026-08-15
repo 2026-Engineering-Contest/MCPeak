@@ -125,12 +125,19 @@ function execute(args) {
     assert.equal(result.err, "");
     assert.ok(result.out.includes(usage));
   }
-  // 시험 실행 옵션 넷이 배포 산출물의 도움말에 있어야 한다. 옵션을 소스에만 넣고 번들에서
+  // 시험 실행 옵션 다섯이 배포 산출물의 도움말에 있어야 한다. 옵션을 소스에만 넣고 번들에서
   // 빠뜨리면 사용자는 존재를 알 방법이 없다.
   {
     const generateHelp = await execute(["generate", "--help"]);
-    for (const option of ["--no-dry-run", "--cassette <path>", "--record", "--reset-cmd <command>"])
+    for (const option of [
+      "--no-dry-run",
+      "--cassette <path>",
+      "--record",
+      "--reset-cmd <command>",
+      "--no-repair",
+    ])
       assert.ok(generateHelp.out.includes(option), option);
+    assert.ok(generateHelp.out.includes("실패가 곧바로 분류 화면으로 갑니다"), generateHelp.out);
     assert.ok(generateHelp.out.includes(".gitignore 를 확인하세요"), generateHelp.out);
   }
   const version = await execute(["--version"]);
@@ -250,7 +257,9 @@ for (const [fixture, expectedStatus, expectedSummary] of [
     // 저장한 명세에는 승인 지문이 들어간다. 설계 문서 §3.
     assert.match(value.approval?.fingerprint ?? "", /^[0-9a-f]{64}$/);
     // --baseline-only 는 시험 실행을 하지 않는다. 화면에 그 줄이 없고 승인 기록도 없다.
+    // 시험 실행이 없으면 입력값 교정도 없으므로 고지의 재호출 줄도 나오지 않는다.
     assert.ok(!generated.out.includes("시험 실행"), generated.out);
+    assert.ok(!generated.out.includes("최대 2회까지 다시 호출합니다"), generated.out);
     assert.equal(value.approval?.cases, undefined);
     await expectExited(pidFile);
     const runTest = async (path, extra = []) => {

@@ -1257,3 +1257,156 @@ describe("입력 계약 참고 문장", () => {
     expect(out.stdout).toContain("참고: bad\\u000aid 의 입력이");
   });
 });
+
+describe("test 보고서 / 승인 시점 서버 결함 표시", () => {
+  const NOTE =
+    "참고: 승인 시점에 서버 결함으로 표시된 케이스입니다. 서버가 아직 고쳐지지 않았습니다.";
+  const caseSpec = (id: string): TestCaseSpec => ({
+    id,
+    name: id,
+    operation: { type: "listTools" },
+    assertions: [{ type: "toolExists", tool: "get_weather" }],
+  });
+  /** 케이스 둘 중 하나만 서버 결함으로 표시한 명세. 지문은 명세에서 계산한다. */
+  const defectSuite = (
+    approvalCases: readonly { id: string; status: "passed" | "serverDefect" }[],
+    approvalFingerprint?: string,
+  ): TestSuiteSpec => {
+    const base: TestSuiteSpec = {
+      schemaVersion: 1,
+      id: "suite",
+      name: "Suite",
+      cases: [caseSpec("ok-case"), caseSpec("broken-case")],
+    };
+    return {
+      ...base,
+      approval: {
+        fingerprint: approvalFingerprint ?? suiteFingerprint(base),
+        cases: approvalCases,
+      },
+    };
+  };
+  const reportOf = (
+    value: TestSuiteSpec,
+    statuses: Record<string, TestCaseResult["status"]>,
+  ): RunnerReport => {
+    const cases: TestCaseResult[] = value.cases.map((spec) => ({
+      spec,
+      status: statuses[spec.id] ?? "passed",
+      operation: { status: "completed" },
+      assertions: [],
+    }));
+    const failed = cases.filter((item) => item.status !== "passed").length;
+    return {
+      schemaVersion: 1,
+      suite: { id: value.id, name: value.name },
+      status: failed === 0 ? "passed" : "failed",
+      cases,
+      summary: {
+        total: cases.length,
+        passed: cases.length - failed,
+        failed,
+        timedOut: 0,
+        cancelled: 0,
+        notRun: 0,
+      },
+    };
+  };
+  const run = async (options: {
+    suite: TestSuiteSpec;
+    statuses: Record<string, TestCaseResult["status"]>;
+    json?: boolean;
+  }) => {
+    const finalReport = reportOf(options.suite, options.statuses);
+    const d = deps({
+      validateSuite: vi.fn(() => ({ valid: true as const, value: options.suite })),
+      finalize: async () => finalReport,
+    });
+    const exitCode = await runCli(
+      ["test", "x.json", "--command", "node", ...(options.json === true ? ["--json"] : [])],
+      d.value,
+    );
+    return { exitCode, stdout: d.writes.out.join("") };
+  };
+  const defectApproval = [
+    { id: "ok-case", status: "passed" },
+    { id: "broken-case", status: "serverDefect" },
+  ] as const;
+
+  it("serverDefect 케이스가 실패하면 참고 줄이 붙는다", async () => {
+    const out = await run({
+      suite: defectSuite(defectApproval),
+      statuses: { "broken-case": "failed" },
+    });
+    expect(out.stdout).toContain(`    ${NOTE}\n`);
+  });
+
+  it("serverDefect 케이스가 통과하면 참고 줄이 안 붙는다", async () => {
+    const out = await run({
+      suite: defectSuite(defectApproval),
+      statuses: { "ok-case": "failed" },
+    });
+    expect(out.stdout).not.toContain(NOTE);
+  });
+
+  it("passed 케이스가 실패하면 참고 줄이 안 붙는다", async () => {
+    const out = await run({
+      suite: defectSuite([{ id: "ok-case", status: "passed" }]),
+      statuses: { "ok-case": "failed" },
+    });
+    expect(out.stdout).not.toContain(NOTE);
+  });
+
+  it("지문이 불일치면 참고 줄이 안 붙는다", async () => {
+    // 명세가 바뀌었으면 승인 시점 판정이 지금 케이스에 해당하는지 알 수 없다. 설계 문서 §9.
+    const out = await run({
+      suite: defectSuite(defectApproval, WRONG_FINGERPRINT),
+      statuses: { "broken-case": "failed" },
+    });
+    expect(out.stdout).not.toContain(NOTE);
+    expect(out.stdout).toContain("승인 시점 이후 변경됨");
+  });
+
+  it("참고 줄이 붙어도 종료 코드가 그대로다", async () => {
+    const withNote = await run({
+      suite: defectSuite(defectApproval),
+      statuses: { "broken-case": "failed" },
+    });
+    const withoutNote = await run({
+      suite: defectSuite([{ id: "broken-case", status: "passed" }]),
+      statuses: { "broken-case": "failed" },
+    });
+    expect(withNote.stdout).toContain(NOTE);
+    expect(withoutNote.stdout).not.toContain(NOTE);
+    expect(withNote.exitCode).toBe(1);
+    expect(withNote.exitCode).toBe(withoutNote.exitCode);
+  });
+
+  it("--json 에 spec.cases 가 실린다", async () => {
+    const out = await run({
+      suite: defectSuite(defectApproval),
+      statuses: { "broken-case": "failed" },
+      json: true,
+    });
+    expect(JSON.parse(out.stdout).spec.cases).toEqual([
+      { id: "ok-case", status: "passed" },
+      { id: "broken-case", status: "serverDefect" },
+    ]);
+    expect(out.stdout).not.toContain(NOTE);
+  });
+
+  it("지문이 불일치여도 --json 의 spec.cases 는 그대로다", async () => {
+    // 텍스트 참고 문장의 억제 규칙은 사람이 읽는 화면의 것이다. 기계는 spec.approval 로 안다.
+    const out = await run({
+      suite: defectSuite(defectApproval, WRONG_FINGERPRINT),
+      statuses: { "broken-case": "failed" },
+      json: true,
+    });
+    expect(JSON.parse(out.stdout).spec.cases).toHaveLength(2);
+  });
+
+  it("approval.cases 가 없으면 --json 에 spec.cases 키가 없다", async () => {
+    const out = await run({ suite, statuses: {}, json: true });
+    expect(Object.hasOwn(JSON.parse(out.stdout).spec, "cases")).toBe(false);
+  });
+});

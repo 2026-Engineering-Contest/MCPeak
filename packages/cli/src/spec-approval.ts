@@ -1,4 +1,4 @@
-import type { TestSuiteSpec } from "@ohmymcp/runner";
+import type { CaseApprovalStatus, TestSuiteSpec } from "@ohmymcp/runner";
 import { suiteFingerprint } from "@ohmymcp/runner";
 
 export type SpecApprovalState = "matched" | "mismatched" | "absent";
@@ -25,6 +25,37 @@ export function checkSpecApproval(suite: TestSuiteSpec): SpecApprovalResult {
     approvedFingerprint: approved,
   };
 }
+
+/**
+ * 승인 시점 케이스 판정의 조회표. `approval.cases` 가 없으면 빈 표다.
+ * 케이스마다 배열을 훑지 않으려고 한 번만 만든다.
+ *
+ * 실재하지 않는 id 가 들어 있어도 그대로 담는다. 검증이 이미 그것을 통과시켰고(설계 문서 §7.3),
+ * 조회하는 쪽은 보고서의 케이스 id 로만 묻기 때문에 여분 항목은 닿지 않는다.
+ */
+export function caseApprovalStatuses(
+  suite: TestSuiteSpec,
+): ReadonlyMap<string, CaseApprovalStatus> {
+  return new Map((suite.approval?.cases ?? []).map((entry) => [entry.id, entry.status]));
+}
+
+/** 케이스 하나의 승인 시점 판정. 없으면 undefined 다. */
+export function caseApprovalStatus(
+  suite: TestSuiteSpec,
+  caseId: string,
+): CaseApprovalStatus | undefined {
+  return caseApprovalStatuses(suite).get(caseId);
+}
+
+/**
+ * `serverDefect` 로 표시된 케이스가 다시 실패했을 때 붙이는 한 줄. 설계 문서 §9.
+ * 들여쓰기는 보고서의 케이스 블록과 맞춘다. 개행으로 끝나고 호출자가 앞에 빈 줄을 붙인다.
+ *
+ * 종료 코드는 바뀌지 않는다. 알려진 결함이어도 실패는 실패이고, 초록으로 만들면 고칠 이유가
+ * 사라진다.
+ */
+export const SERVER_DEFECT_NOTE_LINE =
+  "    참고: 승인 시점에 서버 결함으로 표시된 케이스입니다. 서버가 아직 고쳐지지 않았습니다.\n";
 
 /**
  * 표시 여부. 설계 문서 §7.1.

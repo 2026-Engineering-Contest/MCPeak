@@ -174,6 +174,74 @@ describe("renderReport", () => {
     expect(arrowLines.length).toBe(violations.length);
   });
 
+  it("notes를 위반 줄과 같은 화살표 줄로 그린다", () => {
+    const report = makeReport([
+      testCase({
+        id: "weather",
+        name: "날씨를 조회한다",
+        status: "failed",
+        assertions: [
+          assertion("isError", "failed", {
+            code: "IS_ERROR_MISMATCH",
+            message: "진단 메시지",
+            hint: "진단 힌트",
+            notes: ["알 수 없는 도시: example"],
+          }),
+        ],
+      }),
+    ]);
+
+    const lines = renderReport(report).split("\n");
+    const noteIndex = lines.indexOf("    → 알 수 없는 도시: example");
+
+    expect(noteIndex).toBeGreaterThan(-1);
+    // 단언 줄 다음, hint 줄 앞이다.
+    expect(lines[noteIndex - 1]).toContain("진단 메시지");
+    expect(lines[noteIndex + 1]).toBe("    해결: 진단 힌트");
+  });
+
+  it("notes의 터미널 제어 문자를 위반 줄과 같게 이스케이프한다", () => {
+    const report = makeReport([
+      testCase({
+        id: "weather",
+        name: "날씨를 조회한다",
+        status: "failed",
+        assertions: [
+          assertion("isError", "failed", {
+            code: "IS_ERROR_MISMATCH",
+            message: "진단 메시지",
+            hint: "진단 힌트",
+            notes: [`${ESC}[31m빨강`],
+          }),
+        ],
+      }),
+    ]);
+
+    expect(renderReport(report)).toContain(`    → ${ESCAPED_ESC}[31m빨강`);
+  });
+
+  it("violations를 notes보다 먼저 그린다", () => {
+    const report = makeReport([
+      testCase({
+        id: "weather",
+        name: "날씨를 조회한다",
+        status: "failed",
+        assertions: [
+          assertion("bodyMatchesSchema", "failed", {
+            ...diagnostic("진단 메시지", "진단 힌트", ["위반 하나"]),
+            notes: ["노트 하나"],
+          }),
+        ],
+      }),
+    ]);
+
+    const arrowLines = renderReport(report)
+      .split("\n")
+      .filter((line) => line.startsWith("    → "));
+
+    expect(arrowLines).toEqual(["    → 위반 하나", "    → 노트 하나"]);
+  });
+
   it("통과한 단언은 그리지 않는다", () => {
     const report = makeReport([
       testCase({

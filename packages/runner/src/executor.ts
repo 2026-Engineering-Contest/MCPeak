@@ -5,7 +5,7 @@ import {
   assertIsError,
   assertToolExists,
 } from "./assertions.js";
-import { extractResponseBody } from "./body.js";
+import { type BodyExtraction, extractResponseBody } from "./body.js";
 import {
   normalizeThrownValue,
   operationResultUnavailableDiagnostic,
@@ -294,14 +294,21 @@ export function runSuite(options: RunSuiteOptions): RunnerExecution {
           },
         };
       emit({ type: "operationCompleted", ...fields, result: operation });
-      // 추출은 케이스당 한 번만 한다. 같은 케이스의 bodyMatchesSchema들이 결과를 공유한다.
-      const needsBody =
-        spec.operation.type === "callTool" &&
-        (spec.assertions as AssertionSpec[]).some((item) => item.type === "bodyMatchesSchema");
-      const extraction =
-        needsBody && result !== undefined && result.type === "callTool"
-          ? extractResponseBody(result.result)
-          : undefined;
+      // 추출은 케이스당 한 번만 한다. 같은 케이스의 단언들이 결과를 공유한다.
+      // 실제로 필요할 때까지 미룬다. isError 는 실패했을 때만 본문을 보고(ADR-0027),
+      // 통과한 케이스에서 응답을 읽지 않는 지금 동작을 그대로 지켜야 하기 때문이다.
+      let bodyRead = false;
+      let bodyValue: BodyExtraction | undefined;
+      const readBody = (): BodyExtraction | undefined => {
+        if (!bodyRead) {
+          bodyRead = true;
+          bodyValue =
+            result !== undefined && result.type === "callTool"
+              ? extractResponseBody(result.result)
+              : undefined;
+        }
+        return bodyValue;
+      };
       const assertions: AssertionResult[] = spec.assertions.map((assertion, assertionIndex) => {
         const outcome =
           result === undefined
@@ -313,8 +320,10 @@ export function runSuite(options: RunSuiteOptions): RunnerExecution {
             : result.type === "listTools"
               ? assertToolExists(result.tools, assertion as ToolExistsAssertionSpec)
               : assertion.type === "isError"
-                ? assertIsError(result.result, assertion as IsErrorAssertionSpec)
-                : assertBodyMatchesSchema(extraction, assertion as BodyMatchesSchemaAssertionSpec, {
+                ? assertIsError(result.result, assertion as IsErrorAssertionSpec, readBody, {
+                    redaction: options.redaction,
+                  })
+                : assertBodyMatchesSchema(readBody(), assertion as BodyMatchesSchemaAssertionSpec, {
                     redaction: options.redaction,
                   });
         emit({ type: "assertionCompleted", ...fields, assertionIndex, result: outcome });

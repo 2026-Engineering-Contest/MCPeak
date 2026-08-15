@@ -3,7 +3,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { ToolDef } from "@ohmymcp/core";
 import { afterEach, describe, expect, it } from "vitest";
-import { createMockServer, type MockServer } from "../src/index.js";
+import { ANY, createMockServer, type MockServer } from "../src/index.js";
 
 const { tools } = JSON.parse(
   readFileSync(new URL("../../../fixtures/tools-list.sample.json", import.meta.url), "utf8"),
@@ -135,5 +135,54 @@ describe("@ohmymcp/mock", () => {
 
     const client = new Client({ name: "test", version: "0.0.0" });
     await expect(client.connect(new StreamableHTTPClientTransport(new URL(url)))).rejects.toThrow();
+  });
+
+  it("키로 만들 수 없는 인자를 주입하면 진입점과 위치를 알려준다", async () => {
+    const server = await start();
+    expect(() => server.on("add", { a: 1, b: NaN }, { sum: 1 })).toThrow(
+      "→ mock.on('add', ...) 의 인자로 매칭 키를 만들 수 없습니다: 유한하지 않은 수",
+    );
+    expect(() => server.on("add", { a: 1, b: NaN }, { sum: 1 })).toThrow(
+      "→ 위치: args.b — 발견: NaN",
+    );
+  });
+
+  it("ANY 는 심볼이지만 거부되지 않는다", async () => {
+    const server = await start();
+    expect(() => server.on("add", ANY, { sum: 0 })).not.toThrow();
+    const client = await connect(server);
+
+    const result = await client.callTool({ name: "add", arguments: { a: 7, b: 7 } });
+    expect(result.isError).toBeFalsy();
+    expect(JSON.parse(text(result))).toEqual({ sum: 0 });
+
+    await client.close();
+  });
+
+  it("인자 지정본이 ANY 보다 우선한다", async () => {
+    const server = await start();
+    server.on("add", ANY, { sum: 0 });
+    server.on("add", { a: 1, b: 2 }, { sum: 3 });
+    const client = await connect(server);
+
+    expect(
+      JSON.parse(text(await client.callTool({ name: "add", arguments: { a: 1, b: 2 } }))),
+    ).toEqual({ sum: 3 });
+    expect(
+      JSON.parse(text(await client.callTool({ name: "add", arguments: { a: 9, b: 9 } }))),
+    ).toEqual({ sum: 0 });
+
+    await client.close();
+  });
+
+  it("정의 파일의 responses 도 같은 판정을 받는다", async () => {
+    await expect(
+      createMockServer({
+        tools,
+        responses: [{ tool: "add", args: { a: NaN }, result: { sum: 0 } }],
+      }),
+    ).rejects.toThrow(
+      "→ 정의 파일의 responses[0] 의 인자로 매칭 키를 만들 수 없습니다: 유한하지 않은 수",
+    );
   });
 });

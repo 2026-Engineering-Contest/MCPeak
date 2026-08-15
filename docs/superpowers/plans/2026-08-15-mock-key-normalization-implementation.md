@@ -21,6 +21,7 @@
 - **`packages/mock` 밖의 소스를 수정하지 않는다.** 다른 파트 소유다 (CLAUDE.md, CONTRIBUTING §2.2).
 - **커밋은 사람이 한다.** 각 태스크의 마지막 단계는 `git commit` 실행이 아니라 **권장 커밋 메시지와 변경 파일 제시**다. 사람이 만든 SHA 를 확인한 뒤 다음 태스크를 시작한다 (CLAUDE.md, `CLAUDE.local.md` §4 — 이 규칙이 스킬 기본 템플릿보다 우선한다).
 - **문장 규칙:** 변하는 값 뒤에 은/는 · 이/가 · 을/를 · 로/으로를 붙이지 않는다. 값은 콜론이나 대시 뒤에 둔다 (설계 §6.8).
+- **`packages/mock/src` 안의 상대 import 는 확장자를 `.ts` 로 쓴다.** raw node 제약 때문이다 — 파일 구조 절 참조.
 - **커밋 메시지:** Conventional Commits, scope 는 `mock` (CONTRIBUTING §4).
 
 ## 파일 구조
@@ -33,6 +34,8 @@
 | `packages/mock/tests/index.test.ts` | 수정 | 주입 배선 · `ANY` 회귀 · 조회 깊이 (T3 · T4) |
 | `packages/mock/README.md` | 수정 | 거부 규칙 문서화 (T5) |
 | `.changeset/mock-key-normalization.md` | 생성 | minor 범프 (T5) |
+| `packages/mock/tsconfig.json` | 수정 | `allowImportingTsExtensions` — 아래 raw node 제약의 짝 (T3) |
+| `packages/mock/tests/fixtures/stdio-entry.mjs` | 수정 | 주석만 — 왜 `.ts` 확장자여야 하는지 (T3) |
 | `docs/adr/NNNN-목-매칭-키-정규화-경계.md` | 생성 | 번호는 T5 Step 1 에서 확인 (T5) |
 
 **소스를 나누는 이유가 둘이다.**
@@ -43,6 +46,21 @@
 배선 테스트는 서버를 띄우는 기존 `index.test.ts` 의 헬퍼(`start`, `connect`, `text`)를 그대로 쓴다.
 
 `tsdown` 설정은 손대지 않는다. 진입점은 `index.ts` · `stdio.ts` 그대로이고 새 모듈은 번들에 딸려 들어간다.
+
+### raw node 제약 — 이 패키지만의 것
+
+`packages/mock/tests/fixtures/stdio-entry.mjs` 는 `src/index.ts` 를 **빌드 없이 raw node**
+(`--experimental-strip-types`)로 돌린다. Node 의 ESM 리졸버는 `.js` 를 `.ts` 로 매핑하지 않으므로,
+`index.ts` 가 부르는 상대 모듈은 **확장자를 `.ts` 로 써야 한다.** `.js` 를 쓰면
+`ERR_MODULE_NOT_FOUND` 로 서버가 즉시 죽고, 테스트에는 *"요청 완료 전 MCP 서버가 종료되었습니다"*
+로만 보인다.
+
+짝으로 `packages/mock/tsconfig.json` 에 `allowImportingTsExtensions: true` 가 필요하다.
+`moduleResolution` 이 `Bundler` 이고 이 패키지의 `typecheck` 가 `tsc --noEmit` 이라 성립한다
+(빌드는 tsdown 이 한다). 공유 `tsconfig.base.json` 은 건드리지 않는다.
+
+**이것은 `packages/mock` 에만 해당한다.** 다른 패키지는 `.js` 를 쓰며, 그쪽에는 소스를 그대로
+실행하는 테스트가 없다.
 
 ## 스펙과 다른 점 (의도된 것)
 
@@ -539,10 +557,10 @@ npx vitest run packages/mock/tests/index.test.ts
 
 - [ ] **Step 3: 배선한다**
 
-먼저 `packages/mock/src/index.ts` 의 import 블록 끝에 한 줄을 넣는다.
+먼저 `packages/mock/src/index.ts` 의 import 블록 끝에 한 줄을 넣는다. **확장자가 `.ts` 다** — 이유는 아래 "raw node 제약" 참조.
 
 ```ts
-import { assertKeyable } from "./key-violation.js";
+import { assertKeyable } from "./key-violation.ts";
 ```
 
 `put` 을 바꾼다 (현재 87-90줄).
@@ -686,10 +704,10 @@ class KeyDepthError extends Error {
 }
 ```
 
-그리고 `index.ts` 의 import 를 늘린다.
+그리고 `index.ts` 의 import 를 늘린다. 확장자는 `.ts` 를 유지한다.
 
 ```ts
-import { assertKeyable, KeyDepthError, MAX_KEY_DEPTH } from "./key-violation.js";
+import { assertKeyable, KeyDepthError, MAX_KEY_DEPTH } from "./key-violation.ts";
 ```
 
 `stableKey` 를 바꾼다. **`value.map(stableKey)` 를 그대로 두면 안 된다** — `map` 이 두 번째 인자로 **배열 인덱스**를 넘기므로 그것이 `depth` 로 들어간다. 반드시 화살표로 감싼다.

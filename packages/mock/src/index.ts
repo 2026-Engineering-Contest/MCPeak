@@ -5,6 +5,12 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import type { ToolDef } from "@ohmymcp/core";
+// 확장자가 ".ts" 인 것은 오타가 아니다. tests/fixtures/stdio-entry.mjs 가 이 파일을
+// raw node(--experimental-strip-types)로 직접 돌리는데, Node 의 ESM 리졸버는 ".js" 를
+// ".ts" 로 매핑하지 않아 ERR_MODULE_NOT_FOUND 가 난다. 저장소의 다른 패키지는 ".js" 를
+// 쓰지만 그쪽에는 소스를 그대로 실행하는 테스트가 없다.
+// packages/mock/tsconfig.json 의 allowImportingTsExtensions 가 이것과 짝이다.
+import { assertKeyable } from "./key-violation.ts";
 
 /**
  * 인자를 가리지 않고 매칭한다. `mock.on(tool, ANY, result)`.
@@ -84,9 +90,21 @@ function createRegistry(): Registry {
   return { exact: new Map(), any: new Map() };
 }
 
-function put(registry: Registry, tool: string, args: unknown, result: unknown): void {
-  if (args === ANY) registry.any.set(tool, result);
-  else registry.exact.set(`${tool}|${stableKey(args ?? {})}`, result);
+function put(
+  registry: Registry,
+  tool: string,
+  args: unknown,
+  result: unknown,
+  source: string,
+): void {
+  // ANY 는 Symbol.for(...) 라서 assertKeyable 의 notJson 에 걸린다.
+  // 검사를 이 분기보다 앞에 두면 정상 기능이 죽는다.
+  if (args === ANY) {
+    registry.any.set(tool, result);
+    return;
+  }
+  assertKeyable(args ?? {}, source);
+  registry.exact.set(`${tool}|${stableKey(args ?? {})}`, result);
 }
 
 /** 인자 지정본을 먼저 찾고, 없으면 ANY 로 떨어진다. */
@@ -178,8 +196,9 @@ export function assertMockDefinition(
 /** 정의를 레지스트리로 옮긴다. `args` 가 없으면 ANY 로 취급한다. */
 function seed(definition: MockDefinition): Registry {
   const registry = createRegistry();
-  for (const r of definition.responses ?? []) {
-    put(registry, r.tool, "args" in r ? r.args : ANY, r.result);
+  const responses = definition.responses ?? [];
+  for (const [index, r] of responses.entries()) {
+    put(registry, r.tool, "args" in r ? r.args : ANY, r.result, `정의 파일의 responses[${index}]`);
   }
   return registry;
 }
@@ -249,7 +268,7 @@ export async function createMockServer(options: MockOptions): Promise<MockServer
   return {
     url: `http://${host}:${addr.port}/mcp`,
     on(tool, args, result) {
-      put(registry, tool, args, result);
+      put(registry, tool, args, result, `mock.on('${tool}', ...)`);
     },
     close: () =>
       new Promise<void>((resolve, reject) => {

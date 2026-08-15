@@ -1,0 +1,39 @@
+import { describe, expect, it } from "vitest";
+import { commandHelp, GENERATE_USAGE, GENERATE_USAGE_HINT } from "../src/help.js";
+
+/**
+ * 도움말은 옵션의 유일한 설명이다. 사용법 한 줄에만 이름이 있고 설명이 없으면 사용자는
+ * `--cassette` 가 파일을 남긴다는 것도, `--reset-cmd` 가 셸을 안 쓴다는 것도 모른 채 쓴다.
+ */
+describe("generate 도움말", () => {
+  const help = commandHelp("generate");
+
+  it.each([["--no-dry-run"], ["--cassette <path>"], ["--record"], ["--reset-cmd <command>"]])(
+    "%s 가 사용법 줄에 나온다",
+    (option) => {
+      expect(GENERATE_USAGE).toContain(`[${option}]`);
+    },
+  );
+
+  it("네 옵션의 설명이 도움말에 있다", () => {
+    expect(help).toContain("--no-dry-run          승인 전 시험 실행을 건너뜁니다.");
+    expect(help).toContain("--cassette <path>     서버 응답을 녹화·재생합니다.");
+    expect(help).toContain(
+      "--record              카세트를 처음부터 다시 녹화합니다 (--cassette 필요)",
+    );
+    expect(help).toContain("--reset-cmd <command> 시험 실행 전에 이 명령을 한 번 실행합니다.");
+  });
+
+  it("위험을 알리는 문장이 함께 있다", () => {
+    // 이 셋이 빠지면 옵션 이름만 남는다. 각각 데이터 유출·미검증 저장·오해를 막는 문장이다.
+    expect(help).toContain("실제 서버에서 확인되지");
+    expect(help).toContain(".gitignore 를 확인하세요");
+    expect(help).toContain("셸을 거치지 않으므로");
+  });
+
+  it("사용 오류 힌트는 사용법 한 줄만 담는다", () => {
+    // 힌트는 stderr 한 줄이다. 여기에 옵션 설명 블록이 섞이면 오류 메시지가 화면을 덮는다.
+    expect(GENERATE_USAGE_HINT).toContain(GENERATE_USAGE);
+    expect(GENERATE_USAGE_HINT).not.toContain("\n");
+  });
+});

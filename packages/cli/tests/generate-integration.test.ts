@@ -332,7 +332,19 @@ describe.sequential("generate 실제 weather-server", () => {
         ),
       ).toBe(0);
       expect(provider.author).toHaveBeenCalledOnce();
-      expect(io.confirm).toHaveBeenCalledTimes(3);
+      // 셋은 기존(요청 전송·변경 적용·저장)이고 넷째가 시험 실행 고지다. 이 서버는 케이스가
+      // 전부 통과하므로 분류는 묻지 않는다.
+      expect(io.confirm).toHaveBeenCalledTimes(4);
+      // 실제 서버에 돌린 결과가 승인 기록으로 남는다. 지문은 approval 을 제외해 계산하므로
+      // 이것이 실려도 저장 직후 재검증 세 조건이 그대로 성립한다.
+      const saved = JSON.parse(await readFile(suitePath, "utf8")) as {
+        cases: { id: string }[];
+        approval: { fingerprint: string; cases?: { id: string; status: string }[] };
+      };
+      expect(saved.approval.cases?.map((item) => item.id)).toEqual(
+        saved.cases.map((item) => item.id),
+      );
+      expect(saved.approval.cases?.every((item) => item.status === "passed")).toBe(true);
       const out = vi.spyOn(process.stdout, "write").mockImplementation((text) => {
         outputs.push(String(text));
         return true;

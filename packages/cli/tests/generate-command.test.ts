@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { basename, dirname, normalize } from "node:path";
 import { Readable, Writable } from "node:stream";
-import type { McpStdioConnection, ToolDef } from "@ohmymcp/core";
+import type { McpStdioConnection, ToolDef, ToolResult } from "@ohmymcp/core";
 import {
   type AuthoringDiffPreview,
   applyAuthoringChanges,
@@ -17,6 +17,7 @@ import {
   type SanitizedAuthoringCandidate,
   sha256,
 } from "@ohmymcp/generate";
+import type { Cassette } from "@ohmymcp/record";
 import type { CallToolCaseSpec, SpecFinding, TestCaseSpec, TestSuiteSpec } from "@ohmymcp/runner";
 import { suiteFingerprint, validateMcpSuite } from "@ohmymcp/runner";
 import { describe, expect, it, vi } from "vitest";
@@ -159,7 +160,60 @@ describe("parseGenerateCommand", () => {
       baselineOnly: true,
       provider: undefined,
       model: undefined,
+      dryRun: true,
+      cassettePath: undefined,
+      forceRecord: false,
+      resetCmd: undefined,
     });
+  });
+  it("시험 실행 옵션 넷을 파싱한다", () => {
+    expect(
+      parseGenerateCommand([
+        "--suite-id=weather",
+        "--name=Weather",
+        "--out=out.json",
+        "--command=node",
+        "--cassette",
+        ".ohmymcp/w.json",
+        "--record",
+        "--reset-cmd",
+        "npm run seed",
+      ]),
+    ).toMatchObject({
+      dryRun: true,
+      cassettePath: ".ohmymcp/w.json",
+      forceRecord: true,
+      resetCmd: "npm run seed",
+    });
+  });
+  it("--no-dry-run 은 dryRun 을 끈다", () => {
+    expect(
+      parseGenerateCommand([
+        "--suite-id=weather",
+        "--name=Weather",
+        "--out=out.json",
+        "--command=node",
+        "--no-dry-run",
+      ]),
+    ).toMatchObject({ dryRun: false });
+  });
+  it("시험 실행 옵션의 사용 오류를 거절한다", () => {
+    const base = ["--suite-id=x", "--name=n", "--out=x.json", "--command=node"];
+    const cases: readonly (readonly string[])[] = [
+      // --no-dry-run 을 두 번
+      [...base, "--no-dry-run", "--no-dry-run"],
+      // --no-dry-run 과 --cassette
+      [...base, "--no-dry-run", "--cassette", "c.json"],
+      // --no-dry-run 과 --reset-cmd
+      [...base, "--no-dry-run", "--reset-cmd", "npm run seed"],
+      // --record 를 --cassette 없이
+      [...base, "--record"],
+      // --reset-cmd 값이 빈 문자열
+      [...base, "--reset-cmd="],
+      // --cassette 를 두 번
+      [...base, "--cassette", "a.json", "--cassette", "b.json"],
+    ];
+    for (const argv of cases) expect(() => parseGenerateCommand(argv)).toThrow();
   });
   it("equals 형식, 하이픈 arg와 빈 arg를 보존한다", () => {
     expect(
@@ -612,6 +666,11 @@ describe("AI 대화형 검토", () => {
     "--command",
     "node",
   ];
+  /**
+   * 저장 실패 경로만 보는 테스트에 쓴다. 시험 실행을 켜면 확인 하나와 분류 화면이 끼어들어
+   * 무엇을 보는 테스트인지 흐려진다. 이 경로의 확인은 §8.5 하나와 저장 확인 하나다.
+   */
+  const noDryRunArgv = [...interactiveArgv, "--no-dry-run"];
   it("비대화형 AI mode를 provider 호출 전에 거절한다", async () => {
     const d = deps();
     await expect(
@@ -992,9 +1051,9 @@ describe("AI 대화형 검토", () => {
     expect(d.io.confirm).toHaveBeenCalledOnce();
   });
   it("저장하려는 경로에 파일이 있으면 경로와 조치를 안내한다", async () => {
-    const d = reviewDeps(["save", "cancel"], [], [true]);
+    const d = reviewDeps(["save", "cancel"], [], [true, true]);
     d.value.exists = vi.fn(async () => true);
-    await runGenerateCommand(interactiveArgv, d.value);
+    await runGenerateCommand(noDryRunArgv, d.value);
     const output = d.stderr.join("");
     expect(output).toContain("GENERATE_OUTPUT_EXISTS");
     expect(output).toContain("경로: /tmp/out.json");
@@ -1003,18 +1062,18 @@ describe("AI 대화형 검토", () => {
     expect(d.value.openTemp).not.toHaveBeenCalled();
   });
   it("경로 충돌이 아닌 저장 실패는 기존 문구를 유지한다", async () => {
-    const d = reviewDeps(["save", "cancel"], [], [true]);
+    const d = reviewDeps(["save", "cancel"], [], [true, true]);
     d.value.openTemp = vi.fn(async () => {
       throw new Error("EACCES");
     });
-    await runGenerateCommand(interactiveArgv, d.value);
+    await runGenerateCommand(noDryRunArgv, d.value);
     const output = d.stderr.join("");
     expect(output).toContain("GENERATE_SAVE_FAILED");
     expect(output).not.toContain("GENERATE_OUTPUT_EXISTS");
     expect(output).not.toContain("EACCES");
   });
   it("대화형 저장에서도 hard link 불가를 전용 문구로 안내한다", async () => {
-    const d = reviewDeps(["save", "cancel"], [], [true]);
+    const d = reviewDeps(["save", "cancel"], [], [true, true]);
     // 임시 파일을 실제로 왕복시켜 fingerprint 재검증을 통과시켜야 link 단계까지 간다.
     let written = "";
     d.value.openTemp = vi.fn(async () => ({
@@ -1034,7 +1093,7 @@ describe("AI 대화형 검토", () => {
       error.code = "EPERM";
       throw error;
     });
-    await runGenerateCommand(interactiveArgv, d.value);
+    await runGenerateCommand(noDryRunArgv, d.value);
     const output = d.stderr.join("");
     expect(output).toContain("GENERATE_LINK_UNSUPPORTED");
     expect(output).toContain("경로: /tmp/out.json");
@@ -1705,5 +1764,450 @@ describe("케이스 수 고지", () => {
       ),
     ).resolves.toBe(0);
     expect(stdout.join("")).toContain("케이스 1500개를 만들었습니다");
+  });
+});
+
+/**
+ * 승인 전 시험 실행 게이트. 실제 `runDryRun`·`reviewDryRun`·`wireCassette` 를 그대로 돌리고
+ * 서버와 카세트 파일만 인메모리로 바꾼다. 게이트가 무엇을 묻고 무엇을 저장하는지가 관심사이므로
+ * 그 세 모듈을 스텁으로 바꾸면 확인할 것이 남지 않는다.
+ */
+describe("generate 시험 실행 게이트", () => {
+  const gateTools: ToolDef[] = [
+    {
+      name: "weather",
+      inputSchema: {
+        type: "object",
+        properties: { city: { type: "string" } },
+        required: ["city"],
+      },
+    },
+  ];
+  const ok = (): ToolResult => ({
+    content: [{ type: "text", text: "ok" }],
+    isError: false,
+    raw: { ok: true },
+  });
+  const gateArgv = [
+    "generate",
+    "--suite-id",
+    "weather",
+    "--name",
+    "Weather",
+    "--out",
+    "/tmp/gate.json",
+    "--command",
+    "node",
+    "--arg",
+    "server.mjs",
+  ];
+
+  interface GateOptions {
+    readonly choices: string[];
+    readonly inputs?: string[];
+    readonly confirms?: boolean[];
+    /** 인메모리 서버. 기본은 항상 정상 응답이라 위반 케이스가 실패한다. */
+    readonly respond?: (name: string, args: unknown, call: number) => ToolResult;
+    readonly diagnostics?: () =>
+      | never
+      | {
+          stderr: string;
+          stderrTruncated: boolean;
+          exitCode: number | null;
+          signal: string | null;
+        };
+    /** 카세트 파일 대용. 두 번의 save 사이에 살아남아야 하므로 밖에서 넘긴다. */
+    readonly cassetteStore?: Map<string, Cassette>;
+  }
+
+  function gateDeps(options: GateOptions) {
+    const choices = [...options.choices];
+    const inputs = [...(options.inputs ?? [])];
+    const confirms = [...(options.confirms ?? [])];
+    const screen: string[] = [];
+    const stderr: string[] = [];
+    const calls: string[] = [];
+    let closes = 0;
+    let saved = "";
+    const io = {
+      interactive: true,
+      choose: vi.fn(async () => choices.shift() ?? "cancel"),
+      input: vi.fn(async (message: string) => {
+        screen.push(message);
+        return inputs.shift() ?? "";
+      }),
+      confirm: vi.fn(async (message: string) => {
+        screen.push(`${message} [y/N] `);
+        return confirms.shift() ?? false;
+      }),
+      write: vi.fn((text: string) => {
+        screen.push(text);
+      }),
+      close: vi.fn(),
+    };
+    const connection: McpStdioConnection = {
+      client: {
+        listTools: async () => gateTools,
+        callTool: async (name, args) => {
+          const call = calls.filter((item) => item === name).length;
+          calls.push(name);
+          return (options.respond ?? ok)(name, args, call);
+        },
+        close: async () => undefined,
+      },
+      getDiagnostics: vi.fn(
+        options.diagnostics ??
+          (() => ({ stderr: "", stderrTruncated: false, exitCode: null, signal: null })),
+      ) as McpStdioConnection["getDiagnostics"],
+      close: vi.fn(async () => {
+        closes += 1;
+      }),
+      forceClose: vi.fn(async () => undefined),
+    };
+    const store = options.cassetteStore ?? new Map<string, Cassette>();
+    const value: GenerateCommandDependencies = {
+      connect: vi.fn(async () => connection),
+      createBaselineSuite,
+      createAuthoringSession,
+      finalizeAuthoringDraft,
+      getAuthoringExecutionSuite,
+      validateSuite: validateMcpSuite,
+      exists: vi.fn(async () => false),
+      openTemp: vi.fn(async () => ({
+        writeFile: vi.fn(async (data: string) => {
+          saved = data;
+        }),
+        sync: vi.fn(async () => undefined),
+        close: vi.fn(async () => undefined),
+      })),
+      readFile: vi.fn(async () => new TextEncoder().encode(saved)),
+      link: vi.fn(async () => undefined),
+      unlink: vi.fn(async () => undefined),
+      writeStdout: vi.fn(),
+      writeStderr: vi.fn((text: string) => {
+        stderr.push(text);
+      }),
+      reviewIO: io,
+      prepareAuthoringRequest,
+      dispatchAuthoringRequest,
+      createAuthoringDiff,
+      applyAuthoringChanges,
+      reviewLocalAuthoringCandidate,
+      cassetteIo: {
+        load: async (path) => store.get(path) ?? null,
+        save: async (path, cassette) => {
+          store.set(path, cassette);
+        },
+      },
+    };
+    return {
+      value,
+      io,
+      screen,
+      stderr,
+      calls,
+      store,
+      closeCount: () => closes,
+      savedSuite: () =>
+        saved === ""
+          ? undefined
+          : (JSON.parse(saved) as TestSuiteSpec & {
+              approval: { fingerprint: string; cases?: { id: string; status: string }[] };
+            }),
+      output: () => screen.join(""),
+    };
+  }
+
+  /** 이 툴 선언으로 baseline 이 만드는 케이스. 숫자를 테스트에 박지 않는다. */
+  const baselineCases = createBaselineSuite(gateTools, {
+    suiteId: "weather",
+    suiteName: "Weather",
+  }).suite.cases;
+  /** 정상 응답만 주는 서버에서 실패하는 케이스(위반 케이스)의 수. */
+  const failingCases = baselineCases.filter((item) =>
+    (item.assertions as readonly { type: string; expected?: unknown }[]).some(
+      (assertion) => assertion.type === "isError" && assertion.expected === true,
+    ),
+  ).length;
+
+  it("기본 경로에서 시험 실행 고지가 나오고 거절하면 저장하지 않는다", async () => {
+    const d = gateDeps({ choices: ["save", "cancel"], confirms: [false] });
+    await expect(runGenerateCommand(gateArgv, d.value)).resolves.toBe(0);
+    expect(d.output()).toContain("실제 서버에 보냅니다");
+    expect(d.output()).toContain("이 실행은 서버 상태를 바꿀 수 있습니다.");
+    expect(d.calls).toEqual([]);
+    expect(d.value.openTemp).not.toHaveBeenCalled();
+  });
+
+  it("고지에 케이스 수가 실제 케이스 수와 같게 나온다", async () => {
+    const d = gateDeps({ choices: ["save", "cancel"], confirms: [false] });
+    await runGenerateCommand(gateArgv, d.value);
+    expect(d.output()).toContain(
+      `시험 실행: 케이스 ${baselineCases.length}개를 실제 서버에 보냅니다.`,
+    );
+    expect(d.output()).toContain("  대상: node server.mjs\n");
+  });
+
+  it("카세트가 없으면 고지에 카세트 줄이 안 나온다", async () => {
+    const d = gateDeps({ choices: ["save", "cancel"], confirms: [false] });
+    await runGenerateCommand(gateArgv, d.value);
+    expect(d.output()).not.toContain("카세트:");
+  });
+
+  it("초기화가 없으면 고지에 초기화 줄이 안 나온다", async () => {
+    const d = gateDeps({ choices: ["save", "cancel"], confirms: [false] });
+    await runGenerateCommand(gateArgv, d.value);
+    expect(d.output()).not.toContain("초기화:");
+  });
+
+  it("통과만 있으면 분류를 묻지 않고 저장으로 넘어간다", async () => {
+    // 위반 케이스는 서버가 거절해야 통과한다. isError 를 그대로 돌려준다.
+    const d = gateDeps({
+      choices: ["save"],
+      confirms: [true, true],
+      respond: (_name, args) =>
+        (args as { city?: unknown })?.city === undefined ||
+        typeof (args as { city?: unknown }).city !== "string"
+          ? { content: [], isError: true, raw: { error: "bad input" } }
+          : ok(),
+    });
+    await expect(runGenerateCommand(gateArgv, d.value)).resolves.toBe(0);
+    expect(d.io.input).not.toHaveBeenCalled();
+    expect(d.output()).toContain(`  ✓ 통과 ${baselineCases.length}건`);
+    expect(d.output()).not.toContain("✗ 실패");
+  });
+
+  it("실패 케이스를 serverDefect 로 분류하면 approval.cases 에 실린다", async () => {
+    const d = gateDeps({
+      choices: ["save"],
+      inputs: Array.from({ length: failingCases }, () => "s"),
+      confirms: [true, true],
+    });
+    await expect(runGenerateCommand(gateArgv, d.value)).resolves.toBe(0);
+    const cases = d.savedSuite()?.approval.cases ?? [];
+    expect(cases.filter((item) => item.status === "serverDefect")).toHaveLength(failingCases);
+  });
+
+  it("approval.cases 순서가 suite.cases 순서와 같다", async () => {
+    const d = gateDeps({
+      choices: ["save"],
+      inputs: Array.from({ length: failingCases }, () => "s"),
+      confirms: [true, true],
+    });
+    await runGenerateCommand(gateArgv, d.value);
+    const saved = d.savedSuite();
+    expect(saved?.approval.cases?.map((item) => item.id)).toEqual(
+      saved?.cases.map((item) => item.id),
+    );
+  });
+
+  it("통과 케이스도 approval.cases 에 passed 로 실린다", async () => {
+    const d = gateDeps({
+      choices: ["save"],
+      inputs: Array.from({ length: failingCases }, () => "s"),
+      confirms: [true, true],
+    });
+    await runGenerateCommand(gateArgv, d.value);
+    const cases = d.savedSuite()?.approval.cases ?? [];
+    expect(cases).toHaveLength(baselineCases.length);
+    expect(cases.filter((item) => item.status === "passed").length).toBe(
+      baselineCases.length - failingCases,
+    );
+  });
+
+  it("specError 가 하나라도 있으면 저장하지 않고 메뉴로 돌아간다", async () => {
+    const d = gateDeps({
+      choices: ["save", "cancel"],
+      inputs: ["m", ...Array.from({ length: failingCases - 1 }, () => "s")],
+      confirms: [true],
+    });
+    await expect(runGenerateCommand(gateArgv, d.value)).resolves.toBe(0);
+    expect(d.output()).toContain("명세 오류 1건이 있어 저장할 수 없습니다.");
+    expect(d.output()).toContain("검토 메뉴의 revise 또는 edit");
+    expect(d.value.openTemp).not.toHaveBeenCalled();
+    // 카세트가 없으면 전량이 다시 나간다는 사실을 알려야 한다.
+    expect(d.output()).toContain("--cassette 를 쓰세요");
+    expect(d.io.choose).toHaveBeenCalledTimes(2);
+  });
+
+  it("미분류가 있으면 저장하지 않는다", async () => {
+    const d = gateDeps({
+      choices: ["save", "cancel"],
+      inputs: Array.from({ length: failingCases }, () => "?"),
+      confirms: [true],
+    });
+    await expect(runGenerateCommand(gateArgv, d.value)).resolves.toBe(0);
+    expect(d.output()).toContain("분류하지 않은 케이스가 있어 저장할 수 없습니다.");
+    expect(d.value.openTemp).not.toHaveBeenCalled();
+  });
+
+  it("aborted 면 §8.4 를 찍고 저장하지 않으며 stderr 꼬리가 함께 나온다", async () => {
+    const d = gateDeps({
+      choices: ["save", "cancel"],
+      confirms: [true],
+      respond: () => {
+        throw new Error("socket hang up");
+      },
+      diagnostics: () => ({
+        stderr: "FATAL: heap out of memory\n",
+        stderrTruncated: false,
+        exitCode: 1,
+        signal: null,
+      }),
+    });
+    await expect(runGenerateCommand(gateArgv, d.value)).resolves.toBe(0);
+    expect(d.output()).toContain("✗ 시험 실행을 마치지 못했습니다.");
+    expect(d.output()).toContain("케이스에서 연결이 끊겼습니다.");
+    expect(d.output()).toContain("툴 'weather' 호출 중 오류가 발생했습니다.");
+    expect(d.output()).toContain("FATAL: heap out of memory");
+    expect(d.output()).toContain("저장하지 않았습니다. 서버를 고친 뒤 다시 save 를 고르세요.");
+    expect(d.value.openTemp).not.toHaveBeenCalled();
+  });
+
+  it("--no-dry-run 이면 시험 실행 없이 저장되고 approval.cases 키가 없다", async () => {
+    const d = gateDeps({ choices: ["save"], confirms: [true, true] });
+    await expect(runGenerateCommand([...gateArgv, "--no-dry-run"], d.value)).resolves.toBe(0);
+    expect(d.calls).toEqual([]);
+    expect(d.output()).toContain("⚠ 시험 실행을 건너뜁니다.");
+    expect(d.savedSuite()?.approval).toEqual({
+      fingerprint: expect.any(String) as unknown as string,
+    });
+  });
+
+  it("--no-dry-run 확인을 거절하면 저장하지 않는다", async () => {
+    const d = gateDeps({ choices: ["save", "cancel"], confirms: [false] });
+    await expect(runGenerateCommand([...gateArgv, "--no-dry-run"], d.value)).resolves.toBe(0);
+    expect(d.value.openTemp).not.toHaveBeenCalled();
+  });
+
+  it("--reset-cmd 가 실패하면 시험 실행을 시작하지 않고 저장도 안 한다", async () => {
+    const d = gateDeps({ choices: ["save", "cancel"], confirms: [true] });
+    await expect(
+      runGenerateCommand(
+        [...gateArgv, "--reset-cmd", "ohmymcp-존재하지-않는-초기화-명령"],
+        d.value,
+      ),
+    ).resolves.toBe(0);
+    expect(d.output()).toContain("✗ 초기화 명령이 실패했습니다.");
+    expect(d.calls).toEqual([]);
+    expect(d.value.openTemp).not.toHaveBeenCalled();
+  });
+
+  it("--reset-cmd 성공 시 초기화 줄이 시험 실행보다 먼저 나온다", async () => {
+    const d = gateDeps({
+      choices: ["save", "cancel"],
+      inputs: Array.from({ length: failingCases }, () => "?"),
+      confirms: [true],
+    });
+    const command = `${process.execPath} -e process.exit(0)`;
+    await runGenerateCommand([...gateArgv, "--reset-cmd", command], d.value);
+    const output = d.output();
+    expect(output).toContain(`  초기화: ${command}\n`);
+    expect(output.indexOf(`▸ 초기화: ${command}`)).toBeGreaterThan(-1);
+    expect(output.indexOf(`▸ 초기화: ${command}`)).toBeLessThan(
+      output.indexOf("▸ 시험 실행 중..."),
+    );
+  });
+
+  it("--cassette 를 주면 2회차 save 에서 inner 호출이 새 케이스 수만큼만 늘어난다", async () => {
+    // 1회차는 파일이 없으므로 record 모드다. 전량이 서버로 나가고 flush 가 카세트를 남긴다.
+    const store = new Map<string, Cassette>();
+    const first = gateDeps({
+      choices: ["save"],
+      inputs: Array.from({ length: failingCases }, () => "s"),
+      confirms: [true, true],
+      cassetteStore: store,
+    });
+    await expect(
+      runGenerateCommand([...gateArgv, "--cassette", ".ohmymcp/w.json"], first.value),
+    ).resolves.toBe(0);
+    expect(first.calls).toHaveLength(baselineCases.length);
+    expect(store.get(".ohmymcp/w.json")?.interactions.length).toBeGreaterThan(0);
+    expect(first.output()).toContain("  카세트: .ohmymcp/w.json (신규 녹화)\n");
+
+    // 2회차는 파일이 있으므로 auto 모드다. 명세가 그대로면 새 케이스가 0개이고 서버를 다시
+    // 부르지 않는다. exists 는 출력 파일용 스텁이므로 카세트 존재는 따로 알려 준다.
+    const second = gateDeps({
+      choices: ["save"],
+      inputs: Array.from({ length: failingCases }, () => "s"),
+      confirms: [true, true],
+      cassetteStore: store,
+    });
+    second.value.exists = vi.fn(async (path: string) => path === ".ohmymcp/w.json");
+    await expect(
+      runGenerateCommand([...gateArgv, "--cassette", ".ohmymcp/w.json"], second.value),
+    ).resolves.toBe(0);
+    expect(second.calls).toEqual([]);
+    expect(second.output()).toContain("  카세트: .ohmymcp/w.json (재생)\n");
+  });
+
+  it("카세트 경고가 화면에 그대로 나온다", async () => {
+    let round = 0;
+    const d = gateDeps({
+      choices: ["save", "save"],
+      inputs: [
+        ...Array.from({ length: failingCases }, () => "?"),
+        ...Array.from({ length: failingCases }, () => "?"),
+      ],
+      confirms: [true, true],
+      // 같은 요청에 회차마다 다른 응답을 준다. record 가 경고를 만든다.
+      respond: () => ({
+        content: [{ type: "text", text: `round ${round++}` }],
+        isError: false,
+        raw: { round },
+      }),
+    });
+    await runGenerateCommand([...gateArgv, "--cassette", ".ohmymcp/w.json", "--record"], d.value);
+    expect(d.output()).toContain("→ 같은 요청에 다른 응답이 왔습니다: weather(");
+  });
+
+  it("approval.cases 가 실려도 suiteFingerprint 가 안 바뀐다", async () => {
+    const d = gateDeps({
+      choices: ["save"],
+      inputs: Array.from({ length: failingCases }, () => "s"),
+      confirms: [true, true],
+    });
+    await runGenerateCommand(gateArgv, d.value);
+    const saved = d.savedSuite();
+    if (saved === undefined) throw new Error("저장된 명세가 필요합니다.");
+    expect(saved.approval.cases).not.toBeUndefined();
+    expect(suiteFingerprint(saved)).toBe(saved.approval.fingerprint);
+    const { approval: _approval, ...withoutApproval } = saved;
+    expect(suiteFingerprint(withoutApproval as TestSuiteSpec)).toBe(saved.approval.fingerprint);
+  });
+
+  it("저장 후 검증 조건 셋이 approval.cases 가 있어도 통과한다", async () => {
+    // 조건 셋(validate·지문 재계산·approval.fingerprint 일치)이 하나라도 깨지면 link 까지 못 간다.
+    const d = gateDeps({
+      choices: ["save"],
+      inputs: Array.from({ length: failingCases }, () => "s"),
+      confirms: [true, true],
+    });
+    await expect(runGenerateCommand(gateArgv, d.value)).resolves.toBe(0);
+    expect(d.value.link).toHaveBeenCalledOnce();
+    expect(validateMcpSuite(d.savedSuite()).valid).toBe(true);
+  });
+
+  it("--baseline-only 는 시험 실행을 하지 않고 approval.cases 도 없다", async () => {
+    const d = gateDeps({ choices: [] });
+    await expect(runGenerateCommand([...gateArgv, "--baseline-only"], d.value)).resolves.toBe(0);
+    expect(d.calls).toEqual([]);
+    expect(d.savedSuite()?.approval.cases).toBeUndefined();
+  });
+
+  it("대화형 경로에서 연결이 검토 종료 시점에 닫힌다", async () => {
+    const d = gateDeps({
+      choices: ["save"],
+      inputs: Array.from({ length: failingCases }, () => "s"),
+      confirms: [true, true],
+    });
+    await runGenerateCommand(gateArgv, d.value);
+    expect(d.closeCount()).toBe(1);
+  });
+
+  it("검토를 cancel 로 끝내도 연결이 닫힌다", async () => {
+    const d = gateDeps({ choices: ["cancel"] });
+    await expect(runGenerateCommand(gateArgv, d.value)).resolves.toBe(0);
+    expect(d.closeCount()).toBe(1);
   });
 });

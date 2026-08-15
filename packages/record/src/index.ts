@@ -250,7 +250,19 @@ export function cassetteClient(inner: McpClient, options: CassetteClientOptions)
     },
 
     async callTool(toolName, args) {
-      const key = matchKey(toolName, args);
+      let key: string;
+      try {
+        assertJsonCloneable(args, "args");
+        key = matchKey(toolName, args);
+      } catch (error) {
+        if (mode === "replay") {
+          throw cassetteLookupFailure(toolName, args, cassette, options.cassettePath, error);
+        }
+
+        const result = await inner.callTool(toolName, args);
+        recordingFailures.push(cassetteRecordingFailure(displayRequest(toolName, args), error));
+        return result;
+      }
       const existing = interactions.get(key);
 
       if ((mode === "replay" || mode === "auto") && existing !== undefined) {
@@ -395,6 +407,30 @@ function cassetteRecordingFailure(operation: string, error: unknown): Error {
     lines.push(`  이유: ${String(error)}`);
   }
   lines.push("  → Date, Map, class instance는 JSON 객체나 문자열로 바꿔 반환하세요.");
+  return new Error(lines.join("\n"), { cause: error });
+}
+
+function cassetteLookupFailure(
+  toolName: string,
+  args: unknown,
+  cassette: Cassette,
+  cassettePath: string | undefined,
+  error: unknown,
+): Error {
+  const lines = [
+    `→ 이 args 로는 카세트를 조회할 수 없습니다: ${displayRequest(toolName, args)}`,
+    `  카세트: ${cassetteDescription(cassette, cassettePath)}`,
+  ];
+  if (error instanceof CassetteJsonError) {
+    lines.push(`  조회할 수 없는 값: ${error.path}`);
+    if (error.valueKind !== undefined) lines.push(`  값 종류: ${error.valueKind}`);
+    lines.push(`  이유: 카세트 JSON에는 ${error.reason}.`);
+  } else if (error instanceof Error) {
+    lines.push(`  이유: ${error.message}`);
+  } else {
+    lines.push(`  이유: ${String(error)}`);
+  }
+  lines.push("  → Date, Map, class instance는 JSON 객체나 문자열로 바꿔 호출하세요.");
   return new Error(lines.join("\n"), { cause: error });
 }
 
@@ -727,7 +763,11 @@ function formatDiffValue(value: unknown, missing = false): string {
 }
 
 function displayRequest(toolName: string, args: unknown): string {
-  return `${toolName}(${stableStringify(redact(args === undefined ? {} : args))})`;
+  try {
+    return `${toolName}(${stableStringify(redact(args === undefined ? {} : args))})`;
+  } catch {
+    return `${toolName}(<표시할 수 없는 인자>)`;
+  }
 }
 
 function errorCode(error: unknown): string | undefined {

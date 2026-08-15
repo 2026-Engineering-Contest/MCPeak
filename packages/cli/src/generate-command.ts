@@ -57,6 +57,8 @@ export interface GenerateCommandInput {
   readonly cassettePath?: string;
   /** `--record`. 카세트 파일이 있어도 새로 녹화한다. */
   readonly forceRecord: boolean;
+  /** `--force`. `--out` 에 파일이 있으면 지우고 새로 쓴다. 설계 문서 §5. */
+  readonly force: boolean;
   /** `--reset-cmd`. 시험 실행 직전 1회 실행한다. */
   readonly resetCmd?: string;
   /** 입력값 교정 단계를 돌릴지 여부. 기본은 실행이고 `--no-repair` 가 끈다. 설계 문서 §7. */
@@ -130,10 +132,48 @@ class OutputExistsError extends Error {
     super("output exists");
   }
 }
-/** 출력 파일 충돌 안내. 경로는 라벨 뒤에 두어 조사가 변수에 붙지 않게 한다. */
-function outputExistsFailure(deps: GenerateCommandDependencies, path: string): void {
+/**
+ * 출력 파일 충돌 안내. 경로는 라벨 뒤에 두어 조사가 변수에 붙지 않게 한다.
+ *
+ * 두 자리에서 같은 코드로 끊는다. 다른 것은 사용자가 무엇을 잃었는지뿐이라 그 한 마디만
+ * 갈라 적는다. 선검사는 아직 아무것도 안 했고, 저장 단계는 검토와 시험 실행을 이미 지났다.
+ * 설계 문서 §6.
+ */
+function outputExistsFailure(
+  deps: GenerateCommandDependencies,
+  path: string,
+  stage: "start" | "save" = "save",
+): void {
+  const lost = stage === "start" ? "시작하지" : "저장하지";
   deps.writeStderr(
-    `오류 [GENERATE_OUTPUT_EXISTS]: 출력 파일이 이미 있어 저장하지 않았습니다. 경로: ${path}\n해결: 다른 \`--out\` 경로를 지정하거나 기존 파일을 옮긴 뒤 다시 저장하세요.\n`,
+    `오류 [GENERATE_OUTPUT_EXISTS]: 출력 파일이 이미 있어 ${lost} 않았습니다. 경로: ${path}\n해결: 다른 \`--out\` 경로를 지정하거나, 기존 파일을 덮어쓰려면 \`--force\` 를 붙이세요.\n`,
+  );
+}
+/**
+ * `--force` 인데 기존 출력 파일을 지우지 못한 경우. `ENOENT` 는 원하는 상태와 같으므로
+ * 여기 오지 않는다. `GENERATE_FAILED` 로 뭉뚱그리면 사용자가 무엇을 확인해야 할지 모른다.
+ */
+class OutputReplaceError extends Error {
+  constructor(
+    readonly path: string,
+    readonly code: string | undefined,
+  ) {
+    super("output replace failed");
+  }
+}
+/**
+ * 기존 출력 파일 삭제 실패 안내. 원인을 단정하지 않는다. `--out` 이 디렉터리인지 권한
+ * 문제인지 여기서 구분할 수단이 없고, 그것을 알려고 `stat` 을 주입하지 않는다. 설계 문서 §6.
+ */
+function outputReplaceFailure(
+  deps: GenerateCommandDependencies,
+  path: string,
+  code: string | undefined,
+): void {
+  // 코드가 없으면 괄호를 통째로 뺀다. `(undefined)` 는 사용자에게 아무것도 알려주지 않는다.
+  const suffix = code === undefined ? "" : ` (${code})`;
+  deps.writeStderr(
+    `오류 [GENERATE_OUTPUT_REPLACE_FAILED]: 기존 출력 파일을 지우지 못해 저장하지 않았습니다. 경로: ${path}${suffix}\n해결: 그 경로가 디렉터리이거나 쓰기 권한이 없는지 확인하세요. 다른 \`--out\` 경로를 지정해도 됩니다.\n`,
   );
 }
 /** 커밋에 쓰는 hard link를 출력 디렉터리가 지원하지 않거나 권한이 없는 경우. */
@@ -186,9 +226,16 @@ const optionNames = new Set([
   "--record",
   "--reset-cmd",
   "--no-repair",
+  "--force",
 ]);
 /** 값을 받지 않는 옵션. `=` 를 붙여 쓸 수 없고 두 번 쓸 수 없다. */
-const flagNames = new Set(["--baseline-only", "--no-dry-run", "--record", "--no-repair"]);
+const flagNames = new Set([
+  "--baseline-only",
+  "--no-dry-run",
+  "--record",
+  "--no-repair",
+  "--force",
+]);
 function optionValue(argv: readonly string[], index: number, option: string): [string, number] {
   const item = argv[index];
   if (item === undefined) throw new UsageError(`\`${option}\` 옵션 값이 필요합니다.`);
@@ -267,6 +314,7 @@ export function parseGenerateCommand(argv: readonly string[]): GenerateCommandIn
     dryRun,
     cassettePath,
     forceRecord: flags.has("--record"),
+    force: flags.has("--force"),
     resetCmd,
     repair,
   });
@@ -316,7 +364,9 @@ async function saveSuite(
 ): Promise<void> {
   // 선검사는 사용자에게 더 빨리 알려주기 위한 것이고 **보장이 아니다.** 여기서 통과해도
   // 커밋 직전에 다른 프로세스가 같은 경로를 만들 수 있다. no-clobber 보장은 아래 link에 있다.
-  if (await deps.exists(input.outPath)) throw new OutputExistsError(input.outPath);
+  // `--force` 는 사용자가 이 경로를 지우겠다고 밝힌 것이므로 편의 검사를 건너뛴다.
+  if (!input.force && (await deps.exists(input.outPath)))
+    throw new OutputExistsError(input.outPath);
   const temporary = temporaryPath(input.outPath);
   let created = false;
   try {
@@ -347,6 +397,19 @@ async function saveSuite(
     // (docs/reports/task-r4.md: link는 EEXIST로 실패하며 기존 내용 PRECIOUS를 보존했고,
     // rename은 같은 상황에서 NEW로 덮어썼다). fallback을 넣는 순간 R4에서 없앤 데이터 손실
     // 결함이 그대로 돌아온다. 저장하지 못하는 편이 남의 파일을 날리는 것보다 낫다.
+    // `--force` 의 덮어쓰기. 지우고 link 하는 순서를 지킨다. rename 으로 바꾸지 마라.
+    // 덮어쓸 수 있는 primitive 를 두지 않는다는 것이 R4 의 결론이고, `--force` 는 "이 경로를
+    // 내가 지운다" 는 뜻이지 "무엇이든 덮어쓴다" 는 뜻이 아니다. 설계 문서 §5.
+    //
+    // 이 사이에 다른 프로세스가 같은 경로를 만들면 아래 link 가 EEXIST 로 실패한다. 그 창을
+    // 없애려고 rename 을 쓰면 남의 파일을 말없이 덮어쓰는 결함이 돌아온다.
+    if (input.force)
+      await deps.unlink(input.outPath).catch((error: unknown) => {
+        const code = (error as { code?: unknown } | null)?.code;
+        // 선검사와 저장 사이에 사용자가 파일을 치운 경우다. 결과가 원하는 상태와 같다.
+        if (code === "ENOENT") return;
+        throw new OutputReplaceError(input.outPath, typeof code === "string" ? code : undefined);
+      });
     try {
       await deps.link(temporary, input.outPath);
     } catch (error) {
@@ -1102,6 +1165,8 @@ async function runInteractiveReview(
           return 0;
         } catch (error) {
           if (error instanceof OutputExistsError) outputExistsFailure(deps, error.path);
+          else if (error instanceof OutputReplaceError)
+            outputReplaceFailure(deps, error.path, error.code);
           else if (error instanceof LinkUnsupportedError)
             linkUnsupportedFailure(deps, error.path, error.code);
           else safeFailure(deps, "SAVE_FAILED");
@@ -1373,6 +1438,13 @@ export async function runGenerateCommand(
     deps.writeStderr(`오류 [CLI_USAGE]: ${message}\n해결: ${GENERATE_USAGE_HINT}\n`);
     return 1;
   }
+  // 선검사. `--out` 은 파싱 때 이미 아는 값이라 서버에 붙기 전에 끊을 수 있다. 이 뒤로는
+  // 후보 검토, provider 승인, 실서버 시험 실행, 입력값 교정이 이어지고 그것을 다 치른 뒤
+  // 알려 주면 늦다. 설계 문서 §1·§4. 보장이 아니라 편의이므로 `--force` 면 건너뛴다.
+  if (!input.force && (await deps.exists(input.outPath))) {
+    outputExistsFailure(deps, input.outPath, "start");
+    return 1;
+  }
   if (!input.baselineOnly && !deps.reviewIO?.interactive) {
     deps.writeStderr(
       "오류 [GENERATE_INTERACTIVE_REQUIRED]: AI 검토에는 TTY가 필요합니다.\n해결: `--baseline-only`를 지정하거나 대화형 터미널에서 실행하세요.\n",
@@ -1429,6 +1501,8 @@ export async function runGenerateCommand(
     if (connection !== undefined) await connection.forceClose().catch(() => undefined);
     // 같은 결함이 비대화형 경로에도 있었다. 여기서도 원인이 뭉개지면 안 된다.
     if (error instanceof OutputExistsError) outputExistsFailure(deps, error.path);
+    else if (error instanceof OutputReplaceError)
+      outputReplaceFailure(deps, error.path, error.code);
     else if (error instanceof LinkUnsupportedError)
       linkUnsupportedFailure(deps, error.path, error.code);
     else

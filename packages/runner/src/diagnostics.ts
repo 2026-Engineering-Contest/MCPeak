@@ -102,6 +102,23 @@ export function toolNotFoundDiagnostic(expected: string, actual: string[]): Runn
 }
 
 /**
+ * 문장 **안에 섞인** 민감값을 치환한다.
+ *
+ * `sanitizeJsonValue` 는 값 전체가 `sensitiveValues` 와 같을 때만 치환한다. 명세의 입력값처럼
+ * 값 하나가 필드 하나인 자리에서는 그것으로 충분하다. 그런데 서버 오류 문장은 값이 문장 속에
+ * 박혀 나온다(`토큰 abc123 이 만료되었습니다`). 그 줄은 화면에 찍힐 뿐 아니라 교정 제안
+ * 요청에 실려 외부 provider 로 나가므로, 여기서만 부분 일치까지 치환한다. ADR-0027.
+ *
+ * 빈 문자열은 건너뛴다. 모든 자리에 끼어들어 문장을 통째로 지운다.
+ */
+const redactSubstrings = (text: string, options?: RunnerRedactionOptions): string => {
+  let result = text;
+  for (const secret of options?.sensitiveValues ?? [])
+    if (secret !== "") result = result.split(secret).join(REDACTED);
+  return result;
+};
+
+/**
  * 응답 본문을 진단 줄로 만든다. ADR-0027.
  *
  * 라벨을 붙이지 않는다. 이 줄은 cli 의 교정 요청 문안에 그대로 실리는데, 거기에 이미
@@ -109,8 +126,8 @@ export function toolNotFoundDiagnostic(expected: string, actual: string[]): Runn
  *
  * `text` 는 사람이 읽을 문장이므로 따옴표 없이 그대로 옮기고 줄마다 항목 하나로 나눈다.
  * `json` 은 구조가 보여야 하므로 compact JSON 한 줄로 적는다. 두 경로 모두 승인 화면과
- * 같은 redaction 을 거치고 `MAX_VALUE_STRING_CHARS` 에서 잘린다. 새 규칙을 만들지 않고
- * 기존 헬퍼를 쓴다.
+ * 같은 redaction 을 거치고, 그 위에 문장 안에 섞인 민감값까지 치환한 뒤
+ * `MAX_VALUE_STRING_CHARS` 에서 잘린다.
  */
 function responseBodyNotes(
   extraction: BodyExtraction,
@@ -118,12 +135,14 @@ function responseBodyNotes(
 ): string[] | undefined {
   if (!extraction.ok) return undefined;
   // JSON 은 한 줄이다. structuralValue 의 compact JSON 에는 개행이 없다.
-  if (extraction.form === "json") return [structuralValue(extraction.body, [], options).text];
+  if (extraction.form === "json")
+    return [redactSubstrings(structuralValue(extraction.body, [], options).text, options)];
   // text 형식의 본문은 항상 문자열이다. body.ts 가 그렇게만 만든다.
   const safe = sanitizeJsonValue(extraction.body, options);
   if (typeof safe !== "string") return undefined;
   // 자르기는 나누기 전 본문 전체에 건다. 줄마다 따로 자르면 긴 응답에서 총량이 안 잡힌다.
-  const { text, chars } = cut(safe);
+  // 치환을 자르기보다 먼저 한다. 잘라 놓고 치환하면 경계에 걸린 민감값이 남는다.
+  const { text, chars } = cut(redactSubstrings(safe, options));
   // 줄을 나눠 담는다. 한 줄로 뭉치면 개행이 이스케이프되어 리포터의 들여쓰기 밖으로 튄다.
   // 줄 안의 글자는 손대지 않는다. 서버가 `→` 를 글머리로 쓰면 그것도 그대로 나온다.
   const lines = withEllipsis(text, chars)

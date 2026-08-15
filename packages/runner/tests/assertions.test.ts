@@ -148,6 +148,42 @@ describe("Runner assertion", () => {
     expect(result.diagnostic?.notes).toEqual(["[REDACTED]"]);
   });
 
+  it("문장 안에 섞인 sensitiveValues도 가린다", () => {
+    // 서버 오류 문장은 값이 문장 속에 박혀 나온다. 이 줄은 교정 제안 요청에 실려 외부
+    // provider 로 나가므로 값 전체 일치만으로는 부족하다.
+    const result = assertIsError(
+      { content: null, isError: true, raw: null },
+      { type: "isError", expected: false },
+      () => ({ ok: true, body: "토큰 sk-abc 이 만료되었습니다", form: "text" }),
+      { redaction: { sensitiveValues: ["sk-abc"] } },
+    );
+
+    expect(result.diagnostic?.notes).toEqual(["토큰 [REDACTED] 이 만료되었습니다"]);
+  });
+
+  it("JSON 본문의 문장 안에 섞인 sensitiveValues도 가린다", () => {
+    const result = assertIsError(
+      { content: null, isError: true, raw: null },
+      { type: "isError", expected: false },
+      () => ({ ok: true, body: { error: "토큰 sk-abc 만료" }, form: "json" }),
+      { redaction: { sensitiveValues: ["sk-abc"] } },
+    );
+
+    expect(result.diagnostic?.notes).toEqual(['{"error":"토큰 [REDACTED] 만료"}']);
+  });
+
+  it("빈 문자열 sensitiveValues는 무시한다", () => {
+    // 빈 문자열을 치환하면 모든 자리에 끼어들어 문장을 통째로 지운다.
+    const result = assertIsError(
+      { content: null, isError: true, raw: null },
+      { type: "isError", expected: false },
+      () => ({ ok: true, body: "도시를 찾을 수 없습니다", form: "text" }),
+      { redaction: { sensitiveValues: [""] } },
+    );
+
+    expect(result.diagnostic?.notes).toEqual(["도시를 찾을 수 없습니다"]);
+  });
+
   it("상한을 넘는 본문을 자르고 원본 길이를 남긴다", () => {
     const body = "가".repeat(MAX_VALUE_STRING_CHARS + 30);
     const result = assertIsError(

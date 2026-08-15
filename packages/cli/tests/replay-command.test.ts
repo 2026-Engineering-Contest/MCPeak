@@ -174,7 +174,9 @@ describe("runReplayCommand", () => {
       }),
     });
     await expect(runReplayCommand(["suite.json", "--cassette", "c.json"], value)).resolves.toBe(1);
-    expect(writes.err.join("")).toContain("CASSETTE_READ_FAILED");
+    const err = writes.err.join("");
+    expect(err).toContain("CASSETTE_READ_FAILED");
+    expect(err).toContain("version 이 1 이 아닙니다");
   });
 
   /**
@@ -194,6 +196,24 @@ describe("runReplayCommand", () => {
     const { value, writes } = deps(await recordedCassette({ temp: 21 }));
     await runReplayCommand(["suite.json", "--cassette", "c.json"], value);
     expect(writes.err.join("")).not.toContain("마스킹된 값");
+  });
+
+  it("마스킹 경로가 많으면 총 개수와 표시 상한을 알려준다", async () => {
+    const { value, writes } = deps(
+      await recordedCassette({
+        apiKey0: "a",
+        apiKey1: "b",
+        apiKey2: "c",
+        apiKey3: "d",
+        apiKey4: "e",
+        apiKey5: "f",
+      }),
+    );
+    await runReplayCommand(["suite.json", "--cassette", "c.json"], value);
+
+    const err = writes.err.join("");
+    expect(err).toContain("마스킹된 경로 6개 중 5개만 표시합니다");
+    expect(err).not.toContain("apiKey5");
   });
 
   /**
@@ -252,6 +272,86 @@ describe("runReplayCommand", () => {
       finalize: vi.fn(async () => report("failed")),
     });
     await expect(runReplayCommand(["suite.json", "--cassette", "c.json"], value)).resolves.toBe(1);
+  });
+
+  it.each([
+    {
+      name: "지원하지 않는 명세 형식",
+      argv: ["suite.yaml", "--cassette", "c.json"],
+      overrides: {},
+      code: "SUITE_FORMAT_UNSUPPORTED",
+    },
+    {
+      name: "명세 읽기 실패",
+      argv: ["suite.json", "--cassette", "c.json"],
+      overrides: {
+        readFile: vi.fn(async () => {
+          throw new Error("read failed");
+        }),
+      },
+      code: "SUITE_READ_FAILED",
+    },
+    {
+      name: "잘못된 UTF-8",
+      argv: ["suite.json", "--cassette", "c.json"],
+      overrides: { readFile: vi.fn(async () => new Uint8Array([0xc3, 0x28])) },
+      code: "SUITE_ENCODING_INVALID",
+    },
+    {
+      name: "잘못된 JSON",
+      argv: ["suite.json", "--cassette", "c.json"],
+      overrides: { readFile: vi.fn(async () => new TextEncoder().encode("{")) },
+      code: "SUITE_JSON_INVALID",
+    },
+    {
+      name: "유효하지 않은 명세",
+      argv: ["suite.json", "--cassette", "c.json"],
+      overrides: { validateSuite: vi.fn(() => ({ valid: false as const, issues: [] })) },
+      code: "SUITE_VALIDATION_FAILED",
+    },
+  ] satisfies {
+    name: string;
+    argv: string[];
+    overrides: Partial<ReplayCommandDependencies>;
+    code: string;
+  }[])("$name 오류 계약을 지킨다", async ({ argv, overrides, code }) => {
+    const { value, writes } = deps(null, overrides);
+    await expect(runReplayCommand(argv, value)).resolves.toBe(1);
+    const err = writes.err.join("");
+    expect(err).toContain(`오류 [${code}]`);
+    expect(err).toContain("해결:");
+  });
+
+  it("validateSuite 가 던지면 CLI_INTERNAL_ERROR 로 정규화한다", async () => {
+    const { value, writes } = deps(null, {
+      validateSuite: vi.fn(() => {
+        throw new Error("runtime dependencies unavailable");
+      }),
+    });
+    await expect(runReplayCommand(["suite.json", "--cassette", "c.json"], value)).resolves.toBe(1);
+    expect(writes.err.join("")).toContain("CLI_INTERNAL_ERROR");
+  });
+
+  it("Runner 시작 실패를 구조화된 오류로 돌려준다", async () => {
+    const { value, writes } = deps(await recordedCassette(), {
+      startRunner: vi.fn(() => {
+        throw new Error("start failed");
+      }),
+    });
+    await expect(runReplayCommand(["suite.json", "--cassette", "c.json"], value)).resolves.toBe(1);
+    expect(writes.err.join("")).toContain("RUNNER_EXECUTION_FAILED");
+  });
+
+  it("Runner 종료 실패에 원인 문장을 보존한다", async () => {
+    const { value, writes } = deps(await recordedCassette(), {
+      finalize: vi.fn(async () => {
+        throw new Error("카세트에 없는 호출입니다: get_weather");
+      }),
+    });
+    await expect(runReplayCommand(["suite.json", "--cassette", "c.json"], value)).resolves.toBe(1);
+    const err = writes.err.join("");
+    expect(err).toContain("RUNNER_FINALIZATION_FAILED");
+    expect(err).toContain("카세트에 없는 호출입니다: get_weather");
   });
 
   it("사용 오류는 해결 안내와 함께 stderr 로 간다", async () => {

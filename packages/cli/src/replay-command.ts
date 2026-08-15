@@ -24,6 +24,7 @@ export type ReplayErrorCode =
   | "SUITE_ENCODING_INVALID"
   | "SUITE_JSON_INVALID"
   | "SUITE_VALIDATION_FAILED"
+  | "CLI_INTERNAL_ERROR"
   | "CASSETTE_NOT_FOUND"
   | "CASSETTE_READ_FAILED"
   | "CASSETTE_INCOMPLETE"
@@ -78,6 +79,10 @@ const dictionary: Record<Exclude<ReplayErrorCode, "CLI_USAGE">, Omit<ReplayFailu
   SUITE_VALIDATION_FAILED: {
     message: "MCP 테스트 명세가 유효하지 않습니다.",
     hint: "아래 명세 오류를 모두 수정하세요.",
+  },
+  CLI_INTERNAL_ERROR: {
+    message: "예상하지 못한 CLI 내부 오류가 발생했습니다.",
+    hint: "다시 실행한 뒤 재현 정보와 함께 이슈를 보고하세요.",
   },
   CASSETTE_NOT_FOUND: {
     message: "카세트 파일이 없습니다.",
@@ -187,17 +192,21 @@ const MAX_REDACTED_PATHS = 5;
  * 마스킹된 값의 JSON 경로를 모은다. 판정이 읽는 자리는 `response.content` 하나이므로 거기만 본다.
  * 값이 JSON 문자열이면 그 안까지 들어간다 — 카세트가 문자열 본문도 구조화해 마스킹하기 때문이다.
  */
-function redactedPaths(cassette: Cassette): string[] {
-  const found: string[] = [];
+function redactedPaths(cassette: Cassette): { paths: string[]; total: number } {
+  const paths: string[] = [];
+  let total = 0;
+  const add = (path: string): void => {
+    total++;
+    if (paths.length < MAX_REDACTED_PATHS) paths.push(path);
+  };
   const visit = (value: unknown, path: string): void => {
-    if (found.length >= MAX_REDACTED_PATHS) return;
     if (typeof value === "string") {
-      if (value === REDACTED) found.push(path);
+      if (value === REDACTED) add(path);
       else if (value.includes(REDACTED)) {
         try {
           visit(JSON.parse(value) as unknown, path);
         } catch {
-          found.push(path);
+          add(path);
         }
       }
       return;
@@ -211,8 +220,11 @@ function redactedPaths(cassette: Cassette): string[] {
   };
   for (const [index, interaction] of cassette.interactions.entries())
     visit(interaction.response.content, `interactions[${index}].response.content`);
-  return found;
+  return { paths, total };
 }
+
+const detail = (error: unknown): string =>
+  error instanceof Error && error.message !== "" ? `\n${error.message}` : "";
 
 const format = (failure: ReplayFailure): string => {
   const issues = (failure.issues ?? []).map(
@@ -274,7 +286,15 @@ export async function runReplayCommand(
     });
   }
 
-  const validated = dependencies.validateSuite(parsed);
+  let validated: SuiteValidationResult;
+  try {
+    validated = dependencies.validateSuite(parsed);
+  } catch {
+    return writeFailure(dependencies, {
+      code: "CLI_INTERNAL_ERROR",
+      ...dictionary.CLI_INTERNAL_ERROR,
+    });
+  }
   if (!validated.valid)
     return writeFailure(dependencies, {
       code: "SUITE_VALIDATION_FAILED",
@@ -285,10 +305,11 @@ export async function runReplayCommand(
   let cassette: Cassette | null;
   try {
     cassette = await dependencies.loadCassette(input.cassettePath);
-  } catch {
+  } catch (error) {
     return writeFailure(dependencies, {
       code: "CASSETTE_READ_FAILED",
-      ...dictionary.CASSETTE_READ_FAILED,
+      message: `${dictionary.CASSETTE_READ_FAILED.message}${detail(error)}`,
+      hint: dictionary.CASSETTE_READ_FAILED.hint,
     });
   }
   if (cassette === null)
@@ -314,11 +335,14 @@ export async function runReplayCommand(
    * 없어 재생이 라이브와 정확히 일치한다. ADR-0028.
    */
   const redacted = redactedPaths(cassette);
-  if (redacted.length > 0)
+  if (redacted.total > 0)
     dependencies.writeStderr(
       [
         "→ 카세트에 마스킹된 값이 있습니다. 이 자리의 판정은 실제 서버와 다를 수 있습니다.",
-        ...redacted.map((path) => `  ${path}`),
+        ...redacted.paths.map((path) => `  ${path}`),
+        ...(redacted.total > redacted.paths.length
+          ? [`  → 마스킹된 경로 ${redacted.total}개 중 ${redacted.paths.length}개만 표시합니다.`]
+          : []),
         "  → 이 케이스의 결과를 근거로 쓰기 전에 test 명령으로 한 번 확인하세요.",
         "",
       ].join("\n"),
@@ -348,10 +372,11 @@ export async function runReplayCommand(
       execution,
       shutdown: { client, close: () => client.close(), forceClose: () => client.close() },
     });
-  } catch {
+  } catch (error) {
     return writeFailure(dependencies, {
       code: "RUNNER_FINALIZATION_FAILED",
-      ...dictionary.RUNNER_FINALIZATION_FAILED,
+      message: `${dictionary.RUNNER_FINALIZATION_FAILED.message}${detail(error)}`,
+      hint: dictionary.RUNNER_FINALIZATION_FAILED.hint,
     });
   }
 

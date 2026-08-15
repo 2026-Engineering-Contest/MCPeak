@@ -2,7 +2,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import packageMetadata from "../package.json";
 import { nodeGenerateDependencies, nodeReviewIO, runGenerateCommand } from "./generate-command.js";
 import { commandHelp, GLOBAL_HELP } from "./help.js";
-import { runReplayCommand } from "./replay-command.js";
+import { type ReplayCommandDependencies, runReplayCommand } from "./replay-command.js";
 import { parseTestCommand, runCli } from "./test-command.js";
 
 export type Command = (argv: string[]) => Promise<number>;
@@ -47,7 +47,7 @@ const unavailableRuntimeDependencies = {
  * replay 는 `connect` 를 쓰지 않는다. 대신 카세트 로더가 필요하다. 런타임 의존성을 못 불러도
  * 사용 오류는 정상적으로 내야 하므로, 실제로 쓰이기 전에 끝나는 경로를 위해 자리만 채운다.
  */
-const unavailableReplayDependencies = {
+const unavailableReplayDependencies: ReplayCommandDependencies = {
   ...unavailableRuntimeDependencies,
   loadCassette: async (): Promise<never> => {
     throw new Error("runtime dependencies unavailable");

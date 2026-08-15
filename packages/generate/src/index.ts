@@ -63,6 +63,30 @@ export {
   computeCoverage,
   type ToolCoverage,
 } from "./coverage.js";
+export { diagnosisPrompt } from "./diagnosis-prompt.js";
+export type {
+  DiagnosisDispatchResult,
+  DiagnosisRequestBinding,
+  DiagnosisRequestPreview,
+  DiagnosisValidation,
+} from "./diagnosis-request.js";
+export {
+  DEFAULT_MAX_REPAIR_CASES,
+  dispatchDiagnosisRequest,
+  MAX_REPAIR_STDERR_BYTES,
+  prepareDiagnosisRequest,
+  validateDiagnosisResult,
+} from "./diagnosis-request.js";
+export type {
+  DiagnosisCause,
+  DiagnosisDiagnostic,
+  DiagnosisFailure,
+  DiagnosisProcessDiagnostics,
+  DiagnosisRequest,
+  DiagnosisResult,
+  ServerDiagnosisProvider,
+} from "./diagnosis-schema.js";
+export { DIAGNOSIS_PROVIDER_SCHEMA, MAX_CAUSE_CHARS } from "./diagnosis-schema.js";
 export type {
   AuthoringProviderFailureCode,
   AuthoringProviderFailureReason,

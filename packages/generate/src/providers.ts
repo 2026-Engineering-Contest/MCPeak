@@ -235,6 +235,8 @@ function makeProvider(
       shell: false as const,
     };
     if (id === "codex") {
+      // 진단 경로도 이 이름을 쓴다. 실행마다 만드는 임시 cwd 안의 파일이라 이름은 동작에
+      // 영향이 없고, authoring 과 진단의 차이를 stdin·스키마 둘로만 유지하기 위해서다.
       const schemaName = "authoring-output-schema.json";
       return run({
         ...common,

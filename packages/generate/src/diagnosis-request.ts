@@ -4,6 +4,7 @@ import {
   DEFAULT_PROVIDER_TIMEOUT_MS,
   MAX_REQUEST_BYTES,
   type McpToolContext,
+  type PublicProviderFailure,
 } from "./authoring-request.js";
 import { deepFreeze, sha256 } from "./canonical.js";
 import {
@@ -14,7 +15,12 @@ import {
   type DiagnosisRequest,
   type DiagnosisResult,
   MAX_CAUSE_CHARS,
+  type ServerDiagnosisProvider,
 } from "./diagnosis-schema.js";
+import type {
+  AuthoringProviderFailureCode,
+  AuthoringProviderFailureReason,
+} from "./provider-process.js";
 import { sanitizeRedactable, TOOL_CONTRACT_PATHS } from "./redaction.js";
 import type { JsonValue } from "./schema.js";
 
@@ -48,6 +54,18 @@ export interface DiagnosisRequestPreview {
   };
   readonly binding: DiagnosisRequestBinding;
 }
+
+/**
+ * 승인 검사에 쓰는 요청 상태. `authoring-request.ts` 와 같은 방식이지만 맵은 여기 따로 둔다.
+ * 두 통로의 상태가 한 맵에 섞이면 한쪽 preview 로 다른 쪽 요청을 보낼 여지가 생긴다.
+ */
+type DiagnosisState = {
+  readonly request: DiagnosisRequest;
+  readonly fingerprint: string;
+  readonly providerId: "codex" | "claude";
+  readonly timeoutMs: number;
+};
+const diagnosisRequests = new WeakMap<DiagnosisRequestPreview, DiagnosisState>();
 
 function frozen<T>(value: T): T {
   return deepFreeze(structuredClone(value));
@@ -176,7 +194,10 @@ export function prepareDiagnosisRequest(options: {
   // 사용자는 어떤 근거가 빠졌는지 모른다. 설계서 §7.3.
   if (byte(request) > MAX_REQUEST_BYTES) throw new RangeError("request byte limit을 초과했습니다.");
 
-  return frozen({
+  // sha256 은 canonicalJson 으로 직렬화한 뒤 해시한다(runner canonical.ts). 키 순서에
+  // 의존하지 않는 지문이라 같은 입력이면 항상 같은 값이 나온다.
+  const fingerprint = sha256(request);
+  const preview = frozen({
     request,
     byteLength: byte(request),
     providerId: options.providerId,
@@ -185,12 +206,19 @@ export function prepareDiagnosisRequest(options: {
     maxResultBytes,
     redactionsApplied: true as const,
     requiresApproval: true as const,
-    // sha256 은 canonicalJson 으로 직렬화한 뒤 해시한다(runner canonical.ts). 키 순서에
-    // 의존하지 않는 지문이라 같은 입력이면 항상 같은 값이 나온다.
-    fingerprint: sha256(request),
+    fingerprint,
     omitted: { failures: omittedFailures, stderrBytes: omittedStderrBytes },
     binding: frozen({} as never),
   });
+  // 승인 검사가 대조할 것을 여기서 잠근다. preview 를 들고 오는 쪽이 무엇을 바꿔 와도
+  // 나가는 것은 이 시점에 고정된 request 다.
+  diagnosisRequests.set(preview, {
+    request,
+    fingerprint,
+    providerId: options.providerId,
+    timeoutMs: preview.providerTimeoutMs,
+  });
+  return preview;
 }
 
 export type DiagnosisValidation =
@@ -289,4 +317,108 @@ export function validateDiagnosisResult(
     status: "ok",
     result: frozen({ status: "diagnosis" as const, causes: clamped, discarded }),
   };
+}
+
+export type DiagnosisDispatchResult =
+  | { readonly status: "notApproved" }
+  | { readonly status: "approvalInvalidated" }
+  | { readonly status: "providerFailed"; readonly failure: PublicProviderFailure }
+  | { readonly status: "invalid" }
+  | { readonly status: "diagnosis"; readonly result: DiagnosisResult };
+
+const providerFailureCodes = new Set<AuthoringProviderFailureCode>([
+  "providerUnavailable",
+  "nonZeroExit",
+  "timedOut",
+  "cancelled",
+  "outputLimitExceeded",
+  "invalidUtf8",
+  "invalidJson",
+  "schemaMismatch",
+  "internal",
+]);
+const providerFailureReasons = new Set<AuthoringProviderFailureReason>([
+  "notAuthenticated",
+  "unknownModel",
+  "rateLimited",
+  "badRequest",
+  "serverError",
+]);
+
+/**
+ * provider 오류를 화면에 내보낼 수 있는 닫힌 형태로 접는다. 열거형 멤버만 통과시켜
+ * 조작된 오류 객체의 임의 문자열이 UI 로 새지 않게 한다. raw stdout·stderr 는 담지 않는다.
+ */
+function publicDiagnosisFailure(error: unknown, state: DiagnosisState): PublicProviderFailure {
+  const source = error as {
+    code?: unknown;
+    exitCode?: unknown;
+    reason?: unknown;
+    stderr?: { captured?: unknown; truncated?: unknown };
+  };
+  const code =
+    typeof source?.code === "string" &&
+    providerFailureCodes.has(source.code as AuthoringProviderFailureCode)
+      ? (source.code as AuthoringProviderFailureCode)
+      : "internal";
+  const exitCode =
+    typeof source?.exitCode === "number" &&
+    Number.isInteger(source.exitCode) &&
+    source.exitCode >= 0
+      ? source.exitCode
+      : undefined;
+  const stderr =
+    typeof source?.stderr?.captured === "boolean" && typeof source.stderr.truncated === "boolean"
+      ? { captured: source.stderr.captured, truncated: source.stderr.truncated }
+      : undefined;
+  const reason =
+    typeof source?.reason === "string" &&
+    providerFailureReasons.has(source.reason as AuthoringProviderFailureReason)
+      ? (source.reason as AuthoringProviderFailureReason)
+      : undefined;
+  return {
+    providerId: state.providerId,
+    code,
+    timeoutMs: state.timeoutMs,
+    exitCode,
+    reason,
+    stderr,
+  };
+}
+
+/**
+ * 승인된 진단 요청을 provider 로 보낸다.
+ *
+ * 승인 검사는 `dispatchAuthoringRequest` 와 같은 조건이다. **사용자가 본 것과 나가는 것이
+ * 같다는 보장이 이 검사다.** 느슨하게 만들지 않는다. 보내는 것은 preview 가 들고 있는 request
+ * 가 아니라 준비 시점에 맵에 잠근 `state.request` 다.
+ */
+export async function dispatchDiagnosisRequest(options: {
+  provider: ServerDiagnosisProvider;
+  preview: DiagnosisRequestPreview;
+  approval: { approved: boolean; fingerprint: string };
+  signal?: AbortSignal;
+}): Promise<DiagnosisDispatchResult> {
+  const state = diagnosisRequests.get(options.preview);
+  if (!options.approval.approved) return { status: "notApproved" };
+  if (
+    state === undefined ||
+    options.approval.fingerprint !== state.fingerprint ||
+    options.preview.fingerprint !== state.fingerprint ||
+    sha256(options.preview.request) !== state.fingerprint ||
+    options.provider.id !== state.providerId ||
+    (options.provider.model !== undefined && options.provider.model !== options.preview.model)
+  )
+    return { status: "approvalInvalidated" };
+  try {
+    const raw = await options.provider.diagnose(state.request, {
+      signal: options.signal,
+      timeoutMs: state.timeoutMs,
+    });
+    const validation = validateDiagnosisResult(raw, options.preview);
+    if (validation.status !== "ok") return { status: "invalid" };
+    return { status: "diagnosis", result: validation.result };
+  } catch (error) {
+    return { status: "providerFailed", failure: publicDiagnosisFailure(error, state) };
+  }
 }

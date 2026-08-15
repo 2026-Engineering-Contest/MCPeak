@@ -927,7 +927,7 @@ pnpm --filter ohmymcp test:e2e; echo "e2e exit=$?"
 | 거짓 신호 | 이 작업에서의 모습 | 진실 기준 |
 |---|---|---|
 | 테스트 명령이 즉시 exit 0 | `pnpm --filter @ohmymcp/mock test` 는 **존재하지 않는 스크립트**다. `packages/mock/package.json` 에 `test` 가 없다 | `npx vitest run packages/mock` 을 쓰고 출력에 `Test Files ... passed` 가 있는지 본다 |
-| 문장 테스트 녹색 | `toThrow(문자열)` 은 **부분 일치**다. 문장이 잘려도 통과한다 | 문장 전문을 `.join("\n")` 으로 만들어 통째로 넘긴다 |
+| 문장 테스트 녹색 | `toThrow(문자열)` 은 **부분 일치**다 — chai 가 `indexOf` 로 본다. 문장 뒤에 줄이 더 붙어도 통과하고, **전문을 통째로 넘겨도 마찬가지다** | `toThrow(new Error(전문))` 으로 넘겨 완전 일치를 건다. 실제로 고정됐는지는 문장 끝에 한 줄을 임시로 붙여 **실패를 본 뒤** 되돌려 확인한다 |
 | 깊이 테스트 녹색 | 상한 계산을 틀려 실제로는 상한 아래를 넣었다 | 실패하는 깊이를 `MAX_KEY_DEPTH + 2` 로 쓰고, 상한과 같은 깊이가 **통과하는** 테스트를 짝으로 둔다 |
 | 결정론성 테스트 녹색 | `value.map(stableKey)` 가 인덱스를 `depth` 로 넘기는데 얕은 배열이라 안 걸렸다 | T4 Step 6 에서 일부러 되돌려 실패를 본다 |
 | 종료 코드가 0 으로 보임 | 파이프 뒤에서 `$?` 를 읽었다 | `cmd >/dev/null 2>&1; echo $?` |

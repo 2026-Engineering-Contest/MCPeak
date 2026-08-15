@@ -79,52 +79,62 @@ describe("assertKeyable — 문장 전문", () => {
     const circular: Record<string, unknown> = { a: 1 };
     circular.self = circular;
     expect(() => assertKeyable(circular, source)).toThrow(
-      [
-        "→ mock.on('add', ...) 의 인자로 매칭 키를 만들 수 없습니다: 순환 참조",
-        "→ 위치: args.self",
-        "→ JSON 에는 순환 참조가 없어서 이 주입은 어떤 호출과도 맞지 않습니다. 참조를 끊고 값을 펼쳐 넘기세요.",
-      ].join("\n"),
+      new Error(
+        [
+          "→ mock.on('add', ...) 의 인자로 매칭 키를 만들 수 없습니다: 순환 참조",
+          "→ 위치: args.self",
+          "→ JSON 에는 순환 참조가 없어서 이 주입은 어떤 호출과도 맞지 않습니다. 참조를 끊고 값을 펼쳐 넘기세요.",
+        ].join("\n"),
+      ),
     );
   });
 
   it("희소 배열", () => {
     // biome-ignore lint/suspicious/noSparseArray: 희소 배열 판정을 테스트하려면 빈 슬롯이 필요하다.
     expect(() => assertKeyable({ items: [1, , 3] }, source)).toThrow(
-      [
-        "→ mock.on('add', ...) 의 인자로 매칭 키를 만들 수 없습니다: 희소 배열",
-        "→ 위치: args.items[1] — 비어 있는 자리",
-        "→ 와이어를 건너오면 빈 자리가 null 로 채워집니다. 빈 자리에 null 을 명시하세요.",
-      ].join("\n"),
+      new Error(
+        [
+          "→ mock.on('add', ...) 의 인자로 매칭 키를 만들 수 없습니다: 희소 배열",
+          "→ 위치: args.items[1] — 비어 있는 자리",
+          "→ 와이어를 건너오면 빈 자리가 null 로 채워집니다. 빈 자리에 null 을 명시하세요.",
+        ].join("\n"),
+      ),
     );
   });
 
   it("유한하지 않은 수", () => {
     expect(() => assertKeyable({ n: NaN }, source)).toThrow(
-      [
-        "→ mock.on('add', ...) 의 인자로 매칭 키를 만들 수 없습니다: 유한하지 않은 수",
-        "→ 위치: args.n — 발견: NaN",
-        "→ JSON 에는 NaN · Infinity 가 없습니다. 유한한 수를 쓰거나 그 상태를 나타내는 문자열을 쓰세요.",
-      ].join("\n"),
+      new Error(
+        [
+          "→ mock.on('add', ...) 의 인자로 매칭 키를 만들 수 없습니다: 유한하지 않은 수",
+          "→ 위치: args.n — 발견: NaN",
+          "→ JSON 에는 NaN · Infinity 가 없습니다. 유한한 수를 쓰거나 그 상태를 나타내는 문자열을 쓰세요.",
+        ].join("\n"),
+      ),
     );
   });
 
   it("JSON 으로 표현할 수 없는 값", () => {
     expect(() => assertKeyable({ when: new Date(0) }, source)).toThrow(
-      [
-        "→ mock.on('add', ...) 의 인자로 매칭 키를 만들 수 없습니다: JSON 으로 표현할 수 없는 값",
-        "→ 위치: args.when — 발견: Date",
-        "→ 매칭 키가 되는 것은 객체 · 배열 · 문자열 · 유한한 수 · 불리언 · null 뿐입니다. 직렬화한 값으로 바꿔 넘기세요 (예: Date → toISOString()).",
-      ].join("\n"),
+      new Error(
+        [
+          "→ mock.on('add', ...) 의 인자로 매칭 키를 만들 수 없습니다: JSON 으로 표현할 수 없는 값",
+          "→ 위치: args.when — 발견: Date",
+          "→ 매칭 키가 되는 것은 객체 · 배열 · 문자열 · 유한한 수 · 불리언 · null 뿐입니다. 직렬화한 값으로 바꿔 넘기세요 (예: Date → toISOString()).",
+        ].join("\n"),
+      ),
     );
   });
 
   it("너무 깊은 중첩", () => {
     expect(() => assertKeyable(nest(MAX_KEY_DEPTH + 2), source)).toThrow(
-      [
-        "→ mock.on('add', ...) 의 인자로 매칭 키를 만들 수 없습니다: 중첩이 너무 깊습니다",
-        `→ 위치: 깊이 ${MAX_KEY_DEPTH + 1} — 상한: ${MAX_KEY_DEPTH}`,
-        "→ 목에 넘기는 인자는 테스트가 읽을 수 있는 크기여야 합니다. 필요한 필드만 넘기세요.",
-      ].join("\n"),
+      new Error(
+        [
+          "→ mock.on('add', ...) 의 인자로 매칭 키를 만들 수 없습니다: 중첩이 너무 깊습니다",
+          `→ 위치: 깊이 ${MAX_KEY_DEPTH + 1} — 상한: ${MAX_KEY_DEPTH}`,
+          "→ 목에 넘기는 인자는 테스트가 읽을 수 있는 크기여야 합니다. 필요한 필드만 넘기세요.",
+        ].join("\n"),
+      ),
     );
   });
 

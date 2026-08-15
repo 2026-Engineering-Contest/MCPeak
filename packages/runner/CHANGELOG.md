@@ -1,5 +1,25 @@
 # @ohmymcp/runner
 
+## 0.7.0
+
+### Minor Changes
+
+- ec99eab: runner: 명세의 `approval` 블록이 케이스별 판정을 담을 수 있습니다. `approval.cases` 에
+  `{ id, status }` 를 배열로 적고 `status` 는 `passed` 와 `serverDefect` 둘뿐입니다. 검증과
+  `MCP_SUITE_JSON_SCHEMA` 가 함께 넓어지고 `CaseApprovalStatus` · `SuiteCaseApproval` 타입을
+  내보냅니다. `cases` 는 선택적이라 기존 명세 파일은 그대로 유효하고, `approval` 은 지문 계산에서
+  빠지므로 지문도 바뀌지 않습니다. `approval.cases[].id` 가 실재하는 케이스인지는 검증하지
+  않습니다. 케이스를 지우는 정상 편집이 명세 파일을 깨진 것으로 만들지 않기 위해서입니다.
+- 0f4e5fd: runner: `isError` 단언이 실패하면 서버가 돌려준 응답 본문을 진단에 함께 싣습니다. 지금까지는
+  `정상 응답을 기대했지만 오류 응답을 받았습니다.` 라는 고정 문장과 두 불리언만 담겨 있어서,
+  서버가 왜 거절했는지가 화면에 한 글자도 나오지 않았습니다. 이제 본문이 위반 줄과 같은 `→ `
+  형식으로 붙고, 여러 줄이면 줄마다 한 항목입니다.
+
+  `RunnerDiagnostic` 에 선택 필드 `notes?: string[]` 이 생기고 리포터가 그것을 찍습니다. 다른
+  진단은 채우지 않으므로 출력이 그대로입니다. `assertIsError` 는 본문 접근자와 redaction 옵션을
+  더 받습니다. 본문에는 승인 화면과 같은 redaction 이 적용되고 `MAX_VALUE_STRING_CHARS` 에서
+  잘립니다. 본문 추출이 실패하면 아무것도 붙이지 않습니다.
+
 ## 0.6.1
 
 ### Patch Changes

@@ -8,6 +8,7 @@ import type {
 } from "@ohmymcp/runner";
 import { suiteFingerprint } from "@ohmymcp/runner";
 import { describe, expect, it, vi } from "vitest";
+import { TEST_USAGE_HINT } from "../src/help.js";
 import { parseTestCommand, runCli, type TestCommandDependencies } from "../src/test-command.js";
 
 const suite: TestSuiteSpec = { schemaVersion: 1, id: "suite", name: "Suite", cases: [] };
@@ -242,7 +243,7 @@ describe("runCli", () => {
       expect(await runCli(argv, d.value)).toBe(1);
       expect(d.writes.out).toEqual([]);
       expect(d.writes.err.join("")).toBe(
-        `오류 [CLI_USAGE]: ${message}\n해결: 사용법: ohmymcp test <suite.json> --command <executable> [--arg <value> ...] [--json] [--junit <path>] [--stderr-lines <N>]\n`,
+        `오류 [CLI_USAGE]: ${message}\n해결: ${TEST_USAGE_HINT}\n`,
       );
       expect(d.value.readFile).not.toHaveBeenCalled();
       expect(d.value.connect).not.toHaveBeenCalled();

@@ -1,5 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
+import packageMetadata from "../package.json";
 import { nodeGenerateDependencies, nodeReviewIO, runGenerateCommand } from "./generate-command.js";
+import { commandHelp, GLOBAL_HELP } from "./help.js";
 import { parseTestCommand, runCli } from "./test-command.js";
 
 export type Command = (argv: string[]) => Promise<number>;
@@ -41,6 +43,24 @@ const unavailableRuntimeDependencies = {
 };
 
 export async function run(argv: string[]): Promise<number> {
+  if (
+    argv.length === 0 ||
+    (argv.length === 1 && ["--help", "-h", "help"].includes(argv[0] ?? ""))
+  ) {
+    process.stdout.write(GLOBAL_HELP);
+    return 0;
+  }
+  if (argv.length === 2) {
+    const command = argv[0] === "help" ? argv[1] : argv[1] === "--help" ? argv[0] : undefined;
+    if (command === "test" || command === "generate") {
+      process.stdout.write(commandHelp(command));
+      return 0;
+    }
+  }
+  if (argv.length === 1 && argv[0] === "--version") {
+    process.stdout.write(`ohmymcp ${packageMetadata.version}\n`);
+    return 0;
+  }
   if (argv[0] === "generate") {
     let core: typeof import("@ohmymcp/core");
     let runner: typeof import("@ohmymcp/runner");

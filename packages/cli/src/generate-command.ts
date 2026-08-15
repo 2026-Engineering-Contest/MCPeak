@@ -18,9 +18,9 @@ import type {
   TestSuiteSpec,
 } from "@ohmymcp/runner";
 import { describeSpecFinding, suiteFingerprint } from "@ohmymcp/runner";
+import { GENERATE_USAGE_HINT } from "./help.js";
 
-export const GENERATE_USAGE =
-  "사용법: ohmymcp generate --suite-id <id> --name <name> --out <suite.json> --command <executable> [--arg <value> ...] [--baseline-only] [--provider <codex|claude>] [--model <model>]";
+export { GENERATE_USAGE } from "./help.js";
 
 export interface GenerateCommandInput {
   readonly suiteId: string;
@@ -711,7 +711,7 @@ export async function runGenerateCommand(
   } catch (error) {
     const message =
       error instanceof UsageError ? error.message : "generate 입력을 해석할 수 없습니다.";
-    deps.writeStderr(`오류 [CLI_USAGE]: ${message}\n해결: ${GENERATE_USAGE}\n`);
+    deps.writeStderr(`오류 [CLI_USAGE]: ${message}\n해결: ${GENERATE_USAGE_HINT}\n`);
     return 1;
   }
   if (!input.baselineOnly && !deps.reviewIO?.interactive) {

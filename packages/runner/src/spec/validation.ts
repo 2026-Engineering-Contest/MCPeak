@@ -330,6 +330,50 @@ function validateResponseSchema(
     }
   }
 }
+/**
+ * `approval.cases` 를 검증한다. 설계 문서 §7.
+ *
+ * 값이 어긋난 자리는 전부 `INVALID_VALUE` 로 낸다. 모르는 키만 `unknowns()` 가 `UNKNOWN_FIELD`
+ * 로 따로 낸다. 이 블록은 사람이 손으로 쓰는 자리가 아니라 `generate` 의 시험 실행이 적는
+ * 자리라서, 형식이 어긋났다는 사실 하나면 고칠 곳이 정해진다.
+ *
+ * **`approval.cases[].id` 가 `cases[].id` 에 실재하는지는 검사하지 않는다.** 케이스를 지우는
+ * 정상 편집이 파일을 깨진 것으로 만들면 안 된다. 설계 문서 §7.3.
+ */
+function validateApprovalCases(value: unknown, issues: SuiteValidationIssue[]): void {
+  if (!Array.isArray(value)) {
+    issue(issues, "INVALID_VALUE", "approval.cases");
+    return;
+  }
+  const seen = new Set<string>();
+  value.forEach((entry, index) => {
+    const path = `approval.cases[${index}]`;
+    if (!plain(entry)) {
+      issue(issues, "INVALID_VALUE", path);
+      return;
+    }
+    const id = entry.id;
+    if (typeof id !== "string" || !nonEmpty(id)) issue(issues, "INVALID_VALUE", `${path}.id`);
+    else if (seen.has(id))
+      issueWith(
+        issues,
+        "INVALID_VALUE",
+        `${path}.id`,
+        `승인 판정에 같은 케이스 id '${id}' 가 두 번 있습니다.`,
+        "케이스마다 한 줄만 남기세요. 뒤에 온 판정이 앞을 덮지 않습니다.",
+      );
+    else seen.add(id);
+    if (entry.status !== "passed" && entry.status !== "serverDefect")
+      issueWith(
+        issues,
+        "INVALID_VALUE",
+        `${path}.status`,
+        "승인 판정은 'passed' 또는 'serverDefect' 여야 합니다.",
+        "이 블록은 generate 의 시험 실행이 적습니다. 손으로 고쳤다면 두 값 중 하나로 되돌리세요.",
+      );
+    unknowns(entry, ["id", "status"], path, issues);
+  });
+}
 export function validateMcpSuite(input: unknown): SuiteValidationResult {
   const issues: SuiteValidationIssue[] = [];
   if (!plain(input)) {
@@ -354,7 +398,8 @@ export function validateMcpSuite(input: unknown): SuiteValidationResult {
         issue(issues, "INVALID_TYPE", "approval.fingerprint");
       else if (!HEX64.test(approval.fingerprint))
         issue(issues, "INVALID_VALUE", "approval.fingerprint");
-      unknowns(approval, ["fingerprint"], "approval", issues);
+      if ("cases" in approval) validateApprovalCases(approval.cases, issues);
+      unknowns(approval, ["fingerprint", "cases"], "approval", issues);
     }
   }
   unknowns(

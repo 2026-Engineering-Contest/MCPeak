@@ -4,12 +4,30 @@ export type JsonObject = { [key: string]: JsonValue };
 export type ReadonlyJsonValue = JsonPrimitive | readonly ReadonlyJsonValue[] | ReadonlyJsonObject;
 export type ReadonlyJsonObject = { readonly [key: string]: ReadonlyJsonValue };
 
+/**
+ * 승인 시점에 사람이 케이스에 매긴 판정.
+ * `serverDefect` 는 "케이스는 맞고 서버가 틀렸다" 는 뜻이다. 저장은 하되 실행 판정은 바꾸지
+ * 않는다. 설계 문서 §9. 분류 셋 중 `specError` 는 파일에 남지 않는다. 설계 문서 §7.2.
+ */
+export type CaseApprovalStatus = "passed" | "serverDefect";
+
+export interface SuiteCaseApproval {
+  /** 대상 케이스의 id. `cases[].id` 와 같은 값이지만 실재 여부는 검증하지 않는다(§7.3). */
+  readonly id: string;
+  readonly status: CaseApprovalStatus;
+}
+
 export interface SuiteApproval {
   /**
    * 승인 시점 명세의 sha256 hex 64자, 소문자.
    * 이 블록 자신은 지문 계산에서 제외된다. 계산 규칙은 suiteFingerprint 하나가 소유한다.
    */
-  fingerprint: string;
+  readonly fingerprint: string;
+  /**
+   * 케이스별 판정. 시각·환경을 넣지 않는다. 결정론성 계약이 깨지고 "언제 승인했나" 는 git 이
+   * 답한다. 설계 문서 §7.1.
+   */
+  readonly cases?: readonly SuiteCaseApproval[];
 }
 
 export interface TestSuiteSpec {

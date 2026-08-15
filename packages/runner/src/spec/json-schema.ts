@@ -35,7 +35,21 @@ export const MCP_SUITE_JSON_SCHEMA: ReadonlyJsonObject = freeze<ReadonlyJsonObje
       type: "object",
       additionalProperties: false,
       required: ["fingerprint"],
-      properties: { fingerprint: { type: "string", pattern: "^[0-9a-f]{64}$" } },
+      properties: {
+        fingerprint: { type: "string", pattern: "^[0-9a-f]{64}$" },
+        // 중복 id 는 런타임 검증만 잡는다. JSON Schema 의 uniqueItems 는 항목 전체가 같을 때만
+        // 걸려서 status 가 다른 중복을 통과시킨다. 두 계약이 갈리는 지점을 여기 적어 둔다.
+        cases: { type: "array", items: { $ref: "#/$defs/suiteCaseApproval" } },
+      },
+    },
+    suiteCaseApproval: {
+      type: "object",
+      additionalProperties: false,
+      required: ["id", "status"],
+      properties: {
+        id: { $ref: "#/$defs/nonEmptyString" },
+        status: { enum: ["passed", "serverDefect"] },
+      },
     },
     jsonValue: {
       oneOf: [

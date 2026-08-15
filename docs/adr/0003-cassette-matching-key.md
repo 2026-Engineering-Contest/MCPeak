@@ -146,11 +146,13 @@ export interface Cassette {
 - `secret`
 - `password`
 
-저장 직전 마스킹은 `interactions`와 `tools`에 모두 적용한다. MCP 응답의
+요청 `args`는 interaction 생성 시점에 먼저 마스킹한다. 저장된 request를 사람이 열어도
+요청 비밀값 원문이 남지 않게 하기 위해서다. 응답 `content`/`raw`와 `tools`는 런타임 내부
+카세트에서 원문을 유지하되, `onFlush`에는 마스킹된 저장용 카세트만 넘긴다. MCP 응답의
 `content[].text`처럼 값이 JSON 문자열 자체로 들어오는 경우에는 그 문자열을 JSON으로
 파싱할 수 있을 때만 구조화해 마스킹한 뒤 stable JSON 문자열로 저장한다. 이는 카세트
-파일에 비밀값이 남지 않는 것을 우선한 선택이며, 런타임 인메모리 카세트의 응답 원문은
-바꾸지 않는다.
+파일이나 flush 콜백에 비밀값이 남지 않는 것을 우선한 선택이며, 런타임 내부 카세트의 응답
+원문은 바꾸지 않는다.
 
 첫 버전에서는 사용자 정의 매칭 함수, 사용자 정의 ignore 목록, TTL, 부분 매칭,
 사용자 정의 마스킹 규칙을 제공하지 않는다.
@@ -192,6 +194,10 @@ export interface Cassette {
 - `auto` 모드는 기존 카세트에 없는 호출만 실제 서버에 위임한다.
 - `mode`를 생략하면 기본값은 `auto`다.
 - `record` 모드는 기존 카세트를 덮어쓸 새 카세트를 만든다.
+- 실서버 호출은 성공했지만 응답이나 tools를 JSON 카세트로 복제할 수 없으면 호출 결과는
+  그대로 돌려주고, `close()`가 녹화 실패와 값 경로를 보고하며 `onFlush`는 호출하지 않는다.
+- `onFlush`가 받는 카세트는 `request.args`, `response.content`, `response.raw`, `tools`의
+  민감값을 마스킹한 저장용 값이다.
 - `saveCassette()`는 상호작용과 `tools`를 모두 마스킹한 뒤 stable JSON으로 저장한다.
 - `close()`는 `onFlush`가 있으면 카세트를 넘겨 저장 기회를 준 뒤 `inner.close()`를
   호출한다.

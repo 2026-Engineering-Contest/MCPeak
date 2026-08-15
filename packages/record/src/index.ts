@@ -65,6 +65,17 @@ const plainObject = (value: unknown): value is Record<string, unknown> =>
   !Array.isArray(value) &&
   (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null);
 
+class CassetteJsonError extends TypeError {
+  constructor(
+    readonly path: string,
+    readonly reason: string,
+    readonly valueKind?: string,
+  ) {
+    super(`카세트 JSON에는 ${reason}: ${path}`);
+    this.name = "CassetteJsonError";
+  }
+}
+
 const normalizeKey = (key: string): string => key.replace(/[-_]/g, "").toLowerCase();
 
 const sensitiveKey = (key: string): boolean => {
@@ -208,6 +219,7 @@ export function cassetteClient(inner: McpClient, options: CassetteClientOptions)
   const cassette =
     mode === "record" ? emptyCassette() : cloneCassette(options.cassette ?? emptyCassette());
   const interactions = indexInteractions(cassette);
+  const recordingFailures: Error[] = [];
 
   return {
     async listTools() {
@@ -221,15 +233,19 @@ export function cassetteClient(inner: McpClient, options: CassetteClientOptions)
             ].join("\n"),
           );
         }
-        return cloneJson(cassette.tools) as ToolDef[];
+        return cloneJson(cassette.tools, "tools") as ToolDef[];
       }
 
       if (mode === "auto" && cassette.tools !== undefined) {
-        return cloneJson(cassette.tools) as ToolDef[];
+        return cloneJson(cassette.tools, "tools") as ToolDef[];
       }
 
       const tools = await inner.listTools();
-      cassette.tools = cloneJson(tools) as ToolDef[];
+      try {
+        cassette.tools = cloneJson(tools, "tools") as ToolDef[];
+      } catch (error) {
+        recordingFailures.push(cassetteRecordingFailure("listTools()", error));
+      }
       return tools;
     },
 
@@ -246,7 +262,13 @@ export function cassetteClient(inner: McpClient, options: CassetteClientOptions)
       }
 
       const result = await inner.callTool(toolName, args);
-      const next = toInteraction(key, toolName, args, result);
+      let next: CassetteInteraction;
+      try {
+        next = toInteraction(key, toolName, args, result);
+      } catch (error) {
+        recordingFailures.push(cassetteRecordingFailure(displayRequest(toolName, args), error));
+        return result;
+      }
       if (existing === undefined) {
         cassette.interactions.push(next);
         interactions.set(key, next);
@@ -258,7 +280,8 @@ export function cassetteClient(inner: McpClient, options: CassetteClientOptions)
 
     async close() {
       try {
-        await options.onFlush?.(cloneCassette(cassette));
+        if (recordingFailures.length > 0) throw mergeRecordingFailures(recordingFailures);
+        await options.onFlush?.(prepareCassetteForWrite(cassette));
       } finally {
         await inner.close();
       }
@@ -288,28 +311,114 @@ function toInteraction(
     key,
     request: { toolName, args: redact(args === undefined ? {} : args) },
     response: {
-      content: cloneJson(result.content),
+      content: cloneJson(result.content, "response.content"),
       isError: result.isError,
-      raw: cloneJson(result.raw),
+      raw: cloneJson(result.raw, "response.raw"),
     },
   };
 }
 
 function cloneResponse(response: CassetteInteraction["response"]): ToolResult {
   return {
-    content: cloneJson(response.content),
+    content: cloneJson(response.content, "response.content"),
     isError: response.isError,
-    raw: cloneJson(response.raw),
+    raw: cloneJson(response.raw, "response.raw"),
   };
 }
 
 function cloneCassette(cassette: Cassette): Cassette {
   assertCassette(cassette, "cassette");
-  return cloneJson(cassette) as Cassette;
+  return cloneJson(cassette, "cassette") as Cassette;
 }
 
-function cloneJson(value: unknown): unknown {
+function cloneJson(value: unknown, path: string): unknown {
+  assertJsonCloneable(value, path);
   return JSON.parse(stableStringify(value)) as unknown;
+}
+
+function assertJsonCloneable(value: unknown, path: string): void {
+  const active = new Set<object>();
+  const visit = (current: unknown, currentPath: string): void => {
+    if (current === undefined || current === null || typeof current === "boolean") return;
+    if (typeof current === "string") return;
+    if (typeof current === "number") {
+      if (!Number.isFinite(current)) {
+        throw new CassetteJsonError(currentPath, "유한한 숫자만 사용할 수 있습니다");
+      }
+      return;
+    }
+    if (!Array.isArray(current) && !plainObject(current)) {
+      throw new CassetteJsonError(
+        currentPath,
+        "JSON 객체, 배열, 원시값만 사용할 수 있습니다",
+        valueKind(current),
+      );
+    }
+    if (active.has(current)) {
+      throw new CassetteJsonError(currentPath, "순환 참조를 사용할 수 없습니다");
+    }
+
+    active.add(current);
+    try {
+      if (Array.isArray(current)) {
+        for (let index = 0; index < current.length; index++) {
+          const nextPath = `${currentPath}[${index}]`;
+          if (!Object.hasOwn(current, index)) {
+            throw new CassetteJsonError(nextPath, "sparse array를 사용할 수 없습니다");
+          }
+          visit(current[index], nextPath);
+        }
+        return;
+      }
+
+      for (const key of Object.keys(current).sort()) {
+        const next = current[key];
+        if (next !== undefined) visit(next, jsonPath(currentPath, key));
+      }
+    } finally {
+      active.delete(current);
+    }
+  };
+
+  visit(value, path);
+}
+
+function cassetteRecordingFailure(operation: string, error: unknown): Error {
+  const lines = [`→ 카세트 녹화에 실패했습니다: ${operation}`, "  실제 MCP 호출은 성공했습니다."];
+  if (error instanceof CassetteJsonError) {
+    lines.push(`  기록할 수 없는 값: ${error.path}`);
+    if (error.valueKind !== undefined) lines.push(`  값 종류: ${error.valueKind}`);
+    lines.push(`  이유: 카세트 JSON에는 ${error.reason}.`);
+  } else if (error instanceof Error) {
+    lines.push(`  이유: ${error.message}`);
+  } else {
+    lines.push(`  이유: ${String(error)}`);
+  }
+  lines.push("  → Date, Map, class instance는 JSON 객체나 문자열로 바꿔 반환하세요.");
+  return new Error(lines.join("\n"), { cause: error });
+}
+
+function mergeRecordingFailures(failures: readonly Error[]): Error {
+  const first = failures[0];
+  if (failures.length === 1 && first !== undefined) return first;
+  return new AggregateError(
+    failures,
+    [
+      `카세트 녹화에 실패한 호출이 ${failures.length}개 있습니다.`,
+      ...failures.map((failure, index) => `  ${index + 1}. ${failure.message.split("\n")[0]}`),
+      "  → 위 오류를 고친 뒤 --record 로 카세트를 다시 만드세요.",
+    ].join("\n"),
+  );
+}
+
+function valueKind(value: unknown): string {
+  if (value === null) return "null";
+  if (Array.isArray(value)) return "array";
+  if (typeof value !== "object") return typeof value;
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype === null) return "null-prototype object";
+  const name = (prototype as { constructor?: { name?: unknown } }).constructor?.name;
+  return typeof name === "string" && name.length > 0 ? name : "object";
 }
 
 function sameJson(left: unknown, right: unknown): boolean {
@@ -365,13 +474,15 @@ function transformJson(
     active.add(current);
     try {
       if (Array.isArray(current)) {
-        return current.map((item, index) => {
+        const output: unknown[] = [];
+        for (let index = 0; index < current.length; index++) {
           if (!Object.hasOwn(current, index)) {
             throw new TypeError("카세트 JSON에는 sparse array를 사용할 수 없습니다.");
           }
-          const next = visit(item);
-          return next === undefined ? null : next;
-        });
+          const next = visit(current[index]);
+          output.push(next === undefined ? null : next);
+        }
+        return output;
       }
 
       const output: Record<string, unknown> = {};

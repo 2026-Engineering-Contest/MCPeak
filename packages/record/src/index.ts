@@ -596,23 +596,25 @@ function replayMissMessage(
       const storedArgs = redact(interaction.request.args);
       return {
         interaction,
-        diffs: describeJsonDiffs(visibleArgs, storedArgs, "args"),
+        storedArgs,
+        differenceCount: countJsonDiffs(visibleArgs, storedArgs),
         display: displayRequest(interaction.request.toolName, storedArgs),
       };
     })
-    .sort((left, right) => left.diffs.length - right.diffs.length);
+    .sort((left, right) => left.differenceCount - right.differenceCount);
 
   const nearest = sameTool[0];
   if (nearest !== undefined) {
     lines.push(`  가장 가까운 저장 요청: ${nearest.display}`);
-    if (nearest.diffs.length === 0) {
+    if (nearest.differenceCount === 0) {
       lines.push("  표시상 동일합니다. 마스킹된 비밀값이 다르거나 카세트의 key가 어긋났습니다.");
       lines.push(
         `  요청 key: ${key.slice(0, 8)} / 저장 key: ${nearest.interaction.key.slice(0, 8)}`,
       );
     } else {
+      const displayDiffs = describeJsonDiffs(visibleArgs, nearest.storedArgs, "args");
       lines.push(
-        ...nearest.diffs.map(
+        ...displayDiffs.map(
           (diff) =>
             `  요청 ${diff.path}: ${formatDiffValue(
               diff.left,
@@ -696,6 +698,34 @@ function describeJsonDiffs(left: unknown, right: unknown, path: string): JsonDif
   const diffs: JsonDiff[] = [];
   collectJsonDiffs(left, right, path, diffs);
   return diffs;
+}
+
+function countJsonDiffs(left: unknown, right: unknown): number {
+  if (sameJson(left, right)) return 0;
+
+  if (plainObject(left) && plainObject(right)) {
+    let count = 0;
+    const keys = new Set([...Object.keys(left), ...Object.keys(right)]);
+    for (const key of keys) {
+      const leftHas = Object.hasOwn(left, key);
+      const rightHas = Object.hasOwn(right, key);
+      count += !leftHas || !rightHas ? 1 : countJsonDiffs(left[key], right[key]);
+    }
+    return count;
+  }
+
+  if (Array.isArray(left) && Array.isArray(right)) {
+    let count = 0;
+    const length = Math.max(left.length, right.length);
+    for (let index = 0; index < length; index++) {
+      const leftHas = Object.hasOwn(left, index);
+      const rightHas = Object.hasOwn(right, index);
+      count += !leftHas || !rightHas ? 1 : countJsonDiffs(left[index], right[index]);
+    }
+    return count;
+  }
+
+  return 1;
 }
 
 function collectJsonDiffs(left: unknown, right: unknown, path: string, diffs: JsonDiff[]): void {

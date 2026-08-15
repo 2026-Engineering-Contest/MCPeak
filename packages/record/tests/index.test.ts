@@ -348,6 +348,36 @@ describe("cassetteClient", () => {
     expect(inner.calls.callTool).toBe(0);
   });
 
+  it("replay miss 후보 선택은 전체 차이 수를 쓰고 표시는 5개로 제한한다", async () => {
+    const farther = cassetteWith({
+      toolName: "compare",
+      args: { a: 1, b: 1, c: 1, d: 1, e: 1, f: 1, g: 1 },
+      result: ok({ candidate: "farther" }),
+    });
+    const nearer = cassetteWith({
+      toolName: "compare",
+      args: { a: 1, b: 1, c: 1, d: 1, e: 1, f: 1, g: 0 },
+      result: ok({ candidate: "nearer" }),
+    });
+    const cassette: Cassette = {
+      ...farther,
+      interactions: [...farther.interactions, ...nearer.interactions],
+    };
+    const inner = fakeClient([]);
+    const client = cassetteClient(inner, { cassette, mode: "replay" });
+
+    const error = await rejection(
+      client.callTool("compare", { a: 0, b: 0, c: 0, d: 0, e: 0, f: 0, g: 0 }),
+    );
+    const message = (error as Error).message;
+
+    expect(message).toContain(
+      '가장 가까운 저장 요청: compare({"a":1,"b":1,"c":1,"d":1,"e":1,"f":1,"g":0})',
+    );
+    expect(message.match(/^ {2}요청 args\./gm)).toHaveLength(5);
+    expect(inner.calls.callTool).toBe(0);
+  });
+
   it("replay miss 의 표시 인자가 같아도 저장 key가 어긋났음을 보여준다", async () => {
     const args = { ticker: "AAPL" };
     const cassette = cassetteWith({

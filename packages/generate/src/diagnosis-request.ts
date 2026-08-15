@@ -6,11 +6,14 @@ import {
   type McpToolContext,
 } from "./authoring-request.js";
 import { deepFreeze, sha256 } from "./canonical.js";
-import type {
-  DiagnosisDiagnostic,
-  DiagnosisFailure,
-  DiagnosisProcessDiagnostics,
-  DiagnosisRequest,
+import {
+  type DiagnosisCause,
+  type DiagnosisDiagnostic,
+  type DiagnosisFailure,
+  type DiagnosisProcessDiagnostics,
+  type DiagnosisRequest,
+  type DiagnosisResult,
+  MAX_CAUSE_CHARS,
 } from "./diagnosis-schema.js";
 import { sanitizeRedactable, TOOL_CONTRACT_PATHS } from "./redaction.js";
 import type { JsonValue } from "./schema.js";
@@ -188,4 +191,102 @@ export function prepareDiagnosisRequest(options: {
     omitted: { failures: omittedFailures, stderrBytes: omittedStderrBytes },
     binding: frozen({} as never),
   });
+}
+
+export type DiagnosisValidation =
+  | { readonly status: "ok"; readonly result: DiagnosisResult }
+  | { readonly status: "schemaMismatch" };
+
+const plain = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+/**
+ * 문자열을 앞에서부터 남기고 상한을 넘는 만큼 자른다. 코드 유닛이 아니라 코드 포인트 단위로
+ * 세고 자르므로 서로게이트 쌍(이모지 등)의 중간이 끊기지 않는다.
+ */
+function clamp(text: string, limit: number): string {
+  const points = [...text];
+  return points.length <= limit ? text : points.slice(0, limit).join("");
+}
+
+/** provider 응답의 causes 항목 하나가 스키마 모양을 지키는지 본다. 필드 누락도 여기서 잡는다. */
+function isCauseShape(value: unknown): value is DiagnosisCause {
+  if (!plain(value)) return false;
+  for (const key of ["caseId", "summary", "location", "evidence"])
+    if (typeof value[key] !== "string") return false;
+  return value.target === "server" || value.target === "spec";
+}
+
+/**
+ * provider 응답을 검증한다. 설계서 §5.6 의 순서를 그대로 따른다.
+ * provider 응답은 신뢰하지 않는다. 여기를 통과한 것만 화면에 나간다.
+ */
+export function validateDiagnosisResult(
+  value: unknown,
+  preview: DiagnosisRequestPreview,
+): DiagnosisValidation {
+  // 1. 스키마 모양이 맞지 않으면 schemaMismatch.
+  if (!plain(value)) return { status: "schemaMismatch" };
+  if (value.status !== "diagnosis" && value.status !== "unsure")
+    return { status: "schemaMismatch" };
+  if (!Array.isArray(value.causes)) return { status: "schemaMismatch" };
+  if (typeof value.shortfall !== "string") return { status: "schemaMismatch" };
+  if (!value.causes.every(isCauseShape)) return { status: "schemaMismatch" };
+
+  const causes = value.causes as readonly DiagnosisCause[];
+
+  // 2-후반. status 가 unsure 면 causes 를 통째로 버린다. 버린 수는 discarded 에 실어
+  // 화면이 "무엇인가 왔지만 쓰지 않았다" 를 말할 수 있게 한다.
+  if (value.status === "unsure")
+    return {
+      status: "ok",
+      result: frozen({
+        status: "unsure" as const,
+        // shortfall 은 자르지 않는다. 상한 대상은 §5.6-5 가 정한 셋(summary·location·evidence)뿐이다.
+        shortfall: value.shortfall,
+        discarded: causes.length,
+      }),
+    };
+
+  // 3. 요청에 담아 보낸 실패 목록에 없는 caseId 는 버린다. AI 가 케이스를 지어낸 것이다.
+  const known = new Set(preview.request.failures.map((failure) => failure.caseId));
+  // 4. specApproved 가 true 면 target: "spec" 항목을 버린다. 명세는 옳다는 전제로 물었고
+  //    그 전제를 뒤집는 답은 요청 범위 밖이다. false 면 통과시킨다.
+  const specApproved = preview.request.specApproved;
+  const kept = causes.filter(
+    (cause) => known.has(cause.caseId) && !(specApproved && cause.target === "spec"),
+  );
+
+  // 항목 순서는 요청의 failures 순서를 따른다. AI 응답 순서는 매번 다를 수 있고, 화면 순서가
+  // 흔들리면 같은 실행을 두 번 볼 때 다른 화면이 나온다. 같은 caseId 안에서는 응답의 상대
+  // 순서를 유지한다(Array#sort 는 안정 정렬이다).
+  const order = new Map(
+    preview.request.failures.map((failure, index) => [failure.caseId, index] as const),
+  );
+  const ordered = [...kept].sort(
+    (left, right) => (order.get(left.caseId) ?? 0) - (order.get(right.caseId) ?? 0),
+  );
+
+  // 5. 문자열 상한을 넘으면 자른다.
+  const clamped = ordered.map((cause) => ({
+    caseId: cause.caseId,
+    summary: clamp(cause.summary, MAX_CAUSE_CHARS),
+    location: clamp(cause.location, MAX_CAUSE_CHARS),
+    evidence: clamp(cause.evidence, MAX_CAUSE_CHARS),
+    target: cause.target,
+  }));
+
+  // 6. 버린 항목 수를 담는다.
+  const discarded = causes.length - clamped.length;
+
+  // 2-전반. 유효 항목이 하나도 없으면 unsure 로 접는다. shortfall 은 빈 문자열이다.
+  if (clamped.length === 0)
+    return {
+      status: "ok",
+      result: frozen({ status: "unsure" as const, shortfall: "", discarded }),
+    };
+  return {
+    status: "ok",
+    result: frozen({ status: "diagnosis" as const, causes: clamped, discarded }),
+  };
 }

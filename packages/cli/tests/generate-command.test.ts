@@ -165,6 +165,7 @@ describe("parseGenerateCommand", () => {
       dryRun: true,
       cassettePath: undefined,
       forceRecord: false,
+      force: false,
       resetCmd: undefined,
       repair: true,
     });
@@ -2724,5 +2725,290 @@ describe("generate 시험 실행 게이트", () => {
       expect(d.output()).toContain("  입력값 교정 1건이 명세에 반영되었습니다.\n");
       expect(d.output()).toContain(`    weather.city: ${JSON.stringify(synthesized)} → "서울"\n`);
     });
+  });
+});
+
+describe("generate 옵션 파싱", () => {
+  const base = ["--suite-id=x", "--name=n", "--out=x.json", "--command=node"];
+
+  it("--force 를 두 번 주면 사용 오류다", () => {
+    expect(() => parseGenerateCommand([...base, "--force", "--force"])).toThrow();
+  });
+
+  it("--force 에 값을 붙이면 사용 오류다", () => {
+    expect(() => parseGenerateCommand([...base, "--force=yes"])).toThrow();
+  });
+
+  it("--force 를 주면 force 가 켜진다", () => {
+    expect(parseGenerateCommand([...base, "--force"]).force).toBe(true);
+  });
+
+  it("--force 가 없으면 force 가 꺼진다", () => {
+    expect(parseGenerateCommand(base).force).toBe(false);
+  });
+});
+
+/**
+ * `--out` 은 인자 파싱 때 이미 아는 값이다. 서버에 붙고 AI 를 부르고 사람이 값을 친 뒤에
+ * 알려 주면 늦다. 설계 문서 §1·§4.
+ */
+describe("generate 출력 경로 선검사", () => {
+  const outPath = "/tmp/out.json";
+  const baseArgv = [
+    "generate",
+    "--suite-id",
+    "weather",
+    "--name",
+    "Weather",
+    "--out",
+    outPath,
+    "--command",
+    "node",
+    "--arg",
+    "server.mjs",
+  ];
+  const baselineArgv = [...baseArgv, "--baseline-only"];
+
+  /** TTY 게이트가 대신 끊어 통과하는 일이 없도록 대화형 IO 를 준다. */
+  const interactiveIO = () => ({
+    input: vi.fn(async () => ""),
+    choose: vi.fn(async () => ""),
+    confirm: vi.fn(async () => true),
+    write: vi.fn(),
+    interactive: true,
+  });
+
+  it("--out 이 이미 있고 --force 가 없으면 connect 를 부르지 않는다", async () => {
+    const d = deps({ exists: vi.fn(async () => true), reviewIO: interactiveIO() });
+
+    expect(await runGenerateCommand(baseArgv, d.value)).toBe(1);
+    expect(d.value.connect).not.toHaveBeenCalled();
+  });
+
+  it("그때 화면에 시작하지 않았습니다 문안이 나온다", async () => {
+    const d = deps({ exists: vi.fn(async () => true), reviewIO: interactiveIO() });
+    const stderr: string[] = [];
+    d.value.writeStderr = (text) => stderr.push(text);
+
+    await runGenerateCommand(baseArgv, d.value);
+
+    expect(stderr.join("")).toBe(
+      `오류 [GENERATE_OUTPUT_EXISTS]: 출력 파일이 이미 있어 시작하지 않았습니다. 경로: ${outPath}\n해결: 다른 \`--out\` 경로를 지정하거나, 기존 파일을 덮어쓰려면 \`--force\` 를 붙이세요.\n`,
+    );
+  });
+
+  it("선검사의 exists 가 던지면 종료 코드 1 과 오류 문안으로 끝난다", async () => {
+    // 편의 검사가 명령 전체를 거절로 끝내면 호출자가 보는 것이 종료 코드가 아니라 예외다.
+    const d = deps({
+      exists: vi.fn(async () => {
+        throw Object.assign(new Error("permission denied"), { code: "EACCES" });
+      }),
+      reviewIO: interactiveIO(),
+    });
+    const stderr: string[] = [];
+    d.value.writeStderr = (text) => stderr.push(text);
+
+    expect(await runGenerateCommand(baseArgv, d.value)).toBe(1);
+    expect(stderr.join("")).toBe(
+      `오류 [GENERATE_OUTPUT_CHECK_FAILED]: 출력 경로를 확인하지 못해 시작하지 않았습니다. 경로: ${outPath} (EACCES)\n해결: 그 경로와 상위 디렉터리의 권한을 확인하세요. 다른 \`--out\` 경로를 지정해도 됩니다.\n`,
+    );
+    expect(d.value.connect).not.toHaveBeenCalled();
+  });
+
+  it("--out 이 없으면 선검사가 통과하고 connect 를 부른다", async () => {
+    const d = deps();
+
+    expect(await runGenerateCommand(baselineArgv, d.value)).toBe(0);
+    expect(d.value.connect).toHaveBeenCalledTimes(1);
+  });
+
+  it("--force 면 --out 이 있어도 connect 를 부른다", async () => {
+    const d = deps({ exists: vi.fn(async () => true) });
+
+    expect(await runGenerateCommand([...baselineArgv, "--force"], d.value)).toBe(0);
+    expect(d.value.connect).toHaveBeenCalledTimes(1);
+  });
+
+  it("--baseline-only 에서도 선검사가 돈다", async () => {
+    const d = deps({ exists: vi.fn(async () => true) });
+
+    expect(await runGenerateCommand(baselineArgv, d.value)).toBe(1);
+    expect(d.value.connect).not.toHaveBeenCalled();
+  });
+});
+
+describe("generate 덮어쓰기 저장", () => {
+  const outPath = "/tmp/out.json";
+  const baselineArgv = [
+    "generate",
+    "--suite-id",
+    "weather",
+    "--name",
+    "Weather",
+    "--out",
+    outPath,
+    "--command",
+    "node",
+    "--arg",
+    "server.mjs",
+    "--baseline-only",
+  ];
+
+  /** 지운 경로를 기록하는 unlink. 임시 파일 정리와 출력 경로 삭제를 갈라 보기 위해서다. */
+  /**
+   * `unlink` 를 가로채되 호출 순서를 잃지 않는다. `events` 를 넘기면 출력 경로를 지운 시점을
+   * `unlink:out` 으로 그 배열에 남긴다. `link` 는 `deps` 가 같은 배열에 `link` 를 남기므로
+   * 두 사건의 **선후**를 한 배열에서 비교할 수 있다. 각각 불렸는지만 보면 `link` 뒤에
+   * `unlink` 하는 회귀도 통과한다.
+   */
+  const trackingUnlink = (
+    behavior: (path: string) => void = () => undefined,
+    events?: string[],
+  ) => {
+    const paths: string[] = [];
+    return {
+      paths,
+      unlink: vi.fn(async (path: string) => {
+        paths.push(path);
+        events?.push(path === outPath ? "unlink:out" : "unlink");
+        behavior(path);
+      }),
+    };
+  };
+
+  it("--force 면 기존 파일이 새 명세로 바뀐다", async () => {
+    const events: string[] = [];
+    const tracker = trackingUnlink(() => undefined, events);
+    const d = deps({ exists: vi.fn(async () => true), unlink: tracker.unlink });
+    // deps 가 link 를 자기 events 에 남기므로 같은 배열을 쓰게 바꿔 선후를 한 곳에서 본다.
+    d.value.link = vi.fn(async () => {
+      events.push("link");
+    });
+    const stdout: string[] = [];
+    d.value.writeStdout = (text) => stdout.push(text);
+
+    expect(await runGenerateCommand([...baselineArgv, "--force"], d.value)).toBe(0);
+    expect(stdout.join("")).toContain(`baseline suite를 저장했습니다: ${outPath}`);
+    expect(tracker.paths[0]).toBe(outPath);
+    // 출력 경로를 지운 뒤 link 한다. 뒤집히면 link 가 EEXIST 로 실패한다. 각각 불렸는지만
+    // 보면 link 뒤에 unlink 하는 회귀가 그대로 통과한다.
+    const removed = events.indexOf("unlink:out");
+    const linked = events.indexOf("link");
+    expect(removed).toBeGreaterThan(-1);
+    expect(linked).toBeGreaterThan(-1);
+    expect(removed).toBeLessThan(linked);
+  });
+
+  it("--force 면 저장 직전 exists 검사를 건너뛴다", async () => {
+    const exists = vi.fn(async () => true);
+    const d = deps({ exists, unlink: trackingUnlink().unlink });
+
+    expect(await runGenerateCommand([...baselineArgv, "--force"], d.value)).toBe(0);
+    expect(exists).not.toHaveBeenCalledWith(outPath);
+  });
+
+  it("--force 인데 unlink 가 ENOENT 면 저장이 성공한다", async () => {
+    const tracker = trackingUnlink((path) => {
+      if (path !== outPath) return;
+      throw Object.assign(new Error("missing"), { code: "ENOENT" });
+    });
+    const d = deps({ exists: vi.fn(async () => true), unlink: tracker.unlink });
+
+    expect(await runGenerateCommand([...baselineArgv, "--force"], d.value)).toBe(0);
+  });
+
+  /** `unlink` 가 지정한 코드로 실패하는 deps. 임시 파일 정리는 그대로 성공한다. */
+  const failingUnlink = (code: string) =>
+    trackingUnlink((path) => {
+      if (path !== outPath) return;
+      throw Object.assign(new Error(code), { code });
+    });
+
+  it("--force 인데 unlink 가 다른 오류면 저장이 실패한다", async () => {
+    const d = deps({ exists: vi.fn(async () => true), unlink: failingUnlink("EACCES").unlink });
+    const stderr: string[] = [];
+    d.value.writeStderr = (text) => stderr.push(text);
+
+    expect(await runGenerateCommand([...baselineArgv, "--force"], d.value)).toBe(1);
+    // 출력 충돌도 뭉뚱그린 실패도 아니다. 사용자 조치가 셋 다 다르다.
+    expect(stderr.join("")).toContain("GENERATE_OUTPUT_REPLACE_FAILED");
+    expect(stderr.join("")).not.toContain("GENERATE_OUTPUT_EXISTS");
+    expect(stderr.join("")).not.toContain("GENERATE_FAILED");
+  });
+
+  it("--force 인데 unlink 가 EISDIR 이면 저장하지 않고 replace 실패 문안이 나온다", async () => {
+    const d = deps({ exists: vi.fn(async () => true), unlink: failingUnlink("EISDIR").unlink });
+    const stderr: string[] = [];
+    d.value.writeStderr = (text) => stderr.push(text);
+
+    expect(await runGenerateCommand([...baselineArgv, "--force"], d.value)).toBe(1);
+    expect(stderr.join("")).toBe(
+      `오류 [GENERATE_OUTPUT_REPLACE_FAILED]: 기존 출력 파일을 지우지 못해 저장하지 않았습니다. 경로: ${outPath} (EISDIR)\n해결: 그 경로가 디렉터리이거나 쓰기 권한이 없는지 확인하세요. 다른 \`--out\` 경로를 지정해도 됩니다.\n`,
+    );
+    expect(d.value.link).not.toHaveBeenCalled();
+  });
+
+  it("replace 실패 문안에 시스템 코드가 들어간다", async () => {
+    for (const code of ["EISDIR", "EPERM", "EACCES"]) {
+      const d = deps({ exists: vi.fn(async () => true), unlink: failingUnlink(code).unlink });
+      const stderr: string[] = [];
+      d.value.writeStderr = (text) => stderr.push(text);
+
+      expect(await runGenerateCommand([...baselineArgv, "--force"], d.value)).toBe(1);
+      expect(stderr.join("")).toContain(`경로: ${outPath} (${code})`);
+    }
+  });
+
+  it("코드 없는 unlink 오류면 괄호를 빼고 적는다", async () => {
+    const d = deps({
+      exists: vi.fn(async () => true),
+      unlink: trackingUnlink((path) => {
+        if (path !== outPath) return;
+        throw new Error("알 수 없음");
+      }).unlink,
+    });
+    const stderr: string[] = [];
+    d.value.writeStderr = (text) => stderr.push(text);
+
+    expect(await runGenerateCommand([...baselineArgv, "--force"], d.value)).toBe(1);
+    expect(stderr.join("")).toContain(`경로: ${outPath}\n`);
+    expect(stderr.join("")).not.toContain("(undefined)");
+  });
+
+  it("--force 라도 link 가 EEXIST 면 저장하지 않고 저장 실패 문안이 나온다", async () => {
+    const d = deps({
+      exists: vi.fn(async () => true),
+      unlink: trackingUnlink().unlink,
+      link: vi.fn(async () => {
+        throw Object.assign(new Error("exists"), { code: "EEXIST" });
+      }),
+    });
+    const stderr: string[] = [];
+    d.value.writeStderr = (text) => stderr.push(text);
+
+    expect(await runGenerateCommand([...baselineArgv, "--force"], d.value)).toBe(1);
+    expect(stderr.join("")).toBe(
+      `오류 [GENERATE_OUTPUT_EXISTS]: 출력 파일이 이미 있어 저장하지 않았습니다. 경로: ${outPath}\n해결: 다른 \`--out\` 경로를 지정하거나, 기존 파일을 덮어쓰려면 \`--force\` 를 붙이세요.\n`,
+    );
+  });
+
+  it("--force 가 없으면 저장 단계 동작이 이전과 같다", async () => {
+    const d = deps();
+
+    expect(await runGenerateCommand(baselineArgv, d.value)).toBe(0);
+    expect(normalizedEvents(d.events)).toEqual([
+      "connect",
+      "listTools",
+      "close",
+      "baseline",
+      "finalize",
+      "open",
+      "write",
+      "fsync",
+      "fileClose",
+      "read",
+      "link",
+      "unlink",
+    ]);
   });
 });

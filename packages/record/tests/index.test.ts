@@ -181,7 +181,7 @@ describe("cassetteClient", () => {
     expect(flushed[0]?.interactions).toHaveLength(2);
   });
 
-  it("기본 auto 모드는 miss 뒤 hit 에서도 인메모리 응답 원문을 유지한다", async () => {
+  it("기본 auto 모드는 miss 뒤 hit 응답 원문을 유지하고 flush 는 마스킹한다", async () => {
     const result = ok({ id: "run-1", token: "secret-token", value: 7 });
     const flushed: Cassette[] = [];
     const inner = fakeClient([result]);
@@ -207,7 +207,7 @@ describe("cassetteClient", () => {
     });
     expect(flushed[0]?.interactions[0]?.response.raw).toStrictEqual({
       id: "run-1",
-      token: "secret-token",
+      token: "[redacted]",
       value: 7,
     });
   });

@@ -281,7 +281,7 @@ export function cassetteClient(inner: McpClient, options: CassetteClientOptions)
     async close() {
       try {
         if (recordingFailures.length > 0) throw mergeRecordingFailures(recordingFailures);
-        await options.onFlush?.(cloneCassette(cassette));
+        await options.onFlush?.(prepareCassetteForWrite(cassette));
       } finally {
         await inner.close();
       }

@@ -46,9 +46,9 @@ try {
 `mode`를 생략하면 `auto`로 동작한다. `cassettePath`는 파일 IO를 수행하지 않고, 실패 메시지에
 표시할 경로로만 사용한다.
 
-`close()`는 `onFlush`가 있으면 현재 카세트를 넘긴 뒤 `inner.close()`를 호출한다. 파일 IO는
-`loadCassette`와 `saveCassette`로 분리되어 있고, 테스트에서는 `onFlush`에 인메모리 저장 함수를
-넣으면 된다.
+`close()`는 `onFlush`가 있으면 저장용으로 마스킹한 카세트를 넘긴 뒤 `inner.close()`를
+호출한다. 파일 IO는 `loadCassette`와 `saveCassette`로 분리되어 있고, 테스트에서는 `onFlush`에
+인메모리 저장 함수를 넣으면 된다.
 
 `inner.close()`는 `onFlush`가 실패해도 `finally`로 항상 실행된다. `onFlush`와
 `inner.close()`가 동시에 실패하면 `inner.close()`의 오류가 우선한다 — `onFlush`의 오류는
@@ -79,14 +79,10 @@ try {
 `snapshotContract(result)`는 `ToolResult.raw`를 깊게 순회해 `id`, `requestId`, `sessionId`,
 `timestamp`, `createdAt`, `updatedAt`, `expiresAt` 필드를 제거한 뒤 비밀값을 마스킹한다.
 
-요청 `args`는 녹화 시점에 마스킹되어 인메모리 카세트와 `onFlush`에도 원문 비밀값이 남지
-않는다. 응답 `content`/`raw`와 `tools`는 인메모리에서 원문을 유지하고, 파일에 쓰기 직전
-`saveCassette`가 다시 마스킹한다. 값이 JSON 문자열이면 저장 직전에만 파싱 가능한 경우
-구조화해 마스킹하고 stable JSON 문자열로 저장한다.
-
-**`onFlush`가 받는 카세트의 응답과 tools에는 마스킹 전 원문이 남을 수 있다.** 파일에 쓸 때는
-반드시 `saveCassette`를 거쳐야 하며 (`prepareCassetteForWrite`가 저장 직전에 마스킹한다),
-`onFlush`가 넘겨준 카세트를 그대로 커밋하거나 다른 곳에 저장하지 않는다.
+요청 `args`는 녹화 시점에 마스킹되어 인메모리 카세트에도 원문 비밀값이 남지 않는다. 응답
+`content`/`raw`와 `tools`는 재생 결정론성을 위해 내부 카세트에서 원문을 유지하지만,
+`onFlush`가 받는 카세트는 이미 마스킹된 저장용 값이다. 값이 JSON 문자열이면 flush 시점에
+파싱 가능한 경우 구조화해 마스킹하고 stable JSON 문자열로 저장한다.
 
 ## 제외 범위
 

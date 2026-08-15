@@ -53,6 +53,15 @@ function fakeClient(results: ToolResult[]): McpClient & {
   };
 }
 
+async function rejection(promise: Promise<unknown>): Promise<unknown> {
+  try {
+    await promise;
+  } catch (error) {
+    return error;
+  }
+  throw new Error("expected promise to reject");
+}
+
 describe("stableStringify", () => {
   it("객체 키 순서가 달라도 같은 문자열을 만든다", () => {
     expect(stableStringify({ b: 2, a: 1 })).toBe(stableStringify({ a: 1, b: 2 }));
@@ -325,14 +334,136 @@ describe("cassetteClient", () => {
       mode: "replay",
     });
 
-    await expect(client.callTool("get_stock", { ticker: "AAPL" })).rejects.toThrow(
-      "카세트에 없는 호출입니다",
-    );
-    await expect(client.callTool("get_stock", { ticker: "AAPL" })).rejects.toThrow(
+    const error = await rejection(client.callTool("get_stock", { ticker: "AAPL" }));
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toContain("카세트에 없는 호출입니다");
+    expect((error as Error).message).toContain(
       "카세트: fixtures/stock.cassette.json (상호작용 1개)",
     );
-    await expect(client.callTool("get_stock", { ticker: "AAPL" })).rejects.toThrow(
-      '비슷한 키: get_stock({"ticker":"MSFT"})',
+    expect((error as Error).message).toContain(
+      '가장 가까운 저장 요청: get_stock({"ticker":"MSFT"})',
+    );
+    expect((error as Error).message).toContain(
+      '요청 args.ticker: "AAPL" / 저장 args.ticker: "MSFT"',
+    );
+    expect(inner.calls.callTool).toBe(0);
+  });
+
+  it("replay miss 의 비밀값 차이가 마스킹되면 key 로 원인을 구분한다", async () => {
+    const recordedArgs = { apiKey: "secret-1", ticker: "AAPL" };
+    const requestedArgs = { apiKey: "secret-2", ticker: "AAPL" };
+    const cassette = cassetteWith({
+      toolName: "get_stock",
+      args: recordedArgs,
+      result: ok({ price: 330 }),
+    });
+    const inner = fakeClient([]);
+    const client = cassetteClient(inner, { cassette, mode: "replay" });
+
+    const error = await rejection(client.callTool("get_stock", requestedArgs));
+    const message = (error as Error).message;
+
+    expect(message).toContain(
+      '카세트에 없는 호출입니다: get_stock({"apiKey":"[redacted]","ticker":"AAPL"})',
+    );
+    expect(message).toContain(
+      '가장 가까운 저장 요청: get_stock({"apiKey":"[redacted]","ticker":"AAPL"})',
+    );
+    expect(message).toContain(
+      "표시상 동일합니다. 마스킹된 비밀값이 다르거나 카세트의 key가 어긋났습니다.",
+    );
+    expect(message).toContain(
+      `요청 key: ${matchKey("get_stock", requestedArgs).slice(0, 8)} / 저장 key: ${matchKey(
+        "get_stock",
+        recordedArgs,
+      ).slice(0, 8)}`,
+    );
+    expect(message).not.toContain("secret-1");
+    expect(message).not.toContain("secret-2");
+    expect(inner.calls.callTool).toBe(0);
+  });
+
+  it("replay miss 는 같은 툴의 저장 요청 중 차이가 가장 적은 항목을 보여준다", async () => {
+    const farther = cassetteWith({
+      toolName: "get_stock",
+      args: { market: "NYSE", ticker: "MSFT" },
+      result: ok({ price: 330 }),
+    });
+    const nearer = cassetteWith({
+      toolName: "get_stock",
+      args: { market: "NASDAQ", ticker: "AAPL" },
+      result: ok({ price: 331 }),
+    });
+    const cassette: Cassette = {
+      ...farther,
+      interactions: [...farther.interactions, ...nearer.interactions],
+    };
+    const inner = fakeClient([]);
+    const client = cassetteClient(inner, { cassette, mode: "replay" });
+
+    const error = await rejection(
+      client.callTool("get_stock", { currency: "USD", market: "NASDAQ", ticker: "AAPL" }),
+    );
+    const message = (error as Error).message;
+
+    expect(message).toContain(
+      '가장 가까운 저장 요청: get_stock({"market":"NASDAQ","ticker":"AAPL"})',
+    );
+    expect(message).toContain('요청 args.currency: "USD" / 저장 args.currency: <없음>');
+    expect(inner.calls.callTool).toBe(0);
+  });
+
+  it("replay miss 후보 선택은 전체 차이 수를 쓰고 표시는 5개로 제한한다", async () => {
+    const farther = cassetteWith({
+      toolName: "compare",
+      args: { a: 1, b: 1, c: 1, d: 1, e: 1, f: 1, g: 1 },
+      result: ok({ candidate: "farther" }),
+    });
+    const nearer = cassetteWith({
+      toolName: "compare",
+      args: { a: 1, b: 1, c: 1, d: 1, e: 1, f: 1, g: 0 },
+      result: ok({ candidate: "nearer" }),
+    });
+    const cassette: Cassette = {
+      ...farther,
+      interactions: [...farther.interactions, ...nearer.interactions],
+    };
+    const inner = fakeClient([]);
+    const client = cassetteClient(inner, { cassette, mode: "replay" });
+
+    const error = await rejection(
+      client.callTool("compare", { a: 0, b: 0, c: 0, d: 0, e: 0, f: 0, g: 0 }),
+    );
+    const message = (error as Error).message;
+
+    expect(message).toContain(
+      '가장 가까운 저장 요청: compare({"a":1,"b":1,"c":1,"d":1,"e":1,"f":1,"g":0})',
+    );
+    expect(message.match(/^ {2}요청 args\./gm)).toHaveLength(5);
+    expect(inner.calls.callTool).toBe(0);
+  });
+
+  it("replay miss 의 표시 인자가 같아도 저장 key가 어긋났음을 보여준다", async () => {
+    const args = { ticker: "AAPL" };
+    const cassette = cassetteWith({
+      toolName: "get_stock",
+      args,
+      result: ok({ price: 330 }),
+    });
+    const interaction = cassette.interactions[0];
+    if (interaction === undefined) throw new Error("interaction missing");
+    interaction.key = "f".repeat(64);
+    const inner = fakeClient([]);
+    const client = cassetteClient(inner, { cassette, mode: "replay" });
+
+    const error = await rejection(client.callTool("get_stock", args));
+    const message = (error as Error).message;
+
+    expect(message).toContain(
+      "표시상 동일합니다. 마스킹된 비밀값이 다르거나 카세트의 key가 어긋났습니다.",
+    );
+    expect(message).toContain(
+      `요청 key: ${matchKey("get_stock", args).slice(0, 8)} / 저장 key: ffffffff`,
     );
     expect(inner.calls.callTool).toBe(0);
   });

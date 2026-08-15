@@ -77,7 +77,7 @@ mock.on("t", { n: Infinity }, B);   // 키 {"n":null}  ← A 를 덮어쓴다
 ### 비범위
 
 - **해시 키로 바꾸지 않는다.** §10 의 1번 참조
-- `stableKey` 를 반복문으로 재작성하지 않는다. §7.2 참조
+- `stableKey` 를 반복문으로 재작성하지 않는다. §7.3 참조
 - 사용자 정의 매칭 함수 · 부분 일치 · 와일드카드 (ADR-0005 가 이미 비범위로 둠)
 - 공개 API 변경 없음 — 이 설계의 함수는 전부 모듈 내부이며 `index.ts` 에서 export 하지 않는다
 
@@ -144,14 +144,15 @@ function put(registry, tool, args, result, source) {
  * kind 마다 정확히 하나로 정해진다 — 없는 필드를 참조할 수 없다.
  *
  * path 는 루트가 "args", 중첩은 `args.items[2].when`.
- * tooDeep 에는 path 가 없다. 512 단계짜리 경로는 문장에 넣을 수 없기 때문이다.
+ * tooDeep 에는 path 도 실제 깊이도 없다. 경로는 512 단계라 문장에 넣을 수 없고, 깊이는 가드가
+ * 상한을 넘는 즉시 멈추므로 언제나 `상한 + 1` 이라 측정값이 아니다 — §7.1 참조.
  */
 type KeyViolation =
   | { kind: "circular"; path: string }                   // §6.1
   | { kind: "sparse"; path: string }                     // §6.2
   | { kind: "nonFinite"; path: string; found: string }   // §6.3 — "NaN" · "Infinity"
   | { kind: "notJson"; path: string; found: string }     // §6.4 — "Date" · "function" · "Map"
-  | { kind: "tooDeep"; depth: number };                  // §6.5
+  | { kind: "tooDeep" };                                 // §6.5
 
 /** 위반을 찾는다. 없으면 undefined. 순수 함수 — 던지지 않는다. */
 function findKeyViolation(value: unknown): KeyViolation | undefined;
@@ -161,9 +162,7 @@ function assertKeyable(value: unknown, tool: string, source: string): void;
 
 /** 깊이 상한. 넘으면 KeyDepthError. */
 const MAX_KEY_DEPTH = 512;
-class KeyDepthError extends Error {
-  readonly depth: number;
-}
+class KeyDepthError extends Error {}   // 메시지에 상한만 담는다
 
 /** 시그니처 확장 — depth 는 재귀 내부용이며 외부 호출자는 넘기지 않는다. */
 function stableKey(value: unknown, depth?: number): string;
@@ -234,14 +233,14 @@ function put(registry: Registry, tool: string, args: unknown, result: unknown, s
 
 ```
 → mock.on('add', ...) 의 인자로 매칭 키를 만들 수 없습니다: 중첩이 너무 깊습니다
-→ 위치: 깊이 513 — 상한: 512
+→ 상한: 512 단계
 → 목에 넘기는 인자는 테스트가 읽을 수 있는 크기여야 합니다. 필요한 필드만 넘기세요.
 ```
 
 ### 6.6 너무 깊은 중첩 — 조회 시점 (`isError: true` 응답)
 
 ```
-→ 툴 'add' 의 호출 인자로 매칭 키를 만들 수 없습니다: 중첩이 너무 깊습니다 (깊이 513, 상한 512)
+→ 툴 'add' 의 호출 인자로 매칭 키를 만들 수 없습니다: 중첩이 상한 512 단계를 넘었습니다
 → 목은 이 인자를 주입된 어떤 응답과도 비교할 수 없습니다. 호출 쪽 인자를 줄이세요.
 ```
 
@@ -266,13 +265,20 @@ function put(registry: Registry, tool: string, args: unknown, result: unknown, s
 - 루트가 깊이 0. 512 를 **넘을 때** 거부한다
 - 주입 경로는 throw(§6.5), 조회 경로는 `isError` 응답(§6.6)
 
-### 7.1 512 인 이유
+### 7.1 실제 깊이를 알려주지 않는 이유
+
+가드는 상한을 **넘는 순간** 멈추므로 그 시점의 깊이는 언제나 `상한 + 1` 이다. 실제 중첩이
+5000 단계여도 513 이 나온다. 그 숫자를 문장에 넣으면 *"한 단계만 줄이면 된다"* 로 읽혀
+사용자를 헛수고시킨다. 진짜 깊이를 재려면 끝까지 순회해야 하는데, 그러면 스택을 지키려고
+만든 가드가 무의미해진다. 그래서 **상한만 알린다.**
+
+### 7.2 512 인 이유
 
 측정상 실패는 2000~4000 사이에서 난다. 상한을 실패 지점 가까이 두면 Node 버전 · 스택 여유에
 따라 흔들린다. 512 는 실패 지점에서 충분히 멀고, 테스트가 읽을 수 있는 인자의 현실적인 상한보다
 충분히 크다.
 
-### 7.2 왜 반복문으로 재작성하지 않는가
+### 7.3 왜 반복문으로 재작성하지 않는가
 
 `record` 의 `stableStringify` 는 명시적 프레임 스택 40여 줄이고 `mock` 의 `stableKey` 는 8 줄이다.
 고칠 가치가 있는 것은 "4000 단계를 지원하는 것"이 아니라 **"프로세스가 읽을 수 없는 오류로

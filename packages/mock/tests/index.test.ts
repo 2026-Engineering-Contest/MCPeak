@@ -198,7 +198,7 @@ describe("@ohmymcp/mock", () => {
     const result = await client.callTool({ name: "add", arguments: { deep } });
     expect(result.isError).toBe(true);
     expect(text(result)).toContain(
-      "→ 툴 'add' 의 호출 인자로 매칭 키를 만들 수 없습니다: 중첩이 너무 깊습니다",
+      "→ 툴 'add' 의 호출 인자로 매칭 키를 만들 수 없습니다: 중첩이 상한 512 단계를 넘었습니다",
     );
     expect(text(result)).toContain(
       "→ 목은 이 인자를 주입된 어떤 응답과도 비교할 수 없습니다. 호출 쪽 인자를 줄이세요.",
@@ -224,7 +224,7 @@ describe("@ohmymcp/mock", () => {
 
     const result = await client.callTool({ name: "add", arguments: { deep } });
     expect(result.isError).toBe(true);
-    expect(text(result)).toContain("중첩이 너무 깊습니다");
+    expect(text(result)).toContain("중첩이 상한 512 단계를 넘었습니다");
 
     // 서버가 살아 있어야 한다.
     const after = await client.callTool({ name: "add", arguments: { a: 1, b: 2 } });
@@ -232,5 +232,23 @@ describe("@ohmymcp/mock", () => {
     expect(JSON.parse(text(after))).toEqual({ sum: 3 });
 
     await client.close();
+  });
+
+  it("주입 깊이 경계에서 상한 이하는 통과하고 초과는 설계된 문장으로 거부한다", async () => {
+    const server = await start();
+    const nest = (n: number): unknown => {
+      let value: unknown = null;
+      for (let i = 0; i < n; i++) value = { a: value };
+      return value;
+    };
+
+    // 상한과 같은 깊이는 통과한다.
+    expect(() => server.on("add", { deep: nest(511) }, { sum: 1 })).not.toThrow();
+
+    // 넘으면 raw KeyDepthError 가 아니라 진입점이 붙은 설계된 문장이어야 한다.
+    // 두 깊이 검사(주입: findKeyViolation, 조회: stableKey)가 어긋나면 여기서 잡힌다.
+    expect(() => server.on("add", { deep: nest(513) }, { sum: 1 })).toThrow(
+      "→ mock.on('add', ...) 의 인자로 매칭 키를 만들 수 없습니다: 중첩이 너무 깊습니다",
+    );
   });
 });

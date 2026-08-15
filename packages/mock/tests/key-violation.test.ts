@@ -64,7 +64,7 @@ describe("findKeyViolation — 거부하는 값", () => {
 
   it("상한을 넘는 깊이", () => {
     const violation = findKeyViolation(nest(MAX_KEY_DEPTH + 2));
-    expect(violation).toEqual({ kind: "tooDeep", depth: MAX_KEY_DEPTH + 1 });
+    expect(violation).toEqual({ kind: "tooDeep" });
   });
 
   it("상한과 같은 깊이는 통과한다", () => {
@@ -131,7 +131,7 @@ describe("assertKeyable — 문장 전문", () => {
       new Error(
         [
           "→ mock.on('add', ...) 의 인자로 매칭 키를 만들 수 없습니다: 중첩이 너무 깊습니다",
-          `→ 위치: 깊이 ${MAX_KEY_DEPTH + 1} — 상한: ${MAX_KEY_DEPTH}`,
+          `→ 상한: ${MAX_KEY_DEPTH} 단계`,
           "→ 목에 넘기는 인자는 테스트가 읽을 수 있는 크기여야 합니다. 필요한 필드만 넘기세요.",
         ].join("\n"),
       ),

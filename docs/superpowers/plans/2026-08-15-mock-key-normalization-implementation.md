@@ -1,5 +1,10 @@
 # 목 매칭 키 정규화 경계 구현 계획 (2026-08-15)
 
+> **최종 리뷰 반영.** 아래 T1 · T4 의 코드 블록은 `tooDeep` 에 `depth` 를 담고 문장에
+> `깊이 513` 을 찍는다. 최종 전체 리뷰에서 그 숫자가 실제 깊이와 무관한 상수(언제나 `상한 + 1`)
+> 임이 드러나 **빼기로 결정했다.** 확정된 형태는 설계서 §5 · §6.5 · §6.6 · §7.1 과 실제 소스를
+> 보라. 이 계획서는 실행 기록으로 남긴다.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** `@ohmymcp/mock` 이 매칭 키를 만들 수 없는 인자를 주입 시점에 읽을 수 있는 문장으로 거부하고, 깊은 중첩이 목 서버 프로세스를 죽이지 않게 한다.

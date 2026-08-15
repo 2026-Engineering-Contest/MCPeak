@@ -25,14 +25,16 @@ export const MAX_KEY_DEPTH = 512;
  * `kind` 마다 정확히 하나로 정해진다 — 없는 필드를 참조할 수 없다.
  *
  * `path` 는 루트가 `"args"`, 중첩은 `args.items[2].when`.
- * `tooDeep` 에는 `path` 가 없다. 512 단계짜리 경로는 문장에 넣을 수 없다.
+ * `tooDeep` 에는 `path` 도 `depth` 도 없다. `walk` 는 `depth > MAX_KEY_DEPTH` 가 되는 즉시
+ * 되돌아오므로 그 시점의 `depth` 는 항상 `MAX_KEY_DEPTH + 1` 이다 — 실제 중첩이 얼마나
+ * 깊었는지와 무관한 상수다. 그 값을 문장에 실으면 없는 사실을 말하게 된다.
  */
 export type KeyViolation =
   | { kind: "circular"; path: string }
   | { kind: "sparse"; path: string }
   | { kind: "nonFinite"; path: string; found: string }
   | { kind: "notJson"; path: string; found: string }
-  | { kind: "tooDeep"; depth: number };
+  | { kind: "tooDeep" };
 
 /** plain object 인가. `Date` · `Map` · 클래스 인스턴스를 거른다. */
 function isPlainObject(value: object): boolean {
@@ -46,7 +48,7 @@ function describeValue(value: unknown): string {
   if (typeof value === "function") return "function";
   if (typeof value === "symbol") return "symbol";
   if (typeof value === "bigint") return "bigint";
-  return (value as object)?.constructor?.name ?? "알 수 없는 값";
+  return (value as object)?.constructor?.name || "알 수 없는 값";
 }
 
 /**
@@ -61,7 +63,7 @@ export function findKeyViolation(value: unknown): KeyViolation | undefined {
   const active = new Set<object>();
 
   function walk(current: unknown, path: string, depth: number): KeyViolation | undefined {
-    if (depth > MAX_KEY_DEPTH) return { kind: "tooDeep", depth };
+    if (depth > MAX_KEY_DEPTH) return { kind: "tooDeep" };
     if (current === undefined || current === null) return undefined;
     if (typeof current === "boolean" || typeof current === "string") return undefined;
     if (typeof current === "number") {
@@ -136,7 +138,7 @@ function keyViolationMessage(violation: KeyViolation, source: string): string {
     case "tooDeep":
       return [
         `${head}: 중첩이 너무 깊습니다`,
-        `→ 위치: 깊이 ${violation.depth} — 상한: ${MAX_KEY_DEPTH}`,
+        `→ 상한: ${MAX_KEY_DEPTH} 단계`,
         "→ 목에 넘기는 인자는 테스트가 읽을 수 있는 크기여야 합니다. 필요한 필드만 넘기세요.",
       ].join("\n");
   }
@@ -157,16 +159,17 @@ export function assertKeyable(value: unknown, source: string): void {
 /**
  * 조회 경로에서 깊이 상한을 넘었을 때. 핸들러가 잡아 isError 응답으로 바꾼다.
  *
+ * `depth` 필드가 없다 — `walk` 가 되돌아오는 시점의 깊이는 항상 `MAX_KEY_DEPTH + 1` 인
+ * 상수라 실제 중첩 정도를 말해주지 않는다(`KeyViolation.tooDeep` 문서 참조).
+ *
  * 생성자 매개변수 프로퍼티(`constructor(readonly depth: number)`)를 안 쓴다 — 그 문법은
  * "지우기만 하면 되는" TS 문법이 아니라 실제 코드 생성이 필요해서, `tests/fixtures/stdio-entry.mjs`
  * 가 이 파일을 raw node(`--experimental-strip-types`)로 돌릴 때 "parameter property is not
  * supported in strip-only mode" 로 죽는다(실측). 필드 선언 + 본문 대입으로 우회한다.
  */
 export class KeyDepthError extends Error {
-  readonly depth: number;
-  constructor(depth: number) {
-    super(`중첩이 너무 깊습니다 (깊이 ${depth}, 상한 ${MAX_KEY_DEPTH})`);
+  constructor() {
+    super(`중첩이 상한 ${MAX_KEY_DEPTH} 단계를 넘었습니다`);
     this.name = "KeyDepthError";
-    this.depth = depth;
   }
 }

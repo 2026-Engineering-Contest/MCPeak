@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   defineMcpSuite,
+  MCP_SUITE_JSON_SCHEMA,
+  type ReadonlyJsonObject,
   SuiteValidationError,
   type TestSuiteSpec,
   validateMcpSuite,
@@ -635,5 +637,96 @@ describe("approval 검증", () => {
     expect(issues).toContainEqual(
       expect.objectContaining({ code: "EMPTY_ASSERTIONS", path: "cases[0].assertions" }),
     );
+  });
+});
+
+describe("validateMcpSuite / approval.cases", () => {
+  /** 지문은 유효한 값으로 고정한다. 이 블록의 관심사는 cases 하나다. */
+  const withCases = (cases: unknown) => approvalSuite({ fingerprint: FINGERPRINT, cases });
+
+  it("approval.cases 가 없으면 valid 다", () => {
+    expect(validateMcpSuite(approvalSuite({ fingerprint: FINGERPRINT })).valid).toBe(true);
+  });
+
+  it("approval.cases 가 빈 배열이면 valid 다", () => {
+    expect(validateMcpSuite(withCases([])).valid).toBe(true);
+  });
+
+  it("id 가 문자열이 아니면 INVALID_VALUE 이고 path 가 approval.cases[0].id 다", () => {
+    expect(issuesOf(withCases([{ id: 1, status: "passed" }]))).toContainEqual(
+      expect.objectContaining({ code: "INVALID_VALUE", path: "approval.cases[0].id" }),
+    );
+  });
+
+  it("status 가 passed·serverDefect 밖이면 INVALID_VALUE 다", () => {
+    expect(issuesOf(withCases([{ id: "a", status: "unknown" }]))).toContainEqual(
+      expect.objectContaining({ code: "INVALID_VALUE", path: "approval.cases[0].status" }),
+    );
+  });
+
+  it("status 가 없으면 INVALID_VALUE 다", () => {
+    expect(issuesOf(withCases([{ id: "a" }]))).toContainEqual(
+      expect.objectContaining({ code: "INVALID_VALUE", path: "approval.cases[0].status" }),
+    );
+  });
+
+  it("중복 id 가 있으면 INVALID_VALUE 다", () => {
+    expect(
+      issuesOf(
+        withCases([
+          { id: "a", status: "passed" },
+          { id: "a", status: "passed" },
+        ]),
+      ),
+    ).toContainEqual(
+      expect.objectContaining({ code: "INVALID_VALUE", path: "approval.cases[1].id" }),
+    );
+  });
+
+  it("cases 가 배열이 아니면 INVALID_VALUE 다", () => {
+    expect(issuesOf(withCases({ a: "passed" }))).toContainEqual(
+      expect.objectContaining({ code: "INVALID_VALUE", path: "approval.cases" }),
+    );
+  });
+
+  it("approval.cases[].id 가 cases 에 없어도 valid 다", () => {
+    // 케이스를 지우는 정상 편집이 파일을 깨진 것으로 만들면 안 된다. 설계 문서 §7.3.
+    expect(validateMcpSuite(withCases([{ id: "없는-케이스", status: "serverDefect" }])).valid).toBe(
+      true,
+    );
+  });
+
+  it("passed 와 serverDefect 를 모두 받는다", () => {
+    expect(
+      validateMcpSuite(
+        withCases([
+          { id: "tools", status: "passed" },
+          { id: "call", status: "serverDefect" },
+        ]),
+      ).valid,
+    ).toBe(true);
+  });
+
+  it("항목 안의 모르는 키를 UNKNOWN_FIELD 로 낸다", () => {
+    expect(
+      issuesOf(withCases([{ id: "a", status: "passed", approvedAt: "2026-08-15" }])),
+    ).toContainEqual(
+      expect.objectContaining({ code: "UNKNOWN_FIELD", path: "approval.cases[0].approvedAt" }),
+    );
+  });
+
+  it("MCP_SUITE_JSON_SCHEMA 가 approval.cases 를 기술하고 status 의 enum 이 둘이다", () => {
+    const defs = MCP_SUITE_JSON_SCHEMA.$defs as ReadonlyJsonObject;
+    const approval = defs.suiteApproval as ReadonlyJsonObject;
+    const properties = approval.properties as ReadonlyJsonObject;
+    expect(properties.cases).toEqual({
+      type: "array",
+      items: { $ref: "#/$defs/suiteCaseApproval" },
+    });
+    const item = defs.suiteCaseApproval as ReadonlyJsonObject;
+    expect(item.required).toEqual(["id", "status"]);
+    expect((item.properties as ReadonlyJsonObject).status).toEqual({
+      enum: ["passed", "serverDefect"],
+    });
   });
 });

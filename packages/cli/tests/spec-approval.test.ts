@@ -2,6 +2,7 @@ import type { TestSuiteSpec } from "@ohmymcp/runner";
 import { suiteFingerprint } from "@ohmymcp/runner";
 import { describe, expect, it } from "vitest";
 import {
+  caseApprovalStatus,
   checkSpecApproval,
   renderSpecApproval,
   type SpecApprovalResult,
@@ -37,6 +38,31 @@ describe("checkSpecApproval", () => {
   it("fingerprint 는 항상 64자 hex 다", () => {
     for (const value of [suite, approved(fingerprint), approved(WRONG_FINGERPRINT)])
       expect(checkSpecApproval(value).fingerprint).toMatch(/^[0-9a-f]{64}$/);
+  });
+});
+
+describe("spec-approval / 케이스 판정", () => {
+  const withCases = (): TestSuiteSpec => ({
+    ...suite,
+    approval: {
+      fingerprint,
+      cases: [
+        { id: "ok-case", status: "passed" },
+        { id: "broken-case", status: "serverDefect" },
+      ],
+    },
+  });
+
+  it("approval.cases 가 없으면 판정 조회가 undefined 다", () => {
+    expect(caseApprovalStatus(approved(fingerprint), "ok-case")).toBeUndefined();
+    expect(caseApprovalStatus(suite, "ok-case")).toBeUndefined();
+  });
+  it("serverDefect 인 id 를 조회하면 serverDefect 다", () => {
+    expect(caseApprovalStatus(withCases(), "broken-case")).toBe("serverDefect");
+    expect(caseApprovalStatus(withCases(), "ok-case")).toBe("passed");
+  });
+  it("cases 에 없는 id 를 조회하면 undefined 다", () => {
+    expect(caseApprovalStatus(withCases(), "지워진-케이스")).toBeUndefined();
   });
 });
 

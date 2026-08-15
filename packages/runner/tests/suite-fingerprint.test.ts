@@ -42,6 +42,31 @@ describe("suiteFingerprint", () => {
     );
   });
 
+  it("approval.cases 를 넣어도 지문이 안 바뀐다", () => {
+    // approval 은 블록째 계산에서 빠진다. 항목이 늘어도 제외 규칙은 그대로다. 설계 문서 §7.1.
+    expect(
+      suiteFingerprint({
+        ...baseSuite(),
+        approval: {
+          fingerprint: FINGERPRINT,
+          cases: [
+            { id: "tools", status: "passed" },
+            { id: "call", status: "serverDefect" },
+          ],
+        },
+      }),
+    ).toBe(suiteFingerprint(baseSuite()));
+  });
+
+  it("approval.cases 의 내용을 바꿔도 지문이 안 바뀐다", () => {
+    const of = (status: "passed" | "serverDefect") =>
+      suiteFingerprint({
+        ...baseSuite(),
+        approval: { fingerprint: FINGERPRINT, cases: [{ id: "tools", status }] },
+      });
+    expect(of("passed")).toBe(of("serverDefect"));
+  });
+
   it("cases 안의 문자열 한 글자를 바꾸면 지문이 달라진다", () => {
     const changed = baseSuite();
     changed.cases[0] = { ...(changed.cases[0] as TestSuiteSpec["cases"][number]), name: "툴 목룍" };

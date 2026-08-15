@@ -13,7 +13,7 @@ import type {
   SanitizedAuthoringCandidate,
   ToolCoverage,
 } from "@ohmymcp/generate";
-import type { Cassette } from "@ohmymcp/record";
+import type { Cassette, CassetteMode } from "@ohmymcp/record";
 import type {
   ContractAxisKind,
   SpecFinding,
@@ -682,10 +682,13 @@ function writeDryRunAborted(
 ): void {
   const aborted = result.aborted;
   if (aborted === undefined) return;
+  const progress = `${result.outcomes.length}/${totalCases}`;
   io.write(
     aborted.reason === "connectionLost"
-      ? `✗ 시험 실행을 마치지 못했습니다. ${result.outcomes.length}/${totalCases} 케이스에서 연결이 끊겼습니다.\n`
-      : "✗ 시험 실행을 마치지 못했습니다.\n",
+      ? `✗ 시험 실행을 마치지 못했습니다. ${progress} 케이스에서 연결이 끊겼습니다.\n`
+      : aborted.reason === "stopped"
+        ? `✗ 시험 실행을 마치지 못했습니다. ${progress} 케이스에서 멈췄습니다.\n`
+        : "✗ 시험 실행을 마치지 못했습니다.\n",
   );
   io.write(`  → ${aborted.detail}\n`);
   if (diagnostics !== undefined && hasDiagnosticContent(diagnostics)) {
@@ -696,14 +699,17 @@ function writeDryRunAborted(
 }
 
 /**
- * 분류가 저장을 막았을 때의 안내(§8.3). 마지막 줄은 카세트 유무로 갈린다. 카세트가 있으면
- * 고친 케이스만 서버에 다시 나가고, 없으면 전량이 다시 나간다.
+ * 분류가 저장을 막았을 때의 안내(§8.3). 마지막 줄은 **실제 카세트 모드**로 갈린다.
+ *
+ * 재생은 `auto` 에서만 일어난다. 신규 녹화(`record`)는 회차마다 전량을 다시 서버로 보내므로
+ * "나머지는 카세트에서 재생됩니다" 가 거짓이 된다. 그래서 경로 유무가 아니라 `wireCassette`
+ * 가 정한 모드를 받는다.
  */
 function writeReviewBlocked(
   io: ReviewIO,
   specErrors: number,
   caseCount: number,
-  cassettePath: string | undefined,
+  cassetteMode: CassetteMode | undefined,
 ): void {
   io.write("\n");
   if (specErrors > 0) {
@@ -713,10 +719,15 @@ function writeReviewBlocked(
     // 보류는 고칠 것이 없다. revise·edit 으로 보내면 사용자가 고칠 데를 찾다 만다.
     io.write("  분류하지 않은 케이스가 있어 저장할 수 없습니다.\n");
   }
+  if (cassetteMode === "auto") {
+    io.write("  → 고친 케이스만 서버에 다시 나갑니다. 나머지는 카세트에서 재생됩니다.\n");
+    return;
+  }
+  io.write(`  → 다시 save 를 고르면 케이스 ${caseCount}개가 모두 서버에 다시 나갑니다.\n`);
   io.write(
-    cassettePath !== undefined
-      ? "  → 고친 케이스만 서버에 다시 나갑니다. 나머지는 카세트에서 재생됩니다.\n"
-      : `  → 다시 save 를 고르면 케이스 ${caseCount}개가 모두 서버에 다시 나갑니다.\n    반복 비용이 부담되면 --cassette 를 쓰세요.\n`,
+    cassetteMode === undefined
+      ? "    반복 비용이 부담되면 --cassette 를 쓰세요.\n"
+      : "    신규 녹화 중이라 이번 세션에서는 재생하지 않습니다.\n",
   );
 }
 
@@ -754,6 +765,8 @@ async function runInteractiveReview(
    * (§8.3)가 거짓이 된다. flush 는 저장에 성공한 뒤 한 번만 부른다.
    */
   let cassette: Awaited<ReturnType<typeof wireCassette>> | undefined;
+  /** 이미 화면에 낸 카세트 경고 수. 배선이 세션당 하나라 경고도 누적된다. 회차마다 새것만 낸다. */
+  let printedWarnings = 0;
   /** 진단 읽기가 판정을 바꾸면 안 된다. getDiagnostics 가 던지면 삼킨다. */
   const diagnostics = (): ProcessDiagnosticsInput | undefined => {
     try {
@@ -794,8 +807,9 @@ async function runInteractiveReview(
           writeDryRunNotice(io, {
             caseCount,
             target: [input.command, ...input.args].join(" "),
-            // 고지에 쓰는 모드는 파일 존재로 정한다(§5.2 의 표와 같은 규칙). 두 번째 save 부터는
-            // 이미 배선이 있으므로 그 시점의 모드가 아니라 첫 배선의 모드를 그대로 쓴다.
+            // 배선이 이미 있으면 그것이 정한 모드를 그대로 쓴다. 첫 회차는 아직 배선 전이라
+            // 파일 존재로 정하는데, 이는 `wireCassette` 의 규칙(§5.2)과 같은 판정이다.
+            // `loadCassette` 는 파일이 없을 때만 null 을 주고 나머지는 던지기 때문이다.
             ...(path === undefined
               ? {}
               : {
@@ -804,7 +818,7 @@ async function runInteractiveReview(
                     fresh:
                       cassette === undefined
                         ? input.forceRecord || !(await deps.exists(path))
-                        : false,
+                        : cassette.mode === "record",
                   },
                 }),
             resetCmd: input.resetCmd,
@@ -831,7 +845,8 @@ async function runInteractiveReview(
           // 출력이 깨지고 그 출력을 E2E 가 비교한다.
           io.write(`▸ 시험 실행 중... ${caseCount}/${caseCount}\n`);
           const result = await runDryRun({ client: cassette.client, suite: dryRunSuite });
-          for (const warning of cassette.warnings) io.write(`${warning}\n`);
+          for (const warning of cassette.warnings.slice(printedWarnings)) io.write(`${warning}\n`);
+          printedWarnings = cassette.warnings.length;
           if (result.aborted !== undefined) {
             writeDryRunAborted(io, result, caseCount, diagnostics());
             continue;
@@ -839,7 +854,7 @@ async function runInteractiveReview(
           writeDryRunResult(io, result);
           const review = await reviewDryRun(io, result);
           if (!review.cleared) {
-            writeReviewBlocked(io, review.specErrors.length, caseCount, input.cassettePath);
+            writeReviewBlocked(io, review.specErrors.length, caseCount, cassette.mode);
             continue;
           }
           approvals = review.approvals;
@@ -858,7 +873,15 @@ async function runInteractiveReview(
           await saveSuite(input, finalSuite, final.snapshot.fingerprint, deps, approvals);
           // 저장이 끝난 뒤에만 부른다. flush 는 내부에서 inner.close() 까지 부르므로 이보다
           // 앞이면 저장 직전에 연결이 죽는다.
-          await cassette?.flush();
+          //
+          // 오류 경계를 저장과 분리한다. 카세트 저장 실패는 명세 저장 실패가 아니다. 같이 묶으면
+          // 이미 파일이 만들어진 뒤에 SAVE_FAILED 를 말하고, 이어지는 재시도는 OUTPUT_EXISTS 로
+          // 막히는데 그때 연결은 flush 가 이미 닫아 놓은 상태다.
+          try {
+            await cassette?.flush();
+          } catch {
+            io.write("⚠ 카세트를 저장하지 못했습니다. 명세는 저장됐습니다.\n");
+          }
           // 최종 suite 는 baseline 과 다르다. 사용자가 케이스를 지웠거나 AI 후보를 적용했을 수
           // 있으므로 저장한 그 suite 로 다시 계산한다.
           //

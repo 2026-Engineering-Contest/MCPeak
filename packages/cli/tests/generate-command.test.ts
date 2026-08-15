@@ -2161,6 +2161,90 @@ describe("generate 시험 실행 게이트", () => {
     expect(d.output()).toContain("→ 같은 요청에 다른 응답이 왔습니다: weather(");
   });
 
+  it("회차마다 새 카세트 경고만 나온다", async () => {
+    // 배선은 세션당 하나라 warnings 가 누적된다. 회차마다 전량을 다시 찍으면 사용자는 이번에
+    // 새로 생긴 경고를 구분할 수 없다.
+    const rounds = 3;
+    const d = gateDeps({
+      choices: Array.from({ length: rounds }, () => "save"),
+      inputs: Array.from({ length: rounds * failingCases }, () => "?"),
+      confirms: Array.from({ length: rounds }, () => true),
+      // 같은 요청에 회차마다 다른 응답을 준다. 2회차부터 회차당 같은 수의 경고가 새로 생긴다.
+      respond: (name, _args, call) => ({
+        content: [{ type: "text", text: `${name} ${call}` }],
+        isError: false,
+        raw: { call },
+      }),
+    });
+    await runGenerateCommand([...gateArgv, "--cassette", ".ohmymcp/w.json"], d.value);
+    const marker = "→ 같은 요청에 다른 응답이 왔습니다:";
+    const perRound = d
+      .output()
+      .split("▸ 시험 실행 중...")
+      .slice(1)
+      .map((segment) => segment.split(marker).length - 1);
+    expect(perRound).toHaveLength(rounds);
+    expect(perRound[1]).toBeGreaterThan(0);
+    // 3회차가 2회차보다 많으면 1회차 몫을 다시 찍은 것이다.
+    expect(perRound[2]).toBe(perRound[1]);
+  });
+
+  it("신규 녹화 중에는 재생된다고 말하지 않는다", async () => {
+    // record 모드는 회차마다 전량을 다시 보낸다. auto 로 갈 때만 재생이 일어난다.
+    const d = gateDeps({
+      choices: ["save", "cancel"],
+      inputs: Array.from({ length: failingCases }, () => "?"),
+      confirms: [true],
+    });
+    await runGenerateCommand([...gateArgv, "--cassette", ".ohmymcp/w.json"], d.value);
+    const output = d.output();
+    expect(output).not.toContain("나머지는 카세트에서 재생됩니다");
+    expect(output).toContain(`케이스 ${baselineCases.length}개가 모두 서버에 다시 나갑니다.`);
+    // 이미 --cassette 를 쓰는 중이다. 쓰라고 하면 안 된다.
+    expect(output).not.toContain("--cassette 를 쓰세요");
+  });
+
+  it("카세트를 재생 중이면 고친 케이스만 다시 나간다고 말한다", async () => {
+    const store = new Map<string, Cassette>();
+    const first = gateDeps({
+      choices: ["save"],
+      inputs: Array.from({ length: failingCases }, () => "s"),
+      confirms: [true, true],
+      cassetteStore: store,
+    });
+    await runGenerateCommand([...gateArgv, "--cassette", ".ohmymcp/w.json"], first.value);
+
+    const second = gateDeps({
+      choices: ["save", "cancel"],
+      inputs: Array.from({ length: failingCases }, () => "?"),
+      confirms: [true],
+      cassetteStore: store,
+    });
+    second.value.exists = vi.fn(async (path: string) => path === ".ohmymcp/w.json");
+    await runGenerateCommand([...gateArgv, "--cassette", ".ohmymcp/w.json"], second.value);
+    expect(second.output()).toContain("나머지는 카세트에서 재생됩니다");
+  });
+
+  it("카세트 저장이 실패해도 명세 저장 실패로 보고하지 않는다", async () => {
+    const d = gateDeps({
+      choices: ["save"],
+      inputs: Array.from({ length: failingCases }, () => "s"),
+      confirms: [true, true],
+    });
+    d.value.cassetteIo = {
+      load: async () => null,
+      save: async () => {
+        throw new Error("EACCES");
+      },
+    };
+    await expect(
+      runGenerateCommand([...gateArgv, "--cassette", ".ohmymcp/w.json"], d.value),
+    ).resolves.toBe(0);
+    expect(d.output()).toContain("⚠ 카세트를 저장하지 못했습니다.");
+    expect(d.stderr.join("")).not.toContain("GENERATE_SAVE_FAILED");
+    expect(d.value.link).toHaveBeenCalledOnce();
+  });
+
   it("approval.cases 가 실려도 suiteFingerprint 가 안 바뀐다", async () => {
     const d = gateDeps({
       choices: ["save"],

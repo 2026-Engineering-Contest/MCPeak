@@ -10,7 +10,7 @@ import type { ToolDef } from "@ohmymcp/core";
 // ".ts" 로 매핑하지 않아 ERR_MODULE_NOT_FOUND 가 난다. 저장소의 다른 패키지는 ".js" 를
 // 쓰지만 그쪽에는 소스를 그대로 실행하는 테스트가 없다.
 // packages/mock/tsconfig.json 의 allowImportingTsExtensions 가 이것과 짝이다.
-import { assertKeyable } from "./key-violation.ts";
+import { assertKeyable, KeyDepthError, MAX_KEY_DEPTH } from "./key-violation.ts";
 
 /**
  * 인자를 가리지 않고 매칭한다. `mock.on(tool, ANY, result)`.
@@ -69,14 +69,15 @@ export interface MockServer {
  * `record` 의 ADR-0003(카세트 매칭 키)도 같은 규칙이다 — 두 패키지가 갈리면 안 된다.
  * 배열 안의 `undefined` 는 `JSON.stringify` 와 같이 `null` 로 남긴다 (자리가 의미를 갖는다).
  */
-function stableKey(value: unknown): string {
+function stableKey(value: unknown, depth = 0): string {
+  if (depth > MAX_KEY_DEPTH) throw new KeyDepthError(depth);
   if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
-  if (Array.isArray(value)) return `[${value.map(stableKey).join(",")}]`;
+  if (Array.isArray(value)) return `[${value.map((v) => stableKey(v, depth + 1)).join(",")}]`;
   const obj = value as Record<string, unknown>;
   return `{${Object.keys(obj)
     .filter((k) => obj[k] !== undefined)
     .sort()
-    .map((k) => `${JSON.stringify(k)}:${stableKey(obj[k])}`)
+    .map((k) => `${JSON.stringify(k)}:${stableKey(obj[k], depth + 1)}`)
     .join(",")}}`;
 }
 
@@ -148,6 +149,14 @@ function missMessage(tool: string, args: unknown, registry: Registry): string {
   return lines.join("\n");
 }
 
+/** 조회 인자가 너무 깊어 키를 못 만들 때. 던지지 않고 응답으로 나간다. */
+function depthMissMessage(tool: string, error: KeyDepthError): string {
+  return [
+    `→ 툴 '${tool}' 의 호출 인자로 매칭 키를 만들 수 없습니다: 중첩이 너무 깊습니다 (깊이 ${error.depth}, 상한 ${MAX_KEY_DEPTH})`,
+    "→ 목은 이 인자를 주입된 어떤 응답과도 비교할 수 없습니다. 호출 쪽 인자를 줄이세요.",
+  ].join("\n");
+}
+
 /** 정의를 검증한다. 사람이 손으로 쓰는 파일이라 오류를 읽을 수 있게 낸다. */
 export function assertMockDefinition(
   value: unknown,
@@ -211,8 +220,18 @@ function buildServer(tools: ToolDef[], registry: Registry): Server {
   );
   server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools }));
   server.setRequestHandler(CallToolRequestSchema, async (req) => {
-    const { hit, result } = lookup(registry, req.params.name, req.params.arguments);
-    if (!hit) {
+    let outcome: { hit: boolean; result: unknown };
+    try {
+      outcome = lookup(registry, req.params.name, req.params.arguments);
+    } catch (error) {
+      // KeyDepthError 만 응답으로 바꾼다. 다른 예외를 삼키면 목의 버그가 조용히 묻힌다.
+      if (!(error instanceof KeyDepthError)) throw error;
+      return {
+        content: [{ type: "text", text: depthMissMessage(req.params.name, error) }],
+        isError: true,
+      };
+    }
+    if (!outcome.hit) {
       return {
         content: [
           { type: "text", text: missMessage(req.params.name, req.params.arguments, registry) },
@@ -220,7 +239,7 @@ function buildServer(tools: ToolDef[], registry: Registry): Server {
         isError: true,
       };
     }
-    return { content: [{ type: "text", text: JSON.stringify(result) }] };
+    return { content: [{ type: "text", text: JSON.stringify(outcome.result) }] };
   });
   return server;
 }

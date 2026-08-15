@@ -62,6 +62,11 @@
 **이것은 `packages/mock` 에만 해당한다.** 다른 패키지는 `.js` 를 쓰며, 그쪽에는 소스를 그대로
 실행하는 테스트가 없다.
 
+같은 이유로 **`src/` 안에서 TypeScript 파라미터 프로퍼티를 쓸 수 없다.**
+`constructor(readonly depth: number)` 는 타입만 지워서는 없앨 수 없는 문법이라
+`--experimental-strip-types` 가 거부한다(`TypeScript parameter property is not supported in
+strip-only mode`). 필드 선언 + 생성자 대입으로 쓴다.
+
 ## 스펙과 다른 점 (의도된 것)
 
 - 설계 §5 는 `assertKeyable(value, tool, source)` 였다. **`tool` 을 뺀다** — `source` 가 이미 `mock.on('add', ...)` 로 툴 이름을 담고 있어 두 인자가 어긋날 여지만 생긴다.
@@ -821,17 +826,29 @@ stableKey 에 깊이 상한을 두고, 조회 경로에서는 예외 대신 isEr
 git fetch origin main && git ls-tree -r origin/main --name-only docs/adr | sed 's|.*/||' | grep -o '^[0-9]\{4\}' | sort -u | tail -3
 ```
 
-가장 큰 번호 + 1 을 쓴다. **하드코딩하지 마라** — 이 계획을 쓰는 사이에도 0019 에서 0024 까지 늘었고, 이미 `0007` 이 두 개다.
+가장 큰 번호 다음 **두 개**를 쓴다 (ADR 을 2건 낸다 — Step 2 참조). **하드코딩하지 마라** — 이 계획을 쓰는 사이에도 0019 에서 0024 까지 늘었고, 이미 `0007` 이 두 개다.
 
-- [ ] **Step 2: ADR 을 쓴다**
+- [ ] **Step 2: ADR 을 두 건 쓴다**
 
-CONTRIBUTING §8 의 다섯 항목(배경 / 선택지 / 결정 / 이유 / 결과)으로 쓴다. 담을 판단 세 가지:
+둘 다 CONTRIBUTING §8 의 다섯 항목(배경 / 선택지 / 결정 / 이유 / 결과)으로 쓴다. 상태는 `제안`, 작성자는 `@storyrago (③ mock server 파트)`.
+
+### ADR ①  목 매칭 키 정규화 경계
+
+담을 판단 세 가지:
 
 1. **`record` 처럼 해시 키로 가지 않는다.** ADR-0003 이 `matchKey` 를 SHA-256 hex 로 정한 이유는 결정론성이 아니라 **비밀값 누출** 이다 — 카세트는 파일로 남고 키 문자열은 `redact()` 를 거치지 않는다. `mock` 의 키는 디스크에 가지 않으므로 그 구멍이 없고, 반대로 키가 **실패 메시지에 그대로 찍히는 사용자 화면**이다. 해시로 바꾸면 `→ 이 툴에 주입된 인자: 3f2a9c...` 가 되어 "실패 메시지가 곧 제품" 에 어긋난다. 정규화는 공유하고 직렬화는 다르게 둔다.
 2. **검사를 두 곳에 나눈다.** 네 부류는 와이어로 도달 불가라 주입 경로에서, 깊이는 도달 가능하라 공유 경로에서 막는다.
 3. **깊이는 상한으로 막고 반복문 재작성을 미룬다.** `record` 의 프레임 스택 40 여 줄 대비 `mock` 은 8 줄이다. 고칠 값어치가 있는 것은 "4000 단계 지원" 이 아니라 "읽을 수 없는 오류로 죽는 것" 이다.
 
-상태는 `제안`, 작성자는 `@storyrago (③ mock server 파트)`.
+### ADR ②  `packages/mock/src` 의 상대 import 확장자
+
+T3 에서 실제로 부딪혀 내린 판단이고, **앞으로 `mock/src` 에 추가되는 모든 상대 import 를 구속**하므로 계획서 안에만 두면 안 된다.
+
+- **배경.** `tests/fixtures/stdio-entry.mjs` 가 `src/index.ts` 를 빌드 없이 raw node(`--experimental-strip-types`)로 돌린다. Node 의 ESM 리졸버는 `.js` 를 `.ts` 로 매핑하지 않아 `ERR_MODULE_NOT_FOUND` 가 나고, 테스트에는 *"요청 완료 전 MCP 서버가 종료되었습니다"* 로만 보인다. 저장소의 다른 패키지는 `.js` 를 쓰지만 그쪽에는 소스를 그대로 실행하는 테스트가 없다.
+- **선택지.** ⓐ 파일을 다시 합쳐 상대 import 를 없앤다 (공개 API 불변 목표와 충돌) / ⓑ `.ts` 확장자 + `packages/mock/tsconfig.json` 의 `allowImportingTsExtensions` / ⓒ 픽스처가 `dist` 를 물게 한다 (유닛 테스트가 빌드 의존이 된다)
+- **결정.** ⓑ.
+- **이유.** `moduleResolution` 이 `Bundler` 이고 이 패키지의 `typecheck` 가 `tsc --noEmit` 이라 성립한다(빌드는 tsdown 이 한다). 공유 `tsconfig.base.json` 을 건드리지 않고 `packages/mock` 안에서 끝난다. ⓐ 는 이 설계가 파일을 나눈 이유를 되돌리고, ⓒ 는 `npx vitest run` 만으로 도는 유닛 테스트를 빌드에 묶는다.
+- **결과.** 얻은 것 — raw node 경로가 살아 있고 공개 API 가 그대로다. 받아들인 비용 — **이 패키지만 저장소 관례와 다르다.** 그래서 `src/index.ts` 의 import 위와 `stdio-entry.mjs` 머리에 이유를 주석으로 남겼다. 후속 — 다른 패키지가 같은 종류의 raw-node 테스트를 도입하면 그때 관례를 통일할지 다시 본다.
 
 - [ ] **Step 3: README 를 갱신한다**
 

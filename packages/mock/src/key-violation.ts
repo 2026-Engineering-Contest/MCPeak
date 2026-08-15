@@ -153,3 +153,20 @@ export function assertKeyable(value: unknown, source: string): void {
   const violation = findKeyViolation(value);
   if (violation !== undefined) throw new Error(keyViolationMessage(violation, source));
 }
+
+/**
+ * 조회 경로에서 깊이 상한을 넘었을 때. 핸들러가 잡아 isError 응답으로 바꾼다.
+ *
+ * 생성자 매개변수 프로퍼티(`constructor(readonly depth: number)`)를 안 쓴다 — 그 문법은
+ * "지우기만 하면 되는" TS 문법이 아니라 실제 코드 생성이 필요해서, `tests/fixtures/stdio-entry.mjs`
+ * 가 이 파일을 raw node(`--experimental-strip-types`)로 돌릴 때 "parameter property is not
+ * supported in strip-only mode" 로 죽는다(실측). 필드 선언 + 본문 대입으로 우회한다.
+ */
+export class KeyDepthError extends Error {
+  readonly depth: number;
+  constructor(depth: number) {
+    super(`중첩이 너무 깊습니다 (깊이 ${depth}, 상한 ${MAX_KEY_DEPTH})`);
+    this.name = "KeyDepthError";
+    this.depth = depth;
+  }
+}

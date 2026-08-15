@@ -185,4 +185,52 @@ describe("@ohmymcp/mock", () => {
       "→ 정의 파일의 responses[0] 의 인자로 매칭 키를 만들 수 없습니다: 유한하지 않은 수",
     );
   });
+
+  it("너무 깊은 호출 인자는 서버를 죽이지 않고 오류 응답이 된다", async () => {
+    const server = await start();
+    server.on("add", { a: 1, b: 2 }, { sum: 3 });
+    const client = await connect(server);
+
+    // 루트가 깊이 0. 상한을 넘기려면 상한 + 2 단계가 필요하다.
+    let deep: unknown = null;
+    for (let i = 0; i < 514; i++) deep = { a: deep };
+
+    const result = await client.callTool({ name: "add", arguments: { deep } });
+    expect(result.isError).toBe(true);
+    expect(text(result)).toContain(
+      "→ 툴 'add' 의 호출 인자로 매칭 키를 만들 수 없습니다: 중첩이 너무 깊습니다",
+    );
+    expect(text(result)).toContain(
+      "→ 목은 이 인자를 주입된 어떤 응답과도 비교할 수 없습니다. 호출 쪽 인자를 줄이세요.",
+    );
+
+    // 서버가 살아 있어야 한다 — 이 갈래를 만든 이유가 그것이다.
+    const after = await client.callTool({ name: "add", arguments: { a: 1, b: 2 } });
+    expect(after.isError).toBeFalsy();
+    expect(JSON.parse(text(after))).toEqual({ sum: 3 });
+
+    await client.close();
+  });
+
+  it("깊은 배열 사슬도 같은 오류 응답이 된다", async () => {
+    const server = await start();
+    server.on("add", { a: 1, b: 2 }, { sum: 3 });
+    const client = await connect(server);
+
+    // 객체가 아니라 배열로 사슬을 만든다. stableKey 의 배열 분기가 map 콜백에
+    // 인덱스를 depth 로 흘리면 가드가 안 걸리고 스택이 터진다 — 그 회귀를 잡는다.
+    let deep: unknown = null;
+    for (let i = 0; i < 514; i++) deep = [deep];
+
+    const result = await client.callTool({ name: "add", arguments: { deep } });
+    expect(result.isError).toBe(true);
+    expect(text(result)).toContain("중첩이 너무 깊습니다");
+
+    // 서버가 살아 있어야 한다.
+    const after = await client.callTool({ name: "add", arguments: { a: 1, b: 2 } });
+    expect(after.isError).toBeFalsy();
+    expect(JSON.parse(text(after))).toEqual({ sum: 3 });
+
+    await client.close();
+  });
 });

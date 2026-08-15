@@ -645,4 +645,25 @@ describe("provider adapters", () => {
     expect(combined).not.toContain("no-such-model");
     expect(failure).toMatchObject({ code: "nonZeroExit", reason: "unknownModel" });
   });
+  // 아래 둘은 진단 통로(T4)를 더해도 authoring 경로가 그대로인지 보는 확인용이다.
+  it("진단 배선을 더해도 author 의 stdin 에 suite 스키마 안내가 그대로 있다", async () => {
+    const r = runner({ ok: true, value: { status: "questions", questions: ["q"] } });
+    await createCodexAuthoringProvider({ run: r.run, model: "m" }).author(preview().request, {
+      timeoutMs: 1,
+    });
+    const invocation = r.calls[0] as { stdin: string; files: readonly { contents: string }[] };
+    expect(invocation.stdin).toContain("suiteJson 필드에는 이 스키마를 만족하는 suite를");
+    expect(invocation.stdin.startsWith("역할: 현재 Runner의 TestSuiteSpec만 사용해")).toBe(true);
+    expect(invocation.files[0]?.contents).toBe(JSON.stringify(PROVIDER_OUTPUT_SCHEMA));
+  });
+  it("provider 객체가 author 와 diagnose 를 함께 갖는다", () => {
+    const r = runner({ ok: true, value: { status: "questions", questions: ["q"] } });
+    for (const provider of [
+      createCodexAuthoringProvider({ run: r.run, model: "m" }),
+      createClaudeAuthoringProvider({ run: r.run, model: "m" }),
+    ]) {
+      expect(typeof provider.author).toBe("function");
+      expect(typeof provider.diagnose).toBe("function");
+    }
+  });
 });

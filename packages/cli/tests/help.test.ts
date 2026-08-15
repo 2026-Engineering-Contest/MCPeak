@@ -18,6 +18,17 @@ describe("generate 도움말", () => {
     expect(GENERATE_USAGE).toContain(`[${option}]`);
   });
 
+  it("GENERATE_USAGE 에 [--force] 가 있다", () => {
+    expect(GENERATE_USAGE).toContain("[--force]");
+  });
+
+  it("설명 블록에 --force 줄이 있다", () => {
+    expect(help).toContain(
+      "--force               `--out` 경로에 파일이 있으면 지우고 새로 씁니다. 기본은 저장을",
+    );
+    expect(help).toContain("멈추는 것입니다");
+  });
+
   it("--no-repair 설명이 도움말에 있다", () => {
     expect(help).toContain(
       "--no-repair           시험 실행이 실패해도 입력값을 고쳐 다시 시도하지 않습니다.",

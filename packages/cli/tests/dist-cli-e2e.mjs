@@ -135,6 +135,7 @@ function execute(args) {
       "--record",
       "--reset-cmd <command>",
       "--no-repair",
+      "--force",
     ])
       assert.ok(generateHelp.out.includes(option), option);
     assert.ok(generateHelp.out.includes("실패가 곧바로 분류 화면으로 갑니다"), generateHelp.out);
@@ -262,6 +263,35 @@ for (const [fixture, expectedStatus, expectedSummary] of [
     assert.ok(!generated.out.includes("최대 2회까지 다시 호출합니다"), generated.out);
     assert.equal(value.approval?.cases, undefined);
     await expectExited(pidFile);
+    // 같은 --out 으로 다시 부르면 서버를 띄우기 전에 끊는다. 파일이 이미 있다는 것은 인자
+    // 파싱 때 아는 값이고, 그 뒤로 이어지는 비용을 치르기 전에 알려 줘야 한다.
+    {
+      const pidBefore = await readFile(pidFile, "utf8");
+      const rerun = await execute([
+        "generate",
+        "--suite-id",
+        "weather",
+        "--name",
+        "Weather",
+        "--out",
+        suite,
+        "--command",
+        process.execPath,
+        "--arg",
+        wrapper,
+        "--arg",
+        pidFile,
+        "--arg",
+        server,
+        "--baseline-only",
+      ]);
+      assert.equal(rerun.code, 1);
+      assert.ok(rerun.err.includes("시작하지 않았습니다"), rerun.err);
+      assert.ok(rerun.err.includes("`--force`"), rerun.err);
+      // 서버가 떴다면 wrapper 가 PID 파일을 새 값으로 덮어쓴다. 값이 그대로면 안 떴다는 뜻이다.
+      assert.equal(await readFile(pidFile, "utf8"), pidBefore);
+      await expectExited(pidFile);
+    }
     const runTest = async (path, extra = []) => {
       const outcome = await execute([
         "test",

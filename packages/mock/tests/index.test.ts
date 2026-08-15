@@ -3,7 +3,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { ToolDef } from "@ohmymcp/core";
 import { afterEach, describe, expect, it } from "vitest";
-import { createMockServer, type MockServer } from "../src/index.js";
+import { ANY, createMockServer, type MockServer } from "../src/index.js";
 
 const { tools } = JSON.parse(
   readFileSync(new URL("../../../fixtures/tools-list.sample.json", import.meta.url), "utf8"),
@@ -135,5 +135,120 @@ describe("@ohmymcp/mock", () => {
 
     const client = new Client({ name: "test", version: "0.0.0" });
     await expect(client.connect(new StreamableHTTPClientTransport(new URL(url)))).rejects.toThrow();
+  });
+
+  it("키로 만들 수 없는 인자를 주입하면 진입점과 위치를 알려준다", async () => {
+    const server = await start();
+    expect(() => server.on("add", { a: 1, b: NaN }, { sum: 1 })).toThrow(
+      "→ mock.on('add', ...) 의 인자로 매칭 키를 만들 수 없습니다: 유한하지 않은 수",
+    );
+    expect(() => server.on("add", { a: 1, b: NaN }, { sum: 1 })).toThrow(
+      "→ 위치: args.b — 발견: NaN",
+    );
+  });
+
+  it("ANY 는 심볼이지만 거부되지 않는다", async () => {
+    const server = await start();
+    expect(() => server.on("add", ANY, { sum: 0 })).not.toThrow();
+    const client = await connect(server);
+
+    const result = await client.callTool({ name: "add", arguments: { a: 7, b: 7 } });
+    expect(result.isError).toBeFalsy();
+    expect(JSON.parse(text(result))).toEqual({ sum: 0 });
+
+    await client.close();
+  });
+
+  it("인자 지정본이 ANY 보다 우선한다", async () => {
+    const server = await start();
+    server.on("add", ANY, { sum: 0 });
+    server.on("add", { a: 1, b: 2 }, { sum: 3 });
+    const client = await connect(server);
+
+    expect(
+      JSON.parse(text(await client.callTool({ name: "add", arguments: { a: 1, b: 2 } }))),
+    ).toEqual({ sum: 3 });
+    expect(
+      JSON.parse(text(await client.callTool({ name: "add", arguments: { a: 9, b: 9 } }))),
+    ).toEqual({ sum: 0 });
+
+    await client.close();
+  });
+
+  it("정의 파일의 responses 도 같은 판정을 받는다", async () => {
+    await expect(
+      createMockServer({
+        tools,
+        responses: [{ tool: "add", args: { a: NaN }, result: { sum: 0 } }],
+      }),
+    ).rejects.toThrow(
+      "→ 정의 파일의 responses[0] 의 인자로 매칭 키를 만들 수 없습니다: 유한하지 않은 수",
+    );
+  });
+
+  it("너무 깊은 호출 인자는 서버를 죽이지 않고 오류 응답이 된다", async () => {
+    const server = await start();
+    server.on("add", { a: 1, b: 2 }, { sum: 3 });
+    const client = await connect(server);
+
+    // 루트가 깊이 0. 상한을 넘기려면 상한 + 2 단계가 필요하다.
+    let deep: unknown = null;
+    for (let i = 0; i < 514; i++) deep = { a: deep };
+
+    const result = await client.callTool({ name: "add", arguments: { deep } });
+    expect(result.isError).toBe(true);
+    expect(text(result)).toContain(
+      "→ 툴 'add' 의 호출 인자로 매칭 키를 만들 수 없습니다: 중첩이 상한 512 단계를 넘었습니다",
+    );
+    expect(text(result)).toContain(
+      "→ 목은 이 인자를 주입된 어떤 응답과도 비교할 수 없습니다. 호출 쪽 인자를 줄이세요.",
+    );
+
+    // 서버가 살아 있어야 한다 — 이 갈래를 만든 이유가 그것이다.
+    const after = await client.callTool({ name: "add", arguments: { a: 1, b: 2 } });
+    expect(after.isError).toBeFalsy();
+    expect(JSON.parse(text(after))).toEqual({ sum: 3 });
+
+    await client.close();
+  });
+
+  it("깊은 배열 사슬도 같은 오류 응답이 된다", async () => {
+    const server = await start();
+    server.on("add", { a: 1, b: 2 }, { sum: 3 });
+    const client = await connect(server);
+
+    // 객체가 아니라 배열로 사슬을 만든다. stableKey 의 배열 분기가 map 콜백에
+    // 인덱스를 depth 로 흘리면 가드가 안 걸리고 스택이 터진다 — 그 회귀를 잡는다.
+    let deep: unknown = null;
+    for (let i = 0; i < 514; i++) deep = [deep];
+
+    const result = await client.callTool({ name: "add", arguments: { deep } });
+    expect(result.isError).toBe(true);
+    expect(text(result)).toContain("중첩이 상한 512 단계를 넘었습니다");
+
+    // 서버가 살아 있어야 한다.
+    const after = await client.callTool({ name: "add", arguments: { a: 1, b: 2 } });
+    expect(after.isError).toBeFalsy();
+    expect(JSON.parse(text(after))).toEqual({ sum: 3 });
+
+    await client.close();
+  });
+
+  it("주입 깊이 경계에서 상한 이하는 통과하고 초과는 설계된 문장으로 거부한다", async () => {
+    const server = await start();
+    const nest = (n: number): unknown => {
+      let value: unknown = null;
+      for (let i = 0; i < n; i++) value = { a: value };
+      return value;
+    };
+
+    // 상한과 같은 깊이는 통과한다.
+    expect(() => server.on("add", { deep: nest(511) }, { sum: 1 })).not.toThrow();
+
+    // 넘으면 raw KeyDepthError 가 아니라 진입점이 붙은 설계된 문장이어야 한다.
+    // 두 깊이 검사(주입: findKeyViolation, 조회: stableKey)가 어긋나면 여기서 잡힌다.
+    expect(() => server.on("add", { deep: nest(513) }, { sum: 1 })).toThrow(
+      "→ mock.on('add', ...) 의 인자로 매칭 키를 만들 수 없습니다: 중첩이 너무 깊습니다",
+    );
   });
 });

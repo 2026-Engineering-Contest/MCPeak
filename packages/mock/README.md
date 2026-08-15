@@ -68,6 +68,27 @@ ohmymcp test suite.json --command ohmymcp-mock --arg definition.json
 
 `result` 는 MCP 와이어 포맷이 아니라 **알맹이**다. `content: [{ type: "text", ... }]` 포장은 목이 한다.
 
+### 키로 만들 수 없는 인자
+
+아래는 주입 시점에 거부됩니다. MCP 호출은 JSON 으로 오므로 **어떤 호출로도 도달할 수 없는
+값**이고, 그대로 두면 주입은 성공한 것처럼 보이는데 영영 안 맞거나 다른 주입과 같은 키가 됩니다.
+
+| 값 | 예 |
+|---|---|
+| 순환 참조 | `o.self = o` |
+| 희소 배열 | `[1, , 3]` |
+| `NaN` · `Infinity` | `{ n: NaN }` |
+| JSON 이 아닌 값 | `Date` · 함수 · 심볼 · `BigInt` · `Map` |
+
+`undefined` 는 거부하지 않습니다 — 객체 프로퍼티면 빼고, 배열 원소면 `null` 로 둡니다.
+
+중첩 깊이 상한은 512 입니다. 호출 인자가 이를 넘으면 서버를 죽이지 않고 `isError: true`
+응답으로 알려줍니다.
+
+거부 집합은 `record` 의 카세트 매칭 키(ADR-0003)와 같습니다. 다만 `record` 는 키를 SHA-256 으로
+해시하고 목은 하지 않습니다 — 목의 키는 파일에 남지 않고 실패 메시지에 그대로 찍히기 때문입니다.
+배경은 ADR-0029.
+
 ## 설계 메모
 
 - **HTTP 는 stateless 로 띄운다.** `sessionIdGenerator: undefined`. stateful 로 가면 SDK 가

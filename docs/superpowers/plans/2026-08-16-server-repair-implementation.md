@@ -270,8 +270,8 @@ T12 까지 끝나면 pnpm test 를 --force 로 한 번 돌리고 `Cached: 0 cach
 > **T2·T3·T4 와 터미널 B 도 이 결정을 따른다.**
 
 ```ts
-import type { JsonValue } from "./schema.js";
 import type { McpToolContext } from "./authoring-request.js";
+import type { JsonValue } from "./schema.js";
 
 export interface DiagnosisDiagnostic {
   readonly code: string;

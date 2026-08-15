@@ -95,7 +95,7 @@ PR 이다(로드맵 PR 2-B 선례).
 | 터미널 | PR | 브랜치 | worktree | 패키지 | 태스크 |
 |---|---|---|---|---|---|
 | A | 1 | `feat/contract-axes-runner` | `.claude/worktrees/ohmymcp-contract-axes-runner` | `runner` | T1 → T2 → T3 → T4 |
-| B | 2 | `feat/contract-axes-generate-cli` | `.claude/worktrees/ohmymcp-contract-axes-generate-cli` | `generate` · `cli` | T5 → T6 → T7 → T8 → T9 → T10 |
+| B | 2 | `feat/contract-axes-generate-cli` | `.claude/worktrees/ohmymcp-contract-axes-generate-cli` | `generate` · `cli` | T5 → T6 → T6b → T7 → T8 → T9 → T10 |
 
 터미널 안의 웨이브.
 
@@ -105,7 +105,7 @@ PR 이다(로드맵 PR 2-B 선례).
 | A | 2 | T2 → T3 | 순차. 같은 파일(`contract-axes.ts`) |
 | A | 3 | T4 | 단독. `input-contract.ts` |
 | B | 1 | T5 | 단독 |
-| B | 2 | T6 → T7 | 순차. T7 이 T6 의 케이스를 기대값으로 쓴다 |
+| B | 2 | T6 → T6b → T7 | 순차. T7 이 T6 의 케이스를 기대값으로 쓴다. T6b 는 아래 사유로 실행 중 추가됐다 |
 | B | 3 | T8 | 단독. 여기서 baseline 출력이 실제로 바뀐다 |
 | B | 4 | T9 | **직렬 전용.** 실제 서버 프로세스를 띄운다 |
 | B | 5 | T10 | 단독. 실제 import 를 보고 목록을 확정한다 |
@@ -218,7 +218,7 @@ EnterWorktree 도구에 path 로 그 절대 경로를 넘긴다. name 으로 새
 
 [2단계: 실행]
 
-역할: 오케스트레이터. 너는 직접 구현하지 않는다. 계획서의 T5 → T6 → T7 → T8 → T9 → T10 을
+역할: 오케스트레이터. 너는 직접 구현하지 않는다. 계획서의 T5 → T6 → T6b → T7 → T8 → T9 → T10 을
 순서대로, 태스크마다 서브에이전트를 스폰해 실행시키고, 보고를 받아 검증하고, 다음으로 넘긴다.
 
 계획서: docs/superpowers/plans/2026-08-15-contract-axis-coverage-implementation.md
@@ -1365,6 +1365,67 @@ export { buildViolationCases, type GeneratedCase } from "./violation-cases.js";
 
 ---
 
+## Task 6b: ADR-0009 개정과 의존 경계 갱신 (실행 중 추가)
+
+**이 태스크는 계획 시점에 없었다.** T6 을 통합하려다 계획서 결함을 발견해 추가했다.
+
+`packages/generate/tests/dependency-boundary.test.ts` 는 승인 심볼 목록과 **정확한 일치**를
+요구한다(`expect([...used].sort()).toEqual(APPROVED_RUNNER_SYMBOLS)`). T6 이 `runner` 심볼 셋을
+새로 import 하는 순간 이 테스트가 깨진다. 원래 계획은 목록 갱신을 T10 에 뒀는데, 그러면
+T6·T7·T8·T9 네 태스크가 내내 빨간불이고 각 태스크의 게이트(`pnpm vitest run packages/generate`
+전체 통과)를 판정할 수 없다. 게이트를 판정할 수 없으면 태스크마다 리뷰하는 의미가 사라진다.
+
+그래서 목록 갱신과 ADR-0009 개정을 T6 직후로 당긴다. T10 에는 ADR-0022 만 남는다.
+
+**Files**
+- Modify: `packages/generate/tests/dependency-boundary.test.ts`
+- Modify: `docs/adr/0009-generate가-runner에-의존하는-예외.md`
+
+**Interfaces**
+- Consumes: T6 이 실제로 import 한 `runner` 심볼 목록
+- Produces: 승인 목록과 실제 import 의 일치. 이후 태스크의 게이트가 다시 판정 가능해진다
+
+- [ ] **Step 1: ADR 을 먼저 고친다**
+
+ADR-0009 결과 절에 "목록을 넓히려면 이 ADR 을 고쳐야 한다. 테스트가 먼저 깨져 그 사실을
+알린다" 가 규칙으로 적혀 있다. 테스트가 이미 깨져 알렸으므로 순서를 지켜 ADR 을 먼저 고친다.
+
+배경 절의 심볼 표에 늘어난 것을 넣고 사유를 한 단락 추가한다. 근거는 설계서 §3.1 의 두 이유
+(정규화 한 벌 유지, `generate` 파서는 `anyOf` 에서 던져 커버리지 화면을 통째로 죽인다)다.
+기존의 2026-08-14 단락 둘과 같은 형식으로 쓰고 날짜는 2026-08-15 로 적는다.
+
+- [ ] **Step 2: 실제 import 를 세고 목록을 넓힌다**
+
+```bash
+grep -rn 'from "@ohmymcp/runner"' packages/generate/src
+```
+
+T6 시점에 늘어난 것은 셋이다.
+
+```
+ContractAxis
+ContractDeclaredType
+deriveContractAxes
+```
+
+`matchCoveredAxes` 와 `ContractAxisKind` 는 **넣지 않는다.** 아직 import 하는 코드가 없고 테스트가
+정확한 일치를 요구하므로 미리 넣으면 반대 방향으로 깨진다. T7 이 그것들을 쓰기 시작할 때 같은
+절차(ADR 먼저, 목록 다음)로 넓힌다.
+
+- [ ] **Step 3: 통과 확인**
+
+Run: `pnpm vitest run packages/generate`
+Expected: PASS. T6 시점의 `1 failed` 가 0이 된다
+Run: `pnpm typecheck --force`, `pnpm lint`
+Expected: PASS, `Cached: 0 cached`
+
+- [ ] **Step 4: 보고서**
+
+보고서: `docs/reports/task-t6b-contract-axes.md`
+커밋 제안: `docs(generate): ADR-0009 승인 심볼 목록을 계약 축 심볼로 넓힌다`
+
+---
+
 ## Task 7: `computeCoverage`
 
 **Files**
@@ -1520,6 +1581,17 @@ export {
 - Modify: `packages/generate/src/baseline.ts`
 - Test: `packages/generate/tests/baseline.test.ts`
 - Test: `packages/generate/tests/index.test.ts` (생성 파일 스냅샷이 있으면 갱신)
+- Test: `packages/generate/tests/authoring-session.test.ts` (실행 중 추가. 아래 사유)
+- Test: `packages/generate/tests/authoring-request.test.ts` (실행 중 추가. 아래 사유)
+
+**뒤 두 파일은 계획 시점에 빠져 있었다.** 실행 중 발견해 추가했다. 그 둘이 baseline 출력에서
+파생된 값을 기대값으로 들고 있다. `authoring-session.test.ts` 는 케이스 id 목록과 diff 순서를,
+두 파일 모두 후보 지문 상수(`KNOWN_CLEAN_FINGERPRINT`·`KNOWN_PROVIDER_FINGERPRINT`)를 박아 둔다.
+baseline 이 툴당 1케이스에서 여러 케이스로 늘면 그 값이 전부 바뀐다.
+
+계획을 쓸 때 baseline 출력에 의존하는 테스트를 `baseline.test.ts` 와 `index.test.ts` 로만 봤다.
+**지문 상수를 박아 둔 테스트가 어디 있는지 세지 않은 것이 누락의 원인이다.** 다음에 출력 형태를
+바꾸는 계획을 쓸 때는 그 출력에서 파생된 상수를 `grep` 으로 먼저 세야 한다.
 
 **Interfaces**
 - Consumes: T6 의 `buildViolationCases`, T7 의 `computeCoverage`
@@ -1756,7 +1828,7 @@ Run: `pnpm test`, `pnpm typecheck --force`, `pnpm lint`
 
 ---
 
-## Task 10: ADR-0009 개정, 의존 경계, ADR-0022
+## Task 10: ADR-0022 와 의존 경계 최종 확인
 
 **Files**
 - Modify: `docs/adr/0009-generate가-runner에-의존하는-예외.md`

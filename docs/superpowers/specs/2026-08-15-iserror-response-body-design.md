@@ -22,8 +22,14 @@
    것은 본문 단언뿐이다. 그래서 항상 빈 문자열이고, 그러면 provider 를 안 부르고 곧바로 사람
    입력으로 간다(입력값 교정 설계 §4.4).
 
-`get_weather` 에 `{"city":"example"}` 를 보내면 서버는 `알 수 없는 도시: example. 사용 가능한
-도시: 서울, 부산, 제주` 라고 답한다. 답이 응답 안에 있는데 화면까지 오는 길이 없다.
+`get_weather` 에 `{"city":"example"}` 를 보내면 `examples/weather-server` 는 이렇게 답한다.
+
+```
+→ 'example' 의 날씨 데이터가 없습니다. 사용 가능한 도시: 서울, 부산, 제주
+→ 이 예제 서버는 고정 데이터만 가지고 있습니다.
+```
+
+답이 응답 안에 있는데 화면까지 오는 길이 없다.
 
 교정 기능만의 문제가 아니다. **실패 메시지가 곧 제품인 프로젝트에서 실패 화면이 서버가 말해 준
 이유를 버리고 있었다.**
@@ -74,13 +80,16 @@ export interface RunnerDiagnostic {
 export function assertIsError(
   result: ToolResult,
   spec: IsErrorAssertionSpec,
-  extraction: BodyExtraction | undefined,
+  extraction?: () => BodyExtraction | undefined,
   options?: { redaction?: RunnerRedactionOptions },
 ): AssertionResult;
 ```
 
-`extraction` 은 executor 가 케이스당 한 번 계산한 값을 그대로 넘긴 것이다. 두 번째 추출 구현을
-만들지 않는다(ADR-0011). `runner` 안의 호출부는 `executor.ts` 하나다.
+`extraction` 은 값이 아니라 **접근자**다. executor 가 케이스당 한 번만 계산해 기억하고 그 함수를
+넘긴다. 값으로 받으면 executor 가 미리 추출해야 하는데, `isError` 는 실패했을 때만 본문이
+필요하고 통과 여부는 단언 안에서 정해져 executor 가 미리 알 수 없다. executor 에서 판정을 다시
+하면 같은 판단이 두 곳에 생긴다. 두 번째 추출 구현은 만들지 않는다(ADR-0011). `runner` 안의
+호출부는 `executor.ts` 하나다.
 
 ## 4. 본문을 싣는 규칙 (전량)
 
@@ -140,7 +149,25 @@ export function assertIsError(
 ## 7. 노출
 
 **응답 본문이 터미널에 찍히고, 교정 제안 요청에 실려 외부 provider 로 나간다.** 이것이 이 변경의
-유일한 새 노출이다. 경계는 ADR-0008 의 redaction 규칙을 그대로 따르고 새 규칙을 만들지 않는다.
+유일한 새 노출이다. 경계는 ADR-0008 의 redaction 규칙을 따르되 **한 가지를 좁힌다.**
+
+`sanitizeJsonValue` 는 값 **전체**가 `sensitiveValues` 와 같을 때만 치환한다. 명세의 입력값처럼
+값 하나가 필드 하나인 자리에서는 그것으로 충분하다. 그런데 서버 오류 문장은 값이 문장 속에 박혀
+나온다.
+
+```
+토큰 sk-abc 이 만료되었습니다
+```
+
+전체 일치만 보면 이 줄은 그대로 나간다. 그래서 이 경로에서만 `sensitiveValues` 의 **부분 일치**
+까지 치환한다. 치환은 자르기보다 먼저 한다. 잘라 놓고 치환하면 경계에 걸린 값이 남는다. 빈
+문자열은 건너뛴다. 모든 자리에 끼어들어 문장을 통째로 지우기 때문이다.
+
+전역 `sanitizeJsonValue` 의 의미는 바꾸지 않는다. 그 함수는 다섯 패키지가 쓰고, 부분 일치로
+넓히면 정상 값이 잘려 나가는 자리가 생긴다. 좁힌 규칙은 이 진단 줄에만 적용한다.
+
+남는 한계는 `sensitiveKeys` 다. 문장에는 키가 없어 키 기반 치환이 걸리지 않는다. 서버가 오류
+문장에 비밀을 담는데 그 값을 `--sensitive-value` 로 알려주지 않으면 막을 방법이 없다.
 
 ## 8. 알려진 위험
 

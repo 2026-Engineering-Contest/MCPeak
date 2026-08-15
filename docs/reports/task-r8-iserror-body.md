@@ -6,7 +6,9 @@
 - `docs/superpowers/specs/2026-08-15-iserror-response-body-design.md` §4 표, §5 순서
 - `docs/superpowers/plans/2026-08-15-iserror-response-body-implementation.md`
 
-두 문서와 내 구현이 어긋난 곳은 없었다.
+두 문서와 내 구현이 어긋난 곳은 없었다. 다만 **작업 도중 사양이 한 번 바뀌었고**(본문을 한 줄로
+뭉치던 것을 줄마다 나누는 것으로), 그 뒤 문서 정리는 오케스트레이터가 main 에서 마쳤다. 이 절
+아래의 "남은 위험" 이 적은 문서 불일치는 PR #106 리뷰에서 전부 닫혔다.
 
 브랜치 `feat/iserror-response-body`, 기반 커밋 `9b50c68`.
 
@@ -93,16 +95,14 @@ AssertionError: expected 'city 가 필요합니다.' to be ''
 
 ### `pnpm test`
 
-기존 플레이크(`packages/core/tests/stdio-integration.test.ts`)는 이번에 나오지 않았다.
+첫 실행에서 `packages/core/tests/stdio-integration.test.ts` 의
+`handshake timeout 뒤 프로세스를 정리한다` 1건이 실패했다. 알려진 플레이크이고 이번 변경과
+무관하다. 재실행 세 번 모두 아래 결과가 나왔다.
 
 ```
  Test Files  57 passed (57)
       Tests  1238 passed | 1 skipped (1239)
 ```
-
-한 번은 `packages/core/tests/stdio-integration.test.ts` 의
-`handshake timeout 뒤 프로세스를 정리한다` 1건이 실패했다. 알려진 플레이크이고 이번 변경과
-무관하다. 재실행 세 번 모두 위 결과가 나왔다.
 
 ### `pnpm build && pnpm --filter ohmymcp test:e2e`
 
@@ -233,20 +233,12 @@ JSON 본문의 민감한 **키**는 가려지고(`{"token":"[REDACTED]",...}`), 
 
 ## 남은 위험
 
-- **설계서 파일이 이 worktree 에 없어 못 고쳤다.**
-  `docs/superpowers/specs/2026-08-15-iserror-response-body-design.md` 는 분기점(`9b50c68`)
-  뒤에 main 에 커밋돼서 이 worktree 에 존재하지 않는다. 루트 작업 트리를 고치지 말라는 지시가
-  있었고 rebase 는 git 작업이라 하지 않았다. §4 의 "form 이 text 면 그 문자열을 한 줄로
-  싣는다" 와 §5 예시가 아직 옛 규칙이다. 아래 문안으로 바꾸면 된다.
-  - §4 표: `form === "text"` 행을 "개행으로 나눠 줄마다 항목 하나로 싣는다. 빈 줄은 버린다"
-  - §4 본문: 자르기는 나누기 전 본문 전체에 `MAX_VALUE_STRING_CHARS` 로 건다
-  - §5 예시: 이 보고서 맨 위의 실제 출력 블록
-- **ADR 결정 절의 한 줄이 낡았다.** `0027` 56행이 "응답 본문을 `notes` 에 한 줄로 싣는다" 다.
-  결정·이유 절을 건드리지 말라는 지시를 따라 그대로 뒀다. 배경의 예시와 결과 절은 고쳤다.
-- **본문이 외부 provider 로 나가는 경로가 이제 실제로 열렸다.** ADR-0027 이 예고한 결과이고
-  redaction 은 ADR-0008 규칙을 그대로 쓴다. 다만 위 3번대로 text 본문의 값 가리기가 전체 일치
-  기준이라, 오류 문장 **안에** 토큰이 섞여 나오는 서버라면 그 문장이 그대로 나간다. 기존 승인
-  화면과 같은 노출 수준이지만 노출 지점이 하나 늘었다.
+- **본문이 외부 provider 로 나가는 경로가 이제 실제로 열렸다.** ADR-0027 이 예고한 결과다.
+  PR #106 리뷰에서 이 경로의 값 가리기를 **부분 일치까지** 넓혔다(`redactSubstrings`). 오류
+  문장 안에 섞인 `sensitiveValues` 도 치환되고, 치환이 자르기보다 먼저 돈다. 전역
+  `sanitizeJsonValue` 의 의미는 그대로 두고 이 진단 줄에만 적용했다.
+- **`sensitiveKeys` 는 이 경로에서 안 걸린다.** 문장에는 키가 없다. 서버가 오류 문장에 비밀을
+  담는데 그 값을 `sensitiveValues` 로 알려주지 않으면 막을 수단이 없다.
 - `notes` 는 선택 필드라 다른 진단은 손대지 않았다. 반대로 말하면 지금 `notes` 를 채우는 곳은
   `isError` 하나뿐이고, 다른 진단이 채우기 시작하면 리포터 순서 규칙(violations 먼저)을 다시
   볼 필요가 있다.

@@ -3,7 +3,8 @@
 - 설계 문서: `docs/superpowers/specs/2026-08-15-iserror-response-body-design.md`
 - 선행 ADR: ADR-0008, ADR-0011, ADR-0022, ADR-0025
 - 이 작업의 ADR: ADR-0027 (착수 전 커밋 완료, `9b50c68`)
-- 대상 패키지: `runner`. `cli` 는 테스트 기대값만 바뀐다.
+- 대상 패키지: `runner`. `cli` 는 **소스를 안 고치고** 테스트만 바뀐다. 기대값 수정 하나와
+  이번에 열린 경로를 덮는 테스트 하나다(§4 의 Files 목록).
 
 ## 0. 실행 모델
 
@@ -82,7 +83,7 @@ export interface RunnerDiagnostic {
 export function assertIsError(
   result: ToolResult,
   spec: IsErrorAssertionSpec,
-  extraction: BodyExtraction | undefined,
+  extraction?: () => BodyExtraction | undefined,
   options?: { redaction?: RunnerRedactionOptions },
 ): AssertionResult;
 ```
@@ -172,6 +173,7 @@ R8 허용 Files:
   packages/runner/tests/reporter.test.ts
   packages/runner/tests/executor.test.ts
   packages/cli/tests/input-repair.test.ts
+  packages/cli/tests/repair-target.test.ts
   packages/cli/tests/dry-run.test.ts
   packages/cli/tests/generate-command.test.ts
 
@@ -213,10 +215,13 @@ packages/core/tests/stdio-integration.test.ts 는 첫 실행에 종종 실패하
    `violations` → `notes` → `hint` 순서가 맞는가.
 3. 계획서에 적힌 검증 명령을 **다시 실행한다.** `pnpm typecheck --force` 출력에서
    `Cached: 0 cached` 를 확인한다.
-4. 통과하면 커밋하고 `--no-ff` 로 머지한다. 머지된 `main` 에서 전체 테스트를 **새로** 돌린다.
-5. 통합 SHA 를 `docs/task-integration-ledger.tsv` 에 `R8-iserror-body` 로 기록하고 별도 문서
+4. 통과하면 **오케스트레이터 세션이** 태스크 단위로 커밋한다. 구현 세션은 커밋하지 않는다.
+   실행 프롬프트의 `커밋은 하지 마라` 와 이 줄은 같은 규칙의 양면이다.
+5. 통합 브랜치를 `--no-ff` 로 합친 뒤 **PR 을 열어 머지한다. `main` 에 직접 푸시하지 않는다.**
+   저장소 규칙상 모든 변경은 PR 을 거친다. 로컬 `main` 병합은 검증용이고 원격 반영이 아니다.
+6. 통합 SHA 를 `docs/task-integration-ledger.tsv` 에 `R8-iserror-body` 로 기록하고 별도 문서
    커밋으로 보존한다.
-6. worktree 가 깨끗한지 확인한 뒤 그 worktree 만 제거하고 그 브랜치만 삭제한다.
+7. worktree 가 깨끗한지 확인한 뒤 그 worktree 만 제거하고 그 브랜치만 삭제한다.
 
 ## 7. 완료 판정
 

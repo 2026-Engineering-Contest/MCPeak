@@ -6,9 +6,14 @@
 - `docs/superpowers/specs/2026-08-15-iserror-response-body-design.md` §4 표, §5 순서
 - `docs/superpowers/plans/2026-08-15-iserror-response-body-implementation.md`
 
-두 문서와 내 구현이 어긋난 곳은 없었다. 다만 **작업 도중 사양이 한 번 바뀌었고**(본문을 한 줄로
-뭉치던 것을 줄마다 나누는 것으로), 그 뒤 문서 정리는 오케스트레이터가 main 에서 마쳤다. 이 절
-아래의 "남은 위험" 이 적은 문서 불일치는 PR #106 리뷰에서 전부 닫혔다.
+두 문서와 내 구현이 어긋난 곳은 없었다. 다만 **작업 도중 사양이 한 번 바뀌었다.** 본문을 한 줄로
+뭉치던 것을 줄마다 나누는 것으로 바꿨고, 그때 오케스트레이터가 이 worktree 에 없던 설계서와
+ADR 을 고쳤다.
+
+남은 문서 불일치는 **PR `#106` 브랜치(`feat/iserror-response-body`)에서** 리뷰 지적을 받아
+닫았다. 계약 시그니처를 접근자로 통일한 것, 허용 Files 에 `repair-target.test.ts` 를 넣은 것,
+통합 게이트가 `main` 직접 푸시로 읽히지 않게 고친 것이 그것이다. 그 커밋들은 이 PR 이 머지될 때
+`main` 에 들어간다.
 
 브랜치 `feat/iserror-response-body`, 기반 커밋 `9b50c68`.
 

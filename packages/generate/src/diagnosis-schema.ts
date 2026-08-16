@@ -108,8 +108,47 @@ export const DIAGNOSIS_PROVIDER_SCHEMA = freeze({
  * 스키마 바이트가 흔들린다.
  */
 function caseIdsOf(request: DiagnosisRequest): readonly string[] {
-  return [...new Set(request.failures.map((failure) => failure.caseId))];
+  // 비어 있거나 공백뿐인 caseId 는 enum 에 넣지 않는다. 넣으면 고정 스키마의 `pattern: "\\S"`
+  // 가 막던 값이 오히려 "정상 값" 으로 승격되고, provider 가 그 값을 돌려주면 어느 실패를
+  // 가리키는지 알 수 없는 항목이 통과한다.
+  return [
+    ...new Set(request.failures.map((failure) => failure.caseId).filter((id) => /\S/.test(id))),
+  ];
 }
+
+/**
+ * 고정 스키마와 요청별 스키마를 함께 표현하는 타입.
+ *
+ * `caseId` 는 두 모양이다. 실패 목록이 있으면 `enum` 이고 없으면 `pattern` 이다.
+ * `typeof DIAGNOSIS_PROVIDER_SCHEMA` 로 단언하면 `pattern` 이 항상 있는 것처럼 보여 실제 구조와
+ * 어긋난다. 읽는 쪽이 없는 키를 있다고 믿게 만들지 않는다.
+ */
+export type DiagnosisProviderSchema = {
+  readonly type: "object";
+  readonly additionalProperties: false;
+  readonly required: readonly string[];
+  readonly properties: {
+    readonly status: { readonly enum: readonly string[] };
+    readonly causes: {
+      readonly type: "array";
+      readonly items: {
+        readonly type: "object";
+        readonly additionalProperties: false;
+        readonly required: readonly string[];
+        readonly properties: {
+          readonly caseId:
+            | { readonly type: "string"; readonly pattern: string }
+            | { readonly enum: readonly string[] };
+          readonly summary: { readonly type: "string"; readonly pattern: string };
+          readonly location: { readonly type: "string" };
+          readonly evidence: { readonly type: "string" };
+          readonly target: { readonly enum: readonly string[] };
+        };
+      };
+    };
+    readonly shortfall: { readonly type: "string" };
+  };
+};
 
 /**
  * 요청별 진단 출력 스키마. `caseId` 에 그 요청의 실패 목록을 `enum` 으로 박는다.
@@ -123,9 +162,7 @@ function caseIdsOf(request: DiagnosisRequest): readonly string[] {
  * `minLength`·`minItems` 없음. `enum` 은 고정 스키마도 이미 쓰는 키워드다.
  * 결과는 고정 스키마와 같이 동결한다.
  */
-export function buildDiagnosisProviderSchema(
-  request: DiagnosisRequest,
-): typeof DIAGNOSIS_PROVIDER_SCHEMA {
+export function buildDiagnosisProviderSchema(request: DiagnosisRequest): DiagnosisProviderSchema {
   const caseIds = caseIdsOf(request);
   // 실패가 하나도 없는 요청은 조립 단계에서 걸러진다. 그래도 빈 enum 을 만들지는 않는다.
   // 빈 enum 은 어떤 값도 만족시킬 수 없어 provider 가 무엇을 보내든 스키마 위반이 된다.
@@ -154,7 +191,7 @@ export function buildDiagnosisProviderSchema(
       // status 가 unsure 일 때만 채운다. 아니면 빈 문자열.
       shortfall: { type: "string" },
     },
-  }) as typeof DIAGNOSIS_PROVIDER_SCHEMA;
+  }) as DiagnosisProviderSchema;
 }
 
 /** 프롬프트가 쓰는 허용 caseId 목록. 스키마와 같은 순서·같은 집합이어야 한다. */

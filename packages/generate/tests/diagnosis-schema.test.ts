@@ -82,6 +82,16 @@ describe("buildDiagnosisProviderSchema", () => {
     expect(caseIdSchema(schema).enum).toEqual(["c-1", "c-2"]);
   });
 
+  it("빈 문자열이나 공백뿐인 caseId 는 enum 에 안 들어간다", () => {
+    const schema = buildDiagnosisProviderSchema(request(["", "   ", "c-1"]));
+    expect(caseIdSchema(schema)).toEqual({ enum: ["c-1"] });
+  });
+
+  it("caseId 가 전부 공백이면 enum 대신 pattern 제약으로 돌아간다", () => {
+    const schema = buildDiagnosisProviderSchema(request(["", " "]));
+    expect(caseIdSchema(schema)).toEqual({ type: "string", pattern: "\\S" });
+  });
+
   it("요청별 스키마도 최상위 oneOf·anyOf·not 을 두지 않는다", () => {
     const keys = Object.keys(buildDiagnosisProviderSchema(request(["c-1"])));
     for (const forbidden of ["oneOf", "anyOf", "not"]) expect(keys).not.toContain(forbidden);

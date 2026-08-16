@@ -57,7 +57,12 @@ const diagnosisResult = (causes: readonly unknown[], discarded = 0) => ({
  */
 function diagnosis(options: {
   result?: unknown;
-  dispatchStatus?: "diagnosis" | "providerFailed" | "invalid" | "approvalInvalidated";
+  dispatchStatus?:
+    | "diagnosis"
+    | "providerFailed"
+    | "invalid"
+    | "approvalInvalidated"
+    | "resultLimitExceeded";
   stderr?: string;
   omittedFailures?: number;
   sentFailures?: number;

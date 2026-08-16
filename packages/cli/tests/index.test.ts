@@ -3,7 +3,29 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import packageMetadata from "../package.json";
+import type { GenerateCommandDependencies } from "../src/generate-command.js";
 import { COMMANDS, run } from "../src/index.js";
+
+type OptionalKey<T> = {
+  [K in keyof T]-?: object extends Pick<T, K> ? K : never;
+}[keyof T];
+
+type OptionalFunctionDependencyKey = {
+  [K in OptionalKey<GenerateCommandDependencies>]: NonNullable<
+    GenerateCommandDependencies[K]
+  > extends (...args: never[]) => unknown
+    ? K
+    : never;
+}[OptionalKey<GenerateCommandDependencies>];
+
+const OPTIONAL_GENERATE_DEPENDENCIES = {
+  prepareAuthoringRequest: true,
+  dispatchAuthoringRequest: true,
+  createAuthoringDiff: true,
+  applyAuthoringChanges: true,
+  reviewLocalAuthoringCandidate: true,
+  computeCoverage: true,
+} as const satisfies Record<OptionalFunctionDependencyKey, true>;
 
 describe("ohmymcp cli", () => {
   it("알려진 서브커맨드를 선언한다", () => {
@@ -66,6 +88,43 @@ describe("ohmymcp cli", () => {
     } finally {
       stdout.mockRestore();
       stderr.mockRestore();
+    }
+  });
+
+  it("generate 실행 경로에 선택 함수 의존성을 전부 주입한다", async () => {
+    let capturedDependencies: GenerateCommandDependencies | undefined;
+    vi.doMock("../src/generate-command.js", async (importOriginal) => {
+      const actual = await importOriginal<typeof import("../src/generate-command.js")>();
+      return {
+        ...actual,
+        runGenerateCommand: vi.fn(
+          async (_argv: string[], dependencies: GenerateCommandDependencies): Promise<number> => {
+            capturedDependencies = dependencies;
+            return 0;
+          },
+        ),
+      };
+    });
+
+    try {
+      vi.resetModules();
+      const [{ run: isolatedRun }, generate] = await Promise.all([
+        import("../src/index.js"),
+        import("@ohmymcp/generate"),
+      ]);
+
+      await expect(isolatedRun(["generate"])).resolves.toBe(0);
+      expect(capturedDependencies).toBeDefined();
+
+      const dependencyKeys = Object.keys(
+        OPTIONAL_GENERATE_DEPENDENCIES,
+      ) as OptionalFunctionDependencyKey[];
+      expect(
+        Object.fromEntries(dependencyKeys.map((key) => [key, capturedDependencies?.[key]])),
+      ).toEqual(Object.fromEntries(dependencyKeys.map((key) => [key, generate[key]])));
+    } finally {
+      vi.doUnmock("../src/generate-command.js");
+      vi.resetModules();
     }
   });
 

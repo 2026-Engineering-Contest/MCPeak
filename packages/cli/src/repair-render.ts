@@ -112,7 +112,8 @@ export function renderRepairConfirm(view: RepairConfirmView): string {
   return [
     "repair 요청을 보냅니다.\n",
     "\n",
-    `  provider   ${view.providerId} (${view.model})\n`,
+    // model 은 사용자가 CLI 로 준 문자열이다. AI 출력과 같은 이유로 제어 문자를 이스케이프한다.
+    `  provider   ${view.providerId} (${escapeTerminalText(view.model)})\n`,
     `  대상       ${scope}\n`,
     `  명세 상태  ${APPROVAL_LABEL[view.approval]}\n`,
     `  stderr     ${stderrLine}\n`,
@@ -180,7 +181,7 @@ export function renderRepairResult(options: {
   model: string;
 }): string {
   const parts: string[] = [
-    `── 서버 수정 방향 (${options.providerId} / ${options.model}) ──\n`,
+    `── 서버 수정 방향 (${options.providerId} / ${escapeTerminalText(options.model)}) ──\n`,
     "\n",
     renderApprovalNotice(options.bundle.spec.approval),
   ];

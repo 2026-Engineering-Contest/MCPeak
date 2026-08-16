@@ -5,7 +5,8 @@ status: READY_FOR_REVIEW
 ## 요약
 
 ADR 넷을 쓰고 색인에 넣었다. 번호는 착수 시점에 `ls docs/adr/` 로 다시 세어 확인했고,
-지시받은 0028 · 0031 · 0032 · 0033 이 맞았다. CHANGELOG 두 개에 공개 API 변경을 적었다.
+지시받은 0028 · 0031 · 0032 · 0033 이 맞았다. **(이후 경과)** 원격 `main` 에 replay 서브커맨드
+ADR 이 0028 로 먼저 들어와, provider 진단 통로 ADR 은 **0034** 로 옮겼다. CHANGELOG 두 개에 공개 API 변경을 적었다.
 전체 테스트를 포함한 검증 넷 전부 초록이다.
 
 ## 착수 시점 번호 확인
@@ -66,7 +67,7 @@ Checked 183 files in 63ms. No fixes applied.
 
 계획서 문장을 옮기지 않고 T1~T11 에서 실제로 내린 결정을 결과 항목에 적었다.
 
-**0028 (provider 진단 통로 분리).** authoring 재사용을 버린 이유는 출력 스키마가 명세를 담을 수
+**0028 (provider 진단 통로 분리, 최종 번호 0034).** authoring 재사용을 버린 이유는 출력 스키마가 명세를 담을 수
 있으면 AI 가 명세를 고쳐 온다는 것이다. 결과 항목에 이번 구현의 사실을 적었다. 실행 경로는
 `makeProvider` 하나로 공유한다는 것, claude envelope 해석을 `claudeStructuredOutput` 한 곳에
 합쳤다는 것, provider 실패 매핑을 사본으로 뒀다가 `publicProviderFailure` 로 다시 합쳤다는 것
@@ -110,5 +111,5 @@ import 하지 않고 `cli` 안에 상수로 둔 것(T9)이 전부 여기 걸린�
 - 위 changesets 문제. 릴리스 흐름과 어긋난 채로 두면 다음 릴리스에서 절이 두 벌 생긴다.
 - ADR-0007 번호 중복(`mock-stdio-transport` 와 `provider-전송-스키마-분리`)은 여전히 미해소다.
   이번 작업 범위 밖이라 손대지 않았다.
-- `docs/superpowers/plans/2026-08-16-server-repair-implementation.md` 는 아직 0028~0031 을
+- (해소됨) `docs/superpowers/plans/2026-08-16-server-repair-implementation.md` 는 아직 0028~0031 을
   예약한 문장을 갖고 있다. 계획서는 오케스트레이터 소유라 내가 안 고쳤다. 실제 번호와 다르다.

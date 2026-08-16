@@ -95,6 +95,68 @@ describe("readRepairBundle", () => {
       expect(readRepairBundle(text(value))).toEqual({ status: "invalid", reason: "missingField" });
   });
 
+  it("소비하는 spec 필드가 빠지면 missingField 다", () => {
+    for (const key of ["suiteId", "suiteName", "approval", "fingerprint"]) {
+      const spec: Record<string, unknown> = {
+        suiteId: "weather",
+        suiteName: "날씨 서버 계약",
+        approval: "matched",
+        fingerprint: "a".repeat(64),
+      };
+      delete spec[key];
+      expect(readRepairBundle(text(bundle({ spec })))).toEqual({
+        status: "invalid",
+        reason: "missingField",
+      });
+    }
+  });
+
+  it("spec.approval 이 아는 값이 아니면 missingField 다", () => {
+    const spec = {
+      suiteId: "weather",
+      suiteName: "날씨 서버 계약",
+      approval: "unknown-state",
+      fingerprint: "a".repeat(64),
+    };
+    expect(readRepairBundle(text(bundle({ spec })))).toEqual({
+      status: "invalid",
+      reason: "missingField",
+    });
+  });
+
+  it("소비하는 failure 필드가 빠지면 missingField 다", () => {
+    for (const key of ["caseId", "caseName", "status", "diagnostics"]) {
+      const failure: Record<string, unknown> = { ...FAILURE };
+      delete failure[key];
+      expect(readRepairBundle(text(bundle({ failures: [failure] })))).toEqual({
+        status: "invalid",
+        reason: "missingField",
+      });
+    }
+  });
+
+  it("failure.status 나 approvedAs 가 아는 값이 아니면 missingField 다", () => {
+    for (const failure of [
+      { ...FAILURE, status: "exploded" },
+      { ...FAILURE, approvedAs: "maybe" },
+    ]) {
+      expect(readRepairBundle(text(bundle({ failures: [failure] })))).toEqual({
+        status: "invalid",
+        reason: "missingField",
+      });
+    }
+  });
+
+  it("진단의 code 나 message 가 빠지면 missingField 다", () => {
+    for (const diagnostic of [{ message: "메시지만 있다" }, { code: "CODE_ONLY" }]) {
+      const failure = { ...FAILURE, diagnostics: [diagnostic] };
+      expect(readRepairBundle(text(bundle({ failures: [failure] })))).toEqual({
+        status: "invalid",
+        reason: "missingField",
+      });
+    }
+  });
+
   it("failures 가 빈 배열이면 emptyFailures 다", () => {
     expect(readRepairBundle(text(bundle({ failures: [] })))).toEqual({
       status: "invalid",

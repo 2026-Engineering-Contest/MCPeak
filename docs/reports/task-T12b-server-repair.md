@@ -75,5 +75,7 @@ Checked 183 files in 56ms. No fixes applied.
 - 릴리스 시점에 `pnpm changeset version` 이 이 파일을 소비해 두 CHANGELOG 에 버전 절을 만든다.
   사람이 손댈 것은 없다. T12 가 만든 빚이 여기서 정리됐다.
 - 계획서(`docs/superpowers/plans/2026-08-16-server-repair-implementation.md`)는 여전히 ADR
-  0028~0031 을 예약한 문장을 갖고 있어 실제 번호(0028 · 0031 · 0032 · 0033)와 다르다.
+  0028~0031 을 예약한 문장을 갖고 있어 실제 번호와 다르다.
+  **(이후 경과)** 계획서를 실제 번호로 고쳤다. provider 진단 통로 ADR 은 원격의 replay ADR 과
+  0028 이 겹쳐 **0034** 가 됐고, 나머지는 0031 · 0032 · 0033 이다.
   계획서는 오케스트레이터 소유라 안 고쳤다.

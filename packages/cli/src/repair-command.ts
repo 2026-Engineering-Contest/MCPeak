@@ -2,6 +2,7 @@ import type { ReviewIO } from "./generate-command.js";
 import { REPAIR_USAGE_HINT } from "./help.js";
 import { describeRepairBundleInvalid, readRepairBundle } from "./repair-bundle.js";
 import {
+  escapeTerminalText,
   REPAIR_APPROVAL_INVALIDATED_LINE,
   REPAIR_CANCELLED_LINE,
   REPAIR_CONFIRM_REQUIRED_LINE,
@@ -142,7 +143,7 @@ export async function runRepairCommand(
     text = await deps.readFile(input.bundlePath);
   } catch {
     deps.writeStderr(
-      `오류 [REPAIR_BUNDLE_READ_FAILED]: repair 번들 파일을 읽지 못했습니다. 경로: ${input.bundlePath}\n해결: 경로와 읽기 권한을 확인하세요. 번들은 \`ohmymcp test --repair-bundle <path>\` 가 만듭니다.\n`,
+      `오류 [REPAIR_BUNDLE_READ_FAILED]: repair 번들 파일을 읽지 못했습니다. 경로: ${escapeTerminalText(input.bundlePath)}\n해결: 경로와 읽기 권한을 확인하세요. 번들은 \`ohmymcp test --repair-bundle <path>\` 가 만듭니다.\n`,
     );
     return 1;
   }

@@ -1,5 +1,5 @@
 export const TEST_USAGE =
-  "사용법: ohmymcp test <suite.json> --command <executable> [--arg <value> ...] [--json] [--junit <path>] [--stderr-lines <N>]";
+  "사용법: ohmymcp test <suite.json> --command <executable> [--arg <value> ...] [--json] [--junit <path>] [--repair-bundle <path>] [--stderr-lines <N>]";
 
 export const GENERATE_USAGE =
   "사용법: ohmymcp generate --suite-id <id> --name <name> --out <suite.json> --command <executable> [--arg <value> ...] [--baseline-only] [--provider <codex|claude>] [--model <model>] [--no-dry-run] [--cassette <path>] [--record] [--reset-cmd <command>] [--no-repair] [--force]";
@@ -21,6 +21,21 @@ const GENERATE_DRY_RUN_OPTIONS = `옵션:
   --force               \`--out\` 경로에 파일이 있으면 지우고 새로 씁니다. 기본은 저장을
                         멈추는 것입니다`;
 
+export const REPAIR_USAGE =
+  "사용법: ohmymcp repair <bundle.json> --provider <codex|claude> --model <model> [--max-cases <N>] [--no-stderr] [--yes]";
+
+/**
+ * repair 옵션 설명. 사용법 한 줄로는 `--no-stderr` 가 무엇을 빼는지, `--yes` 가 무엇을 건너뛰는지
+ * 알 수 없다. 둘 다 외부 provider 로 나가는 내용을 바꾸는 값이다.
+ */
+const REPAIR_OPTIONS = `옵션:
+  --provider <id>    진단을 물을 AI CLI 입니다. codex 또는 claude. 기본값은 없습니다
+  --model <model>    provider 에 넘길 모델 식별자입니다. 기본값은 없습니다
+  --max-cases <N>    한 번에 보낼 실패 개수 상한입니다. 넘으면 앞에서부터 남깁니다
+  --no-stderr        서버 stderr 를 전송에서 뺍니다. stderr 는 서버가 자유롭게 쓰는
+                     텍스트라 경로·토큰·데이터가 섞일 수 있습니다
+  --yes              전송 확인 화면을 건너뜁니다. 비대화형 환경에서 필요합니다`;
+
 export const REPLAY_USAGE = "사용법: ohmymcp replay <suite.json> --cassette <path>";
 
 /**
@@ -39,6 +54,7 @@ replay 는 MCP 서버를 실행하지 않고 카세트에 녹화된 응답만 �
 const COMMANDS = `명령:
   test      JSON 테스트 명세로 MCP 서버를 실행하고 검증합니다.
   generate  MCP 서버의 툴 스키마에서 테스트 명세를 생성합니다.
+  repair    실패한 test 실행의 번들로 서버 코드의 원인 후보를 제안받습니다.
   replay    녹화된 카세트로 서버 없이 테스트 명세를 재생합니다.`;
 
 export const GLOBAL_HELP = `OhMyMCP — MCP 서버 테스트 프레임워크
@@ -57,19 +73,29 @@ ${COMMANDS}
   ohmymcp <명령> --help
 `;
 
-const commandDiscovery = "사용 가능한 명령: test, generate, replay. 전체 도움말: ohmymcp --help";
+const commandDiscovery =
+  "사용 가능한 명령: test, generate, repair, replay. 전체 도움말: ohmymcp --help";
 
 export const TEST_USAGE_HINT = `${TEST_USAGE} ${commandDiscovery}`;
 
 export const GENERATE_USAGE_HINT = `${GENERATE_USAGE} ${commandDiscovery}`;
 
+export const REPAIR_USAGE_HINT = `${REPAIR_USAGE} ${commandDiscovery}`;
+
 export const REPLAY_USAGE_HINT = `${REPLAY_USAGE} ${commandDiscovery}`;
 
-export function commandHelp(command: "test" | "generate" | "replay"): string {
+export function commandHelp(command: "test" | "generate" | "repair" | "replay"): string {
   if (command === "test")
     return `test — JSON 테스트 명세로 MCP 서버를 실행하고 검증합니다.
 
 ${TEST_USAGE}
+`;
+  if (command === "repair")
+    return `repair — 실패한 test 실행의 번들로 서버 코드의 원인 후보를 제안받습니다.
+
+${REPAIR_USAGE}
+
+${REPAIR_OPTIONS}
 `;
   if (command === "replay")
     return `replay — 녹화된 카세트로 서버 없이 테스트 명세를 재생합니다.

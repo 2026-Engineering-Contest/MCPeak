@@ -158,6 +158,52 @@ describe("parseTestCommand", () => {
     ])
       expect(() => parseTestCommand(argv)).toThrow("`--junit` 옵션 값이 필요합니다.");
   });
+  it("--repair-bundle out.json 과 --repair-bundle=out.json 이 같게 파싱된다", () => {
+    const spaced = parseTestCommand([
+      "suite.json",
+      "--command",
+      "node",
+      "--repair-bundle",
+      "out.json",
+    ]);
+    const equals = parseTestCommand([
+      "suite.json",
+      "--command",
+      "node",
+      "--repair-bundle=out.json",
+    ]);
+    expect(spaced.repairBundlePath).toBe("out.json");
+    expect(equals.repairBundlePath).toBe("out.json");
+    expect(spaced).toEqual(equals);
+  });
+  it("--repair-bundle 을 두 번 쓰면 CLI_USAGE 다", () => {
+    expect(() =>
+      parseTestCommand([
+        "suite.json",
+        "--command",
+        "node",
+        "--repair-bundle",
+        "a.json",
+        "--repair-bundle",
+        "b.json",
+      ]),
+    ).toThrow("`--repair-bundle`은 한 번만 사용할 수 있습니다.");
+  });
+  it("--repair-bundle 값이 없으면 CLI_USAGE 다", () => {
+    for (const argv of [
+      ["suite.json", "--command", "node", "--repair-bundle"],
+      ["suite.json", "--command", "node", "--repair-bundle="],
+    ])
+      expect(() => parseTestCommand(argv)).toThrow("`--repair-bundle` 옵션 값이 필요합니다.");
+  });
+  it("--repair-bundle --json 처럼 값 자리에 플래그가 오면 CLI_USAGE 다", () => {
+    expect(() =>
+      parseTestCommand(["suite.json", "--command", "node", "--repair-bundle", "--json"]),
+    ).toThrow("`--repair-bundle` 옵션 값이 필요합니다.");
+  });
+  it("--repair-bundle 없이 파싱하면 repairBundlePath 가 undefined 다", () => {
+    expect(parseTestCommand(["suite.json", "--command", "node"]).repairBundlePath).toBeUndefined();
+  });
   it("--json 과 --junit 을 함께 파싱한다", () => {
     const input = parseTestCommand([
       "suite.json",

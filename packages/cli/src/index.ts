@@ -2,11 +2,12 @@ import { readFile, writeFile } from "node:fs/promises";
 import packageMetadata from "../package.json";
 import { nodeGenerateDependencies, nodeReviewIO, runGenerateCommand } from "./generate-command.js";
 import { commandHelp, GLOBAL_HELP } from "./help.js";
+import { type RepairCommandDependencies, runRepairCommand } from "./repair-command.js";
 import { type ReplayCommandDependencies, runReplayCommand } from "./replay-command.js";
 import { parseTestCommand, runCli } from "./test-command.js";
 
 export type Command = (argv: string[]) => Promise<number>;
-export const COMMANDS = ["test", "generate", "record", "replay", "mock"] as const;
+export const COMMANDS = ["test", "generate", "repair", "record", "replay", "mock"] as const;
 
 const unavailableDependencies = {
   readFile: async (): Promise<Uint8Array> => {
@@ -44,6 +45,33 @@ const unavailableRuntimeDependencies = {
 };
 
 /**
+ * `repair` 실행 의존성. 함수로 빼 둔 이유는 **주입 자체를 테스트가 단언할 수 있게** 하기
+ * 위해서다. 분기 안에 리터럴로 두면 `reviewIO` 를 빠뜨려도 아무 테스트도 안 깨진다.
+ * 실제로 그렇게 한 번 빠뜨렸다(T10 보고서).
+ *
+ * 대화형 판정은 `generate` 와 같은 기준이다. 같은 `nodeReviewIO()` 를 쓰고, 그 구현이
+ * stdin·stdout 이 둘 다 TTY 일 때만 `interactive` 를 참으로 만든다.
+ */
+export function nodeRepairDependencies(
+  generate: typeof import("@ohmymcp/generate"),
+): RepairCommandDependencies {
+  return {
+    readFile: (path) => readFile(path, "utf8"),
+    writeStdout: (text) => void process.stdout.write(text),
+    writeStderr: (text) => void process.stderr.write(text),
+    reviewIO: nodeReviewIO(),
+    diagnosis: {
+      prepare: generate.prepareDiagnosisRequest,
+      dispatch: generate.dispatchDiagnosisRequest,
+      providers: {
+        codex: (model) => generate.createCodexProvider({ model }),
+        claude: (model) => generate.createClaudeProvider({ model }),
+      },
+    },
+  };
+}
+
+/**
  * replay 는 `connect` 를 쓰지 않는다. 대신 카세트 로더가 필요하다. 런타임 의존성을 못 불러도
  * 사용 오류는 정상적으로 내야 하므로, 실제로 쓰이기 전에 끝나는 경로를 위해 자리만 채운다.
  */
@@ -64,7 +92,12 @@ export async function run(argv: string[]): Promise<number> {
   }
   if (argv.length === 2) {
     const command = argv[0] === "help" ? argv[1] : argv[1] === "--help" ? argv[0] : undefined;
-    if (command === "test" || command === "generate" || command === "replay") {
+    if (
+      command === "test" ||
+      command === "generate" ||
+      command === "repair" ||
+      command === "replay"
+    ) {
       process.stdout.write(commandHelp(command));
       return 0;
     }
@@ -114,6 +147,28 @@ export async function run(argv: string[]): Promise<number> {
       reviewLocalAuthoringCandidate: generate.reviewLocalAuthoringCandidate,
       computeCoverage: generate.computeCoverage,
     });
+  }
+  if (argv[0] === "repair") {
+    /**
+     * `generate` 분기와 같은 모양으로 동적 import 한다. `test` 경로는 이 분기를 지나지 않으므로
+     * 여전히 `core` 와 `runner` 만 로드한다. 계획서 §8 위험표 첫 줄.
+     */
+    let generate: typeof import("@ohmymcp/generate");
+    try {
+      generate = await import("@ohmymcp/generate");
+    } catch {
+      process.stderr.write(
+        "오류 [REPAIR_RUNTIME_UNAVAILABLE]: 진단에 필요한 @ohmymcp/generate 를 로드하지 못했습니다.\n해결: 의존성을 설치한 뒤 다시 실행하세요.\n",
+      );
+      return 1;
+    }
+    const dependencies = nodeRepairDependencies(generate);
+    try {
+      return await runRepairCommand(argv, dependencies);
+    } finally {
+      // 확인 화면을 띄웠으면 readline 이 열려 있다. 닫지 않으면 TTY 에서 프로세스가 안 끝난다.
+      dependencies.reviewIO?.close?.();
+    }
   }
   if (argv[0] === "replay") {
     let runner: typeof import("@ohmymcp/runner");

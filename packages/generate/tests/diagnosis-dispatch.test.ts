@@ -175,6 +175,44 @@ describe("dispatchDiagnosisRequest", () => {
     );
   });
 
+  it("응답이 maxResultBytes 를 넘으면 resultLimitExceeded 다", async () => {
+    const target = prepareDiagnosisRequest({
+      specApproved: true,
+      suite: { id: "suite-1", name: "weather" },
+      failures: [
+        {
+          caseId: "case-1",
+          caseName: "케이스 1",
+          diagnostics: [{ code: "FIELD_MISSING", message: "'temp' 필드가 없습니다." }],
+        },
+      ],
+      tools: TOOLS,
+      providerId: "codex",
+      model: "m",
+      // 호출자가 정한 상한이 실제로 강제되는지 본다. 저장만 하고 안 쓰면 옵션이 거짓말이 된다.
+      maxResultBytes: 16,
+    });
+    const p = provider(PAYLOAD);
+    const result = await dispatchDiagnosisRequest({
+      provider: p.provider,
+      preview: target,
+      approval: { approved: true, fingerprint: target.fingerprint },
+    });
+    expect(result).toEqual({ status: "resultLimitExceeded" });
+    expect(p.calls).toHaveLength(1);
+  });
+
+  it("응답이 maxResultBytes 안이면 diagnosis 로 나온다", async () => {
+    const target = preview();
+    const p = provider(PAYLOAD);
+    const result = await dispatchDiagnosisRequest({
+      provider: p.provider,
+      preview: target,
+      approval: { approved: true, fingerprint: target.fingerprint },
+    });
+    expect(result.status).toBe("diagnosis");
+  });
+
   it("index 가 진단 통로의 계약을 전부 내보낸다", () => {
     expect(typeof MAX_CAUSE_CHARS).toBe("number");
     expect(Object.keys(DIAGNOSIS_PROVIDER_SCHEMA)).toContain("properties");

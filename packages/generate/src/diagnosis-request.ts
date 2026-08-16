@@ -61,6 +61,7 @@ type DiagnosisState = {
   readonly fingerprint: string;
   readonly providerId: "codex" | "claude";
   readonly timeoutMs: number;
+  readonly maxResultBytes: number;
 };
 const diagnosisRequests = new WeakMap<DiagnosisRequestPreview, DiagnosisState>();
 
@@ -214,6 +215,7 @@ export function prepareDiagnosisRequest(options: {
     fingerprint,
     providerId: options.providerId,
     timeoutMs: preview.providerTimeoutMs,
+    maxResultBytes: preview.maxResultBytes,
   });
   return preview;
 }
@@ -321,6 +323,8 @@ export type DiagnosisDispatchResult =
   | { readonly status: "approvalInvalidated" }
   | { readonly status: "providerFailed"; readonly failure: PublicProviderFailure }
   | { readonly status: "invalid" }
+  /** 응답이 `maxResultBytes` 를 넘었다. 자르지 않고 거절한다. 잘린 진단은 근거가 잘린 진단이다. */
+  | { readonly status: "resultLimitExceeded" }
   | { readonly status: "diagnosis"; readonly result: DiagnosisResult };
 
 /**
@@ -352,6 +356,9 @@ export async function dispatchDiagnosisRequest(options: {
       signal: options.signal,
       timeoutMs: state.timeoutMs,
     });
+    // 호출자가 정한 상한을 실제로 강제한다. authoring 경로(`authoring-request.ts:345`)와 같은
+    // 자리에서 같은 판정을 한다. 저장만 하고 안 쓰면 옵션이 있는데 아무 일도 안 하는 것이 된다.
+    if (byte(raw) > state.maxResultBytes) return { status: "resultLimitExceeded" };
     const validation = validateDiagnosisResult(raw, options.preview);
     if (validation.status !== "ok") return { status: "invalid" };
     return { status: "diagnosis", result: validation.result };

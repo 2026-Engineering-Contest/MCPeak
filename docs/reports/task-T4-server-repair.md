@@ -96,7 +96,8 @@ Checked 173 files in 39ms. No fixes applied.
 
 - `diagnose` 의 반환은 `unknown` 이다. 호출자가 `validateDiagnosisResult` 를 반드시 거쳐야
   한다. 그 배선은 T5 몫이다.
-- preview 상태 저장소는 여전히 없다(T2·T3 보고서와 같음). T5 에서 만든다.
+- preview 상태 저장소는 이 시점에 아직 없었다(T2·T3 보고서와 같음). T5 에서 만들었다.
 - `index.ts` 는 안 건드렸다. `diagnosisPrompt`·`DIAGNOSIS_PROVIDER_SCHEMA` 등의 export 는 T5 의
   Files 목록에 있다.
-- `pnpm test` 전체는 안 돌렸다. 계획서 절차상 T5 이후 `--force` 로 도는 것이 맞다고 봤다.
+- `pnpm test` 전체는 안 돌렸다. T5 이후 한 번 도는 것이 계획서 절차다.
+  **(이후 경과)** 루트 `test` 는 `vitest run` 이라 `--force` 옵션이 없다.

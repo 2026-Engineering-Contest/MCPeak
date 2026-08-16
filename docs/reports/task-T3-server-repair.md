@@ -83,7 +83,9 @@ Checked 171 files in 41ms. No fixes applied.
 
 ## 남은 위험
 
-- T2 보고서에 적은 preview 상태 저장소는 여전히 없다. T5 몫이다.
+- T2 보고서에 적은 preview 상태 저장소는 이 시점에 아직 없었다. T5 몫이었고 거기서 만들었다.
 - `validateDiagnosisResult` 는 `preview` 를 신뢰한다. `preview` 가 위조되면 3·4번 검사가
   무의미해지지만, 그 경로는 T5 의 지문 검사가 막는다.
-- `pnpm test` 전체는 안 돌렸다. 계획서 절차상 T5 이후 `--force` 로 도는 것이 맞다고 봤다.
+- `pnpm test` 전체는 안 돌렸다. T5 이후 한 번 도는 것이 계획서 절차다.
+  **(이후 경과)** 루트 `test` 는 `vitest run` 이라 `--force` 옵션이 없다. 캐시 확인은
+  `typecheck`·`build` 에서만 한다.

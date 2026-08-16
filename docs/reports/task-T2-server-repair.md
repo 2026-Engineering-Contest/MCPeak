@@ -99,6 +99,11 @@ Checked 170 files in 41ms. No fixes applied.
   `requests` 맵에 그것을 담는다. T2 의 시그니처에 그 요구가 없어 넣지 않았다. T5 가 같은
   파일을 수정하는 태스크이므로 거기서 `prepareDiagnosisRequest` 안에 등록 한 줄을 더하면 된다.
   T5 프롬프트에 이 사실을 넣어라.
+  **(이후 경과) T5 에서 해소됐다.** `prepareDiagnosisRequest` 가 모듈 스코프 WeakMap 에 preview
+  상태를 등록하고 `dispatchDiagnosisRequest` 가 그것으로 승인을 대조한다.
 - `binding` 은 `frozen({} as never)` 다. `authoring-request.ts` 와 같은 방식이고, 브랜드 타입만
   구분한다. T5 가 실제 상태 키로 쓸지 여부는 T5 결정이다.
-- `pnpm test` 전체는 안 돌렸다. 계획서 절차상 T5 이후 `--force` 로 도는 것이 맞다고 봤다.
+- `pnpm test` 전체는 안 돌렸다. T5 이후 한 번 도는 것이 계획서 절차다.
+  **(이후 경과)** 루트 `test` 스크립트는 turbo 가 아니라 `vitest run` 이라 `--force` 를 받지
+  않는다. 캐시 재생을 의심할 대상은 `typecheck` 와 `build` 뿐이고, 계획서 완료 조건도 그렇게
+  정정했다.

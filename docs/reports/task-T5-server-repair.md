@@ -94,6 +94,8 @@ CACError: Unknown option `--force`
   벌이 됐으니 한쪽만 늘면 조용히 갈라진다.** 후속으로 `authoring-request.ts` 에서
   `publicProviderFailure` 를 내보내 한 벌로 합치는 것을 권한다. 그것은 오너 판단이라 여기서
   하지 않았다.
+  **(이후 경과) T5b 에서 합쳤다.** `authoring-request.ts` 가 `publicProviderFailure` 와 두 집합을
+  내보내고 `diagnosis-request.ts` 가 그것을 import 한다. 사본은 남아 있지 않다.
 - **`index.ts` 에 계획서 목록 밖 넷을 더 내보냈다.** `diagnosisPrompt`,
   `DiagnosisRequestPreview`, `DiagnosisRequestBinding`, `DiagnosisDispatchResult`,
   `DiagnosisValidation` 이다. `dispatchDiagnosisRequest` 의 인자와 반환 타입이라 이것 없이는

@@ -58,11 +58,11 @@ jobs:
     #
     # Node 20 지원 자체를 접을지는 팀 결정 사항이다 (CONTRIBUTING §6 개정 + ADR).
     runs-on: ubuntu-latest
-    # Publish JUnit report 스텝이 Check Run 을 만들기 위해 필요하다.
-    # 나머지는 기본값(read)으로 두어 필요한 권한만 연다.
+    # Publish JUnit report 스텝은 use-actions-summary 기본값(true)으로 동작해
+    # 리포트를 Actions job summary 에 쓴다. Check Run 을 만들지 않으므로
+    # checks: write 가 필요 없다 — 읽기 권한만 연다.
     permissions:
       contents: read
-      checks: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -109,6 +109,11 @@ jobs:
 
       # 액션은 SHA 로 고정한다. 태그는 옮겨 달 수 있어 CI 가 말없이 바뀐다.
       # dorny/test-reporter v3.0.0 · MIT (프로젝트와 동일 라이선스).
+      #
+      # 리포트는 이 워크플로 run 의 job summary 에 실린다(use-actions-summary 기본값).
+      # PR 체크 목록에 별도 항목으로 띄우려면 use-actions-summary: false 로 두고
+      # 잡에 checks: write 를 열어야 한다. 실패는 바로 위 export 스텝이 build 잡을
+      # 빨갛게 만들어 이미 드러나므로, 체크 항목을 늘리지 않는 쪽을 택했다.
       #
       # if: always() 인 이유 — 위 스텝이 실패해도 XML 은 이미 쓰여 있다.
       # 실패한 회차야말로 리포트가 필요한 회차다.

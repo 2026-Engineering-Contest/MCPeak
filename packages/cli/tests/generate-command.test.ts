@@ -742,6 +742,29 @@ describe("AI 대화형 검토", () => {
     await runGenerateCommand(interactiveArgv, d.value);
     expect(d.io.write).toHaveBeenCalledWith("revision 1을 승인했습니다.\n");
   });
+  it("AI 제안이 0건이면 재요청과 저장 방법을 안내한다", async () => {
+    const d = reviewDeps(["claude", "cancel"], ["sonnet", ""], [true]);
+    const provider = {
+      id: "claude" as const,
+      model: "sonnet",
+      author: vi.fn(async () => ({
+        status: "candidate" as const,
+        suite: d.baseline.suite,
+        summary: "변경 없음",
+        warnings: [],
+        questions: [],
+      })),
+    };
+    d.value.providers = { claude: vi.fn(() => provider) };
+
+    await runGenerateCommand(interactiveArgv, d.value);
+
+    expect(d.io.write).toHaveBeenCalledWith(
+      "AI 가 제안한 변경이 없습니다.\n" +
+        "  → 원하는 케이스를 `AI 요청:` 에 구체적으로 적어 다시 물어보세요.\n" +
+        "  → 지금 상태로 저장하려면 save 를 고르세요.\n",
+    );
+  });
   it("선택 change ID만 적용한다", async () => {
     const d = reviewDeps(["codex", "select", "cancel"], ["", "request", "unknown"], [true, true]);
     await runGenerateCommand(interactiveArgv, d.value);
@@ -1574,9 +1597,9 @@ describe("AI 대화형 검토", () => {
     expect(last).toContain("이하");
     expect(last).toContain("줄 생략");
   });
-  it("변경이 없으면 아무것도 쓰지 않는다", async () => {
+  it("변경이 없으면 change 블록을 쓰지 않는다", async () => {
     const output = await diffOutput((suite) => suite);
-    expect(diffLines(output)).toEqual([]);
+    expect(output).not.toMatch(/^change-\d{3} /m);
   });
   it("select 메뉴에서도 각 change의 내용이 보인다", async () => {
     const d = reviewDeps(

@@ -4,6 +4,8 @@ import { MCP_SUITE_JSON_SCHEMA } from "@ohmymcp/runner";
 import type { AuthoringRequest, TestAuthoringProvider } from "./authoring-request.js";
 import { DEFAULT_MAX_RESULT_BYTES } from "./authoring-request.js";
 import { PROVIDER_OUTPUT_SCHEMA } from "./authoring-schema.js";
+import { diagnosisPrompt } from "./diagnosis-prompt.js";
+import { DIAGNOSIS_PROVIDER_SCHEMA, type ServerDiagnosisProvider } from "./diagnosis-schema.js";
 import {
   type AuthoringProviderFailureCode,
   type AuthoringProviderFailureReason,
@@ -146,23 +148,29 @@ function prompt(request: AuthoringRequest): string {
  * provider 원시 결과를 validateAuthoringProviderResult가 받는 형태로 정규화한다.
  * 실패는 전부 AuthoringProviderError로 던지며, raw stdout/stderr와 인증정보는 절대 담지 않는다.
  */
+/**
+ * claude envelope에서 structured_output을 꺼낸다.
+ *
+ * authoring과 진단이 이 한 곳을 함께 쓴다. 규칙이 두 벌이 되면 한쪽만 고쳐지는 사고가 난다.
+ * Claude 2.1.228 성공 응답은 api_error_status를 null로 항상 담는다. 키 존재로 판정하면 모든
+ * 성공이 거절되므로 값으로 본다.
+ */
+function claudeStructuredOutput(value: unknown): unknown {
+  if (
+    !plain(value) ||
+    value.type !== "result" ||
+    value.subtype !== "success" ||
+    value.is_error === true ||
+    (value.api_error_status !== null && value.api_error_status !== undefined) ||
+    !("structured_output" in value)
+  )
+    throw new AuthoringProviderError("schemaMismatch");
+  return value.structured_output;
+}
 function unwrap(result: ProviderProcessResult, claude: boolean): unknown {
   if (!result.ok) throw new AuthoringProviderError(result.code, result);
   let value: unknown = result.value;
-  if (claude) {
-    // Claude 2.1.228 성공 응답은 api_error_status를 null로 항상 담는다.
-    // 키 존재로 판정하면 모든 성공이 거절되므로 값으로 본다.
-    if (
-      !plain(value) ||
-      value.type !== "result" ||
-      value.subtype !== "success" ||
-      value.is_error === true ||
-      (value.api_error_status !== null && value.api_error_status !== undefined) ||
-      !("structured_output" in value)
-    )
-      throw new AuthoringProviderError("schemaMismatch");
-    value = value.structured_output;
-  }
+  if (claude) value = claudeStructuredOutput(value);
   if (!plain(value)) throw new AuthoringProviderError("schemaMismatch");
   if (value.status !== "candidate" && value.status !== "questions")
     throw new AuthoringProviderError("schemaMismatch");
@@ -186,78 +194,110 @@ function unwrap(result: ProviderProcessResult, claude: boolean): unknown {
     questions: value.questions,
   };
 }
-function makeProvider(id: "codex" | "claude", options: Options): TestAuthoringProvider {
+/**
+ * 진단 응답을 validateDiagnosisResult가 받는 형태로 정규화한다.
+ *
+ * unwrap과 검사할 필드가 다르므로 따로 두되, claude envelope 처리는 같은 함수를 쓴다.
+ * 모양 검사는 validateDiagnosisResult가 하므로 여기서는 객체인지까지만 본다.
+ * 실패는 전부 AuthoringProviderError로 던지며 raw stdout/stderr는 담지 않는다.
+ */
+function unwrapDiagnosis(result: ProviderProcessResult, claude: boolean): unknown {
+  if (!result.ok) throw new AuthoringProviderError(result.code, result);
+  const value = claude ? claudeStructuredOutput(result.value) : result.value;
+  if (!plain(value)) throw new AuthoringProviderError("schemaMismatch");
+  return value;
+}
+function makeProvider(
+  id: "codex" | "claude",
+  options: Options,
+): TestAuthoringProvider & ServerDiagnosisProvider {
   const run = options.run ?? runProviderProcess;
   const model = options.model;
   if (typeof model !== "string" || !/\S/.test(model))
     throw new TypeError("provider model은 비어 있지 않은 문자열이어야 합니다.");
   const allowlist = id === "codex" ? CODEX_ENV_ALLOWLIST : CLAUDE_ENV_ALLOWLIST;
+  /**
+   * authoring과 진단이 같은 실행 경로를 쓴다. 다른 것은 stdin과 출력 스키마뿐이다.
+   * 모델·env allowlist·샌드박스 설정이 두 벌이 되면 갈라지므로 여기 한 곳에만 둔다.
+   */
+  const execute = async (
+    stdin: string,
+    schema: unknown,
+    settings: { readonly timeoutMs: number; readonly signal?: AbortSignal },
+  ): Promise<ProviderProcessResult> => {
+    const common = {
+      stdin,
+      timeoutMs: settings.timeoutMs,
+      env: environment(options.environment, allowlist),
+      cwdPrefix: tmpdir(),
+      maxOutputBytes: DEFAULT_MAX_RESULT_BYTES,
+      signal: settings.signal,
+      shell: false as const,
+    };
+    if (id === "codex") {
+      // 진단 경로도 이 이름을 쓴다. 실행마다 만드는 임시 cwd 안의 파일이라 이름은 동작에
+      // 영향이 없고, authoring 과 진단의 차이를 stdin·스키마 둘로만 유지하기 위해서다.
+      const schemaName = "authoring-output-schema.json";
+      return run({
+        ...common,
+        command: "codex",
+        args: (cwd) => [
+          "exec",
+          "-C",
+          cwd,
+          "-m",
+          model,
+          "-c",
+          'model_reasoning_effort="low"',
+          "-s",
+          "read-only",
+          "--ephemeral",
+          "--ignore-user-config",
+          "--ignore-rules",
+          "--skip-git-repo-check",
+          "--output-schema",
+          join(cwd, schemaName),
+          "-",
+        ],
+        files: [{ name: schemaName, contents: JSON.stringify(schema) }],
+        classifyFailure: classifyCodexFailure,
+      });
+    }
+    return run({
+      ...common,
+      command: "claude",
+      args: [
+        "-p",
+        "--safe-mode",
+        "--model",
+        model,
+        "--tools",
+        "",
+        "--no-session-persistence",
+        "--strict-mcp-config",
+        "--mcp-config",
+        '{"mcpServers":{}}',
+        "--output-format",
+        "json",
+        "--json-schema",
+        JSON.stringify(schema),
+      ],
+      classifyFailure: classifyClaudeFailure,
+    });
+  };
   return {
     id,
     model,
     async author(request, settings) {
-      const common = {
-        stdin: prompt(request),
-        timeoutMs: settings.timeoutMs,
-        env: environment(options.environment, allowlist),
-        cwdPrefix: tmpdir(),
-        maxOutputBytes: DEFAULT_MAX_RESULT_BYTES,
-        signal: settings.signal,
-        shell: false as const,
-      };
-      if (id === "codex") {
-        const schemaName = "authoring-output-schema.json";
-        return unwrap(
-          await run({
-            ...common,
-            command: "codex",
-            args: (cwd) => [
-              "exec",
-              "-C",
-              cwd,
-              "-m",
-              model,
-              "-c",
-              'model_reasoning_effort="low"',
-              "-s",
-              "read-only",
-              "--ephemeral",
-              "--ignore-user-config",
-              "--ignore-rules",
-              "--skip-git-repo-check",
-              "--output-schema",
-              join(cwd, schemaName),
-              "-",
-            ],
-            files: [{ name: schemaName, contents: JSON.stringify(PROVIDER_OUTPUT_SCHEMA) }],
-            classifyFailure: classifyCodexFailure,
-          }),
-          false,
-        );
-      }
       return unwrap(
-        await run({
-          ...common,
-          command: "claude",
-          args: [
-            "-p",
-            "--safe-mode",
-            "--model",
-            model,
-            "--tools",
-            "",
-            "--no-session-persistence",
-            "--strict-mcp-config",
-            "--mcp-config",
-            '{"mcpServers":{}}',
-            "--output-format",
-            "json",
-            "--json-schema",
-            JSON.stringify(PROVIDER_OUTPUT_SCHEMA),
-          ],
-          classifyFailure: classifyClaudeFailure,
-        }),
-        true,
+        await execute(prompt(request), PROVIDER_OUTPUT_SCHEMA, settings),
+        id === "claude",
+      );
+    },
+    async diagnose(request, settings) {
+      return unwrapDiagnosis(
+        await execute(diagnosisPrompt(request), DIAGNOSIS_PROVIDER_SCHEMA, settings),
+        id === "claude",
       );
     },
   };

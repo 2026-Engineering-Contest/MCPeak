@@ -118,7 +118,7 @@ type RequestState = {
 };
 const requests = new WeakMap<AuthoringRequestPreview, RequestState>();
 const candidates = new WeakMap<SanitizedAuthoringCandidate, TestSuiteSpec>();
-const providerFailureCodes = new Set<AuthoringProviderFailureCode>([
+export const providerFailureCodes = new Set<AuthoringProviderFailureCode>([
   "providerUnavailable",
   "nonZeroExit",
   "timedOut",
@@ -129,7 +129,7 @@ const providerFailureCodes = new Set<AuthoringProviderFailureCode>([
   "schemaMismatch",
   "internal",
 ]);
-const providerFailureReasons = new Set<AuthoringProviderFailureReason>([
+export const providerFailureReasons = new Set<AuthoringProviderFailureReason>([
   "notAuthenticated",
   "unknownModel",
   "rateLimited",
@@ -192,7 +192,16 @@ function redactText(value: string, options?: RunnerRedactionOptions): string {
   }
   return result;
 }
-function publicProviderFailure(error: unknown, state: RequestState): PublicProviderFailure {
+/**
+ * provider 오류를 화면에 내보낼 수 있는 닫힌 형태로 접는다.
+ *
+ * authoring 과 진단이 이 한 곳을 함께 쓴다. 매핑이 두 벌이 되면 닫힌 enum 목록이 한쪽만
+ * 늘어나도 아무도 모른다. state 는 두 통로가 공통으로 가진 두 필드만 받는다.
+ */
+export function publicProviderFailure(
+  error: unknown,
+  state: { readonly providerId: "codex" | "claude"; readonly timeoutMs: number },
+): PublicProviderFailure {
   const source = error as {
     code?: unknown;
     exitCode?: unknown;

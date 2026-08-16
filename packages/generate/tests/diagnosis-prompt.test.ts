@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { McpToolContext } from "../src/authoring-request.js";
 import { diagnosisPrompt } from "../src/diagnosis-prompt.js";
 import { prepareDiagnosisRequest } from "../src/diagnosis-request.js";
-import { DIAGNOSIS_PROVIDER_SCHEMA, type DiagnosisRequest } from "../src/diagnosis-schema.js";
+import { buildDiagnosisProviderSchema, type DiagnosisRequest } from "../src/diagnosis-schema.js";
 import type { ProviderProcessResult } from "../src/provider-process.js";
 import {
   AuthoringProviderError,
@@ -100,7 +100,21 @@ describe("diagnosisPrompt", () => {
   });
 
   it("프롬프트에 DIAGNOSIS_PROVIDER_SCHEMA 가 들어간다", () => {
-    expect(diagnosisPrompt(request())).toContain(JSON.stringify(DIAGNOSIS_PROVIDER_SCHEMA));
+    // 고정 스키마가 아니라 요청별 스키마다. caseId 의 허용 값이 요청마다 다르다.
+    const target = request();
+    expect(diagnosisPrompt(target)).toContain(JSON.stringify(buildDiagnosisProviderSchema(target)));
+  });
+
+  it("프롬프트에 허용 caseId 목록이 들어간다", () => {
+    const prompt = diagnosisPrompt(request());
+    expect(prompt).toContain("허용 caseId 목록:");
+    expect(prompt).toContain(JSON.stringify(["case-1"]));
+  });
+
+  it("프롬프트가 한 항목에 한 caseId 규칙을 말한다", () => {
+    const prompt = diagnosisPrompt(request());
+    expect(prompt).toContain("caseId 는 위 목록의 값 하나여야 한다. 여러 값을 이어 붙이지 않는다.");
+    expect(prompt).toContain("여러 케이스가 같은 원인이면 항목을 나눠 각각 낸다.");
   });
 
   it("같은 요청으로 두 번 만든 프롬프트가 동일하다", () => {
@@ -125,7 +139,11 @@ describe("diagnosisPrompt", () => {
     expect(args).toContain("--ephemeral");
     expect(args).toContain(join("/empty/provider", "authoring-output-schema.json"));
     expect(invocation.shell).toBe(false);
-    expect(invocation.files[0]?.contents).toBe(JSON.stringify(DIAGNOSIS_PROVIDER_SCHEMA));
+    expect(invocation.files[0]?.contents).toBe(
+      JSON.stringify(buildDiagnosisProviderSchema(request())),
+    );
+    // 고정 스키마를 그대로 넘기면 caseId 가 pattern 제약만 갖는다. 그것이 이번 결함의 원인이다.
+    expect(invocation.files[0]?.contents).toContain('"enum":["case-1"]');
     expect(invocation.stdin).toBe(diagnosisPrompt(request()));
   });
 
@@ -148,8 +166,9 @@ describe("diagnosisPrompt", () => {
       "--output-format",
       "json",
       "--json-schema",
-      JSON.stringify(DIAGNOSIS_PROVIDER_SCHEMA),
+      JSON.stringify(buildDiagnosisProviderSchema(request())),
     ]);
+    expect(invocation.args.at(-1)).toContain('"enum":["case-1"]');
     expect(invocation.stdin).toBe(diagnosisPrompt(request()));
   });
 

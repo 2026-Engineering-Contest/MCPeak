@@ -4,6 +4,9 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const sourceDir = fileURLToPath(new URL("../src", import.meta.url));
+const adrPath = fileURLToPath(
+  new URL("../../../docs/adr/0009-generate가-runner에-의존하는-예외.md", import.meta.url),
+);
 
 /**
  * `generate → runner` 의존은 ADR-0009로 승인된 예외다. 승인 범위를 코드로 고정한다.
@@ -30,6 +33,28 @@ const APPROVED_RUNNER_SYMBOLS = [
   "sha256",
   "validateMcpSuite",
 ];
+
+function approvedRunnerSymbolsFromAdr(source: string): string[] {
+  const background = source.split(/^## 배경\s*$/m)[1]?.split(/^##\s/m)[0] ?? "";
+  const rows = background.split(/\r?\n/);
+  const headerIndex = rows.findIndex((row) => {
+    const columns = row
+      .trim()
+      .replace(/^\||\|$/g, "")
+      .split("|")
+      .map((column) => column.trim());
+    return columns[0] === "종류" && columns[1] === "심볼";
+  });
+  if (headerIndex < 0) return [];
+
+  const symbols: string[] = [];
+  for (const row of rows.slice(headerIndex + 2)) {
+    if (!row.trim().startsWith("|")) break;
+    const symbolColumn = row.split("|")[2] ?? "";
+    for (const match of symbolColumn.matchAll(/`([^`]+)`/g)) symbols.push(match[1] ?? "");
+  }
+  return symbols;
+}
 
 async function sourceFiles(): Promise<string[]> {
   const entries = await readdir(sourceDir, { withFileTypes: true });
@@ -74,6 +99,13 @@ describe("dependency boundary", () => {
       for (const name of runnerImports(await readFile(file, "utf8"))) used.add(name);
     expect([...used].sort()).toEqual(APPROVED_RUNNER_SYMBOLS);
   });
+
+  it("ADR-0009의 승인 심볼 표가 코드의 승인 목록과 정확히 일치한다", async () => {
+    const adrSymbols = approvedRunnerSymbolsFromAdr(await readFile(adrPath, "utf8"));
+    expect(adrSymbols.length).toBeGreaterThan(0);
+    expect(adrSymbols.sort()).toEqual(APPROVED_RUNNER_SYMBOLS);
+  });
+
   it("승인 목록에 canonicalJson · deepFreeze · sha256 이 있다", () => {
     expect(APPROVED_RUNNER_SYMBOLS).toEqual(
       expect.arrayContaining(["canonicalJson", "deepFreeze", "sha256"]),

@@ -24,9 +24,16 @@ async function pidPath(): Promise<{ directory: string; path: string }> {
   return { directory, path: join(directory, "server.pid") };
 }
 
+/**
+ * PID 파일과 프로세스 소멸을 기다리는 예산. 20회 x 10ms 로는 서버를 띄우는 스펙이 여럿 겹칠 때
+ * 모자란다(이슈 #93). 판정 대상은 "좀비가 남는가" 이지 "얼마나 빨리 뜨는가" 가 아니다. 정상
+ * 실행에서는 첫 시도에 끝나 실행 시간이 늘지 않는다. 실행 격리 자체는 이슈 #119 다.
+ */
+const RESIDUE_WAIT_ATTEMPTS = 200;
+
 async function assertNoResidue(path: string): Promise<void> {
   let pid: number | undefined;
-  for (let attempt = 0; attempt < 20 && pid === undefined; attempt += 1) {
+  for (let attempt = 0; attempt < RESIDUE_WAIT_ATTEMPTS && pid === undefined; attempt += 1) {
     try {
       const value = (await readFile(path, "utf8")).trim();
       const parsed = Number(value);
@@ -41,7 +48,7 @@ async function assertNoResidue(path: string): Promise<void> {
   );
   if (pid === undefined) return;
   let missing = false;
-  for (let attempt = 0; attempt < 20 && !missing; attempt += 1) {
+  for (let attempt = 0; attempt < RESIDUE_WAIT_ATTEMPTS && !missing; attempt += 1) {
     try {
       process.kill(pid, 0);
       await new Promise((resolve) => setTimeout(resolve, 10));
@@ -96,7 +103,14 @@ describe.sequential("stdio 실제 프로세스", () => {
         connectStdio({
           command: process.execPath,
           args: [fixture("handshake-never-completes.mjs")],
-          connectTimeoutMs: 100,
+          /**
+           * 100ms 였다. 그 예산은 **Node 프로세스가 뜨는 시간**과 경쟁한다. 같은 러너에서 서버를
+           * 띄우는 스펙이 늘자 자식이 fixture 의 첫 줄에 닿기도 전에 타임아웃이 나 PID 파일이
+           * 아예 안 생겼고, 정리 여부를 판정할 대상 자체가 사라졌다(이슈 #93). 이 테스트가 보는
+           * 것은 "핸드셰이크가 끝나지 않으면 정리하는가" 이지 타임아웃 값의 크기가 아니다.
+           * fixture 는 핸드셰이크를 영원히 완료하지 않으므로 값을 키워도 시나리오는 그대로다.
+           */
+          connectTimeoutMs: 1_000,
           env: { OHMYMCP_PID_FILE: pid.path },
         }),
       ).rejects.toMatchObject({ code: "HANDSHAKE_TIMEOUT" });

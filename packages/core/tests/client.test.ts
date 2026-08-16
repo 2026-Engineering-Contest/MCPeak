@@ -186,6 +186,9 @@ describe("McpClient SDK adapter", () => {
     const { sdk, client } = adapter();
     const sparse: unknown[] = [1];
     sparse[2] = 3;
+    // 전역을 건드리므로 원래 descriptor 를 보존했다가 그대로 되돌린다. 지금은 비어 있지만,
+    // 값만 지우면 누군가 채워 둔 경우 그 정의가 사라진다.
+    const original = Object.getOwnPropertyDescriptor(Array.prototype, 1);
     (Array.prototype as unknown as Record<string, unknown>)[1] = "polluted";
     try {
       expect(1 in sparse).toBe(true); // 오염이 실제로 걸렸는지 먼저 확인한다
@@ -193,21 +196,29 @@ describe("McpClient SDK adapter", () => {
         code: "INVALID_TOOL_ARGUMENTS",
       });
     } finally {
-      delete (Array.prototype as unknown as Record<string, unknown>)[1];
+      if (original) Object.defineProperty(Array.prototype, 1, original);
+      else delete (Array.prototype as unknown as Record<string, unknown>)[1];
     }
     expect(sdk.callTool).not.toHaveBeenCalled();
   });
 
-  it("length 만 거대한 배열을 즉시 거절한다", async () => {
-    // 길이에 비례해 순회하면 40억 회를 돈다. own 키 수로 판정해야 상수 시간에 끝난다.
+  it("배열 길이에 비례해 순회하지 않는다", async () => {
+    // `length` 를 40억으로 보고하면서 모든 인덱스를 '있다' 고 답하는 배열이 있으면, 길이에
+    // 비례해 도는 구현은 그 자리에서 멈춘다. 소요 시간으로 재면 CI 부하에 따라 흔들리므로
+    // 트랩 호출 횟수로 본다 — 길이 비례 순회를 하면 0 일 수 없다.
     const { client } = adapter();
-    const inflated: unknown[] = [];
-    inflated.length = 2 ** 32 - 1;
-    const startedAt = Date.now();
-    await expect(client.callTool("tool", { items: inflated })).rejects.toMatchObject({
+    let membershipChecks = 0;
+    const hostile = new Proxy([] as unknown[], {
+      get: (target, key) => (key === "length" ? 2 ** 32 - 1 : Reflect.get(target, key)),
+      has: () => {
+        membershipChecks += 1;
+        return true;
+      },
+    });
+    await expect(client.callTool("tool", { items: hostile })).rejects.toMatchObject({
       code: "INVALID_TOOL_ARGUMENTS",
     });
-    expect(Date.now() - startedAt).toBeLessThan(1000);
+    expect(membershipChecks).toBe(0);
   });
 
   it("같은 배열을 두 곳에서 참조하는 것은 순환이 아니므로 허용한다", async () => {

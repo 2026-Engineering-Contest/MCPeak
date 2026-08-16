@@ -34,7 +34,14 @@ function invalidArguments(diagnostics: () => McpDiagnosticsInput): McpClientErro
   });
 }
 
-/** JSON 객체만 전달되도록 iterative traversal로 검증한다. 공유 참조는 허용하고 cycle만 거절한다. */
+/**
+ * JSON 으로 표현되는 값만 전달되도록 iterative traversal로 검증한다.
+ * 공유 참조는 허용하고 cycle만 거절한다.
+ *
+ * 최상위 `args` 는 객체여야 한다(MCP 의 `arguments` 규약). 그 아래 중첩된 값에는 배열이
+ * 올 수 있으며, 배열은 객체와 같은 컨테이너로 순회한다 — 깊이와 순환 검사가 똑같이 걸린다.
+ * 희소 배열만 거부하는 근거는 ADR-0035 에 있다.
+ */
 export function assertToolArguments(
   name: string,
   args: unknown,
@@ -70,11 +77,18 @@ export function assertToolArguments(
         typeof value === "function" ||
         typeof value === "symbol" ||
         typeof value === "bigint" ||
-        Array.isArray(value) ||
         typeof value !== "object" ||
         current.depth > MAX_JSON_DEPTH
       )
         throw invalidArguments(diagnostics);
+      // 희소 배열은 거부한다. 빈 자리는 JSON 을 거치면 `null` 이 되어 실제 `null` 원소와
+      // 구분되지 않는다. 사용자가 넘긴 값과 서버가 받는 값이 달라지는 유일한 배열 형태다.
+      // `mock`(ADR-0029) · `record`(ADR-0003) 와 같은 판정으로 맞춘다.
+      //
+      // `Object.values` 는 빈 자리를 건너뛰므로 이 검사를 순회에 맡길 수 없다.
+      if (Array.isArray(value))
+        for (let index = 0; index < value.length; index += 1)
+          if (!(index in value)) throw invalidArguments(diagnostics);
       if (ancestors.has(value)) throw invalidArguments(diagnostics);
       ancestors.add(value);
       stack.push({ value: undefined, depth: current.depth, leave: value });

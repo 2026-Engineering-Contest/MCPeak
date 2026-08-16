@@ -81,14 +81,19 @@ export function assertToolArguments(
         current.depth > MAX_JSON_DEPTH
       )
         throw invalidArguments(diagnostics);
-      // 희소 배열은 거부한다. 빈 자리는 JSON 을 거치면 `null` 이 되어 실제 `null` 원소와
-      // 구분되지 않는다. 사용자가 넘긴 값과 서버가 받는 값이 달라지는 유일한 배열 형태다.
-      // `mock`(ADR-0029) · `record`(ADR-0003) 와 같은 판정으로 맞춘다.
+      // 배열은 `JSON.stringify` 를 통과했을 때 모양이 보존되는 것만 받는다. 빈 자리(희소)는
+      // `null` 이 되어 실제 `null` 원소와 구분되지 않고, 인덱스가 아닌 속성(`arr.foo`)은
+      // 통째로 사라진다. 둘 다 사용자가 넘긴 값과 서버가 받는 값이 달라지는 경우다.
+      // `mock`(ADR-0029) · `record`(ADR-0003) 와 같은 판정으로 맞춘다. 근거는 ADR-0035.
       //
-      // `Object.values` 는 빈 자리를 건너뛰므로 이 검사를 순회에 맡길 수 없다.
-      if (Array.isArray(value))
-        for (let index = 0; index < value.length; index += 1)
-          if (!(index in value)) throw invalidArguments(diagnostics);
+      // own enumerable 키 수와 `length` 를 비교한다. `Object.values` 가 빈 자리를 건너뛰므로
+      // 순회에 맡길 수 없고, `index in value` 는 프로토타입 체인을 타서 `Array.prototype[1]`
+      // 이 오염되면 구멍을 못 잡는다. `Object.keys` 는 own 프로퍼티만 본다.
+      //
+      // 길이가 아니라 실제 키 수에 비례하므로 `length` 만 크게 부풀린 값(`arr.length = 2**32-1`,
+      // 같은 length 를 보고하는 Proxy)에도 즉시 끝난다.
+      if (Array.isArray(value) && Object.keys(value).length !== value.length)
+        throw invalidArguments(diagnostics);
       if (ancestors.has(value)) throw invalidArguments(diagnostics);
       ancestors.add(value);
       stack.push({ value: undefined, depth: current.depth, leave: value });

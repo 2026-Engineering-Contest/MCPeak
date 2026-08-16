@@ -149,14 +149,22 @@ describe("McpClient SDK adapter", () => {
     let deepArray: unknown[] = [];
     for (let index = 0; index < 101; index += 1) deepArray = [deepArray];
     // 희소 배열. `[1, , 3]` 리터럴로 쓰면 포매터가 빈 자리를 `undefined` 로 채워 희소가
-    // 아니게 되므로, 길이를 늘려 구멍을 직접 만든다. `1 in sparse` 는 false 다.
+    // 아니게 되므로, 길이를 늘려 구멍을 직접 만든다.
     const sparse: unknown[] = [1];
     sparse[2] = 3;
+    // `length` 만 부풀린 배열. 슬롯이 없으므로 own 키 수와 어긋난다.
+    const inflated: unknown[] = [];
+    inflated.length = 2 ** 32 - 1;
+    // 인덱스가 아닌 속성은 `JSON.stringify` 가 통째로 버린다.
+    const extraProperty: unknown[] = [1, 2];
+    (extraProperty as unknown as Record<string, unknown>).extra = "dropped";
     for (const args of [
       // 최상위는 여전히 객체여야 한다 — MCP 의 arguments 규약이다.
       [1, 2, 3],
       // 빈 자리는 JSON 을 거치면 null 이 되어 실제 null 원소와 구분되지 않는다 (ADR-0035).
       { items: sparse },
+      { items: inflated },
+      { items: extraProperty },
       { items: [Number.NaN] },
       { items: [Number.POSITIVE_INFINITY] },
       { items: [() => {}] },
@@ -170,6 +178,36 @@ describe("McpClient SDK adapter", () => {
         phase: "callTool",
       });
     expect(sdk.callTool).not.toHaveBeenCalled();
+  });
+
+  it("Array.prototype 이 오염돼도 희소 배열을 계속 잡아낸다", async () => {
+    // `index in array` 는 프로토타입 체인을 타므로 `Array.prototype[1]` 이 채워져 있으면
+    // 구멍을 못 본다. own 프로퍼티만 세야 이 경로가 막힌다.
+    const { sdk, client } = adapter();
+    const sparse: unknown[] = [1];
+    sparse[2] = 3;
+    (Array.prototype as unknown as Record<string, unknown>)[1] = "polluted";
+    try {
+      expect(1 in sparse).toBe(true); // 오염이 실제로 걸렸는지 먼저 확인한다
+      await expect(client.callTool("tool", { items: sparse })).rejects.toMatchObject({
+        code: "INVALID_TOOL_ARGUMENTS",
+      });
+    } finally {
+      delete (Array.prototype as unknown as Record<string, unknown>)[1];
+    }
+    expect(sdk.callTool).not.toHaveBeenCalled();
+  });
+
+  it("length 만 거대한 배열을 즉시 거절한다", async () => {
+    // 길이에 비례해 순회하면 40억 회를 돈다. own 키 수로 판정해야 상수 시간에 끝난다.
+    const { client } = adapter();
+    const inflated: unknown[] = [];
+    inflated.length = 2 ** 32 - 1;
+    const startedAt = Date.now();
+    await expect(client.callTool("tool", { items: inflated })).rejects.toMatchObject({
+      code: "INVALID_TOOL_ARGUMENTS",
+    });
+    expect(Date.now() - startedAt).toBeLessThan(1000);
   });
 
   it("같은 배열을 두 곳에서 참조하는 것은 순환이 아니므로 허용한다", async () => {

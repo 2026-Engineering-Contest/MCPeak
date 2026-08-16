@@ -27,6 +27,11 @@ import {
   renderProcessDiagnostics,
 } from "./process-diagnostics.js";
 import {
+  buildRepairBundle,
+  REPAIR_BUNDLE_EMPTY_LINE,
+  serializeRepairBundle,
+} from "./repair-bundle.js";
+import {
   caseApprovalStatuses,
   checkSpecApproval,
   renderSpecApproval,
@@ -42,6 +47,8 @@ export interface TestCommandInput {
   readonly json: boolean;
   /** `--junit` 로 받은 XML 출력 경로. 지정하지 않으면 undefined 이고 XML 을 만들지 않는다. */
   readonly junitPath: string | undefined;
+  /** `--repair-bundle` 로 받은 번들 출력 경로. 지정하지 않으면 undefined 이고 번들을 안 만든다. */
+  readonly repairBundlePath: string | undefined;
   readonly stderrLines: number;
 }
 export type CliErrorCode =
@@ -56,6 +63,7 @@ export type CliErrorCode =
   | "RUNNER_EXECUTION_FAILED"
   | "RUNNER_FINALIZATION_FAILED"
   | "JUNIT_WRITE_FAILED"
+  | "REPAIR_BUNDLE_WRITE_FAILED"
   | "CLI_INTERNAL_ERROR";
 export interface CliFailure {
   readonly code: CliErrorCode;
@@ -130,6 +138,10 @@ const dictionary: Record<
     message: "JUnit XML 파일을 쓰지 못했습니다.",
     hint: "`--junit` 경로의 디렉터리가 존재하는지와 쓰기 권한을 확인하세요.",
   },
+  REPAIR_BUNDLE_WRITE_FAILED: {
+    message: "repair 번들 파일을 쓰지 못했습니다.",
+    hint: "`--repair-bundle` 경로의 디렉터리가 존재하는지와 쓰기 권한을 확인하세요.",
+  },
   CLI_INTERNAL_ERROR: {
     message: "예상하지 못한 CLI 내부 오류가 발생했습니다.",
     hint: "다시 실행한 뒤 재현 정보와 함께 이슈를 보고하세요.",
@@ -149,6 +161,7 @@ export function parseTestCommand(argv: readonly string[]): TestCommandInput {
   let command: string | undefined;
   let json = false;
   let junitPath: string | undefined;
+  let repairBundlePath: string | undefined;
   let stderrLines: number | undefined;
   const args: string[] = [];
   for (let index = 1; index < argv.length; index += 1) {
@@ -201,6 +214,24 @@ export function parseTestCommand(argv: readonly string[]): TestCommandInput {
       if (value === "") fail("`--junit` 옵션 값이 필요합니다.");
       if (value.startsWith("--")) fail("`--junit` 옵션 값이 필요합니다.");
       junitPath = value;
+    } else if (token === "--repair-bundle" || token.startsWith("--repair-bundle=")) {
+      // 값 검사는 `--junit` 과 같은 규칙이다. 경로 자리에 플래그가 들어온 것은 값을 빠뜨린
+      // 오타이지 `--json` 이라는 이름의 파일을 만들라는 뜻이 아니다.
+      if (repairBundlePath !== undefined) fail("`--repair-bundle`은 한 번만 사용할 수 있습니다.");
+      let value: string;
+      if (token === "--repair-bundle") {
+        const next = argv[++index];
+        if (next === undefined)
+          throw new CliCommandError({
+            code: "CLI_USAGE",
+            message: "`--repair-bundle` 옵션 값이 필요합니다.",
+            hint: TEST_USAGE_HINT,
+          });
+        value = next;
+      } else value = token.slice("--repair-bundle=".length);
+      if (value === "") fail("`--repair-bundle` 옵션 값이 필요합니다.");
+      if (value.startsWith("--")) fail("`--repair-bundle` 옵션 값이 필요합니다.");
+      repairBundlePath = value;
     } else if (token === "--stderr-lines" || token.startsWith("--stderr-lines=")) {
       if (stderrLines !== undefined) fail("`--stderr-lines`는 한 번만 사용할 수 있습니다.");
       let value: string;
@@ -240,6 +271,7 @@ export function parseTestCommand(argv: readonly string[]): TestCommandInput {
     args: Object.freeze(args),
     json,
     junitPath,
+    repairBundlePath,
     stderrLines: stderrLines ?? DEFAULT_STDERR_LINES,
   });
 }
@@ -721,6 +753,31 @@ export async function runCli(
   // 전부 통과여도 비정상 종료면 쓴다. 종료 경로의 결함을 숨기지 않는다. 설계 문서 §4.3.
   if (!allPassed || (settled.value !== undefined && isAbnormalExit(settled.value)))
     writeDiagnostics(settled);
+  /**
+   * repair 번들. 스냅샷을 그대로 쓴다. 우리가 프로세스를 정리한 뒤의 상태를 다시 읽으면 그
+   * 상태를 서버 탓으로 적게 된다. `--repair-bundle` 을 주지 않으면 이 블록을 통째로 건너뛰므로
+   * 기존 경로의 출력과 종료 코드가 그대로다. 계획서 완료 조건 2.
+   */
+  if (input.repairBundlePath !== undefined) {
+    const bundle = buildRepairBundle({
+      report: finalReport,
+      suite: validated.value,
+      specApproval,
+      processDiagnostics: settled.value,
+    });
+    if (bundle === undefined) dependencies.writeStdout(`\n${REPAIR_BUNDLE_EMPTY_LINE}`);
+    else
+      try {
+        await dependencies.writeFile(input.repairBundlePath, serializeRepairBundle(bundle));
+      } catch {
+        // 전부 통과여도 1 이다. 조용히 0 을 내면 CI 는 번들 없이 초록이 되고, 사용자는 파일이
+        // 없다는 것을 한참 뒤에야 안다. 원인이 로컬 I/O 이므로 진단은 쓰지 않는다.
+        return writeFailure(dependencies, {
+          code: "REPAIR_BUNDLE_WRITE_FAILED",
+          ...dictionary.REPAIR_BUNDLE_WRITE_FAILED,
+        });
+      }
+  }
   // 판정은 케이스 결과로만 정한다. 지문이 달라도 종료 코드는 바뀌지 않는다. 설계 문서 §6.
   return allPassed ? 0 : 1;
 }

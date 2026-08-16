@@ -100,9 +100,20 @@ JSON Schema 의 `type: "array"` 를 쓰는 MCP 서버는 흔하다. 그런 서�
   희소 배열이 `items` 안에 있어도 이 문장이 나온다. CLAUDE.md 가 금지한 형태이고 고쳐야 하지만,
   `McpClientError` 의 메시지가 `MCP_CLIENT_ERROR_DETAILS` 에 코드별로 고정돼 있어 에러 타입
   표면을 건드려야 한다. 범위와 리뷰 단위가 달라 후속 PR 로 분리한다.
-- **배열의 인덱스가 아닌 속성(`arr.foo = 1`)은 검사하지 않는다.** `JSON.stringify` 가 그것을
-  버리므로 희소 배열과 같은 종류의 손실이지만, `Object.values` 순회에 그대로 실려 검증만 되고
-  거부되지는 않는다. 실제로 이런 값을 만드는 경로를 찾지 못해 이번 범위에 넣지 않았다.
+- **배열의 인덱스가 아닌 속성(`arr.foo = 1`)도 거부된다.** `JSON.stringify` 가 그것을 통째로
+  버리므로 희소 배열과 같은 종류의 손실이다. 판정을 own 키 수와 `length` 의 비교로 구현하면서
+  같이 걸리게 됐고, 이 ADR 이 세운 기준("넘긴 것이 서버에 도착한다")에 비추면 거부가 맞다.
+- **판정은 `length` 가 아니라 own 키 수에 비례한다.** `Object.keys(value).length !== value.length`
+  하나로 본다. 처음에는 `0..length` 를 돌며 `index in value` 로 구멍을 찾았는데 두 가지가
+  틀렸다.
+  - `in` 은 프로토타입 체인을 탄다. `Array.prototype[1]` 이 채워져 있으면 구멍이 있는데도
+    있는 것으로 판정된다. `Object.keys` 는 own 프로퍼티만 본다.
+  - 길이에 비례해 도는 것은 `arr.length = 2 ** 32 - 1` 같은 값에 40억 회 순회가 된다.
+    슬롯 없이 `length` 만 부풀린 값이나 같은 `length` 를 보고하는 `Proxy` 가 그렇다. own 키
+    수로 보면 상수 시간에 끝난다.
+
+  `Object.keys` 자체가 던지는 입력(`ownKeys` 트랩이 `length` 를 빠뜨리는 `Proxy`)은 순회를
+  감싼 `try`/`catch` 가 받아 `INVALID_TOOL_ARGUMENTS` 로 바꾼다.
 
 ### 승인 상태
 

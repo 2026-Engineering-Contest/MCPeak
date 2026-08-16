@@ -760,9 +760,9 @@ describe("AI 대화형 검토", () => {
     await runGenerateCommand(interactiveArgv, d.value);
 
     expect(d.io.write).toHaveBeenCalledWith(
-      "AI 가 제안한 변경이 없습니다.\n" +
-        "  → 원하는 케이스를 `AI 요청:` 에 구체적으로 적어 다시 물어보세요.\n" +
-        "  → 지금 상태로 저장하려면 save 를 고르세요.\n",
+      "AI가 제안한 변경이 없습니다.\n" +
+        "  → 원하는 케이스를 `AI 요청:`에 구체적으로 적어 다시 물어보세요.\n" +
+        "  → 지금 상태로 저장하려면 save를 고르세요.\n",
     );
   });
   it("선택 change ID만 적용한다", async () => {

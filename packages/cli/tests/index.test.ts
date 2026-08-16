@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import packageMetadata from "../package.json";
 import type { GenerateCommandDependencies } from "../src/generate-command.js";
-import { COMMANDS, run } from "../src/index.js";
+import { COMMANDS, nodeRepairDependencies, run } from "../src/index.js";
 
 type OptionalKey<T> = {
   [K in keyof T]-?: object extends Pick<T, K> ? K : never;
@@ -29,7 +29,7 @@ const OPTIONAL_GENERATE_DEPENDENCIES = {
 
 describe("ohmymcp cli", () => {
   it("알려진 서브커맨드를 선언한다", () => {
-    expect(COMMANDS).toEqual(["test", "generate", "record", "replay", "mock"]);
+    expect(COMMANDS).toEqual(["test", "generate", "repair", "record", "replay", "mock"]);
   });
 
   it("사용자 입력 오류를 reject하지 않고 종료 코드 1로 반환한다", async () => {
@@ -190,6 +190,29 @@ describe("ohmymcp cli", () => {
     } finally {
       vi.doUnmock("@ohmymcp/generate");
       stderr.mockRestore();
+    }
+  });
+
+  /**
+   * 확인 화면이 실사용에서 뜨려면 `reviewIO` 가 주입돼 있어야 한다. 분기 안에 리터럴로 두면
+   * 빠뜨려도 아무 테스트가 안 깨진다. 실제로 한 번 빠뜨렸으므로 주입 자체를 단언한다.
+   */
+  it("repair 의존성에 reviewIO 와 진단 통로가 모두 들어 있다", () => {
+    const generate = {
+      prepareDiagnosisRequest: () => undefined,
+      dispatchDiagnosisRequest: async () => undefined,
+      createCodexProvider: () => undefined,
+      createClaudeProvider: () => undefined,
+    } as unknown as typeof import("@ohmymcp/generate");
+    const dependencies = nodeRepairDependencies(generate);
+    try {
+      expect(dependencies.reviewIO).toBeDefined();
+      expect(typeof dependencies.reviewIO?.confirm).toBe("function");
+      expect(typeof dependencies.reviewIO?.interactive).toBe("boolean");
+      expect(dependencies.diagnosis).toBeDefined();
+      expect(typeof dependencies.diagnosis?.providers.codex).toBe("function");
+    } finally {
+      dependencies.reviewIO?.close?.();
     }
   });
 });

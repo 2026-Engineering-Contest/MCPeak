@@ -1001,10 +1001,10 @@ get-weather-unknown-city  (get_weather)
 ### T12. ADR 넷과 CHANGELOG (`docs`, **상위**)
 
 **Files**
-- 생성: `docs/adr/0028-provider-진단-통로-분리.md`
-- 생성: `docs/adr/0029-repair-번들과-json-분리.md`
-- 생성: `docs/adr/0030-미승인-명세에서의-repair-동작.md`
-- 생성: `docs/adr/0031-stderr-외부-전송-경계.md`
+- 생성: `docs/adr/0034-provider-진단-통로-분리.md`
+- 생성: `docs/adr/0031-repair-번들과-json-분리.md`
+- 생성: `docs/adr/0032-미승인-명세에서의-repair-동작.md`
+- 생성: `docs/adr/0033-stderr-외부-전송-경계.md`
 - 수정: `docs/adr/README.md`
 - 수정: `packages/generate/CHANGELOG.md`, `packages/cli/CHANGELOG.md`
 
@@ -1015,11 +1015,11 @@ PR 이 번호를 먹었으면 역전된다. 단계 8 에서 0016 번호 충돌�
 
 - **0028 provider 진단 통로 분리.** authoring 통로 재사용(C1)을 왜 버렸는지. 설계서 §5.1 의 세
   갈래 위험과, 재사용했을 때 필요해지는 권한 경계 검사 비용을 근거로 적는다.
-- **0029 repair 번들과 `--json` 분리.** 어느 파일이 결정론 계약을 지고 어느 파일이 안 지는지.
+- **0031 repair 번들과 `--json` 분리.** 어느 파일이 결정론 계약을 지고 어느 파일이 안 지는지.
   단계 9 가 `RunnerReport` 에서 막힌 것과 같은 문제라는 점을 남긴다.
-- **0030 미승인 명세에서의 repair 동작.** 차단이 아니라 전제 전환을 고른 이유. 단계 8 의 비차단
+- **0032 미승인 명세에서의 repair 동작.** 차단이 아니라 전제 전환을 고른 이유. 단계 8 의 비차단
   결정과의 정합.
-- **0031 stderr 외부 전송 경계.** 키 기반 치환이 불가능한 입력을 확인·상한·옵트아웃으로 다루는
+- **0033 stderr 외부 전송 경계.** 키 기반 치환이 불가능한 입력을 확인·상한·옵트아웃으로 다루는
   근거. "치환했으니 안전" 이라고 말하지 않기로 한 것을 명시한다.
 
 CHANGELOG 에는 공개 API 변경만 적는다. `generate` 는 새 export 목록, `cli` 는 새 명령과 새

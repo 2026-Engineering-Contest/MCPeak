@@ -489,6 +489,14 @@ function diffBody(change: AuthoringDiffPreview["changes"][number]): string[] {
   }
 }
 function showDiff(io: ReviewIO, preview: AuthoringDiffPreview): void {
+  if (preview.changes.length === 0) {
+    io.write(
+      "AI가 제안한 변경이 없습니다.\n" +
+        "  → 원하는 케이스를 `AI 요청:`에 구체적으로 적어 다시 물어보세요.\n" +
+        "  → 지금 상태로 저장하려면 save를 고르세요.\n",
+    );
+    return;
+  }
   for (const change of preview.changes) {
     const body = diffBody(change);
     const shown =

@@ -86,7 +86,12 @@ export type {
   DiagnosisResult,
   ServerDiagnosisProvider,
 } from "./diagnosis-schema.js";
-export { DIAGNOSIS_PROVIDER_SCHEMA, MAX_CAUSE_CHARS } from "./diagnosis-schema.js";
+export {
+  buildDiagnosisProviderSchema,
+  DIAGNOSIS_PROVIDER_SCHEMA,
+  diagnosisCaseIds,
+  MAX_CAUSE_CHARS,
+} from "./diagnosis-schema.js";
 export type {
   AuthoringProviderFailureCode,
   AuthoringProviderFailureReason,

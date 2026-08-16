@@ -5,7 +5,7 @@ import type { AuthoringRequest, TestAuthoringProvider } from "./authoring-reques
 import { DEFAULT_MAX_RESULT_BYTES } from "./authoring-request.js";
 import { PROVIDER_OUTPUT_SCHEMA } from "./authoring-schema.js";
 import { diagnosisPrompt } from "./diagnosis-prompt.js";
-import { DIAGNOSIS_PROVIDER_SCHEMA, type ServerDiagnosisProvider } from "./diagnosis-schema.js";
+import { buildDiagnosisProviderSchema, type ServerDiagnosisProvider } from "./diagnosis-schema.js";
 import {
   type AuthoringProviderFailureCode,
   type AuthoringProviderFailureReason,
@@ -296,7 +296,8 @@ function makeProvider(
     },
     async diagnose(request, settings) {
       return unwrapDiagnosis(
-        await execute(diagnosisPrompt(request), DIAGNOSIS_PROVIDER_SCHEMA, settings),
+        // 고정 스키마가 아니라 요청별 스키마다. caseId 의 허용 값이 요청마다 다르다.
+        await execute(diagnosisPrompt(request), buildDiagnosisProviderSchema(request), settings),
         id === "claude",
       );
     },

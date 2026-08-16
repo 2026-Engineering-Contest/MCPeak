@@ -34,7 +34,14 @@ function invalidArguments(diagnostics: () => McpDiagnosticsInput): McpClientErro
   });
 }
 
-/** JSON 객체만 전달되도록 iterative traversal로 검증한다. 공유 참조는 허용하고 cycle만 거절한다. */
+/**
+ * JSON 으로 표현되는 값만 전달되도록 iterative traversal로 검증한다.
+ * 공유 참조는 허용하고 cycle만 거절한다.
+ *
+ * 최상위 `args` 는 객체여야 한다(MCP 의 `arguments` 규약). 그 아래 중첩된 값에는 배열이
+ * 올 수 있으며, 배열은 객체와 같은 컨테이너로 순회한다 — 깊이와 순환 검사가 똑같이 걸린다.
+ * 희소 배열만 거부하는 근거는 ADR-0035 에 있다.
+ */
 export function assertToolArguments(
   name: string,
   args: unknown,
@@ -70,10 +77,22 @@ export function assertToolArguments(
         typeof value === "function" ||
         typeof value === "symbol" ||
         typeof value === "bigint" ||
-        Array.isArray(value) ||
         typeof value !== "object" ||
         current.depth > MAX_JSON_DEPTH
       )
+        throw invalidArguments(diagnostics);
+      // 배열은 `JSON.stringify` 를 통과했을 때 모양이 보존되는 것만 받는다. 빈 자리(희소)는
+      // `null` 이 되어 실제 `null` 원소와 구분되지 않고, 인덱스가 아닌 속성(`arr.foo`)은
+      // 통째로 사라진다. 둘 다 사용자가 넘긴 값과 서버가 받는 값이 달라지는 경우다.
+      // `mock`(ADR-0029) · `record`(ADR-0003) 와 같은 판정으로 맞춘다. 근거는 ADR-0035.
+      //
+      // own enumerable 키 수와 `length` 를 비교한다. `Object.values` 가 빈 자리를 건너뛰므로
+      // 순회에 맡길 수 없고, `index in value` 는 프로토타입 체인을 타서 `Array.prototype[1]`
+      // 이 오염되면 구멍을 못 잡는다. `Object.keys` 는 own 프로퍼티만 본다.
+      //
+      // 길이가 아니라 실제 키 수에 비례하므로 `length` 만 크게 부풀린 값(`arr.length = 2**32-1`,
+      // 같은 length 를 보고하는 Proxy)에도 즉시 끝난다.
+      if (Array.isArray(value) && Object.keys(value).length !== value.length)
         throw invalidArguments(diagnostics);
       if (ancestors.has(value)) throw invalidArguments(diagnostics);
       ancestors.add(value);

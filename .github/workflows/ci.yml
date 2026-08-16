@@ -58,6 +58,11 @@ jobs:
     #
     # Node 20 지원 자체를 접을지는 팀 결정 사항이다 (CONTRIBUTING §6 개정 + ADR).
     runs-on: ubuntu-latest
+    # Publish JUnit report 스텝은 use-actions-summary 기본값(true)으로 동작해
+    # 리포트를 Actions job summary 에 쓴다. Check Run 을 만들지 않으므로
+    # checks: write 가 필요 없다 — 읽기 권한만 연다.
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
         with:
@@ -84,6 +89,54 @@ jobs:
       # 문제를 잡지 못한다 — 그것들은 배포 후에야 드러난다 (CONTRIBUTING §6).
       - name: Verify built CLI
         run: pnpm --filter ohmymcp test:e2e
+
+      # "우리 도구로 우리를 검증한다" 의 마지막 한 칸이다 (CLAUDE.md).
+      #
+      # 위 스텝은 CLI 가 도는지만 본다. 이 스텝은 그 결과를 --junit 으로 내보내
+      # 실제 CI 리포터에 물린다. 우리가 내보낸 XML 을 우리 CI 가 읽지 못하면
+      # 사용자의 CI 도 읽지 못한다 — 그것을 배포 전에 알아야 한다.
+      #
+      # ADR-0016 이 "검증되지 않은 가정" 으로 남긴 time="0" 항목이 여기서 실측된다.
+      # 리포터가 이 XML 을 정상 파싱하면 A안(속성을 0 으로 고정)이 확인되고,
+      # 거부하거나 이상하게 표시하면 그 ADR 을 재검토한다.
+      - name: Export JUnit report from examples/weather-server
+        run: |
+          node packages/cli/dist/cli.mjs test \
+            packages/cli/tests/fixtures/weather-suite.json \
+            --command node \
+            --arg examples/weather-server/server.mjs \
+            --junit junit-dogfood.xml
+
+      # 액션은 커밋 SHA 로 고정한다. 태그는 옮겨 달 수 있어 CI 가 말없이 바뀐다.
+      # dorny/test-reporter v3.0.0 · MIT (프로젝트와 동일 라이선스).
+      #
+      # v3.0.0 은 annotated tag 라 `git/ref/tags` 의 object.sha 는 커밋이 아니라
+      # tag object 를 가리킨다. 여기 적는 것은 그 tag 가 가리키는 **커밋** SHA 다.
+      #
+      # if 조건 — 위 스텝이 실패해도 XML 은 이미 쓰여 있고, 실패한 회차야말로
+      # 리포트가 필요한 회차다. 다만 always() 는 취소된 실행에서도 참이라
+      # 종료 중인 워크플로가 리포트를 하나 더 남긴다. !cancelled() 는 실패 뒤에는
+      # 돌고 취소 뒤에는 건너뛴다.
+      - name: Publish JUnit report
+        if: ${{ !cancelled() }}
+        uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3.0.0
+        with:
+          name: dogfood (examples/weather-server)
+          path: junit-dogfood.xml
+          reporter: java-junit
+          # 리포트를 이 워크플로 run 의 job summary 에 싣는다. false 로 두면 대신
+          # Check Run 을 만들고 잡에 checks: write 가 필요해진다. 실패는 바로 위
+          # export 스텝이 build 잡을 빨갛게 만들어 이미 드러나므로, 체크 항목과
+          # 권한을 늘리지 않는 쪽을 택했다. 기본값과 같지만 명시한다 —
+          # 이 값이 위 permissions 블록과 맞물려 있어 조용히 바뀌면 안 된다.
+          use-actions-summary: true
+          # 실패한 케이스가 있어도 이 스텝 자체는 실패로 두지 않는다. 판정은 위
+          # export 스텝의 종료 코드가 이미 했고, 여기서 또 실패시키면 같은 실패가
+          # 두 번 빨갛게 뜬다. 이 스텝은 관측 수단이지 판정 수단이 아니다.
+          #
+          # fail-on-empty 는 기본값(true)으로 둔다. XML 이 아예 없는 것은 관측
+          # 실패가 아니라 리포터가 깨진 것이므로 알아야 한다.
+          fail-on-error: false
 
   changeset-check:
     # 기능 PR에 changeset이 없으면 경고만 남긴다 (머지 차단 아님).

@@ -27,7 +27,8 @@ function knownFormatValue(schema: JsonSchema): string | null {
  * 정의되지 않는다. `+1` 인지 `+100` 인지 근거가 없고, 근거 없는 매직넘버는 나중에 아무도 못
  * 고친다. 하한 규칙은 어느 조합에서도 정의된다.
  *
- * `exclusive` 는 정수 단위로 한 칸 옮긴다. 임의의 엡실론은 부동소수 재현성이 나쁘다.
+ * `exclusive` 는 정수 단위로 한 칸 옮긴다. 임의의 엡실론은 부동소수 재현성이 나쁘다. 그 한 칸이
+ * 상한을 넘는 좁은 범위만 예외로 중점을 쓴다(`steppedFromExclusiveMinimum`).
  */
 function boundedNumber(schema: JsonSchema, type: SchemaType): number {
   const minimum = numberAt(schema, "minimum");
@@ -41,10 +42,36 @@ function boundedNumber(schema: JsonSchema, type: SchemaType): number {
     return upper ?? 0;
   }
   if (minimum !== null) return minimum;
-  if (exclusiveMinimum !== null) return exclusiveMinimum + 1;
+  if (exclusiveMinimum !== null)
+    return steppedFromExclusiveMinimum(exclusiveMinimum, maximum, exclusiveMaximum);
   if (maximum !== null) return maximum;
   if (exclusiveMaximum !== null) return exclusiveMaximum - 1;
   return 0;
+}
+
+/**
+ * `exclusiveMinimum` 만 하한일 때의 값. 기본은 한 칸 옮긴 `+1` 이다.
+ *
+ * 그 값이 상한을 넘으면 두 경계의 중점을 쓴다. `0 < x < 1` 은 확률·비율 파라미터에서 흔한
+ * 선언인데 `+1` 이 곧 상한 위반이라, 우리가 만든 값이 우리 검사에 걸려 `UNSUPPORTED_SCHEMA`
+ * 로 툴 전체가 건너뛰어졌다. 중점은 두 경계가 다 선언된 경우에만 쓰므로 규칙이 정의되지
+ * 않는 자리가 없고, 경계에서만 유도되므로 매직넘버가 아니다.
+ */
+function steppedFromExclusiveMinimum(
+  exclusiveMinimum: number,
+  maximum: number | null,
+  exclusiveMaximum: number | null,
+): number {
+  const stepped = exclusiveMinimum + 1;
+  const fits =
+    (maximum === null || stepped <= maximum) &&
+    (exclusiveMaximum === null || stepped < exclusiveMaximum);
+  if (fits) return stepped;
+  // assertNoContradiction 이 exclusiveMinimum < 두 상한 을 이미 보장한다. 중점은 항상 안쪽이다.
+  const bounds: number[] = [];
+  if (maximum !== null) bounds.push(maximum);
+  if (exclusiveMaximum !== null) bounds.push(exclusiveMaximum);
+  return (exclusiveMinimum + Math.min(...bounds)) / 2;
 }
 
 /**

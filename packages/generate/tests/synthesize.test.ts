@@ -128,6 +128,17 @@ describe("중첩", () => {
     ).toEqual({ count: 1, url: "https://example.com" });
   });
 
+  it.each([
+    // 하한 +1 이 상한을 넘는 조합. 확률·비율 파라미터에서 흔한 선언이다.
+    [{ type: "number", exclusiveMinimum: 0, exclusiveMaximum: 1 }, 0.5],
+    [{ type: "number", exclusiveMinimum: 0, maximum: 0.5 }, 0.25],
+    // 넘지 않으면 종전대로 한 칸 옮긴다.
+    [{ type: "number", exclusiveMinimum: 0, maximum: 10 }, 1],
+    [{ type: "number", exclusiveMinimum: 0 }, 1],
+  ])("%j → %s", (schema, expected) => {
+    expect(value(schema)).toBe(expected);
+  });
+
   it("같은 입력을 두 번 합성하면 바이트로 같다", () => {
     const schema = {
       type: "object",

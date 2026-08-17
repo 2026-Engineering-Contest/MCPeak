@@ -271,7 +271,7 @@ export function validateDiagnosisResult(
         status: "unsure" as const,
         // shortfall 은 자르지 않는다. 상한 대상은 §5.6-5 가 정한 셋(summary·location·evidence)뿐이다.
         shortfall: value.shortfall,
-        discarded: causes.length,
+        discarded: { unknownCase: 0, specTarget: 0, unsureCauses: causes.length },
       }),
     };
 
@@ -280,9 +280,19 @@ export function validateDiagnosisResult(
   // 4. specApproved 가 true 면 target: "spec" 항목을 버린다. 명세는 옳다는 전제로 물었고
   //    그 전제를 뒤집는 답은 요청 범위 밖이다. false 면 통과시킨다.
   const specApproved = preview.request.specApproved;
-  const kept = causes.filter(
-    (cause) => known.has(cause.caseId) && !(specApproved && cause.target === "spec"),
-  );
+  const discarded = { unknownCase: 0, specTarget: 0, unsureCauses: 0 };
+  const kept = causes.filter((cause) => {
+    // 한 후보가 두 조건을 모두 어기면 요청 범위 검사를 먼저 적용해 한 사유에만 센다.
+    if (!known.has(cause.caseId)) {
+      discarded.unknownCase += 1;
+      return false;
+    }
+    if (specApproved && cause.target === "spec") {
+      discarded.specTarget += 1;
+      return false;
+    }
+    return true;
+  });
 
   // 항목 순서는 요청의 failures 순서를 따른다. AI 응답 순서는 매번 다를 수 있고, 화면 순서가
   // 흔들리면 같은 실행을 두 번 볼 때 다른 화면이 나온다. 같은 caseId 안에서는 응답의 상대
@@ -302,9 +312,6 @@ export function validateDiagnosisResult(
     evidence: clamp(cause.evidence, MAX_CAUSE_CHARS),
     target: cause.target,
   }));
-
-  // 6. 버린 항목 수를 담는다.
-  const discarded = causes.length - clamped.length;
 
   // 2-전반. 유효 항목이 하나도 없으면 unsure 로 접는다. shortfall 은 빈 문자열이다.
   if (clamped.length === 0)

@@ -132,33 +132,63 @@ export interface RepairResultCause {
   readonly target: "server" | "spec";
 }
 
+export interface RepairDiscardedView {
+  readonly unknownCase: number;
+  readonly specTarget: number;
+  readonly unsureCauses: number;
+}
+
 export type RepairResultView =
   | {
       readonly status: "diagnosis";
       readonly causes: readonly RepairResultCause[];
-      readonly discarded: number;
+      readonly discarded: RepairDiscardedView;
     }
-  | { readonly status: "unsure"; readonly shortfall: string; readonly discarded: number };
+  | {
+      readonly status: "unsure";
+      readonly shortfall: string;
+      readonly discarded: RepairDiscardedView;
+    };
+
+function discardedTotal(discarded: RepairDiscardedView): number {
+  return discarded.unknownCase + discarded.specTarget + discarded.unsureCauses;
+}
+
+function renderDiscardReasons(discarded: RepairDiscardedView): string[] {
+  const reasons: string[] = [];
+  if (discarded.unknownCase > 0)
+    reasons.push(`요청에 없는 케이스를 가리킨 제안 ${discarded.unknownCase}건`);
+  if (discarded.specTarget > 0)
+    reasons.push(`승인된 명세를 고치라는 제안 ${discarded.specTarget}건`);
+  if (discarded.unsureCauses > 0)
+    reasons.push(`판단 불가 응답에 함께 온 원인 후보 ${discarded.unsureCauses}건`);
+  return reasons;
+}
 
 /**
  * 제안이 전부 폐기돼 남은 항목이 0 인 경우의 문안.
  *
  * 사용자가 알아야 할 것은 셋이다. AI 가 답을 냈다는 사실, 우리가 왜 버렸는지, 다음에 무엇을
- * 할 수 있는지. **폐기 사유를 항목별로 갖고 있지 않으므로** 두 가능성을 그대로 적는다.
- * 하나로 단정하면 없는 정보를 지어내는 것이 되고, 사용자는 틀린 쪽을 고치러 간다.
+ * 할 수 있는지. generate 가 보존한 사유별 개수로 관련 있는 행동만 안내한다.
  */
-function renderAllDiscarded(discarded: number): string {
-  return [
-    `AI 가 원인 후보 ${discarded}건을 냈지만 전부 검증에서 제외했습니다.\n`,
-    "판단 근거가 없어서가 아니라 답이 요청 범위를 벗어나서입니다.\n",
+function renderAllDiscarded(discarded: RepairDiscardedView): string {
+  const total = discardedTotal(discarded);
+  const parts = [
+    `AI 가 원인 후보 ${total}건을 냈지만 전부 검증에서 제외했습니다.\n`,
+    "판단 근거가 없어서가 아니라 답을 그대로 쓸 수 없어서입니다.\n",
     "\n",
-    "  제외 사유  요청에 없는 케이스를 가리켰거나, 승인된 명세를 고치라는 제안이었습니다.\n",
-    "             둘 중 어느 쪽인지는 구분해 두지 않아 말씀드릴 수 없습니다.\n",
-    "\n",
-    "  → 명세가 실제로 틀렸다고 보시면 `ohmymcp generate` 로 다시 승인받으세요.\n",
-    "    승인된 명세를 고치라는 제안은 그 전에는 화면에 올리지 않습니다.\n",
-    "  → 그렇지 않으면 같은 번들로 한 번 더 물어보세요. 같은 입력에도 답은 달라집니다.\n",
-  ].join("");
+  ];
+  for (const reason of renderDiscardReasons(discarded)) parts.push(`  제외 사유  ${reason}\n`);
+  parts.push("\n");
+  if (discarded.specTarget > 0) {
+    parts.push(
+      "  → 명세가 실제로 틀렸다고 보시면 `ohmymcp generate` 로 다시 승인받으세요.\n",
+      "    승인된 명세를 고치라는 제안은 그 전에는 화면에 올리지 않습니다.\n",
+    );
+  }
+  if (discarded.unknownCase > 0 || discarded.unsureCauses > 0)
+    parts.push("  → 같은 번들로 한 번 더 물어보세요. 같은 입력에도 답은 달라집니다.\n");
+  return parts.join("");
 }
 
 /** 케이스 머리줄. 툴이 없는 케이스(listTools)는 괄호를 안 찍는다. */
@@ -189,12 +219,13 @@ export function renderRepairResult(options: {
     /**
      * `unsure` 는 두 가지 다른 일이다. 하나로 뭉치면 화면이 거짓말을 한다.
      *
-     * `discarded` 가 0 이면 provider 가 실제로 판단을 못 한 것이고, 그때만 "근거가 부족" 이
-     * 사실이다. `discarded` 가 0 보다 크면 **답은 왔는데 우리가 경계 밖이라 버린 것**이다.
+     * `discarded` 합계가 0 이면 provider 가 실제로 판단을 못 한 것이고, 그때만 "근거가 부족" 이
+     * 사실이다. 합계가 0 보다 크면 **답은 왔는데 우리가 경계 밖이라 버린 것**이다.
      * 그 경로에 "근거가 부족" 을 찍으면 사용자는 번들에 정보를 더 담아야 한다고 읽는다.
      * 실제로 그 화면을 보고 "구현이 실패한 것 아니냐" 는 질문이 나왔다.
      */
-    if (options.result.discarded > 0) parts.push(renderAllDiscarded(options.result.discarded));
+    if (discardedTotal(options.result.discarded) > 0)
+      parts.push(renderAllDiscarded(options.result.discarded));
     else parts.push("판단 근거가 부족해 원인 후보를 제시하지 못했습니다.\n");
     // shortfall 이 비면 이 줄만 뺀다. 침묵하지는 않는다. 위 문장은 남는다. 설계서 §6.4.
     if (options.result.shortfall !== "") {
@@ -234,11 +265,11 @@ export function renderRepairResult(options: {
     }
   }
   // 전부 폐기된 경로는 위 문안이 개수와 사유를 이미 말했다. 같은 수를 두 번 찍지 않는다.
-  if (options.result.discarded > 0 && options.result.status !== "unsure")
-    parts.push(
-      "\n",
-      `※ 제안 ${options.result.discarded}건이 검증에서 제외됐습니다 (요청에 없는 케이스이거나 명세 수정 제안).\n`,
-    );
+  if (discardedTotal(options.result.discarded) > 0 && options.result.status !== "unsure") {
+    parts.push("\n");
+    for (const reason of renderDiscardReasons(options.result.discarded))
+      parts.push(`※ ${reason}이 검증에서 제외됐습니다.\n`);
+  }
   parts.push("\n", REPAIR_BOUNDARY_LINES);
   return parts.join("");
 }

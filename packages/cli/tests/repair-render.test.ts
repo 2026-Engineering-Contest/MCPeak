@@ -45,10 +45,18 @@ const cause = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
-const diagnosisResult = (causes: readonly unknown[], discarded = 0) => ({
+const discarded = (
+  overrides: Partial<{
+    unknownCase: number;
+    specTarget: number;
+    unsureCauses: number;
+  }> = {},
+) => ({ unknownCase: 0, specTarget: 0, unsureCauses: 0, ...overrides });
+
+const diagnosisResult = (causes: readonly unknown[], omitted = discarded()) => ({
   status: "diagnosis" as const,
   causes,
-  discarded,
+  discarded: omitted,
 });
 
 /**
@@ -245,13 +253,19 @@ describe("repair 화면", () => {
   it("unsure 에서 shortfall 이 찍히고, 빈 문자열이면 그 줄만 빠진다", async () => {
     const filled = deps({
       diagnosis: diagnosis({
-        result: { status: "unsure", shortfall: "서버 stderr 가 비어 있습니다.", discarded: 0 },
+        result: {
+          status: "unsure",
+          shortfall: "서버 stderr 가 비어 있습니다.",
+          discarded: discarded(),
+        },
       }),
     });
     expect(await runRepairCommand([...ARGV, "--yes"], filled.value)).toBe(0);
     expect(filled.writes.out.join("")).toContain("  → 서버 stderr 가 비어 있습니다.");
     const empty = deps({
-      diagnosis: diagnosis({ result: { status: "unsure", shortfall: "", discarded: 0 } }),
+      diagnosis: diagnosis({
+        result: { status: "unsure", shortfall: "", discarded: discarded() },
+      }),
     });
     expect(await runRepairCommand([...ARGV, "--yes"], empty.value)).toBe(0);
     expect(empty.writes.out.join("")).toContain("판단 근거가 부족해");
@@ -261,7 +275,11 @@ describe("repair 화면", () => {
   it("경계 문장 두 줄이 diagnosis·unsure·지문 불일치 모든 경로에서 찍힌다", async () => {
     const cases = [
       deps({ diagnosis: diagnosis({ result: diagnosisResult([cause()]) }) }),
-      deps({ diagnosis: diagnosis({ result: { status: "unsure", shortfall: "", discarded: 0 } }) }),
+      deps({
+        diagnosis: diagnosis({
+          result: { status: "unsure", shortfall: "", discarded: discarded() },
+        }),
+      }),
       deps({
         bundle: bundle({ spec: { ...bundle().spec, approval: "mismatched" } }),
         diagnosis: diagnosis({ result: diagnosisResult([cause({ target: "spec" })]) }),
@@ -294,17 +312,23 @@ describe("repair 화면", () => {
     expect(screen).not.toContain("근거");
   });
 
-  it("discarded 가 0보다 크면 제외 안내가 찍힌다", async () => {
-    const context = deps({ diagnosis: diagnosis({ result: diagnosisResult([cause()], 2) }) });
+  it("남은 제안이 있으면 제외 사유별 안내가 찍힌다", async () => {
+    const context = deps({
+      diagnosis: diagnosis({
+        result: diagnosisResult([cause()], discarded({ unknownCase: 1, specTarget: 2 })),
+      }),
+    });
     await runRepairCommand([...ARGV, "--yes"], context.value);
-    expect(context.writes.out.join("")).toContain(
-      "※ 제안 2건이 검증에서 제외됐습니다 (요청에 없는 케이스이거나 명세 수정 제안).",
-    );
+    const screen = context.writes.out.join("");
+    expect(screen).toContain("※ 요청에 없는 케이스를 가리킨 제안 1건이 검증에서 제외됐습니다.");
+    expect(screen).toContain("※ 승인된 명세를 고치라는 제안 2건이 검증에서 제외됐습니다.");
   });
 
-  it("discarded 가 0 인 unsure 는 근거 부족 문안을 쓴다", async () => {
+  it("폐기된 제안이 없는 unsure 는 근거 부족 문안을 쓴다", async () => {
     const context = deps({
-      diagnosis: diagnosis({ result: { status: "unsure", shortfall: "", discarded: 0 } }),
+      diagnosis: diagnosis({
+        result: { status: "unsure", shortfall: "", discarded: discarded() },
+      }),
     });
     expect(await runRepairCommand([...ARGV, "--yes"], context.value)).toBe(0);
     expect(context.writes.out.join("")).toContain(
@@ -312,22 +336,37 @@ describe("repair 화면", () => {
     );
   });
 
-  it("discarded 가 0 보다 큰 unsure 는 근거 부족이라고 말하지 않는다", async () => {
+  it("전부 폐기된 unsure 는 사유별 개수와 관련 행동만 안내한다", async () => {
     const context = deps({
-      diagnosis: diagnosis({ result: { status: "unsure", shortfall: "", discarded: 2 } }),
+      diagnosis: diagnosis({
+        result: {
+          status: "unsure",
+          shortfall: "",
+          discarded: discarded({ unknownCase: 2 }),
+        },
+      }),
     });
     expect(await runRepairCommand([...ARGV, "--yes"], context.value)).toBe(0);
     const screen = context.writes.out.join("");
     expect(screen).not.toContain("판단 근거가 부족해");
     expect(screen).toContain("AI 가 원인 후보 2건을 냈지만 전부 검증에서 제외했습니다.");
-    expect(screen).toContain("답이 요청 범위를 벗어나서입니다");
+    expect(screen).toContain("답을 그대로 쓸 수 없어서입니다");
+    expect(screen).toContain("제외 사유  요청에 없는 케이스를 가리킨 제안 2건");
+    expect(screen).toContain("같은 번들로 한 번 더 물어보세요");
+    expect(screen).not.toContain("명세가 실제로 틀렸다고 보시면");
     // 개수와 사유를 위에서 이미 말했다. 같은 수를 두 번 찍지 않는다.
-    expect(screen).not.toContain("※ 제안 2건이 검증에서 제외됐습니다");
+    expect(screen).not.toContain("※ 요청에 없는 케이스");
   });
 
   it("전부 폐기된 unsure 에서도 경계 두 줄이 찍힌다", async () => {
     const context = deps({
-      diagnosis: diagnosis({ result: { status: "unsure", shortfall: "", discarded: 1 } }),
+      diagnosis: diagnosis({
+        result: {
+          status: "unsure",
+          shortfall: "",
+          discarded: discarded({ specTarget: 1 }),
+        },
+      }),
     });
     await runRepairCommand([...ARGV, "--yes"], context.value);
     const screen = context.writes.out.join("");
@@ -335,17 +374,39 @@ describe("repair 화면", () => {
     expect(screen).toContain(BOUNDARY_TWO);
   });
 
-  it("전부 폐기된 unsure 가 다음 행동 둘을 안내한다", async () => {
+  it("여러 사유로 전부 폐기되면 각 사유와 다음 행동을 구분한다", async () => {
     const context = deps({
-      diagnosis: diagnosis({ result: { status: "unsure", shortfall: "", discarded: 3 } }),
+      diagnosis: diagnosis({
+        result: {
+          status: "unsure",
+          shortfall: "",
+          discarded: discarded({ unknownCase: 1, specTarget: 2 }),
+        },
+      }),
     });
     await runRepairCommand([...ARGV, "--yes"], context.value);
     const screen = context.writes.out.join("");
     expect(screen).toContain("`ohmymcp generate` 로 다시 승인받으세요");
     expect(screen).toContain("같은 번들로 한 번 더 물어보세요");
-    // 폐기 사유는 항목별로 없다. 하나로 단정하지 않고 두 가능성을 그대로 적는다.
-    expect(screen).toContain("요청에 없는 케이스를 가리켰거나, 승인된 명세를 고치라는 제안");
-    expect(screen).toContain("구분해 두지 않아");
+    expect(screen).toContain("요청에 없는 케이스를 가리킨 제안 1건");
+    expect(screen).toContain("승인된 명세를 고치라는 제안 2건");
+    expect(screen).not.toContain("구분해 두지 않아");
+  });
+
+  it("unsure 와 함께 온 원인 후보도 별도 사유로 안내한다", async () => {
+    const context = deps({
+      diagnosis: diagnosis({
+        result: {
+          status: "unsure",
+          shortfall: "판단할 수 없습니다.",
+          discarded: discarded({ unsureCauses: 2 }),
+        },
+      }),
+    });
+    await runRepairCommand([...ARGV, "--yes"], context.value);
+    const screen = context.writes.out.join("");
+    expect(screen).toContain("판단 불가 응답에 함께 온 원인 후보 2건");
+    expect(screen).toContain("같은 번들로 한 번 더 물어보세요");
   });
 
   it("AI 출력의 제어 문자가 이스케이프된다", async () => {
@@ -364,7 +425,9 @@ describe("repair 화면", () => {
     const diagnosisRun = deps({ diagnosis: diagnosis({ result: diagnosisResult([cause()]) }) });
     expect(await runRepairCommand([...ARGV, "--yes"], diagnosisRun.value)).toBe(0);
     const unsureRun = deps({
-      diagnosis: diagnosis({ result: { status: "unsure", shortfall: "근거 부족", discarded: 0 } }),
+      diagnosis: diagnosis({
+        result: { status: "unsure", shortfall: "근거 부족", discarded: discarded() },
+      }),
     });
     expect(await runRepairCommand([...ARGV, "--yes"], unsureRun.value)).toBe(0);
   });

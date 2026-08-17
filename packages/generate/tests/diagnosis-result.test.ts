@@ -46,6 +46,14 @@ function diagnosis(causes: readonly DiagnosisCause[]) {
   return { status: "diagnosis", causes, shortfall: "" };
 }
 
+const discarded = (
+  overrides: Partial<{
+    unknownCase: number;
+    specTarget: number;
+    unsureCauses: number;
+  }> = {},
+) => ({ unknownCase: 0, specTarget: 0, unsureCauses: 0, ...overrides });
+
 describe("validateDiagnosisResult", () => {
   it("스키마 모양이 아니면 schemaMismatch 다", () => {
     const target = preview();
@@ -72,7 +80,7 @@ describe("validateDiagnosisResult", () => {
     const validation = validateDiagnosisResult(diagnosis([]), preview());
     expect(validation).toEqual({
       status: "ok",
-      result: { status: "unsure", shortfall: "", discarded: 0 },
+      result: { status: "unsure", shortfall: "", discarded: discarded() },
     });
   });
 
@@ -83,18 +91,26 @@ describe("validateDiagnosisResult", () => {
     );
     expect(validation).toEqual({
       status: "ok",
-      result: { status: "unsure", shortfall: "서버 로그가 없습니다.", discarded: 1 },
+      result: {
+        status: "unsure",
+        shortfall: "서버 로그가 없습니다.",
+        discarded: discarded({ unsureCauses: 1 }),
+      },
     });
   });
 
-  it("요청에 없는 caseId 항목이 버려지고 discarded 가 증가한다", () => {
+  it("요청에 없는 caseId 항목이 unknownCase 로 집계된다", () => {
     const validation = validateDiagnosisResult(
       diagnosis([cause(), cause({ caseId: "지어낸-케이스" })]),
       preview(),
     );
     expect(validation).toEqual({
       status: "ok",
-      result: { status: "diagnosis", causes: [cause()], discarded: 1 },
+      result: {
+        status: "diagnosis",
+        causes: [cause()],
+        discarded: discarded({ unknownCase: 1 }),
+      },
     });
   });
 
@@ -105,7 +121,11 @@ describe("validateDiagnosisResult", () => {
     );
     expect(validation).toEqual({
       status: "ok",
-      result: { status: "unsure", shortfall: "", discarded: 1 },
+      result: {
+        status: "unsure",
+        shortfall: "",
+        discarded: discarded({ specTarget: 1 }),
+      },
     });
   });
 
@@ -116,7 +136,31 @@ describe("validateDiagnosisResult", () => {
     );
     expect(validation).toEqual({
       status: "ok",
-      result: { status: "diagnosis", causes: [cause({ target: "spec" })], discarded: 0 },
+      result: {
+        status: "diagnosis",
+        causes: [cause({ target: "spec" })],
+        discarded: discarded(),
+      },
+    });
+  });
+
+  it("여러 폐기 사유를 각각 세고 한 항목을 중복 집계하지 않는다", () => {
+    const validation = validateDiagnosisResult(
+      diagnosis([
+        cause(),
+        cause({ caseId: "지어낸-서버-케이스" }),
+        cause({ caseId: "지어낸-명세-케이스", target: "spec" }),
+        cause({ target: "spec" }),
+      ]),
+      preview({ specApproved: true }),
+    );
+    expect(validation).toEqual({
+      status: "ok",
+      result: {
+        status: "diagnosis",
+        causes: [cause()],
+        discarded: discarded({ unknownCase: 2, specTarget: 1 }),
+      },
     });
   });
 

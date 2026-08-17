@@ -42,14 +42,28 @@ export interface DiagnosisCause {
   readonly target: "server" | "spec";
 }
 
+/** 검증에서 버린 원인 후보 수. 각 후보는 먼저 걸린 사유 하나에만 집계한다. */
+export interface DiagnosisDiscarded {
+  /** 요청에 담긴 실패 목록에 없는 caseId 를 가리킨 후보. */
+  readonly unknownCase: number;
+  /** 승인된 명세를 고치라고 한 후보. */
+  readonly specTarget: number;
+  /** status: unsure 와 함께 와서 사용할 수 없었던 후보. */
+  readonly unsureCauses: number;
+}
+
 export type DiagnosisResult =
   | {
       readonly status: "diagnosis";
       readonly causes: readonly DiagnosisCause[];
-      /** 검증에서 버린 항목 수. 화면이 이 값을 표시한다. 설계서 §5.6. */
-      readonly discarded: number;
+      /** 검증에서 버린 항목의 사유별 개수. 화면이 이 값을 표시한다. 설계서 §5.6. */
+      readonly discarded: DiagnosisDiscarded;
     }
-  | { readonly status: "unsure"; readonly shortfall: string; readonly discarded: number };
+  | {
+      readonly status: "unsure";
+      readonly shortfall: string;
+      readonly discarded: DiagnosisDiscarded;
+    };
 
 export interface ServerDiagnosisProvider {
   readonly id: "codex" | "claude";

@@ -80,6 +80,7 @@ export {
 export type {
   DiagnosisCause,
   DiagnosisDiagnostic,
+  DiagnosisDiscarded,
   DiagnosisFailure,
   DiagnosisProcessDiagnostics,
   DiagnosisRequest,

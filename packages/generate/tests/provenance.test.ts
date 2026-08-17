@@ -121,3 +121,50 @@ describe("중첩 집계", () => {
     expect(analyzeToolProvenance(t).unknownFormatFields).toEqual(["a", "b"]);
   });
 });
+
+describe("적용되지 않는 제약은 근거가 아니다", () => {
+  it.each([
+    // 제약이 그 type 에 적용될 때만 근거다. 아니면 합성값은 제약 없는 기본값이라 근거가 없다.
+    [{ type: "integer", minLength: 3 }, "placeholder"],
+    [{ type: "string", minimum: 3 }, "placeholder"],
+    [{ type: "integer", format: "uri" }, "placeholder"],
+    [{ type: "integer", minimum: 3 }, "declared"],
+    [{ type: "string", minLength: 3 }, "declared"],
+  ])("%j → %s", (v, expected) => {
+    const provenance = analyzeToolProvenance(tool(v));
+    expect(provenance.needsAssist).toBe(expected === "placeholder");
+  });
+
+  it("표 밖 format 도 문자열일 때만 센다", () => {
+    expect(
+      analyzeToolProvenance(tool({ type: "integer", format: "json-pointer" })).unknownFormatFields,
+    ).toEqual([]);
+  });
+});
+
+describe("순환 스키마", () => {
+  it("자기를 참조해도 끝나고 근거 없음으로 센다", () => {
+    const node: Record<string, unknown> = { type: "object", required: ["next"] };
+    node.properties = { next: node };
+    expect(analyzeToolProvenance(tool(node))).toEqual({
+      tool: "t",
+      declared: 0,
+      placeholder: 1,
+      unknownFormatFields: [],
+      needsAssist: true,
+    });
+  });
+
+  it("형제가 같은 스키마 객체를 공유하는 것은 순환이 아니다", () => {
+    const shared = { type: "string", format: "uri" };
+    const t: ToolDef = {
+      name: "t",
+      inputSchema: {
+        type: "object",
+        required: ["a", "b"],
+        properties: { a: shared, b: shared },
+      },
+    };
+    expect(analyzeToolProvenance(t).declared).toBe(2);
+  });
+});

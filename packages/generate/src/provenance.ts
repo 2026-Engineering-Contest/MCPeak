@@ -27,18 +27,22 @@ export interface ToolProvenance {
 /** UTF-16 코드 단위 안정 비교. `coverage.ts` 의 것과 같은 이유로 의도된 중복이다. */
 const byCodeUnit = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
-/** 범위 제약이 하나라도 선언됐는지. 값 검증은 assertConstraints 가 이미 끝냈다. */
-const hasRangeKeyword = (schema: JsonSchema): boolean =>
-  [
-    "minimum",
-    "maximum",
-    "exclusiveMinimum",
-    "exclusiveMaximum",
-    "minItems",
-    "maxItems",
-    "minLength",
-    "maxLength",
-  ].some((key) => typeof schema[key] === "number");
+/**
+ * 값의 근거가 되는 범위 제약이 선언됐는지. **그 type 에 적용되는 키워드만 본다.**
+ *
+ * `{ type: "integer", minLength: 3 }` 의 `minLength` 는 정수 값에 적용되지 않는다. 근거로 세면
+ * 합성값은 제약이 안 걸린 `0` 인데 `needsAssist` 가 false 가 되어 AI 사전보완 대상에서 빠진다.
+ * 개수 제약(`minItems` 등)은 배열 자신이 아니라 원소 값을 봐야 하므로 여기 오지 않는다.
+ */
+const hasApplicableRangeKeyword = (schema: JsonSchema, type: SchemaType): boolean => {
+  const keys =
+    type === "number" || type === "integer"
+      ? ["minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum"]
+      : type === "string"
+        ? ["minLength", "maxLength"]
+        : [];
+  return keys.some((key) => typeof schema[key] === "number");
+};
 
 /** 후보 키워드가 값을 못 박고 있는지. 이것들은 서버가 직접 적은 값이라 근거가 있다. */
 const hasCandidate = (schema: JsonSchema): boolean =>
@@ -59,12 +63,27 @@ interface Tally {
  * 객체와 배열은 자기 자신을 세지 않고 안쪽으로 내려간다. `{ type: "array", minItems: 2 }` 는
  * 개수만 근거가 있고 **원소 값에는 근거가 없다.** 개수를 근거로 declared 라고 세면 AI 가 채워야
  * 할 원소 값이 대상에서 빠진다.
+ *
+ * `seen` 은 순환 방어다. 이 함수는 `analyzeToolProvenance` 로 공개돼 있어 `validateSchema` 를
+ * 거치지 않은 `inputSchema` 도 받는다. 자기를 참조하는 객체가 오면 스택을 넘기는 대신
+ * placeholder 로 세고 멈춘다. 값을 못 정하는 필드이므로 근거 없음이 맞는 판정이다.
  */
-function tallyField(schema: unknown, path: string, tally: Tally): void {
+function tallyField(
+  schema: unknown,
+  path: string,
+  tally: Tally,
+  seen: Set<object> = new Set(),
+): void {
   if (!plainObject(schema)) {
     tally.placeholder += 1;
     return;
   }
+  if (seen.has(schema)) {
+    tally.placeholder += 1;
+    return;
+  }
+  // 형제끼리 같은 스키마 객체를 공유하는 것은 순환이 아니다. 조상만 담은 사본을 내려보낸다.
+  const ancestors = new Set(seen).add(schema);
   if (hasCandidate(schema)) {
     tally.declared += 1;
     return;
@@ -82,15 +101,16 @@ function tallyField(schema: unknown, path: string, tally: Tally): void {
       return;
     }
     for (const key of required)
-      tallyField(properties[key], path === "" ? key : `${path}.${key}`, tally);
+      tallyField(properties[key], path === "" ? key : `${path}.${key}`, tally, ancestors);
     return;
   }
   if (type === "array") {
-    tallyField(schema.items, path, tally);
+    tallyField(schema.items, path, tally, ancestors);
     return;
   }
+  // format 은 문자열에만 적용된다. 다른 type 에 붙은 format 은 값의 근거가 아니다.
   const format = schema.format;
-  if (typeof format === "string") {
+  if (type === "string" && typeof format === "string") {
     if (isKnownFormat(format)) tally.declared += 1;
     else tally.unknownFormatFields.push(path);
     return;
@@ -100,7 +120,7 @@ function tallyField(schema: unknown, path: string, tally: Tally): void {
     tally.declared += 1;
     return;
   }
-  if (hasRangeKeyword(schema)) {
+  if (hasApplicableRangeKeyword(schema, type)) {
     tally.declared += 1;
     return;
   }

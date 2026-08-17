@@ -1567,10 +1567,18 @@ describe("validatePreFillResult", () => {
 
 서버 호출이 대상 케이스당 최대 2회로 는다. 대상은 `needsAssist` 로 걸러진 툴뿐이다.
 
+**채택한 케이스의 출처를 정직하게 적는다(실행 중 결정).** `TestCaseOrigin` 에
+`"schemaBaselinePreFilled"` 를 더한다. `"schemaBaseline"` 으로 두면 AI 값을 채택한 케이스가
+순수 baseline 으로 기록돼 거짓이 된다. 동작 위험은 없다. `repair-target.ts` 가 `"user"` 하나만
+분기하고 나머지는 동일 취급이기 때문이다. 같은 파일이 `TestCaseOrigin` 을 안 쓰고 유니온을
+복제해 두고 있으므로 **그 복제도 함께 없앤다.** 두면 다음에 값이 늘 때 조용히 어긋난다.
+
 **provider 를 부를 수 없는 경로**(`--baseline-only`, 자격증명 없음, 비대화형)에서는 사전보완을
 건너뛴다. 그리고 `unknownFormatFields` 가 있는 툴은 T11 의 고지와 함께 **건너뛴다.**
 
-전송 전 확인 화면은 authoring 의 것을 그대로 태운다. 새 문안을 만들지 않는다.
+**정정(실행 중 확인): 전송 전 확인 화면을 authoring 것으로 그대로 태울 수 없다.** 그 화면은
+`AuthoringRequestPreview` 를 받는데 사전보완이 보내는 것은 값뿐이라 모양이 다르다. 계획서가
+틀렸다. `diagnosis-request.ts` 를 본으로 삼아 한 벌 만든다. 아래 T10b 로 뗐다.
 
 - [ ] **Step 1: 실패하는 테스트를 쓴다**
 
@@ -1630,6 +1638,41 @@ describe("provider 를 못 부르는 경로", () => {
 `pnpm vitest run packages/cli` → PASS · `pnpm typecheck`
 
 - [ ] **Step 5: 보고한다**
+
+---
+
+### T10b — provider 호출 경로 (실행 중 추가)
+
+**모델:** 표준
+
+**Files**
+- 생성: `packages/generate/src/pre-fill-request.ts`
+- 수정: `packages/cli/src/pre-fill-wiring.ts` · `packages/cli/src/generate-command.ts`
+- 테스트: `packages/generate/tests/pre-fill-request.test.ts` (생성) · `packages/cli/tests/pre-fill-wiring.test.ts`
+
+**왜 생겼나.** T9 · T10 은 요청 조립과 채택 규칙을 만들었지만 **실제로 provider 를 부르는
+경로가 없다.** 그 상태로 머지하면 `applyPreFill` 이 아무 데서도 안 불려 사용자에게 안 닿는다.
+계획서 §4.5 가 authoring 확인 화면을 재사용하라고 적었는데 타입이 안 맞는다.
+
+**authoring 통로를 재사용하지 않는다.** authoring 출력 스키마는 `suiteJson` 을 요구해 AI 가
+케이스 구조 전체를 바꿀 수 있다. 여기서 받을 것은 값뿐이다. ADR-0034 가 진단 통로를 분리한
+것과 같은 이유이므로 `diagnosis-request.ts` 를 본으로 삼는다.
+
+**만들 것**
+
+- `PreFillRequestPreview` — provider id, model, byte length, fingerprint, 전송 데이터 요약
+- 전송 전 확인 화면. 문안은 authoring 것의 어법을 따르되 **전송 데이터 목록은 사실대로**
+  적는다: 툴 이름·설명·`inputSchema`·baseline 값·값 출처. **suite 전체가 아니다.**
+- provider 호출과 타임아웃
+- 바이트 상한은 `MAX_TOOLS_BYTES` 와 같은 값. 넘쳐 잘리면 **그 사실을 화면에 적는다.**
+  조용히 자르지 않는다.
+
+**provider 실패 처리 (계획서 §9 의 미결을 여기서 확정한다)**
+
+**baseline 값으로 진행하고 화면에 그 사실을 적는다. 툴을 건너뛰지 않는다.** provider 실패는
+사용자 서버의 문제가 아니라 우리 쪽 사정이므로, 그것 때문에 케이스를 잃는 손해가 더 크다.
+`unknownFormat` 툴 건너뜀은 `--baseline-only` 처럼 **애초에 provider 를 안 부르기로 한
+경로에서만** 적용한다.
 
 ---
 

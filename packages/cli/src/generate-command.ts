@@ -25,7 +25,6 @@ import type {
   JsonObject,
   JsonValue,
   SpecFinding,
-  SpecFindingCode,
   SuiteCaseApproval,
   SuiteValidationResult,
   TestCaseSpec,
@@ -36,6 +35,8 @@ import { wireCassette } from "./cassette-wiring.js";
 import type { DryRunCaseOutcome, DryRunResult } from "./dry-run.js";
 import { runDryRun } from "./dry-run.js";
 import { reviewDryRun } from "./dry-run-review.js";
+import type { FindingGroup } from "./finding-group.js";
+import { FINDING_GROUP } from "./finding-group.js";
 import { GENERATE_USAGE_HINT } from "./help.js";
 import { repairInputs } from "./input-repair.js";
 import type { UnknownFormatSkip } from "./pre-fill-wiring.js";
@@ -584,27 +585,6 @@ function showDiff(io: ReviewIO, preview: AuthoringDiffPreview): void {
     );
   }
 }
-/**
- * finding 이 어느 블록에 들어가는지. `Record<SpecFindingCode, ...>` 라서 `runner` 가 코드를
- * 늘리면 여기서 타입 오류가 난다. 문자열 배열로 두면 새 코드가 어느 블록에도 못 들어간 채
- * 조용히 사라진다. 이 화면에서 누락은 "위반이 없다" 로 읽히므로 가장 나쁜 실패다.
- *
- * `skipped` 는 위반이 아니다. 서버 스키마를 우리가 못 읽은 것이지 명세가 틀린 게 아니다.
- */
-type FindingGroup = "inputContract" | "assertionSubstance" | "rejectionIntent" | "skipped";
-const FINDING_GROUP: Readonly<Record<SpecFindingCode, FindingGroup>> = {
-  TOOL_NOT_DECLARED: "inputContract",
-  REQUIRED_MISSING: "inputContract",
-  UNDECLARED_FIELD: "inputContract",
-  TYPE_MISMATCH: "inputContract",
-  ENUM_MISMATCH: "inputContract",
-  RANGE_MISMATCH: "inputContract",
-  SCHEMA_NOT_ANALYZABLE: "skipped",
-  REJECTION_WITHOUT_VIOLATION: "rejectionIntent",
-  VACUOUS_MIN_LENGTH: "assertionSubstance",
-  VACUOUS_MIN_ITEMS: "assertionSubstance",
-};
-
 /**
  * 머리글 하나와 그 아래 케이스별 문장을 찍는다. finding 이 없으면 아무것도 안 찍는다.
  * `byCase` 순회는 `Map` 삽입 순서이고 그것이 곧 `runner` 가 정한 finding 순서다. 정렬하지

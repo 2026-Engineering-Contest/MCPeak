@@ -1646,9 +1646,14 @@ describe("provider 를 못 부르는 경로", () => {
 **모델:** 표준
 
 **Files**
-- 생성: `packages/generate/src/pre-fill-request.ts`
-- 수정: `packages/cli/src/pre-fill-wiring.ts` · `packages/cli/src/generate-command.ts`
-- 테스트: `packages/generate/tests/pre-fill-request.test.ts` (생성) · `packages/cli/tests/pre-fill-wiring.test.ts`
+- 수정: `packages/generate/src/pre-fill.ts` (요청 조립과 같은 파일에 preview·dispatch 를 둔다)
+- 수정: `packages/cli/src/pre-fill-wiring.ts` · `packages/cli/src/generate-command.ts` · `packages/cli/src/index.ts`
+- 수정: `packages/generate/src/providers.ts` (`makeProvider` 에 `preFill` 추가)
+- 테스트: `packages/generate/tests/pre-fill.test.ts` · `packages/cli/tests/pre-fill-command.test.ts`
+
+**정정(실행 중 확인):** 착수 시 `pre-fill-request.ts` 를 새로 만들도록 적었으나 파일을 나누지
+않았다. 진단은 `diagnosis-prompt.ts` 로 나눴지만 사전보완 프롬프트는 20줄이라 분리 이득이
+작고, 허용 목록 밖 파일만 하나 더 생긴다.
 
 **왜 생겼나.** T9 · T10 은 요청 조립과 채택 규칙을 만들었지만 **실제로 provider 를 부르는
 경로가 없다.** 그 상태로 머지하면 `applyPreFill` 이 아무 데서도 안 불려 사용자에게 안 닿는다.

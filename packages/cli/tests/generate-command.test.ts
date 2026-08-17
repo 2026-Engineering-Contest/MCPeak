@@ -382,6 +382,7 @@ describe("runGenerateCommand", () => {
             policyVersion: "schema-baseline-v2" as const,
             // renderCoverage 가 순회하다 던지는 모양. tools 가 배열이 아니다.
             coverage: { tools: null, verified: 0, total: 0 },
+            provenance: [],
           }) as never,
       ),
     });

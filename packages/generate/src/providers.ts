@@ -6,6 +6,7 @@ import { DEFAULT_MAX_RESULT_BYTES } from "./authoring-request.js";
 import { PROVIDER_OUTPUT_SCHEMA } from "./authoring-schema.js";
 import { diagnosisPrompt } from "./diagnosis-prompt.js";
 import { buildDiagnosisProviderSchema, type ServerDiagnosisProvider } from "./diagnosis-schema.js";
+import { type PreFillProvider, preFillPrompt } from "./pre-fill.js";
 import {
   type AuthoringProviderFailureCode,
   type AuthoringProviderFailureReason,
@@ -210,7 +211,7 @@ function unwrapDiagnosis(result: ProviderProcessResult, claude: boolean): unknow
 function makeProvider(
   id: "codex" | "claude",
   options: Options,
-): TestAuthoringProvider & ServerDiagnosisProvider {
+): TestAuthoringProvider & ServerDiagnosisProvider & PreFillProvider {
   const run = options.run ?? runProviderProcess;
   const model = options.model;
   if (typeof model !== "string" || !/\S/.test(model))
@@ -291,6 +292,13 @@ function makeProvider(
     async author(request, settings) {
       return unwrap(
         await execute(prompt(request), PROVIDER_OUTPUT_SCHEMA, settings),
+        id === "claude",
+      );
+    },
+    async preFill(request, settings) {
+      return unwrapDiagnosis(
+        // 요청별 스키마다. caseId 의 허용 값이 요청마다 다르다(PR #131).
+        await execute(preFillPrompt(request), request.outputSchema, settings),
         id === "claude",
       );
     },

@@ -570,8 +570,12 @@ describe("describeSpecFinding 의 범위 문안", () => {
 
 - [ ] **Step 3: 구현한다**
 
-`SpecFindingCode` 에 값을 더하고, `assertion-substance.ts:10` 의 `CODE_ORDER` 에도 넣는다
-(순서가 결정론적이어야 한다). `describeSpecFinding` 에 문안을 더한다.
+`SpecFindingCode` 에 값을 더하고, **`input-contract.ts` 의 `CODE_ORDER`** 에도 넣는다(순서가
+결정론적이어야 한다). `describeSpecFinding` 에 문안을 더한다.
+
+**정정(실행 중 확인):** 착수 시 이 지시가 `assertion-substance.ts:10` 을 가리켰는데 그 상수는
+`Partial<Record<...>>` 이고 단언 실질성 코드 둘만 담는다. 입력 계약 대조의 순서를 정하는
+`CODE_ORDER` 는 `input-contract.ts` 에 있는 **다른 상수**다. 같은 이름이 두 파일에 있다.
 
 - [ ] **Step 4: 통과를 확인한다**
 
@@ -1341,6 +1345,36 @@ describe("커버리지에 RANGE_VIOLATION 이 들어간다", () => {
 
 ---
 
+### T8b — `cli` 의 exhaustive Record 파장 (웨이브 1 에서 처리 완료)
+
+**모델:** 상위 (화면 문안) · **상태: 완료** (통합 SHA `bb18b13`)
+
+**계획 작성 시점에 예측하지 못한 파장이다.** `runner` 가 `SpecFindingCode` 와
+`ContractAxisKind` 를 늘리자 `cli` 의 exhaustive `Record` 셋이 컴파일에서 깨졌다.
+**PR 1 은 이것 없이 `pnpm typecheck` 가 녹색이 될 수 없다.**
+
+| 파일 | 상수 | 더한 값 |
+|---|---|---|
+| `packages/cli/src/generate-command.ts` | `FINDING_GROUP` | `RANGE_MISMATCH: "inputContract"` |
+| `packages/cli/src/test-command.ts` | `FINDING_GROUP` | `RANGE_MISMATCH: "inputContract"` |
+| `packages/cli/src/generate-command.ts` | `AXIS_LABEL` | `RANGE_VIOLATION: "선언된 범위 밖 값 거절"` |
+| `packages/cli/tests/generate-command.test.ts` | `createBaselineSuite` 목 | `provenance: []` |
+
+`FINDING_GROUP` 이 `inputContract` 인 근거: `checkInputContract` 가 만드는 finding 이다.
+`AXIS_LABEL` 문안은 형제 항목(`타입 위반 거절` · `선언되지 않은 값 거절`)의 어법을 따랐다.
+
+**T11 이 화면 문안을 다시 볼 때 이 라벨도 함께 확인한다.**
+
+---
+
+> **웨이브 1 에서 확인된 것: 계획서 테스트 스니펫의 API 이름이 실제 저장소와 다르다.**
+> 아래 T9~T12 의 스니펫도 같은 위험이 있다. **단언의 의미는 계획서대로 지키되, 이름과 형태는
+> 실제 코드를 읽고 맞춰라.** 웨이브 1 에서 실제로 어긋난 것들:
+> `operation.arguments` → `operation.input`,
+> `{type:"isError", value:true}` → `{type:"isError", expected:true}`,
+> `synthesizeViolationCases({tool, axes})` → `buildViolationCases({tool, happyInput, baseName})`,
+> `coverage.axes` → `coverage.tools[i].axes`.
+
 ### T9 — AI 사전보완 요청과 응답 검증
 
 **모델:** 표준
@@ -1533,10 +1567,18 @@ describe("validatePreFillResult", () => {
 
 서버 호출이 대상 케이스당 최대 2회로 는다. 대상은 `needsAssist` 로 걸러진 툴뿐이다.
 
+**채택한 케이스의 출처를 정직하게 적는다(실행 중 결정).** `TestCaseOrigin` 에
+`"schemaBaselinePreFilled"` 를 더한다. `"schemaBaseline"` 으로 두면 AI 값을 채택한 케이스가
+순수 baseline 으로 기록돼 거짓이 된다. 동작 위험은 없다. `repair-target.ts` 가 `"user"` 하나만
+분기하고 나머지는 동일 취급이기 때문이다. 같은 파일이 `TestCaseOrigin` 을 안 쓰고 유니온을
+복제해 두고 있으므로 **그 복제도 함께 없앤다.** 두면 다음에 값이 늘 때 조용히 어긋난다.
+
 **provider 를 부를 수 없는 경로**(`--baseline-only`, 자격증명 없음, 비대화형)에서는 사전보완을
 건너뛴다. 그리고 `unknownFormatFields` 가 있는 툴은 T11 의 고지와 함께 **건너뛴다.**
 
-전송 전 확인 화면은 authoring 의 것을 그대로 태운다. 새 문안을 만들지 않는다.
+**정정(실행 중 확인): 전송 전 확인 화면을 authoring 것으로 그대로 태울 수 없다.** 그 화면은
+`AuthoringRequestPreview` 를 받는데 사전보완이 보내는 것은 값뿐이라 모양이 다르다. 계획서가
+틀렸다. `diagnosis-request.ts` 를 본으로 삼아 한 벌 만든다. 아래 T10b 로 뗐다.
 
 - [ ] **Step 1: 실패하는 테스트를 쓴다**
 
@@ -1596,6 +1638,46 @@ describe("provider 를 못 부르는 경로", () => {
 `pnpm vitest run packages/cli` → PASS · `pnpm typecheck`
 
 - [ ] **Step 5: 보고한다**
+
+---
+
+### T10b — provider 호출 경로 (실행 중 추가)
+
+**모델:** 표준
+
+**Files**
+- 수정: `packages/generate/src/pre-fill.ts` (요청 조립과 같은 파일에 preview·dispatch 를 둔다)
+- 수정: `packages/cli/src/pre-fill-wiring.ts` · `packages/cli/src/generate-command.ts` · `packages/cli/src/index.ts`
+- 수정: `packages/generate/src/providers.ts` (`makeProvider` 에 `preFill` 추가)
+- 테스트: `packages/generate/tests/pre-fill.test.ts` · `packages/cli/tests/pre-fill-command.test.ts`
+
+**정정(실행 중 확인):** 착수 시 `pre-fill-request.ts` 를 새로 만들도록 적었으나 파일을 나누지
+않았다. 진단은 `diagnosis-prompt.ts` 로 나눴지만 사전보완 프롬프트는 20줄이라 분리 이득이
+작고, 허용 목록 밖 파일만 하나 더 생긴다.
+
+**왜 생겼나.** T9 · T10 은 요청 조립과 채택 규칙을 만들었지만 **실제로 provider 를 부르는
+경로가 없다.** 그 상태로 머지하면 `applyPreFill` 이 아무 데서도 안 불려 사용자에게 안 닿는다.
+계획서 §4.5 가 authoring 확인 화면을 재사용하라고 적었는데 타입이 안 맞는다.
+
+**authoring 통로를 재사용하지 않는다.** authoring 출력 스키마는 `suiteJson` 을 요구해 AI 가
+케이스 구조 전체를 바꿀 수 있다. 여기서 받을 것은 값뿐이다. ADR-0034 가 진단 통로를 분리한
+것과 같은 이유이므로 `diagnosis-request.ts` 를 본으로 삼는다.
+
+**만들 것**
+
+- `PreFillRequestPreview` — provider id, model, byte length, fingerprint, 전송 데이터 요약
+- 전송 전 확인 화면. 문안은 authoring 것의 어법을 따르되 **전송 데이터 목록은 사실대로**
+  적는다: 툴 이름·설명·`inputSchema`·baseline 값·값 출처. **suite 전체가 아니다.**
+- provider 호출과 타임아웃
+- 바이트 상한은 `MAX_TOOLS_BYTES` 와 같은 값. 넘쳐 잘리면 **그 사실을 화면에 적는다.**
+  조용히 자르지 않는다.
+
+**provider 실패 처리 (계획서 §9 의 미결을 여기서 확정한다)**
+
+**baseline 값으로 진행하고 화면에 그 사실을 적는다. 툴을 건너뛰지 않는다.** provider 실패는
+사용자 서버의 문제가 아니라 우리 쪽 사정이므로, 그것 때문에 케이스를 잃는 손해가 더 크다.
+`unknownFormat` 툴 건너뜀은 `--baseline-only` 처럼 **애초에 provider 를 안 부르기로 한
+경로에서만** 적용한다.
 
 ---
 

@@ -99,3 +99,6 @@ T4-schema-constraint-adr0009	c34d16e	2026-08-17
 T5-T8-schema-constraint-generate	c999393	2026-08-17
 T8b-schema-constraint-cli-exhaustive	9cfe94d	2026-08-17
 T8c-schema-constraint-coverage-notice	3d99e4b	2026-08-17
+R149-schema-constraint-review-fixes	782b4e0	2026-08-18
+T9-T10b-schema-constraint-prefill-generate	52d0aa1	2026-08-17
+T10-T12-schema-constraint-prefill-cli	e82e7df	2026-08-17

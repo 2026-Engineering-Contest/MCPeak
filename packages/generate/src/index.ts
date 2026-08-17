@@ -47,6 +47,7 @@ export type {
   CaseProvenance,
   GenerateReviewApproval,
   SanitizedAuthoringCandidate,
+  TestCaseOrigin,
 } from "./authoring-types.js";
 export {
   BASELINE_POLICY_VERSION,
@@ -94,6 +95,24 @@ export {
   diagnosisCaseIds,
   MAX_CAUSE_CHARS,
 } from "./diagnosis-schema.js";
+export type {
+  PreFillCase,
+  PreFillDiscard,
+  PreFillDispatchResult,
+  PreFillOutputSchema,
+  PreFillProposal,
+  PreFillProvider,
+  PreFillRequest,
+  PreFillRequestBinding,
+  PreFillRequestPreview,
+  PreFillResult,
+} from "./pre-fill.js";
+export {
+  dispatchPreFillRequest,
+  preparePreFillRequest,
+  previewPreFillRequest,
+  validatePreFillResult,
+} from "./pre-fill.js";
 export {
   analyzeToolProvenance,
   type ToolProvenance,

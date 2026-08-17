@@ -227,14 +227,31 @@ function candidateFor(options: LocalCandidateReviewOptions): LocalCandidateRevie
 }
 
 /** baseline에서 revision 0의 불변 검토 session을 만든다. */
-export function createAuthoringSession(baseline: BaselineGenerationResult): AuthoringSessionView {
+export function createAuthoringSession(
+  baseline: BaselineGenerationResult,
+  options?: {
+    /**
+     * AI 사전보완 값을 채택한 케이스의 id. 그 케이스만 origin 이
+     * `schemaBaselinePreFilled` 가 된다.
+     *
+     * `baseline.suite` 는 이미 채택 값이 반영된 것을 넘긴다. 여기서 값을 바꾸지 않는다.
+     * 채택 판정은 실제 서버가 하고(ADR-0025) 이 함수는 그 결과를 기록만 한다.
+     */
+    readonly preFilledCaseIds?: readonly string[];
+  },
+): AuthoringSessionView {
+  const preFilled = new Set(options?.preFilledCaseIds ?? []);
   const base = draft(
     baseline.suite,
     0,
+    // 사전보완을 해도 이 값은 그대로다. 이것은 "어느 규칙 baseline 에서 나왔나" 이고,
+    // 같은 서버 선언을 다시 돌리면 여전히 같은 값이 나온다.
     baseline.baselineFingerprint,
     baseline.suite.cases.map((item) => ({
       caseId: item.id,
-      origin: "schemaBaseline" as const,
+      origin: preFilled.has(item.id)
+        ? ("schemaBaselinePreFilled" as const)
+        : ("schemaBaseline" as const),
       firstRevision: 0,
       lastRevision: 0,
     })),

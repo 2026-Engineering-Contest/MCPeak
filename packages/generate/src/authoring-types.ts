@@ -18,7 +18,15 @@ export interface CandidateSpecFindings {
   readonly assertionSubstance: SpecFindingsResult;
 }
 
-export type TestCaseOrigin = "schemaBaseline" | "ai" | "user";
+/**
+ * 케이스가 어디서 왔는가.
+ *
+ * `schemaBaselinePreFilled` 는 규칙 baseline 이 만든 케이스에 AI 사전보완 값이 채택된 것이다.
+ * `schemaBaseline` 과 나누는 이유는 그 케이스의 입력이 더는 규칙만으로 재현되지 않기 때문이다.
+ * 같은 것으로 적으면 "같은 서버 선언이면 같은 값이 나온다" 가 기록 위에서 거짓이 된다.
+ * `ai` 와도 나눈다. 그쪽은 AI 가 케이스 자체를 만든 것이고 이쪽은 값 하나만 바뀐 것이다.
+ */
+export type TestCaseOrigin = "schemaBaseline" | "schemaBaselinePreFilled" | "ai" | "user";
 export interface CaseProvenance {
   readonly caseId: string;
   readonly origin: TestCaseOrigin;

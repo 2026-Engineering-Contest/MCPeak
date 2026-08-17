@@ -146,6 +146,14 @@ export async function run(argv: string[]): Promise<number> {
       applyAuthoringChanges: generate.applyAuthoringChanges,
       reviewLocalAuthoringCandidate: generate.reviewLocalAuthoringCandidate,
       computeCoverage: generate.computeCoverage,
+      preparePreFillRequest: generate.preparePreFillRequest,
+      previewPreFillRequest: generate.previewPreFillRequest,
+      dispatchPreFillRequest: generate.dispatchPreFillRequest,
+      // authoring 과 같은 실행 경로를 쓰는 provider 다. 다른 것은 stdin 과 출력 스키마뿐이다.
+      preFillProviders: {
+        codex: (model) => generate.createCodexProvider({ model }),
+        claude: (model) => generate.createClaudeProvider({ model }),
+      },
       GenerateTestsError: generate.GenerateTestsError,
     });
   }

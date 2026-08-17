@@ -21,6 +21,12 @@ export interface BaselineSuiteOptions {
 
 /** 미지원 키워드로 케이스를 만들지 못해 건너뛴 툴. 오류가 이미 만든 문장을 그대로 싣는다. */
 export interface SkippedTool {
+  /**
+   * 입력 `tools` 배열에서의 위치. 소비자가 제외할 툴을 고르는 키는 이름이 아니라 이것이다.
+   * 이름은 서버가 중복 선언할 수 있고(`computeCoverage` 가 `duplicateTool` 로 처리한다),
+   * 이름으로 제외하면 동명의 **지원** 툴까지 함께 빠진다.
+   */
+  readonly index: number;
   readonly name: string;
   readonly path: string;
   readonly message: string;
@@ -96,7 +102,7 @@ export function createBaselineSuite(
       // 미지원 키워드만 툴 단위로 격리한다(도그푸딩 실측: 툴 하나가 서버 전체를 막았다).
       // 다른 코드는 입력 자체의 결함이라 종전대로 전체를 멈춘다.
       if (error instanceof GenerateTestsError && error.code === "UNSUPPORTED_SCHEMA") {
-        skippedTools.push({ name: tool.name, path: error.path, message: error.message });
+        skippedTools.push({ index, name: tool.name, path: error.path, message: error.message });
         return [];
       }
       throw error;

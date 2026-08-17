@@ -84,6 +84,7 @@ describe("createBaselineSuite", () => {
       ]);
       expect(result.skippedTools).toEqual([
         {
+          index: 1,
           name: "count_things",
           path: "tools[1].inputSchema.properties.count.maximum",
           message: "지원하지 않는 JSON Schema 키워드 'maximum'가 있습니다.",
@@ -98,6 +99,18 @@ describe("createBaselineSuite", () => {
       });
       expect(result.coverage.tools.map((t) => t.tool)).toEqual(["get_weather"]);
       expect(result.coverage.verified).toBe(result.coverage.total);
+    });
+
+    it("이름이 같은 지원 툴과 미지원 툴을 인덱스로 구분한다", () => {
+      // 소비자가 이름으로 제외하면 동명의 지원 툴 커버리지까지 사라진다. computeCoverage 는
+      // 중복 이름을 duplicateTool 로 명시 처리하므로 중복은 이 저장소가 실제로 다루는 경우다.
+      const sameName: ToolDef = { ...unsupported, name: "get_weather" };
+      const result = createBaselineSuite([tools[0] as ToolDef, sameName], {
+        suiteId: "dup",
+        suiteName: "Dup",
+      });
+      expect(result.skippedTools.map((tool) => tool.index)).toEqual([1]);
+      expect(result.coverage.tools.map((tool) => tool.tool)).toEqual(["get_weather"]);
     });
 
     it("전 툴이 미지원이면 종전대로 던진다", () => {
@@ -259,6 +272,7 @@ describe("createBaselineSuite", () => {
     ).toBe(true);
     expect(result.skippedTools).toEqual([
       {
+        index: 1,
         name: "invalid",
         path: "tools[1].inputSchema.properties.q.minLength",
         message: "지원하지 않는 JSON Schema 키워드 'minLength'가 있습니다.",

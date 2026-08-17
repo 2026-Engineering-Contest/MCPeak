@@ -1226,13 +1226,16 @@ async function runInteractiveReview(
           // 자기 오류 경계를 갖는다.
           // 건너뛴 툴은 케이스가 있을 수 없으므로 커버리지 분모에서 뺀다. baseline 경로의
           // computeCoverage 가 이미 같은 기준이다. 넣으면 매 실행 거짓 "미검증" 이 쌓인다.
-          const skippedNames = new Set(skippedTools.map((tool) => tool.name));
+          // 이름이 아니라 인덱스로 뺀다. 서버가 같은 이름을 두 번 선언할 수 있고, 그때 이름으로
+          // 빼면 동명의 지원 툴 커버리지까지 사라진다. tools 는 listTools 결과 그대로이므로
+          // SkippedTool.index 가 이 배열의 위치와 같다.
+          const skippedIndexes = new Set(skippedTools.map((tool) => tool.index));
           reportCoverageSafely(
             deps,
             () =>
               deps.computeCoverage?.({
                 suite: finalSuite,
-                tools: tools.filter((tool) => !skippedNames.has(tool.name)),
+                tools: tools.filter((_tool, index) => !skippedIndexes.has(index)),
               }),
             finalSuite,
             skippedTools,

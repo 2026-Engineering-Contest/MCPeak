@@ -327,6 +327,7 @@ describe("runGenerateCommand", () => {
       ...(base() as Record<string, unknown>),
       skippedTools: [
         {
+          index: 1,
           name: "count_things",
           path: "tools[1].inputSchema.properties.count.maximum",
           message: "지원하지 않는 JSON Schema 키워드 'maximum'가 있습니다.",
@@ -1747,6 +1748,7 @@ describe("커버리지 화면", () => {
     expect(
       renderSkippedTools([
         {
+          index: 1,
           name: "count_things",
           path: "tools[1].inputSchema.properties.count.maximum",
           message: "지원하지 않는 JSON Schema 키워드 'maximum'가 있습니다.",

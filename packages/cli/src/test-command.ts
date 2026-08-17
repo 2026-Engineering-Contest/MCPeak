@@ -192,8 +192,10 @@ export function parseTestCommand(argv: readonly string[]): TestCommandInput {
             message: "`--arg` 옵션 값이 필요합니다.",
             hint: TEST_USAGE_HINT,
           });
+        // 하이픈으로 시작하는 값을 거절하지 않는다. 서버 인자는 대부분 플래그 모양이고
+        // (-y, --with, --db-path), generate 의 --arg 는 이미 받는다. 값을 빠뜨린 오타는
+        // 목록 끝의 `--arg` 가 잡고, 삼켜진 플래그는 서버가 인자 오류로 알린다.
         value = next;
-        if (value.startsWith("-")) fail("`--arg` 옵션 값이 필요합니다.");
       } else value = token.slice("--arg=".length);
       args.push(value);
     } else if (token === "--junit" || token.startsWith("--junit=")) {

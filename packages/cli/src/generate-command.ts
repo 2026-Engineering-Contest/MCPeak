@@ -11,6 +11,7 @@ import type {
   CoverageResult,
   PublicProviderFailure,
   SanitizedAuthoringCandidate,
+  SkippedTool,
   ToolCoverage,
 } from "@ohmymcp/generate";
 import type { Cassette, CassetteMode } from "@ohmymcp/record";
@@ -203,6 +204,28 @@ function generateTestsFailure(
 ): void {
   deps.writeStderr(
     `오류 [${error.code}]: ${error.message} 경로: ${error.path}\n해결: ${error.hint}\n`,
+  );
+}
+
+/**
+ * core 의 McpClientError 인지 구조로 확인한다. core 를 import 하지 않는다.
+ * `test-command.ts` 의 `coreError` 와 같은 판별인데, 그쪽은 AggregateError 안까지 내려가고
+ * 진단을 함께 꺼낸다. 여기 연결 오류는 core 가 직접 던지므로 겉모양 검사로 충분하다.
+ */
+function isCoreClientError(
+  value: unknown,
+): value is { readonly code: string; readonly message: string; readonly hint: string } {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "name" in value &&
+    value.name === "McpClientError" &&
+    "code" in value &&
+    typeof value.code === "string" &&
+    "message" in value &&
+    typeof value.message === "string" &&
+    "hint" in value &&
+    typeof value.hint === "string"
   );
 }
 
@@ -944,6 +967,7 @@ async function runInteractiveReview(
   session: AuthoringSessionView,
   deps: GenerateCommandDependencies,
   connection: McpStdioConnection,
+  skippedTools: readonly SkippedTool[] = [],
 ): Promise<number> {
   const io = deps.reviewIO;
   const prepare = deps.prepareAuthoringRequest;
@@ -1200,10 +1224,21 @@ async function runInteractiveReview(
           //
           // 저장 뒤이므로 커버리지 실패를 저장 실패로 보고하지 않는다. reportCoverageSafely 가
           // 자기 오류 경계를 갖는다.
+          // 건너뛴 툴은 케이스가 있을 수 없으므로 커버리지 분모에서 뺀다. baseline 경로의
+          // computeCoverage 가 이미 같은 기준이다. 넣으면 매 실행 거짓 "미검증" 이 쌓인다.
+          // 이름이 아니라 인덱스로 뺀다. 서버가 같은 이름을 두 번 선언할 수 있고, 그때 이름으로
+          // 빼면 동명의 지원 툴 커버리지까지 사라진다. tools 는 listTools 결과 그대로이므로
+          // SkippedTool.index 가 이 배열의 위치와 같다.
+          const skippedIndexes = new Set(skippedTools.map((tool) => tool.index));
           reportCoverageSafely(
             deps,
-            () => deps.computeCoverage?.({ suite: finalSuite, tools }),
+            () =>
+              deps.computeCoverage?.({
+                suite: finalSuite,
+                tools: tools.filter((_tool, index) => !skippedIndexes.has(index)),
+              }),
             finalSuite,
+            skippedTools,
           );
           return 0;
         } catch (error) {
@@ -1417,6 +1452,25 @@ export function renderCoverage(coverage: CoverageResult): string {
 }
 
 /**
+ * 건너뛴 툴 고지. 없으면 빈 문자열이다. 순수 함수라서 테스트가 문자열을 그대로 비교한다.
+ *
+ * 종전에는 미지원 키워드 하나가 서버 전체를 거절했다(도그푸딩 실측: 공식 서버 7개 중 5개).
+ * 이제 그 툴만 건너뛰므로, 건너뛴 사실이 안 보이면 "이 서버의 툴을 전부 검증했다" 로 읽힌다.
+ * 커버리지 화면과 같은 이유로 침묵이 거짓말이 되는 자리다.
+ */
+export function renderSkippedTools(skipped: readonly SkippedTool[]): string {
+  if (skipped.length === 0) return "";
+  // "키워드" 로 단정하지 않는다. UNSUPPORTED_SCHEMA 는 키워드뿐 아니라 루트 type 이 object 가
+  // 아닌 경우에도 나오므로, 머리글이 키워드라고 못 박으면 그 케이스에서 원인 줄과 어긋난다.
+  const lines = [`건너뜀  ${skipped.length} tools — 지원하지 않는 입력 스키마`];
+  for (const tool of skipped) lines.push(`  ${tool.name}  ${tool.path}: ${tool.message}`);
+  lines.push(
+    "  → 이 툴의 케이스는 생성되지 않았습니다. 필요하면 명세에 케이스를 손으로 추가하세요.",
+  );
+  return `${lines.join("\n")}\n`;
+}
+
+/**
  * 케이스 수 고지. 임계 아래면 빈 문자열이다.
  * 생성을 막지 않는다. 이미 존재하는 상한을 사용자에게 보이게 하는 것이 목적이다.
  */
@@ -1429,16 +1483,19 @@ export function renderCaseCountNotice(caseCount: number): string {
   );
 }
 
-/** 커버리지와 케이스 수 고지를 stdout 에 찍는다. 둘 다 빈 문자열이면 아무것도 안 찍는다. */
+/** 커버리지·건너뜀·케이스 수 고지를 stdout 에 찍는다. 전부 빈 문자열이면 아무것도 안 찍는다. */
 function writeCoverageReport(
   deps: GenerateCommandDependencies,
   coverage: CoverageResult | undefined,
   suite: TestSuiteSpec,
+  skippedTools: readonly SkippedTool[],
 ): void {
   if (coverage !== undefined) {
     const text = renderCoverage(coverage);
     if (text !== "") deps.writeStdout(text);
   }
+  const skippedText = renderSkippedTools(skippedTools);
+  if (skippedText !== "") deps.writeStdout(skippedText);
   const notice = renderCaseCountNotice(suite.cases.length);
   if (notice !== "") deps.writeStdout(notice);
 }
@@ -1457,9 +1514,10 @@ function reportCoverageSafely(
   deps: GenerateCommandDependencies,
   coverage: () => CoverageResult | undefined,
   suite: TestSuiteSpec,
+  skippedTools: readonly SkippedTool[] = [],
 ): void {
   try {
-    writeCoverageReport(deps, coverage(), suite);
+    writeCoverageReport(deps, coverage(), suite, skippedTools);
   } catch {
     deps.writeStderr(
       "경고 [GENERATE_COVERAGE_UNAVAILABLE]: 명세는 저장했지만 커버리지를 계산하지 못했습니다.\n" +
@@ -1517,6 +1575,7 @@ export async function runGenerateCommand(
         readonly active: McpStdioConnection;
         readonly session: AuthoringSessionView;
         readonly tools: readonly ToolDef[];
+        readonly skippedTools: readonly SkippedTool[];
       }
     | undefined;
   try {
@@ -1538,7 +1597,7 @@ export async function runGenerateCommand(
     if (!input.baselineOnly) {
       // 아래 finally 가 닫는 것으로 소유권을 옮긴다. catch 의 forceClose 와 겹치지 않게 한다.
       connection = undefined;
-      review = { active, session, tools };
+      review = { active, session, tools, skippedTools: baseline.skippedTools };
     } else {
       const final = deps.finalizeAuthoringDraft({
         session,
@@ -1550,7 +1609,7 @@ export async function runGenerateCommand(
       deps.writeStdout(`baseline suite를 저장했습니다: ${input.outPath}\n`);
       // baseline 경로는 저장한 suite 가 baseline 그대로이므로 다시 계산하지 않는다.
       // 저장 뒤이므로 렌더링 실패를 GENERATE_FAILED 로 보고하지 않는다.
-      reportCoverageSafely(deps, () => baseline.coverage, finalSuite);
+      reportCoverageSafely(deps, () => baseline.coverage, finalSuite, baseline.skippedTools);
       return 0;
     }
   } catch (error) {
@@ -1564,6 +1623,13 @@ export async function runGenerateCommand(
     // 주입이 없으면 아래 폴백으로 떨어진다. 기존 동작이 그대로 남는다.
     else if (deps.GenerateTestsError !== undefined && error instanceof deps.GenerateTestsError)
       generateTestsFailure(deps, error);
+    else if (isCoreClientError(error))
+      // 서버가 spawn 직후 죽거나 handshake 에 실패하면 사용자가 볼 근거는 core 가 만든
+      // code·message 뿐이다. GENERATE_FAILED 로 뭉개면 원인을 알 길이 없다(도그푸딩 실측 —
+      // 존재하지 않는 디렉터리 인자, Python 서버의 import 오류가 전부 같은 한 줄로 보였다).
+      deps.writeStderr(
+        `오류 [GENERATE_CONNECT_FAILED/${error.code}]: ${error.message}\n해결: ${error.hint}\n`,
+      );
     else
       deps.writeStderr(
         "오류 [GENERATE_FAILED]: baseline suite를 생성하거나 저장하지 못했습니다.\n해결: MCP 서버와 출력 경로를 확인한 뒤 다시 실행하세요.\n",
@@ -1572,7 +1638,14 @@ export async function runGenerateCommand(
   }
   // 검토는 위 catch 밖에서 돈다. 연결은 검토가 끝난 뒤 여기서 닫는다(설계 문서 §4.1).
   try {
-    return await runInteractiveReview(input, review.tools, review.session, deps, review.active);
+    return await runInteractiveReview(
+      input,
+      review.tools,
+      review.session,
+      deps,
+      review.active,
+      review.skippedTools,
+    );
   } finally {
     await review.active.close().catch(() => undefined);
   }

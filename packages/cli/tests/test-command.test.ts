@@ -124,6 +124,20 @@ describe("parseTestCommand", () => {
       stderrLines: 20,
     });
   });
+  it("공백 형식의 arg 도 하이픈 값을 보존한다", () => {
+    // 서버 인자는 대부분 플래그 모양이다(-y, --with, --db-path). generate 는 이미 받는데
+    // test 만 거절하면 같은 서버를 generate 로 만들고 test 로 못 돌린다. 도그푸딩 실측.
+    const input = parseTestCommand([
+      "suite.json",
+      "--command",
+      "npx",
+      "--arg",
+      "-y",
+      "--arg",
+      "@modelcontextprotocol/server-memory",
+    ]);
+    expect(input.args).toEqual(["-y", "@modelcontextprotocol/server-memory"]);
+  });
   it("parseTestCommand가 json 기본값 false를 낸다", () => {
     expect(parseTestCommand(["suite.json", "--command", "node"]).json).toBe(false);
   });
@@ -277,7 +291,6 @@ describe("runCli", () => {
       ],
       [["test", "suite.json", "--command"], "`--command` 옵션 값이 필요합니다."],
       [["test", "suite.json", "--command", "a", "--arg"], "`--arg` 옵션 값이 필요합니다."],
-      [["test", "x.json", "--command", "a", "--arg", "-m"], "`--arg` 옵션 값이 필요합니다."],
       [["test", "suite.json", "--command", "a", "--wat"], "지원하지 않는 test 옵션 '--wat'입니다."],
       [
         ["test", "suite.json", "--command", "a", "extra"],

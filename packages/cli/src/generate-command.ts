@@ -579,6 +579,7 @@ const FINDING_GROUP: Readonly<Record<SpecFindingCode, FindingGroup>> = {
   UNDECLARED_FIELD: "inputContract",
   TYPE_MISMATCH: "inputContract",
   ENUM_MISMATCH: "inputContract",
+  RANGE_MISMATCH: "inputContract",
   SCHEMA_NOT_ANALYZABLE: "skipped",
   REJECTION_WITHOUT_VIOLATION: "rejectionIntent",
   VACUOUS_MIN_LENGTH: "assertionSubstance",
@@ -1359,6 +1360,7 @@ const AXIS_LABEL: Readonly<Record<ContractAxisKind, string>> = {
   REQUIRED_OMITTED: "필수 필드 누락 거절",
   TYPE_VIOLATION: "타입 위반 거절",
   ENUM_VIOLATION: "선언되지 않은 값 거절",
+  RANGE_VIOLATION: "선언된 범위 밖 값 거절",
 };
 
 /**

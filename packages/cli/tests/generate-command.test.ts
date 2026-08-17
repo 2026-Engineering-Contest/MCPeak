@@ -95,6 +95,8 @@ function deps(overrides: Partial<GenerateCommandDependencies> = {}) {
         // 이 스텁의 suite 는 케이스가 0개다. 커버리지도 그에 맞춰 비운다.
         coverage: { tools: [], verified: 0, total: 0 },
         skippedTools: [],
+        // 툴이 0개이므로 값 출처도 비어 있다. AI 사전보완 대상 판정의 재료다.
+        provenance: [],
       };
     }),
     createAuthoringSession: vi.fn(

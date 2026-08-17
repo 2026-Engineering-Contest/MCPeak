@@ -290,7 +290,7 @@ const escapeTerminalText = (value: string): string =>
  * 참고 문장의 머리글 종류. 검사 종류가 곧 사용자가 고칠 곳이다. `skipped` 는 고칠 것이 없다는
  * 사실 자체를 알리는 종류라서 위반 둘과 갈린다.
  */
-type FindingGroup = "inputContract" | "assertionSubstance" | "skipped";
+type FindingGroup = "inputContract" | "assertionSubstance" | "rejectionIntent" | "skipped";
 /**
  * finding 코드를 검사 종류로 가른다. `Record<SpecFindingCode, …>` 라서 `runner` 가 코드를
  * 늘리면 여기서 타입 오류가 난다. 문자열 배열로 두면 새 코드가 조용히 한쪽으로 흘러간다.
@@ -302,6 +302,7 @@ const FINDING_GROUP: Readonly<Record<SpecFindingCode, FindingGroup>> = {
   TYPE_MISMATCH: "inputContract",
   ENUM_MISMATCH: "inputContract",
   SCHEMA_NOT_ANALYZABLE: "skipped",
+  REJECTION_WITHOUT_VIOLATION: "rejectionIntent",
   VACUOUS_MIN_LENGTH: "assertionSubstance",
   VACUOUS_MIN_ITEMS: "assertionSubstance",
 };
@@ -313,6 +314,9 @@ const FINDING_GROUP: Readonly<Record<SpecFindingCode, FindingGroup>> = {
 const FINDING_HEADING: Readonly<Record<FindingGroup, (caseId: string) => string>> = {
   inputContract: (caseId) => `참고: ${caseId} 의 입력이 서버 선언과 다릅니다`,
   assertionSubstance: (caseId) => `참고: ${caseId} 의 단언은 무엇이 와도 통과합니다`,
+  // '입력이 서버 선언과 다릅니다' 의 정반대 상황이다. 그 머리글 아래 두면 읽는 사람이
+  // 멀쩡한 입력에서 위반을 찾으러 간다.
+  rejectionIntent: (caseId) => `참고: ${caseId} 는 거절을 기대하지만 선언을 어기지 않습니다`,
   skipped: (caseId) => `참고: ${caseId} 의 입력 검사를 건너뛰었습니다`,
 };
 /**
@@ -323,6 +327,7 @@ const FINDING_HEADING: Readonly<Record<FindingGroup, (caseId: string) => string>
 const FINDING_GROUP_ORDER: readonly FindingGroup[] = [
   "inputContract",
   "assertionSubstance",
+  "rejectionIntent",
   "skipped",
 ];
 function format(failure: CliFailure): string {

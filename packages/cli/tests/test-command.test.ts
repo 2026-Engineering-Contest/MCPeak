@@ -1131,6 +1131,26 @@ describe("입력 계약 참고 문장", () => {
     // 입력 문제가 아니므로 입력 머리글이 붙으면 읽는 사람이 입력을 고치러 간다.
     expect(out.stdout).not.toContain("의 입력이 서버 선언과 다릅니다");
   });
+  it("거절 기대 케이스의 입력이 선언을 안 어기면 전용 머리글로 알린다 (#94)", async () => {
+    // 선언에 맞는 입력에 isError true 를 기대한다. 서버가 거절하지 않아 실패했을 때가
+    // 정확히 이 신호가 필요한 순간이다. '입력이 서버 선언과 다릅니다' 는 정반대 상황이라 못 쓴다.
+    const rejectClean: TestCaseSpec = {
+      id: "reject-clean",
+      name: "reject-clean",
+      operation: { type: "callTool", tool: "get_weather", input: { city: "Seoul" } },
+      assertions: [{ type: "isError", expected: true }],
+    };
+    const out = await runTest({
+      suite: suiteOf(rejectClean),
+      tools: weatherTools,
+      statuses: { "reject-clean": "failed" },
+    });
+    expect(out.stdout).toContain("참고: reject-clean 는 거절을 기대하지만 선언을 어기지 않습니다");
+    expect(out.stdout).toContain(
+      "→ 거절을 기대하지만 입력이 서버 선언을 어기지 않습니다. 서버가 선언 밖 제약으로 거절한다면 그대로 두고, 아니라면 입력을 확인하세요",
+    );
+    expect(out.stdout).not.toContain("의 입력이 서버 선언과 다릅니다");
+  });
   it("한 케이스에 둘 다 있으면 머리글을 갈라 찍고 입력 계약이 먼저다", async () => {
     const out = await runTest({
       suite: suiteWithBothKinds,

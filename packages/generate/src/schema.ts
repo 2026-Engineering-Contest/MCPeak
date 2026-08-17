@@ -46,6 +46,10 @@ const SUPPORTED_SCHEMA_KEYS = new Set([
   // 설명용 annotation은 입력값 합성에 영향을 주지 않으므로 안전하게 무시한다.
   "description",
   "title",
+  // 방언 선언용 annotation. 값이 무엇이든 합성될 입력이 달라지지 않으므로 위 둘과 같은 범주다.
+  // TypeScript SDK가 zod에서 스키마를 뽑을 때 기본으로 붙이므로, 이 키를 막으면 그 SDK로 만든
+  // 서버의 툴이 통째로 거절된다. 순서 주의 — hint 문자열이 이 Set의 삽입 순서로 만들어진다.
+  "$schema",
 ]);
 
 export const plainObject = (value: unknown): value is Record<string, unknown> =>
@@ -179,7 +183,7 @@ export function validateSchema(
 }
 
 function validateAnnotations(schema: JsonSchema, path: string): void {
-  for (const annotation of ["description", "title"] as const) {
+  for (const annotation of ["description", "title", "$schema"] as const) {
     if (annotation in schema && typeof schema[annotation] !== "string") {
       fail(
         "UNSUPPORTED_SCHEMA",

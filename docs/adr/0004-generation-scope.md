@@ -28,6 +28,11 @@
 - 입력 스키마의 루트는 객체인 경우만 지원한다.
 - 객체 입력에는 `required`로 선언된 프로퍼티만 포함한다.
 - `type`, `required`, `properties`, `items`, `enum`, `const`, `default`, `examples`와 이를 사용한 중첩 객체·배열을 지원한다. 이 목록에 없는 JSON Schema 키워드가 있으면 생성 전에 지원하지 않는 스키마로 거절한다.
+- 위 목록과 별도로 `description`, `title`, `$schema`를 허용한다. 셋 다 annotation이라 어떤 값이 오든 합성될 입력이 달라지지 않으므로, 거절해도 얻는 것이 없고 서버만 막힌다. 값이 문자열이 아니면 거절한다.
+
+  `description`과 `title`은 구현에는 처음부터 있었으나 이 문서에 적히지 않아 어긋나 있었다. `$schema`는 2026-08-17 도그푸딩에서 이 누락이 드러나 함께 정리했다 — 공식 TypeScript SDK가 zod에서 스키마를 뽑을 때 기본으로 붙이는 키라, 막아 두는 동안 `server-everything` 13개 툴과 `server-memory` 9개 툴이 **전부** 첫 키에서 거절됐다 (`docs/adoption.md` §2.2 · 이슈 #135).
+
+  `minimum`, `maximum`, `format`은 여기 해당하지 않는다. 실제 제약이라 무시하면 잘못된 입력을 만든다. 이 셋의 거절은 유지하며 회귀 테스트로 고정했다.
 - 객체는 필수 프로퍼티를 재귀적으로 생성한다.
 - 배열은 `items` 스키마에서 원소 1개를 재귀적으로 생성한다.
 - 생성된 테스트는 도구 호출 결과가 오류 응답이 아닌지, 즉 `isError`가 `false`인지만 검증한다.

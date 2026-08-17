@@ -9,9 +9,13 @@ import type {
   AuthoringSessionView,
   BaselineGenerationResult,
   CoverageResult,
+  PreFillDiscard,
+  PreFillProvider,
+  PreFillRequestPreview,
   PublicProviderFailure,
   SanitizedAuthoringCandidate,
   SkippedTool,
+  TestCaseOrigin,
   ToolCoverage,
 } from "@ohmymcp/generate";
 import type { Cassette, CassetteMode } from "@ohmymcp/record";
@@ -34,6 +38,8 @@ import { runDryRun } from "./dry-run.js";
 import { reviewDryRun } from "./dry-run-review.js";
 import { GENERATE_USAGE_HINT } from "./help.js";
 import { repairInputs } from "./input-repair.js";
+import type { UnknownFormatSkip } from "./pre-fill-wiring.js";
+import { applyPreFill, dropSkippedTools, unknownFormatSkips } from "./pre-fill-wiring.js";
 import type { ProcessDiagnosticsInput } from "./process-diagnostics.js";
 import { hasDiagnosticContent, renderProcessDiagnostics } from "./process-diagnostics.js";
 import { proposeRepair } from "./repair-proposal.js";
@@ -71,7 +77,10 @@ export interface GenerateCommandDependencies {
     tools: readonly ToolDef[],
     options: { suiteId: string; suiteName: string },
   ): BaselineGenerationResult;
-  createAuthoringSession(baseline: BaselineGenerationResult): AuthoringSessionView;
+  createAuthoringSession(
+    baseline: BaselineGenerationResult,
+    options?: { readonly preFilledCaseIds?: readonly string[] },
+  ): AuthoringSessionView;
   finalizeAuthoringDraft(options: {
     session: AuthoringSessionView;
     approval: { approved: boolean; fingerprint: string };
@@ -104,6 +113,16 @@ export interface GenerateCommandDependencies {
   applyAuthoringChanges?: typeof import("@ohmymcp/generate").applyAuthoringChanges;
   reviewLocalAuthoringCandidate?: typeof import("@ohmymcp/generate").reviewLocalAuthoringCandidate;
   computeCoverage?: typeof import("@ohmymcp/generate").computeCoverage;
+  /**
+   * AI 사전보완 통로. 넷 다 주입돼야 사전보완이 돈다. 하나라도 없으면 건너뛴다.
+   * 위 authoring 통로와 같은 이유로 값 import 가 아니라 주입이다.
+   */
+  preparePreFillRequest?: typeof import("@ohmymcp/generate").preparePreFillRequest;
+  previewPreFillRequest?: typeof import("@ohmymcp/generate").previewPreFillRequest;
+  dispatchPreFillRequest?: typeof import("@ohmymcp/generate").dispatchPreFillRequest;
+  preFillProviders?: Partial<
+    Record<"codex" | "claude", (model: string) => PreFillProvider | undefined>
+  >;
   /**
    * `instanceof` 용 클래스. 값 import 가 아니라 주입인 것이 요점이다.
    *
@@ -847,9 +866,7 @@ function writeRepairSummary(
  * 여기서 비면 사용자가 손으로 쓴 케이스까지 교정 대상이 되므로(§4.2 의 기본값이
  * `schemaBaseline` 이다) 세션이 실제로 싣는 값을 그대로 쓴다.
  */
-const originsOf = (
-  session: AuthoringSessionView,
-): ReadonlyMap<string, "schemaBaseline" | "ai" | "user"> =>
+const originsOf = (session: AuthoringSessionView): ReadonlyMap<string, TestCaseOrigin> =>
   new Map(session.approvedDraft.provenance.map((item) => [item.caseId, item.origin]));
 
 /**
@@ -1484,6 +1501,98 @@ export function renderSkippedTools(skipped: readonly SkippedTool[]): string {
 }
 
 /**
+ * 사전보완 요청의 전송 전 확인 화면.
+ *
+ * authoring 화면의 어법을 따르되 **전송 데이터 목록은 사실대로** 적는다. 여기서 나가는 것은
+ * suite 전량이 아니라 툴 선언과 baseline 이 넣은 값뿐이다. authoring 문안을 그대로 태우면
+ * 사용자가 승인하는 내용과 실제로 나가는 내용이 달라진다.
+ */
+function showPreFillRequest(io: ReviewIO, preview: PreFillRequestPreview): void {
+  const { request } = preview;
+  const fields = request.cases.reduce((sum, item) => sum + item.assistFields.length, 0);
+  io.write(
+    `AI 사전보완 요청\n` +
+      `Provider: ${preview.providerId}\nModel: ${preview.model}\n` +
+      `Payload: ${preview.byteLength} bytes\nResult limit: ${preview.maxResultBytes} bytes\n` +
+      `Timeout: ${preview.providerTimeoutMs}ms\nFingerprint: ${preview.fingerprint}\n` +
+      `대상: 툴 ${request.tools.length}개, 케이스 ${request.cases.length}개, 채울 필드 ${fields}개\n` +
+      "전송 데이터: 툴 이름·설명·inputSchema, baseline 이 넣은 값, 그 값의 출처\n" +
+      "받는 것: 값 제안뿐입니다. 케이스를 더하거나 구조를 바꾸지 않습니다.\n",
+  );
+  // 조용히 자르지 않는다. 무엇이 빠졌는지 모르면 사용자가 결과를 잘못 읽는다(계획서 §4.5).
+  if (request.omitted.tools > 0)
+    io.write(
+      `⚠ 크기 상한 때문에 툴 ${request.omitted.tools}개를 요청에서 뺐습니다. 그 툴은 baseline 값 그대로 갑니다.\n`,
+    );
+}
+
+/**
+ * AI 없이 표 밖 `format` 툴을 건너뛸 때의 고지. 없으면 빈 문자열이다.
+ *
+ * **"지원하지 않는다" 로 끝내지 않는다.** 그러면 사용자가 할 수 있는 일이 없다. 해결 수단을
+ * 같은 고지 안에 적는다. 이 프로젝트에서 실패 메시지는 곧 제품이다(설계서 §3.4).
+ */
+export function renderUnknownFormatSkips(skips: readonly UnknownFormatSkip[]): string {
+  if (skips.length === 0) return "";
+  const lines: string[] = [];
+  for (const skip of skips) {
+    lines.push(`경고: 툴 '${skip.tool}' 를 건너뜁니다.`);
+    // format 이름을 못 읽었으면 필드만 적는다. 없는 이름을 지어내지 않는다.
+    lines.push(
+      skip.format === ""
+        ? `      '${skip.field}' 의 format 은 AI 없이 채울 수 없습니다.`
+        : `      format '${skip.format}' 은 AI 없이 채울 수 없습니다.`,
+    );
+    lines.push("      AI 검토(--baseline-only 없이 실행)를 켜면 생성됩니다.");
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+/**
+ * AI 사전보완 결과 요약. 대상이 없으면 빈 문자열이다.
+ *
+ * **`버림` 은 사유와 대상을 반드시 적는다.** 개수만 적으면 사용자가 무엇을 잃었는지 모른다
+ * (이슈 #120 이 `discarded` 가 개수뿐이라고 지적한 것과 같은 계열이다). 버림이 0건이면 그 줄을
+ * 아예 찍지 않는다.
+ */
+export function renderPreFillSummary(options: {
+  readonly toolCount: number;
+  readonly proposedToolCount: number;
+  readonly adopted: number;
+  readonly notAdopted: number;
+  readonly discarded: readonly PreFillDiscard[];
+}): string {
+  const { toolCount, proposedToolCount, adopted, notAdopted, discarded } = options;
+  if (proposedToolCount === 0 && discarded.length === 0) return "";
+  const lines = [
+    `AI 사전보완: 툴 ${toolCount}개 중 ${proposedToolCount}개에 값 제안을 받았습니다.`,
+    `  채택 ${adopted} (실제 서버에서 baseline 값이 실패하고 제안 값이 통과)`,
+    `  미채택 ${notAdopted} (baseline 값이 이미 통과)`,
+  ];
+  for (const item of discarded)
+    lines.push(`  버림 1 (${item.reason}: ${item.caseId}.${item.field})`);
+  return `${lines.join("\n")}\n`;
+}
+
+/**
+ * 범위 축이 커버리지 분모에 새로 들어간 사실을 알린다. 범위 축이 하나도 없으면 빈 문자열이다.
+ *
+ * 이 버전부터 `minimum` 같은 제약이 검증 축이 된다. 그래서 **같은 서버·같은 명세인데 수치가
+ * 내려간다.** 그 사실을 안 적으면 사용자는 자기 명세가 나빠졌다고 읽는다. 결함이 아니라 이전에
+ * 안 보이던 빈틈이 드러난 것이다(설계서 §5.3).
+ */
+export function renderRangeAxisNotice(coverage: CoverageResult): string {
+  const hasRangeAxis = coverage.tools.some((tool) =>
+    tool.axes.some((axis) => axis.kind === "RANGE_VIOLATION"),
+  );
+  if (!hasRangeAxis) return "";
+  return (
+    "참고: 이번 버전부터 범위 제약(minimum·maxItems 등)이 검증 축에 포함됩니다.\n" +
+    "      이전보다 커버리지가 낮게 보이면 새로 드러난 빈틈입니다.\n"
+  );
+}
+
+/**
  * 케이스 수 고지. 임계 아래면 빈 문자열이다.
  * 생성을 막지 않는다. 이미 존재하는 상한을 사용자에게 보이게 하는 것이 목적이다.
  */
@@ -1506,6 +1615,8 @@ function writeCoverageReport(
   if (coverage !== undefined) {
     const text = renderCoverage(coverage);
     if (text !== "") deps.writeStdout(text);
+    const rangeNotice = renderRangeAxisNotice(coverage);
+    if (rangeNotice !== "") deps.writeStdout(rangeNotice);
   }
   const skippedText = renderSkippedTools(skippedTools);
   if (skippedText !== "") deps.writeStdout(skippedText);
@@ -1537,6 +1648,90 @@ function reportCoverageSafely(
         "해결: 저장된 명세는 그대로 `ohmymcp test` 로 쓸 수 있습니다. 커버리지만 다시 보려면 다른 --out 경로로 generate 를 실행하세요.\n",
     );
   }
+}
+
+/** 사전보완 결과. 건너뛴 경우에는 baseline 그대로이고 채택 목록이 비어 있다. */
+interface PreFillOutcome {
+  readonly suite: TestSuiteSpec;
+  readonly preFilledCaseIds: readonly string[];
+}
+
+/**
+ * AI 사전보완 한 회차. baseline 의 빈틈만 메운다.
+ *
+ * **자동이다.** 사용자의 자연어 요구를 받는 authoring 층과 목적이 다르므로 검토 메뉴가 아니라
+ * 그 앞에서 한 번 돈다(설계서 §4.2). 사용자에게 묻는 것은 전송 승인 하나뿐이다.
+ *
+ * **provider 가 죽어도 툴을 건너뛰지 않는다.** provider 실패는 사용자 서버의 문제가 아니라
+ * 우리 쪽 사정이고, 그것 때문에 케이스를 잃는 손해가 더 크다. baseline 값으로 진행하고
+ * 그 사실을 화면에 적는다.
+ */
+async function runPreFill(
+  input: GenerateCommandInput,
+  tools: readonly ToolDef[],
+  baseline: BaselineGenerationResult,
+  deps: GenerateCommandDependencies,
+  client: McpStdioConnection["client"],
+): Promise<PreFillOutcome> {
+  const skip: PreFillOutcome = { suite: baseline.suite, preFilledCaseIds: [] };
+  const io = deps.reviewIO;
+  const prepare = deps.preparePreFillRequest;
+  const preview = deps.previewPreFillRequest;
+  const dispatch = deps.dispatchPreFillRequest;
+  const providerId = input.provider;
+  if (io === undefined || !prepare || !preview || !dispatch || providerId === undefined)
+    return skip;
+  const model = input.model ?? defaultModel(providerId);
+  const provider = deps.preFillProviders?.[providerId]?.(model);
+  if (provider === undefined) return skip;
+
+  // 전 필드가 근거 있는 값이면 부르지 않는다. 판정은 결정론적이다(설계서 §4.1).
+  const request = prepare({ tools, provenance: baseline.provenance, baseline: baseline.suite });
+  if (request === null) return skip;
+
+  let view: PreFillRequestPreview;
+  try {
+    view = preview({ request, providerId, model });
+  } catch {
+    // 상한을 넘었다. 자르지 않고 이 회차를 건너뛴다. 무엇을 버릴지 우리가 정하지 않는다.
+    io.write("⚠ AI 사전보완 요청이 크기 상한을 넘어 건너뜁니다. baseline 값으로 진행합니다.\n");
+    return skip;
+  }
+  showPreFillRequest(io, view);
+  if (!(await io.confirm("이 요청을 전송할까요?"))) return skip;
+
+  const dispatched = await dispatch({
+    provider,
+    preview: view,
+    approval: { approved: true, fingerprint: view.fingerprint },
+  });
+  if (dispatched.status !== "proposals") {
+    io.write(
+      `⚠ AI 사전보완을 쓰지 못했습니다 (${dispatched.status}). baseline 값으로 진행합니다.\n`,
+    );
+    return skip;
+  }
+
+  const applied = await applyPreFill({
+    client,
+    baseline: baseline.suite,
+    preFill: dispatched.result,
+  });
+  io.write(
+    renderPreFillSummary({
+      toolCount: tools.length,
+      proposedToolCount: request.tools.length,
+      adopted: applied.adopted,
+      notAdopted: applied.notAdopted,
+      discarded: dispatched.result.discarded,
+    }),
+  );
+  return {
+    suite: applied.suite,
+    preFilledCaseIds: applied.cases
+      .filter((item) => item.source === "ai")
+      .map((item) => item.caseId),
+  };
 }
 
 export async function runGenerateCommand(
@@ -1606,7 +1801,31 @@ export async function runGenerateCommand(
       suiteId: input.suiteId,
       suiteName: input.name,
     });
-    const session = deps.createAuthoringSession(baseline);
+    // 사전보완은 검토 세션을 만들기 전에 한 번 돈다. baseline 의 빈틈을 메우는 층이고
+    // 사용자의 요구를 받는 authoring 층과 목적이 다르다(설계서 §4.2).
+    //
+    // `--baseline-only` 는 애초에 provider 를 안 부르기로 한 경로다. 그 경로에서만 표 밖
+    // format 툴을 건너뛴다. AI 없이는 그 필드를 채울 방법이 없기 때문이다(설계서 §3.4).
+    let sessionSuite = baseline.suite;
+    let preFilledCaseIds: readonly string[] = [];
+    if (input.baselineOnly) {
+      const skips = unknownFormatSkips(tools, baseline.provenance);
+      if (skips.length > 0) {
+        deps.writeStdout(renderUnknownFormatSkips(skips));
+        sessionSuite = dropSkippedTools(baseline.suite, skips);
+      }
+    } else {
+      const outcome = await runPreFill(input, tools, baseline, deps, active.client);
+      sessionSuite = outcome.suite;
+      preFilledCaseIds = outcome.preFilledCaseIds;
+    }
+    // baselineFingerprint 는 바꾸지 않는다. 그 값은 "어느 규칙 baseline 에서 나왔나" 이고,
+    // 같은 서버 선언을 다시 돌리면 여전히 같은 값이 나온다. suiteFingerprint 는
+    // createAuthoringSession 이 suite 로 다시 계산한다.
+    const session = deps.createAuthoringSession(
+      sessionSuite === baseline.suite ? baseline : { ...baseline, suite: sessionSuite },
+      { preFilledCaseIds },
+    );
     if (!input.baselineOnly) {
       // 아래 finally 가 닫는 것으로 소유권을 옮긴다. catch 의 forceClose 와 겹치지 않게 한다.
       connection = undefined;

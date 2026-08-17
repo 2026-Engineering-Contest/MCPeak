@@ -1,3 +1,4 @@
+import type { TestCaseOrigin } from "@ohmymcp/generate";
 import type { JsonValue, TestCaseSpec, TestSuiteSpec } from "@ohmymcp/runner";
 import type { DryRunCaseOutcome } from "./dry-run.js";
 
@@ -27,7 +28,11 @@ export interface RepairAttempt {
 export interface SelectRepairTargetsOptions {
   readonly suite: TestSuiteSpec;
   readonly outcomes: readonly DryRunCaseOutcome[];
-  readonly origins: ReadonlyMap<string, "schemaBaseline" | "ai" | "user">;
+  /**
+   * 유니온을 손으로 복제하지 않는다. 복제해 두면 `generate` 가 값을 늘려도 여기는 모르고,
+   * vitest 는 초록인데 typecheck 만 빨강인 상태가 만들어진다(웨이브 1 실측).
+   */
+  readonly origins: ReadonlyMap<string, TestCaseOrigin>;
 }
 
 /** `renderReport` 가 케이스 본문 줄에 쓰는 들여쓰기. dry-run.ts 의 INDENT 와 같은 값이다. */

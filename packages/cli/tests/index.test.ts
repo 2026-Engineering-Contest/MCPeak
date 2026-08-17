@@ -25,6 +25,9 @@ const OPTIONAL_GENERATE_DEPENDENCIES = {
   applyAuthoringChanges: true,
   reviewLocalAuthoringCandidate: true,
   computeCoverage: true,
+  preparePreFillRequest: true,
+  previewPreFillRequest: true,
+  dispatchPreFillRequest: true,
 } as const satisfies Record<OptionalFunctionDependencyKey, true>;
 
 describe("ohmymcp cli", () => {

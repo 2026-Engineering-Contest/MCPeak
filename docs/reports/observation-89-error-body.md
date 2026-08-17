@@ -125,3 +125,113 @@ Cannot read properties of undefined (reading 'city')
 
 부작용이 있는 툴은 호출하지 않았다. `server-filesystem` 은 읽기 툴 4개만 봤고 전용 샌드박스를
 줬다.
+
+---
+
+# 2차 관찰: 거절과 크래시를 가르는 신호가 있는가
+
+관찰일: 2026-08-18. 대상: 공개 서버 10개 + 자체 서버 1개(위반 입력 80건), 크래시 탐침 13건.
+
+1차 관찰의 §5 는 "본문으로는 못 가르니 단계 9(케이스별 stderr)로 넘긴다" 로 끝났다. 2차는 그
+전제를 검증했다. **결과가 그 결론마저 뒤집는다. 단계 9 로도 못 푼다.**
+
+## 8. 크래시 탐침 — SDK 가 예외를 삼키고 로그를 안 남긴다
+
+일부러 터지는 서버를 언어·SDK·터지는 방식으로 나눠 만들고, 클라이언트가 본 것과 stderr 를 함께
+모았다.
+
+| 탐침 | 클라이언트가 본 것 | stderr |
+|---|---|---|
+| **Node 상위 API · 핸들러 예외** | `isError: true` (거절과 동일) | **0 바이트** |
+| **Python 상위 API · 핸들러 예외** | `isError: true` (거절과 동일) | **트레이스 없음** |
+| Node 상위 · async 미처리 거부 | `PROCESS_EXITED` | 스택 전량 |
+| Node 상위 · `process.exit` | `PROCESS_EXITED` | 배너 |
+| Node 상위 · 메모리 부족 | `PROCESS_EXITED` · `SIGABRT` | V8 `FATAL ERROR` 블록 |
+| Node 하위 API · 핸들러 예외 | `OPERATION_FAILED` | 0 바이트 |
+| Python 상위 · `process.exit` | `OPERATION_FAILED` (exit 7) | 배너 + 트레이스백 |
+| **Python 상위 · async 미처리 거부** | **`isError: false`, 통과** | 트레이스백 |
+| Node·Python 상위 + JSON 로거 · 핸들러 예외 | `isError: true` | 스택이 JSON 한 줄 안 |
+
+첫 두 줄이 결론을 정한다. **이슈가 지목한 바로 그 경우에 stderr 가 비어 있다.** SDK 가 핸들러
+예외를 잡아 응답으로 바꾸고, 로그는 남기지 않는다. 서버 작성자가 직접 로그를 찍은 경우(JSON 로거
+행)에만 흔적이 생긴다.
+
+stderr 에 흔적이 남는 나머지는 전부 **프로세스가 실제로 죽은 경우**이고, 그것은 지금도
+`PROCESS_EXITED` 로 구분된다. 즉 단계 9 가 새로 잡아 주는 것이 없다.
+
+**한 줄은 예외다.** Python 상위 API 의 async 미처리 거부는 응답이 정상(`isError: false`)으로
+돌아오는데 stderr 에 트레이스백이 남는다. **케이스는 통과로 찍히고 서버 안에서는 작업이
+실패했다.** 이것은 #89 와 다른 결함이고, 단계 9 가 실제로 잡을 수 있는 유일한 종류다. 별도
+이슈로 등록할 값이 있다.
+
+## 9. 본문 지문 — 접두어로 가를 수 있는가
+
+공개 서버 10개에 위반 입력을 넣어 80건을 모았다.
+
+| 서버 | SDK | 관찰 | 응답 모양 |
+|---|---|---|---|
+| `server-memory` | TS | 12 | `MCP error -32602:` |
+| `server-everything` | TS | 8 | `MCP error -32602:` |
+| `server-filesystem` | TS | 12 | `MCP error -32602:` |
+| `server-sequential-thinking` | TS | 2 | `MCP error -32602:` |
+| `server-github` | TS | 12 | **던져짐** (`OPERATION_FAILED`, cause `-32603`) |
+| `mcp-server-sqlite` | Python | 10 | `Input validation error:` |
+| `mcp-server-git` | Python | 12 | `Input validation error:` |
+| `mcp-server-time` | Python | 4 | `Input validation error:` |
+| `mcp-server-fetch` | Python | 2 | `Input validation error:` |
+| `mcp-server-calculator` | Python (FastMCP) | 2 | **`Error executing tool …:`** |
+| `examples/weather-server` (자체) | 직접 구현 | 4 | 자유 문장 |
+
+접두어 분포는 `MCP error -32602:` 34, `Input validation error:` 28, `Error executing tool X:` 2,
+던져짐 12, 자유 문장 4 다.
+
+**충돌이 네 군데서 난다.**
+
+1. **FastMCP 는 거절과 크래시가 같은 접두어다.** `mcp-server-calculator` 의 정상 거절이
+   `Error executing tool calculate: 1 validation error for …` 이고, 탐침의 크래시가
+   `Error executing tool sync_throw: 'NoneType' object has no attribute 'upper'` 다.
+2. **하위 API 서버는 오류 코드가 같다.** `server-github` 의 거절도, 탐침 크래시도 던져지고
+   `cause.code` 가 둘 다 `-32603` 이다. `-32602`(잘못된 인자)와 `-32603`(내부 오류)이 갈리기를
+   기대했지만 서버가 자기 검증 실패를 내부 오류로 감싼다.
+3. **손으로 거절하는 서버는 자유 문장이다.** 우리 `weather-server` 의
+   `→ 'city' 는 문자열이어야 합니다` 는 크래시 문구와 모양이 같다.
+4. **1차 관찰의 필드 이름 규칙도 여전히 깨진다.** Python 타입 위반은 필드를 안 적고, 크래시
+   문구는 필드를 적는다(`reading 'city'`).
+
+## 10. 결론 — 자동 판정은 불가능하다
+
+거절과 크래시를 **자동으로** 가르는 신호가 응답에도, stderr 에도, 오류 코드에도 없다.
+
+- 응답 본문: 접두어가 SDK마다 다르고 FastMCP 는 거절과 크래시가 같다.
+- 오류 코드: 하위 API 서버에서 둘 다 `-32603` 이다.
+- stderr: 상위 API 의 핸들러 예외에는 아예 없다.
+
+가능한 것은 **반대 방향**이다. "크래시를 찾는다" 가 아니라 **"거절임을 확인한다"** 는 된다.
+아래 세 지문은 SDK 검증이 낸 거절임을 양성으로 확인해 준다.
+
+```
+MCP error -32602:            (TS SDK)
+Input validation error:      (Python 하위 SDK)
+Error executing tool …: N validation error for …   (FastMCP + pydantic)
+```
+
+관찰 80건 중 64건이 이 셋 중 하나에 걸린다. 나머지 16건은 던져진 것(12)과 손으로 거절하는
+서버(4)다. 그 16건은 **거절인지 크래시인지 확인할 수 없다**가 정확한 상태다.
+
+## 11. 수정된 제안
+
+- **판정을 바꾸는 자동 규칙은 만들지 않는다.** 오탐 없이 크래시를 지목할 방법이 없다. ADR-0015 의
+  원칙에 따라 오탐 있는 규칙보다 미탐을 택한다.
+- **양성 확인을 표시한다.** 위반 케이스가 통과했을 때 "거절 근거 확인됨" 과 "확인 못 함" 을
+  나눠 보여준다. 커버리지 화면이 건너뛴 툴을 고지하는 것과 같은 성격이고, 판정을 안 바꾸므로
+  `--json` 과 승인 지문이 안전하다.
+- **단계 9 는 #89 의 해법이 아니다.** 다만 §8 의 마지막 줄(async 실패가 통과로 찍히는 경우)을
+  잡는 별도 가치가 있다. 그 근거로 다시 평가한다.
+- **새 이슈 하나.** "서버 안에서 async 작업이 실패했는데 응답은 정상이라 케이스가 통과한다."
+
+## 12. 표본의 한계
+
+- 공개 서버 10개는 전부 TS SDK 또는 Python SDK 를 쓴다. Go·JVM 구현체는 못 봤다.
+- 툴은 서버당 6개까지만 봤다.
+- 크래시 탐침은 우리가 만든 것이다. 실제 사용자 서버의 크래시 분포와 같다는 보장은 없다.
+- `mcp-server-commands` 는 셸을 실행하므로 제외했다.

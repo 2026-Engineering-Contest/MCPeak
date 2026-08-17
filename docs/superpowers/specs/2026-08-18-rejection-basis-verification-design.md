@@ -50,9 +50,11 @@
 
 1. `classifyRejectionBasis` 가 관찰 데이터 80건 전부를 정확히 분류한다. 잘못된 `verified` 가
    0건이다.
-2. 크래시 탐침 14건 중 어느 것도 `verified` 로 분류되지 않는다. FastMCP 의
-   `Error executing tool X: N validation errors for WeatherResponse`(응답 모델 검증 실패)가
-   `unverified` 여야 한다.
+2. 크래시 탐침에서 나온 본문 4건이 전부 `unverified` 다. 특히 FastMCP 의
+   `Error executing tool get_weather: 2 validation errors for WeatherResponse`(응답 모델 검증
+   실패)가 `unverified` 여야 한다. 같은 파일의 정상 거절 탐침 2건은 `verified` 다.
+   탐침 실행은 13회였지만 응답 본문이 남은 것은 6건이다. 나머지는 프로세스가 죽어
+   `PROCESS_EXITED` 로 끝났고 본문이 없다.
 3. `ohmymcp test` 요약에 확인 못 한 건수가 나온다. 0건이면 그 줄이 안 나온다.
 4. 같은 명세를 같은 서버에 2회 실행해 `--json` 출력 바이트가 같다.
 5. `pnpm test` · `pnpm typecheck` 가 통과하고 기존 케이스 판정이 하나도 안 바뀐다.
@@ -328,8 +330,10 @@ export interface RejectionDiagnosisResult {
 
 ### 8.2 `runner` 통합
 
-- 관찰 데이터 80건 전량을 픽스처로 돌려 **잘못된 `verified` 가 0건**임을 단언한다.
-- 크래시 탐침 14건을 픽스처로 돌려 **`verified` 가 0건**임을 단언한다.
+- 관찰 데이터 80건 전량을 픽스처(`packages/runner/tests/fixtures/rejection-bodies.json`)로
+  돌려 분류가 `verified` 64 · `unverified` 16 로 나오는 것을 단언한다.
+- 탐침 본문 6건(크래시 4 · 정상 거절 2)을 픽스처로 돌려 크래시 4건이 전부 `unverified` 임을
+  단언한다.
 - 기존 스위트 실행에서 케이스 판정과 종료 코드가 하나도 안 바뀌는 것을 단언한다.
 
 ### 8.3 `cli`

@@ -1,0 +1,622 @@
+{
+  "설명": "이슈 #89 관찰(2026-08-18)에서 실측한 응답 본문. classifyRejectionBasis 의 판정 기준 데이터다.",
+  "관찰": [
+    {
+      "source": "weather-server (자체)",
+      "tool": "get_weather",
+      "kind": "REQUIRED_OMITTED",
+      "body": "→ 'city' 는 문자열이어야 합니다. 예: { \"city\": \"서울\" }",
+      "expected": "unverified"
+    },
+    {
+      "source": "weather-server (자체)",
+      "tool": "get_weather",
+      "kind": "TYPE_VIOLATION",
+      "body": "→ 'city' 는 문자열이어야 합니다. 예: { \"city\": \"서울\" }",
+      "expected": "unverified"
+    },
+    {
+      "source": "weather-server (자체)",
+      "tool": "add",
+      "kind": "REQUIRED_OMITTED",
+      "body": "→ 'a' 와 'b' 는 모두 숫자여야 합니다.",
+      "expected": "unverified"
+    },
+    {
+      "source": "weather-server (자체)",
+      "tool": "add",
+      "kind": "TYPE_VIOLATION",
+      "body": "→ 'a' 와 'b' 는 모두 숫자여야 합니다.",
+      "expected": "unverified"
+    },
+    {
+      "source": "server-memory (TS)",
+      "tool": "create_entities",
+      "kind": "REQUIRED_OMITTED",
+      "body": "MCP error -32602: Input validation error: Invalid arguments for tool create_entities: Invalid input: expected array, received undefined at entities",
+      "expected": "verified"
+    },
+    {
+      "source": "server-memory (TS)",
+      "tool": "create_entities",
+      "kind": "TYPE_VIOLATION",
+      "body": "MCP error -32602: Input validation error: Invalid arguments for tool create_entities: Invalid input: expected array, received string at entities",
+      "expected": "verified"
+    },
+    {
+      "source": "server-memory (TS)",
+      "tool": "create_relations",
+      "kind": "REQUIRED_OMITTED",
+      "body": "MCP error -32602: Input validation error: Invalid arguments for tool create_relations: Invalid input: expected array, received undefined at relations",
+      "expected": "verified"
+    },
+    {
+      "source": "server-memory (TS)",
+      "tool": "create_relations",
+      "kind": "TYPE_VIOLATION",
+      "body": "MCP error -32602: Input validation error: Invalid arguments for tool create_relations: Invalid input: expected array, received string at relations",
+      "expected": "verified"
+    },
+    {
+      "source": "server-memory (TS)",
+      "tool": "add_observations",
+      "kind": "REQUIRED_OMITTED",
+      "body": "MCP error -32602: Input validation error: Invalid arguments for tool add_observations: Invalid input: expected array, received undefined at observations",
+      "expected": "verified"
+    },
+    {
+      "source": "server-memory (TS)",
+      "tool": "add_observations",
+      "kind": "TYPE_VIOLATION",
+      "body": "MCP error -32602: Input validation error: Invalid arguments for tool add_observations: Invalid input: expected array, received string at observations",
+      "expected": "verified"
+    },
+    {
+      "source": "server-memory (TS)",
+      "tool": "delete_entities",
+      "kind": "REQUIRED_OMITTED",
+      "body": "MCP error -32602: Input validation error: Invalid arguments for tool delete_entities: Invalid input: expected array, received undefined at entityNames",
+      "expected": "verified"
+    },
+    {
+      "source": "server-memory (TS)",
+      "tool": "delete_entities",
+      "kind": "TYPE_VIOLATION",
+      "body": "MCP error -32602: Input validation error: Invalid arguments for tool delete_entities: Invalid input: expected array, received string at entityNames",
+      "expected": "verified"
+    },
+    {
+      "source": "server-memory (TS)",
+      "tool": "delete_observations",
+      "kind": "REQUIRED_OMITTED",
+      "body": "MCP error -32602: Input validation error: Invalid arguments for tool delete_observations: Invalid input: expected array, received undefined at deletions",
+      "expected": "verified"
+    },
+    {
+      "source": "server-memory (TS)",
+      "tool": "delete_observations",
+      "kind": "TYPE_VIOLATION",
+      "body": "MCP error -32602: Input validation error: Invalid arguments for tool delete_observations: Invalid input: expected array, received string at deletions",
+      "expected": "verified"
+    },
+    {
+      "source": "server-memory (TS)",
+      "tool": "delete_relations",
+      "kind": "REQUIRED_OMITTED",
+      "body": "MCP error -32602: Input validation error: Invalid arguments for tool delete_relations: Invalid input: expected array, received undefined at relations",
+      "expected": "verified"
+    },
+    {
+      "source": "server-memory (TS)",
+      "tool": "delete_relations",
+      "kind": "TYPE_VIOLATION",
+      "body": "MCP error -32602: Input validation error: Invalid arguments for tool delete_relations: Invalid input: expected array, received string at relations",
+      "expected": "verified"
+    },
+    {
+      "source": "server-everything (TS)",
+      "tool": "echo",
+      "kind": "REQUIRED_OMITTED",
+      "body": "MCP error -32602: Input validation error: Invalid arguments for tool echo: Invalid input: expected string, received undefined at message",
+      "expected": "verified"
+    },
+    {
+      "source": "server-everything (TS)",
+      "tool": "echo",
+      "kind": "TYPE_VIOLATION",
+      "body": "MCP error -32602: Input validation error: Invalid arguments for tool echo: Invalid input: expected string, received number at message",
+      "expected": "verified"
+    },
+    {
+      "source": "server-everything (TS)",
+      "tool": "get-annotated-message",
+      "kind": "REQUIRED_OMITTED",
+      "body": "MCP error -32602: Input validation error: Invalid arguments for tool get-annotated-message: Invalid option: expected one of \"error\"|\"success\"|\"debug\" at messageType",
+      "expected": "verified"
+    },
+    {
+      "source": "server-everything (TS)",
+      "tool": "get-annotated-message",
+      "kind": "TYPE_VIOLATION",
+      "body": "MCP error -32602: Input validation error: Invalid arguments for tool get-annotated-message: Invalid option: expected one of \"error\"|\"success\"|\"debug\" at messageType",
+      "expected": "verified"
+    },
+    {
+      "source": "server-everything (TS)",
+      "tool": "get-annotated-message",
+      "kind": "ENUM_VIOLATION",
+      "body": "MCP error -32602: Input validation error: Invalid arguments for tool get-annotated-message: Invalid option: expected one of \"error\"|\"success\"|\"debug\" at messageType",
+      "expected": "verified"
+    },
+    {
+      "source": "server-everything (TS)",
+      "tool": "get-structured-content",
+      "kind": "REQUIRED_OMITTED",
+      "body": "MCP error -32602: Input validation error: Invalid arguments for tool get-structured-content: Invalid option: expected one of \"New York\"|\"Chicago\"|\"Los Angeles\" at location",
+      "expected": "verified"
+    },
+    {
+      "source": "server-everything (TS)",
+      "tool": "get-structured-content",
+      "kind": "TYPE_VIOLATION",
+      "body": "MCP error -32602: Input validation error: Invalid arguments for tool get-structured-content: Invalid option: expected one of \"New York\"|\"Chicago\"|\"Los Angeles\" at location",
+      "expected": "verified"
+    },
+    {
+      "source": "server-everything (TS)",
+      "tool": "get-structured-content",
+      "kind": "ENUM_VIOLATION",
+      "body": "MCP error -32602: Input validation error: Invalid arguments for tool get-structured-content: Invalid option: expected one of \"New York\"|\"Chicago\"|\"Los Angeles\" at location",
+      "expected": "verified"
+    },
+    {
+      "source": "server-filesystem (TS)",
+      "tool": "read_file",
+      "kind": "REQUIRED_OMITTED",
+      "body": "MCP error -32602: Input validation error: Invalid arguments for tool read_file: Invalid input: expected string, received undefined at path",
+      "expected": "verified"
+    },
+    {
+      "source": "server-filesystem (TS)",
+      "tool": "read_file",
+      "kind": "TYPE_VIOLATION",
+      "body": "MCP error -32602: Input validation error: Invalid arguments for tool read_file: Invalid input: expected string, received number at path",
+      "expected": "verified"
+    },
+    {
+      "source": "server-filesystem (TS)",
+      "tool": "read_text_file",
+      "kind": "REQUIRED_OMITTED",
+      "body": "MCP error -32602: Input validation error: Invalid arguments for tool read_text_file: Invalid input: expected string, received undefined at path",
+      "expected": "verified"
+    },
+    {
+      "source": "server-filesystem (TS)",
+      "tool": "read_text_file",
+      "kind": "TYPE_VIOLATION",
+      "body": "MCP error -32602: Input validation error: Invalid arguments for tool read_text_file: Invalid input: expected string, received number at path",
+      "expected": "verified"
+    },
+    {
+      "source": "server-filesystem (TS)",
+      "tool": "read_media_file",
+      "kind": "REQUIRED_OMITTED",
+      "body": "MCP error -32602: Input validation error: Invalid arguments for tool read_media_file: Invalid input: expected string, received undefined at path",
+      "expected": "verified"
+    },
+    {
+      "source": "server-filesystem (TS)",
+      "tool": "read_media_file",
+      "kind": "TYPE_VIOLATION",
+      "body": "MCP error -32602: Input validation error: Invalid arguments for tool read_media_file: Invalid input: expected string, received number at path",
+      "expected": "verified"
+    },
+    {
+      "source": "server-filesystem (TS)",
+      "tool": "read_multiple_files",
+      "kind": "REQUIRED_OMITTED",
+      "body": "MCP error -32602: Input validation error: Invalid arguments for tool read_multiple_files: Invalid input: expected array, received undefined at paths",
+      "expected": "verified"
+    },
+    {
+      "source": "server-filesystem (TS)",
+      "tool": "read_multiple_files",
+      "kind": "TYPE_VIOLATION",
+      "body": "MCP error -32602: Input validation error: Invalid arguments for tool read_multiple_files: Invalid input: expected array, received string at paths",
+      "expected": "verified"
+    },
+    {
+      "source": "server-filesystem (TS)",
+      "tool": "write_file",
+      "kind": "REQUIRED_OMITTED",
+      "body": "MCP error -32602: Input validation error: Invalid arguments for tool write_file: Invalid input: expected string, received undefined at path",
+      "expected": "verified"
+    },
+    {
+      "source": "server-filesystem (TS)",
+      "tool": "write_file",
+      "kind": "TYPE_VIOLATION",
+      "body": "MCP error -32602: Input validation error: Invalid arguments for tool write_file: Invalid input: expected string, received number at path",
+      "expected": "verified"
+    },
+    {
+      "source": "server-filesystem (TS)",
+      "tool": "edit_file",
+      "kind": "REQUIRED_OMITTED",
+      "body": "MCP error -32602: Input validation error: Invalid arguments for tool edit_file: Invalid input: expected string, received undefined at path",
+      "expected": "verified"
+    },
+    {
+      "source": "server-filesystem (TS)",
+      "tool": "edit_file",
+      "kind": "TYPE_VIOLATION",
+      "body": "MCP error -32602: Input validation error: Invalid arguments for tool edit_file: Invalid input: expected string, received number at path",
+      "expected": "verified"
+    },
+    {
+      "source": "server-sequential-thinking (TS)",
+      "tool": "sequentialthinking",
+      "kind": "REQUIRED_OMITTED",
+      "body": "MCP error -32602: Input validation error: Invalid arguments for tool sequentialthinking: Invalid input: expected string, received undefined at thought\nInvalid input: expected boolean, received undefined at nextThoughtNeeded",
+      "expected": "verified"
+    },
+    {
+      "source": "server-sequential-thinking (TS)",
+      "tool": "sequentialthinking",
+      "kind": "TYPE_VIOLATION",
+      "body": "MCP error -32602: Input validation error: Invalid arguments for tool sequentialthinking: Invalid input: expected string, received number at thought\nInvalid input: expected boolean, received undefined at nextThoughtNeeded",
+      "expected": "verified"
+    },
+    {
+      "source": "server-github (TS)",
+      "tool": "create_or_update_file",
+      "kind": "REQUIRED_OMITTED",
+      "body": null,
+      "note": "던져짐(protocol 오류). 본문 없음",
+      "expected": "unverified"
+    },
+    {
+      "source": "server-github (TS)",
+      "tool": "create_or_update_file",
+      "kind": "TYPE_VIOLATION",
+      "body": null,
+      "note": "던져짐(protocol 오류). 본문 없음",
+      "expected": "unverified"
+    },
+    {
+      "source": "server-github (TS)",
+      "tool": "search_repositories",
+      "kind": "REQUIRED_OMITTED",
+      "body": null,
+      "note": "던져짐(protocol 오류). 본문 없음",
+      "expected": "unverified"
+    },
+    {
+      "source": "server-github (TS)",
+      "tool": "search_repositories",
+      "kind": "TYPE_VIOLATION",
+      "body": null,
+      "note": "던져짐(protocol 오류). 본문 없음",
+      "expected": "unverified"
+    },
+    {
+      "source": "server-github (TS)",
+      "tool": "create_repository",
+      "kind": "REQUIRED_OMITTED",
+      "body": null,
+      "note": "던져짐(protocol 오류). 본문 없음",
+      "expected": "unverified"
+    },
+    {
+      "source": "server-github (TS)",
+      "tool": "create_repository",
+      "kind": "TYPE_VIOLATION",
+      "body": null,
+      "note": "던져짐(protocol 오류). 본문 없음",
+      "expected": "unverified"
+    },
+    {
+      "source": "server-github (TS)",
+      "tool": "get_file_contents",
+      "kind": "REQUIRED_OMITTED",
+      "body": null,
+      "note": "던져짐(protocol 오류). 본문 없음",
+      "expected": "unverified"
+    },
+    {
+      "source": "server-github (TS)",
+      "tool": "get_file_contents",
+      "kind": "TYPE_VIOLATION",
+      "body": null,
+      "note": "던져짐(protocol 오류). 본문 없음",
+      "expected": "unverified"
+    },
+    {
+      "source": "server-github (TS)",
+      "tool": "push_files",
+      "kind": "REQUIRED_OMITTED",
+      "body": null,
+      "note": "던져짐(protocol 오류). 본문 없음",
+      "expected": "unverified"
+    },
+    {
+      "source": "server-github (TS)",
+      "tool": "push_files",
+      "kind": "TYPE_VIOLATION",
+      "body": null,
+      "note": "던져짐(protocol 오류). 본문 없음",
+      "expected": "unverified"
+    },
+    {
+      "source": "server-github (TS)",
+      "tool": "create_issue",
+      "kind": "REQUIRED_OMITTED",
+      "body": null,
+      "note": "던져짐(protocol 오류). 본문 없음",
+      "expected": "unverified"
+    },
+    {
+      "source": "server-github (TS)",
+      "tool": "create_issue",
+      "kind": "TYPE_VIOLATION",
+      "body": null,
+      "note": "던져짐(protocol 오류). 본문 없음",
+      "expected": "unverified"
+    },
+    {
+      "source": "mcp-server-sqlite (Python)",
+      "tool": "read_query",
+      "kind": "REQUIRED_OMITTED",
+      "body": "Input validation error: 'query' is a required property",
+      "expected": "verified"
+    },
+    {
+      "source": "mcp-server-sqlite (Python)",
+      "tool": "read_query",
+      "kind": "TYPE_VIOLATION",
+      "body": "Input validation error: 12345 is not of type 'string'",
+      "expected": "verified"
+    },
+    {
+      "source": "mcp-server-sqlite (Python)",
+      "tool": "write_query",
+      "kind": "REQUIRED_OMITTED",
+      "body": "Input validation error: 'query' is a required property",
+      "expected": "verified"
+    },
+    {
+      "source": "mcp-server-sqlite (Python)",
+      "tool": "write_query",
+      "kind": "TYPE_VIOLATION",
+      "body": "Input validation error: 12345 is not of type 'string'",
+      "expected": "verified"
+    },
+    {
+      "source": "mcp-server-sqlite (Python)",
+      "tool": "create_table",
+      "kind": "REQUIRED_OMITTED",
+      "body": "Input validation error: 'query' is a required property",
+      "expected": "verified"
+    },
+    {
+      "source": "mcp-server-sqlite (Python)",
+      "tool": "create_table",
+      "kind": "TYPE_VIOLATION",
+      "body": "Input validation error: 12345 is not of type 'string'",
+      "expected": "verified"
+    },
+    {
+      "source": "mcp-server-sqlite (Python)",
+      "tool": "describe_table",
+      "kind": "REQUIRED_OMITTED",
+      "body": "Input validation error: 'table_name' is a required property",
+      "expected": "verified"
+    },
+    {
+      "source": "mcp-server-sqlite (Python)",
+      "tool": "describe_table",
+      "kind": "TYPE_VIOLATION",
+      "body": "Input validation error: 12345 is not of type 'string'",
+      "expected": "verified"
+    },
+    {
+      "source": "mcp-server-sqlite (Python)",
+      "tool": "append_insight",
+      "kind": "REQUIRED_OMITTED",
+      "body": "Input validation error: 'insight' is a required property",
+      "expected": "verified"
+    },
+    {
+      "source": "mcp-server-sqlite (Python)",
+      "tool": "append_insight",
+      "kind": "TYPE_VIOLATION",
+      "body": "Input validation error: 12345 is not of type 'string'",
+      "expected": "verified"
+    },
+    {
+      "source": "mcp-server-git (Python)",
+      "tool": "git_status",
+      "kind": "REQUIRED_OMITTED",
+      "body": "Input validation error: 'repo_path' is a required property",
+      "expected": "verified"
+    },
+    {
+      "source": "mcp-server-git (Python)",
+      "tool": "git_status",
+      "kind": "TYPE_VIOLATION",
+      "body": "Input validation error: 12345 is not of type 'string'",
+      "expected": "verified"
+    },
+    {
+      "source": "mcp-server-git (Python)",
+      "tool": "git_diff_unstaged",
+      "kind": "REQUIRED_OMITTED",
+      "body": "Input validation error: 'repo_path' is a required property",
+      "expected": "verified"
+    },
+    {
+      "source": "mcp-server-git (Python)",
+      "tool": "git_diff_unstaged",
+      "kind": "TYPE_VIOLATION",
+      "body": "Input validation error: 12345 is not of type 'string'",
+      "expected": "verified"
+    },
+    {
+      "source": "mcp-server-git (Python)",
+      "tool": "git_diff_staged",
+      "kind": "REQUIRED_OMITTED",
+      "body": "Input validation error: 'repo_path' is a required property",
+      "expected": "verified"
+    },
+    {
+      "source": "mcp-server-git (Python)",
+      "tool": "git_diff_staged",
+      "kind": "TYPE_VIOLATION",
+      "body": "Input validation error: 12345 is not of type 'string'",
+      "expected": "verified"
+    },
+    {
+      "source": "mcp-server-git (Python)",
+      "tool": "git_diff",
+      "kind": "REQUIRED_OMITTED",
+      "body": "Input validation error: 'repo_path' is a required property",
+      "expected": "verified"
+    },
+    {
+      "source": "mcp-server-git (Python)",
+      "tool": "git_diff",
+      "kind": "TYPE_VIOLATION",
+      "body": "Input validation error: 12345 is not of type 'string'",
+      "expected": "verified"
+    },
+    {
+      "source": "mcp-server-git (Python)",
+      "tool": "git_commit",
+      "kind": "REQUIRED_OMITTED",
+      "body": "Input validation error: 'repo_path' is a required property",
+      "expected": "verified"
+    },
+    {
+      "source": "mcp-server-git (Python)",
+      "tool": "git_commit",
+      "kind": "TYPE_VIOLATION",
+      "body": "Input validation error: 12345 is not of type 'string'",
+      "expected": "verified"
+    },
+    {
+      "source": "mcp-server-git (Python)",
+      "tool": "git_add",
+      "kind": "REQUIRED_OMITTED",
+      "body": "Input validation error: 'repo_path' is a required property",
+      "expected": "verified"
+    },
+    {
+      "source": "mcp-server-git (Python)",
+      "tool": "git_add",
+      "kind": "TYPE_VIOLATION",
+      "body": "Input validation error: 12345 is not of type 'string'",
+      "expected": "verified"
+    },
+    {
+      "source": "mcp-server-calculator (Python)",
+      "tool": "calculate",
+      "kind": "REQUIRED_OMITTED",
+      "body": "Error executing tool calculate: 1 validation error for calculateArguments\nexpression\n  Field required [type=missing, input_value={}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.13/v/missing",
+      "expected": "verified"
+    },
+    {
+      "source": "mcp-server-calculator (Python)",
+      "tool": "calculate",
+      "kind": "TYPE_VIOLATION",
+      "body": "Error executing tool calculate: 1 validation error for calculateArguments\nexpression\n  Input should be a valid string [type=string_type, input_value=12345, input_type=int]\n    For further information visit https://errors.pydantic.dev/2.13/v/string_type",
+      "expected": "verified"
+    },
+    {
+      "source": "mcp-server-time (Python)",
+      "tool": "get_current_time",
+      "kind": "REQUIRED_OMITTED",
+      "body": "Input validation error: 'timezone' is a required property",
+      "expected": "verified"
+    },
+    {
+      "source": "mcp-server-time (Python)",
+      "tool": "get_current_time",
+      "kind": "TYPE_VIOLATION",
+      "body": "Input validation error: 12345 is not of type 'string'",
+      "expected": "verified"
+    },
+    {
+      "source": "mcp-server-time (Python)",
+      "tool": "convert_time",
+      "kind": "REQUIRED_OMITTED",
+      "body": "Input validation error: 'source_timezone' is a required property",
+      "expected": "verified"
+    },
+    {
+      "source": "mcp-server-time (Python)",
+      "tool": "convert_time",
+      "kind": "TYPE_VIOLATION",
+      "body": "Input validation error: 12345 is not of type 'string'",
+      "expected": "verified"
+    },
+    {
+      "source": "mcp-server-fetch (Python)",
+      "tool": "fetch",
+      "kind": "REQUIRED_OMITTED",
+      "body": "Input validation error: 'url' is a required property",
+      "expected": "verified"
+    },
+    {
+      "source": "mcp-server-fetch (Python)",
+      "tool": "fetch",
+      "kind": "TYPE_VIOLATION",
+      "body": "Input validation error: 12345 is not of type 'string'",
+      "expected": "verified"
+    }
+  ],
+  "탐침": [
+    {
+      "source": "탐침 node 상위 API",
+      "tool": "sync_throw",
+      "kind": "HANDLER_THROW",
+      "body": "Cannot read properties of undefined (reading 'city')",
+      "expected": "unverified"
+    },
+    {
+      "source": "탐침 node 하위 API",
+      "tool": "sync_throw",
+      "kind": "HANDLER_THROW",
+      "body": null,
+      "note": "던져짐(OPERATION_FAILED). 본문 없음",
+      "expected": "unverified"
+    },
+    {
+      "source": "탐침 python FastMCP",
+      "tool": "sync_throw",
+      "kind": "HANDLER_THROW",
+      "body": "Error executing tool sync_throw: 'NoneType' object has no attribute 'upper'",
+      "expected": "unverified"
+    },
+    {
+      "source": "탐침 python FastMCP",
+      "tool": "get_weather",
+      "kind": "RESPONSE_MODEL_CRASH",
+      "body": "Error executing tool get_weather: 2 validation errors for WeatherResponse\ntemperature\n  Input should be a valid number, unable to parse string as a number",
+      "expected": "unverified"
+    },
+    {
+      "source": "탐침 python FastMCP",
+      "tool": "get_weather",
+      "kind": "TYPE_VIOLATION",
+      "body": "Error executing tool get_weather: 1 validation error for get_weatherArguments\ncity\n  Input should be a valid string [type=string_type, input_value=12345, input_type=int]",
+      "expected": "verified"
+    },
+    {
+      "source": "탐침 python FastMCP",
+      "tool": "get_weather",
+      "kind": "REQUIRED_OMITTED",
+      "body": "Error executing tool get_weather: 1 validation error for get_weatherArguments\ncity\n  Field required [type=missing, input_value={}, input_type=dict]",
+      "expected": "verified"
+    }
+  ]
+}

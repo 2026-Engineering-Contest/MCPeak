@@ -21,7 +21,13 @@ import {
   sha256,
 } from "@ohmymcp/generate";
 import type { Cassette } from "@ohmymcp/record";
-import type { CallToolCaseSpec, SpecFinding, TestCaseSpec, TestSuiteSpec } from "@ohmymcp/runner";
+import type {
+  CallToolCaseSpec,
+  ContractAxisKind,
+  SpecFinding,
+  TestCaseSpec,
+  TestSuiteSpec,
+} from "@ohmymcp/runner";
 import { suiteFingerprint, validateMcpSuite } from "@ohmymcp/runner";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -1720,11 +1726,13 @@ describe("AI 대화형 검토", () => {
 });
 
 describe("커버리지 화면", () => {
-  const axis = (
-    kind: "HAPPY_PATH" | "REQUIRED_OMITTED" | "TYPE_VIOLATION" | "ENUM_VIOLATION",
-    field: string | null,
-    caseId: string | null,
-  ) => ({ kind, field, caseId });
+  // 축 목록을 손으로 복제하지 않는다. 복제하면 runner 가 축을 늘릴 때마다 여기가 조용히
+  // 어긋나고, vitest 는 타입을 안 보므로 테스트가 초록인 채로 typecheck 만 빨강이 된다.
+  const axis = (kind: ContractAxisKind, field: string | null, caseId: string | null) => ({
+    kind,
+    field,
+    caseId,
+  });
   const toolCoverage = (
     name: string,
     axes: ReturnType<typeof axis>[],

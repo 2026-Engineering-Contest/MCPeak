@@ -549,7 +549,7 @@ function showDiff(io: ReviewIO, preview: AuthoringDiffPreview): void {
  *
  * `skipped` 는 위반이 아니다. 서버 스키마를 우리가 못 읽은 것이지 명세가 틀린 게 아니다.
  */
-type FindingGroup = "inputContract" | "assertionSubstance" | "skipped";
+type FindingGroup = "inputContract" | "assertionSubstance" | "rejectionIntent" | "skipped";
 const FINDING_GROUP: Readonly<Record<SpecFindingCode, FindingGroup>> = {
   TOOL_NOT_DECLARED: "inputContract",
   REQUIRED_MISSING: "inputContract",
@@ -557,6 +557,7 @@ const FINDING_GROUP: Readonly<Record<SpecFindingCode, FindingGroup>> = {
   TYPE_MISMATCH: "inputContract",
   ENUM_MISMATCH: "inputContract",
   SCHEMA_NOT_ANALYZABLE: "skipped",
+  REJECTION_WITHOUT_VIOLATION: "rejectionIntent",
   VACUOUS_MIN_LENGTH: "assertionSubstance",
   VACUOUS_MIN_ITEMS: "assertionSubstance",
 };
@@ -637,10 +638,14 @@ async function confirmSpecFindings(
     findings.filter((finding) => FINDING_GROUP[finding.code] === group);
   const inputContract = grouped("inputContract");
   const assertionSubstance = grouped("assertionSubstance");
+  const rejectionIntent = grouped("rejectionIntent");
   const skipped = grouped("skipped").length;
   // 입력 계약 블록이 먼저다. 명세를 고칠 때 입력이 먼저 맞아야 단언을 볼 수 있다.
   writeFindingBlock(io, diff, "입력 계약 위반", inputContract);
   writeFindingBlock(io, diff, "항상 통과하는 단언", assertionSubstance);
+  // 위반이 아니라 의도 불명 신호(#94)다. '위반 N건' 재확인에 넣으면 문구가 거짓이 되고,
+  // 선언 밖 제약으로 거절받는 정당한 케이스의 저장에 마찰을 더한다. 표시만 하고 total 에서 뺀다.
+  writeFindingBlock(io, diff, "거절 근거가 불분명한 케이스", rejectionIntent);
   if (skipped > 0) io.write(`  → 해석하지 못한 서버 스키마 ${skipped}건은 검사에서 빠졌습니다.\n`);
   const total = inputContract.length + assertionSubstance.length;
   if (total === 0) return true;

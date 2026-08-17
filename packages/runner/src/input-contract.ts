@@ -39,6 +39,7 @@ const CODE_ORDER: Record<string, number> = {
   UNDECLARED_FIELD: 3,
   TYPE_MISMATCH: 4,
   ENUM_MISMATCH: 5,
+  REJECTION_WITHOUT_VIOLATION: 6,
 };
 
 /** 코드 포인트 기준 레벤슈타인 거리. 두 행만 들고 돌아 입력 길이에 선형인 메모리를 쓴다. */
@@ -131,6 +132,8 @@ export function checkInputContract(options: InputContractOptions): SpecFindingsR
     const caseId = testCase.id;
     const toolName = testCase.operation.tool;
     const caseFindings: SpecFinding[] = [];
+    /** 대조를 끝까지 수행했는지. 툴 미선언·해석 불가·비객체 입력이면 판정 자체가 없던 것이다. */
+    let contractChecked = false;
 
     const tool = declaredTools.get(toolName);
     if (tool === undefined) {
@@ -160,6 +163,7 @@ export function checkInputContract(options: InputContractOptions): SpecFindingsR
         const input = testCase.operation.input;
         // 입력이 객체가 아니면 대조할 키가 없다. validateMcpSuite 가 형식을 따로 잡는다.
         if (plainObject(input)) {
+          contractChecked = true;
           const inputKeys = Object.keys(input).sort(byCodeUnit);
           const undeclaredKeys = inputKeys.filter((key) => !schema.fields.has(key));
           const declaredNames = [...schema.fields.keys()];
@@ -241,10 +245,24 @@ export function checkInputContract(options: InputContractOptions): SpecFindingsR
 
     // expectedIsError 가 null 이면(isError 단언이 없거나 expected 가 서로 다른 단언이 둘인
     // 모순된 명세) 침묵시키지 않는다. 모순을 숨기지 않는다.
-    const kept =
-      expectedIsError(testCase) === true
-        ? caseFindings.filter((finding) => !SUPPRESSED_WHEN_REJECTION_EXPECTED.has(finding.code))
-        : caseFindings;
+    const rejectionExpected = expectedIsError(testCase) === true;
+
+    // 이슈 #94. 거절을 기대하는데 억제할 위반이 하나도 없으면, 그 케이스는 무엇을 거절받으려는지
+    // 알 수 없다(오타로 정상 입력이 됐거나, expected 를 잘못 적었거나, 선언 밖 제약을 노린 것이다).
+    // ADR-0021 의 침묵과 반대 방향이라 충돌하지 않는다. 그쪽은 "어긴 것을 신고하지 않는다" 이고
+    // 이쪽은 "어긴 것이 하나도 없다" 를 알린다. 대조를 끝까지 못 한 케이스에는 내지 않는다 —
+    // 모르면 침묵한다(ADR-0015). 마지막 갈래(선언 밖 제약)가 정당하므로 advisory 다.
+    if (rejectionExpected && contractChecked && caseFindings.length === 0)
+      caseFindings.push({
+        code: "REJECTION_WITHOUT_VIOLATION",
+        severity: "advisory",
+        caseId,
+        path: "operation.input",
+      });
+
+    const kept = rejectionExpected
+      ? caseFindings.filter((finding) => !SUPPRESSED_WHEN_REJECTION_EXPECTED.has(finding.code))
+      : caseFindings;
 
     kept.sort(
       (left, right) =>

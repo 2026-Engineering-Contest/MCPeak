@@ -1006,6 +1006,29 @@ describe("AI 대화형 검토", () => {
     expect(confirmMessages(d.io.confirm.mock.calls)).toEqual(["선택한 변경을 적용할까요?"]);
   });
 
+  it("REJECTION_WITHOUT_VIOLATION 은 전용 블록으로 나오고 재확인 개수에서 빠진다 (#94)", async () => {
+    // 위반이 아니라 의도 불명 신호다. '위반 N건' 재확인에 넣으면 문구가 거짓이 되고,
+    // 선언 밖 제약으로 거절받는 정당한 케이스의 저장에 마찰을 더한다.
+    const d = findingsDeps(["edit", "select", "cancel"], ["candidate.json", "change-002"], [true], {
+      inputContract: [
+        finding({
+          code: "REJECTION_WITHOUT_VIOLATION",
+          severity: "advisory",
+          path: "operation.input",
+        }),
+      ],
+      assertionSubstance: [],
+    });
+    await runGenerateCommand(interactiveArgv, d.value);
+    const out = writtenText(d.io.write.mock.calls);
+    expect(out).toContain("거절 근거가 불분명한 케이스 1건 (선택한 변경 기준)");
+    expect(out).toContain(
+      "거절을 기대하지만 입력이 서버 선언을 어기지 않습니다. 서버가 선언 밖 제약으로 거절한다면 그대로 두고, 아니라면 입력을 확인하세요",
+    );
+    expect(out).not.toContain("입력 계약 위반");
+    expect(confirmMessages(d.io.confirm.mock.calls)).toEqual(["선택한 변경을 적용할까요?"]);
+  });
+
   it("finding 이 없으면 아무 줄도 늘지 않는다", async () => {
     const d = findingsDeps(["edit", "apply-all", "cancel"], ["candidate.json"], [true], {
       inputContract: [],

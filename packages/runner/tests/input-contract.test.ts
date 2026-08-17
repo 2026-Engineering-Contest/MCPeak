@@ -592,6 +592,87 @@ describe("거절 기대 케이스 제외 (설계 §10.3, ADR-0021)", () => {
   });
 
   /**
+   * 이슈 #94. 거절을 기대하는데 입력이 선언을 하나도 안 어기면, 그 케이스는 무엇을
+   * 거절받으려는지 알 수 없다. 억제한 위반이 0건일 때만 advisory 하나로 알린다.
+   */
+  describe("REJECTION_WITHOUT_VIOLATION (#94)", () => {
+    it("정상 입력에 isError true 를 기대하면 advisory 1건", () => {
+      const result = checkInputContract({
+        suite: rejecting({ city: "서울" }),
+        tools: [weather],
+      });
+      expect(result.totalFindings).toBe(1);
+      expect(result.findings).toHaveLength(1);
+      expect(result.findings[0]).toEqual({
+        code: "REJECTION_WITHOUT_VIOLATION",
+        severity: "advisory",
+        caseId: "reject",
+        path: "operation.input",
+      });
+    });
+
+    it("선언 밖 필드를 허용하는 툴에서 오타 필드만 보낸 케이스를 잡는다", () => {
+      // units 는 optional 이고 additionalProperties 제약이 없어 'unitz' 는 아무 선언도 안 어긴다.
+      const lenient = tool(
+        "get_weather",
+        objectSchema({ properties: { units: { enum: ["c", "f"] } } }),
+      );
+      expect(codesOf(rejecting({ unitz: "c" }), [lenient])).toEqual([
+        "REJECTION_WITHOUT_VIOLATION",
+      ]);
+    });
+
+    it("required 필드 오타는 누락 위반이 억제된 것이므로 내지 않는다 (A안의 한계)", () => {
+      // { citi } 는 'city' 를 빠뜨린 입력이기도 하다. REQUIRED_MISSING 이 억제 목록에 남으므로
+      // 위반 0건이 아니다. 이 미탐은 설계에서 감수했다.
+      expect(codesOf(rejecting({ citi: "서울" }))).toEqual([]);
+    });
+
+    it("additionalProperties false 툴에 선언 밖 필드를 보내는 정당한 위반 케이스에는 내지 않는다", () => {
+      expect(codesOf(rejecting({ city: "서울", nope: 1 }))).toEqual([]);
+    });
+
+    it("TOOL_NOT_DECLARED 가 있으면 내지 않는다", () => {
+      const tools = [tool("other", objectSchema({}))];
+      expect(codesOf(rejecting({ city: "서울" }), tools)).toEqual(["TOOL_NOT_DECLARED"]);
+    });
+
+    it("SCHEMA_NOT_ANALYZABLE 이면 내지 않는다", () => {
+      const tools = [tool("get_weather", { anyOf: [{ type: "object" }] })];
+      expect(codesOf(rejecting({ city: "서울" }), tools)).toEqual(["SCHEMA_NOT_ANALYZABLE"]);
+    });
+
+    it("isError false 케이스에는 내지 않는다", () => {
+      const suite = suiteOf({
+        id: "accept",
+        name: "accept",
+        operation: { type: "callTool", tool: "get_weather", input: { city: "서울" } },
+        assertions: [{ type: "isError", expected: false }],
+      });
+      expect(codesOf(suite)).toEqual([]);
+    });
+
+    it("expected 가 서로 다른 isError 단언이 둘이면 내지 않는다", () => {
+      const suite = suiteOf({
+        id: "contradiction",
+        name: "contradiction",
+        operation: { type: "callTool", tool: "get_weather", input: { city: "서울" } },
+        assertions: [
+          { type: "isError", expected: true },
+          { type: "isError", expected: false },
+        ],
+      });
+      expect(codesOf(suite)).toEqual([]);
+    });
+
+    it("같은 입력 2회 호출의 결과가 동일하다", () => {
+      const once = checkInputContract({ suite: rejecting({ city: "서울" }), tools: [weather] });
+      const twice = checkInputContract({ suite: rejecting({ city: "서울" }), tools: [weather] });
+      expect(twice).toEqual(once);
+    });
+  });
+
+  /**
    * 두 패키지를 잇는 계약 테스트다. 설계서 §5.5 의 케이스 8개를 리터럴로 적는다.
    * `generate` 를 import 하면 의존 방향이 뒤집히므로 같은 값을 두 곳에 두는 것이 의도이고,
    * 어긋나면 이 테스트가 깨져 알린다.

@@ -94,6 +94,20 @@ describe("describeSpecFinding 문안 (설계 문서 §7)", () => {
     ).toBe("'get_weather' 의 입력 스키마를 해석하지 못해 이 툴의 입력 검사를 건너뜁니다");
   });
 
+  it("REJECTION_WITHOUT_VIOLATION", () => {
+    expect(
+      describeSpecFinding(
+        finding({
+          code: "REJECTION_WITHOUT_VIOLATION",
+          severity: "advisory",
+          path: "operation.input",
+        }),
+      ),
+    ).toBe(
+      "거절을 기대하지만 입력이 서버 선언을 어기지 않습니다. 서버가 선언 밖 제약으로 거절한다면 그대로 두고, 아니라면 입력을 확인하세요",
+    );
+  });
+
   it("VACUOUS_MIN_LENGTH", () => {
     expect(
       describeSpecFinding(

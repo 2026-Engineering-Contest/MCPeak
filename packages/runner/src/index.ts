@@ -17,6 +17,7 @@ export {
   deriveContractAxes,
   matchCoveredAxes,
 } from "./contract-axes.js";
+export type { ContractRange } from "./contract-range.js";
 export {
   bodyExtractionFailedDiagnostic,
   bodySchemaMismatchDiagnostic,

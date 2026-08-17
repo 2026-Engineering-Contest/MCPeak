@@ -6,6 +6,8 @@
  * 고칠 수 없다.
  */
 
+import type { ContractRange } from "./contract-range.js";
+import { readContractRange } from "./contract-range.js";
 import { byCodeUnit } from "./ordering.js";
 import { matchResponseSchema, plainObject } from "./schema-match.js";
 import type { JsonValue, ResponseSchema } from "./spec/types.js";
@@ -24,6 +26,8 @@ export interface NormalizedField {
   readonly type: DeclaredType | null;
   /** 선언된 enum. 없거나 판정하지 않기로 했으면 null이다. */
   readonly enumValues: readonly JsonValue[] | null;
+  /** 선언된 범위. 없거나 판정하지 않기로 했으면 null 이다. */
+  readonly range: ContractRange | null;
 }
 
 export interface NormalizedInputSchema {
@@ -109,7 +113,7 @@ export function analyzeInputSchema(schema: unknown): InputSchemaAnalysis {
     // type 만 끄고 enum 을 남기면 { type: ["string","null"], enum: ["x"] } 에 3 을 넣었을 때
     // ENUM_MISMATCH 가 난다. 합집합의 다른 갈래가 그 값을 허용할 수 있으므로 오탐이다.
     if (!plainObject(field) || hasBlockingKeyword(field) || Array.isArray(field.type)) {
-      fields.set(name, { type: null, enumValues: null });
+      fields.set(name, { type: null, enumValues: null, range: null });
       unanalyzedFields.push(name);
       continue;
     }
@@ -117,9 +121,11 @@ export function analyzeInputSchema(schema: unknown): InputSchemaAnalysis {
     const rawEnum = field.enum;
     const enumValues =
       Array.isArray(rawEnum) && rawEnum.length > 0 ? (rawEnum as readonly JsonValue[]) : null;
-    fields.set(name, { type, enumValues });
-    // type 도 enum 도 못 읽었으면 이 필드에는 요구할 근거가 없다. 축을 못 만드는 필드다.
-    if (type === null && enumValues === null) unanalyzedFields.push(name);
+    // 범위 키워드는 BLOCKING_KEYWORDS 에 없어 지금까지 조용히 무시되고 있었다. 읽기만 한다.
+    const range = readContractRange(field);
+    fields.set(name, { type, enumValues, range });
+    // type 도 enum 도 범위도 못 읽었으면 이 필드에는 요구할 근거가 없다. 축을 못 만드는 필드다.
+    if (type === null && enumValues === null && range === null) unanalyzedFields.push(name);
   }
 
   const rawRequired = schema.required;

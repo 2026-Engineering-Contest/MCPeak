@@ -31,6 +31,7 @@ export type SpecFindingCode =
   | "ENUM_MISMATCH" // 선언된 enum 밖의 값이다
   | "SCHEMA_NOT_ANALYZABLE" // 서버 스키마를 해석하지 못했다. 위반이 아니다
   | "REJECTION_WITHOUT_VIOLATION" // 거절을 기대하는데 입력이 선언을 어기지 않는다. 위반이 아니라 의도 불명 신호다
+  | "RANGE_MISMATCH" // 명세의 입력값이 선언된 범위를 벗어난다
   // 단언 실질성
   | "VACUOUS_MIN_LENGTH" // minLength: 0
   | "VACUOUS_MIN_ITEMS"; // minItems: 0
@@ -71,6 +72,37 @@ const suggest = (finding: SpecFinding, tail: string): string =>
   finding.suggestion === undefined ? "" : `. ${tail}: '${escapeInline(finding.suggestion)}'`;
 
 /**
+ * 선언된 범위를 사람이 읽는 구절로 만든다. **선언된 항목만 적는다.** 없는 항목을 추측해
+ * 적으면 사용자가 서버 선언에 없는 경계를 있다고 읽는다.
+ *
+ * 재료는 `checkInputContract` 가 `expected` 에 실어 준 범위 객체다. 문장은 여기서만 만든다
+ * (ADR-0018). 세 범주(숫자·원소 개수·문자 길이)는 단위 표기가 달라 따로 조립한다.
+ */
+function describeRange(expected: JsonValue | undefined): string {
+  if (typeof expected !== "object" || expected === null || Array.isArray(expected)) return "";
+  const bound = (key: string, suffix: string): string | null => {
+    const value = expected[key];
+    return typeof value === "number" ? `${value}${suffix}` : null;
+  };
+  const group = (parts: (string | null)[], prefix = ""): string | null => {
+    const kept = parts.filter((part): part is string => part !== null);
+    return kept.length === 0 ? null : `${prefix}${kept.join(" ")}`;
+  };
+  return [
+    group([
+      bound("minimum", " 이상"),
+      bound("exclusiveMinimum", " 초과"),
+      bound("maximum", " 이하"),
+      bound("exclusiveMaximum", " 미만"),
+    ]),
+    group([bound("minItems", "개 이상"), bound("maxItems", "개 이하")], "원소 "),
+    group([bound("minLength", "자 이상"), bound("maxLength", "자 이하")]),
+  ]
+    .filter((part): part is string => part !== null)
+    .join(" ");
+}
+
+/**
  * finding 한 건을 사용자가 읽는 한 문장으로 만든다.
  * 문안은 설계 문서 §7에 전량으로 있다. 소비자는 이 함수만 쓰고 문장을 새로 짓지 않는다.
  * 반환에 줄바꿈이 없다. 들여쓰기와 화살표는 소비자가 붙인다.
@@ -90,6 +122,8 @@ export function describeSpecFinding(finding: SpecFinding): string {
       return `${path} 의 타입이 다릅니다. 서버 선언: ${literal(expected)}, 명세: ${literal(actual)}`;
     case "ENUM_MISMATCH":
       return `${path} 값 ${literal(actual)} 는 선언된 값이 아닙니다. 허용: ${literal(expected)}${suggest(finding, "비슷한 값")}`;
+    case "RANGE_MISMATCH":
+      return `${path} 값 ${literal(actual)} 이 선언된 범위를 벗어납니다. 서버 선언: ${describeRange(expected)}. 값을 범위 안으로 고치거나, 거절을 기대하는 케이스라면 expectError 를 지정하세요`;
     case "SCHEMA_NOT_ANALYZABLE":
       return `${literal(actual)} 의 입력 스키마를 해석하지 못해 이 툴의 입력 검사를 건너뜁니다`;
     case "REJECTION_WITHOUT_VIOLATION":

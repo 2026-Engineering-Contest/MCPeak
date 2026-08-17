@@ -1,7 +1,9 @@
 import type { ToolDef } from "@ohmymcp/core";
 import { describe, expect, it } from "vitest";
+import { readContractRange } from "../src/contract-range.js";
 import type { JsonObject, TestCaseSpec, TestSuiteSpec } from "../src/index.js";
-import { checkInputContract } from "../src/index.js";
+import { checkInputContract, describeSpecFinding } from "../src/index.js";
+import { analyzeInputSchema } from "../src/input-schema.js";
 
 const tool = (name: string, inputSchema: unknown): ToolDef => ({ name, inputSchema });
 
@@ -716,5 +718,218 @@ describe("거절 기대 케이스 제외 (설계 §10.3, ADR-0021)", () => {
       findings: [],
       totalFindings: 0,
     });
+  });
+});
+
+describe("RANGE_MISMATCH", () => {
+  const rangedTools = [
+    tool("get", {
+      type: "object",
+      required: ["count"],
+      properties: { count: { type: "integer", minimum: 1, maximum: 10 } },
+    }),
+  ];
+  const suiteWith = (input: JsonObject, expectError = false): TestSuiteSpec => ({
+    schemaVersion: 1,
+    id: "s",
+    name: "s",
+    cases: [
+      {
+        id: "c",
+        name: "c",
+        operation: { type: "callTool", tool: "get", input },
+        assertions: [{ type: "isError", expected: expectError }],
+      },
+    ],
+  });
+  const codes = (input: JsonObject, expectError = false, tools = rangedTools): string[] =>
+    checkInputContract({ suite: suiteWith(input, expectError), tools }).findings.map((f) => f.code);
+
+  it("범위 밖 값을 잡는다", () => {
+    expect(codes({ count: 0 })).toContain("RANGE_MISMATCH");
+  });
+
+  it("범위 안 값은 잡지 않는다", () => {
+    expect(codes({ count: 1 })).not.toContain("RANGE_MISMATCH");
+  });
+
+  it("경계값은 위반이 아니다", () => {
+    expect(codes({ count: 10 })).not.toContain("RANGE_MISMATCH");
+  });
+
+  it("비차단이다", () => {
+    const finding = checkInputContract({
+      suite: suiteWith({ count: 0 }),
+      tools: rangedTools,
+    }).findings.find((f) => f.code === "RANGE_MISMATCH");
+    expect(finding?.severity).toBe("advisory");
+    expect(finding?.path).toBe("input.count");
+    expect(finding?.actual).toBe(0);
+    expect(finding?.expected).toEqual({ minimum: 1, maximum: 10 });
+  });
+
+  it("거절 기대 케이스에서는 억제된다", () => {
+    expect(codes({ count: 0 }, true)).not.toContain("RANGE_MISMATCH");
+  });
+
+  it("범위 위반만 있는 거절 기대 케이스는 REJECTION_WITHOUT_VIOLATION 이 아니다", () => {
+    expect(codes({ count: 0 }, true)).not.toContain("REJECTION_WITHOUT_VIOLATION");
+  });
+
+  it("범위를 지킨 거절 기대 케이스는 여전히 REJECTION_WITHOUT_VIOLATION 이다", () => {
+    expect(codes({ count: 1 }, true)).toContain("REJECTION_WITHOUT_VIOLATION");
+  });
+
+  it("배열 개수 위반을 잡는다", () => {
+    const arrayTools = [
+      tool("get", {
+        type: "object",
+        required: ["tags"],
+        properties: { tags: { type: "array", items: { type: "string" }, minItems: 2 } },
+      }),
+    ];
+    expect(codes({ tags: ["a"] }, false, arrayTools)).toContain("RANGE_MISMATCH");
+  });
+
+  it("타입이 어긋나면 범위는 보지 않는다", () => {
+    expect(codes({ count: "0" })).toEqual(["TYPE_MISMATCH"]);
+  });
+});
+
+describe("describeSpecFinding 의 범위 문안", () => {
+  const sentenceFor = (schema: Record<string, unknown>, input: JsonObject): string => {
+    const tools = [tool("get", { type: "object", required: ["v"], properties: { v: schema } })];
+    const suite: TestSuiteSpec = {
+      schemaVersion: 1,
+      id: "s",
+      name: "s",
+      cases: [
+        {
+          id: "c",
+          name: "c",
+          operation: { type: "callTool", tool: "get", input },
+          assertions: [{ type: "isError", expected: false }],
+        },
+      ],
+    };
+    return (
+      checkInputContract({ suite, tools })
+        .findings.filter((f) => f.code === "RANGE_MISMATCH")
+        .map((f) => describeSpecFinding(f))[0] ?? ""
+    );
+  };
+
+  it("양쪽 경계를 모두 적는다", () => {
+    const text = sentenceFor({ type: "integer", minimum: 1, maximum: 10 }, { v: 0 });
+    expect(text).toContain("1 이상 10 이하");
+    expect(text).toContain("expectError");
+    expect(text).not.toContain("\n");
+  });
+
+  it("선언되지 않은 경계를 추측하지 않는다", () => {
+    const text = sentenceFor({ type: "integer", minimum: 1 }, { v: 0 });
+    expect(text).toContain("1 이상");
+    expect(text).not.toContain("이하");
+  });
+
+  it.each([
+    [{ type: "integer", maximum: 10 }, { v: 11 }, "10 이하"],
+    [{ type: "integer", exclusiveMinimum: 0 }, { v: 0 }, "0 초과"],
+    [{ type: "integer", exclusiveMaximum: 100 }, { v: 100 }, "100 미만"],
+    [{ type: "integer", exclusiveMinimum: 0, maximum: 10 }, { v: 0 }, "0 초과 10 이하"],
+    [
+      { type: "array", items: { type: "string" }, minItems: 2, maxItems: 5 },
+      { v: ["a"] },
+      "원소 2개 이상 5개 이하",
+    ],
+    [{ type: "string", minLength: 3 }, { v: "ab" }, "3자 이상"],
+  ])("%j 는 %s 로 적는다", (schema, input, expected) => {
+    expect(sentenceFor(schema, input as JsonObject)).toContain(expected as string);
+  });
+});
+
+describe("readContractRange", () => {
+  it("범위 키워드가 없으면 null 이다", () => {
+    expect(readContractRange({ type: "integer" })).toBeNull();
+  });
+
+  it("숫자 범위를 읽는다", () => {
+    expect(readContractRange({ type: "integer", minimum: 1, maximum: 10 })).toEqual({
+      minimum: 1,
+      maximum: 10,
+      exclusiveMinimum: null,
+      exclusiveMaximum: null,
+      minItems: null,
+      maxItems: null,
+      minLength: null,
+      maxLength: null,
+    });
+  });
+
+  it("exclusive 형식을 읽는다", () => {
+    const range = readContractRange({
+      type: "integer",
+      exclusiveMinimum: 0,
+      exclusiveMaximum: 100,
+    });
+    expect(range?.exclusiveMinimum).toBe(0);
+    expect(range?.exclusiveMaximum).toBe(100);
+    expect(range?.minimum).toBeNull();
+  });
+
+  it("개수와 길이를 읽는다", () => {
+    expect(readContractRange({ type: "array", minItems: 2, maxItems: 5 })?.minItems).toBe(2);
+    expect(readContractRange({ type: "string", minLength: 3, maxLength: 8 })?.maxLength).toBe(8);
+  });
+
+  it("draft-04 의 boolean exclusiveMinimum 은 읽지 않는다", () => {
+    expect(readContractRange({ type: "integer", exclusiveMinimum: true })).toBeNull();
+  });
+
+  it("음수 minItems 는 읽지 않는다", () => {
+    expect(readContractRange({ type: "array", minItems: -1 })).toBeNull();
+  });
+
+  it("정수가 아닌 minLength 는 읽지 않는다", () => {
+    expect(readContractRange({ type: "string", minLength: 1.5 })).toBeNull();
+  });
+
+  it("무한대는 읽지 않는다", () => {
+    expect(readContractRange({ type: "number", minimum: Number.POSITIVE_INFINITY })).toBeNull();
+  });
+
+  it("일부만 유효하면 그 항목만 담는다", () => {
+    const range = readContractRange({ type: "integer", minimum: 1, maximum: "10" });
+    expect(range?.minimum).toBe(1);
+    expect(range?.maximum).toBeNull();
+  });
+});
+
+describe("analyzeInputSchema 가 필드의 range 를 담는다", () => {
+  it("범위 있는 필드", () => {
+    const analysis = analyzeInputSchema({
+      type: "object",
+      required: ["count"],
+      properties: { count: { type: "integer", minimum: 1, maximum: 10 } },
+    });
+    expect(analysis.schema?.fields.get("count")?.range?.minimum).toBe(1);
+  });
+
+  it("범위가 없으면 null 이다", () => {
+    const analysis = analyzeInputSchema({
+      type: "object",
+      required: ["count"],
+      properties: { count: { type: "integer" } },
+    });
+    expect(analysis.schema?.fields.get("count")?.range).toBeNull();
+  });
+
+  it("차단 키워드가 있는 필드는 range 도 null 이다", () => {
+    const analysis = analyzeInputSchema({
+      type: "object",
+      required: ["count"],
+      properties: { count: { anyOf: [{ type: "integer", minimum: 1 }] } },
+    });
+    expect(analysis.schema?.fields.get("count")?.range).toBeNull();
   });
 });

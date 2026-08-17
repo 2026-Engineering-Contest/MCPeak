@@ -30,6 +30,7 @@ import {
   parseGenerateCommand,
   renderCaseCountNotice,
   renderCoverage,
+  renderSkippedTools,
   runGenerateCommand,
 } from "../src/generate-command.js";
 
@@ -93,6 +94,7 @@ function deps(overrides: Partial<GenerateCommandDependencies> = {}) {
         policyVersion: "schema-baseline-v2" as const,
         // 이 스텁의 suite 는 케이스가 0개다. 커버리지도 그에 맞춰 비운다.
         coverage: { tools: [], verified: 0, total: 0 },
+        skippedTools: [],
       };
     }),
     createAuthoringSession: vi.fn(
@@ -314,6 +316,28 @@ describe("runGenerateCommand", () => {
     "server.mjs",
     "--baseline-only",
   ];
+  it("baseline 저장 뒤 건너뛴 툴을 stdout 으로 고지한다", async () => {
+    const d = deps();
+    const stdout: string[] = [];
+    d.value.writeStdout = (text) => stdout.push(text);
+    const base = (
+      d.value.createBaselineSuite as ReturnType<typeof vi.fn>
+    ).getMockImplementation?.() as () => object;
+    d.value.createBaselineSuite = vi.fn(() => ({
+      ...(base() as Record<string, unknown>),
+      skippedTools: [
+        {
+          name: "count_things",
+          path: "tools[1].inputSchema.properties.count.maximum",
+          message: "지원하지 않는 JSON Schema 키워드 'maximum'가 있습니다.",
+        },
+      ],
+    })) as never;
+    expect(await runGenerateCommand(argv, d.value)).toBe(0);
+    const output = stdout.join("");
+    expect(output).toContain("건너뜀  1 tools — 지원하지 않는 스키마 키워드");
+    expect(output).toContain("count_things");
+  });
   it("baseline-only는 Core tools/list 뒤 server를 닫고 AI 없이 저장한다", async () => {
     const d = deps();
     const stderr: string[] = [];
@@ -1697,6 +1721,26 @@ describe("커버리지 화면", () => {
   });
   const verifiedAxes = (count: number) =>
     Array.from({ length: count }, (_, index) => axis("TYPE_VIOLATION", `f${index}`, `c${index}`));
+
+  it("건너뛴 툴 고지는 이름·위치·원인·조치를 한 블록에 담는다", () => {
+    expect(
+      renderSkippedTools([
+        {
+          name: "count_things",
+          path: "tools[1].inputSchema.properties.count.maximum",
+          message: "지원하지 않는 JSON Schema 키워드 'maximum'가 있습니다.",
+        },
+      ]),
+    ).toBe(
+      "건너뜀  1 tools — 지원하지 않는 스키마 키워드\n" +
+        "  count_things  tools[1].inputSchema.properties.count.maximum: 지원하지 않는 JSON Schema 키워드 'maximum'가 있습니다.\n" +
+        "  → 이 툴의 케이스는 생성되지 않았습니다. 필요하면 명세에 케이스를 손으로 추가하세요.\n",
+    );
+  });
+
+  it("건너뛴 툴이 없으면 빈 문자열이다", () => {
+    expect(renderSkippedTools([])).toBe("");
+  });
 
   it("전부 검증되면 한 줄이다", () => {
     const coverage = result([

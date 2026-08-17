@@ -47,6 +47,7 @@ const CARRIES_VALUE: Readonly<Record<SpecFindingCode, boolean>> = {
   UNDECLARED_FIELD: false,
   TYPE_MISMATCH: false,
   ENUM_MISMATCH: true,
+  REJECTION_WITHOUT_VIOLATION: false,
   VACUOUS_MIN_LENGTH: false,
   VACUOUS_MIN_ITEMS: false,
 };

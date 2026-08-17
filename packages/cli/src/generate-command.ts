@@ -104,6 +104,15 @@ export interface GenerateCommandDependencies {
   reviewLocalAuthoringCandidate?: typeof import("@ohmymcp/generate").reviewLocalAuthoringCandidate;
   computeCoverage?: typeof import("@ohmymcp/generate").computeCoverage;
   /**
+   * `instanceof` 용 클래스. 값 import 가 아니라 주입인 것이 요점이다.
+   *
+   * 이 파일은 `@ohmymcp/generate` 에서 타입만 가져온다(위 `import type`). 클래스를 값으로
+   * 가져오면 `index.ts` 가 정적으로 끌어와 `test` 경로까지 `generate` 를 로드한다.
+   * `typeof import(...)` 는 타입 위치라 런타임 import 가 생기지 않고, 주입하면 클래스
+   * 동일성도 보장된다. 위 6개 필드가 같은 방식이다.
+   */
+  GenerateTestsError?: typeof import("@ohmymcp/generate").GenerateTestsError;
+  /**
    * 카세트 파일 입출력. 주입점을 여기 하나만 두는 이유는 시험 실행 경로에서 파일시스템을
    * 만지는 곳이 이것뿐이기 때문이다. 나머지(`runDryRun`·`reviewDryRun`)는 주입한 client 와
    * io 만 쓰므로 테스트가 실제 구현을 그대로 돌린다.
@@ -176,6 +185,27 @@ function outputReplaceFailure(
     `오류 [GENERATE_OUTPUT_REPLACE_FAILED]: 기존 출력 파일을 지우지 못해 저장하지 않았습니다. 경로: ${path}${suffix}\n해결: 그 경로가 디렉터리이거나 쓰기 권한이 없는지 확인하세요. 다른 \`--out\` 경로를 지정해도 됩니다.\n`,
   );
 }
+/**
+ * `generate` 가 이미 만들어 둔 원인을 그대로 보여 준다.
+ *
+ * `GENERATE_FAILED` 로 뭉개면 사용자는 "MCP 서버와 출력 경로를 확인하세요" 를 보는데,
+ * 스키마 거절에서 그건 **틀린 조치다** — 서버도 경로도 멀쩡하다. 실제로 이 결함 때문에
+ * 원인을 알아내려고 `generate` 소스를 읽어야 했다 (#136 · `docs/adoption.md` §2.3).
+ */
+function generateTestsFailure(
+  deps: GenerateCommandDependencies,
+  error: {
+    readonly code: string;
+    readonly path: string;
+    readonly message: string;
+    readonly hint: string;
+  },
+): void {
+  deps.writeStderr(
+    `오류 [${error.code}]: ${error.message} 경로: ${error.path}\n해결: ${error.hint}\n`,
+  );
+}
+
 /** 커밋에 쓰는 hard link를 출력 디렉터리가 지원하지 않거나 권한이 없는 경우. */
 type LinkUnsupportedCode = "EPERM" | "ENOTSUP";
 class LinkUnsupportedError extends Error {
@@ -1526,6 +1556,9 @@ export async function runGenerateCommand(
       outputReplaceFailure(deps, error.path, error.code);
     else if (error instanceof LinkUnsupportedError)
       linkUnsupportedFailure(deps, error.path, error.code);
+    // 주입이 없으면 아래 폴백으로 떨어진다. 기존 동작이 그대로 남는다.
+    else if (deps.GenerateTestsError !== undefined && error instanceof deps.GenerateTestsError)
+      generateTestsFailure(deps, error);
     else
       deps.writeStderr(
         "오류 [GENERATE_FAILED]: baseline suite를 생성하거나 저장하지 못했습니다.\n해결: MCP 서버와 출력 경로를 확인한 뒤 다시 실행하세요.\n",

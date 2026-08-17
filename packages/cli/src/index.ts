@@ -146,6 +146,7 @@ export async function run(argv: string[]): Promise<number> {
       applyAuthoringChanges: generate.applyAuthoringChanges,
       reviewLocalAuthoringCandidate: generate.reviewLocalAuthoringCandidate,
       computeCoverage: generate.computeCoverage,
+      GenerateTestsError: generate.GenerateTestsError,
     });
   }
   if (argv[0] === "repair") {

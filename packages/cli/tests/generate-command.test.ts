@@ -12,6 +12,7 @@ import {
   createBaselineSuite,
   dispatchAuthoringRequest,
   finalizeAuthoringDraft,
+  GenerateTestsError,
   getAuthoringExecutionSuite,
   type PublicProviderFailure,
   prepareAuthoringRequest,
@@ -3033,5 +3034,101 @@ describe("generate 덮어쓰기 저장", () => {
       "link",
       "unlink",
     ]);
+  });
+});
+
+describe("generate 구조화된 오류 출력 (#136)", () => {
+  const outPath = "/tmp/out.json";
+  const argv = [
+    "generate",
+    "--suite-id",
+    "weather",
+    "--name",
+    "Weather",
+    "--out",
+    outPath,
+    "--command",
+    "node",
+    "--arg",
+    "server.mjs",
+    "--baseline-only",
+  ];
+
+  /** createBaselineSuite 가 주어진 오류를 던지게 하고 stderr 를 돌려준다. */
+  async function runWith(
+    error: unknown,
+    options: { inject?: boolean } = {},
+  ): Promise<{ output: string; code: number }> {
+    const d = deps({
+      createBaselineSuite: vi.fn(() => {
+        throw error;
+      }),
+      // 주입 여부가 이 결함의 분기점이다. 기본은 index.ts 와 같게 주입한 상태.
+      ...(options.inject === false ? {} : { GenerateTestsError }),
+    });
+    const stderr: string[] = [];
+    d.value.writeStderr = (text) => stderr.push(text);
+    const code = await runGenerateCommand(argv, d.value);
+    return { output: stderr.join(""), code };
+  }
+
+  const schemaError = new GenerateTestsError(
+    "UNSUPPORTED_SCHEMA",
+    "tools[0].inputSchema.$schema",
+    "지원하지 않는 JSON Schema 키워드 '$schema'가 있습니다.",
+    "첫 버전은 type, required, properties를 지원합니다.",
+  );
+
+  it.each([
+    "INVALID_OPTIONS",
+    "INVALID_TOOL",
+    "OUTPUT_FILE_EXISTS",
+    "UNSUPPORTED_SCHEMA",
+    "GENERATED_SUITE_INVALID",
+  ] as const)("%s 를 그대로 드러내고 GENERATE_FAILED 로 뭉개지 않는다", async (code) => {
+    const { output } = await runWith(
+      new GenerateTestsError(code, "tools[0].inputSchema", "무엇이 잘못됐다.", "이렇게 고쳐라."),
+    );
+
+    expect(output).toContain(`[${code}]`);
+    expect(output).not.toContain("GENERATE_FAILED");
+  });
+
+  it("원인이 있는 경로를 사용자에게 보여 준다", async () => {
+    const { output } = await runWith(schemaError);
+
+    // 이 경로가 없으면 사용자는 어느 툴의 어느 키인지 모른 채 소스를 읽어야 한다.
+    expect(output).toContain("tools[0].inputSchema.$schema");
+    expect(output).toContain("지원하지 않는 JSON Schema 키워드");
+  });
+
+  it("hint 를 「해결」 줄에 싣는다", async () => {
+    const { output } = await runWith(schemaError);
+
+    expect(output).toContain("해결: 첫 버전은");
+    // 틀린 조치를 안내하던 기존 문안이 남아 있으면 안 된다.
+    expect(output).not.toContain("MCP 서버와 출력 경로를 확인한 뒤");
+  });
+
+  it("클래스를 주입하지 않으면 기존 GENERATE_FAILED 폴백을 그대로 쓴다", async () => {
+    const { output, code } = await runWith(schemaError, { inject: false });
+
+    // 회귀 0. 주입은 선택 필드라 안 넣은 호출자의 동작이 달라지면 안 된다.
+    expect(output).toContain("GENERATE_FAILED");
+    expect(output).not.toContain("UNSUPPORTED_SCHEMA");
+    expect(code).toBe(1);
+  });
+
+  it("generate 가 던진 것이 아니면 여전히 GENERATE_FAILED 다", async () => {
+    const { output } = await runWith(new Error("무언가 다른 실패"));
+
+    expect(output).toContain("GENERATE_FAILED");
+    expect(output).not.toContain("무언가 다른 실패");
+  });
+
+  it("종료 코드는 1 그대로다", async () => {
+    const { code } = await runWith(schemaError);
+
+    expect(code).toBe(1);
   });
 });

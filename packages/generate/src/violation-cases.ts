@@ -24,10 +24,47 @@ export interface GeneratedCase {
    * expected 는 요구대로 두 리터럴의 유니온으로 남는다. boolean 으로 넓히면 정상 케이스에
    * true 를 넣는 실수를 컴파일러가 못 잡는다.
    */
-  readonly assertions: [
-    | { readonly type: "isError"; readonly expected: true }
-    | { readonly type: "isError"; readonly expected: false },
-  ];
+  readonly assertions:
+    | [IsErrorAssertion]
+    | [{ readonly type: "isError"; readonly expected: true }, ErrorBodyAssertion];
+}
+
+type IsErrorAssertion =
+  | { readonly type: "isError"; readonly expected: true }
+  | { readonly type: "isError"; readonly expected: false };
+
+/**
+ * 오류 본문에 위반 필드 이름이 실렸는지 보는 단언 (#89 · ADR-0037).
+ *
+ * `isError: true` 하나만으로는 **"서버가 입력을 거절했다" 와 "서버가 다른 이유로 죽었다" 가
+ * 구분되지 않는다.** 둘 다 `isError` 라 초록불이고, 후자가 더 나쁜 결함인데 통과로 찍힌다.
+ * 본문에 그 필드 이름이 있는지를 함께 보면 갈린다.
+ *
+ * 새 단언 종류를 만들지 않고 기존 `bodyMatchesSchema` 를 쓴다. `extractResponseBody` 가 JSON
+ * 파싱에 실패한 본문을 문자열로 그대로 주므로(`form: "text"`) 오류 본문에 그대로 걸린다.
+ * `stringContains` 는 `type` 없이 쓰면 명세가 `SCHEMA_KEYWORD_REQUIRES_TYPE` 로 무효라
+ * `type: "string"` 을 함께 박는다.
+ */
+type ErrorBodyAssertion = {
+  readonly type: "bodyMatchesSchema";
+  readonly schema: { readonly type: "string"; readonly stringContains: string };
+};
+
+/**
+ * 이 길이 미만의 필드 이름에는 본문 단언을 붙이지 않는다.
+ *
+ * `'a'` 같은 한두 글자는 **크래시 스택트레이스에도 우연히 들어 있다.** 실측으로 확인했다 —
+ * `TypeError: Cannot read properties of undefined` 에 `a` 가 있어서 크래시가 통과로 찍혔다.
+ * 짧은 이름에서는 이 단언이 구분에 쓸모가 없으므로 아예 안 만든다. 그 축은 `isError` 하나만
+ * 남아 지금과 같아지고, 없던 오탐이 생기지 않는다. ADR-0015 의 "오탐 1건이 미탐 1건보다
+ * 비싸다" 를 따른 선택이다.
+ */
+const MIN_FIELD_NAME_LENGTH_FOR_BODY_ASSERTION = 3;
+
+/** 필드 이름이 충분히 길면 본문 단언을 만든다. 짧으면 `null`. */
+function errorBodyAssertion(field: string): ErrorBodyAssertion | null {
+  if (field.length < MIN_FIELD_NAME_LENGTH_FOR_BODY_ASSERTION) return null;
+  return { type: "bodyMatchesSchema", schema: { type: "string", stringContains: field } };
 }
 
 /**
@@ -99,12 +136,18 @@ export function buildViolationCases(options: {
     usedIds.add(id);
     return id;
   };
-  const violation = (id: string, name: string, input: JsonObject): GeneratedCase => ({
-    id,
-    name,
-    operation: { type: "callTool", tool: tool.name, input },
-    assertions: [{ type: "isError", expected: true }],
-  });
+  const violation = (id: string, name: string, input: JsonObject, field: string): GeneratedCase => {
+    const body = errorBodyAssertion(field);
+    return {
+      id,
+      name,
+      operation: { type: "callTool", tool: tool.name, input },
+      assertions:
+        body === null
+          ? [{ type: "isError", expected: true }]
+          : [{ type: "isError", expected: true }, body],
+    };
+  };
 
   const cases: GeneratedCase[] = [];
   for (const axis of axes) {
@@ -126,15 +169,18 @@ export function buildViolationCases(options: {
           uniqueId("missing", field),
           `${tool.name}가 필수 필드 '${field}' 누락을 거절한다`,
           input,
+          field,
         ),
       );
     } else if (axis.kind === "TYPE_VIOLATION") {
       const value = TYPE_VIOLATION_VALUE[axis.declaredType as ContractDeclaredType];
       cases.push(
-        violation(uniqueId("type", field), `${tool.name}가 '${field}' 타입 위반을 거절한다`, {
-          ...happyInput,
-          [field]: value,
-        }),
+        violation(
+          uniqueId("type", field),
+          `${tool.name}가 '${field}' 타입 위반을 거절한다`,
+          { ...happyInput, [field]: value },
+          field,
+        ),
       );
     } else if (axis.kind === "ENUM_VIOLATION") {
       const value = enumViolationValue({
@@ -146,6 +192,7 @@ export function buildViolationCases(options: {
           uniqueId("enum", field),
           `${tool.name}가 '${field}' 의 선언되지 않은 값을 거절한다`,
           { ...happyInput, [field]: value },
+          field,
         ),
       );
     }

@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import type { ToolDef } from "@ohmymcp/core";
+import { validateMcpSuite } from "@ohmymcp/runner";
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../src/schema.js";
 import { buildViolationCases } from "../src/violation-cases.js";
@@ -41,13 +42,19 @@ describe("buildViolationCases", () => {
         id: "get-weather-missing-city",
         name: "get_weather가 필수 필드 'city' 누락을 거절한다",
         operation: { type: "callTool", tool: "get_weather", input: {} },
-        assertions: [{ type: "isError", expected: true }],
+        assertions: [
+          { type: "isError", expected: true },
+          { type: "bodyMatchesSchema", schema: { type: "string", stringContains: "city" } },
+        ],
       },
       {
         id: "get-weather-type-city",
         name: "get_weather가 'city' 타입 위반을 거절한다",
         operation: { type: "callTool", tool: "get_weather", input: { city: 0 } },
-        assertions: [{ type: "isError", expected: true }],
+        assertions: [
+          { type: "isError", expected: true },
+          { type: "bodyMatchesSchema", schema: { type: "string", stringContains: "city" } },
+        ],
       },
     ]);
   });
@@ -205,7 +212,7 @@ describe("buildViolationCases", () => {
     expect(cases[0]?.operation.input).not.toEqual(cases[1]?.operation.input);
   });
 
-  it("모든 위반 케이스의 단언이 isError true 하나다", () => {
+  it("모든 위반 케이스가 isError true 로 시작한다", () => {
     const cases = [
       ...buildViolationCases({ tool: weather, happyInput: { city: "example" }, baseName: "w" }),
       ...buildViolationCases({ tool: add, happyInput: { a: 0, b: 0 }, baseName: "add" }),
@@ -216,8 +223,11 @@ describe("buildViolationCases", () => {
       }),
     ];
     expect(cases.length).toBeGreaterThan(0);
-    for (const item of cases)
-      expect(item.assertions).toEqual([{ type: "isError", expected: true }]);
+    for (const item of cases) {
+      // 첫 단언은 항상 isError true 다. 두 번째 본문 단언은 필드 이름이 짧으면 안 붙는다(#89).
+      expect(item.assertions[0]).toEqual({ type: "isError", expected: true });
+      expect(item.assertions.length).toBeLessThanOrEqual(2);
+    }
   });
 
   it("슬러그가 충돌하면 -2 가 붙는다", () => {
@@ -257,5 +267,59 @@ describe("buildViolationCases", () => {
     const once = buildViolationCases({ tool: add, happyInput: { a: 0, b: 0 }, baseName: "add" });
     const twice = buildViolationCases({ tool: add, happyInput: { a: 0, b: 0 }, baseName: "add" });
     expect(JSON.stringify(once)).toBe(JSON.stringify(twice));
+  });
+});
+
+describe("오류 본문 단언 (#89)", () => {
+  const named = (field: string) =>
+    tool("t", { type: "object", properties: { [field]: { type: "string" } }, required: [field] });
+
+  it("필드 이름이 충분히 길면 본문에 그 이름이 있는지 함께 본다", () => {
+    const cases = buildViolationCases({
+      tool: named("city"),
+      happyInput: { city: "example" },
+      baseName: "t",
+    });
+
+    expect(cases.length).toBeGreaterThan(0);
+    for (const item of cases)
+      expect(item.assertions[1]).toEqual({
+        type: "bodyMatchesSchema",
+        schema: { type: "string", stringContains: "city" },
+      });
+  });
+
+  // 'a' 는 크래시 스택트레이스에도 우연히 들어 있어 거절과 크래시를 못 가른다.
+  // 붙이면 오탐만 늘고 구분은 안 되므로 아예 안 만든다.
+  it.each(["a", "id"])("필드 이름이 짧으면(%s) 본문 단언을 만들지 않는다", (field) => {
+    const cases = buildViolationCases({
+      tool: named(field),
+      happyInput: { [field]: "example" },
+      baseName: "t",
+    });
+
+    expect(cases.length).toBeGreaterThan(0);
+    for (const item of cases) {
+      expect(item.assertions).toEqual([{ type: "isError", expected: true }]);
+      expect(item.assertions).toHaveLength(1);
+    }
+  });
+
+  it("본문 단언은 runner 명세 검증을 통과한다", () => {
+    const [first] = buildViolationCases({
+      tool: named("city"),
+      happyInput: { city: "example" },
+      baseName: "t",
+    });
+
+    // stringContains 는 type 없이 쓰면 SCHEMA_KEYWORD_REQUIRES_TYPE 로 무효다.
+    const result = validateMcpSuite({
+      schemaVersion: 1,
+      id: "s",
+      name: "s",
+      cases: [first],
+    });
+
+    expect(result.valid).toBe(true);
   });
 });

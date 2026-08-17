@@ -35,8 +35,11 @@ const approve = (fingerprint: string) => ({ approved: true as const, fingerprint
  * 2026-08-15 에 값이 한 번 갈렸다. baseline 정책이 v2 로 올라 툴당 케이스가 정상 1개에서
  * 정상 1개 + 위반 N개로 늘었기 때문이다(ADR-0022). suite 내용이 바뀌었으니 지문이 바뀌는 것이
  * 정상이다. 위 계약이 깨진 것이 아니다. 값은 손으로 계산하지 않고 실제 실행 결과를 넣었다.
+ *
+ * 2026-08-18 에 다시 갈렸다. 위반 케이스에 오류 본문 단언이 붙었기 때문이다(#89 · ADR-0037).
+ * 마찬가지로 suite 내용이 바뀐 결과이며 계약이 깨진 것이 아니다. 값은 실제 실행 결과다.
  */
-const KNOWN_CLEAN_FINGERPRINT = "5eb8858d23345e8f821025adf3ba01d701171c9c723cd6fb0590a1b196598abe";
+const KNOWN_CLEAN_FINGERPRINT = "6518946848d0af845db1aa0efac93f11881cdc4bd649c05630ca9cbb201d5670";
 
 /**
  * baseline 생성용 도구 목록. createBaselineSuite 가 지원하는 키워드만 쓴다. type 없는 필드와

@@ -178,14 +178,39 @@ describe("createBaselineSuite", () => {
       { type: "callTool", tool: "add", input: {} },
       { type: "callTool", tool: "add", input: { value: 1.5 } },
     ]);
-    // 정상 케이스는 isError false, 위반 케이스는 isError true 하나씩이다.
+    // 정상 케이스는 isError false. 위반 케이스는 isError true 에 더해, 필드 이름이 3자 이상이면
+    // 오류 본문에 그 이름이 실렸는지 보는 단언이 따라온다(#89). "value" 는 5자라 붙는다.
     expect(result.suite.cases.map((testCase) => [testCase.id, testCase.assertions])).toEqual([
       ["get-weather-success", [{ type: "isError", expected: false }]],
-      ["get-weather-missing-city", [{ type: "isError", expected: true }]],
-      ["get-weather-type-city", [{ type: "isError", expected: true }]],
+      [
+        "get-weather-missing-city",
+        [
+          { type: "isError", expected: true },
+          { type: "bodyMatchesSchema", schema: { type: "string", stringContains: "city" } },
+        ],
+      ],
+      [
+        "get-weather-type-city",
+        [
+          { type: "isError", expected: true },
+          { type: "bodyMatchesSchema", schema: { type: "string", stringContains: "city" } },
+        ],
+      ],
       ["add-success", [{ type: "isError", expected: false }]],
-      ["add-missing-value", [{ type: "isError", expected: true }]],
-      ["add-type-value", [{ type: "isError", expected: true }]],
+      [
+        "add-missing-value",
+        [
+          { type: "isError", expected: true },
+          { type: "bodyMatchesSchema", schema: { type: "string", stringContains: "value" } },
+        ],
+      ],
+      [
+        "add-type-value",
+        [
+          { type: "isError", expected: true },
+          { type: "bodyMatchesSchema", schema: { type: "string", stringContains: "value" } },
+        ],
+      ],
     ]);
     expect(validateMcpSuite(result.suite).valid).toBe(true);
   });

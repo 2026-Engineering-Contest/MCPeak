@@ -2,7 +2,7 @@ import type { ToolDef } from "@ohmymcp/core";
 import { expectedIsError } from "./case-expectation.js";
 import type { ContractRange } from "./contract-range.js";
 import { rangeYieldsViolation, violatesRange } from "./contract-range.js";
-import type { NormalizedInputSchema } from "./input-schema.js";
+import type { DeclaredType, NormalizedInputSchema } from "./input-schema.js";
 import { analyzeInputSchema, judgeField } from "./input-schema.js";
 import { byCodeUnit } from "./ordering.js";
 import { plainObject } from "./schema-match.js";
@@ -34,14 +34,14 @@ export interface ContractAxis {
   readonly declaredRange: ContractRange | null;
 }
 
-export type ContractDeclaredType =
-  | "object"
-  | "array"
-  | "string"
-  | "number"
-  | "integer"
-  | "boolean"
-  | "null";
+/**
+ * 축이 싣는 선언 타입. 값의 출처는 `analyzeInputSchema` 이므로 그쪽 유니온이 곧 정의다.
+ *
+ * 같은 목록을 여기 다시 적어 두면 한쪽이 늘 때 다른 쪽을 손으로 맞춰야 하고, 그것을
+ * 잊으면 값을 넘기는 자리에서야 타입 오류가 난다(이슈 #154). 이름은 `generate` 가
+ * 공개 API 로 쓰고 있으므로 별칭으로 남긴다.
+ */
+export type ContractDeclaredType = DeclaredType;
 
 export interface ContractAxesResult {
   /** §4.4 순서로 정렬돼 있다. analyzable 이 false 면 빈 배열이다. */

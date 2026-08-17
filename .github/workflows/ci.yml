@@ -44,6 +44,53 @@ jobs:
       - name: Test
         run: pnpm test
 
+  e2e:
+    # 실서버(`mcp-server-fetch`)를 띄우는 E2E 다. verify 와 나눈 이유가 두 가지다.
+    #
+    # 1) verify 는 `uv` 가 없어도 돌아야 한다. 기여자 노트북에 Python 도구 체인을
+    #    요구하지 않는다. 그래서 그쪽은 skip 을 허용하고, 여기서만 승격 스위치를 켠다.
+    # 2) verify 는 Node 20/22/24 매트릭스라 여기 붙이면 E2E 가 3회 돈다. 프로세스
+    #    spawn · stdio 왕복 · 종료처럼 Node 버전에 민감한 층은 이미
+    #    packages/core/tests/stdio-integration.test.ts 가 세 버전 전부에서 본다.
+    #    이 잡이 추가로 보는 것은 상대가 Python 프로세스라는 점 하나다 (ADR-0037).
+    #
+    # OHMYMCP_REQUIRE_E2E=1 은 "uvx 가 없으면 skip 하지 말고 실패해라" 다. 이 잡에서
+    # 아래 setup-uv 가 조용히 깨지면 E2E 는 안 돌지만 결과는 초록이 된다. 그 침묵을
+    # 막는 것이 이 변수의 존재 이유다 (이슈 #153).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      # 액션은 커밋 SHA 로 고정한다. 태그는 옮겨 달 수 있어 CI 가 말없이 바뀐다.
+      # astral-sh/setup-uv v10.0.1 · MIT (프로젝트와 동일 라이선스).
+      #
+      # 여기서 까는 것은 `uv` 뿐이다. Python `mcp` 의 버전 고정은 테스트 안에서
+      # `uvx --with "mcp<2"` 로 한다. `mcp` 2.x 는 McpError 임포트가 깨져 서버가
+      # 시작조차 못 하고, 그것을 우리 도구 결함으로 오진하기 쉽다
+      # (docs/adoption.md §1.5). 그 고정을 여기로 옮기지 마라.
+      - name: Setup uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      # 이 파일만 돌린다. 나머지 스펙은 verify 잡이 세 런타임에서 이미 본다.
+      - name: Real-server E2E
+        env:
+          OHMYMCP_REQUIRE_E2E: "1"
+        run: pnpm vitest run packages/cli/tests/fetch-server-e2e.test.ts
+
   build:
     # 빌드만 별도 잡으로 분리한다.
     #

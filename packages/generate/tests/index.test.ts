@@ -639,6 +639,17 @@ describe("$schema 키워드 (#135)", () => {
       path: "tools[0].inputSchema.properties.count.maximum",
     },
     {
+      // 위 케이스는 정렬상 maximum 이 먼저 걸려 minimum 거절을 확인하지 못한다.
+      // 세 키를 다 고정하려면 minimum 만 남긴 케이스가 따로 있어야 한다.
+      label: "minimum 단독",
+      inputSchema: {
+        $schema: DRAFT_07,
+        type: "object",
+        properties: { count: { type: "number", default: 3, minimum: 1 } },
+      },
+      path: "tools[0].inputSchema.properties.count.minimum",
+    },
+    {
       label: "format (gzip-file-as-resource)",
       inputSchema: {
         $schema: DRAFT_07,

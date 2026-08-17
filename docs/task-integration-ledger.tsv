@@ -94,3 +94,8 @@ T12b-server-repair	f9bc099	2026-08-16
 R2-repair-render	f9bc099	2026-08-16
 R1-repair-caseid	6ddcae0	2026-08-16
 R3-core-stdio-timeout	d569362	2026-08-16
+T1-T3-schema-constraint-runner	92ac7ce	2026-08-17
+T4-schema-constraint-adr0009	c34d16e	2026-08-17
+T5-T8-schema-constraint-generate	c999393	2026-08-17
+T8b-schema-constraint-cli-exhaustive	9cfe94d	2026-08-17
+T8c-schema-constraint-coverage-notice	3d99e4b	2026-08-17

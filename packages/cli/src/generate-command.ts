@@ -1450,6 +1450,17 @@ export function renderCoverage(coverage: CoverageResult): string {
   const nameWidth = Math.max(0, ...coverage.tools.map((tool) => displayWidth(tool.tool))) + 3;
   const lines = [`커버리지  ${count} tools, ${coverage.verified}/${coverage.total} axes 검증`];
   for (const tool of coverage.tools) lines.push(...coverageToolLines(tool, nameWidth));
+  // 범위 축은 이번 버전에 새로 들어왔다. 같은 명세를 어제 돌린 사용자에게는 분모만 커지고
+  // 숫자가 내려간 것으로 보인다. 이유를 안 적으면 우리가 뭔가 망가뜨린 것으로 읽힌다.
+  // 미검증인 범위 축이 실제로 있을 때만 적는다. 조건 없이 매번 찍으면 영구 소음이 된다.
+  if (
+    coverage.tools.some((tool) =>
+      tool.axes.some((axis) => axis.kind === "RANGE_VIOLATION" && axis.caseId === null),
+    )
+  )
+    lines.push(
+      "  → 범위 제약(minimum·maxItems 등)이 이번 버전부터 검증 축에 들어갑니다. 이전보다 숫자가 낮으면 새로 드러난 빈틈입니다",
+    );
   return `${lines.join("\n")}\n`;
 }
 

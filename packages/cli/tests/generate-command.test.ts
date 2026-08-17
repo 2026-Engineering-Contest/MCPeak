@@ -1767,6 +1767,29 @@ describe("커버리지 화면", () => {
     expect(renderSkippedTools([])).toBe("");
   });
 
+  it("미검증인 범위 축이 있으면 분모가 커진 이유를 적는다", () => {
+    const coverage = result([
+      toolCoverage("count_things", [...verifiedAxes(3), axis("RANGE_VIOLATION", "count", null)]),
+    ]);
+    expect(renderCoverage(coverage)).toContain(
+      "→ 범위 제약(minimum·maxItems 등)이 이번 버전부터 검증 축에 들어갑니다. 이전보다 숫자가 낮으면 새로 드러난 빈틈입니다",
+    );
+  });
+
+  it("범위 축이 전부 검증됐으면 그 고지를 적지 않는다", () => {
+    const coverage = result([
+      toolCoverage("count_things", [...verifiedAxes(3), axis("RANGE_VIOLATION", "count", "c1")]),
+    ]);
+    expect(renderCoverage(coverage)).not.toContain("범위 제약");
+  });
+
+  it("범위 축이 아예 없으면 그 고지를 적지 않는다", () => {
+    const coverage = result([
+      toolCoverage("add", [...verifiedAxes(2), axis("TYPE_VIOLATION", "a", null)]),
+    ]);
+    expect(renderCoverage(coverage)).not.toContain("범위 제약");
+  });
+
   it("전부 검증되면 한 줄이다", () => {
     const coverage = result([
       toolCoverage("add", verifiedAxes(5)),

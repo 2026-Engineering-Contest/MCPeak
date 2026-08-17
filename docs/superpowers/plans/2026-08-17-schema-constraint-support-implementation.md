@@ -855,7 +855,7 @@ describe("INVALID_SCHEMA_CONSTRAINT 는 부분 생성으로 건너뛰지 않는�
 | `uri` · `uri-reference` · `iri` | `"https://example.com"` | RFC 2606 예약 도메인 |
 | `date` | `"2000-01-01"` | |
 | `date-time` | `"2000-01-01T00:00:00Z"` | |
-| `time` | `"00:00:00"` | |
+| `time` | `"00:00:00Z"` | |
 | `duration` | `"P1D"` | |
 | `email` · `idn-email` | `"user@example.com"` | RFC 2606 |
 | `uuid` | `"00000000-0000-4000-8000-000000000000"` | 버전 4 형식을 만족하는 최소값 |
@@ -920,7 +920,7 @@ describe("format 표", () => {
     ["iri", "https://example.com"],
     ["date", "2000-01-01"],
     ["date-time", "2000-01-01T00:00:00Z"],
-    ["time", "00:00:00"],
+    ["time", "00:00:00Z"],
     ["duration", "P1D"],
     ["email", "user@example.com"],
     ["idn-email", "user@example.com"],

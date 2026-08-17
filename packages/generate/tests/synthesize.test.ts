@@ -20,6 +20,19 @@ describe("숫자 하한 경계값", () => {
     expect(value(schema)).toBe(expected);
   });
 
+  it.each([
+    // 한 칸 옮긴 +1 이 상한을 넘는 좁은 구간. 확률·비율 파라미터에서 흔한 선언이다.
+    [{ type: "number", exclusiveMinimum: 0, exclusiveMaximum: 1 }, 0.5],
+    [{ type: "number", exclusiveMinimum: 0, maximum: 0.5 }, 0.25],
+    [{ type: "number", exclusiveMinimum: 1, maximum: 1.5 }, 1.25],
+    // 넘지 않으면 종전대로 한 칸 옮긴다.
+    [{ type: "number", exclusiveMinimum: 0, maximum: 10 }, 1],
+    // 하한이 minimum 이면 그 값 자체가 언제나 범위 안이다.
+    [{ type: "number", minimum: 0, exclusiveMaximum: 0.5 }, 0],
+  ])("좁은 배타 구간 %j → %s", (schema, expected) => {
+    expect(value(schema)).toBe(expected);
+  });
+
   it("integer 의 소수 하한은 정수로 올린다", () => {
     // minimum 1.2 를 그대로 쓰면 자기 type 을 어긴 값이 된다.
     expect(value({ type: "integer", minimum: 1.2 })).toBe(2);
@@ -46,7 +59,7 @@ describe("format 표", () => {
     ["iri", "https://example.com"],
     ["date", "2000-01-01"],
     ["date-time", "2000-01-01T00:00:00Z"],
-    ["time", "00:00:00"],
+    ["time", "00:00:00Z"],
     ["duration", "P1D"],
     ["email", "user@example.com"],
     ["idn-email", "user@example.com"],
@@ -126,17 +139,6 @@ describe("중첩", () => {
         },
       }),
     ).toEqual({ count: 1, url: "https://example.com" });
-  });
-
-  it.each([
-    // 하한 +1 이 상한을 넘는 조합. 확률·비율 파라미터에서 흔한 선언이다.
-    [{ type: "number", exclusiveMinimum: 0, exclusiveMaximum: 1 }, 0.5],
-    [{ type: "number", exclusiveMinimum: 0, maximum: 0.5 }, 0.25],
-    // 넘지 않으면 종전대로 한 칸 옮긴다.
-    [{ type: "number", exclusiveMinimum: 0, maximum: 10 }, 1],
-    [{ type: "number", exclusiveMinimum: 0 }, 1],
-  ])("%j → %s", (schema, expected) => {
-    expect(value(schema)).toBe(expected);
   });
 
   it("같은 입력을 두 번 합성하면 바이트로 같다", () => {

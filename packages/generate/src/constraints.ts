@@ -22,7 +22,7 @@ export const FORMAT_VALUES: ReadonlyMap<string, string> = new Map([
   ["iri", "https://example.com"],
   ["date", "2000-01-01"],
   ["date-time", "2000-01-01T00:00:00Z"],
-  ["time", "00:00:00"],
+  ["time", "00:00:00Z"],
   ["duration", "P1D"],
   ["email", "user@example.com"],
   ["idn-email", "user@example.com"],

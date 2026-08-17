@@ -166,7 +166,11 @@ describe("dispatchDiagnosisRequest", () => {
     });
     expect(result).toEqual({
       status: "diagnosis",
-      result: { status: "diagnosis", causes: PAYLOAD.causes, discarded: 0 },
+      result: {
+        status: "diagnosis",
+        causes: PAYLOAD.causes,
+        discarded: { unknownCase: 0, specTarget: 0, unsureCauses: 0 },
+      },
     });
     // 나가는 것은 preview 가 아니라 준비 시점에 잠근 요청이다.
     expect((p.calls[0] as { request: unknown }).request).toEqual(target.request);

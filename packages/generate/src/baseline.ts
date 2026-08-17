@@ -19,12 +19,24 @@ export interface BaselineSuiteOptions {
   readonly defaultTimeoutMs?: number;
 }
 
+/** 미지원 키워드로 케이스를 만들지 못해 건너뛴 툴. 오류가 이미 만든 문장을 그대로 싣는다. */
+export interface SkippedTool {
+  readonly name: string;
+  readonly path: string;
+  readonly message: string;
+}
+
 export interface BaselineGenerationResult {
   readonly policyVersion: typeof BASELINE_POLICY_VERSION;
   readonly suite: TestSuiteSpec;
   readonly suiteFingerprint: string;
   readonly baselineFingerprint: string;
   readonly coverage: CoverageResult;
+  /**
+   * 건너뛴 툴 목록. tools 입력 순서다. suite 밖에 실리므로 전 툴 지원 서버의 출력
+   * 바이트와 지문은 이 필드 도입 전과 같다(#88 의 재승인 문제를 만들지 않는다).
+   */
+  readonly skippedTools: readonly SkippedTool[];
 }
 
 function invalidOption(path: string, message: string, hint: string): never {
@@ -68,14 +80,38 @@ export function createBaselineSuite(
   }
 
   const usedNames = new Set<string>();
+  const skippedTools: SkippedTool[] = [];
+  const generatedTools: ToolDef[] = [];
   const cases = tools.flatMap((tool, index) => {
     const initialName = safeBaseName(typeof tool?.name === "string" ? tool.name : "", index);
     let baseName = initialName;
     for (let occurrence = 2; usedNames.has(baseName); occurrence++)
       baseName = `${initialName}-${occurrence}`;
     usedNames.add(baseName);
-    return buildGeneratedCases(tool, index, baseName);
+    try {
+      const built = buildGeneratedCases(tool, index, baseName);
+      generatedTools.push(tool);
+      return built;
+    } catch (error) {
+      // 미지원 키워드만 툴 단위로 격리한다(도그푸딩 실측: 툴 하나가 서버 전체를 막았다).
+      // 다른 코드는 입력 자체의 결함이라 종전대로 전체를 멈춘다.
+      if (error instanceof GenerateTestsError && error.code === "UNSUPPORTED_SCHEMA") {
+        skippedTools.push({ name: tool.name, path: error.path, message: error.message });
+        return [];
+      }
+      throw error;
+    }
   });
+  // 전부 건너뛰었으면 저장할 것이 없다. 첫 오류를 그대로 던져 종전 화면을 유지한다.
+  if (cases.length === 0 && skippedTools.length > 0) {
+    const first = skippedTools[0] as SkippedTool;
+    throw new GenerateTestsError(
+      "UNSUPPORTED_SCHEMA",
+      first.path,
+      `모든 툴(${tools.length}개)의 스키마를 지원하지 않아 생성할 케이스가 없습니다. 첫 원인: ${first.message}`,
+      "지원 키워드만 쓰는 툴이 하나도 없습니다. 케이스를 손으로 작성하거나 서버 스키마를 확인하세요.",
+    );
+  }
   const suite: TestSuiteSpec = {
     schemaVersion: 1,
     id: options.suiteId,
@@ -97,7 +133,10 @@ export function createBaselineSuite(
     suite,
     suiteFingerprint,
     baselineFingerprint: sha256({ policyVersion: BASELINE_POLICY_VERSION, suite }),
-    coverage: computeCoverage({ suite, tools }),
+    // 건너뛴 툴을 분모에 넣으면 케이스가 있을 수 없는 축이 "미검증" 으로 쌓인다.
+    // 건너뜀은 skippedTools 가 따로 고지한다.
+    coverage: computeCoverage({ suite, tools: generatedTools }),
+    skippedTools,
   };
   return deepFreeze(result);
 }

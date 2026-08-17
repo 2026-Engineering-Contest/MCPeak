@@ -57,6 +57,72 @@ describe("createBaselineSuite", () => {
     expect(BASELINE_POLICY_VERSION).toBe("schema-baseline-v2");
   });
 
+  /**
+   * 미지원 키워드 툴의 격리. 도그푸딩 실측: 공식 서버 7개 중 5개가 툴 하나의
+   * maximum·minItems·exclusiveMaximum·anyOf 때문에 전체 거절됐다. 그 툴만 건너뛰고
+   * 나머지를 생성하면 다섯 서버가 전부 후보로 돌아온다.
+   */
+  describe("미지원 스키마 툴 건너뛰기", () => {
+    const unsupported: ToolDef = {
+      name: "count_things",
+      inputSchema: {
+        type: "object",
+        properties: { count: { type: "integer", maximum: 10 } },
+        required: ["count"],
+      },
+    };
+
+    it("미지원 키워드 툴만 빼고 생성하고 건너뛴 사실을 결과에 싣는다", () => {
+      const result = createBaselineSuite([tools[0] as ToolDef, unsupported], {
+        suiteId: "mixed",
+        suiteName: "Mixed",
+      });
+      expect(result.suite.cases.map((c) => c.id)).toEqual([
+        "get-weather-success",
+        "get-weather-missing-city",
+        "get-weather-type-city",
+      ]);
+      expect(result.skippedTools).toEqual([
+        {
+          name: "count_things",
+          path: "tools[1].inputSchema.properties.count.maximum",
+          message: "지원하지 않는 JSON Schema 키워드 'maximum'가 있습니다.",
+        },
+      ]);
+    });
+
+    it("커버리지는 생성한 툴만 센다", () => {
+      const result = createBaselineSuite([tools[0] as ToolDef, unsupported], {
+        suiteId: "mixed",
+        suiteName: "Mixed",
+      });
+      expect(result.coverage.tools.map((t) => t.tool)).toEqual(["get_weather"]);
+      expect(result.coverage.verified).toBe(result.coverage.total);
+    });
+
+    it("전 툴이 미지원이면 종전대로 던진다", () => {
+      expect(() =>
+        createBaselineSuite([unsupported], { suiteId: "none", suiteName: "None" }),
+      ).toThrow(GenerateTestsError);
+    });
+
+    it("건너뛴 툴이 있어도 전 툴 지원 서버의 지문은 바뀌지 않는다", () => {
+      // 건너뜀 정보는 suite 밖에 실린다. 전 툴 지원 서버의 출력 바이트가 같아야
+      // 기존 승인 지문이 깨지지 않는다(#88).
+      const before = createBaselineSuite(tools, { suiteId: "s", suiteName: "S" });
+      const again = createBaselineSuite(tools, { suiteId: "s", suiteName: "S" });
+      expect(again.baselineFingerprint).toBe(before.baselineFingerprint);
+      expect(again.skippedTools).toEqual([]);
+    });
+
+    it("UNSUPPORTED_SCHEMA 가 아닌 오류는 격리하지 않고 그대로 던진다", () => {
+      const broken: ToolDef = { name: "", inputSchema: { type: "object" } } as ToolDef;
+      expect(() =>
+        createBaselineSuite([tools[0] as ToolDef, broken], { suiteId: "s", suiteName: "S" }),
+      ).toThrow(GenerateTestsError);
+    });
+  });
+
   it("baseline 결과에 커버리지가 실리고 전부 검증된다", () => {
     const result = createBaselineSuite(fixtureTools(), {
       suiteId: "weather",
@@ -174,24 +240,30 @@ describe("createBaselineSuite", () => {
     });
   });
 
-  it("지원하지 않는 schema는 어떤 산출물보다 먼저 거절한다", () => {
-    expect(() =>
-      createBaselineSuite(
-        [
-          tools[0] as ToolDef,
-          {
-            name: "invalid",
-            inputSchema: { type: "object", properties: { q: { type: "string", minLength: 1 } } },
-          },
-        ],
-        { suiteId: "weather", suiteName: "날씨" },
-      ),
-    ).toThrow(
-      expect.objectContaining({
-        code: "UNSUPPORTED_SCHEMA",
-        path: "tools[1].inputSchema.properties.q.minLength",
-      }),
+  it("지원하지 않는 schema는 그 툴만 건너뛰고 위치를 알린다", () => {
+    // 종전에는 전체를 거절했다. 툴 단위 격리로 바꾼 이유와 근거는 ADR-0004 개정 단락.
+    const result = createBaselineSuite(
+      [
+        tools[0] as ToolDef,
+        {
+          name: "invalid",
+          inputSchema: { type: "object", properties: { q: { type: "string", minLength: 1 } } },
+        },
+      ],
+      { suiteId: "weather", suiteName: "날씨" },
     );
+    expect(
+      result.suite.cases.every(
+        (c) => c.operation.type === "callTool" && c.operation.tool === "get_weather",
+      ),
+    ).toBe(true);
+    expect(result.skippedTools).toEqual([
+      {
+        name: "invalid",
+        path: "tools[1].inputSchema.properties.q.minLength",
+        message: "지원하지 않는 JSON Schema 키워드 'minLength'가 있습니다.",
+      },
+    ]);
   });
 
   it("Runner 계약을 복사하지 않고 package dependency로 소비한다", () => {

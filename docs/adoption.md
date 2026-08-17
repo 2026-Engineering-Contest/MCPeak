@@ -100,8 +100,10 @@ CI(`.github/workflows/ci.yml`)가 매 실행 두 경로로 돈다.
 | `@modelcontextprotocol/server-everything` | 2.0.0 | 13 | stdio | `tools/list` · `tools/call` 확인. `generate` 는 `tools[0]` 에서 거절 |
 | `@modelcontextprotocol/server-memory` | 0.6.3 | 9 | stdio | 같음 |
 
-둘 다 공식 레퍼런스 서버다. `server-sequentialthinking` 도 붙이려 했으나 **그 이름으로 npm 에
-없다**(E404). 공식 README 의 실행 명령이 부정확하다.
+둘 다 공식 레퍼런스 서버다. 세 번째로 sequential thinking 서버를 붙이려 했으나 **공식 README 가
+적은 `@modelcontextprotocol/server-sequentialthinking` 은 npm 에 없다**(E404). 실제 패키지 이름은
+하이픈이 들어간 **`@modelcontextprotocol/server-sequential-thinking`** 이다. 이 문서에서 그 서버를
+가리킬 때는 실제 패키지 이름을 쓰고, 하이픈 없는 쪽은 **README 의 오기**로만 언급한다.
 
 **원격(Streamable HTTP) 서버는 후보에서 아예 뺐다.** §1.2 2행 · #137 때문에 CLI 로 붙을 방법이
 없다. stdio 로 띄울 수 있는 서버만 고를 수 있다.
@@ -176,9 +178,20 @@ MCP error -32601: Tool simulate-research-query requires task augmentation (taskS
 서버의 결함이 아니라 값을 고른 사람의 실수이므로 결함으로 세지 않는다.** 다만 부작용이 있는 툴을
 한 스위트에서 함께 돌릴 때 값끼리 간섭할 수 있다는 사실은 남긴다.
 
-**둘 다 같은 입력으로 2회 연속 실행해 결과가 같았다.** `server-filesystem` 은 깨끗한 샌드박스에서
-시작할 때 54/54 가 재현되고, `mcp-server-git` 은 커밋·체크아웃 같은 부작용이 있는데도 40/40 이
-두 번 나왔다. 단계 7(결정론성 확인)이 자동화하려는 검사를 손으로 한 번 돌린 셈이다.
+**둘 다 같은 입력으로 2회 연속 실행해 판정이 같았다. 다만 두 서버의 조건이 다르다.**
+
+| 서버 | 실행 전 상태 복원 | 2회 판정 | 무엇을 말할 수 있나 |
+|---|---|---|---|
+| `server-filesystem` | **매 실행 전 복원함.** `rm -rf fs-sandbox` 뒤 `a.txt` · `movable.txt` 재생성 | 54/54 · 54/54 | 같은 초기 상태에서 같은 결과가 나온다 |
+| `mcp-server-git` | **복원하지 않음.** 1회차가 만든 커밋이 남은 채로 2회차를 돌렸다 | 40/40 · 40/40 | **"두 실행 모두 40/40" 까지만이다.** 초기 상태가 달랐으므로 결정론성 판정이 아니다 |
+
+`mcp-server-git` 쪽을 결정론성 확인으로 읽으면 안 된다. 상태를 바꾸는 툴(`git_commit` ·
+`git_add` · `git_reset` · `git_checkout`)을 실행했고 그 결과가 2회차의 입력이었다. 같은 판정이
+나온 것은 **그 케이스들이 누적 상태에 둔감했다**는 뜻이지 같은 조건을 두 번 준 것이 아니다.
+
+단계 7(결정론성 확인)이 자동화할 검사는 이보다 엄격해야 한다. `server-filesystem` 쪽이 그 검사의
+모양에 가깝고, 상태 복원 수단(`generate` 의 `--reset-cmd` 같은 것)이 `test` 에는 없다는 것도
+이 실행에서 드러났다.
 
 **부작용 있는 툴을 실제로 실행했다.** `git_commit` · `git_add` · `git_reset` · `git_checkout` 과
 `write_file` · `create_directory` · `move_file` 이 그렇다. 전용 샌드박스(`git-sandbox` ·
@@ -300,12 +313,13 @@ CLAUDE.md 가 "실패 메시지가 곧 제품이다" 로 정의한 바로 그 �
 | 무엇 | 어디서 드러났나 | 상태 |
 |---|---|---|
 | 미지원 키워드 **한 개**가 서버 전체 생성을 막는다 | 고유 서버 8개 중 **5개**가 툴 하나의 `maximum` · `minItems` · `exclusiveMaximum` · `anyOf` 에서 전멸 | **PR #145 머지됨** (ADR-0036) |
-| `test` 가 `--arg -y` 를 거절한다 (`generate` 는 받는다) | npx · uvx 로 띄우는 서버 전부. §1.4.1 | **PR #145 머지됨** |
+| `test` 가 `--arg -y` 를 거절한다 (`generate` 는 받는다) | **PR #145 전에 붙인 앞 넷 전부.** 뒤 둘은 수정 후라 공백 형태로 붙었다(§1.4.1) | **PR #145 머지됨** |
 | 연결 실패가 원인 없는 `GENERATE_FAILED` 한 줄이 된다 | `mcp-server-time` 의 import 오류(§1.5)와 없는 디렉터리 인자가 같은 문장으로 보였다 | **PR #145 머지됨** |
 | `taskSupport: 'required'` 툴의 거절 이유를 화면이 버린다 | `server-everything` 의 `simulate-research-query`. §1.4.2 | **미제출** |
 
-**첫 행이 §10 의 실질적 병목이었다.** `server-everything` 은 13개 툴 중 12개가 지원 범위인데
-0개가 생성됐다. 이 하나를 고쳐 **막혔던 5개 중 3개가 실제로 적용됐다**(§2.5.1 ②). 남은 둘은
+**첫 행이 §10 의 실질적 병목이었다.** `server-everything` 은 13개 툴 중 **11개**가 지원 범위인데
+0개가 생성됐다(건너뛴 둘은 `get-resource-links` 의 `maximum` 과 `gzip-file-as-resource` 의
+`format`). §2.2 가 "12개" 로 적은 것은 `format` 을 발견하기 전 관측이다. 이 하나를 고쳐 **막혔던 5개 중 3개가 실제로 적용됐다**(§2.5.1 ②). 남은 둘은
 단일 툴 서버라 부분 생성으로 살릴 수 없다.
 
 > **#135 와 다른 결함이다.** #135 는 "`$schema` 를 지원 목록에 넣어야 한다"(지원 범위)이고,

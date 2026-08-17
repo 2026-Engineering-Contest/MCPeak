@@ -27,19 +27,39 @@ const hasUvx = ((): boolean => {
   }
 })();
 
+/**
+ * 실서버 E2E 를 반드시 돌려야 하는 실행인지. CI 가 켠다.
+ *
+ * 로컬 기여자는 `uv` 없이도 나머지 테스트를 돌릴 수 있어야 하므로 기본은 skip 이다.
+ * 반대로 CI 는 이 E2E 가 안 돈 실행을 통과로 세면 안 되므로, 그때 skip 을 실패로 올린다.
+ */
+const requiresE2e = process.env.OHMYMCP_REQUIRE_E2E === "1";
+
 // uvx 가 패키지를 내려받는 첫 회차는 네트워크에 달렸다. 캐시가 있으면 몇 초에 끝난다.
 const E2E_TIMEOUT_MS = 300_000;
 
+const MISSING_UVX_REASON =
+  "uvx 가 없어 mcp-server-fetch E2E 를 돌리지 못했습니다. " +
+  "이 실행은 계획서 완료 조건 §1.1-3(실서버에서 케이스 1개 이상)을 검증하지 않았습니다. " +
+  "해결: uv 를 설치하면(https://docs.astral.sh/uv) 이 테스트가 돕니다.";
+
 // skip 은 러너 출력에서 초록으로 보인다. 왜 안 돌았는지 적지 않으면 "돌았는데 통과" 와
 // 구분되지 않는다. 커버리지 화면에서 침묵을 거짓말로 본 것과 같은 자리다.
-if (!hasUvx)
-  console.warn(
-    "[fetch-server-e2e] uvx 가 없어 mcp-server-fetch E2E 를 건너뜁니다. " +
-      "이 실행은 계획서 완료 조건 §1.1-3(실서버에서 케이스 1개 이상)을 검증하지 않았습니다. " +
-      "해결: uv 를 설치하면(https://docs.astral.sh/uv) 이 테스트가 돕니다.",
-  );
+if (!hasUvx && !requiresE2e) console.warn(`[fetch-server-e2e] ${MISSING_UVX_REASON}`);
 
 describe.sequential("mcp-server-fetch E2E (실서버)", () => {
+  // 경고 한 줄과 `1 skipped` 는 CI 요약에 안 남는다. OHMYMCP_REQUIRE_E2E=1 인 실행에서는
+  // 침묵 대신 빨간 케이스 하나로 남긴다. 판정에 드러나야 판정이다.
+  it.skipIf(hasUvx || !requiresE2e)("uvx 가 있어야 실서버 E2E 를 판정할 수 있다", () => {
+    // expect.unreachable 은 문장을 `expected "..." not to be reached` 로 감싼다.
+    // 읽는 사람이 필요한 것은 사유와 해결법이지 단언의 형식이 아니다.
+    throw new Error(
+      `${MISSING_UVX_REASON}\n` +
+        "이 실행은 OHMYMCP_REQUIRE_E2E=1 이라 건너뛰기를 실패로 판정합니다.\n" +
+        "E2E 없이 나머지만 돌리려면 이 변수를 지우세요.",
+    );
+  });
+
   it.skipIf(!hasUvx)(
     "exclusiveMaximum 을 가진 툴에서 케이스가 나온다 (uvx 필요)",
     async () => {

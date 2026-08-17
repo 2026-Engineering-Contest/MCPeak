@@ -464,6 +464,27 @@ describe("runGenerateCommand", () => {
     expect(output).not.toContain("EXDEV");
   });
 
+  it("연결 실패는 core 오류의 원인을 그대로 보여준다", async () => {
+    // 서버가 spawn 직후 죽으면(경로 오류, Python import 실패) 사용자가 볼 근거는 core 가
+    // 만든 code·message 뿐이다. GENERATE_FAILED 로 뭉개면 소스를 읽어야 한다. 도그푸딩 실측.
+    const d = deps();
+    const stderr: string[] = [];
+    d.value.writeStderr = (text) => stderr.push(text);
+    d.value.connect = vi.fn(async () => {
+      throw Object.assign(new Error("요청 완료 전 MCP 서버가 종료되었습니다."), {
+        name: "McpClientError",
+        code: "PROCESS_EXITED",
+        hint: "명령 경로와 서버 로그를 확인하세요.",
+      });
+    });
+    expect(await runGenerateCommand(argv, d.value)).toBe(1);
+    const output = stderr.join("");
+    expect(output).toContain("GENERATE_CONNECT_FAILED/PROCESS_EXITED");
+    expect(output).toContain("요청 완료 전 MCP 서버가 종료되었습니다.");
+    expect(output).toContain("명령 경로와 서버 로그를 확인하세요.");
+    expect(output).not.toContain("GENERATE_FAILED");
+  });
+
   /** link가 지정한 errno로 실패하게 만든 뒤 stderr를 돌려준다. */
   async function linkFailsWith(
     code: string,

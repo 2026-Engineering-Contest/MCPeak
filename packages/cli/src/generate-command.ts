@@ -207,6 +207,28 @@ function generateTestsFailure(
   );
 }
 
+/**
+ * core 의 McpClientError 인지 구조로 확인한다. core 를 import 하지 않는다.
+ * `test-command.ts` 의 `coreError` 와 같은 판별인데, 그쪽은 AggregateError 안까지 내려가고
+ * 진단을 함께 꺼낸다. 여기 연결 오류는 core 가 직접 던지므로 겉모양 검사로 충분하다.
+ */
+function isCoreClientError(
+  value: unknown,
+): value is { readonly code: string; readonly message: string; readonly hint: string } {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "name" in value &&
+    value.name === "McpClientError" &&
+    "code" in value &&
+    typeof value.code === "string" &&
+    "message" in value &&
+    typeof value.message === "string" &&
+    "hint" in value &&
+    typeof value.hint === "string"
+  );
+}
+
 /** 커밋에 쓰는 hard link를 출력 디렉터리가 지원하지 않거나 권한이 없는 경우. */
 type LinkUnsupportedCode = "EPERM" | "ENOTSUP";
 class LinkUnsupportedError extends Error {
@@ -1596,6 +1618,13 @@ export async function runGenerateCommand(
     // 주입이 없으면 아래 폴백으로 떨어진다. 기존 동작이 그대로 남는다.
     else if (deps.GenerateTestsError !== undefined && error instanceof deps.GenerateTestsError)
       generateTestsFailure(deps, error);
+    else if (isCoreClientError(error))
+      // 서버가 spawn 직후 죽거나 handshake 에 실패하면 사용자가 볼 근거는 core 가 만든
+      // code·message 뿐이다. GENERATE_FAILED 로 뭉개면 원인을 알 길이 없다(도그푸딩 실측 —
+      // 존재하지 않는 디렉터리 인자, Python 서버의 import 오류가 전부 같은 한 줄로 보였다).
+      deps.writeStderr(
+        `오류 [GENERATE_CONNECT_FAILED/${error.code}]: ${error.message}\n해결: ${error.hint}\n`,
+      );
     else
       deps.writeStderr(
         "오류 [GENERATE_FAILED]: baseline suite를 생성하거나 저장하지 못했습니다.\n해결: MCP 서버와 출력 경로를 확인한 뒤 다시 실행하세요.\n",

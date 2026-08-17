@@ -539,3 +539,153 @@ describe("generateTests", () => {
     await expect(readFile(path as string, "utf8")).resolves.toContain('"toString": "owned-value"');
   });
 });
+
+// 아래 스키마들은 지어낸 것이 아니라 @modelcontextprotocol/server-everything 2.0.0 의
+// tools/list 응답을 그대로 옮긴 것이다 (2026-08-17 도그푸딩, docs/adoption.md §2.2).
+describe("$schema 키워드 (#135)", () => {
+  const DRAFT_07 = "http://json-schema.org/draft-07/schema#";
+
+  it("$schema 가 붙은 스키마를 거절하지 않고 입력을 합성한다", async () => {
+    const outDir = await temporaryOutDir();
+
+    const [path] = await generateTests(
+      [
+        {
+          name: "echo",
+          inputSchema: {
+            $schema: DRAFT_07,
+            type: "object",
+            properties: { message: { type: "string", description: "Message to echo" } },
+            required: ["message"],
+          },
+        },
+      ],
+      { outDir },
+    );
+
+    // 거절되지 않는 것만으로는 부족하다. $schema 를 무시한 결과가 실제 입력이어야 한다.
+    await expect(readFile(path as string, "utf8")).resolves.toContain('"message": "example"');
+  });
+
+  it("중첩된 위치의 $schema 도 무시한다", async () => {
+    const outDir = await temporaryOutDir();
+
+    const [path] = await generateTests(
+      [
+        {
+          name: "nested",
+          inputSchema: {
+            $schema: DRAFT_07,
+            type: "object",
+            properties: {
+              inner: {
+                $schema: DRAFT_07,
+                type: "object",
+                properties: { id: { type: "string" } },
+                required: ["id"],
+              },
+            },
+            required: ["inner"],
+          },
+        },
+      ],
+      { outDir },
+    );
+
+    await expect(readFile(path as string, "utf8")).resolves.toContain('"id": "example"');
+  });
+
+  it("$schema 가 문자열이 아니면 경로를 짚어 거절한다", async () => {
+    const outDir = await temporaryOutDir();
+
+    await expect(
+      generateTests(
+        [
+          {
+            name: "non-string-schema",
+            inputSchema: { $schema: null, type: "object", properties: {}, required: [] },
+          },
+        ],
+        { outDir },
+      ),
+    ).rejects.toMatchObject({
+      code: "UNSUPPORTED_SCHEMA",
+      path: "tools[0].inputSchema.$schema",
+      // 경로만 보면 "미지원 키워드" 거절과 구분되지 않는다. 사유가 타입이어야 한다.
+      message: expect.stringContaining("문자열이어야 합니다"),
+    });
+    await expect(readdir(outDir)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  // ADR-0004 가 그은 경계다. $schema 를 허용한 것이 실제 제약까지 함께 열어 준 것으로
+  // 번지면 잘못된 입력을 만들게 된다. 세 키가 여전히 막히는지 고정한다.
+  it.each([
+    {
+      label: "maximum · minimum (get-resource-links)",
+      inputSchema: {
+        $schema: DRAFT_07,
+        type: "object",
+        properties: {
+          count: {
+            default: 3,
+            description: "Number of resource links to return (1-10)",
+            type: "number",
+            minimum: 1,
+            maximum: 10,
+          },
+        },
+      },
+      // 미지원 키가 여럿이면 정렬해 첫 번째를 보고한다.
+      path: "tools[0].inputSchema.properties.count.maximum",
+    },
+    {
+      label: "format (gzip-file-as-resource)",
+      inputSchema: {
+        $schema: DRAFT_07,
+        type: "object",
+        properties: {
+          data: {
+            default: "https://example.invalid/README.md",
+            type: "string",
+            format: "uri",
+            description: "URL or data URI of the file content to compress",
+          },
+        },
+      },
+      path: "tools[0].inputSchema.properties.data.format",
+    },
+    // 제목에 "$schema" 를 쓰지 않는다 — it.each 가 $ 접두사를 케이스 속성 참조로 읽어 치환한다.
+  ])("허용 키워드를 늘려도 $label 은 여전히 거절한다", async ({ inputSchema, path }) => {
+    const outDir = await temporaryOutDir();
+
+    await expect(
+      generateTests([{ name: "still-rejected", inputSchema }], { outDir }),
+    ).rejects.toMatchObject({ code: "UNSUPPORTED_SCHEMA", path });
+    await expect(readdir(outDir)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("거절 hint 에 $schema 가 실리고 기존 annotation 표기는 유지된다", async () => {
+    const outDir = await temporaryOutDir();
+
+    await expect(
+      generateTests(
+        [
+          {
+            name: "unsupported",
+            inputSchema: {
+              type: "object",
+              properties: { query: { type: "string", minLength: 1 } },
+              required: ["query"],
+            },
+          },
+        ],
+        { outDir },
+      ),
+    ).rejects.toMatchObject({
+      code: "UNSUPPORTED_SCHEMA",
+      // hint 는 SUPPORTED_SCHEMA_KEYS 의 삽입 순서로 만들어진다. $schema 를 사이에 끼우면
+      // "description, title" 이 끊겨 기존 단언(위 describe)이 깨진다.
+      hint: expect.stringContaining("description, title, $schema"),
+    });
+  });
+});

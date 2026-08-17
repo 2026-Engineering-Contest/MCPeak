@@ -30,6 +30,7 @@ export type SpecFindingCode =
   | "TYPE_MISMATCH" // 선언된 type과 입력 값의 타입이 다르다
   | "ENUM_MISMATCH" // 선언된 enum 밖의 값이다
   | "SCHEMA_NOT_ANALYZABLE" // 서버 스키마를 해석하지 못했다. 위반이 아니다
+  | "REJECTION_WITHOUT_VIOLATION" // 거절을 기대하는데 입력이 선언을 어기지 않는다. 위반이 아니라 의도 불명 신호다
   // 단언 실질성
   | "VACUOUS_MIN_LENGTH" // minLength: 0
   | "VACUOUS_MIN_ITEMS"; // minItems: 0
@@ -91,6 +92,8 @@ export function describeSpecFinding(finding: SpecFinding): string {
       return `${path} 값 ${literal(actual)} 는 선언된 값이 아닙니다. 허용: ${literal(expected)}${suggest(finding, "비슷한 값")}`;
     case "SCHEMA_NOT_ANALYZABLE":
       return `${literal(actual)} 의 입력 스키마를 해석하지 못해 이 툴의 입력 검사를 건너뜁니다`;
+    case "REJECTION_WITHOUT_VIOLATION":
+      return "거절을 기대하지만 입력이 서버 선언을 어기지 않습니다. 서버가 선언 밖 제약으로 거절한다면 그대로 두고, 아니라면 입력을 확인하세요";
     case "VACUOUS_MIN_LENGTH":
       return `${path} 는 0이라 모든 문자열이 통과합니다`;
     case "VACUOUS_MIN_ITEMS":

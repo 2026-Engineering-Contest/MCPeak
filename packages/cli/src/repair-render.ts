@@ -165,6 +165,19 @@ function renderDiscardReasons(discarded: RepairDiscardedView): string[] {
   return reasons;
 }
 
+function renderDiscardActions(discarded: RepairDiscardedView): string[] {
+  const actions: string[] = [];
+  if (discarded.specTarget > 0) {
+    actions.push(
+      "  → 명세가 실제로 틀렸다고 보시면 `ohmymcp generate` 로 다시 승인받으세요.\n",
+      "    승인된 명세를 고치라는 제안은 그 전에는 화면에 올리지 않습니다.\n",
+    );
+  }
+  if (discarded.unknownCase > 0 || discarded.unsureCauses > 0)
+    actions.push("  → 같은 번들로 한 번 더 물어보세요. 같은 입력에도 답은 달라집니다.\n");
+  return actions;
+}
+
 /**
  * 제안이 전부 폐기돼 남은 항목이 0 인 경우의 문안.
  *
@@ -179,15 +192,7 @@ function renderAllDiscarded(discarded: RepairDiscardedView): string {
     "\n",
   ];
   for (const reason of renderDiscardReasons(discarded)) parts.push(`  제외 사유  ${reason}\n`);
-  parts.push("\n");
-  if (discarded.specTarget > 0) {
-    parts.push(
-      "  → 명세가 실제로 틀렸다고 보시면 `ohmymcp generate` 로 다시 승인받으세요.\n",
-      "    승인된 명세를 고치라는 제안은 그 전에는 화면에 올리지 않습니다.\n",
-    );
-  }
-  if (discarded.unknownCase > 0 || discarded.unsureCauses > 0)
-    parts.push("  → 같은 번들로 한 번 더 물어보세요. 같은 입력에도 답은 달라집니다.\n");
+  parts.push("\n", ...renderDiscardActions(discarded));
   return parts.join("");
 }
 
@@ -269,6 +274,7 @@ export function renderRepairResult(options: {
     parts.push("\n");
     for (const reason of renderDiscardReasons(options.result.discarded))
       parts.push(`※ ${reason}이 검증에서 제외됐습니다.\n`);
+    parts.push("\n", ...renderDiscardActions(options.result.discarded));
   }
   parts.push("\n", REPAIR_BOUNDARY_LINES);
   return parts.join("");

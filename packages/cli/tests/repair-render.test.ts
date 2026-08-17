@@ -324,6 +324,30 @@ describe("repair 화면", () => {
     expect(screen).toContain("※ 승인된 명세를 고치라는 제안 2건이 검증에서 제외됐습니다.");
   });
 
+  it("남은 제안과 specTarget이 함께 있으면 명세 재승인만 안내한다", async () => {
+    const context = deps({
+      diagnosis: diagnosis({
+        result: diagnosisResult([cause()], discarded({ specTarget: 1 })),
+      }),
+    });
+    await runRepairCommand([...ARGV, "--yes"], context.value);
+    const screen = context.writes.out.join("");
+    expect(screen).toContain("`ohmymcp generate` 로 다시 승인받으세요");
+    expect(screen).not.toContain("같은 번들로 한 번 더 물어보세요");
+  });
+
+  it("남은 제안과 unknownCase가 함께 있으면 재시도만 안내한다", async () => {
+    const context = deps({
+      diagnosis: diagnosis({
+        result: diagnosisResult([cause()], discarded({ unknownCase: 1 })),
+      }),
+    });
+    await runRepairCommand([...ARGV, "--yes"], context.value);
+    const screen = context.writes.out.join("");
+    expect(screen).toContain("같은 번들로 한 번 더 물어보세요");
+    expect(screen).not.toContain("명세가 실제로 틀렸다고 보시면");
+  });
+
   it("폐기된 제안이 없는 unsure 는 근거 부족 문안을 쓴다", async () => {
     const context = deps({
       diagnosis: diagnosis({

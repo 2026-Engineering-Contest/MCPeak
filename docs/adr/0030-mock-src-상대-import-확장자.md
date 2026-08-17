@@ -1,6 +1,6 @@
 # ADR-0030: `packages/mock/src` 의 상대 import 확장자
 
-- 상태: 제안
+- 상태: 채택
 - 날짜: 2026-08-15
 - 작성자: @storyrago (③ mock server 파트)
 
@@ -97,4 +97,9 @@ packages/mock/src/index.ts(13,61): error TS5097: An import path can only end wit
 **후속 과제 (추가)** — `@ohmymcp/mock` 을 TS 로 import 하는 첫 소비자 패키지가 생기면,
 그 패키지의 `tsconfig.json` 에 `allowImportingTsExtensions` 를 켜거나 `tsconfig.base.json`
 으로 올려야 한다. 후자는 다섯 패키지가 공유하는 설정이라 오너 전원의 합의가 필요하다 —
-혼자 판단해서 바꿀 수 없다.
+혼자 판단해서 바꿀 수 없다. **#110 이 그것을 다룬다.**
+
+`#110` 의 결론에 따라 이 결정이 유지되지 않을 수 있다. 그 이슈의 선택지 중 둘(픽스처가 `dist` 를
+물게 하기 · 파일을 다시 합치기)은 `.ts` 확장자 자체를 없앤다. **그 경우 이 ADR 은 `제안` 으로
+되돌리는 것이 아니라 새 ADR 이 대체한다** — 결정은 내려졌고 구현이 `main` 에 있으므로
+(#109), 기록도 그 사실을 반영해야 한다. 아직 안 정해진 것은 이 결정이 아니라 그 **결과**다.

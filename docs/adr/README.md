@@ -15,9 +15,9 @@
 | [0002](./0002-matcher-strategy.md) | matcher를 독립 구현으로 유지하고 외부 테스트 러너 확장은 제공하지 않는다 | runner | 제안 |
 | [0003](./0003-cassette-matching-key.md) | 카세트 매칭 키 설계와 비결정 필드(타임스탬프 등) 처리 | record | 승인 |
 | [0004](./0004-generation-scope.md) | 생성 테스트의 자동화 범위 | generate | 제안 |
-| [0005](./0005-mock-data-strategy.md) | 목 데이터 생성 전략 — 사람이 작성 vs 스키마 기반 생성 | mock | 제안 |
+| [0005](./0005-mock-data-strategy.md) | 목 데이터 생성 전략 — 사람이 작성 vs 스키마 기반 생성 | mock | 채택 |
 | [0006](./0006-ai-assisted-test-authoring.md) | 결정론적 baseline과 AI 테스트 후보의 공존 방식 | generate | 승인 |
-| [0007](./0007-mock-stdio-transport.md) ⚠ | 목 서버의 두 번째 트랜스포트 — stdio 진입점을 낼 것인가 | mock | 제안 |
+| [0007](./0007-mock-stdio-transport.md) ⚠ | 목 서버의 두 번째 트랜스포트 — stdio 진입점을 낼 것인가 | mock | 채택 |
 | [0007](./0007-provider-전송-스키마-분리.md) ⚠ | provider 전송 스키마를 로컬 검증 스키마와 분리한다 | generate | 제안 |
 | [0008](./0008-승인-화면-redaction-범위.md) | 승인 화면 redaction 범위를 넓히지 않는다 | generate, cli | 제안 |
 | [0009](./0009-generate가-runner에-의존하는-예외.md) | `generate`가 `runner`에 의존하는 예외를 명시적으로 승인한다 | generate, runner | 채택 |
@@ -40,8 +40,8 @@
 | [0026](./0026-승인-지문-표시-시점.md) | 승인 지문은 시험 실행과 분류가 끝난 뒤에 표시한다 | cli | 채택 |
 | [0027](./0027-isError-진단의-서버-응답-본문.md) | `isError` 진단이 서버 응답 본문을 함께 싣는다 | runner, cli | 채택 |
 | [0028](./0028-replay-서브커맨드의-서버-없는-실행.md) | `replay` 는 서버를 띄우지 않고, 더미 클라이언트는 `cli` 가 만든다 | cli, record | 제안 |
-| [0029](./0029-목-매칭-키-정규화-경계.md) | 매칭 키로 만들 수 없는 인자를 주입 시점에 거부하고, 해시하지 않는다 | mock | 제안 |
-| [0030](./0030-mock-src-상대-import-확장자.md) | `packages/mock/src` 의 상대 import 는 `.ts` 확장자를 쓴다 | mock | 제안 |
+| [0029](./0029-목-매칭-키-정규화-경계.md) | 매칭 키로 만들 수 없는 인자를 주입 시점에 거부하고, 해시하지 않는다 | mock | 채택 |
+| [0030](./0030-mock-src-상대-import-확장자.md) | `packages/mock/src` 의 상대 import 는 `.ts` 확장자를 쓴다 | mock | 채택 |
 | [0031](./0031-repair-번들과-json-분리.md) | repair 번들을 `--json` 보고서와 별도 파일로 만든다 | cli | 채택 |
 | [0032](./0032-미승인-명세에서의-repair-동작.md) | 미승인 명세에서 `repair` 는 차단하지 않고 전제를 바꾼다 | cli, generate | 채택 |
 | [0033](./0033-stderr-외부-전송-경계.md) | stderr 는 치환하지 않고 확인·상한·옵트아웃으로 다룬다 | cli, generate | 채택 |

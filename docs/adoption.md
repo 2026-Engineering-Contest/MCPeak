@@ -146,7 +146,7 @@ CI(`.github/workflows/ci.yml`)가 매 실행 두 경로로 돈다.
 
 실패 4건은 전부 `simulate-research-query` 툴이다. 원인을 직접 호출로 확인했다.
 
-```
+```text
 MCP error -32601: Tool simulate-research-query requires task augmentation (taskSupport: 'required')
 ```
 
@@ -157,16 +157,26 @@ MCP error -32601: Tool simulate-research-query requires task augmentation (taskS
 
 ### 1.5 외부 서버에서 발견한 결함 — `mcp-server-time`, PR 미제출
 
-`uvx mcp-server-time` 이 기동 즉시 죽었다. 우리 도구는 `PROCESS_EXITED` 로 알렸고, 직접 실행해
-원인을 확인했다.
+`uvx mcp-server-time` 이 기동 즉시 죽었다. **원인에 도달하기까지 세 계층을 거쳤고, 계층마다 받은
+정보가 다르다.** 이 차이 자체가 §2.5 셋째 결함의 근거라 계층을 나눠 적는다.
 
-```
+| 계층 | 무엇을 실행했나 | 무엇을 받았나 |
+|---|---|---|
+| 1. CLI | `ohmymcp generate --command uvx --arg mcp-server-time` | `오류 [GENERATE_FAILED]: baseline suite를 생성하거나 저장하지 못했습니다.` **원인 없음** |
+| 2. 라이브러리 | `core.connectStdio` 를 직접 호출하는 임시 스크립트 | `PROCESS_EXITED 요청 완료 전 MCP 서버가 종료되었습니다.` 서버가 죽었다는 사실까지 |
+| 3. 서버 | `uvx mcp-server-time --help` | 아래 traceback. **여기서야 원인이 나왔다** |
+
+```text
 ImportError: cannot import name 'McpError' from 'mcp.shared.exceptions'.
 Did you mean: 'MCPError'?
 ```
 
 Python `mcp` 2.x 가 `McpError` 를 `MCPError` 로 개명했는데 서버가 구 이름을 import 한다.
 `--with "mcp<2"` 로 고정해 우회했다. **우리 결함이 아니라 그 저장소의 결함이다.**
+
+**1계층에서 멈췄으면 이 결함을 못 찾았다.** `test` 는 같은 상황에서
+`MCP_CONNECTION_FAILED/PROCESS_EXITED` 로 core 의 코드를 그대로 싣는데 `generate` 만 뭉갠다.
+그래서 §2.5 셋째 행을 결함으로 세었고 PR #145 가 `GENERATE_CONNECT_FAILED/<code>` 로 고쳤다.
 
 §10 의 "외부 저장소에 보낸 PR" 후보이지만 **아직 보내지 않았다.** 한 줄 수정이라 비용은 낮고,
 동결 전에 보낼지는 결정하지 않았다. 보내면 이 칸을 갱신한다.
@@ -260,7 +270,7 @@ CLAUDE.md 가 "실패 메시지가 곧 제품이다" 로 정의한 바로 그 �
 
 | 무엇 | 어디서 드러났나 | 상태 |
 |---|---|---|
-| 미지원 키워드 **한 개**가 서버 전체 생성을 막는다 | 8개 시도 중 **5개**가 툴 하나의 `maximum` · `minItems` · `exclusiveMaximum` · `anyOf` 에서 전멸 | PR #145 (ADR-0036) |
+| 미지원 키워드 **한 개**가 서버 전체 생성을 막는다 | 고유 서버 8개 중 **5개**가 툴 하나의 `maximum` · `minItems` · `exclusiveMaximum` · `anyOf` 에서 전멸 | PR #145 (ADR-0036) |
 | `test` 가 `--arg -y` 를 거절한다 (`generate` 는 받는다) | npx · uvx 로 띄우는 서버 전부. §1.4.1 | PR #145 |
 | 연결 실패가 원인 없는 `GENERATE_FAILED` 한 줄이 된다 | `mcp-server-time` 의 import 오류(§1.5)와 없는 디렉터리 인자가 같은 문장으로 보였다 | PR #145 |
 | `taskSupport: 'required'` 툴의 거절 이유를 화면이 버린다 | `server-everything` 의 `simulate-research-query`. §1.4.2 | **미제출** |
@@ -276,10 +286,29 @@ CLAUDE.md 가 "실패 메시지가 곧 제품이다" 로 정의한 바로 그 �
 까지만 말하고 서버가 준 `requires task augmentation` 을 버린다. #106 · #136 과 같은 유형이고,
 **MCP tasks 지원 여부와 별개로 이유를 보여주는 것은 가능하다.**
 
-> **표본 수.** §1.3 은 서버 2개, 여기는 **8개 시도 중 4개 적용**이다. 나머지 4개
-> (`server-filesystem` · `server-sequential-thinking` · `mcp-server-fetch` · `mcp-server-git`)는
-> 적용에 실패한 것이 아니라 **PR #145 이후 재시도하지 않은 것**이다. 부분 생성이 들어갔으므로
-> 이제 붙을 가능성이 있으나 **확인하지 않았다.** 확인 전에는 실적에 넣지 않는다.
+#### 2.5.1 세는 단위 — 고유 서버 수와 실행 횟수는 다르다
+
+이 절과 §1.4 의 숫자는 전부 **고유 서버 수**다. 같은 서버를 여러 번 실행한 것은 세지 않는다
+(`server-everything` 은 PR #145 전후로 두 번, `mcp-server-time` 은 값 교정 전후로 두 번 돌렸다).
+분모가 섞이지 않게 항목을 나눠 적는다.
+
+| 항목 | 수 | 어느 서버 |
+|---|---|---|
+| 2026-08-17 에 붙여 본 **고유 서버** | 8 | 아래 넷의 합 |
+| ① `main` 기준 적용 완료 | 3 | `server-memory` · `mcp-server-sqlite` · `mcp-server-time` |
+| ② PR #145 브랜치에서만 적용 | 1 | `server-everything` |
+| ③ 미지원 키워드로 거절, **재시도 안 함** | 4 | `server-filesystem`(`minItems`) · `server-sequential-thinking`(`maximum`) · `mcp-server-fetch`(`exclusiveMaximum`) · `mcp-server-git`(`anyOf`) |
+| §10 목표(3~5) 대비 | **4** = ① + ② | ② 는 PR #145 머지 전까지 `main` 실적이 아니다 |
+
+**"5개가 전멸" 의 분모는 ② + ③ 이다.** `server-everything` 도 `main` 에서는 0개가 생성되므로
+거절된 쪽에 든다. 부분 생성이 들어간 뒤 그중 하나(②)만 다시 돌려 적용됐다.
+
+**③ 은 적용에 실패한 것이 아니라 재시도하지 않은 것이다.** PR #145 의 부분 생성으로 붙을
+가능성이 있으나 **확인하지 않았다.** 확인 전에는 실적에 넣지 않는다.
+
+> **#141 전과 후도 다른 실행이다.** §1.3 의 두 서버(`server-everything` · `server-memory`)는
+> #141 전에 `$schema` 로 막힌 것이고, 같은 서버를 #141 이후 다시 돌린 것이 §1.4 다. §1.3 의
+> "2개" 와 여기 "8개" 를 더하면 안 된다 — 겹친다.
 
 ## 3. 우리 산출물을 외부 도구로 검증한 것
 

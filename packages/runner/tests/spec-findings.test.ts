@@ -108,6 +108,22 @@ describe("describeSpecFinding 문안 (설계 문서 §7)", () => {
     );
   });
 
+  it("RANGE_MISMATCH", () => {
+    expect(
+      describeSpecFinding(
+        finding({
+          code: "RANGE_MISMATCH",
+          severity: "advisory",
+          path: "input.count",
+          expected: { minimum: 1, maximum: 10 },
+          actual: 0,
+        }),
+      ),
+    ).toBe(
+      "input.count 값 0 이 선언된 범위를 벗어납니다. 서버 선언: 1 이상 10 이하. 값을 범위 안으로 고치거나, 거절을 기대하는 케이스라면 expectError 를 지정하세요",
+    );
+  });
+
   it("VACUOUS_MIN_LENGTH", () => {
     expect(
       describeSpecFinding(

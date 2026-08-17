@@ -198,7 +198,7 @@ ADR-0004 의 「값 선택 규칙」을 개정한다. 기존 우선순위(`const
 | `uri` · `uri-reference` · `iri` | `"https://example.com"` |
 | `date` | `"2000-01-01"` |
 | `date-time` | `"2000-01-01T00:00:00Z"` |
-| `time` | `"00:00:00"` |
+| `time` | `"00:00:00Z"` |
 | `duration` | `"P1D"` |
 | `email` · `idn-email` | `"user@example.com"` |
 | `uuid` | `"00000000-0000-4000-8000-000000000000"` |

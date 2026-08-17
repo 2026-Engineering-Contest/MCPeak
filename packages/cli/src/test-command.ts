@@ -303,6 +303,7 @@ const FINDING_GROUP: Readonly<Record<SpecFindingCode, FindingGroup>> = {
   UNDECLARED_FIELD: "inputContract",
   TYPE_MISMATCH: "inputContract",
   ENUM_MISMATCH: "inputContract",
+  RANGE_MISMATCH: "inputContract",
   SCHEMA_NOT_ANALYZABLE: "skipped",
   REJECTION_WITHOUT_VIOLATION: "rejectionIntent",
   VACUOUS_MIN_LENGTH: "assertionSubstance",

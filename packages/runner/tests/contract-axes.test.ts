@@ -23,6 +23,7 @@ describe("deriveContractAxes", () => {
         field: null,
         declaredType: null,
         declaredEnum: null,
+        declaredRange: null,
       },
       {
         kind: "REQUIRED_OMITTED",
@@ -30,6 +31,7 @@ describe("deriveContractAxes", () => {
         field: "city",
         declaredType: null,
         declaredEnum: null,
+        declaredRange: null,
       },
       {
         kind: "TYPE_VIOLATION",
@@ -37,6 +39,7 @@ describe("deriveContractAxes", () => {
         field: "city",
         declaredType: "string",
         declaredEnum: null,
+        declaredRange: null,
       },
     ]);
   });
@@ -280,6 +283,7 @@ describe("matchCoveredAxes", () => {
         field: null,
         declaredType: null,
         declaredEnum: null,
+        declaredRange: null,
       },
     ]);
   });
@@ -297,6 +301,7 @@ describe("matchCoveredAxes", () => {
         field: "city",
         declaredType: null,
         declaredEnum: null,
+        declaredRange: null,
       },
     ]);
   });
@@ -313,6 +318,7 @@ describe("matchCoveredAxes", () => {
         field: "city",
         declaredType: "string",
         declaredEnum: null,
+        declaredRange: null,
       },
     ]);
   });
@@ -329,6 +335,7 @@ describe("matchCoveredAxes", () => {
         field: "units",
         declaredType: null,
         declaredEnum: ["c", "f"],
+        declaredRange: null,
       },
     ]);
   });
@@ -411,5 +418,146 @@ describe("matchCoveredAxes", () => {
     };
     expect(checkInputContract({ suite, tools: [weather] }).findings).toEqual([]);
     expect(matchCoveredAxes({ testCase, tool: weather })).toHaveLength(1);
+  });
+});
+
+describe("RANGE_VIOLATION 축 도출", () => {
+  const ranged = (props: Record<string, unknown>, required: string[]): ToolDef =>
+    tool("t", { type: "object", required, properties: props });
+  const rangeAxes = (props: Record<string, unknown>, required: string[]) =>
+    deriveContractAxes(ranged(props, required)).axes.filter((a) => a.kind === "RANGE_VIOLATION");
+
+  it("minimum 이 있으면 축을 만든다", () => {
+    const axes = rangeAxes({ count: { type: "integer", minimum: 1 } }, ["count"]);
+    expect(axes).toHaveLength(1);
+    expect(axes[0]?.field).toBe("count");
+    expect(axes[0]?.declaredRange?.minimum).toBe(1);
+    expect(axes[0]?.declaredType).toBeNull();
+    expect(axes[0]?.declaredEnum).toBeNull();
+  });
+
+  it("minimum 이 0 이어도 축을 만든다", () => {
+    expect(rangeAxes({ count: { type: "integer", minimum: 0 } }, ["count"])).toHaveLength(1);
+  });
+
+  it("minItems: 0 단독은 축이 아니다", () => {
+    expect(
+      rangeAxes({ tags: { type: "array", items: { type: "string" }, minItems: 0 } }, ["tags"]),
+    ).toHaveLength(0);
+  });
+
+  it("minItems: 0 이라도 maxItems 가 있으면 축이다", () => {
+    expect(
+      rangeAxes({ tags: { type: "array", items: { type: "string" }, minItems: 0, maxItems: 3 } }, [
+        "tags",
+      ]),
+    ).toHaveLength(1);
+  });
+
+  it("minLength: 0 단독은 축이 아니다", () => {
+    expect(rangeAxes({ q: { type: "string", minLength: 0 } }, ["q"])).toHaveLength(0);
+  });
+
+  it("범위가 없으면 축이 아니다", () => {
+    expect(rangeAxes({ count: { type: "integer" } }, ["count"])).toHaveLength(0);
+  });
+
+  it("한 필드에 축은 하나다", () => {
+    expect(
+      rangeAxes({ count: { type: "integer", minimum: 1, maximum: 10 } }, ["count"]),
+    ).toHaveLength(1);
+  });
+
+  it("기존 축은 declaredRange 가 null 이다", () => {
+    const axes = deriveContractAxes(
+      ranged({ count: { type: "integer", minimum: 1 } }, ["count"]),
+    ).axes;
+    for (const axis of axes)
+      if (axis.kind !== "RANGE_VIOLATION") expect(axis.declaredRange).toBeNull();
+  });
+
+  it("축 순서가 결정론적이고 RANGE_VIOLATION 이 마지막이다", () => {
+    const schema = ranged(
+      { b: { type: "integer", minimum: 1 }, a: { type: "integer", minimum: 1 } },
+      ["b", "a"],
+    );
+    const first = deriveContractAxes(schema).axes.map((a) => `${a.kind}:${a.field}`);
+    const second = deriveContractAxes(schema).axes.map((a) => `${a.kind}:${a.field}`);
+    expect(first).toEqual(second);
+    expect(first).toEqual([
+      "HAPPY_PATH:null",
+      "REQUIRED_OMITTED:a",
+      "REQUIRED_OMITTED:b",
+      "TYPE_VIOLATION:a",
+      "TYPE_VIOLATION:b",
+      "RANGE_VIOLATION:a",
+      "RANGE_VIOLATION:b",
+    ]);
+  });
+});
+
+describe("matchCoveredAxes 가 RANGE_VIOLATION 을 덮은 것으로 센다", () => {
+  const ranged = tool("t", {
+    type: "object",
+    required: ["count"],
+    properties: { count: { type: "integer", minimum: 1 } },
+  });
+  const rejection = (input: JsonObject): TestCaseSpec => ({
+    id: "c",
+    name: "c",
+    operation: { type: "callTool", tool: "t", input },
+    assertions: [{ type: "isError", expected: true }],
+  });
+
+  it("범위 밖 값을 보낸 거절 기대 케이스가 축을 덮는다", () => {
+    const covered = matchCoveredAxes({ testCase: rejection({ count: 0 }), tool: ranged });
+    expect(covered.map((a) => a.kind)).toEqual(["RANGE_VIOLATION"]);
+    expect(covered[0]?.declaredRange?.minimum).toBe(1);
+  });
+
+  it("타입 위반이면 범위 축을 덮지 않는다", () => {
+    const covered = matchCoveredAxes({ testCase: rejection({ count: "x" }), tool: ranged });
+    expect(covered.map((a) => a.kind)).toEqual(["TYPE_VIOLATION"]);
+  });
+
+  it("범위 안 값이면 HAPPY_PATH 다", () => {
+    const testCase: TestCaseSpec = {
+      id: "c",
+      name: "c",
+      operation: { type: "callTool", tool: "t", input: { count: 1 } },
+      assertions: [{ type: "isError", expected: false }],
+    };
+    expect(matchCoveredAxes({ testCase, tool: ranged }).map((a) => a.kind)).toEqual(["HAPPY_PATH"]);
+  });
+});
+
+describe("enum 과 범위가 함께 선언된 필드", () => {
+  const enumRanged = tool("t", {
+    type: "object",
+    required: ["count"],
+    properties: { count: { type: "integer", enum: [1, 2], minimum: 1 } },
+  });
+
+  it("범위 축을 만들지 않는다", () => {
+    // 범위를 어긴 값은 enum 밖이기도 해서 ENUM_VIOLATION 으로 먼저 분류된다. 축을 만들면
+    // 어떤 케이스로도 못 덮는 빈틈이 분모에 남는다.
+    expect(deriveContractAxes(enumRanged).axes.map((a) => a.kind)).toEqual([
+      "HAPPY_PATH",
+      "REQUIRED_OMITTED",
+      "TYPE_VIOLATION",
+      "ENUM_VIOLATION",
+    ]);
+  });
+
+  it("범위 밖 값은 ENUM_VIOLATION 으로 덮인다", () => {
+    const testCase: TestCaseSpec = {
+      id: "c",
+      name: "c",
+      operation: { type: "callTool", tool: "t", input: { count: 0 } },
+      assertions: [{ type: "isError", expected: true }],
+    };
+    expect(matchCoveredAxes({ testCase, tool: enumRanged }).map((a) => a.kind)).toEqual([
+      "ENUM_VIOLATION",
+    ]);
   });
 });

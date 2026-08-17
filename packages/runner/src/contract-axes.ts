@@ -1,5 +1,7 @@
 import type { ToolDef } from "@ohmymcp/core";
 import { expectedIsError } from "./case-expectation.js";
+import type { ContractRange } from "./contract-range.js";
+import { rangeYieldsViolation, violatesRange } from "./contract-range.js";
 import type { NormalizedInputSchema } from "./input-schema.js";
 import { analyzeInputSchema, judgeField } from "./input-schema.js";
 import { byCodeUnit } from "./ordering.js";
@@ -14,7 +16,8 @@ export type ContractAxisKind =
   | "HAPPY_PATH" // 선언을 지킨 입력에 정상 응답한다
   | "REQUIRED_OMITTED" // 필수 필드를 뺀 입력을 거절한다
   | "TYPE_VIOLATION" // 선언 type 을 어긴 값을 거절한다
-  | "ENUM_VIOLATION"; // 선언 enum 밖 값을 거절한다
+  | "ENUM_VIOLATION" // 선언 enum 밖 값을 거절한다
+  | "RANGE_VIOLATION"; // 선언된 범위 밖 값을 거절한다
 
 /** 축 한 개. 같은 툴 안에서 (kind, field) 쌍은 유일하다. */
 export interface ContractAxis {
@@ -27,6 +30,8 @@ export interface ContractAxis {
   readonly declaredType: ContractDeclaredType | null;
   /** 선언된 enum. ENUM_VIOLATION 에서만 값이 있고 그 밖에는 null 이다. */
   readonly declaredEnum: readonly JsonValue[] | null;
+  /** 선언된 범위. RANGE_VIOLATION 에서만 값이 있고 그 밖에는 null 이다. */
+  readonly declaredRange: ContractRange | null;
 }
 
 export type ContractDeclaredType =
@@ -89,7 +94,8 @@ export function deriveContractAxes(
     field: string | null,
     declaredType: ContractDeclaredType | null,
     declaredEnum: readonly JsonValue[] | null,
-  ): ContractAxis => ({ kind, tool: tool.name, field, declaredType, declaredEnum });
+    declaredRange: ContractRange | null = null,
+  ): ContractAxis => ({ kind, tool: tool.name, field, declaredType, declaredEnum, declaredRange });
 
   const axes: ContractAxis[] = [axis("HAPPY_PATH", null, null, null)];
   // required 는 서버가 준 순서다. 정렬해서 쓴다. cases 배열 순서는 지문에 들어가는 의미이므로
@@ -106,6 +112,15 @@ export function deriveContractAxes(
   for (const [name, field] of analysis.schema.fields)
     if (field.enumValues !== null)
       axes.push(axis("ENUM_VIOLATION", name, null, [...field.enumValues]));
+  // 위반 값을 만들 수 없는 범위는 축이 아니다. minItems: 0 단독이 그렇다(설계서 §5.2).
+  //
+  // enum 이 함께 선언된 필드도 만들 수 없다. 범위를 어긴 값은 enum 밖이기도 해서 위반 분류가
+  // ENUM_VIOLATION 으로 먼저 잡힌다(violatedAxes 의 단락 순서). 그러면 이 축은 어떤 케이스로도
+  // 안 덮여 영원히 못 채우는 빈틈이 분모에 남는다. enum 이 이미 허용 집합을 못 박고 있으므로
+  // 거절 검증은 ENUM_VIOLATION 축이 대신한다.
+  for (const [name, field] of analysis.schema.fields)
+    if (field.enumValues === null && rangeYieldsViolation(field.range))
+      axes.push(axis("RANGE_VIOLATION", name, null, null, field.range));
 
   return {
     axes,
@@ -125,7 +140,8 @@ const contractAxis = (
   field: string | null,
   declaredType: ContractDeclaredType | null,
   declaredEnum: readonly JsonValue[] | null,
-): ContractAxis => ({ kind, tool: tool.name, field, declaredType, declaredEnum });
+  declaredRange: ContractRange | null = null,
+): ContractAxis => ({ kind, tool: tool.name, field, declaredType, declaredEnum, declaredRange });
 
 /** 입력이 선언을 어긴 지점을 축으로 바꾼다. §4.4 순서로 낸다. */
 function violatedAxes(
@@ -141,6 +157,7 @@ function violatedAxes(
       axes.push(contractAxis(tool, "REQUIRED_OMITTED", name, null, null));
   const typeAxes: ContractAxis[] = [];
   const enumAxes: ContractAxis[] = [];
+  const rangeAxes: ContractAxis[] = [];
   // fields 는 analyzeInputSchema 가 이미 코드 단위로 정렬해 넣은 Map 이다. 다시 정렬하지 않는다.
   for (const [name, field] of schema.fields) {
     if (!Object.hasOwn(input, name)) continue;
@@ -153,8 +170,15 @@ function violatedAxes(
       enumAxes.push(
         contractAxis(tool, "ENUM_VIOLATION", name, null, [...(field.enumValues ?? [])]),
       );
+    // 타입·enum 을 이미 어긴 값은 그 축을 덮는다. 같은 케이스가 범위 축까지 덮으면 케이스
+    // 하나가 축 둘을 덮게 되어 우리 생성기가 케이스를 따로 만드는 것과 어긋난다.
+    else if (
+      rangeYieldsViolation(field.range) &&
+      violatesRange(field.range, input[name] as JsonValue)
+    )
+      rangeAxes.push(contractAxis(tool, "RANGE_VIOLATION", name, null, null, field.range));
   }
-  return [...axes, ...typeAxes, ...enumAxes];
+  return [...axes, ...typeAxes, ...enumAxes, ...rangeAxes];
 }
 
 /**

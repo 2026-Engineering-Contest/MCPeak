@@ -20,7 +20,7 @@ cli → runner / generate / record / mock → core
 
 | 종류 | 심볼 |
 |---|---|
-| 타입 | `TestSuiteSpec`, `TestCaseSpec`, `SuiteValidationIssue`, `RunnerRedactionOptions`, `SpecFindingsResult`, `ContractAxis`, `ContractAxisKind`, `ContractDeclaredType` |
+| 타입 | `TestSuiteSpec`, `TestCaseSpec`, `SuiteValidationIssue`, `RunnerRedactionOptions`, `SpecFindingsResult`, `ContractAxis`, `ContractAxisKind`, `ContractDeclaredType`, `ContractRange` |
 | 함수 | `validateMcpSuite`, `canonicalJson`, `sha256`, `deepFreeze`, `checkInputContract`, `checkAssertionSubstance`, `deriveContractAxes`, `matchCoveredAxes` |
 | 상수 | `MCP_SUITE_JSON_SCHEMA`, `DEFAULT_SENSITIVE_KEYS`, `REDACTED` |
 
@@ -50,6 +50,13 @@ cli → runner / generate / record / mock → core
 `checkInputContract` 에 그대로 넘긴다). `anyOf` 하나 쓴 서버를 만나면 `generate` 파서 기반 도출은
 화면 전체를 죽이고, `runner` 파서 기반 도출은 그 툴만 해석 불가로 빼고 나머지를 정상 표시한다.
 같은 이유로 커버리지 판정이 `matchCoveredAxes` 와 `ContractAxisKind` 를 쓴다.
+
+`ContractRange` 는 2026-08-17 에 스키마 제약 지원을 위해 추가했다. `runner` 가 서버 선언에서
+`minimum` 같은 범위 키워드를 읽어 `RANGE_VIOLATION` 축의 `declaredRange` 에 싣고, `generate` 는
+그것을 받아 위반 케이스의 값을 합성한다. 같은 구조체를 `generate` 에 로컬로 다시 정의하는
+우회를 쓰지 않는다(단계 4 의 `JsonValue` 가 그 길이었다). 범위는 항목이 여덟 개고 앞으로 늘
+수 있는데, 두 벌을 두면 `runner` 가 항목을 늘릴 때 `generate` 쪽이 조용히 어긋나 위반 값을 못
+만드는 축이 생긴다. 축을 도출하는 쪽과 그 축을 덮는 케이스를 만드는 쪽이 같은 타입을 봐야 한다.
 
 이 의존은 AI 보조 작성 기능 이전부터 있었고, PR #37이 `MCP_SUITE_JSON_SCHEMA`를 하나 더 참조하면서
 코드 리뷰에서 지적됐다.
@@ -110,3 +117,10 @@ C안은 A안을 막지 않는다. 참조 목록을 검사로 고정하면 의존
   먼저 고쳐야 한다는 규칙도 그대로다.
 - 반대 결론이 나오면: A안(suite 스펙과 검증기를 `core`로 이동)을 별도 PR로 진행한다. 그 경우
   `core/src/types.ts`의 책임 범위가 바뀌므로 오너 전원 승인이 필요하다.
+
+### 목록 확장 이력
+
+- **`ContractRange` 추가.** 승인일 2026-08-17(Asia/Seoul), 승인한 사람 @seodduu(파트 ① 오너),
+  PR #149. 위 '배경' 절의 마지막 문단이 사유다. 최초 승인과 같은 근거로 파트 ① 오너가
+  단독 승인했고, 심볼 목록은 `packages/generate/tests/dependency-boundary.test.ts` 가 그대로
+  고정한다.

@@ -1,3 +1,5 @@
+import { assertConstraints } from "./constraints.js";
+
 export type JsonValue = null | boolean | number | string | JsonValue[] | JsonObject;
 export type JsonObject = { [key: string]: JsonValue };
 export type JsonSchema = Record<string, unknown>;
@@ -8,6 +10,7 @@ export type GenerateTestsErrorCode =
   | "INVALID_TOOL"
   | "OUTPUT_FILE_EXISTS"
   | "UNSUPPORTED_SCHEMA"
+  | "INVALID_SCHEMA_CONSTRAINT" // 제약 키워드의 값이 깨졌거나 서로 모순이다
   | "GENERATED_SUITE_INVALID";
 
 /** 생성 전에 발견한 입력 또는 스키마 오류. */
@@ -50,6 +53,17 @@ const SUPPORTED_SCHEMA_KEYS = new Set([
   // TypeScript SDK가 zod에서 스키마를 뽑을 때 기본으로 붙이므로, 이 키를 막으면 그 SDK로 만든
   // 서버의 툴이 통째로 거절된다. 순서 주의 — hint 문자열이 이 Set의 삽입 순서로 만들어진다.
   "$schema",
+  // 제약 키워드. 값은 assertConstraints 가 따로 검증한다(ADR-0004 개정, 설계서 §3.1).
+  // 위 annotation 들 뒤에 붙인다. 사이에 끼우면 "description, title, $schema" 표기가 끊긴다.
+  "minimum",
+  "maximum",
+  "exclusiveMinimum",
+  "exclusiveMaximum",
+  "minItems",
+  "maxItems",
+  "minLength",
+  "maxLength",
+  "format",
 ]);
 
 export const plainObject = (value: unknown): value is Record<string, unknown> =>
@@ -174,6 +188,9 @@ export function validateSchema(
 
     const type = schemaType(schema, path);
     validateAnnotations(schema, path);
+    // 미지원 키워드 검사보다 뒤, 후보 검사보다 앞이다. 깨진 제약을 들고 값을 고르면
+    // "후보가 제약을 만족하지 않는다" 로 잘못 보고된다.
+    assertConstraints(schema, path);
     validateCandidates(schema, path);
     validateObjectKeywords(schema, type, path, active);
     validateArrayKeywords(schema, type, path, active);

@@ -1,5 +1,7 @@
 import type { ToolDef } from "@ohmymcp/core";
 import { expectedIsError } from "./case-expectation.js";
+import type { ContractRange } from "./contract-range.js";
+import { rangeYieldsViolation, violatesRange } from "./contract-range.js";
 import type { NormalizedInputSchema } from "./input-schema.js";
 import { analyzeInputSchema, judgeField } from "./input-schema.js";
 import { byCodeUnit } from "./ordering.js";
@@ -29,6 +31,9 @@ const SUPPRESSED_WHEN_REJECTION_EXPECTED: ReadonlySet<SpecFindingCode> = new Set
   "UNDECLARED_FIELD",
   "TYPE_MISMATCH",
   "ENUM_MISMATCH",
+  // 범위 위반도 거절 기대 케이스가 노리는 위반이다. 넣지 않으면 도구가 스스로 만든
+  // RANGE_VIOLATION 케이스를 스스로 고발한다.
+  "RANGE_MISMATCH",
 ]);
 
 /** 설계 §9.2 의 검사 종류 순서. 낮을수록 앞에 온다. */
@@ -39,7 +44,8 @@ const CODE_ORDER: Record<string, number> = {
   UNDECLARED_FIELD: 3,
   TYPE_MISMATCH: 4,
   ENUM_MISMATCH: 5,
-  REJECTION_WITHOUT_VIOLATION: 6,
+  RANGE_MISMATCH: 6,
+  REJECTION_WITHOUT_VIOLATION: 7,
 };
 
 /** 코드 포인트 기준 레벤슈타인 거리. 두 행만 들고 돌아 입력 길이에 선형인 메모리를 쓴다. */
@@ -83,6 +89,36 @@ function suggestName(target: string, candidates: readonly string[]): string | un
   }
   return best?.name;
 }
+
+const NUMERIC_BOUNDS = ["minimum", "exclusiveMinimum", "maximum", "exclusiveMaximum"] as const;
+const ITEM_BOUNDS = ["minItems", "maxItems"] as const;
+const LENGTH_BOUNDS = ["minLength", "maxLength"] as const;
+
+/**
+ * 값의 타입에 적용되는 경계만 고른다. `violatesRange` 가 실제로 본 것과 같은 묶음이다.
+ * `{ type: "array", minimum: 1, minItems: 2 }` 에 `[]` 가 오면 어긴 것은 `minItems` 뿐인데
+ * `minimum` 까지 실으면 진단이 배열에 적용되지도 않는 "1 이상" 을 서버 선언으로 적는다.
+ */
+const boundsFor = (value: JsonValue): readonly (keyof ContractRange)[] => {
+  if (typeof value === "number" && Number.isFinite(value)) return NUMERIC_BOUNDS;
+  if (typeof value === "string") return LENGTH_BOUNDS;
+  if (Array.isArray(value)) return ITEM_BOUNDS;
+  return [];
+};
+
+/**
+ * 선언된 범위를 finding 의 `expected` 에 실을 JSON 값으로 줄인다. 선언되지 않은 항목과 이 값에
+ * 적용되지 않는 항목은 키 자체를 만들지 않는다. 남기면 `describeSpecFinding` 이 서버가 적지
+ * 않았거나 이 타입과 무관한 경계를 서버 선언으로 적는다. 키 순서는 배열 순서라 결정론적이다.
+ */
+const declaredRangeValue = (range: ContractRange, checked: JsonValue): JsonValue => {
+  const value: Record<string, number> = {};
+  for (const key of boundsFor(checked)) {
+    const bound = range[key];
+    if (bound !== null) value[key] = bound;
+  }
+  return value;
+};
 
 /** suggestion 이 없으면 키 자체를 만들지 않는다. 소비자가 존재 여부로 분기한다. */
 const withSuggestion = (finding: SpecFinding, suggestion: string | undefined): SpecFinding =>
@@ -237,6 +273,18 @@ export function checkInputContract(options: InputContractOptions): SpecFindingsR
                     : undefined,
                 ),
               );
+            } else if (rangeYieldsViolation(field.range) && violatesRange(field.range, value)) {
+              // 타입·enum 을 이미 어긴 값에는 범위를 보지 않는다. judgeField 의 단락 순서와 같다.
+              // 문장은 describeSpecFinding 이 만든다. expected 에는 가공하지 않은 범위만 싣는다.
+              caseFindings.push({
+                code: "RANGE_MISMATCH",
+                // 비차단이다. 통과·실패 판정을 바꾸지 않는다.
+                severity: "advisory",
+                caseId,
+                path: `input.${key}`,
+                expected: declaredRangeValue(field.range, value),
+                actual: value,
+              });
             }
           }
         }

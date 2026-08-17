@@ -21,7 +21,13 @@ import {
   sha256,
 } from "@ohmymcp/generate";
 import type { Cassette } from "@ohmymcp/record";
-import type { CallToolCaseSpec, SpecFinding, TestCaseSpec, TestSuiteSpec } from "@ohmymcp/runner";
+import type {
+  CallToolCaseSpec,
+  ContractAxisKind,
+  SpecFinding,
+  TestCaseSpec,
+  TestSuiteSpec,
+} from "@ohmymcp/runner";
 import { suiteFingerprint, validateMcpSuite } from "@ohmymcp/runner";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -95,6 +101,8 @@ function deps(overrides: Partial<GenerateCommandDependencies> = {}) {
         // 이 스텁의 suite 는 케이스가 0개다. 커버리지도 그에 맞춰 비운다.
         coverage: { tools: [], verified: 0, total: 0 },
         skippedTools: [],
+        // 툴이 0개이므로 값 출처도 비어 있다. AI 사전보완 대상 판정의 재료다.
+        provenance: [],
       };
     }),
     createAuthoringSession: vi.fn(
@@ -1718,11 +1726,13 @@ describe("AI 대화형 검토", () => {
 });
 
 describe("커버리지 화면", () => {
-  const axis = (
-    kind: "HAPPY_PATH" | "REQUIRED_OMITTED" | "TYPE_VIOLATION" | "ENUM_VIOLATION",
-    field: string | null,
-    caseId: string | null,
-  ) => ({ kind, field, caseId });
+  // 축 목록을 손으로 복제하지 않는다. 복제하면 runner 가 축을 늘릴 때마다 여기가 조용히
+  // 어긋나고, vitest 는 타입을 안 보므로 테스트가 초록인 채로 typecheck 만 빨강이 된다.
+  const axis = (kind: ContractAxisKind, field: string | null, caseId: string | null) => ({
+    kind,
+    field,
+    caseId,
+  });
   const toolCoverage = (
     name: string,
     axes: ReturnType<typeof axis>[],
@@ -1763,6 +1773,29 @@ describe("커버리지 화면", () => {
 
   it("건너뛴 툴이 없으면 빈 문자열이다", () => {
     expect(renderSkippedTools([])).toBe("");
+  });
+
+  it("미검증인 범위 축이 있으면 분모가 커진 이유를 적는다", () => {
+    const coverage = result([
+      toolCoverage("count_things", [...verifiedAxes(3), axis("RANGE_VIOLATION", "count", null)]),
+    ]);
+    expect(renderCoverage(coverage)).toContain(
+      "→ 범위 제약(minimum·maxItems 등)이 이번 버전부터 검증 축에 들어갑니다. 이전보다 숫자가 낮으면 새로 드러난 빈틈입니다",
+    );
+  });
+
+  it("범위 축이 전부 검증됐으면 그 고지를 적지 않는다", () => {
+    const coverage = result([
+      toolCoverage("count_things", [...verifiedAxes(3), axis("RANGE_VIOLATION", "count", "c1")]),
+    ]);
+    expect(renderCoverage(coverage)).not.toContain("범위 제약");
+  });
+
+  it("범위 축이 아예 없으면 그 고지를 적지 않는다", () => {
+    const coverage = result([
+      toolCoverage("add", [...verifiedAxes(2), axis("TYPE_VIOLATION", "a", null)]),
+    ]);
+    expect(renderCoverage(coverage)).not.toContain("범위 제약");
   });
 
   it("전부 검증되면 한 줄이다", () => {

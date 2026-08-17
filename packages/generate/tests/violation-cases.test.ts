@@ -1,5 +1,7 @@
 import { readFileSync } from "node:fs";
 import type { ToolDef } from "@ohmymcp/core";
+import type { TestCaseSpec } from "@ohmymcp/runner";
+import { matchCoveredAxes } from "@ohmymcp/runner";
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../src/schema.js";
 import { buildViolationCases } from "../src/violation-cases.js";
@@ -257,5 +259,106 @@ describe("buildViolationCases", () => {
     const once = buildViolationCases({ tool: add, happyInput: { a: 0, b: 0 }, baseName: "add" });
     const twice = buildViolationCases({ tool: add, happyInput: { a: 0, b: 0 }, baseName: "add" });
     expect(JSON.stringify(once)).toBe(JSON.stringify(twice));
+  });
+});
+
+describe("RANGE_VIOLATION 위반 케이스", () => {
+  /** 범위 축 케이스 하나의 위반 필드 값만 본다. */
+  const rangeValue = (v: Record<string, unknown>, happy: JsonObject): unknown => {
+    const cases = buildViolationCases({
+      tool: tool("t", { type: "object", required: ["v"], properties: { v } }),
+      happyInput: happy,
+      baseName: "t",
+    }).filter((item) => item.id.includes("-range-"));
+    return (cases[0]?.operation.input as JsonObject | undefined)?.v;
+  };
+
+  it.each([
+    [{ type: "integer", minimum: 1 }, 0],
+    [{ type: "integer", minimum: 0 }, -1],
+    [{ type: "integer", minimum: -3 }, -4],
+    [{ type: "integer", exclusiveMinimum: 0 }, 0],
+    [{ type: "integer", maximum: 10 }, 11],
+    [{ type: "integer", exclusiveMaximum: 100 }, 100],
+    // 경계가 소수인 integer. 정상 경로가 올림한 값에서 출발하므로 위반도 그 한 칸 아래다.
+    // 소수 값을 내면 type 까지 어겨 TYPE_VIOLATION 축을 덮고 범위 축이 영원히 미검증으로 남는다.
+    [{ type: "integer", minimum: 1.2 }, 1],
+    [{ type: "integer", exclusiveMinimum: 1.2 }, 1],
+    [{ type: "integer", maximum: 1.8 }, 2],
+    [{ type: "integer", exclusiveMaximum: 1.8 }, 2],
+  ])("%j → 위반 값 %s", (schema, expected) => {
+    expect(rangeValue(schema, { v: 1 })).toBe(expected);
+  });
+
+  it("소수 경계 integer 의 위반 케이스가 범위 축을 덮는다", () => {
+    const declaration = tool("t", {
+      type: "object",
+      required: ["v"],
+      properties: { v: { type: "integer", minimum: 1.2 } },
+    });
+    const rangeCase = buildViolationCases({
+      tool: declaration,
+      happyInput: { v: 2 },
+      baseName: "t",
+    }).find((item) => item.id === "t-range-v");
+    const covered = matchCoveredAxes({
+      testCase: rangeCase as unknown as TestCaseSpec,
+      tool: declaration,
+    });
+    expect(covered.map((axis) => axis.kind)).toContain("RANGE_VIOLATION");
+  });
+
+  it("minItems: 2 는 원소 1개다", () => {
+    expect(
+      rangeValue(
+        { type: "array", items: { type: "string" }, minItems: 2 },
+        {
+          v: ["example", "example"],
+        },
+      ),
+    ).toEqual(["example"]);
+  });
+
+  it("maxItems: 1 (하한 없음) 은 원소 2개다", () => {
+    expect(
+      rangeValue({ type: "array", items: { type: "string" }, maxItems: 1 }, { v: ["example"] }),
+    ).toEqual(["example", "example"]);
+  });
+
+  it("minLength: 3 은 길이 2 문자열이다", () => {
+    expect(String(rangeValue({ type: "string", minLength: 3 }, { v: "example" }))).toHaveLength(2);
+  });
+
+  it("maxLength: 3 (하한 없음) 은 길이 4 문자열이다", () => {
+    expect(String(rangeValue({ type: "string", maxLength: 3 }, { v: "exa" }))).toHaveLength(4);
+  });
+
+  it("위반 값을 만들 수 없는 범위는 케이스가 없다", () => {
+    expect(
+      rangeValue({ type: "array", items: { type: "string" }, minItems: 0 }, { v: ["example"] }),
+    ).toBeUndefined();
+  });
+
+  it("거절을 기대하는 케이스다", () => {
+    const cases = buildViolationCases({
+      tool: tool("t", {
+        type: "object",
+        required: ["v"],
+        properties: { v: { type: "integer", minimum: 1 } },
+      }),
+      happyInput: { v: 1 },
+      baseName: "t",
+    }).filter((item) => item.id.includes("-range-"));
+    expect(cases).toHaveLength(1);
+    expect(cases[0]?.id).toBe("t-range-v");
+    expect(cases[0]?.name).toBe("t가 'v' 범위 위반을 거절한다");
+    expect(cases[0]?.assertions).toContainEqual({ type: "isError", expected: true });
+  });
+
+  it("두 번 생성해도 같다", () => {
+    const schema = { type: "integer", minimum: 1, maximum: 10 };
+    expect(JSON.stringify(rangeValue(schema, { v: 1 }))).toBe(
+      JSON.stringify(rangeValue(schema, { v: 1 })),
+    );
   });
 });

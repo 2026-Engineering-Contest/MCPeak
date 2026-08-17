@@ -223,3 +223,26 @@ describe("computeCoverage", () => {
     expect(JSON.stringify(once)).toBe(JSON.stringify(twice));
   });
 });
+
+describe("커버리지에 RANGE_VIOLATION 이 들어간다", () => {
+  const ranged = tool("t", {
+    type: "object",
+    required: ["v"],
+    properties: { v: { type: "integer", minimum: 1 } },
+  });
+  const emptySuite: TestSuiteSpec = { schemaVersion: 1, id: "s", name: "s", cases: [] };
+
+  it("범위 축이 분모에 포함된다", () => {
+    const coverage = computeCoverage({ tools: [ranged], suite: emptySuite });
+    expect(coverage.tools[0]?.axes.some((axis) => axis.kind === "RANGE_VIOLATION")).toBe(true);
+    expect(coverage.verified).toBe(0);
+  });
+
+  it("위반 케이스가 있으면 덮인 것으로 센다", () => {
+    const cases = buildViolationCases({ tool: ranged, happyInput: { v: 1 }, baseName: "t" });
+    const suite: TestSuiteSpec = { schemaVersion: 1, id: "s", name: "s", cases: [...cases] };
+    const coverage = computeCoverage({ tools: [ranged], suite });
+    const rangeAxis = coverage.tools[0]?.axes.find((axis) => axis.kind === "RANGE_VIOLATION");
+    expect(rangeAxis?.caseId).toBe("t-range-v");
+  });
+});

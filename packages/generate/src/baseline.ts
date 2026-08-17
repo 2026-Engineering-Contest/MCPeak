@@ -3,6 +3,7 @@ import { type TestSuiteSpec, validateMcpSuite } from "@ohmymcp/runner";
 import { deepFreeze, sha256 } from "./canonical.js";
 import { type CoverageResult, computeCoverage } from "./coverage.js";
 import { safeBaseName } from "./filename.js";
+import { analyzeToolProvenance, type ToolProvenance } from "./provenance.js";
 import { buildGeneratedCases } from "./render.js";
 import { GenerateTestsError } from "./schema.js";
 
@@ -43,6 +44,12 @@ export interface BaselineGenerationResult {
    * 바이트와 지문은 이 필드 도입 전과 같다(#88 의 재승인 문제를 만들지 않는다).
    */
   readonly skippedTools: readonly SkippedTool[];
+  /**
+   * 툴별 값 출처. **명세 파일에는 들어가지 않는다.** 들어가면 승인 지문의 계산 대상이 되고,
+   * 우리 판정 규칙이 바뀔 때마다 사용자 명세의 지문이 흔들려 "명세가 바뀌었다" 경고가 일상이
+   * 된다. 건너뛴 툴은 케이스가 없으므로 세지 않는다.
+   */
+  readonly provenance: readonly ToolProvenance[];
 }
 
 function invalidOption(path: string, message: string, hint: string): never {
@@ -143,6 +150,7 @@ export function createBaselineSuite(
     // 건너뜀은 skippedTools 가 따로 고지한다.
     coverage: computeCoverage({ suite, tools: generatedTools }),
     skippedTools,
+    provenance: generatedTools.map((tool) => analyzeToolProvenance(tool)),
   };
   return deepFreeze(result);
 }

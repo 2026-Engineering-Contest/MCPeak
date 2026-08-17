@@ -570,8 +570,12 @@ describe("describeSpecFinding 의 범위 문안", () => {
 
 - [ ] **Step 3: 구현한다**
 
-`SpecFindingCode` 에 값을 더하고, `assertion-substance.ts:10` 의 `CODE_ORDER` 에도 넣는다
-(순서가 결정론적이어야 한다). `describeSpecFinding` 에 문안을 더한다.
+`SpecFindingCode` 에 값을 더하고, **`input-contract.ts` 의 `CODE_ORDER`** 에도 넣는다(순서가
+결정론적이어야 한다). `describeSpecFinding` 에 문안을 더한다.
+
+**정정(실행 중 확인):** 착수 시 이 지시가 `assertion-substance.ts:10` 을 가리켰는데 그 상수는
+`Partial<Record<...>>` 이고 단언 실질성 코드 둘만 담는다. 입력 계약 대조의 순서를 정하는
+`CODE_ORDER` 는 `input-contract.ts` 에 있는 **다른 상수**다. 같은 이름이 두 파일에 있다.
 
 - [ ] **Step 4: 통과를 확인한다**
 
@@ -1340,6 +1344,36 @@ describe("커버리지에 RANGE_VIOLATION 이 들어간다", () => {
 - [ ] **Step 5: 보고한다**
 
 ---
+
+### T8b — `cli` 의 exhaustive Record 파장 (웨이브 1 에서 처리 완료)
+
+**모델:** 상위 (화면 문안) · **상태: 완료** (통합 SHA `bb18b13`)
+
+**계획 작성 시점에 예측하지 못한 파장이다.** `runner` 가 `SpecFindingCode` 와
+`ContractAxisKind` 를 늘리자 `cli` 의 exhaustive `Record` 셋이 컴파일에서 깨졌다.
+**PR 1 은 이것 없이 `pnpm typecheck` 가 녹색이 될 수 없다.**
+
+| 파일 | 상수 | 더한 값 |
+|---|---|---|
+| `packages/cli/src/generate-command.ts` | `FINDING_GROUP` | `RANGE_MISMATCH: "inputContract"` |
+| `packages/cli/src/test-command.ts` | `FINDING_GROUP` | `RANGE_MISMATCH: "inputContract"` |
+| `packages/cli/src/generate-command.ts` | `AXIS_LABEL` | `RANGE_VIOLATION: "선언된 범위 밖 값 거절"` |
+| `packages/cli/tests/generate-command.test.ts` | `createBaselineSuite` 목 | `provenance: []` |
+
+`FINDING_GROUP` 이 `inputContract` 인 근거: `checkInputContract` 가 만드는 finding 이다.
+`AXIS_LABEL` 문안은 형제 항목(`타입 위반 거절` · `선언되지 않은 값 거절`)의 어법을 따랐다.
+
+**T11 이 화면 문안을 다시 볼 때 이 라벨도 함께 확인한다.**
+
+---
+
+> **웨이브 1 에서 확인된 것: 계획서 테스트 스니펫의 API 이름이 실제 저장소와 다르다.**
+> 아래 T9~T12 의 스니펫도 같은 위험이 있다. **단언의 의미는 계획서대로 지키되, 이름과 형태는
+> 실제 코드를 읽고 맞춰라.** 웨이브 1 에서 실제로 어긋난 것들:
+> `operation.arguments` → `operation.input`,
+> `{type:"isError", value:true}` → `{type:"isError", expected:true}`,
+> `synthesizeViolationCases({tool, axes})` → `buildViolationCases({tool, happyInput, baseName})`,
+> `coverage.axes` → `coverage.tools[i].axes`.
 
 ### T9 — AI 사전보완 요청과 응답 검증
 

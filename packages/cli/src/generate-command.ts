@@ -1457,7 +1457,9 @@ export function renderCoverage(coverage: CoverageResult): string {
  */
 export function renderSkippedTools(skipped: readonly SkippedTool[]): string {
   if (skipped.length === 0) return "";
-  const lines = [`건너뜀  ${skipped.length} tools — 지원하지 않는 스키마 키워드`];
+  // "키워드" 로 단정하지 않는다. UNSUPPORTED_SCHEMA 는 키워드뿐 아니라 루트 type 이 object 가
+  // 아닌 경우에도 나오므로, 머리글이 키워드라고 못 박으면 그 케이스에서 원인 줄과 어긋난다.
+  const lines = [`건너뜀  ${skipped.length} tools — 지원하지 않는 입력 스키마`];
   for (const tool of skipped) lines.push(`  ${tool.name}  ${tool.path}: ${tool.message}`);
   lines.push(
     "  → 이 툴의 케이스는 생성되지 않았습니다. 필요하면 명세에 케이스를 손으로 추가하세요.",

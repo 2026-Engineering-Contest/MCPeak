@@ -335,7 +335,7 @@ describe("runGenerateCommand", () => {
     })) as never;
     expect(await runGenerateCommand(argv, d.value)).toBe(0);
     const output = stdout.join("");
-    expect(output).toContain("건너뜀  1 tools — 지원하지 않는 스키마 키워드");
+    expect(output).toContain("건너뜀  1 tools — 지원하지 않는 입력 스키마");
     expect(output).toContain("count_things");
   });
   it("baseline-only는 Core tools/list 뒤 server를 닫고 AI 없이 저장한다", async () => {
@@ -1753,7 +1753,7 @@ describe("커버리지 화면", () => {
         },
       ]),
     ).toBe(
-      "건너뜀  1 tools — 지원하지 않는 스키마 키워드\n" +
+      "건너뜀  1 tools — 지원하지 않는 입력 스키마\n" +
         "  count_things  tools[1].inputSchema.properties.count.maximum: 지원하지 않는 JSON Schema 키워드 'maximum'가 있습니다.\n" +
         "  → 이 툴의 케이스는 생성되지 않았습니다. 필요하면 명세에 케이스를 손으로 추가하세요.\n",
     );

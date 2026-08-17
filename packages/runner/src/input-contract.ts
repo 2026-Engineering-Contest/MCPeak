@@ -90,23 +90,30 @@ function suggestName(target: string, candidates: readonly string[]): string | un
   return best?.name;
 }
 
+const NUMERIC_BOUNDS = ["minimum", "exclusiveMinimum", "maximum", "exclusiveMaximum"] as const;
+const ITEM_BOUNDS = ["minItems", "maxItems"] as const;
+const LENGTH_BOUNDS = ["minLength", "maxLength"] as const;
+
 /**
- * 선언된 범위를 finding 의 `expected` 에 실을 JSON 값으로 줄인다. 선언되지 않은 항목은 키
- * 자체를 만들지 않는다. null 을 남기면 `describeSpecFinding` 이 없는 경계를 추측해 적는다.
- * 키 순서는 이 배열 순서라 결정론적이다.
+ * 값의 타입에 적용되는 경계만 고른다. `violatesRange` 가 실제로 본 것과 같은 묶음이다.
+ * `{ type: "array", minimum: 1, minItems: 2 }` 에 `[]` 가 오면 어긴 것은 `minItems` 뿐인데
+ * `minimum` 까지 실으면 진단이 배열에 적용되지도 않는 "1 이상" 을 서버 선언으로 적는다.
  */
-const declaredRangeValue = (range: ContractRange): JsonValue => {
+const boundsFor = (value: JsonValue): readonly (keyof ContractRange)[] => {
+  if (typeof value === "number" && Number.isFinite(value)) return NUMERIC_BOUNDS;
+  if (typeof value === "string") return LENGTH_BOUNDS;
+  if (Array.isArray(value)) return ITEM_BOUNDS;
+  return [];
+};
+
+/**
+ * 선언된 범위를 finding 의 `expected` 에 실을 JSON 값으로 줄인다. 선언되지 않은 항목과 이 값에
+ * 적용되지 않는 항목은 키 자체를 만들지 않는다. 남기면 `describeSpecFinding` 이 서버가 적지
+ * 않았거나 이 타입과 무관한 경계를 서버 선언으로 적는다. 키 순서는 배열 순서라 결정론적이다.
+ */
+const declaredRangeValue = (range: ContractRange, checked: JsonValue): JsonValue => {
   const value: Record<string, number> = {};
-  for (const key of [
-    "minimum",
-    "exclusiveMinimum",
-    "maximum",
-    "exclusiveMaximum",
-    "minItems",
-    "maxItems",
-    "minLength",
-    "maxLength",
-  ] as const) {
+  for (const key of boundsFor(checked)) {
     const bound = range[key];
     if (bound !== null) value[key] = bound;
   }
@@ -275,7 +282,7 @@ export function checkInputContract(options: InputContractOptions): SpecFindingsR
                 severity: "advisory",
                 caseId,
                 path: `input.${key}`,
-                expected: declaredRangeValue(field.range),
+                expected: declaredRangeValue(field.range, value),
                 actual: value,
               });
             }

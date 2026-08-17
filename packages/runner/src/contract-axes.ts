@@ -113,8 +113,13 @@ export function deriveContractAxes(
     if (field.enumValues !== null)
       axes.push(axis("ENUM_VIOLATION", name, null, [...field.enumValues]));
   // 위반 값을 만들 수 없는 범위는 축이 아니다. minItems: 0 단독이 그렇다(설계서 §5.2).
+  //
+  // enum 이 함께 선언된 필드도 만들 수 없다. 범위를 어긴 값은 enum 밖이기도 해서 위반 분류가
+  // ENUM_VIOLATION 으로 먼저 잡힌다(violatedAxes 의 단락 순서). 그러면 이 축은 어떤 케이스로도
+  // 안 덮여 영원히 못 채우는 빈틈이 분모에 남는다. enum 이 이미 허용 집합을 못 박고 있으므로
+  // 거절 검증은 ENUM_VIOLATION 축이 대신한다.
   for (const [name, field] of analysis.schema.fields)
-    if (rangeYieldsViolation(field.range))
+    if (field.enumValues === null && rangeYieldsViolation(field.range))
       axes.push(axis("RANGE_VIOLATION", name, null, null, field.range));
 
   return {

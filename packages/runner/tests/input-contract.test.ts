@@ -794,6 +794,25 @@ describe("RANGE_MISMATCH", () => {
   it("타입이 어긋나면 범위는 보지 않는다", () => {
     expect(codes({ count: "0" })).toEqual(["TYPE_MISMATCH"]);
   });
+
+  it("expected 에는 값의 타입에 적용되는 경계만 싣는다", () => {
+    // 서버가 배열 필드에 minimum 을 같이 적어도 배열에는 적용되지 않는다. 실으면 진단이
+    // 서버 선언에 없는 것처럼 읽히는 "1 이상" 을 적는다.
+    const mixedTools = [
+      tool("get", {
+        type: "object",
+        required: ["tags"],
+        properties: {
+          tags: { type: "array", items: { type: "string" }, minimum: 1, minItems: 2 },
+        },
+      }),
+    ];
+    const finding = checkInputContract({
+      suite: suiteWith({ tags: [] }),
+      tools: mixedTools,
+    }).findings.find((f) => f.code === "RANGE_MISMATCH");
+    expect(finding?.expected).toEqual({ minItems: 2 });
+  });
 });
 
 describe("describeSpecFinding 의 범위 문안", () => {

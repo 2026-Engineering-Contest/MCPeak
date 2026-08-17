@@ -530,3 +530,34 @@ describe("matchCoveredAxes 가 RANGE_VIOLATION 을 덮은 것으로 센다", () 
     expect(matchCoveredAxes({ testCase, tool: ranged }).map((a) => a.kind)).toEqual(["HAPPY_PATH"]);
   });
 });
+
+describe("enum 과 범위가 함께 선언된 필드", () => {
+  const enumRanged = tool("t", {
+    type: "object",
+    required: ["count"],
+    properties: { count: { type: "integer", enum: [1, 2], minimum: 1 } },
+  });
+
+  it("범위 축을 만들지 않는다", () => {
+    // 범위를 어긴 값은 enum 밖이기도 해서 ENUM_VIOLATION 으로 먼저 분류된다. 축을 만들면
+    // 어떤 케이스로도 못 덮는 빈틈이 분모에 남는다.
+    expect(deriveContractAxes(enumRanged).axes.map((a) => a.kind)).toEqual([
+      "HAPPY_PATH",
+      "REQUIRED_OMITTED",
+      "TYPE_VIOLATION",
+      "ENUM_VIOLATION",
+    ]);
+  });
+
+  it("범위 밖 값은 ENUM_VIOLATION 으로 덮인다", () => {
+    const testCase: TestCaseSpec = {
+      id: "c",
+      name: "c",
+      operation: { type: "callTool", tool: "t", input: { count: 0 } },
+      assertions: [{ type: "isError", expected: true }],
+    };
+    expect(matchCoveredAxes({ testCase, tool: enumRanged }).map((a) => a.kind)).toEqual([
+      "ENUM_VIOLATION",
+    ]);
+  });
+});

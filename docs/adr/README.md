@@ -41,7 +41,7 @@
 | [0027](./0027-isError-진단의-서버-응답-본문.md) | `isError` 진단이 서버 응답 본문을 함께 싣는다 | runner, cli | 채택 |
 | [0028](./0028-replay-서브커맨드의-서버-없는-실행.md) | `replay` 는 서버를 띄우지 않고, 더미 클라이언트는 `cli` 가 만든다 | cli, record | 제안 |
 | [0029](./0029-목-매칭-키-정규화-경계.md) | 매칭 키로 만들 수 없는 인자를 주입 시점에 거부하고, 해시하지 않는다 | mock | 채택 |
-| [0030](./0030-mock-src-상대-import-확장자.md) | `packages/mock/src` 의 상대 import 는 `.ts` 확장자를 쓴다 | mock | 제안 (#110) |
+| [0030](./0030-mock-src-상대-import-확장자.md) | `packages/mock/src` 의 상대 import 는 `.ts` 확장자를 쓴다 | mock | 채택 |
 | [0031](./0031-repair-번들과-json-분리.md) | repair 번들을 `--json` 보고서와 별도 파일로 만든다 | cli | 채택 |
 | [0032](./0032-미승인-명세에서의-repair-동작.md) | 미승인 명세에서 `repair` 는 차단하지 않고 전제를 바꾼다 | cli, generate | 채택 |
 | [0033](./0033-stderr-외부-전송-경계.md) | stderr 는 치환하지 않고 확인·상한·옵트아웃으로 다룬다 | cli, generate | 채택 |

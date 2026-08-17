@@ -48,6 +48,10 @@ const CARRIES_VALUE: Readonly<Record<SpecFindingCode, boolean>> = {
   TYPE_MISMATCH: false,
   ENUM_MISMATCH: true,
   REJECTION_WITHOUT_VIOLATION: false,
+  // actual 이 명세에 적힌 입력 값이라 ENUM_MISMATCH 와 같은 범주다. expected 는 서버가 선언한
+  // 범위라 감출 것이 없으나, 치환 단위가 finding 하나이므로 함께 지나간다. 숫자 경계는
+  // sanitizeRedactable 의 대상이 아니라 문장이 그대로 남는다.
+  RANGE_MISMATCH: true,
   VACUOUS_MIN_LENGTH: false,
   VACUOUS_MIN_ITEMS: false,
 };

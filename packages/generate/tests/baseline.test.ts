@@ -67,7 +67,9 @@ describe("createBaselineSuite", () => {
       name: "count_things",
       inputSchema: {
         type: "object",
-        properties: { count: { type: "integer", maximum: 10 } },
+        // maximum 은 이제 지원한다. 부분 생성 자체는 살아 있어야 하므로 여전히 지원하지
+        // 않는 키워드(pattern)로 바꿔 유지한다.
+        properties: { count: { type: "string", pattern: "^a$" } },
         required: ["count"],
       },
     };
@@ -86,8 +88,8 @@ describe("createBaselineSuite", () => {
         {
           index: 1,
           name: "count_things",
-          path: "tools[1].inputSchema.properties.count.maximum",
-          message: "지원하지 않는 JSON Schema 키워드 'maximum'가 있습니다.",
+          path: "tools[1].inputSchema.properties.count.pattern",
+          message: "지원하지 않는 JSON Schema 키워드 'pattern'가 있습니다.",
         },
       ]);
     });
@@ -143,6 +145,61 @@ describe("createBaselineSuite", () => {
     });
     expect(result.coverage.verified).toBe(result.coverage.total);
     expect(result.coverage.total).toBe(8);
+  });
+
+  it("범위와 format 이 있는 툴도 baselineFingerprint 가 재현된다", () => {
+    const ranged: ToolDef[] = [
+      {
+        name: "t",
+        inputSchema: {
+          type: "object",
+          required: ["count", "url", "tags"],
+          properties: {
+            count: { type: "integer", minimum: 1, maximum: 10 },
+            url: { type: "string", format: "uri" },
+            tags: { type: "array", items: { type: "string" }, minItems: 2 },
+          },
+        },
+      },
+    ];
+    const first = createBaselineSuite(ranged, { suiteId: "s", suiteName: "s" });
+    const second = createBaselineSuite(ranged, { suiteId: "s", suiteName: "s" });
+    expect(first.baselineFingerprint).toBe(second.baselineFingerprint);
+    expect(JSON.stringify(first.suite)).toBe(JSON.stringify(second.suite));
+    expect(JSON.stringify(first.suite)).toContain('"count":1');
+    expect(JSON.stringify(first.suite)).toContain('"url":"https://example.com"');
+  });
+
+  it("provenance 를 더해도 명세 파일은 그대로다", () => {
+    // 출처는 명세 파일에 들어가지 않으므로 지문 계산 대상이 아니다.
+    const t: ToolDef[] = [
+      {
+        name: "t",
+        inputSchema: { type: "object", required: ["v"], properties: { v: { type: "string" } } },
+      },
+    ];
+    const result = createBaselineSuite(t, { suiteId: "s", suiteName: "s" });
+    expect(JSON.stringify(result.suite)).not.toContain("provenance");
+    expect(JSON.stringify(result.suite)).not.toContain("placeholder");
+    expect(result.provenance).toEqual([
+      { tool: "t", declared: 0, placeholder: 1, unknownFormatFields: [], needsAssist: true },
+    ]);
+  });
+
+  it("건너뛴 툴은 provenance 에 들어가지 않는다", () => {
+    const skipped: ToolDef = {
+      name: "count_things",
+      inputSchema: {
+        type: "object",
+        properties: { count: { type: "string", pattern: "^a$" } },
+        required: ["count"],
+      },
+    };
+    const result = createBaselineSuite([tools[0] as ToolDef, skipped], {
+      suiteId: "mixed",
+      suiteName: "Mixed",
+    });
+    expect(result.provenance.map((item) => item.tool)).toEqual(["get_weather"]);
   });
 
   it("생성한 suite 가 validateMcpSuite 를 통과한다", () => {
@@ -260,7 +317,8 @@ describe("createBaselineSuite", () => {
         tools[0] as ToolDef,
         {
           name: "invalid",
-          inputSchema: { type: "object", properties: { q: { type: "string", minLength: 1 } } },
+          // minLength 는 이제 지원한다. 여전히 막히는 키워드로 바꿔 유지한다.
+          inputSchema: { type: "object", properties: { q: { type: "string", pattern: "^a$" } } },
         },
       ],
       { suiteId: "weather", suiteName: "날씨" },
@@ -274,8 +332,8 @@ describe("createBaselineSuite", () => {
       {
         index: 1,
         name: "invalid",
-        path: "tools[1].inputSchema.properties.q.minLength",
-        message: "지원하지 않는 JSON Schema 키워드 'minLength'가 있습니다.",
+        path: "tools[1].inputSchema.properties.q.pattern",
+        message: "지원하지 않는 JSON Schema 키워드 'pattern'가 있습니다.",
       },
     ]);
   });

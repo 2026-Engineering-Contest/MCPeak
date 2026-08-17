@@ -94,6 +94,11 @@ export {
   diagnosisCaseIds,
   MAX_CAUSE_CHARS,
 } from "./diagnosis-schema.js";
+export {
+  analyzeToolProvenance,
+  type ToolProvenance,
+  type ValueProvenance,
+} from "./provenance.js";
 export type {
   AuthoringProviderFailureCode,
   AuthoringProviderFailureReason,

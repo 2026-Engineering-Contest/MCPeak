@@ -6,6 +6,7 @@ import type { ToolDef } from "@ohmymcp/core";
 import * as runner from "@ohmymcp/runner";
 import { afterEach, describe, expect, it } from "vitest";
 import { deepFreeze } from "../src/canonical.js";
+import { assertConstraints } from "../src/constraints.js";
 import {
   canonicalJson,
   createBaselineSuite,
@@ -13,6 +14,7 @@ import {
   generateTests,
   sha256,
 } from "../src/index.js";
+import { validateSchema } from "../src/schema.js";
 
 const temporaryDirectories: string[] = [];
 
@@ -235,7 +237,8 @@ describe("generateTests", () => {
           name: "unsupported",
           inputSchema: {
             type: "object",
-            properties: { query: { type: "string", minLength: 1 } },
+            // minLength 는 이제 지원한다. 여전히 막히는 키워드로 바꿔 유지한다.
+            properties: { query: { type: "string", pattern: "^a$" } },
             required: ["query"],
           },
         },
@@ -246,7 +249,7 @@ describe("generateTests", () => {
     await expect(generation).rejects.toBeInstanceOf(GenerateTestsError);
     await expect(generation).rejects.toMatchObject({
       code: "UNSUPPORTED_SCHEMA",
-      path: "tools[1].inputSchema.properties.query.minLength",
+      path: "tools[1].inputSchema.properties.query.pattern",
       hint: expect.stringContaining("description, title"),
     });
     await expect(readdir(outDir)).rejects.toMatchObject({ code: "ENOENT" });
@@ -617,17 +620,17 @@ describe("$schema 키워드 (#135)", () => {
     await expect(readdir(outDir)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  // ADR-0004 가 그은 경계다. $schema 를 허용한 것이 실제 제약까지 함께 열어 준 것으로
-  // 번지면 잘못된 입력을 만들게 된다. 세 키가 여전히 막히는지 고정한다.
+  // ADR-0004 개정. 이 세 건은 원래 거절이었고 이제 생성한다. 실측에서 고유 서버 8개 중 5개가
+  // 이 벽에 걸렸다. 값이 제약을 지키는지까지 함께 고정한다.
   it.each([
     {
       label: "maximum · minimum (get-resource-links)",
       inputSchema: {
         $schema: DRAFT_07,
         type: "object",
+        required: ["count"],
         properties: {
           count: {
-            default: 3,
             description: "Number of resource links to return (1-10)",
             type: "number",
             minimum: 1,
@@ -635,44 +638,145 @@ describe("$schema 키워드 (#135)", () => {
           },
         },
       },
-      // 미지원 키가 여럿이면 정렬해 첫 번째를 보고한다.
-      path: "tools[0].inputSchema.properties.count.maximum",
+      expected: '"count": 1',
     },
     {
-      // 위 케이스는 정렬상 maximum 이 먼저 걸려 minimum 거절을 확인하지 못한다.
-      // 세 키를 다 고정하려면 minimum 만 남긴 케이스가 따로 있어야 한다.
       label: "minimum 단독",
       inputSchema: {
         $schema: DRAFT_07,
         type: "object",
+        required: ["count"],
         properties: { count: { type: "number", default: 3, minimum: 1 } },
       },
-      path: "tools[0].inputSchema.properties.count.minimum",
+      // default 가 범위를 만족하면 종전 우선순위대로 default 를 쓴다.
+      expected: '"count": 3',
     },
     {
       label: "format (gzip-file-as-resource)",
       inputSchema: {
         $schema: DRAFT_07,
         type: "object",
+        required: ["data"],
         properties: {
           data: {
-            default: "https://example.invalid/README.md",
             type: "string",
             format: "uri",
             description: "URL or data URI of the file content to compress",
           },
         },
       },
-      path: "tools[0].inputSchema.properties.data.format",
+      expected: '"data": "https://example.com"',
     },
     // 제목에 "$schema" 를 쓰지 않는다 — it.each 가 $ 접두사를 케이스 속성 참조로 읽어 치환한다.
-  ])("허용 키워드를 늘려도 $label 은 여전히 거절한다", async ({ inputSchema, path }) => {
+  ])("$label 을 이제 생성한다", async ({ inputSchema, expected }) => {
+    const outDir = await temporaryOutDir();
+
+    const [path] = await generateTests([{ name: "now-supported", inputSchema }], { outDir });
+    await expect(readFile(path as string, "utf8")).resolves.toContain(expected);
+  });
+
+  it("pattern 은 종전대로 거절한다", async () => {
     const outDir = await temporaryOutDir();
 
     await expect(
-      generateTests([{ name: "still-rejected", inputSchema }], { outDir }),
-    ).rejects.toMatchObject({ code: "UNSUPPORTED_SCHEMA", path });
+      generateTests(
+        [
+          {
+            name: "still-rejected",
+            inputSchema: {
+              type: "object",
+              required: ["q"],
+              properties: { q: { type: "string", pattern: "^a$" } },
+            },
+          },
+        ],
+        { outDir },
+      ),
+    ).rejects.toMatchObject({
+      code: "UNSUPPORTED_SCHEMA",
+      path: "tools[0].inputSchema.properties.q.pattern",
+    });
     await expect(readdir(outDir)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  describe("제약 키워드 허용", () => {
+    const toolWith = (schema: Record<string, unknown>) => ({
+      type: "object",
+      required: ["v"],
+      properties: { v: schema },
+    });
+
+    it.each([
+      ["minimum", { type: "integer", minimum: 1 }],
+      ["maximum", { type: "integer", maximum: 10 }],
+      ["exclusiveMinimum", { type: "integer", exclusiveMinimum: 0 }],
+      ["exclusiveMaximum", { type: "integer", exclusiveMaximum: 100 }],
+      ["minItems", { type: "array", items: { type: "string" }, minItems: 2 }],
+      ["maxItems", { type: "array", items: { type: "string" }, maxItems: 3 }],
+      ["minLength", { type: "string", minLength: 3 }],
+      ["maxLength", { type: "string", maxLength: 20 }],
+      ["format", { type: "string", format: "uri" }],
+    ])("%s 를 거절하지 않는다", (_label, schema) => {
+      expect(() => validateSchema(toolWith(schema), "t.inputSchema")).not.toThrow();
+    });
+  });
+
+  describe("INVALID_SCHEMA_CONSTRAINT", () => {
+    const check = (schema: Record<string, unknown>) => () => assertConstraints(schema, "p");
+
+    it.each([
+      ["minimum > maximum", { type: "integer", minimum: 10, maximum: 1 }],
+      ["정수 없음", { type: "integer", minimum: 1.2, maximum: 1.8 }],
+      ["exclusive 로 정수 없음", { type: "integer", exclusiveMinimum: 1, exclusiveMaximum: 2 }],
+      ["minItems > maxItems", { type: "array", minItems: 3, maxItems: 1 }],
+      ["minLength > maxLength", { type: "string", minLength: 5, maxLength: 2 }],
+      ["minimum 이 숫자가 아님", { type: "integer", minimum: "1" }],
+      ["minItems 가 음수", { type: "array", minItems: -1 }],
+      ["minLength 가 정수가 아님", { type: "string", minLength: 1.5 }],
+      ["format 이 문자열이 아님", { type: "string", format: 3 }],
+      ["exclusiveMinimum 이 boolean", { type: "integer", exclusiveMinimum: true }],
+      ["minimum 이 무한대", { type: "number", minimum: Number.POSITIVE_INFINITY }],
+      ["exclusiveMinimum >= maximum", { type: "number", exclusiveMinimum: 5, maximum: 5 }],
+      ["minimum >= exclusiveMaximum", { type: "number", minimum: 5, exclusiveMaximum: 5 }],
+    ])("%s 는 INVALID_SCHEMA_CONSTRAINT 다", (_label, schema) => {
+      expect(check(schema)).toThrow(expect.objectContaining({ code: "INVALID_SCHEMA_CONSTRAINT" }));
+    });
+
+    it("number 는 minimum 1.2 maximum 1.8 이 정상이다", () => {
+      expect(check({ type: "number", minimum: 1.2, maximum: 1.8 })).not.toThrow();
+    });
+
+    it("경계가 같으면 정상이다", () => {
+      expect(check({ type: "integer", minimum: 5, maximum: 5 })).not.toThrow();
+    });
+
+    it("모순 메시지에 경로와 두 값이 실린다", () => {
+      expect(check({ type: "integer", minimum: 10, maximum: 1 })).toThrow(
+        expect.objectContaining({
+          path: "p.minimum",
+          message: expect.stringContaining("10"),
+        }),
+      );
+    });
+  });
+
+  describe("INVALID_SCHEMA_CONSTRAINT 는 부분 생성으로 건너뛰지 않는다", () => {
+    it("한 툴이 모순 제약이면 전체가 멈춘다", () => {
+      const tools = [
+        { name: "ok", inputSchema: { type: "object", required: [], properties: {} } },
+        {
+          name: "broken",
+          inputSchema: {
+            type: "object",
+            required: ["v"],
+            properties: { v: { type: "integer", minimum: 10, maximum: 1 } },
+          },
+        },
+      ];
+      expect(() => createBaselineSuite(tools, { suiteId: "s", suiteName: "s" })).toThrow(
+        expect.objectContaining({ code: "INVALID_SCHEMA_CONSTRAINT" }),
+      );
+    });
   });
 
   it("거절 hint 에 $schema 가 실리고 기존 annotation 표기는 유지된다", async () => {
@@ -685,7 +789,8 @@ describe("$schema 키워드 (#135)", () => {
             name: "unsupported",
             inputSchema: {
               type: "object",
-              properties: { query: { type: "string", minLength: 1 } },
+              // minLength 는 이제 지원한다. 여전히 막히는 키워드로 바꿔 유지한다.
+              properties: { query: { type: "string", pattern: "^a$" } },
               required: ["query"],
             },
           },

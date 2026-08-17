@@ -1,7 +1,14 @@
 import type { ToolDef } from "@ohmymcp/core";
-import { type ContractAxis, type ContractDeclaredType, deriveContractAxes } from "@ohmymcp/runner";
+import {
+  type ContractAxis,
+  type ContractDeclaredType,
+  type ContractRange,
+  deriveContractAxes,
+} from "@ohmymcp/runner";
 import { fieldSlug } from "./filename.js";
-import type { JsonObject, JsonValue } from "./schema.js";
+import type { JsonObject, JsonSchema, JsonValue } from "./schema.js";
+import { plainObject } from "./schema.js";
+import { synthesizeValue } from "./synthesize.js";
 
 /**
  * 생성한 케이스 한 개. render.ts 의 지역 타입을 이 이름으로 승격시켜 두 파일이 공유한다.
@@ -72,6 +79,58 @@ function enumViolationValue(axis: ContractAxis): JsonValue {
   for (let suffix = 2; allowed.includes(candidate); suffix++)
     candidate = `${INVALID_ENUM_VALUE}_${suffix}`;
   return candidate;
+}
+
+/**
+ * 길이 L 의 문자열. 정상 경로가 `"example"` 에서 출발하므로 위반도 같은 문자열에서 만든다.
+ * 두 값이 한 글자만 다르면 사용자가 무엇을 노린 케이스인지 읽기 쉽다.
+ */
+const stringOfLength = (length: number): string =>
+  "example".padEnd(Math.max(length, 0), "x").slice(0, Math.max(length, 0));
+
+/** 원소 count 개의 배열. 원소는 items 스키마에서 합성하며 전부 같은 값이다(결정론성). */
+function arrayOfLength(itemsSchema: unknown, count: number, path: string): JsonValue {
+  if (count <= 0) return [];
+  if (!plainObject(itemsSchema)) return Array.from({ length: count }, () => "example");
+  return Array.from({ length: count }, () =>
+    synthesizeValue(itemsSchema as JsonSchema, `${path}.items`),
+  );
+}
+
+/**
+ * 범위를 한 칸 밖으로 넘긴 값. **하한 쪽에서 만든다.** 정상 경로가 하한 경계값이므로 위반도
+ * 같은 쪽에서 만들어야 사용자가 두 케이스의 대응을 읽기 쉽다(설계서 §5.2).
+ *
+ * 하한이 `0` 이고 타입이 `integer` 면 위반 값은 `-1` 이다. 음수를 못 받는 서버가 있을 수 있으나
+ * 그것이 곧 검증 대상이다.
+ *
+ * 만들 수 없으면 undefined 다. 호출자가 그 축의 케이스를 만들지 않는다. `deriveContractAxes` 가
+ * 이미 같은 규칙으로 축을 거르므로 여기 도달하는 것은 전부 만들 수 있는 축이다.
+ */
+function rangeViolationValue(
+  range: ContractRange,
+  fieldSchema: unknown,
+  path: string,
+): JsonValue | undefined {
+  if (range.minimum !== null) return range.minimum - 1;
+  if (range.exclusiveMinimum !== null) return range.exclusiveMinimum;
+  if (range.minItems !== null && range.minItems >= 1)
+    return arrayOfLength(
+      plainObject(fieldSchema) ? fieldSchema.items : null,
+      range.minItems - 1,
+      path,
+    );
+  if (range.minLength !== null && range.minLength >= 1) return stringOfLength(range.minLength - 1);
+  if (range.maximum !== null) return range.maximum + 1;
+  if (range.exclusiveMaximum !== null) return range.exclusiveMaximum;
+  if (range.maxItems !== null)
+    return arrayOfLength(
+      plainObject(fieldSchema) ? fieldSchema.items : null,
+      range.maxItems + 1,
+      path,
+    );
+  if (range.maxLength !== null) return stringOfLength(range.maxLength + 1);
+  return undefined;
 }
 
 /** 한 도구의 위반 케이스 전량. 정상 케이스는 포함하지 않는다. */
@@ -147,6 +206,22 @@ export function buildViolationCases(options: {
           `${tool.name}가 '${field}' 의 선언되지 않은 값을 거절한다`,
           { ...happyInput, [field]: value },
         ),
+      );
+    } else if (axis.kind === "RANGE_VIOLATION" && axis.declaredRange !== null) {
+      const properties = plainObject(tool.inputSchema)
+        ? (tool.inputSchema.properties as Record<string, unknown> | undefined)
+        : undefined;
+      const value = rangeViolationValue(
+        axis.declaredRange,
+        plainObject(properties) ? properties[field] : null,
+        `properties.${field}`,
+      );
+      if (value === undefined) continue;
+      cases.push(
+        violation(uniqueId("range", field), `${tool.name}가 '${field}' 범위 위반을 거절한다`, {
+          ...happyInput,
+          [field]: value,
+        }),
       );
     }
   }

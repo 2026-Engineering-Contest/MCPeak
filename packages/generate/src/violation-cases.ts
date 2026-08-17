@@ -5,6 +5,7 @@ import {
   type ContractRange,
   deriveContractAxes,
 } from "@ohmymcp/runner";
+import { integerLowerBound, integerUpperBound } from "./constraints.js";
 import { fieldSlug } from "./filename.js";
 import type { JsonObject, JsonSchema, JsonValue } from "./schema.js";
 import { plainObject } from "./schema.js";
@@ -112,6 +113,15 @@ function rangeViolationValue(
   fieldSchema: unknown,
   path: string,
 ): JsonValue | undefined {
+  // integer 는 경계가 소수일 수 있다. minimum: 1.2 에 -1 을 하면 0.2 가 나와 자기 type 을 어긴다.
+  // 그러면 그 케이스는 TYPE_VIOLATION 축을 덮고 RANGE_VIOLATION 축은 영원히 미검증으로 남는다.
+  // 정상 경로가 integerLowerBound 를 쓰므로 위반도 같은 계산에서 한 칸 내려간다.
+  if (plainObject(fieldSchema) && fieldSchema.type === "integer") {
+    const lower = integerLowerBound(range.minimum, range.exclusiveMinimum);
+    if (lower !== null) return lower - 1;
+    const upper = integerUpperBound(range.maximum, range.exclusiveMaximum);
+    if (upper !== null) return upper + 1;
+  }
   if (range.minimum !== null) return range.minimum - 1;
   if (range.exclusiveMinimum !== null) return range.exclusiveMinimum;
   if (range.minItems !== null && range.minItems >= 1)

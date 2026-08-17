@@ -1575,24 +1575,6 @@ export function renderPreFillSummary(options: {
 }
 
 /**
- * 범위 축이 커버리지 분모에 새로 들어간 사실을 알린다. 범위 축이 하나도 없으면 빈 문자열이다.
- *
- * 이 버전부터 `minimum` 같은 제약이 검증 축이 된다. 그래서 **같은 서버·같은 명세인데 수치가
- * 내려간다.** 그 사실을 안 적으면 사용자는 자기 명세가 나빠졌다고 읽는다. 결함이 아니라 이전에
- * 안 보이던 빈틈이 드러난 것이다(설계서 §5.3).
- */
-export function renderRangeAxisNotice(coverage: CoverageResult): string {
-  const hasRangeAxis = coverage.tools.some((tool) =>
-    tool.axes.some((axis) => axis.kind === "RANGE_VIOLATION"),
-  );
-  if (!hasRangeAxis) return "";
-  return (
-    "참고: 이번 버전부터 범위 제약(minimum·maxItems 등)이 검증 축에 포함됩니다.\n" +
-    "      이전보다 커버리지가 낮게 보이면 새로 드러난 빈틈입니다.\n"
-  );
-}
-
-/**
  * 케이스 수 고지. 임계 아래면 빈 문자열이다.
  * 생성을 막지 않는다. 이미 존재하는 상한을 사용자에게 보이게 하는 것이 목적이다.
  */
@@ -1615,8 +1597,6 @@ function writeCoverageReport(
   if (coverage !== undefined) {
     const text = renderCoverage(coverage);
     if (text !== "") deps.writeStdout(text);
-    const rangeNotice = renderRangeAxisNotice(coverage);
-    if (rangeNotice !== "") deps.writeStdout(rangeNotice);
   }
   const skippedText = renderSkippedTools(skippedTools);
   if (skippedText !== "") deps.writeStdout(skippedText);

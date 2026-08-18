@@ -3,7 +3,7 @@ import {
   REDACTED,
   type RunnerRedactionOptions,
   type TestSuiteSpec,
-} from "@ohmymcp/runner";
+} from "@ohmymcp-hsu/runner";
 
 export interface RedactedSuite {
   readonly suite: TestSuiteSpec;

@@ -445,8 +445,8 @@ Expected: 전부 녹색. 기존 테스트 결과 불변.
 - Test: `packages/cli/tests/determinism-capture.test.ts`
 
 **Interfaces:**
-- Consumes: `McpClient`(`@ohmymcp/core`), `RunnerEvent`·`DeterminismCaseObservation`
-  (`@ohmymcp/runner`, T1 산출). T1 통합 후에만 시작한다.
+- Consumes: `McpClient`(`@ohmymcp-hsu/core`), `RunnerEvent`·`DeterminismCaseObservation`
+  (`@ohmymcp-hsu/runner`, T1 산출). T1 통합 후에만 시작한다.
 - Produces: `DeterminismCapture` 인터페이스와 `createDeterminismCapture(inner: McpClient)`.
   T3 이 이 이름으로 import 한다.
 
@@ -456,7 +456,7 @@ Expected: 전부 녹색. 기존 테스트 결과 불변.
 
 ```ts
 import { describe, expect, it } from "vitest";
-import type { McpClient, ToolResult } from "@ohmymcp/core";
+import type { McpClient, ToolResult } from "@ohmymcp-hsu/core";
 import { createDeterminismCapture } from "../src/determinism-capture.js";
 
 const toolResult = (text: string): ToolResult => ({
@@ -525,8 +525,8 @@ Expected: FAIL — 모듈 없음.
 - [ ] **Step 3: 구현**
 
 ```ts
-import type { McpClient } from "@ohmymcp/core";
-import type { DeterminismCaseObservation, RunnerEvent } from "@ohmymcp/runner";
+import type { McpClient } from "@ohmymcp-hsu/core";
+import type { DeterminismCaseObservation, RunnerEvent } from "@ohmymcp-hsu/runner";
 
 /**
  * McpClient 를 감싸 응답을 케이스에 귀속시켜 기록한다(설계 §5.1). cassetteClient 와 같은

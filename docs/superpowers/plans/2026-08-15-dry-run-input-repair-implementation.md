@@ -100,8 +100,8 @@ R1 을 단독 웨이브로 두는 이유는 R2·R3·R5 가 전부 R1 의 타입�
 
 ```ts
 import type { DryRunCaseOutcome } from "./dry-run.js";
-import type { TestSuiteSpec } from "@ohmymcp/runner";
-import type { JsonValue } from "@ohmymcp/runner";
+import type { TestSuiteSpec } from "@ohmymcp-hsu/runner";
+import type { JsonValue } from "@ohmymcp-hsu/runner";
 
 /** 교정을 시도할 수 있는 실패 케이스. 설계 문서 §4.2 를 전부 만족한 것만 만들어진다. */
 export interface RepairTarget {

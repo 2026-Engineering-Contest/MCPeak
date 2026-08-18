@@ -52,7 +52,7 @@ ADR 이지만, **머지 직전에 `docs/adr/` 를 한 번 더 봐야 한다.** �
 
 ## Step 4: 최종 확인
 
-`grep -rn 'from "@ohmymcp/runner"' packages/generate/src` 로 센 실제 import 심볼과
+`grep -rn 'from "@ohmymcp-hsu/runner"' packages/generate/src` 로 센 실제 import 심볼과
 `APPROVED_RUNNER_SYMBOLS` 가 정확히 일치한다. 어긋난 것이 없다.
 
 ```
@@ -66,7 +66,7 @@ matchCoveredAxes sha256 validateMcpSuite
 계약 축 작업이 더한 것 다섯: `ContractAxis`, `ContractAxisKind`, `ContractDeclaredType`,
 `deriveContractAxes`, `matchCoveredAxes`. ADR-0009 의 심볼 표도 이 다섯을 담고 있다.
 
-`render.ts:75` 의 `@ohmymcp/runner` 는 생성 파일에 넣을 문자열 리터럴이고 이 패키지의 의존이
+`render.ts:75` 의 `@ohmymcp-hsu/runner` 는 생성 파일에 넣을 문자열 리터럴이고 이 패키지의 의존이
 아니다. 경계 테스트가 줄 시작 앵커로 그것을 이미 걸러낸다.
 
 ## 검증

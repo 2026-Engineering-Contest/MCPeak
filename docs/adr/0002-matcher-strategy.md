@@ -9,7 +9,7 @@
 
 ## 배경
 
-`@ohmymcp/runner`는 검증된 `TestSuiteSpec`을 실행하고, 무엇이 왜 다른지 사람이 읽을 수 있는
+`@ohmymcp-hsu/runner`는 검증된 `TestSuiteSpec`을 실행하고, 무엇이 왜 다른지 사람이 읽을 수 있는
 실패 진단을 만든다. 그런데 현재 이 패키지에는 **성격이 다른 두 갈래의 공개 API가 공존한다.**
 
 | API | 상태 | 성격 |
@@ -30,7 +30,7 @@
    *"우리가 만드는 것도 테스트 도구이므로 내부 러너와 개념이 겹치지 않게 경계를 문서화할 것."*
    그 경계가 아직 어디에도 없다.
 3. **의존성 방향이 미정이다.** 저장소 루트는 Vitest(`^4.1.10`)를 devDependency로 쓰지만,
-   `@ohmymcp/runner`의 런타임 의존성은 `@ohmymcp/core` 하나뿐이다. 어댑터를 제공하려면
+   `@ohmymcp-hsu/runner`의 런타임 의존성은 `@ohmymcp-hsu/core` 하나뿐이다. 어댑터를 제공하려면
    Vitest를 peerDependency로 올려야 하고, 이는 CONTRIBUTING §13.3에 따라 용도·라이선스를
    명시한 PR과 승인이 필요하다.
 
@@ -50,7 +50,7 @@
 - 장점
   - 실행 순서·병렬 여부·타임아웃을 전부 우리가 통제한다. 결정론성이 외부 설정에 의존하지 않는다.
   - 실패 진단을 `RunnerDiagnostic`(code·message·expected·actual·hint) 구조 그대로 출력할 수 있다.
-  - 런타임 의존성이 `@ohmymcp/core` 하나로 유지된다. 의존성 승인 절차가 일정에 끼어들지 않는다.
+  - 런타임 의존성이 `@ohmymcp-hsu/core` 하나로 유지된다. 의존성 승인 절차가 일정에 끼어들지 않는다.
   - 되돌리기 쉽다. 나중에 adapter를 추가하는 것은 minor 변경이다.
 - 단점
   - 이미 Vitest를 쓰는 프로젝트는 MCP 테스트를 별도 명령(`ohmymcp test`)으로 돌려야 한다.
@@ -59,7 +59,7 @@
 
 ### B. 독립 구현 + 별도 진입점의 Vitest adapter
 
-`@ohmymcp/runner/vitest` 서브패스로 adapter를 제공하고 Vitest를 optional peerDependency로 둔다.
+`@ohmymcp-hsu/runner/vitest` 서브패스로 adapter를 제공하고 Vitest를 optional peerDependency로 둔다.
 루트 export는 Vitest를 import하지 않는다.
 
 - 장점
@@ -90,12 +90,12 @@
 
 **A안을 채택한다.**
 
-1. `runSuite`가 유일한 실행 진입점이다. `@ohmymcp/runner`는 외부 테스트 러너 adapter를
+1. `runSuite`가 유일한 실행 진입점이다. `@ohmymcp-hsu/runner`는 외부 테스트 러너 adapter를
    첫 공개 범위에 포함하지 않는다.
 2. `createMcpTest`와 `toContainTool`은 현재 시그니처와 `not implemented` 동작을 유지한 채
    **deprecated로 명시**한다. 제거는 major 릴리스와 migration 문서를 동반한다. 이는 Runner
    설계가 이미 정한 제거 정책을 그대로 따르는 것이며, minor에서 삭제하지 않는다.
-3. `@ohmymcp/runner`의 런타임 의존성은 `@ohmymcp/core` 하나로 유지한다. Vitest를
+3. `@ohmymcp-hsu/runner`의 런타임 의존성은 `@ohmymcp-hsu/core` 하나로 유지한다. Vitest를
    `dependencies`·`peerDependencies` 어디에도 추가하지 않는다. 루트 `devDependencies`의
    Vitest는 우리 저장소가 우리를 테스트하는 용도이며 공개 계약이 아니다.
 4. 실행 결과의 소비는 우리가 만드는 리포터가 맡는다. 터미널 출력과 JUnit XML이 그 대상이며,
@@ -136,11 +136,11 @@ minor 변경이다. 반대로 지금 공개해두고 없애는 것은 major 릴�
 
 ## 결과
 
-- `@ohmymcp/runner`의 공개 실행 API는 `runSuite` 하나다. 외부 러너 adapter는 첫 공개 범위에
+- `@ohmymcp-hsu/runner`의 공개 실행 API는 `runSuite` 하나다. 외부 러너 adapter는 첫 공개 범위에
   포함되지 않는다.
 - `createMcpTest`·`toContainTool`은 deprecated shim으로 남는다. 호출하면 계속
   `not implemented`가 나며, 이는 의도된 동작이다. 제거는 major에서만 한다.
-- `@ohmymcp/runner`의 런타임 의존성은 `@ohmymcp/core` 하나로 고정된다. Vitest 관련 의존성
+- `@ohmymcp-hsu/runner`의 런타임 의존성은 `@ohmymcp-hsu/core` 하나로 고정된다. Vitest 관련 의존성
   추가 PR은 이 ADR이 폐기되기 전까지 승인 대상이 아니다.
 - README의 30초 예제 수정이 후속 과제로 남는다. 현재 예제는 실행하면 실패하므로, 이 ADR이
   승인되는 즉시 별도 PR로 처리한다.

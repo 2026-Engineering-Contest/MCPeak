@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { McpClient, ToolDef, ToolResult } from "@ohmymcp/core";
+import type { McpClient, ToolDef, ToolResult } from "@ohmymcp-hsu/core";
 import { describe, expect, it } from "vitest";
 import {
   type Cassette,

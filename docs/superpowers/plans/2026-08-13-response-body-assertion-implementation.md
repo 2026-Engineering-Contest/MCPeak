@@ -40,7 +40,7 @@ Runner의 단언은 `toolExists`와 `isError` 둘뿐이다. `examples/weather-se
 - `examples/weather-server`를 대상으로 한 E2E가 통과하고, 같은 입력 2회 실행의 출력 바이트가 같다.
 - `bodyMatchesSchema`가 없는 기존 스위트의 보고서 바이트가 변경 전과 동일하다.
 - `docs/adr/0010-응답-스키마-부분집합-경계.md`와 `docs/adr/0011-응답-본문-추출-규칙.md` 존재.
-- `.changeset/` 신규 파일 1개. `@ohmymcp/runner` minor.
+- `.changeset/` 신규 파일 1개. `@ohmymcp-hsu/runner` minor.
 
 ## 3. Global Constraints
 
@@ -443,7 +443,7 @@ const deepEqual = (left: unknown, right: unknown): boolean =>
 `plainObject`와 `typeName`은 `schema-match.ts`에서 가져온다(§5 Task T2).
 
 ```ts
-import type { ToolResult } from "@ohmymcp/core";
+import type { ToolResult } from "@ohmymcp-hsu/core";
 import { plainObject, typeName } from "./schema-match.js";
 import type { JsonValue } from "./spec/types.js";
 
@@ -1050,7 +1050,7 @@ result.type === "listTools"
 
 ```markdown
 ---
-"@ohmymcp/runner": minor
+"@ohmymcp-hsu/runner": minor
 ---
 
 callTool 응답 본문을 JSON Schema 부분집합으로 검사하는 `bodyMatchesSchema` 단언을 추가합니다.
@@ -1389,7 +1389,7 @@ T4까지 끝나면 아래를 확인하고 사용자에게 보고해라:
   - packages/runner/src/index.ts 가 새 타입과 함수를 모두 재수출하는지
   - docs/adr/0010-응답-스키마-부분집합-경계.md 와
     docs/adr/0011-응답-본문-추출-규칙.md 가 존재하는지
-  - .changeset/ 에 @ohmymcp/runner minor 파일이 있는지
+  - .changeset/ 에 @ohmymcp-hsu/runner minor 파일이 있는지
   - pnpm build && node packages/cli/tests/dist-cli-e2e.mjs 가 통과하는지
   - E2E의 결정론성 단언(같은 입력 2회 실행의 표준 출력 바이트 일치)이 실제로 들어 있는지
   - git status --short 에 packages/cli/src/ 변경이 없는지

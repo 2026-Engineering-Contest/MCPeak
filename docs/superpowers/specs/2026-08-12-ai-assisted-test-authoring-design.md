@@ -2,7 +2,7 @@
 
 - 상태: 사용자 승인 완료, 구현 계획 작성 대기
 - 작성일: 2026-08-12
-- 구현 대상: `@ohmymcp/generate`, 후속 `ohmymcp` CLI
+- 구현 대상: `@ohmymcp-hsu/generate`, 후속 `ohmymcp` CLI
 - 실행 기반: 사용자가 설치하고 인증한 Codex CLI 또는 Claude Code CLI
 - 선행 계약: [Runner 실행·보고서 및 Generate 연동 설계](./2026-08-11-runner-design.md)
 - 설계 결정: [ADR-0006](../../adr/0006-ai-assisted-test-authoring.md)
@@ -137,18 +137,18 @@ ohmymcp CLI
   ├─ core로 MCP 서버 연결과 tools/list 수행
   └─ generate의 순수 API와 provider adapter 조립
 
-@ohmymcp/generate
+@ohmymcp-hsu/generate
   ├─ 결정론적 baseline 합성
   ├─ authoring 상태, fingerprint, diff, 선택 적용
   ├─ compile·revise·repair 요청 준비와 결과 검증·정제
   └─ Codex·Claude 프로세스 adapter
 
-@ohmymcp/runner
+@ohmymcp-hsu/runner
   ├─ TestSuiteSpec, JSON Schema, validateMcpSuite
   ├─ 실행 시 observer redaction
   └─ RunnerEvent, RunnerReport
 
-@ohmymcp/core
+@ohmymcp-hsu/core
   └─ MCP 연결, tools/list, 실제 테스트 실행용 client
 ```
 

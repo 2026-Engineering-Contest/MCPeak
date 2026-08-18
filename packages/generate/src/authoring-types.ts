@@ -4,7 +4,7 @@ import type {
   SuiteValidationIssue,
   TestCaseSpec,
   TestSuiteSpec,
-} from "@ohmymcp/runner";
+} from "@ohmymcp-hsu/runner";
 
 /**
  * 승인 화면이 읽는 비차단 진단. 두 검사를 병합하지 않고 따로 담는다. 병합하면 두 검사 사이의

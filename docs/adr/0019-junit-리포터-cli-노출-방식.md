@@ -9,7 +9,7 @@
 
 ## 배경
 
-ADR-0016 이 `renderJUnit(report, options?)` 을 만들었고 `@ohmymcp/runner` 가 이를 공개 API 로
+ADR-0016 이 `renderJUnit(report, options?)` 을 만들었고 `@ohmymcp-hsu/runner` 가 이를 공개 API 로
 내보낸다. 그런데 **사용자는 이 기능을 쓸 수 없다.** `ohmymcp test` 에 리포터를 고르는 수단이
 없기 때문이다. 라이브러리로 직접 import 하지 않는 한 도달할 방법이 없고, 이 도구의 사용자는
 대부분 CLI 로 온다.

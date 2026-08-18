@@ -48,7 +48,7 @@
 
 착수 시점의 기점(`5031794`)에는 T1 이 없어서 `SuiteCaseApproval` 을 이 파일에 같은 모양으로
 정의해 뒀다. 작업 중 T1 이 `main` 에 머지돼(`fce46b1`) 오케스트레이터의 지시로 `git merge main`
-을 한 뒤 로컬 정의를 지우고 `import type { SuiteCaseApproval } from "@ohmymcp/runner";` 로
+을 한 뒤 로컬 정의를 지우고 `import type { SuiteCaseApproval } from "@ohmymcp-hsu/runner";` 로
 바꿨다. 지금 이 브랜치에는 정의가 한 벌만 있다. 병합은 fast-forward 였고 충돌은 없었다.
 
 ## 검증

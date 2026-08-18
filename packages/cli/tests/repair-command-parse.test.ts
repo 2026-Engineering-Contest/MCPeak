@@ -1,4 +1,4 @@
-import { DEFAULT_MAX_REPAIR_CASES } from "@ohmymcp/generate";
+import { DEFAULT_MAX_REPAIR_CASES } from "@ohmymcp-hsu/generate";
 import { describe, expect, it } from "vitest";
 import { commandHelp } from "../src/help.js";
 import {

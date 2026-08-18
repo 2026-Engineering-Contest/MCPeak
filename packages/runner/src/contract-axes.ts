@@ -1,4 +1,4 @@
-import type { ToolDef } from "@ohmymcp/core";
+import type { ToolDef } from "@ohmymcp-hsu/core";
 import { expectedIsError } from "./case-expectation.js";
 import type { ContractRange } from "./contract-range.js";
 import { rangeYieldsViolation, violatesRange } from "./contract-range.js";

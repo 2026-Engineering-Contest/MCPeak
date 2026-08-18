@@ -59,7 +59,7 @@ pnpm exec biome check packages/cli
 - 성공, 테스트 실패, 입력 실패, 연결 실패, 실행·종료 실패의 종료 코드 결정
 - 단계와 해결 방법이 드러나는 결정론적 오류 출력
 - 실제 weather-server를 사용하는 명령 계층 E2E와 빌드 산출물 스모크
-- `@ohmymcp/core`의 CLI 직접 workspace 의존성
+- `@ohmymcp-hsu/core`의 CLI 직접 workspace 의존성
 - CLI README와 공개 기능 changeset 갱신
 
 ### 2.2 제외
@@ -93,7 +93,7 @@ cli ─→ core
   └─→ runner ─→ core의 동결 타입
 ```
 
-- `@ohmymcp/core`는 `packages/cli/package.json`의 직접 workspace dependency로 추가한다.
+- `@ohmymcp-hsu/core`는 `packages/cli/package.json`의 직접 workspace dependency로 추가한다.
 - CLI는 `connectStdio`를 Runner를 통해 재수출하거나 우회하지 않는다.
 - Runner는 Core 연결을 만들지 않고 주입된 `McpClient`만 실행한다.
 - Core는 Runner 또는 CLI를 import하지 않는다.

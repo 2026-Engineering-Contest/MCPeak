@@ -1,5 +1,5 @@
-import type { TestSuiteSpec } from "@ohmymcp/runner";
-import { suiteFingerprint } from "@ohmymcp/runner";
+import type { TestSuiteSpec } from "@ohmymcp-hsu/runner";
+import { suiteFingerprint } from "@ohmymcp-hsu/runner";
 import { describe, expect, it } from "vitest";
 import {
   caseApprovalStatus,

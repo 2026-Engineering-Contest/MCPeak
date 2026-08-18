@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { connect, connectStdio } from "../src/index.js";
 
-describe("@ohmymcp/core", () => {
+describe("@ohmymcp-hsu/core", () => {
   it("connect와 connectStdio 공개 진입점을 제공한다", () => {
     expect(connect).toBeTypeOf("function");
     expect(connectStdio).toBeTypeOf("function");

@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { basename, dirname, normalize } from "node:path";
 import { Readable, Writable } from "node:stream";
-import type { McpStdioConnection, ToolDef, ToolResult } from "@ohmymcp/core";
+import type { McpStdioConnection, ToolDef, ToolResult } from "@ohmymcp-hsu/core";
 import {
   type AuthoringDiffPreview,
   applyAuthoringChanges,
@@ -21,16 +21,16 @@ import {
   reviewLocalAuthoringCandidate,
   type SanitizedAuthoringCandidate,
   sha256,
-} from "@ohmymcp/generate";
-import type { Cassette } from "@ohmymcp/record";
+} from "@ohmymcp-hsu/generate";
+import type { Cassette } from "@ohmymcp-hsu/record";
 import type {
   CallToolCaseSpec,
   ContractAxisKind,
   SpecFinding,
   TestCaseSpec,
   TestSuiteSpec,
-} from "@ohmymcp/runner";
-import { suiteFingerprint, validateMcpSuite } from "@ohmymcp/runner";
+} from "@ohmymcp-hsu/runner";
+import { suiteFingerprint, validateMcpSuite } from "@ohmymcp-hsu/runner";
 import { describe, expect, it, vi } from "vitest";
 import {
   type GenerateCommandDependencies,

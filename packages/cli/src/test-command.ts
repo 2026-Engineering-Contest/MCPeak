@@ -1,5 +1,5 @@
 import { extname } from "node:path";
-import type { McpStdioConnection } from "@ohmymcp/core";
+import type { McpStdioConnection } from "@ohmymcp-hsu/core";
 import type {
   CheckDeterminismOptions,
   DeterminismResult,
@@ -14,14 +14,14 @@ import type {
   SuiteValidationIssue,
   SuiteValidationResult,
   TestSuiteSpec,
-} from "@ohmymcp/runner";
+} from "@ohmymcp-hsu/runner";
 import {
   describeDeterminismDifference,
   describeSpecFinding,
   checkAssertionSubstance as runnerCheckAssertionSubstance,
   checkDeterminism as runnerCheckDeterminism,
   checkInputContract as runnerCheckInputContract,
-} from "@ohmymcp/runner";
+} from "@ohmymcp-hsu/runner";
 import { createDeterminismCapture } from "./determinism-capture.js";
 import type { FindingGroup } from "./finding-group.js";
 import { FINDING_GROUP } from "./finding-group.js";

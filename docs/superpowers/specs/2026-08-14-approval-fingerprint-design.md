@@ -204,7 +204,7 @@ sha256 }`, `packages/generate/src/index.ts:59`)가 그대로 살아 기존 소�
 이동 후 `packages/generate/src/canonical.ts` 는 이 한 줄만 남긴다.
 
 ```ts
-export { canonicalJson, deepFreeze, sha256 } from "@ohmymcp/runner";
+export { canonicalJson, deepFreeze, sha256 } from "@ohmymcp-hsu/runner";
 ```
 
 파일을 지우고 import 를 전부 고치는 대신 재수출 파일을 남기는 이유는 `generate` 안의 4개
@@ -217,8 +217,8 @@ import 지점(`authoring-request.ts` · `authoring-session.ts` · `baseline.ts` 
 심볼을 목록으로 고정하고 있다(ADR-0009 의 승인 범위를 코드로 못 박은 것). `canonicalJson` ·
 `deepFreeze` · `sha256` 이 그 목록에 없으므로 세 개를 추가하고 **ADR-0009 를 함께 개정한다.**
 
-여기에 조용한 구멍이 하나 있다. 그 테스트의 정규식은 `^import\s+...from "@ohmymcp/runner"` 로
-**`import` 문만** 잡는다. 우리가 쓰려는 `export ... from "@ohmymcp/runner"` 는 안 잡힌다. 즉
+여기에 조용한 구멍이 하나 있다. 그 테스트의 정규식은 `^import\s+...from "@ohmymcp-hsu/runner"` 로
+**`import` 문만** 잡는다. 우리가 쓰려는 `export ... from "@ohmymcp-hsu/runner"` 는 안 잡힌다. 즉
 목록을 안 고쳐도 테스트가 초록으로 통과한다. 그러면 ADR-0009 가 지키려던 경계가 재수출 한 줄로
 우회되고, 그 사실을 아무도 모른다.
 
@@ -459,15 +459,15 @@ canonicalJson
 `packages/generate` 쪽에는 재수출 확인만 남긴다.
 
 ```
-· @ohmymcp/generate 의 sha256 이 @ohmymcp/runner 의 sha256 과 같은 함수 참조다
-· @ohmymcp/generate 의 canonicalJson · deepFreeze 도 같다
+· @ohmymcp-hsu/generate 의 sha256 이 @ohmymcp-hsu/runner 의 sha256 과 같은 함수 참조다
+· @ohmymcp-hsu/generate 의 canonicalJson · deepFreeze 도 같다
 ```
 
 `packages/generate/tests/dependency-boundary.test.ts` (§4.6)
 
 ```
 · APPROVED_RUNNER_SYMBOLS 에 canonicalJson · deepFreeze · sha256 이 있다
-· 정규식이 export ... from "@ohmymcp/runner" 구문의 심볼도 수집한다
+· 정규식이 export ... from "@ohmymcp-hsu/runner" 구문의 심볼도 수집한다
   (canonical.ts 의 재수출 세 개가 실제로 used 집합에 잡히는지 단언한다)
 · 목록에 없는 심볼을 재수출하는 가짜 소스를 넣으면 테스트가 실패한다
 ```

@@ -1,7 +1,7 @@
 # CLI 프로세스 진단 출력 설계 (2026-08-13)
 
 - 상태: 사용자 승인 대기
-- 구현 대상: `@ohmymcp/cli` (패키지명 `ohmymcp`)
+- 구현 대상: `@ohmymcp-hsu/cli` (패키지명 `ohmymcp`)
 - 선행 계약: [CLI 보고서 렌더링 설계](./2026-08-13-cli-report-rendering-design.md),
   [Runner 실행·보고서 설계](./2026-08-11-runner-design.md)
 - 관련 ADR: ADR-0012(기본 출력 전환), ADR-0013(렌더러 배치), 이 문서가 만드는 ADR-0014

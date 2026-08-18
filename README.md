@@ -125,11 +125,11 @@ ohmymcp test suite.json --command ohmymcp-mock --arg mock.json
 | 패키지 | 역할 |
 |---|---|
 | [`ohmymcp`](./packages/cli) | CLI 진입점 (얇게 유지) |
-| [`@ohmymcp/core`](./packages/core) | MCP 프로토콜 클라이언트 · 트랜스포트 · 프로세스 수명주기 |
-| [`@ohmymcp/runner`](./packages/runner) | 선언형 테스트 실행 · assertion · 구조화된 리포트 |
-| [`@ohmymcp/generate`](./packages/generate) | 결정론적 baseline 과 승인형 AI 검토로 테스트 생성 |
-| [`@ohmymcp/record`](./packages/record) | 녹화 · 재생 · 계약 스냅샷 |
-| [`@ohmymcp/mock`](./packages/mock) | 목 MCP 서버(Streamable HTTP · stdio) · 응답 주입 |
+| [`@ohmymcp-hsu/core`](./packages/core) | MCP 프로토콜 클라이언트 · 트랜스포트 · 프로세스 수명주기 |
+| [`@ohmymcp-hsu/runner`](./packages/runner) | 선언형 테스트 실행 · assertion · 구조화된 리포트 |
+| [`@ohmymcp-hsu/generate`](./packages/generate) | 결정론적 baseline 과 승인형 AI 검토로 테스트 생성 |
+| [`@ohmymcp-hsu/record`](./packages/record) | 녹화 · 재생 · 계약 스냅샷 |
+| [`@ohmymcp-hsu/mock`](./packages/mock) | 목 MCP 서버(Streamable HTTP · stdio) · 응답 주입 |
 
 의존 방향은 단방향입니다: `cli` → `runner`/`generate`/`record`/`mock` → `core`.
 

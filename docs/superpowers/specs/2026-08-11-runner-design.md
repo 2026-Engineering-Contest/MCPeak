@@ -2,8 +2,8 @@
 
 - 상태: 사용자 승인 완료, Runner 구현 대기
 - 작성일: 2026-08-11
-- 구현 대상: `@ohmymcp/runner`
-- 후속 연동 대상: `@ohmymcp/generate`, `ohmymcp` CLI, Dashboard
+- 구현 대상: `@ohmymcp-hsu/runner`
+- 후속 연동 대상: `@ohmymcp-hsu/generate`, `ohmymcp` CLI, Dashboard
 
 ## 1. 목적
 
@@ -19,10 +19,10 @@ Runner는 생성 출처와 무관하게 검증된 `TestSuiteSpec`을 받아 MCP 
 pnpm exec vitest run packages/runner/tests
 → Runner 단위 테스트 전체 통과
 
-pnpm --filter @ohmymcp/runner typecheck
+pnpm --filter @ohmymcp-hsu/runner typecheck
 → Runner 공개 타입과 테스트 타입체크 통과
 
-pnpm --filter @ohmymcp/runner build
+pnpm --filter @ohmymcp-hsu/runner build
 → ESM, CJS, 선언 파일 생성 성공
 
 pnpm exec biome check packages/runner
@@ -297,10 +297,10 @@ import {
   MCP_SUITE_JSON_SCHEMA,
   validateMcpSuite,
   type TestSuiteSpec,
-} from "@ohmymcp/runner";
+} from "@ohmymcp-hsu/runner";
 ```
 
-별도 `@ohmymcp/runner/spec` subpath는 첫 구현에 만들지 않는다. 현재 `tsconfig.base.json`은 `@ohmymcp/runner` 루트만 소스에 매핑한다. subpath를 추가하면 Runner 작업 범위를 넘어 공유 루트 설정까지 바꾸거나 generate가 Runner 빌드 산출물에 의존해야 한다. 두 선택 모두 현재의 패키지별 병렬 개발 원칙에 맞지 않는다.
+별도 `@ohmymcp-hsu/runner/spec` subpath는 첫 구현에 만들지 않는다. 현재 `tsconfig.base.json`은 `@ohmymcp-hsu/runner` 루트만 소스에 매핑한다. subpath를 추가하면 Runner 작업 범위를 넘어 공유 루트 설정까지 바꾸거나 generate가 Runner 빌드 산출물에 의존해야 한다. 두 선택 모두 현재의 패키지별 병렬 개발 원칙에 맞지 않는다.
 
 Runner 내부에서는 명세 계약을 `src/spec/`에 격리하되 `src/index.ts`가 이를 재수출한다. spec 모듈은 executor를 import하지 않고, executor 모듈도 import 시 작업을 수행하는 부작용을 갖지 않는다.
 
@@ -922,7 +922,7 @@ export function prepareRepairRequest(options: {
 
 기본 repair 후보는 status가 `failed`인 케이스다. `timedOut`은 우선 timeout 설정과 서버 지연 문제로 안내하며 사용자가 명시적으로 선택한 경우에만 `needsReview` 후보로 보낸다. `cancelled`와 `notRun`은 실행 결과가 없으므로 repair 대상으로 보내지 않는다.
 
-`prepareRepairRequest`의 구현과 소유권은 미래 `@ohmymcp/generate`에 있다. 함수는 `originalSuite`와 report의 suite identity·case ID를 먼저 대조하고, report의 sanitized 실패 case만 선택하며 tools의 `inputSchema`에도 같은 redaction을 적용한다. case당 `65_536` bytes 또는 전체 `262_144` bytes를 넘으면 `RepairPayloadLimitError`를 던지고 preview를 반환하지 않는다. result 상한 기본값은 `262_144` UTF-8 bytes, 허용값은 `1..262_144`의 유한 정수이며 caller는 낮출 수만 있다. provider 호출 timeout 기본값은 `120_000ms`, 허용값은 `1..600_000ms`의 유한 정수다. 두 옵션의 잘못된 값은 preview나 provider 실행 전에 동기 `RangeError`로 거절한다. runtime caller가 타입을 우회해 전달할 수 있으므로 tools는 redaction보다 먼저 배열 순서대로 검사한다. `inputSchema`가 JSON primitive(`string`, `boolean`, `null`, 유한 `number`), dense array, 또는 `Object.prototype | null` plain object로만 재귀 구성된 비순환 `ReadonlyJsonValue`가 아니면 첫 위반 tool index만 받는 `GenerateRequestValidationError`를 동기로 던진다. 비순환 공유 참조는 허용하지만 sparse array, `undefined`, `bigint`, `symbol`, 함수, 비 plain object, 비유한 숫자, cycle은 거절한다. 이 오류의 `code`, `message`, `hint`는 위 고정 literal이고 `path`는 안전한 numeric index로 만든 `tools[i].inputSchema`다. 이 경로에는 `needsReview` 대체 결과가 없으며 preview·binding·provider 호출도 만들지 않는다. raw MCP 메시지, 환경 변수, 서버 stderr, 관련 없는 응답 본문은 기본 payload에서 제외한다.
+`prepareRepairRequest`의 구현과 소유권은 미래 `@ohmymcp-hsu/generate`에 있다. 함수는 `originalSuite`와 report의 suite identity·case ID를 먼저 대조하고, report의 sanitized 실패 case만 선택하며 tools의 `inputSchema`에도 같은 redaction을 적용한다. case당 `65_536` bytes 또는 전체 `262_144` bytes를 넘으면 `RepairPayloadLimitError`를 던지고 preview를 반환하지 않는다. result 상한 기본값은 `262_144` UTF-8 bytes, 허용값은 `1..262_144`의 유한 정수이며 caller는 낮출 수만 있다. provider 호출 timeout 기본값은 `120_000ms`, 허용값은 `1..600_000ms`의 유한 정수다. 두 옵션의 잘못된 값은 preview나 provider 실행 전에 동기 `RangeError`로 거절한다. runtime caller가 타입을 우회해 전달할 수 있으므로 tools는 redaction보다 먼저 배열 순서대로 검사한다. `inputSchema`가 JSON primitive(`string`, `boolean`, `null`, 유한 `number`), dense array, 또는 `Object.prototype | null` plain object로만 재귀 구성된 비순환 `ReadonlyJsonValue`가 아니면 첫 위반 tool index만 받는 `GenerateRequestValidationError`를 동기로 던진다. 비순환 공유 참조는 허용하지만 sparse array, `undefined`, `bigint`, `symbol`, 함수, 비 plain object, 비유한 숫자, cycle은 거절한다. 이 오류의 `code`, `message`, `hint`는 위 고정 literal이고 `path`는 안전한 numeric index로 만든 `tools[i].inputSchema`다. 이 경로에는 `needsReview` 대체 결과가 없으며 preview·binding·provider 호출도 만들지 않는다. raw MCP 메시지, 환경 변수, 서버 stderr, 관련 없는 응답 본문은 기본 payload에서 제외한다.
 
 함수는 sanitized request, original suite, 정렬·중복 제거한 `selectedCaseIds`, redaction 정책, result 상한, provider timeout을 deep clone·deep freeze해 module-private `WeakMap<RepairRequestBinding, RepairRequestContext>`에 보존한다. visible preview fingerprint는 binding·fingerprint를 제외한 canonical JSON SHA-256이다. `dispatchRepair`는 compile과 같은 approval fingerprint 검사를 수행하고 mutable `preview.request`가 아니라 binding의 request snapshot만 provider에 전달한다. stdout은 binding의 `maxResultBytes`로 streaming 제한하며 초과하면 process/stream을 중단하고 parse·validate·sanitize 전에 내용 없는 `outputLimitExceeded`를 반환한다. 이 request binding이 provider result의 유일한 원본 suite·선택 집합·timeout 문맥이다.
 
@@ -1097,7 +1097,7 @@ dispatch/apply 경계는 최대 100개, 최종 직렬화 배열 기준 `65_536` 
 
 승인된 교체안은 해당 케이스만 바꾸며, CLI 또는 Dashboard가 교체된 케이스로 작은 임시 suite를 만들어 선택 재실행할 수 있다. 첫 Runner API에 별도 `caseIds` 필터를 추가하지 않는다.
 
-`validateRepairResult`, `sanitizeRepairResult`, `applyReviewedRepairs`의 구현과 소유권은 미래 `@ohmymcp/generate`에 있다. provider JSON은 먼저 구조·문맥 검증을 통과하고, 그 다음 모든 `replacement.operation.input`에 기본 민감 키와 caller 지정 민감 키·문자열 값 redaction을 재귀 적용해야 한다. explanation을 포함한 나머지 문자열에도 caller의 exact `sensitiveValues`와 compile prompt의 민감 assignment 규칙을 적용한다. CLI/Dashboard는 raw `RepairResult`를 받지 않고 `SanitizedRepairResultPreview`만 받는다. 알 수 없는 PII는 자동 판별했다고 주장하지 않으며 preview와 명시적 사용자 승인이 마지막 경계다. validator는 닫힌 객체와 필수 필드, 비어 있지 않은 explanation, boolean `needsReview`를 검사하고 다음 순서로 문맥 규칙을 적용한다.
+`validateRepairResult`, `sanitizeRepairResult`, `applyReviewedRepairs`의 구현과 소유권은 미래 `@ohmymcp-hsu/generate`에 있다. provider JSON은 먼저 구조·문맥 검증을 통과하고, 그 다음 모든 `replacement.operation.input`에 기본 민감 키와 caller 지정 민감 키·문자열 값 redaction을 재귀 적용해야 한다. explanation을 포함한 나머지 문자열에도 caller의 exact `sensitiveValues`와 compile prompt의 민감 assignment 규칙을 적용한다. CLI/Dashboard는 raw `RepairResult`를 받지 않고 `SanitizedRepairResultPreview`만 받는다. 알 수 없는 PII는 자동 판별했다고 주장하지 않으며 preview와 명시적 사용자 승인이 마지막 경계다. validator는 닫힌 객체와 필수 필드, 비어 있지 않은 explanation, boolean `needsReview`를 검사하고 다음 순서로 문맥 규칙을 적용한다.
 
 `sanitizeRepairResult`는 request binding에서 원본 validation context, redaction, result 상한을 읽고 모든 redaction 위치를 `redactedPaths`에 기록한다. replacement 내부에 redaction이 하나라도 있으면 `applicable: false`다. UI는 해당 후보를 적용할 수 없고, 사용자가 replacement 값을 직접 채우고 검토한 새 결과를 같은 request binding으로 다시 validate→sanitize해야 한다. raw provider 결과를 숨겨서 적용하거나 `[REDACTED]` placeholder를 suite에 기록하는 경로는 없다. explanation만 redacted된 경우에는 suite에 적용되는 replacement가 변하지 않으므로 `applicable` 판정에 영향을 주지 않는다. raw validated result와 sanitized result를 각각 측정해 어느 쪽이든 binding의 상한을 넘으면 내용 없는 `RepairPayloadLimitError(scope: "result")`를 동기로 던지고 preview·UI·저장 경계로 결과를 보내지 않는다. `dispatchRepair`는 이를 `status: "resultLimitExceeded"`로, `applyReviewedRepairs`의 재검증 경로는 `reason: "resultLimitExceeded"`로 변환한다. `byteLength`는 통과한 sanitized result의 실제 UTF-8 byte 수다.
 

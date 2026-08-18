@@ -94,7 +94,7 @@ connect(opts): Promise<McpClient>            // core     — 값을 만드는 �
 core를 기다리지 않는다. `McpClient`는 메서드 세 개짜리 인터페이스라 직접 만들면 된다.
 
 ```ts
-import type { McpClient, ToolDef } from "@ohmymcp/core";
+import type { McpClient, ToolDef } from "@ohmymcp-hsu/core";
 
 const fixture: ToolDef[] = [
   { name: "get_weather", description: "날씨 조회", inputSchema: {} },
@@ -175,5 +175,5 @@ runner → core의 동결 타입
 ```
 
 Runner는 Core의 `connect` 또는 `connectStdio`를 재수출하지 않는다. Core도 Runner를 import하지
-않는다. `ohmymcp test`를 구현하는 후속 CLI PR에서 `@ohmymcp/core` workspace dependency를 팀
+않는다. `ohmymcp test`를 구현하는 후속 CLI PR에서 `@ohmymcp-hsu/core` workspace dependency를 팀
 승인 범위로 추가한다.

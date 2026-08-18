@@ -1,5 +1,5 @@
 ---
-"@ohmymcp/generate": minor
+"@ohmymcp-hsu/generate": minor
 ---
 
 authoring 통로와 분리된 **서버 진단 전용 통로**를 내보냅니다. 실패한 `test` 실행의 근거를 AI provider 에게 물어 서버 코드의 원인 후보를 받아 오는 경로이고, 기존 authoring API 는 바뀌지 않습니다.

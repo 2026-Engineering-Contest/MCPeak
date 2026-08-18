@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import type { McpClient, ToolDef, ToolResult } from "@ohmymcp/core";
+import type { McpClient, ToolDef, ToolResult } from "@ohmymcp-hsu/core";
 
 export const CASSETTE_VERSION = 1 as const;
 export const REDACTED = "[redacted]";

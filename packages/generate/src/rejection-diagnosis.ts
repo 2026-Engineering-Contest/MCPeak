@@ -1,4 +1,4 @@
-import type { RunnerRedactionOptions } from "@ohmymcp/runner";
+import type { RunnerRedactionOptions } from "@ohmymcp-hsu/runner";
 import {
   DEFAULT_PROVIDER_TIMEOUT_MS,
   MAX_REQUEST_BYTES,

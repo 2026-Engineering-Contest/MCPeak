@@ -53,7 +53,7 @@ const unavailableRuntimeDependencies = {
  * stdin·stdout 이 둘 다 TTY 일 때만 `interactive` 를 참으로 만든다.
  */
 export function nodeRepairDependencies(
-  generate: typeof import("@ohmymcp/generate"),
+  generate: typeof import("@ohmymcp-hsu/generate"),
 ): RepairCommandDependencies {
   return {
     readFile: (path) => readFile(path, "utf8"),
@@ -107,14 +107,14 @@ export async function run(argv: string[]): Promise<number> {
     return 0;
   }
   if (argv[0] === "generate") {
-    let core: typeof import("@ohmymcp/core");
-    let runner: typeof import("@ohmymcp/runner");
-    let generate: typeof import("@ohmymcp/generate");
+    let core: typeof import("@ohmymcp-hsu/core");
+    let runner: typeof import("@ohmymcp-hsu/runner");
+    let generate: typeof import("@ohmymcp-hsu/generate");
     try {
       [core, runner, generate] = await Promise.all([
-        import("@ohmymcp/core"),
-        import("@ohmymcp/runner"),
-        import("@ohmymcp/generate"),
+        import("@ohmymcp-hsu/core"),
+        import("@ohmymcp-hsu/runner"),
+        import("@ohmymcp-hsu/generate"),
       ]);
     } catch {
       return runGenerateCommand(argv, {
@@ -170,12 +170,12 @@ export async function run(argv: string[]): Promise<number> {
      * `generate` 분기와 같은 모양으로 동적 import 한다. `test` 경로는 이 분기를 지나지 않으므로
      * 여전히 `core` 와 `runner` 만 로드한다. 계획서 §8 위험표 첫 줄.
      */
-    let generate: typeof import("@ohmymcp/generate");
+    let generate: typeof import("@ohmymcp-hsu/generate");
     try {
-      generate = await import("@ohmymcp/generate");
+      generate = await import("@ohmymcp-hsu/generate");
     } catch {
       process.stderr.write(
-        "오류 [REPAIR_RUNTIME_UNAVAILABLE]: 진단에 필요한 @ohmymcp/generate 를 로드하지 못했습니다.\n해결: 의존성을 설치한 뒤 다시 실행하세요.\n",
+        "오류 [REPAIR_RUNTIME_UNAVAILABLE]: 진단에 필요한 @ohmymcp-hsu/generate 를 로드하지 못했습니다.\n해결: 의존성을 설치한 뒤 다시 실행하세요.\n",
       );
       return 1;
     }
@@ -188,10 +188,13 @@ export async function run(argv: string[]): Promise<number> {
     }
   }
   if (argv[0] === "replay") {
-    let runner: typeof import("@ohmymcp/runner");
-    let record: typeof import("@ohmymcp/record");
+    let runner: typeof import("@ohmymcp-hsu/runner");
+    let record: typeof import("@ohmymcp-hsu/record");
     try {
-      [runner, record] = await Promise.all([import("@ohmymcp/runner"), import("@ohmymcp/record")]);
+      [runner, record] = await Promise.all([
+        import("@ohmymcp-hsu/runner"),
+        import("@ohmymcp-hsu/record"),
+      ]);
     } catch {
       return runReplayCommand(argv.slice(1), unavailableReplayDependencies);
     }
@@ -215,10 +218,13 @@ export async function run(argv: string[]): Promise<number> {
   } catch {
     return runCli(argv, unavailableDependencies);
   }
-  let core: typeof import("@ohmymcp/core");
-  let runner: typeof import("@ohmymcp/runner");
+  let core: typeof import("@ohmymcp-hsu/core");
+  let runner: typeof import("@ohmymcp-hsu/runner");
   try {
-    [core, runner] = await Promise.all([import("@ohmymcp/core"), import("@ohmymcp/runner")]);
+    [core, runner] = await Promise.all([
+      import("@ohmymcp-hsu/core"),
+      import("@ohmymcp-hsu/runner"),
+    ]);
   } catch {
     return runCli(argv, unavailableRuntimeDependencies);
   }

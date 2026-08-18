@@ -1,6 +1,6 @@
-import type { ToolDef } from "@ohmymcp/core";
-import type { TestCaseSpec, TestSuiteSpec } from "@ohmymcp/runner";
-import { checkAssertionSubstance, checkInputContract, validateMcpSuite } from "@ohmymcp/runner";
+import type { ToolDef } from "@ohmymcp-hsu/core";
+import type { TestCaseSpec, TestSuiteSpec } from "@ohmymcp-hsu/runner";
+import { checkAssertionSubstance, checkInputContract, validateMcpSuite } from "@ohmymcp-hsu/runner";
 import type {
   ApplyAuthoringChangesResult,
   AuthoringCandidateBinding,

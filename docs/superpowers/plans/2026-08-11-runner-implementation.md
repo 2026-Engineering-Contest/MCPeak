@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED PROJECT SKILL: Use `plan-conventions` when changing this plan and `execution-conventions` when executing it. Implement each task with `superpowers:test-driven-development`; use `superpowers:systematic-debugging` for unexpected failures and `superpowers:verification-before-completion` before reporting completion.
 
-**Goal:** Implement the first deterministic `TestSuiteSpec → RunnerEvent[] + RunnerReport` vertical slice in `@ohmymcp/runner`, with `toolExists`, `isError`, validation, timeout, cancellation, and a generate-ready public contract.
+**Goal:** Implement the first deterministic `TestSuiteSpec → RunnerEvent[] + RunnerReport` vertical slice in `@ohmymcp-hsu/runner`, with `toolExists`, `isError`, validation, timeout, cancellation, and a generate-ready public contract.
 
 **Architecture:** Keep the JSON-compatible specification contract isolated under `src/spec/`, re-export it from the existing package root, and let a sequential executor consume only the frozen `McpClient` contract. Assertions return structured results rather than throwing. Runner keeps private operational inputs separate from sanitized observer snapshots, returns an independently completing report plus a bounded non-rejecting drain result, and retains each sanitized case specification and diagnostic so generate can later build reviewed single-case or batch repair requests.
 
@@ -875,7 +875,7 @@ Run:
 
 ```bash
 pnpm exec vitest run packages/runner/tests/spec-validation.test.ts packages/runner/tests/spec-schema.test.ts packages/runner/tests/index.test.ts
-pnpm --filter @ohmymcp/runner typecheck
+pnpm --filter @ohmymcp-hsu/runner typecheck
 ```
 
 Expected: all Task 1 tests pass and typecheck exits 0.
@@ -986,7 +986,7 @@ Keep `assertToolExists` and `assertIsError` internal to Runner unless tests impo
 
 ```bash
 pnpm exec vitest run packages/runner/tests/assertions.test.ts packages/runner/tests/spec-validation.test.ts packages/runner/tests/spec-schema.test.ts
-pnpm --filter @ohmymcp/runner typecheck
+pnpm --filter @ohmymcp-hsu/runner typecheck
 ```
 
 Expected: all pass.
@@ -1157,8 +1157,8 @@ skipped assertion hint: 먼저 MCP 작업 실패 원인을 해결하세요.
 
 ```bash
 pnpm exec vitest run packages/runner/tests
-pnpm --filter @ohmymcp/runner typecheck
-pnpm --filter @ohmymcp/runner build
+pnpm --filter @ohmymcp-hsu/runner typecheck
+pnpm --filter @ohmymcp-hsu/runner build
 ```
 
 Expected: all pass and build emits ESM/CJS declarations from the single root entry.
@@ -1409,8 +1409,8 @@ RUN_ABORTED hint: 취소 신호를 발생시킨 호출자 상태를 확인한 �
 ```bash
 pnpm exec vitest run packages/runner/tests/executor.test.ts packages/runner/tests/shutdown.test.ts
 pnpm exec vitest run packages/runner/tests
-pnpm --filter @ohmymcp/runner typecheck
-pnpm --filter @ohmymcp/runner build
+pnpm --filter @ohmymcp-hsu/runner typecheck
+pnpm --filter @ohmymcp-hsu/runner build
 ```
 
 Expected: all pass, no pending timer warning, no unhandled rejection, and deterministic deep-equality tests remain green.
@@ -1466,7 +1466,7 @@ README must show:
 
 ```md
 ---
-"@ohmymcp/runner": minor
+"@ohmymcp-hsu/runner": minor
 ---
 
 선언형 MCP 테스트 명세, 순차 실행, 구조화된 진단·이벤트·보고서와 timeout·중단 처리를 추가합니다.
@@ -1484,8 +1484,8 @@ If formatting fails, run `pnpm exec biome format --write packages/runner` and re
 
 ```bash
 pnpm exec vitest run packages/runner/tests
-pnpm --filter @ohmymcp/runner typecheck
-pnpm --filter @ohmymcp/runner build
+pnpm --filter @ohmymcp-hsu/runner typecheck
+pnpm --filter @ohmymcp-hsu/runner build
 pnpm exec biome check packages/runner
 pnpm test
 pnpm typecheck
@@ -1696,7 +1696,7 @@ await spawn_agent({
     "먼저 CLAUDE.md, CONTRIBUTING.md, .agents/skills/execution-conventions/SKILL.md, docs/conventions/execution.md, Runner 설계 문서와 구현 계획을 끝까지 읽는다.",
     "허용 Files: packages/runner/src/spec/types.ts, packages/runner/src/spec/json-schema.ts, packages/runner/src/spec/validation.ts, packages/runner/src/spec/index.ts, packages/runner/src/index.ts, packages/runner/tests/helpers/schema-evaluator.ts, packages/runner/tests/spec-validation.test.ts, packages/runner/tests/spec-schema.test.ts, packages/runner/tests/index.test.ts, .agents/reports/task-1-runner-spec.md.",
     "금지: 다른 파일 수정, background 실행, commit, merge, push, 하위 agent spawn, 다른 작업자의 변경 되돌리기.",
-    "반드시 Task 1 Files의 테스트에 필수 필드·unknown 필드·operation/assertion 조합·timeout 양 경계·`NaN`/`Infinity`/`-Infinity`·null-prototype JSON object·공유 참조·cycle·schema 내부 참조·recursive freeze를 먼저 작성한다. Schema parity는 공개 객체를 dev-only evaluator로 실행해 valid/invalid fixture 판정, 깨진 local `$ref`, `oneOf` match 0개와 2개를 검사한다. evaluator와 production validator 모두 `Object.prototype | null` record만 object로 허용한다. 기존 export 호환 테스트도 유지한다. `pnpm exec vitest run packages/runner/tests/spec-validation.test.ts packages/runner/tests/spec-schema.test.ts packages/runner/tests/index.test.ts`에서 의도한 RED를 확인한 뒤 최소 구현한다. GREEN은 같은 focused 명령, `pnpm exec vitest run packages/runner/tests`, `pnpm --filter @ohmymcp/runner typecheck`로 확인한다.",
+    "반드시 Task 1 Files의 테스트에 필수 필드·unknown 필드·operation/assertion 조합·timeout 양 경계·`NaN`/`Infinity`/`-Infinity`·null-prototype JSON object·공유 참조·cycle·schema 내부 참조·recursive freeze를 먼저 작성한다. Schema parity는 공개 객체를 dev-only evaluator로 실행해 valid/invalid fixture 판정, 깨진 local `$ref`, `oneOf` match 0개와 2개를 검사한다. evaluator와 production validator 모두 `Object.prototype | null` record만 object로 허용한다. 기존 export 호환 테스트도 유지한다. `pnpm exec vitest run packages/runner/tests/spec-validation.test.ts packages/runner/tests/spec-schema.test.ts packages/runner/tests/index.test.ts`에서 의도한 RED를 확인한 뒤 최소 구현한다. GREEN은 같은 focused 명령, `pnpm exec vitest run packages/runner/tests`, `pnpm --filter @ohmymcp-hsu/runner typecheck`로 확인한다.",
     "보고서는 지정 경로에 작성하고 최종 응답은 status: READY_FOR_REVIEW 또는 status: BLOCKED로 시작한다. 변경 파일, RED 관찰, GREEN 결과, 남은 위험을 포함한다.",
   ].join("\n").replaceAll("${runnerWorktree}", runnerWorktree),
 });
@@ -1720,7 +1720,7 @@ await spawn_agent({
     "허용 Files: packages/runner/src/diagnostics.ts, packages/runner/src/assertions.ts, packages/runner/src/index.ts, packages/runner/tests/assertions.test.ts, .agents/reports/task-2-runner-assertions.md.",
     "금지: 허용 Files 밖 수정, fixture 수정, raw/content 노출, background 실행, commit, merge, push, 하위 agent spawn, 다른 변경 되돌리기.",
     "다음 실패 단언을 그대로 테스트한다. 없는 툴 `missing`은 code `TOOL_NOT_FOUND`, message `툴 'missing'를 찾을 수 없습니다.`, expected `missing`, 정렬된 actual `[\"add\", \"get_weather\"]`, hint `서버의 tools/list 응답과 테스트 명세를 확인하세요.`다. 별도 fixture `가`, `a`, `A`, `a`는 `[\"A\", \"a\", \"가\"]`가 되고 spied `localeCompare`는 0회다. `isError`가 expected false/actual true면 code `IS_ERROR_MISMATCH`, message `정상 응답을 기대했지만 오류 응답을 받았습니다.`, hint `툴 입력값과 서버의 오류 응답을 확인하세요.`다. expected true/actual false면 message `오류 응답을 기대했지만 정상 응답을 받았습니다.`이고 같은 hint를 쓴다. 존재/일치 성공, raw/content secret 제외, Error와 모든 비 Error throw의 JSON-safe 정규화도 먼저 RED로 만든다.",
-    "RED/GREEN focused 명령은 `pnpm exec vitest run packages/runner/tests/assertions.test.ts`다. 이후 `pnpm exec vitest run packages/runner/tests/assertions.test.ts packages/runner/tests/spec-validation.test.ts packages/runner/tests/spec-schema.test.ts`와 `pnpm --filter @ohmymcp/runner typecheck`를 실행한다.",
+    "RED/GREEN focused 명령은 `pnpm exec vitest run packages/runner/tests/assertions.test.ts`다. 이후 `pnpm exec vitest run packages/runner/tests/assertions.test.ts packages/runner/tests/spec-validation.test.ts packages/runner/tests/spec-schema.test.ts`와 `pnpm --filter @ohmymcp-hsu/runner typecheck`를 실행한다.",
     "보고서와 최종 응답 형식은 status, 변경 파일, RED, GREEN, 남은 위험 순서다.",
   ].join("\n").replaceAll("${runnerWorktree}", runnerWorktree),
 });
@@ -1743,7 +1743,7 @@ await spawn_agent({
     "프로젝트 지침, 실행 규약, 설계, 계획을 읽고 현재 HEAD가 승인된 Task 2 SHA인지 확인한다.",
     "허용 Files: packages/runner/src/sanitization.ts, packages/runner/src/executor.ts, packages/runner/src/index.ts, packages/runner/tests/sanitization.test.ts, packages/runner/tests/executor.test.ts, .agents/reports/task-3-runner-executor.md.",
     "금지: timeout 범위를 미리 구현, 병렬 실행, client.close 호출, raw 응답 보고, 허용 Files 밖 수정, background, commit, merge, push, 하위 agent spawn.",
-    "이벤트 순서는 `suiteStarted → caseStarted → operationStarted → operationCompleted → assertionCompleted* → caseCompleted`를 case마다 반복한 뒤 `suiteCompleted`이고 sequence는 0부터 1씩 증가한다. case 식별자, snapshot 격리, 실패 후 계속 실행, 배타적 summary, 동일 입력 deep equality, handler 오류를 먼저 RED로 확인한다. `Authorization`/`api_key`/caller sentinel 재귀 마스킹, 원본 client input 보존, 65_536-byte case와 1_048_576-byte report 상한, unsafe `suiteCompleted` 제외, 정상 drain도 테스트한다. timeout/abort 없이 Task 3 상태표만 구현한다. RED/GREEN은 `pnpm exec vitest run packages/runner/tests/executor.test.ts packages/runner/tests/sanitization.test.ts`, 회귀는 `pnpm exec vitest run packages/runner/tests`, `pnpm --filter @ohmymcp/runner typecheck`, `pnpm --filter @ohmymcp/runner build`로 확인한다.",
+    "이벤트 순서는 `suiteStarted → caseStarted → operationStarted → operationCompleted → assertionCompleted* → caseCompleted`를 case마다 반복한 뒤 `suiteCompleted`이고 sequence는 0부터 1씩 증가한다. case 식별자, snapshot 격리, 실패 후 계속 실행, 배타적 summary, 동일 입력 deep equality, handler 오류를 먼저 RED로 확인한다. `Authorization`/`api_key`/caller sentinel 재귀 마스킹, 원본 client input 보존, 65_536-byte case와 1_048_576-byte report 상한, unsafe `suiteCompleted` 제외, 정상 drain도 테스트한다. timeout/abort 없이 Task 3 상태표만 구현한다. RED/GREEN은 `pnpm exec vitest run packages/runner/tests/executor.test.ts packages/runner/tests/sanitization.test.ts`, 회귀는 `pnpm exec vitest run packages/runner/tests`, `pnpm --filter @ohmymcp-hsu/runner typecheck`, `pnpm --filter @ohmymcp-hsu/runner build`로 확인한다.",
     "최종 응답은 READY_FOR_REVIEW 또는 BLOCKED와 증거를 포함한다.",
   ].join("\n").replaceAll("${runnerWorktree}", runnerWorktree),
 });
@@ -1766,7 +1766,7 @@ await spawn_agent({
     "프로젝트 지침, 실행 규약, 설계, 계획을 읽고 현재 HEAD가 승인된 Task 3 SHA인지 확인한다.",
     "허용 Files: packages/runner/src/executor.ts, packages/runner/src/execution-binding.ts, packages/runner/src/shutdown.ts, packages/runner/src/index.ts, packages/runner/tests/executor.test.ts, packages/runner/tests/shutdown.test.ts, .agents/reports/task-4-runner-timeout.md.",
     "금지: core 타입 변경, `runSuite` 내부 client.close/forceClose 호출, timeout 뒤 다음 MCP 호출, 허용 Files 밖 수정, background, commit, merge, push, 하위 agent spawn.",
-    "fake timer로 timeout 우선순위·최대 경계·notRun 필드·abort 우선순위·고정 이벤트·timer/listener cleanup·후속 호출 금지를 먼저 RED로 확인한다. report가 resolve/reject 먼저 끝나고 drain은 그 뒤 union 결과로 non-rejecting 완료되는지 검사한다. drain 0/NaN/Infinity/음수/소수/상한 초과 동기 거절, exact deadline에서 deadline 우선, permanently pending listTools와 callTool 각각의 5,000ms deadline, close와 forceClose fulfill/reject가 정확히 2,000ms인 네 경계에서 deadline 우선, close rejection의 gracefulCloseFailed force path, wrong-client/forged-execution 동기 거절, pending request와 독립적인 forceClose, late reject 처리, undefined report rejection, report→drain→close→force 오류 집계, finalizer 중복 호출에도 transport 종료 1회를 검증한다. RED/GREEN은 `pnpm exec vitest run packages/runner/tests/executor.test.ts packages/runner/tests/shutdown.test.ts`, 회귀는 `pnpm exec vitest run packages/runner/tests`, `pnpm --filter @ohmymcp/runner typecheck`, `pnpm --filter @ohmymcp/runner build`로 확인한다.",
+    "fake timer로 timeout 우선순위·최대 경계·notRun 필드·abort 우선순위·고정 이벤트·timer/listener cleanup·후속 호출 금지를 먼저 RED로 확인한다. report가 resolve/reject 먼저 끝나고 drain은 그 뒤 union 결과로 non-rejecting 완료되는지 검사한다. drain 0/NaN/Infinity/음수/소수/상한 초과 동기 거절, exact deadline에서 deadline 우선, permanently pending listTools와 callTool 각각의 5,000ms deadline, close와 forceClose fulfill/reject가 정확히 2,000ms인 네 경계에서 deadline 우선, close rejection의 gracefulCloseFailed force path, wrong-client/forged-execution 동기 거절, pending request와 독립적인 forceClose, late reject 처리, undefined report rejection, report→drain→close→force 오류 집계, finalizer 중복 호출에도 transport 종료 1회를 검증한다. RED/GREEN은 `pnpm exec vitest run packages/runner/tests/executor.test.ts packages/runner/tests/shutdown.test.ts`, 회귀는 `pnpm exec vitest run packages/runner/tests`, `pnpm --filter @ohmymcp-hsu/runner typecheck`, `pnpm --filter @ohmymcp-hsu/runner build`로 확인한다.",
     "최종 응답은 READY_FOR_REVIEW 또는 BLOCKED와 증거를 포함한다.",
   ].join("\n").replaceAll("${runnerWorktree}", runnerWorktree),
 });
@@ -1782,14 +1782,14 @@ await spawn_agent({
   reasoning_effort: "medium",
   message: [
     "역할: OhMyMCP Runner 문서·릴리스·회귀 검증 담당자.",
-    "목표: Runner README에 listTools/callTool/timeout/AbortSignal/event/report, redaction/payload limit, bounded drain의 `settled | deadlineExceeded`, explicit finalizer와 graceful/force-close controller 예제, deprecated public shim migration note, Generate가 루트 `@ohmymcp/runner` 계약을 소비한다는 경계를 문서화하고, `minor` changeset을 추가한 뒤 전체 회귀를 검증한다.",
+    "목표: Runner README에 listTools/callTool/timeout/AbortSignal/event/report, redaction/payload limit, bounded drain의 `settled | deadlineExceeded`, explicit finalizer와 graceful/force-close controller 예제, deprecated public shim migration note, Generate가 루트 `@ohmymcp-hsu/runner` 계약을 소비한다는 경계를 문서화하고, `minor` changeset을 추가한 뒤 전체 회귀를 검증한다.",
     "Worktree: ${runnerWorktree}",
     "Report: ${runnerWorktree}/.agents/reports/task-5-runner-docs.md",
     "첫 명령으로 `git rev-parse --show-toplevel`을 실행하고 출력이 위 Worktree 절대 경로와 같은지, 그 경로에 이 계획과 승인된 Task 4 HEAD가 있는지 확인한다. 다르면 BLOCKED로 끝낸다.",
     "프로젝트 지침, 실행 규약, 설계, 계획을 읽고 현재 HEAD가 승인된 Task 4 SHA인지 확인한다.",
     "허용 Files: packages/runner/package.json, packages/runner/README.md, .changeset/runner-declarative-suite.md, .agents/reports/task-5-runner-docs.md.",
     "금지: root README와 다른 패키지 수정, repository-wide write format, background, commit, merge, push, 하위 agent spawn.",
-    "README 예제가 실제 공개 타입과 일치하는지 확인하고 `@ohmymcp/runner` minor changeset을 작성한다. `pnpm exec vitest run packages/runner/tests`, `pnpm --filter @ohmymcp/runner typecheck`, `pnpm --filter @ohmymcp/runner build`, `pnpm test`, `pnpm typecheck`, `pnpm lint`, `pnpm build`, `pnpm exec changeset status`를 순서대로 실행하고 검사 대상 수와 exit code를 기록한다.",
+    "README 예제가 실제 공개 타입과 일치하는지 확인하고 `@ohmymcp-hsu/runner` minor changeset을 작성한다. `pnpm exec vitest run packages/runner/tests`, `pnpm --filter @ohmymcp-hsu/runner typecheck`, `pnpm --filter @ohmymcp-hsu/runner build`, `pnpm test`, `pnpm typecheck`, `pnpm lint`, `pnpm build`, `pnpm exec changeset status`를 순서대로 실행하고 검사 대상 수와 exit code를 기록한다.",
     "최종 응답은 READY_FOR_REVIEW 또는 BLOCKED와 증거를 포함한다.",
   ].join("\n").replaceAll("${runnerWorktree}", runnerWorktree),
 });

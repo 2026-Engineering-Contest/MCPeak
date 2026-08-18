@@ -1,4 +1,4 @@
-import type { ToolResult } from "@ohmymcp/core";
+import type { ToolResult } from "@ohmymcp-hsu/core";
 import { plainObject, typeName } from "./schema-match.js";
 import type { JsonValue } from "./spec/types.js";
 

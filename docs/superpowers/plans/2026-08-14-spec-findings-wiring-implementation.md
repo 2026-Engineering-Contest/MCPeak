@@ -359,7 +359,7 @@ refactor(runner): 도달 불가한 UNCONSTRAINED_SCHEMA 를 제거하고 TYPE_MI
 
 **Interfaces**
 - Consumes: T1 이 줄인 `SpecFindingCode`. `checkInputContract` · `checkAssertionSubstance` 는
-  이미 `@ohmymcp/runner` 에서 export 돼 있다.
+  이미 `@ohmymcp-hsu/runner` 에서 export 돼 있다.
 - Produces: 아래 타입. T3 이 같은 필드를 provider 경로에 채우고 T4 가 읽는다.
 
 ```ts
@@ -471,7 +471,7 @@ Expected: FAIL. `specFindings` 가 없다.
 `packages/generate/src/authoring-types.ts`:
 
 ```ts
-import type { SpecFindingsResult } from "@ohmymcp/runner";
+import type { SpecFindingsResult } from "@ohmymcp-hsu/runner";
 
 /**
  * 승인 화면이 읽는 비차단 진단. 두 검사를 병합하지 않고 따로 담는다. 각 검사의 정렬과
@@ -511,7 +511,7 @@ export interface CandidateSpecFindings {
 import 를 더한다.
 
 ```ts
-import { checkAssertionSubstance, checkInputContract, validateMcpSuite } from "@ohmymcp/runner";
+import { checkAssertionSubstance, checkInputContract, validateMcpSuite } from "@ohmymcp-hsu/runner";
 ```
 
 - [ ] **Step 5: 통과를 확인한다**

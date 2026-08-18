@@ -6,7 +6,7 @@
  * 없다.
  */
 
-import type { ToolDef } from "@ohmymcp/core";
+import type { ToolDef } from "@ohmymcp-hsu/core";
 import { isKnownFormat } from "./constraints.js";
 import { type JsonSchema, plainObject, type SchemaType } from "./schema.js";
 

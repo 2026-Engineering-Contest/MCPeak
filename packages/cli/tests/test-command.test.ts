@@ -1617,6 +1617,26 @@ describe("결정론성 확인", () => {
     expect(err).toContain("fatal: not a git repository");
   });
 
+  it("복원이 ResetCommandError 가 아닌 오류로 죽어도 사전 문장으로 나간다", async () => {
+    // 다시 던지면 이 경로만 스택 트레이스가 화면에 나간다. 2회차의 같은 지점은 모든
+    // 오류를 미완주로 삼키므로 처리도 갈린다.
+    const d = deps({
+      runResetCommand: vi.fn(async () => {
+        throw new TypeError("spawn 인자가 비어 있습니다.");
+      }),
+    });
+    const code = await runCli(
+      ["test", "suite.json", "--command", "node", "--reset-cmd", "reset.sh"],
+      d.value,
+    );
+    expect(code).toBe(1);
+    expect(d.value.startRunner).not.toHaveBeenCalled();
+    expect(d.value.connect).not.toHaveBeenCalled();
+    const err = d.writes.err.join("");
+    expect(err).toContain("오류 [CLI_INTERNAL_ERROR]");
+    expect(err).not.toContain("TypeError");
+  });
+
   it("2회차 미완주면 비교 없이 사유와 프로세스 진단을 찍는다", async () => {
     const check = vi.fn(() => sameResult("deterministic"));
     let call = 0;

@@ -608,8 +608,15 @@ export async function runCli(
     try {
       await runReset(input.resetCmd);
     } catch (error) {
-      if (!(error instanceof ResetCommandError)) throw error;
-      return writeFailure(dependencies, resetFailure(error));
+      // 어떤 오류든 사전 문장으로 바꿔서 내보낸다. 여기서 다시 던지면 이 경로만 스택
+      // 트레이스가 화면에 나가고, 2회차의 같은 지점(모든 오류를 미완주로 삼킨다)과도
+      // 처리가 갈린다.
+      return writeFailure(
+        dependencies,
+        error instanceof ResetCommandError
+          ? resetFailure(error)
+          : { code: "CLI_INTERNAL_ERROR", ...dictionary.CLI_INTERNAL_ERROR },
+      );
     }
   }
   let connection: McpStdioConnection;

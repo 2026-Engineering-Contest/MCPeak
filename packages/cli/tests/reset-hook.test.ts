@@ -43,6 +43,22 @@ describe("runResetCommand", () => {
     ).resolves.toBeUndefined();
   });
 
+  it("닫히지 않은 실행 파일 따옴표를 구체적인 파싱 실패로 보고한다", async () => {
+    const error = await rejection(runResetCommand('"unterminated'));
+    expect(error).toBeInstanceOf(ResetCommandError);
+    expect((error as ResetCommandError).stderr).toBe(
+      "잘못된 초기화 명령: 실행 파일을 감싼 큰따옴표가 닫히지 않았습니다.",
+    );
+  });
+
+  it("빈 따옴표 실행 파일 경로를 구체적인 파싱 실패로 보고한다", async () => {
+    const error = await rejection(runResetCommand('""'));
+    expect(error).toBeInstanceOf(ResetCommandError);
+    expect((error as ResetCommandError).stderr).toBe(
+      "잘못된 초기화 명령: 실행 파일 경로가 비어 있습니다.",
+    );
+  });
+
   it("stderr 이 ResetCommandError.stderr 에 담긴다", async () => {
     const error = await rejection(
       runResetCommand(nodeCommand("process.stderr.write('시드실패');process.exit(2)")),

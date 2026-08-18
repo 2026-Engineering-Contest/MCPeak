@@ -13,6 +13,11 @@ import {
 } from "./options.js";
 import type { McpClient } from "./types.js";
 
+export {
+  CommandParseError,
+  type CommandParseErrorCode,
+  tokenizeCommand,
+} from "./command.js";
 export type {
   McpDiagnostics,
   McpHttpDiagnostics,

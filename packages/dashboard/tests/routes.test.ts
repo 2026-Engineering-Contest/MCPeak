@@ -280,14 +280,20 @@ describe("routes.ts", () => {
     await expect(stat(join(server.root, "suite.txt"))).rejects.toThrow();
   });
 
-  it("카세트 PUT은 실제 카세트 JSON만 저장하고 잘못된 JSON은 원본을 보존한다", async () => {
+  it("카세트 PUT은 실제 카세트 JSON만 저장하고 의미상 잘못된 JSON은 원본을 보존한다", async () => {
     server = await startTestServer();
     const target = join(server.root, "cassette.json");
     const original = JSON.stringify(VALID_CASSETTE);
     await writeFile(target, original, "utf8");
     const before = await stat(target);
 
-    const response = await putFile(server, "cassettes", "cassette.json", "{", before.mtimeMs);
+    const response = await putFile(
+      server,
+      "cassettes",
+      "cassette.json",
+      JSON.stringify({ version: 1, interactions: "not-an-array" }),
+      before.mtimeMs,
+    );
     expect(response.status).toBe(400);
     await expect(readFile(target, "utf8")).resolves.toBe(original);
   });

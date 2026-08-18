@@ -1,0 +1,55 @@
+{
+  "name": "@ohmymcp-hsu/dashboard",
+  "version": "0.1.0",
+  "private": false,
+  "type": "module",
+  "description": "OhMyMCP 대시보드 (로컬 웹 UI · CLI 플로우 구동)",
+  "license": "MIT",
+  "bin": {
+    "ohmymcp-dashboard": "./dist/dashboard-cli.mjs"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.mjs"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    }
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.mts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsdown --config-loader native && vite build web --outDir ../dist/web",
+    "typecheck": "tsc --noEmit",
+    "dev": "vite dev web"
+  },
+  "dependencies": {
+    "@ohmymcp-hsu/core": "workspace:*",
+    "@ohmymcp-hsu/generate": "workspace:*",
+    "@ohmymcp-hsu/mock": "workspace:*",
+    "@ohmymcp-hsu/record": "workspace:*",
+    "@ohmymcp-hsu/runner": "workspace:*",
+    "ohmymcp": "workspace:*"
+  },
+  "devDependencies": {
+    "@testing-library/react": "16.3.2",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.4",
+    "@vitejs/plugin-react": "6.0.5",
+    "jsdom": "30.0.1",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "vite": "8.2.1"
+  }
+}

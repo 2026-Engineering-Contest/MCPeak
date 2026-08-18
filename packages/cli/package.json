@@ -21,6 +21,16 @@
         "types": "./dist/index.d.cts",
         "default": "./dist/index.cjs"
       }
+    },
+    "./commands": {
+      "import": {
+        "types": "./dist/commands.d.mts",
+        "default": "./dist/commands.mjs"
+      },
+      "require": {
+        "types": "./dist/commands.d.cts",
+        "default": "./dist/commands.cjs"
+      }
     }
   },
   "main": "./dist/index.cjs",

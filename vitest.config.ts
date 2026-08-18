@@ -16,7 +16,15 @@ const workspaceAliases = Object.fromEntries(
   ]),
 );
 
-const resolve = { alias: workspaceAliases };
+const resolve = {
+  alias: {
+    // `ohmymcp` 키보다 먼저 와야 한다. rollup alias는 `find + "/"` 접두 일치라
+    // `ohmymcp` 키가 있으면 `ohmymcp/commands`를 삼킨다. 지금은 `ohmymcp` 키가
+    // 없으므로 이 한 줄만 추가하고, `ohmymcp` 루트 alias는 만들지 않는다.
+    "ohmymcp/commands": fileURLToPath(new URL("./packages/cli/src/commands.ts", import.meta.url)),
+    ...workspaceAliases,
+  },
+};
 
 /**
  * 실제 서버·자식 프로세스를 띄우는 스펙의 파일명 규약. 이 glob 에 걸리면 e2e 갈래로 간다.

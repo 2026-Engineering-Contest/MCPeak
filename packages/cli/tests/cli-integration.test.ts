@@ -41,8 +41,8 @@ async function cleanupPid(pidFile: string): Promise<void> {
  * 최대 1ms였다(58회는 0ms). 이 함수를 부르는 시점에는 CLI가 자식의 종료를 이미 await한 뒤라
  * 정상 경로는 첫 폴링에서 끝난다. 기존 값 1초에는 근거가 없었다.
  */
-// 실측 최악값(1ms)의 3000배. vitest 기본 테스트 타임아웃(5초)보다 짧아야 vitest의 무의미한
-// 타임아웃 메시지 대신 아래 진단 메시지가 먼저 나온다.
+// 실측 최악값(1ms)의 3000배. 아래 통합 테스트 제한보다 짧아야 vitest의 무의미한 타임아웃
+// 메시지 대신 아래 진단 메시지가 먼저 나온다.
 const EXIT_TIMEOUT_MS = 3_000;
 // 정상 경로는 첫 폴링에서 끝나므로 이 값은 비정상 상황에서만 의미가 있다. 20ms면 3초 동안
 // 150회를 확인하면서 spin으로 CPU를 뺏지 않는다.
@@ -50,6 +50,11 @@ const EXIT_POLL_INTERVAL_MS = 20;
 // 부하로 이벤트 루프가 밀리면 폴링을 몇 번 못 한 채 벽시계 마감만 지날 수 있다. 그것이 이
 // 테스트가 흔들리던 방식이므로, 최소 이 횟수는 실제로 확인한 뒤에만 실패로 판정한다.
 const EXIT_MIN_POLLS = 25;
+
+// 실제 Node 자식 프로세스를 반복 기동하는 E2E라 전체 suite 병렬 실행 중에는 단독 실행보다 느리다.
+// Windows 전체 실행에서 5.6초가 관찰돼 vitest 기본값 5초를 넘었다. 내부 종료 판정은 위의 3초
+// 제한을 그대로 쓰고, 테스트 자체에만 관찰값의 약 두 배를 허용한다.
+const CLI_INTEGRATION_TIMEOUT_MS = 10_000;
 
 async function expectExited(pidFile: string): Promise<void> {
   const pid = parsePid(await readFile(pidFile, "utf8"));
@@ -73,7 +78,7 @@ async function expectExited(pidFile: string): Promise<void> {
   }
 }
 
-describe.sequential("CLI 실제 weather-server", () => {
+describe.sequential("CLI 실제 weather-server", { timeout: CLI_INTEGRATION_TIMEOUT_MS }, () => {
   it("성공 report, 종료 코드와 PID 정리를 검증한다", async () => {
     const dir = await mkdtemp(join(tmpdir(), "ohmymcp-cli-"));
     const pidFile = join(dir, "server.pid");

@@ -186,6 +186,94 @@ describe("redact / snapshotContract", () => {
     });
   });
 
+  it("복수형 민감 키를 마스킹한다", () => {
+    // 목록은 단수형만 담고 sensitiveKey 가 꼬리 s 를 흡수한다(ADR-0045). 토큰·비밀값이
+    // 배열로 오는 응답이 흔한데, 단수형만 보던 규칙은 그 배열을 통째로 흘렸다.
+    expect(
+      redact({
+        tokens: ["a"],
+        secrets: { x: "b" },
+        passwords: "c",
+        cookies: "d",
+        apiKeys: ["e"],
+        refreshTokens: ["f"],
+      }),
+    ).toStrictEqual({
+      tokens: "[redacted]",
+      secrets: "[redacted]",
+      passwords: "[redacted]",
+      cookies: "[redacted]",
+      apiKeys: "[redacted]",
+      refreshTokens: "[redacted]",
+    });
+  });
+
+  it("복수형 규칙이 일반 복수 명사를 새로 잡지 않는다", () => {
+    // 꼬리 s 완화의 회귀 고정. 머리 명사가 목록에 없으면 복수형이어도 통과해야 한다.
+    // 이게 깨지면 ADR-0039 가 좁힌 접미 규칙이 도로 넓어진 것이다.
+    expect(
+      redact({
+        tokenCounts: 2,
+        secretariats: ["office"],
+        cookieCounts: 3,
+        keys: ["a"],
+        credentialTypes: ["oauth"],
+        addresses: ["seoul"],
+      }),
+    ).toStrictEqual({
+      tokenCounts: 2,
+      secretariats: ["office"],
+      cookieCounts: 3,
+      keys: ["a"],
+      credentialTypes: ["oauth"],
+      addresses: ["seoul"],
+    });
+  });
+
+  it("key 로 끝나는 비밀값 합성어를 마스킹한다", () => {
+    // secretKey 는 secret 이 목록에 있어도 접미 조합이 key · secretkey 라 어디에도
+    // 걸리지 않았다. apikey 를 따로 열거해야 했던 것과 같은 구멍이다.
+    expect(
+      redact({
+        privateKey: "a",
+        private_key: "b",
+        secretKey: "c",
+        signingKey: "d",
+        sessionKey: "e",
+        credential: "f",
+        credentials: "g",
+        passwd: "h",
+      }),
+    ).toStrictEqual({
+      privateKey: "[redacted]",
+      private_key: "[redacted]",
+      secretKey: "[redacted]",
+      signingKey: "[redacted]",
+      sessionKey: "[redacted]",
+      credential: "[redacted]",
+      credentials: "[redacted]",
+      passwd: "[redacted]",
+    });
+  });
+
+  it("목록에 넣지 않기로 한 인접어는 계속 통과한다", () => {
+    // auth 를 넣으면 하위 트리가 통째로 사라져 구조를 못 본다. pwd 는 파일시스템 서버의
+    // 작업 디렉터리와 겹친다. bearer 는 bearerToken 이 token 으로 이미 걸린다. ADR-0045.
+    expect(
+      redact({
+        auth: { token: "s", type: "oauth" },
+        pwd: "/home/x",
+        bearer: "b",
+        authMethod: "basic",
+      }),
+    ).toStrictEqual({
+      auth: { token: "[redacted]", type: "oauth" },
+      pwd: "/home/x",
+      bearer: "b",
+      authMethod: "basic",
+    });
+  });
+
   it("비결정 키 판정은 접미 규칙과 무관하게 그대로다", () => {
     // sensitiveKey 만 바뀌었고 normalizeKey 는 NONDETERMINISTIC_KEYS 조회와 공유하므로
     // 건드리지 않았다. 두 판정이 서로 새지 않는지 고정한다.
@@ -1020,6 +1108,52 @@ describe("cassette IO", () => {
         type: "string",
         default: "[redacted]",
       });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("복수형·key 합성어 비밀값이 카세트 파일에 남지 않는다", async () => {
+    // 이 구멍의 결과가 "평문이 파일로 굳어 커밋된다" 였으므로, 단위 함수가 아니라 저장된
+    // 바이트로 고정한다. args · content(문자열 안 JSON) · raw 세 자리를 한 번에 덮는다.
+    const dir = await mkdtemp(join(tmpdir(), "ohmymcp-record-"));
+    const path = join(dir, "secrets.cassette.json");
+    const cassette = cassetteWith({
+      toolName: "list_credentials",
+      args: { apiKeys: ["ak-live-1"], passwd: "pw-live-2" },
+      result: ok({
+        tokens: ["tk-live-3"],
+        refreshTokens: ["rt-live-4"],
+        secrets: { inner: "sc-live-5" },
+        cookies: "sid=ck-live-6",
+        privateKey: "pk-live-7",
+        secretKey: "sk-live-8",
+        credentials: { user: "u", password: "pw-live-9" },
+        tokenCounts: 2,
+      }),
+    });
+
+    try {
+      await saveCassette(path, cassette);
+      const text = await readFile(path, "utf8");
+
+      for (const secret of [
+        "ak-live-1",
+        "pw-live-2",
+        "tk-live-3",
+        "rt-live-4",
+        "sc-live-5",
+        "ck-live-6",
+        "pk-live-7",
+        "sk-live-8",
+        "pw-live-9",
+      ]) {
+        expect(text).not.toContain(secret);
+      }
+
+      // 과잉 마스킹이 아니라는 것도 같은 파일에서 확인한다. 값을 지우는 쪽으로 틀리면
+      // 테스트가 그 필드를 영영 못 본다(ADR-0041).
+      expect(text).toContain('"tokenCounts":2');
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

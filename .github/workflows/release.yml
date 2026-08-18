@@ -39,7 +39,7 @@ jobs:
       - name: Build
         run: pnpm build
 
-      # ── 배포 전 마지막 방어선 (ADR-0038) ──────────────────────────────────────
+      # ── 배포 전 마지막 방어선 (ADR-0042) ──────────────────────────────────────
       #
       # `npm pack` 은 `workspace:*` 를 실제 버전으로 치환하지 않는다. `pnpm pack` 만 한다.
       # changesets 는 pnpm-lock.yaml 을 보고 `pnpm publish` 를 고르지만, 그 감지가

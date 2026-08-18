@@ -133,7 +133,11 @@ docs(adr): 카세트 매칭 키 결정 기록
 ```
 
 - `type`: `feat` `fix` `docs` `test` `refactor` `chore` `ci`
-- `scope`: 패키지명(`core` `runner` `generate` `record` `mock` `cli`)
+- `scope`: 패키지명(`core` `runner` `generate` `record` `mock` `cli`) 또는
+  어느 패키지에도 속하지 않는 공통 영역(`release` `adr`)
+  - `release` — npm 배포, 릴리스 워크플로, 버저닝. 소유 패키지가 없는 릴리스 담당의
+    기여가 집계되지 않는 문제를 막는다(§2.1·§7).
+  - `adr` — 여러 패키지에 걸친 설계 결정 기록. 위 예시에 이미 쓰이고 있다.
 - **scope는 필수다.** 나중에 패키지별 개인 기여를 명령 한 줄로 뽑아낼 수 있어야 한다.
 
   ```bash
@@ -220,7 +224,15 @@ CI에서 자동 검사한다. 로컬에서는 커밋 훅으로 린트·포맷만
 ### 버전
 
 - `0.x.y`로 시작한다. 마감 전까지 **breaking change를 허용**하되 CHANGELOG에 반드시 남긴다.
-- 2주차 알파(`0.1.0-alpha.x`) 배포를 반드시 지킨다. 배포되지 않은 코드는 심사에서 증명하기 어렵다.
+- 알파 배포를 반드시 지킨다. 배포되지 않은 코드는 심사에서 증명하기 어렵다.
+- **버전에 `-alpha` 접미사를 붙이지 않는다.** 이 문서의 초판은 `0.1.0-alpha.x`를 적었지만,
+  실제 버전은 changesets가 굴러 이미 그 지점을 지났다(첫 배포 준비 시점 `cli` 0.7.0).
+  되돌리면 6개 package.json과 CHANGELOG를 사후 편집해야 하고 changesets 이력이 어긋난다.
+  `0.x` 자체가 이미 불안정 신호이므로, **알파라는 사실은 버전 문자열이 아니라 README와
+  릴리스 노트로 알린다.** 프리릴리스 태그를 쓰면 `latest` 태그가 없어 `npm install ohmymcp`가
+  실패하는 것도 이유다.
+- **패키지 이름은 한 번 발행하면 사실상 되돌릴 수 없다.** npm은 72시간이 지나면 unpublish를
+  막는다. 이름·스코프 변경은 첫 발행 **전에** 끝낸다(ADR-0043).
 
 ### 절차
 
@@ -304,12 +316,16 @@ CI에서 자동 검사한다. 로컬에서는 커밋 훅으로 린트·포맷만
 
   | 묶음 | 라벨 |
   |---|---|
-  | 패키지 | `pkg:core` `pkg:runner` `pkg:generate` `pkg:record` `pkg:mock` `pkg:cli` |
+  | 패키지 | `pkg:core` `pkg:runner` `pkg:generate` `pkg:record` `pkg:mock` `pkg:cli` `pkg:release` |
   | 종류 | `type:bug` `type:feat` `type:docs` `type:chore` `type:question` |
   | 기타 | `good first issue` `help wanted` `blocked` |
 
   `pkg:*` 는 파트별로 색이 같다 — ①(파랑) `core`·`runner`·`generate`, ②(초록) `record`,
   ③(주황) `mock`, 공동(보라) `cli`. 이슈 목록에서 색만 보고 자기 파트를 찾을 수 있다.
+
+  `pkg:release`(회색)만 패키지가 아니라 **역할**이다. npm 배포·릴리스 워크플로·버저닝처럼
+  소유 패키지가 없는 작업에 붙인다. 커밋 scope `release` 와 같은 범위를 가리키므로
+  라벨로 거른 이슈와 `git log` 집계가 서로 어긋나지 않는다.
 
   > `good first issue` 와 `help wanted` 는 **GitHub 기본 라벨 이름 그대로**(공백, 하이픈 없음) 쓴다.
   > GitHub 이 이 두 이름을 특별 취급해 기여자 탐색 페이지에 저장소를 노출시키기 때문이다.

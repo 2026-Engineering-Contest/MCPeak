@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "nondeterministic-weather-cli",
+  "name": "비결정 weather 서버 E2E",
+  "defaultTimeoutMs": 10000,
+  "cases": [
+    {
+      "id": "seoul-weather-succeeds",
+      "name": "서울 날씨를 정상 조회한다",
+      "operation": { "type": "callTool", "tool": "get_weather", "input": { "city": "서울" } },
+      "assertions": [{ "type": "isError", "expected": false }]
+    }
+  ]
+}

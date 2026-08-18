@@ -145,6 +145,11 @@ export function renderReport(report: RunnerReport, options?: RenderReportOptions
     const operationDiagnostic = result.operation.diagnostic;
     if (result.status !== "passed" && operationDiagnostic !== undefined) {
       lines.push(`${INDENT}${escapeTerminalText(operationDiagnostic.message)}`);
+      // 서버가 준 이유(원인 체인)가 여기 실린다. 안 그리면 executor 가 살려 온 이유를
+      // 화면이 다시 버린다(adoption.md §2.5 넷째). 이유를 본 뒤 해결을 읽도록 hint 앞이다.
+      for (const note of operationDiagnostic.notes ?? []) {
+        lines.push(`${INDENT}→ ${escapeTerminalText(note)}`);
+      }
       lines.push(hintLine(operationDiagnostic.hint));
     }
 

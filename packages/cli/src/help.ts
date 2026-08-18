@@ -1,5 +1,17 @@
 export const TEST_USAGE =
-  "사용법: ohmymcp test <suite.json> --command <executable> [--arg <value> ...] [--json] [--junit <path>] [--repair-bundle <path>] [--stderr-lines <N>]";
+  "사용법: ohmymcp test <suite.json> --command <executable> [--arg <value> ...] [--determinism] [--reset-cmd <command>] [--json] [--junit <path>] [--repair-bundle <path>] [--stderr-lines <N>]";
+
+/**
+ * 시험 실행 옵션 설명. `--determinism` 은 툴을 2회 호출하므로 부작용이 있는 서버에서 모르고
+ * 쓰면 사고가 난다. 그 경고가 사용법 한 줄에는 들어가지 않는다.
+ */
+const TEST_OPTIONS = `옵션:
+  --determinism         스위트를 2회 실행해 결과가 같은지 확인합니다. 툴을 2회
+                        호출하므로 부작용이 있는 서버에서는 샌드박스에서 쓰세요.
+                        --reset-cmd 와 함께 쓰면 결정론성 확인이 되고, 없으면
+                        "2회 결과가 같았다" 까지만 확인합니다
+  --reset-cmd <command> 각 시험 실행 전에 이 명령을 한 번 실행합니다. 셸을 거치지
+                        않으므로 파이프나 && 는 쓸 수 없습니다`;
 
 export const GENERATE_USAGE =
   "사용법: ohmymcp generate --suite-id <id> --name <name> --out <suite.json> --command <executable> [--arg <value> ...] [--baseline-only] [--provider <codex|claude>] [--model <model>] [--no-dry-run] [--cassette <path>] [--record] [--reset-cmd <command>] [--no-repair] [--force]";
@@ -89,6 +101,8 @@ export function commandHelp(command: "test" | "generate" | "repair" | "replay"):
     return `test — JSON 테스트 명세로 MCP 서버를 실행하고 검증합니다.
 
 ${TEST_USAGE}
+
+${TEST_OPTIONS}
 `;
   if (command === "repair")
     return `repair — 실패한 test 실행의 번들로 서버 코드의 원인 후보를 제안받습니다.

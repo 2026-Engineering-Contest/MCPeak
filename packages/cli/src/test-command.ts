@@ -1,6 +1,8 @@
 import { extname } from "node:path";
 import type { McpStdioConnection } from "@ohmymcp/core";
 import type {
+  CheckDeterminismOptions,
+  DeterminismResult,
   FinalizeRunnerExecutionOptions,
   InputContractOptions,
   RunnerExecution,
@@ -14,10 +16,13 @@ import type {
   TestSuiteSpec,
 } from "@ohmymcp/runner";
 import {
+  describeDeterminismDifference,
   describeSpecFinding,
   checkAssertionSubstance as runnerCheckAssertionSubstance,
+  checkDeterminism as runnerCheckDeterminism,
   checkInputContract as runnerCheckInputContract,
 } from "@ohmymcp/runner";
+import { createDeterminismCapture } from "./determinism-capture.js";
 import type { FindingGroup } from "./finding-group.js";
 import { FINDING_GROUP } from "./finding-group.js";
 import { TEST_USAGE_HINT } from "./help.js";
@@ -32,6 +37,7 @@ import {
   REPAIR_BUNDLE_EMPTY_LINE,
   serializeRepairBundle,
 } from "./repair-bundle.js";
+import { runResetCommand as defaultRunResetCommand, ResetCommandError } from "./reset-hook.js";
 import {
   caseApprovalStatuses,
   checkSpecApproval,
@@ -50,6 +56,10 @@ export interface TestCommandInput {
   readonly junitPath: string | undefined;
   /** `--repair-bundle` 로 받은 번들 출력 경로. 지정하지 않으면 undefined 이고 번들을 안 만든다. */
   readonly repairBundlePath: string | undefined;
+  /** `--determinism`. 스위트를 2회 실행해 결과를 대조한다. 설계 문서 §5.2. */
+  readonly determinism: boolean;
+  /** `--reset-cmd` 로 받은 초기화 명령. 각 회차 전에 1번씩 실행한다. */
+  readonly resetCmd: string | undefined;
   readonly stderrLines: number;
 }
 export type CliErrorCode =
@@ -65,6 +75,7 @@ export type CliErrorCode =
   | "RUNNER_FINALIZATION_FAILED"
   | "JUNIT_WRITE_FAILED"
   | "REPAIR_BUNDLE_WRITE_FAILED"
+  | "RESET_COMMAND_FAILED"
   | "CLI_INTERNAL_ERROR";
 export interface CliFailure {
   readonly code: CliErrorCode;
@@ -93,6 +104,13 @@ export interface TestCommandDependencies {
    */
   checkInputContract?(options: InputContractOptions): SpecFindingsResult;
   checkAssertionSubstance?(suite: TestSuiteSpec): SpecFindingsResult;
+  /**
+   * 결정론성 비교와 초기화 명령의 주입 지점. 위 두 필드와 같은 이유로 선택 사항이다.
+   * 생략하면 각각 `runner` 의 `checkDeterminism` 과 `reset-hook.ts` 의 `runResetCommand` 다.
+   * 캡처 래퍼는 CLI 내부 구현이라 주입 대상이 아니다(설계 문서 §5.2).
+   */
+  checkDeterminism?(options: CheckDeterminismOptions): DeterminismResult;
+  runResetCommand?(command: string): Promise<void>;
   colorEnabled: boolean;
   writeStdout(text: string): void;
   writeStderr(text: string): void;
@@ -143,6 +161,12 @@ const dictionary: Record<
     message: "repair 번들 파일을 쓰지 못했습니다.",
     hint: "`--repair-bundle` 경로의 디렉터리가 존재하는지와 쓰기 권한을 확인하세요.",
   },
+  RESET_COMMAND_FAILED: {
+    // 실제 안내는 명령·종료 코드·stderr 꼬리를 담아 호출 지점에서 만든다. 이 사전 값은
+    // 그 정보가 없을 때의 최소 문장이다.
+    message: "초기화 명령이 실패했습니다.",
+    hint: "`--reset-cmd` 명령이 단독으로 성공하는지 확인한 뒤 다시 실행하세요.",
+  },
   CLI_INTERNAL_ERROR: {
     message: "예상하지 못한 CLI 내부 오류가 발생했습니다.",
     hint: "다시 실행한 뒤 재현 정보와 함께 이슈를 보고하세요.",
@@ -163,6 +187,8 @@ export function parseTestCommand(argv: readonly string[]): TestCommandInput {
   let json = false;
   let junitPath: string | undefined;
   let repairBundlePath: string | undefined;
+  let determinism = false;
+  let resetCmd: string | undefined;
   let stderrLines: number | undefined;
   const args: string[] = [];
   for (let index = 1; index < argv.length; index += 1) {
@@ -235,6 +261,29 @@ export function parseTestCommand(argv: readonly string[]): TestCommandInput {
       if (value === "") fail("`--repair-bundle` 옵션 값이 필요합니다.");
       if (value.startsWith("--")) fail("`--repair-bundle` 옵션 값이 필요합니다.");
       repairBundlePath = value;
+    } else if (token === "--reset-cmd" || token.startsWith("--reset-cmd=")) {
+      // 값 검사는 `--junit` 과 같은 규칙이다. 명령 자리의 플래그는 값을 빠뜨린 오타다.
+      if (resetCmd !== undefined) fail("`--reset-cmd`는 한 번만 사용할 수 있습니다.");
+      let value: string;
+      if (token === "--reset-cmd") {
+        const next = argv[++index];
+        if (next === undefined)
+          throw new CliCommandError({
+            code: "CLI_USAGE",
+            message: "`--reset-cmd` 옵션 값이 필요합니다.",
+            hint: TEST_USAGE_HINT,
+          });
+        value = next;
+      } else value = token.slice("--reset-cmd=".length);
+      // 공백뿐인 명령은 runResetCommand 가 TypeError 로 죽는 값이다. 여기서 거른다.
+      if (value.trim() === "") fail("`--reset-cmd` 옵션 값이 필요합니다.");
+      if (value.startsWith("--")) fail("`--reset-cmd` 옵션 값이 필요합니다.");
+      resetCmd = value;
+    } else if (token === "--determinism") {
+      // 값 없는 스위치다. 중복 지정은 무해하므로 거절하지 않는다.
+      determinism = true;
+    } else if (token.startsWith("--determinism=")) {
+      fail("`--determinism`은 값을 받지 않습니다.");
     } else if (token === "--stderr-lines" || token.startsWith("--stderr-lines=")) {
       if (stderrLines !== undefined) fail("`--stderr-lines`는 한 번만 사용할 수 있습니다.");
       let value: string;
@@ -275,6 +324,8 @@ export function parseTestCommand(argv: readonly string[]): TestCommandInput {
     json,
     junitPath,
     repairBundlePath,
+    determinism,
+    resetCmd,
     stderrLines: stderrLines ?? DEFAULT_STDERR_LINES,
   });
 }
@@ -313,6 +364,85 @@ const FINDING_GROUP_ORDER: readonly FindingGroup[] = [
   "rejectionIntent",
   "skipped",
 ];
+/** 결정론성 결과 블록의 머리글. 설계 문서 §8. */
+const DETERMINISM_HEADING = "결정론성 확인";
+/**
+ * 2회차의 결말. 비교까지 간 경우와 못 간 경우를 값으로 구분한다. 못 간 사유를 문자열로만
+ * 들고 다니면 "비교했는데 차이 0" 과 "비교를 못 했다" 가 화면에서 섞인다. 설계 문서 §7.
+ */
+type DeterminismOutcome =
+  | { readonly kind: "compared"; readonly result: DeterminismResult }
+  | {
+      readonly kind: "incomplete";
+      readonly reason: string;
+      readonly diagnostics?: ProcessDiagnosticsInput;
+    }
+  | { readonly kind: "internal" };
+/** `(12/12)` 와 `(12/12, 제외 2: 실행되지 않은 케이스)`. 설계 문서 §8. */
+const determinismCounts = (result: DeterminismResult): string =>
+  result.skipped === 0
+    ? `(${result.compared}/${result.compared})`
+    : `(${result.compared}/${result.compared}, 제외 ${result.skipped}: 실행되지 않은 케이스)`;
+/**
+ * 결정론성 블록 전문. 문구는 설계 문서 §8 이 사양이다. 케이스 블록은 runner 의
+ * `describeDeterminismDifference` 가 만들고 여기서 들여쓰기를 덧붙이지 않는다. 그 함수가
+ * 이미 앞 공백 2칸을 포함한 블록을 낸다.
+ */
+function renderDeterminism(
+  outcome: DeterminismOutcome,
+  options: { readonly stateRestored: boolean; readonly stderrLines: number },
+): string {
+  if (outcome.kind === "internal")
+    return `${DETERMINISM_HEADING}\n→ 결정론성 비교에서 예상하지 못한 CLI 내부 오류가 발생했습니다. 시험 판정은 1회차 결과 그대로입니다.\n→ 다시 실행한 뒤 재현 정보와 함께 이슈를 보고하세요.\n`;
+  if (outcome.kind === "incomplete") {
+    const head =
+      `${DETERMINISM_HEADING}\n` +
+      `→ 2회차 실행이 완주하지 못해 비교할 수 없습니다. (사유: ${escapeTerminalText(outcome.reason)})\n` +
+      "→ 1회차는 완주했으므로, 서버가 반복 실행 자체에 취약할 수 있습니다\n" +
+      "  (이전 실행이 남긴 상태·잠금·포트 점유 등).\n";
+    // 진단은 2회차 연결의 것이다. 단계 1 의 렌더러를 그대로 쓴다. 설계 문서 §7.
+    if (
+      options.stderrLines === 0 ||
+      outcome.diagnostics === undefined ||
+      !hasDiagnosticContent(outcome.diagnostics)
+    )
+      return head;
+    const block = renderProcessDiagnostics(outcome.diagnostics, { maxLines: options.stderrLines });
+    return block === "" ? head : `${head}${block}`;
+  }
+  const { result } = outcome;
+  if (result.conclusion === "deterministic")
+    return `${DETERMINISM_HEADING}\n→ 같은 초기 상태에서 2회 실행한 결과가 모든 케이스에서 같습니다. ${determinismCounts(result)}\n`;
+  if (result.conclusion === "consistentWithoutReset")
+    return (
+      `${DETERMINISM_HEADING}\n` +
+      `→ 2회 실행 결과가 같았습니다. ${determinismCounts(result)}\n` +
+      "→ 단, 실행 사이에 상태를 복원하지 않았으므로 결정론성 확인은 아닙니다.\n" +
+      "  --reset-cmd 로 초기 상태 복원 명령을 지정하면 확인이 됩니다.\n"
+    );
+  const suffix = result.skipped === 0 ? "" : ` (제외 ${result.skipped}: 실행되지 않은 케이스)`;
+  const blocks = result.differences
+    .map((difference) =>
+      describeDeterminismDifference(difference, { stateRestored: options.stateRestored }),
+    )
+    .join("\n\n");
+  return (
+    `${DETERMINISM_HEADING}\n` +
+    `→ ${result.differences.length}/${result.compared} 케이스에서 2회 실행 결과가 다릅니다.${suffix}\n\n` +
+    `${blocks}\n`
+  );
+}
+/** 초기화 명령 실패 안내. 한 줄로 유지한다. hint 의 개행은 format 이 이스케이프한다. */
+function resetFailure(error: ResetCommandError): CliFailure {
+  const exit = error.exitCode === null ? "없음" : String(error.exitCode);
+  const tail = error.stderr.split("\n").filter(Boolean).slice(-3).join(" | ");
+  const stderr = tail === "" ? "" : ` stderr 마지막 3줄: ${tail}`;
+  return {
+    code: "RESET_COMMAND_FAILED",
+    message: `초기화 명령이 실패했습니다: ${error.command}`,
+    hint: `종료 코드: ${exit}.${stderr} 명령이 단독으로 성공하는지 확인한 뒤 다시 실행하세요.`,
+  };
+}
 function format(failure: CliFailure): string {
   const code =
     failure.coreCode === undefined ? failure.code : `${failure.code}/${failure.coreCode}`;
@@ -469,6 +599,26 @@ export async function runCli(
    * 테스트가 실제 대조 로직을 안 거치게 된다. 설계 문서 §7.
    */
   const specApproval = checkSpecApproval(validated.value);
+  const runReset = dependencies.runResetCommand ?? defaultRunResetCommand;
+  /**
+   * 복원은 시험 실행을 **시작하기 전**이다. 실패하면 서버를 띄우지 않는다. 되돌리지 못한
+   * 상태 위에서 돌린 결과는 판정 근거가 될 수 없기 때문이다(설계 문서 §5.2, ADR-0023).
+   */
+  if (input.resetCmd !== undefined) {
+    try {
+      await runReset(input.resetCmd);
+    } catch (error) {
+      // 어떤 오류든 사전 문장으로 바꿔서 내보낸다. 여기서 다시 던지면 이 경로만 스택
+      // 트레이스가 화면에 나가고, 2회차의 같은 지점(모든 오류를 미완주로 삼킨다)과도
+      // 처리가 갈린다.
+      return writeFailure(
+        dependencies,
+        error instanceof ResetCommandError
+          ? resetFailure(error)
+          : { code: "CLI_INTERNAL_ERROR", ...dictionary.CLI_INTERNAL_ERROR },
+      );
+    }
+  }
   let connection: McpStdioConnection;
   try {
     connection = await dependencies.connect({ command: input.command, args: input.args });
@@ -537,14 +687,30 @@ export async function runCli(
       return [];
     }
   })();
+  /**
+   * 캡처 래퍼는 `--determinism` 일 때만 만든다. 플래그가 없으면 기존 경로와 호출·객체가
+   * 완전히 같다. 캡처 비용 0 이 설계 문서 §5.1 의 조건이다.
+   */
+  const firstCapture = input.determinism ? createDeterminismCapture(connection.client) : undefined;
+  /**
+   * 러너에 넘기는 client 다. **`shutdown.client` 는 반드시 이것과 같은 객체여야 한다.**
+   * `finalizeRunnerExecution` 이 `runSuite` 에 바인딩된 client 와 대조해 다르면 TypeError 를
+   * 던지고(`runner/src/shutdown.ts` 의 `boundClient`), 그러면 종료 절차가 통째로 건너뛰어져
+   * 서버 프로세스가 남는다. 한쪽만 감싸면 정확히 그 일이 난다.
+   */
+  const firstClient = firstCapture?.client ?? connection.client;
   const shutdown = {
-    client: connection.client,
+    client: firstClient,
     close: () => connection.close(),
     forceClose: (_reason: unknown) => connection.forceClose(),
   };
   let execution: RunnerExecution;
   try {
-    execution = dependencies.startRunner({ client: connection.client, suite: validated.value });
+    execution = dependencies.startRunner(
+      firstCapture === undefined
+        ? { client: firstClient, suite: validated.value }
+        : { client: firstClient, suite: validated.value, onEvent: firstCapture.onEvent },
+    );
   } catch {
     // forceClose 는 우리가 SIGTERM·SIGKILL 을 보내는 경로다. 그 뒤의 진단을 보여주면 서버가
     // 죽은 것으로 오인된다. 원인은 로컬의 startRunner 실패다. 정리 전 상태를 찍어둔다.
@@ -598,6 +764,122 @@ export async function runCli(
       });
     }
   }
+  /**
+   * 2회차. `--determinism` 일 때만 돈다. **서버 프로세스를 새로 띄운다.** 1회차 연결은 위
+   * `finalize` 의 종료 절차로 이미 닫혔고, 프로세스 내부 상태도 초기화 대상이라 연결을
+   * 재사용하지 않는다(설계 문서 §5.2).
+   *
+   * 이 블록의 실패는 **CLI 오류로 던지지 않는다.** 1회차 판정과 종료 코드는 이미 정해졌고,
+   * 관찰이 실패했다고 시험 판정을 뒤집으면 안 된다. 2회차 문제는 결정론성 블록 안의
+   * 문장으로만 존재한다(설계 문서 §7).
+   */
+  const determinismOutcome: DeterminismOutcome | undefined = await (async () => {
+    if (firstCapture === undefined) return undefined;
+    const snapshotOf = (target: McpStdioConnection): ProcessDiagnosticsInput | undefined => {
+      try {
+        return target.getDiagnostics();
+      } catch {
+        return undefined;
+      }
+    };
+    if (input.resetCmd !== undefined) {
+      try {
+        await runReset(input.resetCmd);
+      } catch (error) {
+        // 1회차는 이미 끝났다. 여기서 실패로 종료하면 화면에 나간 보고서와 종료 코드가
+        // 서로 다른 이야기를 한다. 비교만 포기한다.
+        const reason =
+          error instanceof ResetCommandError
+            ? `2회차 전 초기화 명령 실패: ${error.command}`
+            : "2회차 전 초기화 명령 실패";
+        return { kind: "incomplete", reason };
+      }
+    }
+    let second: McpStdioConnection;
+    try {
+      second = await dependencies.connect({ command: input.command, args: input.args });
+    } catch (error) {
+      const core = coreError(error);
+      return {
+        kind: "incomplete",
+        reason: "서버 연결 실패",
+        ...(core?.diagnostics === undefined ? {} : { diagnostics: core.diagnostics }),
+      };
+    }
+    const secondCapture = createDeterminismCapture(second.client);
+    let secondExecution: RunnerExecution;
+    try {
+      secondExecution = dependencies.startRunner({
+        client: secondCapture.client,
+        suite: validated.value,
+        onEvent: secondCapture.onEvent,
+      });
+    } catch {
+      // forceClose 전 상태를 찍는다. 우리가 죽인 뒤의 상태를 서버 탓으로 적지 않는다.
+      const snapshot = snapshotOf(second);
+      try {
+        await second.forceClose();
+      } catch {}
+      return {
+        kind: "incomplete",
+        reason: "2회차 실행 시작 실패",
+        ...(snapshot === undefined ? {} : { diagnostics: snapshot }),
+      };
+    }
+    let secondReport: RunnerReport;
+    try {
+      secondReport = await dependencies.finalize({
+        execution: secondExecution,
+        shutdown: {
+          // 1회차와 같은 이유로 러너에 넘긴 객체 그대로다. 다르면 종료 절차가 안 돈다.
+          client: secondCapture.client,
+          close: () => second.close(),
+          forceClose: (_reason: unknown) => second.forceClose(),
+        },
+      });
+    } catch {
+      const snapshot = snapshotOf(second);
+      // finalize 가 실패했으면 종료 절차가 어디까지 갔는지 알 수 없다. 우리가 책임지고
+      // 닫는다. 2회차는 보고서에 남지 않으므로 여기서 안 닫으면 그대로 좀비가 된다.
+      try {
+        await second.forceClose();
+      } catch {}
+      return {
+        kind: "incomplete",
+        reason: "2회차 실행 또는 서버 종료 실패",
+        ...(snapshot === undefined ? {} : { diagnostics: snapshot }),
+      };
+    }
+    if (secondReport.status === "aborted") {
+      const snapshot = snapshotOf(second);
+      const stop = secondReport.stopReason;
+      const reason =
+        stop?.type === "timeout"
+          ? `2회차 케이스 타임아웃 (${stop.caseId})`
+          : stop?.type === "abortSignal"
+            ? "2회차 실행 중단"
+            : "2회차 실행 미완주";
+      return {
+        kind: "incomplete",
+        reason,
+        ...(snapshot === undefined ? {} : { diagnostics: snapshot }),
+      };
+    }
+    try {
+      const check = dependencies.checkDeterminism ?? runnerCheckDeterminism;
+      return {
+        kind: "compared",
+        result: check({
+          first: firstCapture.observations(),
+          second: secondCapture.observations(),
+          stateRestored: input.resetCmd !== undefined,
+        }),
+      };
+    } catch {
+      // 관찰 수 불일치를 포함한 비교 실패다. 우리 결함이지만 판정을 뒤집지 않는다.
+      return { kind: "internal" };
+    }
+  })();
   /**
    * 툴 목록이 비면 입력 계약 대조는 건너뛴다. 목록이 비었을 때 대조하면 모든 케이스가
    * `TOOL_NOT_DECLARED` 로 걸려 실패 원인과 무관한 줄만 늘어난다. 단언 실질성은 툴이 필요
@@ -686,7 +968,16 @@ export async function runCli(
        */
       const approvedCases = validated.value.approval?.cases;
       if (approvedCases !== undefined) spec.cases = approvedCases;
-      dependencies.writeStdout(`${JSON.stringify({ ...finalReport, spec }, null, 2)}\n`);
+      /**
+       * 결정론성은 비교까지 갔을 때만 키를 만든다. `--determinism` 이 없으면 기존 JSON 이
+       * 바이트 그대로여야 하고(설계 문서 §8), 비교를 못 한 경우에는 실어야 할
+       * `DeterminismResult` 자체가 없다. 그 사실은 아래에서 stderr 로 알린다.
+       */
+      const machine =
+        determinismOutcome?.kind === "compared"
+          ? { ...finalReport, spec, determinism: determinismOutcome.result }
+          : { ...finalReport, spec };
+      dependencies.writeStdout(`${JSON.stringify(machine, null, 2)}\n`);
     } else {
       dependencies.writeStdout(
         dependencies.renderReport(finalReport, { color: dependencies.colorEnabled }),
@@ -729,7 +1020,29 @@ export async function runCli(
       // 표시 항목이다. 앞의 빈 줄은 진단 블록과 같은 레이아웃 규칙이다. 설계 문서 §7.2.
       if (shouldShowSpecApproval(specApproval, allPassed))
         dependencies.writeStdout(`\n${renderSpecApproval(specApproval)}`);
+      /**
+       * 결정론성 블록은 보고서 뒤, 다른 블록과 같은 레이아웃 규칙(앞에 빈 줄)을 따른다.
+       * `--determinism` 없이는 한 줄도 찍지 않는다. 설계 문서 §8.
+       */
+      if (determinismOutcome !== undefined)
+        dependencies.writeStdout(
+          `\n${renderDeterminism(determinismOutcome, {
+            stateRestored: input.resetCmd !== undefined,
+            stderrLines: input.stderrLines,
+          })}`,
+        );
     }
+    /**
+     * 기계가 읽는 출력에서는 비교 실패 사실이 사라진다(키를 만들지 않으므로). 그대로 두면
+     * 사용자는 왜 키가 없는지 알 수 없다. stdout 은 JSON 전용이므로 stderr 에 적는다.
+     */
+    if (input.json && determinismOutcome !== undefined && determinismOutcome.kind !== "compared")
+      dependencies.writeStderr(
+        `\n${renderDeterminism(determinismOutcome, {
+          stateRestored: input.resetCmd !== undefined,
+          stderrLines: input.stderrLines,
+        })}`,
+      );
   } catch {
     // 원인이 서버가 아니라 우리 렌더링이므로 진단을 쓰지 않는다. 계획서 §4 호출 지점 4.
     return writeFailure(dependencies, {

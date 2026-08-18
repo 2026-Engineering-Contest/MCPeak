@@ -1,0 +1,256 @@
+import { describe, expect, it } from "vitest";
+import {
+  checkDeterminism,
+  type DeterminismCaseObservation,
+  describeDeterminismDifference,
+} from "../src/determinism.js";
+
+/** 관찰 픽스처. response 는 키 자체를 생략할 수 있어야 하므로 spread 로 만든다. */
+const observation = (
+  overrides: Partial<DeterminismCaseObservation> & { readonly response?: unknown },
+): DeterminismCaseObservation => ({
+  caseId: "case-1",
+  caseName: "정상 조회",
+  toolName: "get_weather",
+  status: "passed",
+  assertionStatuses: ["passed"],
+  ...overrides,
+});
+
+/** 힌트 판정은 첫 차이 지점의 원본 값으로 한다. 값을 content[0].text 자리에 넣는다. */
+const withText = (text: unknown): unknown => ({
+  content: [{ type: "text", text }],
+  isError: false,
+  raw: {},
+});
+
+describe("checkDeterminism", () => {
+  it("모든 케이스가 같고 복원 있음이면 deterministic 을 낸다", () => {
+    const both = [
+      observation({ caseId: "case-1", response: withText("a") }),
+      observation({ caseId: "case-2", response: withText("b") }),
+    ];
+    const result = checkDeterminism({ first: both, second: both, stateRestored: true });
+    expect(result.conclusion).toBe("deterministic");
+    expect(result.differences).toHaveLength(0);
+    expect(result.compared).toBe(2);
+    expect(result.skipped).toBe(0);
+  });
+
+  it("모든 케이스가 같고 복원 없음이면 consistentWithoutReset 을 낸다", () => {
+    const both = [observation({ response: withText("a") })];
+    const result = checkDeterminism({ first: both, second: both, stateRestored: false });
+    expect(result.conclusion).toBe("consistentWithoutReset");
+    expect(result.differences).toHaveLength(0);
+  });
+
+  it("응답 필드 값이 다르면 경로와 양쪽 값을 짚는다", () => {
+    const result = checkDeterminism({
+      first: [
+        observation({ response: { content: [], isError: false, raw: { result: { value: 1 } } } }),
+      ],
+      second: [
+        observation({ response: { content: [], isError: false, raw: { result: { value: 2 } } } }),
+      ],
+      stateRestored: true,
+    });
+    expect(result.differences).toHaveLength(1);
+    expect(result.differences[0]).toMatchObject({
+      kind: "response",
+      path: "raw.result.value",
+      firstValue: "1",
+      secondValue: "2",
+    });
+    expect(result.conclusion).toBe("nondeterministic");
+  });
+
+  it("중첩 배열 원소가 다르면 인덱스 경로를 만든다", () => {
+    const result = checkDeterminism({
+      first: [observation({ response: withText("a") })],
+      second: [observation({ response: withText("b") })],
+      stateRestored: true,
+    });
+    expect(result.differences).toHaveLength(1);
+    expect(result.differences[0]).toMatchObject({
+      kind: "response",
+      path: "content[0].text",
+      firstValue: '"a"',
+      secondValue: '"b"',
+    });
+  });
+
+  it("배열 순서만 달라도 차이다", () => {
+    const result = checkDeterminism({
+      first: [observation({ response: { content: [], isError: false, raw: { items: [1, 2] } } })],
+      second: [observation({ response: { content: [], isError: false, raw: { items: [2, 1] } } })],
+      stateRestored: true,
+    });
+    expect(result.differences).toHaveLength(1);
+    expect(result.differences[0]?.path).toBe("raw.items[0]");
+  });
+
+  it("객체 키 순서만 다르면 차이가 아니다", () => {
+    const result = checkDeterminism({
+      first: [observation({ response: { b: 2, a: 1 } })],
+      second: [observation({ response: { a: 1, b: 2 } })],
+      stateRestored: true,
+    });
+    expect(result.differences).toHaveLength(0);
+    expect(result.conclusion).toBe("deterministic");
+  });
+
+  it("한쪽에만 있는 키를 짚는다", () => {
+    const result = checkDeterminism({
+      first: [observation({ response: { raw: { a: 1, extra: "x" } } })],
+      second: [observation({ response: { raw: { a: 1 } } })],
+      stateRestored: true,
+    });
+    expect(result.differences).toHaveLength(1);
+    expect(result.differences[0]).toMatchObject({
+      kind: "response",
+      path: "raw.extra",
+      firstValue: '"x"',
+      secondValue: "(없음)",
+    });
+  });
+
+  it("status 가 다르면 status 차이만 보고하고 응답은 안 본다", () => {
+    const result = checkDeterminism({
+      first: [observation({ status: "passed", response: { v: 1 } })],
+      second: [observation({ status: "failed", response: { v: 2 } })],
+      stateRestored: false,
+    });
+    expect(result.differences).toHaveLength(1);
+    expect(result.differences[0]?.kind).toBe("status");
+    expect(result.differences[0]?.path).toBeUndefined();
+    expect(result.differences[0]).toMatchObject({ firstValue: "passed", secondValue: "failed" });
+  });
+
+  it("단언 status 가 다르면 assertion 차이를 보고한다", () => {
+    const result = checkDeterminism({
+      first: [observation({ assertionStatuses: ["passed", "passed"], response: withText("a") })],
+      second: [observation({ assertionStatuses: ["passed", "failed"], response: withText("a") })],
+      stateRestored: true,
+    });
+    expect(result.differences).toHaveLength(1);
+    expect(result.differences[0]).toMatchObject({
+      kind: "assertion",
+      path: "assertions[1]",
+      firstValue: "passed",
+      secondValue: "failed",
+    });
+  });
+
+  it("한쪽만 응답이 없으면 차이다", () => {
+    const result = checkDeterminism({
+      first: [observation({ response: withText("a") })],
+      second: [observation({})],
+      stateRestored: true,
+    });
+    expect(result.differences).toHaveLength(1);
+    expect(result.differences[0]?.kind).toBe("response");
+    expect(result.differences[0]?.secondValue).toBe("(응답 없음)");
+  });
+
+  it("양쪽 다 notRun 이면 제외로 센다", () => {
+    const result = checkDeterminism({
+      first: [observation({ status: "notRun", assertionStatuses: ["notRun"] })],
+      second: [observation({ status: "notRun", assertionStatuses: ["notRun"] })],
+      stateRestored: true,
+    });
+    expect(result.skipped).toBe(1);
+    expect(result.compared).toBe(0);
+    expect(result.differences).toHaveLength(0);
+  });
+
+  it("케이스 수가 다르면 던진다", () => {
+    expect(() =>
+      checkDeterminism({ first: [observation({})], second: [], stateRestored: true }),
+    ).toThrow("관찰한 케이스 수가 다릅니다");
+  });
+
+  it("ISO 타임스탬프 쌍에 timestamp 힌트를 단다", () => {
+    const result = checkDeterminism({
+      first: [observation({ response: withText("2026-08-18T14:03:11Z") })],
+      second: [observation({ response: withText("2026-08-18T14:03:12Z") })],
+      stateRestored: true,
+    });
+    expect(result.differences[0]?.hint).toBe("timestamp");
+  });
+
+  it("UUID 쌍에 randomId 힌트를 단다", () => {
+    const result = checkDeterminism({
+      first: [observation({ response: withText("3f2504e0-4f89-11d3-9a0c-0305e82c3301") })],
+      second: [observation({ response: withText("21ec2020-3aea-4069-a2dd-08002b30309d") })],
+      stateRestored: true,
+    });
+    expect(result.differences[0]?.hint).toBe("randomId");
+  });
+
+  it("숫자 쌍에 numericDrift 힌트를 단다", () => {
+    const result = checkDeterminism({
+      first: [observation({ response: withText(24) })],
+      second: [observation({ response: withText(25) })],
+      stateRestored: true,
+    });
+    expect(result.differences[0]?.hint).toBe("numericDrift");
+  });
+
+  it("패턴 밖 문자열 쌍에는 힌트가 없다", () => {
+    const result = checkDeterminism({
+      first: [observation({ response: withText("서울") })],
+      second: [observation({ response: withText("부산") })],
+      stateRestored: true,
+    });
+    expect(result.differences).toHaveLength(1);
+    expect(result.differences[0]?.hint).toBeUndefined();
+  });
+
+  it("한쪽만 타임스탬프 패턴이면 힌트가 없다", () => {
+    const result = checkDeterminism({
+      first: [observation({ response: withText("2026-08-18T14:03:11Z") })],
+      second: [observation({ response: withText("알 수 없음") })],
+      stateRestored: true,
+    });
+    expect(result.differences).toHaveLength(1);
+    expect(result.differences[0]?.hint).toBeUndefined();
+  });
+
+  it("깊이 1500 응답에서 죽지 않는다", () => {
+    // canonical.ts 전례 회귀. 재귀 구현이면 여기서 RangeError 로 죽는다.
+    const deep = (leaf: unknown): unknown => {
+      let value = leaf;
+      for (let i = 0; i < 1500; i += 1) value = { nested: value };
+      return value;
+    };
+    const result = checkDeterminism({
+      first: [observation({ response: deep("a") })],
+      second: [observation({ response: deep("b") })],
+      stateRestored: true,
+    });
+    expect(result.differences[0]?.path).toBe("nested.".repeat(1500).slice(0, -1));
+  });
+});
+
+describe("describeDeterminismDifference", () => {
+  it("describeDeterminismDifference 가 §8 케이스 블록을 만든다", () => {
+    const text = describeDeterminismDifference(
+      {
+        caseId: "case-3",
+        caseName: "정상 조회",
+        toolName: "get_weather",
+        kind: "response",
+        path: "content[0].text",
+        firstValue: '"{\\"fetchedAt\\":\\"2026-08-18T14:03:11Z\\"}"',
+        secondValue: '"{\\"fetchedAt\\":\\"2026-08-18T14:03:12Z\\"}"',
+        hint: "timestamp",
+      },
+      { stateRestored: true },
+    );
+    expect(text).toContain("get_weather / 정상 조회 (case-3)");
+    expect(text).toContain("→ 다른 지점: content[0].text");
+    expect(text).toContain("1회차:");
+    expect(text).toContain("2회차:");
+    expect(text).toContain("시간 의존으로 보입니다");
+  });
+});

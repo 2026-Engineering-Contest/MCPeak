@@ -687,6 +687,11 @@ interface JsonDiff {
   right: unknown;
   leftMissing?: boolean;
   rightMissing?: boolean;
+  /**
+   * 이 지점이 마스킹 대상 키 아래인가. 차이 판정은 원문으로 하고 표시만 마스킹하는데,
+   * 잎 값까지 내려오면 키를 알 수 없다. 그래서 수집 시점에 들고 나온다.
+   */
+  sensitive?: boolean;
 }
 
 const MAX_DIFF_LINES = 5;
@@ -715,16 +720,29 @@ function duplicateResponseMessage(
             `  1회차 ${diff.path}: ${formatDiffValue(
               diff.left,
               diff.leftMissing,
-            )} / 2회차 ${diff.path}: ${formatDiffValue(diff.right, diff.rightMissing)}`,
+              diff.sensitive,
+            )} / 2회차 ${diff.path}: ${formatDiffValue(
+              diff.right,
+              diff.rightMissing,
+              diff.sensitive,
+            )}`,
         )
       : [
           `  1회차 응답: ${formatDiffValue(existing.response)}`,
           `  2회차 응답: ${formatDiffValue(next.response)}`,
         ];
 
+  /**
+   * 표시된 줄을 보고 판단한다. 폴백 가지(응답 전체 출력)도 값 안쪽이 마스킹되므로
+   * `diffs` 만 봐서는 놓친다. 이 문장이 없으면 양쪽이 똑같이 `[redacted]` 로 보여
+   * 거짓 양성처럼 읽힌다.
+   */
+  const masked = diffLines.some((line) => line.includes(REDACTED));
+
   return [
     `→ 같은 요청에 다른 응답이 왔습니다: ${displayRequest(toolName, args)}`,
     ...diffLines,
+    ...(masked ? ["  → 위 값은 마스킹되어 표시됩니다. 실제 값은 서로 다릅니다."] : []),
     "  → 시세나 시간처럼 매번 바뀌는 값이라면 이 툴은 오라클로 쓸 수 없습니다.",
     "  → 의도된 변화라면 --record 로 카세트를 다시 만드세요.",
   ].join("\n");
@@ -764,7 +782,13 @@ function countJsonDiffs(left: unknown, right: unknown): number {
   return 1;
 }
 
-function collectJsonDiffs(left: unknown, right: unknown, path: string, diffs: JsonDiff[]): void {
+function collectJsonDiffs(
+  left: unknown,
+  right: unknown,
+  path: string,
+  diffs: JsonDiff[],
+  sensitive = false,
+): void {
   if (diffs.length >= MAX_DIFF_LINES || sameJson(left, right)) return;
 
   if (plainObject(left) && plainObject(right)) {
@@ -774,6 +798,8 @@ function collectJsonDiffs(left: unknown, right: unknown, path: string, diffs: Js
       const leftHas = Object.hasOwn(left, key);
       const rightHas = Object.hasOwn(right, key);
       const nextPath = jsonPath(path, key);
+      // 상위가 민감하면 하위도 민감하다. redact 는 민감 키의 하위 트리를 통째로 지운다.
+      const nextSensitive = sensitive || sensitiveKey(key);
       if (!leftHas || !rightHas) {
         diffs.push({
           path: nextPath,
@@ -781,10 +807,11 @@ function collectJsonDiffs(left: unknown, right: unknown, path: string, diffs: Js
           right: rightHas ? right[key] : undefined,
           leftMissing: !leftHas,
           rightMissing: !rightHas,
+          sensitive: nextSensitive,
         });
         continue;
       }
-      collectJsonDiffs(left[key], right[key], nextPath, diffs);
+      collectJsonDiffs(left[key], right[key], nextPath, diffs, nextSensitive);
     }
     return;
   }
@@ -803,24 +830,41 @@ function collectJsonDiffs(left: unknown, right: unknown, path: string, diffs: Js
           right: rightHas ? right[index] : undefined,
           leftMissing: !leftHas,
           rightMissing: !rightHas,
+          sensitive,
         });
         continue;
       }
-      collectJsonDiffs(left[index], right[index], nextPath, diffs);
+      collectJsonDiffs(left[index], right[index], nextPath, diffs, sensitive);
     }
     return;
   }
 
-  diffs.push({ path, left, right });
+  diffs.push({ path, left, right, sensitive });
 }
 
 function jsonPath(base: string, key: string): string {
   return /^[A-Za-z_$][\w$]*$/.test(key) ? `${base}.${key}` : `${base}[${JSON.stringify(key)}]`;
 }
 
-function formatDiffValue(value: unknown, missing = false): string {
+/**
+ * 사용자에게 보여줄 값 하나를 만든다.
+ *
+ * 차이 판정은 이미 원문으로 끝난 뒤다. 표시 시점에만 마스킹하는 이유는, 마스킹한 값으로
+ * 비교하면 서로 다른 두 비밀값이 같아 보여 "같은 요청에 다른 응답" 자체를 놓치기 때문이다.
+ * ADR-0003 이 이 경고에 기대한 효용(비결정 서버가 드러난다)이 거기서 죽는다.
+ *
+ * `sensitive` 는 값이 놓인 자리가 비밀값 자리라는 뜻이다. 그 외에는 값 안쪽의 민감 키만
+ * 지운다. 잎 값에 `redact` 를 그냥 부르면 키가 없어 아무것도 마스킹되지 않는다.
+ */
+function formatDiffValue(value: unknown, missing = false, sensitive = false): string {
   if (missing) return "<없음>";
-  const text = stableStringify(value);
+  let text: string;
+  try {
+    text = stableStringify(sensitive ? REDACTED : redact(value));
+  } catch {
+    // redact 는 Date·순환 참조·비유한수에 throw 한다. 한 줄 때문에 경고 전체를 잃지 않는다.
+    return "<표시할 수 없는 값>";
+  }
   return text.length <= MAX_VALUE_DISPLAY ? text : `${text.slice(0, MAX_VALUE_DISPLAY - 1)}…`;
 }
 

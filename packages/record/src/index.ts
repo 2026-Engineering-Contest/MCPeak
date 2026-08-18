@@ -49,7 +49,13 @@ const NONDETERMINISTIC_KEYS = new Set([
   "expiresat",
 ]);
 
-const SENSITIVE_KEY_PARTS = [
+/**
+ * 마스킹 대상 키. 값은 구분자를 지우고 소문자로 맞춘 형태다.
+ *
+ * `accesstoken` · `refreshtoken` 은 접미 규칙상 `token` 에 이미 걸리지만, ADR-0003 이
+ * 열거한 목록이라 그대로 둔다. 근거는 ADR-0039 다.
+ */
+const SENSITIVE_KEYS = new Set([
   "authorization",
   "apikey",
   "accesstoken",
@@ -57,7 +63,8 @@ const SENSITIVE_KEY_PARTS = [
   "token",
   "secret",
   "password",
-];
+  "cookie",
+]);
 
 const plainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" &&
@@ -78,9 +85,41 @@ class CassetteJsonError extends TypeError {
 
 const normalizeKey = (key: string): string => key.replace(/[-_]/g, "").toLowerCase();
 
+/**
+ * 키를 단어로 쪼갠다. `-` · `_` 구분자와 카멜케이스 경계를 함께 본다.
+ *
+ * `normalizeKey` 를 쓰지 않는 이유는 그쪽이 구분자를 **지우기** 때문이다. 경계 정보가
+ * 사라지면 `tokenCount` 와 `accessToken` 을 구분할 수 없다. `normalizeKey` 는
+ * `NONDETERMINISTIC_KEYS` 조회와 공유하므로 건드리지 않는다.
+ */
+const keyWords = (key: string): string[] =>
+  key
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    // 연속 대문자 뒤에 단어가 오는 경우. `APIKey` → `API Key`
+    .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
+    .split(/[-_ ]+/)
+    // 꼬리 숫자는 떼어 낸다. `apiKey0` 은 여전히 API 키다. 머리 명사를 바꾸지 않으므로
+    // `cookieCount2` 가 새로 걸리지도 않는다.
+    .map((word) => word.toLowerCase().replace(/[0-9]+$/, ""))
+    .filter((word) => word.length > 0);
+
+/**
+ * 키의 **접미 단어열**이 목록과 정확히 일치하면 민감으로 본다.
+ *
+ * 부분 문자열 포함이 아니다. 영어 합성명사는 마지막 단어가 머리라서 `accessToken` 은
+ * 토큰의 일종이고 `tokenCount` 는 개수의 일종이다. 포함으로 보면 둘이 구분되지 않아
+ * `tokenCount` · `passwordPolicy` · `secretariat` 이 전부 걸린다. 과잉 마스킹은 값을
+ * 지우므로, ADR-0041 이후에는 "그 필드를 테스트가 영영 못 본다"가 된다.
+ *
+ * 접미로 보되 한 단어씩만 보지 않는 이유는 `X-Api-Key` 다. 마지막 단어 `key` 는 목록에
+ * 없고 `apikey` 가 있다.
+ */
 const sensitiveKey = (key: string): boolean => {
-  const normalized = normalizeKey(key);
-  return SENSITIVE_KEY_PARTS.some((part) => normalized.includes(part));
+  const words = keyWords(key);
+  for (let start = words.length - 1; start >= 0; start--) {
+    if (SENSITIVE_KEYS.has(words.slice(start).join(""))) return true;
+  }
+  return false;
 };
 
 /**
@@ -477,8 +516,74 @@ function prepareCassetteForWrite(cassette: Cassette): Cassette {
         raw: redact(interaction.response.raw),
       },
     })),
-    ...(cassette.tools === undefined ? {} : { tools: redact(cassette.tools) as ToolDef[] }),
+    ...(cassette.tools === undefined ? {} : { tools: redactTools(cassette.tools) }),
   };
+}
+
+/**
+ * `tools` 는 데이터가 아니라 스키마라 `redact` 를 그대로 쓸 수 없다. `properties.<name>`
+ * 의 이름은 값이 아니라 선언 대상이라, 이름으로 마스킹 여부를 결정하는 `redact` 를 그대로
+ * 걸면 `{ type: "string", default: "sk-..." }` 같은 정의 객체 전체가 `"[redacted]"`
+ * 문자열로 치환되어 스키마가 부서진다. 근거는 ADR-0040 이다.
+ *
+ * `name`·`description` 은 선언 대상 자체라 마스킹하지 않는다. `inputSchema` 만
+ * 스키마 전용 규칙(`redactSchema`)을 탄다.
+ */
+function redactTools(tools: readonly ToolDef[]): ToolDef[] {
+  return tools.map((tool) => ({
+    name: tool.name,
+    ...(tool.description === undefined ? {} : { description: tool.description }),
+    inputSchema: redactSchema(tool.inputSchema, false),
+  }));
+}
+
+/**
+ * 스키마를 재귀한다. `sensitive` 는 이 노드가 마스킹 대상 프로퍼티 아래인지를 나타낸다.
+ *
+ * - `properties` 는 재귀하며, 각 프로퍼티의 민감도는 **그 이름으로 새로 판정하되 부모의
+ *   민감도와 OR 로 합친다** (`sensitive || sensitiveKey(name)`). 한번 민감해진 하위
+ *   트리는 이름이 안 걸려도 계속 민감하다 — `authorization.properties.value.default`
+ *   처럼 감싸는 이름이 비밀값이면 안쪽 값도 비밀값이다. 이름 자체는 절대 마스킹하지
+ *   않는다 — 선언 대상이지 값이 아니다.
+ * - `items` 는 재귀하되 민감도를 부모에서 그대로 물려받는다. 배열 원소는 이름이 없다.
+ * - `default` · `const` 는 단일 값이라 통째로 가린다. `examples` · `enum` 은 배열이라
+ *   원소마다 가린다 — 허용값 목록에 실제 키가 들어 있는 경우가 있다.
+ * - 그 외 키(`type`·`required`·`description`·`title`·`$schema` 와 ADR-0004 가
+ *   해석하지 않는 `allOf`·`anyOf`·`oneOf` 등)는 그대로 둔다. 재귀도, 마스킹도 하지
+ *   않는다 — 해석하지 않는 구조에 마스킹만 거는 것은 근거가 없다. **알려진 한계**: 민감한
+ *   프로퍼티의 값이 이 미지원 키워드 안에 있으면(예: `apiKey: { anyOf: [{ default: "sk-..." }] }`)
+ *   가려지지 않는다. ADR-0040 이 승인한 트레이드오프이고, 지원 범위가 늘어나면 함께 넓힌다.
+ */
+function redactSchema(schema: unknown, sensitive: boolean): unknown {
+  if (!plainObject(schema)) return schema;
+
+  const output: Record<string, unknown> = {};
+  for (const key of Object.keys(schema)) {
+    const value = schema[key];
+
+    if (key === "properties" && plainObject(value)) {
+      const nested: Record<string, unknown> = {};
+      for (const name of Object.keys(value)) {
+        nested[name] = redactSchema(value[name], sensitive || sensitiveKey(name));
+      }
+      output[key] = nested;
+      continue;
+    }
+    if (key === "items") {
+      output[key] = redactSchema(value, sensitive);
+      continue;
+    }
+    if (sensitive && (key === "default" || key === "const")) {
+      output[key] = REDACTED;
+      continue;
+    }
+    if (sensitive && (key === "examples" || key === "enum") && Array.isArray(value)) {
+      output[key] = value.map(() => REDACTED);
+      continue;
+    }
+    output[key] = value;
+  }
+  return output;
 }
 
 function transformJson(

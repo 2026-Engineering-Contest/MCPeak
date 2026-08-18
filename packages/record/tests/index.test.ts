@@ -115,9 +115,83 @@ describe("redact / snapshotContract", () => {
     ).toStrictEqual({
       headers: { authorization: "[redacted]" },
       apiKey: "[redacted]",
-      tokenCount: "[redacted]",
+      // token 을 포함하지만 개수다. ADR-0039 로 접미 규칙이 되면서 마스킹 대상에서 빠졌다.
+      tokenCount: 42,
       nested: [{ refresh_token: "[redacted]" }],
     });
+  });
+
+  it("Cookie 와 Set-Cookie 를 마스킹한다", () => {
+    expect(
+      redact({
+        Cookie: "session=abc123",
+        "Set-Cookie": "session=def456; HttpOnly",
+        SET_COOKIE: "x=1",
+        setCookie: "y=2",
+      }),
+    ).toStrictEqual({
+      Cookie: "[redacted]",
+      "Set-Cookie": "[redacted]",
+      SET_COOKIE: "[redacted]",
+      setCookie: "[redacted]",
+    });
+  });
+
+  it("이름에 민감 단어가 들어 있어도 머리가 아니면 마스킹하지 않는다", () => {
+    expect(
+      redact({
+        tokenCount: 42,
+        passwordPolicy: { minLength: 8 },
+        secretariat: "office",
+        cookieCount: 3,
+      }),
+    ).toStrictEqual({
+      tokenCount: 42,
+      passwordPolicy: { minLength: 8 },
+      secretariat: "office",
+      cookieCount: 3,
+    });
+  });
+
+  it("구분자와 대소문자가 어떻든 민감 키는 계속 마스킹한다", () => {
+    expect(
+      redact({
+        accessToken: "a",
+        sessionToken: "b",
+        "X-Api-Key": "c",
+        APIKey: "d",
+        refresh_token: "e",
+        authorization: "f",
+        secret: "g",
+        password: "h",
+      }),
+    ).toStrictEqual({
+      accessToken: "[redacted]",
+      sessionToken: "[redacted]",
+      "X-Api-Key": "[redacted]",
+      APIKey: "[redacted]",
+      refresh_token: "[redacted]",
+      authorization: "[redacted]",
+      secret: "[redacted]",
+      password: "[redacted]",
+    });
+  });
+
+  it("번호가 붙은 민감 키도 계속 마스킹한다", () => {
+    // 꼬리 숫자를 떼지 않으면 apiKey0 의 마지막 단어가 "key0" 이 되어 목록과 안 맞는다.
+    expect(redact({ apiKey0: "a", token2: "b", cookieCount2: 3 })).toStrictEqual({
+      apiKey0: "[redacted]",
+      token2: "[redacted]",
+      cookieCount2: 3,
+    });
+  });
+
+  it("비결정 키 판정은 접미 규칙과 무관하게 그대로다", () => {
+    // sensitiveKey 만 바뀌었고 normalizeKey 는 NONDETERMINISTIC_KEYS 조회와 공유하므로
+    // 건드리지 않았다. 두 판정이 서로 새지 않는지 고정한다.
+    const snapshot = snapshotContract(ok({ createdAt: "x", created_at: "y", cookieCount: 3 }));
+
+    expect(snapshot).toStrictEqual({ cookieCount: 3 });
   });
 
   it("마스킹 중 sparse array를 거절한다", () => {
@@ -575,6 +649,18 @@ describe("cassetteClient", () => {
     expect(warnings[0]).not.toContain("secret-a");
   });
 
+  it("중복 응답 경고가 Set-Cookie 값을 노출하지 않는다", async () => {
+    const warnings = await duplicateWarning(
+      { "Set-Cookie": "session=live-a" },
+      { "Set-Cookie": "session=live-b" },
+    );
+
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).not.toContain("live-a");
+    expect(warnings[0]).not.toContain("live-b");
+    expect(warnings[0]).toContain("위 값은 마스킹되어 표시됩니다");
+  });
+
   it("표시 상한은 차이 판정을 바꾸지 않는다", async () => {
     const long = (fill: string): string => fill.repeat(200);
     const warnings = await duplicateWarning({ note: long("x") }, { note: long("y") });
@@ -743,7 +829,121 @@ describe("cassette IO", () => {
       const loadedSchema = loaded?.tools?.[0]?.inputSchema as
         | { properties?: Record<string, unknown> }
         | undefined;
-      expect(loadedSchema?.properties?.apiKey).toBe("[redacted]");
+      // ADR-0040. properties.apiKey 의 정의 객체 자체는 선언이라 살아남고, 값이 든
+      // default 만 가려진다.
+      expect(loadedSchema?.properties?.apiKey).toStrictEqual({
+        type: "string",
+        default: "[redacted]",
+      });
+      expect(loadedSchema?.properties?.ticker).toStrictEqual({ type: "string" });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("스키마는 재귀하며 프로퍼티 이름으로만 민감도를 판정한다 (ADR-0040)", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "ohmymcp-record-"));
+    const path = join(dir, "schema.cassette.json");
+    const cassette = cassetteWith({
+      toolName: "get_secret",
+      args: { id: 1 },
+      result: ok({ value: "x" }),
+    });
+    cassette.tools = [
+      {
+        name: "get_secret",
+        description: "비밀값을 돌려준다",
+        inputSchema: {
+          type: "object",
+          properties: {
+            auth: {
+              type: "object",
+              properties: {
+                token: { type: "string", default: "nested-secret", const: "nested-secret" },
+              },
+            },
+            token: {
+              type: "array",
+              items: { type: "string", default: "array-secret" },
+            },
+            secret: { type: "string", enum: ["admin-secret", "guest"] },
+            password: { type: "string", examples: ["hint-secret"] },
+            note: { type: "string", default: "안 가려짐" },
+            authSecret: {
+              anyOf: [{ type: "string", default: "안-가려짐-대상-아님" }],
+            },
+            authorization: {
+              type: "object",
+              properties: {
+                value: { type: "string", default: "Bearer inherited-secret" },
+              },
+            },
+          },
+        },
+      },
+    ];
+
+    try {
+      await saveCassette(path, cassette);
+      const loaded = await loadCassette(path);
+      const tool = loaded?.tools?.[0] as {
+        name: string;
+        description?: string;
+        inputSchema: {
+          properties: {
+            auth: { properties: { token: Record<string, unknown> } };
+            token: { items: Record<string, unknown> };
+            secret: { enum: unknown[] };
+            password: { examples: unknown[] };
+            note: Record<string, unknown>;
+            authSecret: { anyOf: unknown[] };
+            authorization: { properties: { value: Record<string, unknown> } };
+          };
+        };
+      };
+
+      // 선언 대상인 이름과 name·description 은 손대지 않는다.
+      expect(tool.name).toBe("get_secret");
+      expect(tool.description).toBe("비밀값을 돌려준다");
+
+      // properties 재귀 — 안쪽 token 의 민감도는 그 이름으로 새로 판정한다.
+      expect(tool.inputSchema.properties.auth.properties.token).toStrictEqual({
+        type: "string",
+        default: "[redacted]",
+        const: "[redacted]",
+      });
+
+      // items 재귀 — 민감도는 부모 프로퍼티 이름(token)에서 물려받는다.
+      expect(tool.inputSchema.properties.token.items).toStrictEqual({
+        type: "string",
+        default: "[redacted]",
+      });
+
+      // enum 은 원소마다 가린다. secret 이라는 이름 자체는 값이 아니므로 프로퍼티 키로는
+      // 남는다.
+      expect(tool.inputSchema.properties.secret.enum).toStrictEqual(["[redacted]", "[redacted]"]);
+
+      // examples 도 원소마다 가린다.
+      expect(tool.inputSchema.properties.password.examples).toStrictEqual(["[redacted]"]);
+
+      // 민감하지 않은 이름의 default 는 그대로 남는다.
+      expect(tool.inputSchema.properties.note).toStrictEqual({
+        type: "string",
+        default: "안 가려짐",
+      });
+
+      // 민감한 이름(authSecret) 아래라도 ADR-0004 가 해석하지 않는 anyOf 는 재귀도
+      // 마스킹도 하지 않는다.
+      expect(tool.inputSchema.properties.authSecret).toStrictEqual({
+        anyOf: [{ type: "string", default: "안-가려짐-대상-아님" }],
+      });
+
+      // 민감도는 properties 를 타고 내려가며 상속된다. value 라는 이름 자체는 민감하지
+      // 않지만, authorization 아래 있으므로 그 default 도 비밀값이다.
+      expect(tool.inputSchema.properties.authorization.properties.value).toStrictEqual({
+        type: "string",
+        default: "[redacted]",
+      });
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

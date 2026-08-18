@@ -449,8 +449,58 @@ CI 파서와 맞는가)을 실측해 닫았다.
   뒤에도 입력값 교정과 저장 흐름이 그대로 이어졌다.
 - `test` 명령에서도 요약 아래 고지 줄이 나오고 종료 코드는 0 그대로였다.
 
-**아직 안 한 것.** 계획서 W5 3번의 공개 서버 3개(`mcp-server-time` · `server-memory` ·
-`mcp-server-calculator`) 대조는 하지 않았다. 기대값은 관찰 기록에 있다(`server-memory` 0건,
-`mcp-server-time` 2건, `mcp-server-calculator` 0건). 표본이 예제 서버 하나뿐이라 **손으로 쓴
-거절이 `unverified` 로 떨어지는 것만 실환경에서 봤고, SDK 검증 지문이 `verified` 로 잡히는 것은
-아직 픽스처로만 검증됐다.**
+### 공개 서버 3개 대조 — 지문 셋이 실환경에서 전부 동작한다
+
+위 문단은 "표본이 예제 서버 하나뿐이라 SDK 검증 지문이 `verified` 로 잡히는 것은 아직 픽스처로만
+검증됐다" 로 남겨 뒀던 자리다. 계획서 W5 3번을 돌려 그것을 닫는다.
+
+| 서버 | SDK | 지문 | 결과 | 기대(픽스처) | 2회 실행 `--json` |
+|---|---|---|---|---|---|
+| `server-memory` | TS | `MCP error -32602:` | verified 16 · **unverified 0** | 0 | 20284 B 동일 |
+| `mcp-server-time` | Python 하위 | `Input validation error:` | verified 8 · **unverified 0** | 0 | 9576 B 동일 |
+| `mcp-server-calculator` | Python FastMCP | `Error executing tool …Arguments` | verified 2 · **unverified 0** | 0 | 3216 B 동일 |
+
+셋 다 기대값과 같다. **지문 셋이 전부 실서버에서 동작한다.** 이제 픽스처로만 검증된 상태가
+아니다. `unverified` 는 세 서버 통틀어 0건이고, 0건일 때 고지 줄이 안 나오는 것도 확인했다.
+
+**셋째 지문의 안전선을 실물로 확인했다.** 설계 §4.1 이 "이 조건을 빼면 서버 결함이 초록으로
+숨는다" 고 적은 그 자리다. `mcp-server-calculator` 를 SDK 로 직접 불러 본문을 떴다.
+
+```
+Error executing tool calculate: 1 validation error for calculateArguments
+                    ^^^^^^^^^                          ^^^^^^^^^
+```
+
+툴 이름이 두 번 나온다. `server-memory` 도 같은 방식으로 확인했다
+(`MCP error -32602: Input validation error: Invalid arguments for tool create_entities: …`).
+도구가 `verified` 라고 말한 것과 실제 응답이 그 지문이라는 것을 따로 확인한 셈이다.
+
+**판정은 안 바뀌었다.** 세 서버에서 실패한 케이스는 `get-current-time-success` ·
+`convert-time-success` · `calculate-success` 셋인데 **전부 `notApplicable`** 이다. 정상 경로가
+도메인 값 때문에 실패한 것이고(예제 서버의 `city: "example"` 과 같은 종류), 거절을 기대한
+케이스는 하나도 실패하지 않았다.
+
+#### 재현 방법
+
+Python 서버는 `mcp<2` 로 고정해야 한다. `mcp` 2.x 에서는 `mcp.shared.exceptions.McpError`
+import 가 깨져 서버가 기동조차 못 한다. 관찰 기록의 `mcp-server-time (mcp<2)` 표기가 그 뜻이다.
+
+```sh
+# TS
+npm pack @modelcontextprotocol/server-memory && npm install   # 풀어서 SDK 설치
+ohmymcp generate --suite-id memory --name m --out m.json   --command node --arg <풀어놓은>/dist/index.js --baseline-only
+ohmymcp test m.json --command node --arg <풀어놓은>/dist/index.js --json
+
+# Python (mcp<2 제약이 핵심이다)
+uv venv pyenv --python 3.11
+VIRTUAL_ENV=pyenv uv pip install mcp-server-time mcp-server-calculator "mcp<2"
+ohmymcp generate --suite-id time --name t --out t.json   --command pyenv/bin/mcp-server-time --baseline-only
+ohmymcp test t.json --command pyenv/bin/mcp-server-time --json
+```
+
+`uvx mcp-server-time` 을 직접 `--command` 로 주면 첫 실행에서 패키지를 받느라
+`HANDSHAKE_TIMEOUT` 이 난다. 미리 설치해 두어야 한다.
+
+**여전히 안 한 것.** Go·JVM 구현 서버는 관찰도 대조도 하지 못했다. 전부 `unverified` 로
+떨어진다. 화이트리스트가 낡는 것도 그대로 남는 위험이라, `@modelcontextprotocol/sdk` 버전을
+올릴 때 `packages/runner/tests/rejection-basis.test.ts` 의 픽스처 테스트를 함께 봐야 한다.

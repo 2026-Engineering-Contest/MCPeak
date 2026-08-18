@@ -1,0 +1,54 @@
+// @vitest-environment jsdom
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import React from "react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { App } from "../src/App.js";
+
+/** 화면들이 마운트 시 부르는 GET을 전부 빈 목록으로 응답하는 fetch fake. */
+function fakeFetch(): typeof fetch {
+  return vi.fn(async () => new Response("[]", { status: 200 })) as unknown as typeof fetch;
+}
+
+const NAV_LABELS = ["Home", "Runs", "Generate", "Cassettes", "Repair"];
+
+describe("app shell", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", fakeFetch());
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+    window.location.hash = "";
+  });
+
+  it("사이드바 라벨이 순서대로 Home, Runs, Generate, Cassettes, Repair다", async () => {
+    window.location.hash = "#/home";
+    render(<App />);
+    const nav = await screen.findByRole("navigation");
+    const links = Array.from(nav.querySelectorAll("a")).map((a) => a.textContent?.trim());
+    expect(links).toEqual(NAV_LABELS);
+  });
+
+  it('해시가 #/cassettes면 Cassettes 화면이 렌더되고 해당 항목만 aria-current="page"다', async () => {
+    window.location.hash = "#/cassettes";
+    render(<App />);
+    // CassetteBrowser 목록 상태의 헤딩(본문 문구는 한국어 유지).
+    expect(await screen.findByRole("heading", { name: "카세트" })).toBeTruthy();
+    const current = document.querySelectorAll('[aria-current="page"]');
+    expect(current).toHaveLength(1);
+    expect(current[0]?.textContent?.trim()).toBe("Cassettes");
+  });
+
+  it("해시가 비어 있으면 #/home으로 온다", async () => {
+    window.location.hash = "";
+    render(<App />);
+    await waitFor(() => {
+      expect(window.location.hash).toBe("#/home");
+    });
+    expect(await screen.findByRole("heading", { name: "홈" })).toBeTruthy();
+    const current = document.querySelectorAll('[aria-current="page"]');
+    expect(current).toHaveLength(1);
+    expect(current[0]?.textContent?.trim()).toBe("Home");
+  });
+});

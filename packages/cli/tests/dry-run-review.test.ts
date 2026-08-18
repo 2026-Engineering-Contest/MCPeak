@@ -48,6 +48,7 @@ const outcome = (
   caseName: `${caseId} 케이스`,
   status,
   detail,
+  rejectionBasis: "notApplicable",
 });
 
 const resultOf = (outcomes: readonly DryRunCaseOutcome[]): DryRunResult => ({ outcomes });

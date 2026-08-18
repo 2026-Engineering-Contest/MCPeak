@@ -49,6 +49,7 @@ const fakeDryRun =
         caseName: item.name,
         status: passes ? ("passed" as const) : ("failed" as const),
         detail: "",
+        rejectionBasis: "notApplicable" as const,
       })),
       ...(options.abort === true
         ? { aborted: { reason: "connectionLost" as const, detail: "끊김" } }

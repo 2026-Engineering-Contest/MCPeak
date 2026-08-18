@@ -2122,6 +2122,88 @@ describe("generate 시험 실행 게이트", () => {
     ),
   ).length;
 
+  /**
+   * 거절 근거 미확인 목록 (#89 · 설계 문서 §5.2). 문안이 곧 제품이라 글자 그대로 못 박는다.
+   * 이 케이스들은 **통과했다.** 목록이 판정을 바꾸지 않는다는 것도 함께 단언한다.
+   */
+  describe("거절 근거 미확인 목록", () => {
+    /** 위반 케이스를 서버가 거절하되 지문 종류를 골라 준다. 정상 케이스는 그대로 통과한다. */
+    const rejectWith = (body: string) => (_name: string, args: unknown) =>
+      (args as { city?: unknown })?.city === undefined ||
+      typeof (args as { city?: unknown }).city !== "string"
+        ? ({ content: [{ type: "text", text: body }], isError: true, raw: null } as ToolResult)
+        : ok();
+
+    it("미확인 케이스가 없으면 블록이 안 나온다", async () => {
+      // TS SDK 지문이라 전부 verified 다.
+      const d = gateDeps({
+        choices: ["save", "cancel"],
+        confirms: [true],
+        respond: rejectWith("MCP error -32602: Input validation error: bad city"),
+      });
+      await runGenerateCommand(gateArgv, d.value);
+      expect(d.output()).not.toContain("거절 근거 미확인");
+    });
+
+    it("미확인 케이스를 id 와 응답 한 줄로 나열한다", async () => {
+      const d = gateDeps({
+        choices: ["save", "cancel"],
+        confirms: [true],
+        respond: rejectWith("→ 'city' 는 문자열이어야 합니다."),
+      });
+      await runGenerateCommand(gateArgv, d.value);
+      const text = d.output();
+      expect(text).toContain(`거절 근거 미확인 ${failingCases}건`);
+      expect(text).toContain("응답: → 'city' 는 문자열이어야 합니다.");
+      expect(text).toContain("  이 응답이 서버의 정상 거절인지 내부 오류인지 확인하지 못했습니다.");
+    });
+
+    it("여러 줄 응답을 한 줄로 자르고 제어 문자를 이스케이프한다", async () => {
+      const d = gateDeps({
+        choices: ["save", "cancel"],
+        confirms: [true],
+        respond: rejectWith("첫 줄\n[31m빨강"),
+      });
+      await runGenerateCommand(gateArgv, d.value);
+      const lines = d.output().split("\n");
+      const listed = lines.filter((line) => line.includes("응답: "));
+      expect(listed).toHaveLength(failingCases);
+      for (const line of listed) expect(line).toContain("첫 줄\\u000a\\u001b[31m빨강");
+      // ESC 가 그대로 나가면 안 된다.
+      expect(d.output()).not.toContain("");
+    });
+
+    it("id 열을 맞춰 응답을 정렬한다", async () => {
+      const d = gateDeps({
+        choices: ["save", "cancel"],
+        confirms: [true],
+        respond: rejectWith("→ 손으로 쓴 거절"),
+      });
+      await runGenerateCommand(gateArgv, d.value);
+      const columns = d
+        .output()
+        .split("\n")
+        .filter((line) => line.includes("응답: "))
+        .map((line) => line.indexOf("응답: "));
+      expect(new Set(columns).size).toBe(1);
+    });
+
+    it("목록은 판정도 저장도 바꾸지 않는다", async () => {
+      const d = gateDeps({
+        choices: ["save"],
+        confirms: [true, true],
+        respond: rejectWith("→ 'city' 는 문자열이어야 합니다."),
+      });
+      await expect(runGenerateCommand(gateArgv, d.value)).resolves.toBe(0);
+      // 미확인이어도 케이스는 통과다. 분류를 묻지 않고 저장까지 간다.
+      expect(d.io.input).not.toHaveBeenCalled();
+      expect(d.output()).toContain(`  ✓ 통과 ${baselineCases.length}건`);
+      expect(d.output()).not.toContain("✗ 실패");
+      const cases = d.savedSuite()?.approval.cases ?? [];
+      expect(cases.every((item) => item.status === "passed")).toBe(true);
+    });
+  });
+
   it("기본 경로에서 시험 실행 고지가 나오고 거절하면 저장하지 않는다", async () => {
     const d = gateDeps({ choices: ["save", "cancel"], confirms: [false] });
     await expect(runGenerateCommand(gateArgv, d.value)).resolves.toBe(0);

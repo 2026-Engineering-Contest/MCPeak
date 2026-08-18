@@ -43,6 +43,7 @@ import { applyPreFill, dropSkippedTools, unknownFormatSkips } from "./pre-fill-w
 import type { ProcessDiagnosticsInput } from "./process-diagnostics.js";
 import { hasDiagnosticContent, renderProcessDiagnostics } from "./process-diagnostics.js";
 import { proposeRepair } from "./repair-proposal.js";
+import { escapeTerminalText } from "./repair-render.js";
 import type { RepairAttempt } from "./repair-target.js";
 import { selectRepairTargets } from "./repair-target.js";
 import { ResetCommandError, runResetCommand } from "./reset-hook.js";
@@ -836,6 +837,40 @@ function writeDryRunResult(io: ReviewIO, result: DryRunResult): void {
   if (failures.length > 0) io.write("\n");
 }
 
+/**
+ * 거절 근거 미확인 목록 (#89 · 설계 문서 §5.2). 시험 실행 결과 블록 바로 아래에 붙는다.
+ *
+ * **이 케이스들은 통과했다.** 목록은 판정도 저장 여부도 바꾸지 않는다. `unverified` 는
+ * "거절이 아니다" 가 아니라 "확인하지 못했다" 는 뜻이라, 문장이 실패나 결함이라고 말하지 않고
+ * 무엇을 확인하지 못했는지만 적는다. 0건이면 아무것도 안 찍는다.
+ *
+ * 응답 본문은 `escapeTerminalText` 를 그대로 쓴다. 그 함수가 개행(0x0a)까지 이스케이프하므로
+ * 여러 줄 응답이 한 줄이 되고 제어 문자도 함께 무해해진다. 자르기는 `runner` 가 이미 진단 값과
+ * 같은 상한에서 했다(`clampObservedText`). 여기서 규칙을 새로 만들지 않는다.
+ */
+function writeRejectionUnverified(io: ReviewIO, result: DryRunResult): void {
+  const unverified = result.outcomes.filter((outcome) => outcome.rejectionBasis === "unverified");
+  if (unverified.length === 0) return;
+  // 열은 이스케이프한 뒤의 폭으로 맞춘다. 순서를 뒤집으면 열이 어긋난다(reporter.ts 와 같다).
+  const ids = unverified.map((outcome) => escapeTerminalText(outcome.caseId));
+  const column = Math.max(...ids.map((id) => Array.from(id).length));
+  io.write(`\n거절 근거 미확인 ${unverified.length}건\n`);
+  for (const [index, outcome] of unverified.entries()) {
+    const id = ids[index] ?? "";
+    const pad = " ".repeat(Math.max(0, column - Array.from(id).length));
+    // 본문이 없는 케이스가 있다. 호출이 오류로 끝나면 읽을 응답 자체가 없다(설계 §4.2).
+    // 그 사실을 빈칸으로 두지 않고 적는다. 무엇을 못 봤는지가 사용자의 판단 재료다.
+    const body =
+      outcome.rejectionBody === undefined
+        ? "(본문 없음)"
+        : escapeTerminalText(outcome.rejectionBody);
+    io.write(`  → ${id}${pad}   응답: ${body}\n`);
+  }
+  // 뒤에 이어지는 질문과 띄운다. 붙으면 안내 문장이 그 질문의 일부처럼 읽힌다.
+  // `writeDryRunResult` 가 실패 목록 뒤에 같은 이유로 빈 줄을 넣는다.
+  io.write("  이 응답이 서버의 정상 거절인지 내부 오류인지 확인하지 못했습니다.\n\n");
+}
+
 /** 교정으로 바뀐 값 한 줄. 반영 요약(§8.8)이 쓴다. */
 interface RepairApplication {
   readonly tool: string;
@@ -1095,6 +1130,9 @@ async function runInteractiveReview(
             continue;
           }
           writeDryRunResult(io, result);
+          // 거절 근거 미확인 목록(§5.2). 결과 블록 바로 아래다. 판정을 바꾸지 않으므로 아래
+          // 교정·분류 흐름은 이 값을 읽지 않는다.
+          writeRejectionUnverified(io, result);
           // 9. 입력값 교정(§4). 대상이 없으면 아무것도 묻지 않는다.
           // AI 제안은 `--provider` 가 있을 때만 쓴다. 별도 옵션을 두지 않는다(§7).
           const repairProvider =

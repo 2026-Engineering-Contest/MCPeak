@@ -144,8 +144,10 @@ export interface Cassette {
 비밀값은 카세트 저장 전에 문자열 `"[redacted]"`로 마스킹한다. 첫 버전의 기본 마스킹
 대상은 아래 문자열을 이름에 포함하는 필드다. 대소문자는 구분하지 않는다.
 
-> **개정 제안 중 — ADR-0039.** `cookie` · `set-cookie` 가 빠져 있고, 이름 **포함**
-> 방식이라 `tokenCount` 처럼 비밀값이 아닌 필드도 걸린다.
+> **개정 제안 중 — ADR-0039.** 이 목록에 `cookie` 가 빠져 있다. 위 항목들이 정규화된
+> 형태(구분자 제거 · 소문자)로 비교되므로 `Set-Cookie` 는 `setcookie` 로 조회되며, 목록에
+> `cookie` 만 넣어도 접미 규칙으로 함께 걸린다. 동시에 이름 **포함** 방식이라 `tokenCount`
+> 처럼 비밀값이 아닌 필드도 걸린다.
 
 - `authorization`
 - `apiKey`
@@ -165,7 +167,9 @@ export interface Cassette {
 
 > **개정 제안 중 — ADR-0041.** 응답 마스킹이 `onFlush` 에서만 걸리므로 `record` 실행은
 > 원문을, `replay` 실행은 마스킹된 값을 돌려준다. 0041 은 "런타임 내부 원문 유지"는
-> 그대로 두고 `callTool` 반환 경계를 추가하는 방향이다.
+> 그대로 두고 **`callTool` 과 `listTools` 두 반환 경계**를 추가하는 방향이다.
+> `listTools` 도 `replay` 는 카세트의 `tools` 를, `record` 는 실서버 원문을 돌려주므로
+> 같은 비대칭을 갖는다.
 >
 > **개정 제안 중 — ADR-0040.** `tools` 에 같은 규칙을 걸면 `inputSchema` 의 프로퍼티
 > 정의 객체가 문자열로 치환되어 스키마가 파괴된다.

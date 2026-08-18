@@ -295,7 +295,9 @@ describe("normalizeThrownValue", () => {
       depth += 1;
       current = (current as { cause: unknown }).cause;
     }
-    expect(depth).toBeLessThanOrEqual(3);
+    // 순환 체인은 cause 가 항상 있으므로 정확히 상한만큼 내려간다. 이하가 아니라 일치로
+    // 단언해야 상한이 조용히 줄어드는 회귀도 잡는다.
+    expect(depth).toBe(3);
   });
 
   it("Error 가 아닌 cause 도 정규화해 싣는다", () => {

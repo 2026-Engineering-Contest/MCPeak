@@ -358,8 +358,8 @@ export function runSuite(options: RunSuiteOptions): RunnerExecution {
       // ADR-0027 이 정한 배선을 바꾸는 것이라 이 설계의 비범위다.
       const expectsRejection = expectedIsError(spec) === true;
       const extraction = expectsRejection ? readBody() : undefined;
-      // 문자열로 읽힌 본문만 지문 대조 대상이다. JSON 으로 파싱된 본문은 오류 문장이 아니고
-      // (관찰 80건이 전부 text 한 블록이다), 못 읽었으면 확인할 것이 없다.
+      // 문자열로 읽힌 본문만 **지문 대조** 대상이다. 지문 셋이 전부 문장 접두어라 JSON 으로
+      // 파싱된 본문에는 대조할 것이 없다(관찰 80건이 전부 text 한 블록이다).
       const bodyText =
         extraction?.ok === true && typeof extraction.body === "string" ? extraction.body : null;
       const rejectionBasis = classifyRejectionBasis({
@@ -367,6 +367,15 @@ export function runSuite(options: RunSuiteOptions): RunnerExecution {
         toolName: spec.operation.type === "callTool" ? spec.operation.tool : null,
         bodyText,
       });
+      // **표시용 본문은 대조용과 다른 목적이라 판정이 다르다.** JSON 오류 본문은 사람이 거절과
+      // 크래시를 가늠하기에 오히려 좋은 재료다. 대조에서 뺐다고 표시에서까지 빼면 서버가 분명히
+      // 보낸 본문이 승인 화면에 "(본문 없음)" 으로 찍혀 사용자에게 거짓을 말하게 된다.
+      const displayBody =
+        extraction?.ok !== true
+          ? null
+          : typeof extraction.body === "string"
+            ? extraction.body
+            : (JSON.stringify(extraction.body) ?? null);
       const caseResult: TestCaseResult = {
         spec: observed,
         status:
@@ -383,8 +392,8 @@ export function runSuite(options: RunSuiteOptions): RunnerExecution {
         // 확인 못 한 케이스만 본문을 싣는다. `verified` 는 사람이 다시 볼 이유가 없고,
         // 전량을 실으면 통과한 모든 케이스의 응답이 보고서에 들어간다. 키는 값이 있을 때만
         // 만든다 — `undefined` 로 넣으면 기존 보고서의 JSON 바이트가 흔들린다.
-        ...(rejectionBasis === "unverified" && bodyText !== null
-          ? { rejectionBody: clampObservedText(bodyText, options.redaction) }
+        ...(rejectionBasis === "unverified" && displayBody !== null
+          ? { rejectionBody: clampObservedText(displayBody, options.redaction) }
           : {}),
       };
       cases.push(caseResult);

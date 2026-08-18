@@ -623,6 +623,23 @@ describe("runSuite와 bodyMatchesSchema", () => {
       expect(report.cases[0]).not.toHaveProperty("rejectionBody");
     });
 
+    /**
+     * 지문 대조에서 JSON 을 뺀 것을 표시에서까지 빼면, 서버가 분명히 보낸 본문이 승인 화면에
+     * "(본문 없음)" 으로 찍힌다. 사용자에게 거짓을 말하는 것이고, JSON 오류 본문은 사람이
+     * 판단하기에 오히려 좋은 재료다.
+     */
+    it("JSON 오류 본문도 직렬화해서 싣는다", async () => {
+      const report = await runSuite({
+        client: respondWith('{"error":"city must be a string","code":"BAD_INPUT"}'),
+        suite: rejectionSuite("json-body"),
+      }).report;
+      // 지문 대조에는 안 쓴다. 여전히 확인 못 한 것이 맞다.
+      expect(report.cases[0]?.rejectionBasis).toBe("unverified");
+      expect(report.cases[0]?.rejectionBody).toBe(
+        '{"error":"city must be a string","code":"BAD_INPUT"}',
+      );
+    });
+
     it("본문이 없으면 키를 만들지 않는다", async () => {
       const report = await runSuite({
         client: {

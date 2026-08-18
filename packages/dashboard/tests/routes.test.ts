@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { RunEvent, StartRunRequest } from "../src/api-types.js";
+import { startDashboardServer } from "../src/index.js";
 import { handleRequest } from "../src/server/routes.js";
 import type { RunIo } from "../src/server/run-registry.js";
 import { RunRegistry } from "../src/server/run-registry.js";
@@ -117,10 +118,13 @@ async function collectSseEvents(
   return events;
 }
 
-let server: TestServer;
+let server: TestServer | undefined;
 
 afterEach(async () => {
-  await server.close();
+  if (server !== undefined) {
+    await server.close();
+    server = undefined;
+  }
 });
 
 describe("routes.ts", () => {
@@ -351,6 +355,31 @@ describe("routes.ts", () => {
       });
     } finally {
       await chmod(locked, 0o700);
+    }
+  });
+
+  it("분류하지 않은 파일 시스템 오류는 상위 generic 500 응답으로 전파한다", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ohmymcp-dashboard-generic-error-"));
+    const dashboard = await startDashboardServer({ port: 0, root });
+    const tooLongName = `${"a".repeat(300)}.json`;
+
+    try {
+      const response = await fetch(
+        `http://127.0.0.1:${dashboard.port}/api/suites/${encodeURIComponent(tooLongName)}`,
+        {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ content: JSON.stringify(VALID_SUITE), baseMtimeMs: 0 }),
+        },
+      );
+
+      expect(response.status).toBe(500);
+      await expect(response.json()).resolves.toEqual({
+        error: expect.stringContaining("서버 내부 오류:"),
+      });
+    } finally {
+      await dashboard.close();
+      await rm(root, { recursive: true, force: true });
     }
   });
 });

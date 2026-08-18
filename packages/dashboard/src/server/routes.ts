@@ -209,7 +209,7 @@ async function handlePutFile(
       sendJson(response, 400, { error: message });
       return;
     }
-    sendJson(response, 500, { error: "파일을 저장하는 중 알 수 없는 오류가 발생했습니다." });
+    throw error;
   }
 }
 
@@ -292,7 +292,7 @@ function handleGetRun(response: ServerResponse, registry: RunRegistry, runId: st
 }
 
 /**
- * SSE 구독. 과거 이벤트를 동기 구간에서 먼저 흘려보낸 뒤 바로 구독한다 — 그 사이에는
+ * SSE 구독. 과거 이벤트를 동기 구간에서 먼저 흘려보낸 뒤 바로 구독한다. 그 사이에는
  * `await`가 없어 다른 이벤트가 끼어들 여지가 없다(중복·누락 방지, 계획서 §5 T2 사양).
  */
 function handleRunEvents(

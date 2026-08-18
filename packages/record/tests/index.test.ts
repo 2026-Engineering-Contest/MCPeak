@@ -504,6 +504,87 @@ describe("cassetteClient", () => {
     expect(flushed[0]?.interactions[0]?.response.raw).toStrictEqual({ price: 187.4 });
   });
 
+  /** 같은 요청에 두 응답을 녹화해 중복 경고를 얻는다. */
+  const duplicateWarning = async (first: unknown, second: unknown): Promise<string[]> => {
+    const warnings: string[] = [];
+    const inner = fakeClient([ok(first), ok(second)]);
+    const client = cassetteClient(inner, {
+      cassette: null,
+      mode: "record",
+      onWarning: (message) => warnings.push(message),
+      onFlush: async () => {},
+    });
+
+    await client.callTool("get_stock", { ticker: "AAPL" });
+    await client.callTool("get_stock", { ticker: "AAPL" });
+    await client.close();
+    return warnings;
+  };
+
+  it("중복 응답 경고는 비밀값 원문 대신 마스킹된 값을 보여준다", async () => {
+    const warnings = await duplicateWarning({ token: "secret-a" }, { token: "secret-b" });
+
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain('1회차 raw.token: "[redacted]" / 2회차 raw.token: "[redacted]"');
+    // 이 두 줄이 회귀의 본체다. 경고는 stderr 로 나간다.
+    expect(warnings[0]).not.toContain("secret-a");
+    expect(warnings[0]).not.toContain("secret-b");
+    expect(warnings[0]).toContain("위 값은 마스킹되어 표시됩니다");
+  });
+
+  it("비밀값이 같으면 중복 경고를 내지 않는다", async () => {
+    // 마스킹한 값으로 비교하면 secret-a 와 secret-b 도 같아진다. 반대로 민감 키를 무조건
+    // 차이로 보고하면 이 케이스가 깨진다. 판정이 원문 기준이라는 것을 이 둘이 함께 고정한다.
+    const warnings = await duplicateWarning({ token: "secret-a" }, { token: "secret-a" });
+
+    expect(warnings).toStrictEqual([]);
+  });
+
+  it("민감하지 않은 필드의 차이는 값을 그대로 보여준다", async () => {
+    const warnings = await duplicateWarning(
+      { token: "secret-a", city: "Seoul" },
+      { token: "secret-a", city: "Busan" },
+    );
+
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain('1회차 raw.city: "Seoul" / 2회차 raw.city: "Busan"');
+    expect(warnings[0]).not.toContain("raw.token");
+    expect(warnings[0]).not.toContain("위 값은 마스킹되어 표시됩니다");
+  });
+
+  it("중첩된 비밀값도 경로를 유지한 채 마스킹된다", async () => {
+    const warnings = await duplicateWarning(
+      { auth: { token: "secret-a" } },
+      { auth: { token: "secret-b" } },
+    );
+
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain(
+      '1회차 raw.auth.token: "[redacted]" / 2회차 raw.auth.token: "[redacted]"',
+    );
+    expect(warnings[0]).not.toContain("secret-a");
+  });
+
+  it("객체 단위 차이는 안쪽 비밀값만 지우고 형제 필드는 보여준다", async () => {
+    const warnings = await duplicateWarning({ data: { token: "secret-a", city: "Seoul" } }, {});
+
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain(
+      '1회차 raw.data: {"city":"Seoul","token":"[redacted]"} / 2회차 raw.data: <없음>',
+    );
+    expect(warnings[0]).not.toContain("secret-a");
+  });
+
+  it("표시 상한은 차이 판정을 바꾸지 않는다", async () => {
+    const long = (fill: string): string => fill.repeat(200);
+    const warnings = await duplicateWarning({ note: long("x") }, { note: long("y") });
+
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("1회차 raw.note:");
+    expect(warnings[0]).toContain("…");
+    expect(warnings[0]).not.toContain(long("x"));
+  });
+
   it("close 는 flush 후 inner.close 를 호출한다", async () => {
     const events: string[] = [];
     const inner: McpClient = {

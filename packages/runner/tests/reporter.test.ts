@@ -332,6 +332,36 @@ describe("renderReport", () => {
     );
   });
 
+  it("케이스 레벨 진단의 notes 를 → 줄로 그린다", () => {
+    // 서버가 준 거절 이유가 notes 에 실린다(adoption.md §2.5 넷째). 안 그리면 executor 가
+    // 살려 온 이유를 화면이 다시 버린다.
+    const report = makeReport([
+      testCase({
+        id: "research",
+        name: "research 시뮬레이션",
+        status: "failed",
+        operationDiagnostic: {
+          code: "OPERATION_FAILED",
+          message: "툴 'simulate-research-query' 호출 중 오류가 발생했습니다.",
+          hint: "MCP 서버 프로세스와 연결 상태를 확인하세요.",
+          notes: [
+            "원인: MCP error -32601: Tool simulate-research-query requires task augmentation (taskSupport: 'required')",
+          ],
+        },
+        assertions: [assertion("isError", "skipped")],
+      }),
+    ]);
+
+    const output = renderReport(report);
+    expect(output).toContain(
+      "    → 원인: MCP error -32601: Tool simulate-research-query requires task augmentation (taskSupport: 'required')",
+    );
+    // notes 는 message 와 hint 사이다. 이유를 보고 나서 해결을 읽는 순서다.
+    const noteIndex = output.indexOf("→ 원인:");
+    expect(noteIndex).toBeGreaterThan(output.indexOf("호출 중 오류가 발생했습니다."));
+    expect(noteIndex).toBeLessThan(output.indexOf("해결: MCP 서버 프로세스와"));
+  });
+
   it("passed 케이스의 operation 진단은 그리지 않는다", () => {
     const report = makeReport([
       testCase({

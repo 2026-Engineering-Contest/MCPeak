@@ -61,7 +61,7 @@ export interface RunnerDiagnostic {
 }
 
 export type NormalizedThrownValue =
-  | { type: "error"; name: string; message: string }
+  | { type: "error"; name: string; message: string; cause?: NormalizedThrownValue }
   | { type: "thrown"; value: string | number | boolean | null }
   | { type: "number"; value: string }
   | { type: "undefined" }
@@ -70,9 +70,30 @@ export type NormalizedThrownValue =
   | { type: "function"; name: string | null }
   | { type: "object" };
 
+/**
+ * cause 체인을 따라 내려가는 상한. 순환 cause 에서 무한히 내려가는 것을 막는다.
+ * 실측 체인은 2단계다(core 의 McpClientError → SDK 의 McpError). 3이면 여유다.
+ */
+const MAX_CAUSE_DEPTH = 3;
+
 export function normalizeThrownValue(value: unknown): NormalizedThrownValue {
+  return normalizeWithDepth(value, 0);
+}
+
+function normalizeWithDepth(value: unknown, depth: number): NormalizedThrownValue {
   if (value instanceof Error) {
-    return { type: "error", name: value.name, message: value.message };
+    // cause 를 버리면 안 된다. 서버가 준 거절 이유(예: `requires task augmentation`)는
+    // core 가 cause 에 보존하는데, 여기서 떨어뜨리면 화면이 우리 사전 문장까지만 말하게
+    // 된다(adoption.md §2.5 넷째). 키는 값이 있을 때만 만든다 — undefined 로 넣으면
+    // 기존 보고서의 JSON 바이트가 흔들린다.
+    return {
+      type: "error",
+      name: value.name,
+      message: value.message,
+      ...(value.cause !== undefined && depth < MAX_CAUSE_DEPTH
+        ? { cause: normalizeWithDepth(value.cause, depth + 1) }
+        : {}),
+    };
   }
   if (value === null || typeof value === "string" || typeof value === "boolean") {
     return { type: "thrown", value };

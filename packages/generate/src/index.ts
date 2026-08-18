@@ -133,6 +133,23 @@ export {
   createCodexProvider,
   PROVIDER_ENV_ALLOWLIST,
 } from "./providers.js";
+export type {
+  RejectionDiagnosisCase,
+  RejectionDiagnosisDispatchResult,
+  RejectionDiagnosisProvider,
+  RejectionDiagnosisRequest,
+  RejectionDiagnosisResult,
+  RejectionDiagnosisValidation,
+  RejectionVerdict,
+} from "./rejection-diagnosis.js";
+export {
+  buildRejectionDiagnosisProviderSchema,
+  dispatchRejectionDiagnosis,
+  prepareRejectionDiagnosisRequests,
+  REJECTION_MAX_REASON_CHARS,
+  rejectionDiagnosisPrompt,
+  validateRejectionDiagnosisResults,
+} from "./rejection-diagnosis.js";
 export type { GenerateTestsErrorCode } from "./schema.js";
 export { GenerateTestsError } from "./schema.js";
 export { buildViolationCases, type GeneratedCase } from "./violation-cases.js";

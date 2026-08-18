@@ -272,11 +272,11 @@ export function cassetteClient(inner: McpClient, options: CassetteClientOptions)
             ].join("\n"),
           );
         }
-        return cloneJson(cassette.tools, "tools") as ToolDef[];
+        return redactTools(cloneJson(cassette.tools, "tools") as ToolDef[]);
       }
 
       if (mode === "auto" && cassette.tools !== undefined) {
-        return cloneJson(cassette.tools, "tools") as ToolDef[];
+        return redactTools(cloneJson(cassette.tools, "tools") as ToolDef[]);
       }
 
       const tools = await inner.listTools();
@@ -285,7 +285,9 @@ export function cassetteClient(inner: McpClient, options: CassetteClientOptions)
       } catch (error) {
         recordingFailures.push(cassetteRecordingFailure("listTools()", error));
       }
-      return tools;
+      // redactTools 는 이름으로만 판정하고 JSON 클론 가능성을 요구하지 않으므로, 위 cloneJson
+      // 실패 여부와 무관하게 안전하다 (ADR-0041).
+      return redactTools(tools);
     },
 
     async callTool(toolName, args) {
@@ -300,12 +302,15 @@ export function cassetteClient(inner: McpClient, options: CassetteClientOptions)
 
         const result = await inner.callTool(toolName, args);
         recordingFailures.push(cassetteRecordingFailure(displayRequest(toolName, args), error));
+        // 카세트로 클론할 수 없는 응답에 redact(JSON 클론을 전제한다)를 걸면 여기서 다시
+        // 던져 실호출 결과를 돌려준다는 이 분기의 존재 이유가 무너진다. 마스킹 없이 원문을
+        // 돌려준다 — 녹화 실패는 close() 가 이미 보고한다.
         return result;
       }
       const existing = interactions.get(key);
 
       if ((mode === "replay" || mode === "auto") && existing !== undefined) {
-        return cloneResponse(existing.response);
+        return redactToolResult(cloneResponse(existing.response));
       }
 
       if (mode === "replay") {
@@ -318,6 +323,7 @@ export function cassetteClient(inner: McpClient, options: CassetteClientOptions)
         next = toInteraction(key, toolName, args, result);
       } catch (error) {
         recordingFailures.push(cassetteRecordingFailure(displayRequest(toolName, args), error));
+        // 위와 같은 이유로 원문을 돌려준다.
         return result;
       }
       if (existing === undefined) {
@@ -326,7 +332,9 @@ export function cassetteClient(inner: McpClient, options: CassetteClientOptions)
       } else if (!sameJson(existing.response, next.response)) {
         options.onWarning?.(duplicateResponseMessage(toolName, args, existing, next));
       }
-      return result;
+      // toInteraction 이 성공했으므로 content·raw 는 JSON 클론 가능함이 증명됐다 — redact 가
+      // 던질 일이 없다.
+      return redactToolResult(result);
     },
 
     async close() {
@@ -535,6 +543,17 @@ function redactTools(tools: readonly ToolDef[]): ToolDef[] {
     ...(tool.description === undefined ? {} : { description: tool.description }),
     inputSchema: redactSchema(tool.inputSchema, false),
   }));
+}
+
+/**
+ * `callTool` 반환값을 마스킹한다. 값이 프로세스 밖으로 나가는 경계 중 하나다 (ADR-0041).
+ *
+ * 호출자는 `content`·`raw`가 JSON 클론 가능함을 이미 증명한 뒤에만 이 함수를 불러야 한다 —
+ * `redact` 는 클론 불가능한 값(Date·순환 참조·비유한수 등)에 던진다. 녹화 실패 fallback
+ * 분기(카세트에 담을 수 없는 응답)는 이 함수를 부르지 않고 원문을 그대로 돌려준다.
+ */
+function redactToolResult(result: ToolResult): ToolResult {
+  return { content: redact(result.content), isError: result.isError, raw: redact(result.raw) };
 }
 
 /**

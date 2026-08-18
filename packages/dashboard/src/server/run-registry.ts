@@ -1,4 +1,10 @@
-import type { RunEvent, RunStatus, RunSummary, StartRunRequest } from "../api-types.js";
+import type {
+  RunEvent,
+  RunEventInput,
+  RunStatus,
+  RunSummary,
+  StartRunRequest,
+} from "../api-types.js";
 import { ansiToHtml } from "./ansi.js";
 import { WebReviewIO } from "./review-bridge.js";
 
@@ -122,9 +128,10 @@ class RunRecord implements RunHandle {
     this.emit({ kind: "done", exitCode });
   }
 
-  private emit(event: RunEvent): void {
-    this.accumulated.push(event);
-    for (const listener of this.listeners) listener(event);
+  private emit(event: RunEventInput): void {
+    const identified = { ...event, id: this.accumulated.length + 1 } as RunEvent;
+    this.accumulated.push(identified);
+    for (const listener of this.listeners) listener(identified);
   }
 }
 

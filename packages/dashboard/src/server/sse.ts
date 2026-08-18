@@ -1,14 +1,13 @@
 import type { RunEvent } from "../api-types.js";
 
 /**
- * SSE 직렬화 유틸. 한 이벤트가 `data: <JSON>\n\n` 한 덩어리다.
+ * SSE 직렬화 유틸. 한 이벤트가 `id:`와 `data:`를 가진 한 덩어리다.
  *
- * 여기에는 타임스탬프나 일련번호처럼 호출 시점마다 달라지는 값을 절대 넣지 않는다.
- * 같은 이벤트 배열이면 같은 바이트가 나와야 늦은 구독자에게 과거 이벤트를 다시
- * 흘려보낸 결과가 처음 흘려보낸 결과와 같아진다. 재생 결정론이 그 위에 선다.
+ * id는 RunRecord가 이벤트 발생 순서로 붙인 값이다. 같은 이벤트 배열은 항상 같은
+ * id와 바이트를 내므로 Last-Event-ID 재연결도 결정론적이다.
  */
 export function formatSseEvent(event: RunEvent): string {
-  return `data: ${JSON.stringify(event)}\n\n`;
+  return `id: ${event.id}\ndata: ${JSON.stringify(event)}\n\n`;
 }
 
 /** 과거 이벤트 전체 선전송용. 순서를 그대로 유지한 채 이어 붙인다. */

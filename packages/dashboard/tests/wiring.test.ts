@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
-import type { RunEvent } from "../src/api-types.js";
+import type { RunEventInput } from "../src/api-types.js";
 import { WebReviewIO } from "../src/server/review-bridge.js";
 import type { RunIo } from "../src/server/run-registry.js";
 import { executeFlow } from "../src/server/wiring.js";
 
 /** wiring.ts가 조립 결과를 검사할 수 있도록 캡처만 하고 아무 것도 하지 않는 IO. */
 function fakeIo(): RunIo {
-  const events: RunEvent[] = [];
+  const events: RunEventInput[] = [];
   return {
     writeStdout: (text) => {
       events.push({ kind: "stdout", html: text });

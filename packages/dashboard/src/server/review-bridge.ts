@@ -1,5 +1,5 @@
 import type { ReviewIO } from "ohmymcp/commands";
-import type { PendingQuestion, RunEvent } from "../api-types.js";
+import type { PendingQuestion, RunEventInput } from "../api-types.js";
 import { ansiToHtml } from "./ansi.js";
 
 /**
@@ -14,7 +14,7 @@ export class WebReviewIO implements ReviewIO {
   } | null = null;
   private counter = 0;
 
-  constructor(private readonly emit: (event: RunEvent) => void) {}
+  constructor(private readonly emit: (event: RunEventInput) => void) {}
 
   write(text: string): void {
     this.emit({ kind: "stdout", html: ansiToHtml(text) });

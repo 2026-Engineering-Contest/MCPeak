@@ -1,9 +1,12 @@
-/** SSE `data:` 페이로드. 한 줄에 JSON 하나. */
-export type RunEvent =
+/** 실행 도중 발생하는 이벤트 본문. RunRecord 경계에서 run별 id를 붙인다. */
+export type RunEventInput =
   | { readonly kind: "stdout"; readonly html: string }
   | { readonly kind: "stderr"; readonly html: string }
   | { readonly kind: "question"; readonly question: PendingQuestion }
   | { readonly kind: "done"; readonly exitCode: number };
+
+/** SSE `data:` 페이로드. id는 run 안에서 1부터 단조 증가하는 재연결 cursor다. */
+export type RunEvent = RunEventInput & { readonly id: number };
 
 /** 대화형 승인 질문. CLI 플로우가 순차적이므로 동시에 최대 1개만 pending이다. */
 export type PendingQuestion =

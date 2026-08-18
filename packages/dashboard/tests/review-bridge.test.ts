@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { RunEvent } from "../src/api-types.js";
+import type { RunEventInput } from "../src/api-types.js";
 import { WebReviewIO } from "../src/server/review-bridge.js";
 
 /** 마이크로태스크·타이머 큐를 한 바퀴 비운다. 답변 뒤 후속 질문이 나갈 틈을 준다. */
@@ -9,8 +9,8 @@ function tick(): Promise<void> {
   });
 }
 
-function make(): { io: WebReviewIO; events: RunEvent[] } {
-  const events: RunEvent[] = [];
+function make(): { io: WebReviewIO; events: RunEventInput[] } {
+  const events: RunEventInput[] = [];
   const io = new WebReviewIO((event) => {
     events.push(event);
   });

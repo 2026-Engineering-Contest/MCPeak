@@ -43,16 +43,65 @@ describe("useRunEvents", () => {
     expect(source).toBeDefined();
 
     act(() => {
-      source?.emit({ kind: "stdout", html: "첫 줄" });
+      source?.emit({ kind: "stdout", html: "첫 줄", id: 1 });
     });
     act(() => {
-      source?.emit({ kind: "stdout", html: "둘째 줄" });
+      source?.emit({ kind: "stdout", html: "둘째 줄", id: 2 });
     });
 
     expect(result.current.events).toEqual([
-      { kind: "stdout", html: "첫 줄" },
-      { kind: "stdout", html: "둘째 줄" },
+      { kind: "stdout", html: "첫 줄", id: 1 },
+      { kind: "stdout", html: "둘째 줄", id: 2 },
     ]);
+  });
+
+  it("재연결로 같은 stdout 커서가 다시 오면 한 번만 렌더한다", () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const { result } = renderHook(() => useRunEvents("run-1"));
+    const source = FakeEventSource.instances[0];
+
+    act(() => {
+      source?.emit({ kind: "stdout", html: "첫 줄", id: 1 });
+      source?.emit({ kind: "stdout", html: "첫 줄", id: 1 });
+      source?.emit({ kind: "stdout", html: "둘째 줄", id: 2 });
+    });
+
+    expect(result.current.events).toEqual([
+      { kind: "stdout", html: "첫 줄", id: 1 },
+      { kind: "stdout", html: "둘째 줄", id: 2 },
+    ]);
+  });
+
+  it("재연결로 같은 stderr 커서가 다시 오면 한 번만 렌더한다", () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const { result } = renderHook(() => useRunEvents("run-1"));
+    const source = FakeEventSource.instances[0];
+
+    act(() => {
+      source?.emit({ kind: "stderr", html: "오류", id: 1 });
+      source?.emit({ kind: "stderr", html: "오류", id: 1 });
+    });
+
+    expect(result.current.events).toEqual([{ kind: "stderr", html: "오류", id: 1 }]);
+  });
+
+  it("재연결로 같은 question 커서가 다시 오면 한 번만 렌더한다", () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const { result } = renderHook(() => useRunEvents("run-1"));
+    const source = FakeEventSource.instances[0];
+
+    const event: RunEvent = {
+      kind: "question",
+      id: 1,
+      question: { id: "q1", kind: "confirm", message: "계속할까요?" },
+    };
+    act(() => {
+      source?.emit(event);
+      source?.emit(event);
+    });
+
+    expect(result.current.events).toEqual([event]);
+    expect(result.current.pendingQuestion).toEqual(event.question);
   });
 
   it("question 이벤트가 pendingQuestion을 세운다", () => {
@@ -63,6 +112,7 @@ describe("useRunEvents", () => {
     act(() => {
       source?.emit({
         kind: "question",
+        id: 1,
         question: { id: "q1", kind: "confirm", message: "계속할까요?" },
       });
     });
@@ -77,7 +127,7 @@ describe("useRunEvents", () => {
     // answer 사이에 낀 출력 한 줄이 패널을 지워 응답 불가 상태로 만드는 문제가 있었기
     // 때문이다(answer 이후 패널을 감추는 책임은 QuestionPanel의 로컬 state로 옮겼다).
     act(() => {
-      source?.emit({ kind: "stdout", html: "답변 이전에 낀 출력" });
+      source?.emit({ kind: "stdout", html: "답변 이전에 낀 출력", id: 2 });
     });
 
     expect(result.current.pendingQuestion).toEqual({
@@ -90,6 +140,7 @@ describe("useRunEvents", () => {
     act(() => {
       source?.emit({
         kind: "question",
+        id: 3,
         question: { id: "q2", kind: "confirm", message: "정말요?" },
       });
     });
@@ -102,7 +153,7 @@ describe("useRunEvents", () => {
 
     // done 이벤트가 오면 비운다.
     act(() => {
-      source?.emit({ kind: "done", exitCode: 0 });
+      source?.emit({ kind: "done", exitCode: 0, id: 4 });
     });
 
     expect(result.current.pendingQuestion).toBeNull();
@@ -114,7 +165,7 @@ describe("useRunEvents", () => {
     const source = FakeEventSource.instances[0];
 
     act(() => {
-      source?.emit({ kind: "done", exitCode: 0 });
+      source?.emit({ kind: "done", exitCode: 0, id: 1 });
     });
 
     expect(result.current.status).toBe("done");

@@ -119,19 +119,40 @@ export type RunnerDrainResult =
   | { status: "settled" }
   | { status: "deadlineExceeded"; pendingOperations: 1 };
 const unavailable = operationResultUnavailableDiagnostic;
+/**
+ * 원인 체인을 사람이 읽을 줄로 만든다. 서버가 준 거절 이유(예: `requires task augmentation`)는
+ * core 가 cause 에 보존하는데, `actual` 은 JSON 보고서에만 실리고 화면에는 안 찍힌다. 화면이
+ * 보는 것은 notes 다(adoption.md §2.5 넷째). message 가 있는 Error 만 문장이 되고, 그 밖의
+ * cause 는 actual 의 구조로만 남는다. 상한은 normalizeThrownValue 의 cause 상한과 같다.
+ */
+const causeNotes = (error: unknown, redaction?: RunnerRedactionOptions): string[] => {
+  const notes: string[] = [];
+  let current: unknown = error instanceof Error ? error.cause : undefined;
+  for (let depth = 0; depth < 3 && current instanceof Error; depth += 1) {
+    if (current.message !== "")
+      notes.push(`원인: ${clampObservedText(current.message, redaction)}`);
+    current = current.cause;
+  }
+  return notes;
+};
 const failed = (
   operation: TestCaseSpec["operation"],
   error: unknown,
   redaction?: RunnerRedactionOptions,
-): RunnerDiagnostic => ({
-  code: "OPERATION_FAILED",
-  message:
-    operation.type === "listTools"
-      ? "MCP 툴 목록 조회 중 오류가 발생했습니다."
-      : `툴 '${operation.tool}' 호출 중 오류가 발생했습니다.`,
-  actual: sanitizeJsonValue(normalizeThrownValue(error), redaction),
-  hint: "MCP 서버 프로세스와 연결 상태를 확인하세요.",
-});
+): RunnerDiagnostic => {
+  const notes = causeNotes(error, redaction);
+  return {
+    code: "OPERATION_FAILED",
+    message:
+      operation.type === "listTools"
+        ? "MCP 툴 목록 조회 중 오류가 발생했습니다."
+        : `툴 '${operation.tool}' 호출 중 오류가 발생했습니다.`,
+    actual: sanitizeJsonValue(normalizeThrownValue(error), redaction),
+    hint: "MCP 서버 프로세스와 연결 상태를 확인하세요.",
+    // 키는 값이 있을 때만 만든다. undefined 로 넣으면 기존 보고서의 JSON 바이트가 흔들린다.
+    ...(notes.length > 0 ? { notes } : {}),
+  };
+};
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 const DEFAULT_DRAIN_TIMEOUT_MS = 5_000;
 const validDrainTimeout = (value: number | undefined): number => {

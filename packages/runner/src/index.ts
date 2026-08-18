@@ -21,6 +21,7 @@ export type { ContractRange } from "./contract-range.js";
 export {
   bodyExtractionFailedDiagnostic,
   bodySchemaMismatchDiagnostic,
+  clampObservedText,
   MAX_OBSERVED_KEYS,
   MAX_VALUE_STRING_CHARS,
   type RunnerDiagnostic,

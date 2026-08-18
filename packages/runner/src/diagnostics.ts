@@ -198,6 +198,22 @@ const withEllipsis = (text: string, chars: number | undefined): string =>
   chars === undefined ? text : `${text}…(총 ${chars}자)`;
 
 /**
+ * 관찰한 문자열 하나를 보고서에 실을 형태로 만든다. 진단 값과 같은 상한·같은 말줄임을 쓴다.
+ *
+ * **치환이 먼저, 자르기가 나중이다.** 순서를 뒤집으면 잘린 조각이 `sensitiveValues` 일치 검사를
+ * 통과하지 못해 `[REDACTED]` 가 적용되지 않는다. `renderedValue` 가 지키는 순서와 같다.
+ *
+ * `rejectionBody`(#89)가 이 함수를 쓴다. 규칙을 두 벌로 두면 같은 서버 응답이 자리에 따라 다르게
+ * 잘린다.
+ */
+export function clampObservedText(text: string, options?: RunnerRedactionOptions): string {
+  const sanitized = sanitizeJsonValue(text, options);
+  if (typeof sanitized !== "string") return renderValue(sanitized);
+  const { text: kept, chars } = cut(sanitized);
+  return withEllipsis(kept, chars);
+}
+
+/**
  * 값을 문장에 적는다. 문자열은 JSON.stringify로 감싼다.
  * 직접 따옴표를 붙이면 값 안의 따옴표·개행·제어문자가 그대로 새어 나가 줄이 깨지거나
  * 문장이 스푸핑된다.

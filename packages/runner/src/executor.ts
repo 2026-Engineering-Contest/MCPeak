@@ -8,6 +8,7 @@ import {
 import { type BodyExtraction, extractResponseBody } from "./body.js";
 import { expectedIsError } from "./case-expectation.js";
 import {
+  clampObservedText,
   normalizeThrownValue,
   operationResultUnavailableDiagnostic,
   type RunnerDiagnostic,
@@ -49,6 +50,15 @@ export interface TestCaseResult {
    * 종료 코드에도 안 들어간다. 추가 필드라 기존 소비자는 무시해도 동작한다.
    */
   rejectionBasis: RejectionBasis;
+  /**
+   * 확인하지 못한 거절의 응답 본문 (#89 · 설계 문서 §5.2). `rejectionBasis` 가 `"unverified"`
+   * 이고 본문을 읽었을 때만 **키가 생긴다.** 그 밖에는 없다.
+   *
+   * 승인 화면이 "이 응답이 정상 거절인지 내부 오류인지" 를 사람에게 보여주려면 본문이 필요한데,
+   * 판정만으로는 그 자리를 채울 수 없어서 함께 싣는다. 진단 값과 같은 상한에서 잘리고 같은
+   * redaction 을 받는다(`clampObservedText`).
+   */
+  rejectionBody?: string;
 }
 export interface RunnerSummary {
   total: number;
@@ -348,13 +358,14 @@ export function runSuite(options: RunSuiteOptions): RunnerExecution {
       // ADR-0027 이 정한 배선을 바꾸는 것이라 이 설계의 비범위다.
       const expectsRejection = expectedIsError(spec) === true;
       const extraction = expectsRejection ? readBody() : undefined;
+      // 문자열로 읽힌 본문만 지문 대조 대상이다. JSON 으로 파싱된 본문은 오류 문장이 아니고
+      // (관찰 80건이 전부 text 한 블록이다), 못 읽었으면 확인할 것이 없다.
+      const bodyText =
+        extraction?.ok === true && typeof extraction.body === "string" ? extraction.body : null;
       const rejectionBasis = classifyRejectionBasis({
         expectsRejection,
         toolName: spec.operation.type === "callTool" ? spec.operation.tool : null,
-        // 문자열로 읽힌 본문만 지문 대조 대상이다. JSON 으로 파싱된 본문은 오류 문장이 아니고
-        // (관찰 80건이 전부 text 한 블록이다), 못 읽었으면 확인할 것이 없다.
-        bodyText:
-          extraction?.ok === true && typeof extraction.body === "string" ? extraction.body : null,
+        bodyText,
       });
       const caseResult: TestCaseResult = {
         spec: observed,
@@ -369,6 +380,12 @@ export function runSuite(options: RunSuiteOptions): RunnerExecution {
         operation,
         assertions,
         rejectionBasis,
+        // 확인 못 한 케이스만 본문을 싣는다. `verified` 는 사람이 다시 볼 이유가 없고,
+        // 전량을 실으면 통과한 모든 케이스의 응답이 보고서에 들어간다. 키는 값이 있을 때만
+        // 만든다 — `undefined` 로 넣으면 기존 보고서의 JSON 바이트가 흔들린다.
+        ...(rejectionBasis === "unverified" && bodyText !== null
+          ? { rejectionBody: clampObservedText(bodyText, options.redaction) }
+          : {}),
       };
       cases.push(caseResult);
       emit({ type: "caseCompleted", ...fields, result: caseResult });

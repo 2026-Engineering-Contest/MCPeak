@@ -1,6 +1,7 @@
 import type { McpClient } from "@ohmymcp/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  MAX_VALUE_STRING_CHARS,
   type RunnerEvent,
   runSuite,
   SuiteValidationError,
@@ -599,6 +600,61 @@ describe("runSuite와 bodyMatchesSchema", () => {
       // 판정은 안 바뀐다. 확인 못 한 것이 실패가 되면 서버 11개 중 2개가 통째로 빨개진다(§4.3).
       expect(report.cases[0]?.status).toBe("passed");
       expect(report.summary.rejectionUnverified).toBe(1);
+    });
+
+    /**
+     * 승인 화면(§5.2)이 "이 응답이 정상 거절인지 내부 오류인지" 를 사람에게 보여주려면 본문이
+     * 필요한데 판정만으로는 그 자리를 못 채운다. 확인 못 한 케이스에만 싣는다.
+     */
+    it("unverified 케이스에만 응답 본문을 싣는다", async () => {
+      const report = await runSuite({
+        client: respondWith("→ 'city' 는 문자열이어야 합니다."),
+        suite: rejectionSuite("body"),
+      }).report;
+      expect(report.cases[0]?.rejectionBody).toBe("→ 'city' 는 문자열이어야 합니다.");
+    });
+
+    it("verified 케이스에는 본문 키가 아예 없다", async () => {
+      const report = await runSuite({
+        client: respondWith("Input validation error: 'city' is a required property"),
+        suite: rejectionSuite("no-body"),
+      }).report;
+      expect(report.cases[0]?.rejectionBasis).toBe("verified");
+      expect(report.cases[0]).not.toHaveProperty("rejectionBody");
+    });
+
+    it("본문이 없으면 키를 만들지 않는다", async () => {
+      const report = await runSuite({
+        client: {
+          listTools: async () => [{ name: "get_weather", inputSchema: {} }],
+          // content 가 비면 추출이 실패한다. 확인은 못 했지만 실을 본문도 없다.
+          callTool: async () => ({ content: [], isError: true, raw: null }),
+          close: async () => undefined,
+        },
+        suite: rejectionSuite("empty"),
+      }).report;
+      expect(report.cases[0]?.rejectionBasis).toBe("unverified");
+      expect(report.cases[0]).not.toHaveProperty("rejectionBody");
+    });
+
+    it("긴 본문은 진단 값과 같은 상한에서 잘린다", async () => {
+      const long = "가".repeat(MAX_VALUE_STRING_CHARS + 80);
+      const report = await runSuite({
+        client: respondWith(long),
+        suite: rejectionSuite("long"),
+      }).report;
+      const body = report.cases[0]?.rejectionBody ?? "";
+      expect(body).toContain(`…(총 ${MAX_VALUE_STRING_CHARS + 80}자)`);
+      expect(body.startsWith("가".repeat(MAX_VALUE_STRING_CHARS))).toBe(true);
+    });
+
+    it("본문에 redaction 이 적용된다", async () => {
+      const report = await runSuite({
+        client: respondWith("sk-live-secret"),
+        suite: rejectionSuite("redact"),
+        redaction: { sensitiveValues: ["sk-live-secret"] },
+      }).report;
+      expect(report.cases[0]?.rejectionBody).toBe("[REDACTED]");
     });
 
     it("거절을 기대하지 않는 케이스는 notApplicable 이다", async () => {

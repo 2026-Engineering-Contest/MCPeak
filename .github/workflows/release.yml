@@ -11,8 +11,9 @@ concurrency:
 permissions:
   contents: write
   pull-requests: write
-  # W2 알파 배포 시 함께 복구한다 — npm provenance / OIDC 발행용 (CONTRIBUTING §7).
-  # id-token: write
+  # npm provenance 발행용. OIDC 로 이 워크플로의 신원을 증명해 npm 에 서명된
+  # 빌드 출처를 남긴다 (CONTRIBUTING §7 "장기 토큰 대신 OIDC 를 우선 검토한다").
+  id-token: write
 
 jobs:
   release:
@@ -38,21 +39,61 @@ jobs:
       - name: Build
         run: pnpm build
 
-      # 버전 PR 생성까지만 한다. 배포는 의도적으로 비활성화돼 있다.
+      # ── 배포 전 마지막 방어선 (ADR-0038) ──────────────────────────────────────
       #
-      # changesets 액션은 changeset 파일이 하나도 없으면 "미배포분을 배포하라"로
-      # 해석해 publish 를 즉시 실행한다. 그 상태에서 NPM_TOKEN 시크릿이 추가되면
-      # 0.0.0 패키지 6개가 npm 에 그대로 올라간다. npm 은 72시간 뒤 unpublish 가
-      # 막히고 그 버전·이름은 영구히 사용할 수 없게 된다.
+      # `npm pack` 은 `workspace:*` 를 실제 버전으로 치환하지 않는다. `pnpm pack` 만 한다.
+      # changesets 는 pnpm-lock.yaml 을 보고 `pnpm publish` 를 고르지만, 그 감지가
+      # 어떤 이유로든(락파일 누락·PATH 에 pnpm 없음·상위 버전에서의 동작 변경) 빗나가면
+      # `"@ohmymcp/core": "workspace:*"` 가 그대로 npm 에 올라간다. 그 패키지는 아무도
+      # 설치할 수 없고, 72시간이 지나면 unpublish 도 막혀 그 이름·버전이 영구히 죽는다.
       #
-      # W2 알파 배포(CONTRIBUTING §7) 시점에 릴리스 담당이 아래 두 줄의 주석을
-      # 해제하고, 위 permissions 의 id-token 도 함께 복구한다.
-      - name: Create Release Pull Request
+      # 그래서 감지를 믿지 않고 실제 tarball 을 만들어 그 안의 package.json 을 검사한다.
+      - name: "Guard — tarball 에 workspace: 프로토콜이 남았는지 검사"
+        run: |
+          set -euo pipefail
+          stage="$(mktemp -d)"
+          for dir in packages/*/; do
+            (cd "$dir" && pnpm pack --pack-destination "$stage" >/dev/null)
+          done
+
+          checked=0
+          bad=0
+          for tgz in "$stage"/*.tgz; do
+            checked=$((checked + 1))
+            manifest="$(tar -xzOf "$tgz" package/package.json)"
+            if printf '%s' "$manifest" | grep -q '"workspace:'; then
+              echo "::error::$(basename "$tgz") 의 package.json 에 workspace: 의존이 남아 있습니다. 이대로 배포하면 설치할 수 없는 패키지가 npm 에 영구히 남습니다."
+              printf '%s' "$manifest" | grep -n '"workspace:'
+              bad=$((bad + 1))
+            fi
+          done
+
+          # 0 건은 "깨끗함"이 아니라 "검사를 안 했음"일 수 있다. 건수를 따로 확인한다.
+          if [ "$checked" -eq 0 ]; then
+            echo "::error::검사한 tarball 이 0 개입니다. packages/*/ 경로나 pnpm pack 을 확인하세요."
+            exit 1
+          fi
+          if [ "$bad" -ne 0 ]; then
+            echo "::error::배포를 중단합니다 — workspace: 가 남은 패키지 ${bad}/${checked} 개."
+            exit 1
+          fi
+          echo "tarball ${checked} 개 검사 완료 — workspace: 잔존 없음"
+
+      # changesets 액션은 대기 중인 changeset 이 있으면 **버전 PR** 을 만들고,
+      # 하나도 없으면 아직 배포되지 않은 패키지를 **배포**한다. 두 동작 모두 이 스텝이다.
+      #
+      # ⚠️ 그래서 changeset 이 비어 있는 상태로 main 에 push 하면 그 시점의 버전이
+      # 그대로 npm 에 나간다. 위 Guard 가 형식 오류는 잡지만 "낼 생각이 없던 버전을
+      # 낸 것"은 잡지 못한다 — 버전 PR 머지 외의 경로로 main 을 건드릴 때 유의한다.
+      - name: Create Release Pull Request / Publish
         uses: changesets/action@v1
         with:
           version: pnpm version-packages
-          # publish: pnpm release
+          publish: pnpm release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # 토큰 값은 여기에 넣지 않는다 — 저장소 시크릿으로만 참조한다.
-          # NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          # changesets 는 --provenance 를 자동으로 붙이지 않는다. 이 환경변수가 있어야
+          # 위 id-token 권한이 실제로 쓰인다. 둘 중 하나만 있으면 provenance 는 안 켜진다.
+          NPM_CONFIG_PROVENANCE: "true"

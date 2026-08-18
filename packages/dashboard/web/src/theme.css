@@ -102,17 +102,6 @@ body {
 /* ---- 이하 기존 index.css에서 이관(계약 블록 아님) ---- */
 
 /*
- * 기존 RunView가 쓰는 터미널 패널. 색은 위 고정 팔레트 토큰으로 통일한다.
- * U2에서 LogPanel로 대체되면 함께 정리한다.
- */
-.terminal-panel {
-  background-color: var(--terminal-bg);
-  color: var(--terminal-fg);
-  border: 1px solid var(--terminal-border);
-  box-shadow: var(--terminal-inset);
-}
-
-/*
  * 서버 ansiToHtml은 30~37·90~97도 내보낸다. 계약 블록이 정의한 코드
  * (31/32/33/36/90/1) 밖의 코드만 여기서 보충한다. 역시 테마 분기 금지.
  */

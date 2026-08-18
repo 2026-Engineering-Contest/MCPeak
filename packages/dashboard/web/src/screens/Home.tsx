@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import type { JSX } from "react";
 import type {
   FileEntry,
   RunSummary,
@@ -6,21 +7,23 @@ import type {
   StartRunResponse,
 } from "../../../src/api-types.js";
 import { apiGet, apiSend } from "../api.js";
+import { FlowChip } from "../components/FlowChip.js";
+import { StatusBadge } from "../components/StatusBadge.js";
 
 /**
- * 스위트 목록과 실행 이력을 보여주고, 스위트를 골라 test 플로우를 시작한다.
- *
- * `FileEntry`는 `path`만 갖는다(§4-4). 레퍼런스 스타일의 "수정시각 열"은 목록 API가
- * 주는 정보 밖이라 여기서는 만들지 않는다(개별 파일을 열 때만 `FileContent.mtimeMs`로
- * 온다). 판단 근거는 보고서에 남긴다.
+ * Home(UI 설계 §5-1). 2열 카드: 좌측 테스트 스위트(GET /api/suites), 우측 최근 실행
+ * (GET /api/runs). 실행 클릭은 --command 입력을 받는 인라인 프롬프트(기본 빈 값) 후
+ * `POST /api/runs {flow:"test", argv:[<스위트 경로>, "--command", <입력값>]}` 하고
+ * `#/runs/:id`로 이동한다(구현계획 §5 U2).
  */
-export function Home() {
+export function Home(): JSX.Element {
   const [suites, setSuites] = useState<readonly FileEntry[] | null>(null);
   const [runs, setRuns] = useState<readonly RunSummary[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [promptFor, setPromptFor] = useState<string | null>(null);
   const [command, setCommand] = useState("");
   const [startError, setStartError] = useState<string | null>(null);
-  const [starting, setStarting] = useState<string | null>(null);
+  const [starting, setStarting] = useState(false);
 
   useEffect(() => {
     apiGet<FileEntry[]>("/api/suites")
@@ -31,141 +34,131 @@ export function Home() {
       .catch((err: unknown) => setLoadError(err instanceof Error ? err.message : String(err)));
   }, []);
 
+  function openPrompt(suitePath: string): void {
+    setPromptFor(suitePath);
+    setCommand("");
+    setStartError(null);
+  }
+
   async function startRun(suitePath: string): Promise<void> {
-    setStarting(suitePath);
+    setStarting(true);
     setStartError(null);
     try {
-      const argv = [suitePath];
-      if (command.trim() !== "") {
-        argv.push("--command", command.trim());
-      }
       const response = await apiSend<StartRunResponse>("POST", "/api/runs", {
         flow: "test",
-        argv,
+        argv: [suitePath, "--command", command],
       } satisfies StartRunRequest);
-      window.location.hash = `#/run/${encodeURIComponent(response.runId)}`;
+      window.location.hash = `#/runs/${encodeURIComponent(response.runId)}`;
     } catch (err) {
       setStartError(err instanceof Error ? err.message : String(err));
     } finally {
-      setStarting(null);
+      setStarting(false);
     }
   }
 
   return (
-    <section className="space-y-8">
+    <section className="space-y-6">
       <div>
-        <h1 className="text-xl font-semibold text-slate-900">홈</h1>
-        <p className="mt-1 text-slate-600">
+        <h1 className="text-xl font-semibold text-ink">홈</h1>
+        <p className="mt-1 text-sm text-ink-muted">
           현재 프로젝트 아래에서 찾은 테스트 스위트로 바로 실행을 시작합니다.
         </p>
       </div>
 
-      {loadError !== null && <p className="text-sm text-red-600">{loadError}</p>}
+      {loadError !== null && (
+        <p className="text-sm" style={{ color: "var(--status-failed-fg)" }}>
+          {loadError}
+        </p>
+      )}
 
-      <div className="max-w-sm">
-        <label className="block text-sm font-medium text-slate-700" htmlFor="home-command">
-          실행할 명령어 (선택)
-        </label>
-        <input
-          id="home-command"
-          className="mt-1 w-full rounded border border-slate-300 px-3 py-1.5 text-sm"
-          value={command}
-          placeholder="비우면 스위트 기본값을 씁니다"
-          onChange={(event) => setCommand(event.target.value)}
-        />
-      </div>
-
-      {startError !== null && <p className="text-sm text-red-600">{startError}</p>}
-
-      <div>
-        <h2 className="text-sm font-semibold text-slate-700">스위트</h2>
-        <div className="mt-3 overflow-hidden rounded-lg border border-slate-200">
-          <table className="w-full text-left text-sm">
-            <thead className="bg-slate-50 text-slate-500">
-              <tr>
-                <th className="px-4 py-2 font-medium">경로</th>
-                <th className="px-4 py-2 font-medium">동작</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {suites === null && (
-                <tr>
-                  <td className="px-4 py-3 text-slate-400" colSpan={2}>
-                    불러오는 중...
-                  </td>
-                </tr>
-              )}
-              {suites !== null && suites.length === 0 && (
-                <tr>
-                  <td className="px-4 py-3 text-slate-400" colSpan={2}>
-                    스위트가 없습니다.
-                  </td>
-                </tr>
-              )}
-              {suites?.map((suite) => (
-                <tr key={suite.path}>
-                  <td className="px-4 py-2 font-mono text-xs text-slate-700">{suite.path}</td>
-                  <td className="px-4 py-2">
+      <div className="grid grid-cols-2 gap-6">
+        <div className="rounded-lg border border-line bg-surface">
+          <h2 className="border-b border-line px-4 py-3 text-sm font-semibold text-ink">
+            테스트 스위트
+          </h2>
+          <ul className="divide-y divide-line-subtle">
+            {suites === null && <li className="px-4 py-3 text-sm text-ink-muted">불러오는 중...</li>}
+            {suites !== null && suites.length === 0 && (
+              <li className="px-4 py-3 text-sm text-ink-muted">스위트가 없습니다.</li>
+            )}
+            {suites?.map((suite) => (
+              <li key={suite.path} className="space-y-2 px-4 py-3">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="font-mono text-xs text-ink">{suite.path}</span>
+                  <button
+                    type="button"
+                    className="rounded bg-accent px-3 py-1 text-xs font-medium text-white"
+                    onClick={() => openPrompt(suite.path)}
+                  >
+                    실행
+                  </button>
+                </div>
+                {promptFor === suite.path && (
+                  <form
+                    className="flex gap-2"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void startRun(suite.path);
+                    }}
+                  >
+                    <label className="sr-only" htmlFor={`command-${suite.path}`}>
+                      실행할 서버 명령 (--command)
+                    </label>
+                    <input
+                      id={`command-${suite.path}`}
+                      className="flex-1 rounded border border-line bg-surface px-3 py-1.5 font-mono text-xs text-ink"
+                      value={command}
+                      placeholder="실행할 서버 명령 (--command)"
+                      onChange={(event) => setCommand(event.target.value)}
+                    />
+                    <button
+                      type="submit"
+                      className="rounded bg-accent px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+                      disabled={starting}
+                    >
+                      실행 시작
+                    </button>
                     <button
                       type="button"
-                      className="rounded bg-slate-900 px-3 py-1 text-xs font-medium text-white disabled:opacity-50"
-                      disabled={starting === suite.path}
-                      onClick={() => void startRun(suite.path)}
+                      className="rounded border border-line px-3 py-1.5 text-xs text-ink-muted"
+                      onClick={() => setPromptFor(null)}
                     >
-                      실행
+                      취소
                     </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                  </form>
+                )}
+              </li>
+            ))}
+          </ul>
+          {startError !== null && (
+            <p className="px-4 py-3 text-sm" style={{ color: "var(--status-failed-fg)" }}>
+              {startError}
+            </p>
+          )}
         </div>
-      </div>
 
-      <div>
-        <h2 className="text-sm font-semibold text-slate-700">최근 실행</h2>
-        <div className="mt-3 overflow-hidden rounded-lg border border-slate-200">
-          <table className="w-full text-left text-sm">
-            <thead className="bg-slate-50 text-slate-500">
-              <tr>
-                <th className="px-4 py-2 font-medium">runId</th>
-                <th className="px-4 py-2 font-medium">플로우</th>
-                <th className="px-4 py-2 font-medium">상태</th>
-                <th className="px-4 py-2 font-medium">종료 코드</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {runs === null && (
-                <tr>
-                  <td className="px-4 py-3 text-slate-400" colSpan={4}>
-                    불러오는 중...
-                  </td>
-                </tr>
-              )}
-              {runs !== null && runs.length === 0 && (
-                <tr>
-                  <td className="px-4 py-3 text-slate-400" colSpan={4}>
-                    아직 실행이 없습니다.
-                  </td>
-                </tr>
-              )}
-              {runs?.map((run) => (
-                <tr key={run.runId}>
-                  <td className="px-4 py-2 font-mono text-xs text-slate-700">
-                    <a
-                      className="text-blue-600 hover:underline"
-                      href={`#/run/${encodeURIComponent(run.runId)}`}
-                    >
-                      {run.runId}
-                    </a>
-                  </td>
-                  <td className="px-4 py-2 text-slate-600">{run.flow}</td>
-                  <td className="px-4 py-2 text-slate-600">{run.status}</td>
-                  <td className="px-4 py-2 text-slate-600">{run.exitCode ?? "-"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="rounded-lg border border-line bg-surface">
+          <h2 className="border-b border-line px-4 py-3 text-sm font-semibold text-ink">
+            최근 실행
+          </h2>
+          <ul className="divide-y divide-line-subtle">
+            {runs === null && <li className="px-4 py-3 text-sm text-ink-muted">불러오는 중...</li>}
+            {runs !== null && runs.length === 0 && (
+              <li className="px-4 py-3 text-sm text-ink-muted">아직 실행이 없습니다.</li>
+            )}
+            {runs?.map((run) => (
+              <li key={run.runId}>
+                <a
+                  className="flex items-center gap-3 px-4 py-3 text-ink hover:bg-line-subtle"
+                  href={`#/runs/${encodeURIComponent(run.runId)}`}
+                >
+                  <FlowChip flow={run.flow} />
+                  <span className="flex-1 font-mono text-xs">{run.runId}</span>
+                  <StatusBadge status={run.status} exitCode={run.exitCode} />
+                </a>
+              </li>
+            ))}
+          </ul>
         </div>
       </div>
     </section>

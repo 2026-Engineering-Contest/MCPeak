@@ -20,8 +20,8 @@ import { RunView } from "./screens/RunView.js";
  * | `#/cassettes` | CassetteBrowser |
  * | `#/repair/:id` | RepairReview |
  *
- * `#/run/:id`는 T3 시절 화면들이 아직 내보내는 구형 링크라 `#/runs/:id`와 같게
- * 해석한다(U2·U4가 화면 쪽 링크를 갱신하면 제거).
+ * `#/run/:id`는 구형 링크 별칭이다. Home·RunView는 U2에서 `#/runs/:id`로 갱신됐고,
+ * CassetteBrowser(replay 이동)가 아직 내보내므로 U4에서 링크 갱신 후 제거한다.
  */
 type Route =
   | { readonly screen: "home" }

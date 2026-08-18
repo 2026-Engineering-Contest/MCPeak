@@ -1,5 +1,6 @@
 import type { McpStdioConnection, ToolDef } from "@ohmymcp/core";
 import type {
+  DeterminismResult,
   RunnerExecution,
   RunnerReport,
   TestCaseResult,
@@ -9,6 +10,7 @@ import type {
 import { suiteFingerprint } from "@ohmymcp/runner";
 import { describe, expect, it, vi } from "vitest";
 import { TEST_USAGE_HINT } from "../src/help.js";
+import { ResetCommandError } from "../src/reset-hook.js";
 import { parseTestCommand, runCli, type TestCommandDependencies } from "../src/test-command.js";
 
 const suite: TestSuiteSpec = { schemaVersion: 1, id: "suite", name: "Suite", cases: [] };
@@ -117,6 +119,8 @@ describe("parseTestCommand", () => {
       args: ["a", "b"],
       json: false,
       junitPath: undefined,
+      determinism: false,
+      resetCmd: undefined,
       stderrLines: 20,
     });
     expect(Object.isFrozen(input)).toBe(true);
@@ -129,6 +133,8 @@ describe("parseTestCommand", () => {
       args: ["-m", ""],
       json: false,
       junitPath: undefined,
+      determinism: false,
+      resetCmd: undefined,
       stderrLines: 20,
     });
   });
@@ -1499,5 +1505,390 @@ describe("test 보고서 / 승인 시점 서버 결함 표시", () => {
   it("approval.cases 가 없으면 --json 에 spec.cases 키가 없다", async () => {
     const out = await run({ suite, statuses: {}, json: true });
     expect(Object.hasOwn(JSON.parse(out.stdout).spec, "cases")).toBe(false);
+  });
+});
+
+/**
+ * 결정론성 확인(설계 §5.2 · §7 · §8). 가짜 의존성으로 2회 실행 배선·문구·비차단성을 고정한다.
+ * `checkDeterminism` 은 주입 지점으로 대체한다. 비교 의미론 자체는 runner 의
+ * `determinism.test.ts` 가 고정하고, 여기서는 배선과 화면만 본다.
+ */
+describe("결정론성 확인", () => {
+  const differenceResult = (): DeterminismResult => ({
+    compared: 12,
+    skipped: 0,
+    differences: [
+      {
+        caseId: "case-3",
+        caseName: "정상 조회",
+        toolName: "get_weather",
+        kind: "response",
+        path: "content[0].text",
+        firstValue: '"a"',
+        secondValue: '"b"',
+        hint: "timestamp",
+      },
+      {
+        caseId: "case-9",
+        caseName: "새 파일",
+        toolName: "create_file",
+        kind: "status",
+        firstValue: "passed",
+        secondValue: "failed",
+      },
+    ],
+    conclusion: "nondeterministic",
+  });
+  const sameResult = (
+    conclusion: DeterminismResult["conclusion"],
+    skipped = 0,
+  ): DeterminismResult => ({ compared: 12, skipped, differences: [], conclusion });
+
+  /** 실행 순서를 events 에 남기는 의존성. reset 은 주입한 가짜다. */
+  const determinismDeps = (
+    overrides: Partial<TestCommandDependencies> = {},
+  ): ReturnType<typeof deps> => {
+    const base = deps(overrides);
+    return base;
+  };
+
+  it("--determinism 이 스위트를 2회 실행한다", async () => {
+    const d = determinismDeps({ checkDeterminism: vi.fn(() => sameResult("deterministic")) });
+    const code = await runCli(
+      ["test", "suite.json", "--command", "node", "--determinism"],
+      d.value,
+    );
+    expect(code).toBe(0);
+    expect(d.value.connect).toHaveBeenCalledTimes(2);
+    expect(d.value.startRunner).toHaveBeenCalledTimes(2);
+    expect(d.value.finalize).toHaveBeenCalledTimes(2);
+    expect(d.value.checkDeterminism).toHaveBeenCalledTimes(1);
+  });
+
+  it("--reset-cmd 와 함께면 각 회차 전에 복원한다", async () => {
+    const order: string[] = [];
+    const d = deps({
+      runResetCommand: vi.fn(async () => {
+        order.push("reset");
+      }),
+      checkDeterminism: vi.fn(() => sameResult("deterministic")),
+    });
+    const startRunner = d.value.startRunner;
+    d.value.startRunner = vi.fn((options) => {
+      order.push("run");
+      return startRunner(options);
+    });
+    await runCli(
+      ["test", "suite.json", "--command", "node", "--determinism", "--reset-cmd", "git checkout ."],
+      d.value,
+    );
+    expect(order).toEqual(["reset", "run", "reset", "run"]);
+  });
+
+  it("--reset-cmd 단독이면 1회 실행 전 1번 복원한다", async () => {
+    const d = deps({ runResetCommand: vi.fn(async () => {}) });
+    const code = await runCli(
+      ["test", "suite.json", "--command", "node", "--reset-cmd", "git checkout ."],
+      d.value,
+    );
+    expect(code).toBe(0);
+    expect(d.value.runResetCommand).toHaveBeenCalledTimes(1);
+    expect(d.value.startRunner).toHaveBeenCalledTimes(1);
+    expect(d.writes.out.join("")).toBe(RENDERED);
+  });
+
+  it("복원 실패면 실행을 시작하지 않는다", async () => {
+    const d = deps({
+      runResetCommand: vi.fn(async () => {
+        throw new ResetCommandError("git checkout .", 128, "fatal: not a git repository\n");
+      }),
+    });
+    const code = await runCli(
+      ["test", "suite.json", "--command", "node", "--reset-cmd", "git checkout ."],
+      d.value,
+    );
+    expect(code).toBe(1);
+    expect(d.value.startRunner).not.toHaveBeenCalled();
+    expect(d.value.connect).not.toHaveBeenCalled();
+    const err = d.writes.err.join("");
+    expect(err).toContain("오류 [RESET_COMMAND_FAILED]");
+    expect(err).toContain("git checkout .");
+    expect(err).toContain("128");
+    expect(err).toContain("fatal: not a git repository");
+  });
+
+  it("2회차 미완주면 비교 없이 사유와 프로세스 진단을 찍는다", async () => {
+    const check = vi.fn(() => sameResult("deterministic"));
+    let call = 0;
+    const d = deps({ checkDeterminism: check });
+    d.value.finalize = vi.fn(async () => {
+      call += 1;
+      return call === 1 ? report() : report("aborted");
+    });
+    d.conn.getDiagnostics = () => diagnostics({ exitCode: 1, stderr: "EADDRINUSE\n" });
+    const code = await runCli(
+      ["test", "suite.json", "--command", "node", "--determinism"],
+      d.value,
+    );
+    expect(code).toBe(0); // 1회차 판정만 반영한다
+    expect(check).not.toHaveBeenCalled();
+    const out = d.writes.out.join("");
+    expect(out).toContain("결정론성 확인");
+    expect(out).toContain("2회차 실행이 완주하지 못해 비교할 수 없습니다.");
+    expect(out).toContain("서버가 반복 실행 자체에 취약할 수 있습니다");
+    expect(out).toContain("서버 프로세스 진단");
+    expect(out).toContain("EADDRINUSE");
+  });
+
+  it("2회차 연결 실패도 미완주로 다루고 종료 코드를 바꾸지 않는다", async () => {
+    const check = vi.fn(() => sameResult("deterministic"));
+    let call = 0;
+    const d = deps({ checkDeterminism: check });
+    const connect = d.value.connect;
+    d.value.connect = vi.fn(async (options) => {
+      call += 1;
+      if (call === 2) throw new Error("spawn ENOENT");
+      return connect(options);
+    });
+    const code = await runCli(
+      ["test", "suite.json", "--command", "node", "--determinism"],
+      d.value,
+    );
+    expect(code).toBe(0);
+    expect(check).not.toHaveBeenCalled();
+    expect(d.writes.out.join("")).toContain("2회차 실행이 완주하지 못해 비교할 수 없습니다.");
+  });
+
+  it("checkDeterminism 이 던지면 내부 오류 한 줄만 남기고 판정을 유지한다", async () => {
+    const d = deps({
+      checkDeterminism: vi.fn(() => {
+        throw new Error("관찰한 케이스 수가 다릅니다: 1회차 3개, 2회차 2개.");
+      }),
+    });
+    const code = await runCli(
+      ["test", "suite.json", "--command", "node", "--determinism"],
+      d.value,
+    );
+    expect(code).toBe(0);
+    const out = d.writes.out.join("");
+    expect(out).toContain("결정론성 확인");
+    expect(out).toContain("예상하지 못한 CLI 내부 오류");
+    expect(out).toContain("1회차");
+  });
+
+  it("판정·종료 코드가 1회차를 따른다", async () => {
+    const d = deps({ checkDeterminism: vi.fn(differenceResult) });
+    const code = await runCli(
+      ["test", "suite.json", "--command", "node", "--determinism"],
+      d.value,
+    );
+    expect(code).toBe(0);
+    const out = d.writes.out.join("");
+    expect(out).toContain("2/12 케이스에서 2회 실행 결과가 다릅니다.");
+    expect(out).toContain("get_weather / 정상 조회 (case-3)");
+    expect(out).toContain("시간 의존으로 보입니다");
+    expect(out).toContain("create_file / 새 파일 (case-9)");
+  });
+
+  it("차이 0 과 복원 유무로 결론 문장이 갈린다", async () => {
+    const withReset = deps({
+      runResetCommand: vi.fn(async () => {}),
+      checkDeterminism: vi.fn(() => sameResult("deterministic")),
+    });
+    await runCli(
+      ["test", "suite.json", "--command", "node", "--determinism", "--reset-cmd", "reset.sh"],
+      withReset.value,
+    );
+    expect(withReset.writes.out.join("")).toContain(
+      "같은 초기 상태에서 2회 실행한 결과가 모든 케이스에서 같습니다. (12/12)",
+    );
+
+    const withoutReset = deps({
+      checkDeterminism: vi.fn(() => sameResult("consistentWithoutReset")),
+    });
+    await runCli(["test", "suite.json", "--command", "node", "--determinism"], withoutReset.value);
+    const out = withoutReset.writes.out.join("");
+    expect(out).toContain("2회 실행 결과가 같았습니다. (12/12)");
+    expect(out).toContain("상태를 복원하지 않았으므로 결정론성 확인은 아닙니다");
+    expect(out).toContain("--reset-cmd");
+  });
+
+  it("비교 제외가 있으면 개수 뒤에 덧붙인다", async () => {
+    const d = deps({ checkDeterminism: vi.fn(() => sameResult("consistentWithoutReset", 2)) });
+    await runCli(["test", "suite.json", "--command", "node", "--determinism"], d.value);
+    expect(d.writes.out.join("")).toContain("(12/12, 제외 2: 실행되지 않은 케이스)");
+  });
+
+  it("JUnit 과 repair 번들이 1회차 보고서로 만들어진다", async () => {
+    let call = 0;
+    const first = report("failed");
+    const d = deps({ checkDeterminism: vi.fn(differenceResult) });
+    d.value.finalize = vi.fn(async () => {
+      call += 1;
+      return call === 1 ? first : report();
+    });
+    const code = await runCli(
+      [
+        "test",
+        "suite.json",
+        "--command",
+        "node",
+        "--determinism",
+        "--junit",
+        "out.xml",
+        "--repair-bundle",
+        "bundle.json",
+      ],
+      d.value,
+    );
+    expect(code).toBe(1); // 1회차가 failed 다
+    expect(d.value.renderJUnit).toHaveBeenCalledTimes(1);
+    expect(d.value.renderJUnit).toHaveBeenCalledWith(first);
+  });
+
+  it("--json 에 determinism 키가 실린다", async () => {
+    const result = sameResult("deterministic");
+    const d = deps({ checkDeterminism: vi.fn(() => result) });
+    await runCli(["test", "suite.json", "--command", "node", "--determinism", "--json"], d.value);
+    const parsed = JSON.parse(d.writes.out.join(""));
+    expect(parsed.determinism).toEqual(result);
+  });
+
+  it("--determinism 없으면 --json 출력이 바이트 단위로 같다", async () => {
+    const d = deps();
+    await runCli(["test", "suite.json", "--command", "node", "--json"], d.value);
+    expect(d.writes.out.join("")).toBe(jsonOut(report()));
+    expect(Object.hasOwn(JSON.parse(d.writes.out.join("")), "determinism")).toBe(false);
+  });
+
+  it("--determinism 없으면 텍스트 출력이 바이트 단위로 같다", async () => {
+    const d = deps();
+    const code = await runCli(["test", "suite.json", "--command", "node"], d.value);
+    expect(code).toBe(0);
+    expect(d.writes.out.join("")).toBe(RENDERED);
+    expect(d.writes.err.join("")).toBe("");
+  });
+
+  it("--determinism 없으면 캡처 래퍼를 만들지 않는다", async () => {
+    const d = deps();
+    await runCli(["test", "suite.json", "--command", "node"], d.value);
+    const [options] = vi.mocked(d.value.startRunner).mock.calls[0] ?? [];
+    // 래퍼를 만들었다면 client 가 감싸진 객체이고 onEvent 가 붙는다.
+    expect(options?.client).toBe(d.conn.client);
+    expect(options?.onEvent).toBeUndefined();
+  });
+
+  it("--determinism 이면 캡처 래퍼로 감싸고 onEvent 를 배선한다", async () => {
+    const d = deps({ checkDeterminism: vi.fn(() => sameResult("deterministic")) });
+    await runCli(["test", "suite.json", "--command", "node", "--determinism"], d.value);
+    const [options] = vi.mocked(d.value.startRunner).mock.calls[0] ?? [];
+    expect(options?.client).not.toBe(d.conn.client);
+    expect(typeof options?.onEvent).toBe("function");
+  });
+
+  it("--determinism 과 --reset-cmd 를 파싱한다", () => {
+    const input = parseTestCommand([
+      "suite.json",
+      "--command",
+      "node",
+      "--determinism",
+      "--reset-cmd",
+      "git checkout .",
+    ]);
+    expect(input.determinism).toBe(true);
+    expect(input.resetCmd).toBe("git checkout .");
+    expect(
+      parseTestCommand(["suite.json", "--command=node", "--reset-cmd=reset.sh"]).resetCmd,
+    ).toBe("reset.sh");
+    expect(parseTestCommand(["suite.json", "--command", "node"]).determinism).toBe(false);
+    expect(parseTestCommand(["suite.json", "--command", "node"]).resetCmd).toBeUndefined();
+  });
+
+  it("--reset-cmd 값 누락·중복과 --determinism 값 지정을 거절한다", () => {
+    for (const argv of [
+      ["suite.json", "--command", "node", "--reset-cmd"],
+      ["suite.json", "--command", "node", "--reset-cmd="],
+      ["suite.json", "--command", "node", "--reset-cmd", "--json"],
+    ])
+      expect(() => parseTestCommand(argv)).toThrow("`--reset-cmd` 옵션 값이 필요합니다.");
+    expect(() =>
+      parseTestCommand(["suite.json", "--command", "node", "--reset-cmd", "a", "--reset-cmd", "b"]),
+    ).toThrow("`--reset-cmd`는 한 번만 사용할 수 있습니다.");
+    expect(() => parseTestCommand(["suite.json", "--command", "node", "--determinism=1"])).toThrow(
+      "`--determinism`은 값을 받지 않습니다.",
+    );
+  });
+});
+
+/**
+ * 실환경 회귀. `finalizeRunnerExecution` 은 `runSuite` 에 넘긴 client 와
+ * `shutdown.client` 가 **같은 객체**일 것을 요구하고, 아니면 TypeError 를 던진다
+ * (`runner/src/shutdown.ts` 의 `boundClient` 검사). 캡처 래퍼를 물리면서 한쪽만 감싸면
+ * 1회차 finalize 가 통째로 실패하고 연결이 안 닫혀 좀비 프로세스가 남는다. 가짜 finalize
+ * 로는 이 계약이 검증되지 않으므로 호출 인자의 동일성을 여기서 직접 단언한다.
+ */
+describe("결정론성 확인 — 종료 절차 계약", () => {
+  const sameClientResult: DeterminismResult = {
+    compared: 1,
+    skipped: 0,
+    differences: [],
+    conclusion: "consistentWithoutReset",
+  };
+
+  it("각 회차의 runSuite client 와 shutdown.client 가 같은 객체다", async () => {
+    const d = deps({ checkDeterminism: vi.fn(() => sameClientResult) });
+    await runCli(["test", "suite.json", "--command", "node", "--determinism"], d.value);
+    const started = vi.mocked(d.value.startRunner).mock.calls;
+    const finalized = vi.mocked(d.value.finalize).mock.calls;
+    expect(started).toHaveLength(2);
+    expect(finalized).toHaveLength(2);
+    for (let index = 0; index < 2; index += 1)
+      expect(finalized[index]?.[0]?.shutdown.client).toBe(started[index]?.[0]?.client);
+  });
+
+  it("플래그가 없을 때도 같은 계약을 지킨다", async () => {
+    const d = deps();
+    await runCli(["test", "suite.json", "--command", "node"], d.value);
+    const [started] = vi.mocked(d.value.startRunner).mock.calls;
+    const [finalized] = vi.mocked(d.value.finalize).mock.calls;
+    expect(finalized?.[0]?.shutdown.client).toBe(started?.[0]?.client);
+    expect(started?.[0]?.client).toBe(d.conn.client);
+  });
+
+  it("1회차 연결을 닫은 뒤에 2회차 연결을 연다", async () => {
+    const order: string[] = [];
+    const d = deps({ checkDeterminism: vi.fn(() => sameClientResult) });
+    const connect = d.value.connect;
+    d.value.connect = vi.fn(async (options) => {
+      order.push("connect");
+      return connect(options);
+    });
+    // 실제 finalize 는 shutdown.close() 를 부른다. 가짜에서도 같은 자리에 넣어 순서를 본다.
+    d.value.finalize = vi.fn(async ({ shutdown }) => {
+      await shutdown.close();
+      order.push("close");
+      return report();
+    });
+    await runCli(["test", "suite.json", "--command", "node", "--determinism"], d.value);
+    expect(order).toEqual(["connect", "close", "connect", "close"]);
+    expect(d.conn.close).toHaveBeenCalledTimes(2);
+  });
+
+  it("2회차 finalize 가 실패하면 연결을 강제로 닫는다", async () => {
+    let call = 0;
+    const d = deps({ checkDeterminism: vi.fn(() => sameClientResult) });
+    d.value.finalize = vi.fn(async () => {
+      call += 1;
+      if (call === 2) throw new Error("finalize 실패");
+      return report();
+    });
+    const code = await runCli(
+      ["test", "suite.json", "--command", "node", "--determinism"],
+      d.value,
+    );
+    expect(code).toBe(0);
+    // 좀비 프로세스를 남기지 않는다. 2회차 연결은 우리가 책임지고 닫는다.
+    expect(d.conn.forceClose).toHaveBeenCalledTimes(1);
+    expect(d.writes.out.join("")).toContain("2회차 실행 또는 서버 종료 실패");
   });
 });

@@ -19,6 +19,15 @@ export {
 } from "./contract-axes.js";
 export type { ContractRange } from "./contract-range.js";
 export {
+  type CheckDeterminismOptions,
+  checkDeterminism,
+  type DeterminismCaseObservation,
+  type DeterminismDifference,
+  type DeterminismHint,
+  type DeterminismResult,
+  describeDeterminismDifference,
+} from "./determinism.js";
+export {
   bodyExtractionFailedDiagnostic,
   bodySchemaMismatchDiagnostic,
   clampObservedText,

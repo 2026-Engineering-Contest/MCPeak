@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CassetteBrowser } from "../src/screens/CassetteBrowser.js";
@@ -49,17 +49,29 @@ describe("CassetteBrowser", () => {
   });
 
   it("늦은 A 응답 뒤 B를 저장해도 B의 내용과 mtime만 전송한다", async () => {
+    const bPath = "/api/cassettes/cassettes%2Fb.json";
+    const bSaveRequest = { content: "B 수정", baseMtimeMs: 200 };
+    const conflictMessage = "다른 곳에서 파일이 바뀌었습니다. 새로고침 후 다시 시도하세요.";
     let resolveA: ((response: Response) => void) | undefined;
     const aResponse = new Promise<Response>((resolve) => {
       resolveA = resolve;
     });
-    const fetchMock = vi
-      .fn()
-      .mockReturnValueOnce(aResponse)
-      .mockResolvedValueOnce(
-        fakeResponse(200, { path: "cassettes/b.json", content: "B 원본", mtimeMs: 200 }),
-      )
-      .mockResolvedValueOnce(fakeResponse(200, { saved: true, mtimeMs: 201 }));
+    const fetchMock = vi.fn((url: string, options?: RequestInit): Promise<Response> => {
+      if (url === "/api/cassettes/cassettes%2Fa.json") return aResponse;
+      if (url === bPath && options === undefined) {
+        return Promise.resolve(
+          fakeResponse(200, { path: "cassettes/b.json", content: "B 원본", mtimeMs: 200 }),
+        );
+      }
+      if (
+        url === bPath &&
+        options?.method === "PUT" &&
+        options.body === JSON.stringify(bSaveRequest)
+      ) {
+        return Promise.resolve(fakeResponse(200, { saved: true, mtimeMs: 201 }));
+      }
+      return Promise.resolve(fakeResponse(200, { saved: false, reason: "conflict", mtimeMs: 201 }));
+    });
     vi.stubGlobal("fetch", fetchMock);
 
     const view = render(React.createElement(CassetteBrowser, { path: "cassettes/a.json" }));
@@ -71,13 +83,13 @@ describe("CassetteBrowser", () => {
       await Promise.resolve();
     });
     fireEvent.change(draft, { target: { value: "B 수정" } });
-    fireEvent.click(screen.getByText("저장"));
+    const saveButton = screen.getByText("저장");
+    fireEvent.click(saveButton);
 
-    await screen.findByDisplayValue("B 수정");
-    expect(fetchMock).toHaveBeenLastCalledWith("/api/cassettes/cassettes%2Fb.json", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content: "B 수정", baseMtimeMs: 200 }),
+    expect(saveButton).toHaveProperty("disabled", true);
+    await waitFor(() => {
+      expect(saveButton).toHaveProperty("disabled", false);
     });
+    expect(screen.queryByText(conflictMessage)).toBeNull();
   });
 });

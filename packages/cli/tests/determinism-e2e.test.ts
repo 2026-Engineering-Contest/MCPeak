@@ -81,16 +81,31 @@ function livingServers(serverPath: string): number {
     .length;
 }
 
+/**
+ * 출력 경로는 문자열로 보간하지 않고 환경 변수로 넘긴다 — PowerShell 명령 문자열에
+ * 직접 꽂으면 인용 이스케이프 책임이 호출자에게 넘어간다. `$ErrorActionPreference = 'Stop'`
+ * 로 `Get-CimInstance` 실패를 종료 오류로 승격해 `catch`에서 `exit 1`로 떨어뜨린다 — 그래야
+ * 조회 자체가 실패했을 때 빈 파일을 "좀비 서버 없음"으로 오독하지 않고 `execFileSync`가
+ * 예외를 던져 테스트가 시끄럽게 실패한다.
+ */
 function listWindowsCommandLines(): string {
   const directory = mkdtempSync(join(tmpdir(), "ohmymcp-livingservers-"));
   const outFile = join(directory, "procs.txt");
   try {
-    execFileSync("powershell.exe", [
-      "-NoProfile",
-      "-NonInteractive",
-      "-Command",
-      `Get-CimInstance Win32_Process | Select-Object -ExpandProperty CommandLine | Out-File -Encoding utf8 -FilePath '${outFile}'`,
-    ]);
+    execFileSync(
+      "powershell.exe",
+      [
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        "$ErrorActionPreference = 'Stop'; " +
+          "try { " +
+          "Get-CimInstance Win32_Process | Select-Object -ExpandProperty CommandLine | " +
+          "Out-File -Encoding utf8 -LiteralPath $env:OHMYMCP_LIVING_SERVERS_OUT_FILE " +
+          "} catch { Write-Error $_; exit 1 }",
+      ],
+      { env: { ...process.env, OHMYMCP_LIVING_SERVERS_OUT_FILE: outFile } },
+    );
     return readFileSync(outFile, "utf8");
   } finally {
     rmSync(directory, { recursive: true, force: true });

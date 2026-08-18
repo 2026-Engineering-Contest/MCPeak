@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -65,11 +66,35 @@ async function expectExited(pidFile: string): Promise<void> {
  * **이 파일 전용 fixture 경로에만 쓴다.** `examples/weather-server` 는 다른 테스트 파일도
  * 띄우고 vitest 는 파일을 병렬로 돌리므로, 공유 경로를 세면 남의 살아 있는 서버가 잡혀
  * 간헐 실패한다(실제로 밟았다). 공유 서버의 잔존은 래퍼가 남기는 PID 로 본다.
+ *
+ * Windows 의 `ps`(Git Bash 등)는 procps 의 `-eo` 옵션을 지원하지 않으므로, 같은 정보를
+ * `Get-CimInstance Win32_Process`의 `CommandLine`으로 대신 얻는다. 결과는 파일로 받는다 —
+ * 파이프로 직접 받으면 콘솔 코드페이지(예: cp949)를 거쳐 프로젝트 경로의 한글이 깨질 수
+ * 있는데, `Out-File -Encoding utf8`은 그 변환을 우회한다.
  */
 function livingServers(serverPath: string): number {
-  const listed = execFileSync("ps", ["-eo", "args="], { encoding: "utf8" });
+  const listed =
+    process.platform === "win32"
+      ? listWindowsCommandLines()
+      : execFileSync("ps", ["-eo", "args="], { encoding: "utf8" });
   return listed.split("\n").filter((line) => line.includes(serverPath) && line.includes("node"))
     .length;
+}
+
+function listWindowsCommandLines(): string {
+  const directory = mkdtempSync(join(tmpdir(), "ohmymcp-livingservers-"));
+  const outFile = join(directory, "procs.txt");
+  try {
+    execFileSync("powershell.exe", [
+      "-NoProfile",
+      "-NonInteractive",
+      "-Command",
+      `Get-CimInstance Win32_Process | Select-Object -ExpandProperty CommandLine | Out-File -Encoding utf8 -FilePath '${outFile}'`,
+    ]);
+    return readFileSync(outFile, "utf8");
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 }
 
 async function runCliCapturingStdout(argv: readonly string[]): Promise<{

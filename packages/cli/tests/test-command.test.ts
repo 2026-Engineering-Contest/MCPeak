@@ -1,4 +1,4 @@
-import type { McpStdioConnection, ToolDef } from "@ohmymcp/core";
+import type { McpStdioConnection, ToolDef } from "@ohmymcp-hsu/core";
 import type {
   DeterminismResult,
   RunnerExecution,
@@ -6,8 +6,8 @@ import type {
   TestCaseResult,
   TestCaseSpec,
   TestSuiteSpec,
-} from "@ohmymcp/runner";
-import { suiteFingerprint } from "@ohmymcp/runner";
+} from "@ohmymcp-hsu/runner";
+import { suiteFingerprint } from "@ohmymcp-hsu/runner";
 import { describe, expect, it, vi } from "vitest";
 import { TEST_USAGE_HINT } from "../src/help.js";
 import { ResetCommandError } from "../src/reset-hook.js";

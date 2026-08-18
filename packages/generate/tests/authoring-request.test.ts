@@ -1,10 +1,10 @@
-import type { ToolDef } from "@ohmymcp/core";
+import type { ToolDef } from "@ohmymcp-hsu/core";
 import {
   DEFAULT_SENSITIVE_KEYS,
   describeSpecFinding,
   MCP_SUITE_JSON_SCHEMA,
   REDACTED,
-} from "@ohmymcp/runner";
+} from "@ohmymcp-hsu/runner";
 import { describe, expect, it, vi } from "vitest";
 import {
   AUTHORING_OUTPUT_SCHEMA,
@@ -379,7 +379,7 @@ describe("authoring request", () => {
     // 자기 자신과 비교하면 어떤 회귀도 못 잡는다. generate를 거치지 않은 새 모듈 인스턴스를
     // 따로 띄워 그것과 비교해야 원본 불변을 실제로 검증한다.
     vi.resetModules();
-    const pristine = await import("@ohmymcp/runner");
+    const pristine = await import("@ohmymcp-hsu/runner");
     expect(MCP_SUITE_JSON_SCHEMA).toEqual(pristine.MCP_SUITE_JSON_SCHEMA);
     expect(Object.keys(MCP_SUITE_JSON_SCHEMA)).toEqual(
       expect.arrayContaining(["$schema", "$id", "$defs"]),

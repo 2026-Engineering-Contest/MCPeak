@@ -8,7 +8,7 @@
 
 ## 배경
 
-`@ohmymcp/core`는 Runner가 실제 MCP 서버를 검사할 수 있도록 동결된 `McpClient` 구현을 만든다.
+`@ohmymcp-hsu/core`는 Runner가 실제 MCP 서버를 검사할 수 있도록 동결된 `McpClient` 구현을 만든다.
 첫 도그푸딩 대상인 `examples/weather-server/server.mjs`는 별도 프로세스로 실행되는 stdio MCP
 서버다. 이후에는 사용자가 직접 만든 Node.js 또는 Python 서버뿐 아니라 `npx`나 로컬 실행
 명령으로 제공되는 외부 MCP도 같은 방식으로 검사해야 한다.
@@ -88,7 +88,7 @@ transport는 강제 종료 방식이 다르므로 첫 PR에서 함께 추상화�
 
 ## 결과
 
-- `@ohmymcp/core`는 stdio MCP 프로세스의 시작, handshake, 통신, stderr 수집, 정상 종료와 강제
+- `@ohmymcp-hsu/core`는 stdio MCP 프로세스의 시작, handshake, 통신, stderr 수집, 정상 종료와 강제
   종료를 소유한다.
 - 동결된 `packages/core/src/types.ts`의 `McpClient`와 `ToolResult`는 변경하지 않는다.
 - Core는 Runner를 import하지 않는다. CLI가 Core 수명주기를 Runner의

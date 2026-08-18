@@ -57,7 +57,7 @@ Step 1~7 을 그대로 따랐고, 위반값 두 표는 값 하나도 바꾸지 �
 T6 의 허용 목록에 없고, 계획서 **Task 10 Step 1~2** 가 실제 import 를 세어 목록을 고치는 일을
 맡고 있다. 그래서 T6 시점에 이 테스트가 빨간 것은 계획서가 예정한 상태다.
 
-T6 이 실제로 추가한 심볼은 셋이다(`grep -rn 'from "@ohmymcp/runner"' packages/generate/src` 로
+T6 이 실제로 추가한 심볼은 셋이다(`grep -rn 'from "@ohmymcp-hsu/runner"' packages/generate/src` 로
 확인).
 
 ```

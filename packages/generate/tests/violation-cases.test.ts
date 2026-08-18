@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
-import type { ToolDef } from "@ohmymcp/core";
-import type { TestCaseSpec } from "@ohmymcp/runner";
-import { matchCoveredAxes } from "@ohmymcp/runner";
+import type { ToolDef } from "@ohmymcp-hsu/core";
+import type { TestCaseSpec } from "@ohmymcp-hsu/runner";
+import { matchCoveredAxes } from "@ohmymcp-hsu/runner";
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../src/schema.js";
 import { buildViolationCases } from "../src/violation-cases.js";

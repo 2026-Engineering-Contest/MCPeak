@@ -2,8 +2,8 @@ import { constants } from "node:fs";
 import { mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ToolDef } from "@ohmymcp/core";
-import * as runner from "@ohmymcp/runner";
+import type { ToolDef } from "@ohmymcp-hsu/core";
+import * as runner from "@ohmymcp-hsu/runner";
 import { afterEach, describe, expect, it } from "vitest";
 import { deepFreeze } from "../src/canonical.js";
 import { assertConstraints } from "../src/constraints.js";
@@ -100,7 +100,7 @@ describe("generateTests", () => {
       join(outDir, "add.generated.ts"),
     ]);
     const weather = await readFile(paths[0] as string, "utf8");
-    expect(weather).toContain('import { defineMcpSuite } from "@ohmymcp/runner";');
+    expect(weather).toContain('import { defineMcpSuite } from "@ohmymcp-hsu/runner";');
     expect(weather).toContain("export const generatedSuite = defineMcpSuite(");
     expect(weather).toContain("직접 수정하지 마세요");
     expect(weather).toContain('"tool": "get_weather"');

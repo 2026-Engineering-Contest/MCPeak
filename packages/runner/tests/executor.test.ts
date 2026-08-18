@@ -1,4 +1,4 @@
-import type { McpClient } from "@ohmymcp/core";
+import type { McpClient } from "@ohmymcp-hsu/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   MAX_VALUE_STRING_CHARS,
@@ -391,10 +391,10 @@ function bodyResult(
     },
     isError: options?.isError ?? false,
     raw: null,
-  } as unknown as import("@ohmymcp/core").ToolResult;
+  } as unknown as import("@ohmymcp-hsu/core").ToolResult;
 }
 
-function bodyClient(result: () => import("@ohmymcp/core").ToolResult): McpClient {
+function bodyClient(result: () => import("@ohmymcp-hsu/core").ToolResult): McpClient {
   return {
     listTools: async () => [{ name: "get_weather", inputSchema: {} }],
     callTool: async () => result(),

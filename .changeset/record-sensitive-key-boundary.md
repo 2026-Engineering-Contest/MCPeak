@@ -1,5 +1,5 @@
 ---
-"@ohmymcp/record": patch
+"@ohmymcp-hsu/record": patch
 ---
 
 민감 키 판정이 **이름에 포함되면 걸리는 방식에서 접미 단어열이 정확히 일치할 때 걸리는

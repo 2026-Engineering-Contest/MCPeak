@@ -35,10 +35,10 @@
     "test:e2e": "node ./tests/dist-cli-e2e.mjs"
   },
   "dependencies": {
-    "@ohmymcp/core": "workspace:*",
-    "@ohmymcp/runner": "workspace:*",
-    "@ohmymcp/generate": "workspace:*",
-    "@ohmymcp/record": "workspace:*",
-    "@ohmymcp/mock": "workspace:*"
+    "@ohmymcp-hsu/core": "workspace:*",
+    "@ohmymcp-hsu/runner": "workspace:*",
+    "@ohmymcp-hsu/generate": "workspace:*",
+    "@ohmymcp-hsu/record": "workspace:*",
+    "@ohmymcp-hsu/mock": "workspace:*"
   }
 }

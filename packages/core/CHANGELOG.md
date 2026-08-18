@@ -1,4 +1,4 @@
-# @ohmymcp/core
+# @ohmymcp-hsu/core
 
 ## 0.2.0
 

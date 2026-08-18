@@ -5,9 +5,9 @@ import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { run } from "../src/index.js";
 
-vi.mock("@ohmymcp/core", async () => import("../../core/src/index.js"));
-vi.mock("@ohmymcp/runner", async () => import("../../runner/src/index.js"));
-vi.mock("@ohmymcp/generate", async () => import("../../generate/src/index.js"));
+vi.mock("@ohmymcp-hsu/core", async () => import("../../core/src/index.js"));
+vi.mock("@ohmymcp-hsu/runner", async () => import("../../runner/src/index.js"));
+vi.mock("@ohmymcp-hsu/generate", async () => import("../../generate/src/index.js"));
 
 /**
  * 실서버를 띄우는 E2E 다. 다른 태스크와 병렬로 돌리지 않는다.

@@ -1,4 +1,4 @@
-import { MCP_SUITE_JSON_SCHEMA } from "@ohmymcp/runner";
+import { MCP_SUITE_JSON_SCHEMA } from "@ohmymcp-hsu/runner";
 
 const runner = structuredClone(MCP_SUITE_JSON_SCHEMA) as Record<string, unknown>;
 const runnerDefs = runner.$defs;

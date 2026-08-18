@@ -1,4 +1,4 @@
-# @ohmymcp/runner
+# @ohmymcp-hsu/runner
 
 ## 0.7.0
 
@@ -25,7 +25,7 @@
 ### Patch Changes
 
 - Updated dependencies [0d92470]
-  - @ohmymcp/core@0.2.0
+  - @ohmymcp-hsu/core@0.2.0
 
 ## 0.6.0
 
@@ -43,9 +43,9 @@
 
   공개 타입 변경 둘이 있다.
 
-  - `@ohmymcp/runner` 의 `SpecFindingCode` 에서 `UNCONSTRAINED_SCHEMA` 가 사라진다. 소비자 경로에서
+  - `@ohmymcp-hsu/runner` 의 `SpecFindingCode` 에서 `UNCONSTRAINED_SCHEMA` 가 사라진다. 소비자 경로에서
     `validateMcpSuite` 가 먼저 거부해 도달할 수 없는 코드였다.
-  - `@ohmymcp/generate` 의 `SanitizedAuthoringCandidate` 에 `specFindings` 필드가 생긴다. 승인
+  - `@ohmymcp-hsu/generate` 의 `SanitizedAuthoringCandidate` 에 `specFindings` 필드가 생긴다. 승인
     지문 계산 대상 밖이라 이미 승인된 지문은 그대로다.
 
 ## 0.5.0
@@ -64,7 +64,7 @@
   `Array.prototype` 에 인덱스가 정의됐을 때 hole 이 상속값으로 채워져 지문이 전역 상태에 따라
   달라집니다.
 
-  generate: `canonical.ts` 가 `@ohmymcp/runner` 재수출 한 줄이 됩니다. 공개 API
+  generate: `canonical.ts` 가 `@ohmymcp-hsu/runner` 재수출 한 줄이 됩니다. 공개 API
   (`canonicalJson` · `sha256`)는 그대로이며 동작도 같습니다. 구현이 한 벌로 유지되어야
   저장 시점 지문과 실행 시점 지문이 갈리지 않습니다.
 
@@ -159,7 +159,7 @@
 ### Patch Changes
 
 - Updated dependencies [606600f]
-  - @ohmymcp/core@0.1.0
+  - @ohmymcp-hsu/core@0.1.0
 
 ## 0.1.0
 

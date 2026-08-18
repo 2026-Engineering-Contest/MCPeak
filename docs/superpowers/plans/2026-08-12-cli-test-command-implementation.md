@@ -4,8 +4,8 @@
 - 작성일: 2026-08-12
 - 설계 기준: [CLI test 명령 실제 실행 흐름 설계](../specs/2026-08-12-cli-test-command-design.md)
 - 선행 구현:
-  - `@ohmymcp/core`의 `connectStdio`
-  - `@ohmymcp/runner`의 `runSuite`, `finalizeRunnerExecution`
+  - `@ohmymcp-hsu/core`의 `connectStdio`
+  - `@ohmymcp-hsu/runner`의 `runSuite`, `finalizeRunnerExecution`
 - 구현 대상: `ohmymcp` CLI
 
 ## 1. 목표
@@ -74,7 +74,7 @@ pnpm exec changeset status
 
 - `packages/cli/src/index.ts`의 `run()`은 `not implemented`를 throw하는 스텁이다.
 - `packages/cli/src/cli.ts`는 `process.exit()`를 호출한다.
-- CLI manifest는 `@ohmymcp/runner`를 직접 의존하지만 `@ohmymcp/core`는 직접 의존하지 않는다.
+- CLI manifest는 `@ohmymcp-hsu/runner`를 직접 의존하지만 `@ohmymcp-hsu/core`는 직접 의존하지 않는다.
 - CLI에는 package test script와 E2E script가 없다.
 - Core package root는 `connectStdio`, `McpClientError`, `McpStdioConnection`을 export한다.
 - Runner package root는 `validateMcpSuite`, `runSuite`, `finalizeRunnerExecution`, `RunnerReport`와
@@ -179,7 +179,7 @@ export function run(argv: string[]): Promise<number>;
 사용하므로 바꾸지 않는다.
 
 ```ts
-import type { McpStdioConnection } from "@ohmymcp/core";
+import type { McpStdioConnection } from "@ohmymcp-hsu/core";
 import type {
   FinalizeRunnerExecutionOptions,
   RunnerExecution,
@@ -187,7 +187,7 @@ import type {
   RunSuiteOptions,
   SuiteValidationIssue,
   SuiteValidationResult,
-} from "@ohmymcp/runner";
+} from "@ohmymcp-hsu/runner";
 
 export interface TestCommandInput {
   readonly suitePath: string;
@@ -657,7 +657,7 @@ ESM과 CJS entry를 같은 source에서 빌드하므로 top-level await를 사�
 입력과 실행 실패를 1로 resolve하므로 진입점에 별도 오류 formatter도 두지 않는다. `process.exit()`는
 어떤 경로에서도 사용하지 않는다.
 
-4. `packages/cli/package.json` dependencies에 `"@ohmymcp/core": "workspace:*"`를 추가한다.
+4. `packages/cli/package.json` dependencies에 `"@ohmymcp-hsu/core": "workspace:*"`를 추가한다.
 5. scripts에 `"test:e2e": "node ./tests/dist-cli-e2e.mjs"`를 추가한다.
 6. 외부 dependency 추가 없이 `pnpm install --lockfile-only`로 CLI importer의 lockfile을 갱신한다.
 7. focused unit, source E2E, package typecheck, build, dist E2E를 순서대로 GREEN으로 만든다.
@@ -868,8 +868,8 @@ pwd가 기록한 cli_worktree와 다르거나 HEAD가 base_commit과 다르거�
   pnpm install --frozen-lockfile
   pnpm exec vitest run packages/cli/tests/index.test.ts
   pnpm --filter ohmymcp typecheck
-  pnpm --filter @ohmymcp/core build
-  pnpm --filter @ohmymcp/runner build
+  pnpm --filter @ohmymcp-hsu/core build
+  pnpm --filter @ohmymcp-hsu/runner build
   pnpm --filter ohmymcp build
 
 의존성 설치, 기존 CLI 테스트 수집, typecheck와 선행 dist build 중 하나라도 실패하면 agent를
@@ -929,7 +929,7 @@ await spawn_agent({
     "실제 process E2E는 읽기 전용 examples/weather-server/server.mjs를 PID wrapper로 import한다. 성공 3-case suite와 실제 assertion 실패 suite를 source run과 dist/cli.mjs에서 실행하고 stdout JSON, 빈 stderr, exit code, PID ESRCH를 검사한다. 외부 network와 사용자 설정은 쓰지 않는다.",
     "RED: pnpm exec vitest run packages/cli/tests/index.test.ts packages/cli/tests/test-command.test.ts, pnpm exec vitest run packages/cli/tests/cli-integration.test.ts, pnpm --filter ohmymcp build && pnpm --filter ohmymcp test:e2e. 테스트 미수집이나 bootstrap 실패는 RED로 인정하지 않는다.",
     "GREEN: focused unit, source integration, packages/cli/tests 전체, pnpm --filter ohmymcp typecheck, pnpm build, pnpm --filter ohmymcp test:e2e, pnpm exec biome check packages/cli. 실제 파일과 테스트 수, success/failure exit, PID 잔존을 기록한다.",
-    "README를 실제 문법과 범위로 갱신하고 ohmymcp minor changeset을 한국어로 작성한다. package에는 @ohmymcp/core workspace dependency와 test:e2e script만 추가하고 pnpm install --lockfile-only로 lockfile importer를 갱신한다.",
+    "README를 실제 문법과 범위로 갱신하고 ohmymcp minor changeset을 한국어로 작성한다. package에는 @ohmymcp-hsu/core workspace dependency와 test:e2e script만 추가하고 pnpm install --lockfile-only로 lockfile importer를 갱신한다.",
     "보고서와 최종 응답은 READY_FOR_REVIEW 또는 BLOCKED, 변경 파일, RED, GREEN과 수집 수, report 경로, 남은 위험 순서다.",
   ].join("\n").replaceAll("${cliWorktree}", cliWorktree),
 });

@@ -165,7 +165,7 @@ EnterWorktree 도구에 path 로 그 절대 경로를 넘긴다. name 으로 새
   - 그 태스크의 Files 목록. 목록 밖 파일 수정 금지. 특히 packages/core/**, packages/runner/**,
     packages/cli/**, 루트 빌드 설정은 이 터미널에서 건드리지 않는다. 필요해 보이면 수정하지
     말고 보고한다.
-  - @ohmymcp/runner 에서 새 심볼을 import 하지 않는다. ADR-0009 의 승인 목록을 넓히지 않는다.
+  - @ohmymcp-hsu/runner 에서 새 심볼을 import 하지 않는다. ADR-0009 의 승인 목록을 넓히지 않는다.
   - 의존 방향은 단방향(cli → runner/generate → core). 역참조·순환 금지.
   - @modelcontextprotocol/sdk 는 1.x 고정. 의존성 추가 금지.
   - git 명령을 실행하지 않는다. 커밋은 사람이 한다.
@@ -264,7 +264,7 @@ T12 까지 끝나면 pnpm test 를 --force 로 한 번 돌리고 `Cached: 0 cach
 
 **계약 (전량 고정. 여기서 한 글자라도 바뀌면 T2·T3·T4 와 터미널 B 가 전부 어긋난다)**
 
-> **정정 (2026-08-16, 실행 중 확인).** 초안은 `JsonValue` 를 `@ohmymcp/runner` 에서 가져왔으나
+> **정정 (2026-08-16, 실행 중 확인).** 초안은 `JsonValue` 를 `@ohmymcp-hsu/runner` 에서 가져왔으나
 > 그것은 전역 제약("`runner` 에서 새 심볼을 import 하지 않는다")과 충돌한다.
 > `dependency-boundary.test.ts` 의 승인 목록은 부분집합이 아니라 정확한 일치를 단언하므로
 > 목록을 넓히지 않고는 초록이 되지 않는다. `packages/generate/src/schema.ts:1` 의 `JsonValue` 가
@@ -831,7 +831,7 @@ export interface RepairCommandInput {
 
 **동적 import**
 
-`index.ts` 에 `repair` 분기를 추가한다. `generate` 분기와 같은 모양으로 `@ohmymcp/generate` 를
+`index.ts` 에 `repair` 분기를 추가한다. `generate` 분기와 같은 모양으로 `@ohmymcp-hsu/generate` 를
 동적 import 한다. **`test` 분기는 고치지 않는다.** `test` 경로가 `generate` 를 로드하게 만들면
 안 된다.
 

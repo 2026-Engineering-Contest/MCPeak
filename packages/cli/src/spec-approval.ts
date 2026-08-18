@@ -1,5 +1,5 @@
-import type { CaseApprovalStatus, TestSuiteSpec } from "@ohmymcp/runner";
-import { suiteFingerprint } from "@ohmymcp/runner";
+import type { CaseApprovalStatus, TestSuiteSpec } from "@ohmymcp-hsu/runner";
+import { suiteFingerprint } from "@ohmymcp-hsu/runner";
 
 export type SpecApprovalState = "matched" | "mismatched" | "absent";
 

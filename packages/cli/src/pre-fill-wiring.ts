@@ -6,15 +6,15 @@
  * 아래 규칙이 baseline 을 지킨다(설계서 §4.4).
  */
 
-import type { McpClient, ToolDef } from "@ohmymcp/core";
-import type { PreFillResult, ToolProvenance } from "@ohmymcp/generate";
+import type { McpClient, ToolDef } from "@ohmymcp-hsu/core";
+import type { PreFillResult, ToolProvenance } from "@ohmymcp-hsu/generate";
 import type {
   CallToolCaseSpec,
   JsonObject,
   JsonValue,
   TestCaseSpec,
   TestSuiteSpec,
-} from "@ohmymcp/runner";
+} from "@ohmymcp-hsu/runner";
 import type { DryRunResult } from "./dry-run.js";
 import { runDryRun } from "./dry-run.js";
 

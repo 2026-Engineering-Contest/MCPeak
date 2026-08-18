@@ -16,7 +16,7 @@ cli → runner / generate / record / mock → core
 ```
 
 이 규칙을 문자 그대로 읽으면 `generate`는 `core`만 참조해야 한다. 그런데 `generate`는
-`@ohmymcp/runner`를 직접 참조한다.
+`@ohmymcp-hsu/runner`를 직접 참조한다.
 
 | 종류 | 심볼 |
 |---|---|

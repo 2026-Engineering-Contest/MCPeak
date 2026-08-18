@@ -194,7 +194,7 @@ if ("suite" in raw || "summary" in raw || "warnings" in raw)
    한 글자도 바꾸지 않는다.
 4. `prompt()`가 고정 지침 뒤에 suite 스키마를 붙인다.
    `${FIXED_INSTRUCTION}\n\nTestSuiteSpec JSON Schema:\n${JSON.stringify(MCP_SUITE_JSON_SCHEMA)}\n\nsuiteJson 필드에는 이 스키마를 만족하는 suite를 JSON 문자열로 직렬화해 넣는다.\n\n${JSON.stringify(request)}\n${UNTRUSTED_WARNING}`
-   `MCP_SUITE_JSON_SCHEMA`는 `@ohmymcp/runner`에서 import한다(단방향 의존 유지).
+   `MCP_SUITE_JSON_SCHEMA`는 `@ohmymcp-hsu/runner`에서 import한다(단방향 의존 유지).
    프롬프트가 커지므로 `MAX_REQUEST_BYTES` 검사에 걸리지 않는지 확인한다. 걸리면 수정하지 말고 보고한다.
 5. `unwrap`을 §4-2 계약대로 다시 쓴다.
 6. `authoring-request.ts`에 §4-3을 적용한다.

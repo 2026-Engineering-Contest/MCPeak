@@ -1,6 +1,6 @@
-import type { McpClient } from "@ohmymcp/core";
-import type { Cassette, CassetteMode } from "@ohmymcp/record";
-import { cassetteClient, loadCassette, saveCassette } from "@ohmymcp/record";
+import type { McpClient } from "@ohmymcp-hsu/core";
+import type { Cassette, CassetteMode } from "@ohmymcp-hsu/record";
+import { cassetteClient, loadCassette, saveCassette } from "@ohmymcp-hsu/record";
 
 /**
  * 시험 실행에 카세트 클라이언트를 배선한다. `record` 패키지를 고치지 않고 감싸기만 한다.

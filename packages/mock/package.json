@@ -1,5 +1,5 @@
 {
-  "name": "@ohmymcp/mock",
+  "name": "@ohmymcp-hsu/mock",
   "version": "0.1.2",
   "private": false,
   "type": "module",
@@ -34,7 +34,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@ohmymcp/core": "workspace:*",
+    "@ohmymcp-hsu/core": "workspace:*",
     "@modelcontextprotocol/sdk": "catalog:"
   }
 }

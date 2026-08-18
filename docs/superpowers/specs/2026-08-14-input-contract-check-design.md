@@ -179,7 +179,7 @@ export function describeSpecFinding(finding: SpecFinding): string;
 
 ```ts
 // input-contract.ts
-import type { ToolDef } from "@ohmymcp/core";
+import type { ToolDef } from "@ohmymcp-hsu/core";
 import type { TestSuiteSpec } from "./spec/types.js";
 
 export interface InputContractOptions {
@@ -207,7 +207,7 @@ export function checkAssertionSubstance(suite: TestSuiteSpec): SpecFindingsResul
 
 ### 3.3 의존 방향
 
-`runner` → `core`뿐이다. `ToolDef`는 `@ohmymcp/core`에서 가져온다. `McpClient`와 `ToolResult`는
+`runner` → `core`뿐이다. `ToolDef`는 `@ohmymcp-hsu/core`에서 가져온다. `McpClient`와 `ToolResult`는
 쓰지 않으므로 동결 인터페이스에 저촉되지 않는다. 역참조와 순환은 생기지 않는다.
 
 ## 4. 서버 inputSchema를 어디까지 해석하는가

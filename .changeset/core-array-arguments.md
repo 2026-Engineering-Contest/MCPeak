@@ -1,5 +1,5 @@
 ---
-"@ohmymcp/core": patch
+"@ohmymcp-hsu/core": patch
 ---
 
 `callTool` 이 배열이 든 인자를 거부하던 문제를 고칩니다. `{ items: [1, 2, 3] }` 처럼 중첩된

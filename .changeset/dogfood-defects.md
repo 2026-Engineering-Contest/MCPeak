@@ -1,5 +1,5 @@
 ---
-"@ohmymcp/generate": minor
+"@ohmymcp-hsu/generate": minor
 "ohmymcp": minor
 ---
 

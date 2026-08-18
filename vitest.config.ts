@@ -11,7 +11,7 @@ import { defineConfig } from "vitest/config";
  */
 const workspaceAliases = Object.fromEntries(
   (["core", "runner", "generate", "record", "mock"] as const).map((name) => [
-    `@ohmymcp/${name}`,
+    `@ohmymcp-hsu/${name}`,
     fileURLToPath(new URL(`./packages/${name}/src/index.ts`, import.meta.url)),
   ]),
 );

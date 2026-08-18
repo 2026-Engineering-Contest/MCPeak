@@ -18,7 +18,7 @@ T12 에서 CHANGELOG 두 개에 직접 쓴 `## Unreleased` 절을 지우고, 같
 
 목록 밖 파일 수정 0건. 코드 변경 0건. 의존성 추가 0건. git 명령 0건.
 
-두 CHANGELOG 의 첫 줄이 각각 `# ohmymcp` → `## 0.7.0`, `# @ohmymcp/generate` → `## 0.4.2` 로
+두 CHANGELOG 의 첫 줄이 각각 `# ohmymcp` → `## 0.7.0`, `# @ohmymcp-hsu/generate` → `## 0.4.2` 로
 돌아온 것을 확인했다. 도구가 만든 버전 절만 남는다.
 
 ## 검증
@@ -47,7 +47,7 @@ Checked 183 files in 56ms. No fixes applied.
 
 **두 패키지 모두 `minor` 다.**
 
-- `@ohmymcp/generate`: export 가 늘었다. 함수 넷, 상수 넷, 타입 열하나다. 기존 authoring API 의
+- `@ohmymcp-hsu/generate`: export 가 늘었다. 함수 넷, 상수 넷, 타입 열하나다. 기존 authoring API 의
   시그니처와 동작은 그대로다. `makeProvider` 반환 객체에 `diagnose` 가 **추가**됐을 뿐 기존
   `author` 는 안 바뀌었다. 추가만 있고 제거·변경이 없으므로 `major` 가 아니다. 공개 표면이
   늘었으므로 `patch` 도 아니다.

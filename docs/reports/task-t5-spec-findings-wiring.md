@@ -81,7 +81,7 @@ path: "assertions[0].schema.minLength" }` 를 내고, 문장은
    내 Files 목록 밖이다. 그래서 `checkInputContract?(...)` · `checkAssertionSubstance?(...)` 로
    선택 필드로 두고, 생략 시 `runner` 의 실제 함수를 쓰게 했다(`?? runnerCheckInputContract`).
    `index.ts` 는 한 줄도 바뀌지 않고 기본값이 실제 함수라는 계획서 요구도 지켜진다.
-   - 부수 효과: `test-command.ts` 가 `@ohmymcp/runner` 를 런타임으로 static import 한다.
+   - 부수 효과: `test-command.ts` 가 `@ohmymcp-hsu/runner` 를 런타임으로 static import 한다.
      이미 `spec-approval.ts` 가 `suiteFingerprint` 를 같은 방식으로 import 하고
      `test-command.ts` 가 그 파일을 import 하므로, 런타임 의존 관계는 새로 생기지 않는다.
 2. **검사 호출 전체를 `try { } catch { return [] }` 로 감쌌다.** 계획서는 `listTools()` 에만

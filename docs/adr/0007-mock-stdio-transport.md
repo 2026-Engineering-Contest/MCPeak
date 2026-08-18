@@ -13,7 +13,7 @@ ADR-0005 에서 목 데이터 전략을 정하면서 목 서버는 **Streamable 
 
 - `core.connect()` 는 `{ command, args, env, cwd }` 만 받는다. URL 을 넣을 자리가 없다 (#16)
 - `cli test` 도 `--command` 기반이다
-- 결과적으로 `@ohmymcp/mock` 을 import 하는 코드가 저장소 전체에 **0곳**이었다
+- 결과적으로 `@ohmymcp-hsu/mock` 을 import 하는 코드가 저장소 전체에 **0곳**이었다
 
 CONTRIBUTING §6 은 *"우리 도구로 우리를 검증한다"* 를 요구하는데, 목 경로에서만 그것이
 성립하지 않는 상태다. 만들어놓고 아무도 쓰지 않는 패키지는 마감 때 잘릴 후보가 된다

@@ -1,5 +1,5 @@
 ---
-"@ohmymcp/record": patch
+"@ohmymcp-hsu/record": patch
 ---
 
 카세트에 저장되는 `tools.inputSchema` 가 **더 이상 파괴되지 않습니다.**

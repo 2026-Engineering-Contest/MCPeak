@@ -1,4 +1,4 @@
-import type { ToolDef } from "@ohmymcp/core";
+import type { ToolDef } from "@ohmymcp-hsu/core";
 import { fail, type JsonObject, plainObject, validateSchema } from "./schema.js";
 import { synthesizeValue } from "./synthesize.js";
 import { buildViolationCases, type GeneratedCase } from "./violation-cases.js";
@@ -72,9 +72,9 @@ function buildSuite(tool: ToolDef, index: number, baseName: string): GeneratedSu
 
 function renderSuite(suite: GeneratedSuiteSpec): string {
   return [
-    'import { defineMcpSuite } from "@ohmymcp/runner";',
+    'import { defineMcpSuite } from "@ohmymcp-hsu/runner";',
     "",
-    "// 이 파일은 @ohmymcp/generate가 생성했습니다. 직접 수정하지 마세요.",
+    "// 이 파일은 @ohmymcp-hsu/generate가 생성했습니다. 직접 수정하지 마세요.",
     "// 실제 client는 별도 실행 진입점에서 주입하고, 사람이 작성하는 테스트는 별도 파일에 두세요.",
     `export const generatedSuite = defineMcpSuite(${JSON.stringify(suite, null, 2)});`,
     "",

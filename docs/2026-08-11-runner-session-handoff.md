@@ -29,11 +29,11 @@ OhMyMCP는 MCP 서버를 코드로 자동 테스트하는 TypeScript 모노레�
 
 | 패키지 | 책임 |
 |---|---|
-| `@ohmymcp/core` | MCP 연결, stdio 프로세스, 핸드셰이크, 수명주기 |
-| `@ohmymcp/runner` | 테스트 실행, assertion, 실패 진단, 리포트 |
-| `@ohmymcp/generate` | 스키마 및 자연어에서 테스트 명세 생성 |
-| `@ohmymcp/record` | 녹화, 재생, 계약 스냅샷 |
-| `@ohmymcp/mock` | Streamable HTTP 목 서버와 응답 주입 |
+| `@ohmymcp-hsu/core` | MCP 연결, stdio 프로세스, 핸드셰이크, 수명주기 |
+| `@ohmymcp-hsu/runner` | 테스트 실행, assertion, 실패 진단, 리포트 |
+| `@ohmymcp-hsu/generate` | 스키마 및 자연어에서 테스트 명세 생성 |
+| `@ohmymcp-hsu/record` | 녹화, 재생, 계약 스냅샷 |
+| `@ohmymcp-hsu/mock` | Streamable HTTP 목 서버와 응답 주입 |
 | `ohmymcp` CLI | 각 패키지를 호출하는 얇은 진입점 |
 
 현재 `mock`을 제외한 주요 패키지는 대부분 `not implemented` 스텁 상태다. `runner`에는 `createMcpTest`와 `toContainTool` 시그니처만 있다.

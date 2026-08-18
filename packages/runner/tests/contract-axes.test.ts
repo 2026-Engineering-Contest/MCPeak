@@ -1,4 +1,4 @@
-import type { ToolDef } from "@ohmymcp/core";
+import type { ToolDef } from "@ohmymcp-hsu/core";
 import { describe, expect, it } from "vitest";
 import type { JsonObject, TestCaseSpec } from "../src/index.js";
 import { checkInputContract, deriveContractAxes, matchCoveredAxes } from "../src/index.js";

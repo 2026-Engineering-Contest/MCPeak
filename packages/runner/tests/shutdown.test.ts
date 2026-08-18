@@ -1,4 +1,4 @@
-import type { McpClient } from "@ohmymcp/core";
+import type { McpClient } from "@ohmymcp-hsu/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   finalizeRunnerExecution,

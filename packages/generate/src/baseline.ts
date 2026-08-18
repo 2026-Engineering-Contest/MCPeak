@@ -1,5 +1,5 @@
-import type { ToolDef } from "@ohmymcp/core";
-import { type TestSuiteSpec, validateMcpSuite } from "@ohmymcp/runner";
+import type { ToolDef } from "@ohmymcp-hsu/core";
+import { type TestSuiteSpec, validateMcpSuite } from "@ohmymcp-hsu/runner";
 import { deepFreeze, sha256 } from "./canonical.js";
 import { type CoverageResult, computeCoverage } from "./coverage.js";
 import { safeBaseName } from "./filename.js";

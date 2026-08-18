@@ -1,16 +1,16 @@
-# @ohmymcp/runner
+# @ohmymcp-hsu/runner
 
 선언형 MCP 테스트 명세를 순서대로 실행하고, assertion 결과와 구조화된 이벤트·보고서를 제공합니다.
 
 - **오너:** `@seodduu` `@endl24` `@sunghoon0303` (① MCP 서버 테스트 파트)
-- **의존:** `@ohmymcp/core`
+- **의존:** `@ohmymcp-hsu/core`
 
 ## 명세 작성
 
 `defineMcpSuite`로 TypeScript 리터럴 타입을 유지하면서 런타임 명세 검증을 수행합니다. 명세를 외부 JSON이나 생성 결과로 받는 경우에는 `validateMcpSuite`를 사용하세요.
 
 ```ts
-import { defineMcpSuite } from "@ohmymcp/runner";
+import { defineMcpSuite } from "@ohmymcp-hsu/runner";
 
 export const suite = defineMcpSuite({
   schemaVersion: 1,
@@ -50,7 +50,7 @@ import {
   runSuite,
   type McpClientShutdownController,
   type RunnerEvent,
-} from "@ohmymcp/runner";
+} from "@ohmymcp-hsu/runner";
 import { suite } from "./weather-suite.js";
 
 declare const shutdown: McpClientShutdownController;

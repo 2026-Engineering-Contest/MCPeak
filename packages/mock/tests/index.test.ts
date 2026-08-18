@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import type { ToolDef } from "@ohmymcp/core";
+import type { ToolDef } from "@ohmymcp-hsu/core";
 import { afterEach, describe, expect, it } from "vitest";
 import { ANY, createMockServer, type MockServer } from "../src/index.js";
 
@@ -39,7 +39,7 @@ afterEach(async () => {
   await Promise.all(opened.splice(0).map((s) => s.close()));
 });
 
-describe("@ohmymcp/mock", () => {
+describe("@ohmymcp-hsu/mock", () => {
   it("url 을 돌려주고 그 주소로 붙을 수 있다", async () => {
     const server = await start();
     expect(server.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/mcp$/);

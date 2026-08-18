@@ -1,10 +1,10 @@
-# @ohmymcp/record
+# @ohmymcp-hsu/record
 
 MCP 클라이언트를 카세트로 감싸 녹화·재생하고, 계약 스냅샷에서 비결정 필드와 비밀값을
 제거한다.
 
 - **오너:** `@ddxng5` (② replay/record 파트)
-- **의존:** `@ohmymcp/core`
+- **의존:** `@ohmymcp-hsu/core`
 - **결정:** [ADR-0003](../../docs/adr/0003-cassette-matching-key.md)
 
 ## 공개 API
@@ -15,7 +15,7 @@ import {
   loadCassette,
   saveCassette,
   type Cassette,
-} from "@ohmymcp/record";
+} from "@ohmymcp-hsu/record";
 
 const path = "fixtures/weather.cassette.json";
 const cassette = await loadCassette(path);

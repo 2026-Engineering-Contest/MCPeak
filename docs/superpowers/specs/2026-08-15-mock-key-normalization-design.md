@@ -1,6 +1,6 @@
 # 목 매칭 키 정규화 경계 설계 (2026-08-15)
 
-- 대상 패키지: `@ohmymcp/mock`
+- 대상 패키지: `@ohmymcp-hsu/mock`
 - 파트: ③ mock server (`@storyrago`)
 - 관련 결정: ADR-0003(카세트 매칭 키), ADR-0005(목 데이터 생성 전략), ADR-0007(목 stdio 트랜스포트)
 - 관련 변경: #69(인자 매칭 키에서 `undefined` 키 제외)

@@ -1,5 +1,5 @@
 ---
-"@ohmymcp/record": patch
+"@ohmymcp-hsu/record": patch
 ---
 
 replay에서 카세트 키를 찾지 못했을 때 가장 가까운 저장 요청의 필드별 차이를 보여주고, 마스킹 후 동일한 요청은 키 앞부분으로 구분합니다.

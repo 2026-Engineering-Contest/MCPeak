@@ -1,10 +1,10 @@
-import type { ToolDef } from "@ohmymcp/core";
+import type { ToolDef } from "@ohmymcp-hsu/core";
 import {
   type ContractAxis,
   type ContractDeclaredType,
   type ContractRange,
   deriveContractAxes,
-} from "@ohmymcp/runner";
+} from "@ohmymcp-hsu/runner";
 import { integerLowerBound, integerUpperBound } from "./constraints.js";
 import { fieldSlug } from "./filename.js";
 import type { JsonObject, JsonSchema, JsonValue } from "./schema.js";

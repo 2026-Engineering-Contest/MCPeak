@@ -1,6 +1,6 @@
 ---
-"@ohmymcp/runner": minor
-"@ohmymcp/generate": patch
+"@ohmymcp-hsu/runner": minor
+"@ohmymcp-hsu/generate": patch
 "ohmymcp": minor
 ---
 

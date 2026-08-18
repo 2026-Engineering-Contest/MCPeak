@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
-import type { ToolDef } from "@ohmymcp/core";
-import { validateMcpSuite } from "@ohmymcp/runner";
+import type { ToolDef } from "@ohmymcp-hsu/core";
+import { validateMcpSuite } from "@ohmymcp-hsu/runner";
 import { describe, expect, it } from "vitest";
 import {
   BASELINE_POLICY_VERSION,
@@ -345,7 +345,7 @@ describe("createBaselineSuite", () => {
     ) as { dependencies?: Record<string, string> };
 
     expect(validateMcpSuite(result.suite)).toMatchObject({ valid: true });
-    expect(packageJson.dependencies?.["@ohmymcp/runner"]).toBe("workspace:*");
+    expect(packageJson.dependencies?.["@ohmymcp-hsu/runner"]).toBe("workspace:*");
   });
 
   // sha256 자체의 동작 단언은 packages/runner/tests/canonical.test.ts 로 옮겼다.

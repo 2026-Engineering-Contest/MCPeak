@@ -6,8 +6,8 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import { run } from "../src/index.js";
 
-vi.mock("@ohmymcp/core", async () => import("../../core/src/index.js"));
-vi.mock("@ohmymcp/runner", async () => import("../../runner/src/index.js"));
+vi.mock("@ohmymcp-hsu/core", async () => import("../../core/src/index.js"));
+vi.mock("@ohmymcp-hsu/runner", async () => import("../../runner/src/index.js"));
 
 /**
  * 결정론성 확인의 실서버 E2E (설계 문서 §9.3). **실제 서버 프로세스를 띄우므로 직렬이다.**

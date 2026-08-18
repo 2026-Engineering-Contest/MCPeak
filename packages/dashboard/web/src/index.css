@@ -1,0 +1,64 @@
+@import "tailwindcss";
+
+/*
+ * 터미널 출력 패널 색상. 서버 `ansiToHtml`(packages/dashboard/src/server/ansi.ts)이
+ * SGR 코드를 `ansi-30`~`ansi-37`, `ansi-90`~`ansi-97`, `ansi-bold` 클래스로 내보낸다.
+ * 라이트 셸 안의 다크 패널이라 여기서만 별도로 정의한다. 가독성이 최우선이므로
+ * 표준 터미널 팔레트에 가깝게 잡는다.
+ */
+.terminal-panel {
+  background-color: #1e1e2e;
+  color: #cdd6f4;
+}
+
+.ansi-30 {
+  color: #45475a;
+}
+.ansi-31 {
+  color: #f38ba8;
+}
+.ansi-32 {
+  color: #a6e3a1;
+}
+.ansi-33 {
+  color: #f9e2af;
+}
+.ansi-34 {
+  color: #89b4fa;
+}
+.ansi-35 {
+  color: #f5c2e7;
+}
+.ansi-36 {
+  color: #94e2d5;
+}
+.ansi-37 {
+  color: #bac2de;
+}
+.ansi-90 {
+  color: #585b70;
+}
+.ansi-91 {
+  color: #fab387;
+}
+.ansi-92 {
+  color: #94e2d5;
+}
+.ansi-93 {
+  color: #f9e2af;
+}
+.ansi-94 {
+  color: #b4befe;
+}
+.ansi-95 {
+  color: #f5c2e7;
+}
+.ansi-96 {
+  color: #94e2d5;
+}
+.ansi-97 {
+  color: #f5f5f5;
+}
+.ansi-1 {
+  font-weight: 700;
+}

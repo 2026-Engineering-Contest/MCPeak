@@ -43,6 +43,7 @@
     "ohmymcp": "workspace:*"
   },
   "devDependencies": {
+    "@tailwindcss/vite": "4.3.3",
     "@testing-library/react": "16.3.2",
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.4",
@@ -50,6 +51,7 @@
     "jsdom": "30.0.1",
     "react": "19.2.8",
     "react-dom": "19.2.8",
+    "tailwindcss": "4.3.3",
     "vite": "8.2.1"
   }
 }

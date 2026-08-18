@@ -49,7 +49,13 @@ const NONDETERMINISTIC_KEYS = new Set([
   "expiresat",
 ]);
 
-const SENSITIVE_KEY_PARTS = [
+/**
+ * 마스킹 대상 키. 값은 구분자를 지우고 소문자로 맞춘 형태다.
+ *
+ * `accesstoken` · `refreshtoken` 은 접미 규칙상 `token` 에 이미 걸리지만, ADR-0003 이
+ * 열거한 목록이라 그대로 둔다. 근거는 ADR-0039 다.
+ */
+const SENSITIVE_KEYS = new Set([
   "authorization",
   "apikey",
   "accesstoken",
@@ -57,7 +63,8 @@ const SENSITIVE_KEY_PARTS = [
   "token",
   "secret",
   "password",
-];
+  "cookie",
+]);
 
 const plainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" &&
@@ -78,9 +85,41 @@ class CassetteJsonError extends TypeError {
 
 const normalizeKey = (key: string): string => key.replace(/[-_]/g, "").toLowerCase();
 
+/**
+ * 키를 단어로 쪼갠다. `-` · `_` 구분자와 카멜케이스 경계를 함께 본다.
+ *
+ * `normalizeKey` 를 쓰지 않는 이유는 그쪽이 구분자를 **지우기** 때문이다. 경계 정보가
+ * 사라지면 `tokenCount` 와 `accessToken` 을 구분할 수 없다. `normalizeKey` 는
+ * `NONDETERMINISTIC_KEYS` 조회와 공유하므로 건드리지 않는다.
+ */
+const keyWords = (key: string): string[] =>
+  key
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    // 연속 대문자 뒤에 단어가 오는 경우. `APIKey` → `API Key`
+    .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
+    .split(/[-_ ]+/)
+    // 꼬리 숫자는 떼어 낸다. `apiKey0` 은 여전히 API 키다. 머리 명사를 바꾸지 않으므로
+    // `cookieCount2` 가 새로 걸리지도 않는다.
+    .map((word) => word.toLowerCase().replace(/[0-9]+$/, ""))
+    .filter((word) => word.length > 0);
+
+/**
+ * 키의 **접미 단어열**이 목록과 정확히 일치하면 민감으로 본다.
+ *
+ * 부분 문자열 포함이 아니다. 영어 합성명사는 마지막 단어가 머리라서 `accessToken` 은
+ * 토큰의 일종이고 `tokenCount` 는 개수의 일종이다. 포함으로 보면 둘이 구분되지 않아
+ * `tokenCount` · `passwordPolicy` · `secretariat` 이 전부 걸린다. 과잉 마스킹은 값을
+ * 지우므로, ADR-0041 이후에는 "그 필드를 테스트가 영영 못 본다"가 된다.
+ *
+ * 접미로 보되 한 단어씩만 보지 않는 이유는 `X-Api-Key` 다. 마지막 단어 `key` 는 목록에
+ * 없고 `apikey` 가 있다.
+ */
 const sensitiveKey = (key: string): boolean => {
-  const normalized = normalizeKey(key);
-  return SENSITIVE_KEY_PARTS.some((part) => normalized.includes(part));
+  const words = keyWords(key);
+  for (let start = words.length - 1; start >= 0; start--) {
+    if (SENSITIVE_KEYS.has(words.slice(start).join(""))) return true;
+  }
+  return false;
 };
 
 /**

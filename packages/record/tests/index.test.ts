@@ -115,9 +115,83 @@ describe("redact / snapshotContract", () => {
     ).toStrictEqual({
       headers: { authorization: "[redacted]" },
       apiKey: "[redacted]",
-      tokenCount: "[redacted]",
+      // token 을 포함하지만 개수다. ADR-0039 로 접미 규칙이 되면서 마스킹 대상에서 빠졌다.
+      tokenCount: 42,
       nested: [{ refresh_token: "[redacted]" }],
     });
+  });
+
+  it("Cookie 와 Set-Cookie 를 마스킹한다", () => {
+    expect(
+      redact({
+        Cookie: "session=abc123",
+        "Set-Cookie": "session=def456; HttpOnly",
+        SET_COOKIE: "x=1",
+        setCookie: "y=2",
+      }),
+    ).toStrictEqual({
+      Cookie: "[redacted]",
+      "Set-Cookie": "[redacted]",
+      SET_COOKIE: "[redacted]",
+      setCookie: "[redacted]",
+    });
+  });
+
+  it("이름에 민감 단어가 들어 있어도 머리가 아니면 마스킹하지 않는다", () => {
+    expect(
+      redact({
+        tokenCount: 42,
+        passwordPolicy: { minLength: 8 },
+        secretariat: "office",
+        cookieCount: 3,
+      }),
+    ).toStrictEqual({
+      tokenCount: 42,
+      passwordPolicy: { minLength: 8 },
+      secretariat: "office",
+      cookieCount: 3,
+    });
+  });
+
+  it("구분자와 대소문자가 어떻든 민감 키는 계속 마스킹한다", () => {
+    expect(
+      redact({
+        accessToken: "a",
+        sessionToken: "b",
+        "X-Api-Key": "c",
+        APIKey: "d",
+        refresh_token: "e",
+        authorization: "f",
+        secret: "g",
+        password: "h",
+      }),
+    ).toStrictEqual({
+      accessToken: "[redacted]",
+      sessionToken: "[redacted]",
+      "X-Api-Key": "[redacted]",
+      APIKey: "[redacted]",
+      refresh_token: "[redacted]",
+      authorization: "[redacted]",
+      secret: "[redacted]",
+      password: "[redacted]",
+    });
+  });
+
+  it("번호가 붙은 민감 키도 계속 마스킹한다", () => {
+    // 꼬리 숫자를 떼지 않으면 apiKey0 의 마지막 단어가 "key0" 이 되어 목록과 안 맞는다.
+    expect(redact({ apiKey0: "a", token2: "b", cookieCount2: 3 })).toStrictEqual({
+      apiKey0: "[redacted]",
+      token2: "[redacted]",
+      cookieCount2: 3,
+    });
+  });
+
+  it("비결정 키 판정은 접미 규칙과 무관하게 그대로다", () => {
+    // sensitiveKey 만 바뀌었고 normalizeKey 는 NONDETERMINISTIC_KEYS 조회와 공유하므로
+    // 건드리지 않았다. 두 판정이 서로 새지 않는지 고정한다.
+    const snapshot = snapshotContract(ok({ createdAt: "x", created_at: "y", cookieCount: 3 }));
+
+    expect(snapshot).toStrictEqual({ cookieCount: 3 });
   });
 
   it("마스킹 중 sparse array를 거절한다", () => {
@@ -573,6 +647,18 @@ describe("cassetteClient", () => {
       '1회차 raw.data: {"city":"Seoul","token":"[redacted]"} / 2회차 raw.data: <없음>',
     );
     expect(warnings[0]).not.toContain("secret-a");
+  });
+
+  it("중복 응답 경고가 Set-Cookie 값을 노출하지 않는다", async () => {
+    const warnings = await duplicateWarning(
+      { "Set-Cookie": "session=live-a" },
+      { "Set-Cookie": "session=live-b" },
+    );
+
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).not.toContain("live-a");
+    expect(warnings[0]).not.toContain("live-b");
+    expect(warnings[0]).toContain("위 값은 마스킹되어 표시됩니다");
   });
 
   it("표시 상한은 차이 판정을 바꾸지 않는다", async () => {

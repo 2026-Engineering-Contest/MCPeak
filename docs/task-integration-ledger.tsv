@@ -103,3 +103,4 @@ R149-schema-constraint-review-fixes	782b4e0	2026-08-18
 T9-T10b-schema-constraint-prefill-generate	52d0aa1	2026-08-17
 T10-T12-schema-constraint-prefill-cli	e82e7df	2026-08-17
 T1-determinism-runner	c86beed	2026-08-18
+T2-determinism-capture	264855d	2026-08-18

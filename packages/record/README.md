@@ -5,7 +5,10 @@ MCP 클라이언트를 카세트로 감싸 녹화·재생하고, 계약 스냅�
 
 - **오너:** `@ddxng5` (② replay/record 파트)
 - **의존:** `@ohmymcp/core`
-- **결정:** [ADR-0003](../../docs/adr/0003-cassette-matching-key.md)
+- **결정:** [ADR-0003](../../docs/adr/0003-cassette-matching-key.md) (개정:
+  [ADR-0039](../../docs/adr/0039-민감-키-목록과-매칭-경계.md),
+  [ADR-0040](../../docs/adr/0040-스키마와-데이터의-마스킹-규칙-분리.md),
+  [ADR-0041](../../docs/adr/0041-마스킹의-적용-경계.md))
 
 ## 공개 API
 
@@ -81,16 +84,28 @@ try {
 
 ## 마스킹과 계약 스냅샷
 
-`redact(value)`는 `authorization`, `apiKey`, `accessToken`, `refreshToken`, `token`,
-`secret`, `password`를 이름에 포함하는 필드를 `"[redacted]"`로 바꾼다. 대소문자는 구분하지
-않으며, 안전을 위해 `tokenCount`처럼 과하게 잡히는 이름도 마스킹한다.
+`redact(value)`는 키를 `-`·`_` 구분자와 카멜케이스 경계로 단어를 나눈 뒤, **뒤에서부터
+이어붙인 접미 조합**이 `authorization`, `apikey`, `accesstoken`, `refreshtoken`, `token`,
+`secret`, `password`, `cookie` 중 하나와 정확히 일치하는 필드만 `"[redacted]"`로 바꾼다.
+대소문자는 구분하지 않는다. 부분 문자열 포함이 아니라 접미 일치이므로 `tokenCount`·
+`passwordPolicy`처럼 머리 명사가 다른 합성어는 마스킹하지 않는다. 반대로 `X-Api-Key`처럼
+목록에 없는 단어가 앞단어와 합쳐 목록에 걸리는 경우는 그대로 마스킹한다. 판정 규칙과 한계는
+[ADR-0039](../../docs/adr/0039-민감-키-목록과-매칭-경계.md).
+
+`tools`의 `inputSchema`는 데이터가 아니라 스키마라 `redact`가 아닌 별도 규칙
+(`redactSchema`)을 탄다. 프로퍼티 이름 자체는 절대 마스킹하지 않고, 민감한 프로퍼티 아래의
+`default`·`const`·`examples`·`enum` 값만 가린다. 근거는
+[ADR-0040](../../docs/adr/0040-스키마와-데이터의-마스킹-규칙-분리.md).
 
 `snapshotContract(result)`는 `ToolResult.raw`를 깊게 순회해 `id`, `requestId`, `sessionId`,
-`timestamp`, `createdAt`, `updatedAt`, `expiresAt` 필드를 제거한 뒤 비밀값을 마스킹한다.
+`timestamp`, `createdAt`, `updatedAt`, `expiresAt` 필드를 제거한 뒤 위 규칙으로 비밀값을
+마스킹한다.
 
 요청 `args`는 녹화 시점에 마스킹되어 인메모리 카세트에도 원문 비밀값이 남지 않는다. 응답
-`content`/`raw`와 `tools`는 재생 결정론성을 위해 내부 카세트에서 원문을 유지하지만,
-`onFlush`가 받는 카세트는 이미 마스킹된 저장용 값이다. 값이 JSON 문자열이면 flush 시점에
+`content`/`raw`와 `tools`는 재생 결정론성을 위해 **내부 카세트에는** 원문으로 남지만,
+`callTool`·`listTools`가 호출자에게 돌려주는 값과 `onFlush`가 받는 저장용 카세트는 이미
+마스킹되어 있다 — 값이 프로세스 밖으로 나가는 경계마다 마스킹을 건다
+([ADR-0041](../../docs/adr/0041-마스킹의-적용-경계.md)). 값이 JSON 문자열이면 이 경계에서
 파싱 가능한 경우 구조화해 마스킹하고 stable JSON 문자열로 저장한다.
 
 ## 제외 범위

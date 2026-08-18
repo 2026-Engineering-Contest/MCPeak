@@ -9,15 +9,15 @@
 `pnpm test` 전체 실행이 부하와 무관하게 간헐적으로 실패한다. 무부하 25회 실행에서 2회다.
 
 ```
-FAIL  packages/core/tests/stdio-integration.test.ts > stdio 실제 프로세스 > handshake timeout 뒤 프로세스를 정리한다
+FAIL  packages/core/tests/stdio-integration-e2e.test.ts > stdio 실제 프로세스 > handshake timeout 뒤 프로세스를 정리한다
 Error: expect(received).toSatisfy()
 Received: undefined
- ❯ assertNoResidue packages/core/tests/stdio-integration.test.ts:39:15
+ ❯ assertNoResidue packages/core/tests/stdio-integration-e2e.test.ts:39:15
 ```
 
 ## 원인
 
-`packages/core/tests/stdio-integration.test.ts:29`의 PID 파일 대기 예산이 20회 × 10ms = 200ms다.
+`packages/core/tests/stdio-integration-e2e.test.ts:29`의 PID 파일 대기 예산이 20회 × 10ms = 200ms다.
 
 ```ts
 for (let attempt = 0; attempt < 20 && pid === undefined; attempt += 1) {
@@ -51,9 +51,9 @@ for (let attempt = 0; attempt < 20 && pid === undefined; attempt += 1) {
 
 실제 프로세스를 띄우는 테스트 세 개가 기본 유닛 실행에 섞여 있다.
 
-- `packages/core/tests/stdio-integration.test.ts`
-- `packages/cli/tests/cli-integration.test.ts`
-- `packages/cli/tests/generate-integration.test.ts`
+- `packages/core/tests/stdio-integration-e2e.test.ts`
+- `packages/cli/tests/cli-integration-e2e.test.ts`
+- `packages/cli/tests/generate-integration-e2e.test.ts`
 
 `CLAUDE.local.md`는 이런 E2E를 직렬 전용 웨이브로 분리하라고 요구한다. 분리하려면 루트
 `vitest.config.ts`를 고쳐야 하는데 그것은 공유 계약이라 제안만 남긴다.

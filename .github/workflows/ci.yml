@@ -51,7 +51,7 @@ jobs:
     #    요구하지 않는다. 그래서 그쪽은 skip 을 허용하고, 여기서만 승격 스위치를 켠다.
     # 2) verify 는 Node 20/22/24 매트릭스라 여기 붙이면 E2E 가 3회 돈다. 프로세스
     #    spawn · stdio 왕복 · 종료처럼 Node 버전에 민감한 층은 이미
-    #    packages/core/tests/stdio-integration.test.ts 가 세 버전 전부에서 본다.
+    #    packages/core/tests/stdio-integration-e2e.test.ts 가 세 버전 전부에서 본다.
     #    이 잡이 추가로 보는 것은 상대가 Python 프로세스라는 점 하나다 (ADR-0037).
     #
     # OHMYMCP_REQUIRE_E2E=1 은 "uvx 가 없으면 skip 하지 말고 실패해라" 다. 이 잡에서
@@ -132,7 +132,7 @@ jobs:
 
       # 빌드가 성공했다는 것과 산출물이 실제로 도는 것은 다르다.
       # 이 스텝은 dist/cli.mjs 를 그대로 실행해 examples/weather-server 를 테스트한다.
-      # vitest 쪽(cli-integration.test.ts)은 소스를 돌리므로 번들링·exports·shebang
+      # vitest 쪽(cli-integration-e2e.test.ts)은 소스를 돌리므로 번들링·exports·shebang
       # 문제를 잡지 못한다 — 그것들은 배포 후에야 드러난다 (CONTRIBUTING §6).
       - name: Verify built CLI
         run: pnpm --filter ohmymcp test:e2e

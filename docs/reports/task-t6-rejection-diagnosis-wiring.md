@@ -98,12 +98,61 @@ T5 는 `rejectionDiagnosisPrompt` 와 `buildRejectionDiagnosisProviderSchema` �
 `index.test.ts` 의 의존 키 exhaustiveness 검사가 이번에 제 역할을 했다. 새 함수 의존 둘을
 `index.ts` 에 배선하지 않았다면 타입 오류로 막혔다.
 
-## 남은 것 — W5
+## W5 실환경 검증 — 전부 통과
 
-여섯 태스크가 전부 끝났다. 통합 게이트 중 남은 것은 **실환경 검증(W5)** 이다.
+여섯 태스크가 끝난 뒤 빌드 산출물로 실제 서버에 돌렸다. 인메모리 스텁이 아니라
+`packages/cli/dist/cli.mjs` 와 `examples/weather-server/server.mjs` 다.
 
-- 게이트 6: `examples/weather-server` 에 같은 명세를 2회 실행해 `--json` 바이트가 같은지.
-- 게이트 7: `pnpm build` 후 `pnpm --filter ohmymcp test:e2e`.
+### 게이트 6 — 결정론성
 
-그 서버는 `rejectionUnverified` 가 6 이므로(T2 에서 실측) `test` 요약의 고지 줄과 `generate`
-승인 화면의 미확인 목록이 실제로 뜬다. AI 진단은 `--provider` 를 줘야 뜬다.
+같은 명세를 2회 실행해 `--json` 출력을 바이트로 비교했다. **2843 바이트가 동일하다.**
+분류가 응답 본문만 보는 순수 함수라는 것이 실행에서도 확인된다.
+
+### 게이트 7 — dist e2e
+
+`pnpm build` 후 `pnpm --filter ohmymcp test:e2e` 가 통과한다(exit 0).
+
+**turbo 캐시에 주의해야 했다.** 첫 `turbo run build` 가 `FULL TURBO` 로 6개 전부 캐시에서
+복원돼 변경이 반영되지 않은 산출물이 나왔다. `--force` 로 다시 빌드해 `dist` 에 새 심볼이
+들어간 것을 확인한 뒤 e2e 를 돌렸다. 검증 전에 `--force` 를 붙이는 편이 안전하다.
+
+`dist-cli-e2e.mjs` 의 summary 단언 5곳을 갱신했다(**계획서 Files 목록 밖**, `cli` 안). 값은
+추측하지 않고 실행 결과에서 받아 채웠다.
+
+| 픽스처 | `rejectionUnverified` |
+|---|---|
+| `weather-suite.json` | 1 |
+| `weather-suite-failing.json` | 0 |
+| `weather-body-assertion.suite.json` | 2 |
+| `generate` baseline (8케이스) | 6 |
+| 4케이스 스위트 | 1 |
+
+### 사람이 보는 화면
+
+빌드된 CLI 를 실제 서버에 그냥 돌린 결과다.
+
+```
+weather-server CLI E2E  (3 cases)
+
+✓ weather-tool-exists             get_weather 도구를 제공한다
+✓ seoul-weather-succeeds          서울 날씨를 정상 조회한다
+✓ unsupported-city-is-tool-error  미지원 도시는 도구 오류를 반환한다
+
+3 passed  (3 total)
+
+  → 거절을 기대한 케이스 1건은 거절 근거를 확인하지 못했습니다.
+    서버가 거절한 것인지 다른 이유로 실패한 것인지 이 도구는 판단하지 못합니다.
+    확인: ohmymcp generate 의 승인 화면에서 해당 케이스의 응답을 확인하세요.
+```
+
+종료 코드는 `0` 이다. **판정이 안 바뀌었다.** 확인 못 한 그 한 건은
+`unsupported-city-is-tool-error` — 거절 문장을 손으로 쓴 케이스이고, 설계 문서 §9 가 우리
+예제 서버를 그 한계의 예로 미리 적어 둔 바로 그 자리다. 규칙이 합성 데이터가 아니라 실제
+실행에서도 예측대로 동작한다.
+
+## 남은 것
+
+- **AI 진단 경로는 실 provider 로 못 돌려 봤다.** `--provider` 와 실제 codex/claude CLI 가
+  있어야 한다. `diagnoseRejection` 이 기존 셋과 같은 실행 경로(`execute`)를 쓰므로 배선은
+  같지만, 실호출은 확인하지 않았다. 그 경로를 한 번 돌려 보는 것이 남은 검증이다.
+- `pnpm test` 1829건 · `typecheck --force` 6/6 · `biome ci .` 202파일 전부 통과.

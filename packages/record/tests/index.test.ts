@@ -264,8 +264,9 @@ describe("cassetteClient", () => {
     expect(flushed[0]?.interactions).toHaveLength(2);
   });
 
-  it("기본 auto 모드는 miss 뒤 hit 응답 원문을 유지하고 flush 는 마스킹한다", async () => {
+  it("auto 모드는 miss 뒤 hit 응답에도 flush 와 같은 마스킹을 적용한다 (ADR-0041)", async () => {
     const result = ok({ id: "run-1", token: "secret-token", value: 7 });
+    const masked = ok({ id: "run-1", token: "[redacted]", value: 7 });
     const flushed: Cassette[] = [];
     const inner = fakeClient([result]);
     const client = cassetteClient(inner, {
@@ -275,12 +276,14 @@ describe("cassetteClient", () => {
       },
     });
 
-    await expect(client.callTool("get_secret", { id: 1, apiKey: "secret-input" })).resolves.toBe(
-      result,
-    );
+    // 1회차(miss, 실호출)와 2회차(hit, 카세트) 모두 caller 가 보는 값은 이미 마스킹돼 있다.
+    // 이 값이 record 실행과 이후 replay 실행에서 같아야 한다는 것이 ADR-0041 의 핵심이다.
     await expect(
       client.callTool("get_secret", { id: 1, apiKey: "secret-input" }),
-    ).resolves.toStrictEqual(result);
+    ).resolves.toStrictEqual(masked);
+    await expect(
+      client.callTool("get_secret", { id: 1, apiKey: "secret-input" }),
+    ).resolves.toStrictEqual(masked);
     await client.close();
 
     expect(inner.calls.callTool).toBe(1);
@@ -292,6 +295,79 @@ describe("cassetteClient", () => {
       id: "run-1",
       token: "[redacted]",
       value: 7,
+    });
+  });
+
+  it("record 실행과 저장된 카세트의 replay 실행은 같은 값을 돌려준다 (ADR-0041)", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "ohmymcp-record-"));
+    const path = join(dir, "roundtrip.cassette.json");
+    try {
+      const liveResult = ok({ city: "Seoul", sessionToken: "abc", tokenCount: 42 });
+      const inner = fakeClient([liveResult]);
+      const recorder = cassetteClient(inner, {
+        cassette: null,
+        mode: "record",
+        cassettePath: path,
+        onFlush: (next) => saveCassette(path, next),
+      });
+
+      const recordedReturn = await recorder.callTool("get_weather", { city: "Seoul" });
+      await recorder.close();
+
+      // 비밀 아닌 필드(tokenCount)는 record 실행에서도 그대로 보이고, 비밀 필드는 이미
+      // 마스킹돼 있다 — flush 를 기다릴 필요가 없다.
+      const recordedRaw = recordedReturn.raw as Record<string, unknown>;
+      expect(recordedRaw.tokenCount).toBe(42);
+      expect(recordedRaw.sessionToken).toBe("[redacted]");
+
+      const deadClient: McpClient = {
+        listTools: async () => {
+          throw new Error("replay 가 서버를 호출했다");
+        },
+        callTool: async () => {
+          throw new Error("replay 가 서버를 호출했다");
+        },
+        close: async () => {},
+      };
+      const loaded = await loadCassette(path);
+      const replayer = cassetteClient(deadClient, {
+        cassette: loaded,
+        mode: "replay",
+        cassettePath: path,
+      });
+      const replayedReturn = await replayer.callTool("get_weather", { city: "Seoul" });
+
+      // record 실행 1회차와, 그 카세트를 파일로 저장했다가 다시 읽은 replay 실행이 caller 에게
+      // 완전히 같은 값(타입 포함)을 돌려준다. 이게 어긋나면 같은 케이스가 record 에서는
+      // 통과하고 replay 에서는 실패(또는 TypeError)할 수 있다.
+      expect(replayedReturn).toStrictEqual(recordedReturn);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("listTools() record 경로는 반환 즉시 민감 스키마 default 를 마스킹한다 (ADR-0041)", async () => {
+    const sensitiveTools: ToolDef[] = [
+      {
+        name: "search",
+        inputSchema: {
+          type: "object",
+          properties: { apiKey: { type: "string", default: "sk-live-1234" } },
+        },
+      },
+    ];
+    const inner: McpClient = {
+      listTools: async () => sensitiveTools,
+      callTool: async () => ok({}),
+      close: async () => {},
+    };
+    const client = cassetteClient(inner, { cassette: null, mode: "record" });
+
+    const tools = await client.listTools();
+
+    expect(tools[0]?.inputSchema).toStrictEqual({
+      type: "object",
+      properties: { apiKey: { type: "string", default: "[redacted]" } },
     });
   });
 

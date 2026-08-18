@@ -34,6 +34,10 @@ function fakeRunnerModule(): typeof import("@ohmymcp-hsu/runner") {
   } as unknown as typeof import("@ohmymcp-hsu/runner");
 }
 
+function fakeRecordModule(): typeof import("@ohmymcp-hsu/record") {
+  return { loadCassette: vi.fn() } as unknown as typeof import("@ohmymcp-hsu/record");
+}
+
 function fakeGenerateModule(): typeof import("@ohmymcp-hsu/generate") {
   const noop = vi.fn();
   return {
@@ -148,5 +152,74 @@ describe("wiring.ts executeFlow", () => {
     });
 
     expect(loadGenerateSpy).not.toHaveBeenCalled();
+  });
+
+  it("test 플로우가 서브커맨드 없는 argv를 받는다", async () => {
+    let capturedArgv: readonly string[] | undefined;
+    const io = fakeIo();
+
+    await executeFlow({ flow: "test", argv: ["suite.json", "--json"] }, io, {
+      runners: {
+        test: async (argv) => {
+          capturedArgv = argv;
+          return 0;
+        },
+      },
+      loaders: {
+        loadCore: () => Promise.resolve(fakeCoreModule()),
+        loadRunner: () => Promise.resolve(fakeRunnerModule()),
+      },
+    });
+
+    expect(capturedArgv).toEqual(["test", "suite.json", "--json"]);
+  });
+
+  it("test 플로우가 서브커맨드 있는 argv도 받는다", async () => {
+    let capturedArgv: readonly string[] | undefined;
+    const io = fakeIo();
+
+    await executeFlow({ flow: "test", argv: ["test", "suite.json", "--json"] }, io, {
+      runners: {
+        test: async (argv) => {
+          capturedArgv = argv;
+          return 0;
+        },
+      },
+      loaders: {
+        loadCore: () => Promise.resolve(fakeCoreModule()),
+        loadRunner: () => Promise.resolve(fakeRunnerModule()),
+      },
+    });
+
+    expect(capturedArgv).toEqual(["test", "suite.json", "--json"]);
+  });
+
+  it("replay 플로우가 서브커맨드 없는 argv에서 스위트 경로를 보존한다", async () => {
+    const captured: (readonly string[])[] = [];
+    const io = fakeIo();
+    const loaders = {
+      loadRunner: () => Promise.resolve(fakeRunnerModule()),
+      loadRecord: () => Promise.resolve(fakeRecordModule()),
+    };
+    const runners = {
+      replay: async (argv: readonly string[]) => {
+        captured.push(argv);
+        return 0;
+      },
+    };
+
+    await executeFlow({ flow: "replay", argv: ["suite.json", "--cassette", "c.json"] }, io, {
+      runners,
+      loaders,
+    });
+    // cli 형태(서브커맨드 포함)도 같은 자리로 수렴한다.
+    await executeFlow(
+      { flow: "replay", argv: ["replay", "suite.json", "--cassette", "c.json"] },
+      io,
+      { runners, loaders },
+    );
+
+    expect(captured[0]).toEqual(["suite.json", "--cassette", "c.json"]);
+    expect(captured[1]).toEqual(["suite.json", "--cassette", "c.json"]);
   });
 });

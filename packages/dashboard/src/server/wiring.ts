@@ -65,6 +65,26 @@ function unavailableSync<T>(): () => T {
   };
 }
 
+/**
+ * 서버 경계의 argv 관용(계획서 §5 T6). §4-4 는 "CLI argv 배열 그대로" 를 기준면으로 정했는데,
+ * 그 "그대로" 를 프론트는 서브커맨드 없이(`["suite.json"]`), cli 는 서브커맨드를 포함해
+ * (`["test","suite.json"]`) 읽는다. 두 규약 다 실전에서 들어오므로 서버가 흡수한다.
+ * 프론트와 cli 는 손대지 않는다.
+ */
+
+/** `runCli` 는 `argv[0] === "test"` 를 요구한다. 없으면 붙여 준다. */
+function withTestSubcommand(argv: readonly string[]): readonly string[] {
+  return argv[0] === "test" ? argv : ["test", ...argv];
+}
+
+/**
+ * `runReplayCommand` 는 서브커맨드가 벗겨진 argv 를 받는다. cli 는 항상 붙여 보내므로
+ * 무조건 `slice(1)` 했지만, 프론트는 안 붙여 보내 그 한 칸이 스위트 경로를 삼켰다.
+ */
+function withoutReplaySubcommand(argv: readonly string[]): readonly string[] {
+  return argv[0] === "replay" ? argv.slice(1) : argv;
+}
+
 export function executeFlow(
   request: StartRunRequest,
   io: RunIo,
@@ -94,6 +114,7 @@ async function executeTest(
   runners: FlowRunners,
   loaders: FlowModuleLoaders,
 ): Promise<number> {
+  const commandArgv = withTestSubcommand(argv);
   const ioFields = { writeStdout: io.writeStdout, writeStderr: io.writeStderr };
   let core: typeof import("@ohmymcp-hsu/core");
   let runner: typeof import("@ohmymcp-hsu/runner");
@@ -112,7 +133,7 @@ async function executeTest(
       colorEnabled: true,
       ...ioFields,
     };
-    return runners.test(argv, dependencies);
+    return runners.test(commandArgv, dependencies);
   }
   const dependencies: TestCommandDependencies = {
     readFile,
@@ -128,7 +149,7 @@ async function executeTest(
     colorEnabled: true,
     ...ioFields,
   };
-  return runners.test(argv, dependencies);
+  return runners.test(commandArgv, dependencies);
 }
 
 async function executeGenerate(
@@ -209,6 +230,7 @@ async function executeReplay(
   runners: FlowRunners,
   loaders: FlowModuleLoaders,
 ): Promise<number> {
+  const commandArgv = withoutReplaySubcommand(argv);
   const ioFields = { writeStdout: io.writeStdout, writeStderr: io.writeStderr };
   let runner: typeof import("@ohmymcp-hsu/runner");
   let record: typeof import("@ohmymcp-hsu/record");
@@ -225,7 +247,7 @@ async function executeReplay(
       colorEnabled: true,
       ...ioFields,
     };
-    return runners.replay(argv.slice(1), dependencies);
+    return runners.replay(commandArgv, dependencies);
   }
   const dependencies: ReplayCommandDependencies = {
     readFile,
@@ -237,7 +259,7 @@ async function executeReplay(
     colorEnabled: true,
     ...ioFields,
   };
-  return runners.replay(argv.slice(1), dependencies);
+  return runners.replay(commandArgv, dependencies);
 }
 
 async function executeRepair(

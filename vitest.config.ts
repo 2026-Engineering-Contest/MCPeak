@@ -61,6 +61,11 @@ export default defineConfig({
           fileParallelism: false,
         },
       },
+      // 대시보드 web 프론트 테스트. unit 갈래의 include 글롭은 각 패키지 바로 아래
+      // tests 디렉터리까지만 잡아서 dashboard/web/tests 를 못 덮는다. 이 항목이 없으면
+      // web 테스트가 0개 수집된 채 전체가 초록으로 보인다(검사 대상 0개 거짓 신호).
+      // 해당 디렉터리의 vite.config.ts 를 프로젝트 설정으로 그대로 물어간다.
+      "packages/dashboard/web",
     ],
   },
 });

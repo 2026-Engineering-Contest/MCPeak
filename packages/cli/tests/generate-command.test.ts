@@ -57,6 +57,29 @@ const fingerprint = createHash("sha256")
  */
 const savedSuite: TestSuiteSpec = { ...suite, approval: { fingerprint } };
 
+/**
+ * `ReviewIO.input` 스텁이 다음 답을 꺼낸다. **큐가 비면 던진다.**
+ *
+ * 빈 문자열로 떨어뜨리면 안 된다. `askChoice`(dry-run-review.ts)는 아는 글자가 나올 때까지 같은
+ * 질문을 다시 하는 무한 루프이고, `""` 는 영원히 유효한 답이 아니다. 게다가 `vi.fn` 이 호출을
+ * 전부 `mock.calls` 에 쌓기 때문에 그 루프는 그냥 도는 게 아니라 **heap 을 4GB 까지 채우고
+ * 죽는다.** 답을 덜 적은 테스트 하나가 파일 전체(189건)를 통째로 못 돌게 만든다.
+ *
+ * 실제 `nodeReviewIO` 는 EOF 에 던지므로(ReviewInputClosedError) 실행 중인 CLI 는 이 상태가
+ * 되지 않는다. 던지는 쪽이 그 계약과 같고, 무엇을 덜 적었는지도 화면에 남는다.
+ *
+ * 사용자가 엔터를 친 것(= 기본값 수락)을 노렸다면 큐에 `""` 를 **명시적으로** 넣어라.
+ */
+const nextInput = (inputs: string[], message: string): string => {
+  const answer = inputs.shift();
+  if (answer === undefined)
+    throw new Error(
+      `ReviewIO.input 에 줄 답이 없습니다: ${JSON.stringify(message)}\n` +
+        '  이 테스트의 inputs 배열에 답을 더 넣으세요. 엔터(기본값 수락)를 노렸다면 "" 를 넣으세요.',
+    );
+  return answer;
+};
+
 /** 임시 파일 이름은 실행마다 고유하므로 open 이벤트의 경로는 비교에서 제외한다. */
 const normalizedEvents = (events: readonly string[]): string[] =>
   events.map((event) => (event.startsWith("open:") ? "open" : event));
@@ -699,7 +722,7 @@ describe("AI 대화형 검토", () => {
     const io = {
       interactive: true,
       choose: vi.fn(async () => choices.shift() ?? "cancel"),
-      input: vi.fn(async () => inputs.shift() ?? ""),
+      input: vi.fn(async (message: string) => nextInput(inputs, message)),
       confirm: vi.fn(async () => confirms.shift() ?? false),
       write: vi.fn(),
       close: vi.fn(),
@@ -2015,7 +2038,7 @@ describe("generate 시험 실행 게이트", () => {
       choose: vi.fn(async () => choices.shift() ?? "cancel"),
       input: vi.fn(async (message: string) => {
         screen.push(message);
-        return inputs.shift() ?? "";
+        return nextInput(inputs, message);
       }),
       confirm: vi.fn(async (message: string) => {
         screen.push(`${message} [y/N] `);
@@ -2178,6 +2201,21 @@ describe("generate 시험 실행 게이트", () => {
     await expect(runGenerateCommand(gateArgv, d.value)).resolves.toBe(0);
     const cases = d.savedSuite()?.approval.cases ?? [];
     expect(cases.filter((item) => item.status === "serverDefect")).toHaveLength(failingCases);
+  });
+
+  /**
+   * 분류 답을 덜 적은 테스트는 **빠르게 던져야 한다.** 빈 문자열로 떨어지면 `askChoice` 가
+   * 무한히 다시 묻고 `vi.fn` 의 호출 기록이 heap 을 채워, 이 파일 189건이 통째로 안 돈다.
+   * T4·T6 이 이 승인 화면을 넓히므로 그때 같은 실수가 다시 나온다. 여기서 못 박는다.
+   */
+  it("분류 답이 모자라면 무한 루프 대신 곧바로 던진다", async () => {
+    // 답이 필요한 건 failingCases 건인데 한 건만 준다.
+    const d = gateDeps({ choices: ["save"], inputs: ["s"], confirms: [true, true] });
+    await expect(runGenerateCommand(gateArgv, d.value)).rejects.toThrow(
+      "ReviewIO.input 에 줄 답이 없습니다",
+    );
+    // 무한 루프였다면 호출 수가 케이스 수와 무관하게 폭주한다. 상한을 함께 못 박는다.
+    expect(d.io.input.mock.calls.length).toBeLessThanOrEqual(failingCases + 1);
   });
 
   it("approval.cases 순서가 suite.cases 순서와 같다", async () => {

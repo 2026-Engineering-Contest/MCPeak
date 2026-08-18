@@ -1,6 +1,10 @@
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { ApiError } from "./api-types.js";
+import { handleRequest } from "./server/routes.js";
+import { RunRegistry } from "./server/run-registry.js";
 
 export type { ApiError } from "./api-types.js";
 
@@ -18,12 +22,39 @@ export interface DashboardServer {
 }
 
 /**
- * 대시보드 HTTP 서버를 띄운다. 지금 응답하는 경로는 `GET /api/health` 하나다.
- * 나머지 `/api` 면은 계획서 §4-4 표대로 이후 태스크가 채운다.
+ * 빌드 산출물 기준 `dist/web`(vite가 이 자리에 SPA를 낸다). 이 모듈 자신의 위치를 기준으로
+ * 계산해, 프로젝트 루트(`options.root`, 사용자의 cwd)와는 별개로 항상 dashboard 패키지의
+ * 산출물을 가리키게 한다. src를 직접 실행하는 vitest에서는 `web` 디렉터리가 없을 수 있고,
+ * 그 경우 `static.ts`가 안내문을 낸다.
+ */
+const WEB_DIST = join(dirname(fileURLToPath(import.meta.url)), "web");
+
+/**
+ * 대시보드 HTTP 서버를 띄운다. `/api` 아래 라우팅은 계획서 §4-4 표대로 `routes.ts`가
+ * 전부 처리하고, 그 밖은 `static.ts`가 SPA를 서빙한다.
  */
 export function startDashboardServer(options: DashboardServerOptions): Promise<DashboardServer> {
+  const registry = new RunRegistry();
   const server = createServer((request, response) => {
-    handle(request, response, options.root);
+    handleRequest(request, response, {
+      root: options.root,
+      webDist: WEB_DIST,
+      registry,
+    }).catch((error: unknown) => {
+      if (response.headersSent) {
+        response.destroy();
+        return;
+      }
+      const body: ApiError = {
+        error: `서버 내부 오류: ${error instanceof Error ? error.message : String(error)}`,
+      };
+      const payload = JSON.stringify(body);
+      response.writeHead(500, {
+        "content-type": "application/json; charset=utf-8",
+        "content-length": Buffer.byteLength(payload),
+      });
+      response.end(payload);
+    });
   });
 
   return new Promise<DashboardServer>((resolve, reject) => {
@@ -50,25 +81,4 @@ export function startDashboardServer(options: DashboardServerOptions): Promise<D
     server.once("listening", onListening);
     server.listen(options.port);
   });
-}
-
-function handle(request: IncomingMessage, response: ServerResponse, _root: string): void {
-  const path = (request.url ?? "/").split("?")[0];
-  if (request.method === "GET" && path === "/api/health") {
-    sendJson(response, 200, { ok: true });
-    return;
-  }
-  const error: ApiError = {
-    error: `그런 경로가 없습니다: ${request.method ?? "GET"} ${path}. 사용 가능한 경로는 /api 아래에 있습니다.`,
-  };
-  sendJson(response, 404, error);
-}
-
-function sendJson(response: ServerResponse, status: number, body: unknown): void {
-  const payload = JSON.stringify(body);
-  response.writeHead(status, {
-    "content-type": "application/json; charset=utf-8",
-    "content-length": Buffer.byteLength(payload),
-  });
-  response.end(payload);
 }

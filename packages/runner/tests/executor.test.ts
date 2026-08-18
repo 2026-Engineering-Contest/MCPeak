@@ -232,6 +232,33 @@ describe("runSuite", () => {
     ).toBe(true);
     expect(report.cases[1]?.status).toBe("passed");
   });
+  it("작업 실패 진단에 원인 체인을 notes 로 싣는다", async () => {
+    // 서버가 준 거절 이유는 core 가 cause 에 보존한다. 진단의 actual 은 화면에 안 찍히므로
+    // notes 로 실어야 사람이 본다(adoption.md §2.5 넷째).
+    const root = new Error(
+      "MCP error -32601: Tool simulate-research-query requires task augmentation (taskSupport: 'required')",
+    );
+    const wrapped = new Error("MCP 작업이 protocol 오류로 거절되었습니다.", { cause: root });
+    const client: McpClient = {
+      listTools: async () => [{ name: "get_weather", inputSchema: {} }],
+      callTool: async () => {
+        throw wrapped;
+      },
+      close: async () => {},
+    };
+    const report = await runSuite({ client, suite: structuredClone(suite) }).report;
+    const failedCase = report.cases.find((item) => item.operation.status === "failed");
+    expect(failedCase?.operation.diagnostic?.notes).toEqual([
+      "원인: MCP error -32601: Tool simulate-research-query requires task augmentation (taskSupport: 'required')",
+    ]);
+  });
+  it("원인이 없는 작업 실패에는 notes 키를 만들지 않는다", async () => {
+    // undefined 로 키를 만들면 기존 보고서의 JSON 바이트가 흔들린다.
+    const report = await runSuite({ client: fake([], true), suite: structuredClone(suite) }).report;
+    const failedCase = report.cases.find((item) => item.operation.status === "failed");
+    expect(failedCase?.operation.diagnostic).toBeDefined();
+    expect(Object.hasOwn(failedCase?.operation.diagnostic ?? {}, "notes")).toBe(false);
+  });
   it("listener 오류를 그대로 전파하고 후속 호출을 막는다", async () => {
     const records: unknown[] = [];
     const sentinel = new Error("sentinel");

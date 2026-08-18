@@ -253,6 +253,62 @@ describe("normalizeThrownValue", () => {
     });
   });
 
+  it("Error 의 cause 체인을 함께 정규화한다", () => {
+    // 서버가 준 거절 이유는 core 가 McpClientError.cause 에 보존한다. 여기서 버리면
+    // 화면이 "protocol 오류로 거절되었습니다" 까지만 말하게 된다(adoption.md §2.5 넷째).
+    const root = new Error(
+      "MCP error -32601: Tool simulate-research-query requires task augmentation (taskSupport: 'required')",
+    );
+    root.name = "McpError";
+    const wrapped = new Error("MCP 작업이 protocol 오류로 거절되었습니다.", { cause: root });
+    wrapped.name = "McpClientError";
+    expect(normalizeThrownValue(wrapped)).toEqual({
+      type: "error",
+      name: "McpClientError",
+      message: "MCP 작업이 protocol 오류로 거절되었습니다.",
+      cause: {
+        type: "error",
+        name: "McpError",
+        message:
+          "MCP error -32601: Tool simulate-research-query requires task augmentation (taskSupport: 'required')",
+      },
+    });
+  });
+
+  it("cause 가 없으면 cause 키를 만들지 않는다", () => {
+    // 키가 undefined 로 생기면 기존 보고서의 JSON 바이트가 흔들린다.
+    const normalized = normalizeThrownValue(new Error("plain"));
+    expect(Object.hasOwn(normalized, "cause")).toBe(false);
+  });
+
+  it("cause 체인은 상한 3에서 자른다", () => {
+    // 순환 cause(a.cause = b, b.cause = a)에서 무한히 내려가면 안 된다. 실측 체인은
+    // 2단계(McpClientError → McpError)라 3이면 여유다.
+    const a = new Error("a");
+    const b = new Error("b", { cause: a });
+    a.cause = b;
+    const normalized = normalizeThrownValue(a);
+    expect(() => JSON.stringify(normalized)).not.toThrow();
+    let depth = 0;
+    let current: unknown = normalized;
+    while (typeof current === "object" && current !== null && Object.hasOwn(current, "cause")) {
+      depth += 1;
+      current = (current as { cause: unknown }).cause;
+    }
+    expect(depth).toBeLessThanOrEqual(3);
+  });
+
+  it("Error 가 아닌 cause 도 정규화해 싣는다", () => {
+    // core 는 형태가 어긋난 결과 객체를 cause 로 넣기도 한다(client.ts 의 OPERATION_FAILED).
+    const wrapped = new Error("wrap", { cause: { unexpected: true } });
+    expect(normalizeThrownValue(wrapped)).toEqual({
+      type: "error",
+      name: "Error",
+      message: "wrap",
+      cause: { type: "object" },
+    });
+  });
+
   it("비 Error throw를 안전하게 정규화한다", () => {
     const toJSON = vi.fn(() => ({ secret: "must-not-run" }));
     const circular: { self?: unknown; toJSON: typeof toJSON } = { toJSON };

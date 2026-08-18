@@ -11,11 +11,13 @@ import {
   createAuthoringSession,
   createBaselineSuite,
   dispatchAuthoringRequest,
+  dispatchRejectionDiagnosis,
   finalizeAuthoringDraft,
   GenerateTestsError,
   getAuthoringExecutionSuite,
   type PublicProviderFailure,
   prepareAuthoringRequest,
+  prepareRejectionDiagnosisRequests,
   reviewLocalAuthoringCandidate,
   type SanitizedAuthoringCandidate,
   sha256,
@@ -1995,6 +1997,8 @@ describe("generate 시험 실행 게이트", () => {
     readonly baseline?: BaselineGenerationResult;
     /** AI 제안용 provider. 없으면 교정이 사람 입력만 쓴다. */
     readonly providers?: GenerateCommandDependencies["providers"];
+    /** 거절 근거 진단용 provider(#89). 없으면 진단을 묻지 않는다. */
+    readonly rejectionProviders?: GenerateCommandDependencies["rejectionProviders"];
     /** 반영 경로 호출 횟수를 세려고 감싼 구현. */
     readonly applyAuthoringChanges?: typeof applyAuthoringChanges;
     /** `edit` 메뉴가 읽을 로컬 JSON. 경로 `candidate.json` 으로만 읽힌다. */
@@ -2085,6 +2089,9 @@ describe("generate 시험 실행 게이트", () => {
       applyAuthoringChanges: options.applyAuthoringChanges ?? applyAuthoringChanges,
       reviewLocalAuthoringCandidate,
       providers: options.providers,
+      rejectionProviders: options.rejectionProviders,
+      prepareRejectionDiagnosisRequests,
+      dispatchRejectionDiagnosis,
       cassetteIo: {
         load: async (path) => store.get(path) ?? null,
         save: async (path, cassette) => {
@@ -2201,6 +2208,196 @@ describe("generate 시험 실행 게이트", () => {
       expect(d.output()).not.toContain("✗ 실패");
       const cases = d.savedSuite()?.approval.cases ?? [];
       expect(cases.every((item) => item.status === "passed")).toBe(true);
+    });
+  });
+
+  /**
+   * 거절 근거 AI 진단 (#89 · 설계 문서 §6). **참고 의견이다.** 판정도 저장도 안 바꾼다.
+   * 호출은 사용자가 시작하고, provider 가 없으면 묻지도 않는다.
+   */
+  describe("거절 근거 AI 진단", () => {
+    const handWritten = (_name: string, args: unknown) =>
+      (args as { city?: unknown })?.city === undefined ||
+      typeof (args as { city?: unknown }).city !== "string"
+        ? ({
+            content: [{ type: "text", text: "→ 'city' 는 문자열이어야 합니다." }],
+            isError: true,
+            raw: null,
+          } as ToolResult)
+        : ok();
+
+    /** 요청받은 케이스 전부에 같은 답을 주는 provider. */
+    const answering = (verdict: string, reason = "스키마 검증기의 문구로 보입니다.") => {
+      const seen: unknown[] = [];
+      return {
+        seen,
+        providers: {
+          claude: () => ({
+            id: "claude" as const,
+            diagnoseRejection: async (requests: readonly { caseId: string }[]) => {
+              seen.push(requests);
+              return { results: requests.map((r) => ({ caseId: r.caseId, verdict, reason })) };
+            },
+          }),
+        },
+      };
+    };
+
+    it("provider 가 없으면 진단을 묻지 않는다", async () => {
+      const d = gateDeps({ choices: ["save", "cancel"], confirms: [true], respond: handWritten });
+      await runGenerateCommand(gateArgv, d.value);
+      expect(d.output()).toContain("거절 근거 미확인");
+      expect(d.output()).not.toContain("진단을 AI 에게 요청할까요");
+    });
+
+    it("미확인이 0건이면 진단을 묻지 않는다", async () => {
+      const ai = answering("rejected");
+      const d = gateDeps({
+        choices: ["save", "cancel"],
+        confirms: [true],
+        // TS SDK 지문이라 전부 verified 다.
+        respond: (_n, args) =>
+          (args as { city?: unknown })?.city === undefined ||
+          typeof (args as { city?: unknown }).city !== "string"
+            ? ({
+                content: [{ type: "text", text: "MCP error -32602: Input validation error: x" }],
+                isError: true,
+                raw: null,
+              } as ToolResult)
+            : ok(),
+        rejectionProviders: ai.providers,
+      });
+      await runGenerateCommand([...gateArgv, "--provider", "claude"], d.value);
+      expect(d.output()).not.toContain("진단을 AI 에게 요청할까요");
+      expect(ai.seen).toHaveLength(0);
+    });
+
+    it("사용자가 거절하면 provider 를 부르지 않는다", async () => {
+      const ai = answering("rejected");
+      const d = gateDeps({
+        choices: ["save", "cancel"],
+        confirms: [true, false],
+        respond: handWritten,
+        rejectionProviders: ai.providers,
+      });
+      await runGenerateCommand([...gateArgv, "--provider", "claude"], d.value);
+      expect(d.output()).toContain("진단을 AI 에게 요청할까요");
+      expect(ai.seen).toHaveLength(0);
+    });
+
+    it("진단 결과를 케이스별로 찍고 참고임을 명시한다", async () => {
+      const ai = answering(
+        "unsure",
+        "응답이 값만 언급하고 어느 단계에서 실패했는지 드러내지 않습니다.",
+      );
+      const d = gateDeps({
+        choices: ["save", "cancel"],
+        confirms: [true, true],
+        respond: handWritten,
+        rejectionProviders: ai.providers,
+      });
+      await runGenerateCommand([...gateArgv, "--provider", "claude"], d.value);
+      const text = d.output();
+      expect(text).toContain(`거절 근거 미확인 ${failingCases}건에 대해 AI 진단을 요청했습니다.`);
+      expect(text).toContain("판단 불가");
+      expect(text).toContain(
+        "    → 응답이 값만 언급하고 어느 단계에서 실패했는지 드러내지 않습니다.",
+      );
+      expect(text).toContain("이 진단은 참고입니다. 케이스 판정과 저장 여부를 바꾸지 않습니다.");
+    });
+
+    it("verdict 를 화면 문구로 옮긴다", async () => {
+      for (const [verdict, label] of [
+        ["rejected", "거절로 보임"],
+        ["crashed", "서버 내부 오류로 보임"],
+        ["unsure", "판단 불가"],
+      ] as const) {
+        const ai = answering(verdict);
+        const d = gateDeps({
+          choices: ["save", "cancel"],
+          confirms: [true, true],
+          respond: handWritten,
+          rejectionProviders: ai.providers,
+        });
+        await runGenerateCommand([...gateArgv, "--provider", "claude"], d.value);
+        expect(d.output()).toContain(label);
+      }
+    });
+
+    it("진단 결과가 저장 여부와 케이스 판정을 바꾸지 않는다", async () => {
+      const ai = answering("crashed", "서버가 터진 것으로 보입니다.");
+      const d = gateDeps({
+        choices: ["save"],
+        confirms: [true, true, true],
+        respond: handWritten,
+        rejectionProviders: ai.providers,
+      });
+      await expect(
+        runGenerateCommand([...gateArgv, "--provider", "claude"], d.value),
+      ).resolves.toBe(0);
+      // crashed 라고 답해도 케이스는 통과이고 저장까지 간다. 분류를 묻지 않는다.
+      expect(d.io.input).not.toHaveBeenCalled();
+      const cases = d.savedSuite()?.approval.cases ?? [];
+      expect(cases.every((item) => item.status === "passed")).toBe(true);
+    });
+
+    it("provider 실패는 흐름을 끊지 않는다", async () => {
+      const d = gateDeps({
+        choices: ["save", "cancel"],
+        confirms: [true, true],
+        respond: handWritten,
+        rejectionProviders: {
+          claude: () => ({
+            id: "claude" as const,
+            diagnoseRejection: async () => {
+              throw Object.assign(new Error("boom"), { code: "timedOut" });
+            },
+          }),
+        },
+      });
+      await expect(
+        runGenerateCommand([...gateArgv, "--provider", "claude"], d.value),
+      ).resolves.toBe(0);
+      expect(d.stderr.join("")).toContain("GENERATE_PROVIDER_TIMEOUT");
+      // 실패해도 승인 화면이 이어져 최종 지문까지 간다.
+      expect(d.output()).toContain("Final fingerprint:");
+    });
+
+    it("형식을 어긴 응답도 흐름을 끊지 않는다", async () => {
+      const d = gateDeps({
+        choices: ["save", "cancel"],
+        confirms: [true, true],
+        respond: handWritten,
+        rejectionProviders: {
+          claude: () => ({
+            id: "claude" as const,
+            diagnoseRejection: async () => ({ results: [{ caseId: "지어낸", verdict: "maybe" }] }),
+          }),
+        },
+      });
+      await runGenerateCommand([...gateArgv, "--provider", "claude"], d.value);
+      expect(d.stderr.join("")).toContain("GENERATE_PROVIDER_SCHEMA");
+      expect(d.output()).toContain("Final fingerprint:");
+    });
+
+    it("본문이 없는 케이스는 진단에서 빼고 그 사실을 적는다", async () => {
+      const ai = answering("rejected");
+      const d = gateDeps({
+        choices: ["save", "cancel"],
+        confirms: [true],
+        // content 가 비면 본문 추출이 실패해 rejectionBody 가 안 생긴다.
+        respond: (_n, args) =>
+          (args as { city?: unknown })?.city === undefined ||
+          typeof (args as { city?: unknown }).city !== "string"
+            ? ({ content: [], isError: true, raw: null } as ToolResult)
+            : ok(),
+        rejectionProviders: ai.providers,
+      });
+      await runGenerateCommand([...gateArgv, "--provider", "claude"], d.value);
+      expect(d.output()).toContain(
+        `응답 본문이 없어 ${failingCases}건 전부를 AI 에게 물을 수 없습니다.`,
+      );
+      expect(ai.seen).toHaveLength(0);
     });
   });
 

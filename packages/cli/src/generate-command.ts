@@ -13,6 +13,9 @@ import type {
   PreFillProvider,
   PreFillRequestPreview,
   PublicProviderFailure,
+  RejectionDiagnosisProvider,
+  RejectionDiagnosisResult,
+  RejectionVerdict,
   SanitizedAuthoringCandidate,
   SkippedTool,
   TestCaseOrigin,
@@ -108,6 +111,19 @@ export interface GenerateCommandDependencies {
   providers?: Partial<
     Record<"codex" | "claude", (model: string) => TestAuthoringProvider | undefined>
   >;
+  /**
+   * 거절 근거 진단 통로 (#89 · 설계 문서 §6). `providers` 와 **따로 둔다.** 그쪽은
+   * `TestAuthoringProvider`(`author`)이고 이쪽은 `diagnoseRejection` 이라 다른 계약이다.
+   * `preFillProviders` 와 같은 선례다. 없으면 진단을 아예 묻지 않는다.
+   */
+  rejectionProviders?: Partial<
+    Record<
+      "codex" | "claude",
+      (model: string) => import("@ohmymcp/generate").RejectionDiagnosisProvider | undefined
+    >
+  >;
+  prepareRejectionDiagnosisRequests?: typeof import("@ohmymcp/generate").prepareRejectionDiagnosisRequests;
+  dispatchRejectionDiagnosis?: typeof import("@ohmymcp/generate").dispatchRejectionDiagnosis;
   prepareAuthoringRequest?: typeof import("@ohmymcp/generate").prepareAuthoringRequest;
   dispatchAuthoringRequest?: typeof import("@ohmymcp/generate").dispatchAuthoringRequest;
   createAuthoringDiff?: typeof import("@ohmymcp/generate").createAuthoringDiff;
@@ -871,6 +887,113 @@ function writeRejectionUnverified(io: ReviewIO, result: DryRunResult): void {
   io.write("  이 응답이 서버의 정상 거절인지 내부 오류인지 확인하지 못했습니다.\n\n");
 }
 
+/**
+ * `verdict` 를 화면 문구로 옮긴다. `Record` 라서 `RejectionVerdict` 가 늘면 여기서 타입 오류가
+ * 난다. 문자열 배열로 두면 새 값이 조용히 빠지고, 이 화면에서 누락은 "판단이 없었다" 로 읽힌다.
+ */
+const VERDICT_LABEL: Readonly<Record<RejectionVerdict, string>> = {
+  rejected: "거절로 보임",
+  crashed: "서버 내부 오류로 보임",
+  unsure: "판단 불가",
+};
+
+/**
+ * AI 진단 결과를 찍는다. 문안은 설계 문서 §6.4 가 고정한다.
+ *
+ * **마지막 줄을 빼면 안 된다.** AI 답변이 판정으로 읽히면 사용자가 초록·빨강을 잘못 해석한다.
+ */
+function writeRejectionDiagnosis(
+  io: ReviewIO,
+  requested: number,
+  results: readonly RejectionDiagnosisResult[],
+): void {
+  io.write(`\n거절 근거 미확인 ${requested}건에 대해 AI 진단을 요청했습니다.\n\n`);
+  const ids = results.map((item) => escapeTerminalText(item.caseId));
+  const column = Math.max(0, ...ids.map((id) => Array.from(id).length));
+  for (const [index, item] of results.entries()) {
+    const id = ids[index] ?? "";
+    const pad = " ".repeat(Math.max(0, column - Array.from(id).length));
+    io.write(`  ${id}${pad}   ${VERDICT_LABEL[item.verdict]}\n`);
+    io.write(`    → ${escapeTerminalText(item.reason)}\n`);
+  }
+  io.write("\n이 진단은 참고입니다. 케이스 판정과 저장 여부를 바꾸지 않습니다.\n\n");
+}
+
+/**
+ * 확인 못 한 케이스를 AI 에게 물을지 사람에게 묻고, 답을 받으면 화면에 찍는다 (#89 · §6).
+ *
+ * 아무것도 안 하고 조용히 지나가는 경우가 셋이다. provider 가 없을 때(대다수 사용자),
+ * 확인 못 한 케이스가 없을 때, 물어볼 본문이 하나도 없을 때다. 그때는 질문 자체를 안 한다.
+ *
+ * **본문이 없는 케이스는 진단에서 뺀다.** 호출이 오류로 끝나 응답이 아예 없는 케이스가 있는데
+ * (설계 문서 §4.2), 그것을 빈 문자열로 채워 물으면 AI 에게 판단 재료가 없고 지어낸 `verdict`
+ * 만 돌아온다. 뺀 사실은 화면에 남긴다 — 몇 건을 왜 못 물었는지가 사용자의 판단 재료다.
+ *
+ * 실패는 흐름을 끊지 않는다. 안내만 찍고 승인 화면이 이어진다. 진단은 참고이지 전제가 아니다.
+ */
+async function askRejectionDiagnosis(options: {
+  readonly io: ReviewIO;
+  readonly deps: GenerateCommandDependencies;
+  readonly result: DryRunResult;
+  readonly suite: TestSuiteSpec;
+  readonly tools: readonly ToolDef[];
+  readonly provider: RejectionDiagnosisProvider | undefined;
+  readonly model: string;
+}): Promise<void> {
+  const { io, deps, provider } = options;
+  const prepare = deps.prepareRejectionDiagnosisRequests;
+  const dispatch = deps.dispatchRejectionDiagnosis;
+  if (provider === undefined || prepare === undefined || dispatch === undefined) return;
+
+  const unverified = options.result.outcomes.filter(
+    (outcome) => outcome.rejectionBasis === "unverified",
+  );
+  if (unverified.length === 0) return;
+
+  const cases = unverified.flatMap((outcome) => {
+    // 본문이 없으면 물을 수 없다. 여기서 빠진 수를 아래에서 화면에 적는다.
+    if (outcome.rejectionBody === undefined) return [];
+    const spec = options.suite.cases.find((item) => item.id === outcome.caseId);
+    if (spec === undefined || !isCallTool(spec)) return [];
+    const schema = options.tools.find((tool) => tool.name === spec.operation.tool)?.inputSchema;
+    return [
+      {
+        caseId: outcome.caseId,
+        tool: spec.operation.tool,
+        input: spec.operation.input as JsonObject,
+        // 스키마를 못 찾거나 객체가 아니면 빈 객체로 보낸다. 지어내지 않는다.
+        inputSchema: (typeof schema === "object" && schema !== null && !Array.isArray(schema)
+          ? schema
+          : {}) as JsonObject,
+        responseBody: outcome.rejectionBody,
+        basis: "unverified" as const,
+      },
+    ];
+  });
+  const skipped = unverified.length - cases.length;
+  if (cases.length === 0) {
+    io.write(
+      `  응답 본문이 없어 ${skipped}건 전부를 AI 에게 물을 수 없습니다. 진단을 건너뜁니다.\n\n`,
+    );
+    return;
+  }
+  if (skipped > 0)
+    io.write(
+      `  응답 본문이 없는 ${skipped}건은 진단에서 제외합니다. AI 에게 줄 근거가 없습니다.\n`,
+    );
+  if (!(await io.confirm(`  나머지 ${cases.length}건의 진단을 AI 에게 요청할까요?`))) return;
+
+  const dispatched = await dispatch({
+    provider,
+    requests: prepare({ cases }),
+  });
+  if (dispatched.type === "failed") {
+    providerFailure(deps, dispatched.failure, options.model);
+    return;
+  }
+  writeRejectionDiagnosis(io, cases.length, dispatched.results);
+}
+
 /** 교정으로 바뀐 값 한 줄. 반영 요약(§8.8)이 쓴다. */
 interface RepairApplication {
   readonly tool: string;
@@ -1133,6 +1256,21 @@ async function runInteractiveReview(
           // 거절 근거 미확인 목록(§5.2). 결과 블록 바로 아래다. 판정을 바꾸지 않으므로 아래
           // 교정·분류 흐름은 이 값을 읽지 않는다.
           writeRejectionUnverified(io, result);
+          // 8.5. 거절 근거 AI 진단(§6). **호출은 사용자가 시작한다.** 자동으로 부르지 않는다 —
+          // 케이스가 많으면 비용이 곱해지고 provider 가 없는 사용자가 대다수다. 결과는 화면에만
+          // 나가고 아래 교정·분류·저장 흐름은 이 값을 읽지 않는다.
+          await askRejectionDiagnosis({
+            io,
+            deps,
+            result,
+            suite: dryRunSuite,
+            tools,
+            provider:
+              preferred === undefined
+                ? undefined
+                : deps.rejectionProviders?.[preferred]?.(model ?? defaultModel(preferred)),
+            model: model ?? (preferred === undefined ? "" : defaultModel(preferred)),
+          });
           // 9. 입력값 교정(§4). 대상이 없으면 아무것도 묻지 않는다.
           // AI 제안은 `--provider` 가 있을 때만 쓴다. 별도 옵션을 두지 않는다(§7).
           const repairProvider =

@@ -63,10 +63,17 @@ export type RejectionDiagnosisDispatchResult =
   | { readonly type: "completed"; readonly results: readonly RejectionDiagnosisResult[] }
   | { readonly type: "failed"; readonly failure: PublicProviderFailure };
 
+/**
+ * 메서드 이름이 `diagnose` 가 아니라 `diagnoseRejection` 인 이유.
+ *
+ * `providers.ts` 의 provider 객체 하나가 authoring · preFill · 진단 · 거절 진단을 전부 맡는다.
+ * 거기 이미 `diagnose(request: DiagnosisRequest, …)` 가 있어서, 같은 이름을 쓰면 시그니처가
+ * 충돌해 한 객체가 두 인터페이스를 동시에 만족할 수 없다.
+ */
 export interface RejectionDiagnosisProvider {
   readonly id: "codex" | "claude";
   readonly model?: string;
-  diagnose(
+  diagnoseRejection(
     requests: readonly RejectionDiagnosisRequest[],
     options: { signal?: AbortSignal; timeoutMs: number },
   ): Promise<unknown>;
@@ -257,7 +264,7 @@ export async function dispatchRejectionDiagnosis(options: {
   const timeoutMs = options.timeoutMs ?? DEFAULT_PROVIDER_TIMEOUT_MS;
   const state = { providerId: options.provider.id, timeoutMs };
   try {
-    const raw = await options.provider.diagnose(options.requests, {
+    const raw = await options.provider.diagnoseRejection(options.requests, {
       signal: options.signal,
       timeoutMs,
     });

@@ -30,7 +30,7 @@ const testCase = (
 /** 넘긴 값을 그대로 돌려주는 provider. 검증만 보고 싶을 때 쓴다. */
 const providerReturning = (raw: unknown): RejectionDiagnosisProvider => ({
   id: "claude",
-  diagnose: async () => raw,
+  diagnoseRejection: async () => raw,
 });
 
 const ok = (caseId: string, verdict = "rejected", reason = "스키마 검증기의 문구다.") => ({
@@ -224,7 +224,7 @@ describe("dispatchRejectionDiagnosis", () => {
     const result = await dispatchRejectionDiagnosis({
       provider: {
         id: "codex",
-        diagnose: async () => {
+        diagnoseRejection: async () => {
           throw Object.assign(new Error("boom"), { code: "timedOut" });
         },
       },
@@ -238,7 +238,7 @@ describe("dispatchRejectionDiagnosis", () => {
     const result = await dispatchRejectionDiagnosis({
       provider: {
         id: "claude",
-        diagnose: async () => {
+        diagnoseRejection: async () => {
           called = true;
           return { results: [] };
         },

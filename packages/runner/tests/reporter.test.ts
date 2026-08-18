@@ -692,4 +692,76 @@ describe("renderReport", () => {
       renderReport(report, { color: false }).split("\n").length,
     );
   });
+
+  /**
+   * 거절 근거 확인 고지 (#89 · 설계 문서 §5.1). 문안이 곧 제품이라 세 줄을 글자 그대로 못 박는다.
+   * 이 화면은 **"확인 못 함" 을 "결함" 으로 오해시키면 안 된다.**
+   */
+  describe("거절 근거 미확인 고지", () => {
+    /** `rejectionBasis` 만 다른 통과 케이스 n 건. 판정은 전부 passed 다. */
+    const unverifiedCases = (count: number): TestCaseResult[] =>
+      Array.from({ length: count }, (_, index) =>
+        testCase({
+          id: `u${index}`,
+          name: `미확인${index}`,
+          status: "passed",
+          rejectionBasis: "unverified",
+        }),
+      );
+
+    it("확인 못 한 케이스가 없으면 고지 줄이 안 나온다", () => {
+      const report = makeReport([
+        testCase({ id: "a", name: "첫 번째", status: "passed" }),
+        testCase({
+          id: "b",
+          name: "두 번째",
+          status: "passed",
+          rejectionBasis: "verified",
+        }),
+      ]);
+      expect(report.summary.rejectionUnverified).toBe(0);
+      expect(renderReport(report)).not.toContain("거절 근거");
+    });
+
+    it("확인 못 한 케이스가 있으면 건수와 안내를 찍는다", () => {
+      const report = makeReport(unverifiedCases(3));
+      const text = renderReport(report);
+      expect(text).toContain(
+        "  → 거절을 기대한 케이스 3건은 거절 근거를 확인하지 못했습니다.\n" +
+          "    서버가 거절한 것인지 다른 이유로 실패한 것인지 이 도구는 판단하지 못합니다.\n" +
+          "    확인: ohmymcp generate 의 승인 화면에서 해당 케이스의 응답을 확인하세요.",
+      );
+    });
+
+    it("고지는 요약 줄 뒤에 온다", () => {
+      const lines = renderReport(makeReport(unverifiedCases(1))).split("\n");
+      const summary = lines.findIndex((line) => line.includes("total)"));
+      const notice = lines.findIndex((line) => line.includes("거절 근거를 확인하지 못했습니다"));
+      expect(summary).toBeGreaterThanOrEqual(0);
+      expect(notice).toBeGreaterThan(summary);
+    });
+
+    it("케이스 목록에는 아무 표시도 더하지 않는다", () => {
+      // 통과한 케이스 옆에 기호를 더하면 판정이 바뀐 것으로 읽힌다(설계 문서 §5.1).
+      const lines = renderReport(makeReport(unverifiedCases(1))).split("\n");
+      const caseLine = lines.find((line) => line.includes("미확인0"));
+      expect(caseLine).toBe("✓ u0  미확인0");
+    });
+
+    it("색상을 켜도 고지에 SGR 이 안 들어간다", () => {
+      // 기존 요약 줄과 같은 규칙이다. 요약에는 색이 없다.
+      const report = makeReport(unverifiedCases(2));
+      const notice = (text: string) => text.split("\n").filter((line) => line.includes("거절"));
+      expect(notice(renderReport(report, { color: true }))).toEqual(
+        notice(renderReport(report, { color: false })),
+      );
+      expect(renderReport(report, { color: true }).split("\n").length).toBe(
+        renderReport(report, { color: false }).split("\n").length,
+      );
+    });
+
+    it("한 건이어도 같은 문장을 쓴다", () => {
+      expect(renderReport(makeReport(unverifiedCases(1)))).toContain("거절을 기대한 케이스 1건은");
+    });
+  });
 });

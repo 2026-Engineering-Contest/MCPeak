@@ -91,6 +91,28 @@ const summaryLine = (summary: RunnerSummary): string => {
 };
 
 /**
+ * 거절 근거를 확인하지 못한 케이스가 있다는 고지. 설계 문서 §5.1 이 문안을 전량 고정한다.
+ *
+ * **0건이면 아무 줄도 안 낸다.** 대부분의 실행이 0건이고, 늘 나오는 줄은 읽히지 않는다.
+ *
+ * 이 케이스들은 **통과했다.** `unverified` 는 "거절이 아니다" 가 아니라 "확인하지 못했다" 는
+ * 뜻이다(설계 문서 §4.3). 그래서 문장이 "실패" 나 "결함" 이라고 말하지 않고, 무엇을 판단하지
+ * 못했는지와 어디서 확인하는지만 적는다. 케이스 목록에는 아무 표시도 더하지 않는다 — 통과한
+ * 케이스 옆에 기호가 붙으면 판정이 바뀐 것으로 읽힌다.
+ *
+ * 색은 넣지 않는다. 바로 위 요약 줄과 같은 규칙이다.
+ */
+const rejectionNoticeLines = (summary: RunnerSummary): readonly string[] =>
+  summary.rejectionUnverified === 0
+    ? []
+    : [
+        "",
+        `${GAP}→ 거절을 기대한 케이스 ${summary.rejectionUnverified}건은 거절 근거를 확인하지 못했습니다.`,
+        `${INDENT}서버가 거절한 것인지 다른 이유로 실패한 것인지 이 도구는 판단하지 못합니다.`,
+        `${INDENT}확인: ohmymcp generate 의 승인 화면에서 해당 케이스의 응답을 확인하세요.`,
+      ];
+
+/**
  * RunnerReport를 사람이 읽는 문자열로 그린다. 순수 함수다.
  * process, stdout, isTTY, NO_COLOR, Date, 로케일을 읽지 않는다.
  * 반환값은 항상 개행 하나로 끝난다. 호출부가 개행을 덧붙이지 않는다.
@@ -155,6 +177,7 @@ export function renderReport(report: RunnerReport, options?: RenderReportOptions
     lines.push("");
   }
   lines.push(summaryLine(report.summary));
+  lines.push(...rejectionNoticeLines(report.summary));
 
   return `${lines.join("\n")}\n`;
 }

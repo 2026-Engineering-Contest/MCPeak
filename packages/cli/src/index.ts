@@ -154,6 +154,14 @@ export async function run(argv: string[]): Promise<number> {
         codex: (model) => generate.createCodexProvider({ model }),
         claude: (model) => generate.createClaudeProvider({ model }),
       },
+      prepareRejectionDiagnosisRequests: generate.prepareRejectionDiagnosisRequests,
+      dispatchRejectionDiagnosis: generate.dispatchRejectionDiagnosis,
+      // 같은 provider 객체가 diagnoseRejection 도 갖는다. 실행 경로는 위와 같고 stdin 과
+      // 출력 스키마만 다르다(#89).
+      rejectionProviders: {
+        codex: (model) => generate.createCodexProvider({ model }),
+        claude: (model) => generate.createClaudeProvider({ model }),
+      },
       GenerateTestsError: generate.GenerateTestsError,
     });
   }

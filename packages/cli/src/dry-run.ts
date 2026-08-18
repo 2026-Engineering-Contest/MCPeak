@@ -1,6 +1,11 @@
 import type { McpClient } from "@ohmymcp/core";
 import type { RunnerReport, TestSuiteSpec } from "@ohmymcp/runner";
-import { RunnerPayloadLimitError, renderReport, runSuite } from "@ohmymcp/runner";
+import {
+  type RejectionBasis,
+  RunnerPayloadLimitError,
+  renderReport,
+  runSuite,
+} from "@ohmymcp/runner";
 
 /**
  * 승인 직전에 후보 명세를 실제 서버에 한 번 돌린다. 화면에 아무것도 쓰지 않고 결과만 돌려준다.
@@ -17,6 +22,16 @@ export interface DryRunCaseOutcome {
   readonly status: "passed" | "failed" | "timedOut" | "cancelled" | "notRun";
   /** 실패 사유 문장. `renderReport` 가 만든 케이스 블록을 그대로 담는다. 통과면 빈 문자열이다. */
   readonly detail: string;
+  /**
+   * 거절 근거를 확인했는가 (#89). **판정과 무관하다.** `status` 와 저장 여부를 바꾸지 않는다.
+   * 승인 화면(설계 §5.2)이 `"unverified"` 인 케이스만 골라 보여준다.
+   */
+  readonly rejectionBasis: RejectionBasis;
+  /**
+   * 확인 못 한 거절의 응답 본문. `rejectionBasis` 가 `"unverified"` 여도 **없을 수 있다.**
+   * 호출이 오류로 끝난 케이스는 읽을 본문이 아예 없다(설계 §4.2).
+   */
+  readonly rejectionBody?: string;
 }
 
 /**
@@ -123,6 +138,9 @@ const toResult = (report: RunnerReport): DryRunResult => {
     caseName: result.spec.name,
     status: result.status,
     detail: blocks[index] ?? "",
+    rejectionBasis: result.rejectionBasis,
+    // 값이 없으면 키를 만들지 않는다. runner 가 같은 규칙으로 넘겨준 것을 그대로 옮긴다.
+    ...(result.rejectionBody === undefined ? {} : { rejectionBody: result.rejectionBody }),
   }));
   const lost = firstConnectionLoss(report);
   if (lost !== undefined)

@@ -21,6 +21,7 @@ export type { ContractRange } from "./contract-range.js";
 export {
   bodyExtractionFailedDiagnostic,
   bodySchemaMismatchDiagnostic,
+  clampObservedText,
   MAX_OBSERVED_KEYS,
   MAX_VALUE_STRING_CHARS,
   type RunnerDiagnostic,
@@ -41,6 +42,7 @@ export {
 export { suiteFingerprint } from "./fingerprint.js";
 export { checkInputContract, type InputContractOptions } from "./input-contract.js";
 export { type JUnitRenderOptions, renderJUnit } from "./junit.js";
+export { classifyRejectionBasis, type RejectionBasis } from "./rejection-basis.js";
 export { type RenderReportOptions, renderReport } from "./reporter.js";
 export {
   DEFAULT_MAX_CASE_BYTES,

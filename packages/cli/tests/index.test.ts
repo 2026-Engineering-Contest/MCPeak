@@ -28,6 +28,8 @@ const OPTIONAL_GENERATE_DEPENDENCIES = {
   preparePreFillRequest: true,
   previewPreFillRequest: true,
   dispatchPreFillRequest: true,
+  prepareRejectionDiagnosisRequests: true,
+  dispatchRejectionDiagnosis: true,
 } as const satisfies Record<OptionalFunctionDependencyKey, true>;
 
 describe("ohmymcp cli", () => {

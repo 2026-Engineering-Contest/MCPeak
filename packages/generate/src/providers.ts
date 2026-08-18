@@ -14,6 +14,11 @@ import {
   type ProviderProcessSpec,
   runProviderProcess,
 } from "./provider-process.js";
+import {
+  buildRejectionDiagnosisProviderSchema,
+  type RejectionDiagnosisProvider,
+  rejectionDiagnosisPrompt,
+} from "./rejection-diagnosis.js";
 
 /** 두 provider가 공통으로 필요로 하는 실행 환경. 인증정보가 아니다. */
 const COMMON_ENV_ALLOWLIST = ["PATH", "HOME", "USER", "SHELL"] as const;
@@ -211,7 +216,7 @@ function unwrapDiagnosis(result: ProviderProcessResult, claude: boolean): unknow
 function makeProvider(
   id: "codex" | "claude",
   options: Options,
-): TestAuthoringProvider & ServerDiagnosisProvider & PreFillProvider {
+): TestAuthoringProvider & ServerDiagnosisProvider & PreFillProvider & RejectionDiagnosisProvider {
   const run = options.run ?? runProviderProcess;
   const model = options.model;
   if (typeof model !== "string" || !/\S/.test(model))
@@ -306,6 +311,23 @@ function makeProvider(
       return unwrapDiagnosis(
         // 고정 스키마가 아니라 요청별 스키마다. caseId 의 허용 값이 요청마다 다르다.
         await execute(diagnosisPrompt(request), buildDiagnosisProviderSchema(request), settings),
+        id === "claude",
+      );
+    },
+    /**
+     * 거절 근거 확인이 안 된 케이스를 한 번에 묻는다(#89). `diagnose` 와 이름이 갈리는 이유는
+     * `RejectionDiagnosisProvider` 의 주석에 있다 — 같은 이름이면 시그니처가 충돌한다.
+     *
+     * 실행 경로는 위 셋과 같다. 다른 것은 stdin 과 출력 스키마뿐이다.
+     */
+    async diagnoseRejection(requests, settings) {
+      return unwrapDiagnosis(
+        // 요청별 스키마다. caseId 의 허용 값이 요청마다 다르다.
+        await execute(
+          rejectionDiagnosisPrompt(requests),
+          buildRejectionDiagnosisProviderSchema(requests),
+          settings,
+        ),
         id === "claude",
       );
     },

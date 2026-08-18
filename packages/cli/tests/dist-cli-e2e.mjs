@@ -156,17 +156,41 @@ for (const [fixture, expectedStatus, expectedSummary] of [
   [
     "weather-suite.json",
     "passed",
-    { total: 3, passed: 3, failed: 0, timedOut: 0, cancelled: 0, notRun: 0 },
+    {
+      total: 3,
+      passed: 3,
+      failed: 0,
+      timedOut: 0,
+      cancelled: 0,
+      notRun: 0,
+      rejectionUnverified: 1,
+    },
   ],
   [
     "weather-suite-failing.json",
     "failed",
-    { total: 1, passed: 0, failed: 1, timedOut: 0, cancelled: 0, notRun: 0 },
+    {
+      total: 1,
+      passed: 0,
+      failed: 1,
+      timedOut: 0,
+      cancelled: 0,
+      notRun: 0,
+      rejectionUnverified: 0,
+    },
   ],
   [
     "weather-body-assertion.suite.json",
     "passed",
-    { total: 3, passed: 3, failed: 0, timedOut: 0, cancelled: 0, notRun: 0 },
+    {
+      total: 3,
+      passed: 3,
+      failed: 0,
+      timedOut: 0,
+      cancelled: 0,
+      notRun: 0,
+      rejectionUnverified: 2,
+    },
   ],
 ]) {
   const dir = await mkdtemp(join(tmpdir(), "ohmymcp-dist-"));
@@ -322,6 +346,8 @@ for (const [fixture, expectedStatus, expectedSummary] of [
       timedOut: 0,
       cancelled: 0,
       notRun: 0,
+      // weather-server 는 거절 문장을 손으로 써서 SDK 지문에 안 걸린다(설계 §9).
+      rejectionUnverified: 6,
     });
     // baseline 은 실패하는 케이스를 포함하므로 지문이 일치해도 규칙표상 표시된다. 설계 §7.1.
     const matched = await runTest(suite);
@@ -688,6 +714,7 @@ for (const [fixture, expectedStatus, expectedSummary] of [
     timedOut: 0,
     cancelled: 0,
     notRun: 0,
+    rejectionUnverified: 1,
   });
 }
 

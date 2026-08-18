@@ -28,7 +28,15 @@ const report = (status: RunnerReport["status"] = "passed"): RunnerReport => ({
   suite: { id: "suite", name: "Suite" },
   status,
   cases: [],
-  summary: { total: 0, passed: 0, failed: 0, timedOut: 0, cancelled: 0, notRun: 0 },
+  summary: {
+    total: 0,
+    passed: 0,
+    failed: 0,
+    timedOut: 0,
+    cancelled: 0,
+    notRun: 0,
+    rejectionUnverified: 0,
+  },
 });
 
 /**

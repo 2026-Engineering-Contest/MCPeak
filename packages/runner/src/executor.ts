@@ -6,12 +6,15 @@ import {
   assertToolExists,
 } from "./assertions.js";
 import { type BodyExtraction, extractResponseBody } from "./body.js";
+import { expectedIsError } from "./case-expectation.js";
 import {
+  clampObservedText,
   normalizeThrownValue,
   operationResultUnavailableDiagnostic,
   type RunnerDiagnostic,
 } from "./diagnostics.js";
 import { bindExecution, monotonicNowMs } from "./execution-binding.js";
+import { classifyRejectionBasis, type RejectionBasis } from "./rejection-basis.js";
 import {
   byteLength,
   RunnerPayloadLimitError,
@@ -42,6 +45,20 @@ export interface TestCaseResult {
   status: "passed" | "failed" | "timedOut" | "cancelled" | "notRun";
   operation: OperationResult;
   assertions: AssertionResult[];
+  /**
+   * 거절 근거를 확인했는가 (#89 · 설계 문서 §4). **판정과 무관하다.** `status` 를 바꾸지 않고
+   * 종료 코드에도 안 들어간다. 추가 필드라 기존 소비자는 무시해도 동작한다.
+   */
+  rejectionBasis: RejectionBasis;
+  /**
+   * 확인하지 못한 거절의 응답 본문 (#89 · 설계 문서 §5.2). `rejectionBasis` 가 `"unverified"`
+   * 이고 본문을 읽었을 때만 **키가 생긴다.** 그 밖에는 없다.
+   *
+   * 승인 화면이 "이 응답이 정상 거절인지 내부 오류인지" 를 사람에게 보여주려면 본문이 필요한데,
+   * 판정만으로는 그 자리를 채울 수 없어서 함께 싣는다. 진단 값과 같은 상한에서 잘리고 같은
+   * redaction 을 받는다(`clampObservedText`).
+   */
+  rejectionBody?: string;
 }
 export interface RunnerSummary {
   total: number;
@@ -50,6 +67,8 @@ export interface RunnerSummary {
   timedOut: number;
   cancelled: number;
   notRun: number;
+  /** `rejectionBasis` 가 `"unverified"` 인 케이스 수. 0 이면 화면에 아무 줄도 안 찍는다(§5.1). */
+  rejectionUnverified: number;
 }
 export interface RunnerReport {
   schemaVersion: 1;
@@ -329,6 +348,34 @@ export function runSuite(options: RunSuiteOptions): RunnerExecution {
         emit({ type: "assertionCompleted", ...fields, assertionIndex, result: outcome });
         return outcome;
       });
+      // 거절 근거 확인 (#89 · 설계 문서 §4.2). 단언 평가가 끝난 뒤 케이스당 한 번 계산한다.
+      // 판정에는 들어가지 않는다. 아래 status 식은 이 값을 보지 않는다.
+      //
+      // `readBody()` 를 여기서 부르는 것이 호출 조건을 넓히는 자리다. 지금까지는 실패한
+      // 케이스에서만 본문을 읽었는데, 거절을 기대한 케이스는 **통과했을 때도** 본문이 필요하다.
+      // 넓히는 범위를 `expectsRejection` 으로 못 박는다. 거절을 기대하지 않는 케이스에서는
+      // 여전히 안 읽는다. 조건을 더 넓히면 모든 통과 케이스가 응답을 읽게 되고, 그것은
+      // ADR-0027 이 정한 배선을 바꾸는 것이라 이 설계의 비범위다.
+      const expectsRejection = expectedIsError(spec) === true;
+      const extraction = expectsRejection ? readBody() : undefined;
+      // 문자열로 읽힌 본문만 **지문 대조** 대상이다. 지문 셋이 전부 문장 접두어라 JSON 으로
+      // 파싱된 본문에는 대조할 것이 없다(관찰 80건이 전부 text 한 블록이다).
+      const bodyText =
+        extraction?.ok === true && typeof extraction.body === "string" ? extraction.body : null;
+      const rejectionBasis = classifyRejectionBasis({
+        expectsRejection,
+        toolName: spec.operation.type === "callTool" ? spec.operation.tool : null,
+        bodyText,
+      });
+      // **표시용 본문은 대조용과 다른 목적이라 판정이 다르다.** JSON 오류 본문은 사람이 거절과
+      // 크래시를 가늠하기에 오히려 좋은 재료다. 대조에서 뺐다고 표시에서까지 빼면 서버가 분명히
+      // 보낸 본문이 승인 화면에 "(본문 없음)" 으로 찍혀 사용자에게 거짓을 말하게 된다.
+      const displayBody =
+        extraction?.ok !== true
+          ? null
+          : typeof extraction.body === "string"
+            ? extraction.body
+            : (JSON.stringify(extraction.body) ?? null);
       const caseResult: TestCaseResult = {
         spec: observed,
         status:
@@ -341,6 +388,13 @@ export function runSuite(options: RunSuiteOptions): RunnerExecution {
                 : "passed",
         operation,
         assertions,
+        rejectionBasis,
+        // 확인 못 한 케이스만 본문을 싣는다. `verified` 는 사람이 다시 볼 이유가 없고,
+        // 전량을 실으면 통과한 모든 케이스의 응답이 보고서에 들어간다. 키는 값이 있을 때만
+        // 만든다 — `undefined` 로 넣으면 기존 보고서의 JSON 바이트가 흔들린다.
+        ...(rejectionBasis === "unverified" && displayBody !== null
+          ? { rejectionBody: clampObservedText(displayBody, options.redaction) }
+          : {}),
       };
       cases.push(caseResult);
       emit({ type: "caseCompleted", ...fields, result: caseResult });
@@ -365,6 +419,10 @@ export function runSuite(options: RunSuiteOptions): RunnerExecution {
           spec: clone(assertion),
           status: "notRun",
         })),
+        // 안 돈 케이스는 판정 대상이 아니다. 본문이 없으니 "unverified" 로 볼 수도 있으나,
+        // 그러면 중단된 실행에서 안 돈 케이스 전부가 §5.1 의 "확인하지 못했습니다" 에 실린다.
+        // 안 돈 케이스는 초록으로 찍히지 않아 크래시가 숨을 자리가 없다. 소음만 남는다(ADR-0015).
+        rejectionBasis: "notApplicable",
       });
     }
     const summary: RunnerSummary = {
@@ -374,6 +432,7 @@ export function runSuite(options: RunSuiteOptions): RunnerExecution {
       timedOut: cases.filter((item) => item.status === "timedOut").length,
       cancelled: cases.filter((item) => item.status === "cancelled").length,
       notRun: cases.filter((item) => item.status === "notRun").length,
+      rejectionUnverified: cases.filter((item) => item.rejectionBasis === "unverified").length,
     };
     const report: RunnerReport = {
       schemaVersion: 1,

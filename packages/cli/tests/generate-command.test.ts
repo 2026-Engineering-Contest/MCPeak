@@ -11,11 +11,13 @@ import {
   createAuthoringSession,
   createBaselineSuite,
   dispatchAuthoringRequest,
+  dispatchRejectionDiagnosis,
   finalizeAuthoringDraft,
   GenerateTestsError,
   getAuthoringExecutionSuite,
   type PublicProviderFailure,
   prepareAuthoringRequest,
+  prepareRejectionDiagnosisRequests,
   reviewLocalAuthoringCandidate,
   type SanitizedAuthoringCandidate,
   sha256,
@@ -1995,6 +1997,10 @@ describe("generate 시험 실행 게이트", () => {
     readonly baseline?: BaselineGenerationResult;
     /** AI 제안용 provider. 없으면 교정이 사람 입력만 쓴다. */
     readonly providers?: GenerateCommandDependencies["providers"];
+    /** 거절 근거 진단용 provider(#89). 없으면 진단을 묻지 않는다. */
+    readonly rejectionProviders?: GenerateCommandDependencies["rejectionProviders"];
+    /** 요청 조립을 갈아 끼운다. 상한 초과 경로를 만들 때 쓴다. */
+    readonly prepareRejectionDiagnosisRequests?: GenerateCommandDependencies["prepareRejectionDiagnosisRequests"];
     /** 반영 경로 호출 횟수를 세려고 감싼 구현. */
     readonly applyAuthoringChanges?: typeof applyAuthoringChanges;
     /** `edit` 메뉴가 읽을 로컬 JSON. 경로 `candidate.json` 으로만 읽힌다. */
@@ -2085,6 +2091,10 @@ describe("generate 시험 실행 게이트", () => {
       applyAuthoringChanges: options.applyAuthoringChanges ?? applyAuthoringChanges,
       reviewLocalAuthoringCandidate,
       providers: options.providers,
+      rejectionProviders: options.rejectionProviders,
+      prepareRejectionDiagnosisRequests:
+        options.prepareRejectionDiagnosisRequests ?? prepareRejectionDiagnosisRequests,
+      dispatchRejectionDiagnosis,
       cassetteIo: {
         load: async (path) => store.get(path) ?? null,
         save: async (path, cassette) => {
@@ -2121,6 +2131,318 @@ describe("generate 시험 실행 게이트", () => {
       (assertion) => assertion.type === "isError" && assertion.expected === true,
     ),
   ).length;
+
+  /**
+   * 거절 근거 미확인 목록 (#89 · 설계 문서 §5.2). 문안이 곧 제품이라 글자 그대로 못 박는다.
+   * 이 케이스들은 **통과했다.** 목록이 판정을 바꾸지 않는다는 것도 함께 단언한다.
+   */
+  describe("거절 근거 미확인 목록", () => {
+    /** 위반 케이스를 서버가 거절하되 지문 종류를 골라 준다. 정상 케이스는 그대로 통과한다. */
+    const rejectWith = (body: string) => (_name: string, args: unknown) =>
+      (args as { city?: unknown })?.city === undefined ||
+      typeof (args as { city?: unknown }).city !== "string"
+        ? ({ content: [{ type: "text", text: body }], isError: true, raw: null } as ToolResult)
+        : ok();
+
+    it("미확인 케이스가 없으면 블록이 안 나온다", async () => {
+      // TS SDK 지문이라 전부 verified 다.
+      const d = gateDeps({
+        choices: ["save", "cancel"],
+        confirms: [true],
+        respond: rejectWith("MCP error -32602: Input validation error: bad city"),
+      });
+      await runGenerateCommand(gateArgv, d.value);
+      expect(d.output()).not.toContain("거절 근거 미확인");
+    });
+
+    it("미확인 케이스를 id 와 응답 한 줄로 나열한다", async () => {
+      const d = gateDeps({
+        choices: ["save", "cancel"],
+        confirms: [true],
+        respond: rejectWith("→ 'city' 는 문자열이어야 합니다."),
+      });
+      await runGenerateCommand(gateArgv, d.value);
+      const text = d.output();
+      expect(text).toContain(`거절 근거 미확인 ${failingCases}건`);
+      expect(text).toContain("응답: → 'city' 는 문자열이어야 합니다.");
+      expect(text).toContain("  이 응답이 서버의 정상 거절인지 내부 오류인지 확인하지 못했습니다.");
+    });
+
+    it("여러 줄 응답을 한 줄로 자르고 제어 문자를 이스케이프한다", async () => {
+      const d = gateDeps({
+        choices: ["save", "cancel"],
+        confirms: [true],
+        respond: rejectWith("첫 줄\n[31m빨강"),
+      });
+      await runGenerateCommand(gateArgv, d.value);
+      const lines = d.output().split("\n");
+      const listed = lines.filter((line) => line.includes("응답: "));
+      expect(listed).toHaveLength(failingCases);
+      for (const line of listed) expect(line).toContain("첫 줄\\u000a\\u001b[31m빨강");
+      // ESC 가 그대로 나가면 안 된다.
+      expect(d.output()).not.toContain("");
+    });
+
+    it("id 열을 맞춰 응답을 정렬한다", async () => {
+      const d = gateDeps({
+        choices: ["save", "cancel"],
+        confirms: [true],
+        respond: rejectWith("→ 손으로 쓴 거절"),
+      });
+      await runGenerateCommand(gateArgv, d.value);
+      const columns = d
+        .output()
+        .split("\n")
+        .filter((line) => line.includes("응답: "))
+        .map((line) => line.indexOf("응답: "));
+      expect(new Set(columns).size).toBe(1);
+    });
+
+    it("목록은 판정도 저장도 바꾸지 않는다", async () => {
+      const d = gateDeps({
+        choices: ["save"],
+        confirms: [true, true],
+        respond: rejectWith("→ 'city' 는 문자열이어야 합니다."),
+      });
+      await expect(runGenerateCommand(gateArgv, d.value)).resolves.toBe(0);
+      // 미확인이어도 케이스는 통과다. 분류를 묻지 않고 저장까지 간다.
+      expect(d.io.input).not.toHaveBeenCalled();
+      expect(d.output()).toContain(`  ✓ 통과 ${baselineCases.length}건`);
+      expect(d.output()).not.toContain("✗ 실패");
+      const cases = d.savedSuite()?.approval.cases ?? [];
+      expect(cases.every((item) => item.status === "passed")).toBe(true);
+    });
+  });
+
+  /**
+   * 거절 근거 AI 진단 (#89 · 설계 문서 §6). **참고 의견이다.** 판정도 저장도 안 바꾼다.
+   * 호출은 사용자가 시작하고, provider 가 없으면 묻지도 않는다.
+   */
+  describe("거절 근거 AI 진단", () => {
+    const handWritten = (_name: string, args: unknown) =>
+      (args as { city?: unknown })?.city === undefined ||
+      typeof (args as { city?: unknown }).city !== "string"
+        ? ({
+            content: [{ type: "text", text: "→ 'city' 는 문자열이어야 합니다." }],
+            isError: true,
+            raw: null,
+          } as ToolResult)
+        : ok();
+
+    /** 요청받은 케이스 전부에 같은 답을 주는 provider. */
+    const answering = (verdict: string, reason = "스키마 검증기의 문구로 보입니다.") => {
+      const seen: unknown[] = [];
+      return {
+        seen,
+        providers: {
+          claude: () => ({
+            id: "claude" as const,
+            diagnoseRejection: async (requests: readonly { caseId: string }[]) => {
+              seen.push(requests);
+              return { results: requests.map((r) => ({ caseId: r.caseId, verdict, reason })) };
+            },
+          }),
+        },
+      };
+    };
+
+    it("provider 가 없으면 진단을 묻지 않는다", async () => {
+      const d = gateDeps({ choices: ["save", "cancel"], confirms: [true], respond: handWritten });
+      await runGenerateCommand(gateArgv, d.value);
+      expect(d.output()).toContain("거절 근거 미확인");
+      expect(d.output()).not.toContain("진단을 AI 에게 요청할까요");
+    });
+
+    it("미확인이 0건이면 진단을 묻지 않는다", async () => {
+      const ai = answering("rejected");
+      const d = gateDeps({
+        choices: ["save", "cancel"],
+        confirms: [true],
+        // TS SDK 지문이라 전부 verified 다.
+        respond: (_n, args) =>
+          (args as { city?: unknown })?.city === undefined ||
+          typeof (args as { city?: unknown }).city !== "string"
+            ? ({
+                content: [{ type: "text", text: "MCP error -32602: Input validation error: x" }],
+                isError: true,
+                raw: null,
+              } as ToolResult)
+            : ok(),
+        rejectionProviders: ai.providers,
+      });
+      await runGenerateCommand([...gateArgv, "--provider", "claude"], d.value);
+      expect(d.output()).not.toContain("진단을 AI 에게 요청할까요");
+      expect(ai.seen).toHaveLength(0);
+    });
+
+    it("사용자가 거절하면 provider 를 부르지 않는다", async () => {
+      const ai = answering("rejected");
+      const d = gateDeps({
+        choices: ["save", "cancel"],
+        confirms: [true, false],
+        respond: handWritten,
+        rejectionProviders: ai.providers,
+      });
+      await runGenerateCommand([...gateArgv, "--provider", "claude"], d.value);
+      expect(d.output()).toContain("진단을 AI 에게 요청할까요");
+      expect(ai.seen).toHaveLength(0);
+    });
+
+    it("진단 결과를 케이스별로 찍고 참고임을 명시한다", async () => {
+      const ai = answering(
+        "unsure",
+        "응답이 값만 언급하고 어느 단계에서 실패했는지 드러내지 않습니다.",
+      );
+      const d = gateDeps({
+        choices: ["save", "cancel"],
+        confirms: [true, true],
+        respond: handWritten,
+        rejectionProviders: ai.providers,
+      });
+      await runGenerateCommand([...gateArgv, "--provider", "claude"], d.value);
+      const text = d.output();
+      expect(text).toContain(`거절 근거 미확인 ${failingCases}건에 대해 AI 진단을 요청했습니다.`);
+      expect(text).toContain("판단 불가");
+      expect(text).toContain(
+        "    → 응답이 값만 언급하고 어느 단계에서 실패했는지 드러내지 않습니다.",
+      );
+      expect(text).toContain("이 진단은 참고입니다. 케이스 판정과 저장 여부를 바꾸지 않습니다.");
+    });
+
+    it("verdict 를 화면 문구로 옮긴다", async () => {
+      for (const [verdict, label] of [
+        ["rejected", "거절로 보임"],
+        ["crashed", "서버 내부 오류로 보임"],
+        ["unsure", "판단 불가"],
+      ] as const) {
+        const ai = answering(verdict);
+        const d = gateDeps({
+          choices: ["save", "cancel"],
+          confirms: [true, true],
+          respond: handWritten,
+          rejectionProviders: ai.providers,
+        });
+        await runGenerateCommand([...gateArgv, "--provider", "claude"], d.value);
+        expect(d.output()).toContain(label);
+      }
+    });
+
+    it("진단 결과가 저장 여부와 케이스 판정을 바꾸지 않는다", async () => {
+      const ai = answering("crashed", "서버가 터진 것으로 보입니다.");
+      const d = gateDeps({
+        choices: ["save"],
+        confirms: [true, true, true],
+        respond: handWritten,
+        rejectionProviders: ai.providers,
+      });
+      await expect(
+        runGenerateCommand([...gateArgv, "--provider", "claude"], d.value),
+      ).resolves.toBe(0);
+      // crashed 라고 답해도 케이스는 통과이고 저장까지 간다. 분류를 묻지 않는다.
+      expect(d.io.input).not.toHaveBeenCalled();
+      const cases = d.savedSuite()?.approval.cases ?? [];
+      expect(cases.every((item) => item.status === "passed")).toBe(true);
+    });
+
+    it("provider 실패는 흐름을 끊지 않는다", async () => {
+      const d = gateDeps({
+        choices: ["save", "cancel"],
+        confirms: [true, true],
+        respond: handWritten,
+        rejectionProviders: {
+          claude: () => ({
+            id: "claude" as const,
+            diagnoseRejection: async () => {
+              throw Object.assign(new Error("boom"), { code: "timedOut" });
+            },
+          }),
+        },
+      });
+      await expect(
+        runGenerateCommand([...gateArgv, "--provider", "claude"], d.value),
+      ).resolves.toBe(0);
+      expect(d.stderr.join("")).toContain("GENERATE_PROVIDER_TIMEOUT");
+      // 실패해도 승인 화면이 이어져 최종 지문까지 간다.
+      expect(d.output()).toContain("Final fingerprint:");
+    });
+
+    it("형식을 어긴 응답도 흐름을 끊지 않는다", async () => {
+      const d = gateDeps({
+        choices: ["save", "cancel"],
+        confirms: [true, true],
+        respond: handWritten,
+        rejectionProviders: {
+          claude: () => ({
+            id: "claude" as const,
+            diagnoseRejection: async () => ({ results: [{ caseId: "지어낸", verdict: "maybe" }] }),
+          }),
+        },
+      });
+      await runGenerateCommand([...gateArgv, "--provider", "claude"], d.value);
+      expect(d.stderr.join("")).toContain("GENERATE_PROVIDER_SCHEMA");
+      expect(d.output()).toContain("Final fingerprint:");
+    });
+
+    /**
+     * `prepare` 는 요청이 상한을 넘으면 던진다. 인자 자리에서 부르면 검토 루프의 catch 가
+     * 그것을 다시 던져 사용자가 안내 대신 스택트레이스를 본다. 진단은 참고이지 저장의 전제가
+     * 아니므로 흐름이 끊기면 안 된다.
+     */
+    it("요청이 상한을 넘으면 스택 대신 안내를 내고 흐름을 잇는다", async () => {
+      const d = gateDeps({
+        choices: ["save", "cancel"],
+        confirms: [true, true],
+        respond: handWritten,
+        rejectionProviders: answering("rejected").providers,
+        // 상한 판정만 보고 싶으므로 prepare 를 직접 던지게 바꾼다.
+        prepareRejectionDiagnosisRequests: () => {
+          throw new RangeError("request byte limit을 초과했습니다.");
+        },
+      });
+      await expect(
+        runGenerateCommand([...gateArgv, "--provider", "claude"], d.value),
+      ).resolves.toBe(0);
+      expect(d.output()).toContain("진단 요청이 크기 상한(256KB)을 넘어 보내지 못했습니다.");
+      expect(d.output()).toContain("케이스 판정과 저장에는 영향이 없습니다.");
+      // 흐름이 이어져 최종 지문까지 간다.
+      expect(d.output()).toContain("Final fingerprint:");
+    });
+
+    it("RangeError 가 아닌 오류는 삼키지 않는다", async () => {
+      const d = gateDeps({
+        choices: ["save", "cancel"],
+        confirms: [true, true],
+        respond: handWritten,
+        rejectionProviders: answering("rejected").providers,
+        prepareRejectionDiagnosisRequests: () => {
+          throw new TypeError("예상치 못한 오류");
+        },
+      });
+      await expect(
+        runGenerateCommand([...gateArgv, "--provider", "claude"], d.value),
+      ).rejects.toThrow("예상치 못한 오류");
+    });
+
+    it("본문이 없는 케이스는 진단에서 빼고 그 사실을 적는다", async () => {
+      const ai = answering("rejected");
+      const d = gateDeps({
+        choices: ["save", "cancel"],
+        confirms: [true],
+        // content 가 비면 본문 추출이 실패해 rejectionBody 가 안 생긴다.
+        respond: (_n, args) =>
+          (args as { city?: unknown })?.city === undefined ||
+          typeof (args as { city?: unknown }).city !== "string"
+            ? ({ content: [], isError: true, raw: null } as ToolResult)
+            : ok(),
+        rejectionProviders: ai.providers,
+      });
+      await runGenerateCommand([...gateArgv, "--provider", "claude"], d.value);
+      expect(d.output()).toContain(
+        `응답 본문이 없어 ${failingCases}건 전부를 AI 에게 물을 수 없습니다.`,
+      );
+      expect(ai.seen).toHaveLength(0);
+    });
+  });
 
   it("기본 경로에서 시험 실행 고지가 나오고 거절하면 저장하지 않는다", async () => {
     const d = gateDeps({ choices: ["save", "cancel"], confirms: [false] });

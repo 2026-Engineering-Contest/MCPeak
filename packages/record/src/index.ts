@@ -78,6 +78,16 @@ const plainObject = (value: unknown): value is Record<string, unknown> =>
   !Array.isArray(value) &&
   (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null);
 
+/**
+ * 동적 키로 일반 객체에 값을 심는다. 대괄호 할당(`obj[key] = value`)은 key 가
+ * `"__proto__"` 일 때 own property 를 만드는 대신 프로토타입을 바꿔, 그 이름의 필드가
+ * 결과에서 조용히 사라진다. `redact` · `redactSchema` 는 키가 입력(응답 raw · 스키마)에서
+ * 그대로 온 임의 문자열이라 이 함수로 심는다.
+ */
+const setOwn = (target: Record<string, unknown>, key: string, value: unknown): void => {
+  Object.defineProperty(target, key, { value, enumerable: true, writable: true, configurable: true });
+};
+
 class CassetteJsonError extends TypeError {
   constructor(
     readonly path: string,
@@ -277,7 +287,7 @@ export function redact(value: unknown): unknown {
       const output: Record<string, unknown> = {};
       for (const objectKey of Object.keys(current).sort()) {
         const next = visit(current[objectKey], objectKey);
-        if (next !== undefined) output[objectKey] = next;
+        if (next !== undefined) setOwn(output, objectKey, next);
       }
       return output;
     } finally {
@@ -642,7 +652,7 @@ function redactSchema(schema: unknown, sensitive: boolean): unknown {
     if (key === "properties" && plainObject(value)) {
       const nested: Record<string, unknown> = {};
       for (const name of Object.keys(value)) {
-        nested[name] = redactSchema(value[name], sensitive || sensitiveKey(name));
+        setOwn(nested, name, redactSchema(value[name], sensitive || sensitiveKey(name)));
       }
       output[key] = nested;
       continue;
@@ -659,7 +669,7 @@ function redactSchema(schema: unknown, sensitive: boolean): unknown {
       output[key] = value.map(() => REDACTED);
       continue;
     }
-    output[key] = value;
+    setOwn(output, key, value);
   }
   return output;
 }

@@ -47,16 +47,21 @@ for (let attempt = 0; attempt < 20 && pid === undefined; attempt += 1) {
    실패 메시지가 곧 제품인 프로젝트의 기준에 맞지 않는다. PID 파일 경로, 기다린 시간, 확인
    횟수, 다음에 볼 것을 담아야 한다.
 
-## 함께 검토할 구조 문제
+## 함께 검토할 구조 문제 — 해소 (2026-08-18, ADR-0042)
 
-실제 프로세스를 띄우는 테스트 세 개가 기본 유닛 실행에 섞여 있다.
+이 절을 처음 쓸 때는 실제 프로세스를 띄우는 테스트 세 개(`stdio-integration` ·
+`cli-integration` · `generate-integration`)가 기본 유닛 실행에 섞여 있었고, 루트
+`vitest.config.ts` 가 공유 계약이라 제안만 남겼다.
 
-- `packages/core/tests/stdio-integration-e2e.test.ts`
-- `packages/cli/tests/cli-integration-e2e.test.ts`
-- `packages/cli/tests/generate-integration-e2e.test.ts`
+지금은 분리됐다. 실프로세스 스펙은 일곱으로 늘었고(위 셋에 `repair-e2e` ·
+`fetch-server-e2e` · `determinism-e2e` · `reset-hook-e2e`), 전부 `*-e2e.test.ts` 파일명
+규약으로 e2e 갈래에 들어가 파일 간 직렬로 돈다(`fileParallelism: false`). 경위와 기각한
+대안은 ADR-0042.
 
-`CLAUDE.local.md`는 이런 E2E를 직렬 전용 웨이브로 분리하라고 요구한다. 분리하려면 루트
-`vitest.config.ts`를 고쳐야 하는데 그것은 공유 계약이라 제안만 남긴다.
+**이 분리로 이 문서의 결함 자체가 없어지는 것은 아니다.** 같은 갈래 안 직렬 실행에서도
+기계가 느리면 나는 실패라 아래 수정 방향은 그대로 유효하다. 다만 병렬 잠식이 사라져 재현
+빈도는 낮아질 것이므로, 판정 기준의 대조군(무부하 25회 중 2회)은 분리 후 다시 측정해야
+비교가 성립한다.
 
 ## 판정 기준
 

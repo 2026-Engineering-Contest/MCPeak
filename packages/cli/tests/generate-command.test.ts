@@ -1999,6 +1999,8 @@ describe("generate 시험 실행 게이트", () => {
     readonly providers?: GenerateCommandDependencies["providers"];
     /** 거절 근거 진단용 provider(#89). 없으면 진단을 묻지 않는다. */
     readonly rejectionProviders?: GenerateCommandDependencies["rejectionProviders"];
+    /** 요청 조립을 갈아 끼운다. 상한 초과 경로를 만들 때 쓴다. */
+    readonly prepareRejectionDiagnosisRequests?: GenerateCommandDependencies["prepareRejectionDiagnosisRequests"];
     /** 반영 경로 호출 횟수를 세려고 감싼 구현. */
     readonly applyAuthoringChanges?: typeof applyAuthoringChanges;
     /** `edit` 메뉴가 읽을 로컬 JSON. 경로 `candidate.json` 으로만 읽힌다. */
@@ -2090,7 +2092,8 @@ describe("generate 시험 실행 게이트", () => {
       reviewLocalAuthoringCandidate,
       providers: options.providers,
       rejectionProviders: options.rejectionProviders,
-      prepareRejectionDiagnosisRequests,
+      prepareRejectionDiagnosisRequests:
+        options.prepareRejectionDiagnosisRequests ?? prepareRejectionDiagnosisRequests,
       dispatchRejectionDiagnosis,
       cassetteIo: {
         load: async (path) => store.get(path) ?? null,
@@ -2378,6 +2381,46 @@ describe("generate 시험 실행 게이트", () => {
       await runGenerateCommand([...gateArgv, "--provider", "claude"], d.value);
       expect(d.stderr.join("")).toContain("GENERATE_PROVIDER_SCHEMA");
       expect(d.output()).toContain("Final fingerprint:");
+    });
+
+    /**
+     * `prepare` 는 요청이 상한을 넘으면 던진다. 인자 자리에서 부르면 검토 루프의 catch 가
+     * 그것을 다시 던져 사용자가 안내 대신 스택트레이스를 본다. 진단은 참고이지 저장의 전제가
+     * 아니므로 흐름이 끊기면 안 된다.
+     */
+    it("요청이 상한을 넘으면 스택 대신 안내를 내고 흐름을 잇는다", async () => {
+      const d = gateDeps({
+        choices: ["save", "cancel"],
+        confirms: [true, true],
+        respond: handWritten,
+        rejectionProviders: answering("rejected").providers,
+        // 상한 판정만 보고 싶으므로 prepare 를 직접 던지게 바꾼다.
+        prepareRejectionDiagnosisRequests: () => {
+          throw new RangeError("request byte limit을 초과했습니다.");
+        },
+      });
+      await expect(
+        runGenerateCommand([...gateArgv, "--provider", "claude"], d.value),
+      ).resolves.toBe(0);
+      expect(d.output()).toContain("진단 요청이 크기 상한(256KB)을 넘어 보내지 못했습니다.");
+      expect(d.output()).toContain("케이스 판정과 저장에는 영향이 없습니다.");
+      // 흐름이 이어져 최종 지문까지 간다.
+      expect(d.output()).toContain("Final fingerprint:");
+    });
+
+    it("RangeError 가 아닌 오류는 삼키지 않는다", async () => {
+      const d = gateDeps({
+        choices: ["save", "cancel"],
+        confirms: [true, true],
+        respond: handWritten,
+        rejectionProviders: answering("rejected").providers,
+        prepareRejectionDiagnosisRequests: () => {
+          throw new TypeError("예상치 못한 오류");
+        },
+      });
+      await expect(
+        runGenerateCommand([...gateArgv, "--provider", "claude"], d.value),
+      ).rejects.toThrow("예상치 못한 오류");
     });
 
     it("본문이 없는 케이스는 진단에서 빼고 그 사실을 적는다", async () => {

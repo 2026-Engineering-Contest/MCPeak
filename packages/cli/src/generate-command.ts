@@ -983,10 +983,23 @@ async function askRejectionDiagnosis(options: {
     );
   if (!(await io.confirm(`  나머지 ${cases.length}건의 진단을 AI 에게 요청할까요?`))) return;
 
-  const dispatched = await dispatch({
-    provider,
-    requests: prepare({ cases }),
-  });
+  // `prepare` 는 요청이 상한(256KB)을 넘으면 던진다. **인자 자리에서 부르면 안 된다** —
+  // `dispatch` 의 try/catch 밖이고, 검토 루프의 catch 는 입력 종료가 아닌 오류를 다시 던져서
+  // 사용자가 안내 대신 스택트레이스를 본다. 진단은 참고이지 저장의 전제가 아니므로, 못 보내면
+  // 그 사실만 적고 승인 흐름을 잇는다.
+  let requests: Awaited<ReturnType<typeof prepare>>;
+  try {
+    requests = prepare({ cases });
+  } catch (error) {
+    if (!(error instanceof RangeError)) throw error;
+    io.write(
+      `  진단 요청이 크기 상한(256KB)을 넘어 보내지 못했습니다. 미확인 ${cases.length}건의 입력 스키마와 응답을 합친 크기입니다.\n` +
+        "  해결: 툴 수가 적은 명세로 나눠 생성한 뒤 다시 시도하세요. 케이스 판정과 저장에는 영향이 없습니다.\n\n",
+    );
+    return;
+  }
+
+  const dispatched = await dispatch({ provider, requests });
   if (dispatched.type === "failed") {
     providerFailure(deps, dispatched.failure, options.model);
     return;

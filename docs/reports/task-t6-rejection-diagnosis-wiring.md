@@ -85,12 +85,29 @@ T5 는 `rejectionDiagnosisPrompt` 와 `buildRejectionDiagnosisProviderSchema` �
 
 ## 검증
 
-| 명령 | 결과 |
+**측정 시점은 커밋 `49b2431`(T6 구현) 이다.** 이 표는 그 시점의 값이고, 이후 커밋에서 숫자가
+늘었다. 문서마다 다른 수가 적히는 것은 실행 시점이 다르기 때문이므로 각자 시점을 함께 적는다.
+
+| 명령 | 결과 (`49b2431` 시점) |
 |---|---|
 | `vitest run packages/cli/tests/generate-command.test.ts` | 203건 통과 (신규 9 포함) |
 | `pnpm test` | 1829건 통과 · 3 skipped (기점 1820 + 신규 9) |
 | `turbo run typecheck --force` | 6/6 통과, `Cached: 0 cached` |
 | `biome ci .` | 202 파일 통과 |
+
+이후 변화는 이렇다.
+
+| 커밋 | `pnpm test` | 무엇이 달라졌나 |
+|---|---|---|
+| `49b2431` T6 구현 | 1829 통과 · 3 skip | 이 보고서의 측정 시점 |
+| `480c1ea` dist e2e 단언 갱신 | 1829 통과 · 3 skip | 테스트 수 변화 없음 |
+| `8c82496` RangeError 처리 | **1831** 통과 · 3 skip | 신규 2건(상한 초과 안내 · 다른 오류 전파) |
+| `4e3e1f0` 실환경 검증 기록 | **1832** 통과 · 2 skip | `docs/adoption.md` 의 값. 코드 변화 없음 |
+
+마지막 줄의 `1832 통과 · 2 skip` 은 `docs/adoption.md` §6 이 적은 값이다. 합계는 1834 로 같고,
+**내 환경에서 skip 된 실서버 E2E 한 건이 그 실행에서는 돌았다.** 그 명령은 실제 서버 프로세스를
+띄울 수 있어야 도는 종류다(`fix/require-real-server-e2e` 가 CI 에서 조용한 skip 을 실패로 올리게
+한 그 테스트다). 코드 차이가 아니라 실행 환경 차이다.
 
 **판정이 안 바뀐다는 것을 테스트가 직접 단언한다.** AI 가 `crashed` 라고 답해도 저장된
 `approval.cases` 가 전량 `passed` 이고 분류 질문(`io.input`)이 한 번도 안 불린다.
@@ -152,7 +169,16 @@ weather-server CLI E2E  (3 cases)
 
 ## 남은 것
 
-- **AI 진단 경로는 실 provider 로 못 돌려 봤다.** `--provider` 와 실제 codex/claude CLI 가
-  있어야 한다. `diagnoseRejection` 이 기존 셋과 같은 실행 경로(`execute`)를 쓰므로 배선은
-  같지만, 실호출은 확인하지 않았다. 그 경로를 한 번 돌려 보는 것이 남은 검증이다.
-- `pnpm test` 1829건 · `typecheck --force` 6/6 · `biome ci .` 202파일 전부 통과.
+**AI 진단 경로의 실 provider 검증은 `@seodduu` 가 했다** (`4e3e1f0`, `docs/adoption.md` §6).
+이 보고서를 쓸 때는 못 한 항목이었다. 실제 `claude` CLI 로 승인 화면까지 대화형으로 돌려
+미확인 6건에 전부 `거절로 보임` 이 나왔고, 판정·종료 코드가 안 바뀌는 것과 참고 문장이 붙는
+것까지 확인됐다.
+
+**대신 그 기록이 새 구멍을 짚었다.** 표본이 `examples/weather-server` 하나뿐인데 그 서버는
+거절 문장을 손으로 써서 **전부 `unverified` 로 떨어진다.** 그래서 실환경에서 `verified` 가
+나온 적이 한 번도 없다 — 화이트리스트의 **양성 경로가 픽스처로만 검증됐다.**
+
+계획서 W5 3번의 공개 서버 3개 대조가 그 자리를 메운다. 기대값은 관찰 기록에 있다
+(`server-memory` 0건 · `mcp-server-time` 2건 · `mcp-server-calculator` 0건).
+
+- **후속 이슈:** #165 — provider 로 보내는 자유 텍스트의 redaction 계약.

@@ -7,7 +7,6 @@ import type {
   RunnerReport,
   RunSuiteOptions,
   SpecFinding,
-  SpecFindingCode,
   SpecFindingsResult,
   SuiteCaseApproval,
   SuiteValidationIssue,
@@ -19,6 +18,8 @@ import {
   checkAssertionSubstance as runnerCheckAssertionSubstance,
   checkInputContract as runnerCheckInputContract,
 } from "@ohmymcp/runner";
+import type { FindingGroup } from "./finding-group.js";
+import { FINDING_GROUP } from "./finding-group.js";
 import { TEST_USAGE_HINT } from "./help.js";
 import {
   hasDiagnosticContent,
@@ -288,27 +289,6 @@ const escapeTerminalText = (value: string): string =>
       ? `\\u${codePoint.toString(16).padStart(4, "0")}`
       : character;
   }).join("");
-/**
- * 참고 문장의 머리글 종류. 검사 종류가 곧 사용자가 고칠 곳이다. `skipped` 는 고칠 것이 없다는
- * 사실 자체를 알리는 종류라서 위반 둘과 갈린다.
- */
-type FindingGroup = "inputContract" | "assertionSubstance" | "rejectionIntent" | "skipped";
-/**
- * finding 코드를 검사 종류로 가른다. `Record<SpecFindingCode, …>` 라서 `runner` 가 코드를
- * 늘리면 여기서 타입 오류가 난다. 문자열 배열로 두면 새 코드가 조용히 한쪽으로 흘러간다.
- */
-const FINDING_GROUP: Readonly<Record<SpecFindingCode, FindingGroup>> = {
-  TOOL_NOT_DECLARED: "inputContract",
-  REQUIRED_MISSING: "inputContract",
-  UNDECLARED_FIELD: "inputContract",
-  TYPE_MISMATCH: "inputContract",
-  ENUM_MISMATCH: "inputContract",
-  RANGE_MISMATCH: "inputContract",
-  SCHEMA_NOT_ANALYZABLE: "skipped",
-  REJECTION_WITHOUT_VIOLATION: "rejectionIntent",
-  VACUOUS_MIN_LENGTH: "assertionSubstance",
-  VACUOUS_MIN_ITEMS: "assertionSubstance",
-};
 /**
  * 머리글은 검사 종류마다 다르다. `minLength: 0` 은 입력이 아니라 단언의 문제이고,
  * `SCHEMA_NOT_ANALYZABLE` 은 명세가 아니라 서버 스키마를 못 읽었다는 뜻이다. 둘 중 어느

@@ -829,7 +829,107 @@ describe("cassette IO", () => {
       const loadedSchema = loaded?.tools?.[0]?.inputSchema as
         | { properties?: Record<string, unknown> }
         | undefined;
-      expect(loadedSchema?.properties?.apiKey).toBe("[redacted]");
+      // ADR-0040. properties.apiKey 의 정의 객체 자체는 선언이라 살아남고, 값이 든
+      // default 만 가려진다.
+      expect(loadedSchema?.properties?.apiKey).toStrictEqual({
+        type: "string",
+        default: "[redacted]",
+      });
+      expect(loadedSchema?.properties?.ticker).toStrictEqual({ type: "string" });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("스키마는 재귀하며 프로퍼티 이름으로만 민감도를 판정한다 (ADR-0040)", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "ohmymcp-record-"));
+    const path = join(dir, "schema.cassette.json");
+    const cassette = cassetteWith({
+      toolName: "get_secret",
+      args: { id: 1 },
+      result: ok({ value: "x" }),
+    });
+    cassette.tools = [
+      {
+        name: "get_secret",
+        description: "비밀값을 돌려준다",
+        inputSchema: {
+          type: "object",
+          properties: {
+            auth: {
+              type: "object",
+              properties: {
+                token: { type: "string", default: "nested-secret", const: "nested-secret" },
+              },
+            },
+            token: {
+              type: "array",
+              items: { type: "string", default: "array-secret" },
+            },
+            secret: { type: "string", enum: ["admin-secret", "guest"] },
+            password: { type: "string", examples: ["hint-secret"] },
+            note: { type: "string", default: "안 가려짐" },
+            authSecret: {
+              anyOf: [{ type: "string", default: "안-가려짐-대상-아님" }],
+            },
+          },
+        },
+      },
+    ];
+
+    try {
+      await saveCassette(path, cassette);
+      const loaded = await loadCassette(path);
+      const tool = loaded?.tools?.[0] as {
+        name: string;
+        description?: string;
+        inputSchema: {
+          properties: {
+            auth: { properties: { token: Record<string, unknown> } };
+            token: { items: Record<string, unknown> };
+            secret: { enum: unknown[] };
+            password: { examples: unknown[] };
+            note: Record<string, unknown>;
+            authSecret: { anyOf: unknown[] };
+          };
+        };
+      };
+
+      // 선언 대상인 이름과 name·description 은 손대지 않는다.
+      expect(tool.name).toBe("get_secret");
+      expect(tool.description).toBe("비밀값을 돌려준다");
+
+      // properties 재귀 — 안쪽 token 의 민감도는 그 이름으로 새로 판정한다.
+      expect(tool.inputSchema.properties.auth.properties.token).toStrictEqual({
+        type: "string",
+        default: "[redacted]",
+        const: "[redacted]",
+      });
+
+      // items 재귀 — 민감도는 부모 프로퍼티 이름(token)에서 물려받는다.
+      expect(tool.inputSchema.properties.token.items).toStrictEqual({
+        type: "string",
+        default: "[redacted]",
+      });
+
+      // enum 은 원소마다 가린다. secret 이라는 이름 자체는 값이 아니므로 프로퍼티 키로는
+      // 남는다.
+      expect(tool.inputSchema.properties.secret.enum).toStrictEqual(["[redacted]", "[redacted]"]);
+
+      // examples 도 원소마다 가린다.
+      expect(tool.inputSchema.properties.password.examples).toStrictEqual(["[redacted]"]);
+
+      // 민감하지 않은 이름의 default 는 그대로 남는다.
+      expect(tool.inputSchema.properties.note).toStrictEqual({
+        type: "string",
+        default: "안 가려짐",
+      });
+
+      // 민감한 이름(authSecret) 아래라도 ADR-0004 가 해석하지 않는 anyOf 는 재귀도
+      // 마스킹도 하지 않는다.
+      expect(tool.inputSchema.properties.authSecret).toStrictEqual({
+        anyOf: [{ type: "string", default: "안-가려짐-대상-아님" }],
+      });
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

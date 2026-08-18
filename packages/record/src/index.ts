@@ -516,8 +516,70 @@ function prepareCassetteForWrite(cassette: Cassette): Cassette {
         raw: redact(interaction.response.raw),
       },
     })),
-    ...(cassette.tools === undefined ? {} : { tools: redact(cassette.tools) as ToolDef[] }),
+    ...(cassette.tools === undefined ? {} : { tools: redactTools(cassette.tools) }),
   };
+}
+
+/**
+ * `tools` 는 데이터가 아니라 스키마라 `redact` 를 그대로 쓸 수 없다. `properties.<name>`
+ * 의 이름은 값이 아니라 선언 대상이라, 이름으로 마스킹 여부를 결정하는 `redact` 를 그대로
+ * 걸면 `{ type: "string", default: "sk-..." }` 같은 정의 객체 전체가 `"[redacted]"`
+ * 문자열로 치환되어 스키마가 부서진다. 근거는 ADR-0040 이다.
+ *
+ * `name`·`description` 은 선언 대상 자체라 마스킹하지 않는다. `inputSchema` 만
+ * 스키마 전용 규칙(`redactSchema`)을 탄다.
+ */
+function redactTools(tools: readonly ToolDef[]): ToolDef[] {
+  return tools.map((tool) => ({
+    name: tool.name,
+    ...(tool.description === undefined ? {} : { description: tool.description }),
+    inputSchema: redactSchema(tool.inputSchema, false),
+  }));
+}
+
+/**
+ * 스키마를 재귀한다. `sensitive` 는 이 노드가 마스킹 대상 프로퍼티 아래인지를 나타낸다.
+ *
+ * - `properties` 는 재귀하며, 각 프로퍼티의 민감도는 그 **이름**으로 새로 판정한다
+ *   (`sensitiveKey`, ADR-0039). 이름 자체는 절대 마스킹하지 않는다 — 선언 대상이지 값이
+ *   아니다.
+ * - `items` 는 재귀하되 민감도를 부모에서 물려받는다. 배열 원소는 이름이 없다.
+ * - `default` · `const` 는 단일 값이라 통째로 가린다. `examples` · `enum` 은 배열이라
+ *   원소마다 가린다 — 허용값 목록에 실제 키가 들어 있는 경우가 있다.
+ * - 그 외 키(`type`·`required`·`description`·`title`·`$schema` 와 ADR-0004 가
+ *   해석하지 않는 `allOf`·`anyOf`·`oneOf` 등)는 그대로 둔다. 재귀도, 마스킹도 하지
+ *   않는다 — 해석하지 않는 구조에 마스킹만 거는 것은 근거가 없다.
+ */
+function redactSchema(schema: unknown, sensitive: boolean): unknown {
+  if (!plainObject(schema)) return schema;
+
+  const output: Record<string, unknown> = {};
+  for (const key of Object.keys(schema)) {
+    const value = schema[key];
+
+    if (key === "properties" && plainObject(value)) {
+      const nested: Record<string, unknown> = {};
+      for (const name of Object.keys(value)) {
+        nested[name] = redactSchema(value[name], sensitiveKey(name));
+      }
+      output[key] = nested;
+      continue;
+    }
+    if (key === "items") {
+      output[key] = redactSchema(value, sensitive);
+      continue;
+    }
+    if (sensitive && (key === "default" || key === "const")) {
+      output[key] = REDACTED;
+      continue;
+    }
+    if (sensitive && (key === "examples" || key === "enum") && Array.isArray(value)) {
+      output[key] = value.map(() => REDACTED);
+      continue;
+    }
+    output[key] = value;
+  }
+  return output;
 }
 
 function transformJson(

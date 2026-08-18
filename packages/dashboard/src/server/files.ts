@@ -8,7 +8,8 @@ const EXCLUDED_DIRS = new Set(["node_modules", ".git", "dist"]);
 
 /** 루트 아래 `.json` 파일 절대경로 전부. 제외 디렉터리는 내려가지 않는다. */
 async function walkJsonFiles(dir: string): Promise<string[]> {
-  const entries = await readdir(dir, { withFileTypes: true });
+  const entries = await readdir(dir, { withFileTypes: true }).catch(() => null);
+  if (entries === null) return [];
   const results: string[] = [];
   for (const entry of entries) {
     if (entry.isDirectory()) {

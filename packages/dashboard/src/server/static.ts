@@ -62,5 +62,14 @@ export async function serveStatic(
 
   const contentType = MIME_TYPES[extname(filePath).toLowerCase()] ?? "application/octet-stream";
   response.writeHead(200, { "content-type": contentType, "content-length": fileStat.size });
-  createReadStream(filePath).pipe(response);
+  const stream = createReadStream(filePath);
+  stream.once("error", () => {
+    if (response.headersSent) {
+      response.destroy();
+      return;
+    }
+    response.writeHead(500, { "content-type": "text/plain; charset=utf-8" });
+    response.end("정적 파일을 읽을 수 없습니다.\n");
+  });
+  stream.pipe(response);
 }

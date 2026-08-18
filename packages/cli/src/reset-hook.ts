@@ -83,10 +83,11 @@ export async function runResetCommand(command: string): Promise<void> {
     tokens = tokenizeCommand(command);
   } catch (error) {
     if (!(error instanceof CommandParseError)) throw error;
-    const reason =
-      error.code === "UNTERMINATED_EXECUTABLE_QUOTE"
-        ? "실행 파일을 감싼 큰따옴표가 닫히지 않았습니다."
-        : "실행 파일 경로가 비어 있습니다.";
+    const reason = {
+      EMPTY_EXECUTABLE: "실행 파일 경로가 비어 있습니다.",
+      UNTERMINATED_EXECUTABLE_QUOTE: "실행 파일을 감싼 큰따옴표가 닫히지 않았습니다.",
+      MISSING_EXECUTABLE_ARGUMENT_SEPARATOR: "실행 파일을 감싼 큰따옴표 뒤에는 공백이 필요합니다.",
+    }[error.code];
     throw new ResetCommandError(command, null, `잘못된 초기화 명령: ${reason}`);
   }
 

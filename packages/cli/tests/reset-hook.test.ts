@@ -59,6 +59,14 @@ describe("runResetCommand", () => {
     );
   });
 
+  it("실행 파일의 닫는 큰따옴표 뒤에 공백이 없으면 파싱 실패로 보고한다", async () => {
+    const error = await rejection(runResetCommand(`"${process.execPath}"-e`));
+    expect(error).toBeInstanceOf(ResetCommandError);
+    expect((error as ResetCommandError).stderr).toBe(
+      "잘못된 초기화 명령: 실행 파일을 감싼 큰따옴표 뒤에는 공백이 필요합니다.",
+    );
+  });
+
   it("stderr 이 ResetCommandError.stderr 에 담긴다", async () => {
     const error = await rejection(
       runResetCommand(nodeCommand("process.stderr.write('시드실패');process.exit(2)")),

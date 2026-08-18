@@ -1,13 +1,18 @@
-export type CommandParseErrorCode = "EMPTY_EXECUTABLE" | "UNTERMINATED_EXECUTABLE_QUOTE";
+export type CommandParseErrorCode =
+  | "EMPTY_EXECUTABLE"
+  | "UNTERMINATED_EXECUTABLE_QUOTE"
+  | "MISSING_EXECUTABLE_ARGUMENT_SEPARATOR";
+
+const ERROR_MESSAGES: Record<CommandParseErrorCode, string> = {
+  EMPTY_EXECUTABLE: "command executable must not be empty",
+  UNTERMINATED_EXECUTABLE_QUOTE: "command has an unterminated executable quote",
+  MISSING_EXECUTABLE_ARGUMENT_SEPARATOR: "quoted command executable must be followed by whitespace",
+};
 
 /** 셸을 거치지 않고 실행할 명령의 실행 파일 부분을 해석할 수 없을 때 발생한다. */
 export class CommandParseError extends TypeError {
   constructor(readonly code: CommandParseErrorCode) {
-    super(
-      code === "EMPTY_EXECUTABLE"
-        ? "command executable must not be empty"
-        : "command has an unterminated executable quote",
-    );
+    super(ERROR_MESSAGES[code]);
     this.name = "CommandParseError";
   }
 }
@@ -30,9 +35,11 @@ export function tokenizeCommand(command: string): readonly string[] {
   const file = trimmed.slice(1, closingQuote);
   if (file.length === 0) throw new CommandParseError("EMPTY_EXECUTABLE");
 
-  const args = trimmed
-    .slice(closingQuote + 1)
-    .split(/\s+/)
-    .filter((token) => token.length > 0);
+  const remainder = trimmed.slice(closingQuote + 1);
+  if (remainder.length > 0 && !/^\s/.test(remainder)) {
+    throw new CommandParseError("MISSING_EXECUTABLE_ARGUMENT_SEPARATOR");
+  }
+
+  const args = remainder.split(/\s+/).filter((token) => token.length > 0);
   return [file, ...args];
 }

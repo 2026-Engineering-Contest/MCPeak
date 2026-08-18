@@ -32,6 +32,14 @@ describe("tokenizeCommand", () => {
     );
   });
 
+  it("큰따옴표로 감싼 실행 파일과 인자 사이에 공백을 요구한다", () => {
+    expect(() => tokenizeCommand('"C:\\Program Files\\node.exe"-e')).toThrowError(
+      expect.objectContaining<Partial<CommandParseError>>({
+        code: "MISSING_EXECUTABLE_ARGUMENT_SEPARATOR",
+      }),
+    );
+  });
+
   it("공백뿐인 명령은 빈 토큰 목록을 반환한다", () => {
     expect(tokenizeCommand("   ")).toEqual([]);
   });

@@ -205,6 +205,9 @@ describe.sequential("generate 실제 weather-server", () => {
         timedOut: 0,
         cancelled: 0,
         notRun: 0,
+        // 거절 근거 확인(#89). weather-server 는 거절 문장을 손으로 써서 SDK 지문에 안 걸린다.
+        // 설계 문서 §9 가 이 서버를 그 한계의 예로 미리 적어 뒀다. 판정은 안 바뀐다.
+        rejectionUnverified: 6,
       });
       // weather-server 는 이미 입력을 검증하므로(typeof city !== "string",
       // typeof a !== "number" || typeof b !== "number") 위반 케이스 6개가 모두 통과한다.
@@ -467,6 +470,8 @@ describe.sequential("generate 실제 weather-server", () => {
           timedOut: 0,
           cancelled: 0,
           notRun: 0,
+          // 위와 같은 이유다. 8건 전부 통과하면서 그중 6건은 거절 근거를 확인하지 못했다.
+          rejectionUnverified: 6,
         });
         expect(err).not.toHaveBeenCalled();
       } finally {

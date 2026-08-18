@@ -27,6 +27,7 @@ const passed = (spec: TestCaseSpec): TestCaseResult => ({
   status: "passed",
   operation: { status: "completed" },
   assertions: passedAssertions(spec),
+  rejectionBasis: "notApplicable",
 });
 
 /** 작업은 끝났고 단언이 틀린 케이스. JUnit 의 <failure> 에 해당한다. */
@@ -35,6 +36,7 @@ const assertionFailed = (spec: TestCaseSpec, diagnostic: RunnerDiagnostic): Test
   status: "failed",
   operation: { status: "completed" },
   assertions: [{ spec: spec.assertions[0] as never, status: "failed", diagnostic }],
+  rejectionBasis: "notApplicable",
 });
 
 /** 작업 자체가 실패한 케이스. JUnit 의 <error> 에 해당한다. */
@@ -43,6 +45,7 @@ const operationFailed = (spec: TestCaseSpec, diagnostic: RunnerDiagnostic): Test
   status: "failed",
   operation: { status: "failed", diagnostic },
   assertions: [{ spec: spec.assertions[0] as never, status: "notRun" }],
+  rejectionBasis: "notApplicable",
 });
 
 const timedOut = (spec: TestCaseSpec): TestCaseResult => ({
@@ -58,6 +61,7 @@ const timedOut = (spec: TestCaseSpec): TestCaseResult => ({
     },
   },
   assertions: [{ spec: spec.assertions[0] as never, status: "notRun" }],
+  rejectionBasis: "notApplicable",
 });
 
 const withStatus = (spec: TestCaseSpec, status: TestCaseResult["status"]): TestCaseResult => ({
@@ -65,6 +69,7 @@ const withStatus = (spec: TestCaseSpec, status: TestCaseResult["status"]): TestC
   status,
   operation: { status: status as never },
   assertions: [{ spec: spec.assertions[0] as never, status: "notRun" }],
+  rejectionBasis: "notApplicable",
 });
 
 function buildReport(cases: TestCaseResult[], overrides?: Partial<RunnerReport>): RunnerReport {
@@ -75,6 +80,7 @@ function buildReport(cases: TestCaseResult[], overrides?: Partial<RunnerReport>)
     timedOut: 0,
     cancelled: 0,
     notRun: 0,
+    rejectionUnverified: cases.filter((item) => item.rejectionBasis === "unverified").length,
   };
   for (const result of cases) summary[result.status] += 1;
   return {
@@ -345,6 +351,7 @@ describe("renderJUnit", () => {
         status: "failed",
         operation: { status: "completed" },
         assertions: [{ spec: { type: "isError", expected: false }, status: "failed" }],
+        rejectionBasis: "notApplicable",
       },
     ]);
     const xml = renderJUnit(report);

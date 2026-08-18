@@ -65,6 +65,7 @@ function report(cases: readonly TestCaseResult[]): RunnerReport {
       timedOut: cases.filter((item) => item.status === "timedOut").length,
       cancelled: cases.filter((item) => item.status === "cancelled").length,
       notRun: cases.filter((item) => item.status === "notRun").length,
+      rejectionUnverified: cases.filter((item) => item.rejectionBasis === "unverified").length,
     },
   };
 }

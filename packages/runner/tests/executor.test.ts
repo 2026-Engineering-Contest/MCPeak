@@ -203,6 +203,8 @@ describe("runSuite", () => {
       timedOut: 0,
       cancelled: 0,
       notRun: 0,
+      // 거절 근거 확인(#89). 판정 종류가 아니므로 아래 total 합산식에는 안 들어간다.
+      rejectionUnverified: 0,
     });
     expect(report.summary.total).toBe(
       report.summary.passed +
@@ -549,6 +551,203 @@ describe("runSuite와 bodyMatchesSchema", () => {
     expect(byteLength(report.cases[0])).toBeLessThan(65_536);
   });
 
+  /**
+   * 거절 근거 확인 (#89 · 설계 문서 §4.2). `rejectionBasis` 는 판정을 바꾸지 않는다.
+   * 아래 케이스들은 전부 `status: "passed"` 이고, 그 사실도 함께 단언한다.
+   */
+  describe("rejectionBasis", () => {
+    /** 거절을 기대하는 케이스 하나짜리 스위트. 본문만 바꿔 가며 분류를 본다. */
+    const rejectionSuite = (id: string): TestSuiteSpec => ({
+      schemaVersion: 1,
+      id,
+      name: id,
+      defaultTimeoutMs: 1_000,
+      cases: [
+        {
+          id: "reject",
+          name: "reject",
+          operation: { type: "callTool", tool: "get_weather", input: { city: 123 } },
+          assertions: [{ type: "isError", expected: true }],
+        },
+      ],
+    });
+
+    const respondWith = (text: string, isError = true): McpClient => ({
+      listTools: async () => [{ name: "get_weather", inputSchema: {} }],
+      callTool: async () => ({ content: [{ type: "text", text }], isError, raw: null }),
+      close: async () => undefined,
+    });
+
+    it("거절을 기대한 케이스의 응답 본문으로 rejectionBasis 를 채운다", async () => {
+      const report = await runSuite({
+        client: respondWith(
+          "MCP error -32602: Input validation error: Invalid arguments for tool get_weather: Invalid input: expected string, received number at city",
+        ),
+        suite: rejectionSuite("verified"),
+      }).report;
+      expect(report.cases[0]?.rejectionBasis).toBe("verified");
+      expect(report.cases[0]?.status).toBe("passed");
+      expect(report.summary.rejectionUnverified).toBe(0);
+    });
+
+    it("지문에 안 걸리면 unverified 다", async () => {
+      const report = await runSuite({
+        client: respondWith("→ 'city' 는 문자열이어야 합니다."),
+        suite: rejectionSuite("unverified"),
+      }).report;
+      expect(report.cases[0]?.rejectionBasis).toBe("unverified");
+      // 판정은 안 바뀐다. 확인 못 한 것이 실패가 되면 서버 11개 중 2개가 통째로 빨개진다(§4.3).
+      expect(report.cases[0]?.status).toBe("passed");
+      expect(report.summary.rejectionUnverified).toBe(1);
+    });
+
+    it("거절을 기대하지 않는 케이스는 notApplicable 이다", async () => {
+      const suite: TestSuiteSpec = {
+        schemaVersion: 1,
+        id: "happy",
+        name: "happy",
+        defaultTimeoutMs: 1_000,
+        cases: [
+          {
+            id: "ok",
+            name: "ok",
+            operation: { type: "callTool", tool: "get_weather", input: { city: "서울" } },
+            assertions: [{ type: "isError", expected: false }],
+          },
+        ],
+      };
+      const report = await runSuite({ client: respondWith("맑음", false), suite }).report;
+      expect(report.cases[0]?.rejectionBasis).toBe("notApplicable");
+      expect(report.summary.rejectionUnverified).toBe(0);
+    });
+
+    it("listTools 케이스는 notApplicable 이다", async () => {
+      const suite: TestSuiteSpec = {
+        schemaVersion: 1,
+        id: "tools",
+        name: "tools",
+        defaultTimeoutMs: 1_000,
+        cases: [
+          {
+            id: "tools",
+            name: "tools",
+            operation: { type: "listTools" },
+            assertions: [{ type: "toolExists", tool: "get_weather" }],
+          },
+        ],
+      };
+      const report = await runSuite({ client: respondWith("x"), suite }).report;
+      expect(report.cases[0]?.rejectionBasis).toBe("notApplicable");
+    });
+
+    it("요약이 unverified 건수를 센다", async () => {
+      const suite: TestSuiteSpec = {
+        schemaVersion: 1,
+        id: "mixed",
+        name: "mixed",
+        defaultTimeoutMs: 1_000,
+        cases: [
+          {
+            id: "verified",
+            name: "verified",
+            operation: { type: "callTool", tool: "get_weather", input: { city: 1 } },
+            assertions: [{ type: "isError", expected: true }],
+          },
+          {
+            id: "unverified",
+            name: "unverified",
+            operation: { type: "callTool", tool: "get_weather", input: { city: 2 } },
+            assertions: [{ type: "isError", expected: true }],
+          },
+          {
+            id: "happy",
+            name: "happy",
+            operation: { type: "callTool", tool: "get_weather", input: { city: "서울" } },
+            assertions: [{ type: "isError", expected: false }],
+          },
+        ],
+      };
+      const report = await runSuite({
+        client: {
+          listTools: async () => [{ name: "get_weather", inputSchema: {} }],
+          callTool: async (_name, args) => {
+            const city = (args as { city?: unknown }).city;
+            if (city === 1)
+              return {
+                content: [{ type: "text", text: "Input validation error: 'city' is not a string" }],
+                isError: true,
+                raw: null,
+              };
+            if (city === 2)
+              return {
+                content: [{ type: "text", text: "→ 'city' 는 문자열이어야 합니다." }],
+                isError: true,
+                raw: null,
+              };
+            return { content: [{ type: "text", text: "맑음" }], isError: false, raw: null };
+          },
+          close: async () => undefined,
+        },
+        suite,
+      }).report;
+      expect(report.cases.map((item) => item.rejectionBasis)).toEqual([
+        "verified",
+        "unverified",
+        "notApplicable",
+      ]);
+      expect(report.summary.rejectionUnverified).toBe(1);
+      expect(report.summary.passed).toBe(3);
+    });
+
+    /**
+     * 실행되지 않은 케이스는 `notApplicable` 이다. 본문이 없으니 `unverified` 로 볼 수도 있으나,
+     * 그러면 중단된 실행에서 안 돈 케이스 전부가 요약의 "확인하지 못했습니다" 에 실린다.
+     * 안 돈 케이스는 초록으로 찍히지도 않아 크래시가 숨을 자리가 없다. 소음만 남는다(ADR-0015).
+     */
+    it("실행되지 않은 케이스는 notApplicable 이다", async () => {
+      const suite: TestSuiteSpec = {
+        schemaVersion: 1,
+        id: "aborted",
+        name: "aborted",
+        defaultTimeoutMs: 1_000,
+        cases: [
+          {
+            id: "boom",
+            name: "boom",
+            operation: { type: "callTool", tool: "get_weather", input: { city: 1 } },
+            assertions: [{ type: "isError", expected: true }],
+          },
+          {
+            id: "never",
+            name: "never",
+            operation: { type: "callTool", tool: "get_weather", input: { city: 2 } },
+            assertions: [{ type: "isError", expected: true }],
+          },
+        ],
+      };
+      const controller = new AbortController();
+      const report = await runSuite({
+        client: {
+          listTools: async () => [{ name: "get_weather", inputSchema: {} }],
+          callTool: async () => {
+            controller.abort();
+            return {
+              content: [{ type: "text", text: "→ 손으로 쓴 거절" }],
+              isError: true,
+              raw: null,
+            };
+          },
+          close: async () => undefined,
+        },
+        suite,
+        signal: controller.signal,
+      }).report;
+      const never = report.cases.find((item) => item.spec.id === "never");
+      expect(never?.status).toBe("notRun");
+      expect(never?.rejectionBasis).toBe("notApplicable");
+    });
+  });
+
   it("기존 isError 전용 스위트의 보고서가 변하지 않는다", async () => {
     const legacy: TestSuiteSpec = {
       schemaVersion: 1,
@@ -582,9 +781,14 @@ describe("runSuite와 bodyMatchesSchema", () => {
       },
       suite: legacy,
     }).report;
-    // 이 문자열은 bodyMatchesSchema 도입 전(HEAD 323ce2e)에 같은 fixture로 얻은 보고서다.
+    // 이 문자열은 bodyMatchesSchema 도입 전(HEAD 323ce2e)에 같은 fixture로 얻은 보고서에
+    // 거절 근거 확인(#89)의 **추가 필드 둘**을 더한 것이다. 갱신한 것은 그 둘뿐이다 —
+    // `cases[].rejectionBasis` 와 `summary.rejectionUnverified`. 기존 키의 값은 하나도 안 바뀌고
+    // 특히 두 케이스의 `status` 가 그대로 `passed` 다. 그래서 `schemaVersion` 은 1 을 유지한다.
+    // 이 두 케이스가 `notApplicable` 인 것도 사양이다. 거절을 기대하지 않으므로 응답 본문을
+    // 읽지 않는다(설계 문서 §4.2).
     expect(JSON.stringify(report)).toBe(
-      '{"schemaVersion":1,"suite":{"id":"legacy","name":"legacy","defaultTimeoutMs":1000},"status":"passed","cases":[{"spec":{"id":"tools","name":"tools","operation":{"type":"listTools"},"assertions":[{"type":"toolExists","tool":"get_weather"}]},"status":"passed","operation":{"status":"completed","timeoutMs":1000},"assertions":[{"spec":{"type":"toolExists","tool":"get_weather"},"status":"passed"}]},{"spec":{"id":"call","name":"call","operation":{"type":"callTool","tool":"get_weather","input":{"city":"서울"}},"assertions":[{"type":"isError","expected":false}]},"status":"passed","operation":{"status":"completed","timeoutMs":1000},"assertions":[{"spec":{"type":"isError","expected":false},"status":"passed"}]}],"summary":{"total":2,"passed":2,"failed":0,"timedOut":0,"cancelled":0,"notRun":0}}',
+      '{"schemaVersion":1,"suite":{"id":"legacy","name":"legacy","defaultTimeoutMs":1000},"status":"passed","cases":[{"spec":{"id":"tools","name":"tools","operation":{"type":"listTools"},"assertions":[{"type":"toolExists","tool":"get_weather"}]},"status":"passed","operation":{"status":"completed","timeoutMs":1000},"assertions":[{"spec":{"type":"toolExists","tool":"get_weather"},"status":"passed"}],"rejectionBasis":"notApplicable"},{"spec":{"id":"call","name":"call","operation":{"type":"callTool","tool":"get_weather","input":{"city":"서울"}},"assertions":[{"type":"isError","expected":false}]},"status":"passed","operation":{"status":"completed","timeoutMs":1000},"assertions":[{"spec":{"type":"isError","expected":false},"status":"passed"}],"rejectionBasis":"notApplicable"}],"summary":{"total":2,"passed":2,"failed":0,"timedOut":0,"cancelled":0,"notRun":0,"rejectionUnverified":0}}',
     );
   });
 });

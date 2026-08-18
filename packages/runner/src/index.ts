@@ -41,6 +41,7 @@ export {
 export { suiteFingerprint } from "./fingerprint.js";
 export { checkInputContract, type InputContractOptions } from "./input-contract.js";
 export { type JUnitRenderOptions, renderJUnit } from "./junit.js";
+export { classifyRejectionBasis, type RejectionBasis } from "./rejection-basis.js";
 export { type RenderReportOptions, renderReport } from "./reporter.js";
 export {
   DEFAULT_MAX_CASE_BYTES,

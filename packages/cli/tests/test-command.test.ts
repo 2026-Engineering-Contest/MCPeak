@@ -35,7 +35,15 @@ const report = (status: RunnerReport["status"] = "passed"): RunnerReport => ({
   suite: { id: "suite", name: "Suite" },
   status,
   cases: [],
-  summary: { total: 0, passed: 0, failed: 0, timedOut: 0, cancelled: 0, notRun: 0 },
+  summary: {
+    total: 0,
+    passed: 0,
+    failed: 0,
+    timedOut: 0,
+    cancelled: 0,
+    notRun: 0,
+    rejectionUnverified: 0,
+  },
 });
 /** 주입한 renderReport 가 돌려주는 값. 렌더링 문안은 runner 의 reporter.test.ts 가 고정한다. */
 const RENDERED = "렌더링 결과\n";
@@ -1055,6 +1063,7 @@ describe("입력 계약 참고 문장", () => {
       status: statuses[spec.id] ?? "passed",
       operation: { status: "completed" },
       assertions: [],
+      rejectionBasis: "notApplicable",
     }));
     const failed = cases.filter((item) => item.status !== "passed").length;
     return {
@@ -1069,6 +1078,7 @@ describe("입력 계약 참고 문장", () => {
         timedOut: 0,
         cancelled: 0,
         notRun: 0,
+        rejectionUnverified: 0,
       },
     };
   };
@@ -1374,6 +1384,7 @@ describe("test 보고서 / 승인 시점 서버 결함 표시", () => {
       status: statuses[spec.id] ?? "passed",
       operation: { status: "completed" },
       assertions: [],
+      rejectionBasis: "notApplicable",
     }));
     const failed = cases.filter((item) => item.status !== "passed").length;
     return {
@@ -1388,6 +1399,7 @@ describe("test 보고서 / 승인 시점 서버 결함 표시", () => {
         timedOut: 0,
         cancelled: 0,
         notRun: 0,
+        rejectionUnverified: 0,
       },
     };
   };

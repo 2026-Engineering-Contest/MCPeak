@@ -61,6 +61,8 @@ interface CaseInput {
   status: TestCaseResult["status"];
   operationDiagnostic?: RunnerDiagnostic;
   assertions?: readonly AssertionResult[];
+  /** 거절 근거 확인(#89). 안 주면 판정 대상이 아닌 케이스다. */
+  rejectionBasis?: TestCaseResult["rejectionBasis"];
 }
 
 const testCase = (input: CaseInput): TestCaseResult => ({
@@ -76,6 +78,7 @@ const testCase = (input: CaseInput): TestCaseResult => ({
     ...(input.operationDiagnostic === undefined ? {} : { diagnostic: input.operationDiagnostic }),
   },
   assertions: [...(input.assertions ?? [])],
+  rejectionBasis: input.rejectionBasis ?? "notApplicable",
 });
 
 const summarize = (cases: readonly TestCaseResult[]): RunnerSummary => ({
@@ -85,6 +88,7 @@ const summarize = (cases: readonly TestCaseResult[]): RunnerSummary => ({
   timedOut: cases.filter((item) => item.status === "timedOut").length,
   cancelled: cases.filter((item) => item.status === "cancelled").length,
   notRun: cases.filter((item) => item.status === "notRun").length,
+  rejectionUnverified: cases.filter((item) => item.rejectionBasis === "unverified").length,
 });
 
 const makeReport = (

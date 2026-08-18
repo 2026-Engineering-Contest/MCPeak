@@ -1,5 +1,5 @@
 ---
-"@ohmymcp/core": minor
+"@ohmymcp-hsu/core": minor
 "ohmymcp": patch
 ---
 

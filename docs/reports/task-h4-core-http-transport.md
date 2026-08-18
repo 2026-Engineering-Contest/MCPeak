@@ -11,7 +11,7 @@ worktree: `.claude/worktrees/ohmymcp-h4-core-http`
 | `docs/adr/README.md` | 0020 행 상태 칸을 `초안` 에서 `제안` 으로 |
 | `docs/architecture.md` | 2절 표의 `core` 입력 칸을 `ConnectOptions (command·args·env·cwd 또는 url·headers)` 로 |
 | `packages/core/README.md` | 머리 문단 갱신, "Streamable HTTP로 연결하기" 절 신규, stdio 전용 서술 문장 정정 |
-| `.changeset/core-streamable-http.md` | 신규. `@ohmymcp/core` minor, 한국어 한 문단 |
+| `.changeset/core-streamable-http.md` | 신규. `@ohmymcp-hsu/core` minor, 한국어 한 문단 |
 
 `git status --short`:
 

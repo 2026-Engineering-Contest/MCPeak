@@ -12,7 +12,7 @@
 
 완료 조건은 다음과 같다.
 
-1. `@ohmymcp/generate`가 한 서버의 `ToolDef[]`를 in-memory baseline suite 하나로 만들고 같은
+1. `@ohmymcp-hsu/generate`가 한 서버의 `ToolDef[]`를 in-memory baseline suite 하나로 만들고 같은
    입력·정책에 byte가 같은 fingerprint를 반환한다.
 2. baseline, 승인 draft, working candidate, execution snapshot이 분리되고 AI 호출·거절·질문·실패는
    승인 revision을 바꾸지 않는다.
@@ -46,7 +46,7 @@
 - 기준 main HEAD: 계획 작성 시 `22a4bdf171fc904c90ee5be0a6728559f7a4e529`이다.
 - 설계·ADR·이 계획은 현재 작업 트리의 문서 변경이므로 실행 전 사용자가 먼저 커밋해야 한다.
 - `generateTests()`는 도구별 TypeScript suite 파일을 만들며 in-memory baseline API는 없다.
-- `packages/generate/package.json`은 `@ohmymcp/core`만 의존한다.
+- `packages/generate/package.json`은 `@ohmymcp-hsu/core`만 의존한다.
 - Runner의 `TestSuiteSpec`, `MCP_SUITE_JSON_SCHEMA`, `validateMcpSuite`는 구현돼 있다.
 - CLI는 `test`만 구현됐고 `generate`는 `COMMAND_NOT_IMPLEMENTED`다.
 - weather-server의 `get_weather` schema에는 유효 도시 example이 없으므로 현재 규칙은
@@ -286,7 +286,7 @@ questions branch는 비어 있지 않은 string array만 허용한다. runtime v
    - baseline result 없음, 기존 file output 없음
 7. `Runner 계약을 복사하지 않고 package dependency로 소비한다`
    - root import로 `TestSuiteSpec`, validator 사용
-   - `packages/generate/package.json`에 `@ohmymcp/runner: workspace:*`
+   - `packages/generate/package.json`에 `@ohmymcp-hsu/runner: workspace:*`
    - `packages/core/src/types.ts` diff 없음
 
 RED:
@@ -300,8 +300,8 @@ GREEN:
 ```bash
 pnpm exec vitest run packages/generate/tests/baseline.test.ts packages/generate/tests/index.test.ts
 pnpm exec vitest run packages/generate/tests
-pnpm --filter @ohmymcp/generate typecheck
-pnpm --filter @ohmymcp/generate build
+pnpm --filter @ohmymcp-hsu/generate typecheck
+pnpm --filter @ohmymcp-hsu/generate build
 pnpm exec biome check packages/generate
 ```
 
@@ -373,8 +373,8 @@ GREEN:
 ```bash
 pnpm exec vitest run packages/generate/tests/authoring-session.test.ts
 pnpm exec vitest run packages/generate/tests
-pnpm --filter @ohmymcp/generate typecheck
-pnpm --filter @ohmymcp/generate build
+pnpm --filter @ohmymcp-hsu/generate typecheck
+pnpm --filter @ohmymcp-hsu/generate build
 pnpm exec biome check packages/generate
 ```
 
@@ -444,8 +444,8 @@ GREEN:
 ```bash
 pnpm exec vitest run packages/generate/tests/authoring-request.test.ts packages/generate/tests/authoring-session.test.ts
 pnpm exec vitest run packages/generate/tests
-pnpm --filter @ohmymcp/generate typecheck
-pnpm --filter @ohmymcp/generate build
+pnpm --filter @ohmymcp-hsu/generate typecheck
+pnpm --filter @ohmymcp-hsu/generate build
 pnpm exec biome check packages/generate
 ```
 
@@ -525,8 +525,8 @@ GREEN:
 ```bash
 pnpm exec vitest run packages/generate/tests/provider-process.test.ts packages/generate/tests/providers.test.ts packages/generate/tests/authoring-request.test.ts
 pnpm exec vitest run packages/generate/tests
-pnpm --filter @ohmymcp/generate typecheck
-pnpm --filter @ohmymcp/generate build
+pnpm --filter @ohmymcp-hsu/generate typecheck
+pnpm --filter @ohmymcp-hsu/generate build
 pnpm exec biome check packages/generate
 ```
 
@@ -549,11 +549,11 @@ feat(generate): Codex와 Claude provider adapter 추가
 - Test only: 모든 Generate tests
 
 README에는 baseline API, stateless 재호출, 3단 승인, Codex·Claude 격리, raw 데이터 미보존,
-RunnerReport repair 비범위를 포함한다. changeset은 `@ohmymcp/generate` minor다.
+RunnerReport repair 비범위를 포함한다. changeset은 `@ohmymcp-hsu/generate` minor다.
 
 ```md
 ---
-"@ohmymcp/generate": minor
+"@ohmymcp-hsu/generate": minor
 ---
 
 결정론적 baseline, 반복 AI 검토·승인 상태와 격리된 Codex·Claude provider adapter를 추가합니다.
@@ -563,8 +563,8 @@ RunnerReport repair 비범위를 포함한다. changeset은 `@ohmymcp/generate` 
 
 ```bash
 pnpm exec vitest run packages/generate/tests
-pnpm --filter @ohmymcp/generate typecheck
-pnpm --filter @ohmymcp/generate build
+pnpm --filter @ohmymcp-hsu/generate typecheck
+pnpm --filter @ohmymcp-hsu/generate build
 pnpm exec biome check packages/generate docs/architecture.md .changeset/generate-ai-authoring.md
 pnpm test
 pnpm typecheck
@@ -914,7 +914,7 @@ git worktree add -b feat/generate-ai-authoring
 
 진입 뒤 pwd, HEAD==base_commit, branch, 세 문서 존재, clean status를 확인한다.
 pnpm install --frozen-lockfile를 실행하고 pnpm exec vitest --version,
-pnpm exec tsc --version, pnpm --filter @ohmymcp/generate typecheck가 실제 실행되는지 확인한다. 실패하면
+pnpm exec tsc --version, pnpm --filter @ohmymcp-hsu/generate typecheck가 실제 실행되는지 확인한다. 실패하면
 agent를 spawn하지 말고 BLOCKED다.
 
 [2단계: 실행]

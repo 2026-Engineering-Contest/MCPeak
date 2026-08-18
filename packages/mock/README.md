@@ -1,9 +1,9 @@
-# @ohmymcp/mock
+# @ohmymcp-hsu/mock
 
 목 MCP 서버 · 응답 주입. **Streamable HTTP** 와 **stdio** 두 가지로 뜬다.
 
 - **오너:** `@storyrago` (③ mock server 파트)
-- **의존:** `@ohmymcp/core` · `@modelcontextprotocol/sdk` (catalog, 1.x 고정)
+- **의존:** `@ohmymcp-hsu/core` · `@modelcontextprotocol/sdk` (catalog, 1.x 고정)
 
 실제 MCP 서버 없이, MCP 를 사용하는 프로그램을 테스트하기 위한 것이다.
 외부 API 키도 실제 데이터도 없이 원하는 상황을 그대로 세워둘 수 있다.
@@ -20,7 +20,7 @@
 ## HTTP — 외부 프로그램용
 
 ```ts
-import { ANY, createMockServer } from "@ohmymcp/mock";
+import { ANY, createMockServer } from "@ohmymcp-hsu/mock";
 
 const mock = await createMockServer({ tools });      // tools: ToolDef[]
 mock.on("add", { a: 1, b: 2 }, { sum: 3 });          // 인자를 지정

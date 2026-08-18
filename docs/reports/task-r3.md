@@ -116,7 +116,7 @@ provider가 불완전한 입력으로 답한 결과를 성공으로 받는다.
 ## 5. `generate → runner` 의존 검사 테스트
 
 `packages/generate/tests/dependency-boundary.test.ts`를 새로 만들었다. `src/*.ts`를 실제로 읽어
-`@ohmymcp/runner`에서 가져오는 심볼 이름을 뽑고 승인 목록과 정확히 비교한다.
+`@ohmymcp-hsu/runner`에서 가져오는 심볼 이름을 뽑고 승인 목록과 정확히 비교한다.
 
 **실제 소스를 훑어 확인한 결과 지시받은 목록과 정확히 일치했다.** 8개다.
 
@@ -128,11 +128,11 @@ provider가 불완전한 입력으로 답한 결과를 성공으로 받는다.
 
 파서를 만들면서 잡은 함정 두 개를 기록해 둔다. 둘 다 실제로 오탐을 냈고 지금은 막혀 있다.
 
-1. **앞선 import 문으로 넘어감.** `import\s+([\s\S]*?)\s+from\s+"@ohmymcp/runner"`가 lazy
+1. **앞선 import 문으로 넘어감.** `import\s+([\s\S]*?)\s+from\s+"@ohmymcp-hsu/runner"`가 lazy
    매칭이라도 앞 문장부터 걸쳐 잡아서 `tmpdir`, `ToolDef` 같은 다른 패키지 심볼을 끌어왔다.
    clause에 따옴표와 세미콜론을 금지(`[^"';]*?`)해 막았다.
 2. **생성 코드 문자열 리터럴.** `render.ts`가 생성 파일에 넣을 import 문을 문자열로 들고 있다
-   (`'import { defineMcpSuite } from "@ohmymcp/runner";'`). 이것은 이 패키지의 의존이 아닌데
+   (`'import { defineMcpSuite } from "@ohmymcp-hsu/runner";'`). 이것은 이 패키지의 의존이 아닌데
    `defineMcpSuite`가 잡혔다. 줄 시작 앵커(`^ ... /gm`)로 막았다. 실제 import 문은 열 0에서
    시작하고 저 리터럴은 들여쓰기돼 있다.
 
@@ -199,7 +199,7 @@ $ rm -rf packages/*/dist && pnpm test    # CI 조건
    떨어지므로, 실패가 조용하지는 않지만 원인이 바로 보이지는 않는다.
 2. **`warnings`·`summary`가 optional이라 cli는 `undefined`를 다뤄야 한다.** 표시 분기는 9f 몫이다.
 3. **의존 검사 파서는 정규식이다.** 위 두 함정을 막았지만 `import` 없이 `require`나 동적
-   `await import("@ohmymcp/runner")`로 가져오면 잡지 못한다. 지금 `src`에는 그런 코드가 없다.
+   `await import("@ohmymcp-hsu/runner")`로 가져오면 잡지 못한다. 지금 `src`에는 그런 코드가 없다.
    테스트 파일(`authoring-request.test.ts`)에는 동적 import가 있지만 검사 대상은 `src`뿐이다.
 4. **stdin 판정 변경으로 이전에 성공하던 경계 케이스가 `internal`이 될 수 있다.** exit 0인데
    stdout이 깨진 상태에서 쓰기 오류까지 있었던 경우다. 그 상황은 원래도 `invalidJson`으로 실패했고

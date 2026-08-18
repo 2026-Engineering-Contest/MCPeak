@@ -1,4 +1,4 @@
-import type { McpStdioConnection, ToolDef, ToolResult } from "@ohmymcp/core";
+import type { McpStdioConnection, ToolDef, ToolResult } from "@ohmymcp-hsu/core";
 import {
   applyAuthoringChanges,
   createAuthoringDiff,
@@ -13,9 +13,9 @@ import {
   preparePreFillRequest,
   previewPreFillRequest,
   reviewLocalAuthoringCandidate,
-} from "@ohmymcp/generate";
-import type { JsonObject } from "@ohmymcp/runner";
-import { validateMcpSuite } from "@ohmymcp/runner";
+} from "@ohmymcp-hsu/generate";
+import type { JsonObject } from "@ohmymcp-hsu/runner";
+import { validateMcpSuite } from "@ohmymcp-hsu/runner";
 import { describe, expect, it, vi } from "vitest";
 import type { GenerateCommandDependencies, ReviewIO } from "../src/generate-command.js";
 import { runGenerateCommand } from "../src/generate-command.js";

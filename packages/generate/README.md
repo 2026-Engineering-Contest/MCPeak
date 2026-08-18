@@ -1,11 +1,11 @@
-# @ohmymcp/generate
+# @ohmymcp-hsu/generate
 
 MCP 도구의 입력 스키마에서 결정론적 baseline을 만들고, 사용자가 승인한 AI 보조 검토로 테스트
 초안을 발전시킵니다.
 
 - **오너:** `@seodduu` `@endl24` `@sunghoon0303`
-- **생성 시 의존:** `@ohmymcp/core`, `@ohmymcp/runner`
-- **생성 결과 실행 시 의존:** `@ohmymcp/runner`
+- **생성 시 의존:** `@ohmymcp-hsu/core`, `@ohmymcp-hsu/runner`
+- **생성 결과 실행 시 의존:** `@ohmymcp-hsu/runner`
 
 ## 결정론적 baseline
 
@@ -14,7 +14,7 @@ MCP 도구의 입력 스키마에서 결정론적 baseline을 만들고, 사용�
 쓰거나 서버에 연결하지 않으므로, CLI와 다른 사용자 인터페이스가 안전하게 조립할 수 있습니다.
 
 ```ts
-import { createBaselineSuite } from "@ohmymcp/generate";
+import { createBaselineSuite } from "@ohmymcp-hsu/generate";
 
 const baseline = createBaselineSuite(tools, {
   suiteId: "weather",
@@ -34,7 +34,7 @@ happy-path는 도구 응답의 `isError`가 `false`인지 확인합니다.
 ## 테스트 생성
 
 ```ts
-import { generateTests } from "@ohmymcp/generate";
+import { generateTests } from "@ohmymcp-hsu/generate";
 
 const paths = await generateTests(tools, {
   outDir: "./generated",
@@ -99,7 +99,7 @@ bounded 종료를 적용합니다. 실제 provider 실행에는 사용자가 설
 생성 파일과 실제 서버 연결은 별도 실행 진입점에서 조합합니다.
 
 ```ts
-import { runSuite } from "@ohmymcp/runner";
+import { runSuite } from "@ohmymcp-hsu/runner";
 import { generatedSuite } from "./generated/get-weather.generated.js";
 
 const execution = runSuite({

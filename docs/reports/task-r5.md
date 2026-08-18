@@ -24,7 +24,7 @@ changeset은 만들지 않았다. 근거는 아래 "changeset을 만들지 않�
 두 구현이 같은 값을 내는지 먼저 확인했다. 다르면 승인 검증을 조용히 깨뜨리므로 BLOCKED였다.
 
 방법: `packages/cli/src/generate-command.ts`의 지역 구현을 **그대로 복사**한 스크립트와 빌드된
-`@ohmymcp/generate`의 `sha256`·`canonicalJson`을 같은 입력에 돌려 대조했다.
+`@ohmymcp-hsu/generate`의 `sha256`·`canonicalJson`을 같은 입력에 돌려 대조했다.
 
 ```
 empty cases: canonicalJson 동일=true, sha256 동일=true
@@ -63,7 +63,7 @@ non-plain 객체(예: `Date`)를 명시적으로 던진다. cli 지역 구현은
 ```ts
 let sha256Impl: ((value: unknown) => string) | undefined;
 async function suiteFingerprint(suite: TestSuiteSpec): Promise<string> {
-  sha256Impl ??= (await import("@ohmymcp/generate")).sha256;
+  sha256Impl ??= (await import("@ohmymcp-hsu/generate")).sha256;
   return sha256Impl(suite);
 }
 ```
@@ -73,10 +73,10 @@ async function suiteFingerprint(suite: TestSuiteSpec): Promise<string> {
 
 ### 왜 정적 import가 아니라 동적 import인가
 
-여기서 판단이 갈렸다. 처음에는 `import { sha256 } from "@ohmymcp/generate"`를 쓰려 했으나
+여기서 판단이 갈렸다. 처음에는 `import { sha256 } from "@ohmymcp-hsu/generate"`를 쓰려 했으나
 **모듈 로드 동작을 바꾼다**는 것을 확인하고 물렀다.
 
-`packages/cli/src/index.ts`는 `@ohmymcp/core`·`runner`·`generate`를 **동적으로** 불러오고,
+`packages/cli/src/index.ts`는 `@ohmymcp-hsu/core`·`runner`·`generate`를 **동적으로** 불러오고,
 실패하면 `unavailableDependencies`로 떨어져 안내 메시지를 낸다. 그런데 `index.ts`는
 `generate-command.ts`를 **정적으로** import한다. 따라서 `generate-command.ts`가 generate를
 정적으로 묶으면 모듈 로드 시점에 터져 그 fallback 경로가 죽고, generate와 무관한
@@ -90,8 +90,8 @@ import { basename, dirname, extname, join } from "node:path";
 import { createInterface } from "node:readline/promises";
 ```
 
-`import("@ohmymcp/generate")`는 동적 형태로 2건 남아 있다(index.ts의 기존 1건 + 이번 1건).
-정적 import를 썼다면 여기에 `@ohmymcp/generate` 줄이 하나 더 생겼을 것이다.
+`import("@ohmymcp-hsu/generate")`는 동적 형태로 2건 남아 있다(index.ts의 기존 1건 + 이번 1건).
+정적 import를 썼다면 여기에 `@ohmymcp-hsu/generate` 줄이 하나 더 생겼을 것이다.
 
 호출부는 `saveSuite` 한 곳뿐이라 `await`만 붙이면 됐다. Node가 모듈을 캐시하고 `sha256Impl`에도
 담아 두므로 반복 비용은 없다.
@@ -169,7 +169,7 @@ rm -rf packages/*/dist && pnpm test → Test Files 28 passed (28) / Tests 330 pa
 
 ## 남은 위험
 
-- generate가 로드되지 않는 상황에서 baseline 저장에 도달하면 `import("@ohmymcp/generate")`가
+- generate가 로드되지 않는 상황에서 baseline 저장에 도달하면 `import("@ohmymcp-hsu/generate")`가
   던지고 `GENERATE_FAILED`로 떨어진다. 다만 그 경로에서는 `createBaselineSuite` 자체가
   `unavailableDependencies`라 그 전에 이미 실패하므로 실제로 도달하지 않는다. 코드를 읽어
   확인한 것이고 실행으로 재현하지는 않았다.

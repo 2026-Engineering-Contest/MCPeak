@@ -1,4 +1,4 @@
-import type { McpClient } from "@ohmymcp/core";
+import type { McpClient } from "@ohmymcp-hsu/core";
 import type { RunnerExecution } from "./executor.js";
 
 const bindings = new WeakMap<RunnerExecution, McpClient>();

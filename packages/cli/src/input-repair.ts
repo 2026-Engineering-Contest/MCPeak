@@ -1,5 +1,5 @@
-import type { ToolDef } from "@ohmymcp/core";
-import type { JsonValue, TestSuiteSpec } from "@ohmymcp/runner";
+import type { ToolDef } from "@ohmymcp-hsu/core";
+import type { JsonValue, TestSuiteSpec } from "@ohmymcp-hsu/runner";
 import type { ReviewIO } from "./generate-command.js";
 import type { RepairAttempt, RepairTarget } from "./repair-target.js";
 

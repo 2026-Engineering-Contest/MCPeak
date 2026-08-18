@@ -64,7 +64,7 @@ Checked 170 files in 41ms. No fixes applied.
   적용한다. `redaction.ts` 의 `sanitizeRedactable` 을 쓰고, `tools` 에는 기존
   `TOOL_CONTRACT_PATHS` 가드를 넘긴다. **stderr 에는 적용하지 않는다.** 이것이 의도된 동작임을
   테스트로 고정했다.
-- `JsonValue` 는 T1 결정대로 `./schema.js` 로컬 정의를 쓴다. `@ohmymcp/runner` 에서 가져온 것은
+- `JsonValue` 는 T1 결정대로 `./schema.js` 로컬 정의를 쓴다. `@ohmymcp-hsu/runner` 에서 가져온 것은
   기존 승인 목록 안의 `RunnerRedactionOptions` 하나뿐이고, 그 심볼은 `authoring-request.ts` 가
   이미 쓰고 있다. 승인 목록은 안 넓혔다(`dependency-boundary.test.ts` 통과가 근거다).
 

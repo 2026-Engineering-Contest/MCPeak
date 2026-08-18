@@ -73,7 +73,7 @@ T1·T2 산출물(`spec/*`, `body.ts`, `schema-match.ts`, 그 테스트)은 되�
 
 ### changeset
 
-`.changeset/warm-donkeys-shave.md`. `@ohmymcp/runner` minor, 본문은 계획서 그대로다.
+`.changeset/warm-donkeys-shave.md`. `@ohmymcp-hsu/runner` minor, 본문은 계획서 그대로다.
 
 ## 테스트 우선 확인
 

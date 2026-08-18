@@ -1,6 +1,11 @@
-import type { McpStdioConnection } from "@ohmymcp/core";
-import type { RunnerExecution, RunnerReport, TestCaseResult, TestSuiteSpec } from "@ohmymcp/runner";
-import { suiteFingerprint } from "@ohmymcp/runner";
+import type { McpStdioConnection } from "@ohmymcp-hsu/core";
+import type {
+  RunnerExecution,
+  RunnerReport,
+  TestCaseResult,
+  TestSuiteSpec,
+} from "@ohmymcp-hsu/runner";
+import { suiteFingerprint } from "@ohmymcp-hsu/runner";
 import { describe, expect, it, vi } from "vitest";
 import {
   buildRepairBundle,

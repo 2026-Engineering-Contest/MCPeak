@@ -51,7 +51,7 @@ Checked 168 files in 41ms. No fixes applied.
 ## 해소된 막힘
 
 1차 보고는 BLOCKED 였다. 계획서 초안의 계약 첫 줄
-`import type { JsonValue } from "@ohmymcp/runner";` 가
+`import type { JsonValue } from "@ohmymcp-hsu/runner";` 가
 `packages/generate/tests/dependency-boundary.test.ts` 를 깼기 때문이다. 그 테스트는
 `APPROVED_RUNNER_SYMBOLS` 와 **정확한 일치**를 단언하는데(`expect([...used].sort()).toEqual(...)`)
 `JsonValue` 는 목록에 없다. 계획서 전역 제약 25행과 설계서 §8 은 그 목록을 넓히지 말라고 적고

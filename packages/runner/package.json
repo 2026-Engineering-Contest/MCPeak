@@ -1,5 +1,5 @@
 {
-  "name": "@ohmymcp/runner",
+  "name": "@ohmymcp-hsu/runner",
   "version": "0.7.0",
   "private": false,
   "type": "module",
@@ -31,6 +31,6 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@ohmymcp/core": "workspace:*"
+    "@ohmymcp-hsu/core": "workspace:*"
   }
 }

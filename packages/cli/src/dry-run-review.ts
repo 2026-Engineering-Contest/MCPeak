@@ -1,4 +1,4 @@
-import type { SuiteCaseApproval } from "@ohmymcp/runner";
+import type { SuiteCaseApproval } from "@ohmymcp-hsu/runner";
 import type { DryRunCaseOutcome, DryRunResult } from "./dry-run.js";
 import type { ReviewIO } from "./generate-command.js";
 import type { RepairAttempt } from "./repair-target.js";

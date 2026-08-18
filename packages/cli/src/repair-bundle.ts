@@ -4,7 +4,7 @@ import type {
   JsonValue,
   RunnerReport,
   TestSuiteSpec,
-} from "@ohmymcp/runner";
+} from "@ohmymcp-hsu/runner";
 import packageMetadata from "../package.json";
 import { hasDiagnosticContent, type ProcessDiagnosticsInput } from "./process-diagnostics.js";
 import { caseApprovalStatuses, type SpecApprovalState } from "./spec-approval.js";

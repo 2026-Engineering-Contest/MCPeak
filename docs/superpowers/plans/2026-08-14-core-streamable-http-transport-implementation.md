@@ -169,7 +169,7 @@ packages/core/src/index.ts
 **입력 계약.** H1 이 만든 진단 · 오류 계약, H2 가 만든 옵션 계약. 설계 문서 §3.3 의 SDK 실측.
 
 **산출 계약.** `connectHttp(options: HttpConnectOptions): Promise<McpHttpConnection>` 와
-`connect(options: ConnectOptions): Promise<McpClient>` 가 `@ohmymcp/core` 에서 import 가능.
+`connect(options: ConnectOptions): Promise<McpClient>` 가 `@ohmymcp-hsu/core` 에서 import 가능.
 `connect` 의 반환 타입은 `Promise<McpClient>` 그대로. `McpHttpConnection` ·
 `McpHttpDiagnostics` · `McpDiagnostics` 타입 재수출.
 
@@ -215,7 +215,7 @@ packages/core/README.md                       HTTP 연결 사용법 절 추가
 - `docs/architecture.md` 2절 표의 `core` 입력 칸이
   `ConnectOptions (command·args·env·cwd 또는 url·headers)`
 - `packages/core/README.md` 에 `connect({ url })` 예제와 "OAuth 미지원 · 재연결 미지원" 한 줄
-- changeset 은 `@ohmymcp/core` 의 `minor` 이고 본문이 한국어 한 문단
+- changeset 은 `@ohmymcp-hsu/core` 의 `minor` 이고 본문이 한국어 한 문단
 
 **표적 검증.** `pnpm lint`
 **회귀 검증.** 없음. 코드 변경이 없다.
@@ -468,7 +468,7 @@ docs/adr/0020-streamable-http-transport.md 의 결정 절을 먼저 읽어라.
   packages/core/README.md                     connect({ url }) 사용 예제 절 추가.
                                               OAuth 미지원과 재연결 미지원을 한 줄로 명시한다
 만들 것:
-  .changeset/core-streamable-http.md          @ohmymcp/core 의 minor.
+  .changeset/core-streamable-http.md          @ohmymcp-hsu/core 의 minor.
                                               본문은 한국어 한 문단
 
 절대 하지 마라:
@@ -623,7 +623,7 @@ H3-core-http-transport	<sha>	2026-08-14
 
 | 거짓 신호 | 이 작업에서의 모습 | 진실 기준 |
 |---|---|---|
-| 테스트 명령이 즉시 exit 0 | `pnpm --filter @ohmymcp/core test` 는 존재하지 않는 스크립트다. 패키지 `package.json` 에 `test` 가 없어 아무것도 안 하고 성공한다 | 표적 검증은 `pnpm test packages/core`. 출력에 `Test Files ... passed` 줄이 있는지 확인 |
+| 테스트 명령이 즉시 exit 0 | `pnpm --filter @ohmymcp-hsu/core test` 는 존재하지 않는 스크립트다. 패키지 `package.json` 에 `test` 가 없어 아무것도 안 하고 성공한다 | 표적 검증은 `pnpm test packages/core`. 출력에 `Test Files ... passed` 줄이 있는지 확인 |
 | 타입체크 · 린트 녹색 | 새 파일이 `index.ts` 에서 export 안 돼 검사 대상에서 빠짐 | 검사 파일 수를 출력에서 확인 |
 | HTTP 테스트 녹색 | fixture 서버가 MCP 를 흉내만 내고 실제 handshake 를 안 함 | `listTools` 결과가 서버 등록 툴과 이름까지 같은지 (§12.4 의 1번) |
 | 실패 케이스 녹색 | 오류가 나긴 나는데 전부 같은 코드(`HTTP_CONNECT_FAILED`)로 뭉개짐 | §12.4 의 7 · 8 · 9 · 10 · 11번이 서로 다른 코드를 단언하는지 이름으로 확인 |

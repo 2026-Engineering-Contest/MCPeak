@@ -66,7 +66,7 @@ Checked 179 files in 41ms. No fixes applied.
   밖이면 거절한다.
 - `--max-cases` 는 1 이상 정수만 받는다. `0`·`-1`·`1.5`·`열`·`1e3`·빈 문자열 전부 거절이다.
 - `--no-stderr`·`--yes` 는 값을 안 받는다. `=` 를 붙이면 거절한다.
-- `index.ts` 의 `repair` 분기가 `@ohmymcp/generate` 를 **동적 import** 한다. `generate` 분기와
+- `index.ts` 의 `repair` 분기가 `@ohmymcp-hsu/generate` 를 **동적 import** 한다. `generate` 분기와
   같은 모양이고, 실패하면 `REPAIR_RUNTIME_UNAVAILABLE` 로 알리고 1 을 돌려준다.
 - `repair` 분기는 `if (argv[0] !== "test")` 줄 **앞**에 있다. `test` 경로는 이 분기를 지나지
   않으므로 여전히 `core` 와 `runner` 만 로드한다.
@@ -74,7 +74,7 @@ Checked 179 files in 41ms. No fixes applied.
 ## 임의로 판단한 지점
 
 - **`DEFAULT_REPAIR_MAX_CASES` 를 `repair-command.ts` 에 상수로 뒀다.** 계획서는 "generate 에서
-  가져온다" 고 적었지만, `repair-command.ts` 가 `@ohmymcp/generate` 를 **값으로** import 하면
+  가져온다" 고 적었지만, `repair-command.ts` 가 `@ohmymcp-hsu/generate` 를 **값으로** import 하면
   `index.ts` 가 그것을 정적으로 끌어와 `test` 경로까지 `generate` 를 로드한다. 계획서 §8 위험표
   첫 줄이 막는 바로 그것이다. 기존 `generate-command.ts`·`repair-proposal.ts` 도 generate 에서
   타입만 가져오고 값은 주입받는다. 같은 방식으로 맞췄고, **테스트가 두 상수의 동일성을 직접

@@ -1,5 +1,5 @@
 ---
-"@ohmymcp/record": patch
+"@ohmymcp-hsu/record": patch
 ---
 
 같은 요청에 다른 응답이 왔을 때 나오는 경고가 **비밀값을 원문 그대로 출력하던 문제를

@@ -1,11 +1,11 @@
-import type { McpClient } from "@ohmymcp/core";
-import type { RunnerReport, TestSuiteSpec } from "@ohmymcp/runner";
+import type { McpClient } from "@ohmymcp-hsu/core";
+import type { RunnerReport, TestSuiteSpec } from "@ohmymcp-hsu/runner";
 import {
   type RejectionBasis,
   RunnerPayloadLimitError,
   renderReport,
   runSuite,
-} from "@ohmymcp/runner";
+} from "@ohmymcp-hsu/runner";
 
 /**
  * 승인 직전에 후보 명세를 실제 서버에 한 번 돌린다. 화면에 아무것도 쓰지 않고 결과만 돌려준다.

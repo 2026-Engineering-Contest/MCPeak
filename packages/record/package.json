@@ -1,5 +1,5 @@
 {
-  "name": "@ohmymcp/record",
+  "name": "@ohmymcp-hsu/record",
   "version": "0.1.1",
   "private": false,
   "type": "module",
@@ -31,6 +31,6 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@ohmymcp/core": "workspace:*"
+    "@ohmymcp-hsu/core": "workspace:*"
   }
 }

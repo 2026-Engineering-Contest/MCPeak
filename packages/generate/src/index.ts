@@ -1,7 +1,7 @@
 import { constants } from "node:fs";
 import { lstat, mkdir, open, writeFile } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
-import type { ToolDef } from "@ohmymcp/core";
+import type { ToolDef } from "@ohmymcp-hsu/core";
 import { nameDiscriminator, safeBaseName } from "./filename.js";
 import { renderTool } from "./render.js";
 import { fail } from "./schema.js";

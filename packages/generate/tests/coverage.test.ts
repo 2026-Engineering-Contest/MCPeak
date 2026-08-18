@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
-import type { ToolDef } from "@ohmymcp/core";
-import type { TestSuiteSpec } from "@ohmymcp/runner";
+import type { ToolDef } from "@ohmymcp-hsu/core";
+import type { TestSuiteSpec } from "@ohmymcp-hsu/runner";
 import { describe, expect, it } from "vitest";
 import { computeCoverage } from "../src/coverage.js";
 import { buildViolationCases } from "../src/index.js";

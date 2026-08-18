@@ -36,7 +36,7 @@
 3. Codex `--output-schema` 파일 내용과 Claude `--json-schema` 인자를 `PROVIDER_OUTPUT_SCHEMA`로
    바꿨다. CLI 인자 배열의 나머지는 그대로다.
 4. `prompt()`가 계획서 5장에 적힌 템플릿 문자열 그대로 suite 스키마와 안내 문장을 붙인다.
-   `MCP_SUITE_JSON_SCHEMA`는 `@ohmymcp/runner`에서 import한다.
+   `MCP_SUITE_JSON_SCHEMA`는 `@ohmymcp-hsu/runner`에서 import한다.
 5. `unwrap`을 계획서 4-2의 판정 순서(1~6) 그대로 다시 썼다.
 6. `authoring-request.ts`의 `questions` 분기 맨 앞에 4-3의 suite/summary/warnings 동반 거절을
    넣었다.
@@ -127,7 +127,7 @@ $ pnpm test
 - **`MAX_REQUEST_BYTES` 검사**: 프롬프트가 커지지만 이 검사(`authoring-request.ts:259`)의 대상은
   request 본문이지 프롬프트가 아니다. 프롬프트 증가분은 한도 판정에 들어가지 않는다.
   `pnpm test` 전량 통과가 이를 확인한다.
-- **의존 방향**: `generate`가 `@ohmymcp/runner`를 import한다. 기존에도 있던 방향이고 역참조가
+- **의존 방향**: `generate`가 `@ohmymcp-hsu/runner`를 import한다. 기존에도 있던 방향이고 역참조가
   아니다. `packages/cli` 참조는 만들지 않았다.
 - **의존성**: 추가하지 않았다. `@modelcontextprotocol/sdk` 버전은 건드리지 않았다.
 - **유닛테스트 격리**: 실제 codex/claude 프로세스를 띄우는 코드는 없다. 오히려 help 검사 제거로

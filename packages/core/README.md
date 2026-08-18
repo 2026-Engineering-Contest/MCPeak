@@ -1,6 +1,6 @@
-# @ohmymcp/core
+# @ohmymcp-hsu/core
 
-`@ohmymcp/core`는 MCP 서버에 붙어 handshake를 완료한 뒤 동결된 `McpClient`를 제공한다.
+`@ohmymcp-hsu/core`는 MCP 서버에 붙어 handshake를 완료한 뒤 동결된 `McpClient`를 제공한다.
 transport는 두 가지다. 로컬 서버는 프로세스를 stdio로 시작해서 붙고, 원격 서버는 URL에
 Streamable HTTP로 붙는다. stdio 경로에서 서버 프로세스, stdin/stdout, bounded stderr와 종료
 수명주기는 Core가 소유한다.
@@ -10,7 +10,7 @@ Streamable HTTP로 붙는다. stdio 경로에서 서버 프로세스, stdin/stdo
 간단히 사용할 때는 `connect`로 동결된 클라이언트만 받을 수 있다.
 
 ```ts
-import { connect } from "@ohmymcp/core";
+import { connect } from "@ohmymcp-hsu/core";
 
 const client = await connect({
   command: process.execPath,
@@ -35,7 +35,7 @@ CLI나 다른 composition root에서 정상 종료와 즉시 강제 종료를 �
 사용한다.
 
 ```ts
-import { connectStdio } from "@ohmymcp/core";
+import { connectStdio } from "@ohmymcp-hsu/core";
 
 const connection = await connectStdio({
   command: "node",
@@ -82,7 +82,7 @@ URL로만 접근할 수 있는 MCP 서버에는 `command` 대신 `url`을 준다
 보고 transport를 고른다.
 
 ```ts
-import { connect } from "@ohmymcp/core";
+import { connect } from "@ohmymcp-hsu/core";
 
 const token = process.env.MCP_TOKEN;
 if (!token) throw new Error("MCP_TOKEN is required");

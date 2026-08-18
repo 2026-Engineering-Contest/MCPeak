@@ -269,7 +269,7 @@ unknowns(input, ["schemaVersion", "id", "name", "approval", "defaultTimeoutMs", 
 
 `feat(runner): 명세에 승인 지문 필드를 추가한다`
 
-changeset 하나를 `.changeset/` 에 추가한다. `@ohmymcp/runner` `minor`.
+changeset 하나를 `.changeset/` 에 추가한다. `@ohmymcp-hsu/runner` `minor`.
 
 ---
 
@@ -289,7 +289,7 @@ changeset 하나를 `.changeset/` 에 추가한다. `@ohmymcp/runner` `minor`.
 **Consumes:** 태스크 1 의 `TestSuiteSpec.approval`
 **Produces:**
 ```ts
-// @ohmymcp/runner
+// @ohmymcp-hsu/runner
 export function canonicalJson(value: unknown): string;
 export function sha256(value: unknown): string;
 export function deepFreeze<T>(value: T): T;
@@ -305,7 +305,7 @@ export function suiteFingerprint(suite: TestSuiteSpec): string;
 `packages/generate/src/canonical.ts` 는 전체를 이 한 줄로 교체한다.
 
 ```ts
-export { canonicalJson, deepFreeze, sha256 } from "@ohmymcp/runner";
+export { canonicalJson, deepFreeze, sha256 } from "@ohmymcp-hsu/runner";
 ```
 
 `generate` 안의 4개 import 지점(`authoring-request.ts`, `authoring-session.ts`, `baseline.ts`,
@@ -350,14 +350,14 @@ suite 는 `deepFreeze` 된 객체라서 그 경로에서 조용히 실패하거�
 **여기에 구멍이 있다.** 현재 정규식은 `import` 문만 잡는다.
 
 ```ts
-const statement = /^import\s+([^"';]*?)\s+from\s+"@ohmymcp\/runner"/gm;
+const statement = /^import\s+([^"';]*?)\s+from\s+"@ohmymcp-hsu\/runner"/gm;
 ```
 
-§5.1 이 쓰는 `export ... from "@ohmymcp/runner"` 는 안 잡힌다. 즉 목록을 안 고쳐도 테스트가
+§5.1 이 쓰는 `export ... from "@ohmymcp-hsu/runner"` 는 안 잡힌다. 즉 목록을 안 고쳐도 테스트가
 초록으로 통과하고, ADR-0009 의 경계가 재수출 한 줄로 우회된다. 둘 다 고친다.
 
 ```ts
-const statement = /^(?:import|export)\s+([^"';]*?)\s+from\s+"@ohmymcp\/runner"/gm;
+const statement = /^(?:import|export)\s+([^"';]*?)\s+from\s+"@ohmymcp-hsu\/runner"/gm;
 
 const APPROVED_RUNNER_SYMBOLS = [
   "DEFAULT_SENSITIVE_KEYS",
@@ -437,7 +437,7 @@ suiteFingerprint
 `packages/generate/tests/index.test.ts` 에 추가한다.
 
 ```
-· @ohmymcp/generate 의 sha256 이 @ohmymcp/runner 의 sha256 과 같은 함수 참조다
+· @ohmymcp-hsu/generate 의 sha256 이 @ohmymcp-hsu/runner 의 sha256 과 같은 함수 참조다
 · canonicalJson · deepFreeze 도 같은 함수 참조다
 ```
 
@@ -445,7 +445,7 @@ suiteFingerprint
 
 ```
 · APPROVED_RUNNER_SYMBOLS 에 canonicalJson · deepFreeze · sha256 이 있다
-· 정규식이 export ... from "@ohmymcp/runner" 구문의 심볼을 수집한다
+· 정규식이 export ... from "@ohmymcp-hsu/runner" 구문의 심볼을 수집한다
     (실제 소스를 읽는 기존 테스트와 별개로, 문자열 리터럴 소스를 runnerImports 에 직접
      넣어 export 구문에서 세 심볼이 나오는지 단언한다)
 · 목록에 없는 심볼을 export ... from 으로 가져오는 문자열 소스를 넣으면 수집 결과에 그
@@ -472,7 +472,7 @@ export 한다. export 를 늘리는 것이 부담이면 임시 파일 대신 `so
 
 `refactor(runner): canonical JSON 구현을 generate 에서 이관한다`
 
-changeset 하나. `@ohmymcp/runner` `minor`, `@ohmymcp/generate` `patch`.
+changeset 하나. `@ohmymcp-hsu/runner` `minor`, `@ohmymcp-hsu/generate` `patch`.
 
 여기까지가 PR 1 이다. 머지 후 태스크 3 을 시작한다.
 
@@ -492,7 +492,7 @@ changeset 하나. `@ohmymcp/runner` `minor`, `@ohmymcp/generate` `patch`.
 - 수정: `packages/cli/tests/dist-cli-e2e.mjs` (추가)
 - 수정: `packages/cli/README.md`
 
-**Consumes:** `suiteFingerprint`, `SuiteApproval` (`@ohmymcp/runner`)
+**Consumes:** `suiteFingerprint`, `SuiteApproval` (`@ohmymcp-hsu/runner`)
 **Produces:** 없음 (최종 소비자)
 
 ### 6.1 `spec-approval.ts` (전량)
@@ -500,8 +500,8 @@ changeset 하나. `@ohmymcp/runner` `minor`, `@ohmymcp/generate` `patch`.
 문안이 곧 제품이므로 전량으로 못 박는다.
 
 ```ts
-import type { TestSuiteSpec } from "@ohmymcp/runner";
-import { suiteFingerprint } from "@ohmymcp/runner";
+import type { TestSuiteSpec } from "@ohmymcp-hsu/runner";
+import { suiteFingerprint } from "@ohmymcp-hsu/runner";
 
 export type SpecApprovalState = "matched" | "mismatched" | "absent";
 
@@ -577,7 +577,7 @@ export function renderSpecApproval(result: SpecApprovalResult): string {
 ### 6.3 `generate-command.ts` 변경
 
 **지역 `suiteFingerprint` 를 지운다.** `generate` 를 동적 import 해 `sha256` 을 끌어오던
-219줄 함수와 그 앞의 주석 블록이 대상이다. 대신 `@ohmymcp/runner` 에서 정적으로 가져온다.
+219줄 함수와 그 앞의 주석 블록이 대상이다. 대신 `@ohmymcp-hsu/runner` 에서 정적으로 가져온다.
 `runner` 는 이 모듈이 이미 정적으로 의존하는 패키지라 주석이 막으려던 문제(=`test` 경로가
 `generate` 로드에 묶이는 것)가 생기지 않는다. 주석이 지시하는 "여기서 다시 구현하지 마라" 는
 그대로 지켜진다.
@@ -812,7 +812,7 @@ docs/superpowers/specs/2026-08-14-approval-fingerprint-design.md 가 사양의 �
   - git status --short 가 비어 있는가
   - pnpm install 이 성공하는가
   - pnpm build 가 성공하는가
-  - node -e "import('@ohmymcp/runner').then(m => console.log(typeof m.suiteFingerprint))" 가
+  - node -e "import('@ohmymcp-hsu/runner').then(m => console.log(typeof m.suiteFingerprint))" 가
     function 을 출력하는가 (PR 1 의 산출물이 실제로 보이는지 확인한다. 빌드 산출물이 낡으면
     낡은 계약으로 판정하게 된다)
   - pnpm test 가 현재 상태에서 통과하는가

@@ -110,7 +110,7 @@ stdio 에는 `forceClose()` 가 있고 HTTP 에는 없다. 프로세스가 없�
 
 ## 결과
 
-- `@ohmymcp/core` 가 URL 로 접근하는 Streamable HTTP MCP 서버를 검사할 수 있다.
+- `@ohmymcp-hsu/core` 가 URL 로 접근하는 Streamable HTTP MCP 서버를 검사할 수 있다.
 - `connect()` 의 반환 타입은 `Promise<McpClient>` 로 유지되므로 `runner` · `generate` ·
   `record` · `mock` · `cli` 의 소스 변경이 없다.
 - `McpClientError.diagnostics` 의 공개 타입이 `McpDiagnostics` 로 넓어진다. 이 값을 읽는

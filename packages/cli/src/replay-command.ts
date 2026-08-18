@@ -1,6 +1,6 @@
-import type { McpClient } from "@ohmymcp/core";
-import type { Cassette } from "@ohmymcp/record";
-import { cassetteClient, matchKey, REDACTED } from "@ohmymcp/record";
+import type { McpClient } from "@ohmymcp-hsu/core";
+import type { Cassette } from "@ohmymcp-hsu/record";
+import { cassetteClient, matchKey, REDACTED } from "@ohmymcp-hsu/record";
 import type {
   FinalizeRunnerExecutionOptions,
   RunnerExecution,
@@ -9,7 +9,7 @@ import type {
   SuiteValidationIssue,
   SuiteValidationResult,
   TestSuiteSpec,
-} from "@ohmymcp/runner";
+} from "@ohmymcp-hsu/runner";
 import { REPLAY_USAGE_HINT } from "./help.js";
 
 export interface ReplayCommandInput {

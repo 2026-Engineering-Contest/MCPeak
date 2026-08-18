@@ -1,6 +1,6 @@
-import type { McpClient, ToolDef, ToolResult } from "@ohmymcp/core";
-import type { Cassette } from "@ohmymcp/record";
-import { CASSETTE_VERSION, cassetteClient, stableStringify } from "@ohmymcp/record";
+import type { McpClient, ToolDef, ToolResult } from "@ohmymcp-hsu/core";
+import type { Cassette } from "@ohmymcp-hsu/record";
+import { CASSETTE_VERSION, cassetteClient, stableStringify } from "@ohmymcp-hsu/record";
 import { describe, expect, it } from "vitest";
 import { wireCassette } from "../src/cassette-wiring.js";
 

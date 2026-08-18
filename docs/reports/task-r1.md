@@ -158,7 +158,7 @@ candidate는 그 도구의 case를 지웠지만 사용자가 삭제 change를 �
 
 - **`expect(MCP_SUITE_JSON_SCHEMA).toEqual(MCP_SUITE_JSON_SCHEMA)`**: 자기 비교라 아무것도 못 잡는다.
   "generate가 원본을 건드리지 않는다"를 실제로 검증하려면 generate를 거치지 않은 인스턴스가 필요하다.
-  `vi.resetModules()` 뒤 `await import("@ohmymcp/runner")`로 새 모듈 인스턴스를 띄워 그것과 비교한다.
+  `vi.resetModules()` 뒤 `await import("@ohmymcp-hsu/runner")`로 새 모듈 인스턴스를 띄워 그것과 비교한다.
   더해서 `$schema`/`$id`/`$defs` 키가 원본에 남아 있는지도 단언한다(`authoring-schema.ts`가 복사본에서
   이 키들을 지우므로, 복사를 빠뜨리면 여기서 걸린다).
 - **중복 `selectedChangeIds`**: candidate가 approved와 같아 `changes`가 빈 배열이었고 `"change-001"`은

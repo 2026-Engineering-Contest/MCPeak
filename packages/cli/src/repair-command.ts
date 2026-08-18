@@ -14,7 +14,7 @@ import {
 } from "./repair-render.js";
 
 /**
- * 한 번에 보낼 실패 개수 기본 상한. `@ohmymcp/generate` 의 `DEFAULT_MAX_REPAIR_CASES` 와 같은
+ * 한 번에 보낼 실패 개수 기본 상한. `@ohmymcp-hsu/generate` 의 `DEFAULT_MAX_REPAIR_CASES` 와 같은
  * 값이어야 한다. 파싱은 generate 를 로드하지 않는 경로에서도 돌아야 해서 여기서 상수를 받는다.
  * 실제 값 대조는 테스트가 generate 의 export 와 직접 비교해 고정한다.
  */
@@ -36,15 +36,15 @@ export interface RepairCommandDependencies {
   /** 전송 확인 화면. 없으면 비대화형으로 본다. `generate` 가 쓰는 그 인터페이스다. */
   readonly reviewIO?: ReviewIO;
   /**
-   * 진단 통로. `@ohmymcp/generate` 를 값으로 import 하지 않고 주입받는다. 정적으로 import 하면
+   * 진단 통로. `@ohmymcp-hsu/generate` 를 값으로 import 하지 않고 주입받는다. 정적으로 import 하면
    * `test` 경로가 `generate` 를 함께 로드한다. 계획서 §8 위험표 첫 줄이다.
    */
   readonly diagnosis?: {
-    readonly prepare: typeof import("@ohmymcp/generate").prepareDiagnosisRequest;
-    readonly dispatch: typeof import("@ohmymcp/generate").dispatchDiagnosisRequest;
+    readonly prepare: typeof import("@ohmymcp-hsu/generate").prepareDiagnosisRequest;
+    readonly dispatch: typeof import("@ohmymcp-hsu/generate").dispatchDiagnosisRequest;
     readonly providers: {
-      readonly codex: (model: string) => import("@ohmymcp/generate").ServerDiagnosisProvider;
-      readonly claude: (model: string) => import("@ohmymcp/generate").ServerDiagnosisProvider;
+      readonly codex: (model: string) => import("@ohmymcp-hsu/generate").ServerDiagnosisProvider;
+      readonly claude: (model: string) => import("@ohmymcp-hsu/generate").ServerDiagnosisProvider;
     };
   };
 }

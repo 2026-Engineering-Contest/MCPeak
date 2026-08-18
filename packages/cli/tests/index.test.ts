@@ -115,7 +115,7 @@ describe("ohmymcp cli", () => {
       vi.resetModules();
       const [{ run: isolatedRun }, generate] = await Promise.all([
         import("../src/index.js"),
-        import("@ohmymcp/generate"),
+        import("@ohmymcp-hsu/generate"),
       ]);
 
       await expect(isolatedRun(["generate"])).resolves.toBe(0);
@@ -153,7 +153,7 @@ describe("ohmymcp cli", () => {
     const directory = await mkdtemp(join(tmpdir(), "ohmymcp-index-"));
     const suite = join(directory, "suite.json");
     const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
-    vi.doMock("@ohmymcp/core", () => {
+    vi.doMock("@ohmymcp-hsu/core", () => {
       throw new Error("DYNAMIC_IMPORT_SECRET_STACK");
     });
     try {
@@ -163,7 +163,7 @@ describe("ohmymcp cli", () => {
         "오류 [CLI_INTERNAL_ERROR]: 예상하지 못한 CLI 내부 오류가 발생했습니다.\n해결: 다시 실행한 뒤 재현 정보와 함께 이슈를 보고하세요.\n",
       );
     } finally {
-      vi.doUnmock("@ohmymcp/core");
+      vi.doUnmock("@ohmymcp-hsu/core");
       stderr.mockRestore();
       await rm(directory, { recursive: true, force: true });
     }
@@ -171,7 +171,7 @@ describe("ohmymcp cli", () => {
 
   it("generate 의존성 로드 실패를 raw 오류 없이 정규화한다", async () => {
     const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
-    vi.doMock("@ohmymcp/generate", () => {
+    vi.doMock("@ohmymcp-hsu/generate", () => {
       throw new Error("GENERATE_DYNAMIC_SECRET_STACK");
     });
     try {
@@ -193,7 +193,7 @@ describe("ohmymcp cli", () => {
         "GENERATE_DYNAMIC_SECRET_STACK",
       );
     } finally {
-      vi.doUnmock("@ohmymcp/generate");
+      vi.doUnmock("@ohmymcp-hsu/generate");
       stderr.mockRestore();
     }
   });
@@ -208,7 +208,7 @@ describe("ohmymcp cli", () => {
       dispatchDiagnosisRequest: async () => undefined,
       createCodexProvider: () => undefined,
       createClaudeProvider: () => undefined,
-    } as unknown as typeof import("@ohmymcp/generate");
+    } as unknown as typeof import("@ohmymcp-hsu/generate");
     const dependencies = nodeRepairDependencies(generate);
     try {
       expect(dependencies.reviewIO).toBeDefined();

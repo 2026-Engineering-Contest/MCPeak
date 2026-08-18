@@ -1,4 +1,4 @@
-import type { ToolDef } from "@ohmymcp/core";
+import type { ToolDef } from "@ohmymcp-hsu/core";
 import { describe, expect, it } from "vitest";
 import { readContractRange } from "../src/contract-range.js";
 import type { JsonObject, TestCaseSpec, TestSuiteSpec } from "../src/index.js";

@@ -1,4 +1,4 @@
-import type { ToolDef, ToolResult } from "@ohmymcp/core";
+import type { ToolDef, ToolResult } from "@ohmymcp-hsu/core";
 import type { BodyExtraction } from "./body.js";
 import {
   bodyExtractionFailedDiagnostic,

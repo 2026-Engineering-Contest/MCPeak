@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { canonicalJson, DEFAULT_SENSITIVE_KEYS, REDACTED } from "@ohmymcp/runner";
+import { canonicalJson, DEFAULT_SENSITIVE_KEYS, REDACTED } from "@ohmymcp-hsu/runner";
 import { describe, expect, it } from "vitest";
 import type { McpToolContext } from "../src/authoring-request.js";
 import {

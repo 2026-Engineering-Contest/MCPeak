@@ -25,9 +25,9 @@
 - Updated dependencies [81579f1]
 - Updated dependencies [ec99eab]
 - Updated dependencies [0f4e5fd]
-  - @ohmymcp/record@0.1.1
-  - @ohmymcp/runner@0.7.0
-  - @ohmymcp/generate@0.4.2
+  - @ohmymcp-hsu/record@0.1.1
+  - @ohmymcp-hsu/runner@0.7.0
+  - @ohmymcp-hsu/generate@0.4.2
 
 ## 0.6.1
 
@@ -35,11 +35,11 @@
 
 - Updated dependencies [0d92470]
 - Updated dependencies [38ec704]
-  - @ohmymcp/core@0.2.0
-  - @ohmymcp/record@0.1.0
-  - @ohmymcp/generate@0.4.1
-  - @ohmymcp/mock@0.1.2
-  - @ohmymcp/runner@0.6.1
+  - @ohmymcp-hsu/core@0.2.0
+  - @ohmymcp-hsu/record@0.1.0
+  - @ohmymcp-hsu/generate@0.4.1
+  - @ohmymcp-hsu/mock@0.1.2
+  - @ohmymcp-hsu/runner@0.6.1
 
 ## 0.6.0
 
@@ -76,16 +76,16 @@
 
   공개 타입 변경 둘이 있다.
 
-  - `@ohmymcp/runner` 의 `SpecFindingCode` 에서 `UNCONSTRAINED_SCHEMA` 가 사라진다. 소비자 경로에서
+  - `@ohmymcp-hsu/runner` 의 `SpecFindingCode` 에서 `UNCONSTRAINED_SCHEMA` 가 사라진다. 소비자 경로에서
     `validateMcpSuite` 가 먼저 거부해 도달할 수 없는 코드였다.
-  - `@ohmymcp/generate` 의 `SanitizedAuthoringCandidate` 에 `specFindings` 필드가 생긴다. 승인
+  - `@ohmymcp-hsu/generate` 의 `SanitizedAuthoringCandidate` 에 `specFindings` 필드가 생긴다. 승인
     지문 계산 대상 밖이라 이미 승인된 지문은 그대로다.
 
 ### Patch Changes
 
 - Updated dependencies [d31c26e]
-  - @ohmymcp/generate@0.4.0
-  - @ohmymcp/runner@0.6.0
+  - @ohmymcp-hsu/generate@0.4.0
+  - @ohmymcp-hsu/runner@0.6.0
 
 ## 0.5.0
 
@@ -111,17 +111,17 @@
 - Updated dependencies [c728f02]
 - Updated dependencies [9803c19]
 - Updated dependencies [cfa921d]
-  - @ohmymcp/mock@0.1.1
-  - @ohmymcp/runner@0.5.0
-  - @ohmymcp/generate@0.3.5
+  - @ohmymcp-hsu/mock@0.1.1
+  - @ohmymcp-hsu/runner@0.5.0
+  - @ohmymcp-hsu/generate@0.3.5
 
 ## 0.4.1
 
 ### Patch Changes
 
 - Updated dependencies [d8227e2]
-  - @ohmymcp/runner@0.4.0
-  - @ohmymcp/generate@0.3.4
+  - @ohmymcp-hsu/runner@0.4.0
+  - @ohmymcp-hsu/generate@0.3.4
 
 ## 0.4.0
 
@@ -145,8 +145,8 @@
 ### Patch Changes
 
 - Updated dependencies [4da5f7c]
-  - @ohmymcp/runner@0.3.1
-  - @ohmymcp/generate@0.3.3
+  - @ohmymcp-hsu/runner@0.3.1
+  - @ohmymcp-hsu/generate@0.3.3
 
 ## 0.3.0
 
@@ -162,23 +162,23 @@
 ### Patch Changes
 
 - Updated dependencies [74c96da]
-  - @ohmymcp/runner@0.3.0
-  - @ohmymcp/generate@0.3.2
+  - @ohmymcp-hsu/runner@0.3.0
+  - @ohmymcp-hsu/generate@0.3.2
 
 ## 0.2.2
 
 ### Patch Changes
 
 - Updated dependencies [a1f9bb4]
-  - @ohmymcp/runner@0.2.0
-  - @ohmymcp/generate@0.3.1
+  - @ohmymcp-hsu/runner@0.2.0
+  - @ohmymcp-hsu/generate@0.3.1
 
 ## 0.2.1
 
 ### Patch Changes
 
 - Updated dependencies [ed2a3b8]
-  - @ohmymcp/generate@0.3.0
+  - @ohmymcp-hsu/generate@0.3.0
 
 ## 0.2.0
 
@@ -226,8 +226,8 @@
 - Updated dependencies [7c1cf62]
 - Updated dependencies [3760bac]
 - Updated dependencies [623eea0]
-  - @ohmymcp/generate@0.2.0
-  - @ohmymcp/mock@0.1.0
+  - @ohmymcp-hsu/generate@0.2.0
+  - @ohmymcp-hsu/mock@0.1.0
 
 ## 0.1.0
 
@@ -239,15 +239,15 @@
 
 - Updated dependencies [606600f]
 - Updated dependencies [b80e0e5]
-  - @ohmymcp/core@0.1.0
-  - @ohmymcp/generate@0.1.0
-  - @ohmymcp/mock@0.0.1
-  - @ohmymcp/record@0.0.1
-  - @ohmymcp/runner@0.1.1
+  - @ohmymcp-hsu/core@0.1.0
+  - @ohmymcp-hsu/generate@0.1.0
+  - @ohmymcp-hsu/mock@0.0.1
+  - @ohmymcp-hsu/record@0.0.1
+  - @ohmymcp-hsu/runner@0.1.1
 
 ## 0.0.1
 
 ### Patch Changes
 
 - Updated dependencies [216184a]
-  - @ohmymcp/runner@0.1.0
+  - @ohmymcp-hsu/runner@0.1.0

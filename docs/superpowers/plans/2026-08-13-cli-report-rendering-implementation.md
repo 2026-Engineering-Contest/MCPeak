@@ -48,7 +48,7 @@ dependencies.writeStdout(`${JSON.stringify(finalReport, null, 2)}\n`);
   같은 입력 2회 실행의 stdout 바이트가 같다.
 - `--json` 을 붙인 실행의 stdout 바이트가 이 웨이브 이전과 동일하다.
 - `docs/adr/0012-cli-기본-출력-전환.md` 와 `docs/adr/0013-렌더러-배치와-진단-무분기.md` 존재.
-- `.changeset/` 신규 파일 1개. `@ohmymcp/runner` minor, `ohmymcp` minor.
+- `.changeset/` 신규 파일 1개. `@ohmymcp-hsu/runner` minor, `ohmymcp` minor.
 
 ## 3. Global Constraints
 
@@ -446,7 +446,7 @@ colorEnabled: process.stdout.isTTY === true && process.env.NO_COLOR === undefine
 
 ```markdown
 ---
-"@ohmymcp/runner": minor
+"@ohmymcp-hsu/runner": minor
 "ohmymcp": minor
 ---
 
@@ -738,7 +738,7 @@ T3까지 끝나면 아래를 확인하고 사용자에게 보고해라:
   - packages/runner/src/index.ts 가 renderReport 와 RenderReportOptions 를 재수출하는지
   - docs/adr/0012-cli-기본-출력-전환.md 와
     docs/adr/0013-렌더러-배치와-진단-무분기.md 가 존재하는지
-  - .changeset/ 에 @ohmymcp/runner minor 와 ohmymcp minor 를 담은 파일이 있는지
+  - .changeset/ 에 @ohmymcp-hsu/runner minor 와 ohmymcp minor 를 담은 파일이 있는지
   - pnpm build && node packages/cli/tests/dist-cli-e2e.mjs 가 통과하는지
   - E2E의 결정론성 단언(같은 입력 2회 실행의 표준 출력 바이트 일치)이 렌더링 경로에도
     들어 있는지

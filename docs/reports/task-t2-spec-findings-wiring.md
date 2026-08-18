@@ -14,7 +14,7 @@
 | `packages/generate/tests/authoring-session.test.ts` | 헬퍼 셋과 테스트 셋 추가 |
 
 `packages/core/src/types.ts`, `packages/runner`, 루트 빌드 설정은 건드리지 않았다. 의존성 추가
-0건(`@ohmymcp/core` 는 이미 `packages/generate/package.json` 의 dependency 다).
+0건(`@ohmymcp-hsu/core` 는 이미 `packages/generate/package.json` 의 dependency 다).
 `fingerprint: sha256(frozenSuite)` 는 그대로 두었고 `specFindings` 는 `result` 밖에 있다.
 
 ## 2. 검증 명령과 판정 줄
@@ -25,7 +25,7 @@
 | 같은 명령 (Step 5, 구현 후) | `Test Files  1 passed (1)` / `Tests  15 passed (15)` |
 | `pnpm vitest run packages/generate` | `Test Files  1 failed \| 6 passed (7)` / `Tests  1 failed \| 134 passed \| 1 skipped (136)` — 실패는 `dependency-boundary.test.ts` 하나뿐 |
 | `pnpm test` | `Test Files  1 failed \| 42 passed (43)` / `Tests  1 failed \| 821 passed \| 1 skipped (823)` — 같은 실패 하나뿐 |
-| `npx turbo typecheck --force` | `Tasks: 4 successful, 6 total` / `Cached: 0 cached, 6 total` / `Failed: @ohmymcp/generate#typecheck` |
+| `npx turbo typecheck --force` | `Tasks: 4 successful, 6 total` / `Cached: 0 cached, 6 total` / `Failed: @ohmymcp-hsu/generate#typecheck` |
 | `pnpm lint` | `Checked 134 files in 30ms. No fixes applied.` (통과) |
 
 `typecheck` 는 지시대로 `--force` 로 돌렸고 `Cached: 0 cached, 6 total` 로 캐시 재생이 아님을

@@ -85,7 +85,7 @@ packages/runner/src/index.ts                 (export 추가만)
 
 **산출 계약.** `SpecFinding` · `SpecFindingCode` · `MAX_FINDINGS_PER_CASE` ·
 `SpecFindingsResult` · `describeSpecFinding` · `InputContractOptions` ·
-`checkInputContract`(스텁) · `checkAssertionSubstance`(스텁) 이 `@ohmymcp/runner` 에서
+`checkInputContract`(스텁) · `checkAssertionSubstance`(스텁) 이 `@ohmymcp-hsu/runner` 에서
 import 가능하다.
 
 **테스트.** 설계 문서 §10.5 전량.
@@ -543,7 +543,7 @@ T4-input-contract	<sha>	2026-08-14
 
 | 거짓 신호 | 이 작업에서의 모습 | 진실 기준 |
 |---|---|---|
-| 테스트 명령이 즉시 exit 0 | `pnpm --filter @ohmymcp/runner test` 는 **존재하지 않는 스크립트**다. 패키지 `package.json` 에 `test` 가 없어 아무것도 안 하고 성공한다 | 출력에 `Test Files ... passed` 줄이 있는지 확인. 표적 검증은 `pnpm test packages/runner` |
+| 테스트 명령이 즉시 exit 0 | `pnpm --filter @ohmymcp-hsu/runner test` 는 **존재하지 않는 스크립트**다. 패키지 `package.json` 에 `test` 가 없어 아무것도 안 하고 성공한다 | 출력에 `Test Files ... passed` 줄이 있는지 확인. 표적 검증은 `pnpm test packages/runner` |
 | 타입체크 · 린트 녹색 | 새 파일이 `index.ts` 에서 export 안 돼 검사 대상에서 빠짐 | 세 명령의 검사 파일 수를 출력에서 확인 |
 | 테스트 녹색 | T1 의 스텁이 그대로 남아 `throw` 하는데 아무도 호출 안 함 | T2 · T3 통합 후 `not implemented` 문자열이 `src/` 에 0 건인지 grep |
 | finding 0 건이라 깨끗해 보임 | 스키마 해석 불가로 전부 건너뜀 | `SCHEMA_NOT_ANALYZABLE` 개수를 따로 확인 (§10.3 테스트) |

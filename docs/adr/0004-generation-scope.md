@@ -6,7 +6,7 @@
 
 ## 배경
 
-`@ohmymcp/generate`는 `ToolDef[]`의 `inputSchema`를 분석해 실행 가능한 MCP 테스트 초안을 생성한다. 그러나 JSON Schema만으로는 입력값의 비즈니스 의미나 정상 응답의 구체적인 내용을 알 수 없다. 예를 들어 날씨 도구의 입력이 도시 이름이라는 사실은 알 수 있어도 어떤 도시가 실제로 유효한지, 정상 응답의 온도가 얼마여야 하는지는 스키마만으로 결정할 수 없다.
+`@ohmymcp-hsu/generate`는 `ToolDef[]`의 `inputSchema`를 분석해 실행 가능한 MCP 테스트 초안을 생성한다. 그러나 JSON Schema만으로는 입력값의 비즈니스 의미나 정상 응답의 구체적인 내용을 알 수 없다. 예를 들어 날씨 도구의 입력이 도시 이름이라는 사실은 알 수 있어도 어떤 도시가 실제로 유효한지, 정상 응답의 온도가 얼마여야 하는지는 스키마만으로 결정할 수 없다.
 
 자동 생성기가 이를 추측하면 실행 환경에 따라 테스트가 실패하거나, 실제 동작을 검증하지 못하는 거짓 확신을 줄 수 있다. 반대로 모든 JSON Schema 기능과 비정상 입력까지 처음부터 지원하면 `$ref`, 조합 스키마, 순환 참조 등으로 구현 범위가 지나치게 커진다. 따라서 첫 버전에서 자동 생성할 범위와 사람이 작성할 범위를 명확히 구분해야 한다.
 
@@ -92,7 +92,7 @@
 
 compile·repair 요청을 준비할 때는 [Runner 설계의 Generate 요청 검증 계약](../superpowers/specs/2026-08-11-runner-design.md)에 따라 `tools[].inputSchema`를 redaction보다 먼저 runtime `ReadonlyJsonValue`로 검증한다. 비 JSON 값은 preview·binding·provider 호출 전에 동기 `GenerateRequestValidationError`로 거절하며, 오류 코드는 `INVALID_TOOL_INPUT_SCHEMA`를 사용한다.
 
-다만 `generate → runner → core` 의존 방향과 `@ohmymcp/generate`의 Runner workspace dependency 추가는 이 ADR만으로 확정하지 않는다. Runner 담당과 팀의 별도 승인을 받은 뒤 의존성과 구체적인 생성 파일 형식을 구현한다. 승인 전에는 Runner 계약을 generate 내부에 복사하지 않는다.
+다만 `generate → runner → core` 의존 방향과 `@ohmymcp-hsu/generate`의 Runner workspace dependency 추가는 이 ADR만으로 확정하지 않는다. Runner 담당과 팀의 별도 승인을 받은 뒤 의존성과 구체적인 생성 파일 형식을 구현한다. 승인 전에는 Runner 계약을 generate 내부에 복사하지 않는다.
 
 ## 이유
 

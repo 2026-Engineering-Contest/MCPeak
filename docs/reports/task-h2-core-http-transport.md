@@ -49,7 +49,7 @@
 |---|---|---|
 | `pnpm test packages/core` | **통과** | `Test Files 7 passed (7)`, `Tests 56 passed (56)` (기준 48 에서 +8) |
 | `pnpm lint` | **통과** | `Checked 134 files in 36ms. No fixes applied.` |
-| `pnpm typecheck` | **실패** | `Tasks: 2 successful, 6 total` / `Failed: @ohmymcp/core#typecheck` |
+| `pnpm typecheck` | **실패** | `Tasks: 2 successful, 6 total` / `Failed: @ohmymcp-hsu/core#typecheck` |
 
 typecheck 실패의 전문은 다음 한 건이다.
 
@@ -82,7 +82,7 @@ export async function connectStdio(options: StdioConnectOptions): Promise<McpStd
 즉 이 오류는 H3 이 `connect()` 분기를 구현하는 순간 함께 사라진다. H2 쪽에서 따로 고칠 것이
 없다. 오케스트레이터가 택할 수 있는 길은 둘이다.
 
-1. H2 를 이대로 병합하고 H3 가 끝날 때까지 `@ohmymcp/core#typecheck` 가 빨간 것을 감수한다.
+1. H2 를 이대로 병합하고 H3 가 끝날 때까지 `@ohmymcp-hsu/core#typecheck` 가 빨간 것을 감수한다.
 2. H2 의 병합 게이트에서 typecheck 를 빼고, H1·H2·H3 통합 후에 한 번에 판정한다.
 
 어느 쪽이든 H2 단독 브랜치에서 typecheck 를 녹색으로 만들려면 H3 소유 파일을 건드려야 한다.
@@ -118,7 +118,7 @@ export async function connectStdio(options: StdioConnectOptions): Promise<McpStd
   결과 객체의 키 순서도 다르다. 값 비교(`toEqual`)와 실제 요청에는 영향이 없지만, 진단이나
   카세트에서 헤더를 직렬화하는 코드가 생기면 정렬이 필요해진다. 지금은 어디에도 직렬화하지
   않는다(§11 이 헤더 직렬화를 금지한다).
-- **`ConnectOptions` 유니온의 하위 호환.** `@ohmymcp/core` 의 공개 타입 `ConnectOptions` 가
+- **`ConnectOptions` 유니온의 하위 호환.** `@ohmymcp-hsu/core` 의 공개 타입 `ConnectOptions` 가
   인터페이스에서 유니온 별칭으로 바뀌었다. `interface X extends ConnectOptions` 로 확장하던
   외부 코드가 있으면 깨진다. 저장소 안에는 그런 사용처가 없다(`grep ConnectOptions` 로 확인).
 - **쿼리 문자열은 보존한다.** §11·§15 의 결정대로 URL 정규화가 쿼리를 지우지 않으므로, 토큰을

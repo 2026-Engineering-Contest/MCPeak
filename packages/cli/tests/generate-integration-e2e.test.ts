@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { connectStdio } from "@ohmymcp/core";
+import { connectStdio } from "@ohmymcp-hsu/core";
 import {
   applyAuthoringChanges,
   createAuthoringDiff,
@@ -13,15 +13,15 @@ import {
   getAuthoringExecutionSuite,
   prepareAuthoringRequest,
   reviewLocalAuthoringCandidate,
-} from "@ohmymcp/generate";
-import { deriveContractAxes, validateMcpSuite } from "@ohmymcp/runner";
+} from "@ohmymcp-hsu/generate";
+import { deriveContractAxes, validateMcpSuite } from "@ohmymcp-hsu/runner";
 import { describe, expect, it, vi } from "vitest";
 import { nodeGenerateDependencies, runGenerateCommand } from "../src/generate-command.js";
 import { run } from "../src/index.js";
 
-vi.mock("@ohmymcp/core", async () => import("../../core/src/index.js"));
-vi.mock("@ohmymcp/runner", async () => import("../../runner/src/index.js"));
-vi.mock("@ohmymcp/generate", async () => import("../../generate/src/index.js"));
+vi.mock("@ohmymcp-hsu/core", async () => import("../../core/src/index.js"));
+vi.mock("@ohmymcp-hsu/runner", async () => import("../../runner/src/index.js"));
+vi.mock("@ohmymcp-hsu/generate", async () => import("../../generate/src/index.js"));
 
 const here = resolve(fileURLToPath(new URL(".", import.meta.url)));
 const root = resolve(here, "../../..");
@@ -367,7 +367,7 @@ describe.sequential("generate 실제 weather-server", () => {
     const provider = {
       id: "codex" as const,
       model: "gpt-5.6-luna",
-      author: vi.fn(async (request: import("@ohmymcp/generate").AuthoringRequest) => ({
+      author: vi.fn(async (request: import("@ohmymcp-hsu/generate").AuthoringRequest) => ({
         status: "candidate" as const,
         suite: {
           ...request.candidate,

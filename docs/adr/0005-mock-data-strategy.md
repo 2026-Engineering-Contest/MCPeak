@@ -9,7 +9,7 @@
 
 ## 배경
 
-`@ohmymcp/mock` 은 실제 MCP 서버 없이, MCP 를 사용하는 프로그램을 테스트하게 해준다.
+`@ohmymcp-hsu/mock` 은 실제 MCP 서버 없이, MCP 를 사용하는 프로그램을 테스트하게 해준다.
 그러려면 목이 툴 호출에 **무슨 값을 돌려줄지** 정해야 한다.
 
 자동 생성이 원리적으로 가능하다. `ToolDef.inputSchema` 가 JSON Schema 이므로 타입에 맞는

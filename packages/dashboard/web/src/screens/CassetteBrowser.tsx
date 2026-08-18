@@ -39,7 +39,7 @@ export function CassetteBrowser({ path }: CassetteBrowserProps) {
   if (path === null) {
     return <CassetteList />;
   }
-  return <CassetteDetail path={path} />;
+  return <CassetteDetail key={path} path={path} />;
 }
 
 function CassetteList() {

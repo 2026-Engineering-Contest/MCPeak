@@ -32,6 +32,14 @@ type Route =
   | { readonly screen: "cassettes"; readonly path: string | null }
   | { readonly screen: "repair"; readonly runId: string | null };
 
+function decodeRouteValue(value: string): string | null {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return null;
+  }
+}
+
 /**
  * `#/run/<runId>`, `#/cassettes/<인코딩된 경로>` 처럼 첫 세그먼트가 화면을, 그
  * 뒤가 식별자를 가리키는 해시를 해석한다. 식별자가 없으면 null이다(예: `#/run`만
@@ -43,7 +51,7 @@ function parseRoute(hash: string): Route {
   const [first, ...rest] = segments;
 
   if (first === "run") {
-    return { screen: "run", runId: rest[0] !== undefined ? decodeURIComponent(rest[0]) : null };
+    return { screen: "run", runId: rest[0] !== undefined ? decodeRouteValue(rest[0]) : null };
   }
   if (first === "generate") {
     return { screen: "generate" };
@@ -51,13 +59,13 @@ function parseRoute(hash: string): Route {
   if (first === "cassettes") {
     return {
       screen: "cassettes",
-      path: rest.length > 0 ? decodeURIComponent(rest.join("/")) : null,
+      path: rest.length > 0 ? decodeRouteValue(rest.join("/")) : null,
     };
   }
   if (first === "repair") {
     return {
       screen: "repair",
-      runId: rest[0] !== undefined ? decodeURIComponent(rest[0]) : null,
+      runId: rest[0] !== undefined ? decodeRouteValue(rest[0]) : null,
     };
   }
   return { screen: "home" };

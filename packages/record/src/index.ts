@@ -54,6 +54,14 @@ const NONDETERMINISTIC_KEYS = new Set([
  *
  * `accesstoken` · `refreshtoken` 은 접미 규칙상 `token` 에 이미 걸리지만, ADR-0003 이
  * 열거한 목록이라 그대로 둔다. 근거는 ADR-0039 다.
+ *
+ * **단수형만 담는다.** 복수형은 `sensitiveKey` 가 조회 시점에 흡수한다. `tokens` ·
+ * `secrets` 를 항목으로 넣으면 목록이 두 배가 되는데, 항목이 늘수록 오탐이 는다는
+ * ADR-0039 의 판단이 그대로 깨진다.
+ *
+ * `key` 로 끝나는 것은 **합성어만** 열거한다. `key` 단독은 넣지 않는다 — `apikey` 만
+ * 넣고 `key` 를 뺀 ADR-0039 의 이유가 `privatekey` 계열에도 그대로 적용된다.
+ * `auth` · `pwd` · `bearer` 를 뺀 이유는 ADR-0045 에 있다.
  */
 const SENSITIVE_KEYS = new Set([
   "authorization",
@@ -64,6 +72,14 @@ const SENSITIVE_KEYS = new Set([
   "secret",
   "password",
   "cookie",
+  // 아래부터 ADR-0045. `secretkey` 는 `secret` 이 목록에 있어도 접미 조합이
+  // `key` · `secretkey` 라 어디에도 걸리지 않았다. `apikey` 와 같은 구멍이었다.
+  "privatekey",
+  "secretkey",
+  "signingkey",
+  "sessionkey",
+  "credential",
+  "passwd",
 ]);
 
 const plainObject = (value: unknown): value is Record<string, unknown> =>
@@ -113,11 +129,18 @@ const keyWords = (key: string): string[] =>
  *
  * 접미로 보되 한 단어씩만 보지 않는 이유는 `X-Api-Key` 다. 마지막 단어 `key` 는 목록에
  * 없고 `apikey` 가 있다.
+ *
+ * 목록이 단수형만 담으므로 꼬리 `s` 를 뗀 형태도 함께 조회한다. 이 완화가 좁은 이유는,
+ * 목록 단어에 `s` 를 붙여 만들어지는 영어 단어가 전부 그 비밀값의 복수형이기 때문이다
+ * (`tokens` · `secrets` · `cookies`). 머리 명사는 건드리지 않으므로 `tokenCounts` ·
+ * `secretariats` 는 계속 통과한다. 근거는 ADR-0045 이다.
  */
 const sensitiveKey = (key: string): boolean => {
   const words = keyWords(key);
   for (let start = words.length - 1; start >= 0; start--) {
-    if (SENSITIVE_KEYS.has(words.slice(start).join(""))) return true;
+    const joined = words.slice(start).join("");
+    if (SENSITIVE_KEYS.has(joined)) return true;
+    if (joined.endsWith("s") && SENSITIVE_KEYS.has(joined.slice(0, -1))) return true;
   }
   return false;
 };

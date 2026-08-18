@@ -5,11 +5,11 @@ import { ResetCommandError, runResetCommand } from "../src/reset-hook.js";
  * 임시 스크립트 파일을 만들지 않는다. `process.execPath` 와 `-e` 만 쓴다. 터미널을 병렬로
  * 돌리므로 파일을 만들면 같은 경로를 두 터미널이 잡는다.
  *
- * 명령 문자열은 공백으로 잘리므로 인라인 스크립트에 공백을 넣을 수 없다. 아래 스크립트가
- * 전부 붙여 쓰인 이유다.
+ * 실행 파일은 큰따옴표로 감싼다. Windows 의 `process.execPath` 는 보통 `Program Files` 아래라
+ * 공백이 있다. 인자는 여전히 공백으로 잘리므로 아래 인라인 스크립트는 전부 붙여 쓴다.
  */
 const nodeCommand = (script: string, ...args: readonly string[]): string =>
-  [process.execPath, "-e", script, ...args].join(" ");
+  [`"${process.execPath}"`, "-e", script, ...args].join(" ");
 
 const rejection = async (promise: Promise<unknown>): Promise<unknown> => {
   try {
@@ -35,6 +35,36 @@ describe("runResetCommand", () => {
     const error = await rejection(runResetCommand("ohmymcp-존재하지-않는-실행파일"));
     expect(error).toBeInstanceOf(ResetCommandError);
     expect((error as ResetCommandError).exitCode).toBeNull();
+  });
+
+  it("큰따옴표로 감싼 실행 파일 경로를 실행한다", async () => {
+    await expect(
+      runResetCommand(`"${process.execPath}" -e process.exit(0)`),
+    ).resolves.toBeUndefined();
+  });
+
+  it("닫히지 않은 실행 파일 따옴표를 구체적인 파싱 실패로 보고한다", async () => {
+    const error = await rejection(runResetCommand('"unterminated'));
+    expect(error).toBeInstanceOf(ResetCommandError);
+    expect((error as ResetCommandError).stderr).toBe(
+      "잘못된 초기화 명령: 실행 파일을 감싼 큰따옴표가 닫히지 않았습니다.",
+    );
+  });
+
+  it("빈 따옴표 실행 파일 경로를 구체적인 파싱 실패로 보고한다", async () => {
+    const error = await rejection(runResetCommand('""'));
+    expect(error).toBeInstanceOf(ResetCommandError);
+    expect((error as ResetCommandError).stderr).toBe(
+      "잘못된 초기화 명령: 실행 파일 경로가 비어 있습니다.",
+    );
+  });
+
+  it("실행 파일의 닫는 큰따옴표 뒤에 공백이 없으면 파싱 실패로 보고한다", async () => {
+    const error = await rejection(runResetCommand(`"${process.execPath}"-e`));
+    expect(error).toBeInstanceOf(ResetCommandError);
+    expect((error as ResetCommandError).stderr).toBe(
+      "잘못된 초기화 명령: 실행 파일을 감싼 큰따옴표 뒤에는 공백이 필요합니다.",
+    );
   });
 
   it("stderr 이 ResetCommandError.stderr 에 담긴다", async () => {

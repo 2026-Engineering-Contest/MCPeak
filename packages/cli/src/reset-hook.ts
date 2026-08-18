@@ -1,11 +1,12 @@
 import { spawn } from "node:child_process";
+import { CommandParseError, tokenizeCommand } from "@ohmymcp/core";
 
 /**
  * 시험 실행 직전에 서버 상태를 되돌리는 초기화 명령을 실행한다. ADR-0023 의 결정을 구현한다.
  *
- * 셸을 거치지 않는다. `;`·`&&`·백틱은 해석되지 않고 그대로 인자가 된다. 따옴표도 해석하지
- * 않으므로 공백이 든 인자가 필요하면 사용자가 스크립트 파일을 만들어야 한다. 이 제약은
- * 도움말에 적힌 사양이지 구현 편의가 아니다.
+ * 셸을 거치지 않는다. `;`·`&&`·백틱은 해석되지 않고 그대로 인자가 된다. 실행 파일을 감싼
+ * 큰따옴표만 경계로 인식하며 인자의 따옴표는 해석하지 않는다. 공백이 든 인자가 필요하면
+ * 사용자가 스크립트 파일을 만들어야 한다. 이 제약은 도움말에 적힌 사양이지 구현 편의가 아니다.
  */
 
 /** 초기화 명령의 제한 시간. 설계 문서 §6. */
@@ -34,13 +35,6 @@ export class ResetCommandError extends Error {
     this.name = "ResetCommandError";
   }
 }
-
-/**
- * 공백으로 나눈 첫 토큰이 실행 파일, 나머지가 인자다. 빈 토큰은 버린다.
- * 따옴표를 해석하지 않는 것이 사양이다.
- */
-const tokenize = (command: string): readonly string[] =>
-  command.split(/\s+/).filter((token) => token.length > 0);
 
 /**
  * stderr 의 **마지막** 상한만큼을 모은다. 앞부분을 버리는 것이 요점이다. 화면에 쓰는 것은
@@ -84,7 +78,20 @@ class StderrTail {
  * 이미 걸러야 하는 값이고, 여기까지 왔다면 사용자 입력 문제가 아니라 호출 측 결함이다.
  */
 export async function runResetCommand(command: string): Promise<void> {
-  const [file, ...args] = tokenize(command);
+  let tokens: readonly string[];
+  try {
+    tokens = tokenizeCommand(command);
+  } catch (error) {
+    if (!(error instanceof CommandParseError)) throw error;
+    const reason = {
+      EMPTY_EXECUTABLE: "실행 파일 경로가 비어 있습니다.",
+      UNTERMINATED_EXECUTABLE_QUOTE: "실행 파일을 감싼 큰따옴표가 닫히지 않았습니다.",
+      MISSING_EXECUTABLE_ARGUMENT_SEPARATOR: "실행 파일을 감싼 큰따옴표 뒤에는 공백이 필요합니다.",
+    }[error.code];
+    throw new ResetCommandError(command, null, `잘못된 초기화 명령: ${reason}`);
+  }
+
+  const [file, ...args] = tokens;
   if (file === undefined) {
     throw new TypeError("초기화 명령이 비어 있습니다.");
   }

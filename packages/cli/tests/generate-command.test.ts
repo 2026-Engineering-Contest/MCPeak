@@ -2651,7 +2651,7 @@ describe("generate 시험 실행 게이트", () => {
       inputs: Array.from({ length: failingCases }, () => "?"),
       confirms: [true],
     });
-    const command = `${process.execPath} -e process.exit(0)`;
+    const command = `"${process.execPath}" -e process.exit(0)`;
     await runGenerateCommand([...gateArgv, "--reset-cmd", command], d.value);
     const output = d.output();
     expect(output).toContain(`  초기화: ${command}\n`);

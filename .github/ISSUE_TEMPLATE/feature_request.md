@@ -13,7 +13,7 @@ assignees: []
 ## 대안
 
 ## 관련 패키지
-<!-- pkg:core / pkg:runner / pkg:generate / pkg:record / pkg:mock / pkg:cli -->
+<!-- pkg:core / pkg:runner / pkg:generate / pkg:record / pkg:mock / pkg:cli / pkg:release -->
 
 ## 범위 / 오너
 <!-- 이 기능이 속하는 패키지의 오너가 결정권을 가진다 (CONTRIBUTING §2.1). -->

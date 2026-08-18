@@ -17,3 +17,9 @@
 
 /docs/adr/            @seodduu @endl24 @sunghoon0303
 /CONTRIBUTING.md      @seodduu @endl24 @sunghoon0303 @ddxng5 @storyrago
+
+# CI 게이트는 전원의 코드 경로를 막거나 통과시키므로 전원이 리뷰한다.
+# 배포 워크플로는 릴리스 담당이 본다 — npm 발행은 되돌릴 수 없어서
+# (72시간 뒤 unpublish 불가) 조용히 지나가면 안 된다.
+/.github/workflows/ci.yml       @seodduu @endl24 @sunghoon0303 @ddxng5 @storyrago
+/.github/workflows/release.yml  @storyrago

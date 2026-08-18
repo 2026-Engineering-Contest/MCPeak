@@ -1,5 +1,5 @@
 ---
-"@ohmymcp/record": patch
+"@ohmymcp-hsu/record": patch
 ---
 
 record 실행과 replay 실행이 같은 요청에 다른 값(타입까지)을 돌려주던 문제를 고칩니다.

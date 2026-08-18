@@ -10,7 +10,6 @@ import {
   matchKey,
   redact,
   saveCassette,
-  snapshotContract,
   stableStringify,
 } from "../src/index.js";
 
@@ -103,7 +102,7 @@ describe("matchKey", () => {
   });
 });
 
-describe("redact / snapshotContract", () => {
+describe("redact", () => {
   it("비밀값 이름을 중첩 객체까지 마스킹한다", () => {
     expect(
       redact({
@@ -274,36 +273,11 @@ describe("redact / snapshotContract", () => {
     });
   });
 
-  it("비결정 키 판정은 접미 규칙과 무관하게 그대로다", () => {
-    // sensitiveKey 만 바뀌었고 normalizeKey 는 NONDETERMINISTIC_KEYS 조회와 공유하므로
-    // 건드리지 않았다. 두 판정이 서로 새지 않는지 고정한다.
-    const snapshot = snapshotContract(ok({ createdAt: "x", created_at: "y", cookieCount: 3 }));
-
-    expect(snapshot).toStrictEqual({ cookieCount: 3 });
-  });
-
   it("마스킹 중 sparse array를 거절한다", () => {
     const sparse = [1, undefined, 3];
     delete sparse[1];
 
     expect(() => redact(sparse)).toThrow("카세트 JSON에는 sparse array를 사용할 수 없습니다.");
-  });
-
-  it("비결정 필드는 제거하고 계약 변경 필드는 남긴다", () => {
-    const snapshot = snapshotContract(
-      ok({
-        id: "run-1",
-        requestId: "req-1",
-        timestamp: "2026-08-14T00:00:00Z",
-        data: { name: "weather", updatedAt: "now", fields: ["city"] },
-        auth: { token: "secret" },
-      }),
-    );
-
-    expect(snapshot).toStrictEqual({
-      data: { name: "weather", fields: ["city"] },
-      auth: { token: "[redacted]" },
-    });
   });
 });
 

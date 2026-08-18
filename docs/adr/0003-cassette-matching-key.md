@@ -12,6 +12,8 @@
   **승인되기 전까지 그 부분은 이 ADR 의 결정이 유효하다** (README §상태: 제안·초안에
   기대어 구현하지 않는다). 아래 「결정」에서 개정 대상으로 지목된 문단에는 그 자리에
   표시가 있다.
+- 철회 제안 중 (2026-08-19): [ADR-0046](./0046-계약-스냅샷-api-철회.md) 계약 스냅샷
+  API. 아래 「결정」의 `snapshotContract` 문단과 「결과」의 공개 API 목록이 대상이다.
 
 ## 배경
 
@@ -131,6 +133,11 @@ export interface Cassette {
 }
 ```
 
+> **철회 제안 중 — ADR-0046.** 이 함수는 구현·배포됐지만 어느 패키지도 부르지 않고,
+> 카세트 저장 경로도 이 함수를 타지 않는다. 그 사이 ADR-0038 이 같은 문제에 반대
+> 방향의 답(차이를 지우지 않고 보고한다)을 냈고 `runner` 가 그것을 구현했다. 0046 은
+> 이 문단을 철회하는 방향이다.
+
 계약 스냅샷(`snapshotContract`)은 `ToolResult.raw`를 기준으로 만들고, 기본적으로 아래
 이름의 필드는 깊게 순회하며 제거한다.
 
@@ -218,6 +225,7 @@ JSON으로 파싱할 수 있을 때만 구조화해 마스킹한 뒤 stable JSON
 
 - `record` 패키지는 `stableStringify`, `matchKey`, `redact`, `snapshotContract`,
   `loadCassette`, `saveCassette`, `cassetteClient`를 공개 API로 제공한다.
+  (`snapshotContract` 는 [ADR-0046](./0046-계약-스냅샷-api-철회.md) 에서 철회 제안 중이다.)
 - `matchKey()`는 원본 인자로 계산하지만 반환값은 SHA-256 hex라서 파일에 비밀값이
   남지 않는다.
 - `CassetteInteraction.key`는 필수다. 저장된 `request.args`는 마스킹될 수 있으므로

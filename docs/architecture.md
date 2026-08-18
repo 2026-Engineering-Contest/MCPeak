@@ -75,7 +75,7 @@ cli → record / mock → core
 ```ts
 createMcpTest({ client: McpClient }, body)   // runner   — client 를 받는다
 generateTests(tools: ToolDef[], opts)        // generate — tools 를 받는다
-snapshotContract(result: ToolResult)         // record   — result 를 받는다
+cassetteClient(inner: McpClient, opts)       // record   — client 를 받는다
 injectResponse(name, response: ToolResult)   // mock     — response 를 받는다
 connect(opts): Promise<McpClient>            // core     — 값을 만드는 유일한 함수
 ```

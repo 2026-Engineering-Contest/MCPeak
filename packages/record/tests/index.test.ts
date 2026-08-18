@@ -872,6 +872,12 @@ describe("cassette IO", () => {
             authSecret: {
               anyOf: [{ type: "string", default: "안-가려짐-대상-아님" }],
             },
+            authorization: {
+              type: "object",
+              properties: {
+                value: { type: "string", default: "Bearer inherited-secret" },
+              },
+            },
           },
         },
       },
@@ -891,6 +897,7 @@ describe("cassette IO", () => {
             password: { examples: unknown[] };
             note: Record<string, unknown>;
             authSecret: { anyOf: unknown[] };
+            authorization: { properties: { value: Record<string, unknown> } };
           };
         };
       };
@@ -929,6 +936,13 @@ describe("cassette IO", () => {
       // 마스킹도 하지 않는다.
       expect(tool.inputSchema.properties.authSecret).toStrictEqual({
         anyOf: [{ type: "string", default: "안-가려짐-대상-아님" }],
+      });
+
+      // 민감도는 properties 를 타고 내려가며 상속된다. value 라는 이름 자체는 민감하지
+      // 않지만, authorization 아래 있으므로 그 default 도 비밀값이다.
+      expect(tool.inputSchema.properties.authorization.properties.value).toStrictEqual({
+        type: "string",
+        default: "[redacted]",
       });
     } finally {
       await rm(dir, { recursive: true, force: true });

@@ -540,15 +540,19 @@ function redactTools(tools: readonly ToolDef[]): ToolDef[] {
 /**
  * 스키마를 재귀한다. `sensitive` 는 이 노드가 마스킹 대상 프로퍼티 아래인지를 나타낸다.
  *
- * - `properties` 는 재귀하며, 각 프로퍼티의 민감도는 그 **이름**으로 새로 판정한다
- *   (`sensitiveKey`, ADR-0039). 이름 자체는 절대 마스킹하지 않는다 — 선언 대상이지 값이
- *   아니다.
- * - `items` 는 재귀하되 민감도를 부모에서 물려받는다. 배열 원소는 이름이 없다.
+ * - `properties` 는 재귀하며, 각 프로퍼티의 민감도는 **그 이름으로 새로 판정하되 부모의
+ *   민감도와 OR 로 합친다** (`sensitive || sensitiveKey(name)`). 한번 민감해진 하위
+ *   트리는 이름이 안 걸려도 계속 민감하다 — `authorization.properties.value.default`
+ *   처럼 감싸는 이름이 비밀값이면 안쪽 값도 비밀값이다. 이름 자체는 절대 마스킹하지
+ *   않는다 — 선언 대상이지 값이 아니다.
+ * - `items` 는 재귀하되 민감도를 부모에서 그대로 물려받는다. 배열 원소는 이름이 없다.
  * - `default` · `const` 는 단일 값이라 통째로 가린다. `examples` · `enum` 은 배열이라
  *   원소마다 가린다 — 허용값 목록에 실제 키가 들어 있는 경우가 있다.
  * - 그 외 키(`type`·`required`·`description`·`title`·`$schema` 와 ADR-0004 가
  *   해석하지 않는 `allOf`·`anyOf`·`oneOf` 등)는 그대로 둔다. 재귀도, 마스킹도 하지
- *   않는다 — 해석하지 않는 구조에 마스킹만 거는 것은 근거가 없다.
+ *   않는다 — 해석하지 않는 구조에 마스킹만 거는 것은 근거가 없다. **알려진 한계**: 민감한
+ *   프로퍼티의 값이 이 미지원 키워드 안에 있으면(예: `apiKey: { anyOf: [{ default: "sk-..." }] }`)
+ *   가려지지 않는다. ADR-0040 이 승인한 트레이드오프이고, 지원 범위가 늘어나면 함께 넓힌다.
  */
 function redactSchema(schema: unknown, sensitive: boolean): unknown {
   if (!plainObject(schema)) return schema;
@@ -560,7 +564,7 @@ function redactSchema(schema: unknown, sensitive: boolean): unknown {
     if (key === "properties" && plainObject(value)) {
       const nested: Record<string, unknown> = {};
       for (const name of Object.keys(value)) {
-        nested[name] = redactSchema(value[name], sensitiveKey(name));
+        nested[name] = redactSchema(value[name], sensitive || sensitiveKey(name));
       }
       output[key] = nested;
       continue;

@@ -42,10 +42,15 @@ jobs:
       # ── 배포 전 마지막 방어선 (ADR-0043) ──────────────────────────────────────
       #
       # `npm pack` 은 `workspace:*` 를 실제 버전으로 치환하지 않는다. `pnpm pack` 만 한다.
-      # changesets 는 pnpm-lock.yaml 을 보고 `pnpm publish` 를 고르지만, 그 감지가
-      # 어떤 이유로든(락파일 누락·PATH 에 pnpm 없음·상위 버전에서의 동작 변경) 빗나가면
-      # `"@ohmymcp/core": "workspace:*"` 가 그대로 npm 에 올라간다. 그 패키지는 아무도
-      # 설치할 수 없고, 72시간이 지나면 unpublish 도 막혀 그 이름·버전이 영구히 죽는다.
+      #
+      # changesets 2.31.1 의 `getPublishTool()` 은 `package-manager-detector` 가 pnpm 을
+      # 감지하지 못할 때만 npm 을 고른다. 감지 후 `pnpm --version` 실행이 실패해도 catch 가
+      # pnpm 을 그대로 돌려주므로, PATH 문제로 npm 으로 넘어가는 경로는 없다. 위험은
+      # **감지 실패** 한 갈래로 한정된다 — 락파일 누락, 워크스페이스 인식 실패, 상위 버전에서
+      # 감지 로직 변경.
+      #
+      # 그 경우 `"@ohmymcp-hsu/core": "workspace:*"` 가 그대로 npm 에 올라간다. 아무도 설치할
+      # 수 없고, unpublish 해도 같은 이름·버전으로 다시 올릴 수 없다.
       #
       # 그래서 감지를 믿지 않고 실제 tarball 을 만들어 그 안의 package.json 을 검사한다.
       - name: "Guard — tarball 에 workspace: 프로토콜이 남았는지 검사"

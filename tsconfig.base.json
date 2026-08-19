@@ -21,7 +21,8 @@
       "@ohmymcp-hsu/runner": ["./packages/runner/src/index.ts"],
       "@ohmymcp-hsu/generate": ["./packages/generate/src/index.ts"],
       "@ohmymcp-hsu/record": ["./packages/record/src/index.ts"],
-      "@ohmymcp-hsu/mock": ["./packages/mock/src/index.ts"]
+      "@ohmymcp-hsu/mock": ["./packages/mock/src/index.ts"],
+      "ohmymcp/commands": ["./packages/cli/src/commands.ts"]
     }
   }
 }

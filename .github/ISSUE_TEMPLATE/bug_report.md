@@ -26,4 +26,4 @@ assignees: []
 - OS:
 
 ## 관련 패키지
-<!-- pkg:core / pkg:runner / pkg:generate / pkg:record / pkg:mock / pkg:cli -->
+<!-- pkg:core / pkg:runner / pkg:generate / pkg:record / pkg:mock / pkg:cli / pkg:release -->

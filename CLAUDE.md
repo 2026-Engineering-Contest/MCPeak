@@ -39,7 +39,10 @@ fix(core): 서버 종료 시 좀비 프로세스 잔존 문제 해결
 ```
 
 `type`: feat / fix / docs / test / refactor / chore / ci
-`scope`: core / runner / generate / record / mock / cli
+`scope`: core / runner / generate / record / mock / cli / release / adr
+
+`release` 는 npm 배포·릴리스 워크플로·버저닝, `adr` 는 여러 패키지에 걸친 설계 결정 기록.
+둘 다 소유 패키지가 없는 작업이라 패키지 scope 로는 집계되지 않는다.
 
 ## 설계 결정은 기록한다
 

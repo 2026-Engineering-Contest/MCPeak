@@ -7,4 +7,4 @@ record: 아무 경로에도 배선되지 않은 `snapshotContract` 를 공개 AP
 방향을 정했고, 이 함수의 전제는 그 결정에 뒤집혔습니다. 이 함수만 쓰던
 `NONDETERMINISTIC_KEYS` 와 `normalizeKey` 도 함께 걷어냈고, `transformJson` 은 옵션이
 사라져 `redact` 가 본체를 흡수했습니다. `redact` 의 동작과 마스킹 경계는 그대로입니다.
-근거는 ADR-0046 입니다.
+근거는 ADR-0047 입니다.

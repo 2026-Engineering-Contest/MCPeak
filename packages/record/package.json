@@ -1,10 +1,17 @@
 {
   "name": "@ohmymcp-hsu/record",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": false,
   "type": "module",
   "description": "녹화 · 재생",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/2026-Engineering-Contest/OhMyMCP.git",
+    "directory": "packages/record"
+  },
+  "homepage": "https://github.com/2026-Engineering-Contest/OhMyMCP#readme",
+  "bugs": "https://github.com/2026-Engineering-Contest/OhMyMCP/issues",
   "publishConfig": {
     "access": "public"
   },

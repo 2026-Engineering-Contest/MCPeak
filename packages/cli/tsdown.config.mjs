@@ -6,7 +6,7 @@ import { defineConfig } from "tsdown";
 // 고정해 그 분기를 없앤다(결정론성, CLAUDE.md). native 로더는 순수 ESM 만
 // 읽으므로 설정 파일은 .ts 가 아니라 .mjs 여야 한다.
 export default defineConfig({
-  entry: ["src/index.ts", "src/cli.ts"],
+  entry: ["src/index.ts", "src/cli.ts", "src/commands.ts"],
   format: ["esm", "cjs"],
   dts: true,
   clean: true,

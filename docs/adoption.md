@@ -449,8 +449,87 @@ CI 파서와 맞는가)을 실측해 닫았다.
   뒤에도 입력값 교정과 저장 흐름이 그대로 이어졌다.
 - `test` 명령에서도 요약 아래 고지 줄이 나오고 종료 코드는 0 그대로였다.
 
-**아직 안 한 것.** 계획서 W5 3번의 공개 서버 3개(`mcp-server-time` · `server-memory` ·
-`mcp-server-calculator`) 대조는 하지 않았다. 기대값은 관찰 기록에 있다(`server-memory` 0건,
-`mcp-server-time` 2건, `mcp-server-calculator` 0건). 표본이 예제 서버 하나뿐이라 **손으로 쓴
-거절이 `unverified` 로 떨어지는 것만 실환경에서 봤고, SDK 검증 지문이 `verified` 로 잡히는 것은
-아직 픽스처로만 검증됐다.**
+### 공개 서버 3개 대조 — 지문 셋이 실환경에서 전부 동작한다
+
+위 문단은 "표본이 예제 서버 하나뿐이라 SDK 검증 지문이 `verified` 로 잡히는 것은 아직 픽스처로만
+검증됐다" 로 남겨 뒀던 자리다. 계획서 W5 3번을 돌려 그것을 닫는다.
+
+| 서버 | SDK | 지문 | 결과 | 기대(픽스처) | 2회 실행 `--json` |
+|---|---|---|---|---|---|
+| `server-memory` | TS | `MCP error -32602:` | verified 16 · **unverified 0** | 0 | 20284 B 동일 |
+| `mcp-server-time` | Python 하위 | `Input validation error:` | verified 8 · **unverified 0** | 0 | 9576 B 동일 |
+| `mcp-server-calculator` | Python FastMCP | `Error executing tool …Arguments` | verified 2 · **unverified 0** | 0 | 3216 B 동일 |
+
+셋 다 기대값과 같다. **지문 셋이 전부 실서버에서 동작한다.** 이제 픽스처로만 검증된 상태가
+아니다. `unverified` 는 세 서버 통틀어 0건이고, 0건일 때 고지 줄이 안 나오는 것도 확인했다.
+
+**셋째 지문의 안전선을 실물로 확인했다.** 설계 §4.1 이 "이 조건을 빼면 서버 결함이 초록으로
+숨는다" 고 적은 그 자리다. `mcp-server-calculator` 를 SDK 로 직접 불러 본문을 떴다.
+
+```
+Error executing tool calculate: 1 validation error for calculateArguments
+                    ^^^^^^^^^                          ^^^^^^^^^
+```
+
+툴 이름이 두 번 나온다. `server-memory` 도 같은 방식으로 확인했다
+(`MCP error -32602: Input validation error: Invalid arguments for tool create_entities: …`).
+도구가 `verified` 라고 말한 것과 실제 응답이 그 지문이라는 것을 따로 확인한 셈이다.
+
+**판정은 안 바뀌었다.** 세 서버에서 실패한 케이스는 `get-current-time-success` ·
+`convert-time-success` · `calculate-success` 셋인데 **전부 `notApplicable`** 이다. 정상 경로가
+도메인 값 때문에 실패한 것이고(예제 서버의 `city: "example"` 과 같은 종류), 거절을 기대한
+케이스는 하나도 실패하지 않았다.
+
+#### 재현 방법
+
+Python 서버는 `mcp<2` 로 고정해야 한다. `mcp` 2.x 에서는 `mcp.shared.exceptions.McpError`
+import 가 깨져 서버가 기동조차 못 한다. 관찰 기록의 `mcp-server-time (mcp<2)` 표기가 그 뜻이다.
+
+**버전을 고정해야 같은 결과가 나온다.** 아래는 대조에 실제로 쓴 버전이다. 이 표는 각 서버 1회
+세션의 기록이고, 서버가 올라가면 지문이 바뀔 수 있다. 재현할 때는 이 버전으로 박아라.
+
+```sh
+# TS
+npm install @modelcontextprotocol/server-memory@2026.7.4
+MEM=node_modules/@modelcontextprotocol/server-memory/dist/index.js
+ohmymcp generate --suite-id memory --name m --out m.json --command node --arg "$MEM" --baseline-only
+ohmymcp test m.json --command node --arg "$MEM" --json
+
+# Python (mcp<2 제약이 핵심이다)
+uv venv pyenv --python 3.11
+VIRTUAL_ENV=pyenv uv pip install \
+  mcp-server-time==2026.7.10 mcp-server-calculator==0.2.1 mcp==1.29.0
+ohmymcp generate --suite-id time --name t --out t.json --command pyenv/bin/mcp-server-time --baseline-only
+ohmymcp test t.json --command pyenv/bin/mcp-server-time --json
+
+# Python FastMCP — 셋째 지문은 이쪽에서만 나온다
+ohmymcp generate --suite-id calc --name c --out c.json --command pyenv/bin/mcp-server-calculator --baseline-only
+ohmymcp test c.json --command pyenv/bin/mcp-server-calculator --json
+```
+
+**Python 두 서버는 `test` 종료 코드가 1이다.** 정상 경로 케이스가 도메인 값 때문에 실패하는
+것이고(위 문단), 거절을 기대한 케이스는 전부 통과한다. 실패를 보고 놀라지 마라.
+
+**`server-memory` 는 핸드셰이크에서 자기 버전을 `0.6.3` 으로 보고하지만 npm 에 그 버전은 없다.**
+패키지 안 문자열이 낡은 것이다. 설치는 위의 `2026.7.4`(대조 시점의 `latest`)로 해야 한다.
+
+**전이 의존성은 고정하지 않았다.** 위 셋만 박으면 나머지 30개는 `uv` 가 설치할 때마다 다시
+푼다. 2026-08-19 에 새 환경으로 떠 봤을 때는 33개가 대조 때와 전부 같게 풀렸지만
+(`pydantic 2.13.4` · `anyio 4.14.2` 등), **그 날짜의 관찰이지 앞으로도 그렇다는 보장이 아니다.**
+새 릴리스가 나오면 달라질 수 있다.
+
+완전히 고정하려면 `uv pip compile` 로 잠금 파일을 떠서 `uv pip sync` 로 설치해라. 이 저장소에는
+넣지 않았다 — 문서 전용 1회 검증에 Python 잠금 산출물을 얹으면 유지 대상만 는다. 지문이 갈릴
+때 `VIRTUAL_ENV=pyenv uv pip freeze` 를 떠서 위 버전들과 대조하는 것으로 충분하다고 봤다.
+
+**표의 `2회 실행` 칸은 크기 값이 아니라 두 번이 같은가를 보는 자리다.** 절대 크기는 환경에 따라
+다를 수 있다 — 2026-08-19 재실행에서 `server-memory` 는 20265 B 로 두 번 일치했고(위 표는
+20284 B), 판정 수는 `verified 16 · unverified 0` 으로 표와 같았다. **재현했는지는 판정 수와
+2회 일치로 판단해라.**
+
+`uvx mcp-server-time` 을 직접 `--command` 로 주면 첫 실행에서 패키지를 받느라
+`HANDSHAKE_TIMEOUT` 이 난다. 미리 설치해 두어야 한다.
+
+**여전히 안 한 것.** Go·JVM 구현 서버는 관찰도 대조도 하지 못했다. 전부 `unverified` 로
+떨어진다. 화이트리스트가 낡는 것도 그대로 남는 위험이라, `@modelcontextprotocol/sdk` 버전을
+올릴 때 `packages/runner/tests/rejection-basis.test.ts` 의 픽스처 테스트를 함께 봐야 한다.

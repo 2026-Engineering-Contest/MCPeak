@@ -5,6 +5,13 @@
   "type": "module",
   "description": "OhMyMCP 대시보드 (로컬 웹 UI · CLI 플로우 구동)",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/2026-Engineering-Contest/OhMyMCP.git",
+    "directory": "packages/dashboard"
+  },
+  "homepage": "https://github.com/2026-Engineering-Contest/OhMyMCP#readme",
+  "bugs": "https://github.com/2026-Engineering-Contest/OhMyMCP/issues",
   "bin": {
     "ohmymcp-dashboard": "./dist/dashboard-cli.mjs"
   },

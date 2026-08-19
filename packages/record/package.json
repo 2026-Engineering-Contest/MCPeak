@@ -5,6 +5,13 @@
   "type": "module",
   "description": "녹화 · 재생 · 계약 스냅샷",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/2026-Engineering-Contest/OhMyMCP.git",
+    "directory": "packages/record"
+  },
+  "homepage": "https://github.com/2026-Engineering-Contest/OhMyMCP#readme",
+  "bugs": "https://github.com/2026-Engineering-Contest/OhMyMCP/issues",
   "publishConfig": {
     "access": "public"
   },

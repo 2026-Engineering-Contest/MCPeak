@@ -1,4 +1,8 @@
+import type { JSX } from "react";
 import { useEffect, useState } from "react";
+import type { NavId } from "./components/Sidebar.js";
+import { Sidebar } from "./components/Sidebar.js";
+import { ThemeToggle } from "./components/ThemeToggle.js";
 import { CassetteBrowser } from "./screens/CassetteBrowser.js";
 import { GenerateWizard } from "./screens/GenerateWizard.js";
 import { Home } from "./screens/Home.js";
@@ -6,44 +10,35 @@ import { RepairReview } from "./screens/RepairReview.js";
 import { RunView } from "./screens/RunView.js";
 
 /**
- * 화면 5개의 해시 라우팅. 라우터 의존성 없이 `location.hash`만 본다.
- * `run`·`repair`·`cassettes`는 해시에서 식별자(run id, 카세트 경로)를 추가로 뽑는다.
+ * 해시 라우팅(구현계획 §4-3). 라우터 의존성 없이 `location.hash`만 본다.
+ *
+ * | 라우트 | 화면 |
+ * |---|---|
+ * | `#/home` (기본 리다이렉트 대상) | Home |
+ * | `#/runs`, `#/runs/:id` | RunView (`#/runs`는 목록 상태) |
+ * | `#/generate` | GenerateWizard |
+ * | `#/cassettes` | CassetteBrowser |
+ * | `#/repair/:id` | RepairReview |
+ *
  */
-type ScreenId = "home" | "run" | "generate" | "cassettes" | "repair";
-
-interface ScreenDefinition {
-  readonly id: ScreenId;
-  readonly label: string;
-  readonly hash: string;
-}
-
-const NAV_SCREENS: readonly ScreenDefinition[] = [
-  { id: "home", label: "홈", hash: "#/" },
-  { id: "run", label: "실행", hash: "#/run" },
-  { id: "generate", label: "생성", hash: "#/generate" },
-  { id: "cassettes", label: "카세트", hash: "#/cassettes" },
-  { id: "repair", label: "수리", hash: "#/repair" },
-];
-
 type Route =
   | { readonly screen: "home" }
-  | { readonly screen: "run"; readonly runId: string | null }
+  | { readonly screen: "runs"; readonly runId: string | null }
   | { readonly screen: "generate" }
   | { readonly screen: "cassettes"; readonly path: string | null }
-  | { readonly screen: "repair"; readonly runId: string | null };
+  | { readonly screen: "repair"; readonly runId: string | null }
+  | { readonly screen: "redirect" };
 
-/**
- * `#/run/<runId>`, `#/cassettes/<인코딩된 경로>` 처럼 첫 세그먼트가 화면을, 그
- * 뒤가 식별자를 가리키는 해시를 해석한다. 식별자가 없으면 null이다(예: `#/run`만
- * 있으면 실행 화면이지만 아직 특정 run을 보는 중은 아니다).
- */
 function parseRoute(hash: string): Route {
   const withoutHash = hash.startsWith("#") ? hash.slice(1) : hash;
   const segments = withoutHash.split("/").filter((segment) => segment.length > 0);
   const [first, ...rest] = segments;
 
-  if (first === "run") {
-    return { screen: "run", runId: rest[0] !== undefined ? decodeURIComponent(rest[0]) : null };
+  if (first === "home") {
+    return { screen: "home" };
+  }
+  if (first === "runs") {
+    return { screen: "runs", runId: rest[0] !== undefined ? decodeURIComponent(rest[0]) : null };
   }
   if (first === "generate") {
     return { screen: "generate" };
@@ -60,15 +55,24 @@ function parseRoute(hash: string): Route {
       runId: rest[0] !== undefined ? decodeURIComponent(rest[0]) : null,
     };
   }
-  return { screen: "home" };
+  // 빈 해시·알 수 없는 해시는 #/home으로 보낸다(§4-3 기본 리다이렉트).
+  return { screen: "redirect" };
 }
 
-export function App() {
-  const [hash, setHash] = useState<string>(() => window.location.hash || "#/");
+const HEADER_TITLES: Record<NavId, string> = {
+  home: "Home",
+  runs: "Runs",
+  generate: "Generate",
+  cassettes: "Cassettes",
+  repair: "Repair",
+};
+
+export function App(): JSX.Element {
+  const [hash, setHash] = useState<string>(() => window.location.hash);
 
   useEffect(() => {
     const onHashChange = (): void => {
-      setHash(window.location.hash || "#/");
+      setHash(window.location.hash);
     };
     window.addEventListener("hashchange", onHashChange);
     return (): void => {
@@ -78,40 +82,42 @@ export function App() {
 
   const route = parseRoute(hash);
 
+  useEffect(() => {
+    if (route.screen === "redirect") {
+      window.location.hash = "#/home";
+      setHash("#/home");
+    }
+  }, [route.screen]);
+
+  if (route.screen === "redirect") {
+    return <div className="min-h-screen bg-canvas" />;
+  }
+
   return (
-    <div className="flex min-h-screen bg-slate-50 text-slate-900">
-      <nav className="w-56 shrink-0 border-r border-slate-200 bg-white p-4">
-        <p className="mb-4 px-2 text-sm font-semibold text-slate-400">OhMyMCP 대시보드</p>
-        <ul className="space-y-1">
-          {NAV_SCREENS.map((screen) => (
-            <li key={screen.id}>
-              <a
-                className={`block rounded px-3 py-2 text-sm font-medium ${
-                  screen.id === route.screen
-                    ? "bg-slate-900 text-white"
-                    : "text-slate-600 hover:bg-slate-100"
-                }`}
-                href={screen.hash}
-                aria-current={screen.id === route.screen ? "page" : undefined}
-              >
-                {screen.label}
-              </a>
-            </li>
-          ))}
-        </ul>
-      </nav>
-      <main className="flex-1 p-8">
-        <Screen route={route} />
-      </main>
+    <div className="flex min-h-screen bg-canvas text-ink">
+      <Sidebar active={route.screen} />
+      <div className="flex min-w-0 flex-1 flex-col">
+        <header className="flex h-16 shrink-0 items-center justify-between border-b border-line bg-surface px-6">
+          <p className="text-sm font-semibold text-ink">{HEADER_TITLES[route.screen]}</p>
+          <ThemeToggle />
+        </header>
+        <main className="min-w-0 flex-1 p-8">
+          <Screen route={route} />
+        </main>
+      </div>
     </div>
   );
 }
 
-function Screen({ route }: { readonly route: Route }) {
+function Screen({
+  route,
+}: {
+  readonly route: Exclude<Route, { screen: "redirect" }>;
+}): JSX.Element {
   switch (route.screen) {
     case "home":
       return <Home />;
-    case "run":
+    case "runs":
       return <RunView runId={route.runId} />;
     case "generate":
       return <GenerateWizard />;
@@ -119,7 +125,5 @@ function Screen({ route }: { readonly route: Route }) {
       return <CassetteBrowser path={route.path} />;
     case "repair":
       return <RepairReview runId={route.runId} />;
-    default:
-      return <Home />;
   }
 }

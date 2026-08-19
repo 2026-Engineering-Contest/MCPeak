@@ -1,91 +1,134 @@
-import type { ReactNode } from "react";
+import type { JSX } from "react";
 import { useState } from "react";
 import type { StartRunRequest, StartRunResponse } from "../../../src/api-types.js";
 import { apiSend } from "../api.js";
-import { RunStreamPanel } from "./RunView.js";
+import { Stepper } from "../components/Stepper.js";
+import type { GenerateForm } from "../generate/build-argv.js";
+import { buildGenerateArgv } from "../generate/build-argv.js";
+import { StepConfirm } from "../generate/steps/StepConfirm.js";
+import { StepMode } from "../generate/steps/StepMode.js";
+import type { CommandMethod } from "../generate/steps/StepServer.js";
+import { StepServer, splitCommand } from "../generate/steps/StepServer.js";
+import { StepSuite } from "../generate/steps/StepSuite.js";
 
-/**
- * argv 조립 규칙. `packages/cli/src/generate-command.ts`의 `parseGenerateCommand`가
- * 받는 옵션 이름을 그대로 쓴다(§4-4: "CLI argv 배열 그대로" 원칙. 대시보드가 옵션
- * 스키마를 복제하지 않고 CLI가 이미 아는 이름을 그대로 조립만 한다).
- * `--suite-id`·`--name`·`--out`·`--command`는 필수, 나머지는 값이 있을 때만 붙는다.
- */
-export interface GenerateFormValues {
-  readonly command: string;
-  readonly suiteId: string;
-  readonly suiteName: string;
-  readonly outPath: string;
-  readonly argsText: string;
-  readonly cassettePath: string;
-  readonly record: boolean;
-  readonly provider: "" | "codex" | "claude";
+const STEPS = ["테스트할 서버", "만들어질 스위트", "생성 방식", "녹화와 확인"] as const;
+
+const RECENT_KEY = "ohmymcp-generate-recent-commands";
+
+function readRecentCommands(): readonly string[] {
+  try {
+    const raw = window.localStorage.getItem(RECENT_KEY);
+    const parsed: unknown = raw === null ? [] : JSON.parse(raw);
+    return Array.isArray(parsed)
+      ? parsed.filter((item): item is string => typeof item === "string")
+      : [];
+  } catch {
+    return [];
+  }
 }
 
-export function buildGenerateArgv(form: GenerateFormValues): string[] {
-  const argv: string[] = [
-    "--command",
-    form.command.trim(),
-    "--suite-id",
-    form.suiteId.trim(),
-    "--name",
-    form.suiteName.trim(),
-    "--out",
-    form.outPath.trim(),
-  ];
-  for (const arg of form.argsText.split(/\s+/).filter((token) => token.length > 0)) {
-    argv.push("--arg", arg);
-  }
-  if (form.provider !== "") {
-    argv.push("--provider", form.provider);
-  }
-  if (form.cassettePath.trim() !== "") {
-    argv.push("--cassette", form.cassettePath.trim());
-  }
-  if (form.record) {
-    argv.push("--record");
-  }
-  return argv;
+function saveRecentCommand(target: string): void {
+  const next = [target, ...readRecentCommands().filter((item) => item !== target)].slice(0, 8);
+  window.localStorage.setItem(RECENT_KEY, JSON.stringify(next));
 }
 
-function isFormValid(form: GenerateFormValues): boolean {
-  return (
-    form.command.trim() !== "" &&
-    form.suiteId.trim() !== "" &&
-    form.suiteName.trim() !== "" &&
-    form.outPath.trim() !== ""
-  );
+/** 스크립트 경로에서 저장 위치 기본값을 만든다(확장자를 .suite.json으로). */
+function suggestOutPath(target: string): string {
+  const withoutExt = target.replace(/\.[^./\\]+$/, "");
+  return `${withoutExt}.suite.json`;
 }
 
-const INITIAL_FORM: GenerateFormValues = {
-  command: "",
+interface WizardState extends Omit<GenerateForm, "command"> {
+  readonly method: CommandMethod;
+  readonly target: string;
+}
+
+const INITIAL_STATE: WizardState = {
+  method: "node",
+  target: "",
+  args: [],
   suiteId: "",
   suiteName: "",
   outPath: "",
-  argsText: "",
+  force: false,
+  mode: "ai",
+  provider: "claude",
+  model: "",
+  dryRun: true,
+  repair: true,
   cassettePath: "",
   record: false,
-  provider: "",
+  resetCmd: "",
 };
 
-export function GenerateWizard() {
-  const [form, setForm] = useState<GenerateFormValues>(INITIAL_FORM);
+/**
+ * Generate 4단계 마법사(UI 설계 §5-3). 가운데 카드 800px, 상단 스텝 인디케이터,
+ * 하단 이전/다음. 단계 상태는 컴포넌트 메모리에만 있다(URL에 안 싣는다. 새로고침
+ * 시 1단계로 돌아가는 것을 허용). 생성 시작이 argv를 조립해
+ * `POST /api/runs {flow:"generate", argv}` 후 `#/runs/:id`로 이동한다.
+ */
+export function GenerateWizard(): JSX.Element {
+  const [step, setStep] = useState(0);
+  const [state, setState] = useState<WizardState>(INITIAL_STATE);
+  const [recentCommands] = useState<readonly string[]>(() => readRecentCommands());
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [runId, setRunId] = useState<string | null>(null);
 
-  function update<K extends keyof GenerateFormValues>(key: K, value: GenerateFormValues[K]): void {
-    setForm((previous) => ({ ...previous, [key]: value }));
+  // CLI `--command`는 실행 파일 하나만 받는 계약이다. 대상 스크립트 경로(직접 입력의
+  // 나머지 토큰 포함)는 args 선두로 가고, 사용자가 추가한 인자가 그 뒤를 잇는다.
+  const split = splitCommand(state.method, state.target);
+  const form: GenerateForm = {
+    ...state,
+    command: split.command,
+    args: [...split.leadingArgs, ...state.args],
+  };
+
+  function patch(partial: Partial<WizardState>): void {
+    setState((previous) => ({ ...previous, ...partial }));
   }
 
-  async function submit(): Promise<void> {
+  const stepValid =
+    step === 0
+      ? form.command !== ""
+      : step === 1
+        ? state.suiteId !== "" && state.suiteName !== "" && state.outPath !== ""
+        : true;
+
+  function reasonForInvalid(): string | null {
+    if (stepValid) {
+      return null;
+    }
+    if (step === 0) {
+      return "실행 명령을 입력하세요.";
+    }
+    if (state.suiteId === "") {
+      return "스위트 ID를 입력하세요.";
+    }
+    if (state.suiteName === "") {
+      return "스위트 이름을 입력하세요.";
+    }
+    return "저장 위치를 입력하세요.";
+  }
+
+  function goNext(): void {
+    // 2단계 진입 시 저장 위치가 비어 있으면 스크립트 기준으로 자동 제안한다.
+    if (step === 0 && state.outPath === "" && state.method !== "custom" && state.target !== "") {
+      patch({ outPath: suggestOutPath(state.target) });
+    }
+    setStep((previous) => Math.min(previous + 1, STEPS.length - 1));
+  }
+
+  async function start(): Promise<void> {
     setStarting(true);
     setError(null);
     try {
+      const argv = buildGenerateArgv(form);
       const response = await apiSend<StartRunResponse>("POST", "/api/runs", {
         flow: "generate",
-        argv: buildGenerateArgv(form),
+        argv: [...argv],
       } satisfies StartRunRequest);
-      setRunId(response.runId);
+      saveRecentCommand(state.target);
+      window.location.hash = `#/runs/${encodeURIComponent(response.runId)}`;
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -93,141 +136,89 @@ export function GenerateWizard() {
     }
   }
 
-  const valid = isFormValid(form);
-
   return (
-    <section className="space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold text-slate-900">생성</h1>
-        <p className="mt-1 text-slate-600">MCP 서버를 검사해 테스트 스위트를 생성합니다.</p>
+    <section className="mx-auto max-w-[800px] space-y-6">
+      <h1 className="text-xl font-semibold text-ink">생성</h1>
+      <Stepper steps={STEPS} current={step} />
+
+      <div className="rounded-lg border border-line bg-surface p-6">
+        {step === 0 && (
+          <StepServer
+            method={state.method}
+            target={state.target}
+            args={state.args}
+            recentCommands={recentCommands}
+            onMethodChange={(method) => patch({ method })}
+            onTargetChange={(target) => patch({ target })}
+            onArgsChange={(args) => patch({ args })}
+          />
+        )}
+        {step === 1 && (
+          <StepSuite
+            form={{
+              suiteId: state.suiteId,
+              suiteName: state.suiteName,
+              outPath: state.outPath,
+              force: state.force,
+            }}
+            onChange={patch}
+          />
+        )}
+        {step === 2 && (
+          <StepMode
+            form={{
+              mode: state.mode,
+              provider: state.provider,
+              model: state.model,
+              dryRun: state.dryRun,
+              repair: state.repair,
+            }}
+            onChange={patch}
+          />
+        )}
+        {step === 3 && <StepConfirm form={form} onChange={patch} />}
       </div>
 
-      {runId === null ? (
-        <form
-          className="max-w-xl space-y-4"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void submit();
-          }}
-        >
-          <Field label="명령어" htmlFor="gw-command" required>
-            <input
-              id="gw-command"
-              className="w-full rounded border border-slate-300 px-3 py-1.5 text-sm"
-              value={form.command}
-              onChange={(event) => update("command", event.target.value)}
-              placeholder="예: node server.js"
-            />
-          </Field>
-
-          <Field label="인자" htmlFor="gw-args">
-            <input
-              id="gw-args"
-              className="w-full rounded border border-slate-300 px-3 py-1.5 text-sm"
-              value={form.argsText}
-              onChange={(event) => update("argsText", event.target.value)}
-              placeholder="공백으로 구분"
-            />
-          </Field>
-
-          <Field label="스위트 ID" htmlFor="gw-suite-id" required>
-            <input
-              id="gw-suite-id"
-              className="w-full rounded border border-slate-300 px-3 py-1.5 text-sm"
-              value={form.suiteId}
-              onChange={(event) => update("suiteId", event.target.value)}
-            />
-          </Field>
-
-          <Field label="스위트 이름" htmlFor="gw-suite-name" required>
-            <input
-              id="gw-suite-name"
-              className="w-full rounded border border-slate-300 px-3 py-1.5 text-sm"
-              value={form.suiteName}
-              onChange={(event) => update("suiteName", event.target.value)}
-            />
-          </Field>
-
-          <Field label="출력 경로" htmlFor="gw-out" required>
-            <input
-              id="gw-out"
-              className="w-full rounded border border-slate-300 px-3 py-1.5 text-sm"
-              value={form.outPath}
-              onChange={(event) => update("outPath", event.target.value)}
-              placeholder="예: suites/weather.json"
-            />
-          </Field>
-
-          <Field label="카세트 경로" htmlFor="gw-cassette">
-            <input
-              id="gw-cassette"
-              className="w-full rounded border border-slate-300 px-3 py-1.5 text-sm"
-              value={form.cassettePath}
-              onChange={(event) => update("cassettePath", event.target.value)}
-              placeholder="예: cassettes/weather.json"
-            />
-          </Field>
-
-          <label className="flex items-center gap-2 text-sm text-slate-700" htmlFor="gw-record">
-            <input
-              id="gw-record"
-              type="checkbox"
-              checked={form.record}
-              onChange={(event) => update("record", event.target.checked)}
-            />
-            --record (카세트를 새로 녹화)
-          </label>
-
-          <Field label="AI 제안 provider" htmlFor="gw-provider">
-            <select
-              id="gw-provider"
-              className="w-full rounded border border-slate-300 px-3 py-1.5 text-sm"
-              value={form.provider}
-              onChange={(event) =>
-                update("provider", event.target.value as GenerateFormValues["provider"])
-              }
-            >
-              <option value="">사용 안 함</option>
-              <option value="codex">codex</option>
-              <option value="claude">claude</option>
-            </select>
-          </Field>
-
-          {error !== null && <p className="text-sm text-red-600">{error}</p>}
-
-          <button
-            type="submit"
-            className="rounded bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
-            disabled={!valid || starting}
-          >
-            생성 시작
-          </button>
-        </form>
-      ) : (
-        <RunStreamPanel runId={runId} />
+      {error !== null && (
+        <p className="text-sm" style={{ color: "var(--status-failed-fg)" }}>
+          {error}
+        </p>
       )}
-    </section>
-  );
-}
 
-function Field({
-  label,
-  htmlFor,
-  required = false,
-  children,
-}: {
-  readonly label: string;
-  readonly htmlFor: string;
-  readonly required?: boolean;
-  readonly children: ReactNode;
-}) {
-  return (
-    <div>
-      <label className="block text-sm font-medium text-slate-700" htmlFor={htmlFor}>
-        {label}
-        {required && <span className="text-red-500"> *</span>}
-      </label>
-      <div className="mt-1">{children}</div>
-    </div>
+      <div className="flex items-center justify-between">
+        <button
+          type="button"
+          className="rounded border border-line px-4 py-2 text-sm text-ink-muted hover:text-ink disabled:opacity-50"
+          disabled={step === 0}
+          onClick={() => setStep((previous) => Math.max(previous - 1, 0))}
+        >
+          이전
+        </button>
+        <div className="flex items-center gap-3">
+          {reasonForInvalid() !== null && (
+            <span className="text-xs text-ink-muted">{reasonForInvalid()}</span>
+          )}
+          {step < STEPS.length - 1 ? (
+            <button
+              type="button"
+              className="rounded bg-accent px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+              disabled={!stepValid}
+              onClick={goNext}
+            >
+              다음
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="rounded bg-accent px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+              disabled={starting}
+              onClick={() => void start()}
+            >
+              생성 시작
+            </button>
+          )}
+        </div>
+      </div>
+    </section>
   );
 }

@@ -404,3 +404,115 @@ describe("@ohmymcp-hsu/mock — inputSchema 검사", () => {
     expect(notice).not.toContain("'get_weather'");
   });
 });
+
+describe("isError 응답 주입 (#180)", () => {
+  it("isError: true 로 주입하면 응답이 거절로 표시된다", async () => {
+    const server = await start();
+    server.on(
+      "get_weather",
+      { city: "없는도시" },
+      { error: "→ '없는도시' 를 찾을 수 없습니다" },
+      { isError: true },
+    );
+    const client = await connect(server);
+    const result = await client.callTool({ name: "get_weather", arguments: { city: "없는도시" } });
+    expect(result.isError).toBe(true);
+    expect(JSON.parse(text(result))).toEqual({ error: "→ '없는도시' 를 찾을 수 없습니다" });
+  });
+
+  it("주입한 거절과 매칭 미스의 거절은 본문으로 구분된다", async () => {
+    const server = await start();
+    server.on("get_weather", { city: "없는도시" }, { error: "설계된 거절" }, { isError: true });
+    const client = await connect(server);
+
+    const designed = await client.callTool({
+      name: "get_weather",
+      arguments: { city: "없는도시" },
+    });
+    const miss = await client.callTool({ name: "get_weather", arguments: { city: "주입안함" } });
+
+    expect(designed.isError).toBe(true);
+    expect(miss.isError).toBe(true);
+    // 둘 다 isError 지만 본문이 다르다. 설계된 거절은 사용자가 쓴 값이 그대로 나온다.
+    expect(JSON.parse(text(designed))).toEqual({ error: "설계된 거절" });
+    expect(text(miss)).toContain("주입된 응답이 없습니다");
+  });
+
+  it("options 를 생략하면 기존과 같이 성공 응답이다", async () => {
+    const server = await start();
+    server.on("get_weather", { city: "서울" }, { temperature: 28 });
+    const client = await connect(server);
+    const result = await client.callTool({ name: "get_weather", arguments: { city: "서울" } });
+    expect(result.isError).toBeFalsy();
+  });
+
+  it("isError: false 를 명시해도 성공 응답이다", async () => {
+    const server = await start();
+    server.on("get_weather", { city: "서울" }, { temperature: 28 }, { isError: false });
+    const client = await connect(server);
+    const result = await client.callTool({ name: "get_weather", arguments: { city: "서울" } });
+    expect(result.isError).toBeFalsy();
+  });
+
+  it("ANY 에도 거절을 주입할 수 있다", async () => {
+    const server = await start();
+    server.on("get_weather", ANY, { error: "이 툴은 항상 거절한다" }, { isError: true });
+    const client = await connect(server);
+    const result = await client.callTool({ name: "get_weather", arguments: { city: "아무거나" } });
+    expect(result.isError).toBe(true);
+  });
+
+  it("인자 지정 거절이 ANY 성공보다 우선한다", async () => {
+    const server = await start();
+    server.on("get_weather", ANY, { temperature: 0 });
+    server.on("get_weather", { city: "없는도시" }, { error: "거절" }, { isError: true });
+    const client = await connect(server);
+
+    const rejected = await client.callTool({
+      name: "get_weather",
+      arguments: { city: "없는도시" },
+    });
+    const ok = await client.callTool({ name: "get_weather", arguments: { city: "서울" } });
+
+    expect(rejected.isError).toBe(true);
+    expect(ok.isError).toBeFalsy();
+  });
+
+  it("정의 파일의 responses 에서도 isError 가 동작한다", async () => {
+    const server = await createMockServer({
+      tools,
+      responses: [
+        {
+          tool: "get_weather",
+          args: { city: "없는도시" },
+          result: { error: "없음" },
+          isError: true,
+        },
+        { tool: "get_weather", result: { temperature: 0 } },
+      ],
+    });
+    opened.push(server);
+    const client = await connect(server);
+
+    const rejected = await client.callTool({
+      name: "get_weather",
+      arguments: { city: "없는도시" },
+    });
+    const ok = await client.callTool({ name: "get_weather", arguments: { city: "서울" } });
+
+    expect(rejected.isError).toBe(true);
+    expect(ok.isError).toBeFalsy();
+  });
+
+  it("같은 거절 호출 3회가 바이트 단위로 동일하다", async () => {
+    const server = await start();
+    server.on("get_weather", ANY, { error: "거절" }, { isError: true });
+    const client = await connect(server);
+    const seen = new Set<string>();
+    for (let i = 0; i < 3; i++) {
+      const r = await client.callTool({ name: "get_weather", arguments: { city: "서울" } });
+      seen.add(JSON.stringify({ isError: r.isError, body: text(r) }));
+    }
+    expect(seen.size).toBe(1);
+  });
+});

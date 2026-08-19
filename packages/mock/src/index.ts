@@ -32,6 +32,19 @@ export interface MockResponse {
   args?: unknown;
   /** MCP 와이어 포맷이 아니라 **알맹이**다. `content[{ type: "text" }]` 포장은 목이 한다. */
   result: unknown;
+  /**
+   * 이 응답을 서버의 **거절**로 표시한다. 생략하면 성공이다.
+   *
+   * 실패 응답도 계약의 절반이다 — "없는 ID 를 조회하면 이런 오류를 준다" 를 설계 단계에서
+   * 보여주려면 사용자가 실패를 선언할 수 있어야 한다.
+   *
+   * 매칭 미스가 만드는 `isError` 와는 다르다. 미스는 "표에 없다" 는 목의 안내문이고,
+   * 이 필드는 "서버가 이렇게 거절한다" 는 설계된 계약이다. 본문으로 구분된다.
+   *
+   * `result` 에 `{ $error: ... }` 같은 특수 형태를 인식시키지 않고 별도 필드로 둔 이유는,
+   * 데이터와 지시가 섞이면 매칭 키의 결정론적 직렬화가 탁해지기 때문이다.
+   */
+  isError?: boolean;
 }
 
 /** 목 서버가 무엇을 노출하고 무엇을 돌려줄지에 대한 선언. 파일로 저장할 수 있다. */
@@ -63,6 +76,7 @@ export interface MockServer {
    * JSON 으로 표현할 수 없는 값(예: `Date`, 함수, `Map`), 상한을 넘는 중첩 깊이가 그렇다.
    */
   on(tool: string, args: unknown, result: unknown): void;
+  on(tool: string, args: unknown, result: unknown, options: { isError?: boolean }): void;
   close(): Promise<void>;
 }
 
@@ -89,10 +103,16 @@ function stableKey(value: unknown, depth = 0): string {
     .join(",")}}`;
 }
 
+/** 저장된 응답 하나. 알맹이와 거절 여부를 함께 둔다. */
+interface StoredResponse {
+  result: unknown;
+  isError: boolean;
+}
+
 /** 주입된 응답 저장소. 인자 지정본과 ANY 본을 따로 둔다. */
 interface Registry {
-  exact: Map<string, unknown>;
-  any: Map<string, unknown>;
+  exact: Map<string, StoredResponse>;
+  any: Map<string, StoredResponse>;
 }
 
 function createRegistry(): Registry {
@@ -105,15 +125,17 @@ function put(
   args: unknown,
   result: unknown,
   source: string,
+  isError = false,
 ): void {
+  const stored: StoredResponse = { result, isError };
   // ANY 는 Symbol.for(...) 라서 assertKeyable 의 notJson 에 걸린다.
   // 검사를 이 분기보다 앞에 두면 정상 기능이 죽는다.
   if (args === ANY) {
-    registry.any.set(tool, result);
+    registry.any.set(tool, stored);
     return;
   }
   assertKeyable(args ?? {}, source);
-  registry.exact.set(`${tool}|${stableKey(args ?? {})}`, result);
+  registry.exact.set(`${tool}|${stableKey(args ?? {})}`, stored);
 }
 
 /**
@@ -127,10 +149,12 @@ function lookup(
   registry: Registry,
   tool: string,
   args: unknown,
-): { hit: "exact" | "any"; result: unknown } | { hit: false } {
+): { hit: "exact" | "any"; stored: StoredResponse } | { hit: false } {
   const key = `${tool}|${stableKey(args ?? {})}`;
-  if (registry.exact.has(key)) return { hit: "exact", result: registry.exact.get(key) };
-  if (registry.any.has(tool)) return { hit: "any", result: registry.any.get(tool) };
+  const exact = registry.exact.get(key);
+  if (exact !== undefined) return { hit: "exact", stored: exact };
+  const any = registry.any.get(tool);
+  if (any !== undefined) return { hit: "any", stored: any };
   return { hit: false };
 }
 
@@ -296,6 +320,11 @@ export function assertMockDefinition(
       const res = r as Record<string, unknown>;
       if (typeof res.tool !== "string") fail(`responses[${i}] 에 문자열 'tool' 이 없습니다`);
       if (!("result" in res)) fail(`responses[${i}] 에 'result' 가 없습니다`);
+      if ("isError" in res && typeof res.isError !== "boolean") {
+        fail(
+          `responses[${i}] 의 'isError' 가 boolean 이 아닙니다 (받은 값: ${typeof res.isError})`,
+        );
+      }
       const names = (def.tools as ToolDef[]).map((t) => t.name);
       if (!names.includes(res.tool as string)) {
         fail(
@@ -311,7 +340,14 @@ function seed(definition: MockDefinition): Registry {
   const registry = createRegistry();
   const responses = definition.responses ?? [];
   for (const [index, r] of responses.entries()) {
-    put(registry, r.tool, "args" in r ? r.args : ANY, r.result, `정의 파일의 responses[${index}]`);
+    put(
+      registry,
+      r.tool,
+      "args" in r ? r.args : ANY,
+      r.result,
+      `정의 파일의 responses[${index}]`,
+      r.isError === true,
+    );
   }
   return registry;
 }
@@ -339,10 +375,13 @@ function buildServer(tools: ToolDef[], registry: Registry): Server {
     // 주입이 검사보다 우선한다 (ADR-0048 §2). 표는 사람이 손으로 쓰는 것이라, 스키마를 어기는
     // 인자를 적어 두었다면 그것이 의도다 — "잘못 부르면 서버가 이렇게 답한다" 를 설계에 넣는
     // 경로이고, 이 순서가 곧 검사를 끄는 스위치를 대신한다.
-    const respond = (result: unknown) => ({
-      content: [{ type: "text" as const, text: JSON.stringify(result) }],
+    // `isError` 는 참일 때만 싣는다. MCP 에서 생략과 false 는 같은 뜻이라, 성공 응답의 와이어
+    // 모양을 이 기능 도입 전과 동일하게 유지한다.
+    const respond = (stored: StoredResponse) => ({
+      content: [{ type: "text" as const, text: JSON.stringify(stored.result) }],
+      ...(stored.isError ? { isError: true as const } : {}),
     });
-    if (outcome.hit === "exact") return respond(outcome.result);
+    if (outcome.hit === "exact") return respond(outcome.stored);
 
     const violations = findSchemaViolations(schemas.get(req.params.name), req.params.arguments);
     if (violations.length > 0) {
@@ -357,7 +396,7 @@ function buildServer(tools: ToolDef[], registry: Registry): Server {
       };
     }
 
-    if (outcome.hit === "any") return respond(outcome.result);
+    if (outcome.hit === "any") return respond(outcome.stored);
 
     return {
       content: [
@@ -412,8 +451,8 @@ export async function createMockServer(options: MockOptions): Promise<MockServer
 
   return {
     url: `http://${host}:${addr.port}/mcp`,
-    on(tool, args, result) {
-      put(registry, tool, args, result, `mock.on('${tool}', ...)`);
+    on(tool: string, args: unknown, result: unknown, options?: { isError?: boolean }) {
+      put(registry, tool, args, result, `mock.on('${tool}', ...)`, options?.isError === true);
     },
     close: () =>
       new Promise<void>((resolve, reject) => {

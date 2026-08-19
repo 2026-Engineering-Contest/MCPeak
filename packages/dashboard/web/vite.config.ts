@@ -32,6 +32,8 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    include: ["tests/**/*.test.ts"],
+    // .tsx도 잡는다. UI 구현계획(U0~U4)의 컴포넌트 테스트가 tests/*.test.tsx라서
+    // .ts만 잡으면 그 파일들이 0개 수집된 채 초록으로 보인다(검사 대상 0개 거짓 신호).
+    include: ["tests/**/*.test.{ts,tsx}"],
   },
 });

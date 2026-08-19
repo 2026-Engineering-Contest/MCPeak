@@ -137,8 +137,21 @@ draft 를 풀면 된다.
 - 해석 불가 스키마는 ADR-0015 규칙대로 건너뛰고 기동 시 `stderr` 로 고지
 - JSON Schema 평가기 의존 추가 없음, `runner` import 없음 (의존 방향 유지)
 
-**남은 후속:** CLI E2E 에 진짜 위반 케이스를 넣어 `rejectionUnverified` 를 0 으로 만드는 것.
-지금 `dist-cli-e2e.mjs` 는 `rejectionUnverified: 1` 을 정상값으로 단언한다.
+**남은 후속:** CLI E2E 에 진짜 스키마 위반 케이스를 넣는 것. 지금 `dist-cli-e2e.mjs` 의 거절
+케이스(`{a:9, b:9}`)는 스키마상 멀쩡한 인자라 "표에 없음" 미스로 통과한다 — 통과의 근거가
+검증이 아니다.
+
+⚠️ **다만 `rejectionUnverified` 는 0 이 되지 않는다.** `runner` 의 `classifyRejectionBasis` 는
+거절이 SDK 입력 검증에서 나온 것인지를 **오류 문장 접두어 화이트리스트**(`MCP error -32602:` ·
+`Input validation error:` · FastMCP 패턴)로 판별하는데, 목의 거절문(`→ 툴 '...' 의 ...`)은 거기
+없다. `examples/weather-server` 도 마찬가지다. 목의 문장을 화이트리스트에 넣을지, 목이
+`McpError(InvalidParams)` 를 던지게 할지는 **`runner` 파트와 함께 정할 일**이고 ADR-0048 개정
+대상이다. 지금 `dist-cli-e2e.mjs` 가 `rejectionUnverified: 1` 을 정상값으로 단언하는 것은
+그래서 당분간 맞는 상태다.
+
+같은 파일에 `rejectionUnverified: 0` 단언도 있으나 `verified` 라서가 아니다 —
+`weather-suite-failing.json` 은 케이스가 `listTools` 하나뿐이라 거절 기대 케이스가 없고
+`notApplicable` 로 빠진다. **E2E 가 붙는 서버 중 `verified` 를 만드는 것은 하나도 없다.**
 
 ### 릴리스 파트
 

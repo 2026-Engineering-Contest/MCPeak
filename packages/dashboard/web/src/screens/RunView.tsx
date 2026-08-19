@@ -129,7 +129,7 @@ export function RunStreamPanel({
             <QuestionPanel
               key={visibleQuestion.id}
               question={visibleQuestion}
-              onAnswer={(value) => void answer(visibleQuestion.id, value)}
+              onAnswer={(value) => answer(visibleQuestion.id, value)}
             />
           ) : undefined
         }

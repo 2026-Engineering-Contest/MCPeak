@@ -64,6 +64,24 @@ describe("GenerateWizard", () => {
     );
   });
 
+  it("시험 실행을 끄면 이미 입력한 카세트·초기화 값이 비워진다", () => {
+    render(<GenerateWizard />);
+    fillStepServer("server.js");
+    fillStepSuite();
+    fireEvent.click(screen.getByRole("button", { name: "다음" }));
+    // 4단계에서 카세트를 입력해 두고,
+    fireEvent.change(screen.getByLabelText("카세트 저장 위치 (선택)"), {
+      target: { value: "cassettes/a.json" },
+    });
+    // 3단계로 돌아가 시험 실행을 끈 뒤 다시 4단계로 오면,
+    fireEvent.click(screen.getByRole("button", { name: "이전" }));
+    fireEvent.click(screen.getByLabelText("저장 전에 시험 실행으로 검증"));
+    fireEvent.click(screen.getByRole("button", { name: "다음" }));
+    // 잠긴 입력에 값이 남아 buildGenerateArgv가 throw하는 함정이 없어야 한다(PR #199).
+    expect(screen.getByLabelText("카세트 저장 위치 (선택)")).toHaveProperty("value", "");
+    expect(screen.getByLabelText("시험 실행 전 초기화 명령 (선택)")).toHaveProperty("value", "");
+  });
+
   it("재녹화 체크는 카세트 경로가 비어 있으면 비활성이다", () => {
     render(<GenerateWizard />);
     fillStepServer("server.js");

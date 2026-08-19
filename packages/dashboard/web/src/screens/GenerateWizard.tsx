@@ -28,8 +28,14 @@ function readRecentCommands(): readonly string[] {
 }
 
 function saveRecentCommand(target: string): void {
-  const next = [target, ...readRecentCommands().filter((item) => item !== target)].slice(0, 8);
-  window.localStorage.setItem(RECENT_KEY, JSON.stringify(next));
+  // 저장 용량 초과·스토리지 차단으로 setItem이 throw해도 무시한다. 실행은 이미
+  // 서버에서 시작됐으므로 여기서 던지면 #/runs/:id 전환만 막힌다(PR #199 리뷰 반영).
+  try {
+    const next = [target, ...readRecentCommands().filter((item) => item !== target)].slice(0, 8);
+    window.localStorage.setItem(RECENT_KEY, JSON.stringify(next));
+  } catch {
+    // 최근 사용값은 편의 기능이라 실패를 표시하지 않는다.
+  }
 }
 
 /** 스크립트 경로에서 저장 위치 기본값을 만든다(확장자를 .suite.json으로). */
@@ -84,7 +90,16 @@ export function GenerateWizard(): JSX.Element {
   };
 
   function patch(partial: Partial<WizardState>): void {
-    setState((previous) => ({ ...previous, ...partial }));
+    setState((previous) => {
+      const next = { ...previous, ...partial };
+      // 시험 실행을 끄면 그에 종속된 값(카세트·초기화 명령·재녹화)을 함께 비운다.
+      // 값이 남으면 4단계 입력이 잠긴 채 buildGenerateArgv가 throw해 복구 경로가
+      // 없다(PR #199 리뷰 반영).
+      if (partial.dryRun === false) {
+        return { ...next, cassettePath: "", resetCmd: "", record: false };
+      }
+      return next;
+    });
   }
 
   const stepValid =

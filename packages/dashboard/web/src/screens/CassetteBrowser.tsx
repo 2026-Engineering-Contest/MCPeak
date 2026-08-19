@@ -100,6 +100,8 @@ function CassetteList({
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: version은 상세의 삭제 후 목록 재조회를 트리거하는 신호다(본문에서 값은 안 쓴다)
   useEffect(() => {
+    // 재조회가 성공하면 이전 실패 배너를 지운다(PR #199 리뷰 반영).
+    setError(null);
     apiGet<FileEntry[]>("/api/cassettes")
       .then(setCassettes)
       .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)));
@@ -239,7 +241,9 @@ function CassetteDetail({
           <button
             type="button"
             className="rounded border border-line px-3 py-1.5 text-sm text-ink hover:text-accent disabled:opacity-50"
-            disabled={busy || file === null}
+            // 타임라인이 있는데 아직 항목을 안 골랐으면 textarea(원문)가 숨겨져
+            // 있다. 보이지 않는 내용을 저장하게 두지 않는다(PR #199 리뷰 반영).
+            disabled={busy || file === null || (selected === null && timeline.length > 0)}
             onClick={() => void save()}
           >
             저장

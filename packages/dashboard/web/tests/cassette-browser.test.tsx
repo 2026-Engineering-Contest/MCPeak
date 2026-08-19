@@ -79,7 +79,9 @@ describe("CassetteBrowser", () => {
   it("저장이 PUT에 baseMtimeMs를 실어 보낸다", async () => {
     const fetchMock = stubFetch();
     render(<CassetteBrowser path={CASSETTE_PATH} />);
-    fireEvent.click(await screen.findByRole("button", { name: "저장" }));
+    // 타임라인 항목을 선택해야 원문 textarea와 저장이 활성화된다(PR #199 리뷰 반영).
+    fireEvent.click(await screen.findByText("get_weather"));
+    fireEvent.click(screen.getByRole("button", { name: "저장" }));
 
     await waitFor(() => {
       expect(fetchMock.mock.calls.some(([, init]) => init?.method === "PUT")).toBe(true);
@@ -95,7 +97,8 @@ describe("CassetteBrowser", () => {
   it("conflict 응답이 경고를 띄우고 재저장하지 않는다", async () => {
     const fetchMock = stubFetch({ saved: false, reason: "conflict", mtimeMs: 3000 });
     render(<CassetteBrowser path={CASSETTE_PATH} />);
-    fireEvent.click(await screen.findByRole("button", { name: "저장" }));
+    fireEvent.click(await screen.findByText("get_weather"));
+    fireEvent.click(screen.getByRole("button", { name: "저장" }));
 
     await screen.findByText("다른 곳에서 파일이 바뀌었습니다. 새로고침 후 다시 시도하세요.");
     const puts = fetchMock.mock.calls.filter(([, init]) => init?.method === "PUT");
@@ -139,6 +142,15 @@ describe("CassetteBrowser", () => {
       expect(listGets).toHaveLength(2);
     });
     expect(window.location.hash).toBe("#/cassettes");
+  });
+
+  it("타임라인 항목을 선택하기 전에는 저장이 비활성이다", async () => {
+    stubFetch();
+    render(<CassetteBrowser path={CASSETTE_PATH} />);
+    await screen.findByText("get_weather");
+    expect(screen.getByRole("button", { name: "저장" })).toHaveProperty("disabled", true);
+    fireEvent.click(screen.getByText("get_weather"));
+    expect(screen.getByRole("button", { name: "저장" })).toHaveProperty("disabled", false);
   });
 
   // origin f9198e0의 회귀 테스트 이식: 경로 전환 뒤 늦게 도착한 이전 카세트 응답이

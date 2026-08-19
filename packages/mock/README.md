@@ -60,13 +60,49 @@ ohmymcp test suite.json --command ohmymcp-mock --arg definition.json
 
 두 진입점이 **같은 규칙**을 쓴다.
 
-1. **인자를 지정한 응답이 우선한다.**
-2. 없으면 `ANY`(정의 파일에서는 `args` 생략)가 받는다.
-3. 그것도 없으면 `isError: true` 와 함께 무엇이 등록돼 있는지 알려준다.
+1. **인자를 지정한 응답이 우선한다.** 스키마 검사보다도 앞이다.
+2. 없으면 **`inputSchema` 로 인자를 검사한다.** 어기면 `isError: true` 로 거절한다.
+3. 통과하면 `ANY`(정의 파일에서는 `args` 생략)가 받는다.
+4. 그것도 없으면 `isError: true` 와 함께 무엇이 등록돼 있는지 알려준다.
 
-`ANY` 는 편하지만 **잘못된 인자로 불러도 통과**하게 만든다. 기본은 인자 지정이고 `ANY` 는 예외로 쓴다.
+`ANY` 는 편하지만 **스키마가 허용하는 범위에서는 어떤 인자로 불러도 통과**하게 만든다.
+기본은 인자 지정이고 `ANY` 는 예외로 쓴다.
 
 `result` 는 MCP 와이어 포맷이 아니라 **알맹이**다. `content: [{ type: "text", ... }]` 포장은 목이 한다.
+
+### 인자 검사
+
+`tools/list` 로 광고한 `inputSchema` 를 실제 호출에 대조한다. 네 축을 **최상위 필드에서만** 본다
+([ADR-0048](../../docs/adr/0048-목이-inputSchema-를-실제로-검사한다.md)).
+
+| 축 | 스키마의 어디 | 위반 예 |
+|---|---|---|
+| `required` | `"required": ["city"]` | `city` 를 안 보냄 |
+| `type` | `{ "type": "string" }` | `{ "city": 0 }` |
+| `enum` | `{ "enum": ["c", "f"] }` | `{ "unit": "k" }` |
+| `range` | `minimum` · `maximum` · `exclusiveMinimum` · `exclusiveMaximum` · `minLength` · `maxLength` · `minItems` · `maxItems` | `{ "days": 99 }` |
+
+```
+→ 툴 'get_weather' 의 'city' 은(는) string 이어야 합니다. 받은 값: 0 (number)
+→ 이 툴이 tools/list 로 선언한 inputSchema 가 그렇게 요구합니다.
+→ 거절이 의도한 것이면 responses 에 이 인자를 넣어 응답을 지정하세요.
+```
+
+**의도한 거절을 설계에 넣으려면 그 인자를 지정해 주입한다.** 1번이 2번보다 앞이라 이 응답이 이긴다.
+
+```json
+{ "tool": "get_weather", "args": { "city": 0 }, "result": "도시 이름이 잘못됐습니다" }
+```
+
+**검사하지 않는 것:** 중첩 객체와 배열 원소 내부, `additionalProperties`. 조합자
+(`anyOf` · `oneOf` · `allOf` · `not` · `$ref` · `if`)나 배열 `type` 이 있으면 — 루트에 있으면 그 툴
+전체를, 필드에 있으면 그 필드만 — 건너뛴다. 툴 전체를 건너뛴 경우는 서버를 띄울 때 `stderr` 로
+한 번 고지한다.
+
+```
+→ 다음 툴은 inputSchema 를 해석할 수 없어 인자 검사를 건너뜁니다:
+   'search' — 해석할 수 없는 키워드: anyOf
+```
 
 ### 키로 만들 수 없는 인자
 

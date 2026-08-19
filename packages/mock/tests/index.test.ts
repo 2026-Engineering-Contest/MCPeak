@@ -2,8 +2,8 @@ import { readFileSync } from "node:fs";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { ToolDef } from "@ohmymcp-hsu/core";
-import { afterEach, describe, expect, it } from "vitest";
-import { ANY, createMockServer, type MockServer } from "../src/index.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { ANY, createMockServer, type MockOptions, type MockServer } from "../src/index.js";
 
 const { tools } = JSON.parse(
   readFileSync(new URL("../../../fixtures/tools-list.sample.json", import.meta.url), "utf8"),
@@ -250,5 +250,157 @@ describe("@ohmymcp-hsu/mock", () => {
     expect(() => server.on("add", { deep: nest(513) }, { sum: 1 })).toThrow(
       "→ mock.on('add', ...) 의 인자로 매칭 키를 만들 수 없습니다: 중첩이 너무 깊습니다",
     );
+  });
+});
+
+/**
+ * inputSchema 로 호출 인자를 검사한다 (ADR-0048, #181).
+ *
+ * 판정 자체는 tests/input-validation.test.ts 가 전량 고정한다. 여기서는 **순서**를 본다 —
+ * 주입된 응답이 검사보다 우선하고, 검사는 주입이 없을 때만 돈다.
+ */
+describe("@ohmymcp-hsu/mock — inputSchema 검사", () => {
+  const schemaTools: ToolDef[] = [
+    {
+      name: "get_weather",
+      description: "스키마 검사용 (목).",
+      inputSchema: {
+        type: "object",
+        properties: {
+          city: { type: "string" },
+          unit: { type: "string", enum: ["c", "f"] },
+          days: { type: "integer", minimum: 1, maximum: 7 },
+        },
+        required: ["city"],
+      },
+    },
+    {
+      name: "opaque",
+      description: "해석할 수 없는 스키마 (목).",
+      inputSchema: {
+        type: "object",
+        properties: { city: { type: "string" } },
+        anyOf: [{ required: ["city"] }],
+      },
+    },
+  ];
+
+  async function startWith(options: Partial<MockOptions> = {}): Promise<MockServer> {
+    const server = await createMockServer({ tools: schemaTools, ...options });
+    opened.push(server);
+    return server;
+  }
+
+  it("주입이 전혀 없으면 스키마 위반이 미스 진단문 대신 위반 진단문으로 거절된다", async () => {
+    const client = await connect(await startWith());
+    const result = await client.callTool({ name: "get_weather", arguments: { city: 0 } });
+
+    expect(result.isError).toBe(true);
+    expect(text(result)).toContain("'city' 은(는) string 이어야 합니다. 받은 값: 0 (number)");
+    // 미스 진단문으로 새면 사용자가 "주입을 안 했나" 로 잘못 읽는다. 원인이 다르다.
+    expect(text(result)).not.toContain("주입된 응답이 없습니다");
+    await client.close();
+  });
+
+  it("ANY 폴백이 있어도 스키마 위반은 거절된다 — ANY 가 위반 인자를 먹지 않는다", async () => {
+    const server = await startWith();
+    server.on("get_weather", ANY, { tempC: 21 });
+    const client = await connect(server);
+
+    const result = await client.callTool({ name: "get_weather", arguments: { city: 0 } });
+    expect(result.isError).toBe(true);
+    expect(text(result)).toContain("string 이어야 합니다");
+    await client.close();
+  });
+
+  it("인자를 지정한 주입이 스키마 검사보다 우선한다 (ADR-0048 §2)", async () => {
+    // 이 테스트가 이번 결정의 회귀 테스트다. 검사를 lookup 앞으로 옮기면 여기서 깨진다.
+    const server = await startWith();
+    server.on("get_weather", { city: 0 }, "도시 이름이 잘못됐습니다");
+    const client = await connect(server);
+
+    const result = await client.callTool({ name: "get_weather", arguments: { city: 0 } });
+    expect(result.isError).toBeFalsy();
+    expect(JSON.parse(text(result))).toBe("도시 이름이 잘못됐습니다");
+    await client.close();
+  });
+
+  it("스키마를 지킨 인자는 ANY 로 통과한다 — 기존 동작이 유지된다", async () => {
+    const server = await startWith();
+    server.on("get_weather", ANY, { tempC: 21 });
+    const client = await connect(server);
+
+    const result = await client.callTool({
+      name: "get_weather",
+      arguments: { city: "서울", unit: "c", days: 3 },
+    });
+    expect(result.isError).toBeFalsy();
+    expect(JSON.parse(text(result))).toEqual({ tempC: 21 });
+    await client.close();
+  });
+
+  it("네 축을 전부 검사한다 — required · type · enum · range", async () => {
+    const client = await connect(await startWith());
+
+    const missing = await client.callTool({ name: "get_weather", arguments: { unit: "c" } });
+    expect(text(missing)).toContain("필수 필드 'city' 이(가) 없습니다");
+
+    const badEnum = await client.callTool({
+      name: "get_weather",
+      arguments: { city: "서울", unit: "k" },
+    });
+    expect(text(badEnum)).toContain('선언된 값 중 하나여야 합니다: "c", "f". 받은 값: "k"');
+
+    const badRange = await client.callTool({
+      name: "get_weather",
+      arguments: { city: "서울", days: 99 },
+    });
+    expect(text(badRange)).toContain("7 이하여야 합니다. 받은 값: 99");
+    await client.close();
+  });
+
+  it("위반이 여럿이면 전부 내고 안내 줄은 한 번만 붙는다", async () => {
+    const client = await connect(await startWith());
+    const result = await client.callTool({
+      name: "get_weather",
+      arguments: { unit: "k", days: 0 },
+    });
+
+    const lines = text(result).split("\n");
+    expect(lines[0]).toContain("필수 필드 'city' 이(가) 없습니다");
+    expect(lines[1]).toContain("'unit'");
+    expect(lines[2]).toContain("'days'");
+    expect(lines.filter((l) => l.includes("responses 에 이 인자를 넣어"))).toHaveLength(1);
+    await client.close();
+  });
+
+  it("해석할 수 없는 스키마의 툴은 위반 인자도 검사하지 않는다", async () => {
+    const server = await startWith();
+    server.on("opaque", ANY, { ok: true });
+    const client = await connect(server);
+
+    const result = await client.callTool({ name: "opaque", arguments: { city: 0 } });
+    expect(result.isError).toBeFalsy();
+    await client.close();
+  });
+
+  it("해석할 수 없는 툴을 띄울 때 stderr 로 한 번 고지한다", async () => {
+    const written: string[] = [];
+    const spy = vi.spyOn(process.stderr, "write").mockImplementation((chunk: unknown): boolean => {
+      written.push(String(chunk));
+      return true;
+    });
+    try {
+      await startWith();
+    } finally {
+      spy.mockRestore();
+    }
+
+    const notice = written.join("");
+    expect(notice).toContain("인자 검사를 건너뜁니다");
+    expect(notice).toContain("'opaque'");
+    expect(notice).toContain("anyOf");
+    // 해석 가능한 툴은 고지에 없어야 한다.
+    expect(notice).not.toContain("'get_weather'");
   });
 });

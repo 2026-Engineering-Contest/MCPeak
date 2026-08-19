@@ -5,6 +5,11 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import type { ToolDef } from "@ohmymcp-hsu/core";
+import {
+  findSchemaViolations,
+  type SchemaViolation,
+  unanalyzableReason,
+} from "./input-validation.ts";
 // 확장자가 ".ts" 인 것은 오타가 아니다. tests/fixtures/stdio-entry.mjs 가 이 파일을
 // raw node(--experimental-strip-types)로 직접 돌리는데, Node 의 ESM 리졸버는 ".js" 를
 // ".ts" 로 매핑하지 않아 ERR_MODULE_NOT_FOUND 가 난다. 저장소의 다른 패키지는 ".js" 를
@@ -111,16 +116,22 @@ function put(
   registry.exact.set(`${tool}|${stableKey(args ?? {})}`, result);
 }
 
-/** 인자 지정본을 먼저 찾고, 없으면 ANY 로 떨어진다. */
+/**
+ * 인자 지정본을 먼저 찾고, 없으면 ANY 로 떨어진다.
+ *
+ * **어느 쪽에서 나왔는지 구분해서 돌려준다.** 둘을 하나의 `hit` 으로 뭉치면 호출자가
+ * 스키마 검사를 어디에 끼울지 정할 수 없다 — 인자 지정본은 검사보다 우선하고 ANY 는 뒤다
+ * (ADR-0048 §2). ANY 가 위반 인자까지 먹는 것이 #181 이 지목한 결함 그 자체다.
+ */
 function lookup(
   registry: Registry,
   tool: string,
   args: unknown,
-): { hit: boolean; result: unknown } {
+): { hit: "exact" | "any"; result: unknown } | { hit: false } {
   const key = `${tool}|${stableKey(args ?? {})}`;
-  if (registry.exact.has(key)) return { hit: true, result: registry.exact.get(key) };
-  if (registry.any.has(tool)) return { hit: true, result: registry.any.get(tool) };
-  return { hit: false, result: undefined };
+  if (registry.exact.has(key)) return { hit: "exact", result: registry.exact.get(key) };
+  if (registry.any.has(tool)) return { hit: "any", result: registry.any.get(tool) };
+  return { hit: false };
 }
 
 /** 주입된 응답이 없을 때 사용자가 읽을 문장을 만든다. 실패 메시지가 곧 제품이다. */
@@ -150,6 +161,96 @@ function missMessage(tool: string, args: unknown, registry: Registry): string {
     lines.push("→ mock.on(툴이름, 인자, 응답) 을 호출했는지 확인하세요.");
   }
   return lines.join("\n");
+}
+
+/** 범위 위반 한 건의 문장. keyword 가 값 기준인지 길이·개수 기준인지 가른다. */
+function rangeSentence(violation: Extract<SchemaViolation, { kind: "rangeMismatch" }>): string {
+  const { limit, found } = violation;
+  switch (violation.keyword) {
+    case "minimum":
+      return `${limit} 이상이어야 합니다. 받은 값: ${found}`;
+    case "maximum":
+      return `${limit} 이하여야 합니다. 받은 값: ${found}`;
+    case "exclusiveMinimum":
+      return `${limit} 보다 커야 합니다. 받은 값: ${found}`;
+    case "exclusiveMaximum":
+      return `${limit} 보다 작아야 합니다. 받은 값: ${found}`;
+    case "minLength":
+      return `${limit}자 이상이어야 합니다. 받은 값의 길이: ${found}`;
+    case "maxLength":
+      return `${limit}자 이하여야 합니다. 받은 값의 길이: ${found}`;
+    case "minItems":
+      return `원소가 ${limit}개 이상이어야 합니다. 받은 개수: ${found}`;
+    case "maxItems":
+      return `원소가 ${limit}개 이하여야 합니다. 받은 개수: ${found}`;
+  }
+}
+
+/** 위반 한 건을 한 줄로. 모든 kind 가 값을 돌려주므로 switch 가 빠지는 길이 없다. */
+function violationLine(tool: string, args: unknown, violation: SchemaViolation): string {
+  const head = `→ 툴 '${tool}' 의 '${violation.field}' 은(는)`;
+  switch (violation.kind) {
+    case "requiredMissing":
+      return `→ 툴 '${tool}' 호출에 필수 필드 '${violation.field}' 이(가) 없습니다. 받은 인자: ${stableKey(args ?? {})}`;
+    case "typeMismatch": {
+      const received = JSON.stringify(plainArgs(args)[violation.field]) ?? "undefined";
+      return `${head} ${violation.declared} 이어야 합니다. 받은 값: ${received} (${violation.found})`;
+    }
+    case "enumMismatch": {
+      const allowed = violation.allowed.map((value) => JSON.stringify(value)).join(", ");
+      return `${head} 선언된 값 중 하나여야 합니다: ${allowed}. 받은 값: ${JSON.stringify(violation.found)}`;
+    }
+    case "rangeMismatch":
+      return `${head} ${rangeSentence(violation)}`;
+  }
+}
+
+/**
+ * 스키마 위반을 사용자가 읽을 문장으로 만든다. 실패 메시지가 곧 제품이다 (ADR-0048).
+ *
+ * 위반마다 한 줄씩 내고 안내 두 줄을 끝에 **한 번만** 붙인다. 위반이 셋인데 안내가 셋이면
+ * 읽을 수 없다. 마지막 줄이 주입 우선 규칙으로 가는 길을 가리킨다 — 목이 막았는데 뚫는 법을
+ * 모르는 상태를 만들지 않는다.
+ */
+function violationMessage(
+  tool: string,
+  args: unknown,
+  violations: readonly SchemaViolation[],
+): string {
+  const lines = violations.map((violation) => violationLine(tool, args, violation));
+
+  lines.push("→ 이 툴이 tools/list 로 선언한 inputSchema 가 그렇게 요구합니다.");
+  lines.push("→ 거절이 의도한 것이면 responses 에 이 인자를 넣어 응답을 지정하세요.");
+  return lines.join("\n");
+}
+
+/** 문장에서 원래 값을 꺼내기 위한 것. 인자가 객체가 아니면 빈 객체로 본다. */
+function plainArgs(args: unknown): Record<string, unknown> {
+  return args !== null && typeof args === "object" && !Array.isArray(args)
+    ? (args as Record<string, unknown>)
+    : {};
+}
+
+/**
+ * 해석할 수 없는 스키마를 가진 툴을 stderr 로 **한 번** 고지한다.
+ *
+ * `buildServer` 가 아니라 진입점에서 부른다 — HTTP 는 요청마다 `buildServer` 를 새로 부르므로
+ * 거기 두면 호출마다 찍힌다. stdout 은 stdio 트랜스포트의 JSON-RPC 채널이라 쓸 수 없다.
+ *
+ * `ohmymcp test` 의 성공 경로에서는 이 줄이 사용자에게 안 보일 수 있다(CLI 의 프로세스 진단은
+ * 비정상 종료·연결 실패에서 렌더된다). 그래도 내는 이유는 ADR-0048 의 "결과" 에 적어 두었다.
+ */
+function noticeUnanalyzable(tools: ToolDef[]): void {
+  const skipped = tools
+    .map((tool) => ({ name: tool.name, reason: unanalyzableReason(tool.inputSchema) }))
+    .filter((entry): entry is { name: string; reason: string } => entry.reason !== undefined);
+  if (skipped.length === 0) return;
+  process.stderr.write(
+    `${[
+      "→ 다음 툴은 inputSchema 를 해석할 수 없어 인자 검사를 건너뜁니다:",
+      ...skipped.map((entry) => `   '${entry.name}' — ${entry.reason}`),
+    ].join("\n")}\n`,
+  );
 }
 
 /** 조회 인자가 너무 깊어 키를 못 만들 때. 던지지 않고 응답으로 나간다. */
@@ -221,9 +322,10 @@ function buildServer(tools: ToolDef[], registry: Registry): Server {
     { name: "ohmymcp-mock", version: "0.0.0" },
     { capabilities: { tools: {} } },
   );
+  const schemas = new Map(tools.map((tool) => [tool.name, tool.inputSchema]));
   server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools }));
   server.setRequestHandler(CallToolRequestSchema, async (req) => {
-    let outcome: { hit: boolean; result: unknown };
+    let outcome: ReturnType<typeof lookup>;
     try {
       outcome = lookup(registry, req.params.name, req.params.arguments);
     } catch (error) {
@@ -234,15 +336,35 @@ function buildServer(tools: ToolDef[], registry: Registry): Server {
         isError: true,
       };
     }
-    if (!outcome.hit) {
+    // 주입이 검사보다 우선한다 (ADR-0048 §2). 표는 사람이 손으로 쓰는 것이라, 스키마를 어기는
+    // 인자를 적어 두었다면 그것이 의도다 — "잘못 부르면 서버가 이렇게 답한다" 를 설계에 넣는
+    // 경로이고, 이 순서가 곧 검사를 끄는 스위치를 대신한다.
+    const respond = (result: unknown) => ({
+      content: [{ type: "text" as const, text: JSON.stringify(result) }],
+    });
+    if (outcome.hit === "exact") return respond(outcome.result);
+
+    const violations = findSchemaViolations(schemas.get(req.params.name), req.params.arguments);
+    if (violations.length > 0) {
       return {
         content: [
-          { type: "text", text: missMessage(req.params.name, req.params.arguments, registry) },
+          {
+            type: "text",
+            text: violationMessage(req.params.name, req.params.arguments, violations),
+          },
         ],
         isError: true,
       };
     }
-    return { content: [{ type: "text", text: JSON.stringify(outcome.result) }] };
+
+    if (outcome.hit === "any") return respond(outcome.result);
+
+    return {
+      content: [
+        { type: "text", text: missMessage(req.params.name, req.params.arguments, registry) },
+      ],
+      isError: true,
+    };
   });
   return server;
 }
@@ -257,6 +379,7 @@ function buildServer(tools: ToolDef[], registry: Registry): Server {
 export async function createMockServer(options: MockOptions): Promise<MockServer> {
   const { tools, port = 0, host = "127.0.0.1" } = options;
   assertMockDefinition(options, "createMockServer 옵션");
+  noticeUnanalyzable(tools);
   const registry = seed(options);
 
   // stateless 모드는 요청마다 새 Server/transport 를 요구한다.
@@ -311,6 +434,7 @@ export async function createMockServer(options: MockOptions): Promise<MockServer
  */
 export async function serveStdio(definition: MockDefinition): Promise<void> {
   assertMockDefinition(definition);
+  noticeUnanalyzable(definition.tools);
   const server = buildServer(definition.tools, seed(definition));
   await server.connect(new StdioServerTransport());
 }

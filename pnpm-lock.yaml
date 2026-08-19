@@ -68,6 +68,9 @@ importers:
 
   packages/dashboard:
     dependencies:
+      '@ohmymcp-hsu/cli':
+        specifier: workspace:*
+        version: link:../cli
       '@ohmymcp-hsu/core':
         specifier: workspace:*
         version: link:../core
@@ -83,9 +86,6 @@ importers:
       '@ohmymcp-hsu/runner':
         specifier: workspace:*
         version: link:../runner
-      ohmymcp:
-        specifier: workspace:*
-        version: link:../cli
     devDependencies:
       '@tailwindcss/vite':
         specifier: 4.3.3

@@ -42,12 +42,12 @@
     "dev": "vite dev web"
   },
   "dependencies": {
+    "@ohmymcp-hsu/cli": "workspace:*",
     "@ohmymcp-hsu/core": "workspace:*",
     "@ohmymcp-hsu/generate": "workspace:*",
     "@ohmymcp-hsu/mock": "workspace:*",
     "@ohmymcp-hsu/record": "workspace:*",
-    "@ohmymcp-hsu/runner": "workspace:*",
-    "ohmymcp": "workspace:*"
+    "@ohmymcp-hsu/runner": "workspace:*"
   },
   "devDependencies": {
     "@tailwindcss/vite": "4.3.3",

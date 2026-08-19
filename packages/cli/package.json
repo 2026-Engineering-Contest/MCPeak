@@ -1,5 +1,5 @@
 {
-  "name": "ohmymcp",
+  "name": "@ohmymcp-hsu/cli",
   "version": "0.8.0",
   "private": false,
   "type": "module",

@@ -1,5 +1,24 @@
 # @ohmymcp-hsu/runner
 
+## 0.8.0
+
+### Minor Changes
+
+- a2b37e0: 거절을 기대하는 케이스의 입력이 서버 선언을 하나도 어기지 않으면 `REJECTION_WITHOUT_VIOLATION` advisory 를 냅니다 (#94). ADR-0021 이 감수한 미탐(거절 기대 케이스에서 입력 계약 위반을 침묵)에 신호가 없어, 오타로 정상 입력이 됐거나 `expected` 를 잘못 적은 케이스가 아무것도 검증하지 않으면서 초록으로 통과했습니다. `cli test` 는 전용 머리글(`거절을 기대하지만 선언을 어기지 않습니다`)로, `generate` 승인 화면은 전용 블록(`거절 근거가 불분명한 케이스`)으로 보여주되 "위반 N건" 재확인 개수에는 넣지 않습니다. 서버가 선언 밖 제약(값의 도메인)으로 거절하는 정당한 케이스가 있으므로 차단하지 않습니다.
+- 4e2c6df: `runner`: 거절을 기대한 케이스마다 **거절 근거를 확인했는지**를 판정해 결과에 싣습니다. `TestCaseResult.rejectionBasis`(`verified` · `unverified` · `notApplicable`)와 `RunnerSummary.rejectionUnverified` 두 필드가 늘었습니다. 위반 케이스의 단언은 `isError: true` 하나라 "서버가 입력을 거절한 것"과 "서버가 다른 이유로 실패한 것"이 구분되지 않았고, 관찰 80건은 응답 본문 형식으로 크래시를 지목할 수 없음을 보였습니다. 그래서 방향을 뒤집어 **SDK 검증이 낸 거절임을 양성으로 확인**합니다. 지문 셋(TS SDK 의 `MCP error -32602:`, Python 하위 SDK 의 `Input validation error:`, FastMCP 의 `<툴>Arguments` 모델)에 안 걸리면 전부 `unverified` 로 떨어지는 화이트리스트입니다.
+
+  확인하지 못한 케이스에는 응답 본문도 함께 싣습니다(`TestCaseResult.rejectionBody`). 승인 화면이 "이 응답이 정상 거절인지 내부 오류인지"를 사람에게 보여주려면 본문이 필요한데 판정만으로는 그 자리를 채울 수 없기 때문입니다. `unverified` 이고 본문을 읽었을 때만 **키가 생기고**, 진단 값과 같은 상한(200자)에서 잘리며 같은 redaction 을 받습니다. `verified` 와 `notApplicable` 에는 키 자체가 없어서 통과한 모든 케이스의 응답이 보고서에 들어가지 않습니다.
+
+  **판정과 종료 코드는 바뀌지 않습니다.** `unverified` 는 "거절이 아니다"가 아니라 "확인하지 못했다"는 뜻이고, 이것을 실패로 올리면 관찰한 서버 11개 중 2개가 통째로 빨개집니다(ADR-0015). `RunnerReport.schemaVersion` 은 `1` 을 유지합니다 — 늘어난 필드가 전부 추가이고 기존 필드의 의미가 바뀌지 않아, 기존 `--json` 소비자는 새 키를 무시하면 종전과 같은 결과를 읽습니다. 분류는 응답 본문 문자열만 보는 순수 함수라 같은 응답에 항상 같은 값이 나옵니다.
+
+- 4558ef9: `runner`: `ohmymcp test` 요약 아래에 거절 근거를 확인하지 못한 케이스 수를 고지합니다. 0건이면 아무 줄도 안 나옵니다. 이 케이스들은 **통과한 케이스**이고 판정도 종료 코드도 바뀌지 않습니다 — `unverified` 는 "거절이 아니다"가 아니라 "확인하지 못했다"는 뜻이라, 문안도 실패나 결함이라고 말하지 않고 무엇을 판단하지 못했는지와 어디서 확인하는지만 적습니다. 케이스 목록에는 아무 표시도 더하지 않습니다. 통과한 케이스 옆에 기호가 붙으면 판정이 바뀐 것으로 읽히기 때문입니다.
+
+### Patch Changes
+
+- Updated dependencies [cd25fb4]
+- Updated dependencies [bf16fb5]
+  - @ohmymcp-hsu/core@0.3.0
+
 ## 0.7.0
 
 ### Minor Changes

@@ -70,6 +70,8 @@ async function sourceFiles(): Promise<string[]> {
 interface RunnerStatement {
   readonly clause: string;
   readonly text: string;
+  /** `import "@ohmymcp-hsu/runner";` — 절이 아예 없는 side-effect import. */
+  readonly sideEffectOnly: boolean;
 }
 
 /** runner를 가리키는 구문을 뽑는다. 심볼 수집과 경계 위반 검사가 같은 판정을 쓰게 하는 자리다. */
@@ -83,14 +85,32 @@ function runnerStatements(source: string): RunnerStatement[] {
   // 인용부호는 캡처해서 backreference로 짝을 맞춘다. 큰따옴표만 보면 작은따옴표로 쓴 구문이
   // 빠져나간다. biome이 큰따옴표로 포매팅한다고 해도 경계 장치에 우회 경로를 두지 않는다.
   //
-  // 알려진 한계: `import "@ohmymcp-hsu/runner";` 처럼 `from`이 없는 side-effect import는 잡지
-  // 않는다. 가져오는 심볼이 0개라 ADR-0009가 통제하는 "승인 심볼 범위"를 우회하지 못한다.
-  // 동적 `await import(...)`도 정적 검사 대상이 아니다.
+  // 알려진 한계: 동적 `await import("@ohmymcp-hsu/runner")`는 정적 검사 대상이 아니다.
   const statement = /^(?:import|export)\s+([^"';]*?)\s+from\s+(["'])@ohmymcp-hsu\/runner\2/gm;
-  return [...source.matchAll(statement)].map((match) => ({
-    clause: match[1] ?? "",
-    text: match[0],
-  }));
+  // `from`이 없는 side-effect import는 위 정규식에 안 걸린다. `import` 뒤에 인용부호가 바로 오므로
+  // 명시 import 구문과 겹치지 않는다. 가져오는 심볼은 0개지만 의존 자체는 생기고, ADR-0009의
+  // 승인 표는 심볼로 적혀 있어 이 줄을 표현할 방법이 없다. 그래서 경계 위반으로 다룬다.
+  const sideEffect = /^import\s+(["'])@ohmymcp-hsu\/runner\1/gm;
+
+  const found = [
+    ...[...source.matchAll(statement)].map((match) => ({
+      index: match.index,
+      clause: match[1] ?? "",
+      text: match[0],
+      sideEffectOnly: false,
+    })),
+    ...[...source.matchAll(sideEffect)].map((match) => ({
+      index: match.index,
+      clause: "",
+      text: match[0],
+      sideEffectOnly: true,
+    })),
+  ];
+  // 두 번 훑으므로 등장 순서로 다시 세운다. 실패 화면의 줄 순서가 정규식 실행 순서에 따라
+  // 흔들리면 안 된다 — 같은 입력에 같은 출력이 이 저장소의 핵심 가치다.
+  return found
+    .sort((left, right) => left.index - right.index)
+    .map(({ clause, text, sideEffectOnly }) => ({ clause, text, sideEffectOnly }));
 }
 
 /** `import ... from "@ohmymcp-hsu/runner"` 구문에서 가져오는 심볼 이름만 뽑는다. */
@@ -113,9 +133,10 @@ function runnerImports(source: string): string[] {
 /**
  * 승인 목록으로 범위를 좁힐 수 없는 runner 구문을 뽑는다.
  *
- * `import * as` · `export *` · `export * as` · default import · default 혼합이 여기 해당한다.
- * 판정은 `*`를 찾는 것이 아니라 **중괄호 밖에 이름이 남는가**다. `*`만 열거하면 default import가
- * 같은 방식으로 빠져나간다 — 둘 다 "가져온 것을 목록으로 좁힐 수 없다"는 같은 문제다.
+ * `import * as` · `export *` · `export * as` · default import · default 혼합 · side-effect import가
+ * 여기 해당한다. 판정은 `*`를 찾는 것이 아니라 **중괄호 밖에 이름이 남는가**다. `*`만 열거하면
+ * default import가 같은 방식으로 빠져나간다 — 둘 다 "가져온 것을 목록으로 좁힐 수 없다"는 같은
+ * 문제다. side-effect import는 반대로 가져오는 것이 0개라 승인 표에 적을 수 없다.
  *
  * 심볼 수집(`runnerImports`)과 나눠 둔 이유는 처방이 다르기 때문이다. 목록 밖 심볼은 "ADR을
  * 고쳐 목록을 늘려라"지만, 이쪽은 "명시 import로 바꿔라"다. 한 목록에 섞으면 화면이 틀린 처방을
@@ -123,7 +144,11 @@ function runnerImports(source: string): string[] {
  */
 function unscopedRunnerStatements(source: string): string[] {
   const offenders: string[] = [];
-  for (const { clause, text } of runnerStatements(source)) {
+  for (const { clause, text, sideEffectOnly } of runnerStatements(source)) {
+    if (sideEffectOnly) {
+      offenders.push(text.trim());
+      continue;
+    }
     const outsideBraces = clause.replace(/\{[\s\S]*?\}/g, "");
     // `import type { A }` 의 선행 `type`은 이름이 아니다. 쉼표와 공백을 걷어낸 뒤 남는 것이 있으면
     // 중괄호 밖에서 무언가를 가져오고 있다는 뜻이다.
@@ -135,8 +160,9 @@ function unscopedRunnerStatements(source: string): string[] {
 
 const UNSCOPED_STATEMENT_HINT = [
   "→ ADR-0009는 generate → runner 의존을 '승인된 심볼 목록'으로만 허용합니다.",
-  "→ 아래 구문은 가져오는 것을 목록으로 좁힐 수 없어 그 장치를 통째로 우회합니다.",
+  "→ 아래 구문은 가져오는 것을 그 목록으로 표현할 수 없어 장치를 통째로 우회합니다.",
   '→ 필요한 심볼만 명시해서 가져오세요: import { canonicalJson } from "@ohmymcp-hsu/runner"',
+  '→ side-effect import(import "@ohmymcp-hsu/runner")라면 심볼 없이 의존만 생깁니다. 줄을 지우세요.',
   "→ 새 심볼이 정말 필요하면 ADR-0009의 승인 표를 먼저 고치세요.",
 ].join("\n");
 
@@ -216,6 +242,44 @@ describe("dependency boundary", () => {
     ]);
     // 명시한 쪽은 심볼로도 잡힌다. 위반 검사가 심볼 수집을 가리지 않는다.
     expect(runnerImports(mixed)).toEqual(["canonicalJson"]);
+  });
+
+  it("side-effect import도 경계 위반이다", () => {
+    // 가져오는 심볼이 0개라 ADR-0009의 승인 표(심볼 목록)에 적을 방법이 없다.
+    const source = 'import "@ohmymcp-hsu/runner";\n';
+    expect(unscopedRunnerStatements(source)).toEqual(['import "@ohmymcp-hsu/runner"']);
+    expect(unscopedRunnerStatements("import '@ohmymcp-hsu/runner';\n")).toEqual([
+      "import '@ohmymcp-hsu/runner'",
+    ]);
+    expect(runnerImports(source)).toEqual([]);
+  });
+
+  it("side-effect import도 줄 시작 앵커와 인용부호 짝 규칙을 따른다", () => {
+    expect(unscopedRunnerStatements('  import "@ohmymcp-hsu/runner";\n')).toEqual([]);
+    expect(unscopedRunnerStatements("import \"@ohmymcp-hsu/runner';\n")).toEqual([]);
+  });
+
+  it("동적 import는 이 검사의 대상이 아니다", () => {
+    // 알려진 한계를 고정한다. 정적 정규식의 사정권 밖이고, 넓히면 문자열 리터럴까지 딸려온다.
+    expect(
+      unscopedRunnerStatements('const runner = await import("@ohmymcp-hsu/runner");\n'),
+    ).toEqual([]);
+  });
+
+  it("위반 구문은 파일에 등장한 순서대로 돌려준다", () => {
+    // 두 정규식을 따로 훑으므로 순서를 다시 세운다. 같은 입력에 같은 출력이어야 한다.
+    const source = [
+      'export * from "@ohmymcp-hsu/runner";',
+      'import { canonicalJson } from "@ohmymcp-hsu/runner";',
+      'import "@ohmymcp-hsu/runner";',
+      'import * as runner from "@ohmymcp-hsu/runner";',
+      "",
+    ].join("\n");
+    expect(unscopedRunnerStatements(source)).toEqual([
+      'export * from "@ohmymcp-hsu/runner"',
+      'import "@ohmymcp-hsu/runner"',
+      'import * as runner from "@ohmymcp-hsu/runner"',
+    ]);
   });
 
   it("명시 import·재수출·type import는 위반이 아니다", () => {

@@ -113,6 +113,10 @@ ohmymcp test suite.json --command ohmymcp-mock --arg mock.json
 
 응답은 **사람이 지정한 값**입니다(ADR-0005). 같은 호출은 언제나 같은 바이트를 돌려줍니다.
 
+목은 **서버를 만들기 전에 설계를 먼저 검증하는 데**도 씁니다 — 정의 파일로 띄워 Claude Desktop
+같은 실제 클라이언트에 붙여보고, 거기서 `generate` 로 구현자에게 넘길 계약 초안을 뽑습니다.
+절차는 [`packages/mock` 의 설계 우선 워크플로](./packages/mock#설계-우선-워크플로)에 있습니다.
+
 ## 기존 도구와의 차이
 
 - **실패 메시지가 곧 제품이다.** `expected true, got false` 가 아니라 *무엇이 왜 다른지, 어떻게

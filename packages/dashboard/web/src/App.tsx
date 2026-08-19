@@ -20,8 +20,6 @@ import { RunView } from "./screens/RunView.js";
  * | `#/cassettes` | CassetteBrowser |
  * | `#/repair/:id` | RepairReview |
  *
- * `#/run/:id`는 구형 링크 별칭이다. Home·RunView는 U2에서 `#/runs/:id`로 갱신됐고,
- * CassetteBrowser(replay 이동)가 아직 내보내므로 U4에서 링크 갱신 후 제거한다.
  */
 type Route =
   | { readonly screen: "home" }
@@ -39,7 +37,7 @@ function parseRoute(hash: string): Route {
   if (first === "home") {
     return { screen: "home" };
   }
-  if (first === "runs" || first === "run") {
+  if (first === "runs") {
     return { screen: "runs", runId: rest[0] !== undefined ? decodeURIComponent(rest[0]) : null };
   }
   if (first === "generate") {

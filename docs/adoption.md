@@ -501,14 +501,26 @@ VIRTUAL_ENV=pyenv uv pip install \
   mcp-server-time==2026.7.10 mcp-server-calculator==0.2.1 mcp==1.29.0
 ohmymcp generate --suite-id time --name t --out t.json --command pyenv/bin/mcp-server-time --baseline-only
 ohmymcp test t.json --command pyenv/bin/mcp-server-time --json
+
+# Python FastMCP — 셋째 지문은 이쪽에서만 나온다
+ohmymcp generate --suite-id calc --name c --out c.json --command pyenv/bin/mcp-server-calculator --baseline-only
+ohmymcp test c.json --command pyenv/bin/mcp-server-calculator --json
 ```
+
+**Python 두 서버는 `test` 종료 코드가 1이다.** 정상 경로 케이스가 도메인 값 때문에 실패하는
+것이고(위 문단), 거절을 기대한 케이스는 전부 통과한다. 실패를 보고 놀라지 마라.
 
 **`server-memory` 는 핸드셰이크에서 자기 버전을 `0.6.3` 으로 보고하지만 npm 에 그 버전은 없다.**
 패키지 안 문자열이 낡은 것이다. 설치는 위의 `2026.7.4`(대조 시점의 `latest`)로 해야 한다.
 
-전이 의존성은 따로 적지 않는다. **세 패키지를 위처럼 고정하면 나머지 30개도 대조 때와 같은
-조합으로 풀린다** (`pydantic 2.13.4` · `anyio 4.14.2` 등 33개 전부 일치, 2026-08-19 재확인).
-다른 환경에서 지문이 갈리면 `VIRTUAL_ENV=pyenv uv pip freeze` 부터 떠서 이 조합과 대조해라.
+**전이 의존성은 고정하지 않았다.** 위 셋만 박으면 나머지 30개는 `uv` 가 설치할 때마다 다시
+푼다. 2026-08-19 에 새 환경으로 떠 봤을 때는 33개가 대조 때와 전부 같게 풀렸지만
+(`pydantic 2.13.4` · `anyio 4.14.2` 등), **그 날짜의 관찰이지 앞으로도 그렇다는 보장이 아니다.**
+새 릴리스가 나오면 달라질 수 있다.
+
+완전히 고정하려면 `uv pip compile` 로 잠금 파일을 떠서 `uv pip sync` 로 설치해라. 이 저장소에는
+넣지 않았다 — 문서 전용 1회 검증에 Python 잠금 산출물을 얹으면 유지 대상만 는다. 지문이 갈릴
+때 `VIRTUAL_ENV=pyenv uv pip freeze` 를 떠서 위 버전들과 대조하는 것으로 충분하다고 봤다.
 
 **표의 `2회 실행` 칸은 크기 값이 아니라 두 번이 같은가를 보는 자리다.** 절대 크기는 환경에 따라
 다를 수 있다 — 2026-08-19 재실행에서 `server-memory` 는 20265 B 로 두 번 일치했고(위 표는

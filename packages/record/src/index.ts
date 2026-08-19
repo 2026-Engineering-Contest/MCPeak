@@ -85,7 +85,12 @@ const plainObject = (value: unknown): value is Record<string, unknown> =>
  * 그대로 온 임의 문자열이라 이 함수로 심는다.
  */
 const setOwn = (target: Record<string, unknown>, key: string, value: unknown): void => {
-  Object.defineProperty(target, key, { value, enumerable: true, writable: true, configurable: true });
+  Object.defineProperty(target, key, {
+    value,
+    enumerable: true,
+    writable: true,
+    configurable: true,
+  });
 };
 
 class CassetteJsonError extends TypeError {

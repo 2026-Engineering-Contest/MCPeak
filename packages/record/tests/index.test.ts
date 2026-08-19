@@ -24,6 +24,14 @@ const TOOLS: ToolDef[] = [
   },
 ];
 
+/**
+ * own property 값을 읽는다. `obj.__proto__` · `obj["__proto__"]` 는 둘 다 biome
+ * `noProto` 에 걸린다 — 점 표기와 대괄호 표기가 같은 접근자를 거치기 때문이다.
+ * `getOwnPropertyDescriptor` 는 그 접근자를 우회하고 own property 만 본다.
+ */
+const ownValue = (obj: object, key: string): unknown =>
+  Object.getOwnPropertyDescriptor(obj, key)?.value;
+
 const ok = (raw: unknown): ToolResult => ({
   content: [{ type: "text", text: JSON.stringify(raw) }],
   isError: false,
@@ -291,8 +299,8 @@ describe("redact", () => {
     // 대괄호 할당(obj[key] = value)으로 심으면 이 자리에서 own property 대신
     // 프로토타입이 바뀌어 필드가 사라진다. own property 로 남아야 한다.
     expect(Object.keys(result).sort()).toStrictEqual(["__proto__", "nested", "ok"]);
-    expect(result.__proto__).toBe("user-value");
-    expect((result.nested as Record<string, unknown>).__proto__).toBe("inner");
+    expect(ownValue(result, "__proto__")).toBe("user-value");
+    expect(ownValue(result.nested as object, "__proto__")).toBe("inner");
     // 값 심기가 실제 프로토타입까지 바꾸지 않았는지도 함께 고정한다.
     expect(Object.getPrototypeOf(result)).toBe(Object.prototype);
   });
@@ -307,7 +315,7 @@ describe("redact", () => {
     const parsedBack = JSON.parse(result.text) as Record<string, unknown>;
 
     expect(Object.keys(parsedBack).sort()).toStrictEqual(["__proto__", "num"]);
-    expect(parsedBack.__proto__).toBe("embedded");
+    expect(ownValue(parsedBack, "__proto__")).toBe("embedded");
   });
 });
 
@@ -1148,7 +1156,7 @@ describe("cassette IO", () => {
         "__proto__",
         "normal",
       ]);
-      expect(tool.inputSchema.properties.__proto__).toStrictEqual({
+      expect(ownValue(tool.inputSchema.properties, "__proto__")).toStrictEqual({
         type: "string",
         default: "안-민감-스키마값",
       });

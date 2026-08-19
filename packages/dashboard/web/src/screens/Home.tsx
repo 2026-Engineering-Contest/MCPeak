@@ -12,9 +12,10 @@ import { StatusBadge } from "../components/StatusBadge.js";
 
 /**
  * Home(UI 설계 §5-1). 2열 카드: 좌측 테스트 스위트(GET /api/suites), 우측 최근 실행
- * (GET /api/runs). 실행 클릭은 --command 입력을 받는 인라인 프롬프트(기본 빈 값) 후
- * `POST /api/runs {flow:"test", argv:[<스위트 경로>, "--command", <입력값>]}` 하고
- * `#/runs/:id`로 이동한다(구현계획 §5 U2).
+ * (GET /api/runs). 실행 클릭은 서버 명령 입력을 받는 인라인 프롬프트(기본 빈 값) 후
+ * `POST /api/runs {flow:"test", argv}` 하고 `#/runs/:id`로 이동한다(구현계획 §5 U2).
+ * CLI `--command`는 실행 파일 하나만 받는 계약이라 입력을 공백으로 분해해 첫 토큰만
+ * `--command`, 나머지는 각각 `--arg`로 보낸다.
  */
 export function Home(): JSX.Element {
   const [suites, setSuites] = useState<readonly FileEntry[] | null>(null);
@@ -41,12 +42,16 @@ export function Home(): JSX.Element {
   }
 
   async function startRun(suitePath: string): Promise<void> {
+    if (command.trim() === "") {
+      return;
+    }
     setStarting(true);
     setStartError(null);
     try {
+      const [head, ...rest] = command.trim().split(/\s+/);
       const response = await apiSend<StartRunResponse>("POST", "/api/runs", {
         flow: "test",
-        argv: [suitePath, "--command", command],
+        argv: [suitePath, "--command", head ?? "", ...rest.flatMap((token) => ["--arg", token])],
       } satisfies StartRunRequest);
       window.location.hash = `#/runs/${encodeURIComponent(response.runId)}`;
     } catch (err) {
@@ -110,13 +115,13 @@ export function Home(): JSX.Element {
                       id={`command-${suite.path}`}
                       className="flex-1 rounded border border-line bg-surface px-3 py-1.5 font-mono text-xs text-ink"
                       value={command}
-                      placeholder="실행할 서버 명령 (--command)"
+                      placeholder="예: node examples/weather-server/server.mjs"
                       onChange={(event) => setCommand(event.target.value)}
                     />
                     <button
                       type="submit"
                       className="rounded bg-accent px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
-                      disabled={starting}
+                      disabled={starting || command.trim() === ""}
                     >
                       실행 시작
                     </button>

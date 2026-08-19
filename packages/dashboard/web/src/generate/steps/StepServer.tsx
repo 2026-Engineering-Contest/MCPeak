@@ -12,20 +12,32 @@ export const METHOD_LABELS: Record<CommandMethod, string> = {
   custom: "직접 입력",
 };
 
-/** 세그먼트 + 대상 입력을 command 문자열 하나로 수렴시킨다. */
-export function composeCommand(method: CommandMethod, target: string): string {
-  if (target === "") {
-    return "";
+export interface SplitCommand {
+  readonly command: string;
+  readonly leadingArgs: readonly string[];
+}
+
+/**
+ * 세그먼트 + 대상 입력을 실행 파일 하나(command)와 선행 인자(args 선두)로 분해한다.
+ * CLI `--command`는 실행 파일 하나만 받는 계약이라(parseTestCommand·generate 동일)
+ * 스크립트 경로·패키지명·직접 입력의 나머지 토큰은 전부 `--arg`로 가야 한다.
+ */
+export function splitCommand(method: CommandMethod, target: string): SplitCommand {
+  const trimmed = target.trim();
+  if (trimmed === "") {
+    return { command: "", leadingArgs: [] };
   }
   switch (method) {
     case "node":
-      return `node ${target}`;
+      return { command: "node", leadingArgs: [trimmed] };
     case "npx":
-      return `npx ${target}`;
+      return { command: "npx", leadingArgs: [trimmed] };
     case "python":
-      return `python ${target}`;
-    case "custom":
-      return target;
+      return { command: "python", leadingArgs: [trimmed] };
+    case "custom": {
+      const [head, ...rest] = trimmed.split(/\s+/);
+      return { command: head ?? "", leadingArgs: rest };
+    }
   }
 }
 
@@ -43,7 +55,7 @@ export function StepServer(props: {
   onArgsChange: (args: readonly string[]) => void;
 }): JSX.Element {
   const [argDraft, setArgDraft] = useState("");
-  const command = composeCommand(props.method, props.target);
+  const { command, leadingArgs } = splitCommand(props.method, props.target);
 
   function addArg(): void {
     if (argDraft.trim() === "") {
@@ -151,7 +163,7 @@ export function StepServer(props: {
       <div className="rounded-md border border-line bg-line-subtle px-3 py-2">
         <p className="text-xs text-ink-muted">실행될 명령</p>
         <p className="font-mono text-sm text-ink">
-          {command === "" ? "—" : [command, ...props.args].join(" ")}
+          {command === "" ? "—" : [command, ...leadingArgs, ...props.args].join(" ")}
         </p>
       </div>
     </div>

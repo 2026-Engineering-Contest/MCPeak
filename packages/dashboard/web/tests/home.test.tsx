@@ -44,10 +44,12 @@ describe("Home", () => {
     expect(path.className).toContain("font-mono");
   });
 
-  it('실행 제출이 flow:"test"와 argv를 POST한다', async () => {
+  it('실행 제출이 flow:"test"와 --command/--arg 분해 argv를 POST한다', async () => {
     const fetchMock = stubFetch();
     render(<Home />);
     fireEvent.click(await screen.findByRole("button", { name: "실행" }));
+    // 빈 입력이면 시작 버튼이 비활성이다.
+    expect(screen.getByRole("button", { name: "실행 시작" })).toHaveProperty("disabled", true);
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "node server.js" } });
     fireEvent.click(screen.getByRole("button", { name: "실행 시작" }));
 
@@ -56,9 +58,10 @@ describe("Home", () => {
     });
     const post = fetchMock.mock.calls.find(([, init]) => init?.method === "POST");
     expect(post?.[0]).toBe("/api/runs");
+    // --command는 실행 파일 하나만, 나머지 토큰은 각각 --arg다(CLI parseTestCommand 계약).
     expect(JSON.parse(String(post?.[1]?.body))).toEqual({
       flow: "test",
-      argv: ["examples/weather/suite.json", "--command", "node server.js"],
+      argv: ["examples/weather/suite.json", "--command", "node", "--arg", "server.js"],
     });
   });
 

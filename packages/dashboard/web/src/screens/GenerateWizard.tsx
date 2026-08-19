@@ -8,7 +8,7 @@ import { buildGenerateArgv } from "../generate/build-argv.js";
 import { StepConfirm } from "../generate/steps/StepConfirm.js";
 import { StepMode } from "../generate/steps/StepMode.js";
 import type { CommandMethod } from "../generate/steps/StepServer.js";
-import { composeCommand, StepServer } from "../generate/steps/StepServer.js";
+import { StepServer, splitCommand } from "../generate/steps/StepServer.js";
 import { StepSuite } from "../generate/steps/StepSuite.js";
 
 const STEPS = ["테스트할 서버", "만들어질 스위트", "생성 방식", "녹화와 확인"] as const;
@@ -74,9 +74,13 @@ export function GenerateWizard(): JSX.Element {
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // CLI `--command`는 실행 파일 하나만 받는 계약이다. 대상 스크립트 경로(직접 입력의
+  // 나머지 토큰 포함)는 args 선두로 가고, 사용자가 추가한 인자가 그 뒤를 잇는다.
+  const split = splitCommand(state.method, state.target);
   const form: GenerateForm = {
     ...state,
-    command: composeCommand(state.method, state.target),
+    command: split.command,
+    args: [...split.leadingArgs, ...state.args],
   };
 
   function patch(partial: Partial<WizardState>): void {

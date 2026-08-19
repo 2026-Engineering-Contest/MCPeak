@@ -93,11 +93,14 @@ describe("GenerateWizard", () => {
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe("/api/runs");
     expect(init.method).toBe("POST");
+    // --command는 실행 파일 하나만, 스크립트 경로는 --arg 선두다(CLI 계약).
     expect(JSON.parse(String(init.body))).toEqual({
       flow: "generate",
       argv: [
         "--command",
-        "node server.js",
+        "node",
+        "--arg",
+        "server.js",
         "--suite-id",
         "weather",
         "--name",
@@ -110,6 +113,31 @@ describe("GenerateWizard", () => {
     });
   });
 
+  it("스크립트 경로가 args 선두로 가고 사용자 인자가 그 뒤를 잇는다", async () => {
+    const fetchMock = stubFetch();
+    render(<GenerateWizard />);
+    fireEvent.change(screen.getByLabelText("서버 스크립트"), { target: { value: "server.js" } });
+    fireEvent.change(screen.getByLabelText("서버 인자"), { target: { value: "--port" } });
+    fireEvent.click(screen.getByRole("button", { name: "추가" }));
+    fireEvent.click(screen.getByRole("button", { name: "다음" }));
+    fillStepSuite();
+    fireEvent.click(screen.getByRole("button", { name: "다음" }));
+    fireEvent.click(screen.getByRole("button", { name: "생성 시작" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalled();
+    });
+    const body = JSON.parse(String((fetchMock.mock.calls[0] as [string, RequestInit])[1].body));
+    expect(body.argv.slice(0, 6)).toEqual([
+      "--command",
+      "node",
+      "--arg",
+      "server.js",
+      "--arg",
+      "--port",
+    ]);
+  });
+
   it("마지막 단계에 조립된 CLI 명령 전문이 보인다", () => {
     render(<GenerateWizard />);
     fillStepServer("server.js");
@@ -117,7 +145,7 @@ describe("GenerateWizard", () => {
     fireEvent.click(screen.getByRole("button", { name: "다음" }));
 
     const command = screen.getByText(
-      'ohmymcp generate --command "node server.js" --suite-id weather ' +
+      "ohmymcp generate --command node --arg server.js --suite-id weather " +
         '--name "날씨 서버" --out examples/weather/suite.json --provider claude',
     );
     expect(command.className).toContain("font-mono");

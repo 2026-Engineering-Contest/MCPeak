@@ -5,7 +5,8 @@ import { buildGenerateArgv } from "../src/generate/build-argv.js";
 
 /** 최소 필수 입력만 채운 폼. 각 테스트가 필요한 필드만 덮어쓴다. */
 const BASE: GenerateForm = {
-  command: "node server.js",
+  // command에는 실행 파일 하나만 온다(CLI --command 계약). 스크립트 경로는 args로 간다.
+  command: "node",
   args: [],
   suiteId: "weather",
   suiteName: "날씨 서버",
@@ -25,7 +26,7 @@ describe("buildGenerateArgv", () => {
   it("최소 필수 입력의 argv가 §4-4 순서와 정확히 일치한다", () => {
     expect(buildGenerateArgv(BASE)).toEqual([
       "--command",
-      "node server.js",
+      "node",
       "--suite-id",
       "weather",
       "--name",
@@ -39,14 +40,7 @@ describe("buildGenerateArgv", () => {
 
   it("args 두 개가 --arg 쌍 두 벌로 나온다", () => {
     const argv = buildGenerateArgv({ ...BASE, args: ["--port", "8080"] });
-    expect(argv.slice(0, 6)).toEqual([
-      "--command",
-      "node server.js",
-      "--arg",
-      "--port",
-      "--arg",
-      "8080",
-    ]);
+    expect(argv.slice(0, 6)).toEqual(["--command", "node", "--arg", "--port", "--arg", "8080"]);
   });
 
   it("baseline 모드는 --baseline-only를 넣고 --provider·--model을 넣지 않는다", () => {

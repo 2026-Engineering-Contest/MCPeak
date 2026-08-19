@@ -4,7 +4,7 @@
  * 어긋나면 대시보드만 다른 제품이 된다.
  */
 export interface GenerateForm {
-  readonly command: string; // 1단계에서 조립된 실행 명령("직접 입력" 포함)
+  readonly command: string; // 실행 파일 하나만("node" 등). CLI --command 계약이 실행 파일 단독이라 스크립트 경로는 args 선두로 간다.
   readonly args: readonly string[];
   readonly suiteId: string;
   readonly suiteName: string;

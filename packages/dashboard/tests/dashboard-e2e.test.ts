@@ -94,7 +94,9 @@ async function drainRun(
       while (boundary !== -1) {
         const frame = buffer.slice(0, boundary);
         buffer = buffer.slice(boundary + 2);
-        const event = JSON.parse(frame.slice("data: ".length)) as RunEvent;
+        const data = frame.split("\n").find((line) => line.startsWith("data: "));
+        if (data === undefined) throw new Error(`SSE data 프레임이 없습니다: ${frame}`);
+        const event = JSON.parse(data.slice("data: ".length)) as RunEvent;
         events.push(event);
         if (event.kind === "question") {
           const value = answerFor(event.question, script);

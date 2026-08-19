@@ -1,7 +1,7 @@
 # @ohmymcp-hsu/record
 
-MCP 클라이언트를 카세트로 감싸 녹화·재생하고, 계약 스냅샷에서 비결정 필드와 비밀값을
-제거한다.
+MCP 클라이언트를 카세트로 감싸 녹화·재생하고, 값이 프로세스 밖으로 나가는 경계에서
+비밀값을 제거한다.
 
 - **오너:** `@ddxng5` (② replay/record 파트)
 - **의존:** `@ohmymcp-hsu/core`
@@ -82,7 +82,7 @@ try {
 필드별 차이를 보여준다. 마스킹 후 인자가 동일하면 비밀값 차이 또는 어긋난 키를 구분할 수 있도록
 요청 키와 저장 키의 앞 8자를 보여준다.
 
-## 마스킹과 계약 스냅샷
+## 마스킹
 
 `redact(value)`는 키를 `-`·`_` 구분자와 카멜케이스 경계로 단어를 나눈 뒤, **뒤에서부터
 이어붙인 접미 조합**이 `authorization`, `apikey`, `accesstoken`, `refreshtoken`, `token`,
@@ -97,10 +97,6 @@ try {
 `default`·`const`·`examples`·`enum` 값만 가린다. 근거는
 [ADR-0040](../../docs/adr/0040-스키마와-데이터의-마스킹-규칙-분리.md).
 
-`snapshotContract(result)`는 `ToolResult.raw`를 깊게 순회해 `id`, `requestId`, `sessionId`,
-`timestamp`, `createdAt`, `updatedAt`, `expiresAt` 필드를 제거한 뒤 위 규칙으로 비밀값을
-마스킹한다.
-
 요청 `args`는 녹화 시점에 마스킹되어 인메모리 카세트에도 원문 비밀값이 남지 않는다. 응답
 `content`/`raw`와 `tools`는 재생 결정론성을 위해 **내부 카세트에는** 원문으로 남지만,
 `callTool`·`listTools`가 호출자에게 돌려주는 값과 `onFlush`가 받는 저장용 카세트는 이미
@@ -112,3 +108,9 @@ try {
 
 첫 버전은 사용자 정의 매칭 함수, 사용자 정의 마스킹 규칙, TTL, 부분 매칭을 제공하지 않는다.
 필요성이 확인되면 별도 ADR로 확장한다.
+
+**계약 스냅샷(`snapshotContract`)과 비결정 필드 제거도 제공하지 않는다.** 이 패키지는
+비결정성을 지워서 감추지 않고, 같은 키에 다른 응답이 오면 경고해서 드러낸다. 실행 간
+차이를 판정하는 일은 `runner` 의 결정론성 확인이 맡는다
+([ADR-0038](../../docs/adr/0038-결정론성-확인의-비교-대상과-캡처-위치.md)). 근거는
+[ADR-0047](../../docs/adr/0047-계약-스냅샷-api-철회.md).

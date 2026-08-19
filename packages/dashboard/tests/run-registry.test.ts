@@ -33,7 +33,7 @@ describe("RunRegistry", () => {
     await tick();
     expect(handle.summary.status).toBe("done");
     expect(handle.summary.exitCode).toBe(0);
-    expect(handle.events.at(-1)).toEqual({ kind: "done", exitCode: 0 });
+    expect(handle.events.at(-1)).toEqual({ kind: "done", exitCode: 0, id: 1 });
   });
 
   it("exitCode 0이 아니면 failed다", async () => {
@@ -42,7 +42,7 @@ describe("RunRegistry", () => {
     await tick();
     expect(handle.summary.status).toBe("failed");
     expect(handle.summary.exitCode).toBe(3);
-    expect(handle.events.at(-1)).toEqual({ kind: "done", exitCode: 3 });
+    expect(handle.events.at(-1)).toEqual({ kind: "done", exitCode: 3, id: 1 });
   });
 
   it("execute가 던지면 stderr 이벤트 후 done(1)이다", async () => {
@@ -50,8 +50,8 @@ describe("RunRegistry", () => {
     const handle = registry.start("generate", () => Promise.reject(new Error("터졌다")));
     await tick();
     expect(handle.events).toEqual([
-      { kind: "stderr", html: "터졌다\n" },
-      { kind: "done", exitCode: 1 },
+      { kind: "stderr", html: "터졌다\n", id: 1 },
+      { kind: "done", exitCode: 1, id: 2 },
     ]);
     expect(handle.summary.status).toBe("failed");
     expect(handle.summary.exitCode).toBe(1);
@@ -71,9 +71,9 @@ describe("RunRegistry", () => {
     io.writeStdout("둘");
     io.writeStderr("셋");
     expect(handle.events).toEqual([
-      { kind: "stdout", html: "하나" },
-      { kind: "stdout", html: "둘" },
-      { kind: "stderr", html: "셋" },
+      { kind: "stdout", html: "하나", id: 1 },
+      { kind: "stdout", html: "둘", id: 2 },
+      { kind: "stderr", html: "셋", id: 3 },
     ]);
 
     const received: RunEvent[] = [];
@@ -81,7 +81,7 @@ describe("RunRegistry", () => {
       received.push(event);
     });
     io.writeStdout("넷");
-    expect(received).toEqual([{ kind: "stdout", html: "넷" }]);
+    expect(received).toEqual([{ kind: "stdout", html: "넷", id: 4 }]);
     expect(handle.events).toHaveLength(4);
 
     gate.resolve(0);
@@ -106,7 +106,7 @@ describe("RunRegistry", () => {
     unsubscribe();
     io.writeStdout("안 보인다");
 
-    expect(received).toEqual([{ kind: "stdout", html: "보인다" }]);
+    expect(received).toEqual([{ kind: "stdout", html: "보인다", id: 1 }]);
     expect(handle.events).toHaveLength(2);
 
     gate.resolve(0);

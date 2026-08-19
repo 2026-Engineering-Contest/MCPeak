@@ -39,6 +39,7 @@ export function useRunEvents(runId: string | null): RunEventsState {
       const event = JSON.parse(message.data) as RunEvent;
 
       setState((previous) => {
+        if (previous.events.some((received) => received.id === event.id)) return previous;
         const events = [...previous.events, event];
 
         if (event.kind === "question") {

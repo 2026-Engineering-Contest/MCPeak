@@ -74,6 +74,8 @@ export function CassetteBrowser({ path }: CassetteBrowserProps): JSX.Element {
           <p className="text-sm text-ink-muted">왼쪽 목록에서 카세트를 선택하세요.</p>
         ) : (
           <CassetteDetail
+            // 경로 전환 시 상세 상태(초안·경고)를 리셋한다. origin f9198e0의 회귀 수정 계승.
+            key={path}
             path={path}
             onDeleted={() => {
               setListVersion((version) => version + 1);

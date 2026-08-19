@@ -140,4 +140,59 @@ describe("CassetteBrowser", () => {
     });
     expect(window.location.hash).toBe("#/cassettes");
   });
+
+  // origin f9198e0의 회귀 테스트 이식: 경로 전환 뒤 늦게 도착한 이전 카세트 응답이
+  // 현재 화면의 초안·mtime을 덮어쓰면 안 된다(key={path}가 이전 인스턴스를 분리한다).
+  it("늦은 A 응답 뒤 B를 저장해도 B의 내용과 mtime만 전송한다", async () => {
+    const aPath = "/api/cassettes/cassettes%2Fa.json";
+    const bPath = "/api/cassettes/cassettes%2Fb.json";
+    let resolveA: ((response: Response) => void) | undefined;
+    const aResponse = new Promise<Response>((resolve) => {
+      resolveA = resolve;
+    });
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+      if (url === aPath) return aResponse;
+      if (url === bPath && method === "GET") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({ path: "cassettes/b.json", content: "B 원본", mtimeMs: 200 }),
+            { status: 200 },
+          ),
+        );
+      }
+      if (url === bPath && method === "PUT") {
+        return Promise.resolve(
+          new Response(JSON.stringify({ saved: true, mtimeMs: 201 }), { status: 200 }),
+        );
+      }
+      return Promise.resolve(new Response("[]", { status: 200 }));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const view = render(<CassetteBrowser path="cassettes/a.json" />);
+    view.rerender(<CassetteBrowser path="cassettes/b.json" />);
+    const draft = await screen.findByDisplayValue("B 원본");
+
+    resolveA?.(
+      new Response(JSON.stringify({ path: "cassettes/a.json", content: "A 원본", mtimeMs: 100 }), {
+        status: 200,
+      }),
+    );
+    await Promise.resolve();
+
+    fireEvent.change(draft, { target: { value: "B 수정" } });
+    fireEvent.click(screen.getByRole("button", { name: "저장" }));
+
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([, init]) => init?.method === "PUT")).toBe(true);
+    });
+    const put = fetchMock.mock.calls.find(([, init]) => init?.method === "PUT");
+    expect(String(put?.[0])).toBe(bPath);
+    expect(JSON.parse(String(put?.[1]?.body))).toEqual({ content: "B 수정", baseMtimeMs: 200 });
+    expect(
+      screen.queryByText("다른 곳에서 파일이 바뀌었습니다. 새로고침 후 다시 시도하세요."),
+    ).toBeNull();
+  });
 });

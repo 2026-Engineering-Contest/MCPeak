@@ -29,6 +29,20 @@ type Route =
   | { readonly screen: "repair"; readonly runId: string | null }
   | { readonly screen: "redirect" };
 
+/** 잘못된 인코딩(%zz 등)이 화면을 깨뜨리지 않게 한다. origin f9198e0 계승. */
+function decodeRouteValue(value: string): string | null {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * `#/runs/<runId>`, `#/cassettes/<인코딩된 경로>` 처럼 첫 세그먼트가 화면을, 그
+ * 뒤가 식별자를 가리키는 해시를 해석한다. 식별자가 없으면 null이다(예: `#/runs`만
+ * 있으면 실행 화면이지만 아직 특정 run을 보는 중은 아니다).
+ */
 function parseRoute(hash: string): Route {
   const withoutHash = hash.startsWith("#") ? hash.slice(1) : hash;
   const segments = withoutHash.split("/").filter((segment) => segment.length > 0);
@@ -38,7 +52,7 @@ function parseRoute(hash: string): Route {
     return { screen: "home" };
   }
   if (first === "runs") {
-    return { screen: "runs", runId: rest[0] !== undefined ? decodeURIComponent(rest[0]) : null };
+    return { screen: "runs", runId: rest[0] !== undefined ? decodeRouteValue(rest[0]) : null };
   }
   if (first === "generate") {
     return { screen: "generate" };
@@ -46,13 +60,13 @@ function parseRoute(hash: string): Route {
   if (first === "cassettes") {
     return {
       screen: "cassettes",
-      path: rest.length > 0 ? decodeURIComponent(rest.join("/")) : null,
+      path: rest.length > 0 ? decodeRouteValue(rest.join("/")) : null,
     };
   }
   if (first === "repair") {
     return {
       screen: "repair",
-      runId: rest[0] !== undefined ? decodeURIComponent(rest[0]) : null,
+      runId: rest[0] !== undefined ? decodeRouteValue(rest[0]) : null,
     };
   }
   // 빈 해시·알 수 없는 해시는 #/home으로 보낸다(§4-3 기본 리다이렉트).

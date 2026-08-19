@@ -1,10 +1,17 @@
 {
   "name": "ohmymcp",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "private": false,
   "type": "module",
   "description": "OhMyMCP 프레임워크의 CLI 진입점 (얇게 유지)",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/2026-Engineering-Contest/OhMyMCP.git",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://github.com/2026-Engineering-Contest/OhMyMCP#readme",
+  "bugs": "https://github.com/2026-Engineering-Contest/OhMyMCP/issues",
   "publishConfig": {
     "access": "public"
   },

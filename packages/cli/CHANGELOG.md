@@ -1,5 +1,94 @@
 # ohmymcp
 
+## 0.8.0
+
+### Minor Changes
+
+- 49b2431: `generate` 승인 화면에서 거절 근거를 확인하지 못한 케이스를 **AI 에게 물어볼 수 있습니다.** 미확인 목록 아래에 요청 여부를 묻고, 사용자가 승낙했을 때만 provider 를 부릅니다. 자동으로 부르지 않습니다 — 케이스가 많으면 비용이 곱해지고 provider 가 없는 사용자가 대다수입니다. `--provider` 가 없거나 미확인이 0건이면 아무것도 묻지 않습니다.
+
+  **이 진단은 참고입니다. 케이스 판정도 저장 여부도 바꾸지 않습니다.** 결과는 화면에만 나가고 `--json` 이나 `RunnerReport` 에는 들어가지 않으며, 화면 마지막 줄이 그 사실을 항상 함께 적습니다. provider 가 실패하거나 형식을 어긴 답을 보내도 안내만 찍고 승인 화면이 그대로 이어집니다.
+
+  응답 본문이 없는 케이스는 진단에서 **제외합니다.** 호출이 오류로 끝나 서버 응답이 아예 없는 경우가 있는데, 빈 값을 채워 물으면 AI 에게 판단 재료가 없어 지어낸 답만 돌아옵니다. 몇 건을 왜 뺐는지는 화면에 남깁니다.
+
+  `@ohmymcp-hsu/generate` 의 provider 객체에 `diagnoseRejection` 메서드가 추가됐습니다. `RejectionDiagnosisProvider` 의 메서드 이름이 `diagnose` 에서 `diagnoseRejection` 으로 바뀌었습니다 — 한 provider 객체가 기존 `diagnose(request: DiagnosisRequest, …)` 와 시그니처가 충돌하지 않게 하기 위함입니다.
+
+- 5b469fe: `generate` 승인 화면의 시험 실행 결과 아래에 **거절 근거 미확인 목록**을 붙입니다. 위반 케이스가 통과했더라도 그 거절이 서버의 정상 거절인지 내부 오류인지 확인하지 못한 경우가 있고, 그 케이스의 id 와 응답 본문을 한 줄씩 보여줘 사람이 저장 전에 판단할 수 있게 합니다. 0건이면 아무것도 나오지 않습니다.
+
+  **판정도 저장 여부도 바뀌지 않습니다.** 이 케이스들은 통과한 케이스이고 목록은 화면에만 나옵니다. 응답 본문은 기존 `escapeTerminalText` 로 제어 문자를 무해화하며, 개행도 함께 이스케이프되어 여러 줄 응답이 한 줄로 나옵니다. 본문 길이 제한은 `runner` 가 진단 값과 같은 상한에서 이미 적용합니다. 호출이 오류로 끝나 읽을 응답이 없는 케이스는 `(본문 없음)` 으로 적습니다.
+
+- 892ff61: `ohmymcp replay <suite.json> --cassette <path>` 를 추가했습니다. 녹화된 카세트만으로 테스트 명세를 재생하며 MCP 서버를 실행하지 않습니다. 카세트에 마스킹된 값이 있으면 그 자리의 판정이 실제 서버와 다를 수 있다는 경고를 냅니다.
+- 7600b09: 도그푸딩(공개 MCP 서버 8개)에서 잡힌 결함 셋을 고칩니다.
+
+  - `generate` 가 지원하지 않는 JSON Schema 키워드를 만나면 서버 전체를 거절하던 것을, 해당 툴만 건너뛰고 나머지를 생성하도록 바꿉니다(ADR-0036). 건너뛴 툴은 `skippedTools` 로 결과에 실리고 화면에 `건너뜀 N tools` 블록으로 고지되며, 커버리지 분모에서 빠집니다. 실측에서 공개 서버 8개 중 5개가 툴 하나 때문에 전체 거절됐습니다. 전 툴 지원 서버의 출력과 지문은 바뀌지 않습니다.
+  - `test` 가 `--arg` 값의 하이픈 접두를 거절해 `--arg -y` 를 못 받던 것을 고칩니다. `generate` 는 이미 받고 있었고, npx·uvx 로 띄우는 서버는 전부 여기 걸립니다.
+  - `generate` 의 연결 단계 실패(서버가 spawn 직후 종료 등)가 원인 없는 `GENERATE_FAILED` 로 뭉개지던 것을, core 오류의 code·message·hint 를 그대로 보여주는 `GENERATE_CONNECT_FAILED/<code>` 로 바꿉니다.
+
+- 6a93d42: cli: `generate` 가 `--out` 경로 충돌을 **서버에 붙기 전에** 알려 줍니다. 지금까지는 저장 확인에
+  답한 뒤에야 막혀서, 후보 검토와 provider 호출과 실서버 시험 실행과 입력값 교정을 다 치른 다음에
+  "파일이 이미 있다" 를 들었습니다. 이제 인자 파싱 직후에 끊습니다.
+
+  덮어쓰려면 `--force` 를 붙입니다. 기존 파일을 지우고 새로 씁니다. 플래그가 없으면 지금처럼
+  저장을 멈춥니다. 커밋 순간의 no-clobber 보장(`link` 의 `EEXIST`)은 그대로라 다른 프로세스가
+  같은 경로를 만들면 여전히 막힙니다. `--force` 인데 기존 파일을 못 지우면
+  `GENERATE_OUTPUT_REPLACE_FAILED` 로 끊고 시스템 오류 코드를 함께 보여줍니다.
+
+- a2b37e0: 거절을 기대하는 케이스의 입력이 서버 선언을 하나도 어기지 않으면 `REJECTION_WITHOUT_VIOLATION` advisory 를 냅니다 (#94). ADR-0021 이 감수한 미탐(거절 기대 케이스에서 입력 계약 위반을 침묵)에 신호가 없어, 오타로 정상 입력이 됐거나 `expected` 를 잘못 적은 케이스가 아무것도 검증하지 않으면서 초록으로 통과했습니다. `cli test` 는 전용 머리글(`거절을 기대하지만 선언을 어기지 않습니다`)로, `generate` 승인 화면은 전용 블록(`거절 근거가 불분명한 케이스`)으로 보여주되 "위반 N건" 재확인 개수에는 넣지 않습니다. 서버가 선언 밖 제약(값의 도메인)으로 거절하는 정당한 케이스가 있으므로 차단하지 않습니다.
+- 247e414: 진단 결과의 `discarded`를 단일 개수에서 사유별 개수로 확장합니다. 요청에 없는 케이스, 승인된 명세 수정 제안, `unsure` 응답에 함께 온 원인 후보를 각각 구분합니다.
+
+  `repair` 화면은 실제로 발생한 제외 사유와 개수를 보여주고, 명세 재승인이나 재시도 중 관련 있는 다음 행동만 안내합니다.
+
+- 58fb54a: 서버 수정 방향 제안(단계 4 repair)을 추가합니다. 승인된 명세로 `test` 를 돌려 실패가 났을 때 그 근거를 한 파일로 남기고, `ohmymcp repair` 가 그것을 AI provider 에게 물어 **서버 코드의 원인 후보**를 화면에 보여줍니다. 파일도 명세도 고치지 않습니다.
+
+  cli: `repair` 명령을 추가합니다.
+
+  ```
+  ohmymcp repair <bundle.json> --provider <codex|claude> --model <model> [--max-cases <N>] [--no-stderr] [--yes]
+  ```
+
+  `--provider` 와 `--model` 은 필수이며 기본값을 두지 않습니다. 외부로 나가기 전에 전송 내용을 확인 화면으로 보여주고, 비대화형 환경에서 `--yes` 가 없으면 보내지 않습니다. `n` 을 답하면 provider 를 한 번도 부르지 않고 종료 코드 0 으로 끝납니다. 진단을 받았든 근거가 부족하든 종료 코드는 0 이고, 1 이 되는 경우는 운영 실패뿐입니다(ADR-0032, ADR-0033).
+
+  cli: `test` 에 `--repair-bundle <path>` 옵션을 추가합니다. 실패한 케이스와 서버 stderr 를 담은 번들 파일을 만듭니다. `repair` 의 입력이며 `--json` 보고서와는 별도 파일입니다(ADR-0031). 실패가 없으면 파일을 만들지 않고 그 사실을 한 줄로 알립니다. 쓰기에 실패하면 전부 통과여도 종료 코드가 1 이고 `REPAIR_BUNDLE_WRITE_FAILED` 가 뜹니다. **이 옵션을 주지 않은 실행의 stdout · stderr · 종료 코드는 이전과 같습니다.**
+
+### Patch Changes
+
+- cd25fb4: core: 셸을 사용하지 않는 실행 명령 토큰화와 구체적인 명령 구문 오류를 공개 API로 제공한다.
+
+  cli: reset 명령에서 닫히지 않은 실행 파일 큰따옴표와 빈 실행 파일 경로를 구분해 안내한다.
+
+- 407f9ff: `generate`: 실패할 때 `generate`가 이미 알고 있던 원인을 그대로 보여 줍니다. 지금까지는 스키마가 거절돼도 `GENERATE_FAILED`와 "MCP 서버와 출력 경로를 확인하세요"만 나왔는데, 서버도 경로도 멀쩡한 경우라 **틀린 안내**였습니다. 이제 오류 코드·스키마 경로·원인·조치가 모두 나옵니다.
+
+  ```text
+  오류 [UNSUPPORTED_SCHEMA]: 지원하지 않는 JSON Schema 키워드 'maximum'가 있습니다. 경로: tools[3].inputSchema.properties.count.maximum
+  해결: 첫 버전은 type, required, properties, items, enum, const, default, examples, description, title, $schema를 지원합니다.
+  ```
+
+- f58967f: AI 검토 응답에 제안된 변경이 없으면 재요청 방법과 현재 상태 저장 방법을 안내합니다.
+- Updated dependencies [cd25fb4]
+- Updated dependencies [49b2431]
+- Updated dependencies [bf16fb5]
+- Updated dependencies [7600b09]
+- Updated dependencies [6ada2e6]
+- Updated dependencies [5dd34d3]
+- Updated dependencies [464d065]
+- Updated dependencies [8a5b2a4]
+- Updated dependencies [9bdd914]
+- Updated dependencies [8eb955d]
+- Updated dependencies [d70affe]
+- Updated dependencies [99db6ee]
+- Updated dependencies [f0ae3d3]
+- Updated dependencies [2d68bdb]
+- Updated dependencies [a2b37e0]
+- Updated dependencies [8e28914]
+- Updated dependencies [247e414]
+- Updated dependencies [4e2c6df]
+- Updated dependencies [4558ef9]
+- Updated dependencies [db571dd]
+  - @ohmymcp-hsu/core@0.3.0
+  - @ohmymcp-hsu/generate@0.5.0
+  - @ohmymcp-hsu/mock@0.2.0
+  - @ohmymcp-hsu/record@0.1.2
+  - @ohmymcp-hsu/runner@0.8.0
+
 ## 0.7.0
 
 ### Minor Changes

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { RunEvent } from "../../src/api-types.js";
+import type { RunEventInput } from "../../src/api-types.js";
 import { RunView } from "../src/screens/RunView.js";
 
 /** run-stream.test.ts와 같은 방식의 EventSource fake. 네트워크·서버 없음. */
@@ -17,8 +17,12 @@ class FakeEventSource {
     FakeEventSource.instances.push(this);
   }
 
-  emit(event: RunEvent): void {
-    this.onmessage?.({ data: JSON.stringify(event) } as MessageEvent<string>);
+  #nextId = 1;
+
+  /** 서버 RunRecord처럼 발생 순서대로 id를 붙인다(run-stream의 id 중복 제거 대응). */
+  emit(event: RunEventInput & { readonly id?: number }): void {
+    const withId = { id: this.#nextId++, ...event };
+    this.onmessage?.({ data: JSON.stringify(withId) } as MessageEvent<string>);
   }
 
   close(): void {

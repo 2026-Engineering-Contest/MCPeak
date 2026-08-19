@@ -1,4 +1,9 @@
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { loadCassette } from "@ohmymcp-hsu/record";
+import { validateMcpSuite } from "@ohmymcp-hsu/runner";
 import type {
   AnswerRequest,
   ApiError,
@@ -59,7 +64,13 @@ export async function handleRequest(
     return;
   }
   if (method === "PUT" && pathname.startsWith("/api/suites/")) {
-    await handlePutFile(request, response, options.root, decodeParam(pathname, "/api/suites/"));
+    await handlePutFile(
+      request,
+      response,
+      options.root,
+      decodeParam(pathname, "/api/suites/"),
+      "suite",
+    );
     return;
   }
   if (method === "GET" && pathname === "/api/cassettes") {
@@ -71,7 +82,13 @@ export async function handleRequest(
     return;
   }
   if (method === "PUT" && pathname.startsWith("/api/cassettes/")) {
-    await handlePutFile(request, response, options.root, decodeParam(pathname, "/api/cassettes/"));
+    await handlePutFile(
+      request,
+      response,
+      options.root,
+      decodeParam(pathname, "/api/cassettes/"),
+      "cassette",
+    );
     return;
   }
   if (method === "DELETE" && pathname.startsWith("/api/cassettes/")) {
@@ -87,7 +104,7 @@ export async function handleRequest(
     return;
   }
   if (method === "GET" && pathname.startsWith("/api/runs/") && pathname.endsWith("/events")) {
-    handleRunEvents(response, options.registry, extractRunId(pathname, "/events"));
+    handleRunEvents(request, response, options.registry, extractRunId(pathname, "/events"));
     return;
   }
   if (method === "POST" && pathname.startsWith("/api/runs/") && pathname.endsWith("/answer")) {
@@ -154,6 +171,7 @@ async function handlePutFile(
   response: ServerResponse,
   root: string,
   relativeOrNull: string | null,
+  type: "suite" | "cassette",
 ): Promise<void> {
   if (relativeOrNull === null) {
     sendJson(response, 400, { error: "경로를 해석할 수 없습니다." });
@@ -162,6 +180,10 @@ async function handlePutFile(
   const absolute = resolveProjectPath(root, relativeOrNull);
   if (absolute === null) {
     sendJson(response, 400, { error: "허용되지 않는 경로입니다." });
+    return;
+  }
+  if (!relativeOrNull.toLowerCase().endsWith(".json")) {
+    sendJson(response, 400, { error: "스위트와 카세트는 .json 확장자 파일만 저장할 수 있습니다." });
     return;
   }
   const body = await readJsonBody<Partial<PutFileRequest>>(request);
@@ -173,8 +195,22 @@ async function handlePutFile(
     sendJson(response, 400, { error: "content·baseMtimeMs가 필요합니다." });
     return;
   }
-  const result = await writeFileContent(absolute, body.content, body.baseMtimeMs);
-  sendJson(response, 200, result);
+  const validationError = await validateFileContent(type, body.content);
+  if (validationError !== null) {
+    sendJson(response, 400, { error: validationError });
+    return;
+  }
+  try {
+    const result = await writeFileContent(absolute, body.content, body.baseMtimeMs);
+    sendJson(response, 200, result);
+  } catch (error) {
+    const message = writeErrorMessage(error);
+    if (message !== null) {
+      sendJson(response, 400, { error: message });
+      return;
+    }
+    throw error;
+  }
 }
 
 async function handleDeleteFile(
@@ -191,12 +227,21 @@ async function handleDeleteFile(
     sendJson(response, 400, { error: "허용되지 않는 경로입니다." });
     return;
   }
+  if (!relativeOrNull.toLowerCase().endsWith(".json")) {
+    sendJson(response, 400, { error: "카세트는 .json 확장자 파일만 삭제할 수 있습니다." });
+    return;
+  }
   try {
+    if ((await loadCassette(absolute)) === null) {
+      sendJson(response, 404, { error: "파일을 찾을 수 없습니다." });
+      return;
+    }
     await deleteFile(absolute);
     response.writeHead(204);
     response.end();
-  } catch {
-    sendJson(response, 404, { error: "파일을 찾을 수 없습니다." });
+  } catch (error) {
+    if (isErrno(error, "ENOENT")) sendJson(response, 404, { error: "파일을 찾을 수 없습니다." });
+    else sendJson(response, 400, { error: "올바른 카세트 JSON 파일만 삭제할 수 있습니다." });
   }
 }
 
@@ -247,21 +292,73 @@ function handleGetRun(response: ServerResponse, registry: RunRegistry, runId: st
 }
 
 /**
- * SSE 구독. 과거 이벤트를 동기 구간에서 먼저 흘려보낸 뒤 바로 구독한다 — 그 사이에는
+ * SSE 구독. 과거 이벤트를 동기 구간에서 먼저 흘려보낸 뒤 바로 구독한다. 그 사이에는
  * `await`가 없어 다른 이벤트가 끼어들 여지가 없다(중복·누락 방지, 계획서 §5 T2 사양).
  */
-function handleRunEvents(response: ServerResponse, registry: RunRegistry, runId: string): void {
+function handleRunEvents(
+  request: IncomingMessage,
+  response: ServerResponse,
+  registry: RunRegistry,
+  runId: string,
+): void {
   const handle = registry.get(runId);
   if (handle === undefined) {
     sendJson(response, 404, { error: "그런 run이 없습니다." });
     return;
   }
+  const header = request.headers["last-event-id"];
+  const lastEventId = parseLastEventId(Array.isArray(header) ? header[0] : header);
   response.writeHead(200, SSE_HEADERS);
-  response.write(formatSseEvents(handle.events));
+  response.write(formatSseEvents(handle.events.filter((event) => event.id > lastEventId)));
   const unsubscribe = handle.subscribe((event) => {
     response.write(formatSseEvent(event));
   });
   response.on("close", unsubscribe);
+}
+
+function parseLastEventId(value: string | undefined): number {
+  if (value === undefined || !/^\d+$/.test(value)) return 0;
+  return Number(value);
+}
+
+async function validateFileContent(
+  type: "suite" | "cassette",
+  content: string,
+): Promise<string | null> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content) as unknown;
+  } catch {
+    return "본문 content가 올바른 JSON이 아닙니다.";
+  }
+  if (type === "suite") {
+    return validateMcpSuite(parsed).valid ? null : "본문 content가 올바른 MCP 스위트가 아닙니다.";
+  }
+
+  const directory = await mkdtemp(join(tmpdir(), "ohmymcp-dashboard-cassette-"));
+  const candidate = join(directory, "candidate.json");
+  try {
+    await writeFile(candidate, content, "utf8");
+    await loadCassette(candidate);
+    return null;
+  } catch {
+    return "본문 content가 올바른 카세트가 아닙니다.";
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+}
+
+function isErrno(error: unknown, code: "ENOENT" | "EISDIR" | "EACCES"): boolean {
+  return typeof error === "object" && error !== null && "code" in error && error.code === code;
+}
+
+function writeErrorMessage(error: unknown): string | null {
+  if (isErrno(error, "ENOENT"))
+    return "상위 디렉터리가 없습니다. 먼저 디렉터리를 만든 뒤 다시 저장하세요.";
+  if (isErrno(error, "EISDIR")) return "저장 대상이 디렉터리입니다. 파일 경로를 선택하세요.";
+  if (isErrno(error, "EACCES"))
+    return "쓰기 권한이 없습니다. 파일 또는 상위 디렉터리의 쓰기 권한을 확인하세요.";
+  return null;
 }
 
 async function handleAnswer(

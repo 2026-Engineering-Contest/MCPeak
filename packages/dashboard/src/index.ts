@@ -79,6 +79,6 @@ export function startDashboardServer(options: DashboardServerOptions): Promise<D
     };
     server.once("error", onError);
     server.once("listening", onListening);
-    server.listen(options.port);
+    server.listen(options.port, "127.0.0.1");
   });
 }

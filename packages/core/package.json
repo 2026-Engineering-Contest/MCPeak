@@ -1,10 +1,17 @@
 {
   "name": "@ohmymcp-hsu/core",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": false,
   "type": "module",
   "description": "MCP 프로토콜 클라이언트 · 트랜스포트 · 프로세스 수명주기",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/2026-Engineering-Contest/OhMyMCP.git",
+    "directory": "packages/core"
+  },
+  "homepage": "https://github.com/2026-Engineering-Contest/OhMyMCP#readme",
+  "bugs": "https://github.com/2026-Engineering-Contest/OhMyMCP/issues",
   "publishConfig": {
     "access": "public"
   },

@@ -106,3 +106,8 @@ T1-determinism-runner	c86beed	2026-08-18
 T2-determinism-capture	264855d	2026-08-18
 T3-determinism-cli-wiring	84c9e52	2026-08-18
 T4-determinism-e2e-adr	a3e5b54	2026-08-18
+T0-dashboard-contracts	c4ba137	2026-08-19
+T1-T2-dashboard-server	1d6a2f1	2026-08-19
+T3-T4-dashboard-web	fdeb2db	2026-08-19
+T5-dashboard-e2e-adr	9d9b4b2	2026-08-19
+T6-dashboard-argv-fix	eafad9d	2026-08-19

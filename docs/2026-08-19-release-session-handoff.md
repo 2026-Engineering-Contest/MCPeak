@@ -42,7 +42,9 @@
 - **스코프 `@ohmymcp-hsu`** — 라이브러리 6 개가 이미 그 이름으로 발행됨
 - **인증** — GitHub 시크릿 `NPM_TOKEN`(Granular Access Token, **2FA 우회 켜짐**, All packages)
 - **provenance** — `release.yml` 에 `id-token: write` + `NPM_CONFIG_PROVENANCE`
-- **7 패키지에 `repository`·`homepage`·`bugs`** — provenance 검증이 요구한다
+- **7 패키지에 `repository.url`** — provenance 검증이 요구한다. 실제 `E422` 는
+  `package.json: "repository.url" is ""` 였다. `homepage`·`bugs` 는 #191 이 같이 넣었지만
+  provenance 대조 대상이 아니다 — 빼도 발행은 된다
 
 원래 쓰려던 `@ohmymcp` 스코프는 2026-08-05 에 타인(`@ohmymcp/pi-directx`, npm 유저 `ev3lynx`)이
 선점해 사용할 수 없다.

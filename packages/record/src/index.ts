@@ -39,16 +39,6 @@ export interface CassetteClientOptions {
   onWarning?: (message: string) => void;
 }
 
-const NONDETERMINISTIC_KEYS = new Set([
-  "id",
-  "requestid",
-  "sessionid",
-  "timestamp",
-  "createdat",
-  "updatedat",
-  "expiresat",
-]);
-
 /**
  * 마스킹 대상 키. 값은 구분자를 지우고 소문자로 맞춘 형태다.
  *
@@ -88,6 +78,21 @@ const plainObject = (value: unknown): value is Record<string, unknown> =>
   !Array.isArray(value) &&
   (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null);
 
+/**
+ * 동적 키로 일반 객체에 값을 심는다. 대괄호 할당(`obj[key] = value`)은 key 가
+ * `"__proto__"` 일 때 own property 를 만드는 대신 프로토타입을 바꿔, 그 이름의 필드가
+ * 결과에서 조용히 사라진다. `redact` · `redactSchema` 는 키가 입력(응답 raw · 스키마)에서
+ * 그대로 온 임의 문자열이라 이 함수로 심는다.
+ */
+const setOwn = (target: Record<string, unknown>, key: string, value: unknown): void => {
+  Object.defineProperty(target, key, {
+    value,
+    enumerable: true,
+    writable: true,
+    configurable: true,
+  });
+};
+
 class CassetteJsonError extends TypeError {
   constructor(
     readonly path: string,
@@ -99,14 +104,11 @@ class CassetteJsonError extends TypeError {
   }
 }
 
-const normalizeKey = (key: string): string => key.replace(/[-_]/g, "").toLowerCase();
-
 /**
  * 키를 단어로 쪼갠다. `-` · `_` 구분자와 카멜케이스 경계를 함께 본다.
  *
- * `normalizeKey` 를 쓰지 않는 이유는 그쪽이 구분자를 **지우기** 때문이다. 경계 정보가
- * 사라지면 `tokenCount` 와 `accessToken` 을 구분할 수 없다. `normalizeKey` 는
- * `NONDETERMINISTIC_KEYS` 조회와 공유하므로 건드리지 않는다.
+ * 구분자를 **지워서** 이어 붙이면 경계 정보가 사라져 `tokenCount` 와 `accessToken` 을
+ * 구분할 수 없다. 그래서 지우지 않고 쪼갠다.
  */
 const keyWords = (key: string): string[] =>
   key
@@ -244,12 +246,61 @@ export function matchKey(toolName: string, args: unknown): string {
     .digest("hex");
 }
 
+/**
+ * 값을 깊게 순회해 민감한 키의 값을 `"[redacted]"` 로 바꾼다. 판정은 `sensitiveKey` 다.
+ *
+ * JSON 으로 표현할 수 없는 값(Date · 순환 참조 · 비유한수 · sparse array)에는 던진다.
+ * 호출자는 클론 가능성을 먼저 확인한 뒤에 부르거나, 던지는 것을 처리해야 한다.
+ */
 export function redact(value: unknown): unknown {
-  return transformJson(value, { redactSecrets: true, removeNondeterministic: false });
-}
+  const active = new Set<object>();
+  const visit = (current: unknown, key?: string): unknown => {
+    if (key !== undefined && sensitiveKey(key)) return REDACTED;
+    if (current === undefined) return undefined;
+    if (typeof current === "string") {
+      return redactJsonString(current, visit);
+    }
+    if (current === null || typeof current === "boolean") {
+      return current;
+    }
+    if (typeof current === "number") {
+      if (!Number.isFinite(current)) {
+        throw new TypeError("카세트 JSON에는 유한한 숫자만 사용할 수 있습니다.");
+      }
+      return current;
+    }
+    if (!Array.isArray(current) && !plainObject(current)) {
+      throw new TypeError("카세트 JSON에는 JSON 객체, 배열, 원시값만 사용할 수 있습니다.");
+    }
+    if (active.has(current)) {
+      throw new TypeError("카세트 JSON에는 순환 참조를 사용할 수 없습니다.");
+    }
+    active.add(current);
+    try {
+      if (Array.isArray(current)) {
+        const output: unknown[] = [];
+        for (let index = 0; index < current.length; index++) {
+          if (!Object.hasOwn(current, index)) {
+            throw new TypeError("카세트 JSON에는 sparse array를 사용할 수 없습니다.");
+          }
+          const next = visit(current[index]);
+          output.push(next === undefined ? null : next);
+        }
+        return output;
+      }
 
-export function snapshotContract(result: ToolResult): unknown {
-  return transformJson(result.raw, { redactSecrets: true, removeNondeterministic: true });
+      const output: Record<string, unknown> = {};
+      for (const objectKey of Object.keys(current).sort()) {
+        const next = visit(current[objectKey], objectKey);
+        if (next !== undefined) setOwn(output, objectKey, next);
+      }
+      return output;
+    } finally {
+      active.delete(current);
+    }
+  };
+
+  return visit(value);
 }
 
 export async function loadCassette(path: string): Promise<Cassette | null> {
@@ -606,7 +657,7 @@ function redactSchema(schema: unknown, sensitive: boolean): unknown {
     if (key === "properties" && plainObject(value)) {
       const nested: Record<string, unknown> = {};
       for (const name of Object.keys(value)) {
-        nested[name] = redactSchema(value[name], sensitive || sensitiveKey(name));
+        setOwn(nested, name, redactSchema(value[name], sensitive || sensitiveKey(name)));
       }
       output[key] = nested;
       continue;
@@ -623,72 +674,12 @@ function redactSchema(schema: unknown, sensitive: boolean): unknown {
       output[key] = value.map(() => REDACTED);
       continue;
     }
-    output[key] = value;
+    setOwn(output, key, value);
   }
   return output;
 }
 
-function transformJson(
-  value: unknown,
-  options: { redactSecrets: boolean; removeNondeterministic: boolean },
-): unknown {
-  const active = new Set<object>();
-  const visit = (current: unknown, key?: string): unknown => {
-    if (key !== undefined && options.redactSecrets && sensitiveKey(key)) return REDACTED;
-    if (current === undefined) return undefined;
-    if (typeof current === "string") {
-      return transformJsonString(current, visit);
-    }
-    if (current === null || typeof current === "boolean") {
-      return current;
-    }
-    if (typeof current === "number") {
-      if (!Number.isFinite(current)) {
-        throw new TypeError("카세트 JSON에는 유한한 숫자만 사용할 수 있습니다.");
-      }
-      return current;
-    }
-    if (!Array.isArray(current) && !plainObject(current)) {
-      throw new TypeError("카세트 JSON에는 JSON 객체, 배열, 원시값만 사용할 수 있습니다.");
-    }
-    if (active.has(current)) {
-      throw new TypeError("카세트 JSON에는 순환 참조를 사용할 수 없습니다.");
-    }
-    active.add(current);
-    try {
-      if (Array.isArray(current)) {
-        const output: unknown[] = [];
-        for (let index = 0; index < current.length; index++) {
-          if (!Object.hasOwn(current, index)) {
-            throw new TypeError("카세트 JSON에는 sparse array를 사용할 수 없습니다.");
-          }
-          const next = visit(current[index]);
-          output.push(next === undefined ? null : next);
-        }
-        return output;
-      }
-
-      const output: Record<string, unknown> = {};
-      for (const objectKey of Object.keys(current).sort()) {
-        if (options.removeNondeterministic && NONDETERMINISTIC_KEYS.has(normalizeKey(objectKey))) {
-          continue;
-        }
-        const next = visit(current[objectKey], objectKey);
-        if (next !== undefined) output[objectKey] = next;
-      }
-      return output;
-    } finally {
-      active.delete(current);
-    }
-  };
-
-  return visit(value);
-}
-
-function transformJsonString(
-  text: string,
-  visit: (value: unknown, key?: string) => unknown,
-): string {
+function redactJsonString(text: string, visit: (value: unknown, key?: string) => unknown): string {
   const trimmed = text.trimStart();
   if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) return text;
 

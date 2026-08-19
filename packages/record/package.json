@@ -3,7 +3,7 @@
   "version": "0.1.2",
   "private": false,
   "type": "module",
-  "description": "녹화 · 재생 · 계약 스냅샷",
+  "description": "녹화 · 재생",
   "license": "MIT",
   "repository": {
     "type": "git",

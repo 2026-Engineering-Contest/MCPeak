@@ -35,7 +35,7 @@ flowchart LR
 | `core` | `ConnectOptions` (command·args·env·cwd 또는 url·headers) | `McpClient` | 프로세스 기동·종료, 핸드셰이크, 타임아웃, stderr 수집 |
 | `runner` | `McpClient` (**주입받음**) | 실패 메시지 · 리포트 · JUnit XML | 공개 API, matcher, **실패 메시지 품질** |
 | `generate` | `ToolDef[]` (**주입받음**) | 테스트 소스 파일 경로 · 승인된 suite snapshot | 결정론적 baseline 합성, AI authoring 검토·승인 |
-| `record` | `ToolResult` (**주입받음**) | 카세트 파일 · 계약 스냅샷 | 매칭 키, 비결정 필드 처리, 비밀값 마스킹 |
+| `record` | `McpClient` (**감쌈**) | 카세트 파일 | 녹화·재생, 매칭 키, 비밀값 마스킹 |
 | `mock` | 툴 정의 · 주입할 응답 | 목 서버 | 가짜 데이터, 응답 주입 |
 | `cli` | `argv` | 종료 코드 | 얇은 디스패처. 각자 자기 서브커맨드만 |
 
@@ -75,7 +75,7 @@ cli → record / mock → core
 ```ts
 createMcpTest({ client: McpClient }, body)   // runner   — client 를 받는다
 generateTests(tools: ToolDef[], opts)        // generate — tools 를 받는다
-snapshotContract(result: ToolResult)         // record   — result 를 받는다
+cassetteClient(inner: McpClient, opts)       // record   — client 를 받는다
 injectResponse(name, response: ToolResult)   // mock     — response 를 받는다
 connect(opts): Promise<McpClient>            // core     — 값을 만드는 유일한 함수
 ```

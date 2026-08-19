@@ -10,7 +10,6 @@ import {
   matchKey,
   redact,
   saveCassette,
-  snapshotContract,
   stableStringify,
 } from "../src/index.js";
 
@@ -24,6 +23,14 @@ const TOOLS: ToolDef[] = [
     },
   },
 ];
+
+/**
+ * own property 값을 읽는다. `obj.__proto__` · `obj["__proto__"]` 는 둘 다 biome
+ * `noProto` 에 걸린다 — 점 표기와 대괄호 표기가 같은 접근자를 거치기 때문이다.
+ * `getOwnPropertyDescriptor` 는 그 접근자를 우회하고 own property 만 본다.
+ */
+const ownValue = (obj: object, key: string): unknown =>
+  Object.getOwnPropertyDescriptor(obj, key)?.value;
 
 const ok = (raw: unknown): ToolResult => ({
   content: [{ type: "text", text: JSON.stringify(raw) }],
@@ -103,7 +110,7 @@ describe("matchKey", () => {
   });
 });
 
-describe("redact / snapshotContract", () => {
+describe("redact", () => {
   it("비밀값 이름을 중첩 객체까지 마스킹한다", () => {
     expect(
       redact({
@@ -274,14 +281,6 @@ describe("redact / snapshotContract", () => {
     });
   });
 
-  it("비결정 키 판정은 접미 규칙과 무관하게 그대로다", () => {
-    // sensitiveKey 만 바뀌었고 normalizeKey 는 NONDETERMINISTIC_KEYS 조회와 공유하므로
-    // 건드리지 않았다. 두 판정이 서로 새지 않는지 고정한다.
-    const snapshot = snapshotContract(ok({ createdAt: "x", created_at: "y", cookieCount: 3 }));
-
-    expect(snapshot).toStrictEqual({ cookieCount: 3 });
-  });
-
   it("마스킹 중 sparse array를 거절한다", () => {
     const sparse = [1, undefined, 3];
     delete sparse[1];
@@ -289,21 +288,34 @@ describe("redact / snapshotContract", () => {
     expect(() => redact(sparse)).toThrow("카세트 JSON에는 sparse array를 사용할 수 없습니다.");
   });
 
-  it("비결정 필드는 제거하고 계약 변경 필드는 남긴다", () => {
-    const snapshot = snapshotContract(
-      ok({
-        id: "run-1",
-        requestId: "req-1",
-        timestamp: "2026-08-14T00:00:00Z",
-        data: { name: "weather", updatedAt: "now", fields: ["city"] },
-        auth: { token: "secret" },
-      }),
-    );
+  it("__proto__ 라는 이름의 필드를 일반 키로 보존한다", () => {
+    // { __proto__: x } 객체 리터럴 구문 자체가 __proto__ 를 own property 대신
+    // 프로토타입으로 특별 취급하므로, own property 인 입력을 만들려면 JSON.parse 를
+    // 쓴다. 실제로도 이런 값은 서버 응답을 JSON.parse 해서 들어온다.
+    const input = JSON.parse('{"__proto__":"user-value","ok":1,"nested":{"__proto__":"inner"}}');
 
-    expect(snapshot).toStrictEqual({
-      data: { name: "weather", fields: ["city"] },
-      auth: { token: "[redacted]" },
-    });
+    const result = redact(input) as Record<string, unknown>;
+
+    // 대괄호 할당(obj[key] = value)으로 심으면 이 자리에서 own property 대신
+    // 프로토타입이 바뀌어 필드가 사라진다. own property 로 남아야 한다.
+    expect(Object.keys(result).sort()).toStrictEqual(["__proto__", "nested", "ok"]);
+    expect(ownValue(result, "__proto__")).toBe("user-value");
+    expect(ownValue(result.nested as object, "__proto__")).toBe("inner");
+    // 값 심기가 실제 프로토타입까지 바꾸지 않았는지도 함께 고정한다.
+    expect(Object.getPrototypeOf(result)).toBe(Object.prototype);
+  });
+
+  it("문자열 안에 인코딩된 __proto__ 도 일반 키로 보존한다", () => {
+    // redactJsonString 은 문자열 필드를 JSON.parse 해 재귀한 뒤 다시 문자열로 만든다.
+    // 그 경로도 같은 visit 함수를 타므로 여기서도 __proto__ 가 살아야 한다.
+    const embedded = JSON.parse('{"__proto__":"embedded","num":1}');
+    const text = JSON.stringify(embedded);
+
+    const result = redact({ text }) as { text: string };
+    const parsedBack = JSON.parse(result.text) as Record<string, unknown>;
+
+    expect(Object.keys(parsedBack).sort()).toStrictEqual(["__proto__", "num"]);
+    expect(ownValue(parsedBack, "__proto__")).toBe("embedded");
   });
 });
 
@@ -1107,6 +1119,46 @@ describe("cassette IO", () => {
       expect(tool.inputSchema.properties.authorization.properties.value).toStrictEqual({
         type: "string",
         default: "[redacted]",
+      });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("__proto__ 라는 이름의 스키마 프로퍼티를 일반 키로 보존한다", async () => {
+    // redactSchema 의 properties 재귀도 redact 와 같은 대괄호 할당 버그를 가질 수 있다.
+    // properties.__proto__ 는 "아무 키나 담는 객체" 스키마에서 실제로 나올 수 있는 이름이다.
+    const dir = await mkdtemp(join(tmpdir(), "ohmymcp-record-"));
+    const path = join(dir, "proto-schema.cassette.json");
+    const cassette = cassetteWith({
+      toolName: "get_bag",
+      args: {},
+      result: ok({}),
+    });
+    // 객체 리터럴 구문 { __proto__: ... } 은 own property 가 아니라 프로토타입을
+    // 바꾸므로, 애초에 own property 인 입력을 만들려면 JSON 문자열을 파싱해야 한다.
+    cassette.tools = [
+      JSON.parse(
+        '{"name":"get_bag","inputSchema":{"type":"object","properties":' +
+          '{"__proto__":{"type":"string","default":"안-민감-스키마값"},' +
+          '"normal":{"type":"string"}}}}',
+      ),
+    ];
+
+    try {
+      await saveCassette(path, cassette);
+      const loaded = await loadCassette(path);
+      const tool = loaded?.tools?.[0] as {
+        inputSchema: { properties: Record<string, unknown> };
+      };
+
+      expect(Object.keys(tool.inputSchema.properties).sort()).toStrictEqual([
+        "__proto__",
+        "normal",
+      ]);
+      expect(ownValue(tool.inputSchema.properties, "__proto__")).toStrictEqual({
+        type: "string",
+        default: "안-민감-스키마값",
       });
     } finally {
       await rm(dir, { recursive: true, force: true });

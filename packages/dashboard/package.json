@@ -1,6 +1,6 @@
 {
   "name": "@ohmymcp-hsu/dashboard",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": false,
   "type": "module",
   "description": "OhMyMCP 대시보드 (로컬 웹 UI · CLI 플로우 구동)",

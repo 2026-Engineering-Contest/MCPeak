@@ -1,5 +1,47 @@
 # @ohmymcp-hsu/generate
 
+## 0.5.0
+
+### Minor Changes
+
+- 49b2431: `generate` 승인 화면에서 거절 근거를 확인하지 못한 케이스를 **AI 에게 물어볼 수 있습니다.** 미확인 목록 아래에 요청 여부를 묻고, 사용자가 승낙했을 때만 provider 를 부릅니다. 자동으로 부르지 않습니다 — 케이스가 많으면 비용이 곱해지고 provider 가 없는 사용자가 대다수입니다. `--provider` 가 없거나 미확인이 0건이면 아무것도 묻지 않습니다.
+
+  **이 진단은 참고입니다. 케이스 판정도 저장 여부도 바꾸지 않습니다.** 결과는 화면에만 나가고 `--json` 이나 `RunnerReport` 에는 들어가지 않으며, 화면 마지막 줄이 그 사실을 항상 함께 적습니다. provider 가 실패하거나 형식을 어긴 답을 보내도 안내만 찍고 승인 화면이 그대로 이어집니다.
+
+  응답 본문이 없는 케이스는 진단에서 **제외합니다.** 호출이 오류로 끝나 서버 응답이 아예 없는 경우가 있는데, 빈 값을 채워 물으면 AI 에게 판단 재료가 없어 지어낸 답만 돌아옵니다. 몇 건을 왜 뺐는지는 화면에 남깁니다.
+
+  `@ohmymcp-hsu/generate` 의 provider 객체에 `diagnoseRejection` 메서드가 추가됐습니다. `RejectionDiagnosisProvider` 의 메서드 이름이 `diagnose` 에서 `diagnoseRejection` 으로 바뀌었습니다 — 한 provider 객체가 기존 `diagnose(request: DiagnosisRequest, …)` 와 시그니처가 충돌하지 않게 하기 위함입니다.
+
+- 7600b09: 도그푸딩(공개 MCP 서버 8개)에서 잡힌 결함 셋을 고칩니다.
+
+  - `generate` 가 지원하지 않는 JSON Schema 키워드를 만나면 서버 전체를 거절하던 것을, 해당 툴만 건너뛰고 나머지를 생성하도록 바꿉니다(ADR-0036). 건너뛴 툴은 `skippedTools` 로 결과에 실리고 화면에 `건너뜀 N tools` 블록으로 고지되며, 커버리지 분모에서 빠집니다. 실측에서 공개 서버 8개 중 5개가 툴 하나 때문에 전체 거절됐습니다. 전 툴 지원 서버의 출력과 지문은 바뀌지 않습니다.
+  - `test` 가 `--arg` 값의 하이픈 접두를 거절해 `--arg -y` 를 못 받던 것을 고칩니다. `generate` 는 이미 받고 있었고, npx·uvx 로 띄우는 서버는 전부 여기 걸립니다.
+  - `generate` 의 연결 단계 실패(서버가 spawn 직후 종료 등)가 원인 없는 `GENERATE_FAILED` 로 뭉개지던 것을, core 오류의 code·message·hint 를 그대로 보여주는 `GENERATE_CONNECT_FAILED/<code>` 로 바꿉니다.
+
+- 6ada2e6: `generate`: 거절 근거를 확인하지 못한 위반 케이스에 대해 AI 에게 참고 의견을 묻는 통로를 추가했습니다(`prepareRejectionDiagnosisRequests` · `rejectionDiagnosisPrompt` · `dispatchRejectionDiagnosis`). 위반 케이스의 단언은 `isError: true` 하나라 "서버가 입력을 거절한 것"과 "서버가 다른 이유로 죽은 것"이 구분되지 않고, 관찰 80건은 응답 본문 형식으로 그 둘을 가를 수 없음을 보였습니다. 그래서 이 통로는 **판정을 바꾸지 않습니다.** 케이스 결과·종료 코드·`--json`·`RunnerReport` 어디에도 들어가지 않고 승인 화면에만 참고로 나갑니다. 대상은 `unverified` 케이스뿐이고, 전송 payload 에는 기존 redaction 계약(ADR-0033)이 그대로 적용됩니다. provider 응답은 `verdict` 가 `rejected`·`crashed`·`unsure` 셋 중 하나인지, `reason` 이 비지 않았는지, 요청한 케이스에 빠짐없이 한 번씩 답했는지를 전부 검사하고 하나라도 어긋나면 거부합니다.
+- 247e414: 진단 결과의 `discarded`를 단일 개수에서 사유별 개수로 확장합니다. 요청에 없는 케이스, 승인된 명세 수정 제안, `unsure` 응답에 함께 온 원인 후보를 각각 구분합니다.
+
+  `repair` 화면은 실제로 발생한 제외 사유와 개수를 보여주고, 명세 재승인이나 재시도 중 관련 있는 다음 행동만 안내합니다.
+
+- db571dd: authoring 통로와 분리된 **서버 진단 전용 통로**를 내보냅니다. 실패한 `test` 실행의 근거를 AI provider 에게 물어 서버 코드의 원인 후보를 받아 오는 경로이고, 기존 authoring API 는 바뀌지 않습니다.
+
+  새 함수는 `prepareDiagnosisRequest` · `dispatchDiagnosisRequest` · `validateDiagnosisResult` · `diagnosisPrompt` 입니다. 새 상수는 `DIAGNOSIS_PROVIDER_SCHEMA` · `DEFAULT_MAX_REPAIR_CASES` · `MAX_REPAIR_STDERR_BYTES` · `MAX_CAUSE_CHARS` 이고, 타입은 `DiagnosisRequest` · `DiagnosisFailure` · `DiagnosisDiagnostic` · `DiagnosisProcessDiagnostics` · `DiagnosisCause` · `DiagnosisResult` · `ServerDiagnosisProvider` · `DiagnosisRequestPreview` · `DiagnosisRequestBinding` · `DiagnosisDispatchResult` · `DiagnosisValidation` 을 함께 내보냅니다.
+
+  `createCodexProvider` · `createClaudeProvider` 가 돌려주는 객체에 `diagnose` 가 추가되어, 한 객체가 `TestAuthoringProvider` 와 `ServerDiagnosisProvider` 를 함께 만족합니다. 모델과 환경변수 allowlist, 샌드박스 설정은 두 경로가 공유합니다.
+
+### Patch Changes
+
+- 5dd34d3: `generate`: `$schema` 키워드를 지원 목록에 추가해 draft 선언이 붙은 서버의 툴이 거절되지 않게 했습니다. 공식 TypeScript SDK가 zod에서 스키마를 뽑을 때 이 키를 기본으로 붙이므로, 그동안 `server-everything` 13개 툴과 `server-memory` 9개 툴이 전부 첫 키에서 막혔습니다. `$schema`는 방언 선언용 annotation이라 합성될 입력값을 바꾸지 않으며, 문자열이 아니면 종전대로 거절합니다. 실제 제약인 `minimum`·`maximum`·`format`의 거절은 그대로 유지됩니다.
+- a2b37e0: 거절을 기대하는 케이스의 입력이 서버 선언을 하나도 어기지 않으면 `REJECTION_WITHOUT_VIOLATION` advisory 를 냅니다 (#94). ADR-0021 이 감수한 미탐(거절 기대 케이스에서 입력 계약 위반을 침묵)에 신호가 없어, 오타로 정상 입력이 됐거나 `expected` 를 잘못 적은 케이스가 아무것도 검증하지 않으면서 초록으로 통과했습니다. `cli test` 는 전용 머리글(`거절을 기대하지만 선언을 어기지 않습니다`)로, `generate` 승인 화면은 전용 블록(`거절 근거가 불분명한 케이스`)으로 보여주되 "위반 N건" 재확인 개수에는 넣지 않습니다. 서버가 선언 밖 제약(값의 도메인)으로 거절하는 정당한 케이스가 있으므로 차단하지 않습니다.
+- 8e28914: 진단 요청의 `caseId` 허용 값을 요청마다 스키마 `enum` 으로 못 박습니다. provider 가 여러 케이스를 한 항목에 이어 붙여 답하면 검증이 그 항목을 버려, 근거가 충분한 답이 통째로 `unsure` 로 접히던 문제를 크게 줄입니다. provider 가 그래도 enum 을 어기면 검증은 여전히 그 항목을 버립니다. 프롬프트도 허용 목록과 "여러 케이스가 같은 원인이면 항목을 나눠 각각 낸다" 는 규칙을 함께 싣습니다.
+- Updated dependencies [cd25fb4]
+- Updated dependencies [bf16fb5]
+- Updated dependencies [a2b37e0]
+- Updated dependencies [4e2c6df]
+- Updated dependencies [4558ef9]
+  - @ohmymcp-hsu/core@0.3.0
+  - @ohmymcp-hsu/runner@0.8.0
+
 ## 0.4.2
 
 ### Patch Changes

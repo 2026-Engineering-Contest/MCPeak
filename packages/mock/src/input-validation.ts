@@ -101,8 +101,8 @@ function jsonTypeOf(value: unknown): string {
  * 제약은 그 타입의 값에만 적용한다 — `minLength` 가 걸린 필드에 배열이 와도 길이를 재지 않는다.
  * 타입이 어긋난 것은 type 축이 볼 일이고, 두 축이 같은 값을 두고 다른 문장을 내면 모순으로 읽힌다.
  *
- * 문자열 길이는 UTF-16 단위다(`String.length`). 서로게이트 쌍이 2 로 세지는 것은 알려진 한계고,
- * 코드포인트로 세려면 `[...value].length` 로 바꾸면 된다.
+ * 문자열 길이는 **코드 포인트**로 센다. `String.length` 는 UTF-16 단위라 "😀" 를 2 로 세고,
+ * 그러면 `maxLength: 1` 을 지킨 값을 거절하는 오탐이 된다. JSON Schema 의 length 는 문자 수다.
  */
 function rangeViolation(
   field: string,
@@ -134,10 +134,11 @@ function rangeViolation(
   }
 
   if (typeof value === "string") {
+    const length = [...value].length;
     const min = limit("minLength");
-    if (min !== undefined && value.length < min) return at("minLength", min, value.length);
+    if (min !== undefined && length < min) return at("minLength", min, length);
     const max = limit("maxLength");
-    if (max !== undefined && value.length > max) return at("maxLength", max, value.length);
+    if (max !== undefined && length > max) return at("maxLength", max, length);
     return undefined;
   }
 
@@ -212,6 +213,9 @@ export function findSchemaViolations(
     if (!plainObject(fieldSchema)) continue;
     // 필드에 조합자가 있으면 그 필드만 건너뛴다. 나머지 필드와 required 검사는 계속한다.
     if (UNREADABLE_KEYWORDS.some((keyword) => keyword in fieldSchema)) continue;
+    // 필드 type 이 배열이면 루트와 같은 규칙으로 그 필드를 통째로 포기한다. 타입 축만 빼고
+    // enum·range 를 계속 보면 반쯤 검사된 필드가 남아 "못 읽으면 침묵" 규칙이 갈린다.
+    if (Array.isArray(fieldSchema.type)) continue;
     const found = fieldViolation(name, fieldSchema, values[name]);
     if (found !== undefined) violations.push(found);
   }

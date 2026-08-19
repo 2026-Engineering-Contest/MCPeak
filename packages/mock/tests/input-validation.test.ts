@@ -125,6 +125,15 @@ describe("findSchemaViolations — range", () => {
     );
   });
 
+  it("길이는 UTF-16 단위가 아니라 코드 포인트로 센다", () => {
+    // "😀" 는 String.length 로 2 다. maxLength: 1 을 어겼다고 하면 정상 값을 거절하는 오탐이다.
+    // JSON Schema 의 length 는 코드 포인트 수다.
+    expect(findSchemaViolations(schema({ f: { maxLength: 1 } }), { f: "😀" })).toEqual([]);
+    expect(findSchemaViolations(schema({ f: { minLength: 2 } }), { f: "😀" })).toEqual([
+      { kind: "rangeMismatch", field: "f", keyword: "minLength", limit: 2, found: 1 },
+    ]);
+  });
+
   it("길이 제약은 그 타입의 값에만 적용한다", () => {
     // minLength 가 걸린 필드에 배열이 오면 길이 검사를 하지 않는다. 타입 축이 볼 일이다.
     expect(findSchemaViolations(schema({ f: { minLength: 3 } }), { f: [1] })).toEqual([]);
@@ -190,6 +199,15 @@ describe("findSchemaViolations — 해석할 수 없는 스키마 (ADR-0048 §4)
       { kind: "requiredMissing", field: "c" },
       { kind: "typeMismatch", field: "b", declared: "string", found: "number" },
     ]);
+  });
+
+  it("필드 type 이 배열이면 그 필드를 검사하지 않는다", () => {
+    // 루트 type 배열과 같은 규칙이다 — 어느 쪽으로 읽어야 할지 정보가 없다. 타입 축만 빼고
+    // enum·range 를 계속 보면 그 필드가 반쯤 검사된 상태로 남아 규칙이 갈린다.
+    expect(findSchemaViolations(schema({ f: { type: ["string", "null"] } }), { f: 0 })).toEqual([]);
+    expect(
+      findSchemaViolations(schema({ f: { type: ["string", "null"], minimum: 10 } }), { f: 0 }),
+    ).toEqual([]);
   });
 
   it("해석 가능한 스키마는 unanalyzableReason 이 undefined 다", () => {

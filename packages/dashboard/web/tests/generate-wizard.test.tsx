@@ -73,6 +73,9 @@ describe("GenerateWizard", () => {
     fireEvent.change(screen.getByLabelText("카세트 저장 위치 (선택)"), {
       target: { value: "cassettes/a.json" },
     });
+    fireEvent.change(screen.getByLabelText("시험 실행 전 초기화 명령 (선택)"), {
+      target: { value: "node scripts/reset.js" },
+    });
     // 3단계로 돌아가 시험 실행을 끈 뒤 다시 4단계로 오면,
     fireEvent.click(screen.getByRole("button", { name: "이전" }));
     fireEvent.click(screen.getByLabelText("저장 전에 시험 실행으로 검증"));

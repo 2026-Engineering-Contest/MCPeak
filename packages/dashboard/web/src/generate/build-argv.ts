@@ -4,7 +4,7 @@
  * 어긋나면 대시보드만 다른 제품이 된다.
  */
 export interface GenerateForm {
-  readonly command: string;        // 1단계에서 조립된 실행 명령("직접 입력" 포함)
+  readonly command: string; // 1단계에서 조립된 실행 명령("직접 입력" 포함)
   readonly args: readonly string[];
   readonly suiteId: string;
   readonly suiteName: string;
@@ -12,12 +12,12 @@ export interface GenerateForm {
   readonly force: boolean;
   readonly mode: "ai" | "baseline";
   readonly provider: "claude" | "codex";
-  readonly model: string;          // 빈 문자열 = 미지정
-  readonly dryRun: boolean;        // 기본 true
-  readonly repair: boolean;        // 기본 true
-  readonly cassettePath: string;   // 빈 문자열 = 녹화 없음
+  readonly model: string; // 빈 문자열 = 미지정
+  readonly dryRun: boolean; // 기본 true
+  readonly repair: boolean; // 기본 true
+  readonly cassettePath: string; // 빈 문자열 = 녹화 없음
   readonly record: boolean;
-  readonly resetCmd: string;       // 빈 문자열 = 미지정
+  readonly resetCmd: string; // 빈 문자열 = 미지정
 }
 
 /** 필수 필드의 사용자 표시 라벨(조사 포함, 오류 문구용). */

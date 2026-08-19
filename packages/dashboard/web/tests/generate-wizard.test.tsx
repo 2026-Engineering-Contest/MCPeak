@@ -1,6 +1,5 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GenerateWizard } from "../src/screens/GenerateWizard.js";
 
@@ -97,11 +96,16 @@ describe("GenerateWizard", () => {
     expect(JSON.parse(String(init.body))).toEqual({
       flow: "generate",
       argv: [
-        "--command", "node server.js",
-        "--suite-id", "weather",
-        "--name", "날씨 서버",
-        "--out", "examples/weather/suite.json",
-        "--provider", "claude",
+        "--command",
+        "node server.js",
+        "--suite-id",
+        "weather",
+        "--name",
+        "날씨 서버",
+        "--out",
+        "examples/weather/suite.json",
+        "--provider",
+        "claude",
       ],
     });
   });
@@ -113,8 +117,8 @@ describe("GenerateWizard", () => {
     fireEvent.click(screen.getByRole("button", { name: "다음" }));
 
     const command = screen.getByText(
-      "ohmymcp generate --command \"node server.js\" --suite-id weather " +
-        "--name \"날씨 서버\" --out examples/weather/suite.json --provider claude",
+      'ohmymcp generate --command "node server.js" --suite-id weather ' +
+        '--name "날씨 서버" --out examples/weather/suite.json --provider claude',
     );
     expect(command.className).toContain("font-mono");
   });

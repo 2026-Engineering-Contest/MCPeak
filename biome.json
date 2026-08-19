@@ -27,5 +27,18 @@
     "formatter": {
       "quoteStyle": "double"
     }
-  }
+  },
+  "overrides": [
+    {
+      "includes": ["packages/dashboard/web/src/theme.css"],
+      "css": {
+        "parser": {
+          "tailwindDirectives": true
+        }
+      },
+      "formatter": {
+        "enabled": false
+      }
+    }
+  ]
 }

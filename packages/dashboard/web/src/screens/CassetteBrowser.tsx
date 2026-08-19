@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
 import type { JSX } from "react";
+import { useEffect, useState } from "react";
 import type {
   FileContent,
   FileEntry,
@@ -31,7 +31,8 @@ function summarizeInteractions(content: string): readonly TimelineRow[] {
     const parsed = JSON.parse(content) as { interactions?: unknown };
     if (!Array.isArray(parsed.interactions)) return [];
     return parsed.interactions.map((item) => {
-      const record = item !== null && typeof item === "object" ? (item as Record<string, unknown>) : {};
+      const record =
+        item !== null && typeof item === "object" ? (item as Record<string, unknown>) : {};
       const request =
         record.request !== null && typeof record.request === "object"
           ? (record.request as Record<string, unknown>)
@@ -47,7 +48,8 @@ function summarizeInteractions(content: string): readonly TimelineRow[] {
             ? record.method
             : "?";
       const args = "args" in request ? truncate(JSON.stringify(request.args) ?? "", 48) : "";
-      const result = "content" in response ? truncate(JSON.stringify(response.content) ?? "", 48) : "";
+      const result =
+        "content" in response ? truncate(JSON.stringify(response.content) ?? "", 48) : "";
       return { method, summary: [args, result].filter((part) => part !== "").join(" · ") };
     });
   } catch {
@@ -94,6 +96,7 @@ function CassetteList({
   const [cassettes, setCassettes] = useState<readonly FileEntry[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: version은 상세의 삭제 후 목록 재조회를 트리거하는 신호다(본문에서 값은 안 쓴다)
   useEffect(() => {
     apiGet<FileEntry[]>("/api/cassettes")
       .then(setCassettes)
@@ -219,7 +222,9 @@ function CassetteDetail({
   return (
     <div className="space-y-4">
       <header className="flex flex-wrap items-center gap-3">
-        <h2 className="min-w-0 flex-1 font-mono text-sm font-semibold break-all text-ink">{path}</h2>
+        <h2 className="min-w-0 flex-1 font-mono text-sm font-semibold break-all text-ink">
+          {path}
+        </h2>
         <div className="flex items-center gap-2">
           <button
             type="button"
@@ -288,6 +293,7 @@ function CassetteDetail({
           {timeline.length > 0 && (
             <ol className="overflow-hidden rounded-lg border border-line bg-surface">
               {timeline.map((row, index) => (
+                // biome-ignore lint/suspicious/noArrayIndexKey: 타임라인은 draft 원문에서 통째로 재파생되고 재정렬이 없어 index가 곧 표시 번호다
                 <li key={index} className="border-b border-line-subtle last:border-b-0">
                   <button
                     type="button"

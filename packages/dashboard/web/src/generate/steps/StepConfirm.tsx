@@ -49,7 +49,10 @@ export function StepConfirm(props: {
     ],
     ["시험 실행", form.dryRun ? "켬" : "끔"],
     ["자동 교정", form.repair ? "켬" : "끔"],
-    ["카세트", form.cassettePath === "" ? "녹화 없음" : form.cassettePath + (form.record ? " (재녹화)" : "")],
+    [
+      "카세트",
+      form.cassettePath === "" ? "녹화 없음" : form.cassettePath + (form.record ? " (재녹화)" : ""),
+    ],
     ["초기화 명령", form.resetCmd === "" ? "없음" : form.resetCmd],
   ];
 

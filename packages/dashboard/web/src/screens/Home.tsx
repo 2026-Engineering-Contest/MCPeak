@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
 import type { JSX } from "react";
+import { useEffect, useState } from "react";
 import type {
   FileEntry,
   RunSummary,
@@ -77,7 +77,9 @@ export function Home(): JSX.Element {
             테스트 스위트
           </h2>
           <ul className="divide-y divide-line-subtle">
-            {suites === null && <li className="px-4 py-3 text-sm text-ink-muted">불러오는 중...</li>}
+            {suites === null && (
+              <li className="px-4 py-3 text-sm text-ink-muted">불러오는 중...</li>
+            )}
             {suites !== null && suites.length === 0 && (
               <li className="px-4 py-3 text-sm text-ink-muted">스위트가 없습니다.</li>
             )}

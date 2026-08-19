@@ -1,5 +1,5 @@
-import { useState } from "react";
 import type { JSX } from "react";
+import { useState } from "react";
 import { Field, INPUT_CLASS } from "./fields.js";
 
 /** 1단계 실행 방법 세그먼트. command 문자열 조립 프리셋일 뿐이다(구현계획 §5 U3). */
@@ -57,7 +57,7 @@ export function StepServer(props: {
     <div className="space-y-5">
       <div>
         <p className="mb-2 text-sm font-medium text-ink">실행 방법</p>
-        <div className="inline-flex overflow-hidden rounded-md border border-line" role="group">
+        <fieldset className="inline-flex overflow-hidden rounded-md border border-line">
           {(Object.keys(METHOD_LABELS) as readonly CommandMethod[]).map((method) => (
             <button
               key={method}
@@ -73,7 +73,7 @@ export function StepServer(props: {
               {METHOD_LABELS[method]}
             </button>
           ))}
-        </div>
+        </fieldset>
       </div>
 
       <Field
@@ -107,6 +107,7 @@ export function StepServer(props: {
           <ul className="flex flex-wrap gap-2">
             {props.args.map((arg, index) => (
               <li
+                // biome-ignore lint/suspicious/noArrayIndexKey: 인자 칩은 같은 값 중복을 허용해 값만으로는 유일 키가 없고, 목록은 변경마다 통째로 재생성된다
                 key={`${arg}-${index}`}
                 className="inline-flex items-center gap-1.5 rounded bg-line-subtle px-2 py-0.5 font-mono text-xs text-ink"
               >

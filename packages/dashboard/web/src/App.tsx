@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
 import type { JSX } from "react";
-import { Sidebar } from "./components/Sidebar.js";
+import { useEffect, useState } from "react";
 import type { NavId } from "./components/Sidebar.js";
+import { Sidebar } from "./components/Sidebar.js";
 import { ThemeToggle } from "./components/ThemeToggle.js";
 import { CassetteBrowser } from "./screens/CassetteBrowser.js";
 import { GenerateWizard } from "./screens/GenerateWizard.js";
@@ -109,7 +109,11 @@ export function App(): JSX.Element {
   );
 }
 
-function Screen({ route }: { readonly route: Exclude<Route, { screen: "redirect" }> }): JSX.Element {
+function Screen({
+  route,
+}: {
+  readonly route: Exclude<Route, { screen: "redirect" }>;
+}): JSX.Element {
   switch (route.screen) {
     case "home":
       return <Home />;

@@ -1,6 +1,5 @@
 // @vitest-environment jsdom
 import { cleanup, render } from "@testing-library/react";
-import React from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import { Stepper } from "../src/components/Stepper.js";
 

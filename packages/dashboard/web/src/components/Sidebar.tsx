@@ -32,6 +32,7 @@ const NAV_ITEMS: readonly NavItem[] = [
     label: "Home",
     hash: "#/home",
     icon: (
+      // biome-ignore lint/a11y/noSvgWithoutTitle: 장식용 아이콘, 라벨 텍스트가 인접
       <svg {...ICON_PROPS}>
         <path d="M3 10.5 12 3l9 7.5" />
         <path d="M5 9.5V21h14V9.5" />
@@ -43,6 +44,7 @@ const NAV_ITEMS: readonly NavItem[] = [
     label: "Runs",
     hash: "#/runs",
     icon: (
+      // biome-ignore lint/a11y/noSvgWithoutTitle: 장식용 아이콘, 라벨 텍스트가 인접
       <svg {...ICON_PROPS}>
         <polyline points="4 17 10 11 4 5" />
         <line x1="12" y1="19" x2="20" y2="19" />
@@ -54,6 +56,7 @@ const NAV_ITEMS: readonly NavItem[] = [
     label: "Generate",
     hash: "#/generate",
     icon: (
+      // biome-ignore lint/a11y/noSvgWithoutTitle: 장식용 아이콘, 라벨 텍스트가 인접
       <svg {...ICON_PROPS}>
         <path d="M12 3v18" />
         <path d="M3 12h18" />
@@ -65,6 +68,7 @@ const NAV_ITEMS: readonly NavItem[] = [
     label: "Cassettes",
     hash: "#/cassettes",
     icon: (
+      // biome-ignore lint/a11y/noSvgWithoutTitle: 장식용 아이콘, 라벨 텍스트가 인접
       <svg {...ICON_PROPS}>
         <rect x="3" y="6" width="18" height="12" rx="2" />
         <circle cx="8" cy="12" r="2" />
@@ -77,6 +81,7 @@ const NAV_ITEMS: readonly NavItem[] = [
     label: "Repair",
     hash: "#/repair",
     icon: (
+      // biome-ignore lint/a11y/noSvgWithoutTitle: 장식용 아이콘, 라벨 텍스트가 인접
       <svg {...ICON_PROPS}>
         <path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.7 2.7-2.7-2.7 2.4-3z" />
       </svg>
@@ -93,6 +98,7 @@ export function Sidebar({ active }: { readonly active: NavId }): JSX.Element {
           style={{ background: "linear-gradient(135deg, #8b5cf6, #6d28d9)" }}
           aria-hidden
         >
+          {/* biome-ignore lint/a11y/noSvgWithoutTitle: 장식용 아이콘, 라벨 텍스트가 인접 */}
           <svg {...ICON_PROPS}>
             <polyline points="4 17 10 11 4 5" />
             <line x1="12" y1="19" x2="20" y2="19" />

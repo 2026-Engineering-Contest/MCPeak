@@ -1,6 +1,5 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CassetteBrowser } from "../src/screens/CassetteBrowser.js";
 
@@ -70,7 +69,9 @@ describe("CassetteBrowser", () => {
     rerender(<CassetteBrowser path={CASSETTE_PATH} />);
     await screen.findByText("get_weather");
     expect(
-      fetchMock.mock.calls.some(([input]) => String(input) === `/api/cassettes/${encodeURIComponent(CASSETTE_PATH)}`),
+      fetchMock.mock.calls.some(
+        ([input]) => String(input) === `/api/cassettes/${encodeURIComponent(CASSETTE_PATH)}`,
+      ),
     ).toBe(true);
     expect(screen.getByText("1")).toBeTruthy();
   });

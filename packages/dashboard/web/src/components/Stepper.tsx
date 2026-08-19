@@ -11,7 +11,11 @@ export function Stepper(props: { steps: readonly string[]; current: number }): J
       {props.steps.map((step, index) => {
         const state = index < props.current ? "done" : index === props.current ? "current" : "todo";
         return (
-          <li key={step} className="flex items-center gap-2" aria-current={state === "current" ? "step" : undefined}>
+          <li
+            key={step}
+            className="flex items-center gap-2"
+            aria-current={state === "current" ? "step" : undefined}
+          >
             {index > 0 && <span aria-hidden className="h-px w-6 bg-line" />}
             <span
               data-step-state={state}

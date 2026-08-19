@@ -1,7 +1,7 @@
-import { useState } from "react";
 import type { JSX } from "react";
-import { applyThemeChoice, getThemeChoice } from "../theme.js";
+import { useState } from "react";
 import type { ThemeChoice } from "../theme.js";
+import { applyThemeChoice, getThemeChoice } from "../theme.js";
 
 const CYCLE: readonly ThemeChoice[] = ["system", "light", "dark"];
 
@@ -19,7 +19,7 @@ export function ThemeToggle(): JSX.Element {
   const [choice, setChoice] = useState<ThemeChoice>(() => getThemeChoice(window.localStorage));
 
   const cycle = (): void => {
-    const next = CYCLE[(CYCLE.indexOf(choice) + 1) % CYCLE.length]!;
+    const next = CYCLE[(CYCLE.indexOf(choice) + 1) % CYCLE.length] ?? "system";
     applyThemeChoice(next, document.documentElement, window.localStorage);
     setChoice(next);
   };

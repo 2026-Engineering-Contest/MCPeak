@@ -1,10 +1,6 @@
-import { useEffect, useState } from "react";
 import type { JSX } from "react";
-import type {
-  RunSummary,
-  StartRunRequest,
-  StartRunResponse,
-} from "../../../src/api-types.js";
+import { useEffect, useState } from "react";
+import type { RunSummary, StartRunRequest, StartRunResponse } from "../../../src/api-types.js";
 import { apiGet, apiSend } from "../api.js";
 import { FlowChip } from "../components/FlowChip.js";
 import { LogPanel } from "../components/LogPanel.js";
@@ -27,7 +23,10 @@ interface RunStreamPanelProps {
  * `pendingQuestion`은 LogPanel footer의 QuestionPanel로 보여주고, 응답은
  * `POST /api/runs/:id/answer`로 보낸다.
  */
-export function RunStreamPanel({ runId, showRepairAction = true }: RunStreamPanelProps): JSX.Element {
+export function RunStreamPanel({
+  runId,
+  showRepairAction = true,
+}: RunStreamPanelProps): JSX.Element {
   const { events, status, pendingQuestion } = useRunEvents(runId);
   const [answeredId, setAnsweredId] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
@@ -110,7 +109,11 @@ export function RunStreamPanel({ runId, showRepairAction = true }: RunStreamPane
         )}
       </div>
 
-      {error !== null && <p className="text-sm" style={{ color: "var(--status-failed-fg)" }}>{error}</p>}
+      {error !== null && (
+        <p className="text-sm" style={{ color: "var(--status-failed-fg)" }}>
+          {error}
+        </p>
+      )}
 
       <LogPanel
         title="터미널 출력"
@@ -172,7 +175,11 @@ function RunList(): JSX.Element {
   return (
     <section className="space-y-4">
       <h1 className="text-xl font-semibold text-ink">실행</h1>
-      {error !== null && <p className="text-sm" style={{ color: "var(--status-failed-fg)" }}>{error}</p>}
+      {error !== null && (
+        <p className="text-sm" style={{ color: "var(--status-failed-fg)" }}>
+          {error}
+        </p>
+      )}
       <div className="overflow-hidden rounded-lg border border-line bg-surface">
         <table className="w-full text-left text-sm">
           <tbody className="divide-y divide-line-subtle">

@@ -44,16 +44,14 @@ export function LogPanel(props: {
             return null;
           }
           return (
-            // 스트림 이벤트는 재정렬·삭제 없이 수신 순서 그대로라 index key가 안전하다.
+            // biome-ignore lint/suspicious/noArrayIndexKey: 스트림은 append-only라 수신 순서 index가 안정 키다(구현계획 §4-5)
+            // biome-ignore lint/security/noDangerouslySetInnerHtml: html 이스케이프는 서버 ansiToHtml이 보장한다(구현계획 §4-5)
             <div key={index} dangerouslySetInnerHTML={{ __html: event.html }} />
           );
         })}
       </div>
       {props.footer !== undefined && (
-        <div
-          className="p-3"
-          style={{ borderTop: "1px solid var(--terminal-border)" }}
-        >
+        <div className="p-3" style={{ borderTop: "1px solid var(--terminal-border)" }}>
           {props.footer}
         </div>
       )}

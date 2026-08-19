@@ -24,20 +24,28 @@ const BASE: GenerateForm = {
 describe("buildGenerateArgv", () => {
   it("최소 필수 입력의 argv가 §4-4 순서와 정확히 일치한다", () => {
     expect(buildGenerateArgv(BASE)).toEqual([
-      "--command", "node server.js",
-      "--suite-id", "weather",
-      "--name", "날씨 서버",
-      "--out", "examples/weather/suite.json",
-      "--provider", "claude",
+      "--command",
+      "node server.js",
+      "--suite-id",
+      "weather",
+      "--name",
+      "날씨 서버",
+      "--out",
+      "examples/weather/suite.json",
+      "--provider",
+      "claude",
     ]);
   });
 
   it("args 두 개가 --arg 쌍 두 벌로 나온다", () => {
     const argv = buildGenerateArgv({ ...BASE, args: ["--port", "8080"] });
     expect(argv.slice(0, 6)).toEqual([
-      "--command", "node server.js",
-      "--arg", "--port",
-      "--arg", "8080",
+      "--command",
+      "node server.js",
+      "--arg",
+      "--port",
+      "--arg",
+      "8080",
     ]);
   });
 
@@ -69,9 +77,9 @@ describe("buildGenerateArgv", () => {
     expect(() =>
       buildGenerateArgv({ ...BASE, dryRun: false, resetCmd: "rm -rf tmp" }),
     ).toThrowError("시험 실행을 끄면 초기화 명령을 쓸 수 없습니다.");
-    expect(() =>
-      buildGenerateArgv({ ...BASE, dryRun: false, repair: false }),
-    ).toThrowError("시험 실행과 자동 교정을 동시에 끌 수 없습니다.");
+    expect(() => buildGenerateArgv({ ...BASE, dryRun: false, repair: false })).toThrowError(
+      "시험 실행과 자동 교정을 동시에 끌 수 없습니다.",
+    );
   });
 
   it("record인데 카세트가 비면 throw한다", () => {

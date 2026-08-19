@@ -1,6 +1,5 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen } from "@testing-library/react";
-import React from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import type { RunEvent } from "../../src/api-types.js";
 import { LogPanel } from "../src/components/LogPanel.js";

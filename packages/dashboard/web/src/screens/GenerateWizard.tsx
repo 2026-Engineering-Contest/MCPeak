@@ -1,5 +1,5 @@
-import { useState } from "react";
 import type { JSX } from "react";
+import { useState } from "react";
 import type { StartRunRequest, StartRunResponse } from "../../../src/api-types.js";
 import { apiSend } from "../api.js";
 import { Stepper } from "../components/Stepper.js";
@@ -7,9 +7,8 @@ import type { GenerateForm } from "../generate/build-argv.js";
 import { buildGenerateArgv } from "../generate/build-argv.js";
 import { StepConfirm } from "../generate/steps/StepConfirm.js";
 import { StepMode } from "../generate/steps/StepMode.js";
-import { StepServer } from "../generate/steps/StepServer.js";
 import type { CommandMethod } from "../generate/steps/StepServer.js";
-import { composeCommand } from "../generate/steps/StepServer.js";
+import { composeCommand, StepServer } from "../generate/steps/StepServer.js";
 import { StepSuite } from "../generate/steps/StepSuite.js";
 
 const STEPS = ["테스트할 서버", "만들어질 스위트", "생성 방식", "녹화와 확인"] as const;
@@ -20,7 +19,9 @@ function readRecentCommands(): readonly string[] {
   try {
     const raw = window.localStorage.getItem(RECENT_KEY);
     const parsed: unknown = raw === null ? [] : JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : [];
+    return Array.isArray(parsed)
+      ? parsed.filter((item): item is string => typeof item === "string")
+      : [];
   } catch {
     return [];
   }

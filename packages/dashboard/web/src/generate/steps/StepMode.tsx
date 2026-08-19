@@ -23,6 +23,7 @@ export function StepMode(props: {
             ["baseline", "기본 골격만", "AI 없이 스위트 골격만 만듭니다 (--baseline-only)."],
           ] as const
         ).map(([mode, title, desc]) => (
+          // biome-ignore lint/a11y/useSemanticElements: 카드형 라디오라 실제 input[type=radio]로 바꾸면 스타일·포커스 구조를 다시 짜야 한다. role/aria-checked로 의미를 보존한다
           <button
             key={mode}
             type="button"

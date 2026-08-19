@@ -1,6 +1,5 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RunEvent } from "../../src/api-types.js";
 import { RunView } from "../src/screens/RunView.js";
@@ -99,7 +98,10 @@ describe("RunView", () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     const fetchMock = stubFetch();
     const prompts = ["bundle.json", "claude", "claude-sonnet-5"];
-    vi.stubGlobal("prompt", vi.fn(() => prompts.shift() ?? null));
+    vi.stubGlobal(
+      "prompt",
+      vi.fn(() => prompts.shift() ?? null),
+    );
 
     render(<RunView runId="run-1" />);
     act(() => {

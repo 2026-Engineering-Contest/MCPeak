@@ -1,4 +1,4 @@
-import { runCli } from "ohmymcp/commands";
+import { runCli } from "@ohmymcp-hsu/cli/commands";
 import { describe, expect, it } from "vitest";
 import { startDashboardServer } from "../src/index.js";
 

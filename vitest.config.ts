@@ -18,10 +18,12 @@ const workspaceAliases = Object.fromEntries(
 
 const resolve = {
   alias: {
-    // `ohmymcp` 키보다 먼저 와야 한다. rollup alias는 `find + "/"` 접두 일치라
-    // `ohmymcp` 키가 있으면 `ohmymcp/commands`를 삼킨다. 지금은 `ohmymcp` 키가
-    // 없으므로 이 한 줄만 추가하고, `ohmymcp` 루트 alias는 만들지 않는다.
-    "ohmymcp/commands": fileURLToPath(new URL("./packages/cli/src/commands.ts", import.meta.url)),
+    // `@ohmymcp-hsu/cli` 키보다 먼저 와야 한다. rollup alias는 `find + "/"` 접두
+    // 일치라, 그 키가 있으면 `@ohmymcp-hsu/cli/commands`를 삼킨다. 지금은 없으므로
+    // 이 한 줄만 추가하고 루트 alias는 만들지 않는다.
+    "@ohmymcp-hsu/cli/commands": fileURLToPath(
+      new URL("./packages/cli/src/commands.ts", import.meta.url),
+    ),
     ...workspaceAliases,
   },
 };

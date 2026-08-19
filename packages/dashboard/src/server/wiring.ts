@@ -9,7 +9,7 @@ import {
   runRepairCommand,
   runReplayCommand,
   type TestCommandDependencies,
-} from "ohmymcp/commands";
+} from "@ohmymcp-hsu/cli/commands";
 import type { StartRunRequest } from "../api-types.js";
 import type { RunIo } from "./run-registry.js";
 

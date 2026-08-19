@@ -1,6 +1,6 @@
 /**
  * 대시보드 등 외부 진입점을 위한 재export 면. 로직 없음.
- * 여기 있는 이름만이 `ohmymcp/commands` 공개 계약이다.
+ * 여기 있는 이름만이 `@ohmymcp-hsu/cli/commands` 공개 계약이다.
  */
 
 export {

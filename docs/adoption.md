@@ -485,18 +485,35 @@ Error executing tool calculate: 1 validation error for calculateArguments
 Python 서버는 `mcp<2` 로 고정해야 한다. `mcp` 2.x 에서는 `mcp.shared.exceptions.McpError`
 import 가 깨져 서버가 기동조차 못 한다. 관찰 기록의 `mcp-server-time (mcp<2)` 표기가 그 뜻이다.
 
+**버전을 고정해야 같은 결과가 나온다.** 아래는 대조에 실제로 쓴 버전이다. 이 표는 각 서버 1회
+세션의 기록이고, 서버가 올라가면 지문이 바뀔 수 있다. 재현할 때는 이 버전으로 박아라.
+
 ```sh
 # TS
-npm pack @modelcontextprotocol/server-memory && npm install   # 풀어서 SDK 설치
-ohmymcp generate --suite-id memory --name m --out m.json   --command node --arg <풀어놓은>/dist/index.js --baseline-only
-ohmymcp test m.json --command node --arg <풀어놓은>/dist/index.js --json
+npm install @modelcontextprotocol/server-memory@2026.7.4
+MEM=node_modules/@modelcontextprotocol/server-memory/dist/index.js
+ohmymcp generate --suite-id memory --name m --out m.json --command node --arg "$MEM" --baseline-only
+ohmymcp test m.json --command node --arg "$MEM" --json
 
 # Python (mcp<2 제약이 핵심이다)
 uv venv pyenv --python 3.11
-VIRTUAL_ENV=pyenv uv pip install mcp-server-time mcp-server-calculator "mcp<2"
-ohmymcp generate --suite-id time --name t --out t.json   --command pyenv/bin/mcp-server-time --baseline-only
+VIRTUAL_ENV=pyenv uv pip install \
+  mcp-server-time==2026.7.10 mcp-server-calculator==0.2.1 mcp==1.29.0
+ohmymcp generate --suite-id time --name t --out t.json --command pyenv/bin/mcp-server-time --baseline-only
 ohmymcp test t.json --command pyenv/bin/mcp-server-time --json
 ```
+
+**`server-memory` 는 핸드셰이크에서 자기 버전을 `0.6.3` 으로 보고하지만 npm 에 그 버전은 없다.**
+패키지 안 문자열이 낡은 것이다. 설치는 위의 `2026.7.4`(대조 시점의 `latest`)로 해야 한다.
+
+전이 의존성은 따로 적지 않는다. **세 패키지를 위처럼 고정하면 나머지 30개도 대조 때와 같은
+조합으로 풀린다** (`pydantic 2.13.4` · `anyio 4.14.2` 등 33개 전부 일치, 2026-08-19 재확인).
+다른 환경에서 지문이 갈리면 `VIRTUAL_ENV=pyenv uv pip freeze` 부터 떠서 이 조합과 대조해라.
+
+**표의 `2회 실행` 칸은 크기 값이 아니라 두 번이 같은가를 보는 자리다.** 절대 크기는 환경에 따라
+다를 수 있다 — 2026-08-19 재실행에서 `server-memory` 는 20265 B 로 두 번 일치했고(위 표는
+20284 B), 판정 수는 `verified 16 · unverified 0` 으로 표와 같았다. **재현했는지는 판정 수와
+2회 일치로 판단해라.**
 
 `uvx mcp-server-time` 을 직접 `--command` 로 주면 첫 실행에서 패키지를 받느라
 `HANDSHAKE_TIMEOUT` 이 난다. 미리 설치해 두어야 한다.

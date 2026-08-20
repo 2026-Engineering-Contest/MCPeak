@@ -44,7 +44,7 @@ export interface RejectionDiagnosisRequest {
    * 서버 응답 본문. **redaction 을 적용하지 않는다**(ADR-0049).
    *
    * 남의 서버가 자유롭게 쓴 텍스트라 키·값 치환이 구조적으로 맞지 않는다. 대신 상한
-   * (`clampObservedText`)·전송 전 확인·기본 거부 옵트아웃으로 다룬다. 여기 오는 값에는
+   * (`clampObservedText`)·전송 전 확인·기본 거부(`[y/N]`)로 다룬다. 여기 오는 값에는
    * 경로·토큰·요청 본문이 섞여 있을 수 있다.
    */
   readonly responseBody: string;

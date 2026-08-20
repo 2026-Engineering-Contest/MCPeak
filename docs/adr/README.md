@@ -59,6 +59,9 @@
 | [0045](./0045-민감-키-목록의-복수형과-key-합성어.md) | 민감 키 목록에 `key` 합성어를 넣고 복수형을 조회에서 흡수한다 (ADR-0039 개정) | record | 채택 |
 | [0046](./0046-대시보드를-로컬-웹서버로-만든다.md) | 대시보드는 로컬 웹서버로 만들고 CLI 커맨드 함수를 재사용한다 | dashboard, cli | 제안 |
 | [0047](./0047-계약-스냅샷-api-철회.md) | 계약 스냅샷 API(`snapshotContract`)를 철회한다 (ADR-0003 개정) | record | 채택 |
+| [0048](./0048-external-record-replay와-tool-카세트-경계-분리.md) | External Record/Replay와 기존 Tool 카세트의 경계를 분리한다 | record, cli, dashboard | 제안 |
+| [0049](./0049-coordinator가-engine과-session-store를-소유한다.md) | 부모 Coordinator가 Record/Replay Engine과 Session Store를 소유한다 | record, cli | 제안 |
+| [0050](./0050-http-외부-요청-매칭과-반복-호출-정책.md) | HTTP 외부 요청은 보수적으로 정규화하고 반복 응답은 순서대로 소비한다 | record | 제안 |
 
 **상태** — `채택` 과 `승인` 이 확정된 결정입니다. `제안` 과 `초안` 은 아직 확정되지 않았으므로 이
 결정에 기대어 구현하지 마세요. 값은 각 파일 머리의 `상태` 를 그대로 옮긴 것입니다.

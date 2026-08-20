@@ -145,44 +145,44 @@ jobs:
         run: |
           set -uo pipefail
 
-          # 갓 발행된 버전이 레지스트리 조회에 뜨기까지 **분 단위**로 걸릴 수 있다.
+          # 조회 결과를 세 가지로 가른다. 하나로 뭉치면 실패 메시지가 틀린 말을 한다.
           #
-          # 2026-08-20 에 `@mcpeak/*` 일곱 개를 발행한 직후 `npm view` 와 캐시를 우회한
-          # `curl` 이 모두 몇 분 동안 404 를 돌려줬다. 발행은 성공한 상태였는데 그것을
-          # 무발행으로 오진해 워크플로를 고치는 PR(#216)까지 냈다. 재시도가 짧으면 이
-          # Guard 가 같은 오진을 자동화해 **성공한 릴리스를 빨갛게** 만든다.
+          #   found    이 버전이 레지스트리에 있다
+          #   absent   E404 — 없다. 이것만 "무발행" 으로 본다
+          #   failed   네트워크 · 인증 · 5xx 등. 없는 것이 아니라 **확인하지 못한 것**이다
           #
-          # 그래서 넉넉히 잡는다. 최대 3 분이며, 대부분은 첫 시도에 끝난다.
-          # 진짜 무발행이면 3 분 뒤에도 없으므로 이 대기로 가려지지 않는다.
-          lookup() {
-            for attempt in $(seq 1 7); do
-              npm view "$1" version >/dev/null 2>&1 && return 0
-              if [ "$attempt" -lt 7 ]; then
-                echo "    … ${1} 미확인, 30초 후 재시도 (${attempt}/6)"
-                sleep 30
-              fi
-            done
-            return 1
+          # 마지막 오류 원인을 LAST_ERROR 에 남겨 문장에 싣는다.
+          probe() {
+            local out
+            if out="$(npm view "$1" version 2>&1)"; then
+              return 0
+            fi
+            LAST_ERROR="$(printf '%s' "$out" | grep -m1 -oE 'code E[A-Z0-9]+|[45][0-9][0-9] [A-Za-z ]+' || true)"
+            case "$out" in
+              *E404*) return 1 ;;
+              *) return 2 ;;
+            esac
           }
 
+          # 대기 구조 — 전수 즉시 확인 후, 빠진 것만 **전역 마감** 안에서 다시 본다.
+          #
+          # 갓 발행된 버전이 조회에 뜨기까지 분 단위로 걸릴 수 있다. 2026-08-20 에
+          # `@mcpeak/*` 일곱 개를 발행한 직후 `npm view` 와 캐시를 우회한 `curl` 이 몇 분간
+          # 404 를 돌려줬고, 그것을 무발행으로 오진해 워크플로 수정 PR(#216)까지 냈다.
+          # 재시도가 짧으면 이 Guard 가 같은 오진을 자동화해 성공한 릴리스를 빨갛게 만든다.
+          #
+          # 다만 대기를 패키지마다 따로 두면 전부 미발행일 때 대기가 곱해진다(7 개 × 3 분
+          # = 21 분). 마감을 전역으로 두어 최악에도 3 분 안에 판정한다.
+          DEADLINE=$(( $(date +%s) + 180 ))
+
+          declare -a pending=()
           checked=0
-          missing=0
           for dir in packages/*/; do
             manifest="$dir/package.json"
             [ -f "$manifest" ] || continue
-            private="$(node -p "require('./$manifest').private === true")"
-            [ "$private" = "true" ] && continue
-
-            name="$(node -p "require('./$manifest').name")"
-            version="$(node -p "require('./$manifest').version")"
+            [ "$(node -p "require('./$manifest').private === true")" = "true" ] && continue
             checked=$((checked + 1))
-
-            if lookup "${name}@${version}"; then
-              echo "  ✓ ${name}@${version}"
-            else
-              echo "::error::${name}@${version} 이 레지스트리에 없습니다. 발행이 보고와 다릅니다."
-              missing=$((missing + 1))
-            fi
+            pending+=("$(node -p "require('./$manifest').name")@$(node -p "require('./$manifest').version")")
           done
 
           # 0 건은 "전부 통과"가 아니라 "검사를 안 했음"이다. 위 tarball Guard 와 같은 이유다.
@@ -190,8 +190,37 @@ jobs:
             echo "::error::검사한 패키지가 0 개입니다. packages/*/ 경로를 확인하세요."
             exit 1
           fi
-          if [ "$missing" -ne 0 ]; then
-            echo "::error::${checked} 개 중 ${missing} 개가 레지스트리에 없습니다."
+
+          declare -a absent=() failed=()
+          while :; do
+            declare -a still=()
+            absent=(); failed=()
+            for spec in ${pending[@]+"${pending[@]}"}; do
+              LAST_ERROR=""
+              probe "$spec"
+              case "$?" in
+                0) echo "  ✓ ${spec}" ;;
+                1) still+=("$spec"); absent+=("$spec") ;;
+                *) still+=("$spec"); failed+=("${spec} (${LAST_ERROR:-원인 불명})") ;;
+              esac
+            done
+
+            [ "${#still[@]}" -eq 0 ] && break
+            [ "$(date +%s)" -ge "$DEADLINE" ] && break
+
+            echo "    … ${#still[@]} 개 미확인, 30초 후 재시도 (마감까지 $(( DEADLINE - $(date +%s) ))초)"
+            sleep 30
+            pending=(${still[@]+"${still[@]}"})
+          done
+
+          for spec in ${failed[@]+"${failed[@]}"}; do
+            echo "::error::${spec} 를 확인하지 못했습니다. 없는 것이 아니라 조회가 실패한 것입니다."
+          done
+          for spec in ${absent[@]+"${absent[@]}"}; do
+            echo "::error::${spec} 이 레지스트리에 없습니다(E404). 발행이 보고와 다릅니다."
+          done
+          if [ "${#failed[@]}" -ne 0 ] || [ "${#absent[@]}" -ne 0 ]; then
+            echo "::error::${checked} 개 중 미발행 ${#absent[@]} 개 · 확인 실패 ${#failed[@]} 개."
             exit 1
           fi
           echo "패키지 ${checked} 개 전부 레지스트리에서 확인됨"

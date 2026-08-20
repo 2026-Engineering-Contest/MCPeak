@@ -27,6 +27,16 @@ export interface Cassette {
   tools?: ToolDef[];
 }
 
+/** `record` 모드 저장이 기존 파일에서 무엇을 지우는지. `diffCassettes` 가 만든다. */
+export interface CassetteDropReport {
+  /** 기존 파일에 있었지만 이번 실행에는 없는 상호작용. */
+  readonly dropped: readonly CassetteInteraction[];
+  /** 양쪽에 다 있는 개수. */
+  readonly kept: number;
+  /** 이번 실행에서 새로 생긴 개수. */
+  readonly added: number;
+}
+
 export interface CassetteClientOptions {
   cassette: Cassette | null;
   /** 생략하면 auto 모드로 동작한다. */
@@ -323,6 +333,83 @@ export async function saveCassette(path: string, cassette: Cassette): Promise<vo
   await writeFile(path, `${stableStringify(prepared)}\n`, "utf8");
 }
 
+/**
+ * `before` 를 `after` 로 덮어쓸 때 사라지는 것을 센다. 판정은 `key` 기준이다.
+ *
+ * 같은 키에 응답만 바뀐 것은 손실이 아니라 갱신이라 `dropped` 가 아니다. 사라졌다고 말할 수
+ * 있는 것은 이번 실행이 그 요청을 아예 부르지 않아 카세트에서 통째로 빠지는 경우뿐이다.
+ *
+ * `before` 가 `null` 이면 덮어쓸 대상이 없으므로 전부 `added` 다.
+ */
+export function diffCassettes(before: Cassette | null, after: Cassette): CassetteDropReport {
+  const afterKeys = new Set(after.interactions.map((interaction) => interaction.key));
+  if (before === null) return { dropped: [], kept: 0, added: afterKeys.size };
+
+  const dropped: CassetteInteraction[] = [];
+  const beforeKeys = new Set<string>();
+  let kept = 0;
+  for (const interaction of before.interactions) {
+    // 중복 키는 첫 항목만 센다. `indexInteractions` 가 재생에서 쓰는 규칙과 같아야
+    // "사라진다"고 알린 것과 실제로 재생되던 것이 어긋나지 않는다.
+    if (beforeKeys.has(interaction.key)) continue;
+    beforeKeys.add(interaction.key);
+    if (afterKeys.has(interaction.key)) kept++;
+    else dropped.push(interaction);
+  }
+
+  let added = 0;
+  for (const key of afterKeys) if (!beforeKeys.has(key)) added++;
+  return { dropped, kept, added };
+}
+
+/** 사라지는 요청을 몇 개까지 보여줄지. 나머지는 개수로 줄인다. */
+const MAX_DROPPED_DISPLAY = 3;
+
+/**
+ * 사라지는 녹화본을 알리는 문장. 사라지는 것이 없으면 `null` 이다.
+ *
+ * 저장을 막지는 않는다. `--record` 는 갈아엎으라는 명령이므로 막으면 명령의 의미가 바뀐다.
+ * 이 함수가 고치는 것은 "지운다"가 아니라 "말없이 지운다"이다.
+ */
+export function droppedInteractionsMessage(
+  report: CassetteDropReport,
+  cassettePath?: string,
+): string | null {
+  if (report.dropped.length === 0) return null;
+
+  const shown = report.dropped
+    .slice(0, MAX_DROPPED_DISPLAY)
+    .map((interaction) => displayRequest(interaction.request.toolName, interaction.request.args));
+  const rest = report.dropped.length - shown.length;
+  const list = rest > 0 ? `${shown.join(", ")} 외 ${rest}개` : shown.join(", ");
+
+  return [
+    `→ --record 가 기존 카세트의 상호작용 ${report.dropped.length}개를 지웁니다${
+      cassettePath === undefined ? "" : `: ${cassettePath}`
+    }`,
+    `  기존 ${report.kept + report.dropped.length}개 중 ${report.kept}개는 유지되고, 이번 실행에 없는 ${report.dropped.length}개는 사라집니다.`,
+    `  사라지는 요청: ${list}`,
+    "  → 이번 실행이 그 케이스를 부르지 않았습니다. 테스트 필터나 중간 실패를 확인하세요.",
+    "  → 기존 녹화본을 지키려면 --record 없이 실행하세요. 없는 것만 덧붙습니다.",
+  ].join("\n");
+}
+
+/**
+ * `record` 모드가 갈아엎을 기준선. 형태가 깨진 카세트면 경고를 포기하고 `null` 을 준다.
+ *
+ * 경고는 부가 기능이다. 여기서 던지면 지금까지 깨진 파일을 그냥 무시하고 새로 녹화하던
+ * `record` 모드가 죽는다. 경고 하나 때문에 녹화 자체를 막는 것은 거래가 맞지 않는다.
+ */
+function recordBaseline(cassette: Cassette | null | undefined): Cassette | null {
+  if (cassette === null || cassette === undefined) return null;
+  try {
+    assertCassette(cassette, "cassette");
+    return cassette;
+  } catch {
+    return null;
+  }
+}
+
 export function cassetteClient(inner: McpClient, options: CassetteClientOptions): McpClient {
   const mode = options.mode ?? "auto";
   if (mode !== "record" && mode !== "replay" && mode !== "auto") {
@@ -331,6 +418,8 @@ export function cassetteClient(inner: McpClient, options: CassetteClientOptions)
 
   const cassette =
     mode === "record" ? emptyCassette() : cloneCassette(options.cassette ?? emptyCassette());
+  // record 모드만 기존 파일을 갈아엎는다. auto 는 물려받아 덧붙이므로 사라지는 것이 없다.
+  const baseline = mode === "record" ? recordBaseline(options.cassette) : null;
   const interactions = indexInteractions(cassette);
   const recordingFailures: Error[] = [];
 
@@ -414,6 +503,14 @@ export function cassetteClient(inner: McpClient, options: CassetteClientOptions)
     async close() {
       try {
         if (recordingFailures.length > 0) throw mergeRecordingFailures(recordingFailures);
+        // 저장하는 경우에만 알린다. onFlush 가 없으면 파일이 바뀌지 않으므로 사라지는 것도 없다.
+        if (baseline !== null && options.onFlush !== undefined) {
+          const message = droppedInteractionsMessage(
+            diffCassettes(baseline, cassette),
+            options.cassettePath,
+          );
+          if (message !== null) options.onWarning?.(message);
+        }
         await options.onFlush?.(prepareCassetteForWrite(cassette));
       } finally {
         await inner.close();

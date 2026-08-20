@@ -626,7 +626,7 @@ describe("describeSpecFinding 의 범위 문안", () => {
 
 ```ts
 it("재수출도 경계 검사 대상이다", () => {
-  // export ... from "@ohmymcp-hsu/runner" 형태가 정규식에 잡히는지 직접 단언한다.
+  // export ... from "@mcpeak/runner" 형태가 정규식에 잡히는지 직접 단언한다.
   // 전제로 삼은 장치를 실제로 밟아보지 않으면 그 전제가 참인지 모른다(단계 8 의 교훈).
 });
 ```
@@ -1773,7 +1773,7 @@ it("건너뜀 고지에 해결 수단이 있다", () => {
 결함으로 오진하기 쉽다.
 
 ```
-ohmymcp generate --server 'uvx --with "mcp<2" mcp-server-fetch' --baseline-only --out <임시경로>
+mcpeak generate --server 'uvx --with "mcp<2" mcp-server-fetch' --baseline-only --out <임시경로>
 기대: 케이스 1개 이상. url 필드 값이 "https://example.com"
 ```
 

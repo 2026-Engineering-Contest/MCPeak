@@ -1,5 +1,5 @@
 {
-  "name": "@ohmymcp-hsu/mock",
+  "name": "@mcpeak/mock",
   "version": "0.2.0",
   "private": false,
   "type": "module",
@@ -13,7 +13,7 @@
   "homepage": "https://github.com/2026-Engineering-Contest/OhMyMCP#readme",
   "bugs": "https://github.com/2026-Engineering-Contest/OhMyMCP/issues",
   "bin": {
-    "ohmymcp-mock": "./dist/stdio.mjs"
+    "mcpeak-mock": "./dist/stdio.mjs"
   },
   "publishConfig": {
     "access": "public"
@@ -41,7 +41,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@ohmymcp-hsu/core": "workspace:*",
+    "@mcpeak/core": "workspace:*",
     "@modelcontextprotocol/sdk": "catalog:"
   }
 }

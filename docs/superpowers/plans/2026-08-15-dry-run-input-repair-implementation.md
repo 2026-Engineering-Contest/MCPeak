@@ -100,8 +100,8 @@ R1 을 단독 웨이브로 두는 이유는 R2·R3·R5 가 전부 R1 의 타입�
 
 ```ts
 import type { DryRunCaseOutcome } from "./dry-run.js";
-import type { TestSuiteSpec } from "@ohmymcp-hsu/runner";
-import type { JsonValue } from "@ohmymcp-hsu/runner";
+import type { TestSuiteSpec } from "@mcpeak/runner";
+import type { JsonValue } from "@mcpeak/runner";
 
 /** 교정을 시도할 수 있는 실패 케이스. 설계 문서 §4.2 를 전부 만족한 것만 만들어진다. */
 export interface RepairTarget {
@@ -558,10 +558,10 @@ generate 지문 표시
 · generate --baseline-only 출력에 교정 줄이 없다 (기존 기대값 유지)
 ```
 
-`pnpm build && pnpm --filter ohmymcp test:e2e` 로만 도는 파일이다. `pnpm test` 의 수집 대상이
+`pnpm build && pnpm --filter @mcpeak/cli test:e2e` 로만 도는 파일이다. `pnpm test` 의 수집 대상이
 아니라서 로컬 전체 검증이 녹색인데 CI 의 `build` job 이 빨간불이 되는 함정이 있다.
 
-**명령**: `pnpm test`, `pnpm build && pnpm --filter ohmymcp test:e2e`, `pnpm typecheck --force`, `pnpm lint`
+**명령**: `pnpm test`, `pnpm build && pnpm --filter @mcpeak/cli test:e2e`, `pnpm typecheck --force`, `pnpm lint`
 **보고서**: `docs/reports/task-r7-input-repair.md`
 **커밋**: `docs(cli): 입력값 교정 옵션 도움말과 E2E 기대값을 갱신한다`
 
@@ -576,12 +576,12 @@ generate 지문 표시
 ```
 [1단계: 작업 공간 만들기] 다른 무엇보다 먼저 이것부터 해라.
 
-  git worktree add /Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/ohmymcp-repair-target -b feat/dry-run-repair-target main
+  git worktree add /Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/mcpeak-repair-target -b feat/dry-run-repair-target main
 
 를 실행한 뒤 그 경로로 세션을 옮겨라. 옮긴 다음 아래를 확인하고, 하나라도 어긋나면 중단하고
 BLOCKED 로 보고해라.
 
-  - pwd 가 /Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/ohmymcp-repair-target 인지
+  - pwd 가 /Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/mcpeak-repair-target 인지
   - git log --oneline -1 이 루트의 main HEAD 와 같은지
   - docs/superpowers/specs/2026-08-15-dry-run-input-repair-design.md 가 있는지
   - docs/superpowers/plans/2026-08-15-dry-run-input-repair-implementation.md 가 있는지
@@ -633,12 +633,12 @@ typecheck 는 Cached: 0 cached 인지 확인해라.
 ```
 [1단계: 작업 공간 만들기] 다른 무엇보다 먼저 이것부터 해라.
 
-  git worktree add /Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/ohmymcp-repair-screen -b feat/dry-run-repair-screen main
+  git worktree add /Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/mcpeak-repair-screen -b feat/dry-run-repair-screen main
 
 를 실행한 뒤 그 경로로 세션을 옮겨라. 옮긴 다음 아래를 확인하고, 하나라도 어긋나면 중단하고
 BLOCKED 로 보고해라.
 
-  - pwd 가 /Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/ohmymcp-repair-screen 인지
+  - pwd 가 /Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/mcpeak-repair-screen 인지
   - git log --oneline -1 이 루트의 main HEAD 와 같은지
   - packages/cli/src/repair-target.ts 가 있는지 (없으면 R1 이 안 들어온 것이다. BLOCKED)
   - docs/superpowers/specs/2026-08-15-dry-run-input-repair-design.md 가 있는지
@@ -694,12 +694,12 @@ typecheck 는 Cached: 0 cached 인지 확인해라.
 ```
 [1단계: 작업 공간 만들기] 다른 무엇보다 먼저 이것부터 해라.
 
-  git worktree add /Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/ohmymcp-repair-proposal -b feat/dry-run-repair-proposal main
+  git worktree add /Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/mcpeak-repair-proposal -b feat/dry-run-repair-proposal main
 
 를 실행한 뒤 그 경로로 세션을 옮겨라. 옮긴 다음 아래를 확인하고, 하나라도 어긋나면 중단하고
 BLOCKED 로 보고해라.
 
-  - pwd 가 /Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/ohmymcp-repair-proposal 인지
+  - pwd 가 /Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/mcpeak-repair-proposal 인지
   - git log --oneline -1 이 루트의 main HEAD 와 같은지
   - packages/cli/src/repair-target.ts 가 있는지 (없으면 R1 이 안 들어온 것이다. BLOCKED)
   - docs/superpowers/specs/2026-08-15-dry-run-input-repair-design.md 가 있는지
@@ -761,12 +761,12 @@ typecheck 는 Cached: 0 cached 인지 확인해라.
 ```
 [1단계: 작업 공간 만들기] 다른 무엇보다 먼저 이것부터 해라.
 
-  git worktree add /Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/ohmymcp-repair-wiring -b feat/dry-run-repair-wiring main
+  git worktree add /Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/mcpeak-repair-wiring -b feat/dry-run-repair-wiring main
 
 를 실행한 뒤 그 경로로 세션을 옮겨라. 옮긴 다음 아래를 확인하고, 하나라도 어긋나면 중단하고
 BLOCKED 로 보고해라.
 
-  - pwd 가 /Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/ohmymcp-repair-wiring 인지
+  - pwd 가 /Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/mcpeak-repair-wiring 인지
   - git log --oneline -1 이 루트의 main HEAD 와 같은지
   - packages/cli/src/repair-target.ts, input-repair.ts, repair-proposal.ts 가 모두 있는지
     (없으면 웨이브 2 가 안 들어온 것이다. BLOCKED 로 보고해라)
@@ -802,7 +802,7 @@ R7 허용 Files:
   3. 교정 결과 반영은 reviewLocalAuthoringCandidate → createAuthoringDiff →
      applyAuthoringChanges 세 단을 탄다. cli 가 TestSuiteSpec 을 직접 조립해 넣지 마라.
      revision·provenance·지문 재계산이 generate 안에서 한 번에 일어나야 한다.
-  4. dist-cli-e2e.mjs 는 pnpm test 가 아니라 pnpm build && pnpm --filter ohmymcp test:e2e 로
+  4. dist-cli-e2e.mjs 는 pnpm test 가 아니라 pnpm build && pnpm --filter @mcpeak/cli test:e2e 로
      돈다. 출력 형태를 바꿨으므로 이 파일 기대값을 반드시 함께 고쳐라. 안 고치면 로컬은
      녹색인데 CI 의 build job 이 빨간불이 된다.
 
@@ -816,7 +816,7 @@ dry-run.ts, cassette-wiring.ts, reset-hook.ts 는 고치지 마라. 계약이 �
 이 터미널은 직렬 전용이다. R7 의 E2E 가 실제 서버 프로세스를 띄우므로 다른 터미널과 동시에
 돌리지 않는다.
 
-검증: pnpm test, pnpm build && pnpm --filter ohmymcp test:e2e, pnpm typecheck --force,
+검증: pnpm test, pnpm build && pnpm --filter @mcpeak/cli test:e2e, pnpm typecheck --force,
 pnpm lint 를 모두 돌리고 출력을 보고서에 붙여라. typecheck 는 Cached: 0 cached 인지 확인해라.
 
 보고서: docs/reports/task-r6-input-repair.md 와 docs/reports/task-r7-input-repair.md 두 개를
@@ -847,7 +847,7 @@ pnpm lint 를 모두 돌리고 출력을 보고서에 붙여라. typecheck 는 C
 
 설계서 §2 의 완료 조건 전부에 더해 아래를 확인한다.
 
-- `main` 에서 `pnpm test`, `pnpm build && pnpm --filter ohmymcp test:e2e`,
+- `main` 에서 `pnpm test`, `pnpm build && pnpm --filter @mcpeak/cli test:e2e`,
   `pnpm typecheck --force`, `pnpm lint` 가 통과한다.
 - `docs/task-integration-ledger.tsv` 에 R1·R2·R3·R5·R6·R7 여섯 줄이 있고 전부 `main` 의
   조상이다.

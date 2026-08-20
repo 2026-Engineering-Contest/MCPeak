@@ -35,7 +35,7 @@ describe("theme", () => {
     const root = makeRoot();
     applyThemeChoice("dark", root, storage);
     expect(root.getAttribute("data-theme")).toBe("dark");
-    expect(storage.getItem("ohmymcp-theme")).toBe("dark");
+    expect(storage.getItem("mcpeak-theme")).toBe("dark");
   });
 
   it("light 저장 후 재초기화하면 light가 복원된다", () => {
@@ -55,11 +55,11 @@ describe("theme", () => {
     applyThemeChoice("dark", root, storage);
     applyThemeChoice("system", root, storage);
     expect(root.hasAttribute("data-theme")).toBe(false);
-    expect(storage.getItem("ohmymcp-theme")).toBeNull();
+    expect(storage.getItem("mcpeak-theme")).toBeNull();
   });
 
   it("알 수 없는 저장값은 system으로 취급한다", () => {
-    const storage = makeStorage({ "ohmymcp-theme": "sepia" });
+    const storage = makeStorage({ "mcpeak-theme": "sepia" });
     expect(getThemeChoice(storage)).toBe("system");
   });
 });

@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { connectStdio } from "@ohmymcp-hsu/core";
+import { connectStdio } from "@mcpeak/core";
 import {
   applyAuthoringChanges,
   createAuthoringDiff,
@@ -13,15 +13,15 @@ import {
   getAuthoringExecutionSuite,
   prepareAuthoringRequest,
   reviewLocalAuthoringCandidate,
-} from "@ohmymcp-hsu/generate";
-import { deriveContractAxes, validateMcpSuite } from "@ohmymcp-hsu/runner";
+} from "@mcpeak/generate";
+import { deriveContractAxes, validateMcpSuite } from "@mcpeak/runner";
 import { describe, expect, it, vi } from "vitest";
 import { nodeGenerateDependencies, runGenerateCommand } from "../src/generate-command.js";
 import { run } from "../src/index.js";
 
-vi.mock("@ohmymcp-hsu/core", async () => import("../../core/src/index.js"));
-vi.mock("@ohmymcp-hsu/runner", async () => import("../../runner/src/index.js"));
-vi.mock("@ohmymcp-hsu/generate", async () => import("../../generate/src/index.js"));
+vi.mock("@mcpeak/core", async () => import("../../core/src/index.js"));
+vi.mock("@mcpeak/runner", async () => import("../../runner/src/index.js"));
+vi.mock("@mcpeak/generate", async () => import("../../generate/src/index.js"));
 
 const here = resolve(fileURLToPath(new URL(".", import.meta.url)));
 const root = resolve(here, "../../..");
@@ -102,7 +102,7 @@ async function cleanup(pidFile: string): Promise<void> {
 
 describe.sequential("generate 실제 weather-server", () => {
   it("weather-server에서 baseline JSON을 만들고 process를 종료한다", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "ohmymcp-generate-"));
+    const directory = await mkdtemp(join(tmpdir(), "mcpeak-generate-"));
     const pidFile = join(directory, "server.pid");
     // 축 수를 세는 연결은 pid 파일을 따로 쓴다. 같은 파일을 쓰면 아래 exited 가 어느 프로세스를
     // 본 것인지 흐려진다.
@@ -155,7 +155,7 @@ describe.sequential("generate 실제 weather-server", () => {
   });
 
   it("weather baseline은 실제 test에서 신뢰도 한계를 드러낸다", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "ohmymcp-generate-"));
+    const directory = await mkdtemp(join(tmpdir(), "mcpeak-generate-"));
     const pidFile = join(directory, "server.pid");
     const suitePath = join(directory, "baseline.json");
     const out = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
@@ -244,7 +244,7 @@ describe.sequential("generate 실제 weather-server", () => {
           "--out",
           "/tmp/weather.json",
           "--command",
-          "ohmymcp-no-command",
+          "mcpeak-no-command",
           "--baseline-only",
         ]),
       ).toBe(1);
@@ -259,7 +259,7 @@ describe.sequential("generate 실제 weather-server", () => {
   it("입력값 교정으로 고친 값이 실제 서버 명세에 남는다", async () => {
     // baseline 합성값 city "example" 은 weather-server 가 거절한다. 교정 단계가 사람에게 값을
     // 받아 그 케이스만 다시 실행하고, 통과한 값이 저장된 명세에 반영되는지 실제 서버로 본다.
-    const directory = await mkdtemp(join(tmpdir(), "ohmymcp-generate-"));
+    const directory = await mkdtemp(join(tmpdir(), "mcpeak-generate-"));
     const pidFile = join(directory, "server.pid");
     const suitePath = join(directory, "repaired.json");
     const outputs: string[] = [];
@@ -351,7 +351,7 @@ describe.sequential("generate 실제 weather-server", () => {
   });
 
   it("사용자 지시를 반영한 승인 candidate는 실제 test를 통과한다", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "ohmymcp-generate-"));
+    const directory = await mkdtemp(join(tmpdir(), "mcpeak-generate-"));
     const pidFile = join(directory, "server.pid");
     const suitePath = join(directory, "approved.json");
     const outputs: string[] = [];
@@ -367,7 +367,7 @@ describe.sequential("generate 실제 weather-server", () => {
     const provider = {
       id: "codex" as const,
       model: "gpt-5.6-luna",
-      author: vi.fn(async (request: import("@ohmymcp-hsu/generate").AuthoringRequest) => ({
+      author: vi.fn(async (request: import("@mcpeak/generate").AuthoringRequest) => ({
         status: "candidate" as const,
         suite: {
           ...request.candidate,

@@ -339,7 +339,7 @@ it("확인 못 한 케이스가 있으면 건수와 안내를 찍는다", () => 
   // 기대 출력에 아래 세 줄이 순서대로 들어 있다:
   //   "  → 거절을 기대한 케이스 3건은 거절 근거를 확인하지 못했습니다."
   //   "    서버가 거절한 것인지 다른 이유로 실패한 것인지 이 도구는 판단하지 못합니다."
-  //   "    확인: ohmymcp generate 의 승인 화면에서 해당 케이스의 응답을 확인하세요."
+  //   "    확인: mcpeak generate 의 승인 화면에서 해당 케이스의 응답을 확인하세요."
 });
 ```
 
@@ -614,7 +614,7 @@ T3·T4·T5 는 쓰는 파일이 겹치지 않는다(`reporter.ts` / `generate-co
 4. 관찰 픽스처 테스트가 `verified` 64 · `unverified` 16 을 재현한다.
 5. 탐침 픽스처의 크래시 4건이 전부 `unverified` 다.
 6. `examples/weather-server` 에 같은 명세를 2회 실행해 `--json` 바이트가 같다.
-7. `pnpm build` 후 `pnpm --filter ohmymcp test:e2e` 통과.
+7. `pnpm build` 후 `pnpm --filter @mcpeak/cli test:e2e` 통과.
 
 ## 6. 사람이 할 사전 확인 (2줄)
 
@@ -632,10 +632,10 @@ git status --short       # 깨끗한지 확인
 
 ```
 [1단계: 작업 공간 만들기] 다른 무엇보다 먼저 이것부터 해라.
-  git worktree add .claude/worktrees/ohmymcp-t1 -b feat/rejection-basis-rule <기점SHA>
+  git worktree add .claude/worktrees/mcpeak-t1 -b feat/rejection-basis-rule <기점SHA>
 를 실행한 뒤 그 경로로 세션을 옮겨라. 이어서 pnpm install 을 돌려라.
 진입 후 아래를 확인하고, 하나라도 어긋나면 중단하고 BLOCKED 로 보고해라:
-  - pwd 가 .claude/worktrees/ohmymcp-t1 인지
+  - pwd 가 .claude/worktrees/mcpeak-t1 인지
   - git log --oneline -1 이 <기점SHA> 인지
   - docs/superpowers/plans/2026-08-18-rejection-basis-verification-implementation.md 와
     docs/superpowers/specs/2026-08-18-rejection-basis-verification-design.md 가 존재하는지
@@ -663,10 +663,10 @@ git 명령을 실행하지 마라. 커밋·푸시·머지는 사람이 한다. �
 
 ```
 [1단계: 작업 공간 만들기] 다른 무엇보다 먼저 이것부터 해라.
-  git worktree add .claude/worktrees/ohmymcp-t2 -b feat/rejection-basis-wiring <T1통합SHA>
+  git worktree add .claude/worktrees/mcpeak-t2 -b feat/rejection-basis-wiring <T1통합SHA>
 를 실행한 뒤 그 경로로 세션을 옮겨라. 이어서 pnpm install 을 돌려라.
 진입 후 아래를 확인하고, 하나라도 어긋나면 중단하고 BLOCKED 로 보고해라:
-  - pwd 가 .claude/worktrees/ohmymcp-t2 인지
+  - pwd 가 .claude/worktrees/mcpeak-t2 인지
   - git log --oneline -1 이 <T1통합SHA> 인지
   - packages/runner/src/rejection-basis.ts 가 존재하는지 (T1 산출물)
   - 계획서와 설계 문서가 존재하는지
@@ -693,10 +693,10 @@ git 명령을 실행하지 마라. 백그라운드 실행과 하위 에이전트
 
 ```
 [1단계: 작업 공간 만들기] 다른 무엇보다 먼저 이것부터 해라.
-  git worktree add .claude/worktrees/ohmymcp-t3 -b feat/rejection-basis-reporter <T2통합SHA>
+  git worktree add .claude/worktrees/mcpeak-t3 -b feat/rejection-basis-reporter <T2통합SHA>
 를 실행한 뒤 그 경로로 세션을 옮겨라. 이어서 pnpm install 을 돌려라.
 진입 후 아래를 확인하고, 하나라도 어긋나면 중단하고 BLOCKED 로 보고해라:
-  - pwd 가 .claude/worktrees/ohmymcp-t3 인지
+  - pwd 가 .claude/worktrees/mcpeak-t3 인지
   - git log --oneline -1 이 <T2통합SHA> 인지
   - RunnerSummary 에 rejectionUnverified 가 있는지 (T2 산출물)
   - 계획서와 설계 문서가 존재하는지
@@ -721,10 +721,10 @@ colorEnabled 가 false 면 SGR 을 넣지 마라.
 
 ```
 [1단계: 작업 공간 만들기] 다른 무엇보다 먼저 이것부터 해라.
-  git worktree add .claude/worktrees/ohmymcp-t4 -b feat/rejection-basis-approval-screen <T2통합SHA>
+  git worktree add .claude/worktrees/mcpeak-t4 -b feat/rejection-basis-approval-screen <T2통합SHA>
 를 실행한 뒤 그 경로로 세션을 옮겨라. 이어서 pnpm install 을 돌려라.
 진입 후 아래를 확인하고, 하나라도 어긋나면 중단하고 BLOCKED 로 보고해라:
-  - pwd 가 .claude/worktrees/ohmymcp-t4 인지
+  - pwd 가 .claude/worktrees/mcpeak-t4 인지
   - git log --oneline -1 이 <T2통합SHA> 인지
   - TestCaseResult 에 rejectionBasis 가 있는지 (T2 산출물)
   - 계획서와 설계 문서가 존재하는지
@@ -751,10 +751,10 @@ git 명령을 실행하지 마라. 하위 에이전트 스폰 금지다.
 
 ```
 [1단계: 작업 공간 만들기] 다른 무엇보다 먼저 이것부터 해라.
-  git worktree add .claude/worktrees/ohmymcp-t5 -b feat/rejection-diagnosis-provider <기점SHA>
+  git worktree add .claude/worktrees/mcpeak-t5 -b feat/rejection-diagnosis-provider <기점SHA>
 를 실행한 뒤 그 경로로 세션을 옮겨라. 이어서 pnpm install 을 돌려라.
 진입 후 아래를 확인하고, 하나라도 어긋나면 중단하고 BLOCKED 로 보고해라:
-  - pwd 가 .claude/worktrees/ohmymcp-t5 인지
+  - pwd 가 .claude/worktrees/mcpeak-t5 인지
   - git log --oneline -1 이 <기점SHA> 인지
   - packages/generate/src/provider-process.ts 와 diagnosis-request.ts 가 존재하는지
   - 계획서와 설계 문서가 존재하는지
@@ -781,10 +781,10 @@ git 명령을 실행하지 마라. 하위 에이전트 스폰 금지다.
 
 ```
 [1단계: 작업 공간 만들기] 다른 무엇보다 먼저 이것부터 해라.
-  git worktree add .claude/worktrees/ohmymcp-t6 -b feat/rejection-diagnosis-wiring <T4T5통합SHA>
+  git worktree add .claude/worktrees/mcpeak-t6 -b feat/rejection-diagnosis-wiring <T4T5통합SHA>
 를 실행한 뒤 그 경로로 세션을 옮겨라. 이어서 pnpm install 을 돌려라.
 진입 후 아래를 확인하고, 하나라도 어긋나면 중단하고 BLOCKED 로 보고해라:
-  - pwd 가 .claude/worktrees/ohmymcp-t6 인지
+  - pwd 가 .claude/worktrees/mcpeak-t6 인지
   - git log --oneline -1 이 <T4T5통합SHA> 인지
   - packages/generate/src/rejection-diagnosis.ts 가 존재하는지 (T5 산출물)
   - 승인 화면에 "거절 근거 미확인" 블록이 있는지 (T4 산출물)
@@ -812,7 +812,7 @@ verdict 가 늘 때 새 값이 조용히 빠진다.
 
 서브에이전트에 넘기지 않는다. 실제 외부 서버를 띄우므로 직렬 웨이브다.
 
-1. `pnpm build --force` 후 `pnpm --filter ohmymcp test:e2e`.
+1. `pnpm build --force` 후 `pnpm --filter @mcpeak/cli test:e2e`.
 2. `examples/weather-server` 에 기존 명세를 2회 실행해 `--json` 바이트 비교.
 3. 공개 서버 3개(`mcp-server-time` · `server-memory` · `mcp-server-calculator`)에 `generate`
    를 돌려 화면에 `거절 근거 미확인` 블록이 관찰과 같은 건수로 나오는지 대조한다. 기대값은

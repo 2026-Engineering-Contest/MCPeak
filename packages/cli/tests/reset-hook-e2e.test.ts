@@ -32,7 +32,7 @@ describe("runResetCommand", () => {
   });
 
   it("실행 파일이 없으면 ResetCommandError 를 던지고 exitCode 가 null 이다", async () => {
-    const error = await rejection(runResetCommand("ohmymcp-존재하지-않는-실행파일"));
+    const error = await rejection(runResetCommand("mcpeak-존재하지-않는-실행파일"));
     expect(error).toBeInstanceOf(ResetCommandError);
     expect((error as ResetCommandError).exitCode).toBeNull();
   });

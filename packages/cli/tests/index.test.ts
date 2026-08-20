@@ -38,7 +38,7 @@ const OPTIONAL_GENERATE_DEPENDENCIES = {
   dispatchRejectionDiagnosis: true,
 } as const satisfies Record<OptionalFunctionDependencyKey, true>;
 
-describe("ohmymcp cli", () => {
+describe("mcpeak cli", () => {
   it("알려진 서브커맨드를 선언한다", () => {
     expect(COMMANDS).toEqual(["test", "generate", "repair", "record", "replay", "verify", "mock"]);
   });
@@ -78,7 +78,7 @@ describe("ohmymcp cli", () => {
       try {
         await expect(run(argv)).resolves.toBe(0);
         const output = stdout.mock.calls.map(([text]) => String(text)).join("");
-        expect(output).toContain("사용법: ohmymcp <명령> [옵션]");
+        expect(output).toContain("사용법: mcpeak <명령> [옵션]");
         expect(output).toContain("test");
         expect(output).toContain("generate");
         expect(stderr).not.toHaveBeenCalled();
@@ -90,10 +90,10 @@ describe("ohmymcp cli", () => {
   );
 
   it.each([
-    [["help", "test"], "ohmymcp test <suite.json>"],
-    [["test", "--help"], "ohmymcp test <suite.json>"],
-    [["help", "generate"], "ohmymcp generate --suite-id <id>"],
-    [["generate", "--help"], "ohmymcp generate --suite-id <id>"],
+    [["help", "test"], "mcpeak test <suite.json>"],
+    [["test", "--help"], "mcpeak test <suite.json>"],
+    [["help", "generate"], "mcpeak generate --suite-id <id>"],
+    [["generate", "--help"], "mcpeak generate --suite-id <id>"],
   ])("%j 는 해당 서브커맨드 도움말을 stdout 에 쓴다", async (argv, expected) => {
     const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
@@ -112,7 +112,7 @@ describe("ohmymcp cli", () => {
     const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
     try {
       await expect(run(["--version"])).resolves.toBe(0);
-      expect(stdout).toHaveBeenCalledWith(`ohmymcp ${packageMetadata.version}\n`);
+      expect(stdout).toHaveBeenCalledWith(`mcpeak ${packageMetadata.version}\n`);
       expect(stderr).not.toHaveBeenCalled();
     } finally {
       stdout.mockRestore();
@@ -139,7 +139,7 @@ describe("ohmymcp cli", () => {
       vi.resetModules();
       const [{ run: isolatedRun }, generate] = await Promise.all([
         import("../src/index.js"),
-        import("@ohmymcp-hsu/generate"),
+        import("@mcpeak/generate"),
       ]);
 
       await expect(isolatedRun(["generate"])).resolves.toBe(0);
@@ -174,10 +174,10 @@ describe("ohmymcp cli", () => {
   });
 
   it("동적 Core 의존성 로드 실패를 안전한 내부 오류로 정규화한다", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "ohmymcp-index-"));
+    const directory = await mkdtemp(join(tmpdir(), "mcpeak-index-"));
     const suite = join(directory, "suite.json");
     const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
-    vi.doMock("@ohmymcp-hsu/core", () => {
+    vi.doMock("@mcpeak/core", () => {
       throw new Error("DYNAMIC_IMPORT_SECRET_STACK");
     });
     try {
@@ -187,7 +187,7 @@ describe("ohmymcp cli", () => {
         "오류 [CLI_INTERNAL_ERROR]: 예상하지 못한 CLI 내부 오류가 발생했습니다.\n해결: 다시 실행한 뒤 재현 정보와 함께 이슈를 보고하세요.\n",
       );
     } finally {
-      vi.doUnmock("@ohmymcp-hsu/core");
+      vi.doUnmock("@mcpeak/core");
       stderr.mockRestore();
       await rm(directory, { recursive: true, force: true });
     }
@@ -195,7 +195,7 @@ describe("ohmymcp cli", () => {
 
   it("generate 의존성 로드 실패를 raw 오류 없이 정규화한다", async () => {
     const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
-    vi.doMock("@ohmymcp-hsu/generate", () => {
+    vi.doMock("@mcpeak/generate", () => {
       throw new Error("GENERATE_DYNAMIC_SECRET_STACK");
     });
     try {
@@ -217,7 +217,7 @@ describe("ohmymcp cli", () => {
         "GENERATE_DYNAMIC_SECRET_STACK",
       );
     } finally {
-      vi.doUnmock("@ohmymcp-hsu/generate");
+      vi.doUnmock("@mcpeak/generate");
       stderr.mockRestore();
     }
   });
@@ -232,7 +232,7 @@ describe("ohmymcp cli", () => {
       dispatchDiagnosisRequest: async () => undefined,
       createCodexProvider: () => undefined,
       createClaudeProvider: () => undefined,
-    } as unknown as typeof import("@ohmymcp-hsu/generate");
+    } as unknown as typeof import("@mcpeak/generate");
     const dependencies = nodeRepairDependencies(generate);
     try {
       expect(dependencies.reviewIO).toBeDefined();

@@ -7,8 +7,8 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import { run } from "../src/index.js";
 
-vi.mock("@ohmymcp-hsu/core", async () => import("../../core/src/index.js"));
-vi.mock("@ohmymcp-hsu/runner", async () => import("../../runner/src/index.js"));
+vi.mock("@mcpeak/core", async () => import("../../core/src/index.js"));
+vi.mock("@mcpeak/runner", async () => import("../../runner/src/index.js"));
 
 /**
  * 결정론성 확인의 실서버 E2E (설계 문서 §9.3). **실제 서버 프로세스를 띄우므로 직렬이다.**
@@ -89,7 +89,7 @@ function livingServers(serverPath: string): number {
  * 예외를 던져 테스트가 시끄럽게 실패한다.
  */
 function listWindowsCommandLines(): string {
-  const directory = mkdtempSync(join(tmpdir(), "ohmymcp-livingservers-"));
+  const directory = mkdtempSync(join(tmpdir(), "mcpeak-livingservers-"));
   const outFile = join(directory, "procs.txt");
   try {
     execFileSync(
@@ -131,7 +131,7 @@ describe.sequential("결정론성 확인 E2E (실서버)", () => {
   it(
     "weather-server 는 차이 0 이다",
     async () => {
-      const directory = await mkdtemp(join(tmpdir(), "ohmymcp-determinism-e2e-"));
+      const directory = await mkdtemp(join(tmpdir(), "mcpeak-determinism-e2e-"));
       const pidFile = join(directory, "server.pid");
       try {
         const { exitCode, stdout } = await runCliCapturingStdout([
@@ -190,7 +190,7 @@ describe.sequential("결정론성 확인 E2E (실서버)", () => {
   it(
     "--reset-cmd 와 함께면 결론 문장이 확인으로 올라간다",
     async () => {
-      const directory = await mkdtemp(join(tmpdir(), "ohmymcp-determinism-e2e-"));
+      const directory = await mkdtemp(join(tmpdir(), "mcpeak-determinism-e2e-"));
       const pidFile = join(directory, "server.pid");
       try {
         const { exitCode, stdout } = await runCliCapturingStdout([

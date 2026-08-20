@@ -1,5 +1,5 @@
 ---
-"ohmymcp": patch
+"@mcpeak/cli": patch
 ---
 
 cli: 거절 근거 AI 진단 승낙을 묻기 전에, 응답 본문이 값 치환 없이 그대로 provider 로 나간다는

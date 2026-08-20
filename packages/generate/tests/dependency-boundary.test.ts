@@ -70,14 +70,14 @@ async function sourceFiles(): Promise<string[]> {
 interface RunnerStatement {
   readonly clause: string;
   readonly text: string;
-  /** `import "@ohmymcp-hsu/runner";` — 절이 아예 없는 side-effect import. */
+  /** `import "@mcpeak/runner";` — 절이 아예 없는 side-effect import. */
   readonly sideEffectOnly: boolean;
 }
 
 /** runner를 가리키는 구문을 뽑는다. 심볼 수집과 경계 위반 검사가 같은 판정을 쓰게 하는 자리다. */
 function runnerStatements(source: string): RunnerStatement[] {
   // 줄 시작 앵커를 건다. render.ts는 생성 파일에 넣을 import 문을 문자열 리터럴로 들고 있는데
-  // (들여쓰기된 `'import { defineMcpSuite } from "@ohmymcp-hsu/runner";'`), 그것은 이 패키지의
+  // (들여쓰기된 `'import { defineMcpSuite } from "@mcpeak/runner";'`), 그것은 이 패키지의
   // 의존이 아니다. 실제 import 문만 열 0에서 시작한다.
   // clause에 따옴표와 세미콜론을 허용하지 않아 앞선 import 문으로도 넘어가지 않는다.
   // export ... from 도 같이 센다. 재수출도 이 패키지가 runner에서 가져오는 심볼이기 때문이다.
@@ -85,12 +85,12 @@ function runnerStatements(source: string): RunnerStatement[] {
   // 인용부호는 캡처해서 backreference로 짝을 맞춘다. 큰따옴표만 보면 작은따옴표로 쓴 구문이
   // 빠져나간다. biome이 큰따옴표로 포매팅한다고 해도 경계 장치에 우회 경로를 두지 않는다.
   //
-  // 알려진 한계: 동적 `await import("@ohmymcp-hsu/runner")`는 정적 검사 대상이 아니다.
-  const statement = /^(?:import|export)\s+([^"';]*?)\s+from\s+(["'])@ohmymcp-hsu\/runner\2/gm;
+  // 알려진 한계: 동적 `await import("@mcpeak/runner")`는 정적 검사 대상이 아니다.
+  const statement = /^(?:import|export)\s+([^"';]*?)\s+from\s+(["'])@mcpeak\/runner\2/gm;
   // `from`이 없는 side-effect import는 위 정규식에 안 걸린다. `import` 뒤에 인용부호가 바로 오므로
   // 명시 import 구문과 겹치지 않는다. 가져오는 심볼은 0개지만 의존 자체는 생기고, ADR-0009의
   // 승인 표는 심볼로 적혀 있어 이 줄을 표현할 방법이 없다. 그래서 경계 위반으로 다룬다.
-  const sideEffect = /^import\s+(["'])@ohmymcp-hsu\/runner\1/gm;
+  const sideEffect = /^import\s+(["'])@mcpeak\/runner\1/gm;
 
   const found = [
     ...[...source.matchAll(statement)].map((match) => ({
@@ -113,7 +113,7 @@ function runnerStatements(source: string): RunnerStatement[] {
     .map(({ clause, text, sideEffectOnly }) => ({ clause, text, sideEffectOnly }));
 }
 
-/** `import ... from "@ohmymcp-hsu/runner"` 구문에서 가져오는 심볼 이름만 뽑는다. */
+/** `import ... from "@mcpeak/runner"` 구문에서 가져오는 심볼 이름만 뽑는다. */
 function runnerImports(source: string): string[] {
   const names: string[] = [];
   for (const { clause } of runnerStatements(source)) {
@@ -161,8 +161,8 @@ function unscopedRunnerStatements(source: string): string[] {
 const UNSCOPED_STATEMENT_HINT = [
   "→ ADR-0009는 generate → runner 의존을 '승인된 심볼 목록'으로만 허용합니다.",
   "→ 아래 구문은 가져오는 것을 그 목록으로 표현할 수 없어 장치를 통째로 우회합니다.",
-  '→ 필요한 심볼만 명시해서 가져오세요: import { canonicalJson } from "@ohmymcp-hsu/runner"',
-  '→ side-effect import(import "@ohmymcp-hsu/runner")라면 심볼 없이 의존만 생깁니다. 줄을 지우세요.',
+  '→ 필요한 심볼만 명시해서 가져오세요: import { canonicalJson } from "@mcpeak/runner"',
+  '→ side-effect import(import "@mcpeak/runner")라면 심볼 없이 의존만 생깁니다. 줄을 지우세요.',
   "→ 새 심볼이 정말 필요하면 ADR-0009의 승인 표를 먼저 고치세요.",
 ].join("\n");
 
@@ -188,57 +188,53 @@ describe("dependency boundary", () => {
     );
   });
 
-  it('export ... from "@ohmymcp-hsu/runner" 구문의 심볼도 수집한다', () => {
-    const source = 'export { canonicalJson, deepFreeze, sha256 } from "@ohmymcp-hsu/runner";\n';
+  it('export ... from "@mcpeak/runner" 구문의 심볼도 수집한다', () => {
+    const source = 'export { canonicalJson, deepFreeze, sha256 } from "@mcpeak/runner";\n';
     expect(runnerImports(source).sort()).toEqual(["canonicalJson", "deepFreeze", "sha256"]);
   });
 
   it("작은따옴표로 쓴 재수출도 수집한다", () => {
-    const source = "export { runSuite } from '@ohmymcp-hsu/runner';\n";
+    const source = "export { runSuite } from '@mcpeak/runner';\n";
     expect(runnerImports(source)).toContain("runSuite");
   });
 
   it("인용부호 짝이 맞지 않는 구문은 수집하지 않는다", () => {
-    expect(runnerImports("export { runSuite } from \"@ohmymcp-hsu/runner';\n")).toEqual([]);
+    expect(runnerImports("export { runSuite } from \"@mcpeak/runner';\n")).toEqual([]);
   });
 
   it("목록에 없는 심볼을 재수출하면 수집 결과에 잡힌다", () => {
     // 정규식만 넓히고 검증하지 않으면 다음에 누가 되돌려도 아무도 모른다.
-    const source = 'export { runSuite } from "@ohmymcp-hsu/runner";\n';
+    const source = 'export { runSuite } from "@mcpeak/runner";\n';
     expect(runnerImports(source)).toContain("runSuite");
     expect(APPROVED_RUNNER_SYMBOLS).not.toContain("runSuite");
   });
 
   it("네임스페이스 import는 경계 위반으로 잡힌다", () => {
-    const source = 'import * as runner from "@ohmymcp-hsu/runner";\n';
-    expect(unscopedRunnerStatements(source)).toEqual([
-      'import * as runner from "@ohmymcp-hsu/runner"',
-    ]);
+    const source = 'import * as runner from "@mcpeak/runner";\n';
+    expect(unscopedRunnerStatements(source)).toEqual(['import * as runner from "@mcpeak/runner"']);
     // 심볼 수집만으로는 안 잡힌다. 두 검사가 나뉘어 있다는 사실을 고정한다.
     expect(runnerImports(source)).toEqual([]);
   });
 
   it("wildcard 재수출은 경계 위반으로 잡힌다", () => {
-    const source = 'export * from "@ohmymcp-hsu/runner";\n';
-    expect(unscopedRunnerStatements(source)).toEqual(['export * from "@ohmymcp-hsu/runner"']);
+    const source = 'export * from "@mcpeak/runner";\n';
+    expect(unscopedRunnerStatements(source)).toEqual(['export * from "@mcpeak/runner"']);
     expect(runnerImports(source)).toEqual([]);
   });
 
   it("export * as 네임스페이스 재수출도 경계 위반이다", () => {
-    const source = 'export * as runner from "@ohmymcp-hsu/runner";\n';
-    expect(unscopedRunnerStatements(source)).toEqual([
-      'export * as runner from "@ohmymcp-hsu/runner"',
-    ]);
+    const source = 'export * as runner from "@mcpeak/runner";\n';
+    expect(unscopedRunnerStatements(source)).toEqual(['export * as runner from "@mcpeak/runner"']);
   });
 
   it("default import와 default 혼합 import도 경계 위반이다", () => {
     // `*`만 찾는 규칙이면 이 둘이 그대로 빠져나간다. 판정 기준이 "중괄호 밖 이름"인 이유다.
-    expect(unscopedRunnerStatements('import runner from "@ohmymcp-hsu/runner";\n')).toEqual([
-      'import runner from "@ohmymcp-hsu/runner"',
+    expect(unscopedRunnerStatements('import runner from "@mcpeak/runner";\n')).toEqual([
+      'import runner from "@mcpeak/runner"',
     ]);
-    const mixed = 'import runner, { canonicalJson } from "@ohmymcp-hsu/runner";\n';
+    const mixed = 'import runner, { canonicalJson } from "@mcpeak/runner";\n';
     expect(unscopedRunnerStatements(mixed)).toEqual([
-      'import runner, { canonicalJson } from "@ohmymcp-hsu/runner"',
+      'import runner, { canonicalJson } from "@mcpeak/runner"',
     ]);
     // 명시한 쪽은 심볼로도 잡힌다. 위반 검사가 심볼 수집을 가리지 않는다.
     expect(runnerImports(mixed)).toEqual(["canonicalJson"]);
@@ -246,61 +242,57 @@ describe("dependency boundary", () => {
 
   it("side-effect import도 경계 위반이다", () => {
     // 가져오는 심볼이 0개라 ADR-0009의 승인 표(심볼 목록)에 적을 방법이 없다.
-    const source = 'import "@ohmymcp-hsu/runner";\n';
-    expect(unscopedRunnerStatements(source)).toEqual(['import "@ohmymcp-hsu/runner"']);
-    expect(unscopedRunnerStatements("import '@ohmymcp-hsu/runner';\n")).toEqual([
-      "import '@ohmymcp-hsu/runner'",
+    const source = 'import "@mcpeak/runner";\n';
+    expect(unscopedRunnerStatements(source)).toEqual(['import "@mcpeak/runner"']);
+    expect(unscopedRunnerStatements("import '@mcpeak/runner';\n")).toEqual([
+      "import '@mcpeak/runner'",
     ]);
     expect(runnerImports(source)).toEqual([]);
   });
 
   it("side-effect import도 줄 시작 앵커와 인용부호 짝 규칙을 따른다", () => {
-    expect(unscopedRunnerStatements('  import "@ohmymcp-hsu/runner";\n')).toEqual([]);
-    expect(unscopedRunnerStatements("import \"@ohmymcp-hsu/runner';\n")).toEqual([]);
+    expect(unscopedRunnerStatements('  import "@mcpeak/runner";\n')).toEqual([]);
+    expect(unscopedRunnerStatements("import \"@mcpeak/runner';\n")).toEqual([]);
   });
 
   it("동적 import는 이 검사의 대상이 아니다", () => {
     // 알려진 한계를 고정한다. 정적 정규식의 사정권 밖이고, 넓히면 문자열 리터럴까지 딸려온다.
-    expect(
-      unscopedRunnerStatements('const runner = await import("@ohmymcp-hsu/runner");\n'),
-    ).toEqual([]);
+    expect(unscopedRunnerStatements('const runner = await import("@mcpeak/runner");\n')).toEqual(
+      [],
+    );
   });
 
   it("위반 구문은 파일에 등장한 순서대로 돌려준다", () => {
     // 두 정규식을 따로 훑으므로 순서를 다시 세운다. 같은 입력에 같은 출력이어야 한다.
     const source = [
-      'export * from "@ohmymcp-hsu/runner";',
-      'import { canonicalJson } from "@ohmymcp-hsu/runner";',
-      'import "@ohmymcp-hsu/runner";',
-      'import * as runner from "@ohmymcp-hsu/runner";',
+      'export * from "@mcpeak/runner";',
+      'import { canonicalJson } from "@mcpeak/runner";',
+      'import "@mcpeak/runner";',
+      'import * as runner from "@mcpeak/runner";',
       "",
     ].join("\n");
     expect(unscopedRunnerStatements(source)).toEqual([
-      'export * from "@ohmymcp-hsu/runner"',
-      'import "@ohmymcp-hsu/runner"',
-      'import * as runner from "@ohmymcp-hsu/runner"',
+      'export * from "@mcpeak/runner"',
+      'import "@mcpeak/runner"',
+      'import * as runner from "@mcpeak/runner"',
     ]);
   });
 
   it("명시 import·재수출·type import는 위반이 아니다", () => {
     for (const source of [
-      'import { canonicalJson } from "@ohmymcp-hsu/runner";\n',
-      'export { sha256 } from "@ohmymcp-hsu/runner";\n',
-      'import type { TestSuiteSpec } from "@ohmymcp-hsu/runner";\n',
-      'import { type ContractAxis, sha256 } from "@ohmymcp-hsu/runner";\n',
-      "export { deepFreeze } from '@ohmymcp-hsu/runner';\n",
+      'import { canonicalJson } from "@mcpeak/runner";\n',
+      'export { sha256 } from "@mcpeak/runner";\n',
+      'import type { TestSuiteSpec } from "@mcpeak/runner";\n',
+      'import { type ContractAxis, sha256 } from "@mcpeak/runner";\n',
+      "export { deepFreeze } from '@mcpeak/runner';\n",
     ])
       expect(unscopedRunnerStatements(source), source).toEqual([]);
   });
 
   it("위반 검사도 줄 시작 앵커와 인용부호 짝 규칙을 그대로 따른다", () => {
     // 들여쓴 구문은 render.ts가 생성 파일에 넣을 문자열이지 이 패키지의 의존이 아니다.
-    expect(unscopedRunnerStatements('  import * as runner from "@ohmymcp-hsu/runner";\n')).toEqual(
-      [],
-    );
-    expect(unscopedRunnerStatements("import * as runner from \"@ohmymcp-hsu/runner';\n")).toEqual(
-      [],
-    );
+    expect(unscopedRunnerStatements('  import * as runner from "@mcpeak/runner";\n')).toEqual([]);
+    expect(unscopedRunnerStatements("import * as runner from \"@mcpeak/runner';\n")).toEqual([]);
   });
 
   it("generate 소스에 범위를 좁힐 수 없는 runner 구문이 없다", async () => {
@@ -315,6 +307,6 @@ describe("dependency boundary", () => {
 
   it("generate는 cli를 참조하지 않는다", async () => {
     for (const file of await sourceFiles())
-      expect(await readFile(file, "utf8")).not.toContain("@ohmymcp-hsu/cli");
+      expect(await readFile(file, "utf8")).not.toContain("@mcpeak/cli");
   });
 });

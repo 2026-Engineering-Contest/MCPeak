@@ -1,5 +1,5 @@
 ---
-"@ohmymcp-hsu/generate": patch
+"@mcpeak/generate": patch
 ---
 
 generate: 거절 진단 요청의 `responseBody` 에서 값 치환을 걷어냅니다. 계약 주석은 "redaction 이

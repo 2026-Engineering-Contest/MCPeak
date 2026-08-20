@@ -135,7 +135,7 @@ jobs:
       # vitest 쪽(cli-integration-e2e.test.ts)은 소스를 돌리므로 번들링·exports·shebang
       # 문제를 잡지 못한다 — 그것들은 배포 후에야 드러난다 (CONTRIBUTING §6).
       - name: Verify built CLI
-        run: pnpm --filter ohmymcp test:e2e
+        run: pnpm --filter @mcpeak/cli test:e2e
 
       # "우리 도구로 우리를 검증한다" 의 마지막 한 칸이다 (CLAUDE.md).
       #

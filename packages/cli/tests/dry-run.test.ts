@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
-import type { McpClient, ToolDef, ToolResult } from "@ohmymcp-hsu/core";
-import type { TestCaseSpec, TestSuiteSpec } from "@ohmymcp-hsu/runner";
-import { renderReport, runSuite } from "@ohmymcp-hsu/runner";
+import type { McpClient, ToolDef, ToolResult } from "@mcpeak/core";
+import type { TestCaseSpec, TestSuiteSpec } from "@mcpeak/runner";
+import { renderReport, runSuite } from "@mcpeak/runner";
 import { describe, expect, it } from "vitest";
 import { runDryRun } from "../src/dry-run.js";
 

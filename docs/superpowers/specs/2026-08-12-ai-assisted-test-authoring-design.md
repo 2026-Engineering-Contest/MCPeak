@@ -2,7 +2,7 @@
 
 - 상태: 사용자 승인 완료, 구현 계획 작성 대기
 - 작성일: 2026-08-12
-- 구현 대상: `@ohmymcp-hsu/generate`, 후속 `ohmymcp` CLI
+- 구현 대상: `@mcpeak/generate`, 후속 `mcpeak` CLI
 - 실행 기반: 사용자가 설치하고 인증한 Codex CLI 또는 Claude Code CLI
 - 선행 계약: [Runner 실행·보고서 및 Generate 연동 설계](./2026-08-11-runner-design.md)
 - 설계 결정: [ADR-0006](../../adr/0006-ai-assisted-test-authoring.md)
@@ -45,7 +45,7 @@ Codex 또는 Claude → validate → sanitize → working candidate │
                                                    ↓
                                       최종 JSON suite 승인
                                                    ↓
-                                             ohmymcp test
+                                             mcpeak test
 ```
 
 ## 2. 범위
@@ -61,7 +61,7 @@ Codex 또는 Claude → validate → sanitize → working candidate │
 - 승인 draft와 working candidate 사이의 결정론적 diff
 - AI 변경 전체 또는 선택 변경 적용
 - 사용자의 직접 수정과 AI 수정에 같은 검증·승인 경계 적용
-- 최종 승인 JSON suite의 불변 snapshot과 `ohmymcp test` 연결
+- 최종 승인 JSON suite의 불변 snapshot과 `mcpeak test` 연결
 - 향후 `RunnerReport` 기반 repair가 같은 검토 상태를 재사용할 수 있는 경계
 
 ### 제외
@@ -132,23 +132,23 @@ change ID를 순서대로 부여한다.
 ## 4. 패키지 책임과 의존 방향
 
 ```text
-ohmymcp CLI
+mcpeak CLI
   ├─ 사용자 입력, provider 선택, preview·diff 표시, 승인, 파일 저장
   ├─ core로 MCP 서버 연결과 tools/list 수행
   └─ generate의 순수 API와 provider adapter 조립
 
-@ohmymcp-hsu/generate
+@mcpeak/generate
   ├─ 결정론적 baseline 합성
   ├─ authoring 상태, fingerprint, diff, 선택 적용
   ├─ compile·revise·repair 요청 준비와 결과 검증·정제
   └─ Codex·Claude 프로세스 adapter
 
-@ohmymcp-hsu/runner
+@mcpeak/runner
   ├─ TestSuiteSpec, JSON Schema, validateMcpSuite
   ├─ 실행 시 observer redaction
   └─ RunnerEvent, RunnerReport
 
-@ohmymcp-hsu/core
+@mcpeak/core
   └─ MCP 연결, tools/list, 실제 테스트 실행용 client
 ```
 
@@ -595,7 +595,7 @@ JSON 파일을 저장할 때는 다음 규칙을 사용한다.
 저장된 JSON은 기존 명령으로 실행한다.
 
 ```bash
-ohmymcp test generated/weather.suite.json \
+mcpeak test generated/weather.suite.json \
   --command node \
   --arg server.mjs
 ```
@@ -755,11 +755,11 @@ provider Promise와 child event에는 handler를 유지해 결과와 unhandled r
 
 ## 15. CLI 검토 흐름 예시
 
-첫 구현의 `ohmymcp generate`는 대화형 검토 흐름을 제공한다. 비대화형 CI에서 provider 호출이나
+첫 구현의 `mcpeak generate`는 대화형 검토 흐름을 제공한다. 비대화형 CI에서 provider 호출이나
 승인을 추측하지 않는다.
 
 ```text
-$ ohmymcp generate \
+$ mcpeak generate \
     --suite-id weather-server \
     --name "Weather Server" \
     --out generated/weather.suite.json \
@@ -877,9 +877,9 @@ repair 결과의 replacement는 authoring diff의 `replaceCase`로 변환해 같
 ### 실제 CLI smoke
 
 - 실제 weather-server에서 baseline JSON을 저장하면 `get_weather({ city: "example" })`이 도구 오류가
-  되어 기존 `ohmymcp test`가 실패하는 것을 확인한다. 이를 엔진 단독 신뢰도의 한계로 취급한다.
+  되어 기존 `mcpeak test`가 실패하는 것을 확인한다. 이를 엔진 단독 신뢰도의 한계로 취급한다.
 - 사용자 instruction에 `서울을 정상 도시로 사용`을 명시해 승인한 AI candidate는 같은
-  weather-server에서 `ohmymcp test`를 통과한다.
+  weather-server에서 `mcpeak test`를 통과한다.
 - 사용자가 명시적으로 요청한 경우에만 실제 Codex와 Claude smoke를 각각 직렬 실행한다.
 - smoke는 provider/model, 전송 preview 승인, 구조화 결과, diff, 최종 snapshot까지만 확인하며 raw
   prompt·stdout·stderr와 계정 정보를 보고서에 남기지 않는다.

@@ -1,10 +1,10 @@
 import type { Server as HttpServer } from "node:http";
 import { createServer } from "node:http";
+import type { ToolDef } from "@mcpeak/core";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
-import type { ToolDef } from "@ohmymcp-hsu/core";
 import {
   findSchemaViolations,
   type SchemaViolation,
@@ -23,7 +23,7 @@ import { assertKeyable, KeyDepthError, MAX_KEY_DEPTH } from "./key-violation.ts"
  *
  * 인자를 지정한 응답이 항상 우선한다 — ANY 는 나머지를 받는 기본값이다.
  */
-export const ANY = Symbol.for("ohmymcp.mock.any");
+export const ANY = Symbol.for("mcpeak.mock.any");
 
 /** 툴 하나에 대한 응답 선언. */
 export interface MockResponse {
@@ -261,7 +261,7 @@ function plainArgs(args: unknown): Record<string, unknown> {
  * `buildServer` 가 아니라 진입점에서 부른다 — HTTP 는 요청마다 `buildServer` 를 새로 부르므로
  * 거기 두면 호출마다 찍힌다. stdout 은 stdio 트랜스포트의 JSON-RPC 채널이라 쓸 수 없다.
  *
- * `ohmymcp test` 의 성공 경로에서는 이 줄이 사용자에게 안 보일 수 있다(CLI 의 프로세스 진단은
+ * `mcpeak test` 의 성공 경로에서는 이 줄이 사용자에게 안 보일 수 있다(CLI 의 프로세스 진단은
  * 비정상 종료·연결 실패에서 렌더된다). 그래도 내는 이유는 ADR-0048 의 "결과" 에 적어 두었다.
  */
 function noticeUnanalyzable(tools: ToolDef[]): void {
@@ -355,7 +355,7 @@ function seed(definition: MockDefinition): Registry {
 /** 요청 핸들러를 등록한 MCP 서버를 만든다. HTTP·stdio 가 이것을 공유한다. */
 function buildServer(tools: ToolDef[], registry: Registry): Server {
   const server = new Server(
-    { name: "ohmymcp-mock", version: "0.0.0" },
+    { name: "mcpeak-mock", version: "0.0.0" },
     { capabilities: { tools: {} } },
   );
   const schemas = new Map(tools.map((tool) => [tool.name, tool.inputSchema]));

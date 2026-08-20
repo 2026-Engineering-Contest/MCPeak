@@ -1,10 +1,10 @@
-import type { ToolDef } from "@ohmymcp-hsu/core";
+import type { ToolDef } from "@mcpeak/core";
 import {
   type ContractAxis,
   type ContractDeclaredType,
   type ContractRange,
   deriveContractAxes,
-} from "@ohmymcp-hsu/runner";
+} from "@mcpeak/runner";
 import { integerLowerBound, integerUpperBound } from "./constraints.js";
 import { fieldSlug } from "./filename.js";
 import type { JsonObject, JsonSchema, JsonValue } from "./schema.js";

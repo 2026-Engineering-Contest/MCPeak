@@ -53,7 +53,7 @@ AI 보조 테스트 작성 설계 §19의 `응답 본문 assertion이 Runner에 
 - `packages/runner`의 `pnpm test`, `pnpm typecheck`, `pnpm lint` 통과
 - 새 단언을 쓴 스위트로 `examples/weather-server`를 검사하는 E2E가 통과
 - `bodyMatchesSchema`가 없는 기존 스위트의 보고서 바이트가 변경 전과 동일
-- `@ohmymcp-hsu/runner` minor changeset
+- `@mcpeak/runner` minor changeset
 
 ## 3. 설계 결정 요약
 
@@ -206,7 +206,7 @@ parity 평가기(`tests/helpers/schema-evaluator.ts`)가 로컬 `$ref`를 해석
 
 `schemaVersion`은 1을 유지한다. 단언 추가는 덧붙이기이며 기존 스위트가 전부 그대로 유효하다.
 새 단언을 쓴 스위트를 옛 러너에 넣으면 `INCOMPATIBLE_ASSERTION`으로 거부되므로 조용히 틀리지
-않는다. `@ohmymcp-hsu/runner`는 0.1.1에서 0.2.0으로 올린다.
+않는다. `@mcpeak/runner`는 0.1.1에서 0.2.0으로 올린다.
 
 ### 4.8 예시
 
@@ -731,7 +731,7 @@ suite는 JSON 문자열로 전송하므로(ADR-0007) provider 전송 스키마 �
 
 ### 11.2 CLI 보고서 렌더링
 
-현재 `ohmymcp test`는 `RunnerReport`를 `JSON.stringify`로 표준 출력에 덤프한다
+현재 `mcpeak test`는 `RunnerReport`를 `JSON.stringify`로 표준 출력에 덤프한다
 (`test-command.ts`). 이 설계로 진단 품질이 올라가도 사용자가 보는 것은 여전히 JSON이다.
 §7.2의 문장들이 사람에게 닿으려면 CLI 렌더링이 필요하다. 다음 웨이브 우선순위가 높다.
 

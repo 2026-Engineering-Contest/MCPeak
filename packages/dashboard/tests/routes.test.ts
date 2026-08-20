@@ -27,7 +27,7 @@ interface TestServer {
 async function startTestServer(
   execute?: (request: StartRunRequest, io: RunIo) => Promise<number>,
 ): Promise<TestServer> {
-  const root = await mkdtemp(join(tmpdir(), "ohmymcp-dashboard-routes-"));
+  const root = await mkdtemp(join(tmpdir(), "mcpeak-dashboard-routes-"));
   const registry = new RunRegistry();
   const server: Server = createServer((request, response) => {
     handleRequest(request, response, {
@@ -365,7 +365,7 @@ describe("routes.ts", () => {
   });
 
   it("분류하지 않은 파일 시스템 오류는 상위 generic 500 응답으로 전파한다", async () => {
-    const root = await mkdtemp(join(tmpdir(), "ohmymcp-dashboard-generic-error-"));
+    const root = await mkdtemp(join(tmpdir(), "mcpeak-dashboard-generic-error-"));
     const dashboard = await startDashboardServer({ port: 0, root });
     const tooLongName = `${"a".repeat(300)}.json`;
 

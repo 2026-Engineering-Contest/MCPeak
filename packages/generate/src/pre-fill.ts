@@ -9,12 +9,12 @@
  * (ADR-0025: 판정 주체는 실제 서버다).
  */
 
-import type { ToolDef } from "@ohmymcp-hsu/core";
+import type { ToolDef } from "@mcpeak/core";
 import {
   checkInputContract,
   type RunnerRedactionOptions,
   type TestSuiteSpec,
-} from "@ohmymcp-hsu/runner";
+} from "@mcpeak/runner";
 import {
   DEFAULT_MAX_RESULT_BYTES,
   DEFAULT_PROVIDER_TIMEOUT_MS,

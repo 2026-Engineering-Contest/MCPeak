@@ -57,7 +57,7 @@ AI 에게 물어 화면에 보여준다.
 
 ## 3. 명령 표면
 
-### 3.1 `ohmymcp test ... --repair-bundle <경로>`
+### 3.1 `mcpeak test ... --repair-bundle <경로>`
 
 판정이 끝난 뒤 실패 근거를 한 파일로 쓴다. `--junit` 과 같은 모양의 옵션이다.
 
@@ -79,7 +79,7 @@ AI 에게 물어 화면에 보여준다.
 `repair` 가 "실패가 없습니다" 를 말하려고 파일을 읽는 셈이고, 사용자는 실패가 없다는 것을 이미
 보고서에서 봤다.
 
-### 3.2 `ohmymcp repair <번들경로> [옵션]`
+### 3.2 `mcpeak repair <번들경로> [옵션]`
 
 | 옵션 | 필수 | 뜻 |
 |---|---|---|
@@ -99,7 +99,7 @@ AI 에게 물어 화면에 보여준다.
 ```json
 {
   "bundleVersion": 1,
-  "generatedBy": "ohmymcp 0.1.0",
+  "generatedBy": "mcpeak 0.1.0",
   "spec": {
     "suiteId": "weather",
     "suiteName": "날씨 서버 계약",
@@ -407,7 +407,7 @@ add-negative  (add)
     다음 실행에서 더 정확한 답을 받을 수 있습니다.
 
 ※ AI 제안입니다. 파일을 고치지 않았고 명세도 그대로입니다.
-※ 명세 쪽이 틀렸다고 판단되면 `ohmymcp generate` 로 다시 승인받으세요.
+※ 명세 쪽이 틀렸다고 판단되면 `mcpeak generate` 로 다시 승인받으세요.
 ```
 
 케이스 순서는 **번들에 담긴 순서**다. 번들 순서는 `RunnerReport.cases` 순서이고 그것은 명세의

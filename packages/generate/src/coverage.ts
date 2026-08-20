@@ -1,10 +1,10 @@
-import type { ToolDef } from "@ohmymcp-hsu/core";
+import type { ToolDef } from "@mcpeak/core";
 import {
   type ContractAxisKind,
   deriveContractAxes,
   matchCoveredAxes,
   type TestSuiteSpec,
-} from "@ohmymcp-hsu/runner";
+} from "@mcpeak/runner";
 
 /**
  * UTF-16 코드 단위 안정 비교. `runner` 의 `ordering.ts` 에 같은 것이 있지만 그 파일은 패키지

@@ -1,9 +1,9 @@
-# @ohmymcp-hsu/mock
+# @mcpeak/mock
 
 목 MCP 서버 · 응답 주입. **Streamable HTTP** 와 **stdio** 두 가지로 뜬다.
 
 - **오너:** `@storyrago` (③ mock server 파트)
-- **의존:** `@ohmymcp-hsu/core` · `@modelcontextprotocol/sdk` (catalog, 1.x 고정)
+- **의존:** `@mcpeak/core` · `@modelcontextprotocol/sdk` (catalog, 1.x 고정)
 
 실제 MCP 서버 없이, MCP 를 사용하는 프로그램을 테스트하기 위한 것이다.
 외부 API 키도 실제 데이터도 없이 원하는 상황을 그대로 세워둘 수 있다.
@@ -15,16 +15,16 @@
 | | 대상 | 응답 주입 |
 |---|---|---|
 | **HTTP** `createMockServer` | MCP 를 사용하는 **외부 프로그램** | 띄운 뒤 `on()` 으로 |
-| **stdio** `ohmymcp-mock` | **우리 도구**(`ohmymcp test`) | 정의 파일에 미리 |
+| **stdio** `mcpeak-mock` | **우리 도구**(`mcpeak test`) | 정의 파일에 미리 |
 
-`core.connect()` 는 HTTP 도 안다 (ADR-0020). 갈리는 이유는 CLI 다 — `ohmymcp test` 가
+`core.connect()` 는 HTTP 도 안다 (ADR-0020). 갈리는 이유는 CLI 다 — `mcpeak test` 가
 `core.connectStdio` 를 하드코딩하고 `--url` 이 없다 (`packages/cli/src/index.ts:132`·`234`).
 자세한 배경은 ADR-0007.
 
 ## HTTP — 외부 프로그램용
 
 ```ts
-import { ANY, createMockServer } from "@ohmymcp-hsu/mock";
+import { ANY, createMockServer } from "@mcpeak/mock";
 
 const mock = await createMockServer({ tools });      // tools: ToolDef[]
 mock.on("add", { a: 1, b: 2 }, { sum: 3 });          // 인자를 지정
@@ -52,10 +52,10 @@ await mock.close();
 }
 ```
 
-`ohmymcp test` 의 대상으로 지정한다.
+`mcpeak test` 의 대상으로 지정한다.
 
 ```bash
-ohmymcp test suite.json --command ohmymcp-mock --arg definition.json
+mcpeak test suite.json --command mcpeak-mock --arg definition.json
 ```
 
 프로세스가 곧 서버라 실행 중에는 응답을 주입할 수 없다. 그래서 정의 파일에 미리 적는다.
@@ -102,7 +102,7 @@ JSON       클라이언트에   (계약 초안)                실물 서버에
 {
   "mcpServers": {
     "weather-design": {
-      "command": "ohmymcp-mock",
+      "command": "mcpeak-mock",
       "args": ["/절대/경로/weather.mock.json"]
     }
   }
@@ -124,9 +124,9 @@ Claude Desktop 설정에 위처럼 넣는다. **경로는 절대경로여야 한
 ### ③ 명세 — 목에서 계약 초안을 뽑는다
 
 ```bash
-ohmymcp generate --suite-id weather --name "날씨 서버 계약" \
+mcpeak generate --suite-id weather --name "날씨 서버 계약" \
   --out contract.suite.json \
-  --command ohmymcp-mock --arg weather.mock.json --baseline-only
+  --command mcpeak-mock --arg weather.mock.json --baseline-only
 ```
 ```
 baseline suite를 저장했습니다: contract.suite.json
@@ -151,7 +151,7 @@ baseline suite를 저장했습니다: contract.suite.json
 구현이 끝나면 **같은 파일**을 진짜 서버에 돌린다. 통과하면 구현이 설계 계약을 지켰다는 증명이다.
 
 ```bash
-ohmymcp test contract.suite.json --command node --arg ./server.js
+mcpeak test contract.suite.json --command node --arg ./server.js
 ```
 
 **목에서 초록인 것은 구현이 맞다는 뜻이 아니다.** 같은 suite 를 예제 서버에 돌린 실제 결과:
@@ -171,7 +171,7 @@ ohmymcp test contract.suite.json --command node --arg ./server.js
   그 목록에 없다. 케이스는 통과하고 경고만 붙는다.
 - **완성된 MCP 를 실제로 쓰는 것은 목이 아니다.** 목은 구현 전 설계 검증과, 실물을 붙일 수
   없는 환경(외부 API 키 없음, 응답이 매번 다름)의 대역이다. 내 서버를 목으로 테스트하는 것은
-  내가 적은 답이 나오는지 보는 것이라 순환이다 — 그건 `@ohmymcp-hsu/record` 가 한다.
+  내가 적은 답이 나오는지 보는 것이라 순환이다 — 그건 `@mcpeak/record` 가 한다.
 
 ## 응답 매칭 규칙
 
@@ -312,5 +312,5 @@ mock.on("get_meeting", { id: "m-99" }, { error: "→ 'm-99' 회의록이 없습�
 - 목 응답은 **사람이 지정한 결정론적 값**을 쓴다 (ADR-0005 에서 확정). 스키마 기반 랜덤
   생성은 폐기됐고, 고정 시드 생성은 보류 상태다 — 툴이 많은 서버의 스모크 테스트 수요가
   실제로 확인되면 그때 별도로 결정한다.
-- CLI 의 HTTP 연결 — `core.connect()` 쪽은 됐다 (ADR-0020, #16). `ohmymcp test` 에 `--url`
+- CLI 의 HTTP 연결 — `core.connect()` 쪽은 됐다 (ADR-0020, #16). `mcpeak test` 에 `--url`
   이 생기면 우리 러너가 HTTP 목에도 붙는다. 지금은 CLI 가 stdio 로 고정돼 있다

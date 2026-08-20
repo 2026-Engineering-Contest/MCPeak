@@ -49,7 +49,7 @@ jobs:
       # **감지 실패** 한 갈래로 한정된다 — 락파일 누락, 워크스페이스 인식 실패, 상위 버전에서
       # 감지 로직 변경.
       #
-      # 그 경우 `"@ohmymcp-hsu/core": "workspace:*"` 가 그대로 npm 에 올라간다. 아무도 설치할
+      # 그 경우 `"@mcpeak/core": "workspace:*"` 가 그대로 npm 에 올라간다. 아무도 설치할
       # 수 없고, unpublish 해도 같은 이름·버전으로 다시 올릴 수 없다.
       #
       # 그래서 감지를 믿지 않고 실제 tarball 을 만들어 그 안의 package.json 을 검사한다.

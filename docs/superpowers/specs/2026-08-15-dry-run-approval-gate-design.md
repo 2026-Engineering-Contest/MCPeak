@@ -21,7 +21,7 @@
 케이스도, ADR-0022 가 만드는 위반 케이스도, AI 가 제안한 케이스도 마찬가지다. 사용자는 그것을
 읽고 승인한다. 승인된 순간 그 추측은 오라클 지위를 얻는다.
 
-이 상태에서 `ohmymcp test` 가 빨간불을 띄우면 원인이 둘인데 화면은 구분하지 못한다.
+이 상태에서 `mcpeak test` 가 빨간불을 띄우면 원인이 둘인데 화면은 구분하지 못한다.
 
 ```
 ✗ get_weather/정상 응답
@@ -76,8 +76,8 @@
 - 저장된 파일의 `approval.cases` 에 케이스 전량의 분류가 들어 있다.
 - 같은 카세트로 두 번 돌린 시험 실행 결과가 바이트 동일하다.
 - `--reset-cmd` 가 실패하면 시험 실행이 시작되지 않는다.
-- `ohmymcp test` 가 `serverDefect` 로 표시된 케이스의 실패에 참고 문장을 덧붙인다.
-- `pnpm test`, `pnpm typecheck --force`, `pnpm lint`, `pnpm build && pnpm --filter ohmymcp test:e2e` 가 통과한다.
+- `mcpeak test` 가 `serverDefect` 로 표시된 케이스의 실패에 참고 문장을 덧붙인다.
+- `pnpm test`, `pnpm typecheck --force`, `pnpm lint`, `pnpm build && pnpm --filter @mcpeak/cli test:e2e` 가 통과한다.
 
 ## 3. 아키텍처
 
@@ -421,7 +421,7 @@ ADR-0017 이 지문 계산에서 `approval` 블록을 **통째로** 제외했고
 ```
 시험 실행: 케이스 24개를 실제 서버에 보냅니다.
   대상: node examples/todo-server/index.js
-  카세트: .ohmymcp/todo.cassette.json (신규 녹화)
+  카세트: .mcpeak/todo.cassette.json (신규 녹화)
   초기화: npm run seed
 
 이 실행은 서버 상태를 바꿀 수 있습니다. 입력 검증이 없는 서버라면 외부 API 호출도
@@ -652,7 +652,7 @@ generate save 경로
 
 ### 13.5 `packages/cli/tests/dist-cli-e2e.mjs` (수정)
 
-이 파일은 `pnpm test` 가 아니라 `pnpm build && pnpm --filter ohmymcp test:e2e` 로만 돈다. CI 의 `build` job 이 부른다.
+이 파일은 `pnpm test` 가 아니라 `pnpm build && pnpm --filter @mcpeak/cli test:e2e` 로만 돈다. CI 의 `build` job 이 부른다.
 출력 형태를 바꾸는 변경이므로 여기 기대값을 함께 고쳐야 한다. 계약 축 커버리지 작업에서
 이것을 빠뜨려 로컬은 녹색인데 CI 가 빨간불이 된 선례가 있다.
 

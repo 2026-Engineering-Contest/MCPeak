@@ -19,7 +19,7 @@
 | 타입체크 | `pnpm typecheck` |
 | 린트 | `pnpm lint` |
 | 빌드 | `pnpm build` |
-| 배포 산출물 E2E | `pnpm --filter ohmymcp test:e2e` |
+| 배포 산출물 E2E | `pnpm --filter @mcpeak/cli test:e2e` |
 
 완료 조건.
 
@@ -282,7 +282,7 @@ type CoreError = Readonly<{
 
 임시 파일은 테스트가 끝나며 정리한다. 저장소 안에 파일을 남기지 않는다.
 
-**표적 검증**: `pnpm build && pnpm --filter ohmymcp test:e2e`
+**표적 검증**: `pnpm build && pnpm --filter @mcpeak/cli test:e2e`
 **전체 회귀**: `pnpm test`, `pnpm typecheck`, `pnpm lint`
 
 **보고서**: `docs/reports/task-t3-cli-process-diagnostics.md`
@@ -357,16 +357,16 @@ git status --short
 ```
 [1단계: 작업 공간 만들기] 다른 무엇보다 먼저 이것부터 해라.
 
-  git worktree add .claude/worktrees/ohmymcp-cli-process-diagnostics -b feat/cli-process-diagnostics
+  git worktree add .claude/worktrees/mcpeak-cli-process-diagnostics -b feat/cli-process-diagnostics
 
 를 실행한 뒤 그 경로로 세션을 옮겨라. 이어서 루트의 로컬 문서를 worktree 로 복사해라
 (gitignore 대상이라 worktree 에 따라오지 않는다).
 
-  cp ROADMAP.local.md .claude/worktrees/ohmymcp-cli-process-diagnostics/ 2>/dev/null || true
-  cp CLAUDE.local.md .claude/worktrees/ohmymcp-cli-process-diagnostics/ 2>/dev/null || true
+  cp ROADMAP.local.md .claude/worktrees/mcpeak-cli-process-diagnostics/ 2>/dev/null || true
+  cp CLAUDE.local.md .claude/worktrees/mcpeak-cli-process-diagnostics/ 2>/dev/null || true
 
 진입 후 아래를 확인하고, 하나라도 어긋나면 중단하고 BLOCKED 로 보고해라.
-  - pwd 가 <repository-root>/.claude/worktrees/ohmymcp-cli-process-diagnostics 인지
+  - pwd 가 <repository-root>/.claude/worktrees/mcpeak-cli-process-diagnostics 인지
   - git log --oneline -1 이 루트에서 본 기점 커밋과 같은지
   - docs/superpowers/specs/2026-08-13-cli-process-diagnostics-design.md 와
     docs/superpowers/plans/2026-08-13-cli-process-diagnostics-implementation.md 가 존재하는지
@@ -410,7 +410,7 @@ git status --short
 T3 전에는 반드시 pnpm build 를 먼저 돌려라. 낡은 dist 로 판정하면 옛 동작을 검증한다.
 
 전부 끝나면 다음을 실행해 결과를 보고해라. 커밋·푸시·PR 생성은 하지 마라.
-  pnpm test && pnpm typecheck && pnpm lint && pnpm build && pnpm --filter ohmymcp test:e2e
+  pnpm test && pnpm typecheck && pnpm lint && pnpm build && pnpm --filter @mcpeak/cli test:e2e
 ```
 
 ## 9. 통합 게이트

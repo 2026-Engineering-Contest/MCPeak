@@ -6,7 +6,7 @@ import {
   type RunnerRedactionOptions,
   type TestSuiteSpec,
   validateMcpSuite,
-} from "@ohmymcp-hsu/runner";
+} from "@mcpeak/runner";
 import { redactSpecFindings, reviewLocalAuthoringCandidate } from "./authoring-session.js";
 import type {
   AuthoringSessionView,

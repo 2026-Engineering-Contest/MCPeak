@@ -45,7 +45,7 @@ function clampDisplay(text: string, limit: number): string {
  * 이것이 없으면 사용자가 멀쩡한 서버 코드를 판다. 억제 조건을 만들지 않는다. 설계서 §6.3.
  */
 export const REPAIR_BOUNDARY_LINES =
-  "※ AI 제안입니다. 파일을 고치지 않았고 명세도 그대로입니다.\n※ 명세 쪽이 틀렸다고 판단되면 `ohmymcp generate` 로 다시 승인받으세요.\n";
+  "※ AI 제안입니다. 파일을 고치지 않았고 명세도 그대로입니다.\n※ 명세 쪽이 틀렸다고 판단되면 `mcpeak generate` 로 다시 승인받으세요.\n";
 
 /** 비대화형에서 `--yes` 없이 부른 경우. 물어볼 수 없는 곳에서 조용히 보내지 않는다. */
 export const REPAIR_CONFIRM_REQUIRED_LINE =
@@ -169,7 +169,7 @@ function renderDiscardActions(discarded: RepairDiscardedView): string[] {
   const actions: string[] = [];
   if (discarded.specTarget > 0) {
     actions.push(
-      "  → 명세가 실제로 틀렸다고 보시면 `ohmymcp generate` 로 다시 승인받으세요.\n",
+      "  → 명세가 실제로 틀렸다고 보시면 `mcpeak generate` 로 다시 승인받으세요.\n",
       "    승인된 명세를 고치라는 제안은 그 전에는 화면에 올리지 않습니다.\n",
     );
   }

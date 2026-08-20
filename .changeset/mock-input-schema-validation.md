@@ -1,5 +1,5 @@
 ---
-"@ohmymcp-hsu/mock": minor
+"@mcpeak/mock": minor
 ---
 
 목이 `inputSchema` 로 호출 인자를 검사해 위반 인자를 거절한다 (#181, ADR-0048).

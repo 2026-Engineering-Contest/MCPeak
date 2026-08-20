@@ -1,5 +1,5 @@
 {
-  "name": "ohmymcp",
+  "name": "@mcpeak/cli",
   "version": "0.8.0",
   "private": false,
   "type": "module",
@@ -16,7 +16,7 @@
     "access": "public"
   },
   "bin": {
-    "ohmymcp": "./dist/cli.mjs"
+    "mcpeak": "./dist/cli.mjs"
   },
   "exports": {
     ".": {
@@ -52,10 +52,10 @@
     "test:e2e": "node ./tests/dist-cli-e2e.mjs"
   },
   "dependencies": {
-    "@ohmymcp-hsu/core": "workspace:*",
-    "@ohmymcp-hsu/runner": "workspace:*",
-    "@ohmymcp-hsu/generate": "workspace:*",
-    "@ohmymcp-hsu/record": "workspace:*",
-    "@ohmymcp-hsu/mock": "workspace:*"
+    "@mcpeak/core": "workspace:*",
+    "@mcpeak/runner": "workspace:*",
+    "@mcpeak/generate": "workspace:*",
+    "@mcpeak/record": "workspace:*",
+    "@mcpeak/mock": "workspace:*"
   }
 }

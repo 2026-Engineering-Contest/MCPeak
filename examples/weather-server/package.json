@@ -1,5 +1,5 @@
 {
-  "name": "@ohmymcp-examples/weather-server",
+  "name": "@mcpeak-examples/weather-server",
   "version": "0.0.0",
   "private": true,
   "type": "module",

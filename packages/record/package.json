@@ -1,5 +1,5 @@
 {
-  "name": "@ohmymcp-hsu/record",
+  "name": "@mcpeak/record",
   "version": "0.1.2",
   "private": false,
   "type": "module",
@@ -38,6 +38,6 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@ohmymcp-hsu/core": "workspace:*"
+    "@mcpeak/core": "workspace:*"
   }
 }

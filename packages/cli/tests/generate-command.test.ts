@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { basename, dirname, normalize } from "node:path";
 import { Readable, Writable } from "node:stream";
-import type { McpStdioConnection, ToolDef, ToolResult } from "@ohmymcp-hsu/core";
+import type { McpStdioConnection, ToolDef, ToolResult } from "@mcpeak/core";
 import {
   type AuthoringDiffPreview,
   applyAuthoringChanges,
@@ -21,16 +21,16 @@ import {
   reviewLocalAuthoringCandidate,
   type SanitizedAuthoringCandidate,
   sha256,
-} from "@ohmymcp-hsu/generate";
-import { type Cassette, matchKey } from "@ohmymcp-hsu/record";
+} from "@mcpeak/generate";
+import { type Cassette, matchKey } from "@mcpeak/record";
 import type {
   CallToolCaseSpec,
   ContractAxisKind,
   SpecFinding,
   TestCaseSpec,
   TestSuiteSpec,
-} from "@ohmymcp-hsu/runner";
-import { suiteFingerprint, validateMcpSuite } from "@ohmymcp-hsu/runner";
+} from "@mcpeak/runner";
+import { suiteFingerprint, validateMcpSuite } from "@mcpeak/runner";
 import { describe, expect, it, vi } from "vitest";
 import {
   type GenerateCommandDependencies,
@@ -214,14 +214,14 @@ describe("parseGenerateCommand", () => {
         "--out=out.json",
         "--command=node",
         "--cassette",
-        ".ohmymcp/w.json",
+        ".mcpeak/w.json",
         "--record",
         "--reset-cmd",
         "npm run seed",
       ]),
     ).toMatchObject({
       dryRun: true,
-      cassettePath: ".ohmymcp/w.json",
+      cassettePath: ".mcpeak/w.json",
       forceRecord: true,
       resetCmd: "npm run seed",
     });
@@ -461,7 +461,7 @@ describe("runGenerateCommand", () => {
     // 임시 파일은 출력 경로와 같은 디렉터리에 있어야 link가 같은 파일시스템 안에서 끝난다.
     const opened = openedTempPath(d.events);
     expect(dirname(opened)).toBe(normalize(dirname(outPath)));
-    expect(basename(opened)).toMatch(/^\.out\.json\.ohmymcp\./);
+    expect(basename(opened)).toMatch(/^\.out\.json\.mcpeak\./);
   });
   it("선검사 뒤 커밋 직전에 파일이 생겨도 덮어쓰지 않는다", async () => {
     // 경쟁 조건 재현. exists()는 없다고 답했지만 link 시점에는 이미 다른 프로세스가 만들어 뒀다.
@@ -583,7 +583,7 @@ describe("runGenerateCommand", () => {
     expect(first).not.toBe(second);
     for (const tempPath of [first, second]) {
       expect(dirname(tempPath)).toBe(normalize(dirname(outPath)));
-      expect(basename(tempPath)).toMatch(/^\.out\.json\.ohmymcp\./);
+      expect(basename(tempPath)).toMatch(/^\.out\.json\.mcpeak\./);
     }
   });
   it("temp 충돌과 재검증 실패는 목표 파일을 바꾸지 않는다", async () => {
@@ -2656,10 +2656,7 @@ describe("generate 시험 실행 게이트", () => {
   it("--reset-cmd 가 실패하면 시험 실행을 시작하지 않고 저장도 안 한다", async () => {
     const d = gateDeps({ choices: ["save", "cancel"], confirms: [true] });
     await expect(
-      runGenerateCommand(
-        [...gateArgv, "--reset-cmd", "ohmymcp-존재하지-않는-초기화-명령"],
-        d.value,
-      ),
+      runGenerateCommand([...gateArgv, "--reset-cmd", "mcpeak-존재하지-않는-초기화-명령"], d.value),
     ).resolves.toBe(0);
     expect(d.output()).toContain("✗ 초기화 명령이 실패했습니다.");
     expect(d.calls).toEqual([]);
@@ -2692,11 +2689,11 @@ describe("generate 시험 실행 게이트", () => {
       cassetteStore: store,
     });
     await expect(
-      runGenerateCommand([...gateArgv, "--cassette", ".ohmymcp/w.json"], first.value),
+      runGenerateCommand([...gateArgv, "--cassette", ".mcpeak/w.json"], first.value),
     ).resolves.toBe(0);
     expect(first.calls).toHaveLength(baselineCases.length);
-    expect(store.get(".ohmymcp/w.json")?.interactions.length).toBeGreaterThan(0);
-    expect(first.output()).toContain("  카세트: .ohmymcp/w.json (신규 녹화)\n");
+    expect(store.get(".mcpeak/w.json")?.interactions.length).toBeGreaterThan(0);
+    expect(first.output()).toContain("  카세트: .mcpeak/w.json (신규 녹화)\n");
 
     // 2회차는 파일이 있으므로 auto 모드다. 명세가 그대로면 새 케이스가 0개이고 서버를 다시
     // 부르지 않는다. exists 는 출력 파일용 스텁이므로 카세트 존재는 따로 알려 준다.
@@ -2706,12 +2703,12 @@ describe("generate 시험 실행 게이트", () => {
       confirms: [true, true],
       cassetteStore: store,
     });
-    second.value.exists = vi.fn(async (path: string) => path === ".ohmymcp/w.json");
+    second.value.exists = vi.fn(async (path: string) => path === ".mcpeak/w.json");
     await expect(
-      runGenerateCommand([...gateArgv, "--cassette", ".ohmymcp/w.json"], second.value),
+      runGenerateCommand([...gateArgv, "--cassette", ".mcpeak/w.json"], second.value),
     ).resolves.toBe(0);
     expect(second.calls).toEqual([]);
-    expect(second.output()).toContain("  카세트: .ohmymcp/w.json (재생)\n");
+    expect(second.output()).toContain("  카세트: .mcpeak/w.json (재생)\n");
   });
 
   it("카세트 경고가 화면에 그대로 나온다", async () => {
@@ -2730,7 +2727,7 @@ describe("generate 시험 실행 게이트", () => {
         raw: { round },
       }),
     });
-    await runGenerateCommand([...gateArgv, "--cassette", ".ohmymcp/w.json", "--record"], d.value);
+    await runGenerateCommand([...gateArgv, "--cassette", ".mcpeak/w.json", "--record"], d.value);
     expect(d.output()).toContain("→ 같은 요청에 다른 응답이 왔습니다: weather(");
   });
 
@@ -2749,7 +2746,7 @@ describe("generate 시험 실행 게이트", () => {
         raw: { call },
       }),
     });
-    await runGenerateCommand([...gateArgv, "--cassette", ".ohmymcp/w.json"], d.value);
+    await runGenerateCommand([...gateArgv, "--cassette", ".mcpeak/w.json"], d.value);
     const marker = "→ 같은 요청에 다른 응답이 왔습니다:";
     const perRound = d
       .output()
@@ -2769,7 +2766,7 @@ describe("generate 시험 실행 게이트", () => {
       inputs: Array.from({ length: failingCases }, () => "?"),
       confirms: [true],
     });
-    await runGenerateCommand([...gateArgv, "--cassette", ".ohmymcp/w.json"], d.value);
+    await runGenerateCommand([...gateArgv, "--cassette", ".mcpeak/w.json"], d.value);
     const output = d.output();
     expect(output).not.toContain("나머지는 카세트에서 재생됩니다");
     expect(output).toContain(`케이스 ${baselineCases.length}개가 모두 서버에 다시 나갑니다.`);
@@ -2785,7 +2782,7 @@ describe("generate 시험 실행 게이트", () => {
       confirms: [true, true],
       cassetteStore: store,
     });
-    await runGenerateCommand([...gateArgv, "--cassette", ".ohmymcp/w.json"], first.value);
+    await runGenerateCommand([...gateArgv, "--cassette", ".mcpeak/w.json"], first.value);
 
     const second = gateDeps({
       choices: ["save", "cancel"],
@@ -2793,8 +2790,8 @@ describe("generate 시험 실행 게이트", () => {
       confirms: [true],
       cassetteStore: store,
     });
-    second.value.exists = vi.fn(async (path: string) => path === ".ohmymcp/w.json");
-    await runGenerateCommand([...gateArgv, "--cassette", ".ohmymcp/w.json"], second.value);
+    second.value.exists = vi.fn(async (path: string) => path === ".mcpeak/w.json");
+    await runGenerateCommand([...gateArgv, "--cassette", ".mcpeak/w.json"], second.value);
     expect(second.output()).toContain("나머지는 카세트에서 재생됩니다");
   });
 
@@ -2811,7 +2808,7 @@ describe("generate 시험 실행 게이트", () => {
       },
     };
     await expect(
-      runGenerateCommand([...gateArgv, "--cassette", ".ohmymcp/w.json"], d.value),
+      runGenerateCommand([...gateArgv, "--cassette", ".mcpeak/w.json"], d.value),
     ).resolves.toBe(0);
     expect(d.output()).toContain("⚠ 카세트를 저장하지 못했습니다.");
     expect(d.stderr.join("")).not.toContain("GENERATE_SAVE_FAILED");
@@ -2843,7 +2840,7 @@ describe("generate 시험 실행 게이트", () => {
       },
     };
     await expect(
-      runGenerateCommand([...gateArgv, "--cassette", ".ohmymcp/w.json", "--record"], d.value),
+      runGenerateCommand([...gateArgv, "--cassette", ".mcpeak/w.json", "--record"], d.value),
     ).resolves.toBe(0);
     expect(d.output()).toContain("⚠ 카세트를 저장하지 못했습니다.");
     expect(d.output()).not.toContain("지웁니다");

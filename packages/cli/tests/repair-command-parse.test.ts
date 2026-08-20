@@ -1,4 +1,4 @@
-import { DEFAULT_MAX_REPAIR_CASES } from "@ohmymcp-hsu/generate";
+import { DEFAULT_MAX_REPAIR_CASES } from "@mcpeak/generate";
 import { describe, expect, it } from "vitest";
 import { commandHelp } from "../src/help.js";
 import {
@@ -80,9 +80,9 @@ describe("parseRepairCommand", () => {
     expect(await usageOf(["--provider", "codex", "--model", "m"])).toContain("오류 [CLI_USAGE]");
   });
 
-  it("ohmymcp repair --help 가 옵션 목록을 찍는다", () => {
+  it("mcpeak repair --help 가 옵션 목록을 찍는다", () => {
     const help = commandHelp("repair");
-    expect(help).toContain("ohmymcp repair <bundle.json>");
+    expect(help).toContain("mcpeak repair <bundle.json>");
     for (const option of ["--provider", "--model", "--max-cases", "--no-stderr", "--yes"])
       expect(help).toContain(option);
   });
@@ -102,7 +102,7 @@ describe("runRepairCommand", () => {
   it("번들이 형식에 안 맞으면 사유 문장과 함께 1 이다", async () => {
     const d = deps({ readFile: async () => JSON.stringify({ bundleVersion: 2 }) });
     expect(await runRepairCommand(BASE, d.value)).toBe(1);
-    expect(d.writes.err.join("")).toContain("최신 `ohmymcp test --repair-bundle` 로 다시 만드세요");
+    expect(d.writes.err.join("")).toContain("최신 `mcpeak test --repair-bundle` 로 다시 만드세요");
   });
 
   /**
@@ -112,7 +112,7 @@ describe("runRepairCommand", () => {
   it("진단 통로가 없으면 안내와 함께 1 이다", async () => {
     const bundle = {
       bundleVersion: 1,
-      generatedBy: "ohmymcp 0.7.0",
+      generatedBy: "mcpeak 0.7.0",
       spec: { suiteId: "weather", suiteName: "날씨", approval: "matched", fingerprint: "a" },
       failures: [{ caseId: "c1", caseName: "케이스", status: "failed", diagnostics: [] }],
     };

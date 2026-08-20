@@ -11,17 +11,19 @@ import { defineConfig } from "vitest/config";
  */
 const workspaceAliases = Object.fromEntries(
   (["core", "runner", "generate", "record", "mock"] as const).map((name) => [
-    `@ohmymcp-hsu/${name}`,
+    `@mcpeak/${name}`,
     fileURLToPath(new URL(`./packages/${name}/src/index.ts`, import.meta.url)),
   ]),
 );
 
 const resolve = {
   alias: {
-    // `ohmymcp` 키보다 먼저 와야 한다. rollup alias는 `find + "/"` 접두 일치라
-    // `ohmymcp` 키가 있으면 `ohmymcp/commands`를 삼킨다. 지금은 `ohmymcp` 키가
-    // 없으므로 이 한 줄만 추가하고, `ohmymcp` 루트 alias는 만들지 않는다.
-    "ohmymcp/commands": fileURLToPath(new URL("./packages/cli/src/commands.ts", import.meta.url)),
+    // `mcpeak` 키보다 먼저 와야 한다. rollup alias는 `find + "/"` 접두 일치라
+    // `mcpeak` 키가 있으면 `@mcpeak/cli/commands`를 삼킨다. 지금은 `mcpeak` 키가
+    // 없으므로 이 한 줄만 추가하고, `mcpeak` 루트 alias는 만들지 않는다.
+    "@mcpeak/cli/commands": fileURLToPath(
+      new URL("./packages/cli/src/commands.ts", import.meta.url),
+    ),
     ...workspaceAliases,
   },
 };

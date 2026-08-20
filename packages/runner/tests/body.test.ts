@@ -1,4 +1,4 @@
-import type { ToolResult } from "@ohmymcp-hsu/core";
+import type { ToolResult } from "@mcpeak/core";
 import { describe, expect, it } from "vitest";
 import { extractResponseBody } from "../src/index.js";
 

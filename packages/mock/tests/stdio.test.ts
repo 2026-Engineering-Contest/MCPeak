@@ -2,14 +2,14 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { McpClient, ToolDef } from "@ohmymcp-hsu/core";
-import { connect } from "@ohmymcp-hsu/core";
+import type { McpClient, ToolDef } from "@mcpeak/core";
+import { connect } from "@mcpeak/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { assertMockDefinition } from "../src/index.js";
 
-// CI 는 빌드 없이 `pnpm test` 를 돌리므로 @ohmymcp-hsu/core 의 dist 가 없다.
+// CI 는 빌드 없이 `pnpm test` 를 돌리므로 @mcpeak/core 의 dist 가 없다.
 // 워크스페이스 패키지를 소스로 돌려 해결한다 (packages/cli 도 같은 방식).
-vi.mock("@ohmymcp-hsu/core", async () => import("../../core/src/index.js"));
+vi.mock("@mcpeak/core", async () => import("../../core/src/index.js"));
 
 /**
  * 이 파일이 검증하는 것은 하나다 — **우리 도구로 우리 목 서버를 검증할 수 있는가**
@@ -54,7 +54,7 @@ const canStripTypes = nodeMajor > 22 || (nodeMajor === 22 && nodeMinor >= 6);
 
 /** stdio 목을 띄우고 core.connect() 로 붙는다. */
 async function connectMock(definition: unknown): Promise<McpClient> {
-  const dir = mkdtempSync(join(tmpdir(), "ohmymcp-mock-"));
+  const dir = mkdtempSync(join(tmpdir(), "mcpeak-mock-"));
   const path = join(dir, "definition.json");
   writeFileSync(path, JSON.stringify(definition), "utf8");
 
@@ -78,7 +78,7 @@ afterEach(async () => {
   await Promise.all(opened.splice(0).map((c) => c.close()));
 });
 
-describe.skipIf(!canStripTypes)("@ohmymcp-hsu/mock stdio", () => {
+describe.skipIf(!canStripTypes)("@mcpeak/mock stdio", () => {
   it("core.connect() 로 붙어 정의한 툴을 그대로 노출한다", async () => {
     const client = await connectMock({ tools: TOOLS });
 

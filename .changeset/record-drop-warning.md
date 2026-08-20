@@ -1,6 +1,6 @@
 ---
-"@ohmymcp-hsu/record": minor
-"ohmymcp": minor
+"@mcpeak/record": minor
+"@mcpeak/cli": minor
 ---
 
 record: `--record` 가 기존 카세트를 갈아엎을 때 무엇이 사라지는지 알립니다. 지금까지는 기존

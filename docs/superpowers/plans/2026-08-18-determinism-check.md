@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: superpowers:subagent-driven-development 로
 > 태스크 단위 실행. 스텝은 체크박스(`- [ ]`)로 추적한다.
 
-**목표:** `ohmymcp test --determinism [--reset-cmd <cmd>]` 로 스위트를 2회 실행해 케이스별
+**목표:** `mcpeak test --determinism [--reset-cmd <cmd>]` 로 스위트를 2회 실행해 케이스별
 구조화 비교를 하고, 차이의 경로·양쪽 값·휴리스틱 힌트를 비차단 진단으로 보고한다.
 
 **아키텍처:** 비교와 문장은 `runner` 순수 함수(`determinism.ts`), 응답 캡처와 2회 실행 배선은
@@ -445,8 +445,8 @@ Expected: 전부 녹색. 기존 테스트 결과 불변.
 - Test: `packages/cli/tests/determinism-capture.test.ts`
 
 **Interfaces:**
-- Consumes: `McpClient`(`@ohmymcp-hsu/core`), `RunnerEvent`·`DeterminismCaseObservation`
-  (`@ohmymcp-hsu/runner`, T1 산출). T1 통합 후에만 시작한다.
+- Consumes: `McpClient`(`@mcpeak/core`), `RunnerEvent`·`DeterminismCaseObservation`
+  (`@mcpeak/runner`, T1 산출). T1 통합 후에만 시작한다.
 - Produces: `DeterminismCapture` 인터페이스와 `createDeterminismCapture(inner: McpClient)`.
   T3 이 이 이름으로 import 한다.
 
@@ -456,7 +456,7 @@ Expected: 전부 녹색. 기존 테스트 결과 불변.
 
 ```ts
 import { describe, expect, it } from "vitest";
-import type { McpClient, ToolResult } from "@ohmymcp-hsu/core";
+import type { McpClient, ToolResult } from "@mcpeak/core";
 import { createDeterminismCapture } from "../src/determinism-capture.js";
 
 const toolResult = (text: string): ToolResult => ({
@@ -525,8 +525,8 @@ Expected: FAIL — 모듈 없음.
 - [ ] **Step 3: 구현**
 
 ```ts
-import type { McpClient } from "@ohmymcp-hsu/core";
-import type { DeterminismCaseObservation, RunnerEvent } from "@ohmymcp-hsu/runner";
+import type { McpClient } from "@mcpeak/core";
+import type { DeterminismCaseObservation, RunnerEvent } from "@mcpeak/runner";
 
 /**
  * McpClient 를 감싸 응답을 케이스에 귀속시켜 기록한다(설계 §5.1). cassetteClient 와 같은
@@ -861,11 +861,11 @@ ADR(0036·0037)을 따른다.
 프로젝트 루트 /Users/doo._.hyun/Study/Project/OhMyMCP 에서 시작한다.
   git rev-parse HEAD
 로 기점 커밋을 기록한 뒤,
-  git worktree add /Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/ohmymcp-determinism -b feat/determinism-check
+  git worktree add /Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/mcpeak-determinism -b feat/determinism-check
 를 실행하고 그 경로로 세션을 옮겨라(EnterWorktree 에 path 로 넘긴다. name 으로 새로 만들게
 하지 마라).
 진입 후 아래를 확인하고, 하나라도 어긋나면 중단하고 BLOCKED 로 보고해라:
-  - pwd 가 /Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/ohmymcp-determinism 인지
+  - pwd 가 /Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/mcpeak-determinism 인지
   - git log --oneline -1 이 루트에서 기록한 기점 커밋과 같은지
   - docs/superpowers/specs/2026-08-18-determinism-check-design.md 와
     docs/superpowers/plans/2026-08-18-determinism-check.md 가 실제로 존재하는지

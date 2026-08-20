@@ -3,9 +3,9 @@
 - 상태: 사용자 승인 완료, 구현 계획 작성 완료
 - 작성일: 2026-08-12
 - 승인일: 2026-08-12
-- 구현 대상: `@ohmymcp-hsu/core`
+- 구현 대상: `@mcpeak/core`
 - 선행 결정: [ADR-0001](../../adr/0001-transport-strategy.md)
-- 후속 연동: `ohmymcp test`, weather-server E2E
+- 후속 연동: `mcpeak test`, weather-server E2E
 
 ## 1. 목적
 
@@ -25,10 +25,10 @@ Core는 로컬 명령으로 실행할 수 있는 실제 MCP 서버를 자식 프
 pnpm exec vitest run packages/core/tests
 → Core 단위 테스트와 직렬 stdio 통합 테스트 전체 통과
 
-pnpm --filter @ohmymcp-hsu/core typecheck
+pnpm --filter @mcpeak/core typecheck
 → 공개 타입과 테스트 타입체크 통과
 
-pnpm --filter @ohmymcp-hsu/core build
+pnpm --filter @mcpeak/core build
 → ESM, CJS, 선언 파일 생성 성공
 
 pnpm exec biome check packages/core

@@ -54,7 +54,7 @@
 2. `packages/cli/src/repair-target.ts` 를 안 고쳤는데 `serverMessage` 가 채워진다.
 3. `examples/weather-server` 에 `{"city":"example"}` 를 보낸 실패 블록 전문이 보고서에 있다.
 4. 프로젝트 루트에서 `pnpm test`, `pnpm typecheck --force`, `pnpm lint`,
-   `pnpm build && pnpm --filter ohmymcp test:e2e` 가 통과한다.
+   `pnpm build && pnpm --filter @mcpeak/cli test:e2e` 가 통과한다.
 
 ## 3. 계약 변경 (전량)
 

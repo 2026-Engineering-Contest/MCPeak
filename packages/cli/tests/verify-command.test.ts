@@ -1,5 +1,5 @@
-import type { McpClient } from "@ohmymcp-hsu/core";
-import type { Cassette, CassetteVerifyResult } from "@ohmymcp-hsu/record";
+import type { McpClient } from "@mcpeak/core";
+import type { Cassette, CassetteVerifyResult } from "@mcpeak/record";
 import { describe, expect, it } from "vitest";
 import {
   parseVerifyCommand,

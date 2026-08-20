@@ -13,7 +13,7 @@ import { StepSuite } from "../generate/steps/StepSuite.js";
 
 const STEPS = ["테스트할 서버", "만들어질 스위트", "생성 방식", "녹화와 확인"] as const;
 
-const RECENT_KEY = "ohmymcp-generate-recent-commands";
+const RECENT_KEY = "mcpeak-generate-recent-commands";
 
 function readRecentCommands(): readonly string[] {
   try {

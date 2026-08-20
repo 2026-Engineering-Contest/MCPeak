@@ -1,6 +1,6 @@
-import type { McpClient, ToolDef, ToolResult } from "@ohmymcp-hsu/core";
-import type { Cassette } from "@ohmymcp-hsu/record";
-import { CASSETTE_VERSION, cassetteClient, stableStringify } from "@ohmymcp-hsu/record";
+import type { McpClient, ToolDef, ToolResult } from "@mcpeak/core";
+import type { Cassette } from "@mcpeak/record";
+import { CASSETTE_VERSION, cassetteClient, stableStringify } from "@mcpeak/record";
 import { describe, expect, it } from "vitest";
 import { wireCassette } from "../src/cassette-wiring.js";
 
@@ -96,7 +96,7 @@ describe("wireCassette", () => {
     const inner = fakeInner();
     const wiring = await wireCassette({
       inner,
-      path: ".ohmymcp/x.json",
+      path: ".mcpeak/x.json",
       forceRecord: false,
       io: fakeIo(null),
     });
@@ -110,7 +110,7 @@ describe("wireCassette", () => {
     const inner = fakeInner();
     const wiring = await wireCassette({
       inner,
-      path: ".ohmymcp/x.json",
+      path: ".mcpeak/x.json",
       forceRecord: false,
       io: fakeIo(await recordedCassette()),
     });
@@ -127,7 +127,7 @@ describe("wireCassette", () => {
     const inner = fakeInner();
     const wiring = await wireCassette({
       inner,
-      path: ".ohmymcp/x.json",
+      path: ".mcpeak/x.json",
       forceRecord: true,
       io: fakeIo(await recordedCassette()),
     });
@@ -140,7 +140,7 @@ describe("wireCassette", () => {
     const io = fakeIo(await recordedCassette());
     const wiring = await wireCassette({
       inner: fakeInner(),
-      path: ".ohmymcp/x.json",
+      path: ".mcpeak/x.json",
       forceRecord: true,
       io,
     });
@@ -153,7 +153,7 @@ describe("wireCassette", () => {
 
     expect(wiring.warnings).toHaveLength(1);
     expect(wiring.warnings[0]).toContain("상호작용 1개를 지웁니다");
-    expect(wiring.warnings[0]).toContain(".ohmymcp/x.json");
+    expect(wiring.warnings[0]).toContain(".mcpeak/x.json");
     expect(wiring.warnings[0]).toContain('get_weather({"city":"서울"})');
     // 경고는 저장을 막지 않는다. --record 의 의미는 그대로다.
     expect(io.saved).toHaveLength(1);
@@ -164,7 +164,7 @@ describe("wireCassette", () => {
     const io = fakeIo(await recordedCassette());
     const wiring = await wireCassette({
       inner: fakeInner(),
-      path: ".ohmymcp/x.json",
+      path: ".mcpeak/x.json",
       forceRecord: false,
       io,
     });
@@ -179,7 +179,7 @@ describe("wireCassette", () => {
   it("client.close() 가 inner.close() 를 부르고 save 는 안 부른다", async () => {
     const io = fakeIo();
     const inner = fakeInner();
-    const wiring = await wireCassette({ inner, path: ".ohmymcp/x.json", forceRecord: false, io });
+    const wiring = await wireCassette({ inner, path: ".mcpeak/x.json", forceRecord: false, io });
     await wiring.client.close();
     expect(inner.closeCount()).toBe(1);
     expect(io.saved).toEqual([]);
@@ -189,20 +189,20 @@ describe("wireCassette", () => {
     const io = fakeIo();
     const wiring = await wireCassette({
       inner: fakeInner(),
-      path: ".ohmymcp/x.json",
+      path: ".mcpeak/x.json",
       forceRecord: false,
       io,
     });
     await wiring.flush();
     expect(io.saved).toHaveLength(1);
-    expect(io.saved[0]?.path).toBe(".ohmymcp/x.json");
+    expect(io.saved[0]?.path).toBe(".mcpeak/x.json");
   });
 
   it("flush() 가 저장한 카세트에 녹화된 호출이 들어 있다", async () => {
     const io = fakeIo();
     const wiring = await wireCassette({
       inner: fakeInner(),
-      path: ".ohmymcp/x.json",
+      path: ".mcpeak/x.json",
       forceRecord: false,
       io,
     });
@@ -224,7 +224,7 @@ describe("wireCassette", () => {
     }));
     const wiring = await wireCassette({
       inner,
-      path: ".ohmymcp/x.json",
+      path: ".mcpeak/x.json",
       forceRecord: false,
       io: fakeIo(),
     });
@@ -241,7 +241,7 @@ describe("wireCassette", () => {
     });
     const wiring = await wireCassette({
       inner: fakeInner(respond),
-      path: ".ohmymcp/x.json",
+      path: ".mcpeak/x.json",
       forceRecord: false,
       io: fakeIo(),
     });
@@ -253,7 +253,7 @@ describe("wireCassette", () => {
     const recorder = cassetteClient(fakeInner(respond), {
       cassette: null,
       mode: "record",
-      cassettePath: ".ohmymcp/x.json",
+      cassettePath: ".mcpeak/x.json",
       onWarning: (message) => direct.push(message),
     });
     await recorder.callTool("get_weather", { city: "서울" });
@@ -269,7 +269,7 @@ describe("wireCassette", () => {
     await expect(
       wireCassette({
         inner: fakeInner(),
-        path: ".ohmymcp/x.json",
+        path: ".mcpeak/x.json",
         forceRecord: false,
         io: broken,
       }),
@@ -281,7 +281,7 @@ describe("wireCassette", () => {
       const io = fakeIo();
       const wiring = await wireCassette({
         inner: fakeInner(),
-        path: ".ohmymcp/x.json",
+        path: ".mcpeak/x.json",
         forceRecord: false,
         io,
       });

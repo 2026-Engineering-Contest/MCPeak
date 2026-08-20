@@ -121,7 +121,7 @@ export function assertIsError(
 `입력값 교정으로 고친 값이 실제 서버 명세에 남는다` 가 여전히 통과하는지 본다. 실제
 `weather-server` 를 띄우는 테스트라 이 터미널만 돌 때 확인한다.
 
-**명령**: `pnpm test`, `pnpm build && pnpm --filter ohmymcp test:e2e`, `pnpm typecheck --force`,
+**명령**: `pnpm test`, `pnpm build && pnpm --filter @mcpeak/cli test:e2e`, `pnpm typecheck --force`,
 `pnpm lint`
 
 **보고서**: `docs/reports/task-r8-iserror-body.md`. `weather-server` 에 `{"city":"example"}` 를
@@ -138,12 +138,12 @@ export function assertIsError(
 ```
 [1단계: 작업 공간 만들기] 다른 무엇보다 먼저 이것부터 해라.
 
-  git worktree add /Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/ohmymcp-iserror-body -b feat/iserror-response-body main
+  git worktree add /Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/mcpeak-iserror-body -b feat/iserror-response-body main
 
 를 실행한 뒤 그 경로로 세션을 옮겨라. 옮긴 다음 아래를 확인하고, 하나라도 어긋나면 중단하고
 BLOCKED 로 보고해라.
 
-  - pwd 가 /Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/ohmymcp-iserror-body 인지
+  - pwd 가 /Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/mcpeak-iserror-body 인지
   - git log --oneline -1 이 루트의 main HEAD 와 같은지
   - docs/adr/0027-isError-진단의-서버-응답-본문.md 가 있는지
   - docs/superpowers/specs/2026-08-15-iserror-response-body-design.md 가 있는지
@@ -194,7 +194,7 @@ packages/cli/tests/dry-run.test.ts 와 packages/cli/tests/generate-command.test.
 test.ts 의 `입력값 교정으로 고친 값이 실제 서버 명세에 남는다` 가 통과하는지 확인해라. 그것은
 실제 weather-server 를 띄운다. 이 터미널만 돌고 있으니 괜찮다.
 
-검증: pnpm test, pnpm build && pnpm --filter ohmymcp test:e2e, pnpm typecheck --force, pnpm lint
+검증: pnpm test, pnpm build && pnpm --filter @mcpeak/cli test:e2e, pnpm typecheck --force, pnpm lint
 를 모두 돌리고 출력을 보고서에 붙여라. typecheck 는 Cached: 0 cached 인지 확인해라.
 packages/core/tests/stdio-integration.test.ts 는 첫 실행에 종종 실패하는 기존 플레이크다. 그것만
 실패하면 재실행하고 그 사실을 적어라.

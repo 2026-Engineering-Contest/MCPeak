@@ -1,10 +1,6 @@
-import type { McpClient, ToolDef } from "@ohmymcp-hsu/core";
-import {
-  analyzeToolProvenance,
-  createBaselineSuite,
-  type PreFillResult,
-} from "@ohmymcp-hsu/generate";
-import type { JsonObject, TestSuiteSpec } from "@ohmymcp-hsu/runner";
+import type { McpClient, ToolDef } from "@mcpeak/core";
+import { analyzeToolProvenance, createBaselineSuite, type PreFillResult } from "@mcpeak/generate";
+import type { JsonObject, TestSuiteSpec } from "@mcpeak/runner";
 import { describe, expect, it, vi } from "vitest";
 import type { DryRunResult } from "../src/dry-run.js";
 import { applyPreFill, dropSkippedTools, unknownFormatSkips } from "../src/pre-fill-wiring.js";

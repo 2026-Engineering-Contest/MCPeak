@@ -1,6 +1,6 @@
 export type ThemeChoice = "light" | "dark" | "system";
 
-const STORAGE_KEY = "ohmymcp-theme";
+const STORAGE_KEY = "mcpeak-theme";
 
 /** 저장된 선택을 읽는다. 없거나 알 수 없는 값이면 "system". */
 export function getThemeChoice(storage: Pick<Storage, "getItem">): ThemeChoice {

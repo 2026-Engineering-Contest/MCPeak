@@ -1,4 +1,4 @@
-import type { ToolDef } from "@ohmymcp-hsu/core";
+import type { ToolDef } from "@mcpeak/core";
 import { describe, expect, it } from "vitest";
 import { analyzeToolProvenance } from "../src/provenance.js";
 

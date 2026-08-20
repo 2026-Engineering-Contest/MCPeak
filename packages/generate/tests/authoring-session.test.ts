@@ -1,5 +1,5 @@
-import type { ToolDef } from "@ohmymcp-hsu/core";
-import { describeSpecFinding, REDACTED } from "@ohmymcp-hsu/runner";
+import type { ToolDef } from "@mcpeak/core";
+import { describeSpecFinding, REDACTED } from "@mcpeak/runner";
 import { describe, expect, it } from "vitest";
 import {
   applyAuthoringChanges,

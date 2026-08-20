@@ -2,7 +2,7 @@
 
 - 상태: 초안 (사용자 검토 대기)
 - 작성일: 2026-08-14
-- 구현 대상: `@ohmymcp-hsu/core`
+- 구현 대상: `@mcpeak/core`
 - 해결 이슈: [#16 core.connect() 가 Streamable HTTP 를 지원해야 한다](https://github.com/2026-Engineering-Contest/OhMyMCP/issues/16)
 - 선행 결정: [ADR-0001](../../adr/0001-transport-strategy.md), [ADR-0020](../../adr/0020-streamable-http-transport.md)
 - 선행 설계: [Core stdio transport 및 프로세스 수명주기 설계](./2026-08-12-core-stdio-transport-design.md)
@@ -26,10 +26,10 @@ Core 는 URL 로 접근하는 원격 또는 로컬 Streamable HTTP MCP 서버에
 pnpm exec vitest run packages/core/tests
 → Core 단위 테스트와 HTTP 통합 테스트 전체 통과 (수집된 테스트 파일 수를 눈으로 확인한다)
 
-pnpm --filter @ohmymcp-hsu/core typecheck
+pnpm --filter @mcpeak/core typecheck
 → 공개 타입과 테스트 타입체크 통과
 
-pnpm --filter @ohmymcp-hsu/core build
+pnpm --filter @mcpeak/core build
 → ESM, CJS, 선언 파일 생성 성공
 
 pnpm exec biome check packages/core
@@ -85,8 +85,8 @@ export interface McpClient {
 | 이슈의 전제 | 현재 상태 | 근거 |
 |---|---|---|
 | `core` 가 아직 스텁이다 | 아니다. stdio 연결 · 수명주기 · 진단 · 오류 모델 구현 완료 | `packages/core/src` 8개 파일 1146줄, 테스트 7개 파일 |
-| `cli` 에 `core` 를 부를 경로가 없다 | 있다 | `packages/cli/package.json` 의 `"@ohmymcp-hsu/core": "workspace:*"`, `docs/architecture.md` 7절 |
-| 목 경로에서 자기 검증이 막힌다 | 안 막힌다 | `packages/mock/src/stdio.ts` 의 `ohmymcp-mock` 진입점 ([ADR-0007](../../adr/0007-mock-stdio-transport.md)) |
+| `cli` 에 `core` 를 부를 경로가 없다 | 있다 | `packages/cli/package.json` 의 `"@mcpeak/core": "workspace:*"`, `docs/architecture.md` 7절 |
+| 목 경로에서 자기 검증이 막힌다 | 안 막힌다 | `packages/mock/src/stdio.ts` 의 `mcpeak-mock` 진입점 ([ADR-0007](../../adr/0007-mock-stdio-transport.md)) |
 | HTTP 로 뜨는 MCP 서버를 테스트할 수 없다 | **여전히 그렇다. 이 설계의 대상이다.** | `packages/core/src/options.ts` 에 URL 을 넣을 자리가 없다 |
 
 이슈 5번("ADR-0001 에 세 번째 선택지 추가")도 따르지 않는다. ADR-0001 은 이미 선택지 C 로

@@ -46,7 +46,7 @@ vi.mock("node:fs/promises", async (importOriginal) => {
 let root: string;
 
 beforeEach(async () => {
-  root = await mkdtemp(join(tmpdir(), "ohmymcp-dashboard-files-"));
+  root = await mkdtemp(join(tmpdir(), "mcpeak-dashboard-files-"));
 });
 
 afterEach(async () => {

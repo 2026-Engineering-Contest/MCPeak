@@ -117,7 +117,7 @@ export async function runProviderProcess(
 ): Promise<ProviderProcessResult> {
   const deps = supplied ?? systemDeps;
   if (spec.signal?.aborted) return { ok: false, code: "cancelled" };
-  const cwd = await deps.mkdtemp(join(spec.cwdPrefix, "ohmymcp-provider-"));
+  const cwd = await deps.mkdtemp(join(spec.cwdPrefix, "mcpeak-provider-"));
   try {
     for (const file of spec.files ?? []) {
       if (

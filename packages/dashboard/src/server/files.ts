@@ -1,7 +1,7 @@
 import { readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
-import { loadCassette } from "@ohmymcp-hsu/record";
-import { validateMcpSuite } from "@ohmymcp-hsu/runner";
+import { loadCassette } from "@mcpeak/record";
+import { validateMcpSuite } from "@mcpeak/runner";
 import type { FileContent, FileEntry, PutFileResponse } from "../api-types.js";
 
 const EXCLUDED_DIRS = new Set(["node_modules", ".git", "dist"]);

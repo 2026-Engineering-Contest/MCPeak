@@ -1,5 +1,5 @@
-import type { McpClient } from "@ohmymcp-hsu/core";
-import type { DeterminismCaseObservation, RunnerEvent } from "@ohmymcp-hsu/runner";
+import type { McpClient } from "@mcpeak/core";
+import type { DeterminismCaseObservation, RunnerEvent } from "@mcpeak/runner";
 
 /**
  * McpClient 를 감싸 응답을 케이스에 귀속시켜 기록한다(설계 §5.1). cassetteClient 와 같은

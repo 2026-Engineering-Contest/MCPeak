@@ -1,5 +1,5 @@
 {
-  "name": "@ohmymcp-hsu/runner",
+  "name": "@mcpeak/runner",
   "version": "0.8.0",
   "private": false,
   "type": "module",
@@ -38,6 +38,6 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@ohmymcp-hsu/core": "workspace:*"
+    "@mcpeak/core": "workspace:*"
   }
 }

@@ -1,5 +1,5 @@
-import type { McpClient } from "@ohmymcp-hsu/core";
-import type { Cassette, CassetteVerifyResult } from "@ohmymcp-hsu/record";
+import type { McpClient } from "@mcpeak/core";
+import type { Cassette, CassetteVerifyResult } from "@mcpeak/record";
 import { VERIFY_USAGE_HINT } from "./help.js";
 
 /**
@@ -61,12 +61,12 @@ export interface VerifyCommandDependencies {
 
 const dictionary: Record<Exclude<VerifyErrorCode, "CLI_USAGE">, Omit<VerifyFailure, "code">> = {
   VERIFY_RUNTIME_UNAVAILABLE: {
-    message: "verify 에 필요한 @ohmymcp-hsu/record 를 로드하지 못했습니다.",
+    message: "verify 에 필요한 @mcpeak/record 를 로드하지 못했습니다.",
     hint: "의존성을 설치한 뒤 다시 실행하세요. 카세트 파일의 문제가 아닙니다.",
   },
   CASSETTE_NOT_FOUND: {
     message: "카세트 파일이 없습니다.",
-    hint: "`ohmymcp generate --cassette <path> --record` 로 먼저 녹화하세요.",
+    hint: "`mcpeak generate --cassette <path> --record` 로 먼저 녹화하세요.",
   },
   CASSETTE_READ_FAILED: {
     message: "카세트를 읽지 못했습니다.",

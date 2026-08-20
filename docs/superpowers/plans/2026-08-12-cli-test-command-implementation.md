@@ -4,13 +4,13 @@
 - 작성일: 2026-08-12
 - 설계 기준: [CLI test 명령 실제 실행 흐름 설계](../specs/2026-08-12-cli-test-command-design.md)
 - 선행 구현:
-  - `@ohmymcp-hsu/core`의 `connectStdio`
-  - `@ohmymcp-hsu/runner`의 `runSuite`, `finalizeRunnerExecution`
-- 구현 대상: `ohmymcp` CLI
+  - `@mcpeak/core`의 `connectStdio`
+  - `@mcpeak/runner`의 `runSuite`, `finalizeRunnerExecution`
+- 구현 대상: `mcpeak` CLI
 
 ## 1. 목표
 
-`ohmymcp test`가 단일 JSON 테스트 명세와 stdio MCP 서버의 command 및 args를 받아 다음 수직
+`mcpeak test`가 단일 JSON 테스트 명세와 stdio MCP 서버의 command 및 args를 받아 다음 수직
 흐름을 실제로 수행하게 한다.
 
 ```text
@@ -31,9 +31,9 @@ weather-server 대상 실제 프로세스 테스트는 source `run()` 계층과 
 
 ```text
 pnpm exec vitest run packages/cli/tests
-pnpm --filter ohmymcp typecheck
+pnpm --filter @mcpeak/cli typecheck
 pnpm build
-pnpm --filter ohmymcp test:e2e
+pnpm --filter @mcpeak/cli test:e2e
 pnpm exec biome check packages/cli
 pnpm test
 pnpm typecheck
@@ -74,7 +74,7 @@ pnpm exec changeset status
 
 - `packages/cli/src/index.ts`의 `run()`은 `not implemented`를 throw하는 스텁이다.
 - `packages/cli/src/cli.ts`는 `process.exit()`를 호출한다.
-- CLI manifest는 `@ohmymcp-hsu/runner`를 직접 의존하지만 `@ohmymcp-hsu/core`는 직접 의존하지 않는다.
+- CLI manifest는 `@mcpeak/runner`를 직접 의존하지만 `@mcpeak/core`는 직접 의존하지 않는다.
 - CLI에는 package test script와 E2E script가 없다.
 - Core package root는 `connectStdio`, `McpClientError`, `McpStdioConnection`을 export한다.
 - Runner package root는 `validateMcpSuite`, `runSuite`, `finalizeRunnerExecution`, `RunnerReport`와
@@ -179,7 +179,7 @@ export function run(argv: string[]): Promise<number>;
 사용하므로 바꾸지 않는다.
 
 ```ts
-import type { McpStdioConnection } from "@ohmymcp-hsu/core";
+import type { McpStdioConnection } from "@mcpeak/core";
 import type {
   FinalizeRunnerExecutionOptions,
   RunnerExecution,
@@ -187,7 +187,7 @@ import type {
   RunSuiteOptions,
   SuiteValidationIssue,
   SuiteValidationResult,
-} from "@ohmymcp-hsu/runner";
+} from "@mcpeak/runner";
 
 export interface TestCommandInput {
   readonly suitePath: string;
@@ -251,7 +251,7 @@ export function runCli(
 고정 usage 문자열은 다음 한 줄이다.
 
 ```text
-사용법: ohmymcp test <suite.json> --command <executable> [--arg <value> ...]
+사용법: mcpeak test <suite.json> --command <executable> [--arg <value> ...]
 ```
 
 `runCli`는 첫 토큰을 디스패치하고 `test` 뒤의 토큰만 `parseTestCommand`에 넘긴다.
@@ -593,8 +593,8 @@ production source를 고치기 전에 weather suite 두 개, PID wrapper,
 
 ```bash
 pnpm exec vitest run packages/cli/tests/cli-integration.test.ts
-pnpm --filter ohmymcp build
-pnpm --filter ohmymcp test:e2e
+pnpm --filter @mcpeak/cli build
+pnpm --filter @mcpeak/cli test:e2e
 ```
 
 source integration은 `run()` 스텁 때문에 실패해야 한다. dist E2E는 빌드된 stub CLI의 예외 또는
@@ -615,7 +615,7 @@ source integration은 `run()` 스텁 때문에 실패해야 한다. dist E2E는 
    - parsed report status `failed`, summary failed 1, stderr 0회, 반환 코드 1
    - 기록된 PID가 최대 1초 안에 `ESRCH`
 3. `실행할 수 없는 command의 Core 오류를 stderr에 출력하고 1을 반환한다`
-   - valid suite와 `ohmymcp-command-that-does-not-exist` command를 사용
+   - valid suite와 `mcpeak-command-that-does-not-exist` command를 사용
    - stdout 0회, stderr header `MCP_CONNECTION_FAILED/PROCESS_START_FAILED`, 반환 코드 1
    - native error, stack, 입력 command 값이 stderr에 없음
 
@@ -657,7 +657,7 @@ ESM과 CJS entry를 같은 source에서 빌드하므로 top-level await를 사�
 입력과 실행 실패를 1로 resolve하므로 진입점에 별도 오류 formatter도 두지 않는다. `process.exit()`는
 어떤 경로에서도 사용하지 않는다.
 
-4. `packages/cli/package.json` dependencies에 `"@ohmymcp-hsu/core": "workspace:*"`를 추가한다.
+4. `packages/cli/package.json` dependencies에 `"@mcpeak/core": "workspace:*"`를 추가한다.
 5. scripts에 `"test:e2e": "node ./tests/dist-cli-e2e.mjs"`를 추가한다.
 6. 외부 dependency 추가 없이 `pnpm install --lockfile-only`로 CLI importer의 lockfile을 갱신한다.
 7. focused unit, source E2E, package typecheck, build, dist E2E를 순서대로 GREEN으로 만든다.
@@ -669,7 +669,7 @@ ESM과 CJS entry를 같은 source에서 빌드하므로 top-level await를 사�
 `packages/cli/README.md`의 스텁 상태 문구를 실제 기능으로 바꾸고 다음 내용을 포함한다.
 
 - JSON suite 예시 또는 `packages/cli/tests/fixtures/weather-suite.json` 링크
-- `ohmymcp test <suite.json> --command <executable> [--arg <value> ...]`
+- `mcpeak test <suite.json> --command <executable> [--arg <value> ...]`
 - Node server에서 command와 arg를 합치면 `node ./server.mjs`가 된다는 설명
 - `--arg` 반복과 `--arg=-m`, `--arg=` 설명
 - CLI가 stdio MCP server를 직접 시작하고 종료한다는 설명
@@ -686,7 +686,7 @@ ESM과 CJS entry를 같은 source에서 빌드하므로 top-level await를 사�
 
 ```md
 ---
-"ohmymcp": minor
+"mcpeak": minor
 ---
 
 JSON 테스트 명세와 stdio MCP 서버 실행 정보를 받아 실제 RunnerReport와 종료 코드를 만드는 test 명령을 추가한다.
@@ -724,7 +724,7 @@ pnpm exec vitest run packages/cli/tests/index.test.ts packages/cli/tests/test-co
 pnpm exec vitest run packages/cli/tests/cli-integration.test.ts
 → 실제 weather-server 경로를 확인한 뒤 run stub 때문에 실패
 
-pnpm --filter ohmymcp build && pnpm --filter ohmymcp test:e2e
+pnpm --filter @mcpeak/cli build && pnpm --filter @mcpeak/cli test:e2e
 → dist CLI가 실행되지만 report 또는 exit 계약 불일치로 실패
 ```
 
@@ -734,9 +734,9 @@ pnpm --filter ohmymcp build && pnpm --filter ohmymcp test:e2e
 pnpm exec vitest run packages/cli/tests/index.test.ts packages/cli/tests/test-command.test.ts
 pnpm exec vitest run packages/cli/tests/cli-integration.test.ts
 pnpm exec vitest run packages/cli/tests
-pnpm --filter ohmymcp typecheck
+pnpm --filter @mcpeak/cli typecheck
 pnpm build
-pnpm --filter ohmymcp test:e2e
+pnpm --filter @mcpeak/cli test:e2e
 pnpm exec biome check packages/cli
 ```
 
@@ -783,7 +783,7 @@ pnpm test
 pnpm typecheck
 pnpm lint
 pnpm build
-pnpm --filter ohmymcp test:e2e
+pnpm --filter @mcpeak/cli test:e2e
 pnpm exec changeset status
 ```
 
@@ -867,10 +867,10 @@ pwd가 기록한 cli_worktree와 다르거나 HEAD가 base_commit과 다르거�
 
   pnpm install --frozen-lockfile
   pnpm exec vitest run packages/cli/tests/index.test.ts
-  pnpm --filter ohmymcp typecheck
-  pnpm --filter @ohmymcp-hsu/core build
-  pnpm --filter @ohmymcp-hsu/runner build
-  pnpm --filter ohmymcp build
+  pnpm --filter @mcpeak/cli typecheck
+  pnpm --filter @mcpeak/core build
+  pnpm --filter @mcpeak/runner build
+  pnpm --filter @mcpeak/cli build
 
 의존성 설치, 기존 CLI 테스트 수집, typecheck와 선행 dist build 중 하나라도 실패하면 agent를
 spawn하지 말고 BLOCKED로 끝내라. 출력에 실제 CLI test와 Core, Runner, CLI package가 나타나는지
@@ -927,9 +927,9 @@ await spawn_agent({
     "금지: Core, Runner와 다른 package, examples, fixtures, root 설정, CI, SDK version, 신규 외부 dependency 수정. shell true, eval, 명세 module import, background, commit, merge, push, 하위 agent spawn, 다른 변경 되돌리기도 금지한다.",
     "테스트를 먼저 작성한다. argv parser, JSON 확장자와 fatal UTF-8, parse와 validate 순서, 모든 validation issue, terminal control escape, Core 오류의 safe normalization, connect→runSuite→finalize 순서, 동일 client identity, startRunner 전 force cleanup, finalizer 단독 종료 소유권, report stdout과 오류 stderr 분리, exit 0/1을 계획의 고정 문장과 단언 그대로 검증한다.",
     "실제 process E2E는 읽기 전용 examples/weather-server/server.mjs를 PID wrapper로 import한다. 성공 3-case suite와 실제 assertion 실패 suite를 source run과 dist/cli.mjs에서 실행하고 stdout JSON, 빈 stderr, exit code, PID ESRCH를 검사한다. 외부 network와 사용자 설정은 쓰지 않는다.",
-    "RED: pnpm exec vitest run packages/cli/tests/index.test.ts packages/cli/tests/test-command.test.ts, pnpm exec vitest run packages/cli/tests/cli-integration.test.ts, pnpm --filter ohmymcp build && pnpm --filter ohmymcp test:e2e. 테스트 미수집이나 bootstrap 실패는 RED로 인정하지 않는다.",
-    "GREEN: focused unit, source integration, packages/cli/tests 전체, pnpm --filter ohmymcp typecheck, pnpm build, pnpm --filter ohmymcp test:e2e, pnpm exec biome check packages/cli. 실제 파일과 테스트 수, success/failure exit, PID 잔존을 기록한다.",
-    "README를 실제 문법과 범위로 갱신하고 ohmymcp minor changeset을 한국어로 작성한다. package에는 @ohmymcp-hsu/core workspace dependency와 test:e2e script만 추가하고 pnpm install --lockfile-only로 lockfile importer를 갱신한다.",
+    "RED: pnpm exec vitest run packages/cli/tests/index.test.ts packages/cli/tests/test-command.test.ts, pnpm exec vitest run packages/cli/tests/cli-integration.test.ts, pnpm --filter @mcpeak/cli build && pnpm --filter @mcpeak/cli test:e2e. 테스트 미수집이나 bootstrap 실패는 RED로 인정하지 않는다.",
+    "GREEN: focused unit, source integration, packages/cli/tests 전체, pnpm --filter @mcpeak/cli typecheck, pnpm build, pnpm --filter @mcpeak/cli test:e2e, pnpm exec biome check packages/cli. 실제 파일과 테스트 수, success/failure exit, PID 잔존을 기록한다.",
+    "README를 실제 문법과 범위로 갱신하고 @mcpeak/cli minor changeset을 한국어로 작성한다. package에는 @mcpeak/core workspace dependency와 test:e2e script만 추가하고 pnpm install --lockfile-only로 lockfile importer를 갱신한다.",
     "보고서와 최종 응답은 READY_FOR_REVIEW 또는 BLOCKED, 변경 파일, RED, GREEN과 수집 수, report 경로, 남은 위험 순서다.",
   ].join("\n").replaceAll("${cliWorktree}", cliWorktree),
 });

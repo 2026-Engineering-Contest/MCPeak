@@ -1,17 +1,17 @@
 {
-  "name": "@ohmymcp-hsu/generate",
-  "version": "0.5.0",
+  "name": "@mcpeak/generate",
+  "version": "0.5.1",
   "private": false,
   "type": "module",
   "description": "결정론적 baseline과 승인형 AI 검토로 MCP 테스트를 생성",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/2026-Engineering-Contest/OhMyMCP.git",
+    "url": "git+https://github.com/2026-Engineering-Contest/MCPeak.git",
     "directory": "packages/generate"
   },
-  "homepage": "https://github.com/2026-Engineering-Contest/OhMyMCP#readme",
-  "bugs": "https://github.com/2026-Engineering-Contest/OhMyMCP/issues",
+  "homepage": "https://github.com/2026-Engineering-Contest/MCPeak#readme",
+  "bugs": "https://github.com/2026-Engineering-Contest/MCPeak/issues",
   "publishConfig": {
     "access": "public"
   },
@@ -38,7 +38,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@ohmymcp-hsu/core": "workspace:*",
-    "@ohmymcp-hsu/runner": "workspace:*"
+    "@mcpeak/core": "workspace:*",
+    "@mcpeak/runner": "workspace:*"
   }
 }

@@ -1,8 +1,4 @@
-import type {
-  AuthoringSessionView,
-  McpToolContext,
-  TestAuthoringProvider,
-} from "@ohmymcp-hsu/generate";
+import type { AuthoringSessionView, McpToolContext, TestAuthoringProvider } from "@mcpeak/generate";
 import {
   canonicalJson,
   type JsonValue,
@@ -10,7 +6,7 @@ import {
   type RunnerRedactionOptions,
   type TestCaseSpec,
   type TestSuiteSpec,
-} from "@ohmymcp-hsu/runner";
+} from "@mcpeak/runner";
 import type { RepairTarget } from "./repair-target.js";
 
 /**
@@ -26,8 +22,8 @@ export interface ProposeRepairOptions {
   readonly session: AuthoringSessionView;
   readonly tools: readonly McpToolContext[];
   readonly provider: TestAuthoringProvider;
-  readonly prepare: typeof import("@ohmymcp-hsu/generate").prepareAuthoringRequest;
-  readonly dispatch: typeof import("@ohmymcp-hsu/generate").dispatchAuthoringRequest;
+  readonly prepare: typeof import("@mcpeak/generate").prepareAuthoringRequest;
+  readonly dispatch: typeof import("@mcpeak/generate").dispatchAuthoringRequest;
   readonly redaction?: RunnerRedactionOptions;
 }
 

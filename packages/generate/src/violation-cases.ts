@@ -1,10 +1,10 @@
-import type { ToolDef } from "@ohmymcp-hsu/core";
+import type { ToolDef } from "@mcpeak/core";
 import {
   type ContractAxis,
   type ContractDeclaredType,
   type ContractRange,
   deriveContractAxes,
-} from "@ohmymcp-hsu/runner";
+} from "@mcpeak/runner";
 import { integerLowerBound, integerUpperBound } from "./constraints.js";
 import { fieldSlug } from "./filename.js";
 import type { JsonObject, JsonSchema, JsonValue } from "./schema.js";
@@ -42,7 +42,7 @@ export interface GeneratedCase {
  * enum 위반값에 쓰는 예약 문자열. 어떤 서버도 이것을 유효한 값으로 선언하지 않을 것을 노린
  * 이름이고, 그래도 겹치면 접미사를 붙여 피한다.
  */
-const INVALID_ENUM_VALUE = "__ohmymcp_invalid_enum__";
+const INVALID_ENUM_VALUE = "__mcpeak_invalid_enum__";
 
 /**
  * 선언 type 을 어기는 값. 표로 고정한다. 값이 흔들리면 지문이 흔들린다.

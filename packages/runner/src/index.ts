@@ -1,4 +1,4 @@
-import type { McpClient, ToolResult } from "@ohmymcp-hsu/core";
+import type { McpClient, ToolResult } from "@mcpeak/core";
 
 export { checkAssertionSubstance } from "./assertion-substance.js";
 export { type AssertionResult, assertBodyMatchesSchema } from "./assertions.js";

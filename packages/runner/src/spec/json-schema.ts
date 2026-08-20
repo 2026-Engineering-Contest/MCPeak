@@ -10,7 +10,11 @@ const freeze = <T extends ReadonlyJsonValue>(value: T): T => {
 
 export const MCP_SUITE_JSON_SCHEMA: ReadonlyJsonObject = freeze<ReadonlyJsonObject>({
   $schema: "https://json-schema.org/draft/2020-12/schema",
-  $id: "https://ohmymcp.dev/schemas/test-suite/v1.json",
+  // 소유한 주소를 쓴다. `ohmymcp.dev` 는 DNS 조차 없는 지어낸 도메인이었고,
+  // `mcpeak.dev` 로 바꿔도 마찬가지라 저장소 URL 로 옮겼다 (#210).
+  // `$id` 는 접속되지 않아도 되는 식별자지만, 남이 같은 주소에 다른 스키마를 올릴 수
+  // 없어야 한다는 점에서 소유가 중요하다.
+  $id: "https://github.com/2026-Engineering-Contest/MCPeak/schemas/test-suite/v1.json",
   type: "object",
   additionalProperties: false,
   required: ["schemaVersion", "id", "name", "cases"],

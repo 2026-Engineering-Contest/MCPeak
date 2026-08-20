@@ -6,7 +6,7 @@ import {
   validateMcpSuite,
 } from "../src/index.js";
 
-describe("@ohmymcp-hsu/runner", () => {
+describe("@mcpeak/runner", () => {
   it("createMcpTest() 는 아직 구현되지 않은 스텁이다", () => {
     expect(createMcpTest).toBeTypeOf("function");
     expect(() => createMcpTest({ client: {} as never }, () => {})).toThrow("not implemented");

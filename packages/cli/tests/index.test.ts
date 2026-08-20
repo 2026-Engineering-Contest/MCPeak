@@ -4,7 +4,13 @@ import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import packageMetadata from "../package.json";
 import type { GenerateCommandDependencies } from "../src/generate-command.js";
-import { COMMANDS, nodeRepairDependencies, run } from "../src/index.js";
+import {
+  COMMANDS,
+  nodeRepairDependencies,
+  run,
+  unavailableReplayDependencies,
+} from "../src/index.js";
+import { ReplayRuntimeUnavailableError } from "../src/replay-command.js";
 
 type OptionalKey<T> = {
   [K in keyof T]-?: object extends Pick<T, K> ? K : never;
@@ -32,9 +38,27 @@ const OPTIONAL_GENERATE_DEPENDENCIES = {
   dispatchRejectionDiagnosis: true,
 } as const satisfies Record<OptionalFunctionDependencyKey, true>;
 
-describe("ohmymcp cli", () => {
+describe("mcpeak cli", () => {
   it("알려진 서브커맨드를 선언한다", () => {
     expect(COMMANDS).toEqual(["test", "generate", "repair", "record", "replay", "verify", "mock"]);
+  });
+
+  /**
+   * 배선을 직접 단언한다. 여기가 평범한 Error 로 되돌아가면 `validateSuite` 자리에서
+   * `CLI_INTERNAL_ERROR` 로 잡혀 "이슈를 보고하세요" 가 나가고, 사용자는 자기 설치 문제로
+   * 버그 리포트를 쓴다. 모듈 모킹으로는 이 경로를 재현할 수 없어 배선을 직접 본다.
+   */
+  it("replay fallback 의존성이 런타임 미가용 전용 오류를 던진다", async () => {
+    const runtime = [
+      () => unavailableReplayDependencies.validateSuite({}),
+      () => unavailableReplayDependencies.loadCassette("c.json"),
+      () => unavailableReplayDependencies.startRunner({} as never),
+      () => unavailableReplayDependencies.finalize({} as never),
+      () => unavailableReplayDependencies.renderReport({} as never),
+    ];
+    for (const call of runtime) {
+      await expect(async () => await call()).rejects.toBeInstanceOf(ReplayRuntimeUnavailableError);
+    }
   });
 
   it("사용자 입력 오류를 reject하지 않고 종료 코드 1로 반환한다", async () => {
@@ -54,7 +78,7 @@ describe("ohmymcp cli", () => {
       try {
         await expect(run(argv)).resolves.toBe(0);
         const output = stdout.mock.calls.map(([text]) => String(text)).join("");
-        expect(output).toContain("사용법: ohmymcp <명령> [옵션]");
+        expect(output).toContain("사용법: mcpeak <명령> [옵션]");
         expect(output).toContain("test");
         expect(output).toContain("generate");
         expect(stderr).not.toHaveBeenCalled();
@@ -66,10 +90,10 @@ describe("ohmymcp cli", () => {
   );
 
   it.each([
-    [["help", "test"], "ohmymcp test <suite.json>"],
-    [["test", "--help"], "ohmymcp test <suite.json>"],
-    [["help", "generate"], "ohmymcp generate --suite-id <id>"],
-    [["generate", "--help"], "ohmymcp generate --suite-id <id>"],
+    [["help", "test"], "mcpeak test <suite.json>"],
+    [["test", "--help"], "mcpeak test <suite.json>"],
+    [["help", "generate"], "mcpeak generate --suite-id <id>"],
+    [["generate", "--help"], "mcpeak generate --suite-id <id>"],
   ])("%j 는 해당 서브커맨드 도움말을 stdout 에 쓴다", async (argv, expected) => {
     const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
@@ -88,7 +112,7 @@ describe("ohmymcp cli", () => {
     const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
     try {
       await expect(run(["--version"])).resolves.toBe(0);
-      expect(stdout).toHaveBeenCalledWith(`ohmymcp ${packageMetadata.version}\n`);
+      expect(stdout).toHaveBeenCalledWith(`mcpeak ${packageMetadata.version}\n`);
       expect(stderr).not.toHaveBeenCalled();
     } finally {
       stdout.mockRestore();
@@ -115,7 +139,7 @@ describe("ohmymcp cli", () => {
       vi.resetModules();
       const [{ run: isolatedRun }, generate] = await Promise.all([
         import("../src/index.js"),
-        import("@ohmymcp-hsu/generate"),
+        import("@mcpeak/generate"),
       ]);
 
       await expect(isolatedRun(["generate"])).resolves.toBe(0);
@@ -150,10 +174,10 @@ describe("ohmymcp cli", () => {
   });
 
   it("동적 Core 의존성 로드 실패를 안전한 내부 오류로 정규화한다", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "ohmymcp-index-"));
+    const directory = await mkdtemp(join(tmpdir(), "mcpeak-index-"));
     const suite = join(directory, "suite.json");
     const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
-    vi.doMock("@ohmymcp-hsu/core", () => {
+    vi.doMock("@mcpeak/core", () => {
       throw new Error("DYNAMIC_IMPORT_SECRET_STACK");
     });
     try {
@@ -163,7 +187,7 @@ describe("ohmymcp cli", () => {
         "오류 [CLI_INTERNAL_ERROR]: 예상하지 못한 CLI 내부 오류가 발생했습니다.\n해결: 다시 실행한 뒤 재현 정보와 함께 이슈를 보고하세요.\n",
       );
     } finally {
-      vi.doUnmock("@ohmymcp-hsu/core");
+      vi.doUnmock("@mcpeak/core");
       stderr.mockRestore();
       await rm(directory, { recursive: true, force: true });
     }
@@ -171,7 +195,7 @@ describe("ohmymcp cli", () => {
 
   it("generate 의존성 로드 실패를 raw 오류 없이 정규화한다", async () => {
     const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
-    vi.doMock("@ohmymcp-hsu/generate", () => {
+    vi.doMock("@mcpeak/generate", () => {
       throw new Error("GENERATE_DYNAMIC_SECRET_STACK");
     });
     try {
@@ -193,7 +217,7 @@ describe("ohmymcp cli", () => {
         "GENERATE_DYNAMIC_SECRET_STACK",
       );
     } finally {
-      vi.doUnmock("@ohmymcp-hsu/generate");
+      vi.doUnmock("@mcpeak/generate");
       stderr.mockRestore();
     }
   });
@@ -208,7 +232,7 @@ describe("ohmymcp cli", () => {
       dispatchDiagnosisRequest: async () => undefined,
       createCodexProvider: () => undefined,
       createClaudeProvider: () => undefined,
-    } as unknown as typeof import("@ohmymcp-hsu/generate");
+    } as unknown as typeof import("@mcpeak/generate");
     const dependencies = nodeRepairDependencies(generate);
     try {
       expect(dependencies.reviewIO).toBeDefined();

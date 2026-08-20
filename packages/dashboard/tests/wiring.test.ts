@@ -20,25 +20,25 @@ function fakeIo(): RunIo {
   };
 }
 
-function fakeCoreModule(): typeof import("@ohmymcp-hsu/core") {
-  return { connectStdio: vi.fn() } as unknown as typeof import("@ohmymcp-hsu/core");
+function fakeCoreModule(): typeof import("@mcpeak/core") {
+  return { connectStdio: vi.fn() } as unknown as typeof import("@mcpeak/core");
 }
 
-function fakeRunnerModule(): typeof import("@ohmymcp-hsu/runner") {
+function fakeRunnerModule(): typeof import("@mcpeak/runner") {
   return {
     validateMcpSuite: vi.fn(),
     runSuite: vi.fn(),
     finalizeRunnerExecution: vi.fn(),
     renderReport: vi.fn(),
     renderJUnit: vi.fn(),
-  } as unknown as typeof import("@ohmymcp-hsu/runner");
+  } as unknown as typeof import("@mcpeak/runner");
 }
 
-function fakeRecordModule(): typeof import("@ohmymcp-hsu/record") {
-  return { loadCassette: vi.fn() } as unknown as typeof import("@ohmymcp-hsu/record");
+function fakeRecordModule(): typeof import("@mcpeak/record") {
+  return { loadCassette: vi.fn() } as unknown as typeof import("@mcpeak/record");
 }
 
-function fakeGenerateModule(): typeof import("@ohmymcp-hsu/generate") {
+function fakeGenerateModule(): typeof import("@mcpeak/generate") {
   const noop = vi.fn();
   return {
     createBaselineSuite: noop,
@@ -61,7 +61,7 @@ function fakeGenerateModule(): typeof import("@ohmymcp-hsu/generate") {
     prepareRejectionDiagnosisRequests: noop,
     dispatchRejectionDiagnosis: noop,
     GenerateTestsError: class GenerateTestsError extends Error {},
-  } as unknown as typeof import("@ohmymcp-hsu/generate");
+  } as unknown as typeof import("@mcpeak/generate");
 }
 
 /** `TestCommandDependencies`의 필수(비선택) 키 전량. `packages/cli/src/test-command.ts` 참조. */

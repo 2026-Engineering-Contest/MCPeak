@@ -1,4 +1,4 @@
-import { runCli } from "ohmymcp/commands";
+import { runCli } from "@mcpeak/cli/commands";
 import { describe, expect, it } from "vitest";
 import { startDashboardServer } from "../src/index.js";
 
@@ -12,7 +12,7 @@ describe("대시보드 스캐폴드", () => {
     await expect(fetch(`http://127.0.0.1:${server.port}/api/health`)).rejects.toThrow();
   });
 
-  it("ohmymcp/commands가 해석된다", () => {
+  it("@mcpeak/cli/commands가 해석된다", () => {
     expect(typeof runCli).toBe("function");
   });
 });

@@ -11,8 +11,8 @@ import { type RepairCommandDependencies, runRepairCommand } from "../src/repair-
  * 워크스페이스 산출물 대신 소스를 본다. `cli-integration-e2e.test.ts` 와 같은 방식이라 빌드가
  * 낡아도 낡은 계약으로 판정하지 않는다.
  */
-vi.mock("@ohmymcp-hsu/core", async () => import("../../core/src/index.js"));
-vi.mock("@ohmymcp-hsu/runner", async () => import("../../runner/src/index.js"));
+vi.mock("@mcpeak/core", async () => import("../../core/src/index.js"));
+vi.mock("@mcpeak/runner", async () => import("../../runner/src/index.js"));
 
 const here = resolve(fileURLToPath(new URL(".", import.meta.url)));
 const brokenServerSource = join(here, "fixtures/broken-weather-server.mjs");
@@ -41,7 +41,7 @@ let testExitCode: number;
 const testWrites = { out: [] as string[], err: [] as string[] };
 
 beforeAll(async () => {
-  workspace = await mkdtemp(join(tmpdir(), "ohmymcp-repair-e2e-"));
+  workspace = await mkdtemp(join(tmpdir(), "mcpeak-repair-e2e-"));
   suitePath = join(workspace, "suite.json");
   bundlePath = join(workspace, "bundle.json");
   await writeFile(suitePath, JSON.stringify(SUITE), "utf8");

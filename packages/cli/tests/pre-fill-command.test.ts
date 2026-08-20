@@ -1,4 +1,4 @@
-import type { McpStdioConnection, ToolDef, ToolResult } from "@ohmymcp-hsu/core";
+import type { McpStdioConnection, ToolDef, ToolResult } from "@mcpeak/core";
 import {
   applyAuthoringChanges,
   createAuthoringDiff,
@@ -13,9 +13,9 @@ import {
   preparePreFillRequest,
   previewPreFillRequest,
   reviewLocalAuthoringCandidate,
-} from "@ohmymcp-hsu/generate";
-import type { JsonObject } from "@ohmymcp-hsu/runner";
-import { validateMcpSuite } from "@ohmymcp-hsu/runner";
+} from "@mcpeak/generate";
+import type { JsonObject } from "@mcpeak/runner";
+import { validateMcpSuite } from "@mcpeak/runner";
 import { describe, expect, it, vi } from "vitest";
 import type { GenerateCommandDependencies, ReviewIO } from "../src/generate-command.js";
 import { runGenerateCommand } from "../src/generate-command.js";
@@ -153,7 +153,7 @@ describe("provider 를 못 부르는 경로", () => {
     const connection = fakeConnection([]);
     connection.client.listTools = vi.fn(async () => [needsHelp]) as never;
     const code = await runGenerateCommand(
-      argv("/tmp/ohmymcp-pre-fill-1.json", ["--baseline-only", "--provider", "codex"]),
+      argv("/tmp/mcpeak-pre-fill-1.json", ["--baseline-only", "--provider", "codex"]),
       deps({
         tools: [needsHelp],
         connection,
@@ -170,7 +170,7 @@ describe("provider 를 못 부르는 경로", () => {
     connection.client.listTools = vi.fn(async () => [allDeclared]) as never;
     const stdout: string[] = [];
     const code = await runGenerateCommand(
-      argv("/tmp/ohmymcp-pre-fill-2.json", ["--provider", "codex", "--model", "m"]),
+      argv("/tmp/mcpeak-pre-fill-2.json", ["--provider", "codex", "--model", "m"]),
       deps({
         tools: [allDeclared],
         connection,
@@ -187,7 +187,7 @@ describe("provider 를 못 부르는 경로", () => {
     const connection = fakeConnection([]);
     connection.client.listTools = vi.fn(async () => [needsHelp]) as never;
     const code = await runGenerateCommand(
-      argv("/tmp/ohmymcp-pre-fill-3.json", ["--provider", "codex", "--model", "m"]),
+      argv("/tmp/mcpeak-pre-fill-3.json", ["--provider", "codex", "--model", "m"]),
       deps({ tools: [needsHelp], connection, io: reviewIO(true, []) }),
     );
     expect(code).toBe(0);
@@ -201,7 +201,7 @@ describe("--baseline-only 에서 표 밖 format 툴 건너뛰기", () => {
     const stdout: string[] = [];
     const sessionSpy = vi.fn(createAuthoringSession);
     const code = await runGenerateCommand(
-      argv("/tmp/ohmymcp-pre-fill-4.json", ["--baseline-only"]),
+      argv("/tmp/mcpeak-pre-fill-4.json", ["--baseline-only"]),
       deps({
         tools: [unknownFormatTool, allDeclared],
         connection,
@@ -232,7 +232,7 @@ describe("사전보완 채택", () => {
     const stdout: string[] = [];
     const sessionSpy = vi.fn(createAuthoringSession);
     const code = await runGenerateCommand(
-      argv("/tmp/ohmymcp-pre-fill-5.json", ["--provider", "codex", "--model", "m"]),
+      argv("/tmp/mcpeak-pre-fill-5.json", ["--provider", "codex", "--model", "m"]),
       deps({
         tools: [needsHelp],
         connection,
@@ -277,7 +277,7 @@ describe("사전보완 채택", () => {
     const preFill = vi.fn(async () => ({ proposals: [] }));
     const sessionSpy = vi.fn(createAuthoringSession);
     await runGenerateCommand(
-      argv("/tmp/ohmymcp-pre-fill-6.json", ["--provider", "codex", "--model", "m"]),
+      argv("/tmp/mcpeak-pre-fill-6.json", ["--provider", "codex", "--model", "m"]),
       deps({
         tools: [needsHelp],
         connection,
@@ -296,7 +296,7 @@ describe("사전보완 채택", () => {
     const connection = fakeConnection([]);
     const sessionSpy = vi.fn(createAuthoringSession);
     const code = await runGenerateCommand(
-      argv("/tmp/ohmymcp-pre-fill-7.json", ["--provider", "codex", "--model", "m"]),
+      argv("/tmp/mcpeak-pre-fill-7.json", ["--provider", "codex", "--model", "m"]),
       deps({
         tools: [needsHelp],
         connection,

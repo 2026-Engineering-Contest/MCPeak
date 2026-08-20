@@ -1,4 +1,4 @@
-import type { McpClient } from "@ohmymcp-hsu/core";
+import type { McpClient } from "@mcpeak/core";
 import { describe, expect, it } from "vitest";
 import {
   type RunnerEvent,

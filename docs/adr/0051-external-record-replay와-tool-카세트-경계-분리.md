@@ -1,4 +1,4 @@
-# ADR-0048: External Record/Replay와 기존 Tool 카세트의 경계를 분리한다
+# ADR-0051: External Record/Replay와 기존 Tool 카세트의 경계를 분리한다
 
 - 상태: 제안
 - 날짜: 2026-08-21
@@ -13,7 +13,7 @@
 
 ## 배경
 
-현재 `@ohmymcp-hsu/record`는 `McpClient`를 `cassetteClient`로 감싼다. 매칭 키는 MCP Tool
+현재 `@mcpeak/record`는 `McpClient`를 `cassetteClient`로 감싼다. 매칭 키는 MCP Tool
 이름과 Tool 인자이고, 저장 값은 `ToolResult`다. Replay는 실제 MCP 서버를 실행하지 않고
 카세트의 Tool 응답을 Runner에 직접 반환한다. ADR-0003과 ADR-0028이 이 의미를 정했다.
 
@@ -92,7 +92,7 @@ legacy ──X── external
   먼저 동결하고, 필요한 순수 함수만 작은 변경 단위로 추출한다.
 - 기존 JSON 카세트와 신규 External Session은 schema version, 타입 이름, 저장 위치를 공유하지
   않는다.
-- 기존 `ohmymcp replay --cassette`와 `generate --cassette`는 신규 External 흐름의 구현 기반으로
+- 기존 `mcpeak replay --cassette`와 `generate --cassette`는 신규 External 흐름의 구현 기반으로
   사용하지 않는다.
 - 신규 사용자 흐름은 실제 MCP 서버를 실행하는 `test` 실행 경로에 별도 session 옵션으로
   연결한다. 정확한 옵션 이름은 CLI 설계에서 정한다.

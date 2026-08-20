@@ -8,10 +8,10 @@
 
 ## 1. 배경
 
-사용자는 `ohmymcp generate` 로 명세를 만들고 승인 화면에서 케이스를 하나씩 확인한 뒤 저장한다.
+사용자는 `mcpeak generate` 로 명세를 만들고 승인 화면에서 케이스를 하나씩 확인한 뒤 저장한다.
 그 시점의 명세는 오라클 자격을 가진 것으로 취급된다.
 
-몇 주 뒤 `ohmymcp test` 가 실패한다.
+몇 주 뒤 `mcpeak test` 가 실패한다.
 
 ```
 ✗ weather-ok
@@ -48,7 +48,7 @@
 ### 목표
 
 1. 승인 시점의 명세 지문을 명세 파일 안에 남긴다.
-2. `ohmymcp test` 가 실행 시점에 지문을 다시 계산해 대조하고 결과를 보고서에 적는다.
+2. `mcpeak test` 가 실행 시점에 지문을 다시 계산해 대조하고 결과를 보고서에 적는다.
 3. 지문 계산이 자기 자신을 포함하지 않는다(§4).
 4. 지문은 파일의 **내용**에만 의존한다. 들여쓰기·키 순서·줄바꿈이 달라도 같은 값이 나온다.
 5. 지문 대조가 통과·실패 판정을 바꾸지 않는다. 종료 코드는 케이스 결과로만 정해진다.
@@ -71,7 +71,7 @@
 - `approval` 이 없는 기존 명세 파일이 그대로 검증을 통과하고 실행된다(§10.1)
 - `approval` 을 붙인 명세와 안 붙인 같은 명세의 지문이 동일하다(§10.2)
 - `approval.fingerprint` 값만 바꾼 두 파일의 지문이 동일하다(§10.2)
-- `ohmymcp generate` 로 저장한 파일을 `ohmymcp test` 로 돌리면 "승인 시점과 동일" 이 나온다(§10.5)
+- `mcpeak generate` 로 저장한 파일을 `mcpeak test` 로 돌리면 "승인 시점과 동일" 이 나온다(§10.5)
 - 저장된 파일의 `cases` 한 글자를 바꾸면 "승인 시점 이후 변경됨" 이 나오고 **종료 코드는
   안 바뀐다**(§10.4)
 - `canonicalJson` · `sha256` 의 구현이 저장소에 한 벌이다(`grep -c "createHash(\"sha256\")"` 로 확인)
@@ -185,7 +185,7 @@ draft suite 는 `deepFreeze` 된 객체라서 그 경로에서 조용히 실패�
 `generate → runner` 이므로 `runner` 가 `generate` 를 부를 수 없다. 선택지가 셋이었다.
 
 - A안: `cli` 의 `test` 경로에서 `generate` 를 동적 import 한다. 패키지 이동 0건이지만
-  `ohmymcp test` 가 `generate` 로드에 묶인다. `generate-command.ts:210` 의 주석이 `generate` 를
+  `mcpeak test` 가 `generate` 로드에 묶인다. `generate-command.ts:210` 의 주석이 `generate` 를
   `test` 경로에서 떼어놓기 위해 동적 import 를 쓴다고 명시하고 있어 그 의도와 정면으로 어긋난다.
 - B안: `runner` 에 canonical JSON 을 새로 쓴다. 같은 주석이 "여기서 다시 구현하지 마라" 로
   금지한 것이다. 두 벌이 갈라지는 순간 승인 검증이 조용히 깨진다.
@@ -204,7 +204,7 @@ sha256 }`, `packages/generate/src/index.ts:59`)가 그대로 살아 기존 소�
 이동 후 `packages/generate/src/canonical.ts` 는 이 한 줄만 남긴다.
 
 ```ts
-export { canonicalJson, deepFreeze, sha256 } from "@ohmymcp-hsu/runner";
+export { canonicalJson, deepFreeze, sha256 } from "@mcpeak/runner";
 ```
 
 파일을 지우고 import 를 전부 고치는 대신 재수출 파일을 남기는 이유는 `generate` 안의 4개
@@ -217,8 +217,8 @@ import 지점(`authoring-request.ts` · `authoring-session.ts` · `baseline.ts` 
 심볼을 목록으로 고정하고 있다(ADR-0009 의 승인 범위를 코드로 못 박은 것). `canonicalJson` ·
 `deepFreeze` · `sha256` 이 그 목록에 없으므로 세 개를 추가하고 **ADR-0009 를 함께 개정한다.**
 
-여기에 조용한 구멍이 하나 있다. 그 테스트의 정규식은 `^import\s+...from "@ohmymcp-hsu/runner"` 로
-**`import` 문만** 잡는다. 우리가 쓰려는 `export ... from "@ohmymcp-hsu/runner"` 는 안 잡힌다. 즉
+여기에 조용한 구멍이 하나 있다. 그 테스트의 정규식은 `^import\s+...from "@mcpeak/runner"` 로
+**`import` 문만** 잡는다. 우리가 쓰려는 `export ... from "@mcpeak/runner"` 는 안 잡힌다. 즉
 목록을 안 고쳐도 테스트가 초록으로 통과한다. 그러면 ADR-0009 가 지키려던 경계가 재수출 한 줄로
 우회되고, 그 사실을 아무도 모른다.
 
@@ -325,7 +325,7 @@ export interface TestSuiteSpec {
   → 실패 원인에서 명세 변경을 배제할 수 없습니다. 명세 diff 를 먼저 확인하세요.
 
 명세: 승인 지문이 없습니다 (미고정)
-  → ohmymcp generate 로 승인한 명세가 아니거나 승인 이전 버전으로 만든 파일입니다.
+  → mcpeak generate 로 승인한 명세가 아니거나 승인 이전 버전으로 만든 파일입니다.
 ```
 
 앞 12자만 쓴다. 64자는 줄을 넘겨 읽히지 않고, 12자면 두 값이 다르다는 것을 눈으로 확인하기에
@@ -459,15 +459,15 @@ canonicalJson
 `packages/generate` 쪽에는 재수출 확인만 남긴다.
 
 ```
-· @ohmymcp-hsu/generate 의 sha256 이 @ohmymcp-hsu/runner 의 sha256 과 같은 함수 참조다
-· @ohmymcp-hsu/generate 의 canonicalJson · deepFreeze 도 같다
+· @mcpeak/generate 의 sha256 이 @mcpeak/runner 의 sha256 과 같은 함수 참조다
+· @mcpeak/generate 의 canonicalJson · deepFreeze 도 같다
 ```
 
 `packages/generate/tests/dependency-boundary.test.ts` (§4.6)
 
 ```
 · APPROVED_RUNNER_SYMBOLS 에 canonicalJson · deepFreeze · sha256 이 있다
-· 정규식이 export ... from "@ohmymcp-hsu/runner" 구문의 심볼도 수집한다
+· 정규식이 export ... from "@mcpeak/runner" 구문의 심볼도 수집한다
   (canonical.ts 의 재수출 세 개가 실제로 used 집합에 잡히는지 단언한다)
 · 목록에 없는 심볼을 재수출하는 가짜 소스를 넣으면 테스트가 실패한다
 ```

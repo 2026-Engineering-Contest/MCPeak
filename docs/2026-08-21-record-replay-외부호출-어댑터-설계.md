@@ -6,9 +6,9 @@
 > 목적: Node HTTP 1차 구현에 필요한 공통 확장 지점을 정하고, 후속 DB 어댑터가 HTTP 구현을
 > 다시 뜯지 않고 들어올 자리를 마련한다.
 > 결정:
-> [ADR-0048](./adr/0048-external-record-replay와-tool-카세트-경계-분리.md),
-> [ADR-0049](./adr/0049-coordinator가-engine과-session-store를-소유한다.md),
-> [ADR-0050](./adr/0050-http-외부-요청-매칭과-반복-호출-정책.md)
+> [ADR-0051](./adr/0051-external-record-replay와-tool-카세트-경계-분리.md),
+> [ADR-0052](./adr/0052-coordinator가-engine과-session-store를-소유한다.md),
+> [ADR-0053](./adr/0053-http-외부-요청-매칭과-반복-호출-정책.md)
 
 ## 1. 이번 문서의 범위
 
@@ -71,7 +71,7 @@ flowchart LR
 | Redaction Policy | 저장·표시 경계의 비밀값 제거 | 서버 프로세스 수명주기 |
 
 기존 Tool 카세트는 이 구조 바깥의 legacy다. External 계층이 기존 `Cassette`·`cassetteClient`나
-`McpClient`를 가져오지 않는 경계는 ADR-0048을 따른다.
+`McpClient`를 가져오지 않는 경계는 ADR-0051을 따른다.
 
 ## 5. 공통 데이터 계약
 
@@ -168,7 +168,7 @@ type RecordedInteraction =
 - `schemaVersion`: 어댑터가 저장한 request·outcome 형식의 버전
 - `pending`: Coordinator가 자리를 예약했지만 결과 저장을 확인하지 못한 interaction
 
-반복 호출은 ADR-0050에 따라 occurrence 순서대로 소비한다. `pending` interaction이나 하나라도
+반복 호출은 ADR-0053에 따라 occurrence 순서대로 소비한다. `pending` interaction이나 하나라도
 남은 session은 성공한 Replay 원본으로 선택할 수 없다.
 
 ## 6. 어댑터 확장 계약
@@ -329,7 +329,7 @@ interface HttpRecordedRequest {
 }
 ```
 
-match는 ADR-0050의 고정 헤더 allowlist(`accept`, `accept-language`, `content-type`, `range`)만
+match는 ADR-0053의 고정 헤더 allowlist(`accept`, `accept-language`, `content-type`, `range`)만
 사용한다. Authorization·Cookie 등 비밀 헤더 값은 match와 display에 원문으로 남기지 않는다.
 URL query와 JSON body의 민감 키 값도 matchKey 계산 전에 마스킹한다.
 
@@ -352,7 +352,7 @@ SQLite에 저장하지 않는다. Adapter는 `status`·`headers`·`body`뿐 아�
 
 ### 9.4 HTTP v1에서 고정한 것과 후속 범위
 
-HTTP v1의 다음 항목은 ADR-0050으로 고정됐다.
+HTTP v1의 다음 항목은 ADR-0053으로 고정됐다.
 
 - method 대문자화, scheme·host 소문자화, 기본 포트·fragment 제거
 - pathname, query 순서, percent-encoding 보존
@@ -549,7 +549,7 @@ H1·H2는 먼저 인메모리 Store로 실행 경계를 검증한다. 이때 공
 
 ## 14. ADR로 제안한 결정과 후속 결정
 
-HTTP H1·H2 전에 필요한 구조 결정은 ADR-0048~0050의 제안으로 다음처럼 정리됐다. 세 ADR이
+HTTP H1·H2 전에 필요한 구조 결정은 ADR-0051~0053의 제안으로 다음처럼 정리됐다. 세 ADR이
 채택되기 전에는 이 결정에 기대어 구현하지 않는다.
 
 1. 신규 External 경로는 기존 Tool 카세트와 타입·저장 형식·실행 경로를 공유하지 않는다.

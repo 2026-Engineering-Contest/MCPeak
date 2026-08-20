@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
- * `ohmymcp-mock <definition.json>` — 목 MCP 서버를 stdio 로 띄운다.
+ * `mcpeak-mock <definition.json>` — 목 MCP 서버를 stdio 로 띄운다.
  *
  * `core.connect({ command, args })` 가 이 프로세스에 붙는다. 즉 우리 도구로
  * 목 서버를 검증하는 경로다 (CONTRIBUTING §6).
  *
- *   ohmymcp test suite.json --command ohmymcp-mock --arg weather.mock.json
+ *   mcpeak test suite.json --command mcpeak-mock --arg weather.mock.json
  *
  * **stdout 에 아무것도 쓰지 않는다.** stdio 트랜스포트가 그 채널로 JSON-RPC 를
  * 주고받으므로, 안내나 오류는 전부 stderr 로 보낸다.
@@ -14,7 +14,7 @@ import { readFileSync } from "node:fs";
 import { assertMockDefinition, serveStdio } from "./index.js";
 
 const usage = [
-  "사용법: ohmymcp-mock <definition.json>",
+  "사용법: mcpeak-mock <definition.json>",
   '  definition.json 형식: { "tools": [...], "responses": [{ "tool": ..., "result": ... }] }',
   "  responses 의 args 를 생략하면 인자를 가리지 않습니다.",
 ].join("\n");

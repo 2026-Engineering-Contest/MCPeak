@@ -4,7 +4,7 @@
 - 날짜: 2026-08-14
 - 승인일: 2026-08-14
 - 작성자: @ddxng5 (record 파트)
-- 관련 이슈: [#59](https://github.com/2026-Engineering-Contest/OhMyMCP/issues/59)
+- 관련 이슈: [#59](https://github.com/2026-Engineering-Contest/MCPeak/issues/59)
 - 개정 (2026-08-18): [ADR-0039](./0039-민감-키-목록과-매칭-경계.md) 기본 마스킹 목록과
   매칭 방식 · [ADR-0040](./0040-스키마와-데이터의-마스킹-규칙-분리.md) `tools` 스키마의
   마스킹 규칙. 둘 다 `채택` 됐다. 아래 「결정」의 해당 문단은 개정 후 내용이다.

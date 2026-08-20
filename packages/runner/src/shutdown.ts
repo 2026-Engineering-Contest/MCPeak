@@ -1,4 +1,4 @@
-import type { McpClient } from "@ohmymcp-hsu/core";
+import type { McpClient } from "@mcpeak/core";
 import { boundClient, monotonicNowMs } from "./execution-binding.js";
 import type { RunnerExecution, RunnerReport } from "./executor.js";
 

@@ -7,12 +7,12 @@
 ## 1. 목표
 
 결정론적 스키마 엔진이 만든 baseline을 사용자의 Codex 또는 Claude가 보완하고, 사용자가 검토 중
-재수정을 요청하거나 변경 일부를 선택해 승인한 뒤 최종 JSON suite를 기존 `ohmymcp test`로 실행할
+재수정을 요청하거나 변경 일부를 선택해 승인한 뒤 최종 JSON suite를 기존 `mcpeak test`로 실행할
 수 있게 한다.
 
 완료 조건은 다음과 같다.
 
-1. `@ohmymcp-hsu/generate`가 한 서버의 `ToolDef[]`를 in-memory baseline suite 하나로 만들고 같은
+1. `@mcpeak/generate`가 한 서버의 `ToolDef[]`를 in-memory baseline suite 하나로 만들고 같은
    입력·정책에 byte가 같은 fingerprint를 반환한다.
 2. baseline, 승인 draft, working candidate, execution snapshot이 분리되고 AI 호출·거절·질문·실패는
    승인 revision을 바꾸지 않는다.
@@ -20,7 +20,7 @@
    통과해야 한다.
 4. Codex와 Claude adapter는 빈 임시 cwd, stdin, 구조화 출력, 도구·MCP·파일 쓰기 차단,
    환경변수 allowlist, timeout·취소·bounded 종료를 사용한다.
-5. `ohmymcp generate`가 baseline-only와 대화형 AI 반복 검토를 지원하고 최종 승인 JSON만 원자적으로
+5. `mcpeak generate`가 baseline-only와 대화형 AI 반복 검토를 지원하고 최종 승인 JSON만 원자적으로
    저장한다.
 6. weather-server baseline은 `city: "example"` 때문에 실제 test가 실패하고, `서울`을 넣은 승인
    candidate는 통과한다.
@@ -46,7 +46,7 @@
 - 기준 main HEAD: 계획 작성 시 `22a4bdf171fc904c90ee5be0a6728559f7a4e529`이다.
 - 설계·ADR·이 계획은 현재 작업 트리의 문서 변경이므로 실행 전 사용자가 먼저 커밋해야 한다.
 - `generateTests()`는 도구별 TypeScript suite 파일을 만들며 in-memory baseline API는 없다.
-- `packages/generate/package.json`은 `@ohmymcp-hsu/core`만 의존한다.
+- `packages/generate/package.json`은 `@mcpeak/core`만 의존한다.
 - Runner의 `TestSuiteSpec`, `MCP_SUITE_JSON_SCHEMA`, `validateMcpSuite`는 구현돼 있다.
 - CLI는 `test`만 구현됐고 `generate`는 `COMMAND_NOT_IMPLEMENTED`다.
 - weather-server의 `get_weather` schema에는 유효 도시 example이 없으므로 현재 규칙은
@@ -286,7 +286,7 @@ questions branch는 비어 있지 않은 string array만 허용한다. runtime v
    - baseline result 없음, 기존 file output 없음
 7. `Runner 계약을 복사하지 않고 package dependency로 소비한다`
    - root import로 `TestSuiteSpec`, validator 사용
-   - `packages/generate/package.json`에 `@ohmymcp-hsu/runner: workspace:*`
+   - `packages/generate/package.json`에 `@mcpeak/runner: workspace:*`
    - `packages/core/src/types.ts` diff 없음
 
 RED:
@@ -300,8 +300,8 @@ GREEN:
 ```bash
 pnpm exec vitest run packages/generate/tests/baseline.test.ts packages/generate/tests/index.test.ts
 pnpm exec vitest run packages/generate/tests
-pnpm --filter @ohmymcp-hsu/generate typecheck
-pnpm --filter @ohmymcp-hsu/generate build
+pnpm --filter @mcpeak/generate typecheck
+pnpm --filter @mcpeak/generate build
 pnpm exec biome check packages/generate
 ```
 
@@ -373,8 +373,8 @@ GREEN:
 ```bash
 pnpm exec vitest run packages/generate/tests/authoring-session.test.ts
 pnpm exec vitest run packages/generate/tests
-pnpm --filter @ohmymcp-hsu/generate typecheck
-pnpm --filter @ohmymcp-hsu/generate build
+pnpm --filter @mcpeak/generate typecheck
+pnpm --filter @mcpeak/generate build
 pnpm exec biome check packages/generate
 ```
 
@@ -444,8 +444,8 @@ GREEN:
 ```bash
 pnpm exec vitest run packages/generate/tests/authoring-request.test.ts packages/generate/tests/authoring-session.test.ts
 pnpm exec vitest run packages/generate/tests
-pnpm --filter @ohmymcp-hsu/generate typecheck
-pnpm --filter @ohmymcp-hsu/generate build
+pnpm --filter @mcpeak/generate typecheck
+pnpm --filter @mcpeak/generate build
 pnpm exec biome check packages/generate
 ```
 
@@ -525,8 +525,8 @@ GREEN:
 ```bash
 pnpm exec vitest run packages/generate/tests/provider-process.test.ts packages/generate/tests/providers.test.ts packages/generate/tests/authoring-request.test.ts
 pnpm exec vitest run packages/generate/tests
-pnpm --filter @ohmymcp-hsu/generate typecheck
-pnpm --filter @ohmymcp-hsu/generate build
+pnpm --filter @mcpeak/generate typecheck
+pnpm --filter @mcpeak/generate build
 pnpm exec biome check packages/generate
 ```
 
@@ -549,11 +549,11 @@ feat(generate): Codex와 Claude provider adapter 추가
 - Test only: 모든 Generate tests
 
 README에는 baseline API, stateless 재호출, 3단 승인, Codex·Claude 격리, raw 데이터 미보존,
-RunnerReport repair 비범위를 포함한다. changeset은 `@ohmymcp-hsu/generate` minor다.
+RunnerReport repair 비범위를 포함한다. changeset은 `@mcpeak/generate` minor다.
 
 ```md
 ---
-"@ohmymcp-hsu/generate": minor
+"@mcpeak/generate": minor
 ---
 
 결정론적 baseline, 반복 AI 검토·승인 상태와 격리된 Codex·Claude provider adapter를 추가합니다.
@@ -563,8 +563,8 @@ RunnerReport repair 비범위를 포함한다. changeset은 `@ohmymcp-hsu/genera
 
 ```bash
 pnpm exec vitest run packages/generate/tests
-pnpm --filter @ohmymcp-hsu/generate typecheck
-pnpm --filter @ohmymcp-hsu/generate build
+pnpm --filter @mcpeak/generate typecheck
+pnpm --filter @mcpeak/generate build
 pnpm exec biome check packages/generate docs/architecture.md .changeset/generate-ai-authoring.md
 pnpm test
 pnpm typecheck
@@ -598,7 +598,7 @@ G5 main review 뒤 읽기 전용 최종 reviewer가 설계 §§5~14와 passing t
 고정 usage:
 
 ```text
-사용법: ohmymcp generate --suite-id <id> --name <name> --out <suite.json> --command <executable> [--arg <value> ...] [--baseline-only] [--provider <codex|claude>] [--model <model>]
+사용법: mcpeak generate --suite-id <id> --name <name> --out <suite.json> --command <executable> [--arg <value> ...] [--baseline-only] [--provider <codex|claude>] [--model <model>]
 ```
 
 `--baseline-only`는 명시적 비대화형 승인으로 baseline을 저장한다. AI를 호출하지 않는다. interactive
@@ -617,7 +617,7 @@ mode에서 `--model`은 `--provider`와 함께만 허용한다. `--out`은 `.jso
 7. `기존 out 파일을 비대화형으로 덮어쓰지 않는다`
    - 기존 content 불변, temp·rename 0회
 8. `같은 디렉터리 temp write를 다시 읽어 검증한 뒤 rename한다`
-   - temp 이름 `.<basename>.ohmymcp.tmp`
+   - temp 이름 `.<basename>.mcpeak.tmp`
    - write→read→validate/fingerprint→rename 순서
 9. `temp 충돌과 재검증 실패는 목표 파일을 바꾸지 않는다`
 10. `저장 JSON은 고정 필드 순서, 2칸 indent와 마지막 newline을 쓴다`
@@ -634,8 +634,8 @@ GREEN:
 
 ```bash
 pnpm exec vitest run packages/cli/tests/generate-command.test.ts packages/cli/tests/index.test.ts packages/cli/tests/test-command.test.ts
-pnpm --filter ohmymcp typecheck
-pnpm --filter ohmymcp build
+pnpm --filter @mcpeak/cli typecheck
+pnpm --filter @mcpeak/cli build
 pnpm exec biome check packages/cli
 ```
 
@@ -708,8 +708,8 @@ GREEN:
 ```bash
 pnpm exec vitest run packages/cli/tests/generate-command.test.ts packages/cli/tests/index.test.ts
 pnpm exec vitest run packages/cli/tests
-pnpm --filter ohmymcp typecheck
-pnpm --filter ohmymcp build
+pnpm --filter @mcpeak/cli typecheck
+pnpm --filter @mcpeak/cli build
 pnpm exec biome check packages/cli
 ```
 
@@ -757,18 +757,18 @@ RED:
 
 ```bash
 pnpm exec vitest run packages/cli/tests/generate-integration.test.ts
-pnpm --filter ohmymcp build
-pnpm --filter ohmymcp test:e2e
+pnpm --filter @mcpeak/cli build
+pnpm --filter @mcpeak/cli test:e2e
 ```
 
 GREEN:
 
 ```bash
 pnpm exec vitest run packages/cli/tests/generate-integration.test.ts packages/cli/tests/cli-integration.test.ts
-pnpm --filter ohmymcp build
-pnpm --filter ohmymcp test:e2e
+pnpm --filter @mcpeak/cli build
+pnpm --filter @mcpeak/cli test:e2e
 pnpm exec vitest run packages/cli/tests
-pnpm --filter ohmymcp typecheck
+pnpm --filter @mcpeak/cli typecheck
 pnpm exec biome check packages/cli
 ```
 
@@ -789,11 +789,11 @@ test(cli): generate 실제 서버와 배포본 E2E 추가
 - Test only: 모든 CLI tests와 dist E2E
 
 README는 `--baseline-only`, interactive provider 선택, 요청별 전송 승인, 재호출, diff 선택, 편집 JSON
-불러오기, final fingerprint, 기존 `ohmymcp test` 연결과 baseline weather 실패 예시를 문서화한다.
+불러오기, final fingerprint, 기존 `mcpeak test` 연결과 baseline weather 실패 예시를 문서화한다.
 
 ```md
 ---
-"ohmymcp": minor
+"@mcpeak/cli": minor
 ---
 
 결정론적 baseline과 사용자 Codex·Claude를 이용한 반복 검토를 지원하는 generate 명령을 추가합니다.
@@ -803,9 +803,9 @@ README는 `--baseline-only`, interactive provider 선택, 요청별 전송 승�
 
 ```bash
 pnpm exec vitest run packages/cli/tests
-pnpm --filter ohmymcp typecheck
-pnpm --filter ohmymcp build
-pnpm --filter ohmymcp test:e2e
+pnpm --filter @mcpeak/cli typecheck
+pnpm --filter @mcpeak/cli build
+pnpm --filter @mcpeak/cli test:e2e
 pnpm exec biome check packages/cli .changeset/cli-ai-authoring.md
 pnpm test
 pnpm typecheck
@@ -846,7 +846,7 @@ claude --help
 - 동시에 provider process를 하나만 실행한다.
 
 Codex smoke와 Claude smoke는 각각 새 authoring session으로 실행한다. 한 provider 실패를 다른 provider로
-자동 대체하지 않는다. 승인 candidate JSON을 weather-server에 `ohmymcp test`로 실행해 두 cases가
+자동 대체하지 않는다. 승인 candidate JSON을 weather-server에 `mcpeak test`로 실행해 두 cases가
 passed인지 확인한다. raw prompt/stdout/stderr, session ID, 인증 정보는 report에 기록하지 않는다.
 
 ## 18. 메인 세션 리뷰와 보고 형식
@@ -914,7 +914,7 @@ git worktree add -b feat/generate-ai-authoring
 
 진입 뒤 pwd, HEAD==base_commit, branch, 세 문서 존재, clean status를 확인한다.
 pnpm install --frozen-lockfile를 실행하고 pnpm exec vitest --version,
-pnpm exec tsc --version, pnpm --filter @ohmymcp-hsu/generate typecheck가 실제 실행되는지 확인한다. 실패하면
+pnpm exec tsc --version, pnpm --filter @mcpeak/generate typecheck가 실제 실행되는지 확인한다. 실패하면
 agent를 spawn하지 말고 BLOCKED다.
 
 [2단계: 실행]
@@ -978,7 +978,7 @@ SHA를 기록하고 git worktree add -b feat/cli-ai-authoring
 
 진입 뒤 pwd, HEAD==base_commit, branch, 문서 존재, clean status를 확인한다.
 pnpm install --frozen-lockfile를 실행하고 pnpm build로 fresh Generate dist를 만든 뒤
-pnpm exec vitest --version, pnpm exec tsc --version, pnpm --filter ohmymcp typecheck가 실제 실행되는지
+pnpm exec vitest --version, pnpm exec tsc --version, pnpm --filter @mcpeak/cli typecheck가 실제 실행되는지
 확인한다. 실패하면 agent를 spawn하지 말고 BLOCKED다.
 
 [2단계: 실행]

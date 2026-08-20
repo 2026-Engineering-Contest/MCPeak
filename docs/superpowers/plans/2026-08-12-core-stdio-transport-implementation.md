@@ -4,7 +4,7 @@
 - 작성일: 2026-08-12
 - 설계 기준: [Core stdio transport 및 프로세스 수명주기 설계](../specs/2026-08-12-core-stdio-transport-design.md)
 - 결정 기준: [ADR-0001](../../adr/0001-transport-strategy.md)
-- 구현 대상: `@ohmymcp-hsu/core`
+- 구현 대상: `@mcpeak/core`
 
 ## 1. 목표
 
@@ -16,8 +16,8 @@ process와 stream 수명주기를 소유하며, 정상 종료와 pending `listTo
 
 ```text
 pnpm exec vitest run packages/core/tests
-pnpm --filter @ohmymcp-hsu/core typecheck
-pnpm --filter @ohmymcp-hsu/core build
+pnpm --filter @mcpeak/core typecheck
+pnpm --filter @mcpeak/core build
 pnpm exec biome check packages/core
 pnpm test
 pnpm typecheck
@@ -418,8 +418,8 @@ pnpm exec vitest run packages/core/tests/options.test.ts packages/core/tests/dia
 
 ```bash
 pnpm exec vitest run packages/core/tests/options.test.ts packages/core/tests/diagnostics.test.ts packages/core/tests/errors.test.ts packages/core/tests/index.test.ts
-pnpm --filter @ohmymcp-hsu/core typecheck
-pnpm --filter @ohmymcp-hsu/core build
+pnpm --filter @mcpeak/core typecheck
+pnpm --filter @mcpeak/core build
 pnpm exec biome check packages/core
 ```
 
@@ -492,8 +492,8 @@ pnpm exec vitest run packages/core/tests/lifecycle.test.ts
 ```bash
 pnpm exec vitest run packages/core/tests/lifecycle.test.ts packages/core/tests/diagnostics.test.ts packages/core/tests/errors.test.ts
 pnpm exec vitest run packages/core/tests
-pnpm --filter @ohmymcp-hsu/core typecheck
-pnpm --filter @ohmymcp-hsu/core build
+pnpm --filter @mcpeak/core typecheck
+pnpm --filter @mcpeak/core build
 pnpm exec biome check packages/core
 ```
 
@@ -558,7 +558,7 @@ pnpm exec vitest run packages/core/tests/stdio-integration.test.ts
 
 ### 구현 규칙
 
-- SDK `Client` identity는 고정 `{ name: "ohmymcp", version: "0.0.0" }`을 사용하고 runtime 시간이나
+- SDK `Client` identity는 고정 `{ name: "mcpeak", version: "0.0.0" }`을 사용하고 runtime 시간이나
   machine 정보를 넣지 않는다.
 - SDK `Client.connect(transport, { timeout: connectTimeoutMs })`가 resolve된 뒤 connection을 반환한다.
 - connect 실패 catch는 SDK의 내부 close 완료를 기다리기 전에 controlled transport force-close를
@@ -577,8 +577,8 @@ pnpm exec vitest run packages/core/tests/stdio-integration.test.ts
 pnpm exec vitest run packages/core/tests/client.test.ts packages/core/tests/index.test.ts
 pnpm exec vitest run packages/core/tests/stdio-integration.test.ts
 pnpm exec vitest run packages/core/tests
-pnpm --filter @ohmymcp-hsu/core typecheck
-pnpm --filter @ohmymcp-hsu/core build
+pnpm --filter @mcpeak/core typecheck
+pnpm --filter @mcpeak/core build
 pnpm exec biome check packages/core
 ```
 
@@ -610,14 +610,14 @@ README에 다음을 실제 공개 타입과 일치하게 기록한다.
 - Windows `.cmd`와 `.bat`는 첫 구현에서 거절하며 executable과 script args 조합을 써야 한다는 제한
 - Core는 Runner를 import하지 않고 CLI가 조립한다는 경계
 
-changeset은 `@ohmymcp-hsu/core` minor이며 설명은 한국어로 작성한다.
+changeset은 `@mcpeak/core` minor이며 설명은 한국어로 작성한다.
 
 ### 검증
 
 ```bash
 pnpm exec vitest run packages/core/tests
-pnpm --filter @ohmymcp-hsu/core typecheck
-pnpm --filter @ohmymcp-hsu/core build
+pnpm --filter @mcpeak/core typecheck
+pnpm --filter @mcpeak/core build
 pnpm exec biome check packages/core
 pnpm test
 pnpm typecheck
@@ -766,8 +766,8 @@ pwd가 기록한 core_worktree와 다르거나 HEAD가 base_commit과 다르거�
 
   pnpm install --frozen-lockfile
   pnpm exec vitest run packages/core/tests/index.test.ts
-  pnpm --filter @ohmymcp-hsu/core typecheck
-  pnpm --filter @ohmymcp-hsu/core build
+  pnpm --filter @mcpeak/core typecheck
+  pnpm --filter @mcpeak/core build
 
 의존성 설치, 테스트 수집, typecheck, build 중 하나라도 실패하면 agent를 spawn하지 말고 BLOCKED로
 끝내라. 출력에 실제 테스트 파일과 Core package가 나타나는지 확인해라.
@@ -833,7 +833,7 @@ await spawn_agent({
     "허용 Files: packages/core/src/errors.ts, packages/core/src/options.ts, packages/core/src/diagnostics.ts, packages/core/src/index.ts, packages/core/tests/options.test.ts, packages/core/tests/diagnostics.test.ts, packages/core/tests/errors.test.ts, packages/core/tests/index.test.ts, .agents/reports/task-1-core-contract.md.",
     "금지: packages/core/src/types.ts, dependency와 lockfile, 다른 package, root 설정 수정, background, commit, merge, push, 하위 agent spawn, 다른 변경 되돌리기.",
     "테스트를 먼저 작성한다. option 기본값은 connect 10000ms, message 10MiB, stderr 64KiB다. 빈 command, args/env/cwd 타입, unknown field, 각 수치의 0/NaN/±Infinity/음수/소수/상한+1과 win32의 .cmd/.bat command를 process 시작 전에 거절하고 양 수치 경계는 허용한다. 원본 변경에도 immutable snapshot이 유지돼야 한다. stderr는 byte-tail과 truncation, partial UTF-8 replacement, 새 frozen snapshot을 검증한다. 모든 McpClientError code의 고정 message/hint/phase와 process, transport phase, stderr/cause/config sentinel이 없는 safe toJSON을 검증한다. 기존 connect stub과 동결 타입은 유지한다.",
-    "RED/GREEN: pnpm exec vitest run packages/core/tests/options.test.ts packages/core/tests/diagnostics.test.ts packages/core/tests/errors.test.ts packages/core/tests/index.test.ts. 이후 pnpm --filter @ohmymcp-hsu/core typecheck, build와 pnpm exec biome check packages/core를 실행하고 수집 수를 기록한다.",
+    "RED/GREEN: pnpm exec vitest run packages/core/tests/options.test.ts packages/core/tests/diagnostics.test.ts packages/core/tests/errors.test.ts packages/core/tests/index.test.ts. 이후 pnpm --filter @mcpeak/core typecheck, build와 pnpm exec biome check packages/core를 실행하고 수집 수를 기록한다.",
     "보고서와 최종 응답은 READY_FOR_REVIEW 또는 BLOCKED, 변경 파일, RED, GREEN, 남은 위험 순서다.",
   ].join("\n").replaceAll("${coreWorktree}", coreWorktree),
 });
@@ -904,7 +904,7 @@ await spawn_agent({
     "첫 명령으로 저장소 루트와 Worktree를 확인하고 HEAD가 승인된 Task 3과 통합 대장 commit을 포함하는지 확인한다. AGENTS.md, .agents/skills/execution-conventions/SKILL.md, docs/conventions/execution.md, ADR, 설계, 계획과 실제 public types를 끝까지 읽는다.",
     "허용 Files: packages/core/README.md, packages/core/package.json의 description, .changeset/core-stdio-transport.md, .agents/reports/task-4-core-docs.md.",
     "금지: package dependency와 script, lockfile, source와 tests, 다른 package와 root README, repository-wide write format, background, commit, merge, push, 하위 agent spawn, 다른 변경 되돌리기.",
-    "README에 connect와 connectStdio 예제, explicit env와 안전한 기본 상속, timeout과 크기 상한, bounded untrusted stderr, stdio-only 범위, Windows executable 제한, CLI composition 경계를 실제 export와 일치하게 쓴다. @ohmymcp-hsu/core minor changeset을 한국어로 작성한다. Core 표적 테스트/typecheck/build/Biome 뒤 전체 test/typecheck/lint/build와 changeset status를 실행하고 각 검사 대상 수, frozen types/SDK/lockfile 무변경, 잔존 process 없음을 기록한다.",
+    "README에 connect와 connectStdio 예제, explicit env와 안전한 기본 상속, timeout과 크기 상한, bounded untrusted stderr, stdio-only 범위, Windows executable 제한, CLI composition 경계를 실제 export와 일치하게 쓴다. @mcpeak/core minor changeset을 한국어로 작성한다. Core 표적 테스트/typecheck/build/Biome 뒤 전체 test/typecheck/lint/build와 changeset status를 실행하고 각 검사 대상 수, frozen types/SDK/lockfile 무변경, 잔존 process 없음을 기록한다.",
     "최종 응답은 READY_FOR_REVIEW 또는 BLOCKED 형식이다.",
   ].join("\n").replaceAll("${coreWorktree}", coreWorktree),
 });

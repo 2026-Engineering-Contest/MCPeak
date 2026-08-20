@@ -1,4 +1,4 @@
-import type { SpecFindingCode } from "@ohmymcp-hsu/runner";
+import type { SpecFindingCode } from "@mcpeak/runner";
 
 /**
  * finding 이 어느 블록에 들어가는지. `skipped` 는 위반이 아니다. 서버 스키마를 우리가 못 읽은

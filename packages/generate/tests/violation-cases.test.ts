@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
-import type { ToolDef } from "@ohmymcp-hsu/core";
-import type { TestCaseSpec } from "@ohmymcp-hsu/runner";
-import { matchCoveredAxes } from "@ohmymcp-hsu/runner";
+import type { ToolDef } from "@mcpeak/core";
+import type { TestCaseSpec } from "@mcpeak/runner";
+import { matchCoveredAxes } from "@mcpeak/runner";
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../src/schema.js";
 import { buildViolationCases } from "../src/violation-cases.js";
@@ -150,7 +150,7 @@ describe("buildViolationCases", () => {
     ]);
   });
 
-  it("문자열 enum 의 위반값은 __ohmymcp_invalid_enum__ 이다", () => {
+  it("문자열 enum 의 위반값은 __mcpeak_invalid_enum__ 이다", () => {
     const cases = buildViolationCases({
       tool: tool("t", { type: "object", properties: { u: { type: "string", enum: ["c", "f"] } } }),
       happyInput: { u: "c" },
@@ -158,7 +158,7 @@ describe("buildViolationCases", () => {
     });
     expect(cases.map((item) => [item.id, item.operation.input])).toEqual([
       ["t-type-u", { u: 0 }],
-      ["t-enum-u", { u: "__ohmymcp_invalid_enum__" }],
+      ["t-enum-u", { u: "__mcpeak_invalid_enum__" }],
     ]);
     expect(cases[1]?.name).toBe("t가 'u' 의 선언되지 않은 값을 거절한다");
   });
@@ -167,12 +167,12 @@ describe("buildViolationCases", () => {
     const cases = buildViolationCases({
       tool: tool("t", {
         type: "object",
-        properties: { u: { type: "string", enum: ["__ohmymcp_invalid_enum__"] } },
+        properties: { u: { type: "string", enum: ["__mcpeak_invalid_enum__"] } },
       }),
-      happyInput: { u: "__ohmymcp_invalid_enum__" },
+      happyInput: { u: "__mcpeak_invalid_enum__" },
       baseName: "t",
     });
-    expect(cases[1]?.operation.input).toEqual({ u: "__ohmymcp_invalid_enum___2" });
+    expect(cases[1]?.operation.input).toEqual({ u: "__mcpeak_invalid_enum___2" });
   });
 
   it("숫자 enum 의 위반값은 최댓값 + 1 이다", () => {
@@ -193,7 +193,7 @@ describe("buildViolationCases", () => {
       happyInput: { n: Number.MAX_SAFE_INTEGER },
       baseName: "t",
     });
-    expect(cases[1]?.operation.input).toEqual({ n: "__ohmymcp_invalid_enum__" });
+    expect(cases[1]?.operation.input).toEqual({ n: "__mcpeak_invalid_enum__" });
   });
 
   it("type 과 enum 이 함께 있는 필드의 두 케이스 입력이 서로 다르다", () => {

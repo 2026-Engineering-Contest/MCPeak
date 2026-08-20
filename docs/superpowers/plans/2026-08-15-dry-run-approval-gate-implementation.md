@@ -674,7 +674,7 @@ test 보고서
 
 **E2E**
 
-`pnpm build && pnpm --filter ohmymcp test:e2e` 로만 도는 파일이다. `pnpm test` 의 수집 대상이 아니라서 **로컬 전체 검증이
+`pnpm build && pnpm --filter @mcpeak/cli test:e2e` 로만 도는 파일이다. `pnpm test` 의 수집 대상이 아니라서 **로컬 전체 검증이
 녹색인데 CI 의 `build` job 이 빨간불**이 된다. 계약 축 커버리지 작업에서 실제로 밟은 함정이다.
 
 ```
@@ -684,7 +684,7 @@ test 보고서
 
 `--no-dry-run` 대화형 경로는 TTY 가 필요해 E2E 로 안 덮는다. T6 의 인메모리 테스트가 덮는다.
 
-**명령**: `pnpm test`, `pnpm build && pnpm --filter ohmymcp test:e2e`, `pnpm typecheck --force`, `pnpm lint`
+**명령**: `pnpm test`, `pnpm build && pnpm --filter @mcpeak/cli test:e2e`, `pnpm typecheck --force`, `pnpm lint`
 **보고서**: `docs/reports/task-t8-dry-run-gate.md`
 **커밋**: `docs(cli): 시험 실행 옵션 도움말과 E2E 기대값을 갱신한다`
 
@@ -699,12 +699,12 @@ test 보고서
 ```
 [1단계: 작업 공간 만들기] 다른 무엇보다 먼저 이것부터 해라.
 
-  git worktree add /Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/ohmymcp-dryrun-schema -b feat/dry-run-approval-schema main
+  git worktree add /Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/mcpeak-dryrun-schema -b feat/dry-run-approval-schema main
 
 를 실행한 뒤 그 경로로 세션을 옮겨라. 옮긴 다음 아래를 확인하고, 하나라도 어긋나면 중단하고
 BLOCKED 로 보고해라.
 
-  - pwd 가 /Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/ohmymcp-dryrun-schema 인지
+  - pwd 가 /Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/mcpeak-dryrun-schema 인지
   - git log --oneline -1 이 루트의 main HEAD 와 같은지
   - docs/superpowers/specs/2026-08-15-dry-run-approval-gate-design.md 가 있는지
   - docs/superpowers/plans/2026-08-15-dry-run-approval-gate-implementation.md 가 있는지
@@ -763,12 +763,12 @@ typecheck 는 Cached: 0 cached 인지 확인해라.
 ```
 [1단계: 작업 공간 만들기] 다른 무엇보다 먼저 이것부터 해라.
 
-  git worktree add /Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/ohmymcp-dryrun-modules -b feat/dry-run-approval-modules main
+  git worktree add /Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/mcpeak-dryrun-modules -b feat/dry-run-approval-modules main
 
 를 실행한 뒤 그 경로로 세션을 옮겨라. 옮긴 다음 아래를 확인하고, 하나라도 어긋나면 중단하고
 BLOCKED 로 보고해라.
 
-  - pwd 가 /Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/ohmymcp-dryrun-modules 인지
+  - pwd 가 /Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/mcpeak-dryrun-modules 인지
   - git log --oneline -1 이 루트의 main HEAD 와 같은지
   - docs/superpowers/specs/2026-08-15-dry-run-approval-gate-design.md 가 있는지
   - docs/superpowers/plans/2026-08-15-dry-run-approval-gate-implementation.md 가 있는지
@@ -829,12 +829,12 @@ typecheck 는 Cached: 0 cached 인지 확인해라.
 ```
 [1단계: 작업 공간 만들기] 다른 무엇보다 먼저 이것부터 해라.
 
-  git worktree add /Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/ohmymcp-dryrun-wiring -b feat/dry-run-approval-wiring main
+  git worktree add /Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/mcpeak-dryrun-wiring -b feat/dry-run-approval-wiring main
 
 를 실행한 뒤 그 경로로 세션을 옮겨라. 옮긴 다음 아래를 확인하고, 하나라도 어긋나면 중단하고
 BLOCKED 로 보고해라.
 
-  - pwd 가 /Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/ohmymcp-dryrun-wiring 인지
+  - pwd 가 /Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/mcpeak-dryrun-wiring 인지
   - git log --oneline -1 이 루트의 main HEAD 와 같은지
   - packages/cli/src/reset-hook.ts, dry-run.ts, dry-run-review.ts, cassette-wiring.ts 가
     모두 있는지 (없으면 웨이브 1 이 안 들어온 것이다. BLOCKED 로 보고해라)
@@ -866,7 +866,7 @@ T8 허용 Files:
   1. 연결 수명이 바뀐다. 대화형 경로에서 listTools 직후 close 를 하지 말고 검토가 끝난 뒤
      finally 에서 닫아라. --baseline-only 경로는 지금 그대로 둔다.
   2. cassetteWiring.flush() 는 내부에서 inner.close() 까지 부른다. 저장이 끝난 뒤에만 불러라.
-  3. dist-cli-e2e.mjs 는 pnpm test 가 아니라 pnpm build && pnpm --filter ohmymcp test:e2e 로 돈다. 출력 형태를 바꿨으므로
+  3. dist-cli-e2e.mjs 는 pnpm test 가 아니라 pnpm build && pnpm --filter @mcpeak/cli test:e2e 로 돈다. 출력 형태를 바꿨으므로
      이 파일 기대값을 반드시 함께 고쳐라. 안 고치면 로컬은 녹색인데 CI 의 build job 이
      빨간불이 된다.
 
@@ -884,7 +884,7 @@ dry-run.ts, dry-run-review.ts, cassette-wiring.ts 도 고치지 마라. 계약�
 이 터미널은 직렬 전용이다. T8 의 E2E 가 실제 서버 프로세스를 띄우므로 다른 터미널과 동시에
 돌리지 않는다.
 
-검증: pnpm test, pnpm build && pnpm --filter ohmymcp test:e2e, pnpm typecheck --force, pnpm lint 를 모두 돌리고 출력을
+검증: pnpm test, pnpm build && pnpm --filter @mcpeak/cli test:e2e, pnpm typecheck --force, pnpm lint 를 모두 돌리고 출력을
 보고서에 붙여라. typecheck 는 Cached: 0 cached 인지 확인해라.
 
 보고서: docs/reports/task-t6-dry-run-gate.md 와 docs/reports/task-t8-dry-run-gate.md 두 개를
@@ -910,7 +910,7 @@ dry-run.ts, dry-run-review.ts, cassette-wiring.ts 도 고치지 마라. 계약�
 
 설계서 §2 의 완료 조건 전부에 더해 아래를 확인한다.
 
-- `main` 에서 `pnpm test`, `pnpm build && pnpm --filter ohmymcp test:e2e`, `pnpm typecheck --force`, `pnpm lint` 가 통과한다.
+- `main` 에서 `pnpm test`, `pnpm build && pnpm --filter @mcpeak/cli test:e2e`, `pnpm typecheck --force`, `pnpm lint` 가 통과한다.
 - `docs/task-integration-ledger.tsv` 에 T1~T8 여덟 줄이 있고 전부 `main` 의 조상이다.
 - `docs/adr/README.md` 에 T0 의 ADR 이 색인돼 있다.
 - 상태 있는 예제 서버 부재로 인한 검증 공백(설계서 §13.7)이 후속 작업으로 등록돼 있다.
@@ -925,4 +925,4 @@ dry-run.ts, dry-run-review.ts, cassette-wiring.ts 도 고치지 마라. 계약�
 - **ADR 번호 충돌.** 병렬 브랜치가 같은 번호를 잡는 사고가 저장소에서 네 번 났다. T0 을
   메인 세션이 먼저 끝내고 머지한 뒤 웨이브 1 을 연다.
 - **E2E 누락.** 출력 형태를 바꾸는 작업에서 `pnpm test` 밖의 검증 스크립트를 빠뜨리는 실수가
-  직전 작업에서 났다. T8 에 명시했지만 통합 게이트에서 `pnpm build && pnpm --filter ohmymcp test:e2e` 를 다시 돌려 확인한다.
+  직전 작업에서 났다. T8 에 명시했지만 통합 게이트에서 `pnpm build && pnpm --filter @mcpeak/cli test:e2e` 를 다시 돌려 확인한다.

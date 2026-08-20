@@ -1,19 +1,19 @@
 {
-  "name": "@ohmymcp-hsu/mock",
-  "version": "0.2.0",
+  "name": "@mcpeak/mock",
+  "version": "0.3.0",
   "private": false,
   "type": "module",
   "description": "목 MCP 서버 (Streamable HTTP · stdio) · 응답 주입",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/2026-Engineering-Contest/OhMyMCP.git",
+    "url": "git+https://github.com/2026-Engineering-Contest/MCPeak.git",
     "directory": "packages/mock"
   },
-  "homepage": "https://github.com/2026-Engineering-Contest/OhMyMCP#readme",
-  "bugs": "https://github.com/2026-Engineering-Contest/OhMyMCP/issues",
+  "homepage": "https://github.com/2026-Engineering-Contest/MCPeak#readme",
+  "bugs": "https://github.com/2026-Engineering-Contest/MCPeak/issues",
   "bin": {
-    "ohmymcp-mock": "./dist/stdio.mjs"
+    "mcpeak-mock": "./dist/stdio.mjs"
   },
   "publishConfig": {
     "access": "public"
@@ -41,7 +41,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@ohmymcp-hsu/core": "workspace:*",
+    "@mcpeak/core": "workspace:*",
     "@modelcontextprotocol/sdk": "catalog:"
   }
 }

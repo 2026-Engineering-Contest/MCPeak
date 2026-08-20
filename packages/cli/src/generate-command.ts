@@ -1,7 +1,7 @@
 import { access, link, open, readFile, unlink } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { createInterface } from "node:readline/promises";
-import type { McpStdioConnection, ToolDef } from "@ohmymcp-hsu/core";
+import type { McpStdioConnection, ToolDef } from "@mcpeak/core";
 import type {
   AuthoringDiffPreview,
   AuthoringExecutionSnapshot,
@@ -20,8 +20,8 @@ import type {
   SkippedTool,
   TestCaseOrigin,
   ToolCoverage,
-} from "@ohmymcp-hsu/generate";
-import type { Cassette, CassetteMode } from "@ohmymcp-hsu/record";
+} from "@mcpeak/generate";
+import type { Cassette, CassetteMode } from "@mcpeak/record";
 import type {
   CallToolCaseSpec,
   ContractAxisKind,
@@ -32,8 +32,8 @@ import type {
   SuiteValidationResult,
   TestCaseSpec,
   TestSuiteSpec,
-} from "@ohmymcp-hsu/runner";
-import { describeSpecFinding, suiteFingerprint } from "@ohmymcp-hsu/runner";
+} from "@mcpeak/runner";
+import { describeSpecFinding, suiteFingerprint } from "@mcpeak/runner";
 import { wireCassette } from "./cassette-wiring.js";
 import type { DryRunCaseOutcome, DryRunResult } from "./dry-run.js";
 import { runDryRun } from "./dry-run.js";
@@ -120,36 +120,36 @@ export interface GenerateCommandDependencies {
   rejectionProviders?: Partial<
     Record<
       "codex" | "claude",
-      (model: string) => import("@ohmymcp-hsu/generate").RejectionDiagnosisProvider | undefined
+      (model: string) => import("@mcpeak/generate").RejectionDiagnosisProvider | undefined
     >
   >;
-  prepareRejectionDiagnosisRequests?: typeof import("@ohmymcp-hsu/generate").prepareRejectionDiagnosisRequests;
-  dispatchRejectionDiagnosis?: typeof import("@ohmymcp-hsu/generate").dispatchRejectionDiagnosis;
-  prepareAuthoringRequest?: typeof import("@ohmymcp-hsu/generate").prepareAuthoringRequest;
-  dispatchAuthoringRequest?: typeof import("@ohmymcp-hsu/generate").dispatchAuthoringRequest;
-  createAuthoringDiff?: typeof import("@ohmymcp-hsu/generate").createAuthoringDiff;
-  applyAuthoringChanges?: typeof import("@ohmymcp-hsu/generate").applyAuthoringChanges;
-  reviewLocalAuthoringCandidate?: typeof import("@ohmymcp-hsu/generate").reviewLocalAuthoringCandidate;
-  computeCoverage?: typeof import("@ohmymcp-hsu/generate").computeCoverage;
+  prepareRejectionDiagnosisRequests?: typeof import("@mcpeak/generate").prepareRejectionDiagnosisRequests;
+  dispatchRejectionDiagnosis?: typeof import("@mcpeak/generate").dispatchRejectionDiagnosis;
+  prepareAuthoringRequest?: typeof import("@mcpeak/generate").prepareAuthoringRequest;
+  dispatchAuthoringRequest?: typeof import("@mcpeak/generate").dispatchAuthoringRequest;
+  createAuthoringDiff?: typeof import("@mcpeak/generate").createAuthoringDiff;
+  applyAuthoringChanges?: typeof import("@mcpeak/generate").applyAuthoringChanges;
+  reviewLocalAuthoringCandidate?: typeof import("@mcpeak/generate").reviewLocalAuthoringCandidate;
+  computeCoverage?: typeof import("@mcpeak/generate").computeCoverage;
   /**
    * AI 사전보완 통로. 넷 다 주입돼야 사전보완이 돈다. 하나라도 없으면 건너뛴다.
    * 위 authoring 통로와 같은 이유로 값 import 가 아니라 주입이다.
    */
-  preparePreFillRequest?: typeof import("@ohmymcp-hsu/generate").preparePreFillRequest;
-  previewPreFillRequest?: typeof import("@ohmymcp-hsu/generate").previewPreFillRequest;
-  dispatchPreFillRequest?: typeof import("@ohmymcp-hsu/generate").dispatchPreFillRequest;
+  preparePreFillRequest?: typeof import("@mcpeak/generate").preparePreFillRequest;
+  previewPreFillRequest?: typeof import("@mcpeak/generate").previewPreFillRequest;
+  dispatchPreFillRequest?: typeof import("@mcpeak/generate").dispatchPreFillRequest;
   preFillProviders?: Partial<
     Record<"codex" | "claude", (model: string) => PreFillProvider | undefined>
   >;
   /**
    * `instanceof` 용 클래스. 값 import 가 아니라 주입인 것이 요점이다.
    *
-   * 이 파일은 `@ohmymcp-hsu/generate` 에서 타입만 가져온다(위 `import type`). 클래스를 값으로
+   * 이 파일은 `@mcpeak/generate` 에서 타입만 가져온다(위 `import type`). 클래스를 값으로
    * 가져오면 `index.ts` 가 정적으로 끌어와 `test` 경로까지 `generate` 를 로드한다.
    * `typeof import(...)` 는 타입 위치라 런타임 import 가 생기지 않고, 주입하면 클래스
    * 동일성도 보장된다. 위 6개 필드가 같은 방식이다.
    */
-  GenerateTestsError?: typeof import("@ohmymcp-hsu/generate").GenerateTestsError;
+  GenerateTestsError?: typeof import("@mcpeak/generate").GenerateTestsError;
   /**
    * 카세트 파일 입출력. 주입점을 여기 하나만 두는 이유는 시험 실행 경로에서 파일시스템을
    * 만지는 곳이 이것뿐이기 때문이다. 나머지(`runDryRun`·`reviewDryRun`)는 주입한 client 와
@@ -168,7 +168,7 @@ export interface ReviewIO {
   readonly interactive: boolean;
   close?(): void;
 }
-type TestAuthoringProvider = import("@ohmymcp-hsu/generate").TestAuthoringProvider;
+type TestAuthoringProvider = import("@mcpeak/generate").TestAuthoringProvider;
 class UsageError extends Error {}
 /**
  * 출력 경로에 이미 파일이 있어 저장을 멈춘 경우. 다른 I/O 실패와 사용자 조치가 다르므로
@@ -442,7 +442,7 @@ function temporaryPath(outPath: string): string {
   temporarySequence += 1;
   return join(
     dirname(outPath),
-    `.${basename(outPath)}.ohmymcp.${process.pid}.${temporarySequence}.tmp`,
+    `.${basename(outPath)}.mcpeak.${process.pid}.${temporarySequence}.tmp`,
   );
 }
 async function saveSuite(
@@ -961,6 +961,14 @@ async function askRejectionDiagnosis(options: {
     io.write(
       `  응답 본문이 없는 ${skipped}건은 진단에서 제외합니다. AI 에게 줄 근거가 없습니다.\n`,
     );
+  // 값 치환을 적용하지 않는다는 사실을 **묻기 전에** 적는다(ADR-0049). 위 목록이 나가는 본문을
+  // 그대로 보여주고 있으므로, 사용자가 그것을 읽고 판단할 재료가 이 한 줄로 완성된다.
+  // 문장은 `repair` 의 stderr 안내(`repair-render.ts`)와 같은 계열로 맞춘다. 두 통로가 다른
+  // 문장을 쓰면 한쪽만 고쳐지고, 어느 쪽이 최신인지 알 방법이 없다.
+  io.write(
+    "  ※ 응답 본문은 서버가 자유롭게 쓰는 텍스트라 경로·토큰·데이터가 섞일 수 있습니다.\n" +
+      "    값 치환을 적용하지 않습니다.\n",
+  );
   if (!(await io.confirm(`  나머지 ${cases.length}건의 진단을 AI 에게 요청할까요?`))) return;
 
   // `prepare` 는 요청이 상한(256KB)을 넘으면 던진다. **인자 자리에서 부르면 안 된다** —
@@ -1806,7 +1814,7 @@ function reportCoverageSafely(
   } catch {
     deps.writeStderr(
       "경고 [GENERATE_COVERAGE_UNAVAILABLE]: 명세는 저장했지만 커버리지를 계산하지 못했습니다.\n" +
-        "해결: 저장된 명세는 그대로 `ohmymcp test` 로 쓸 수 있습니다. 커버리지만 다시 보려면 다른 --out 경로로 generate 를 실행하세요.\n",
+        "해결: 저장된 명세는 그대로 `mcpeak test` 로 쓸 수 있습니다. 커버리지만 다시 보려면 다른 --out 경로로 generate 를 실행하세요.\n",
     );
   }
 }

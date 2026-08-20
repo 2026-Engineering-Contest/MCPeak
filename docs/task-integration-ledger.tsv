@@ -111,3 +111,11 @@ T1-T2-dashboard-server	1d6a2f1	2026-08-19
 T3-T4-dashboard-web	fdeb2db	2026-08-19
 T5-dashboard-e2e-adr	9d9b4b2	2026-08-19
 T6-dashboard-argv-fix	eafad9d	2026-08-19
+U0-dashboard-ui	4dc5a0a	2026-08-19
+U1-dashboard-ui	51d3289	2026-08-19
+U2-dashboard-ui	3eb6d81	2026-08-19
+U3-dashboard-ui	f8791de	2026-08-19
+U4-dashboard-ui	0384e9b	2026-08-19
+U5a-dashboard-ui-lint	89c771f	2026-08-19
+U5b-dashboard-ui-argv-fix	ff450f4	2026-08-19
+U5-dashboard-ui-integration	72fd93f	2026-08-19

@@ -85,7 +85,7 @@ packages/runner/src/index.ts                 (export 추가만)
 
 **산출 계약.** `SpecFinding` · `SpecFindingCode` · `MAX_FINDINGS_PER_CASE` ·
 `SpecFindingsResult` · `describeSpecFinding` · `InputContractOptions` ·
-`checkInputContract`(스텁) · `checkAssertionSubstance`(스텁) 이 `@ohmymcp-hsu/runner` 에서
+`checkInputContract`(스텁) · `checkAssertionSubstance`(스텁) 이 `@mcpeak/runner` 에서
 import 가능하다.
 
 **테스트.** 설계 문서 §10.5 전량.
@@ -276,10 +276,10 @@ docs/superpowers/plans/2026-08-14-input-contract-check-implementation.md
 
 ```
 [1단계: 작업 공간 만들기] 다른 무엇보다 먼저 이것부터 해라.
-  git worktree add .claude/worktrees/ohmymcp-t1-input-contract -b feat/runner-spec-findings main
+  git worktree add .claude/worktrees/mcpeak-t1-input-contract -b feat/runner-spec-findings main
 를 실행한 뒤 그 경로로 세션을 옮겨라.
 진입 후 아래를 확인하고, 하나라도 어긋나면 중단하고 status: BLOCKED 로 보고해라:
-  - pwd 가 .claude/worktrees/ohmymcp-t1-input-contract 로 끝나는지
+  - pwd 가 .claude/worktrees/mcpeak-t1-input-contract 로 끝나는지
   - git log --oneline -1 이 루트의 main HEAD 와 같은지
   - docs/superpowers/specs/2026-08-14-input-contract-check-design.md 가 존재하는지
   - docs/superpowers/plans/2026-08-14-input-contract-check-implementation.md 가 존재하는지
@@ -332,10 +332,10 @@ describeSpecFinding 의 문장은 설계 문서 §7 과 한 글자도 다르면 
 
 ```
 [1단계: 작업 공간 만들기] 다른 무엇보다 먼저 이것부터 해라.
-  git worktree add .claude/worktrees/ohmymcp-t2-input-contract -b feat/runner-input-contract main
+  git worktree add .claude/worktrees/mcpeak-t2-input-contract -b feat/runner-input-contract main
 를 실행한 뒤 그 경로로 세션을 옮겨라.
 진입 후 아래를 확인하고, 하나라도 어긋나면 중단하고 status: BLOCKED 로 보고해라:
-  - pwd 가 .claude/worktrees/ohmymcp-t2-input-contract 로 끝나는지
+  - pwd 가 .claude/worktrees/mcpeak-t2-input-contract 로 끝나는지
   - git log --oneline -1 이 루트의 main HEAD 와 같은지
   - docs/superpowers/specs/2026-08-14-input-contract-check-design.md 가 존재하는지
   - packages/runner/src/spec-findings.ts 가 존재하는지 (T1 산출물이다. 없으면 BLOCKED)
@@ -398,10 +398,10 @@ JSON.stringify 결과가 같은지 보는 테스트가 있어야 한다.
 
 ```
 [1단계: 작업 공간 만들기] 다른 무엇보다 먼저 이것부터 해라.
-  git worktree add .claude/worktrees/ohmymcp-t3-input-contract -b feat/runner-assertion-substance main
+  git worktree add .claude/worktrees/mcpeak-t3-input-contract -b feat/runner-assertion-substance main
 를 실행한 뒤 그 경로로 세션을 옮겨라.
 진입 후 아래를 확인하고, 하나라도 어긋나면 중단하고 status: BLOCKED 로 보고해라:
-  - pwd 가 .claude/worktrees/ohmymcp-t3-input-contract 로 끝나는지
+  - pwd 가 .claude/worktrees/mcpeak-t3-input-contract 로 끝나는지
   - git log --oneline -1 이 루트의 main HEAD 와 같은지
   - docs/superpowers/specs/2026-08-14-input-contract-check-design.md 가 존재하는지
   - packages/runner/src/spec-findings.ts 가 존재하는지 (T1 산출물이다. 없으면 BLOCKED)
@@ -464,10 +464,10 @@ status: BLOCKED 로 보고하고 멈춰라.
 
 ```
 [1단계: 작업 공간 만들기] 다른 무엇보다 먼저 이것부터 해라.
-  git worktree add .claude/worktrees/ohmymcp-t4-input-contract -b docs/adr-0015-input-schema-subset main
+  git worktree add .claude/worktrees/mcpeak-t4-input-contract -b docs/adr-0015-input-schema-subset main
 를 실행한 뒤 그 경로로 세션을 옮겨라.
 진입 후 아래를 확인하고, 하나라도 어긋나면 중단하고 status: BLOCKED 로 보고해라:
-  - pwd 가 .claude/worktrees/ohmymcp-t4-input-contract 로 끝나는지
+  - pwd 가 .claude/worktrees/mcpeak-t4-input-contract 로 끝나는지
   - git log --oneline -1 이 루트의 main HEAD 와 같은지
   - docs/superpowers/specs/2026-08-14-input-contract-check-design.md 가 존재하는지
   - docs/adr/0010-응답-스키마-부분집합-경계.md 가 존재하는지
@@ -543,7 +543,7 @@ T4-input-contract	<sha>	2026-08-14
 
 | 거짓 신호 | 이 작업에서의 모습 | 진실 기준 |
 |---|---|---|
-| 테스트 명령이 즉시 exit 0 | `pnpm --filter @ohmymcp-hsu/runner test` 는 **존재하지 않는 스크립트**다. 패키지 `package.json` 에 `test` 가 없어 아무것도 안 하고 성공한다 | 출력에 `Test Files ... passed` 줄이 있는지 확인. 표적 검증은 `pnpm test packages/runner` |
+| 테스트 명령이 즉시 exit 0 | `pnpm --filter @mcpeak/runner test` 는 **존재하지 않는 스크립트**다. 패키지 `package.json` 에 `test` 가 없어 아무것도 안 하고 성공한다 | 출력에 `Test Files ... passed` 줄이 있는지 확인. 표적 검증은 `pnpm test packages/runner` |
 | 타입체크 · 린트 녹색 | 새 파일이 `index.ts` 에서 export 안 돼 검사 대상에서 빠짐 | 세 명령의 검사 파일 수를 출력에서 확인 |
 | 테스트 녹색 | T1 의 스텁이 그대로 남아 `throw` 하는데 아무도 호출 안 함 | T2 · T3 통합 후 `not implemented` 문자열이 `src/` 에 0 건인지 grep |
 | finding 0 건이라 깨끗해 보임 | 스키마 해석 불가로 전부 건너뜀 | `SCHEMA_NOT_ANALYZABLE` 개수를 따로 확인 (§10.3 테스트) |

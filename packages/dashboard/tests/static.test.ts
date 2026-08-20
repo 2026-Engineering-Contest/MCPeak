@@ -37,7 +37,7 @@ afterEach(async () => {
 
 describe("serveStatic", () => {
   it("헤더 전송 뒤 읽기 스트림 오류가 나면 응답 연결을 종료한다", async () => {
-    directory = await mkdtemp(join(tmpdir(), "ohmymcp-dashboard-static-"));
+    directory = await mkdtemp(join(tmpdir(), "mcpeak-dashboard-static-"));
     await mkdir(directory, { recursive: true });
     await writeFile(join(directory, "index.html"), "본문 내용", "utf8");
     streamControl.emitError = true;

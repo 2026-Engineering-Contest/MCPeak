@@ -3,7 +3,7 @@
 - 상태: 사용자 승인 완료, 구현 계획 작성 완료
 - 작성일: 2026-08-12
 - 승인일: 2026-08-12
-- 구현 대상: `ohmymcp` CLI
+- 구현 대상: `mcpeak` CLI
 - 선행 설계:
   - [Core stdio transport 및 프로세스 수명주기 설계](./2026-08-12-core-stdio-transport-design.md)
   - [Runner 실행·보고서 및 Generate 연동 설계](./2026-08-11-runner-design.md)
@@ -18,7 +18,7 @@ stdio 서버를 시작하고 Runner를 실행한다. CLI는 Core와 Runner를 �
 
 첫 수직 기능의 완료 조건은 다음과 같다.
 
-> `ohmymcp test`에 JSON 명세와 weather-server 실행 command 및 args를 전달하면 CLI가 명세를
+> `mcpeak test`에 JSON 명세와 weather-server 실행 command 및 args를 전달하면 CLI가 명세를
 > 검증한 뒤 서버에 연결하고, RunnerReport를 stdout에 한 번 출력하며, 테스트 결과에 맞는 종료
 > 코드를 반환하고, 실행 뒤 자식 프로세스를 남기지 않는다.
 
@@ -28,13 +28,13 @@ stdio 서버를 시작하고 Runner를 실행한다. CLI는 Core와 Runner를 �
 pnpm exec vitest run packages/cli/tests
 → CLI 단위·계약 테스트와 실제 weather-server 명령 계층 E2E가 수집되고 전체 통과
 
-pnpm --filter ohmymcp typecheck
+pnpm --filter @mcpeak/cli typecheck
 → CLI 구현과 테스트 타입체크 통과
 
 pnpm build
 → Core와 Runner의 최신 dist를 포함해 CLI ESM, CJS, 선언 파일 생성 성공
 
-pnpm --filter ohmymcp test:e2e
+pnpm --filter @mcpeak/cli test:e2e
 → 빌드된 dist/cli.mjs가 실제 weather-server를 실행하고 report, 종료 코드, 프로세스 종료를 검증
 
 pnpm exec biome check packages/cli
@@ -59,7 +59,7 @@ pnpm exec biome check packages/cli
 - 성공, 테스트 실패, 입력 실패, 연결 실패, 실행·종료 실패의 종료 코드 결정
 - 단계와 해결 방법이 드러나는 결정론적 오류 출력
 - 실제 weather-server를 사용하는 명령 계층 E2E와 빌드 산출물 스모크
-- `@ohmymcp-hsu/core`의 CLI 직접 workspace 의존성
+- `@mcpeak/core`의 CLI 직접 workspace 의존성
 - CLI README와 공개 기능 changeset 갱신
 
 ### 2.2 제외
@@ -93,7 +93,7 @@ cli ─→ core
   └─→ runner ─→ core의 동결 타입
 ```
 
-- `@ohmymcp-hsu/core`는 `packages/cli/package.json`의 직접 workspace dependency로 추가한다.
+- `@mcpeak/core`는 `packages/cli/package.json`의 직접 workspace dependency로 추가한다.
 - CLI는 `connectStdio`를 Runner를 통해 재수출하거나 우회하지 않는다.
 - Runner는 Core 연결을 만들지 않고 주입된 `McpClient`만 실행한다.
 - Core는 Runner 또는 CLI를 import하지 않는다.
@@ -124,13 +124,13 @@ pnpm-lock.yaml
 첫 구현의 유일한 실행 문법은 다음과 같다.
 
 ```text
-ohmymcp test <suite.json> --command <executable> [--arg <value> ...]
+mcpeak test <suite.json> --command <executable> [--arg <value> ...]
 ```
 
 weather-server 실행 예시는 다음과 같다.
 
 ```bash
-ohmymcp test packages/cli/tests/fixtures/weather-suite.json \
+mcpeak test packages/cli/tests/fixtures/weather-suite.json \
   --command node \
   --arg examples/weather-server/server.mjs
 ```
@@ -509,14 +509,14 @@ Node.js가 만든 원문 오류를 그대로 출력하지 않으므로 같은 �
 
 CLI README에는 다음 내용을 실제 구현과 일치하게 추가한다.
 
-- `ohmymcp test` 문법과 weather-server 예시
+- `mcpeak test` 문법과 weather-server 예시
 - JSON 명세만 지원한다는 범위
 - 반복 `--arg`와 `--arg=<value>` 사용법
 - stdout RunnerReport와 stderr 오류 분리
 - 성공 0, 그 밖의 결과 1인 종료 코드
 - shell 문법과 TypeScript 명세가 지원되지 않는다는 제한
 
-공개 기능 추가이므로 `ohmymcp` minor changeset을 한국어로 작성한다. Core와 Runner changeset은
+공개 기능 추가이므로 `@mcpeak/cli` minor changeset을 한국어로 작성한다. Core와 Runner changeset은
 추가하지 않는다. CLI 버전과 배포 산출물 외 다른 패키지 버전은 이 변경에서 직접 조정하지 않는다.
 
 ## 13. ADR 판단

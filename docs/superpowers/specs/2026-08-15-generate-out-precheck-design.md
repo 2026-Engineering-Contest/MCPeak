@@ -7,7 +7,7 @@
 
 ## 1. 배경
 
-`ohmymcp generate` 는 출력 파일이 이미 있으면 저장하지 않고 `GENERATE_OUTPUT_EXISTS` 로 끊는다.
+`mcpeak generate` 는 출력 파일이 이미 있으면 저장하지 않고 `GENERATE_OUTPUT_EXISTS` 로 끊는다.
 `rename` 이 대상을 말없이 덮어쓴다는 것을 실측으로 확인하고 `link` 로 바꾼 R4 의 결론이다
 (`docs/reports/task-r4.md`). 남의 파일을 날리느니 저장을 안 하는 쪽이 옳다.
 
@@ -48,7 +48,7 @@ CI 나 스크립트에 `--out` 이 고정돼 있으면 두 번째 실행부터 �
 3. `--force` 없이 저장 단계까지 간 경우의 동작은 지금과 같다(경합 대비).
 4. `generate --help` 와 `dist-cli-e2e.mjs` 에 `--force` 가 나온다.
 5. 프로젝트 루트에서 `pnpm test`, `pnpm typecheck --force`, `pnpm lint`,
-   `pnpm build && pnpm --filter ohmymcp test:e2e` 가 통과한다.
+   `pnpm build && pnpm --filter @mcpeak/cli test:e2e` 가 통과한다.
 
 ## 3. 옵션
 

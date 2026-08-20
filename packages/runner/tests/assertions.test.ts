@@ -1,4 +1,4 @@
-import type { ToolDef } from "@ohmymcp-hsu/core";
+import type { ToolDef } from "@mcpeak/core";
 import { describe, expect, it, vi } from "vitest";
 import toolsListFixture from "../../../fixtures/tools-list.sample.json";
 import { assertBodyMatchesSchema, assertIsError, assertToolExists } from "../src/assertions.js";

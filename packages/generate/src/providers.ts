@@ -1,6 +1,6 @@
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { MCP_SUITE_JSON_SCHEMA } from "@ohmymcp-hsu/runner";
+import { MCP_SUITE_JSON_SCHEMA } from "@mcpeak/runner";
 import type { AuthoringRequest, TestAuthoringProvider } from "./authoring-request.js";
 import { DEFAULT_MAX_RESULT_BYTES } from "./authoring-request.js";
 import { PROVIDER_OUTPUT_SCHEMA } from "./authoring-schema.js";

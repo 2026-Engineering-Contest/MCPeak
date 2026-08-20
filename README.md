@@ -8,7 +8,7 @@ MCP(Model Context Protocol) 서버를 **코드로 자동 테스트**하는 오�
 > ⚠️ **아직 npm 에 배포되지 않았습니다.** 여섯 패키지 모두 동작하지만 공개 배포 전이라,
 > 지금은 저장소를 클론해 [개발](#개발) 절차로 써야 합니다.
 >
-> 아래 예제의 `ohmymcp` · `ohmymcp-mock` 은 **배포 후의 호출 형태**입니다. 배포 전에는 같은 명령을
+> 아래 예제의 `mcpeak` · `mcpeak-mock` 은 **배포 후의 호출 형태**입니다. 배포 전에는 같은 명령을
 > 빌드 산출물 경로로 부릅니다 — [개발](#개발) 절에 세 명령 모두 적어뒀습니다.
 
 ## 30초 예제
@@ -40,7 +40,7 @@ MCP(Model Context Protocol) 서버를 **코드로 자동 테스트**하는 오�
 서버를 띄우는 방법과 함께 넘긴다.
 
 ```bash
-ohmymcp test weather.suite.json --command node --arg ./server.js
+mcpeak test weather.suite.json --command node --arg ./server.js
 ```
 
 ```
@@ -71,7 +71,7 @@ ohmymcp test weather.suite.json --command node --arg ./server.js
 서버의 툴 스키마를 읽어 명세를 만들어 줍니다.
 
 ```bash
-ohmymcp generate --suite-id weather --name "날씨 서버" --out weather.suite.json \
+mcpeak generate --suite-id weather --name "날씨 서버" --out weather.suite.json \
   --command node --arg ./server.js
 ```
 
@@ -81,10 +81,10 @@ ohmymcp generate --suite-id weather --name "날씨 서버" --out weather.suite.j
 ## CLI
 
 ```
-ohmymcp test <suite.json> --command <executable> [--arg <value> ...]
+mcpeak test <suite.json> --command <executable> [--arg <value> ...]
              [--json] [--junit <path>] [--stderr-lines <N>]
 
-ohmymcp generate --suite-id <id> --name <name> --out <suite.json>
+mcpeak generate --suite-id <id> --name <name> --out <suite.json>
                  --command <executable> [--arg <value> ...]
                  [--baseline-only] [--provider <codex|claude>] [--model <model>]
                  [--no-dry-run] [--cassette <path>] [--record]
@@ -94,14 +94,14 @@ ohmymcp generate --suite-id <id> --name <name> --out <suite.json>
 `--command` 와 `--arg` 가 **테스트 대상 서버를 띄우는 방법**입니다. `--arg` 를 여러 번 써서
 인자를 순서대로 넘깁니다.
 
-전체 도움말은 `ohmymcp --help`, 서브커맨드는 `ohmymcp help test` 로 봅니다.
+전체 도움말은 `mcpeak --help`, 서브커맨드는 `mcpeak help test` 로 봅니다.
 
 ## 실제 서버 없이 테스트하기
 
 목 서버를 대신 띄우면 외부 API 키도 실제 데이터도 없이 원하는 상황을 세울 수 있습니다.
 
 ```bash
-ohmymcp test suite.json --command ohmymcp-mock --arg mock.json
+mcpeak test suite.json --command mcpeak-mock --arg mock.json
 ```
 
 ```json
@@ -112,6 +112,10 @@ ohmymcp test suite.json --command ohmymcp-mock --arg mock.json
 ```
 
 응답은 **사람이 지정한 값**입니다(ADR-0005). 같은 호출은 언제나 같은 바이트를 돌려줍니다.
+
+목은 **서버를 만들기 전에 설계를 먼저 검증하는 데**도 씁니다 — 정의 파일로 띄워 Claude Desktop
+같은 실제 클라이언트에 붙여보고, 거기서 `generate` 로 구현자에게 넘길 계약 초안을 뽑습니다.
+절차는 [`packages/mock` 의 설계 우선 워크플로](./packages/mock#설계-우선-워크플로)에 있습니다.
 
 ## 기존 도구와의 차이
 
@@ -124,12 +128,12 @@ ohmymcp test suite.json --command ohmymcp-mock --arg mock.json
 
 | 패키지 | 역할 |
 |---|---|
-| [`ohmymcp`](./packages/cli) | CLI 진입점 (얇게 유지) |
-| [`@ohmymcp-hsu/core`](./packages/core) | MCP 프로토콜 클라이언트 · 트랜스포트 · 프로세스 수명주기 |
-| [`@ohmymcp-hsu/runner`](./packages/runner) | 선언형 테스트 실행 · assertion · 구조화된 리포트 |
-| [`@ohmymcp-hsu/generate`](./packages/generate) | 결정론적 baseline 과 승인형 AI 검토로 테스트 생성 |
-| [`@ohmymcp-hsu/record`](./packages/record) | 녹화 · 재생 · 계약 스냅샷 |
-| [`@ohmymcp-hsu/mock`](./packages/mock) | 목 MCP 서버(Streamable HTTP · stdio) · 응답 주입 |
+| [`@mcpeak/cli`](./packages/cli) | CLI 진입점 (얇게 유지) |
+| [`@mcpeak/core`](./packages/core) | MCP 프로토콜 클라이언트 · 트랜스포트 · 프로세스 수명주기 |
+| [`@mcpeak/runner`](./packages/runner) | 선언형 테스트 실행 · assertion · 구조화된 리포트 |
+| [`@mcpeak/generate`](./packages/generate) | 결정론적 baseline 과 승인형 AI 검토로 테스트 생성 |
+| [`@mcpeak/record`](./packages/record) | 녹화 · 재생 · 계약 스냅샷 |
+| [`@mcpeak/mock`](./packages/mock) | 목 MCP 서버(Streamable HTTP · stdio) · 응답 주입 |
 
 의존 방향은 단방향입니다: `cli` → `runner`/`generate`/`record`/`mock` → `core`.
 
@@ -152,14 +156,14 @@ pnpm lint
 배포 전이라 실행 파일이 `PATH` 에 없습니다. 위 예제의 명령들은 빌드 산출물로 직접 부릅니다.
 
 ```bash
-# ohmymcp test ...
+# mcpeak test ...
 node packages/cli/dist/cli.mjs test <suite.json> --command node --arg ./server.js
 
-# ohmymcp generate ...
+# mcpeak generate ...
 node packages/cli/dist/cli.mjs generate --suite-id <id> --name <name> --out <suite.json> \
   --command node --arg ./server.js
 
-# --command ohmymcp-mock --arg mock.json
+# --command mcpeak-mock --arg mock.json
 node packages/cli/dist/cli.mjs test <suite.json> \
   --command node --arg packages/mock/dist/stdio.mjs --arg mock.json
 ```

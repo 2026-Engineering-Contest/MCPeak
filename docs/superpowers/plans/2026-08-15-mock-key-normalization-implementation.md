@@ -7,7 +7,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** `@ohmymcp-hsu/mock` 이 매칭 키를 만들 수 없는 인자를 주입 시점에 읽을 수 있는 문장으로 거부하고, 깊은 중첩이 목 서버 프로세스를 죽이지 않게 한다.
+**Goal:** `@mcpeak/mock` 이 매칭 키를 만들 수 없는 인자를 주입 시점에 읽을 수 있는 문장으로 거부하고, 깊은 중첩이 목 서버 프로세스를 죽이지 않게 한다.
 
 **Architecture:** 판정(`findKeyViolation`, 순수 함수) · 문장(`keyViolationMessage`) · 배선(`put`)을 세 층으로 나눈다. 주입 경로에서만 도달 가능한 네 부류는 `put` 에서 거부하고, 와이어로도 도달하는 깊이는 공유 함수 `stableKey` 에서 막아 조회 경로에서는 `isError` 응답으로 바꾼다.
 
@@ -161,7 +161,7 @@ npx vitest run packages/mock/tests/key-violation.test.ts
 
 기대: `../src/key-violation.js` 파일이 없어서 **import 단계에서 실패**한다.
 
-> `pnpm --filter @ohmymcp-hsu/mock test` 를 쓰지 마라. `packages/mock/package.json` 에는 `test` 스크립트가 **없어서** 아무것도 안 하고 성공한다 (`CLAUDE.local.md` §2 첫 줄).
+> `pnpm --filter @mcpeak/mock test` 를 쓰지 마라. `packages/mock/package.json` 에는 `test` 스크립트가 **없어서** 아무것도 안 하고 성공한다 (`CLAUDE.local.md` §2 첫 줄).
 
 - [ ] **Step 3: 판정을 구현한다**
 
@@ -509,7 +509,7 @@ feat(mock): 매칭 키 위반을 사람이 읽는 문장으로 바꾸는 계층 
 
 - [ ] **Step 1: 배선 테스트를 쓴다**
 
-`packages/mock/tests/index.test.ts` 의 `describe("@ohmymcp-hsu/mock")` 블록 안, 마지막 `it` 뒤에 붙인다.
+`packages/mock/tests/index.test.ts` 의 `describe("@mcpeak/mock")` 블록 안, 마지막 `it` 뒤에 붙인다.
 
 ```ts
   it("키로 만들 수 없는 인자를 주입하면 진입점과 위치를 알려준다", async () => {
@@ -887,18 +887,18 @@ T3 에서 실제로 부딪혀 내린 판단이고, **앞으로 `mock/src` 에 �
 
 ```markdown
 ---
-"@ohmymcp-hsu/mock": minor
+"@mcpeak/mock": minor
 ---
 
 mock: 매칭 키로 만들 수 없는 인자를 주입 시점에 거부한다. 순환 참조 · 희소 배열 · `NaN` · `Infinity` · `Date` · 함수처럼 JSON 으로 표현할 수 없는 값은 어떤 호출로도 도달할 수 없어, 그대로 두면 주입이 영영 안 맞거나(희소 배열) 서로 다른 주입이 같은 키가 되어 엉뚱한 응답이 나갔다(`NaN` 과 `Infinity` 가 둘 다 `null`). 거부 집합은 `record` 의 카세트 매칭 키(ADR-0003)와 같게 맞췄다. 또한 깊게 중첩된 호출 인자가 스택을 터뜨려 목 서버 프로세스를 죽이던 문제를 고친다 — 깊이 512 를 넘으면 `isError: true` 응답으로 알린다.
 ```
 
-**breaking change 라 minor 다.** `@ohmymcp-hsu/mock` 은 `0.1.2` → `0.2.0` 이 된다. CONTRIBUTING §7 상 0.x 에서 허용되지만 CHANGELOG 에 반드시 남긴다.
+**breaking change 라 minor 다.** `@mcpeak/mock` 은 `0.1.2` → `0.2.0` 이 된다. CONTRIBUTING §7 상 0.x 에서 허용되지만 CHANGELOG 에 반드시 남긴다.
 
 - [ ] **Step 5: 저장소 전체 게이트**
 
 ```bash
-pnpm install && pnpm build && pnpm typecheck && pnpm lint && npx vitest run && pnpm --filter ohmymcp test:e2e
+pnpm install && pnpm build && pnpm typecheck && pnpm lint && npx vitest run && pnpm --filter @mcpeak/cli test:e2e
 ```
 
 기대: `Test Files N passed`, `Tasks: 6 successful`, e2e 는 파이프 없이 `echo $?` 가 `0`.
@@ -950,7 +950,7 @@ T1 판정 → T2 문장 → T3 주입 배선 → T4 조회 깊이 → T5 문서�
 
 ```bash
 pnpm build && pnpm typecheck && pnpm lint && npx vitest run
-pnpm --filter ohmymcp test:e2e; echo "e2e exit=$?"
+pnpm --filter @mcpeak/cli test:e2e; echo "e2e exit=$?"
 ```
 
 추가로 확인한다.
@@ -966,7 +966,7 @@ pnpm --filter ohmymcp test:e2e; echo "e2e exit=$?"
 
 | 거짓 신호 | 이 작업에서의 모습 | 진실 기준 |
 |---|---|---|
-| 테스트 명령이 즉시 exit 0 | `pnpm --filter @ohmymcp-hsu/mock test` 는 **존재하지 않는 스크립트**다. `packages/mock/package.json` 에 `test` 가 없다 | `npx vitest run packages/mock` 을 쓰고 출력에 `Test Files ... passed` 가 있는지 본다 |
+| 테스트 명령이 즉시 exit 0 | `pnpm --filter @mcpeak/mock test` 는 **존재하지 않는 스크립트**다. `packages/mock/package.json` 에 `test` 가 없다 | `npx vitest run packages/mock` 을 쓰고 출력에 `Test Files ... passed` 가 있는지 본다 |
 | 문장 테스트 녹색 | `toThrow(문자열)` 은 **부분 일치**다 — chai 가 `indexOf` 로 본다. 문장 뒤에 줄이 더 붙어도 통과하고, **전문을 통째로 넘겨도 마찬가지다** | `toThrow(new Error(전문))` 으로 넘겨 완전 일치를 건다. 실제로 고정됐는지는 문장 끝에 한 줄을 임시로 붙여 **실패를 본 뒤** 되돌려 확인한다 |
 | 깊이 테스트 녹색 | 상한 계산을 틀려 실제로는 상한 아래를 넣었다 | 실패하는 깊이를 `MAX_KEY_DEPTH + 2` 로 쓰고, 상한과 같은 깊이가 **통과하는** 테스트를 짝으로 둔다 |
 | 결정론성 테스트 녹색 | `value.map(stableKey)` 가 인덱스를 `depth` 로 넘기는데 얕은 배열이라 안 걸렸다 | T4 Step 6 에서 일부러 되돌려 실패를 본다 |

@@ -4,9 +4,9 @@
 > 날짜: 2026-08-20 (2026-08-21 Coordinator·경계·HTTP 정책 반영)
 > 기준: 「MCP 테스트 및 코드 최적화 도구 구상」의 Session Recording / Replay 설계와 담당자 확인 내용
 > 목적: 세부 ADR과 구현 계획을 작성하기 전에 제품의 책임과 실행 경계를 먼저 고정한다.
-> 세부 결정 제안: [ADR-0048](./adr/0048-external-record-replay와-tool-카세트-경계-분리.md),
-> [ADR-0049](./adr/0049-coordinator가-engine과-session-store를-소유한다.md),
-> [ADR-0050](./adr/0050-http-외부-요청-매칭과-반복-호출-정책.md)
+> 세부 결정 제안: [ADR-0051](./adr/0051-external-record-replay와-tool-카세트-경계-분리.md),
+> [ADR-0052](./adr/0052-coordinator가-engine과-session-store를-소유한다.md),
+> [ADR-0053](./adr/0053-http-외부-요청-매칭과-반복-호출-정책.md)
 
 ## 1. 한 문장
 
@@ -121,7 +121,7 @@ Record가 저장하는 기본 단위는 MCP Tool 호출 결과가 아니라 **MC
 - 같은 HTTP 요청은 matchKey별 occurrence 순서로 소비하며, source session은 사용자가 명시한다.
 - Replay miss는 실제 네트워크로 fallback하지 않는다.
 - 정확한 HTTP v1 규칙과 미지원 범위는
-  [ADR-0050](./adr/0050-http-외부-요청-매칭과-반복-호출-정책.md)을 따른다.
+  [ADR-0053](./adr/0053-http-외부-요청-매칭과-반복-호출-정책.md)을 따른다.
 - SQL 정규화와 DB 반복 호출 정책은 첫 DB·드라이버를 고를 때 별도 ADR로 정한다.
 - 녹화 때와 다른 테스트 명세라도 같은 외부 요청을 만들면 기존 기록을 사용할 수 있어야 한다.
 
@@ -157,7 +157,7 @@ Record가 저장하는 기본 단위는 MCP Tool 호출 결과가 아니라 **MC
 이 구조는 이 문서의 상위 설계와 다르다. 목표 구조에서는 `McpClient` 바깥에서 ToolResult를
 대체하지 않고, 실제 MCP 서버 안의 외부 호출 경계에서 요청과 응답을 기록하거나 재생한다.
 
-기존 구현은 [ADR-0048](./adr/0048-external-record-replay와-tool-카세트-경계-분리.md)에 따라
+기존 구현은 [ADR-0051](./adr/0051-external-record-replay와-tool-카세트-경계-분리.md)에 따라
 legacy로 동결한다. 신규 External 구현은 기존 `Cassette`·`cassetteClient`·Tool 매칭 타입을
 참조하지 않는다. 신규 수직 기능과 CLI 전환이 검증된 뒤에 기존 API를 유지·개명·제거할지를
 마이그레이션 단계에서 확정한다. 공통화는 같은 의미가 검증된 순수 함수에만 허용한다.
@@ -234,11 +234,11 @@ legacy로 동결한다. 신규 External 구현은 기존 `Cassette`·`cassetteCl
 구체화한다. 현재 연결된 제안은 다음과 같다. 세 ADR이 채택되기 전에는 구현의 선행 조건으로
 사용하지 않는다.
 
-1. [ADR-0048](./adr/0048-external-record-replay와-tool-카세트-경계-분리.md): legacy와
+1. [ADR-0051](./adr/0051-external-record-replay와-tool-카세트-경계-분리.md): legacy와
    External 경계
-2. [ADR-0049](./adr/0049-coordinator가-engine과-session-store를-소유한다.md): 부모
+2. [ADR-0052](./adr/0052-coordinator가-engine과-session-store를-소유한다.md): 부모
    Coordinator, 내부 통신, Node·SQLite 런타임
-3. [ADR-0050](./adr/0050-http-외부-요청-매칭과-반복-호출-정책.md): HTTP 매칭,
+3. [ADR-0053](./adr/0053-http-외부-요청-매칭과-반복-호출-정책.md): HTTP 매칭,
    occurrence, strict miss, 1차 지원 범위
 
 후속 문서는 이 결정 위에서 다음 순서로 작성한다.

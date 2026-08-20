@@ -1,6 +1,6 @@
 # 목 매칭 키 정규화 경계 설계 (2026-08-15)
 
-- 대상 패키지: `@ohmymcp-hsu/mock`
+- 대상 패키지: `@mcpeak/mock`
 - 파트: ③ mock server (`@storyrago`)
 - 관련 결정: ADR-0003(카세트 매칭 키), ADR-0005(목 데이터 생성 전략), ADR-0007(목 stdio 트랜스포트)
 - 관련 변경: #69(인자 매칭 키에서 `undefined` 키 제외)
@@ -124,7 +124,7 @@ function put(registry, tool, args, result, source) {
 }
 ```
 
-`ANY` 는 `Symbol.for("ohmymcp.mock.any")` 라서 `notJson` 에 걸린다. 검사를 `ANY` 분기보다 앞에
+`ANY` 는 `Symbol.for("mcpeak.mock.any")` 라서 `notJson` 에 걸린다. 검사를 `ANY` 분기보다 앞에
 두면 **정상 기능이 죽는다.** §8-③ 이 이것을 고정한다.
 
 ### 4.2 조회 경로의 깊이 초과

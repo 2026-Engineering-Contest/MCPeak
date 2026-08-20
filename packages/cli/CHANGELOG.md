@@ -1,5 +1,87 @@
 # ohmymcp
 
+## 0.9.0
+
+### Minor Changes
+
+- d962089: record: `--record` 가 기존 카세트를 갈아엎을 때 무엇이 사라지는지 알립니다. 지금까지는 기존
+  파일에 상호작용이 50개 있어도 이번 실행이 12개만 부르면 나머지 38개가 아무 말 없이
+  사라졌습니다. 테스트 필터나 중간 실패로 일부만 실행된 경우가 그대로 손실이 됐고, 커밋 전에
+  `git diff` 를 보지 않으면 알 방법이 없었습니다.
+
+  `record` 모드에서 `onFlush` 가 있으면 `close()` 시점에 기존 카세트와 비교해 사라지는 요청을
+  `onWarning` 으로 알립니다. 판정은 `diffCassettes` 와 `droppedInteractionsMessage` 로 분리해
+  공개했고, `key` 기준이라 같은 키에 응답만 바뀐 것은 손실이 아니라 갱신으로 봅니다.
+
+  **경고일 뿐 저장을 막지 않습니다.** 막으면 `--record` 가 갈아엎으라는 명령이라는 의미가 바뀌고
+  `--record` 를 자동으로 도는 파이프라인이 깨집니다. 고치는 것은 "지운다" 가 아니라 "말없이
+  지운다" 입니다. `auto` 는 기존 것을 물려받아 덧붙이므로 이 경고가 나오지 않습니다.
+
+  cli: `generate` 가 카세트 저장에 성공한 뒤 이 경고를 출력합니다. 경고는 `recorder.close()`
+  안에서야 확정되므로 기존 두 출력 지점(시험 실행 후 · 교정 후)에는 아직 존재하지 않았고,
+  출력 지점이 없어 화면까지 오지 못하던 상태였습니다.
+
+- 6cb8b5b: record: 카세트가 아직 실서버와 맞는지 확인하는 `verifyCassette` 를 추가합니다.
+
+  `auto` 모드는 카세트에 있는 요청이면 서버를 부르지 않으므로, 서버 응답이 바뀌어도 영원히
+  알아채지 못합니다. 그것을 확인하는 방법이 지금까지 파괴적인 `--record` 뿐이었고, 재동기화가
+  전부-아니면-전무라 사람들이 피했고, 그래서 카세트가 손으로 쓴 목과 똑같이 낡아 갔습니다.
+
+  `verifyCassette(client, cassette)` 는 녹화된 요청을 실서버에 다시 보내 응답을 비교하고
+  결과만 돌려줍니다. **카세트를 고치지도 저장하지도 않습니다.** 연결도 닫지 않습니다 —
+  소유권은 호출자에게 있습니다.
+
+  비교는 양쪽 모두 마스킹한 뒤에 합니다. 파일에서 읽은 카세트는 이미 마스킹돼 있고 실서버
+  응답은 원문이라, 그대로 비교하면 비밀값이 든 응답이 전부 거짓 불일치가 됩니다. 대가로
+  비밀값 자체만 바뀐 경우는 감지되지 않지만, 그 값은 테스트에도 마스킹돼 나가므로(ADR-0041)
+  어떤 단언도 그것에 의존할 수 없습니다.
+
+  요청 인자에 비밀값이 있었던 상호작용은 원래 요청을 복원할 수 없어 `skipped` 로 보고합니다.
+  마스킹된 값을 실서버에 그대로 보내지 않습니다.
+
+  record: JSON 문자열 안의 차이를 필드 단위로 보여줍니다. MCP 응답의 실제 페이로드는
+  `content[].text` 안에 JSON 문자열로 들어 있어서, 지금까지는 이스케이프된 문자열 두 개를 눈으로
+  대조하라는 메시지가 나왔고 페이로드가 길면 잘려서 아무것도 볼 수 없었습니다. 이제
+  `raw.content[0].text.temp: <없음> / ... .temperature: 21` 처럼 어느 필드가 바뀌었는지 나옵니다.
+  `replay` 미스와 중복 응답 경고도 같은 개선을 받습니다.
+
+  cli: `mcpeak verify <cassette.json> --command <executable> [--arg <value> ...]` 를 추가합니다.
+  불일치나 호출 실패가 있으면 종료 코드 1 입니다. 확인불가(마스킹된 인자)는 실패로 보지
+  않습니다 — "달라졌다" 가 아니라 "확인할 수 없다" 이고, 그것으로 CI 를 빨갛게 만들면 끌 방법이
+  없습니다. `--record` 를 주면 조용히 무시하지 않고 `generate --record` 를 안내합니다.
+
+### Patch Changes
+
+- 7520b74: cli: 거절 근거 AI 진단 승낙을 묻기 전에, 응답 본문이 값 치환 없이 그대로 provider 로 나간다는
+  사실을 화면에 적습니다. 미확인 목록이 이미 본문을 한 줄씩 보여주고 있어서, 이 한 줄이 붙으면
+  사용자가 보고 판단할 재료가 갖춰집니다. 문장은 `repair` 의 stderr 안내와 같은 계열로 맞췄습니다 —
+  provider 로 자유 텍스트를 보내는 두 통로가 다른 문장을 쓰면 한쪽만 고쳐집니다. 근거는 ADR-0049
+  입니다.
+- 393def4: cli: `replay` 가 런타임 모듈 로드 실패를 내부 오류로 보고하지 않습니다.
+
+  `@mcpeak/runner` 나 `@mcpeak/record` 를 못 불러 fallback 의존성이 쓰이면, 가장 먼저
+  걸리는 `validateSuite` 가 평범한 `Error` 를 던져 `CLI_INTERNAL_ERROR` 로 잡혔습니다. 화면에는
+  "예상하지 못한 CLI 내부 오류가 발생했습니다 / 다시 실행한 뒤 재현 정보와 함께 이슈를
+  보고하세요" 가 나갔고, 사용자는 자기 설치 문제로 버그 리포트를 쓰게 됐습니다.
+
+  전용 `ReplayRuntimeUnavailableError` 와 `REPLAY_RUNTIME_UNAVAILABLE` 코드로 가릅니다.
+  `repair` 가 `REPAIR_RUNTIME_UNAVAILABLE` 로 이미 하던 것과 같은 처리입니다.
+
+  다른 코드는 그대로입니다. 명세 자체의 문제는 종전대로 `SUITE_FORMAT_UNSUPPORTED` ·
+  `SUITE_READ_FAILED` · `SUITE_ENCODING_INVALID` · `SUITE_JSON_INVALID` ·
+  `SUITE_VALIDATION_FAILED` 이고, `CLI_INTERNAL_ERROR` 는 `validateSuite` 가 예상치 못하게
+  던졌을 때만, `CASSETTE_READ_FAILED` 는 카세트를 읽지 못했을 때만 나옵니다.
+
+- Updated dependencies [be534d6]
+- Updated dependencies [c923b48]
+- Updated dependencies [10ae345]
+- Updated dependencies [55ba842]
+- Updated dependencies [d962089]
+- Updated dependencies [6cb8b5b]
+  - @mcpeak/generate@0.5.1
+  - @mcpeak/mock@0.3.0
+  - @mcpeak/record@0.2.0
+
 ## 0.8.0
 
 ### Minor Changes

@@ -1,0 +1,119 @@
+@import "tailwindcss";
+
+/* 라이트 기본값. 다크는 아래 두 블록에서 같은 값으로 덮는다.
+   [주의] 다크 값 블록이 두 곳(수동 선택, OS 위임)에 있다. 반드시 함께 고쳐라. */
+:root {
+  --canvas: #f7f7f8;
+  --surface: #ffffff;
+  --line: #e8e8ec;
+  --line-subtle: #f0f0f3;
+  --ink: #18181b;
+  --ink-muted: #71717a;
+  --accent: #6d28d9;
+  --accent-soft: #faf8ff;
+  --accent-border: #ddd6fe;
+  --status-running-fg: #2563eb;  --status-running-bg: #eff6ff;
+  --status-waiting-fg: #d97706;  --status-waiting-bg: #fffbeb;
+  --status-done-fg: #16a34a;     --status-done-bg: #f0fdf4;
+  --status-failed-fg: #dc2626;   --status-failed-bg: #fef2f2;
+  --terminal-border: #26262f;
+  --terminal-inset: none;
+
+  /* 테마 무관 고정(터미널 재현 영역). UI 설계 §3. */
+  --terminal-bg: #0d0d12;
+  --terminal-header-bg: #16161c;
+  --terminal-fg: #d4d4d8;
+  --terminal-muted: #8b8b96;
+}
+
+:root[data-theme="dark"] {
+  --canvas: #131318;
+  --surface: #1b1b21;
+  --line: #2a2a33;
+  --line-subtle: #232329;
+  --ink: #e4e4e7;
+  --ink-muted: #8b8b96;
+  --accent: #8b5cf6;
+  --accent-soft: #241a35;
+  --accent-border: #4c3575;
+  --status-running-fg: #60a5fa;  --status-running-bg: #172036;
+  --status-waiting-fg: #fbbf24;  --status-waiting-bg: #2c2410;
+  --status-done-fg: #4ade80;     --status-done-bg: #122618;
+  --status-failed-fg: #f87171;   --status-failed-bg: #2b1518;
+  --terminal-border: #34343f;
+  --terminal-inset: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --canvas: #131318;
+    --surface: #1b1b21;
+    --line: #2a2a33;
+    --line-subtle: #232329;
+    --ink: #e4e4e7;
+    --ink-muted: #8b8b96;
+    --accent: #8b5cf6;
+    --accent-soft: #241a35;
+    --accent-border: #4c3575;
+    --status-running-fg: #60a5fa;  --status-running-bg: #172036;
+    --status-waiting-fg: #fbbf24;  --status-waiting-bg: #2c2410;
+    --status-done-fg: #4ade80;     --status-done-bg: #122618;
+    --status-failed-fg: #f87171;   --status-failed-bg: #2b1518;
+    --terminal-border: #34343f;
+    --terminal-inset: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  }
+}
+
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-line: var(--line);
+  --color-line-subtle: var(--line-subtle);
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-border: var(--accent-border);
+  --color-terminal: var(--terminal-bg);
+  --color-terminal-header: var(--terminal-header-bg);
+  --color-terminal-fg: var(--terminal-fg);
+  --color-terminal-muted: var(--terminal-muted);
+  --color-terminal-border: var(--terminal-border);
+  --font-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* ANSI 색. 서버 ansiToHtml이 붙이는 클래스에 web이 색을 입힌다(기반 계획 T4 주석과 동일).
+   터미널 고정 팔레트의 일부이므로 테마 분기 금지. */
+.ansi-31 { color: #f87171; }
+.ansi-32 { color: #4ade80; }
+.ansi-33 { color: #facc15; }
+.ansi-36 { color: #22d3ee; }
+.ansi-90 { color: #8b8b96; }
+.ansi-1 { font-weight: 700; }
+
+body {
+  margin: 0;
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--font-sans);
+}
+
+/* ---- 이하 기존 index.css에서 이관(계약 블록 아님) ---- */
+
+/*
+ * 서버 ansiToHtml은 30~37·90~97도 내보낸다. 계약 블록이 정의한 코드
+ * (31/32/33/36/90/1) 밖의 코드만 여기서 보충한다. 역시 테마 분기 금지.
+ */
+/* 30(검정)은 다크 패널 위에서 안 보인다. origin의 가독성 수정 취지를 따라 밝힌다. */
+.ansi-30 { color: #71717a; }
+.ansi-34 { color: #60a5fa; }
+.ansi-35 { color: #e879f9; }
+.ansi-37 { color: #d4d4d8; }
+.ansi-91 { color: #fca5a5; }
+.ansi-92 { color: #86efac; }
+.ansi-93 { color: #fde047; }
+.ansi-94 { color: #93c5fd; }
+.ansi-95 { color: #f0abfc; }
+.ansi-96 { color: #67e8f9; }
+.ansi-97 { color: #fafafa; }

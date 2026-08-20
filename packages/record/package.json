@@ -1,17 +1,17 @@
 {
-  "name": "@ohmymcp-hsu/record",
-  "version": "0.1.2",
+  "name": "@mcpeak/record",
+  "version": "0.2.0",
   "private": false,
   "type": "module",
   "description": "녹화 · 재생",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/2026-Engineering-Contest/OhMyMCP.git",
+    "url": "git+https://github.com/2026-Engineering-Contest/MCPeak.git",
     "directory": "packages/record"
   },
-  "homepage": "https://github.com/2026-Engineering-Contest/OhMyMCP#readme",
-  "bugs": "https://github.com/2026-Engineering-Contest/OhMyMCP/issues",
+  "homepage": "https://github.com/2026-Engineering-Contest/MCPeak#readme",
+  "bugs": "https://github.com/2026-Engineering-Contest/MCPeak/issues",
   "publishConfig": {
     "access": "public"
   },
@@ -38,6 +38,6 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@ohmymcp-hsu/core": "workspace:*"
+    "@mcpeak/core": "workspace:*"
   }
 }

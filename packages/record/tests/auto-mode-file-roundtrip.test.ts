@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { McpClient, ToolResult } from "@ohmymcp-hsu/core";
+import type { McpClient, ToolResult } from "@mcpeak/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   type Cassette,
@@ -96,7 +96,7 @@ describe("파일 왕복: auto 모드와 record 모드의 보존 차이", () => {
   let path: string;
 
   beforeEach(async () => {
-    dir = await mkdtemp(join(tmpdir(), "ohmymcp-cassette-"));
+    dir = await mkdtemp(join(tmpdir(), "mcpeak-cassette-"));
     path = join(dir, "demo-cassette.json");
     // 씨앗: 서로 다른 두 호출을 녹화해 파일로 남긴다.
     const seeded = await run(

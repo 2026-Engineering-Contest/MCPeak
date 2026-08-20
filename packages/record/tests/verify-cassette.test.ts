@@ -1,4 +1,4 @@
-import type { McpClient, ToolDef, ToolResult } from "@ohmymcp-hsu/core";
+import type { McpClient, ToolDef, ToolResult } from "@mcpeak/core";
 import { describe, expect, it } from "vitest";
 import {
   type Cassette,
@@ -283,7 +283,7 @@ describe("verifyCassette", () => {
     const { join } = await import("node:path");
     const { loadCassette } = await import("../src/index.js");
 
-    const dir = await mkdtemp(join(tmpdir(), "ohmymcp-verify-"));
+    const dir = await mkdtemp(join(tmpdir(), "mcpeak-verify-"));
     try {
       const path = join(dir, "c.json");
       await saveCassette(path, cassetteOf(storedInteraction("login", {}, { token: "sk-A", v: 1 })));

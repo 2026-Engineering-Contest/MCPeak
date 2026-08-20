@@ -110,15 +110,15 @@ function execute(args) {
     const result = await execute(args);
     assert.equal(result.code, 0);
     assert.equal(result.err, "");
-    assert.ok(result.out.includes("사용법: ohmymcp <명령> [옵션]"));
+    assert.ok(result.out.includes("사용법: mcpeak <명령> [옵션]"));
     assert.ok(result.out.includes("test"));
     assert.ok(result.out.includes("generate"));
   }
   for (const [args, usage] of [
-    [["help", "test"], "ohmymcp test <suite.json>"],
-    [["test", "--help"], "ohmymcp test <suite.json>"],
-    [["help", "generate"], "ohmymcp generate --suite-id <id>"],
-    [["generate", "--help"], "ohmymcp generate --suite-id <id>"],
+    [["help", "test"], "mcpeak test <suite.json>"],
+    [["test", "--help"], "mcpeak test <suite.json>"],
+    [["help", "generate"], "mcpeak generate --suite-id <id>"],
+    [["generate", "--help"], "mcpeak generate --suite-id <id>"],
   ]) {
     const result = await execute(args);
     assert.equal(result.code, 0);
@@ -144,7 +144,7 @@ function execute(args) {
   const version = await execute(["--version"]);
   assert.equal(version.code, 0);
   assert.equal(version.err, "");
-  assert.equal(version.out, `ohmymcp ${packageMetadata.version}\n`);
+  assert.equal(version.out, `mcpeak ${packageMetadata.version}\n`);
 
   const unknown = await execute(["unknown"]);
   assert.equal(unknown.code, 1);
@@ -193,7 +193,7 @@ for (const [fixture, expectedStatus, expectedSummary] of [
     },
   ],
 ]) {
-  const dir = await mkdtemp(join(tmpdir(), "ohmymcp-dist-"));
+  const dir = await mkdtemp(join(tmpdir(), "mcpeak-dist-"));
   const pidFile = join(dir, "pid");
   try {
     const result = await execute([
@@ -225,7 +225,7 @@ for (const [fixture, expectedStatus, expectedSummary] of [
 }
 
 {
-  const dir = await mkdtemp(join(tmpdir(), "ohmymcp-dist-generate-"));
+  const dir = await mkdtemp(join(tmpdir(), "mcpeak-dist-generate-"));
   const pidFile = join(dir, "pid");
   const suite = join(dir, "baseline.json");
   try {
@@ -377,7 +377,7 @@ for (const [fixture, expectedStatus, expectedSummary] of [
 }
 
 {
-  const dir = await mkdtemp(join(tmpdir(), "ohmymcp-dist-body-"));
+  const dir = await mkdtemp(join(tmpdir(), "mcpeak-dist-body-"));
   const pidFile = join(dir, "pid");
   const args = [
     "test",
@@ -423,7 +423,7 @@ for (const [fixture, expectedStatus, expectedSummary] of [
 }
 
 {
-  const dir = await mkdtemp(join(tmpdir(), "ohmymcp-dist-render-"));
+  const dir = await mkdtemp(join(tmpdir(), "mcpeak-dist-render-"));
   const pidFile = join(dir, "pid");
   const args = [
     "test",
@@ -471,7 +471,7 @@ for (const [fixture, expectedStatus, expectedSummary] of [
 // weather-server 는 additionalProperties 를 닫지 않으므로 UNDECLARED_FIELD 는 나지 않는다.
 // 오타는 REQUIRED_MISSING 으로 걸린다.
 {
-  const dir = await mkdtemp(join(tmpdir(), "ohmymcp-dist-contract-"));
+  const dir = await mkdtemp(join(tmpdir(), "mcpeak-dist-contract-"));
   const pidFile = join(dir, "pid");
   // 항상 참인 단언. minLength 0 은 어떤 문자열이든 통과시킨다. isError 뒤에 두므로
   // finding 의 path 는 assertions[1] 이 된다.
@@ -612,7 +612,7 @@ for (const [fixture, expectedStatus, expectedSummary] of [
 
 // 서버 프로세스 진단 (설계 문서 §8.4). 기동 즉시 죽는 서버와 실행 불가능한 command 를 본다.
 {
-  const dir = await mkdtemp(join(tmpdir(), "ohmymcp-dist-diagnostics-"));
+  const dir = await mkdtemp(join(tmpdir(), "mcpeak-dist-diagnostics-"));
   const dying = join(dir, "dying-server.mjs");
   // SDK 를 쓰지 않는 최소 스크립트다. 핸드셰이크 실패 경로라 MCP 구현이 필요 없다.
   // examples/ 를 오염시키지 않기 위해 임시 디렉터리에 만든다.
@@ -667,7 +667,7 @@ for (const [fixture, expectedStatus, expectedSummary] of [
       "test",
       suite,
       "--command",
-      "ohmymcp-command-that-does-not-exist",
+      "mcpeak-command-that-does-not-exist",
     ]);
     assert.equal(missing.code, 1);
     assert.equal(missing.out, "");
@@ -720,7 +720,7 @@ for (const [fixture, expectedStatus, expectedSummary] of [
 
 // JUnit 리포터 (ADR-0019). 빌드 산출물이 실제 파일을 만드는지, 실패가 XML 에 드러나는지 본다.
 {
-  const dir = await mkdtemp(join(tmpdir(), "ohmymcp-dist-junit-"));
+  const dir = await mkdtemp(join(tmpdir(), "mcpeak-dist-junit-"));
   const pidFile = join(dir, "pid");
   const xmlPath = join(dir, "junit.xml");
   const args = (fixture, xml, extra = []) => [

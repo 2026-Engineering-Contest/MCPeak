@@ -1,1 +1,1 @@
-export { canonicalJson, deepFreeze, sha256 } from "@ohmymcp-hsu/runner";
+export { canonicalJson, deepFreeze, sha256 } from "@mcpeak/runner";

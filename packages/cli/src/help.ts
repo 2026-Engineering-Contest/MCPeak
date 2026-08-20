@@ -1,5 +1,5 @@
 export const TEST_USAGE =
-  "사용법: ohmymcp test <suite.json> --command <executable> [--arg <value> ...] [--determinism] [--reset-cmd <command>] [--json] [--junit <path>] [--repair-bundle <path>] [--stderr-lines <N>]";
+  "사용법: mcpeak test <suite.json> --command <executable> [--arg <value> ...] [--determinism] [--reset-cmd <command>] [--json] [--junit <path>] [--repair-bundle <path>] [--stderr-lines <N>]";
 
 /**
  * 시험 실행 옵션 설명. `--determinism` 은 툴을 2회 호출하므로 부작용이 있는 서버에서 모르고
@@ -14,7 +14,7 @@ const TEST_OPTIONS = `옵션:
                         않으므로 파이프나 && 는 쓸 수 없습니다`;
 
 export const GENERATE_USAGE =
-  "사용법: ohmymcp generate --suite-id <id> --name <name> --out <suite.json> --command <executable> [--arg <value> ...] [--baseline-only] [--provider <codex|claude>] [--model <model>] [--no-dry-run] [--cassette <path>] [--record] [--reset-cmd <command>] [--no-repair] [--force]";
+  "사용법: mcpeak generate --suite-id <id> --name <name> --out <suite.json> --command <executable> [--arg <value> ...] [--baseline-only] [--provider <codex|claude>] [--model <model>] [--no-dry-run] [--cassette <path>] [--record] [--reset-cmd <command>] [--no-repair] [--force]";
 
 /**
  * 시험 실행 옵션 설명. 사용법 한 줄로는 `--cassette` 가 무엇을 파일로 남기는지, `--reset-cmd`
@@ -34,7 +34,7 @@ const GENERATE_DRY_RUN_OPTIONS = `옵션:
                         멈추는 것입니다`;
 
 export const REPAIR_USAGE =
-  "사용법: ohmymcp repair <bundle.json> --provider <codex|claude> --model <model> [--max-cases <N>] [--no-stderr] [--yes]";
+  "사용법: mcpeak repair <bundle.json> --provider <codex|claude> --model <model> [--max-cases <N>] [--no-stderr] [--yes]";
 
 /**
  * repair 옵션 설명. 사용법 한 줄로는 `--no-stderr` 가 무엇을 빼는지, `--yes` 가 무엇을 건너뛰는지
@@ -48,7 +48,7 @@ const REPAIR_OPTIONS = `옵션:
                      텍스트라 경로·토큰·데이터가 섞일 수 있습니다
   --yes              전송 확인 화면을 건너뜁니다. 비대화형 환경에서 필요합니다`;
 
-export const REPLAY_USAGE = "사용법: ohmymcp replay <suite.json> --cassette <path>";
+export const REPLAY_USAGE = "사용법: mcpeak replay <suite.json> --cassette <path>";
 
 /**
  * 재생이 무엇을 하지 않는지가 이 명령의 핵심이다. 서버를 안 띄운다는 것과, 마스킹된 값에서는
@@ -58,13 +58,13 @@ const REPLAY_OPTIONS = `옵션:
   --cassette <path>  재생할 카세트 파일입니다. 필수입니다.
 
 replay 는 MCP 서버를 실행하지 않고 카세트에 녹화된 응답만 돌려줍니다. 카세트에 없는 호출을
-만나면 실패합니다. 녹화는 \`ohmymcp generate --cassette <path> --record\` 로 합니다.
+만나면 실패합니다. 녹화는 \`mcpeak generate --cassette <path> --record\` 로 합니다.
 
 카세트는 저장할 때 \`token\`·\`apiKey\` 같은 이름의 값을 가립니다. 그 자리의 판정은 실제 서버와
 다를 수 있어 재생 시 경고합니다.`;
 
 export const VERIFY_USAGE =
-  "사용법: ohmymcp verify <cassette.json> --command <executable> [--arg <value> ...]";
+  "사용법: mcpeak verify <cassette.json> --command <executable> [--arg <value> ...]";
 
 /**
  * `verify` 가 무엇을 **하지 않는지**가 이 명령의 핵심이다. 서버를 부르지만 카세트를 고치지
@@ -104,8 +104,8 @@ const COMMANDS = `명령:
 
 export const GLOBAL_HELP = `OhMyMCP — MCP 서버 테스트 프레임워크
 
-사용법: ohmymcp <명령> [옵션]
-        ohmymcp help [명령]
+사용법: mcpeak <명령> [옵션]
+        mcpeak help [명령]
 
 ${COMMANDS}
 
@@ -114,12 +114,12 @@ ${COMMANDS}
   --version   버전을 표시합니다.
 
 서브커맨드 도움말:
-  ohmymcp help <명령>
-  ohmymcp <명령> --help
+  mcpeak help <명령>
+  mcpeak <명령> --help
 `;
 
 const commandDiscovery =
-  "사용 가능한 명령: test, generate, repair, replay, verify. 전체 도움말: ohmymcp --help";
+  "사용 가능한 명령: test, generate, repair, replay, verify. 전체 도움말: mcpeak --help";
 
 export const TEST_USAGE_HINT = `${TEST_USAGE} ${commandDiscovery}`;
 

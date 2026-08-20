@@ -5,7 +5,7 @@
 
 ## 1. 배경과 근거
 
-`ohmymcp generate`의 AI 검토가 Codex와 Claude 양쪽에서 실패한다. 원인은 두 개다.
+`mcpeak generate`의 AI 검토가 Codex와 Claude 양쪽에서 실패한다. 원인은 두 개다.
 
 **원인 1. Codex는 프로세스가 뜨지도 않는다.**
 `packages/generate/src/providers.ts:65` `hasRequiredCapabilities`가 `codex exec --help` 출력에
@@ -194,7 +194,7 @@ if ("suite" in raw || "summary" in raw || "warnings" in raw)
    한 글자도 바꾸지 않는다.
 4. `prompt()`가 고정 지침 뒤에 suite 스키마를 붙인다.
    `${FIXED_INSTRUCTION}\n\nTestSuiteSpec JSON Schema:\n${JSON.stringify(MCP_SUITE_JSON_SCHEMA)}\n\nsuiteJson 필드에는 이 스키마를 만족하는 suite를 JSON 문자열로 직렬화해 넣는다.\n\n${JSON.stringify(request)}\n${UNTRUSTED_WARNING}`
-   `MCP_SUITE_JSON_SCHEMA`는 `@ohmymcp-hsu/runner`에서 import한다(단방향 의존 유지).
+   `MCP_SUITE_JSON_SCHEMA`는 `@mcpeak/runner`에서 import한다(단방향 의존 유지).
    프롬프트가 커지므로 `MAX_REQUEST_BYTES` 검사에 걸리지 않는지 확인한다. 걸리면 수정하지 말고 보고한다.
 5. `unwrap`을 §4-2 계약대로 다시 쓴다.
 6. `authoring-request.ts`에 §4-3을 적용한다.
@@ -395,7 +395,7 @@ it("실패 메시지에 prompt·stdout·stderr·stack·인증정보가 노출되
 
 1. 프리플라이트(읽기 전용): `codex --version`, `claude --version`, `codex login status`,
    `examples/weather-server`가 기동되는지 확인.
-2. Codex로 `ohmymcp generate`를 1회 실행해 승인본을 만들고 `ohmymcp test`가
+2. Codex로 `mcpeak generate`를 1회 실행해 승인본을 만들고 `mcpeak test`가
    `2 passed, 0 failed`인지 확인한다.
 3. Claude로 같은 절차를 1회 실행해 같은 결과인지 확인한다.
 4. 두 provider 각각 같은 입력으로 2회 실행해 저장된 suite 파일의 바이트가 동일한지 확인한다
@@ -408,8 +408,8 @@ it("실패 메시지에 prompt·stdout·stderr·stack·인증정보가 노출되
 
 | Wave | Task | 터미널 | worktree | 브랜치 | 모델 |
 |---|---|---|---|---|---|
-| 1 | A1 | 터미널 1 | `.claude/worktrees/ohmymcp-generate-provider` | `fix/generate-provider-schema` | 상위 |
-| 1 | B1 | 터미널 2 | `.claude/worktrees/ohmymcp-cli-provider-failure` | `fix/cli-provider-failure-message` | 상위 |
+| 1 | A1 | 터미널 1 | `.claude/worktrees/mcpeak-generate-provider` | `fix/generate-provider-schema` | 상위 |
+| 1 | B1 | 터미널 2 | `.claude/worktrees/mcpeak-cli-provider-failure` | `fix/cli-provider-failure-message` | 상위 |
 | 2 | C1 | 메인 세션 | 없음 (루트) | 없음 | 상위 |
 
 A1과 B1은 쓰는 파일이 겹치지 않고 `PublicProviderFailure` 타입도 바뀌지 않으므로 병렬이 안전하다.
@@ -444,11 +444,11 @@ untracked다. **worktree를 만들기 전에 커밋되어 있어야 한다.** �
 [1단계: 작업 공간 만들기] 다른 무엇보다 먼저 이것부터 해라.
 
 이 저장소의 루트에서
-  git worktree add .claude/worktrees/ohmymcp-generate-provider -b fix/generate-provider-schema
-를 실행한 뒤 세션을 방금 만든 .claude/worktrees/ohmymcp-generate-provider 로 옮겨라.
+  git worktree add .claude/worktrees/mcpeak-generate-provider -b fix/generate-provider-schema
+를 실행한 뒤 세션을 방금 만든 .claude/worktrees/mcpeak-generate-provider 로 옮겨라.
 
 진입 후 아래를 확인하고, 하나라도 어긋나면 중단하고 BLOCKED로 보고해라:
-  - pwd가 .claude/worktrees/ohmymcp-generate-provider 로 끝나는지
+  - pwd가 .claude/worktrees/mcpeak-generate-provider 로 끝나는지
   - git log --oneline -1 이 루트에서 본 기점 커밋과 같은지
   - docs/plans/2026-08-12-ai-provider-호출-복구-구현계획.md 와
     docs/ai-provider-schema-compatibility.md 가 실제로 존재하는지
@@ -507,11 +507,11 @@ untracked다. **worktree를 만들기 전에 커밋되어 있어야 한다.** �
 [1단계: 작업 공간 만들기] 다른 무엇보다 먼저 이것부터 해라.
 
 이 저장소의 루트에서
-  git worktree add .claude/worktrees/ohmymcp-cli-provider-failure -b fix/cli-provider-failure-message
-를 실행한 뒤 세션을 방금 만든 .claude/worktrees/ohmymcp-cli-provider-failure 로 옮겨라.
+  git worktree add .claude/worktrees/mcpeak-cli-provider-failure -b fix/cli-provider-failure-message
+를 실행한 뒤 세션을 방금 만든 .claude/worktrees/mcpeak-cli-provider-failure 로 옮겨라.
 
 진입 후 아래를 확인하고, 하나라도 어긋나면 중단하고 BLOCKED로 보고해라:
-  - pwd가 .claude/worktrees/ohmymcp-cli-provider-failure 로 끝나는지
+  - pwd가 .claude/worktrees/mcpeak-cli-provider-failure 로 끝나는지
   - git log --oneline -1 이 루트에서 본 기점 커밋과 같은지
   - docs/plans/2026-08-12-ai-provider-호출-복구-구현계획.md 가 실제로 존재하는지
   - git status --short 가 비어 있는지

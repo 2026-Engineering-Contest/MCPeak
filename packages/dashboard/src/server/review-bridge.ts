@@ -1,4 +1,4 @@
-import type { ReviewIO } from "ohmymcp/commands";
+import type { ReviewIO } from "@mcpeak/cli/commands";
 import type { PendingQuestion, RunEventInput } from "../api-types.js";
 import { ansiToHtml } from "./ansi.js";
 

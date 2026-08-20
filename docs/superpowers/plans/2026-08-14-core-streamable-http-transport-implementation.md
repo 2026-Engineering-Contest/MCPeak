@@ -3,7 +3,7 @@
 - 설계 문서: `docs/superpowers/specs/2026-08-14-core-streamable-http-transport-design.md`
 - 선행 결정: `docs/adr/0020-streamable-http-transport.md`
 - 대상 패키지: `packages/core` 단독 (그 밖에는 `docs/` 와 `.changeset/` 만)
-- 해결 이슈: [#16](https://github.com/2026-Engineering-Contest/OhMyMCP/issues/16)
+- 해결 이슈: [#16](https://github.com/2026-Engineering-Contest/MCPeak/issues/16)
 
 ## 1. 실행 모델
 
@@ -169,7 +169,7 @@ packages/core/src/index.ts
 **입력 계약.** H1 이 만든 진단 · 오류 계약, H2 가 만든 옵션 계약. 설계 문서 §3.3 의 SDK 실측.
 
 **산출 계약.** `connectHttp(options: HttpConnectOptions): Promise<McpHttpConnection>` 와
-`connect(options: ConnectOptions): Promise<McpClient>` 가 `@ohmymcp-hsu/core` 에서 import 가능.
+`connect(options: ConnectOptions): Promise<McpClient>` 가 `@mcpeak/core` 에서 import 가능.
 `connect` 의 반환 타입은 `Promise<McpClient>` 그대로. `McpHttpConnection` ·
 `McpHttpDiagnostics` · `McpDiagnostics` 타입 재수출.
 
@@ -215,7 +215,7 @@ packages/core/README.md                       HTTP 연결 사용법 절 추가
 - `docs/architecture.md` 2절 표의 `core` 입력 칸이
   `ConnectOptions (command·args·env·cwd 또는 url·headers)`
 - `packages/core/README.md` 에 `connect({ url })` 예제와 "OAuth 미지원 · 재연결 미지원" 한 줄
-- changeset 은 `@ohmymcp-hsu/core` 의 `minor` 이고 본문이 한국어 한 문단
+- changeset 은 `@mcpeak/core` 의 `minor` 이고 본문이 한국어 한 문단
 
 **표적 검증.** `pnpm lint`
 **회귀 검증.** 없음. 코드 변경이 없다.
@@ -298,10 +298,10 @@ docs/adr/0020-streamable-http-transport.md
 
 ```
 [1단계: 작업 공간 만들기] 다른 무엇보다 먼저 이것부터 해라.
-  git worktree add .claude/worktrees/ohmymcp-h1-core-http -b feat/core-http-diagnostics main
+  git worktree add .claude/worktrees/mcpeak-h1-core-http -b feat/core-http-diagnostics main
 를 실행한 뒤 그 경로로 세션을 옮겨라.
 진입 후 아래를 확인하고, 하나라도 어긋나면 중단하고 status: BLOCKED 로 보고해라:
-  - pwd 가 .claude/worktrees/ohmymcp-h1-core-http 로 끝나는지
+  - pwd 가 .claude/worktrees/mcpeak-h1-core-http 로 끝나는지
   - git log --oneline -1 이 루트의 main HEAD 와 같은지
   - docs/superpowers/specs/2026-08-14-core-streamable-http-transport-design.md 가 존재하는지
   - docs/superpowers/plans/2026-08-14-core-streamable-http-transport-implementation.md 가 존재하는지
@@ -374,10 +374,10 @@ git status --short 결과, 실행한 검증 명령과 출력 요약, 임의로 �
 
 ```
 [1단계: 작업 공간 만들기] 다른 무엇보다 먼저 이것부터 해라.
-  git worktree add .claude/worktrees/ohmymcp-h2-core-http -b feat/core-http-options main
+  git worktree add .claude/worktrees/mcpeak-h2-core-http -b feat/core-http-options main
 를 실행한 뒤 그 경로로 세션을 옮겨라.
 진입 후 아래를 확인하고, 하나라도 어긋나면 중단하고 status: BLOCKED 로 보고해라:
-  - pwd 가 .claude/worktrees/ohmymcp-h2-core-http 로 끝나는지
+  - pwd 가 .claude/worktrees/mcpeak-h2-core-http 로 끝나는지
   - git log --oneline -1 이 루트의 main HEAD 와 같은지
   - docs/superpowers/specs/2026-08-14-core-streamable-http-transport-design.md 가 존재하는지
   - docs/superpowers/plans/2026-08-14-core-streamable-http-transport-implementation.md 가 존재하는지
@@ -443,10 +443,10 @@ git status --short 결과, 실행한 검증 명령과 출력 요약, 임의로 �
 
 ```
 [1단계: 작업 공간 만들기] 다른 무엇보다 먼저 이것부터 해라.
-  git worktree add .claude/worktrees/ohmymcp-h4-core-http -b docs/core-http-transport main
+  git worktree add .claude/worktrees/mcpeak-h4-core-http -b docs/core-http-transport main
 를 실행한 뒤 그 경로로 세션을 옮겨라.
 진입 후 아래를 확인하고, 하나라도 어긋나면 중단하고 status: BLOCKED 로 보고해라:
-  - pwd 가 .claude/worktrees/ohmymcp-h4-core-http 로 끝나는지
+  - pwd 가 .claude/worktrees/mcpeak-h4-core-http 로 끝나는지
   - git log --oneline -1 이 루트의 main HEAD 와 같은지
   - docs/superpowers/specs/2026-08-14-core-streamable-http-transport-design.md 가 존재하는지
   - docs/adr/0020-streamable-http-transport.md 가 존재하는지
@@ -468,7 +468,7 @@ docs/adr/0020-streamable-http-transport.md 의 결정 절을 먼저 읽어라.
   packages/core/README.md                     connect({ url }) 사용 예제 절 추가.
                                               OAuth 미지원과 재연결 미지원을 한 줄로 명시한다
 만들 것:
-  .changeset/core-streamable-http.md          @ohmymcp-hsu/core 의 minor.
+  .changeset/core-streamable-http.md          @mcpeak/core 의 minor.
                                               본문은 한국어 한 문단
 
 절대 하지 마라:
@@ -500,10 +500,10 @@ git status --short 결과, 임의로 판단한 지점을 담아라.
 
 ```
 [1단계: 작업 공간 만들기] 다른 무엇보다 먼저 이것부터 해라.
-  git worktree add .claude/worktrees/ohmymcp-h3-core-http -b feat/core-http-connect main
+  git worktree add .claude/worktrees/mcpeak-h3-core-http -b feat/core-http-connect main
 를 실행한 뒤 그 경로로 세션을 옮겨라.
 진입 후 아래를 확인하고, 하나라도 어긋나면 중단하고 status: BLOCKED 로 보고해라:
-  - pwd 가 .claude/worktrees/ohmymcp-h3-core-http 로 끝나는지
+  - pwd 가 .claude/worktrees/mcpeak-h3-core-http 로 끝나는지
   - git log --oneline -1 이 루트의 main HEAD 와 같은지
   - docs/superpowers/specs/2026-08-14-core-streamable-http-transport-design.md 가 존재하는지
   - packages/core/src/diagnostics.ts 에 McpHttpDiagnostics 가 있는지 (Task H1 결과)
@@ -623,7 +623,7 @@ H3-core-http-transport	<sha>	2026-08-14
 
 | 거짓 신호 | 이 작업에서의 모습 | 진실 기준 |
 |---|---|---|
-| 테스트 명령이 즉시 exit 0 | `pnpm --filter @ohmymcp-hsu/core test` 는 존재하지 않는 스크립트다. 패키지 `package.json` 에 `test` 가 없어 아무것도 안 하고 성공한다 | 표적 검증은 `pnpm test packages/core`. 출력에 `Test Files ... passed` 줄이 있는지 확인 |
+| 테스트 명령이 즉시 exit 0 | `pnpm --filter @mcpeak/core test` 는 존재하지 않는 스크립트다. 패키지 `package.json` 에 `test` 가 없어 아무것도 안 하고 성공한다 | 표적 검증은 `pnpm test packages/core`. 출력에 `Test Files ... passed` 줄이 있는지 확인 |
 | 타입체크 · 린트 녹색 | 새 파일이 `index.ts` 에서 export 안 돼 검사 대상에서 빠짐 | 검사 파일 수를 출력에서 확인 |
 | HTTP 테스트 녹색 | fixture 서버가 MCP 를 흉내만 내고 실제 handshake 를 안 함 | `listTools` 결과가 서버 등록 툴과 이름까지 같은지 (§12.4 의 1번) |
 | 실패 케이스 녹색 | 오류가 나긴 나는데 전부 같은 코드(`HTTP_CONNECT_FAILED`)로 뭉개짐 | §12.4 의 7 · 8 · 9 · 10 · 11번이 서로 다른 코드를 단언하는지 이름으로 확인 |

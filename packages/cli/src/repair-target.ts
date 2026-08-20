@@ -1,5 +1,5 @@
-import type { TestCaseOrigin } from "@ohmymcp-hsu/generate";
-import type { JsonValue, TestCaseSpec, TestSuiteSpec } from "@ohmymcp-hsu/runner";
+import type { TestCaseOrigin } from "@mcpeak/generate";
+import type { JsonValue, TestCaseSpec, TestSuiteSpec } from "@mcpeak/runner";
 import type { DryRunCaseOutcome } from "./dry-run.js";
 
 /**

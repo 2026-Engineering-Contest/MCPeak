@@ -3,7 +3,11 @@ import packageMetadata from "../package.json";
 import { nodeGenerateDependencies, nodeReviewIO, runGenerateCommand } from "./generate-command.js";
 import { commandHelp, GLOBAL_HELP } from "./help.js";
 import { type RepairCommandDependencies, runRepairCommand } from "./repair-command.js";
-import { type ReplayCommandDependencies, runReplayCommand } from "./replay-command.js";
+import {
+  type ReplayCommandDependencies,
+  ReplayRuntimeUnavailableError,
+  runReplayCommand,
+} from "./replay-command.js";
 import { parseTestCommand, runCli } from "./test-command.js";
 import {
   runVerifyCommand,
@@ -66,7 +70,7 @@ const unavailableRuntimeDependencies = {
  * stdin·stdout 이 둘 다 TTY 일 때만 `interactive` 를 참으로 만든다.
  */
 export function nodeRepairDependencies(
-  generate: typeof import("@ohmymcp-hsu/generate"),
+  generate: typeof import("@mcpeak/generate"),
 ): RepairCommandDependencies {
   return {
     readFile: (path) => readFile(path, "utf8"),
@@ -87,11 +91,36 @@ export function nodeRepairDependencies(
 /**
  * replay 는 `connect` 를 쓰지 않는다. 대신 카세트 로더가 필요하다. 런타임 의존성을 못 불러도
  * 사용 오류는 정상적으로 내야 하므로, 실제로 쓰이기 전에 끝나는 경로를 위해 자리만 채운다.
+ *
+ * **테스트가 배선을 직접 단언할 수 있도록 내보낸다.** 여기서 평범한 Error 로 되돌아가면
+ * 사용자는 "이슈를 보고하세요" 를 보게 되는데, 모듈 모킹으로는 이 경로를 재현할 수 없다 —
+ * `record` 와 `runner` 가 `generate-command` 를 통해 정적 import 체인에 있어서, 그것을
+ * 모킹하면 `index.ts` 로드 자체가 깨진다. `nodeRepairDependencies` 를 함수로 뺀 것과 같은
+ * 이유다(주입을 빠뜨려도 아무 테스트가 안 깨지는 상황을 막는다).
  */
-const unavailableReplayDependencies: ReplayCommandDependencies = {
+export const unavailableReplayDependencies: ReplayCommandDependencies = {
   ...unavailableRuntimeDependencies,
+  /**
+   * 런타임에서 오는 의존성은 전용 오류 타입을 던진다. 평범한 Error 로 두면 `validateSuite`
+   * 자리에서 `CLI_INTERNAL_ERROR` 로 잡혀 "이슈를 보고하세요" 가 나가고, 사용자는 자기
+   * 설치 문제로 버그 리포트를 쓰게 된다. 실제로 가장 먼저 걸리는 것이 `validateSuite` 다.
+   *
+   * `unavailableRuntimeDependencies` 자체는 `test` 경로와 공유하므로 여기서만 덮는다.
+   */
+  validateSuite: (): never => {
+    throw new ReplayRuntimeUnavailableError();
+  },
   loadCassette: async (): Promise<never> => {
-    throw new Error("runtime dependencies unavailable");
+    throw new ReplayRuntimeUnavailableError();
+  },
+  startRunner: (): never => {
+    throw new ReplayRuntimeUnavailableError();
+  },
+  finalize: async (): Promise<never> => {
+    throw new ReplayRuntimeUnavailableError();
+  },
+  renderReport: (): never => {
+    throw new ReplayRuntimeUnavailableError();
   },
 };
 
@@ -137,18 +166,18 @@ export async function run(argv: string[]): Promise<number> {
     }
   }
   if (argv.length === 1 && argv[0] === "--version") {
-    process.stdout.write(`ohmymcp ${packageMetadata.version}\n`);
+    process.stdout.write(`mcpeak ${packageMetadata.version}\n`);
     return 0;
   }
   if (argv[0] === "generate") {
-    let core: typeof import("@ohmymcp-hsu/core");
-    let runner: typeof import("@ohmymcp-hsu/runner");
-    let generate: typeof import("@ohmymcp-hsu/generate");
+    let core: typeof import("@mcpeak/core");
+    let runner: typeof import("@mcpeak/runner");
+    let generate: typeof import("@mcpeak/generate");
     try {
       [core, runner, generate] = await Promise.all([
-        import("@ohmymcp-hsu/core"),
-        import("@ohmymcp-hsu/runner"),
-        import("@ohmymcp-hsu/generate"),
+        import("@mcpeak/core"),
+        import("@mcpeak/runner"),
+        import("@mcpeak/generate"),
       ]);
     } catch {
       return runGenerateCommand(argv, {
@@ -204,12 +233,12 @@ export async function run(argv: string[]): Promise<number> {
      * `generate` 분기와 같은 모양으로 동적 import 한다. `test` 경로는 이 분기를 지나지 않으므로
      * 여전히 `core` 와 `runner` 만 로드한다. 계획서 §8 위험표 첫 줄.
      */
-    let generate: typeof import("@ohmymcp-hsu/generate");
+    let generate: typeof import("@mcpeak/generate");
     try {
-      generate = await import("@ohmymcp-hsu/generate");
+      generate = await import("@mcpeak/generate");
     } catch {
       process.stderr.write(
-        "오류 [REPAIR_RUNTIME_UNAVAILABLE]: 진단에 필요한 @ohmymcp-hsu/generate 를 로드하지 못했습니다.\n해결: 의존성을 설치한 뒤 다시 실행하세요.\n",
+        "오류 [REPAIR_RUNTIME_UNAVAILABLE]: 진단에 필요한 @mcpeak/generate 를 로드하지 못했습니다.\n해결: 의존성을 설치한 뒤 다시 실행하세요.\n",
       );
       return 1;
     }
@@ -222,13 +251,10 @@ export async function run(argv: string[]): Promise<number> {
     }
   }
   if (argv[0] === "replay") {
-    let runner: typeof import("@ohmymcp-hsu/runner");
-    let record: typeof import("@ohmymcp-hsu/record");
+    let runner: typeof import("@mcpeak/runner");
+    let record: typeof import("@mcpeak/record");
     try {
-      [runner, record] = await Promise.all([
-        import("@ohmymcp-hsu/runner"),
-        import("@ohmymcp-hsu/record"),
-      ]);
+      [runner, record] = await Promise.all([import("@mcpeak/runner"), import("@mcpeak/record")]);
     } catch {
       return runReplayCommand(argv.slice(1), unavailableReplayDependencies);
     }
@@ -245,13 +271,10 @@ export async function run(argv: string[]): Promise<number> {
     });
   }
   if (argv[0] === "verify") {
-    let core: typeof import("@ohmymcp-hsu/core");
-    let record: typeof import("@ohmymcp-hsu/record");
+    let core: typeof import("@mcpeak/core");
+    let record: typeof import("@mcpeak/record");
     try {
-      [core, record] = await Promise.all([
-        import("@ohmymcp-hsu/core"),
-        import("@ohmymcp-hsu/record"),
-      ]);
+      [core, record] = await Promise.all([import("@mcpeak/core"), import("@mcpeak/record")]);
     } catch {
       return runVerifyCommand(argv.slice(1), unavailableVerifyDependencies);
     }
@@ -271,13 +294,10 @@ export async function run(argv: string[]): Promise<number> {
   } catch {
     return runCli(argv, unavailableDependencies);
   }
-  let core: typeof import("@ohmymcp-hsu/core");
-  let runner: typeof import("@ohmymcp-hsu/runner");
+  let core: typeof import("@mcpeak/core");
+  let runner: typeof import("@mcpeak/runner");
   try {
-    [core, runner] = await Promise.all([
-      import("@ohmymcp-hsu/core"),
-      import("@ohmymcp-hsu/runner"),
-    ]);
+    [core, runner] = await Promise.all([import("@mcpeak/core"), import("@mcpeak/runner")]);
   } catch {
     return runCli(argv, unavailableRuntimeDependencies);
   }

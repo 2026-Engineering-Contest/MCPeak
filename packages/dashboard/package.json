@@ -1,19 +1,19 @@
 {
-  "name": "@ohmymcp-hsu/dashboard",
-  "version": "0.1.1",
+  "name": "@mcpeak/dashboard",
+  "version": "0.1.2",
   "private": false,
   "type": "module",
   "description": "OhMyMCP 대시보드 (로컬 웹 UI · CLI 플로우 구동)",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/2026-Engineering-Contest/OhMyMCP.git",
+    "url": "git+https://github.com/2026-Engineering-Contest/MCPeak.git",
     "directory": "packages/dashboard"
   },
-  "homepage": "https://github.com/2026-Engineering-Contest/OhMyMCP#readme",
-  "bugs": "https://github.com/2026-Engineering-Contest/OhMyMCP/issues",
+  "homepage": "https://github.com/2026-Engineering-Contest/MCPeak#readme",
+  "bugs": "https://github.com/2026-Engineering-Contest/MCPeak/issues",
   "bin": {
-    "ohmymcp-dashboard": "./dist/dashboard-cli.mjs"
+    "mcpeak-dashboard": "./dist/dashboard-cli.mjs"
   },
   "publishConfig": {
     "access": "public"
@@ -42,12 +42,12 @@
     "dev": "vite dev web"
   },
   "dependencies": {
-    "@ohmymcp-hsu/core": "workspace:*",
-    "@ohmymcp-hsu/generate": "workspace:*",
-    "@ohmymcp-hsu/mock": "workspace:*",
-    "@ohmymcp-hsu/record": "workspace:*",
-    "@ohmymcp-hsu/runner": "workspace:*",
-    "ohmymcp": "workspace:*"
+    "@mcpeak/core": "workspace:*",
+    "@mcpeak/generate": "workspace:*",
+    "@mcpeak/mock": "workspace:*",
+    "@mcpeak/record": "workspace:*",
+    "@mcpeak/runner": "workspace:*",
+    "@mcpeak/cli": "workspace:*"
   },
   "devDependencies": {
     "@tailwindcss/vite": "4.3.3",

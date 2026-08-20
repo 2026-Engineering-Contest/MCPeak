@@ -1,10 +1,10 @@
-# @ohmymcp-hsu/record
+# @mcpeak/record
 
 MCP 클라이언트를 카세트로 감싸 녹화·재생하고, 값이 프로세스 밖으로 나가는 경계에서
 비밀값을 제거한다.
 
 - **오너:** `@ddxng5` (② replay/record 파트)
-- **의존:** `@ohmymcp-hsu/core`
+- **의존:** `@mcpeak/core`
 - **결정:** [ADR-0003](../../docs/adr/0003-cassette-matching-key.md) (개정:
   [ADR-0039](../../docs/adr/0039-민감-키-목록과-매칭-경계.md),
   [ADR-0040](../../docs/adr/0040-스키마와-데이터의-마스킹-규칙-분리.md),
@@ -18,7 +18,7 @@ import {
   loadCassette,
   saveCassette,
   type Cassette,
-} from "@ohmymcp-hsu/record";
+} from "@mcpeak/record";
 
 const path = "fixtures/weather.cassette.json";
 const cassette = await loadCassette(path);
@@ -106,7 +106,7 @@ droppedInteractionsMessage(report: CassetteDropReport, cassettePath?: string): s
 피하게 되고, 카세트는 손으로 쓴 목과 똑같이 낡는다. 이 함수가 그 비파괴 경로다.
 
 ```ts
-import { loadCassette, verifyCassette } from "@ohmymcp-hsu/record";
+import { loadCassette, verifyCassette } from "@mcpeak/record";
 
 const cassette = await loadCassette(path);
 if (cassette !== null) {
@@ -117,7 +117,7 @@ if (cassette !== null) {
 ```
 
 **카세트를 고치지도 저장하지도 않는다.** 연결도 닫지 않는다 — 소유권은 호출자에게 있다.
-CLI 는 `ohmymcp verify <cassette.json> --command <executable>` 로 감싼다.
+CLI 는 `mcpeak verify <cassette.json> --command <executable>` 로 감싼다.
 
 읽기 전용인 것은 **카세트 파일이지 서버가 아니다.** 녹화된 요청을 전부 다시 호출하므로,
 메일 발송·결제·파일 쓰기 같은 툴이 카세트에 있으면 그 부작용이 실제로 다시 일어난다.

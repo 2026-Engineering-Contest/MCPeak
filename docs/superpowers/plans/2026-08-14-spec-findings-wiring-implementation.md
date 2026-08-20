@@ -74,7 +74,7 @@ candidate 에 싣고, T4 가 그 필드를 읽는다. 병렬로 나눌 지점이
 둘째, 사용자가 **단일 PR** 로 정했다. 브랜치를 나누면 합치는 비용만 늘고 얻는 것이 없다.
 
 브랜치: `feat/spec-findings-wiring`
-worktree: `.claude/worktrees/ohmymcp-spec-findings-wiring`
+worktree: `.claude/worktrees/mcpeak-spec-findings-wiring`
 
 웨이브는 한 터미널 안의 순서다.
 
@@ -102,13 +102,13 @@ worktree: `.claude/worktrees/ohmymcp-spec-findings-wiring`
 ```
 [1단계: 작업 공간 만들기] 다른 무엇보다 먼저 이것부터 해라.
 
-  git worktree add .claude/worktrees/ohmymcp-spec-findings-wiring -b feat/spec-findings-wiring HEAD
+  git worktree add .claude/worktrees/mcpeak-spec-findings-wiring -b feat/spec-findings-wiring HEAD
 
-를 실행한 뒤 그 경로(.claude/worktrees/ohmymcp-spec-findings-wiring)로 세션을 옮겨라.
+를 실행한 뒤 그 경로(.claude/worktrees/mcpeak-spec-findings-wiring)로 세션을 옮겨라.
 EnterWorktree 도구에 path 로 그 절대 경로를 넘긴다. name 으로 새로 만들게 하지 마라.
 
 진입 후 아래를 확인하고, 하나라도 어긋나면 중단하고 `BLOCKED: <사유>` 로 보고해라.
-  - pwd 가 .claude/worktrees/ohmymcp-spec-findings-wiring 인지
+  - pwd 가 .claude/worktrees/mcpeak-spec-findings-wiring 인지
   - git log --oneline -1 이 루트에서 적어 둔 기점 SHA 와 같은지
   - docs/superpowers/plans/2026-08-14-spec-findings-wiring-implementation.md 가 존재하는지
   - docs/superpowers/specs/2026-08-14-spec-findings-wiring-design.md 가 존재하는지
@@ -359,7 +359,7 @@ refactor(runner): 도달 불가한 UNCONSTRAINED_SCHEMA 를 제거하고 TYPE_MI
 
 **Interfaces**
 - Consumes: T1 이 줄인 `SpecFindingCode`. `checkInputContract` · `checkAssertionSubstance` 는
-  이미 `@ohmymcp-hsu/runner` 에서 export 돼 있다.
+  이미 `@mcpeak/runner` 에서 export 돼 있다.
 - Produces: 아래 타입. T3 이 같은 필드를 provider 경로에 채우고 T4 가 읽는다.
 
 ```ts
@@ -471,7 +471,7 @@ Expected: FAIL. `specFindings` 가 없다.
 `packages/generate/src/authoring-types.ts`:
 
 ```ts
-import type { SpecFindingsResult } from "@ohmymcp-hsu/runner";
+import type { SpecFindingsResult } from "@mcpeak/runner";
 
 /**
  * 승인 화면이 읽는 비차단 진단. 두 검사를 병합하지 않고 따로 담는다. 각 검사의 정렬과
@@ -511,7 +511,7 @@ export interface CandidateSpecFindings {
 import 를 더한다.
 
 ```ts
-import { checkAssertionSubstance, checkInputContract, validateMcpSuite } from "@ohmymcp-hsu/runner";
+import { checkAssertionSubstance, checkInputContract, validateMcpSuite } from "@mcpeak/runner";
 ```
 
 - [ ] **Step 5: 통과를 확인한다**

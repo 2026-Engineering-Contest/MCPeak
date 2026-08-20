@@ -1,72 +1,63 @@
+import type { JSX } from "react";
 import { useState } from "react";
 import type { PendingQuestion } from "../../../src/api-types.js";
-import { apiSend } from "../api.js";
-
-interface QuestionPanelProps {
-  readonly runId: string;
-  readonly question: PendingQuestion;
-}
 
 /**
- * 대화형 승인 질문 하나를 보여주고 `POST /api/runs/:id/answer`로 응답한다.
+ * 대화형 승인 질문 하나(UI 설계 §4). "질문" 뱃지 + message + kind별 컨트롤.
+ * 표시 전용이다: 응답 전송·패널 숨김은 호출부가 onAnswer로 처리한다(구현계획 §4-5).
+ * input→입력값, choose→선택지 그대로, confirm→"y"|"n".
  *
- * `run-stream.ts`는 새 question 이벤트로 교체되거나 done이 올 때만 pendingQuestion을
- * 비운다(질문과 답 사이에 낀 stdout/stderr 한 줄로 패널이 사라져 응답 불가 상태가 되는
- * 문제를 막기 위해서다). 그래서 "답변 후 패널을 감춘다"는 규칙은 이 컴포넌트가 직접
- * 담당한다: 자신이 마지막으로 성공시킨 question.id를 로컬 state로 들고 있다가, 같은
- * id의 질문이 다시 props로 오면(즉 상위 state가 아직 안 바뀌었으면) null을 렌더한다.
+ * onAnswer가 진행 중인 동안 모든 컨트롤을 비활성화한다. 같은 questionId로
+ * POST /answer가 중복 전송되면 첫 요청만 성공하고 나머지는 409가 되어,
+ * 이미 처리된 질문인데 사용자에게 오류가 보인다(PR #199 리뷰 반영).
  *
- * 질문이 바뀔 때 입력값·에러를 초기화하는 책임은 useEffect가 아니라 호출부의
- * `key={question.id}` 리마운트에 맡긴다(리마운트가 곧 초기화라 effect가 필요 없다).
+ * 질문이 바뀔 때 입력값 초기화는 호출부의 `key={question.id}` 리마운트에 맡긴다.
  */
-export function QuestionPanel({ runId, question }: QuestionPanelProps) {
-  const [answeredId, setAnsweredId] = useState<string | null>(null);
+export function QuestionPanel(props: {
+  question: PendingQuestion;
+  onAnswer: (value: string) => Promise<void>;
+}): JSX.Element {
+  const { question, onAnswer } = props;
   const [inputValue, setInputValue] = useState("");
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
-  if (answeredId === question.id) {
-    return null;
-  }
-
-  async function answer(value: string): Promise<void> {
-    setSending(true);
-    setError(null);
+  async function submit(value: string): Promise<void> {
+    if (busy) return;
+    setBusy(true);
     try {
-      await apiSend("POST", `/api/runs/${encodeURIComponent(runId)}/answer`, {
-        questionId: question.id,
-        value,
-      });
-      setAnsweredId(question.id);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      await onAnswer(value);
     } finally {
-      setSending(false);
+      setBusy(false);
     }
   }
 
   return (
-    <div className="space-y-3 rounded-lg border border-amber-300 bg-amber-50 p-4">
-      <p className="font-medium text-slate-800">{question.message}</p>
+    <div className="space-y-3 rounded-lg border border-accent-border bg-accent-soft p-4">
+      <p className="text-sm">
+        <span className="mr-2 inline-flex items-center rounded bg-accent px-1.5 py-0.5 text-xs font-semibold text-white">
+          질문
+        </span>
+        <span className="font-medium text-ink">{question.message}</span>
+      </p>
 
       {question.kind === "input" && (
         <form
           className="flex gap-2"
           onSubmit={(event) => {
             event.preventDefault();
-            void answer(inputValue);
+            void submit(inputValue);
           }}
         >
           <input
-            className="flex-1 rounded border border-slate-300 px-3 py-1.5 text-sm"
+            className="flex-1 rounded border border-line bg-surface px-3 py-1.5 text-sm text-ink disabled:opacity-50"
             value={inputValue}
-            disabled={sending}
+            disabled={busy}
             onChange={(event) => setInputValue(event.target.value)}
           />
           <button
             type="submit"
-            className="rounded bg-slate-900 px-3 py-1.5 text-sm text-white disabled:opacity-50"
-            disabled={sending}
+            className="rounded bg-accent px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+            disabled={busy}
           >
             제출
           </button>
@@ -79,9 +70,9 @@ export function QuestionPanel({ runId, question }: QuestionPanelProps) {
             <button
               key={choice}
               type="button"
-              className="rounded border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100 disabled:opacity-50"
-              disabled={sending}
-              onClick={() => void answer(choice)}
+              className="rounded border border-line bg-surface px-3 py-1.5 text-sm text-ink hover:bg-line-subtle disabled:opacity-50"
+              disabled={busy}
+              onClick={() => void submit(choice)}
             >
               {choice}
             </button>
@@ -93,24 +84,22 @@ export function QuestionPanel({ runId, question }: QuestionPanelProps) {
         <div className="flex gap-2">
           <button
             type="button"
-            className="rounded bg-emerald-600 px-3 py-1.5 text-sm text-white disabled:opacity-50"
-            disabled={sending}
-            onClick={() => void answer("y")}
+            className="rounded bg-accent px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+            disabled={busy}
+            onClick={() => void submit("y")}
           >
             예
           </button>
           <button
             type="button"
-            className="rounded bg-slate-200 px-3 py-1.5 text-sm text-slate-800 disabled:opacity-50"
-            disabled={sending}
-            onClick={() => void answer("n")}
+            className="rounded border border-line bg-surface px-3 py-1.5 text-sm text-ink hover:bg-line-subtle disabled:opacity-50"
+            disabled={busy}
+            onClick={() => void submit("n")}
           >
             아니오
           </button>
         </div>
       )}
-
-      {error !== null && <p className="text-sm text-red-600">{error}</p>}
     </div>
   );
 }

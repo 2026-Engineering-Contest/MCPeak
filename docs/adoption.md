@@ -22,7 +22,7 @@
 
 **2026-08-17 에 0 → 6 이 됐다. §10 목표(3~5개)를 넘겼다.** 오전까지 0이던 이유는 `generate` 가
 `$schema` 하나로 모든 툴을 거절한 것(#135)이었다. PR #141 이 그것을 고쳐 4개가 통과했고, PR #145
-의 부분 생성이 머지된 뒤 둘이 더 붙었다(§1.4.3). 여섯 서버 모두 `tools/list` 부터 `ohmymcp test`
+의 부분 생성이 머지된 뒤 둘이 더 붙었다(§1.4.3). 여섯 서버 모두 `tools/list` 부터 `mcpeak test`
 판정까지 갔다. **"붙여 봤다" 와 "적용했다" 를 같은 칸에 넣지 않는다는 기준은 유지한다** — §1.4 의
 여섯은 후자다.
 
@@ -46,7 +46,7 @@ CI(`.github/workflows/ci.yml`)가 매 실행 두 경로로 돈다.
 
 | 경로 | 무엇을 지키나 |
 |---|---|
-| `pnpm --filter ohmymcp test:e2e` | 빌드 산출물 `dist/cli.mjs` 가 실제로 도는지. 번들링·exports·shebang 결함은 소스 테스트로는 안 잡힌다 |
+| `pnpm --filter @mcpeak/cli test:e2e` | 빌드 산출물 `dist/cli.mjs` 가 실제로 도는지. 번들링·exports·shebang 결함은 소스 테스트로는 안 잡힌다 |
 | `--junit junit-dogfood.xml` → `dorny/test-reporter` | 우리가 내보낸 XML 을 실제 CI 리포터가 읽는지 |
 
 ### 1.2 외부 서버에서 무슨 일이 날 것인가 — 예측과 실측 대조
@@ -204,7 +204,7 @@ MCP error -32601: Tool simulate-research-query requires task augmentation (taskS
 
 | 계층 | 무엇을 실행했나 | 무엇을 받았나 |
 |---|---|---|
-| 1. CLI | `ohmymcp generate --command uvx --arg mcp-server-time` | `오류 [GENERATE_FAILED]: baseline suite를 생성하거나 저장하지 못했습니다.` **원인 없음** |
+| 1. CLI | `mcpeak generate --command uvx --arg mcp-server-time` | `오류 [GENERATE_FAILED]: baseline suite를 생성하거나 저장하지 못했습니다.` **원인 없음** |
 | 2. 라이브러리 | `core.connectStdio` 를 직접 호출하는 임시 스크립트 | `PROCESS_EXITED 요청 완료 전 MCP 서버가 종료되었습니다.` 서버가 죽었다는 사실까지 |
 | 3. 서버 | `uvx mcp-server-time --help` | 아래 traceback. **여기서야 원인이 나왔다** |
 
@@ -231,7 +231,7 @@ Python `mcp` 2.x 가 `McpError` 를 `MCPError` 로 개명했는데 서버가 구
 
 | 항목 | 값 |
 |---|---|
-| 발견 도구 | `ohmymcp repair` |
+| 발견 도구 | `mcpeak repair` |
 | 무엇을 했나 | `repair` 가 원인으로 정규화 불일치를 지목했고, 사람이 해당 줄을 손으로 고쳐 재실행해 초록을 확인했다 |
 | 결과 | 수정됨 |
 | 파생 | 이슈 #122 — "지목이 정확할수록 '그럼 고쳐 줘' 가 따라온다" 는 기능 요구로 이어졌다 |
@@ -247,7 +247,7 @@ Python `mcp` 2.x 가 `McpError` 를 `MCPError` 로 개명했는데 서버가 구
 
 | 항목 | 값 |
 |---|---|
-| 발견 도구 | `ohmymcp generate` |
+| 발견 도구 | `mcpeak generate` |
 | 근거 등급 | **실측.** 실제 서버에 붙여 실행하다 났다 |
 | 무엇이 났나 | `UNSUPPORTED_SCHEMA` at `tools[0].inputSchema.$schema`. 첫 툴, 첫 키에서 멈춤 |
 | 범위 | 붙여 본 두 서버의 툴 **전부** — `server-everything` 13/13 · `server-memory` 9/9. TypeScript SDK 가 zod 에서 스키마를 뽑을 때 기본으로 붙이는 키다 |
@@ -279,7 +279,7 @@ Python `mcp` 2.x 가 `McpError` 를 `MCPError` 로 개명했는데 서버가 구
 
 | 항목 | 값 |
 |---|---|
-| 발견 도구 | `ohmymcp generate` |
+| 발견 도구 | `mcpeak generate` |
 | 근거 등급 | **실측**(증상) + **소스 확인**(위치). 갈라서 적는다 |
 | 무엇이 났나 | `generate` 가 만든 `code`·`path`·`message`·`hint` 4필드를 CLI 가 버리고 원인 없는 두 줄만 출력 |
 | 결과 | 이슈 등록 · @endl24 가 아닌 `cli` 담당이 수정 착수 |
@@ -432,7 +432,7 @@ CI 파서와 맞는가)을 실측해 닫았다.
 | `pnpm test` | 78 파일 · 1832 통과 · 2 skip |
 | `pnpm typecheck --force` | 6/6 성공, `Cached: 0 cached` |
 | `pnpm biome ci .` | 202 파일, 수정 없음 |
-| `pnpm build` 후 `pnpm --filter ohmymcp test:e2e` | 통과 |
+| `pnpm build` 후 `pnpm --filter @mcpeak/cli test:e2e` | 통과 |
 
 ### 사람이 대화형으로 확인한 것
 
@@ -492,19 +492,19 @@ import 가 깨져 서버가 기동조차 못 한다. 관찰 기록의 `mcp-serve
 # TS
 npm install @modelcontextprotocol/server-memory@2026.7.4
 MEM=node_modules/@modelcontextprotocol/server-memory/dist/index.js
-ohmymcp generate --suite-id memory --name m --out m.json --command node --arg "$MEM" --baseline-only
-ohmymcp test m.json --command node --arg "$MEM" --json
+mcpeak generate --suite-id memory --name m --out m.json --command node --arg "$MEM" --baseline-only
+mcpeak test m.json --command node --arg "$MEM" --json
 
 # Python (mcp<2 제약이 핵심이다)
 uv venv pyenv --python 3.11
 VIRTUAL_ENV=pyenv uv pip install \
   mcp-server-time==2026.7.10 mcp-server-calculator==0.2.1 mcp==1.29.0
-ohmymcp generate --suite-id time --name t --out t.json --command pyenv/bin/mcp-server-time --baseline-only
-ohmymcp test t.json --command pyenv/bin/mcp-server-time --json
+mcpeak generate --suite-id time --name t --out t.json --command pyenv/bin/mcp-server-time --baseline-only
+mcpeak test t.json --command pyenv/bin/mcp-server-time --json
 
 # Python FastMCP — 셋째 지문은 이쪽에서만 나온다
-ohmymcp generate --suite-id calc --name c --out c.json --command pyenv/bin/mcp-server-calculator --baseline-only
-ohmymcp test c.json --command pyenv/bin/mcp-server-calculator --json
+mcpeak generate --suite-id calc --name c --out c.json --command pyenv/bin/mcp-server-calculator --baseline-only
+mcpeak test c.json --command pyenv/bin/mcp-server-calculator --json
 ```
 
 **Python 두 서버는 `test` 종료 코드가 1이다.** 정상 경로 케이스가 도메인 값 때문에 실패하는

@@ -45,7 +45,7 @@ export interface McpHttpConnection {
 
 export async function connectStdio(options: StdioConnectOptions): Promise<McpStdioConnection> {
   const transport = new NodeControlledStdioTransport(resolveConnectOptions(options));
-  const sdk = new Client({ name: "ohmymcp", version: "0.0.0" });
+  const sdk = new Client({ name: "mcpeak", version: "0.0.0" });
   // SDK close는 facade에서 끝내고, 실제 child 종료는 lifecycle controller가 한 번만 수행한다.
   // 이 순서가 아니면 lifecycle의 normalClose hook이 다시 자기 close Promise를 await하게 된다.
   const sdkTransport: Transport = {
@@ -132,7 +132,7 @@ export async function connectStdio(options: StdioConnectOptions): Promise<McpStd
 export async function connectHttp(options: HttpConnectOptions): Promise<McpHttpConnection> {
   const resolved = resolveHttpConnectOptions(options);
   const state = new HttpConnectionState(resolved);
-  const sdk = new Client({ name: "ohmymcp", version: "0.0.0" });
+  const sdk = new Client({ name: "mcpeak", version: "0.0.0" });
   try {
     await sdk.connect(state.transport, { timeout: resolved.connectTimeoutMs });
   } catch (cause) {

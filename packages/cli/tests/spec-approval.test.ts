@@ -1,5 +1,5 @@
-import type { TestSuiteSpec } from "@ohmymcp-hsu/runner";
-import { suiteFingerprint } from "@ohmymcp-hsu/runner";
+import type { TestSuiteSpec } from "@mcpeak/runner";
+import { suiteFingerprint } from "@mcpeak/runner";
 import { describe, expect, it } from "vitest";
 import {
   caseApprovalStatus,
@@ -109,7 +109,7 @@ describe("renderSpecApproval", () => {
   it("absent 문장 2줄이 설계 문서 §7.2 와 같다", () => {
     expect(absent).toBe(
       "명세: 승인 지문이 없습니다 (미고정)\n" +
-        "  → ohmymcp generate 로 승인한 명세가 아니거나 승인 이전 버전으로 만든 파일입니다.\n",
+        "  → mcpeak generate 로 승인한 명세가 아니거나 승인 이전 버전으로 만든 파일입니다.\n",
     );
   });
   it("mismatched 문장 3줄이 설계 문서 §7.2 와 같고 두 값이 각각 앞 12자다", () => {

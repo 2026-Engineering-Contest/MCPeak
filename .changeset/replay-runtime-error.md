@@ -10,5 +10,9 @@ cli: `replay` 가 런타임 모듈 로드 실패를 내부 오류로 보고하�
 보고하세요" 가 나갔고, 사용자는 자기 설치 문제로 버그 리포트를 쓰게 됐습니다.
 
 전용 `ReplayRuntimeUnavailableError` 와 `REPLAY_RUNTIME_UNAVAILABLE` 코드로 가릅니다.
-`repair` 가 `REPAIR_RUNTIME_UNAVAILABLE` 로 이미 하던 것과 같은 처리입니다. 명세나 카세트가
-실제로 잘못된 경우는 종전대로 `CLI_INTERNAL_ERROR` · `CASSETTE_READ_FAILED` 입니다.
+`repair` 가 `REPAIR_RUNTIME_UNAVAILABLE` 로 이미 하던 것과 같은 처리입니다.
+
+다른 코드는 그대로입니다. 명세 자체의 문제는 종전대로 `SUITE_FORMAT_UNSUPPORTED` ·
+`SUITE_READ_FAILED` · `SUITE_ENCODING_INVALID` · `SUITE_JSON_INVALID` ·
+`SUITE_VALIDATION_FAILED` 이고, `CLI_INTERNAL_ERROR` 는 `validateSuite` 가 예상치 못하게
+던졌을 때만, `CASSETTE_READ_FAILED` 는 카세트를 읽지 못했을 때만 나옵니다.

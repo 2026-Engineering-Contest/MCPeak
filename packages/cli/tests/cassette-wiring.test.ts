@@ -135,6 +135,47 @@ describe("wireCassette", () => {
     expect(inner.calls).toEqual(["get_weather"]);
   });
 
+  it("forceRecord 로 기존 녹화본이 사라지면 flush 뒤 warnings 에 경고가 쌓인다", async () => {
+    // 기존 카세트에는 get_weather({"city":"서울"}) 하나가 들어 있다.
+    const io = fakeIo(await recordedCassette());
+    const wiring = await wireCassette({
+      inner: fakeInner(),
+      path: ".ohmymcp/x.json",
+      forceRecord: true,
+      io,
+    });
+    // 기존 것을 부르지 않고 다른 케이스만 녹화한다 — 서울이 사라지는 상황이다.
+    await wiring.client.callTool("get_weather", { city: "부산" });
+    // 무엇이 사라지는지는 실행이 끝나야 안다. flush 전에는 경고가 없다.
+    expect(wiring.warnings).toEqual([]);
+
+    await wiring.flush();
+
+    expect(wiring.warnings).toHaveLength(1);
+    expect(wiring.warnings[0]).toContain("상호작용 1개를 지웁니다");
+    expect(wiring.warnings[0]).toContain(".ohmymcp/x.json");
+    expect(wiring.warnings[0]).toContain('get_weather({"city":"서울"})');
+    // 경고는 저장을 막지 않는다. --record 의 의미는 그대로다.
+    expect(io.saved).toHaveLength(1);
+    expect(io.saved[0]?.cassette.interactions).toHaveLength(1);
+  });
+
+  it("auto 모드는 기존 녹화본을 지우지 않으므로 경고가 없다", async () => {
+    const io = fakeIo(await recordedCassette());
+    const wiring = await wireCassette({
+      inner: fakeInner(),
+      path: ".ohmymcp/x.json",
+      forceRecord: false,
+      io,
+    });
+    await wiring.client.callTool("get_weather", { city: "부산" });
+    await wiring.flush();
+
+    expect(wiring.warnings).toEqual([]);
+    // 부르지 않은 기존 녹화본이 그대로 남고 새 것이 덧붙는다.
+    expect(io.saved[0]?.cassette.interactions).toHaveLength(2);
+  });
+
   it("client.close() 가 inner.close() 를 부르고 save 는 안 부른다", async () => {
     const io = fakeIo();
     const inner = fakeInner();

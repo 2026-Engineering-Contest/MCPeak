@@ -49,6 +49,39 @@ try {
 `mode`를 생략하면 `auto`로 동작한다. `cassettePath`는 파일 IO를 수행하지 않고, 실패 메시지에
 표시할 경로로만 사용한다.
 
+### `record` 모드가 지우는 것
+
+`record`는 넘겨받은 `cassette`를 **무시하고 빈 카세트에서 시작한다.** 저장하면 이번 실행이
+부른 것만 남고 나머지는 사라진다. 그것이 "다시 녹화한다"의 의미다.
+
+지우는 것은 막지 않되, **말없이 지우지는 않는다.** `record` 모드에서 `onFlush`가 있으면
+`close()` 시점에 기존 카세트와 비교해 사라지는 상호작용을 `onWarning`으로 알린다.
+
+```
+→ --record 가 기존 카세트의 상호작용 2개를 지웁니다: fixtures/weather.cassette.json
+  기존 3개 중 1개는 유지되고, 이번 실행에 없는 2개는 사라집니다.
+  사라지는 요청: get_weather({"city":"부산"}), get_weather({"city":"제주"})
+  → 이번 실행이 그 케이스를 부르지 않았습니다. 테스트 필터나 중간 실패를 확인하세요.
+  → 기존 녹화본을 지키려면 --record 없이 실행하세요. 없는 것만 덧붙습니다.
+```
+
+경고일 뿐 저장을 막지 않는다. 막으면 `--record`가 갈아엎으라는 명령이라는 의미가 바뀌고,
+`--record`를 자동으로 도는 파이프라인이 깨진다.
+
+경고는 `onFlush`가 성공한 뒤에만 나온다. `onFlush`가 없거나 던지면 파일이 그대로이므로
+사라지는 것도 없는데, 그때 "사라집니다"라고 말하면 거짓이 된다.
+
+판정은 아래 두 함수로 분리돼 있고 `cli`가 직접 부를 수도 있다.
+
+```ts
+diffCassettes(before: Cassette | null, after: Cassette): CassetteDropReport;
+droppedInteractionsMessage(report: CassetteDropReport, cassettePath?: string): string | null;
+```
+
+`dropped` 판정은 `key` 기준이다. 같은 키에 응답만 바뀐 것은 손실이 아니라 갱신이므로 세지
+않는다. `before`가 `null`이면(새 파일) 사라지는 것이 없다. `auto`는 기존 것을 물려받아
+덧붙이므로 이 경고를 내지 않는다.
+
 `close()`는 `onFlush`가 있으면 저장용으로 마스킹한 카세트를 넘긴 뒤 `inner.close()`를
 호출한다. 파일 IO는 `loadCassette`와 `saveCassette`로 분리되어 있고, 테스트에서는 `onFlush`에
 인메모리 저장 함수를 넣으면 된다.

@@ -1401,10 +1401,22 @@ async function runInteractiveReview(
           // 오류 경계를 저장과 분리한다. 카세트 저장 실패는 명세 저장 실패가 아니다. 같이 묶으면
           // 이미 파일이 만들어진 뒤에 SAVE_FAILED 를 말하고, 이어지는 재시도는 OUTPUT_EXISTS 로
           // 막히는데 그때 연결은 flush 가 이미 닫아 놓은 상태다.
+          let cassetteSaved = false;
           try {
             await cassette?.flush();
+            cassetteSaved = true;
           } catch {
             io.write("⚠ 카세트를 저장하지 못했습니다. 명세는 저장됐습니다.\n");
+          }
+          // flush 가 붙인 경고(`--record` 로 사라지는 기존 녹화본)를 내는 유일한 지점이다.
+          // 그 경고는 recorder.close() 안에서야 확정되므로 앞의 두 출력 지점(시험 실행 후 ·
+          // 교정 후)에는 아직 존재하지 않는다. 여기서 안 내면 영영 나오지 않는다.
+          //
+          // 저장에 실패했으면 내지 않는다. 파일이 그대로인데 "사라집니다" 라고 말하게 된다.
+          if (cassetteSaved && cassette !== undefined) {
+            for (const warning of cassette.warnings.slice(printedWarnings))
+              io.write(`${warning}\n`);
+            printedWarnings = cassette.warnings.length;
           }
           // 최종 suite 는 baseline 과 다르다. 사용자가 케이스를 지웠거나 AI 후보를 적용했을 수
           // 있으므로 저장한 그 suite 로 다시 계산한다.

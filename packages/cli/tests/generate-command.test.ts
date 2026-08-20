@@ -22,7 +22,7 @@ import {
   type SanitizedAuthoringCandidate,
   sha256,
 } from "@ohmymcp-hsu/generate";
-import type { Cassette } from "@ohmymcp-hsu/record";
+import { type Cassette, matchKey } from "@ohmymcp-hsu/record";
 import type {
   CallToolCaseSpec,
   ContractAxisKind,
@@ -2795,6 +2795,37 @@ describe("generate 시험 실행 게이트", () => {
     expect(d.output()).toContain("⚠ 카세트를 저장하지 못했습니다.");
     expect(d.stderr.join("")).not.toContain("GENERATE_SAVE_FAILED");
     expect(d.value.link).toHaveBeenCalledOnce();
+  });
+
+  it("카세트 저장이 실패하면 축소 경고를 내지 않는다", async () => {
+    // 파일이 그대로인데 "사라집니다" 라고 말하면 거짓이다. record 는 onFlush 성공 뒤에 경고를
+    // 넘기지만 실제 파일 쓰기는 그 뒤 io.save 라, 출력은 저장 성공까지 기다려야 한다.
+    const stale: Cassette = {
+      version: 1,
+      interactions: [
+        {
+          key: matchKey("weather", { city: "부산" }),
+          request: { toolName: "weather", args: { city: "부산" } },
+          response: { content: [{ type: "text", text: "ok" }], isError: false, raw: { ok: true } },
+        },
+      ],
+    };
+    const d = gateDeps({
+      choices: ["save"],
+      inputs: Array.from({ length: failingCases }, () => "s"),
+      confirms: [true, true],
+    });
+    d.value.cassetteIo = {
+      load: async () => stale,
+      save: async () => {
+        throw new Error("EACCES");
+      },
+    };
+    await expect(
+      runGenerateCommand([...gateArgv, "--cassette", ".ohmymcp/w.json", "--record"], d.value),
+    ).resolves.toBe(0);
+    expect(d.output()).toContain("⚠ 카세트를 저장하지 못했습니다.");
+    expect(d.output()).not.toContain("지웁니다");
   });
 
   it("approval.cases 가 실려도 suiteFingerprint 가 안 바뀐다", async () => {

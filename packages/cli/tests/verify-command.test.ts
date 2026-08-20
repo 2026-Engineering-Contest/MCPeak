@@ -90,6 +90,38 @@ describe("parseVerifyCommand", () => {
     expect(input.args).toStrictEqual(["s.mjs", "-v"]);
   });
 
+  // verify 는 generate --record 가 녹화한 바로 그 서버를 다시 불러야 한다. generate 와 test 가
+  // 받는 명령줄을 여기서 거절하면 그 카세트는 확인할 방법이 아예 없어진다.
+  it("--arg 는 플래그 모양 값을 받는다", () => {
+    const input = parseVerifyCommand([
+      "c.json",
+      "--command",
+      "npx",
+      "--arg",
+      "--yes",
+      "--arg",
+      "--db-path",
+      "--arg",
+      "/tmp/x.db",
+    ]);
+    expect(input.args).toStrictEqual(["--yes", "--db-path", "/tmp/x.db"]);
+  });
+
+  it("--arg 는 빈 문자열도 받는다", () => {
+    expect(parseVerifyCommand(["c.json", "--command", "node", "--arg", ""]).args).toStrictEqual([
+      "",
+    ]);
+  });
+
+  it("--arg 뒤에 아무것도 없으면 거절한다", () => {
+    expect(() => parseVerifyCommand(["c.json", "--command", "node", "--arg"])).toThrow("--arg");
+  });
+
+  // --command 는 실행 파일 자리다. 여기 플래그가 들어온 것은 값을 빠뜨린 오타다.
+  it("--command 는 플래그 모양 값을 거절한다", () => {
+    expect(() => parseVerifyCommand(["c.json", "--command", "--arg"])).toThrow("--command");
+  });
+
   it("--command=value 형태도 받는다", () => {
     expect(parseVerifyCommand(["c.json", "--command=node"]).command).toBe("node");
   });

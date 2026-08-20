@@ -92,16 +92,26 @@ const usage = (message: string): never => {
   throw new VerifyCommandError({ code: "CLI_USAGE", message, hint: VERIFY_USAGE_HINT });
 };
 
-/** 값을 하나 읽는다. `--opt value` 와 `--opt=value` 를 모두 받는다. */
+/**
+ * 값을 하나 읽는다. `--opt value` 와 `--opt=value` 를 모두 받는다.
+ *
+ * `--arg` 만 값의 모양을 검사하지 않는다. 서버 인자는 대부분 플래그 모양이고(`-y`, `--with`,
+ * `--db-path`) 빈 문자열도 정상적인 인자다. `generate` 와 `test` 가 이미 `--arg` 를 그렇게
+ * 받으므로, 여기서 거절하면 **`generate --record` 로 녹화한 바로 그 서버를 `verify` 로는
+ * 부를 수 없다.** 같은 명령줄을 못 받는 verify 는 그 카세트를 확인할 방법이 아예 없다.
+ *
+ * `--command` 는 그대로 검사한다. 실행 파일 자리에 들어온 플래그는 값을 빠뜨린 오타다.
+ */
 function optionValue(argv: readonly string[], index: number, name: string): [string, number] {
+  const anyShape = name === "--arg";
   const token = argv[index] ?? "";
   if (token.startsWith(`${name}=`)) {
     const value = token.slice(name.length + 1);
-    if (value === "") usage(`${name} 옵션 값이 필요합니다.`);
+    if (value === "" && !anyShape) usage(`${name} 옵션 값이 필요합니다.`);
     return [value, index];
   }
   const next = argv[index + 1];
-  if (next === undefined || next === "" || next.startsWith("--"))
+  if (next === undefined || (!anyShape && (next === "" || next.startsWith("--"))))
     usage(`${name} 옵션 값이 필요합니다.`);
   return [next as string, index + 1];
 }

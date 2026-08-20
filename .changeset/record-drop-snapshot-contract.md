@@ -1,5 +1,5 @@
 ---
-"@ohmymcp-hsu/record": minor
+"@mcpeak/record": minor
 ---
 
 record: 아무 경로에도 배선되지 않은 `snapshotContract` 를 공개 API 에서 제거합니다. 비결정

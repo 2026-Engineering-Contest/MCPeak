@@ -1,35 +1,35 @@
 # OhMyMCP CLI
 
-`ohmymcp test`는 JSON 테스트 명세로 로컬 stdio MCP 서버를 직접 시작하고 종료합니다.
+`mcpeak test`는 JSON 테스트 명세로 로컬 stdio MCP 서버를 직접 시작하고 종료합니다.
 
 처음 실행하거나 사용 가능한 명령을 확인할 때는 전체 도움말을 표시합니다. 인자 없이 실행해도
 같은 도움말을 stdout에 쓰고 종료 코드 0을 반환합니다.
 
 ```bash
-ohmymcp --help
-ohmymcp -h
-ohmymcp help
-ohmymcp --version
+mcpeak --help
+mcpeak -h
+mcpeak help
+mcpeak --version
 ```
 
-`ohmymcp help test`와 `ohmymcp test --help`는 `test` 도움말을, `ohmymcp help generate`와
-`ohmymcp generate --help`는 `generate` 도움말을 표시합니다. 도움말과 버전은 오류가 아니므로
+`mcpeak help test`와 `mcpeak test --help`는 `test` 도움말을, `mcpeak help generate`와
+`mcpeak generate --help`는 `generate` 도움말을 표시합니다. 도움말과 버전은 오류가 아니므로
 stderr가 아니라 stdout으로 출력하고 종료 코드 0을 반환합니다.
 
 ```bash
-ohmymcp test packages/cli/tests/fixtures/weather-suite.json \
+mcpeak test packages/cli/tests/fixtures/weather-suite.json \
   --command node \
   --arg examples/weather-server/server.mjs
 ```
 
-문법은 `ohmymcp test <suite.json> --command <executable> [--arg <value> ...] [--json] [--junit <path>] [--stderr-lines <N>]`입니다. 위 예시의 command와 arg는 `node examples/weather-server/server.mjs`로 실행됩니다. `--arg`는 반복할 수 있고, 하이픈으로 시작하는 값은 `--arg=-m`, 빈 값은 `--arg=`로 전달합니다.
+문법은 `mcpeak test <suite.json> --command <executable> [--arg <value> ...] [--json] [--junit <path>] [--stderr-lines <N>]`입니다. 위 예시의 command와 arg는 `node examples/weather-server/server.mjs`로 실행됩니다. `--arg`는 반복할 수 있고, 하이픈으로 시작하는 값은 `--arg=-m`, 빈 값은 `--arg=`로 전달합니다.
 
 stdout에는 보고서만 나갑니다. 기본은 사람이 읽는 보고서이고, `--json`을 주면 `RunnerReport` JSON이 나갑니다. CLI 오류와 서버 프로세스 진단은 stderr로만 나가므로 `--json > report.json`이 깨지지 않습니다. 모든 테스트가 통과하면 종료 코드 0을, failed 또는 aborted report와 입력, 연결, 종료 오류에는 1을 반환합니다.
 
 `--junit <path>`는 CI 도구가 읽는 JUnit XML 리포트를 그 경로에 씁니다.
 
 ```bash
-ohmymcp test weather.json \
+mcpeak test weather.json \
   --command node --arg examples/weather-server/server.mjs \
   --junit reports/junit.xml
 ```
@@ -64,10 +64,10 @@ XML을 만드는 단계에서 실패하면 `CLI_INTERNAL_ERROR`와 함께 종료
 
 ## generate
 
-`ohmymcp generate`는 서버의 `tools/list` 결과에서 결정론적 baseline suite를 만듭니다.
+`mcpeak generate`는 서버의 `tools/list` 결과에서 결정론적 baseline suite를 만듭니다.
 
 ```bash
-ohmymcp generate \
+mcpeak generate \
   --suite-id weather \
   --name "Weather server" \
   --out weather.json \
@@ -79,10 +79,10 @@ ohmymcp generate \
 문법은 다음과 같습니다.
 
 ```text
-ohmymcp generate --suite-id <id> --name <name> --out <suite.json> --command <executable> [--arg <value> ...] [--baseline-only] [--provider <codex|claude>] [--model <model>]
+mcpeak generate --suite-id <id> --name <name> --out <suite.json> --command <executable> [--arg <value> ...] [--baseline-only] [--provider <codex|claude>] [--model <model>]
 ```
 
-`--baseline-only`는 AI를 호출하지 않는 명시적 비대화형 승인입니다. 생성기는 기존 출력 파일을 덮어쓰지 않으며, 같은 디렉터리의 임시 파일을 다시 읽어 suite와 fingerprint를 검증한 뒤 원자적으로 저장합니다. weather-server의 baseline은 `get_weather`에 `{ "city": "example" }`를 사용하므로, 이어서 `ohmymcp test`를 실행하면 get_weather가 실패하고 add는 통과합니다. 이는 baseline이 스키마에서 얻은 출발점일 뿐 실행 성공을 보장하지 않는다는 신호입니다.
+`--baseline-only`는 AI를 호출하지 않는 명시적 비대화형 승인입니다. 생성기는 기존 출력 파일을 덮어쓰지 않으며, 같은 디렉터리의 임시 파일을 다시 읽어 suite와 fingerprint를 검증한 뒤 원자적으로 저장합니다. weather-server의 baseline은 `get_weather`에 `{ "city": "example" }`를 사용하므로, 이어서 `mcpeak test`를 실행하면 get_weather가 실패하고 add는 통과합니다. 이는 baseline이 스키마에서 얻은 출발점일 뿐 실행 성공을 보장하지 않는다는 신호입니다.
 
 TTY에서 `--baseline-only`를 빼면 대화형 검토가 시작됩니다. Codex 또는 Claude provider와 model을 선택할 수 있습니다. 기본 model은 Codex `gpt-5.6-luna`, Claude `haiku`입니다. `--provider`와 `--model`을 함께 지정하면 그 정확한 선택을 사용합니다.
 
@@ -105,4 +105,4 @@ TTY에서 `--baseline-only`를 빼면 대화형 검토가 시작됩니다. Codex
 
 `fingerprint`는 승인한 시점의 명세를 요약한 소문자 hex 64자입니다. 계산 대상은 파일 바이트가 아니라 파싱된 명세 객체이므로 들여쓰기, 줄 끝 문자, 키 순서를 바꿔도 값이 그대로입니다. 답해야 하는 질문이 "바이트가 바뀌었나"가 아니라 "테스트의 의미가 바뀌었나"이기 때문입니다. `approval` 블록 자신은 계산에서 제외됩니다. 자기를 포함한 채로 자기를 요약할 수는 없습니다. 저장 직후에는 파일을 다시 읽어 계산값과 파일에 적힌 값이 모두 승인 시점의 지문과 같은지 확인한 뒤에만 커밋합니다.
 
-마지막으로 승인된 draft의 fingerprint를 확인하고 저장을 다시 승인해야 JSON을 씁니다. 저장한 파일은 기존 `ohmymcp test <suite.json> --command ...` 명령에 그대로 전달할 수 있습니다. 실제 Codex 또는 Claude 호출은 계정과 비용을 사용하는 작업이므로, 자동 테스트나 기본 검증에서는 실행하지 않습니다.
+마지막으로 승인된 draft의 fingerprint를 확인하고 저장을 다시 승인해야 JSON을 씁니다. 저장한 파일은 기존 `mcpeak test <suite.json> --command ...` 명령에 그대로 전달할 수 있습니다. 실제 Codex 또는 Claude 호출은 계정과 비용을 사용하는 작업이므로, 자동 테스트나 기본 검증에서는 실행하지 않습니다.

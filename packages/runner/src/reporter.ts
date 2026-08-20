@@ -109,7 +109,7 @@ const rejectionNoticeLines = (summary: RunnerSummary): readonly string[] =>
         "",
         `${GAP}→ 거절을 기대한 케이스 ${summary.rejectionUnverified}건은 거절 근거를 확인하지 못했습니다.`,
         `${INDENT}서버가 거절한 것인지 다른 이유로 실패한 것인지 이 도구는 판단하지 못합니다.`,
-        `${INDENT}확인: ohmymcp generate 의 승인 화면에서 해당 케이스의 응답을 확인하세요.`,
+        `${INDENT}확인: mcpeak generate 의 승인 화면에서 해당 케이스의 응답을 확인하세요.`,
       ];
 
 /**

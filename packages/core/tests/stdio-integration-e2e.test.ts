@@ -20,7 +20,7 @@ afterEach(async () => {
 });
 
 async function pidPath(): Promise<{ directory: string; path: string }> {
-  const directory = await mkdtemp(join(tmpdir(), "ohmymcp-core-"));
+  const directory = await mkdtemp(join(tmpdir(), "mcpeak-core-"));
   return { directory, path: join(directory, "server.pid") };
 }
 

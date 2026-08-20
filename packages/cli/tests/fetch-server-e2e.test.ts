@@ -5,9 +5,9 @@ import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { run } from "../src/index.js";
 
-vi.mock("@ohmymcp-hsu/core", async () => import("../../core/src/index.js"));
-vi.mock("@ohmymcp-hsu/runner", async () => import("../../runner/src/index.js"));
-vi.mock("@ohmymcp-hsu/generate", async () => import("../../generate/src/index.js"));
+vi.mock("@mcpeak/core", async () => import("../../core/src/index.js"));
+vi.mock("@mcpeak/runner", async () => import("../../runner/src/index.js"));
+vi.mock("@mcpeak/generate", async () => import("../../generate/src/index.js"));
 
 /**
  * 실서버를 띄우는 E2E 다. 다른 태스크와 병렬로 돌리지 않는다.
@@ -65,7 +65,7 @@ describe.sequential("mcp-server-fetch E2E (실서버)", () => {
     async () => {
       // 이 서버는 툴이 1개고 exclusiveMaximum 을 가져 이 계획 전에는 케이스가 0개였다.
       // 계획의 완료 조건 §1.1-3 이 이 단언이다.
-      const directory = await mkdtemp(join(tmpdir(), "ohmymcp-fetch-e2e-"));
+      const directory = await mkdtemp(join(tmpdir(), "mcpeak-fetch-e2e-"));
       const suitePath = join(directory, "fetch.json");
       try {
         const code = await run([

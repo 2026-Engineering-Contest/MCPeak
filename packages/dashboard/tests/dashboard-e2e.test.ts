@@ -13,7 +13,7 @@ import type {
 import { type DashboardServer, startDashboardServer } from "../src/index.js";
 
 /**
- * 대시보드 서버 - `ohmymcp/commands` - 실제 MCP 서버 통로를 HTTP 만으로 관통한다.
+ * 대시보드 서버 - `@mcpeak/cli/commands` - 실제 MCP 서버 통로를 HTTP 만으로 관통한다.
  * 브라우저는 띄우지 않는다. 프론트 로직은 `web/tests` 의 유닛이 검증하고, 여기서 보는 것은
  * 그 아래 통로다. 파일명이 `*-e2e.test.ts` 라 러너가 직렬 갈래로 수집한다.
  */
@@ -166,7 +166,7 @@ describe.sequential("대시보드 실서버 관통", () => {
   it(
     "generate 플로우가 dry-run 질문을 내고 승인까지 간다",
     async () => {
-      const directory = await mkdtemp(join(tmpdir(), "ohmymcp-dashboard-e2e-"));
+      const directory = await mkdtemp(join(tmpdir(), "mcpeak-dashboard-e2e-"));
       const server = await startDashboardServer({ port: 0, root });
       const outPath = join(directory, "generated.json");
       try {
@@ -209,7 +209,7 @@ describe.sequential("대시보드 실서버 관통", () => {
   it(
     "replay 플로우가 카세트로 서버 없이 통과한다",
     async () => {
-      const directory = await mkdtemp(join(tmpdir(), "ohmymcp-dashboard-e2e-"));
+      const directory = await mkdtemp(join(tmpdir(), "mcpeak-dashboard-e2e-"));
       const server = await startDashboardServer({ port: 0, root });
       const outPath = join(directory, "recorded-suite.json");
       const cassettePath = join(directory, "weather.cassette.json");
@@ -288,7 +288,7 @@ describe.sequential("대시보드 실서버 관통", () => {
   it(
     "replay 플로우가 프론트 argv 형태로도 통과한다",
     async () => {
-      const directory = await mkdtemp(join(tmpdir(), "ohmymcp-dashboard-e2e-"));
+      const directory = await mkdtemp(join(tmpdir(), "mcpeak-dashboard-e2e-"));
       const server = await startDashboardServer({ port: 0, root });
       const outPath = join(directory, "recorded-suite.json");
       const cassettePath = join(directory, "weather.cassette.json");

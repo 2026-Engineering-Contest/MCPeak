@@ -1,6 +1,6 @@
-import type { McpClient } from "@ohmymcp-hsu/core";
-import type { Cassette } from "@ohmymcp-hsu/record";
-import { cassetteClient, matchKey, REDACTED } from "@ohmymcp-hsu/record";
+import type { McpClient } from "@mcpeak/core";
+import type { Cassette } from "@mcpeak/record";
+import { cassetteClient, matchKey, REDACTED } from "@mcpeak/record";
 import type {
   FinalizeRunnerExecutionOptions,
   RunnerExecution,
@@ -9,7 +9,7 @@ import type {
   SuiteValidationIssue,
   SuiteValidationResult,
   TestSuiteSpec,
-} from "@ohmymcp-hsu/runner";
+} from "@mcpeak/runner";
 import { REPLAY_USAGE_HINT } from "./help.js";
 
 export interface ReplayCommandInput {
@@ -77,7 +77,7 @@ export interface ReplayCommandDependencies {
  */
 const dictionary: Record<Exclude<ReplayErrorCode, "CLI_USAGE">, Omit<ReplayFailure, "code">> = {
   REPLAY_RUNTIME_UNAVAILABLE: {
-    message: "replay 에 필요한 @ohmymcp-hsu/runner · @ohmymcp-hsu/record 를 로드하지 못했습니다.",
+    message: "replay 에 필요한 @mcpeak/runner · @mcpeak/record 를 로드하지 못했습니다.",
     hint: "의존성을 설치한 뒤 다시 실행하세요. 명세나 카세트 파일의 문제가 아닙니다.",
   },
   SUITE_FORMAT_UNSUPPORTED: {
@@ -106,7 +106,7 @@ const dictionary: Record<Exclude<ReplayErrorCode, "CLI_USAGE">, Omit<ReplayFailu
   },
   CASSETTE_NOT_FOUND: {
     message: "카세트 파일이 없습니다.",
-    hint: "`ohmymcp generate --cassette <path> --record` 로 먼저 녹화하세요.",
+    hint: "`mcpeak generate --cassette <path> --record` 로 먼저 녹화하세요.",
   },
   CASSETTE_READ_FAILED: {
     message: "카세트를 읽지 못했습니다.",
@@ -114,7 +114,7 @@ const dictionary: Record<Exclude<ReplayErrorCode, "CLI_USAGE">, Omit<ReplayFailu
   },
   CASSETTE_INCOMPLETE: {
     message: "카세트에 이 명세의 응답이 모두 들어 있지 않습니다.",
-    hint: "명세를 고쳤다면 `ohmymcp generate --cassette <path> --record` 로 다시 녹화하세요.",
+    hint: "명세를 고쳤다면 `mcpeak generate --cassette <path> --record` 로 다시 녹화하세요.",
   },
   RUNNER_EXECUTION_FAILED: {
     message: "Runner 실행을 시작하지 못했습니다.",

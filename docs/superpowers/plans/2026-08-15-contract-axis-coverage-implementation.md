@@ -94,8 +94,8 @@ PR 이다(로드맵 PR 2-B 선례).
 
 | 터미널 | PR | 브랜치 | worktree | 패키지 | 태스크 |
 |---|---|---|---|---|---|
-| A | 1 | `feat/contract-axes-runner` | `.claude/worktrees/ohmymcp-contract-axes-runner` | `runner` | T1 → T2 → T3 → T4 |
-| B | 2 | `feat/contract-axes-generate-cli` | `.claude/worktrees/ohmymcp-contract-axes-generate-cli` | `generate` · `cli` | T5 → T6 → T7 → T8 → T9 → T10 |
+| A | 1 | `feat/contract-axes-runner` | `.claude/worktrees/mcpeak-contract-axes-runner` | `runner` | T1 → T2 → T3 → T4 |
+| B | 2 | `feat/contract-axes-generate-cli` | `.claude/worktrees/mcpeak-contract-axes-generate-cli` | `generate` · `cli` | T5 → T6 → T7 → T8 → T9 → T10 |
 
 터미널 안의 웨이브.
 
@@ -134,13 +134,13 @@ PR 이다(로드맵 PR 2-B 선례).
 ```
 [1단계: 작업 공간 만들기] 다른 무엇보다 먼저 이것부터 해라.
 
-  git worktree add .claude/worktrees/ohmymcp-contract-axes-runner -b feat/contract-axes-runner HEAD
+  git worktree add .claude/worktrees/mcpeak-contract-axes-runner -b feat/contract-axes-runner HEAD
 
-를 실행한 뒤 그 경로(.claude/worktrees/ohmymcp-contract-axes-runner)로 세션을 옮겨라.
+를 실행한 뒤 그 경로(.claude/worktrees/mcpeak-contract-axes-runner)로 세션을 옮겨라.
 EnterWorktree 도구에 path 로 그 절대 경로를 넘긴다. name 으로 새로 만들게 하지 마라.
 
 진입 후 아래를 확인하고, 하나라도 어긋나면 중단하고 `BLOCKED: <사유>` 로 보고해라.
-  - pwd 가 .claude/worktrees/ohmymcp-contract-axes-runner 인지
+  - pwd 가 .claude/worktrees/mcpeak-contract-axes-runner 인지
   - git log --oneline -1 이 루트에서 적어 둔 기점 SHA 와 같은지
   - docs/superpowers/plans/2026-08-15-contract-axis-coverage-implementation.md 가 존재하는지
   - docs/superpowers/specs/2026-08-15-contract-axis-coverage-design.md 가 존재하는지
@@ -199,13 +199,13 @@ T4 가 끝나면 pnpm test · pnpm typecheck --force · pnpm lint 를 한 번 �
   - git merge-base --is-ancestor <PR1 통합 SHA> origin/main 이 성공한다
 하나라도 실패하면 아무것도 만들지 말고 `BLOCKED: PR 1 미머지` 로 보고해라.
 
-  git worktree add .claude/worktrees/ohmymcp-contract-axes-generate-cli -b feat/contract-axes-generate-cli origin/main
+  git worktree add .claude/worktrees/mcpeak-contract-axes-generate-cli -b feat/contract-axes-generate-cli origin/main
 
-를 실행한 뒤 그 경로(.claude/worktrees/ohmymcp-contract-axes-generate-cli)로 세션을 옮겨라.
+를 실행한 뒤 그 경로(.claude/worktrees/mcpeak-contract-axes-generate-cli)로 세션을 옮겨라.
 EnterWorktree 도구에 path 로 그 절대 경로를 넘긴다. name 으로 새로 만들게 하지 마라.
 
 진입 후 아래를 확인하고, 하나라도 어긋나면 중단하고 `BLOCKED: <사유>` 로 보고해라.
-  - pwd 가 .claude/worktrees/ohmymcp-contract-axes-generate-cli 인지
+  - pwd 가 .claude/worktrees/mcpeak-contract-axes-generate-cli 인지
   - git log --oneline -1 이 루트에서 적어 둔 origin/main 기점 SHA 와 같은지
   - docs/superpowers/plans/2026-08-15-contract-axis-coverage-implementation.md 가 존재하는지
   - docs/superpowers/specs/2026-08-15-contract-axis-coverage-design.md 가 존재하는지
@@ -213,7 +213,7 @@ EnterWorktree 도구에 path 로 그 절대 경로를 넘긴다. name 으로 새
   - pnpm install 로 의존성을 설치하고 pnpm build 로 runner 산출물을 만든 뒤
     `pnpm vitest run packages/generate/tests/baseline.test.ts` 가 실제로 실행되는지
     (generate 와 cli 는 runner 산출물을 본다. 낡은 산출물은 낡은 계약으로 판정한다)
-  - node -e "import('@ohmymcp/runner').then(m => console.log(typeof m.deriveContractAxes, typeof m.matchCoveredAxes))"
+  - node -e "import('@mcpeak/runner').then(m => console.log(typeof m.deriveContractAxes, typeof m.matchCoveredAxes))"
     가 `function function` 을 출력하는지. 아니면 PR 1 이 실제로 안 들어온 것이므로 BLOCKED 다
 
 [2단계: 실행]
@@ -458,7 +458,7 @@ Expected: PASS, 검사 파일 수가 0이 아님
 - [ ] **Step 1: 실패하는 테스트를 쓴다**
 
 ```ts
-import type { ToolDef } from "@ohmymcp/core";
+import type { ToolDef } from "@mcpeak/core";
 import { describe, expect, it } from "vitest";
 import { deriveContractAxes } from "../src/index.js";
 
@@ -559,7 +559,7 @@ Expected: FAIL. `deriveContractAxes is not a function`
 - [ ] **Step 3: 최소 구현**
 
 ```ts
-import type { ToolDef } from "@ohmymcp/core";
+import type { ToolDef } from "@mcpeak/core";
 import { analyzeInputSchema } from "./input-schema.js";
 import { byCodeUnit } from "./ordering.js";
 import type { JsonValue } from "./spec/types.js";
@@ -1699,7 +1699,7 @@ baseline 과 다르므로 저장 직전에 `computeCoverage({ suite: 최종 suit
 의존성은 `GenerateCommandDependencies` 에 선택 필드로 추가한다(기존 선택 의존성 패턴과 같다).
 
 ```ts
-computeCoverage?: typeof import("@ohmymcp/generate").computeCoverage;
+computeCoverage?: typeof import("@mcpeak/generate").computeCoverage;
 ```
 
 `packages/cli/src/index.ts` 의 실제 주입에 `computeCoverage: generate.computeCoverage` 한 줄을
@@ -1770,7 +1770,7 @@ Run: `pnpm test`, `pnpm typecheck --force`, `pnpm lint`
 - [ ] **Step 1: 실제 import 를 센다**
 
 ```bash
-grep -rn 'from "@ohmymcp/runner"' packages/generate/src
+grep -rn 'from "@mcpeak/runner"' packages/generate/src
 ```
 
 목록에 추가될 것은 `deriveContractAxes`, `matchCoveredAxes`, `ContractAxis`,

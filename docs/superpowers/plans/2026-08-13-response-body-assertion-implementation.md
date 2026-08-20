@@ -40,7 +40,7 @@ Runner의 단언은 `toolExists`와 `isError` 둘뿐이다. `examples/weather-se
 - `examples/weather-server`를 대상으로 한 E2E가 통과하고, 같은 입력 2회 실행의 출력 바이트가 같다.
 - `bodyMatchesSchema`가 없는 기존 스위트의 보고서 바이트가 변경 전과 동일하다.
 - `docs/adr/0010-응답-스키마-부분집합-경계.md`와 `docs/adr/0011-응답-본문-추출-규칙.md` 존재.
-- `.changeset/` 신규 파일 1개. `@ohmymcp-hsu/runner` minor.
+- `.changeset/` 신규 파일 1개. `@mcpeak/runner` minor.
 
 ## 3. Global Constraints
 
@@ -443,7 +443,7 @@ const deepEqual = (left: unknown, right: unknown): boolean =>
 `plainObject`와 `typeName`은 `schema-match.ts`에서 가져온다(§5 Task T2).
 
 ```ts
-import type { ToolResult } from "@ohmymcp-hsu/core";
+import type { ToolResult } from "@mcpeak/core";
 import { plainObject, typeName } from "./schema-match.js";
 import type { JsonValue } from "./spec/types.js";
 
@@ -1050,7 +1050,7 @@ result.type === "listTools"
 
 ```markdown
 ---
-"@ohmymcp-hsu/runner": minor
+"@mcpeak/runner": minor
 ---
 
 callTool 응답 본문을 JSON Schema 부분집합으로 검사하는 `bodyMatchesSchema` 단언을 추가합니다.
@@ -1191,7 +1191,7 @@ callTool 응답 본문을 JSON Schema 부분집합으로 검사하는 `bodyMatch
 
 ```js
 {
-  const dir = await mkdtemp(join(tmpdir(), "ohmymcp-dist-body-"));
+  const dir = await mkdtemp(join(tmpdir(), "mcpeak-dist-body-"));
   const pidFile = join(dir, "pid");
   const args = [
     "test",
@@ -1273,7 +1273,7 @@ T1·T2·T3이 `runner/src/index.ts`를 모두 건드리므로 병렬로 나눌 �
 않지만 빌드된 `packages/cli/dist/cli.mjs`가 T3까지의 산출을 담아야 하므로 마지막이다.
 T4는 실제 서버 프로세스를 띄우므로 `CLAUDE.local.md` 규칙상 직렬 전용이다.
 
-worktree 경로: `.claude/worktrees/ohmymcp-runner-body-assertion`
+worktree 경로: `.claude/worktrees/mcpeak-runner-body-assertion`
 브랜치: `feat/runner-body-assertion`
 
 ## 7. 모델 배분
@@ -1310,11 +1310,11 @@ untracked면 새 worktree에 딸려가지 않아 서브에이전트가 문서를
 [1단계: 작업 공간 만들기] 다른 무엇보다 먼저 이것부터 해라.
 
 이 저장소의 루트에서
-  git worktree add .claude/worktrees/ohmymcp-runner-body-assertion -b feat/runner-body-assertion
-를 실행한 뒤 세션을 방금 만든 .claude/worktrees/ohmymcp-runner-body-assertion 로 옮겨라.
+  git worktree add .claude/worktrees/mcpeak-runner-body-assertion -b feat/runner-body-assertion
+를 실행한 뒤 세션을 방금 만든 .claude/worktrees/mcpeak-runner-body-assertion 로 옮겨라.
 
 진입 후 아래를 확인하고, 하나라도 어긋나면 중단하고 BLOCKED로 보고해라:
-  - pwd가 .claude/worktrees/ohmymcp-runner-body-assertion 로 끝나는지
+  - pwd가 .claude/worktrees/mcpeak-runner-body-assertion 로 끝나는지
   - git log --oneline -1 이 루트에서 본 기점 커밋과 같은지
   - docs/superpowers/plans/2026-08-13-response-body-assertion-implementation.md 와
     docs/superpowers/specs/2026-08-13-response-body-assertion-design.md 가 실제로 존재하는지
@@ -1389,7 +1389,7 @@ T4까지 끝나면 아래를 확인하고 사용자에게 보고해라:
   - packages/runner/src/index.ts 가 새 타입과 함수를 모두 재수출하는지
   - docs/adr/0010-응답-스키마-부분집합-경계.md 와
     docs/adr/0011-응답-본문-추출-규칙.md 가 존재하는지
-  - .changeset/ 에 @ohmymcp-hsu/runner minor 파일이 있는지
+  - .changeset/ 에 @mcpeak/runner minor 파일이 있는지
   - pnpm build && node packages/cli/tests/dist-cli-e2e.mjs 가 통과하는지
   - E2E의 결정론성 단언(같은 입력 2회 실행의 표준 출력 바이트 일치)이 실제로 들어 있는지
   - git status --short 에 packages/cli/src/ 변경이 없는지

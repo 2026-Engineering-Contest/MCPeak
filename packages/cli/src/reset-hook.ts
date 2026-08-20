@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { CommandParseError, tokenizeCommand } from "@ohmymcp-hsu/core";
+import { CommandParseError, tokenizeCommand } from "@mcpeak/core";
 
 /**
  * 시험 실행 직전에 서버 상태를 되돌리는 초기화 명령을 실행한다. ADR-0023 의 결정을 구현한다.

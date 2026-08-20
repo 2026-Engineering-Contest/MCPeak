@@ -1,4 +1,4 @@
-# @ohmymcp-hsu/generate
+# @mcpeak/generate
 
 ## 0.5.0
 
@@ -10,7 +10,7 @@
 
   응답 본문이 없는 케이스는 진단에서 **제외합니다.** 호출이 오류로 끝나 서버 응답이 아예 없는 경우가 있는데, 빈 값을 채워 물으면 AI 에게 판단 재료가 없어 지어낸 답만 돌아옵니다. 몇 건을 왜 뺐는지는 화면에 남깁니다.
 
-  `@ohmymcp-hsu/generate` 의 provider 객체에 `diagnoseRejection` 메서드가 추가됐습니다. `RejectionDiagnosisProvider` 의 메서드 이름이 `diagnose` 에서 `diagnoseRejection` 으로 바뀌었습니다 — 한 provider 객체가 기존 `diagnose(request: DiagnosisRequest, …)` 와 시그니처가 충돌하지 않게 하기 위함입니다.
+  `@mcpeak/generate` 의 provider 객체에 `diagnoseRejection` 메서드가 추가됐습니다. `RejectionDiagnosisProvider` 의 메서드 이름이 `diagnose` 에서 `diagnoseRejection` 으로 바뀌었습니다 — 한 provider 객체가 기존 `diagnose(request: DiagnosisRequest, …)` 와 시그니처가 충돌하지 않게 하기 위함입니다.
 
 - 7600b09: 도그푸딩(공개 MCP 서버 8개)에서 잡힌 결함 셋을 고칩니다.
 
@@ -39,8 +39,8 @@
 - Updated dependencies [a2b37e0]
 - Updated dependencies [4e2c6df]
 - Updated dependencies [4558ef9]
-  - @ohmymcp-hsu/core@0.3.0
-  - @ohmymcp-hsu/runner@0.8.0
+  - @mcpeak/core@0.3.0
+  - @mcpeak/runner@0.8.0
 
 ## 0.4.2
 
@@ -48,15 +48,15 @@
 
 - Updated dependencies [ec99eab]
 - Updated dependencies [0f4e5fd]
-  - @ohmymcp-hsu/runner@0.7.0
+  - @mcpeak/runner@0.7.0
 
 ## 0.4.1
 
 ### Patch Changes
 
 - Updated dependencies [0d92470]
-  - @ohmymcp-hsu/core@0.2.0
-  - @ohmymcp-hsu/runner@0.6.1
+  - @mcpeak/core@0.2.0
+  - @mcpeak/runner@0.6.1
 
 ## 0.4.0
 
@@ -67,22 +67,22 @@
   `runner` 가 이미 갖고 있던 `checkInputContract` · `checkAssertionSubstance` 를 두 소비자에 연결해,
   오타·타입 불일치·항상 참인 단언이 승인 전과 실패 직후에 문장으로 보인다.
 
-  - `ohmymcp generate` 승인 화면은 선택한 변경에 걸린 위반을 세어 보여 주고, 위반이 있으면 확인을
+  - `mcpeak generate` 승인 화면은 선택한 변경에 걸린 위반을 세어 보여 주고, 위반이 있으면 확인을
     한 번 더 받는다. 거부하지는 않는다.
-  - `ohmymcp test` 는 실패한 케이스에만 참고 문장을 붙인다. 판정과 exit code 는 바뀌지 않는다.
+  - `mcpeak test` 는 실패한 케이스에만 참고 문장을 붙인다. 판정과 exit code 는 바뀌지 않는다.
     `--json` 은 `spec.findings` 에 구조로 담는다.
 
   공개 타입 변경 둘이 있다.
 
-  - `@ohmymcp-hsu/runner` 의 `SpecFindingCode` 에서 `UNCONSTRAINED_SCHEMA` 가 사라진다. 소비자 경로에서
+  - `@mcpeak/runner` 의 `SpecFindingCode` 에서 `UNCONSTRAINED_SCHEMA` 가 사라진다. 소비자 경로에서
     `validateMcpSuite` 가 먼저 거부해 도달할 수 없는 코드였다.
-  - `@ohmymcp-hsu/generate` 의 `SanitizedAuthoringCandidate` 에 `specFindings` 필드가 생긴다. 승인
+  - `@mcpeak/generate` 의 `SanitizedAuthoringCandidate` 에 `specFindings` 필드가 생긴다. 승인
     지문 계산 대상 밖이라 이미 승인된 지문은 그대로다.
 
 ### Patch Changes
 
 - Updated dependencies [d31c26e]
-  - @ohmymcp-hsu/runner@0.6.0
+  - @mcpeak/runner@0.6.0
 
 ## 0.3.5
 
@@ -100,42 +100,42 @@
   `Array.prototype` 에 인덱스가 정의됐을 때 hole 이 상속값으로 채워져 지문이 전역 상태에 따라
   달라집니다.
 
-  generate: `canonical.ts` 가 `@ohmymcp-hsu/runner` 재수출 한 줄이 됩니다. 공개 API
+  generate: `canonical.ts` 가 `@mcpeak/runner` 재수출 한 줄이 됩니다. 공개 API
   (`canonicalJson` · `sha256`)는 그대로이며 동작도 같습니다. 구현이 한 벌로 유지되어야
   저장 시점 지문과 실행 시점 지문이 갈리지 않습니다.
 
 - Updated dependencies [c728f02]
 - Updated dependencies [9803c19]
 - Updated dependencies [cfa921d]
-  - @ohmymcp-hsu/runner@0.5.0
+  - @mcpeak/runner@0.5.0
 
 ## 0.3.4
 
 ### Patch Changes
 
 - Updated dependencies [d8227e2]
-  - @ohmymcp-hsu/runner@0.4.0
+  - @mcpeak/runner@0.4.0
 
 ## 0.3.3
 
 ### Patch Changes
 
 - Updated dependencies [4da5f7c]
-  - @ohmymcp-hsu/runner@0.3.1
+  - @mcpeak/runner@0.3.1
 
 ## 0.3.2
 
 ### Patch Changes
 
 - Updated dependencies [74c96da]
-  - @ohmymcp-hsu/runner@0.3.0
+  - @mcpeak/runner@0.3.0
 
 ## 0.3.1
 
 ### Patch Changes
 
 - Updated dependencies [a1f9bb4]
-  - @ohmymcp-hsu/runner@0.2.0
+  - @mcpeak/runner@0.2.0
 
 ## 0.3.0
 
@@ -166,4 +166,4 @@
 ### Patch Changes
 
 - Updated dependencies [606600f]
-  - @ohmymcp-hsu/core@0.1.0
+  - @mcpeak/core@0.1.0

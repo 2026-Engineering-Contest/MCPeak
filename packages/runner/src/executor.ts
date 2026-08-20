@@ -1,4 +1,4 @@
-import type { McpClient, ToolDef, ToolResult } from "@ohmymcp-hsu/core";
+import type { McpClient, ToolDef, ToolResult } from "@mcpeak/core";
 import {
   type AssertionResult,
   assertBodyMatchesSchema,

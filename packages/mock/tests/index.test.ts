@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
+import type { ToolDef } from "@mcpeak/core";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import type { ToolDef } from "@ohmymcp-hsu/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ANY, createMockServer, type MockOptions, type MockServer } from "../src/index.js";
 
@@ -39,7 +39,7 @@ afterEach(async () => {
   await Promise.all(opened.splice(0).map((s) => s.close()));
 });
 
-describe("@ohmymcp-hsu/mock", () => {
+describe("@mcpeak/mock", () => {
   it("url 을 돌려주고 그 주소로 붙을 수 있다", async () => {
     const server = await start();
     expect(server.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/mcp$/);
@@ -259,7 +259,7 @@ describe("@ohmymcp-hsu/mock", () => {
  * 판정 자체는 tests/input-validation.test.ts 가 전량 고정한다. 여기서는 **순서**를 본다 —
  * 주입된 응답이 검사보다 우선하고, 검사는 주입이 없을 때만 돈다.
  */
-describe("@ohmymcp-hsu/mock — inputSchema 검사", () => {
+describe("@mcpeak/mock — inputSchema 검사", () => {
   const schemaTools: ToolDef[] = [
     {
       name: "get_weather",

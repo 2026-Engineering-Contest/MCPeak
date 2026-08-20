@@ -2,8 +2,8 @@ import { constants } from "node:fs";
 import { mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ToolDef } from "@ohmymcp-hsu/core";
-import * as runner from "@ohmymcp-hsu/runner";
+import type { ToolDef } from "@mcpeak/core";
+import * as runner from "@mcpeak/runner";
 import { afterEach, describe, expect, it } from "vitest";
 import { deepFreeze } from "../src/canonical.js";
 import { assertConstraints } from "../src/constraints.js";
@@ -19,7 +19,7 @@ import { validateSchema } from "../src/schema.js";
 const temporaryDirectories: string[] = [];
 
 async function temporaryOutDir(): Promise<string> {
-  const directory = await mkdtemp(join(tmpdir(), "ohmymcp-generate-"));
+  const directory = await mkdtemp(join(tmpdir(), "mcpeak-generate-"));
   temporaryDirectories.push(directory);
   return join(directory, "generated");
 }
@@ -100,7 +100,7 @@ describe("generateTests", () => {
       join(outDir, "add.generated.ts"),
     ]);
     const weather = await readFile(paths[0] as string, "utf8");
-    expect(weather).toContain('import { defineMcpSuite } from "@ohmymcp-hsu/runner";');
+    expect(weather).toContain('import { defineMcpSuite } from "@mcpeak/runner";');
     expect(weather).toContain("export const generatedSuite = defineMcpSuite(");
     expect(weather).toContain("직접 수정하지 마세요");
     expect(weather).toContain('"tool": "get_weather"');

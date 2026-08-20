@@ -128,7 +128,7 @@ generate 도움말
 둘째 항목은 `--baseline-only` 로 확인한다. 프로세스가 뜨지 않았는지는 기존 `expectExited` 와 같은
 방식으로 본다. 새 검사 방식을 만들지 마라.
 
-**명령**: `pnpm test`, `pnpm build && pnpm --filter ohmymcp test:e2e`, `pnpm typecheck --force`,
+**명령**: `pnpm test`, `pnpm build && pnpm --filter @mcpeak/cli test:e2e`, `pnpm typecheck --force`,
 `pnpm lint`
 
 **보고서**: `docs/reports/task-r9-out-precheck.md`
@@ -145,12 +145,12 @@ generate 도움말
 [1단계: 작업 공간 만들기] 다른 무엇보다 먼저 이것부터 해라.
 
   cd "$(git rev-parse --show-toplevel)"
-  git worktree add .claude/worktrees/ohmymcp-out-precheck -b feat/generate-out-precheck main
+  git worktree add .claude/worktrees/mcpeak-out-precheck -b feat/generate-out-precheck main
 
 를 실행한 뒤 그 경로로 세션을 옮겨라. 옮긴 다음 아래를 확인하고, 하나라도 어긋나면 중단하고
 BLOCKED 로 보고해라.
 
-  - pwd 가 저장소 루트의 .claude/worktrees/ohmymcp-out-precheck 인지
+  - pwd 가 저장소 루트의 .claude/worktrees/mcpeak-out-precheck 인지
     (git rev-parse --show-toplevel 이 그 경로를 가리키는지로 확인한다)
   - git log --oneline -1 이 루트의 main HEAD 와 같은지
   - docs/superpowers/specs/2026-08-15-generate-out-precheck-design.md 가 있는지
@@ -199,9 +199,9 @@ packages/cli/tests/generate-command.test.ts 는 다른 터미널이 PR 102 에�
 네가 그 파일에서 손댄 범위를 보고서에 적어라.
 
 테스트는 인메모리와 fixtures/ 만 쓴다. connect 는 주입한 가짜다. dist-cli-e2e.mjs 만 실제
-프로세스를 띄우고 그것은 pnpm --filter ohmymcp test:e2e 로 돈다.
+프로세스를 띄우고 그것은 pnpm --filter @mcpeak/cli test:e2e 로 돈다.
 
-검증: pnpm test, pnpm build && pnpm --filter ohmymcp test:e2e, pnpm typecheck --force, pnpm lint
+검증: pnpm test, pnpm build && pnpm --filter @mcpeak/cli test:e2e, pnpm typecheck --force, pnpm lint
 를 모두 돌리고 출력을 보고서에 붙여라. typecheck 는 Cached: 0 cached 인지 확인해라.
 packages/core/tests/stdio-integration.test.ts 는 첫 실행에 종종 실패하는 기존 플레이크다.
 그것만 실패하면 재실행하고 그 사실을 적어라.

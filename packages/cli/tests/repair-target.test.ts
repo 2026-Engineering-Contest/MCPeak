@@ -1,10 +1,10 @@
-import type { McpClient, ToolDef, ToolResult } from "@ohmymcp-hsu/core";
+import type { McpClient, ToolDef, ToolResult } from "@mcpeak/core";
 import type {
   JsonObject,
   TestCaseSpec,
   TestSuiteSpec,
   ToolResultAssertionSpec,
-} from "@ohmymcp-hsu/runner";
+} from "@mcpeak/runner";
 import { describe, expect, it } from "vitest";
 import { runDryRun } from "../src/dry-run.js";
 import { selectRepairTargets } from "../src/repair-target.js";

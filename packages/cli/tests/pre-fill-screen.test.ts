@@ -1,6 +1,6 @@
-import type { ToolDef } from "@ohmymcp-hsu/core";
-import { computeCoverage, createBaselineSuite } from "@ohmymcp-hsu/generate";
-import type { TestSuiteSpec } from "@ohmymcp-hsu/runner";
+import type { ToolDef } from "@mcpeak/core";
+import { computeCoverage, createBaselineSuite } from "@mcpeak/generate";
+import type { TestSuiteSpec } from "@mcpeak/runner";
 import { describe, expect, it } from "vitest";
 import {
   renderCoverage,

@@ -24,7 +24,7 @@ const FAILURE = {
 
 const bundle = (overrides: Record<string, unknown> = {}) => ({
   bundleVersion: REPAIR_BUNDLE_VERSION,
-  generatedBy: "ohmymcp 0.7.0",
+  generatedBy: "mcpeak 0.7.0",
   spec: {
     suiteId: "weather",
     suiteName: "날씨 서버 계약",
@@ -169,7 +169,7 @@ describe("readRepairBundle", () => {
     expect(new Set(messages).size).toBe(REASONS.length);
     for (const message of messages) expect(message.length).toBeGreaterThan(10);
     expect(describeRepairBundleInvalid("versionMismatch")).toContain(
-      "최신 `ohmymcp test --repair-bundle` 로 다시 만드세요",
+      "최신 `mcpeak test --repair-bundle` 로 다시 만드세요",
     );
     expect(describeRepairBundleInvalid("emptyFailures")).toContain("provider 를 부르지 않습니다");
   });

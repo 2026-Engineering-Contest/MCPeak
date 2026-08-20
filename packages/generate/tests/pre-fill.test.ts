@@ -1,5 +1,5 @@
-import type { ToolDef } from "@ohmymcp-hsu/core";
-import type { TestSuiteSpec } from "@ohmymcp-hsu/runner";
+import type { ToolDef } from "@mcpeak/core";
+import type { TestSuiteSpec } from "@mcpeak/runner";
 import { describe, expect, it, vi } from "vitest";
 import { createBaselineSuite } from "../src/baseline.js";
 import type { PreFillProvider } from "../src/pre-fill.js";

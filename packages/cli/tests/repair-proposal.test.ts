@@ -3,9 +3,9 @@ import type {
   AuthoringSessionView,
   McpToolContext,
   TestAuthoringProvider,
-} from "@ohmymcp-hsu/generate";
-import { dispatchAuthoringRequest, prepareAuthoringRequest } from "@ohmymcp-hsu/generate";
-import type { JsonObject, TestCaseSpec, TestSuiteSpec } from "@ohmymcp-hsu/runner";
+} from "@mcpeak/generate";
+import { dispatchAuthoringRequest, prepareAuthoringRequest } from "@mcpeak/generate";
+import type { JsonObject, TestCaseSpec, TestSuiteSpec } from "@mcpeak/runner";
 import { describe, expect, it } from "vitest";
 import { acceptProposal, proposeRepair } from "../src/repair-proposal.js";
 import type { RepairTarget } from "../src/repair-target.js";

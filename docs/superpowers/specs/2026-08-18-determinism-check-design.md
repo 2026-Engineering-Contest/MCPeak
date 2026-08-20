@@ -49,7 +49,7 @@
   클라이언트 래퍼가 한다(§5). "통과 케이스는 본문을 읽지 않는다"(ADR-0027) 배선도 그대로다.
 - **비결정 필드의 무시 목록.** "이 필드는 비교에서 빼라" 는 명세 확장은 이번에 안 한다.
   그것은 `record` 파트의 카세트 매칭 키 책임과 겹치는 영역이라, 필요해지면 이슈로 협의한다.
-- **`generate` 경로.** 이 검사는 `ohmymcp test` 전용이다. 승인 전 dry run 에 붙이는 것은
+- **`generate` 경로.** 이 검사는 `mcpeak test` 전용이다. 승인 전 dry run 에 붙이는 것은
   후속이다.
 
 ## 4. runner 공개 API — `packages/runner/src/determinism.ts` (신규)
@@ -201,7 +201,7 @@ export function createDeterminismCapture(inner: McpClient): DeterminismCapture;
 오류).
 
 ```
-ohmymcp test <suite.json> --command <executable> [--arg <value> ...]
+mcpeak test <suite.json> --command <executable> [--arg <value> ...]
   [--determinism] [--reset-cmd <command>]
   [--json] [--junit <path>] [--repair-bundle <path>] [--stderr-lines <N>]
 ```

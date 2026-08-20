@@ -1,7 +1,7 @@
 # CLI 프로세스 진단 출력 설계 (2026-08-13)
 
 - 상태: 사용자 승인 대기
-- 구현 대상: `@ohmymcp-hsu/cli` (패키지명 `ohmymcp`)
+- 구현 대상: `@mcpeak/cli` (패키지명 `mcpeak`)
 - 선행 계약: [CLI 보고서 렌더링 설계](./2026-08-13-cli-report-rendering-design.md),
   [Runner 실행·보고서 설계](./2026-08-11-runner-design.md)
 - 관련 ADR: ADR-0012(기본 출력 전환), ADR-0013(렌더러 배치), 이 문서가 만드는 ADR-0014
@@ -10,7 +10,7 @@
 
 서버가 죽으면 사용자에게 아무 단서가 가지 않는다. 실제 실행 결과가 근거다.
 
-예외를 던지고 죽는 서버에 `ohmymcp test` 를 걸면 지금 나오는 것은 이것뿐이다.
+예외를 던지고 죽는 서버에 `mcpeak test` 를 걸면 지금 나오는 것은 이것뿐이다.
 
 ```
 ✓ seoul  서울 날씨
@@ -368,7 +368,7 @@ ADR-0013 과 같다. `reporter.ts` 도 같은 이유로 자기 사본을 가지�
 ## 6. 옵션: `--stderr-lines`
 
 ```
-ohmymcp test <suite.json> --command <executable> [--arg <value> ...] [--json] [--stderr-lines <N>]
+mcpeak test <suite.json> --command <executable> [--arg <value> ...] [--json] [--stderr-lines <N>]
 ```
 
 - 기본값 `20`.

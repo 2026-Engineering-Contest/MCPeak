@@ -8,7 +8,7 @@ const ARGV = ["bundle.json", "--provider", "codex", "--model", "gpt-5-codex"];
 const bundle = (overrides: Partial<RepairBundle> = {}): RepairBundle =>
   ({
     bundleVersion: 1,
-    generatedBy: "ohmymcp 0.7.0",
+    generatedBy: "mcpeak 0.7.0",
     spec: {
       suiteId: "weather",
       suiteName: "날씨 서버 계약",
@@ -166,7 +166,7 @@ function deps(options: {
 }
 
 const BOUNDARY_ONE = "※ AI 제안입니다. 파일을 고치지 않았고 명세도 그대로입니다.";
-const BOUNDARY_TWO = "※ 명세 쪽이 틀렸다고 판단되면 `ohmymcp generate` 로 다시 승인받으세요.";
+const BOUNDARY_TWO = "※ 명세 쪽이 틀렸다고 판단되면 `mcpeak generate` 로 다시 승인받으세요.";
 
 describe("repair 화면", () => {
   it("확인 화면에서 n 이면 diagnose 가 0회 호출된다", async () => {
@@ -332,7 +332,7 @@ describe("repair 화면", () => {
     });
     await runRepairCommand([...ARGV, "--yes"], context.value);
     const screen = context.writes.out.join("");
-    expect(screen).toContain("`ohmymcp generate` 로 다시 승인받으세요");
+    expect(screen).toContain("`mcpeak generate` 로 다시 승인받으세요");
     expect(screen).not.toContain("같은 번들로 한 번 더 물어보세요");
   });
 
@@ -410,7 +410,7 @@ describe("repair 화면", () => {
     });
     await runRepairCommand([...ARGV, "--yes"], context.value);
     const screen = context.writes.out.join("");
-    expect(screen).toContain("`ohmymcp generate` 로 다시 승인받으세요");
+    expect(screen).toContain("`mcpeak generate` 로 다시 승인받으세요");
     expect(screen).toContain("같은 번들로 한 번 더 물어보세요");
     expect(screen).toContain("요청에 없는 케이스를 가리킨 제안 1건");
     expect(screen).toContain("승인된 명세를 고치라는 제안 2건");

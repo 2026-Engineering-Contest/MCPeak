@@ -1,4 +1,4 @@
-# ohmymcp
+# mcpeak
 
 ## 0.8.0
 
@@ -10,13 +10,13 @@
 
   응답 본문이 없는 케이스는 진단에서 **제외합니다.** 호출이 오류로 끝나 서버 응답이 아예 없는 경우가 있는데, 빈 값을 채워 물으면 AI 에게 판단 재료가 없어 지어낸 답만 돌아옵니다. 몇 건을 왜 뺐는지는 화면에 남깁니다.
 
-  `@ohmymcp-hsu/generate` 의 provider 객체에 `diagnoseRejection` 메서드가 추가됐습니다. `RejectionDiagnosisProvider` 의 메서드 이름이 `diagnose` 에서 `diagnoseRejection` 으로 바뀌었습니다 — 한 provider 객체가 기존 `diagnose(request: DiagnosisRequest, …)` 와 시그니처가 충돌하지 않게 하기 위함입니다.
+  `@mcpeak/generate` 의 provider 객체에 `diagnoseRejection` 메서드가 추가됐습니다. `RejectionDiagnosisProvider` 의 메서드 이름이 `diagnose` 에서 `diagnoseRejection` 으로 바뀌었습니다 — 한 provider 객체가 기존 `diagnose(request: DiagnosisRequest, …)` 와 시그니처가 충돌하지 않게 하기 위함입니다.
 
 - 5b469fe: `generate` 승인 화면의 시험 실행 결과 아래에 **거절 근거 미확인 목록**을 붙입니다. 위반 케이스가 통과했더라도 그 거절이 서버의 정상 거절인지 내부 오류인지 확인하지 못한 경우가 있고, 그 케이스의 id 와 응답 본문을 한 줄씩 보여줘 사람이 저장 전에 판단할 수 있게 합니다. 0건이면 아무것도 나오지 않습니다.
 
   **판정도 저장 여부도 바뀌지 않습니다.** 이 케이스들은 통과한 케이스이고 목록은 화면에만 나옵니다. 응답 본문은 기존 `escapeTerminalText` 로 제어 문자를 무해화하며, 개행도 함께 이스케이프되어 여러 줄 응답이 한 줄로 나옵니다. 본문 길이 제한은 `runner` 가 진단 값과 같은 상한에서 이미 적용합니다. 호출이 오류로 끝나 읽을 응답이 없는 케이스는 `(본문 없음)` 으로 적습니다.
 
-- 892ff61: `ohmymcp replay <suite.json> --cassette <path>` 를 추가했습니다. 녹화된 카세트만으로 테스트 명세를 재생하며 MCP 서버를 실행하지 않습니다. 카세트에 마스킹된 값이 있으면 그 자리의 판정이 실제 서버와 다를 수 있다는 경고를 냅니다.
+- 892ff61: `mcpeak replay <suite.json> --cassette <path>` 를 추가했습니다. 녹화된 카세트만으로 테스트 명세를 재생하며 MCP 서버를 실행하지 않습니다. 카세트에 마스킹된 값이 있으면 그 자리의 판정이 실제 서버와 다를 수 있다는 경고를 냅니다.
 - 7600b09: 도그푸딩(공개 MCP 서버 8개)에서 잡힌 결함 셋을 고칩니다.
 
   - `generate` 가 지원하지 않는 JSON Schema 키워드를 만나면 서버 전체를 거절하던 것을, 해당 툴만 건너뛰고 나머지를 생성하도록 바꿉니다(ADR-0036). 건너뛴 툴은 `skippedTools` 로 결과에 실리고 화면에 `건너뜀 N tools` 블록으로 고지되며, 커버리지 분모에서 빠집니다. 실측에서 공개 서버 8개 중 5개가 툴 하나 때문에 전체 거절됐습니다. 전 툴 지원 서버의 출력과 지문은 바뀌지 않습니다.
@@ -37,12 +37,12 @@
 
   `repair` 화면은 실제로 발생한 제외 사유와 개수를 보여주고, 명세 재승인이나 재시도 중 관련 있는 다음 행동만 안내합니다.
 
-- 58fb54a: 서버 수정 방향 제안(단계 4 repair)을 추가합니다. 승인된 명세로 `test` 를 돌려 실패가 났을 때 그 근거를 한 파일로 남기고, `ohmymcp repair` 가 그것을 AI provider 에게 물어 **서버 코드의 원인 후보**를 화면에 보여줍니다. 파일도 명세도 고치지 않습니다.
+- 58fb54a: 서버 수정 방향 제안(단계 4 repair)을 추가합니다. 승인된 명세로 `test` 를 돌려 실패가 났을 때 그 근거를 한 파일로 남기고, `mcpeak repair` 가 그것을 AI provider 에게 물어 **서버 코드의 원인 후보**를 화면에 보여줍니다. 파일도 명세도 고치지 않습니다.
 
   cli: `repair` 명령을 추가합니다.
 
   ```
-  ohmymcp repair <bundle.json> --provider <codex|claude> --model <model> [--max-cases <N>] [--no-stderr] [--yes]
+  mcpeak repair <bundle.json> --provider <codex|claude> --model <model> [--max-cases <N>] [--no-stderr] [--yes]
   ```
 
   `--provider` 와 `--model` 은 필수이며 기본값을 두지 않습니다. 외부로 나가기 전에 전송 내용을 확인 화면으로 보여주고, 비대화형 환경에서 `--yes` 가 없으면 보내지 않습니다. `n` 을 답하면 provider 를 한 번도 부르지 않고 종료 코드 0 으로 끝납니다. 진단을 받았든 근거가 부족하든 종료 코드는 0 이고, 1 이 되는 경우는 운영 실패뿐입니다(ADR-0032, ADR-0033).
@@ -83,11 +83,11 @@
 - Updated dependencies [4e2c6df]
 - Updated dependencies [4558ef9]
 - Updated dependencies [db571dd]
-  - @ohmymcp-hsu/core@0.3.0
-  - @ohmymcp-hsu/generate@0.5.0
-  - @ohmymcp-hsu/mock@0.2.0
-  - @ohmymcp-hsu/record@0.1.2
-  - @ohmymcp-hsu/runner@0.8.0
+  - @mcpeak/core@0.3.0
+  - @mcpeak/generate@0.5.0
+  - @mcpeak/mock@0.2.0
+  - @mcpeak/record@0.1.2
+  - @mcpeak/runner@0.8.0
 
 ## 0.7.0
 
@@ -114,9 +114,9 @@
 - Updated dependencies [81579f1]
 - Updated dependencies [ec99eab]
 - Updated dependencies [0f4e5fd]
-  - @ohmymcp-hsu/record@0.1.1
-  - @ohmymcp-hsu/runner@0.7.0
-  - @ohmymcp-hsu/generate@0.4.2
+  - @mcpeak/record@0.1.1
+  - @mcpeak/runner@0.7.0
+  - @mcpeak/generate@0.4.2
 
 ## 0.6.1
 
@@ -124,17 +124,17 @@
 
 - Updated dependencies [0d92470]
 - Updated dependencies [38ec704]
-  - @ohmymcp-hsu/core@0.2.0
-  - @ohmymcp-hsu/record@0.1.0
-  - @ohmymcp-hsu/generate@0.4.1
-  - @ohmymcp-hsu/mock@0.1.2
-  - @ohmymcp-hsu/runner@0.6.1
+  - @mcpeak/core@0.2.0
+  - @mcpeak/record@0.1.0
+  - @mcpeak/generate@0.4.1
+  - @mcpeak/mock@0.1.2
+  - @mcpeak/runner@0.6.1
 
 ## 0.6.0
 
 ### Minor Changes
 
-- fb40da5: `ohmymcp test` 에 `--junit <path>` 를 추가합니다. runner 가 만든 JUnit XML 을 그 경로에 파일로
+- fb40da5: `mcpeak test` 에 `--junit <path>` 를 추가합니다. runner 가 만든 JUnit XML 을 그 경로에 파일로
   써서, CI 도구가 테스트 결과를 화면에 렌더할 수 있게 합니다. `renderJUnit` 은 공개 API 였지만
   CLI 에 리포터를 고르는 수단이 없어 사용자가 쓸 방법이 없었습니다. 이 플래그가 그 연결입니다.
 
@@ -158,23 +158,23 @@
   `runner` 가 이미 갖고 있던 `checkInputContract` · `checkAssertionSubstance` 를 두 소비자에 연결해,
   오타·타입 불일치·항상 참인 단언이 승인 전과 실패 직후에 문장으로 보인다.
 
-  - `ohmymcp generate` 승인 화면은 선택한 변경에 걸린 위반을 세어 보여 주고, 위반이 있으면 확인을
+  - `mcpeak generate` 승인 화면은 선택한 변경에 걸린 위반을 세어 보여 주고, 위반이 있으면 확인을
     한 번 더 받는다. 거부하지는 않는다.
-  - `ohmymcp test` 는 실패한 케이스에만 참고 문장을 붙인다. 판정과 exit code 는 바뀌지 않는다.
+  - `mcpeak test` 는 실패한 케이스에만 참고 문장을 붙인다. 판정과 exit code 는 바뀌지 않는다.
     `--json` 은 `spec.findings` 에 구조로 담는다.
 
   공개 타입 변경 둘이 있다.
 
-  - `@ohmymcp-hsu/runner` 의 `SpecFindingCode` 에서 `UNCONSTRAINED_SCHEMA` 가 사라진다. 소비자 경로에서
+  - `@mcpeak/runner` 의 `SpecFindingCode` 에서 `UNCONSTRAINED_SCHEMA` 가 사라진다. 소비자 경로에서
     `validateMcpSuite` 가 먼저 거부해 도달할 수 없는 코드였다.
-  - `@ohmymcp-hsu/generate` 의 `SanitizedAuthoringCandidate` 에 `specFindings` 필드가 생긴다. 승인
+  - `@mcpeak/generate` 의 `SanitizedAuthoringCandidate` 에 `specFindings` 필드가 생긴다. 승인
     지문 계산 대상 밖이라 이미 승인된 지문은 그대로다.
 
 ### Patch Changes
 
 - Updated dependencies [d31c26e]
-  - @ohmymcp-hsu/generate@0.4.0
-  - @ohmymcp-hsu/runner@0.6.0
+  - @mcpeak/generate@0.4.0
+  - @mcpeak/runner@0.6.0
 
 ## 0.5.0
 
@@ -200,23 +200,23 @@
 - Updated dependencies [c728f02]
 - Updated dependencies [9803c19]
 - Updated dependencies [cfa921d]
-  - @ohmymcp-hsu/mock@0.1.1
-  - @ohmymcp-hsu/runner@0.5.0
-  - @ohmymcp-hsu/generate@0.3.5
+  - @mcpeak/mock@0.1.1
+  - @mcpeak/runner@0.5.0
+  - @mcpeak/generate@0.3.5
 
 ## 0.4.1
 
 ### Patch Changes
 
 - Updated dependencies [d8227e2]
-  - @ohmymcp-hsu/runner@0.4.0
-  - @ohmymcp-hsu/generate@0.3.4
+  - @mcpeak/runner@0.4.0
+  - @mcpeak/generate@0.3.4
 
 ## 0.4.0
 
 ### Minor Changes
 
-- f4a78b0: `ohmymcp test` 가 실패했거나 서버가 비정상 종료·중단했을 때, 보여줄 진단 정보가 있으면 서버
+- f4a78b0: `mcpeak test` 가 실패했거나 서버가 비정상 종료·중단했을 때, 보여줄 진단 정보가 있으면 서버
   프로세스 진단을 stderr 에 출력합니다. 종료 코드, 시그널, 서버가 남긴 stderr 의 마지막 줄들을
   보여줍니다. 기동 즉시 죽는 서버처럼 지금까지 단서가 전혀 없던 경로에서도 원인을 볼 수 있습니다.
 
@@ -234,40 +234,40 @@
 ### Patch Changes
 
 - Updated dependencies [4da5f7c]
-  - @ohmymcp-hsu/runner@0.3.1
-  - @ohmymcp-hsu/generate@0.3.3
+  - @mcpeak/runner@0.3.1
+  - @mcpeak/generate@0.3.3
 
 ## 0.3.0
 
 ### Minor Changes
 
-- 74c96da: `ohmymcp test` 의 기본 출력을 사람이 읽는 보고서로 바꿉니다. 실패한 케이스의 진단 문장과
+- 74c96da: `mcpeak test` 의 기본 출력을 사람이 읽는 보고서로 바꿉니다. 실패한 케이스의 진단 문장과
   해결 힌트를 터미널에 직접 표시합니다.
 
   **파괴적 변경**: 기존의 JSON 출력은 `--json` 플래그로 옮겼습니다. stdout을 기계로 파싱하던
-  스크립트는 `ohmymcp test ... --json` 으로 바꿔야 합니다. `--json` 출력의 바이트는 이전과
+  스크립트는 `mcpeak test ... --json` 으로 바꿔야 합니다. `--json` 출력의 바이트는 이전과
   동일합니다. 종료 코드는 바뀌지 않았습니다.
 
 ### Patch Changes
 
 - Updated dependencies [74c96da]
-  - @ohmymcp-hsu/runner@0.3.0
-  - @ohmymcp-hsu/generate@0.3.2
+  - @mcpeak/runner@0.3.0
+  - @mcpeak/generate@0.3.2
 
 ## 0.2.2
 
 ### Patch Changes
 
 - Updated dependencies [a1f9bb4]
-  - @ohmymcp-hsu/runner@0.2.0
-  - @ohmymcp-hsu/generate@0.3.1
+  - @mcpeak/runner@0.2.0
+  - @mcpeak/generate@0.3.1
 
 ## 0.2.1
 
 ### Patch Changes
 
 - Updated dependencies [ed2a3b8]
-  - @ohmymcp-hsu/generate@0.3.0
+  - @mcpeak/generate@0.3.0
 
 ## 0.2.0
 
@@ -315,8 +315,8 @@
 - Updated dependencies [7c1cf62]
 - Updated dependencies [3760bac]
 - Updated dependencies [623eea0]
-  - @ohmymcp-hsu/generate@0.2.0
-  - @ohmymcp-hsu/mock@0.1.0
+  - @mcpeak/generate@0.2.0
+  - @mcpeak/mock@0.1.0
 
 ## 0.1.0
 
@@ -328,15 +328,15 @@
 
 - Updated dependencies [606600f]
 - Updated dependencies [b80e0e5]
-  - @ohmymcp-hsu/core@0.1.0
-  - @ohmymcp-hsu/generate@0.1.0
-  - @ohmymcp-hsu/mock@0.0.1
-  - @ohmymcp-hsu/record@0.0.1
-  - @ohmymcp-hsu/runner@0.1.1
+  - @mcpeak/core@0.1.0
+  - @mcpeak/generate@0.1.0
+  - @mcpeak/mock@0.0.1
+  - @mcpeak/record@0.0.1
+  - @mcpeak/runner@0.1.1
 
 ## 0.0.1
 
 ### Patch Changes
 
 - Updated dependencies [216184a]
-  - @ohmymcp-hsu/runner@0.1.0
+  - @mcpeak/runner@0.1.0

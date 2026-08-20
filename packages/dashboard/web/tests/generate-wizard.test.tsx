@@ -166,7 +166,7 @@ describe("GenerateWizard", () => {
     fireEvent.click(screen.getByRole("button", { name: "다음" }));
 
     const command = screen.getByText(
-      "ohmymcp generate --command node --arg server.js --suite-id weather " +
+      "mcpeak generate --command node --arg server.js --suite-id weather " +
         '--name "날씨 서버" --out examples/weather/suite.json --provider claude',
     );
     expect(command.className).toContain("font-mono");

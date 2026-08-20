@@ -2,7 +2,7 @@
 
 ## 문제
 
-`ohmymcp generate`의 AI 검토는 Codex와 Claude 모두 현재 실패한다. 인증이나 모델 문제가 아니라
+`mcpeak generate`의 AI 검토는 Codex와 Claude 모두 현재 실패한다. 인증이나 모델 문제가 아니라
 `packages/generate/src/authoring-schema.ts`의 `AUTHORING_OUTPUT_SCHEMA`가 두 CLI에서 지원하는
 JSON Schema 범위를 벗어나기 때문이다.
 

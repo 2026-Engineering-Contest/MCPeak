@@ -1,5 +1,5 @@
-import type { McpClient, ToolDef, ToolResult } from "@ohmymcp-hsu/core";
-import type { RunnerEvent, TestCaseResult, TestCaseSpec } from "@ohmymcp-hsu/runner";
+import type { McpClient, ToolDef, ToolResult } from "@mcpeak/core";
+import type { RunnerEvent, TestCaseResult, TestCaseSpec } from "@mcpeak/runner";
 import { describe, expect, it } from "vitest";
 import { createDeterminismCapture } from "../src/determinism-capture.js";
 

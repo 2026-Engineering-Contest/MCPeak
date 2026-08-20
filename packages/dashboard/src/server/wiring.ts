@@ -9,7 +9,7 @@ import {
   runRepairCommand,
   runReplayCommand,
   type TestCommandDependencies,
-} from "ohmymcp/commands";
+} from "@mcpeak/cli/commands";
 import type { StartRunRequest } from "../api-types.js";
 import type { RunIo } from "./run-registry.js";
 
@@ -30,10 +30,10 @@ export interface FlowRunners {
 }
 
 export interface FlowModuleLoaders {
-  readonly loadCore: () => Promise<typeof import("@ohmymcp-hsu/core")>;
-  readonly loadRunner: () => Promise<typeof import("@ohmymcp-hsu/runner")>;
-  readonly loadGenerate: () => Promise<typeof import("@ohmymcp-hsu/generate")>;
-  readonly loadRecord: () => Promise<typeof import("@ohmymcp-hsu/record")>;
+  readonly loadCore: () => Promise<typeof import("@mcpeak/core")>;
+  readonly loadRunner: () => Promise<typeof import("@mcpeak/runner")>;
+  readonly loadGenerate: () => Promise<typeof import("@mcpeak/generate")>;
+  readonly loadRecord: () => Promise<typeof import("@mcpeak/record")>;
 }
 
 export interface ExecuteFlowOverrides {
@@ -49,10 +49,10 @@ const defaultRunners: FlowRunners = {
 };
 
 const defaultLoaders: FlowModuleLoaders = {
-  loadCore: () => import("@ohmymcp-hsu/core"),
-  loadRunner: () => import("@ohmymcp-hsu/runner"),
-  loadGenerate: () => import("@ohmymcp-hsu/generate"),
-  loadRecord: () => import("@ohmymcp-hsu/record"),
+  loadCore: () => import("@mcpeak/core"),
+  loadRunner: () => import("@mcpeak/runner"),
+  loadGenerate: () => import("@mcpeak/generate"),
+  loadRecord: () => import("@mcpeak/record"),
 };
 
 /** 런타임 의존성 로드 실패 시 자리표시자. cli의 `unavailableDependencies`와 같은 값이다. */
@@ -116,8 +116,8 @@ async function executeTest(
 ): Promise<number> {
   const commandArgv = withTestSubcommand(argv);
   const ioFields = { writeStdout: io.writeStdout, writeStderr: io.writeStderr };
-  let core: typeof import("@ohmymcp-hsu/core");
-  let runner: typeof import("@ohmymcp-hsu/runner");
+  let core: typeof import("@mcpeak/core");
+  let runner: typeof import("@mcpeak/runner");
   try {
     [core, runner] = await Promise.all([loaders.loadCore(), loaders.loadRunner()]);
   } catch {
@@ -164,9 +164,9 @@ async function executeGenerate(
     writeStderr: io.writeStderr,
     reviewIO: io.reviewIO,
   };
-  let core: typeof import("@ohmymcp-hsu/core");
-  let runner: typeof import("@ohmymcp-hsu/runner");
-  let generate: typeof import("@ohmymcp-hsu/generate");
+  let core: typeof import("@mcpeak/core");
+  let runner: typeof import("@mcpeak/runner");
+  let generate: typeof import("@mcpeak/generate");
   try {
     [core, runner, generate] = await Promise.all([
       loaders.loadCore(),
@@ -232,8 +232,8 @@ async function executeReplay(
 ): Promise<number> {
   const commandArgv = withoutReplaySubcommand(argv);
   const ioFields = { writeStdout: io.writeStdout, writeStderr: io.writeStderr };
-  let runner: typeof import("@ohmymcp-hsu/runner");
-  let record: typeof import("@ohmymcp-hsu/record");
+  let runner: typeof import("@mcpeak/runner");
+  let record: typeof import("@mcpeak/record");
   try {
     [runner, record] = await Promise.all([loaders.loadRunner(), loaders.loadRecord()]);
   } catch {
@@ -268,12 +268,12 @@ async function executeRepair(
   runners: FlowRunners,
   loaders: FlowModuleLoaders,
 ): Promise<number> {
-  let generate: typeof import("@ohmymcp-hsu/generate");
+  let generate: typeof import("@mcpeak/generate");
   try {
     generate = await loaders.loadGenerate();
   } catch {
     io.writeStderr(
-      "오류 [REPAIR_RUNTIME_UNAVAILABLE]: 진단에 필요한 @ohmymcp-hsu/generate 를 로드하지 못했습니다.\n해결: 의존성을 설치한 뒤 다시 실행하세요.\n",
+      "오류 [REPAIR_RUNTIME_UNAVAILABLE]: 진단에 필요한 @mcpeak/generate 를 로드하지 못했습니다.\n해결: 의존성을 설치한 뒤 다시 실행하세요.\n",
     );
     return 1;
   }

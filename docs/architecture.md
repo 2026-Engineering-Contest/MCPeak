@@ -11,16 +11,16 @@ flowchart LR
     U[MCP 서버를 만든 개발자]
   end
 
-  U -->|① ohmymcp generate| G[generate]
+  U -->|① mcpeak generate| G[generate]
   G -->|테스트 파일 초안| E[내 테스트 코드]
   U -->|② 손으로 수정| E
 
-  E -->|③ ohmymcp test| R[runner]
+  E -->|③ mcpeak test| R[runner]
   C[core] -->|McpClient 주입| R
   R -->|실패 메시지 · 리포트| U
 
-  R -.->|④ ohmymcp record| RC[record]
-  RC -->|카세트 파일| CI[CI: ohmymcp replay]
+  R -.->|④ mcpeak record| RC[record]
+  RC -->|카세트 파일| CI[CI: mcpeak replay]
   CI -->|네트워크 없이 동일 결과| U
 
   M[mock] -.->|진짜 서버 대신 끼움| C
@@ -94,7 +94,7 @@ connect(opts): Promise<McpClient>            // core     — 값을 만드는 �
 core를 기다리지 않는다. `McpClient`는 메서드 세 개짜리 인터페이스라 직접 만들면 된다.
 
 ```ts
-import type { McpClient, ToolDef } from "@ohmymcp-hsu/core";
+import type { McpClient, ToolDef } from "@mcpeak/core";
 
 const fixture: ToolDef[] = [
   { name: "get_weather", description: "날씨 조회", inputSchema: {} },
@@ -175,5 +175,5 @@ runner → core의 동결 타입
 ```
 
 Runner는 Core의 `connect` 또는 `connectStdio`를 재수출하지 않는다. Core도 Runner를 import하지
-않는다. `ohmymcp test`를 구현하는 후속 CLI PR에서 `@ohmymcp-hsu/core` workspace dependency를 팀
+않는다. `mcpeak test`를 구현하는 후속 CLI PR에서 `@mcpeak/core` workspace dependency를 팀
 승인 범위로 추가한다.

@@ -4,7 +4,7 @@
 > 단위 실행. 스텝은 체크박스(`- [ ]`) 로 추적한다.
 
 **목표:** 승인된 명세로 `test` 를 돌려 실패가 났을 때, 그 근거를 한 파일(번들)로 남기고,
-`ohmymcp repair` 가 그것을 AI provider 에게 물어 **서버 코드의 원인 후보**를 화면에 보여준다.
+`mcpeak repair` 가 그것을 AI provider 에게 물어 **서버 코드의 원인 후보**를 화면에 보여준다.
 파일·명세·종료 코드를 바꾸지 않는다.
 
 **설계:** `generate` 는 authoring 과 분리된 **진단 전용 통로**를 소유한다(요청 조립, 출력 스키마,
@@ -41,7 +41,7 @@ ADR-0025(교정 권한 경계), ADR-0027(isError 진단의 서버 응답 본문)
 1. `pnpm test`, `pnpm typecheck --force`, `pnpm lint` 전부 통과. `Cached: 0 cached` 는
    `typecheck`·`build` 에서만 확인한다. 루트 `test` 스크립트는 turbo 가 아니라 `vitest run` 이라
    `--force` 를 받지 않고 캐시도 끼지 않는다(2026-08-16 실행 중 확인).
-2. `--repair-bundle` 없이 돌린 `ohmymcp test` 의 stdout·stderr·종료 코드가 이 작업 이전과
+2. `--repair-bundle` 없이 돌린 `mcpeak test` 의 stdout·stderr·종료 코드가 이 작업 이전과
    **바이트 단위로 동일**하다. 기존 `packages/cli/tests/` 의 test 명령 스냅샷이 하나도 안 바뀐다.
 3. 같은 번들·같은 옵션으로 `prepareDiagnosisRequest` 를 두 번 부른 결과의
    `JSON.stringify(preview.request)` 가 동일하다.
@@ -95,8 +95,8 @@ PR 을 두 개로 가르는 이유는 CONTRIBUTING §2.2 다. `generate` 는 파
 
 | 터미널 | PR | 브랜치 | worktree | 패키지 | 태스크 |
 |---|---|---|---|---|---|
-| A | 1 | `feat/server-repair-generate` | `.claude/worktrees/ohmymcp-server-repair-generate` | `generate` | T1 → T2 → T3 → T4 → T5 |
-| B | 2 | `feat/server-repair-cli` | `.claude/worktrees/ohmymcp-server-repair-cli` | `cli` · `docs` | T6 → T7 → T8 → T9 → T10 → T11 → T12 |
+| A | 1 | `feat/server-repair-generate` | `.claude/worktrees/mcpeak-server-repair-generate` | `generate` | T1 → T2 → T3 → T4 → T5 |
+| B | 2 | `feat/server-repair-cli` | `.claude/worktrees/mcpeak-server-repair-cli` | `cli` · `docs` | T6 → T7 → T8 → T9 → T10 → T11 → T12 |
 
 터미널 안의 웨이브.
 
@@ -136,13 +136,13 @@ PR 을 두 개로 가르는 이유는 CONTRIBUTING §2.2 다. `generate` 는 파
 ```
 [1단계: 작업 공간 만들기] 다른 무엇보다 먼저 이것부터 해라.
 
-  git worktree add .claude/worktrees/ohmymcp-server-repair-generate -b feat/server-repair-generate HEAD
+  git worktree add .claude/worktrees/mcpeak-server-repair-generate -b feat/server-repair-generate HEAD
 
-를 실행한 뒤 그 경로(.claude/worktrees/ohmymcp-server-repair-generate)로 세션을 옮겨라.
+를 실행한 뒤 그 경로(.claude/worktrees/mcpeak-server-repair-generate)로 세션을 옮겨라.
 EnterWorktree 도구에 path 로 그 절대 경로를 넘긴다. name 으로 새로 만들게 하지 마라.
 
 진입 후 아래를 확인하고, 하나라도 어긋나면 중단하고 `BLOCKED: <사유>` 로 보고해라.
-  - pwd 가 .claude/worktrees/ohmymcp-server-repair-generate 인지
+  - pwd 가 .claude/worktrees/mcpeak-server-repair-generate 인지
   - git log --oneline -1 이 루트에서 적어 둔 기점 SHA 와 같은지
   - docs/superpowers/plans/2026-08-16-server-repair-implementation.md 가 존재하는지
   - docs/superpowers/specs/2026-08-16-server-repair-design.md 가 존재하는지
@@ -165,7 +165,7 @@ EnterWorktree 도구에 path 로 그 절대 경로를 넘긴다. name 으로 새
   - 그 태스크의 Files 목록. 목록 밖 파일 수정 금지. 특히 packages/core/**, packages/runner/**,
     packages/cli/**, 루트 빌드 설정은 이 터미널에서 건드리지 않는다. 필요해 보이면 수정하지
     말고 보고한다.
-  - @ohmymcp-hsu/runner 에서 새 심볼을 import 하지 않는다. ADR-0009 의 승인 목록을 넓히지 않는다.
+  - @mcpeak/runner 에서 새 심볼을 import 하지 않는다. ADR-0009 의 승인 목록을 넓히지 않는다.
   - 의존 방향은 단방향(cli → runner/generate → core). 역참조·순환 금지.
   - @modelcontextprotocol/sdk 는 1.x 고정. 의존성 추가 금지.
   - git 명령을 실행하지 않는다. 커밋은 사람이 한다.
@@ -195,13 +195,13 @@ T5 까지 끝나면 pnpm test 를 --force 로 한 번 돌리고 `Cached: 0 cache
 ```
 [1단계: 작업 공간 만들기] 다른 무엇보다 먼저 이것부터 해라.
 
-  git worktree add .claude/worktrees/ohmymcp-server-repair-cli -b feat/server-repair-cli HEAD
+  git worktree add .claude/worktrees/mcpeak-server-repair-cli -b feat/server-repair-cli HEAD
 
-를 실행한 뒤 그 경로(.claude/worktrees/ohmymcp-server-repair-cli)로 세션을 옮겨라.
+를 실행한 뒤 그 경로(.claude/worktrees/mcpeak-server-repair-cli)로 세션을 옮겨라.
 EnterWorktree 도구에 path 로 그 절대 경로를 넘긴다. name 으로 새로 만들게 하지 마라.
 
 진입 후 아래를 확인하고, 하나라도 어긋나면 중단하고 `BLOCKED: <사유>` 로 보고해라.
-  - pwd 가 .claude/worktrees/ohmymcp-server-repair-cli 인지
+  - pwd 가 .claude/worktrees/mcpeak-server-repair-cli 인지
   - git log --oneline -1 이 루트에서 적어 둔 기점 SHA 와 같은지
   - PR 1 의 통합 SHA 가 조상인지:
     git merge-base --is-ancestor <PR1 통합 SHA> HEAD 가 성공하는지
@@ -264,7 +264,7 @@ T12 까지 끝나면 pnpm test 를 --force 로 한 번 돌리고 `Cached: 0 cach
 
 **계약 (전량 고정. 여기서 한 글자라도 바뀌면 T2·T3·T4 와 터미널 B 가 전부 어긋난다)**
 
-> **정정 (2026-08-16, 실행 중 확인).** 초안은 `JsonValue` 를 `@ohmymcp-hsu/runner` 에서 가져왔으나
+> **정정 (2026-08-16, 실행 중 확인).** 초안은 `JsonValue` 를 `@mcpeak/runner` 에서 가져왔으나
 > 그것은 전역 제약("`runner` 에서 새 심볼을 import 하지 않는다")과 충돌한다.
 > `dependency-boundary.test.ts` 의 승인 목록은 부분집합이 아니라 정확한 일치를 단언하므로
 > 목록을 넓히지 않고는 초록이 되지 않는다. `packages/generate/src/schema.ts:1` 의 `JsonValue` 가
@@ -788,7 +788,7 @@ export function readRepairBundle(text: string): RepairBundleRead;
   → `missingField`
 - `failures` 가 빈 배열 → `emptyFailures`. 이 경우 provider 를 부르지 않는다.
 
-각 사유마다 안내 문장이 다르다. `versionMismatch` 는 "최신 `ohmymcp test --repair-bundle` 로
+각 사유마다 안내 문장이 다르다. `versionMismatch` 는 "최신 `mcpeak test --repair-bundle` 로
 다시 만드세요" 를 안내한다.
 
 **테스트 (`repair-bundle-read.test.ts`)**
@@ -831,7 +831,7 @@ export interface RepairCommandInput {
 
 **동적 import**
 
-`index.ts` 에 `repair` 분기를 추가한다. `generate` 분기와 같은 모양으로 `@ohmymcp-hsu/generate` 를
+`index.ts` 에 `repair` 분기를 추가한다. `generate` 분기와 같은 모양으로 `@mcpeak/generate` 를
 동적 import 한다. **`test` 분기는 고치지 않는다.** `test` 경로가 `generate` 를 로드하게 만들면
 안 된다.
 
@@ -846,7 +846,7 @@ export interface RepairCommandInput {
 - `--max-cases 기본값이 DEFAULT_MAX_REPAIR_CASES 다`
 - `--no-stderr 가 includeStderr 를 거짓으로 만든다`
 - `번들 경로가 없으면 CLI_USAGE 다`
-- `ohmymcp repair --help 가 옵션 목록을 찍는다`
+- `mcpeak repair --help 가 옵션 목록을 찍는다`
 
 ### T10. 화면 문안 (`cli`, **상위**)
 
@@ -891,7 +891,7 @@ get-weather-unknown-city  (get_weather)
   근거       city='toString' 입력에 isError:false 와 빈 본문
 
 ※ AI 제안입니다. 파일을 고치지 않았고 명세도 그대로입니다.
-※ 명세 쪽이 틀렸다고 판단되면 `ohmymcp generate` 로 다시 승인받으세요.
+※ 명세 쪽이 틀렸다고 판단되면 `mcpeak generate` 로 다시 승인받으세요.
 ```
 
 **문안 규칙 (전부 판단이다. 줄이지 마라)**

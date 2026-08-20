@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { McpClient, ToolDef, ToolResult } from "@ohmymcp-hsu/core";
+import type { McpClient, ToolDef, ToolResult } from "@mcpeak/core";
 import { describe, expect, it } from "vitest";
 import {
   type Cassette,
@@ -399,7 +399,7 @@ describe("cassetteClient", () => {
   });
 
   it("record 실행과 저장된 카세트의 replay 실행은 같은 값을 돌려준다 (ADR-0041)", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "ohmymcp-record-"));
+    const dir = await mkdtemp(join(tmpdir(), "mcpeak-record-"));
     const path = join(dir, "roundtrip.cassette.json");
     try {
       const liveResult = ok({ city: "Seoul", sessionToken: "abc", tokenCount: 42 });
@@ -958,7 +958,7 @@ describe("cassetteClient", () => {
 
 describe("cassette IO", () => {
   it("없는 파일은 null 로 읽는다", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "ohmymcp-record-"));
+    const dir = await mkdtemp(join(tmpdir(), "mcpeak-record-"));
     try {
       await expect(loadCassette(join(dir, "missing.json"))).resolves.toBeNull();
     } finally {
@@ -967,7 +967,7 @@ describe("cassette IO", () => {
   });
 
   it("같은 카세트는 같은 바이트로 저장하고 비밀값을 마스킹한다", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "ohmymcp-record-"));
+    const dir = await mkdtemp(join(tmpdir(), "mcpeak-record-"));
     const path = join(dir, "stock.cassette.json");
     const cassette = cassetteWith({
       toolName: "get_stock",
@@ -1018,7 +1018,7 @@ describe("cassette IO", () => {
   });
 
   it("스키마는 재귀하며 프로퍼티 이름으로만 민감도를 판정한다 (ADR-0040)", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "ohmymcp-record-"));
+    const dir = await mkdtemp(join(tmpdir(), "mcpeak-record-"));
     const path = join(dir, "schema.cassette.json");
     const cassette = cassetteWith({
       toolName: "get_secret",
@@ -1128,7 +1128,7 @@ describe("cassette IO", () => {
   it("__proto__ 라는 이름의 스키마 프로퍼티를 일반 키로 보존한다", async () => {
     // redactSchema 의 properties 재귀도 redact 와 같은 대괄호 할당 버그를 가질 수 있다.
     // properties.__proto__ 는 "아무 키나 담는 객체" 스키마에서 실제로 나올 수 있는 이름이다.
-    const dir = await mkdtemp(join(tmpdir(), "ohmymcp-record-"));
+    const dir = await mkdtemp(join(tmpdir(), "mcpeak-record-"));
     const path = join(dir, "proto-schema.cassette.json");
     const cassette = cassetteWith({
       toolName: "get_bag",
@@ -1168,7 +1168,7 @@ describe("cassette IO", () => {
   it("복수형·key 합성어 비밀값이 카세트 파일에 남지 않는다", async () => {
     // 이 구멍의 결과가 "평문이 파일로 굳어 커밋된다" 였으므로, 단위 함수가 아니라 저장된
     // 바이트로 고정한다. args · content(문자열 안 JSON) · raw 세 자리를 한 번에 덮는다.
-    const dir = await mkdtemp(join(tmpdir(), "ohmymcp-record-"));
+    const dir = await mkdtemp(join(tmpdir(), "mcpeak-record-"));
     const path = join(dir, "secrets.cassette.json");
     const cassette = cassetteWith({
       toolName: "list_credentials",

@@ -1,6 +1,6 @@
 # 승인 지문 재현 고정 구현 계획 (2026-08-14)
 
-**목표:** 승인 시점의 명세 지문을 명세 파일에 남기고, `ohmymcp test` 가 실행 시점에 대조해
+**목표:** 승인 시점의 명세 지문을 명세 파일에 남기고, `mcpeak test` 가 실행 시점에 대조해
 "그 사이 명세가 바뀌지 않았음" 을 보고서에 적는다.
 
 **설계 문서:** `docs/superpowers/specs/2026-08-14-approval-fingerprint-design.md`
@@ -100,8 +100,8 @@
 
 | 웨이브 | 터미널 | worktree | 브랜치 | 태스크 |
 |---|---|---|---|---|
-| 1 | 터미널 A | `.claude/worktrees/ohmymcp-approval-fp-a` | `feat/runner-approval-fingerprint` | 1, 2 |
-| 2 | 터미널 B | `.claude/worktrees/ohmymcp-approval-fp-b` | `feat/cli-approval-fingerprint` | 3 |
+| 1 | 터미널 A | `.claude/worktrees/mcpeak-approval-fp-a` | `feat/runner-approval-fingerprint` | 1, 2 |
+| 2 | 터미널 B | `.claude/worktrees/mcpeak-approval-fp-b` | `feat/cli-approval-fingerprint` | 3 |
 
 터미널 B 는 **PR 1 이 main 에 머지된 뒤에** 연다. 기점이 다르기 때문이다.
 
@@ -269,7 +269,7 @@ unknowns(input, ["schemaVersion", "id", "name", "approval", "defaultTimeoutMs", 
 
 `feat(runner): 명세에 승인 지문 필드를 추가한다`
 
-changeset 하나를 `.changeset/` 에 추가한다. `@ohmymcp-hsu/runner` `minor`.
+changeset 하나를 `.changeset/` 에 추가한다. `@mcpeak/runner` `minor`.
 
 ---
 
@@ -289,7 +289,7 @@ changeset 하나를 `.changeset/` 에 추가한다. `@ohmymcp-hsu/runner` `minor
 **Consumes:** 태스크 1 의 `TestSuiteSpec.approval`
 **Produces:**
 ```ts
-// @ohmymcp-hsu/runner
+// @mcpeak/runner
 export function canonicalJson(value: unknown): string;
 export function sha256(value: unknown): string;
 export function deepFreeze<T>(value: T): T;
@@ -305,7 +305,7 @@ export function suiteFingerprint(suite: TestSuiteSpec): string;
 `packages/generate/src/canonical.ts` 는 전체를 이 한 줄로 교체한다.
 
 ```ts
-export { canonicalJson, deepFreeze, sha256 } from "@ohmymcp-hsu/runner";
+export { canonicalJson, deepFreeze, sha256 } from "@mcpeak/runner";
 ```
 
 `generate` 안의 4개 import 지점(`authoring-request.ts`, `authoring-session.ts`, `baseline.ts`,
@@ -350,14 +350,14 @@ suite 는 `deepFreeze` 된 객체라서 그 경로에서 조용히 실패하거�
 **여기에 구멍이 있다.** 현재 정규식은 `import` 문만 잡는다.
 
 ```ts
-const statement = /^import\s+([^"';]*?)\s+from\s+"@ohmymcp-hsu\/runner"/gm;
+const statement = /^import\s+([^"';]*?)\s+from\s+"@mcpeak\/runner"/gm;
 ```
 
-§5.1 이 쓰는 `export ... from "@ohmymcp-hsu/runner"` 는 안 잡힌다. 즉 목록을 안 고쳐도 테스트가
+§5.1 이 쓰는 `export ... from "@mcpeak/runner"` 는 안 잡힌다. 즉 목록을 안 고쳐도 테스트가
 초록으로 통과하고, ADR-0009 의 경계가 재수출 한 줄로 우회된다. 둘 다 고친다.
 
 ```ts
-const statement = /^(?:import|export)\s+([^"';]*?)\s+from\s+"@ohmymcp-hsu\/runner"/gm;
+const statement = /^(?:import|export)\s+([^"';]*?)\s+from\s+"@mcpeak\/runner"/gm;
 
 const APPROVED_RUNNER_SYMBOLS = [
   "DEFAULT_SENSITIVE_KEYS",
@@ -437,7 +437,7 @@ suiteFingerprint
 `packages/generate/tests/index.test.ts` 에 추가한다.
 
 ```
-· @ohmymcp-hsu/generate 의 sha256 이 @ohmymcp-hsu/runner 의 sha256 과 같은 함수 참조다
+· @mcpeak/generate 의 sha256 이 @mcpeak/runner 의 sha256 과 같은 함수 참조다
 · canonicalJson · deepFreeze 도 같은 함수 참조다
 ```
 
@@ -445,7 +445,7 @@ suiteFingerprint
 
 ```
 · APPROVED_RUNNER_SYMBOLS 에 canonicalJson · deepFreeze · sha256 이 있다
-· 정규식이 export ... from "@ohmymcp-hsu/runner" 구문의 심볼을 수집한다
+· 정규식이 export ... from "@mcpeak/runner" 구문의 심볼을 수집한다
     (실제 소스를 읽는 기존 테스트와 별개로, 문자열 리터럴 소스를 runnerImports 에 직접
      넣어 export 구문에서 세 심볼이 나오는지 단언한다)
 · 목록에 없는 심볼을 export ... from 으로 가져오는 문자열 소스를 넣으면 수집 결과에 그
@@ -472,7 +472,7 @@ export 한다. export 를 늘리는 것이 부담이면 임시 파일 대신 `so
 
 `refactor(runner): canonical JSON 구현을 generate 에서 이관한다`
 
-changeset 하나. `@ohmymcp-hsu/runner` `minor`, `@ohmymcp-hsu/generate` `patch`.
+changeset 하나. `@mcpeak/runner` `minor`, `@mcpeak/generate` `patch`.
 
 여기까지가 PR 1 이다. 머지 후 태스크 3 을 시작한다.
 
@@ -492,7 +492,7 @@ changeset 하나. `@ohmymcp-hsu/runner` `minor`, `@ohmymcp-hsu/generate` `patch`
 - 수정: `packages/cli/tests/dist-cli-e2e.mjs` (추가)
 - 수정: `packages/cli/README.md`
 
-**Consumes:** `suiteFingerprint`, `SuiteApproval` (`@ohmymcp-hsu/runner`)
+**Consumes:** `suiteFingerprint`, `SuiteApproval` (`@mcpeak/runner`)
 **Produces:** 없음 (최종 소비자)
 
 ### 6.1 `spec-approval.ts` (전량)
@@ -500,8 +500,8 @@ changeset 하나. `@ohmymcp-hsu/runner` `minor`, `@ohmymcp-hsu/generate` `patch`
 문안이 곧 제품이므로 전량으로 못 박는다.
 
 ```ts
-import type { TestSuiteSpec } from "@ohmymcp-hsu/runner";
-import { suiteFingerprint } from "@ohmymcp-hsu/runner";
+import type { TestSuiteSpec } from "@mcpeak/runner";
+import { suiteFingerprint } from "@mcpeak/runner";
 
 export type SpecApprovalState = "matched" | "mismatched" | "absent";
 
@@ -545,7 +545,7 @@ export function renderSpecApproval(result: SpecApprovalResult): string {
   if (result.state === "absent")
     return (
       "명세: 승인 지문이 없습니다 (미고정)\n" +
-      "  → ohmymcp generate 로 승인한 명세가 아니거나 승인 이전 버전으로 만든 파일입니다.\n"
+      "  → mcpeak generate 로 승인한 명세가 아니거나 승인 이전 버전으로 만든 파일입니다.\n"
     );
   return (
     "명세: 승인 시점 이후 변경됨\n" +
@@ -577,7 +577,7 @@ export function renderSpecApproval(result: SpecApprovalResult): string {
 ### 6.3 `generate-command.ts` 변경
 
 **지역 `suiteFingerprint` 를 지운다.** `generate` 를 동적 import 해 `sha256` 을 끌어오던
-219줄 함수와 그 앞의 주석 블록이 대상이다. 대신 `@ohmymcp-hsu/runner` 에서 정적으로 가져온다.
+219줄 함수와 그 앞의 주석 블록이 대상이다. 대신 `@mcpeak/runner` 에서 정적으로 가져온다.
 `runner` 는 이 모듈이 이미 정적으로 의존하는 패키지라 주석이 막으려던 문제(=`test` 경로가
 `generate` 로드에 묶이는 것)가 생기지 않는다. 주석이 지시하는 "여기서 다시 구현하지 마라" 는
 그대로 지켜진다.
@@ -705,7 +705,7 @@ renderSpecApproval
 ### 6.6 검증
 
 - 표적: `pnpm test packages/cli`
-- E2E: `pnpm build` 후 `pnpm --filter ohmymcp test:e2e`
+- E2E: `pnpm build` 후 `pnpm --filter @mcpeak/cli test:e2e`
 - 전체: `pnpm build`, `pnpm test`, `pnpm typecheck`, `pnpm lint`
 - `packages/cli/tests/fixtures/` 의 기존 파일 변경 0건
 
@@ -713,7 +713,7 @@ renderSpecApproval
 
 `feat(cli): 승인 지문 대조 결과를 보고서에 표시한다`
 
-changeset 하나. `ohmymcp` `minor`.
+changeset 하나. `mcpeak` `minor`.
 
 ---
 
@@ -730,12 +730,12 @@ changeset 하나. `ohmymcp` `minor`.
 ```
 [1단계: 작업 공간 만들기] 다른 무엇보다 먼저 이것부터 해라.
 
-  git worktree add /Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/ohmymcp-approval-fp-a -b feat/runner-approval-fingerprint
+  git worktree add /Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/mcpeak-approval-fp-a -b feat/runner-approval-fingerprint
 
 를 프로젝트 루트에서 실행한 뒤 그 경로로 세션을 옮겨라.
 
 진입 후 아래를 확인하고, 하나라도 어긋나면 중단하고 BLOCKED 로 보고해라.
-  - pwd 가 /Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/ohmymcp-approval-fp-a 인가
+  - pwd 가 /Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/mcpeak-approval-fp-a 인가
   - git log --oneline -1 이 루트에서 본 기점 커밋과 같은가
   - docs/superpowers/plans/2026-08-14-approval-fingerprint.md 가 있는가
   - docs/superpowers/specs/2026-08-14-approval-fingerprint-design.md 가 있는가
@@ -802,17 +802,17 @@ docs/superpowers/specs/2026-08-14-approval-fingerprint-design.md 가 사양의 �
 
 확인되면 그 커밋 SHA 를 기록하고 아래를 실행한 뒤 그 경로로 세션을 옮겨라.
 
-  git worktree add /Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/ohmymcp-approval-fp-b -b feat/cli-approval-fingerprint origin/main
+  git worktree add /Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/mcpeak-approval-fp-b -b feat/cli-approval-fingerprint origin/main
 
 진입 후 아래를 확인하고, 하나라도 어긋나면 중단하고 BLOCKED 로 보고해라.
-  - pwd 가 /Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/ohmymcp-approval-fp-b 인가
+  - pwd 가 /Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/mcpeak-approval-fp-b 인가
   - git log --oneline -1 이 위에서 기록한 origin/main 커밋과 같은가
   - docs/superpowers/plans/2026-08-14-approval-fingerprint.md 가 있는가
   - docs/superpowers/specs/2026-08-14-approval-fingerprint-design.md 가 있는가
   - git status --short 가 비어 있는가
   - pnpm install 이 성공하는가
   - pnpm build 가 성공하는가
-  - node -e "import('@ohmymcp-hsu/runner').then(m => console.log(typeof m.suiteFingerprint))" 가
+  - node -e "import('@mcpeak/runner').then(m => console.log(typeof m.suiteFingerprint))" 가
     function 을 출력하는가 (PR 1 의 산출물이 실제로 보이는지 확인한다. 빌드 산출물이 낡으면
     낡은 계약으로 판정하게 된다)
   - pnpm test 가 현재 상태에서 통과하는가
@@ -832,7 +832,7 @@ docs/superpowers/specs/2026-08-14-approval-fingerprint-design.md 가 사양의 �
   제안으로 적어라. 실패 메시지가 이 프로젝트의 제품이라 문안 변경은 사람이 판단한다.
   표시 억제 규칙(설계서 §7.1)의 여섯 조합을 테스트로 전부 덮는다.
   표적 검증 pnpm test packages/cli.
-  E2E 검증 pnpm build 후 pnpm --filter ohmymcp test:e2e.
+  E2E 검증 pnpm build 후 pnpm --filter @mcpeak/cli test:e2e.
   전체 검증 pnpm build / pnpm test / pnpm typecheck / pnpm lint.
 
 서브에이전트에 다음을 명시해라.

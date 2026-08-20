@@ -26,7 +26,7 @@ dependencies.writeStdout(`${JSON.stringify(finalReport, null, 2)}\n`);
 ### 목표
 
 1. `RunnerReport`를 터미널 문장으로 그리는 렌더러를 `runner`에 추가한다.
-2. `ohmymcp test`의 기본 stdout을 그 문장으로 바꾸고 `--json`으로 기존 출력을 보존한다.
+2. `mcpeak test`의 기본 stdout을 그 문장으로 바꾸고 `--json`으로 기존 출력을 보존한다.
 3. 같은 보고서에 항상 같은 바이트를 만든다.
 4. 서버 응답에서 온 문자열이 터미널 제어 시퀀스로 해석되지 않게 한다.
 
@@ -51,8 +51,8 @@ dependencies.writeStdout(`${JSON.stringify(finalReport, null, 2)}\n`);
 - `--json` 출력 바이트가 이 웨이브 이전과 동일하다.
 - `pnpm build && node packages/cli/tests/dist-cli-e2e.mjs` 통과.
 - `docs/adr/0012-cli-기본-출력-전환.md` 와 `docs/adr/0013-렌더러-배치와-진단-무분기.md` 존재.
-- `.changeset/` 신규 파일 1개. `@ohmymcp-hsu/runner` minor, `ohmymcp` minor.
-  CLI 패키지 이름은 `ohmymcp` 이며 `@ohmymcp-hsu/cli` 가 아니다. 출력 계약이 깨지지만 major 를
+- `.changeset/` 신규 파일 1개. `@mcpeak/runner` minor, `mcpeak` minor.
+  CLI 패키지 이름은 `mcpeak` 이며 `@mcpeak/cli` 가 아니다. 출력 계약이 깨지지만 major 를
   쓰지 않는다. 현재 버전이 `0.2.0` 이라 major 는 `1.0.0` 이 되고, 그것은 우리가 아직 주장할 수
   없는 안정성 선언이다. 파괴적 변경 사실은 changeset 본문에 명시한다.
 
@@ -124,8 +124,8 @@ diagnostic.hint                     "해결: " 접두로 한 줄
 
 | | 이전 | 이후 |
 |---|---|---|
-| `ohmymcp test ...` stdout | JSON 덤프 | 사람용 문장 |
-| `ohmymcp test ... --json` | 없는 플래그 | 이전과 동일 바이트 |
+| `mcpeak test ...` stdout | JSON 덤프 | 사람용 문장 |
+| `mcpeak test ... --json` | 없는 플래그 | 이전과 동일 바이트 |
 | stderr | 오류 전용 | 그대로 |
 | 종료 코드 | `passed` 면 0, 아니면 1 | 그대로 |
 

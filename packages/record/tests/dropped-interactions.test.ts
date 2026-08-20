@@ -1,4 +1,4 @@
-import type { McpClient, ToolResult } from "@ohmymcp-hsu/core";
+import type { McpClient, ToolResult } from "@mcpeak/core";
 import { describe, expect, it } from "vitest";
 import {
   type Cassette,

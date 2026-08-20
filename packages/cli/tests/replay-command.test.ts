@@ -1,12 +1,7 @@
-import type { McpClient, ToolDef } from "@ohmymcp-hsu/core";
-import type { Cassette } from "@ohmymcp-hsu/record";
-import { cassetteClient } from "@ohmymcp-hsu/record";
-import type {
-  RunnerExecution,
-  RunnerReport,
-  RunSuiteOptions,
-  TestSuiteSpec,
-} from "@ohmymcp-hsu/runner";
+import type { McpClient, ToolDef } from "@mcpeak/core";
+import type { Cassette } from "@mcpeak/record";
+import { cassetteClient } from "@mcpeak/record";
+import type { RunnerExecution, RunnerReport, RunSuiteOptions, TestSuiteSpec } from "@mcpeak/runner";
 import { describe, expect, it, vi } from "vitest";
 import {
   parseReplayCommand,

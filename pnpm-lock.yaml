@@ -44,19 +44,19 @@ importers:
 
   packages/cli:
     dependencies:
-      '@ohmymcp-hsu/core':
+      '@mcpeak/core':
         specifier: workspace:*
         version: link:../core
-      '@ohmymcp-hsu/generate':
+      '@mcpeak/generate':
         specifier: workspace:*
         version: link:../generate
-      '@ohmymcp-hsu/mock':
+      '@mcpeak/mock':
         specifier: workspace:*
         version: link:../mock
-      '@ohmymcp-hsu/record':
+      '@mcpeak/record':
         specifier: workspace:*
         version: link:../record
-      '@ohmymcp-hsu/runner':
+      '@mcpeak/runner':
         specifier: workspace:*
         version: link:../runner
 
@@ -68,24 +68,24 @@ importers:
 
   packages/dashboard:
     dependencies:
-      '@ohmymcp-hsu/core':
-        specifier: workspace:*
-        version: link:../core
-      '@ohmymcp-hsu/generate':
-        specifier: workspace:*
-        version: link:../generate
-      '@ohmymcp-hsu/mock':
-        specifier: workspace:*
-        version: link:../mock
-      '@ohmymcp-hsu/record':
-        specifier: workspace:*
-        version: link:../record
-      '@ohmymcp-hsu/runner':
-        specifier: workspace:*
-        version: link:../runner
-      ohmymcp:
+      '@mcpeak/cli':
         specifier: workspace:*
         version: link:../cli
+      '@mcpeak/core':
+        specifier: workspace:*
+        version: link:../core
+      '@mcpeak/generate':
+        specifier: workspace:*
+        version: link:../generate
+      '@mcpeak/mock':
+        specifier: workspace:*
+        version: link:../mock
+      '@mcpeak/record':
+        specifier: workspace:*
+        version: link:../record
+      '@mcpeak/runner':
+        specifier: workspace:*
+        version: link:../runner
     devDependencies:
       '@tailwindcss/vite':
         specifier: 4.3.3
@@ -120,31 +120,31 @@ importers:
 
   packages/generate:
     dependencies:
-      '@ohmymcp-hsu/core':
+      '@mcpeak/core':
         specifier: workspace:*
         version: link:../core
-      '@ohmymcp-hsu/runner':
+      '@mcpeak/runner':
         specifier: workspace:*
         version: link:../runner
 
   packages/mock:
     dependencies:
+      '@mcpeak/core':
+        specifier: workspace:*
+        version: link:../core
       '@modelcontextprotocol/sdk':
         specifier: 'catalog:'
         version: 1.30.0(zod@4.4.3)
-      '@ohmymcp-hsu/core':
-        specifier: workspace:*
-        version: link:../core
 
   packages/record:
     dependencies:
-      '@ohmymcp-hsu/core':
+      '@mcpeak/core':
         specifier: workspace:*
         version: link:../core
 
   packages/runner:
     dependencies:
-      '@ohmymcp-hsu/core':
+      '@mcpeak/core':
         specifier: workspace:*
         version: link:../core
 

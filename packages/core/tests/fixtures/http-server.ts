@@ -78,7 +78,7 @@ export async function startMcpHttpServer(options: {
   /** 요청 하나를 처리할 서버를 만든다. 핸들러는 공유 상태를 닫아 잡는다. */
   const createServerInstance = (): McpSdkServer => {
     const mcp = new McpSdkServer(
-      { name: "ohmymcp-test-server", version: "0.0.0" },
+      { name: "mcpeak-test-server", version: "0.0.0" },
       { capabilities: { tools: {} } },
     );
 

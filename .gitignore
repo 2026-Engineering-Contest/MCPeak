@@ -6,7 +6,7 @@ coverage/
 *.log
 .DS_Store
 
-# ohmymcp generate 기본 출력 경로 (로컬 실행 산출물)
+# mcpeak generate 기본 출력 경로 (로컬 실행 산출물)
 /generated/
 
 # CI 도그푸딩 스텝이 만드는 JUnit 리포트. 로컬에서 같은 명령을 돌려볼 때도 생긴다.

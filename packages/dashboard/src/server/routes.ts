@@ -2,8 +2,8 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadCassette } from "@ohmymcp-hsu/record";
-import { validateMcpSuite } from "@ohmymcp-hsu/runner";
+import { loadCassette } from "@mcpeak/record";
+import { validateMcpSuite } from "@mcpeak/runner";
 import type {
   AnswerRequest,
   ApiError,
@@ -335,7 +335,7 @@ async function validateFileContent(
     return validateMcpSuite(parsed).valid ? null : "본문 content가 올바른 MCP 스위트가 아닙니다.";
   }
 
-  const directory = await mkdtemp(join(tmpdir(), "ohmymcp-dashboard-cassette-"));
+  const directory = await mkdtemp(join(tmpdir(), "mcpeak-dashboard-cassette-"));
   const candidate = join(directory, "candidate.json");
   try {
     await writeFile(candidate, content, "utf8");

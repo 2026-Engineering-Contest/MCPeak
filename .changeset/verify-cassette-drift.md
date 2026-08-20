@@ -1,6 +1,6 @@
 ---
-"@ohmymcp-hsu/record": minor
-"ohmymcp": minor
+"@mcpeak/record": minor
+"mcpeak": minor
 ---
 
 record: 카세트가 아직 실서버와 맞는지 확인하는 `verifyCassette` 를 추가합니다.
@@ -27,7 +27,7 @@ record: JSON 문자열 안의 차이를 필드 단위로 보여줍니다. MCP �
 `raw.content[0].text.temp: <없음> / ... .temperature: 21` 처럼 어느 필드가 바뀌었는지 나옵니다.
 `replay` 미스와 중복 응답 경고도 같은 개선을 받습니다.
 
-cli: `ohmymcp verify <cassette.json> --command <executable> [--arg <value> ...]` 를 추가합니다.
+cli: `mcpeak verify <cassette.json> --command <executable> [--arg <value> ...]` 를 추가합니다.
 불일치나 호출 실패가 있으면 종료 코드 1 입니다. 확인불가(마스킹된 인자)는 실패로 보지
 않습니다 — "달라졌다" 가 아니라 "확인할 수 없다" 이고, 그것으로 CI 를 빨갛게 만들면 끌 방법이
 없습니다. `--record` 를 주면 조용히 무시하지 않고 `generate --record` 를 안내합니다.

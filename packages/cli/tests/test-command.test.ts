@@ -1,4 +1,4 @@
-import type { McpStdioConnection, ToolDef } from "@ohmymcp-hsu/core";
+import type { McpStdioConnection, ToolDef } from "@mcpeak/core";
 import type {
   DeterminismResult,
   RunnerExecution,
@@ -6,8 +6,8 @@ import type {
   TestCaseResult,
   TestCaseSpec,
   TestSuiteSpec,
-} from "@ohmymcp-hsu/runner";
-import { suiteFingerprint } from "@ohmymcp-hsu/runner";
+} from "@mcpeak/runner";
+import { suiteFingerprint } from "@mcpeak/runner";
 import { describe, expect, it, vi } from "vitest";
 import { TEST_USAGE_HINT } from "../src/help.js";
 import { ResetCommandError } from "../src/reset-hook.js";
@@ -929,7 +929,7 @@ describe("승인 지문 대조 표시", () => {
     const { out } = await runText(suite, "failed");
     expect(out.startsWith(RENDERED)).toBe(true);
     expect(out).toBe(
-      `${RENDERED}\n명세: 승인 지문이 없습니다 (미고정)\n  → ohmymcp generate 로 승인한 명세가 아니거나 승인 이전 버전으로 만든 파일입니다.\n`,
+      `${RENDERED}\n명세: 승인 지문이 없습니다 (미고정)\n  → mcpeak generate 로 승인한 명세가 아니거나 승인 이전 버전으로 만든 파일입니다.\n`,
     );
   });
   it("명세 줄은 stdout 이고 stderr 에 없다", async () => {

@@ -15,7 +15,7 @@ function quoteToken(token: string): string {
 
 /** 표시용 CLI 명령 전문. 전송 argv 배열과 같은 순서다. */
 export function formatCliCommand(argv: readonly string[]): string {
-  return ["ohmymcp", "generate", ...argv.map(quoteToken)].join(" ");
+  return ["mcpeak", "generate", ...argv.map(quoteToken)].join(" ");
 }
 
 /**

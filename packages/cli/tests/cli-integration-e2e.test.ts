@@ -5,8 +5,8 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import { run } from "../src/index.js";
 
-vi.mock("@ohmymcp-hsu/core", async () => import("../../core/src/index.js"));
-vi.mock("@ohmymcp-hsu/runner", async () => import("../../runner/src/index.js"));
+vi.mock("@mcpeak/core", async () => import("../../core/src/index.js"));
+vi.mock("@mcpeak/runner", async () => import("../../runner/src/index.js"));
 
 const here = resolve(fileURLToPath(new URL(".", import.meta.url)));
 const root = resolve(here, "../../..");
@@ -80,7 +80,7 @@ async function expectExited(pidFile: string): Promise<void> {
 
 describe.sequential("CLI 실제 weather-server", { timeout: CLI_INTEGRATION_TIMEOUT_MS }, () => {
   it("성공 report, 종료 코드와 PID 정리를 검증한다", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "ohmymcp-cli-"));
+    const dir = await mkdtemp(join(tmpdir(), "mcpeak-cli-"));
     const pidFile = join(dir, "server.pid");
     const out = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     const err = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
@@ -122,7 +122,7 @@ describe.sequential("CLI 실제 weather-server", { timeout: CLI_INTEGRATION_TIME
     }
   });
   it("assertion 실패 report, 종료 코드와 PID 정리를 검증한다", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "ohmymcp-cli-"));
+    const dir = await mkdtemp(join(tmpdir(), "mcpeak-cli-"));
     const pidFile = join(dir, "server.pid");
     const out = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     const err = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
@@ -160,7 +160,7 @@ describe.sequential("CLI 실제 weather-server", { timeout: CLI_INTEGRATION_TIME
     }
   });
   it("--json 없이 실패 케이스의 진단 문장을 stdout에 쓴다", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "ohmymcp-cli-"));
+    const dir = await mkdtemp(join(tmpdir(), "mcpeak-cli-"));
     const pidFile = join(dir, "server.pid");
     const out = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     const err = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
@@ -197,13 +197,13 @@ describe.sequential("CLI 실제 weather-server", { timeout: CLI_INTEGRATION_TIME
     const out = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     const err = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
     try {
-      expect(await run(["test", success, "--command", "ohmymcp-command-that-does-not-exist"])).toBe(
+      expect(await run(["test", success, "--command", "mcpeak-command-that-does-not-exist"])).toBe(
         1,
       );
       const text = err.mock.calls.map(([value]) => String(value)).join("");
       expect(out).not.toHaveBeenCalled();
       expect(text).toContain("MCP_CONNECTION_FAILED/PROCESS_START_FAILED");
-      expect(text).not.toContain("ohmymcp-command-that-does-not-exist");
+      expect(text).not.toContain("mcpeak-command-that-does-not-exist");
       expect(text).not.toMatch(/ENOENT|Error:|at /);
     } finally {
       out.mockRestore();
@@ -213,7 +213,7 @@ describe.sequential("CLI 실제 weather-server", { timeout: CLI_INTEGRATION_TIME
   it("--stderr-lines 0 은 변경 전과 같은 바이트를 낸다", async () => {
     /** 같은 실패 명세를 한 번 실행하고 stdout·stderr 를 그대로 돌려준다. */
     const runOnce = async (extra: readonly string[]) => {
-      const dir = await mkdtemp(join(tmpdir(), "ohmymcp-cli-"));
+      const dir = await mkdtemp(join(tmpdir(), "mcpeak-cli-"));
       const pidFile = join(dir, "server.pid");
       const out = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
       const err = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
@@ -250,7 +250,7 @@ describe.sequential("CLI 실제 weather-server", { timeout: CLI_INTEGRATION_TIME
      * weather-server 는 정상 종료하고 stderr 도 비어서 설계 §4.3 의 빈 진단 생략에 걸린다.
      */
     const runDeadServer = async (extra: readonly string[]) => {
-      const dir = await mkdtemp(join(tmpdir(), "ohmymcp-cli-"));
+      const dir = await mkdtemp(join(tmpdir(), "mcpeak-cli-"));
       const script = join(dir, "dies.mjs");
       // process.exit 은 stderr 가 파이프일 때 write 버퍼를 버릴 수 있다. exitCode 만 정하고
       // 이벤트 루프가 비어 자연 종료하게 둔다. 종료 코드는 1 그대로다.

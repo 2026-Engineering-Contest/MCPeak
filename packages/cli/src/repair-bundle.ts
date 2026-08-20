@@ -4,7 +4,7 @@ import type {
   JsonValue,
   RunnerReport,
   TestSuiteSpec,
-} from "@ohmymcp-hsu/runner";
+} from "@mcpeak/runner";
 import packageMetadata from "../package.json";
 import { hasDiagnosticContent, type ProcessDiagnosticsInput } from "./process-diagnostics.js";
 import { caseApprovalStatuses, type SpecApprovalState } from "./spec-approval.js";
@@ -16,8 +16,8 @@ import { caseApprovalStatuses, type SpecApprovalState } from "./spec-approval.js
  */
 export const REPAIR_BUNDLE_VERSION = 1;
 
-/** 번들에 적는 CLI 식별자. `ohmymcp --version` 이 찍는 것과 같은 출처를 쓴다. */
-export const REPAIR_BUNDLE_GENERATED_BY = `ohmymcp ${packageMetadata.version}`;
+/** 번들에 적는 CLI 식별자. `mcpeak --version` 이 찍는 것과 같은 출처를 쓴다. */
+export const REPAIR_BUNDLE_GENERATED_BY = `mcpeak ${packageMetadata.version}`;
 
 export interface RepairBundleDiagnostic {
   readonly code: string;
@@ -203,9 +203,9 @@ export function describeRepairBundleInvalid(reason: RepairBundleInvalidReason): 
     case "notObject":
       return "번들 최상위가 JSON 객체가 아닙니다. 배열이나 문자열이 담긴 다른 파일을 가리키고 있지 않은지 경로를 확인하세요.";
     case "versionMismatch":
-      return `번들 형식 버전이 이 CLI 가 아는 ${REPAIR_BUNDLE_VERSION} 이 아닙니다. 최신 \`ohmymcp test --repair-bundle\` 로 다시 만드세요.`;
+      return `번들 형식 버전이 이 CLI 가 아는 ${REPAIR_BUNDLE_VERSION} 이 아닙니다. 최신 \`mcpeak test --repair-bundle\` 로 다시 만드세요.`;
     case "missingField":
-      return "번들에 필요한 항목이 없거나 값이 형식과 다릅니다. `spec` 의 `suiteId`·`suiteName`·`approval`, 각 실패의 `caseId`·`caseName`·`status`·`diagnostics`, 각 진단의 `code`·`message` 가 있어야 합니다. `ohmymcp test --repair-bundle` 로 다시 만드세요.";
+      return "번들에 필요한 항목이 없거나 값이 형식과 다릅니다. `spec` 의 `suiteId`·`suiteName`·`approval`, 각 실패의 `caseId`·`caseName`·`status`·`diagnostics`, 각 진단의 `code`·`message` 가 있어야 합니다. `mcpeak test --repair-bundle` 로 다시 만드세요.";
     case "emptyFailures":
       return "번들에 실패한 케이스가 없습니다. 진단할 근거가 없으므로 provider 를 부르지 않습니다. 실패가 있는 실행에서 번들을 다시 만드세요.";
   }

@@ -1,4 +1,4 @@
-# @ohmymcp-hsu/mock
+# @mcpeak/mock
 
 ## 0.2.0
 
@@ -10,14 +10,14 @@
 
 - Updated dependencies [cd25fb4]
 - Updated dependencies [bf16fb5]
-  - @ohmymcp-hsu/core@0.3.0
+  - @mcpeak/core@0.3.0
 
 ## 0.1.2
 
 ### Patch Changes
 
 - Updated dependencies [0d92470]
-  - @ohmymcp-hsu/core@0.2.0
+  - @mcpeak/core@0.2.0
 
 ## 0.1.1
 
@@ -29,11 +29,11 @@
 
 ### Minor Changes
 
-- 623eea0: mock: stdio 진입점(`ohmymcp-mock`)과 인자 무관 매칭(`ANY`)을 추가한다. `core.connect()` 가 아직 stdio 만 알아 우리 도구가 목 서버에 붙지 못하던 것을 푼다 (ADR-0007). HTTP 진입점과 매칭 규칙을 공유한다 — 인자를 지정한 응답이 우선하고 `ANY`(정의 파일에서는 `args` 생략)가 나머지를 받는다.
+- 623eea0: mock: stdio 진입점(`mcpeak-mock`)과 인자 무관 매칭(`ANY`)을 추가한다. `core.connect()` 가 아직 stdio 만 알아 우리 도구가 목 서버에 붙지 못하던 것을 푼다 (ADR-0007). HTTP 진입점과 매칭 규칙을 공유한다 — 인자를 지정한 응답이 우선하고 `ANY`(정의 파일에서는 `args` 생략)가 나머지를 받는다.
 
 ## 0.0.1
 
 ### Patch Changes
 
 - Updated dependencies [606600f]
-  - @ohmymcp-hsu/core@0.1.0
+  - @mcpeak/core@0.1.0

@@ -21,7 +21,7 @@ dependencies.writeStdout(`${JSON.stringify(finalReport, null, 2)}\n`);
 ### 목표
 
 1. `RunnerReport`를 터미널 문장으로 그리는 `renderReport`를 `packages/runner`에 추가한다.
-2. `ohmymcp test`의 기본 stdout을 그 문장으로 바꾸고 `--json`으로 기존 출력을 보존한다.
+2. `mcpeak test`의 기본 stdout을 그 문장으로 바꾸고 `--json`으로 기존 출력을 보존한다.
 3. 같은 보고서에 항상 같은 바이트를 만든다.
 4. 서버 응답에서 온 문자열이 터미널 제어 시퀀스로 해석되지 않게 한다.
 
@@ -48,7 +48,7 @@ dependencies.writeStdout(`${JSON.stringify(finalReport, null, 2)}\n`);
   같은 입력 2회 실행의 stdout 바이트가 같다.
 - `--json` 을 붙인 실행의 stdout 바이트가 이 웨이브 이전과 동일하다.
 - `docs/adr/0012-cli-기본-출력-전환.md` 와 `docs/adr/0013-렌더러-배치와-진단-무분기.md` 존재.
-- `.changeset/` 신규 파일 1개. `@ohmymcp-hsu/runner` minor, `ohmymcp` minor.
+- `.changeset/` 신규 파일 1개. `@mcpeak/runner` minor, `mcpeak` minor.
 
 ## 3. Global Constraints
 
@@ -446,19 +446,19 @@ colorEnabled: process.stdout.isTTY === true && process.env.NO_COLOR === undefine
 
 ```markdown
 ---
-"@ohmymcp-hsu/runner": minor
-"ohmymcp": minor
+"@mcpeak/runner": minor
+"mcpeak": minor
 ---
 
-`ohmymcp test` 의 기본 출력을 사람이 읽는 보고서로 바꿉니다. 실패한 케이스의 진단 문장과
+`mcpeak test` 의 기본 출력을 사람이 읽는 보고서로 바꿉니다. 실패한 케이스의 진단 문장과
 해결 힌트를 터미널에 직접 표시합니다.
 
 **파괴적 변경**: 기존의 JSON 출력은 `--json` 플래그로 옮겼습니다. stdout을 기계로 파싱하던
-스크립트는 `ohmymcp test ... --json` 으로 바꿔야 합니다. `--json` 출력의 바이트는 이전과
+스크립트는 `mcpeak test ... --json` 으로 바꿔야 합니다. `--json` 출력의 바이트는 이전과
 동일합니다. 종료 코드는 바뀌지 않았습니다.
 ```
 
-`ohmymcp` 를 major 가 아니라 minor 로 올린다. 현재 버전이 `0.2.0` 이라 major 는 `1.0.0` 이
+`mcpeak` 를 major 가 아니라 minor 로 올린다. 현재 버전이 `0.2.0` 이라 major 는 `1.0.0` 이
 되고 그것은 아직 주장할 수 없는 안정성 선언이다.
 
 **표적 검증** `pnpm vitest run packages/cli/tests/test-command.test.ts`
@@ -526,7 +526,7 @@ colorEnabled: process.stdout.isTTY === true && process.env.NO_COLOR === undefine
 
 ```js
 {
-  const dir = await mkdtemp(join(tmpdir(), "ohmymcp-dist-render-"));
+  const dir = await mkdtemp(join(tmpdir(), "mcpeak-dist-render-"));
   const pidFile = join(dir, "pid");
   const args = [
     "test",
@@ -604,7 +604,7 @@ T1 runner 렌더러  →  T2 cli 출력 계약  →  T3 실환경 검증
 `packages/cli/dist/cli.mjs` 가 T2까지의 산출을 담아야 하므로 순차다. T3는 실제 서버 프로세스를
 띄우므로 `CLAUDE.local.md` 규칙상 직렬 전용이다.
 
-worktree 경로: `.claude/worktrees/ohmymcp-cli-report-rendering`
+worktree 경로: `.claude/worktrees/mcpeak-cli-report-rendering`
 브랜치: `feat/cli-report-rendering`
 
 ## 7. 모델 배분
@@ -644,11 +644,11 @@ git status --short       # 깨끗한지
 [1단계: 작업 공간 만들기] 다른 무엇보다 먼저 이것부터 해라.
 
 이 저장소의 루트에서
-  git worktree add .claude/worktrees/ohmymcp-cli-report-rendering -b feat/cli-report-rendering
-를 실행한 뒤 세션을 방금 만든 .claude/worktrees/ohmymcp-cli-report-rendering 로 옮겨라.
+  git worktree add .claude/worktrees/mcpeak-cli-report-rendering -b feat/cli-report-rendering
+를 실행한 뒤 세션을 방금 만든 .claude/worktrees/mcpeak-cli-report-rendering 로 옮겨라.
 
 진입 후 아래를 확인하고, 하나라도 어긋나면 중단하고 BLOCKED로 보고해라:
-  - pwd가 .claude/worktrees/ohmymcp-cli-report-rendering 로 끝나는지
+  - pwd가 .claude/worktrees/mcpeak-cli-report-rendering 로 끝나는지
   - git log --oneline -1 이 루트에서 본 기점 커밋과 같은지
   - docs/superpowers/plans/2026-08-13-cli-report-rendering-implementation.md 와
     docs/superpowers/specs/2026-08-13-cli-report-rendering-design.md 가 실제로 존재하는지
@@ -738,7 +738,7 @@ T3까지 끝나면 아래를 확인하고 사용자에게 보고해라:
   - packages/runner/src/index.ts 가 renderReport 와 RenderReportOptions 를 재수출하는지
   - docs/adr/0012-cli-기본-출력-전환.md 와
     docs/adr/0013-렌더러-배치와-진단-무분기.md 가 존재하는지
-  - .changeset/ 에 @ohmymcp-hsu/runner minor 와 ohmymcp minor 를 담은 파일이 있는지
+  - .changeset/ 에 @mcpeak/runner minor 와 mcpeak minor 를 담은 파일이 있는지
   - pnpm build && node packages/cli/tests/dist-cli-e2e.mjs 가 통과하는지
   - E2E의 결정론성 단언(같은 입력 2회 실행의 표준 출력 바이트 일치)이 렌더링 경로에도
     들어 있는지

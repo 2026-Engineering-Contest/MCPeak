@@ -1,15 +1,17 @@
-# OhMyMCP
+# MCPeak
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+[![npm](https://img.shields.io/npm/v/%40mcpeak%2Fcli)](https://www.npmjs.com/package/@mcpeak/cli)
 
 MCP(Model Context Protocol) 서버를 **코드로 자동 테스트**하는 오픈소스 프레임워크.
 서버를 띄우고, 응답을 검증하고, 녹화·재생하고, 목 서버로 대체하는 것을 하나의 도구로 한다.
 
-> ⚠️ **아직 npm 에 배포되지 않았습니다.** 여섯 패키지 모두 동작하지만 공개 배포 전이라,
-> 지금은 저장소를 클론해 [개발](#개발) 절차로 써야 합니다.
->
-> 아래 예제의 `mcpeak` · `mcpeak-mock` 은 **배포 후의 호출 형태**입니다. 배포 전에는 같은 명령을
-> 빌드 산출물 경로로 부릅니다 — [개발](#개발) 절에 세 명령 모두 적어뒀습니다.
+```bash
+npm install -g @mcpeak/cli
+```
+
+설치하면 `mcpeak` · `mcpeak-mock` 이 `PATH` 에 놓입니다. 아래 예제를 그대로 칠 수 있습니다.
+한 번만 쓸 거라면 설치 없이 `npx @mcpeak/cli test ...` 도 됩니다.
 
 ## 30초 예제
 
@@ -134,8 +136,11 @@ mcpeak test suite.json --command mcpeak-mock --arg mock.json
 | [`@mcpeak/generate`](./packages/generate) | 결정론적 baseline 과 승인형 AI 검토로 테스트 생성 |
 | [`@mcpeak/record`](./packages/record) | 녹화 · 재생 · 계약 스냅샷 |
 | [`@mcpeak/mock`](./packages/mock) | 목 MCP 서버(Streamable HTTP · stdio) · 응답 주입 |
+| [`@mcpeak/dashboard`](./packages/dashboard) | 로컬 웹 UI. `mcpeak-dashboard` 로 띄웁니다 ([ADR-0046](./docs/adr/0046-대시보드를-로컬-웹서버로-만든다.md), 제안) |
 
 의존 방향은 단방향입니다: `cli` → `runner`/`generate`/`record`/`mock` → `core`.
+`dashboard` 는 `cli` 가 공개하는 `@mcpeak/cli/commands` 를 불러 같은 커맨드 함수를 씁니다 —
+판정 로직을 두 벌 만들지 않기 위해서입니다.
 
 ## 설계 결정
 
@@ -147,13 +152,13 @@ mcpeak test suite.json --command mcpeak-mock --arg mock.json
 ```bash
 corepack enable       # pnpm 활성화 (packageManager 핀 사용)
 pnpm install
-pnpm build            # 6개 패키지 dist/ 생성
+pnpm build            # 7개 패키지 + 예제 서버 dist/ 생성
 pnpm typecheck
 pnpm test
 pnpm lint
 ```
 
-배포 전이라 실행 파일이 `PATH` 에 없습니다. 위 예제의 명령들은 빌드 산출물로 직접 부릅니다.
+저장소에서 작업할 때는 설치본 대신 **빌드 산출물**을 부릅니다. 고친 코드가 바로 반영됩니다.
 
 ```bash
 # mcpeak test ...
@@ -168,7 +173,12 @@ node packages/cli/dist/cli.mjs test <suite.json> \
   --command node --arg packages/mock/dist/stdio.mjs --arg mock.json
 ```
 
+> `pnpm build` 를 건너뛰면 낡은 `dist/` 를 뭅니다. 소스를 고쳤으면 다시 빌드하세요.
+
 Node 20 · 22 · 24 에서 검사하며, 빌드는 Node 22 이상이 필요합니다.
+
+> **Node 25 에서는 `packages/dashboard/web` 테스트 13건이 실패합니다.** 지원 범위 밖이라 CI 는
+> 잡지 못합니다. 자기 변경과 무관하니 [#212](https://github.com/2026-Engineering-Contest/MCPeak/issues/212) 를 보세요.
 
 기여 규칙은 [CONTRIBUTING.md](./CONTRIBUTING.md) 를 먼저 읽으세요.
 

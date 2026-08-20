@@ -1,4 +1,4 @@
-import type { SuiteCaseApproval } from "@ohmymcp-hsu/runner";
+import type { CaseApprovalStatus, SuiteCaseApproval } from "@ohmymcp-hsu/runner";
 import type { DryRunCaseOutcome, DryRunResult } from "./dry-run.js";
 import type { ReviewIO } from "./generate-command.js";
 import type { RepairAttempt } from "./repair-target.js";
@@ -10,8 +10,14 @@ import type { RepairAttempt } from "./repair-target.js";
  * 호출 측의 몫이다. 여기서는 분류 요약 한 줄까지만 찍는다.
  */
 
-/** 사람이 실패 케이스에 내리는 판정. `specError` 는 저장되지 않고 저장을 막는 사유가 된다. */
-export type CaseClassification = "passed" | "serverDefect" | "specError";
+/**
+ * 사람이 실패 케이스에 내리는 판정. 저장 가능한 값은 runner 계약을 그대로 따르고,
+ * `specError` 만 저장되지 않은 채 저장을 막는 CLI 전용 판정으로 덧붙인다.
+ *
+ * `CaseApprovalStatus` 의 리터럴을 여기에 다시 적으면 runner 가 값을 늘릴 때 이 복제본은
+ * 조용히 어긋난다(이슈 #154).
+ */
+export type CaseClassification = CaseApprovalStatus | "specError";
 
 export interface DryRunReviewResult {
   /** 저장을 진행해도 되는가. false 면 검토 메뉴로 돌아간다. */

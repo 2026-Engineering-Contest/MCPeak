@@ -105,11 +105,16 @@ jobs:
           #   NPM_TOKEN       — changesets/action 이 이 이름을 직접 읽는다.
           #
           # NPM_TOKEN 이 없으면 changesets/action 은 "No NPM_TOKEN found, but OIDC is
-          # available" 로 판단해 **npm trusted publishing(OIDC)** 으로 갈아탄다. 그 방식은
-          # npm 쪽에 패키지별 trusted publisher 등록이 있어야 하는데, 새로 만드는 패키지에는
-          # 그것이 없다. 2026-08-20 에 `@mcpeak/*` 일곱 개가 이 경로로 새서 **워크플로는
-          # success · changesets 는 "published successfully" · 레지스트리는 404** 인 상태가
-          # 나왔다. 실패가 아니라 조용한 무발행이라 초록만 보고는 알 수 없다.
+          # available" 로 판단해 **npm trusted publishing(OIDC)** 으로 갈아탄다.
+          #
+          # 2026-08-20 에 `@mcpeak/*` 일곱 개가 그 경로로 나갔고 **정상 발행됐다.** 당시
+          # 발행 직후 몇 분간 레지스트리 조회가 404 여서 무발행으로 오진하고 이 줄을
+          # 추가했는데, 원인은 OIDC 가 아니라 전파 지연이었다. 즉 **이 줄은 그때 문제를
+          # 고친 것이 아니다.**
+          #
+          # 그래도 남겨 둔다. OIDC 는 npm 쪽 trusted publisher 등록에 의존하므로 새 패키지나
+          # 새 스코프에서 실패할 여지가 있고, 토큰 경로를 명시해 두면 그 분기를 타지 않는다.
+          # 되돌릴 수 없는 발행에서는 경로가 하나로 고정된 편이 낫다.
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           # changesets 는 --provenance 를 자동으로 붙이지 않는다. 이 환경변수가 있어야
@@ -118,10 +123,12 @@ jobs:
 
       # 발행했다고 **보고한** 것과 레지스트리에 **있는** 것을 대조한다.
       #
-      # 2026-08-20 에 changesets 가 일곱 패키지를 "published successfully" 로 보고하고
-      # git 태그까지 밀었는데 레지스트리에는 하나도 없었다. 워크플로는 success 였다.
-      # 위 env 수정이 그 원인(OIDC 로 새는 것)을 막지만, 조용한 무발행은 형태가 여러 가지라
-      # 원인마다 막는 대신 결과를 직접 확인한다.
+      # changesets 가 "published successfully" 를 찍고 git 태그까지 밀어도 그것은 **보고**일
+      # 뿐이다. 발행이 되돌릴 수 없는 작업인 만큼 보고를 믿지 않고 결과를 직접 조회한다.
+      #
+      # 2026-08-20 에는 반대 방향의 오진이 있었다 — 발행은 성공했는데 전파 지연으로 몇 분간
+      # 404 가 보였고, 그것을 무발행으로 읽었다. 그래서 아래 `lookup` 의 대기를 넉넉히 잡는다.
+      # 이 Guard 가 짧게 포기하면 **성공한 릴리스를 빨갛게** 만들어 오진을 자동화한다.
       #
       # 발행을 되돌릴 수는 없으므로 이 스텝은 "막는 관문"이 아니라 "거짓 초록을 없애는
       # 경보"다. 실패하면 사람이 재실행 여부를 판단한다.
@@ -138,35 +145,48 @@ jobs:
         run: |
           set -uo pipefail
 
-          # 갓 발행된 버전은 레지스트리 전파에 몇 초 걸릴 수 있다. 짧게 재시도해
-          # 전파 지연을 무발행으로 오인하지 않는다. 이번 사고의 404 는 분 단위로
-          # 지속됐으므로 이 재시도로 가려지지 않는다.
-          lookup() {
-            for attempt in 1 2 3; do
-              npm view "$1" version >/dev/null 2>&1 && return 0
-              [ "$attempt" -lt 3 ] && sleep 5
-            done
-            return 1
+          # 조회 결과를 세 가지로 가른다. 하나로 뭉치면 실패 메시지가 틀린 말을 한다.
+          #
+          #   found    이 버전이 레지스트리에 있다
+          #   absent   E404 — 없다. 이것만 "무발행" 으로 본다
+          #   failed   네트워크 · 인증 · 5xx 등. 없는 것이 아니라 **확인하지 못한 것**이다
+          #
+          # 마지막 오류 원인을 LAST_ERROR 에 남겨 문장에 싣는다.
+          # `$1` 조회, `$2` 초 안에. 조회 자체가 멎을 수 있으므로 시간을 건다 —
+          # 걸지 않으면 아래 전역 마감이 `npm view` 가 돌아온 뒤에만 검사돼 초과한다.
+          # 시간 초과는 124 로 끝나고 E404 를 담지 않으므로 자동으로 `failed` 가 된다.
+          probe() {
+            local out code
+            out="$(timeout "$2" npm view "$1" version 2>&1)" && return 0
+
+            # **오류 코드 줄만** 본다. 전체 출력에 `case` 를 걸면 URL 이나 요청 spec 에
+            # 들어간 `E404` 까지 미발행으로 오인한다. `_` 를 넣지 않으면 `EAI_AGAIN` 이
+            # `EAI` 로 잘려 문장이 틀린 코드를 싣는다.
+            code="$(printf '%s\n' "$out" | grep -m1 -oE 'code E[A-Z0-9_]+' | sed 's/^code //' || true)"
+            LAST_ERROR="${code:-$(printf '%s\n' "$out" | grep -m1 -oE '[45][0-9][0-9] [A-Za-z ]+' || true)}"
+            [ "$code" = "E404" ] && return 1
+            return 2
           }
 
+          # 대기 구조 — 전수 즉시 확인 후, 빠진 것만 **전역 마감** 안에서 다시 본다.
+          #
+          # 갓 발행된 버전이 조회에 뜨기까지 분 단위로 걸릴 수 있다. 2026-08-20 에
+          # `@mcpeak/*` 일곱 개를 발행한 직후 `npm view` 와 캐시를 우회한 `curl` 이 몇 분간
+          # 404 를 돌려줬고, 그것을 무발행으로 오진해 워크플로 수정 PR(#216)까지 냈다.
+          # 재시도가 짧으면 이 Guard 가 같은 오진을 자동화해 성공한 릴리스를 빨갛게 만든다.
+          #
+          # 다만 대기를 패키지마다 따로 두면 전부 미발행일 때 대기가 곱해진다(7 개 × 3 분
+          # = 21 분). 마감을 전역으로 두어 최악에도 3 분 안에 판정한다.
+          DEADLINE=$(( $(date +%s) + 180 ))
+
+          declare -a pending=()
           checked=0
-          missing=0
           for dir in packages/*/; do
             manifest="$dir/package.json"
             [ -f "$manifest" ] || continue
-            private="$(node -p "require('./$manifest').private === true")"
-            [ "$private" = "true" ] && continue
-
-            name="$(node -p "require('./$manifest').name")"
-            version="$(node -p "require('./$manifest').version")"
+            [ "$(node -p "require('./$manifest').private === true")" = "true" ] && continue
             checked=$((checked + 1))
-
-            if lookup "${name}@${version}"; then
-              echo "  ✓ ${name}@${version}"
-            else
-              echo "::error::${name}@${version} 이 레지스트리에 없습니다. 발행이 보고와 다릅니다."
-              missing=$((missing + 1))
-            fi
+            pending+=("$(node -p "require('./$manifest').name")@$(node -p "require('./$manifest').version")")
           done
 
           # 0 건은 "전부 통과"가 아니라 "검사를 안 했음"이다. 위 tarball Guard 와 같은 이유다.
@@ -174,8 +194,47 @@ jobs:
             echo "::error::검사한 패키지가 0 개입니다. packages/*/ 경로를 확인하세요."
             exit 1
           fi
-          if [ "$missing" -ne 0 ]; then
-            echo "::error::${checked} 개 중 ${missing} 개가 레지스트리에 없습니다."
+
+          declare -a absent=() failed=()
+          while :; do
+            declare -a still=()
+            absent=(); failed=()
+            for spec in ${pending[@]+"${pending[@]}"}; do
+              # 조회에 거는 시간도 남은 마감을 넘지 않는다. 최소 5 초는 준다 —
+              # 마감이 코앞이라고 0 초를 걸면 멀쩡한 조회까지 실패로 만든다.
+              budget=$(( DEADLINE - $(date +%s) ))
+              [ "$budget" -lt 5 ] && budget=5
+
+              LAST_ERROR=""
+              probe "$spec" "$budget"
+              case "$?" in
+                0) echo "  ✓ ${spec}" ;;
+                1) still+=("$spec"); absent+=("$spec") ;;
+                *) still+=("$spec"); failed+=("${spec} (${LAST_ERROR:-원인 불명})") ;;
+              esac
+            done
+
+            [ "${#still[@]}" -eq 0 ] && break
+
+            remaining=$(( DEADLINE - $(date +%s) ))
+            [ "$remaining" -le 0 ] && break
+
+            # 대기도 남은 마감으로 자른다. 30 초를 통째로 자면 마감을 넘어선다.
+            nap=30
+            [ "$remaining" -lt "$nap" ] && nap="$remaining"
+            echo "    … ${#still[@]} 개 미확인, ${nap}초 후 재시도 (마감까지 ${remaining}초)"
+            sleep "$nap"
+            pending=(${still[@]+"${still[@]}"})
+          done
+
+          for spec in ${failed[@]+"${failed[@]}"}; do
+            echo "::error::${spec} 를 확인하지 못했습니다. 없는 것이 아니라 조회가 실패한 것입니다."
+          done
+          for spec in ${absent[@]+"${absent[@]}"}; do
+            echo "::error::${spec} 이 레지스트리에 없습니다(E404). 발행이 보고와 다릅니다."
+          done
+          if [ "${#failed[@]}" -ne 0 ] || [ "${#absent[@]}" -ne 0 ]; then
+            echo "::error::${checked} 개 중 미발행 ${#absent[@]} 개 · 확인 실패 ${#failed[@]} 개."
             exit 1
           fi
           echo "패키지 ${checked} 개 전부 레지스트리에서 확인됨"

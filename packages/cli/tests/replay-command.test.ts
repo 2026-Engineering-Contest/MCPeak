@@ -11,6 +11,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   parseReplayCommand,
   type ReplayCommandDependencies,
+  ReplayRuntimeUnavailableError,
   runReplayCommand,
 } from "../src/replay-command.js";
 
@@ -333,11 +334,47 @@ describe("runReplayCommand", () => {
   it("validateSuite 가 던지면 CLI_INTERNAL_ERROR 로 정규화한다", async () => {
     const { value, writes } = deps(null, {
       validateSuite: vi.fn(() => {
-        throw new Error("runtime dependencies unavailable");
+        throw new Error("알 수 없는 내부 오류");
       }),
     });
     await expect(runReplayCommand(["suite.json", "--cassette", "c.json"], value)).resolves.toBe(1);
     expect(writes.err.join("")).toContain("CLI_INTERNAL_ERROR");
+  });
+
+  /**
+   * 런타임을 못 부른 것은 내부 오류가 아니다. `CLI_INTERNAL_ERROR` 로 부르면 "재현 정보와
+   * 함께 이슈를 보고하세요" 가 나가고, 사용자는 자기 설치 문제로 버그 리포트를 쓴다.
+   * fallback 의존성에서 가장 먼저 걸리는 것이 `validateSuite` 다.
+   */
+  it("런타임 미가용을 내부 오류로 보고하지 않는다", async () => {
+    const { value, writes } = deps(null, {
+      validateSuite: vi.fn(() => {
+        throw new ReplayRuntimeUnavailableError();
+      }),
+    });
+    await expect(runReplayCommand(["suite.json", "--cassette", "c.json"], value)).resolves.toBe(1);
+    const err = writes.err.join("");
+
+    expect(err).toContain("REPLAY_RUNTIME_UNAVAILABLE");
+    expect(err).not.toContain("CLI_INTERNAL_ERROR");
+    expect(err).toContain("의존성을 설치한 뒤");
+    // 엉뚱한 곳을 보게 하지 않는다.
+    expect(err).not.toContain("이슈를 보고하세요");
+  });
+
+  it("런타임 미가용을 카세트 읽기 실패로 보고하지 않는다", async () => {
+    const { value, writes } = deps(null, {
+      loadCassette: vi.fn(async () => {
+        throw new ReplayRuntimeUnavailableError();
+      }),
+    });
+    await expect(runReplayCommand(["suite.json", "--cassette", "c.json"], value)).resolves.toBe(1);
+    const err = writes.err.join("");
+
+    expect(err).toContain("REPLAY_RUNTIME_UNAVAILABLE");
+    expect(err).not.toContain("CASSETTE_READ_FAILED");
+    // 멀쩡한 카세트를 다시 녹화하라고 하지 않는다.
+    expect(err).not.toContain("--record 로 다시 녹화");
   });
 
   it("Runner 시작 실패를 구조화된 오류로 돌려준다", async () => {

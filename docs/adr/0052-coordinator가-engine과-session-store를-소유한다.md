@@ -7,9 +7,6 @@
 - 승인: 미승인
 - 선행 결정:
   [ADR-0051](./0051-external-record-replay와-tool-카세트-경계-분리.md)
-- 참조:
-  [Record/Replay 상위 설계](../2026-08-20-record-replay-상위-설계.md),
-  [외부 호출 어댑터 확장 설계](../2026-08-21-record-replay-외부호출-어댑터-설계.md)
 
 ## 배경
 

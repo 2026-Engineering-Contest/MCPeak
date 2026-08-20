@@ -503,7 +503,9 @@ export function cassetteClient(inner: McpClient, options: CassetteClientOptions)
     async close() {
       try {
         if (recordingFailures.length > 0) throw mergeRecordingFailures(recordingFailures);
-        // 저장하는 경우에만 알린다. onFlush 가 없으면 파일이 바뀌지 않으므로 사라지는 것도 없다.
+        await options.onFlush?.(prepareCassetteForWrite(cassette));
+        // 저장에 성공한 뒤에만 알린다. onFlush 가 없으면 파일이 바뀌지 않으므로 사라지는 것도
+        // 없고, onFlush 가 던졌으면 파일이 그대로인데 "사라집니다" 라고 말하게 된다.
         if (baseline !== null && options.onFlush !== undefined) {
           const message = droppedInteractionsMessage(
             diffCassettes(baseline, cassette),
@@ -511,7 +513,6 @@ export function cassetteClient(inner: McpClient, options: CassetteClientOptions)
           );
           if (message !== null) options.onWarning?.(message);
         }
-        await options.onFlush?.(prepareCassetteForWrite(cassette));
       } finally {
         await inner.close();
       }

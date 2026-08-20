@@ -222,6 +222,23 @@ describe("cassetteClient — record 모드의 축소 경고", () => {
     expect(flushed?.interactions).toHaveLength(2);
   });
 
+  it("저장(onFlush)이 실패하면 경고하지 않는다 — 파일이 그대로이므로 사라진 것도 없다", async () => {
+    const warnings: string[] = [];
+    const client = cassetteClient(fakeClient([ok({ temp: 21 })]), {
+      cassette: cassetteOf(SEOUL, BUSAN, JEJU),
+      mode: "record",
+      cassettePath: "demo.cassette.json",
+      onWarning: (message) => warnings.push(message),
+      onFlush: async () => {
+        throw new Error("디스크가 가득 찼습니다");
+      },
+    });
+    await client.callTool("get_weather", { city: "서울" });
+
+    await expect(client.close()).rejects.toThrow("디스크가 가득 찼습니다");
+    expect(warnings).toStrictEqual([]);
+  });
+
   it("경고는 저장을 막지 않는다 — 저장 내용은 경고 없을 때와 같다", async () => {
     const { warnings, flushed } = await recordRun(
       cassetteOf(SEOUL, BUSAN, JEJU),

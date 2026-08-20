@@ -412,7 +412,14 @@ export interface CassetteVerifyResult {
   readonly failed: readonly CassetteMismatch[];
   /** args 에 마스킹된 값이 있어 실서버에 그대로 보낼 수 없는 것. */
   readonly skipped: readonly CassetteMismatch[];
-  /** `cassette.tools` 가 있을 때만 의미가 있다. 스키마가 바뀌었는가. */
+  /**
+   * `cassette.tools` 가 있을 때만 의미가 있다. 스키마가 **바뀌었는가**.
+   *
+   * 확인하지 못한 경우는 `false` 다. `listTools` 호출 자체가 실패하면 이 값이 아니라
+   * `failed` 에 항목이 들어간다. 확인 불가를 변경으로 보고하면 재녹화를 자동 판단하는
+   * 쪽에서 연결 실패에 파괴적인 `--record` 를 돌린다. 그러므로 이 값만 읽지 말고
+   * `failed` 가 비었는지 함께 보라.
+   */
   readonly toolsChanged: boolean;
 }
 
@@ -458,7 +465,10 @@ export async function verifyCassette(
     try {
       toolsChanged = !sameJson(stored, redactTools(await client.listTools()));
     } catch (error) {
-      toolsChanged = true;
+      // `toolsChanged` 로 올리지 않는다. 호출 실패는 "바뀌었다" 가 아니라 "확인할 수 없다"
+      // 이고, 이 함수가 `skipped` 를 `mismatched` 와 나눈 이유가 바로 그 구분이다.
+      // `toolsChanged` 를 보고 재녹화를 자동 판단하는 쪽에서는 서버 연결 실패 하나로
+      // 파괴적인 `--record` 가 돌아간다. 확인하지 못했다는 사실은 `failed` 가 전한다.
       failed.push({
         key: "listTools",
         toolName: "listTools",

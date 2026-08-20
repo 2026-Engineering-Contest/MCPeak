@@ -221,6 +221,22 @@ describe("verifyCassette", () => {
     expect(drifted.failed[0]?.message).toContain("툴 스키마가 카세트와 다릅니다");
   });
 
+  // 호출 실패는 "바뀌었다" 가 아니라 "확인할 수 없다" 다. toolsChanged 를 보고 재녹화를
+  // 자동 판단하는 쪽에서 연결 실패 하나로 파괴적인 --record 가 돌면 안 된다.
+  it("listTools 호출이 실패해도 toolsChanged 를 올리지 않는다", async () => {
+    const tools: ToolDef[] = [{ name: "get_weather", inputSchema: { type: "object" } }];
+    const cassette: Cassette = { ...cassetteOf(), tools };
+
+    const result = await verifyCassette(fakeServer({}), cassette);
+
+    expect(result.toolsChanged).toBe(false);
+    expect(result.failed).toHaveLength(1);
+    expect(result.failed[0]?.key).toBe("listTools");
+    expect(result.failed[0]?.message).toContain("listTools 를 확인하지 못했습니다");
+    // 확인 못 한 것을 스키마가 바뀌었다고 말하면 안 된다.
+    expect(result.failed[0]?.message).not.toContain("툴 스키마가 카세트와 다릅니다");
+  });
+
   it("cassette.tools 가 없으면 listTools 를 부르지 않는다", async () => {
     const server = fakeServer({ get_weather: ok({ temp: 21 }) });
     await verifyCassette(server, cassetteOf(storedInteraction("get_weather", {}, { temp: 21 })));

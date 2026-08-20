@@ -40,7 +40,13 @@ export interface RejectionDiagnosisRequest {
   readonly input: JsonObject;
   /** 서버가 선언한 입력 스키마. */
   readonly inputSchema: JsonObject;
-  /** 서버 응답 본문. redaction 이 적용된 값이다. */
+  /**
+   * 서버 응답 본문. **redaction 을 적용하지 않는다**(ADR-0049).
+   *
+   * 남의 서버가 자유롭게 쓴 텍스트라 키·값 치환이 구조적으로 맞지 않는다. 대신 상한
+   * (`clampObservedText`)·전송 전 확인·기본 거부(`[y/N]`)로 다룬다. 여기 오는 값에는
+   * 경로·토큰·요청 본문이 섞여 있을 수 있다.
+   */
   readonly responseBody: string;
 }
 
@@ -113,9 +119,15 @@ function clamp(text: string, limit: number): string {
  * 둘 다 물을 것이 없다(설계서 §6.3). 순서는 넘어온 순서를 그대로 지킨다. 다시 정렬하면 같은
  * 실행을 두 번 볼 때 화면 순서가 흔들린다.
  *
- * **`input` 과 `responseBody` 에만 redaction 을 건다(설계서 §6.2·§6.3, ADR-0033).**
+ * **`input` 에만 redaction 을 건다(설계서 §6.2·§6.3, ADR-0033 · ADR-0049).** 구조화된 값이라
+ * 키·값 치환이 제대로 동작하는 유일한 자리다.
+ *
  * `inputSchema` 는 걸지 않는다. 스키마 안의 enum 값이 치환되면 AI 가 대조할 계약 자체가
  * 사라지고, 그것은 `authoring-request.ts` 가 `unredactedTools` 를 따로 두는 이유와 같다.
+ *
+ * `responseBody` 도 걸지 않는다. 남의 서버가 쓴 자유 텍스트에는 값 치환이 완전 일치로만
+ * 걸려서, 남겨 두면 "가렸다" 로 보이면서 실제로는 거의 아무것도 안 가린다. 못 하는 것을 한 척
+ * 하지 않는 쪽을 골랐다(ADR-0049).
  */
 export function prepareRejectionDiagnosisRequests(options: {
   readonly cases: readonly RejectionDiagnosisCase[];
@@ -129,7 +141,7 @@ export function prepareRejectionDiagnosisRequests(options: {
         tool: item.tool,
         input: sanitizeRedactable(item.input, options.redaction) as JsonObject,
         inputSchema: item.inputSchema,
-        responseBody: sanitizeRedactable(item.responseBody, options.redaction) as string,
+        responseBody: item.responseBody,
       }),
     );
 

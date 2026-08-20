@@ -175,5 +175,5 @@ runner → core의 동결 타입
 ```
 
 Runner는 Core의 `connect` 또는 `connectStdio`를 재수출하지 않는다. Core도 Runner를 import하지
-않는다. `mcpeak test`를 구현하는 후속 CLI PR에서 `@mcpeak/core` workspace dependency를 팀
-승인 범위로 추가한다.
+않는다. `mcpeak test`를 구현하면서 `cli` 가 `@mcpeak/core` workspace dependency를 팀 승인
+범위로 받았고, 지금은 `packages/cli/package.json` 에 선언돼 있다.

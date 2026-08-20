@@ -412,8 +412,8 @@ function buildServer(tools: ToolDef[], registry: Registry): Server {
  * 목 MCP 서버를 Streamable HTTP 로 띄운다.
  *
  * 실제 MCP 서버 없이, MCP 를 사용하는 프로그램을 테스트하기 위한 것이다.
- * 우리 도구로 목을 테스트하려면 `serveStdio` 를 쓴다 — `core.connect()` 가
- * 아직 stdio 만 알기 때문이다 (#16).
+ * 우리 도구로 목을 테스트하려면 `serveStdio` 를 쓴다 — `core.connect()` 는 HTTP 도
+ * 알지만 (ADR-0020) CLI 가 `connectStdio` 로 고정돼 있기 때문이다 (#16).
  */
 export async function createMockServer(options: MockOptions): Promise<MockServer> {
   const { tools, port = 0, host = "127.0.0.1" } = options;

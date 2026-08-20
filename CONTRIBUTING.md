@@ -42,7 +42,7 @@ ohmymcp/
 │   ├── runner/                 # createMcpTest · matcher · 리포터
 │   ├── generate/               # 스키마 → 테스트 코드 생성
 │   ├── record/                 # 녹화 · 재생 · 계약 스냅샷
-│   ├── mock/                   # 목 서버 · 가짜 데이터 생성
+│   ├── mock/                   # 목 서버 · 응답 주입 (사람이 지정한 값, ADR-0005)
 │   └── cli/                    # npx ohmymcp 진입점 (얇게 유지)
 ├── examples/                   # 도그푸딩 대상 · 데모용 예제 서버
 ├── fixtures/                   # 공용 테스트 픽스처 (JSON 응답 샘플)

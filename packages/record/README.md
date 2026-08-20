@@ -99,6 +99,51 @@ droppedInteractionsMessage(report: CassetteDropReport, cassettePath?: string): s
 호출하지 않는다. `replay` 모드는 실제 호출 없이 카세트를 조회할 수 없는 값의 경로와 종류를
 보고한다.
 
+## 드리프트 확인 (`verifyCassette`)
+
+`auto` 모드는 카세트에 있는 요청이면 서버를 부르지 않는다. 그래서 **서버 응답이 바뀌어도
+영원히 알아채지 못한다.** 그것을 확인하는 방법이 파괴적인 `--record` 뿐이면 재동기화를
+피하게 되고, 카세트는 손으로 쓴 목과 똑같이 낡는다. 이 함수가 그 비파괴 경로다.
+
+```ts
+import { loadCassette, verifyCassette } from "@ohmymcp-hsu/record";
+
+const cassette = await loadCassette(path);
+if (cassette !== null) {
+  const result = await verifyCassette(client, cassette, { cassettePath: path });
+  // { matched, mismatched, failed, skipped, toolsChanged }
+  for (const item of result.mismatched) console.error(item.message);
+}
+```
+
+**카세트를 고치지도 저장하지도 않는다.** 연결도 닫지 않는다 — 소유권은 호출자에게 있다.
+CLI 는 `ohmymcp verify <cassette.json> --command <executable>` 로 감싼다.
+
+읽기 전용인 것은 **카세트 파일이지 서버가 아니다.** 녹화된 요청을 전부 다시 호출하므로,
+메일 발송·결제·파일 쓰기 같은 툴이 카세트에 있으면 그 부작용이 실제로 다시 일어난다.
+부작용이 있는 서버에는 샌드박스에서 붙여라.
+
+| 분류 | 뜻 |
+|---|---|
+| `matched` | 카세트와 실서버 응답이 같다 |
+| `mismatched` | 응답이 달라졌다. 카세트가 낡았다는 뜻이다 |
+| `failed` | 실서버 호출 자체가 실패했다. 응답 차이와 구분한다 |
+| `skipped` | args 에 마스킹된 값이 있어 실서버에 그대로 보낼 수 없다 |
+
+### 비교는 마스킹 후에 한다
+
+파일에서 읽은 카세트의 응답은 `prepareCassetteForWrite` 를 거쳐 이미 마스킹돼 있고 실서버
+응답은 원문이다. 그대로 비교하면 비밀값이 든 응답이 **전부 거짓 불일치**가 된다. 그래서
+실서버 응답에 `redact` 를 먼저 걸고 비교한다.
+
+대가로 **비밀값 자체만 바뀐 경우는 감지하지 못한다** — 양쪽 다 `"[redacted]"` 로 보인다.
+다만 그 값은 테스트에도 마스킹돼 나가므로([ADR-0041](../../docs/adr/0041-마스킹의-적용-경계.md))
+어떤 단언도 그것에 의존할 수 없고, 따라서 놓쳐도 테스트 결과는 달라지지 않는다. 필드 추가·삭제,
+이름 변경, 일반 값 변경, `isError` 변경, 툴 스키마 변경은 모두 잡힌다.
+
+요청 **인자**에 비밀값이 있었던 상호작용은 원래 요청을 복원할 수 없다. 마스킹된 값을 실서버에
+그대로 보내지 않고 `skipped` 로 보고한다. 그 요청의 드리프트는 `--record` 로만 확인된다.
+
 ## 매칭과 저장 규칙
 
 `matchKey(toolName, args)`는 `toolName`과 stable JSON 인자를 SHA-256 hex로 해시한다. 원본

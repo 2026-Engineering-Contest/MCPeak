@@ -394,6 +394,208 @@ export function droppedInteractionsMessage(
   ].join("\n");
 }
 
+/** `verifyCassette` 가 보고하는 상호작용 하나. `message` 는 그대로 화면에 낼 수 있다. */
+export interface CassetteMismatch {
+  readonly key: string;
+  readonly toolName: string;
+  /** 카세트에 저장된 args. 이미 마스킹돼 있다. */
+  readonly args: unknown;
+  readonly message: string;
+}
+
+export interface CassetteVerifyResult {
+  /** 카세트와 실서버 응답이 같은 상호작용 수. */
+  readonly matched: number;
+  /** 응답이 달라진 것. 카세트가 낡았다는 뜻이다. */
+  readonly mismatched: readonly CassetteMismatch[];
+  /** 실서버 호출 자체가 실패한 것. 응답 차이와 구분한다. */
+  readonly failed: readonly CassetteMismatch[];
+  /** args 에 마스킹된 값이 있어 실서버에 그대로 보낼 수 없는 것. */
+  readonly skipped: readonly CassetteMismatch[];
+  /**
+   * `cassette.tools` 가 있을 때만 의미가 있다. 스키마가 **바뀌었는가**.
+   *
+   * 확인하지 못한 경우는 `false` 다. `listTools` 호출 자체가 실패하면 이 값이 아니라
+   * `failed` 에 항목이 들어간다. 확인 불가를 변경으로 보고하면 재녹화를 자동 판단하는
+   * 쪽에서 연결 실패에 파괴적인 `--record` 를 돌린다. 그러므로 이 값만 읽지 말고
+   * `failed` 가 비었는지 함께 보라.
+   */
+  readonly toolsChanged: boolean;
+}
+
+/** 값 어딘가에 마스킹 흔적이 있는가. 있으면 그 요청은 실서버에 그대로 보낼 수 없다. */
+function containsRedacted(value: unknown): boolean {
+  if (typeof value === "string") return value.includes(REDACTED);
+  if (Array.isArray(value)) return value.some(containsRedacted);
+  if (plainObject(value)) return Object.values(value).some(containsRedacted);
+  return false;
+}
+
+/**
+ * 카세트에 녹화된 요청을 실서버에 다시 보내 응답이 아직 같은지 확인한다. **카세트를 쓰지도,
+ * 고치지도, 저장하지도 않는다.**
+ *
+ * `auto` 모드는 히트하면 서버를 부르지 않으므로 서버 응답이 바뀌어도 영원히 모른다. 그것을
+ * 확인하는 유일한 방법이 지금까지 파괴적인 `--record` 뿐이었고, 그래서 사람들이 재동기화를
+ * 피하고 카세트가 낡아 갔다. 이 함수가 그 비파괴 경로다.
+ *
+ * **비교는 마스킹 후에 한다.** 파일에서 읽은 카세트의 응답은 `prepareCassetteForWrite` 를
+ * 거쳐 이미 마스킹돼 있고 실서버 응답은 원문이라, 그대로 비교하면 비밀값이 든 응답이 전부
+ * 거짓 불일치로 뜬다. 대가로 **비밀값 자체만 바뀐 경우는 감지하지 못한다** — 양쪽 다
+ * `"[redacted]"` 로 보인다. 다만 그 값은 테스트에도 마스킹돼 나가므로(ADR-0041) 어떤 단언도
+ * 그것에 의존할 수 없고, 따라서 놓쳐도 테스트 결과는 달라지지 않는다.
+ *
+ * 연결은 닫지 않는다. 소유권은 호출자에게 있다.
+ */
+export async function verifyCassette(
+  client: McpClient,
+  cassette: Cassette,
+  options: { cassettePath?: string } = {},
+): Promise<CassetteVerifyResult> {
+  assertCassette(cassette, "cassette");
+
+  const mismatched: CassetteMismatch[] = [];
+  const failed: CassetteMismatch[] = [];
+  const skipped: CassetteMismatch[] = [];
+  let matched = 0;
+
+  let toolsChanged = false;
+  if (cassette.tools !== undefined) {
+    const stored = redactTools(cassette.tools);
+    try {
+      toolsChanged = !sameJson(stored, redactTools(await client.listTools()));
+    } catch (error) {
+      // `toolsChanged` 로 올리지 않는다. 호출 실패는 "바뀌었다" 가 아니라 "확인할 수 없다"
+      // 이고, 이 함수가 `skipped` 를 `mismatched` 와 나눈 이유가 바로 그 구분이다.
+      // `toolsChanged` 를 보고 재녹화를 자동 판단하는 쪽에서는 서버 연결 실패 하나로
+      // 파괴적인 `--record` 가 돌아간다. 확인하지 못했다는 사실은 `failed` 가 전한다.
+      failed.push({
+        key: "listTools",
+        toolName: "listTools",
+        args: {},
+        message: [
+          "→ listTools 를 확인하지 못했습니다.",
+          `  이유: ${error instanceof Error ? error.message : String(error)}`,
+        ].join("\n"),
+      });
+    }
+  }
+
+  for (const interaction of cassette.interactions) {
+    const { toolName, args } = interaction.request;
+    const base = { key: interaction.key, toolName, args };
+
+    if (containsRedacted(args)) {
+      skipped.push({
+        ...base,
+        message: [
+          `→ 마스킹된 args 라 실서버에 보낼 수 없습니다: ${displayRequest(toolName, args)}`,
+          "  녹화 시점에 비밀값이 지워져 원래 요청을 복원할 수 없습니다.",
+          "  → 이 요청의 드리프트는 --record 로 다시 녹화해야만 확인됩니다.",
+        ].join("\n"),
+      });
+      continue;
+    }
+
+    let live: ToolResult;
+    try {
+      live = await client.callTool(toolName, args);
+    } catch (error) {
+      failed.push({
+        ...base,
+        message: [
+          `→ 실서버 호출이 실패했습니다: ${displayRequest(toolName, args)}`,
+          `  이유: ${error instanceof Error ? error.message : String(error)}`,
+        ].join("\n"),
+      });
+      continue;
+    }
+
+    let masked: CassetteInteraction["response"];
+    try {
+      masked = {
+        content: redact(live.content),
+        isError: live.isError,
+        raw: redact(live.raw),
+      };
+    } catch (error) {
+      failed.push({
+        ...base,
+        message: [
+          `→ 실서버 응답을 카세트와 비교할 수 없습니다: ${displayRequest(toolName, args)}`,
+          `  이유: ${error instanceof Error ? error.message : String(error)}`,
+          "  → Date, Map, class instance 는 JSON 객체나 문자열로 바꿔 반환하세요.",
+        ].join("\n"),
+      });
+      continue;
+    }
+
+    if (sameJson(interaction.response, masked)) {
+      matched++;
+      continue;
+    }
+    mismatched.push({
+      ...base,
+      message: verifyMismatchMessage(toolName, args, interaction.response, masked),
+    });
+  }
+
+  if (toolsChanged && failed.every((item) => item.key !== "listTools")) {
+    failed.push({
+      key: "listTools",
+      toolName: "listTools",
+      args: {},
+      message: [
+        "→ 툴 스키마가 카세트와 다릅니다.",
+        ...(options.cassettePath === undefined ? [] : [`  카세트: ${options.cassettePath}`]),
+        "  → 서버의 툴 정의가 바뀌었습니다. --record 로 카세트를 다시 만드세요.",
+      ].join("\n"),
+    });
+  }
+
+  return { matched, mismatched, failed, skipped, toolsChanged };
+}
+
+/** 카세트 응답과 실서버 응답의 차이. 판정은 이미 끝났고 여기서는 보여주기만 한다. */
+function verifyMismatchMessage(
+  toolName: string,
+  args: unknown,
+  stored: CassetteInteraction["response"],
+  live: CassetteInteraction["response"],
+): string {
+  const rawDiffs = describeJsonDiffs(stored.raw, live.raw, "raw");
+  const contentDiffs =
+    rawDiffs.length === 0 ? describeJsonDiffs(stored.content, live.content, "content") : [];
+  const responseDiffs =
+    rawDiffs.length === 0 && contentDiffs.length === 0
+      ? describeJsonDiffs(stored, live, "response")
+      : [];
+  const diffs = [...rawDiffs, ...contentDiffs, ...responseDiffs];
+
+  const lines =
+    diffs.length > 0
+      ? diffs.map(
+          (diff) =>
+            `  카세트 ${diff.path}: ${formatDiffValue(
+              diff.left,
+              diff.leftMissing,
+              diff.sensitive,
+            )} / 실서버 ${diff.path}: ${formatDiffValue(
+              diff.right,
+              diff.rightMissing,
+              diff.sensitive,
+            )}`,
+        )
+      : [`  카세트 응답: ${formatDiffValue(stored)}`, `  실서버 응답: ${formatDiffValue(live)}`];
+
+  return [
+    `→ 카세트와 실서버 응답이 다릅니다: ${displayRequest(toolName, args)}`,
+    ...lines,
+    "  → 서버가 바뀐 것이라면 --record 로 카세트를 다시 만드세요.",
+    "  → 매번 바뀌는 값이라면 그 툴은 오라클로 쓸 수 없습니다.",
+  ].join("\n");
+}
+
 /**
  * `record` 모드가 갈아엎을 기준선. 형태가 깨진 카세트면 경고를 포기하고 `null` 을 준다.
  *
@@ -1075,7 +1277,36 @@ function collectJsonDiffs(
     return;
   }
 
+  // 양쪽이 JSON 문자열이면 그 안까지 들어간다. MCP 응답의 실제 페이로드는 `content[].text`
+  // 안에 JSON 문자열로 들어 있어서, 여기서 멈추면 이스케이프된 문자열 두 개를 눈으로
+  // 대조하라는 메시지가 된다. 페이로드가 길면 MAX_VALUE_DISPLAY 에서 잘려 아무것도 못 본다.
+  // 마스킹이 `redactJsonString` 으로 문자열 안까지 들어가는 것과 같은 이유다.
+  if (typeof left === "string" && typeof right === "string") {
+    const parsedLeft = parseJsonContainer(left);
+    const parsedRight = parseJsonContainer(right);
+    // 파싱 결과가 같은데 문자열이 다르면 키 순서나 공백 차이다. 그것은 그대로 보여 준다.
+    if (
+      parsedLeft !== undefined &&
+      parsedRight !== undefined &&
+      !sameJson(parsedLeft, parsedRight)
+    ) {
+      collectJsonDiffs(parsedLeft, parsedRight, path, diffs, sensitive);
+      return;
+    }
+  }
+
   diffs.push({ path, left, right, sensitive });
+}
+
+/** JSON 객체·배열로 파싱되는 문자열이면 그 값을, 아니면 `undefined`. */
+function parseJsonContainer(text: string): unknown {
+  const trimmed = text.trimStart();
+  if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) return undefined;
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return undefined;
+  }
 }
 
 function jsonPath(base: string, key: string): string {

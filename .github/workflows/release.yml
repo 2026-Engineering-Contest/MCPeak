@@ -152,16 +152,20 @@ jobs:
           #   failed   네트워크 · 인증 · 5xx 등. 없는 것이 아니라 **확인하지 못한 것**이다
           #
           # 마지막 오류 원인을 LAST_ERROR 에 남겨 문장에 싣는다.
+          # `$1` 조회, `$2` 초 안에. 조회 자체가 멎을 수 있으므로 시간을 건다 —
+          # 걸지 않으면 아래 전역 마감이 `npm view` 가 돌아온 뒤에만 검사돼 초과한다.
+          # 시간 초과는 124 로 끝나고 E404 를 담지 않으므로 자동으로 `failed` 가 된다.
           probe() {
-            local out
-            if out="$(npm view "$1" version 2>&1)"; then
-              return 0
-            fi
-            LAST_ERROR="$(printf '%s' "$out" | grep -m1 -oE 'code E[A-Z0-9]+|[45][0-9][0-9] [A-Za-z ]+' || true)"
-            case "$out" in
-              *E404*) return 1 ;;
-              *) return 2 ;;
-            esac
+            local out code
+            out="$(timeout "$2" npm view "$1" version 2>&1)" && return 0
+
+            # **오류 코드 줄만** 본다. 전체 출력에 `case` 를 걸면 URL 이나 요청 spec 에
+            # 들어간 `E404` 까지 미발행으로 오인한다. `_` 를 넣지 않으면 `EAI_AGAIN` 이
+            # `EAI` 로 잘려 문장이 틀린 코드를 싣는다.
+            code="$(printf '%s\n' "$out" | grep -m1 -oE 'code E[A-Z0-9_]+' | sed 's/^code //' || true)"
+            LAST_ERROR="${code:-$(printf '%s\n' "$out" | grep -m1 -oE '[45][0-9][0-9] [A-Za-z ]+' || true)}"
+            [ "$code" = "E404" ] && return 1
+            return 2
           }
 
           # 대기 구조 — 전수 즉시 확인 후, 빠진 것만 **전역 마감** 안에서 다시 본다.
@@ -196,8 +200,13 @@ jobs:
             declare -a still=()
             absent=(); failed=()
             for spec in ${pending[@]+"${pending[@]}"}; do
+              # 조회에 거는 시간도 남은 마감을 넘지 않는다. 최소 5 초는 준다 —
+              # 마감이 코앞이라고 0 초를 걸면 멀쩡한 조회까지 실패로 만든다.
+              budget=$(( DEADLINE - $(date +%s) ))
+              [ "$budget" -lt 5 ] && budget=5
+
               LAST_ERROR=""
-              probe "$spec"
+              probe "$spec" "$budget"
               case "$?" in
                 0) echo "  ✓ ${spec}" ;;
                 1) still+=("$spec"); absent+=("$spec") ;;
@@ -206,10 +215,15 @@ jobs:
             done
 
             [ "${#still[@]}" -eq 0 ] && break
-            [ "$(date +%s)" -ge "$DEADLINE" ] && break
 
-            echo "    … ${#still[@]} 개 미확인, 30초 후 재시도 (마감까지 $(( DEADLINE - $(date +%s) ))초)"
-            sleep 30
+            remaining=$(( DEADLINE - $(date +%s) ))
+            [ "$remaining" -le 0 ] && break
+
+            # 대기도 남은 마감으로 자른다. 30 초를 통째로 자면 마감을 넘어선다.
+            nap=30
+            [ "$remaining" -lt "$nap" ] && nap="$remaining"
+            echo "    … ${#still[@]} 개 미확인, ${nap}초 후 재시도 (마감까지 ${remaining}초)"
+            sleep "$nap"
             pending=(${still[@]+"${still[@]}"})
           done
 

@@ -1,6 +1,6 @@
 {
   "name": "@mcpeak/dashboard",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": false,
   "type": "module",
   "description": "OhMyMCP 대시보드 (로컬 웹 UI · CLI 플로우 구동)",

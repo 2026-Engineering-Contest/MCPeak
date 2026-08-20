@@ -106,8 +106,14 @@ droppedInteractionsMessage(report: CassetteDropReport, cassettePath?: string): s
 피하게 되고, 카세트는 손으로 쓴 목과 똑같이 낡는다. 이 함수가 그 비파괴 경로다.
 
 ```ts
-const result = await verifyCassette(client, cassette, { cassettePath: path });
-// { matched, mismatched, failed, skipped, toolsChanged }
+import { loadCassette, verifyCassette } from "@ohmymcp-hsu/record";
+
+const cassette = await loadCassette(path);
+if (cassette !== null) {
+  const result = await verifyCassette(client, cassette, { cassettePath: path });
+  // { matched, mismatched, failed, skipped, toolsChanged }
+  for (const item of result.mismatched) console.error(item.message);
+}
 ```
 
 **카세트를 고치지도 저장하지도 않는다.** 연결도 닫지 않는다 — 소유권은 호출자에게 있다.

@@ -19,6 +19,7 @@ export interface ReplayCommandInput {
 
 export type ReplayErrorCode =
   | "CLI_USAGE"
+  | "REPLAY_RUNTIME_UNAVAILABLE"
   | "SUITE_FORMAT_UNSUPPORTED"
   | "SUITE_READ_FAILED"
   | "SUITE_ENCODING_INVALID"
@@ -36,6 +37,21 @@ export interface ReplayFailure {
   readonly message: string;
   readonly hint: string;
   readonly issues?: readonly SuiteValidationIssue[];
+}
+
+/**
+ * 런타임 모듈을 못 불러 fallback 의존성이 쓰일 때 던진다.
+ *
+ * 타입을 따로 두는 이유는 이 실패가 **명세·카세트 문제와 구분돼야** 하기 때문이다. 그냥
+ * 던지면 `validateSuite` 자리에서 `CLI_INTERNAL_ERROR` 로 잡혀 "다시 실행한 뒤 재현 정보와
+ * 함께 이슈를 보고하세요" 가 나간다. 사용자는 자기 설치 문제로 버그 리포트를 쓰게 된다.
+ * `repair` 가 `REPAIR_RUNTIME_UNAVAILABLE` 로 이미 가르고 있는 것과 같은 처리다.
+ */
+export class ReplayRuntimeUnavailableError extends Error {
+  constructor() {
+    super("replay 실행에 필요한 모듈을 로드하지 못했습니다.");
+    this.name = "ReplayRuntimeUnavailableError";
+  }
 }
 
 /**
@@ -60,6 +76,10 @@ export interface ReplayCommandDependencies {
  * 이기 때문이고, 공용 모듈로 빼는 것은 `test` 서브커맨드 소유자와 합의가 필요한 별도 작업이다.
  */
 const dictionary: Record<Exclude<ReplayErrorCode, "CLI_USAGE">, Omit<ReplayFailure, "code">> = {
+  REPLAY_RUNTIME_UNAVAILABLE: {
+    message: "replay 에 필요한 @ohmymcp-hsu/runner · @ohmymcp-hsu/record 를 로드하지 못했습니다.",
+    hint: "의존성을 설치한 뒤 다시 실행하세요. 명세나 카세트 파일의 문제가 아닙니다.",
+  },
   SUITE_FORMAT_UNSUPPORTED: {
     message: "테스트 명세 형식을 지원하지 않습니다.",
     hint: "UTF-8로 저장한 .json 명세 파일을 사용하세요.",
@@ -226,6 +246,10 @@ function redactedPaths(cassette: Cassette): { paths: string[]; total: number } {
 const detail = (error: unknown): string =>
   error instanceof Error && error.message !== "" ? `\n${error.message}` : "";
 
+/** 런타임 미가용이면 그 코드를, 아니면 `undefined`. 호출부가 자기 기본 코드를 고른다. */
+const runtimeCode = (error: unknown): "REPLAY_RUNTIME_UNAVAILABLE" | undefined =>
+  error instanceof ReplayRuntimeUnavailableError ? "REPLAY_RUNTIME_UNAVAILABLE" : undefined;
+
 const format = (failure: ReplayFailure): string => {
   const issues = (failure.issues ?? []).map(
     (issue) => `\n- [${issue.code}] ${issue.path}: ${issue.message}`,
@@ -289,11 +313,11 @@ export async function runReplayCommand(
   let validated: SuiteValidationResult;
   try {
     validated = dependencies.validateSuite(parsed);
-  } catch {
-    return writeFailure(dependencies, {
-      code: "CLI_INTERNAL_ERROR",
-      ...dictionary.CLI_INTERNAL_ERROR,
-    });
+  } catch (error) {
+    // 런타임을 못 부른 것을 내부 오류로 부르면 "이슈를 보고하세요" 가 나간다. 자기 설치
+    // 문제로 버그 리포트를 쓰게 되므로 가른다. fallback 의존성이 여기서 가장 먼저 걸린다.
+    const code = runtimeCode(error) ?? "CLI_INTERNAL_ERROR";
+    return writeFailure(dependencies, { code, ...dictionary[code] });
   }
   if (!validated.valid)
     return writeFailure(dependencies, {
@@ -306,11 +330,17 @@ export async function runReplayCommand(
   try {
     cassette = await dependencies.loadCassette(input.cassettePath);
   } catch (error) {
-    return writeFailure(dependencies, {
-      code: "CASSETTE_READ_FAILED",
-      message: `${dictionary.CASSETTE_READ_FAILED.message}${detail(error)}`,
-      hint: dictionary.CASSETTE_READ_FAILED.hint,
-    });
+    const runtime = runtimeCode(error);
+    return writeFailure(
+      dependencies,
+      runtime === undefined
+        ? {
+            code: "CASSETTE_READ_FAILED",
+            message: `${dictionary.CASSETTE_READ_FAILED.message}${detail(error)}`,
+            hint: dictionary.CASSETTE_READ_FAILED.hint,
+          }
+        : { code: runtime, ...dictionary[runtime] },
+    );
   }
   if (cassette === null)
     return writeFailure(dependencies, {

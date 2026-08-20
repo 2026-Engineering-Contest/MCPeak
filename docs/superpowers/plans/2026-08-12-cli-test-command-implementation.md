@@ -929,7 +929,7 @@ await spawn_agent({
     "실제 process E2E는 읽기 전용 examples/weather-server/server.mjs를 PID wrapper로 import한다. 성공 3-case suite와 실제 assertion 실패 suite를 source run과 dist/cli.mjs에서 실행하고 stdout JSON, 빈 stderr, exit code, PID ESRCH를 검사한다. 외부 network와 사용자 설정은 쓰지 않는다.",
     "RED: pnpm exec vitest run packages/cli/tests/index.test.ts packages/cli/tests/test-command.test.ts, pnpm exec vitest run packages/cli/tests/cli-integration.test.ts, pnpm --filter @mcpeak/cli build && pnpm --filter @mcpeak/cli test:e2e. 테스트 미수집이나 bootstrap 실패는 RED로 인정하지 않는다.",
     "GREEN: focused unit, source integration, packages/cli/tests 전체, pnpm --filter @mcpeak/cli typecheck, pnpm build, pnpm --filter @mcpeak/cli test:e2e, pnpm exec biome check packages/cli. 실제 파일과 테스트 수, success/failure exit, PID 잔존을 기록한다.",
-    "README를 실제 문법과 범위로 갱신하고 mcpeak minor changeset을 한국어로 작성한다. package에는 @mcpeak/core workspace dependency와 test:e2e script만 추가하고 pnpm install --lockfile-only로 lockfile importer를 갱신한다.",
+    "README를 실제 문법과 범위로 갱신하고 @mcpeak/cli minor changeset을 한국어로 작성한다. package에는 @mcpeak/core workspace dependency와 test:e2e script만 추가하고 pnpm install --lockfile-only로 lockfile importer를 갱신한다.",
     "보고서와 최종 응답은 READY_FOR_REVIEW 또는 BLOCKED, 변경 파일, RED, GREEN과 수집 수, report 경로, 남은 위험 순서다.",
   ].join("\n").replaceAll("${cliWorktree}", cliWorktree),
 });

@@ -1,4 +1,4 @@
-# OhMyMCP CLI
+# MCPeak CLI
 
 `mcpeak test`는 JSON 테스트 명세로 로컬 stdio MCP 서버를 직접 시작하고 종료합니다.
 

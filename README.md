@@ -128,7 +128,7 @@ mcpeak test suite.json --command mcpeak-mock --arg mock.json
 
 | 패키지 | 역할 |
 |---|---|
-| [`mcpeak`](./packages/cli) | CLI 진입점 (얇게 유지) |
+| [`@mcpeak/cli`](./packages/cli) | CLI 진입점 (얇게 유지) |
 | [`@mcpeak/core`](./packages/core) | MCP 프로토콜 클라이언트 · 트랜스포트 · 프로세스 수명주기 |
 | [`@mcpeak/runner`](./packages/runner) | 선언형 테스트 실행 · assertion · 구조화된 리포트 |
 | [`@mcpeak/generate`](./packages/generate) | 결정론적 baseline 과 승인형 AI 검토로 테스트 생성 |

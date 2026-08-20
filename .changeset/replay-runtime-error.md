@@ -1,5 +1,5 @@
 ---
-"mcpeak": patch
+"@mcpeak/cli": patch
 ---
 
 cli: `replay` 가 런타임 모듈 로드 실패를 내부 오류로 보고하지 않습니다.

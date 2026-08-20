@@ -1,6 +1,6 @@
 ---
 "@mcpeak/record": minor
-"mcpeak": minor
+"@mcpeak/cli": minor
 ---
 
 record: 카세트가 아직 실서버와 맞는지 확인하는 `verifyCassette` 를 추가합니다.

@@ -1,4 +1,4 @@
-# @mcpeak/core
+# @ohmymcp-hsu/core
 
 ## 0.3.0
 

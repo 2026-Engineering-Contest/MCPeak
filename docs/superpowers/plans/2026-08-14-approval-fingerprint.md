@@ -713,7 +713,7 @@ renderSpecApproval
 
 `feat(cli): 승인 지문 대조 결과를 보고서에 표시한다`
 
-changeset 하나. `mcpeak` `minor`.
+changeset 하나. `@mcpeak/cli` `minor`.
 
 ---
 

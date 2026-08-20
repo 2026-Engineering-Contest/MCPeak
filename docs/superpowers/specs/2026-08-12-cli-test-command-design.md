@@ -516,7 +516,7 @@ CLI README에는 다음 내용을 실제 구현과 일치하게 추가한다.
 - 성공 0, 그 밖의 결과 1인 종료 코드
 - shell 문법과 TypeScript 명세가 지원되지 않는다는 제한
 
-공개 기능 추가이므로 `mcpeak` minor changeset을 한국어로 작성한다. Core와 Runner changeset은
+공개 기능 추가이므로 `@mcpeak/cli` minor changeset을 한국어로 작성한다. Core와 Runner changeset은
 추가하지 않는다. CLI 버전과 배포 산출물 외 다른 패키지 버전은 이 변경에서 직접 조정하지 않는다.
 
 ## 13. ADR 판단

@@ -1,4 +1,4 @@
-# @mcpeak/dashboard
+# @ohmymcp-hsu/dashboard
 
 ## 0.1.1
 
@@ -30,9 +30,9 @@
 - Updated dependencies [4558ef9]
 - Updated dependencies [db571dd]
 - Updated dependencies [58fb54a]
-  - @mcpeak/core@0.3.0
-  - mcpeak@0.8.0
-  - @mcpeak/generate@0.5.0
-  - @mcpeak/mock@0.2.0
-  - @mcpeak/record@0.1.2
-  - @mcpeak/runner@0.8.0
+  - @ohmymcp-hsu/core@0.3.0
+  - ohmymcp@0.8.0
+  - @ohmymcp-hsu/generate@0.5.0
+  - @ohmymcp-hsu/mock@0.2.0
+  - @ohmymcp-hsu/record@0.1.2
+  - @ohmymcp-hsu/runner@0.8.0

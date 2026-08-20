@@ -1,4 +1,4 @@
-# @mcpeak/runner
+# @ohmymcp-hsu/runner
 
 ## 0.8.0
 
@@ -11,13 +11,13 @@
 
   **판정과 종료 코드는 바뀌지 않습니다.** `unverified` 는 "거절이 아니다"가 아니라 "확인하지 못했다"는 뜻이고, 이것을 실패로 올리면 관찰한 서버 11개 중 2개가 통째로 빨개집니다(ADR-0015). `RunnerReport.schemaVersion` 은 `1` 을 유지합니다 — 늘어난 필드가 전부 추가이고 기존 필드의 의미가 바뀌지 않아, 기존 `--json` 소비자는 새 키를 무시하면 종전과 같은 결과를 읽습니다. 분류는 응답 본문 문자열만 보는 순수 함수라 같은 응답에 항상 같은 값이 나옵니다.
 
-- 4558ef9: `runner`: `mcpeak test` 요약 아래에 거절 근거를 확인하지 못한 케이스 수를 고지합니다. 0건이면 아무 줄도 안 나옵니다. 이 케이스들은 **통과한 케이스**이고 판정도 종료 코드도 바뀌지 않습니다 — `unverified` 는 "거절이 아니다"가 아니라 "확인하지 못했다"는 뜻이라, 문안도 실패나 결함이라고 말하지 않고 무엇을 판단하지 못했는지와 어디서 확인하는지만 적습니다. 케이스 목록에는 아무 표시도 더하지 않습니다. 통과한 케이스 옆에 기호가 붙으면 판정이 바뀐 것으로 읽히기 때문입니다.
+- 4558ef9: `runner`: `ohmymcp test` 요약 아래에 거절 근거를 확인하지 못한 케이스 수를 고지합니다. 0건이면 아무 줄도 안 나옵니다. 이 케이스들은 **통과한 케이스**이고 판정도 종료 코드도 바뀌지 않습니다 — `unverified` 는 "거절이 아니다"가 아니라 "확인하지 못했다"는 뜻이라, 문안도 실패나 결함이라고 말하지 않고 무엇을 판단하지 못했는지와 어디서 확인하는지만 적습니다. 케이스 목록에는 아무 표시도 더하지 않습니다. 통과한 케이스 옆에 기호가 붙으면 판정이 바뀐 것으로 읽히기 때문입니다.
 
 ### Patch Changes
 
 - Updated dependencies [cd25fb4]
 - Updated dependencies [bf16fb5]
-  - @mcpeak/core@0.3.0
+  - @ohmymcp-hsu/core@0.3.0
 
 ## 0.7.0
 
@@ -44,7 +44,7 @@
 ### Patch Changes
 
 - Updated dependencies [0d92470]
-  - @mcpeak/core@0.2.0
+  - @ohmymcp-hsu/core@0.2.0
 
 ## 0.6.0
 
@@ -55,16 +55,16 @@
   `runner` 가 이미 갖고 있던 `checkInputContract` · `checkAssertionSubstance` 를 두 소비자에 연결해,
   오타·타입 불일치·항상 참인 단언이 승인 전과 실패 직후에 문장으로 보인다.
 
-  - `mcpeak generate` 승인 화면은 선택한 변경에 걸린 위반을 세어 보여 주고, 위반이 있으면 확인을
+  - `ohmymcp generate` 승인 화면은 선택한 변경에 걸린 위반을 세어 보여 주고, 위반이 있으면 확인을
     한 번 더 받는다. 거부하지는 않는다.
-  - `mcpeak test` 는 실패한 케이스에만 참고 문장을 붙인다. 판정과 exit code 는 바뀌지 않는다.
+  - `ohmymcp test` 는 실패한 케이스에만 참고 문장을 붙인다. 판정과 exit code 는 바뀌지 않는다.
     `--json` 은 `spec.findings` 에 구조로 담는다.
 
   공개 타입 변경 둘이 있다.
 
-  - `@mcpeak/runner` 의 `SpecFindingCode` 에서 `UNCONSTRAINED_SCHEMA` 가 사라진다. 소비자 경로에서
+  - `@ohmymcp-hsu/runner` 의 `SpecFindingCode` 에서 `UNCONSTRAINED_SCHEMA` 가 사라진다. 소비자 경로에서
     `validateMcpSuite` 가 먼저 거부해 도달할 수 없는 코드였다.
-  - `@mcpeak/generate` 의 `SanitizedAuthoringCandidate` 에 `specFindings` 필드가 생긴다. 승인
+  - `@ohmymcp-hsu/generate` 의 `SanitizedAuthoringCandidate` 에 `specFindings` 필드가 생긴다. 승인
     지문 계산 대상 밖이라 이미 승인된 지문은 그대로다.
 
 ## 0.5.0
@@ -83,7 +83,7 @@
   `Array.prototype` 에 인덱스가 정의됐을 때 hole 이 상속값으로 채워져 지문이 전역 상태에 따라
   달라집니다.
 
-  generate: `canonical.ts` 가 `@mcpeak/runner` 재수출 한 줄이 됩니다. 공개 API
+  generate: `canonical.ts` 가 `@ohmymcp-hsu/runner` 재수출 한 줄이 됩니다. 공개 API
   (`canonicalJson` · `sha256`)는 그대로이며 동작도 같습니다. 구현이 한 벌로 유지되어야
   저장 시점 지문과 실행 시점 지문이 갈리지 않습니다.
 
@@ -142,7 +142,7 @@
   같은 이름의 툴이 두 번 선언된 경우도 해석 불가로 처리합니다. 어느 선언이 참인지 알 수 없어서
   하나를 고르면 목록 순서가 결과를 바꾸게 됩니다.
 
-  아직 어느 명령에도 연결돼 있지 않습니다. `mcpeak` CLI 의 동작은 이전과 같습니다.
+  아직 어느 명령에도 연결돼 있지 않습니다. `ohmymcp` CLI 의 동작은 이전과 같습니다.
 
 ## 0.3.1
 
@@ -159,11 +159,11 @@
 
 ### Minor Changes
 
-- 74c96da: `mcpeak test` 의 기본 출력을 사람이 읽는 보고서로 바꿉니다. 실패한 케이스의 진단 문장과
+- 74c96da: `ohmymcp test` 의 기본 출력을 사람이 읽는 보고서로 바꿉니다. 실패한 케이스의 진단 문장과
   해결 힌트를 터미널에 직접 표시합니다.
 
   **파괴적 변경**: 기존의 JSON 출력은 `--json` 플래그로 옮겼습니다. stdout을 기계로 파싱하던
-  스크립트는 `mcpeak test ... --json` 으로 바꿔야 합니다. `--json` 출력의 바이트는 이전과
+  스크립트는 `ohmymcp test ... --json` 으로 바꿔야 합니다. `--json` 출력의 바이트는 이전과
   동일합니다. 종료 코드는 바뀌지 않았습니다.
 
 ## 0.2.0
@@ -178,7 +178,7 @@
 ### Patch Changes
 
 - Updated dependencies [606600f]
-  - @mcpeak/core@0.1.0
+  - @ohmymcp-hsu/core@0.1.0
 
 ## 0.1.0
 

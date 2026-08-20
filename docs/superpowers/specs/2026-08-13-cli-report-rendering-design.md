@@ -51,7 +51,7 @@ dependencies.writeStdout(`${JSON.stringify(finalReport, null, 2)}\n`);
 - `--json` 출력 바이트가 이 웨이브 이전과 동일하다.
 - `pnpm build && node packages/cli/tests/dist-cli-e2e.mjs` 통과.
 - `docs/adr/0012-cli-기본-출력-전환.md` 와 `docs/adr/0013-렌더러-배치와-진단-무분기.md` 존재.
-- `.changeset/` 신규 파일 1개. `@mcpeak/runner` minor, `mcpeak` minor.
+- `.changeset/` 신규 파일 1개. `@mcpeak/runner` minor, `@mcpeak/cli` minor.
   CLI 패키지 이름은 `mcpeak` 이며 `@mcpeak/cli` 가 아니다. 출력 계약이 깨지지만 major 를
   쓰지 않는다. 현재 버전이 `0.2.0` 이라 major 는 `1.0.0` 이 되고, 그것은 우리가 아직 주장할 수
   없는 안정성 선언이다. 파괴적 변경 사실은 changeset 본문에 명시한다.

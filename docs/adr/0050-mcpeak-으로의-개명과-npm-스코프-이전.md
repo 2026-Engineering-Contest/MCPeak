@@ -243,8 +243,8 @@ npm unpublish @ohmymcp-hsu/core      --force
 
 **조직을 세 번째로 만들었다는 사실을 기록해 둔다.** `ohmymcp-dev`(2026-08-17) →
 `ohmymcp-hsu`(2026-08-18) → `mcpeak`(2026-08-20). npm 은 조직 개명 기능이 없어서 이름을
-바꾸려면 매번 새로 만들어야 한다. 앞의 둘은 그대로 남는다 — `ohmymcp-dev` 는 패키지가 없어
-무해하고, `ohmymcp-hsu` 는 deprecate 된 여섯을 담은 채로 남는다.
+바꾸려면 매번 새로 만들어야 한다. 앞의 둘은 그대로 남는다 — 위 삭제를 마치면 `ohmymcp-hsu`
+도 `ohmymcp-dev` 와 같이 패키지가 하나도 없는 빈 조직이 되므로 무해하다.
 
 ## 결과
 

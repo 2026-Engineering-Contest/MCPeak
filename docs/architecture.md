@@ -19,7 +19,7 @@ flowchart LR
   C[core] -->|McpClient 주입| R
   R -->|실패 메시지 · 리포트| U
 
-  R -.->|④ mcpeak record| RC[record]
+  R -.->|④ mcpeak generate --cassette --record| RC[record]
   RC -->|카세트 파일| CI[CI: mcpeak replay]
   CI -->|네트워크 없이 동일 결과| U
 

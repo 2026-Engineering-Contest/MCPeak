@@ -48,7 +48,7 @@ dependencies.writeStdout(`${JSON.stringify(finalReport, null, 2)}\n`);
   같은 입력 2회 실행의 stdout 바이트가 같다.
 - `--json` 을 붙인 실행의 stdout 바이트가 이 웨이브 이전과 동일하다.
 - `docs/adr/0012-cli-기본-출력-전환.md` 와 `docs/adr/0013-렌더러-배치와-진단-무분기.md` 존재.
-- `.changeset/` 신규 파일 1개. `@mcpeak/runner` minor, `mcpeak` minor.
+- `.changeset/` 신규 파일 1개. `@mcpeak/runner` minor, `@mcpeak/cli` minor.
 
 ## 3. Global Constraints
 
@@ -458,7 +458,7 @@ colorEnabled: process.stdout.isTTY === true && process.env.NO_COLOR === undefine
 동일합니다. 종료 코드는 바뀌지 않았습니다.
 ```
 
-`mcpeak` 를 major 가 아니라 minor 로 올린다. 현재 버전이 `0.2.0` 이라 major 는 `1.0.0` 이
+`@mcpeak/cli` 를 major 가 아니라 minor 로 올린다. 현재 버전이 `0.2.0` 이라 major 는 `1.0.0` 이
 되고 그것은 아직 주장할 수 없는 안정성 선언이다.
 
 **표적 검증** `pnpm vitest run packages/cli/tests/test-command.test.ts`
@@ -738,7 +738,7 @@ T3까지 끝나면 아래를 확인하고 사용자에게 보고해라:
   - packages/runner/src/index.ts 가 renderReport 와 RenderReportOptions 를 재수출하는지
   - docs/adr/0012-cli-기본-출력-전환.md 와
     docs/adr/0013-렌더러-배치와-진단-무분기.md 가 존재하는지
-  - .changeset/ 에 @mcpeak/runner minor 와 mcpeak minor 를 담은 파일이 있는지
+  - .changeset/ 에 @mcpeak/runner minor 와 @mcpeak/cli minor 를 담은 파일이 있는지
   - pnpm build && node packages/cli/tests/dist-cli-e2e.mjs 가 통과하는지
   - E2E의 결정론성 단언(같은 입력 2회 실행의 표준 출력 바이트 일치)이 렌더링 경로에도
     들어 있는지

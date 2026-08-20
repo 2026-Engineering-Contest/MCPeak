@@ -1,4 +1,4 @@
-# @mcpeak/record
+# @ohmymcp-hsu/record
 
 ## 0.1.2
 
@@ -114,7 +114,7 @@
 
 - Updated dependencies [cd25fb4]
 - Updated dependencies [bf16fb5]
-  - @mcpeak/core@0.3.0
+  - @ohmymcp-hsu/core@0.3.0
 
 ## 0.1.1
 
@@ -135,11 +135,11 @@
 ### Patch Changes
 
 - Updated dependencies [0d92470]
-  - @mcpeak/core@0.2.0
+  - @ohmymcp-hsu/core@0.2.0
 
 ## 0.0.1
 
 ### Patch Changes
 
 - Updated dependencies [606600f]
-  - @mcpeak/core@0.1.0
+  - @ohmymcp-hsu/core@0.1.0

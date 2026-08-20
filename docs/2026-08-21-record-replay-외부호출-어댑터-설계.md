@@ -1,11 +1,11 @@
 # Record/Replay 외부 호출 어댑터 확장 설계
 
-> 상태: ADR 결정 반영 초안
+> 상태: ADR 제안 반영 초안 (ADR-0051·0052·0053 모두 `제안`·`미승인`)
 > 날짜: 2026-08-21
 > 상위 문서: [Record/Replay 상위 설계](./2026-08-20-record-replay-상위-설계.md)
 > 목적: Node HTTP 1차 구현에 필요한 공통 확장 지점을 정하고, 후속 DB 어댑터가 HTTP 구현을
 > 다시 뜯지 않고 들어올 자리를 마련한다.
-> 결정:
+> 관련 제안:
 > [ADR-0051](./adr/0051-external-record-replay와-tool-카세트-경계-분리.md),
 > [ADR-0052](./adr/0052-coordinator가-engine과-session-store를-소유한다.md),
 > [ADR-0053](./adr/0053-http-외부-요청-매칭과-반복-호출-정책.md)
@@ -94,6 +94,23 @@ interface EncodedBytes {
 `Date`, `BigInt`, `Buffer`, decimal 등은 공통 엔진이 임의로 문자열화하지 않는다. 해당 값을 아는
 어댑터가 타입 태그를 붙여 저장하고 복원한다.
 
+`number`는 유한한 값만 저장한다. `NaN`, `Infinity`, `-Infinity`는 `null`로 바꿔 조용히
+삼키지 않고 지원 범위 밖이라고 실패한다. `JSON.stringify`가 이 값들을 `null`로 만들기 때문에,
+거르지 않으면 서로 다른 요청이 같은 matchKey를 갖는다.
+
+### 5.1.1 stable JSON
+
+matchKey 계산(ADR-0053)과 저장 envelope 직렬화가 쓰는 **stable JSON**은 다음을 고정한다. 이
+규칙이 없으면 같은 값이 런타임마다 다른 SHA-256 matchKey를 만든다.
+
+- 객체 키는 UTF-16 code unit 오름차순으로 정렬한다.
+- 정규화 결과에 같은 키가 두 번 생기면 병합하거나 뒤 값으로 덮어쓰지 않고 실패한다.
+- 숫자는 `Number.prototype.toString()`의 십진 표기를 쓰고 `-0`은 `0`으로 정규화한다.
+- 문자열은 `"`, `\`, `U+0000`–`U+001F`만 escape하고 나머지 문자는 원문 그대로 둔다. 비ASCII를
+  `\uXXXX`로 바꾸지 않는다.
+- 구분자 뒤에 공백이나 개행을 넣지 않는다.
+- 해시 입력은 이 JSON 문자열의 UTF-8 bytes다.
+
 ### 5.2 정규화된 외부 요청
 
 ```ts
@@ -163,13 +180,16 @@ type RecordedInteraction =
     });
 ```
 
-- `ordinal`: 세션 전체에서 관찰된 순서
+- `ordinal`: 세션 전체에서 Coordinator가 `begin`을 받은 도착 순서. ADR-0053에 따라 진단·표시용
+  이며 매칭 입력이 아니다.
 - `occurrence`: 같은 `protocol + matchKey`가 세션 안에서 몇 번째인지
 - `schemaVersion`: 어댑터가 저장한 request·outcome 형식의 버전
 - `pending`: Coordinator가 자리를 예약했지만 결과 저장을 확인하지 못한 interaction
 
-반복 호출은 ADR-0053에 따라 occurrence 순서대로 소비한다. `pending` interaction이나 하나라도
-남은 session은 성공한 Replay 원본으로 선택할 수 없다.
+반복 호출은 ADR-0053에 따라 occurrence 순서대로 소비한다. `pending`으로 남은 interaction이
+하나라도 있는 session은 성공한 Replay 원본으로 선택할 수 없다. 반대로 `completed`인데 이번
+Replay에서 소비되지 않고 남은 interaction은 ADR-0053에 따라 실패가 아니라 종료 시 경고다.
+녹화 때와 다른 테스트 명세도 일부 interaction만 재사용할 수 있어야 하기 때문이다.
 
 ## 6. 어댑터 확장 계약
 
@@ -321,13 +341,21 @@ axios·node-fetch가 그 경로에서 잡히는지 E2E로 검증한다.
 ### 9.2 HTTP 요청 envelope 초안
 
 ```ts
+type HttpBody =
+  | { readonly type: "none" }
+  | { readonly type: "json"; readonly value: JsonValue };
+
 interface HttpRecordedRequest {
   readonly method: string;
   readonly url: string;
   readonly headers: Readonly<Record<string, readonly string[]>>;
-  readonly body: null | JsonValue;
+  readonly body: HttpBody;
 }
 ```
+
+`JsonValue`가 이미 `null`을 포함하므로 `null | JsonValue`로는 본문 없음과 JSON literal `null`을
+구분할 수 없다. 같은 method·URL에서 둘이 같은 matchKey가 되면 false hit가 되고 Replay가 돌려주는
+본문의 의미도 달라진다. 그래서 tagged union으로 분리한다.
 
 match는 ADR-0053의 고정 헤더 allowlist(`accept`, `accept-language`, `content-type`, `range`)만
 사용한다. Authorization·Cookie 등 비밀 헤더 값은 match와 display에 원문으로 남기지 않는다.
@@ -341,9 +369,14 @@ interface HttpRecordedResponse {
   readonly statusText: string;
   readonly headers: Readonly<Record<string, readonly string[]>>;
   readonly url: string;
-  readonly body: null | JsonValue;
+  readonly body: HttpBody;
 }
 ```
+
+Record에서 `encodeReturn`은 원본 `Response`의 본문을 소비하지 않는다. `Response` 본문은 한 번만
+읽을 수 있고, 읽으면 `bodyUsed`가 `true`가 되어 서버 코드가 다시 읽지 못한다. 저장용 직렬화는
+`value.clone()`으로 만든 복제본에서만 읽고, 원본은 `bodyUsed`가 `false`인 상태 그대로 서버
+코드에 돌려준다. 복제는 본문을 읽기 전에 해야 한다.
 
 Replay에서는 이 값으로 새로운 `Response`를 만들어 반환한다. 네이티브 `Response` 객체 자체는
 SQLite에 저장하지 않는다. Adapter는 `status`·`headers`·`body`뿐 아니라 서버 코드가 관찰하는

@@ -95,7 +95,15 @@ Coordinator 통신은 다음 조건을 가진 내부 HTTP JSON 프로토콜로 �
 
 - host는 `127.0.0.1`, port는 `0`으로 열어 OS가 빈 포트를 고른다.
 - 외부 인터페이스에는 bind하지 않는다.
-- 실행마다 충분한 엔트로피의 임시 bearer token을 만들고 모든 요청에서 검증한다.
+- 실행마다 임시 bearer token을 만들고 모든 요청에서 검증한다. token은 CSPRNG
+  (`node:crypto`의 `randomBytes`)로 만들고 최소 256비트 엔트로피를 base64url로 인코딩한다.
+- token은 `Authorization: Bearer <token>` 헤더로만 보낸다. query string이나 body에 싣지 않는다.
+- token의 유효 기간은 현재 실행뿐이다. Coordinator가 닫힐 때 메모리에서 폐기하고, 다음 실행은
+  항상 새 token을 만든다. 실행 사이에 재사용하지 않는다.
+- token 비교는 길이 확인 후 `timingSafeEqual` 같은 상수 시간 비교를 쓴다. 문자열 `===`로
+  비교하지 않는다.
+- 인증 실패는 `401`, token은 맞지만 허용되지 않은 요청은 `403`으로 응답한다. 오류 body에는
+  기대한 token, 받은 token, 그 일부나 길이를 넣지 않는다.
 - token 원문은 SQLite, 설정 스냅샷, stderr, 오류 메시지에 저장하지 않는다.
 - 요청·응답 크기에 고정 상한을 두며 초과는 실제 호출 우회가 아니라 명시적 실패다.
 - Coordinator 연결 실패, 인증 실패, 알 수 없는 schema version은 fail-closed다.

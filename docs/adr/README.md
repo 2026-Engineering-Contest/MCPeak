@@ -62,6 +62,9 @@
 | [0048](./0048-목이-inputSchema-를-실제로-검사한다.md) | 목이 `inputSchema` 를 실제로 검사하되, 주입된 응답이 검사보다 우선한다 | mock | 채택 |
 | [0049](./0049-provider-자유-텍스트-값-치환-경계.md) | provider 로 보내는 자유 텍스트에는 값 치환을 적용하지 않는다 (ADR-0033 확장) | generate, cli | 채택 |
 | [0050](./0050-mcpeak-으로의-개명과-npm-스코프-이전.md) | 제품명을 MCPeak 으로 바꾸고 npm 스코프를 `@mcpeak` 으로 옮긴다 (ADR-0044 후속) | 전 패키지 | 채택 |
+| [0051](./0051-external-record-replay와-tool-카세트-경계-분리.md) | External Record/Replay와 기존 Tool 카세트의 경계를 분리한다 | record, cli, dashboard | 제안 |
+| [0052](./0052-coordinator가-engine과-session-store를-소유한다.md) | 부모 Coordinator가 Record/Replay Engine과 Session Store를 소유한다 | record, cli | 제안 |
+| [0053](./0053-http-외부-요청-매칭과-반복-호출-정책.md) | HTTP 외부 요청은 보수적으로 정규화하고 반복 응답은 순서대로 소비한다 | record | 제안 |
 
 **상태** — `채택` 과 `승인` 이 확정된 결정입니다. `제안` 과 `초안` 은 아직 확정되지 않았으므로 이
 결정에 기대어 구현하지 마세요. 값은 각 파일 머리의 `상태` 를 그대로 옮긴 것입니다.

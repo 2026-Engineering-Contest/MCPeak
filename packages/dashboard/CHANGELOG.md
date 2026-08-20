@@ -1,5 +1,22 @@
 # @ohmymcp-hsu/dashboard
 
+## 0.1.2
+
+### Patch Changes
+
+- Updated dependencies [7520b74]
+- Updated dependencies [be534d6]
+- Updated dependencies [c923b48]
+- Updated dependencies [10ae345]
+- Updated dependencies [55ba842]
+- Updated dependencies [d962089]
+- Updated dependencies [393def4]
+- Updated dependencies [6cb8b5b]
+  - @mcpeak/cli@0.9.0
+  - @mcpeak/generate@0.5.1
+  - @mcpeak/mock@0.3.0
+  - @mcpeak/record@0.2.0
+
 ## 0.1.1
 
 ### Patch Changes

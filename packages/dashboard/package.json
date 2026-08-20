@@ -7,11 +7,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/2026-Engineering-Contest/OhMyMCP.git",
+    "url": "git+https://github.com/2026-Engineering-Contest/MCPeak.git",
     "directory": "packages/dashboard"
   },
-  "homepage": "https://github.com/2026-Engineering-Contest/OhMyMCP#readme",
-  "bugs": "https://github.com/2026-Engineering-Contest/OhMyMCP/issues",
+  "homepage": "https://github.com/2026-Engineering-Contest/MCPeak#readme",
+  "bugs": "https://github.com/2026-Engineering-Contest/MCPeak/issues",
   "bin": {
     "mcpeak-dashboard": "./dist/dashboard-cli.mjs"
   },

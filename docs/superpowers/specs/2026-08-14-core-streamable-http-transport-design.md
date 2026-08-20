@@ -3,7 +3,7 @@
 - 상태: 초안 (사용자 검토 대기)
 - 작성일: 2026-08-14
 - 구현 대상: `@mcpeak/core`
-- 해결 이슈: [#16 core.connect() 가 Streamable HTTP 를 지원해야 한다](https://github.com/2026-Engineering-Contest/OhMyMCP/issues/16)
+- 해결 이슈: [#16 core.connect() 가 Streamable HTTP 를 지원해야 한다](https://github.com/2026-Engineering-Contest/MCPeak/issues/16)
 - 선행 결정: [ADR-0001](../../adr/0001-transport-strategy.md), [ADR-0020](../../adr/0020-streamable-http-transport.md)
 - 선행 설계: [Core stdio transport 및 프로세스 수명주기 설계](./2026-08-12-core-stdio-transport-design.md)
 

@@ -108,7 +108,7 @@ try {
 
 **OAuth와 재연결은 지원하지 않는다.** 인증은 직접 만든 `headers`로만 붙이고 401은
 `HTTP_UNAUTHORIZED`로 끝나며, 연결이 끊기면 재시도 없이 즉시 실패한다(자세한 이유는
-[ADR-0020](https://github.com/2026-Engineering-Contest/OhMyMCP/blob/main/docs/adr/0020-streamable-http-transport.md)
+[ADR-0020](https://github.com/2026-Engineering-Contest/MCPeak/blob/main/docs/adr/0020-streamable-http-transport.md)
 참조).
 
 Core는 Runner를 import하지 않는다. Runner는 `McpClient`를 주입받고, CLI가 `connectStdio`의

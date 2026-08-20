@@ -3,7 +3,7 @@
 - 설계 문서: `docs/superpowers/specs/2026-08-14-core-streamable-http-transport-design.md`
 - 선행 결정: `docs/adr/0020-streamable-http-transport.md`
 - 대상 패키지: `packages/core` 단독 (그 밖에는 `docs/` 와 `.changeset/` 만)
-- 해결 이슈: [#16](https://github.com/2026-Engineering-Contest/OhMyMCP/issues/16)
+- 해결 이슈: [#16](https://github.com/2026-Engineering-Contest/MCPeak/issues/16)
 
 ## 1. 실행 모델
 

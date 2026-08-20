@@ -34,7 +34,7 @@ const OPTIONAL_GENERATE_DEPENDENCIES = {
 
 describe("ohmymcp cli", () => {
   it("알려진 서브커맨드를 선언한다", () => {
-    expect(COMMANDS).toEqual(["test", "generate", "repair", "record", "replay", "mock"]);
+    expect(COMMANDS).toEqual(["test", "generate", "repair", "record", "replay", "verify", "mock"]);
   });
 
   it("사용자 입력 오류를 reject하지 않고 종료 코드 1로 반환한다", async () => {

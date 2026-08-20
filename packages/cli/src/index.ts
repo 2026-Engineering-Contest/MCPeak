@@ -5,9 +5,18 @@ import { commandHelp, GLOBAL_HELP } from "./help.js";
 import { type RepairCommandDependencies, runRepairCommand } from "./repair-command.js";
 import { type ReplayCommandDependencies, runReplayCommand } from "./replay-command.js";
 import { parseTestCommand, runCli } from "./test-command.js";
+import { runVerifyCommand, type VerifyCommandDependencies } from "./verify-command.js";
 
 export type Command = (argv: string[]) => Promise<number>;
-export const COMMANDS = ["test", "generate", "repair", "record", "replay", "mock"] as const;
+export const COMMANDS = [
+  "test",
+  "generate",
+  "repair",
+  "record",
+  "replay",
+  "verify",
+  "mock",
+] as const;
 
 const unavailableDependencies = {
   readFile: async (): Promise<Uint8Array> => {
@@ -82,6 +91,24 @@ const unavailableReplayDependencies: ReplayCommandDependencies = {
   },
 };
 
+/**
+ * verify 도 런타임을 못 불러도 사용 오류는 정상적으로 내야 한다. 파싱은 의존성 없이 끝나므로
+ * `--command` 누락 같은 오류는 여기까지 오지 않는다.
+ */
+const unavailableVerifyDependencies: VerifyCommandDependencies = {
+  loadCassette: async (): Promise<never> => {
+    throw new Error("runtime dependencies unavailable");
+  },
+  connect: async (): Promise<never> => {
+    throw new Error("runtime dependencies unavailable");
+  },
+  verifyCassette: async (): Promise<never> => {
+    throw new Error("runtime dependencies unavailable");
+  },
+  writeStdout: (text: string): void => void process.stdout.write(text),
+  writeStderr: (text: string): void => void process.stderr.write(text),
+};
+
 export async function run(argv: string[]): Promise<number> {
   if (
     argv.length === 0 ||
@@ -96,7 +123,8 @@ export async function run(argv: string[]): Promise<number> {
       command === "test" ||
       command === "generate" ||
       command === "repair" ||
-      command === "replay"
+      command === "replay" ||
+      command === "verify"
     ) {
       process.stdout.write(commandHelp(command));
       return 0;
@@ -208,6 +236,25 @@ export async function run(argv: string[]): Promise<number> {
       colorEnabled: process.stdout.isTTY === true && process.env.NO_COLOR === undefined,
       writeStdout: (text) => process.stdout.write(text),
       writeStderr: (text) => process.stderr.write(text),
+    });
+  }
+  if (argv[0] === "verify") {
+    let core: typeof import("@ohmymcp-hsu/core");
+    let record: typeof import("@ohmymcp-hsu/record");
+    try {
+      [core, record] = await Promise.all([
+        import("@ohmymcp-hsu/core"),
+        import("@ohmymcp-hsu/record"),
+      ]);
+    } catch {
+      return runVerifyCommand(argv.slice(1), unavailableVerifyDependencies);
+    }
+    return runVerifyCommand(argv.slice(1), {
+      loadCassette: record.loadCassette,
+      connect: (options) => core.connect({ command: options.command, args: options.args }),
+      verifyCassette: record.verifyCassette,
+      writeStdout: (text) => void process.stdout.write(text),
+      writeStderr: (text) => void process.stderr.write(text),
     });
   }
   if (argv[0] !== "test") return runCli(argv, unavailableDependencies);

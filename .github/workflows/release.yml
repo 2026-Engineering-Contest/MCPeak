@@ -91,6 +91,7 @@ jobs:
       # 그대로 npm 에 나간다. 위 Guard 가 형식 오류는 잡지만 "낼 생각이 없던 버전을
       # 낸 것"은 잡지 못한다 — 버전 PR 머지 외의 경로로 main 을 건드릴 때 유의한다.
       - name: Create Release Pull Request / Publish
+        id: changesets
         uses: changesets/action@v1
         with:
           version: pnpm version-packages
@@ -124,10 +125,29 @@ jobs:
       #
       # 발행을 되돌릴 수는 없으므로 이 스텝은 "막는 관문"이 아니라 "거짓 초록을 없애는
       # 경보"다. 실패하면 사람이 재실행 여부를 판단한다.
+      #
+      # **발행 경로에서만 돈다.** 위 액션은 changeset 이 있으면 버전 PR 을 만들고 발행하지
+      # 않는데, 그때도 `changeset version` 이 러너의 package.json 버전을 올린다. 그 버전은
+      # 아직 npm 에 없는 것이 정상이므로 무조건 대조하면 버전 PR 이 만들어질 때마다
+      # 릴리스가 빨개진다. `published` 출력으로 두 경로를 가른다.
+      #
+      # 이번 사고처럼 액션이 발행했다고 **보고만** 한 경우에도 `published` 는 true 라서
+      # 이 Guard 가 돈다 — 잡으려는 것이 정확히 그 경우다.
       - name: Guard — 발행 결과를 레지스트리에서 확인
-        if: always()
+        if: ${{ always() && steps.changesets.outputs.published == 'true' }}
         run: |
           set -uo pipefail
+
+          # 갓 발행된 버전은 레지스트리 전파에 몇 초 걸릴 수 있다. 짧게 재시도해
+          # 전파 지연을 무발행으로 오인하지 않는다. 이번 사고의 404 는 분 단위로
+          # 지속됐으므로 이 재시도로 가려지지 않는다.
+          lookup() {
+            for attempt in 1 2 3; do
+              npm view "$1" version >/dev/null 2>&1 && return 0
+              [ "$attempt" -lt 3 ] && sleep 5
+            done
+            return 1
+          }
 
           checked=0
           missing=0
@@ -141,7 +161,7 @@ jobs:
             version="$(node -p "require('./$manifest').version")"
             checked=$((checked + 1))
 
-            if npm view "${name}@${version}" version >/dev/null 2>&1; then
+            if lookup "${name}@${version}"; then
               echo "  ✓ ${name}@${version}"
             else
               echo "::error::${name}@${version} 이 레지스트리에 없습니다. 발행이 보고와 다릅니다."

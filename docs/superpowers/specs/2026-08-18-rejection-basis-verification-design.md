@@ -288,6 +288,23 @@ export interface RejectionDiagnosisResult {
 
 ### 6.4 화면
 
+승낙을 묻는 자리다. **값 치환을 적용하지 않는다는 사실을 묻기 전에 적는다**(ADR-0049).
+위 목록이 나갈 본문을 이미 한 줄씩 보여주고 있으므로, 이 한 줄이 붙으면 사용자가 보고 판단할
+재료가 갖춰진다. 문장은 `repair` 의 stderr 안내와 같은 계열로 맞춘다.
+
+```
+거절 근거 미확인 2건
+  → fetch-url-required   응답: Input validation error: 'url' is a required property
+  → fetch-url-type       응답: 12345 is not of type 'string'
+  이 응답이 서버의 정상 거절인지 내부 오류인지 확인하지 못했습니다.
+
+  ※ 응답 본문은 서버가 자유롭게 쓰는 텍스트라 경로·토큰·데이터가 섞일 수 있습니다.
+    값 치환을 적용하지 않습니다.
+  나머지 2건의 진단을 AI 에게 요청할까요? [y/N]
+```
+
+기본값이 `N` 이다. 답이 `y` 일 때만 요청이 나가고, 결과가 이어서 찍힌다.
+
 ```
 거절 근거 미확인 2건에 대해 AI 진단을 요청했습니다.
 

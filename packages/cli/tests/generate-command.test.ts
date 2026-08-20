@@ -2298,6 +2298,27 @@ describe("generate 시험 실행 게이트", () => {
       expect(ai.seen).toHaveLength(0);
     });
 
+    /**
+     * ADR-0049. 응답 본문은 값 치환 없이 그대로 나간다. 그 사실이 **승낙을 묻기 전에** 화면에
+     * 있어야 사용자가 보고 판단할 수 있다. 질문 뒤에 적으면 이미 보낸 뒤다.
+     */
+    it("승낙을 묻기 전에 응답 본문이 그대로 전송된다고 알린다", async () => {
+      const ai = answering("rejected");
+      const d = gateDeps({
+        choices: ["save", "cancel"],
+        confirms: [true, false],
+        respond: handWritten,
+        rejectionProviders: ai.providers,
+      });
+      await runGenerateCommand([...gateArgv, "--provider", "claude"], d.value);
+      const text = d.output();
+      expect(text).toContain("서버가 자유롭게 쓰는 텍스트");
+      expect(text).toContain("값 치환을 적용하지 않습니다");
+      expect(text.indexOf("값 치환을 적용하지 않습니다")).toBeLessThan(
+        text.indexOf("진단을 AI 에게 요청할까요"),
+      );
+    });
+
     it("사용자가 거절하면 provider 를 부르지 않는다", async () => {
       const ai = answering("rejected");
       const d = gateDeps({

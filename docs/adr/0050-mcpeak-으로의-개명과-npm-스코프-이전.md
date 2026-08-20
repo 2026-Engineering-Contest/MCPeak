@@ -285,7 +285,7 @@ npm unpublish @ohmymcp-hsu/core      --force
 |---|---|
 | 최소 수정 | 이름 치환뿐. 로직·시그니처·동작 변경 0. `core/src/types.ts` 미변경 |
 | 오너를 리뷰어로 지정 | CODEOWNERS 가 자동 지정 |
-| 이슈에 사유를 남긴다 | **[#214](https://github.com/2026-Engineering-Contest/OhMyMCP/issues/214)** |
+| 이슈에 사유를 남긴다 | **[#214](https://github.com/2026-Engineering-Contest/MCPeak/issues/214)** |
 
 **머지 조건은 각 패키지 오너의 명시적 승인이었다. 그것을 지키지 않고 머지했다.**
 

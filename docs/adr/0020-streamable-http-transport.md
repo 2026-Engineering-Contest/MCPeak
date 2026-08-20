@@ -5,7 +5,7 @@
 - 작성자: core 오너
 - 관련 결정: [ADR-0001](./0001-transport-strategy.md), [ADR-0007](./0007-mock-stdio-transport.md)
 - 관련 설계: [Core Streamable HTTP transport 설계](../superpowers/specs/2026-08-14-core-streamable-http-transport-design.md)
-- 관련 이슈: [#16](https://github.com/2026-Engineering-Contest/OhMyMCP/issues/16)
+- 관련 이슈: [#16](https://github.com/2026-Engineering-Contest/MCPeak/issues/16)
 
 ## 배경
 

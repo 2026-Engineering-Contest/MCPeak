@@ -36,7 +36,7 @@ flowchart LR
 | `runner` | `McpClient` (**주입받음**) | 실패 메시지 · 리포트 · JUnit XML | 공개 API, matcher, **실패 메시지 품질** |
 | `generate` | `ToolDef[]` (**주입받음**) | 테스트 소스 파일 경로 · 승인된 suite snapshot | 결정론적 baseline 합성, AI authoring 검토·승인 |
 | `record` | `McpClient` (**감쌈**) | 카세트 파일 | 녹화·재생, 매칭 키, 비밀값 마스킹 |
-| `mock` | 툴 정의 · 주입할 응답 | 목 서버 | 가짜 데이터, 응답 주입 |
+| `mock` | 툴 정의 · 주입할 응답 | 목 서버 | 응답 주입 (사람이 지정한 값, ADR-0005), 입력 스키마 검사 |
 | `cli` | `argv` | 종료 코드 | 얇은 디스패처. 각자 자기 서브커맨드만 |
 
 의존 방향은 단방향이다. 역참조·순환 금지.
@@ -76,7 +76,7 @@ cli → record / mock → core
 createMcpTest({ client: McpClient }, body)   // runner   — client 를 받는다
 generateTests(tools: ToolDef[], opts)        // generate — tools 를 받는다
 cassetteClient(inner: McpClient, opts)       // record   — client 를 받는다
-injectResponse(name, response: ToolResult)   // mock     — response 를 받는다
+createMockServer({ tools: ToolDef[] })       // mock     — tools 를 받는다
 connect(opts): Promise<McpClient>            // core     — 값을 만드는 유일한 함수
 ```
 
@@ -157,7 +157,7 @@ ADR도 이미 1인 1개씩 균등 배정돼 있다:
 | 0002 | matcher — 기존 러너 확장 vs 독립 구현 | `runner` 오너 |
 | 0003 | 카세트 매칭 키와 비결정 필드 처리 | `record` 오너 |
 | 0004 | 생성 테스트의 범위 | `generate` 오너 |
-| 0005 | 목 데이터 — 스키마 랜덤 vs 고정 시드 | `mock` 오너 |
+| 0005 | 목 데이터 — 사람이 작성 vs 스키마 기반 생성 | `mock` 오너 |
 
 패키지 크기와 무관하게 "다르게 갈 수도 있었던 판단"을 1인당 하나씩 남긴다. (§12는 1인 2건 이상을 요구하므로, 스켈레톤 5개 외에 각자 하나씩은 더 쓰게 된다.)
 

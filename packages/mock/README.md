@@ -17,7 +17,9 @@
 | **HTTP** `createMockServer` | MCP 를 사용하는 **외부 프로그램** | 띄운 뒤 `on()` 으로 |
 | **stdio** `ohmymcp-mock` | **우리 도구**(`ohmymcp test`) | 정의 파일에 미리 |
 
-`core.connect()` 가 아직 stdio 만 알기 때문에 갈린다 (#16). 자세한 배경은 ADR-0007.
+`core.connect()` 는 HTTP 도 안다 (ADR-0020). 갈리는 이유는 CLI 다 — `ohmymcp test` 가
+`core.connectStdio` 를 하드코딩하고 `--url` 이 없다 (`packages/cli/src/index.ts:132`·`234`).
+자세한 배경은 ADR-0007.
 
 ## HTTP — 외부 프로그램용
 
@@ -310,5 +312,5 @@ mock.on("get_meeting", { id: "m-99" }, { error: "→ 'm-99' 회의록이 없습�
 - 목 응답은 **사람이 지정한 결정론적 값**을 쓴다 (ADR-0005 에서 확정). 스키마 기반 랜덤
   생성은 폐기됐고, 고정 시드 생성은 보류 상태다 — 툴이 많은 서버의 스모크 테스트 수요가
   실제로 확인되면 그때 별도로 결정한다.
-- `core.connect()` 의 HTTP 지원 — #16. 있으면 우리 러너가 HTTP 목에도 붙는다
-- CI 의 E2E 잡에 stdio 목 경로를 넣을지 — `examples/` 오너 확정 후 (§2.1 에 빠져 있다)
+- CLI 의 HTTP 연결 — `core.connect()` 쪽은 됐다 (ADR-0020, #16). `ohmymcp test` 에 `--url`
+  이 생기면 우리 러너가 HTTP 목에도 붙는다. 지금은 CLI 가 stdio 로 고정돼 있다

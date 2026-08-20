@@ -18,7 +18,7 @@
 | **stdio** `ohmymcp-mock` | **우리 도구**(`ohmymcp test`) | 정의 파일에 미리 |
 
 `core.connect()` 는 HTTP 도 안다 (ADR-0020). 갈리는 이유는 CLI 다 — `ohmymcp test` 가
-`core.connectStdio` 를 하드코딩하고 `--url` 이 없다 (`cli/src/index.ts:132`·`234`).
+`core.connectStdio` 를 하드코딩하고 `--url` 이 없다 (`packages/cli/src/index.ts:132`·`234`).
 자세한 배경은 ADR-0007.
 
 ## HTTP — 외부 프로그램용

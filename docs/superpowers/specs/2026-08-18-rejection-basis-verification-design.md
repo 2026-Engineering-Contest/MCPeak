@@ -247,7 +247,7 @@ export interface RejectionDiagnosisRequest {
   readonly input: JsonObject;
   /** 서버가 선언한 입력 스키마. */
   readonly inputSchema: JsonObject;
-  /** 서버 응답 본문. redaction 이 적용된 값이다. */
+  /** 서버 응답 본문. redaction 을 적용하지 않는다(ADR-0049). */
   readonly responseBody: string;
 }
 
@@ -276,8 +276,12 @@ export interface RejectionDiagnosisResult {
   아니다.
 - **`unsure` 를 허용한다.** repair 의 `unsure` 와 같은 취급이다. AI 가 모르면 모른다고 답하는
   것이 답을 지어내는 것보다 낫다.
-- **전송이므로 redaction 을 적용한다.** 입력과 응답 본문이 provider 로 나간다. ADR-0033 의
-  경계를 그대로 쓴다. 새 규칙을 만들지 않는다.
+- **redaction 은 구조화된 입력에만 적용한다(ADR-0049).** 입력은 키·값 치환이 제대로 도는
+  자리다. **응답 본문에는 적용하지 않는다** — 남의 서버가 쓴 자유 텍스트라 값 치환이 완전
+  일치로만 걸리고, 그런 부분 방어를 화면에 "가렸다" 로 보이게 두는 것이 원래 위험보다 나쁘다.
+  ADR-0033 이 stderr 에 대해 내린 판단을 그대로 물려받는다. 새 규칙을 만들지 않는다.
+- **응답 본문은 상한·확인·옵트아웃으로 다룬다.** 200자 상한(`clampObservedText`), 승낙 전
+  본문 한 줄씩 표시, 기본값 `N` 인 확인 질문 셋이다.
 - **호출은 사용자가 시작한다.** 승인 화면의 메뉴 항목이다. 자동으로 부르지 않는다. 케이스가
   많으면 비용이 곱해지고, provider 가 없는 사용자가 대다수다.
 

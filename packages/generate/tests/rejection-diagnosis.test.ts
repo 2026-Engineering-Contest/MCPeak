@@ -64,40 +64,54 @@ describe("prepareRejectionDiagnosisRequests", () => {
     expect(requests.map((request) => request.caseId)).toEqual(["unverified-1"]);
   });
 
-  it("전송 payload 에 redaction 이 적용된다", () => {
+  it("구조화된 입력에 redaction 이 적용된다", () => {
     const [request] = prepareRejectionDiagnosisRequests({
       cases: [
         testCase("unverified-1", "unverified", {
           input: { city: "서울", apiKey: "sk-live-1234", note: "tok-secret" },
-          responseBody: "tok-secret",
         }),
       ],
       redaction: { sensitiveValues: ["tok-secret"] },
     });
     // 키 기반 치환(ADR-0033 기본 민감 키)
     expect(request?.input.apiKey).toBe("[REDACTED]");
-    // 값 기반 치환. 입력과 응답 본문 양쪽에 걸린다(설계서 §6.3).
+    // 값 기반 치환. 구조화된 입력에는 걸린다(설계서 §6.3).
     expect(request?.input.note).toBe("[REDACTED]");
-    expect(request?.responseBody).toBe("[REDACTED]");
     // 스키마는 치환하지 않는다. 값이 바뀌면 AI 가 대조할 계약이 사라진다.
     expect(request?.inputSchema).toEqual(schema);
   });
 
   /**
-   * ADR-0033 의 값 치환은 **완전 일치**다. 부분 문자열은 안 건드린다. `responseBody` 는 서버가
-   * 쓴 자유 문장이라 비밀값이 문장 안에 박혀 오면 그대로 provider 로 나간다. 새 규칙을 만들지
-   * 말라는 것이 설계서 §6.3 이므로 여기서 고치지 않고, 아는 한계로 못 박아 둔다.
+   * ADR-0049. `responseBody` 는 남의 서버가 자유롭게 쓴 텍스트라 키·값 치환이 구조적으로 맞지
+   * 않는다. 완전 일치로 우연히 걸리는 하나를 남겨 두면 화면이 "가렸다" 로 읽히므로 아예 걸지
+   * 않고, 상한·확인·옵트아웃으로 다룬다(ADR-0033 과 같은 판단).
+   *
+   * **경계를 여기서 못 박는다.** 같은 문자열이 `input` 에서는 가려지고 `responseBody` 에서는
+   * 남는다. 한쪽만 고쳐지면 이 테스트가 깨진다.
    */
-  it("[한계] 문장 안에 박힌 비밀값은 치환되지 않는다", () => {
-    const [request] = prepareRejectionDiagnosisRequests({
+  it("responseBody 에는 값 치환을 적용하지 않는다", () => {
+    const [exact] = prepareRejectionDiagnosisRequests({
       cases: [
         testCase("unverified-1", "unverified", {
+          input: { city: "tok-secret" },
+          responseBody: "tok-secret",
+        }),
+      ],
+      redaction: { sensitiveValues: ["tok-secret"] },
+    });
+    expect(exact?.input.city).toBe("[REDACTED]");
+    expect(exact?.responseBody).toBe("tok-secret");
+
+    // 문장 안에 박힌 경우도 같다. #165 가 든 예다.
+    const [embedded] = prepareRejectionDiagnosisRequests({
+      cases: [
+        testCase("unverified-2", "unverified", {
           responseBody: "거절: tok-secret 은 허용되지 않습니다",
         }),
       ],
       redaction: { sensitiveValues: ["tok-secret"] },
     });
-    expect(request?.responseBody).toBe("거절: tok-secret 은 허용되지 않습니다");
+    expect(embedded?.responseBody).toBe("거절: tok-secret 은 허용되지 않습니다");
   });
 
   it("같은 입력이면 같은 요청이 나온다", () => {

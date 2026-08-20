@@ -5,7 +5,11 @@ import { commandHelp, GLOBAL_HELP } from "./help.js";
 import { type RepairCommandDependencies, runRepairCommand } from "./repair-command.js";
 import { type ReplayCommandDependencies, runReplayCommand } from "./replay-command.js";
 import { parseTestCommand, runCli } from "./test-command.js";
-import { runVerifyCommand, type VerifyCommandDependencies } from "./verify-command.js";
+import {
+  runVerifyCommand,
+  type VerifyCommandDependencies,
+  VerifyRuntimeUnavailableError,
+} from "./verify-command.js";
 
 export type Command = (argv: string[]) => Promise<number>;
 export const COMMANDS = [
@@ -96,14 +100,16 @@ const unavailableReplayDependencies: ReplayCommandDependencies = {
  * `--command` 누락 같은 오류는 여기까지 오지 않는다.
  */
 const unavailableVerifyDependencies: VerifyCommandDependencies = {
+  // 전용 오류 타입을 던진다. 평범한 Error 로 던지면 CASSETTE_READ_FAILED 로 잡혀
+  // "카세트가 손상되지 않았는지 확인하세요" 가 나가는데, 고칠 곳은 설치다.
   loadCassette: async (): Promise<never> => {
-    throw new Error("runtime dependencies unavailable");
+    throw new VerifyRuntimeUnavailableError();
   },
   connect: async (): Promise<never> => {
-    throw new Error("runtime dependencies unavailable");
+    throw new VerifyRuntimeUnavailableError();
   },
   verifyCassette: async (): Promise<never> => {
-    throw new Error("runtime dependencies unavailable");
+    throw new VerifyRuntimeUnavailableError();
   },
   writeStdout: (text: string): void => void process.stdout.write(text),
   writeStderr: (text: string): void => void process.stderr.write(text),

@@ -21,10 +21,25 @@ export interface VerifyCommandInput {
 
 export type VerifyErrorCode =
   | "CLI_USAGE"
+  | "VERIFY_RUNTIME_UNAVAILABLE"
   | "CASSETTE_NOT_FOUND"
   | "CASSETTE_READ_FAILED"
   | "SERVER_CONNECT_FAILED"
   | "CASSETTE_DRIFTED";
+
+/**
+ * 런타임 모듈을 못 불러 fallback 의존성이 쓰일 때 던진다.
+ *
+ * 타입을 따로 두는 이유는 이 실패가 **카세트 손상과 구분돼야** 하기 때문이다. 그냥 던지면
+ * `CASSETTE_READ_FAILED` 로 잡혀 "카세트 파일이 손상되지 않았는지 확인하세요" 가 나가고,
+ * 사용자는 멀쩡한 파일을 들여다보게 된다. 고칠 곳은 설치다.
+ */
+export class VerifyRuntimeUnavailableError extends Error {
+  constructor() {
+    super("verify 실행에 필요한 모듈을 로드하지 못했습니다.");
+    this.name = "VerifyRuntimeUnavailableError";
+  }
+}
 
 export interface VerifyFailure {
   readonly code: VerifyErrorCode;
@@ -45,6 +60,10 @@ export interface VerifyCommandDependencies {
 }
 
 const dictionary: Record<Exclude<VerifyErrorCode, "CLI_USAGE">, Omit<VerifyFailure, "code">> = {
+  VERIFY_RUNTIME_UNAVAILABLE: {
+    message: "verify 에 필요한 @ohmymcp-hsu/record 를 로드하지 못했습니다.",
+    hint: "의존성을 설치한 뒤 다시 실행하세요. 카세트 파일의 문제가 아닙니다.",
+  },
   CASSETTE_NOT_FOUND: {
     message: "카세트 파일이 없습니다.",
     hint: "`ohmymcp generate --cassette <path> --record` 로 먼저 녹화하세요.",
@@ -153,8 +172,14 @@ export function formatVerifyResult(result: CassetteVerifyResult, cassettePath: s
     lines.push(
       "  확인불가는 args 에 마스킹된 비밀값이 있어 실서버에 그대로 보낼 수 없는 요청입니다.",
     );
+  // 확인하지 못한 것이 있으면 "일치합니다" 라고 단언하지 않는다. skipped 는 비교를 못 한
+  // 것이지 같다고 확인한 것이 아니다. 전수 검사인 척하면 사용자가 낡은 카세트를 믿는다.
   if (result.mismatched.length === 0 && result.failed.length === 0)
-    lines.push("  카세트가 실서버와 일치합니다.");
+    lines.push(
+      result.skipped.length === 0
+        ? "  카세트가 실서버와 일치합니다."
+        : `  확인한 ${result.matched}개는 실서버와 일치합니다. ${result.skipped.length}개는 확인하지 못했습니다.`,
+    );
 
   return `${lines.join("\n")}\n`;
 }
@@ -174,11 +199,14 @@ export async function runVerifyCommand(
   let cassette: Cassette | null;
   try {
     cassette = await dependencies.loadCassette(input.cassettePath);
-  } catch {
-    return writeFailure(dependencies, {
-      code: "CASSETTE_READ_FAILED",
-      ...dictionary.CASSETTE_READ_FAILED,
-    });
+  } catch (error) {
+    // 런타임을 못 부른 것과 카세트가 깨진 것은 고칠 곳이 다르다. 같은 문안으로 묶으면
+    // 멀쩡한 파일을 들여다보게 된다.
+    const code =
+      error instanceof VerifyRuntimeUnavailableError
+        ? "VERIFY_RUNTIME_UNAVAILABLE"
+        : "CASSETTE_READ_FAILED";
+    return writeFailure(dependencies, { code, ...dictionary[code] });
   }
   if (cassette === null)
     return writeFailure(dependencies, {

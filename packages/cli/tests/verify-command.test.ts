@@ -5,6 +5,7 @@ import {
   parseVerifyCommand,
   runVerifyCommand,
   type VerifyCommandDependencies,
+  VerifyRuntimeUnavailableError,
 } from "../src/verify-command.js";
 
 const emptyCassette: Cassette = { version: 1, interactions: [] };
@@ -160,6 +161,60 @@ describe("runVerifyCommand", () => {
 
     expect(code).toBe(0);
     expect(stdout.join("")).toContain("확인불가 1");
+  });
+
+  it("확인 못 한 것이 있으면 전체 일치를 단언하지 않는다", async () => {
+    // skipped 는 "같다" 가 아니라 "비교를 못 했다" 이다. 전수 검사인 척하면 사용자가
+    // 낡은 카세트를 믿는다.
+    const { dependencies, stdout } = harness({
+      verifyCassette: async () => ({
+        matched: 2,
+        mismatched: [],
+        failed: [],
+        skipped: [{ key: "k", toolName: "login", args: {}, message: "→ 마스킹된 args" }],
+        toolsChanged: false,
+      }),
+    });
+    await runVerifyCommand(["c.json", "--command", "node"], dependencies);
+    const output = stdout.join("");
+
+    expect(output).not.toContain("카세트가 실서버와 일치합니다");
+    expect(output).toContain("확인한 2개는 실서버와 일치합니다");
+    expect(output).toContain("1개는 확인하지 못했습니다");
+  });
+
+  it("확인불가가 없을 때만 전체 일치를 말한다", async () => {
+    const { dependencies, stdout } = harness();
+    await runVerifyCommand(["c.json", "--command", "node"], dependencies);
+
+    expect(stdout.join("")).toContain("카세트가 실서버와 일치합니다");
+  });
+
+  it("런타임 로드 실패를 카세트 손상으로 보고하지 않는다", async () => {
+    // 고칠 곳이 다르다. 같은 문안으로 묶으면 멀쩡한 카세트 파일을 들여다보게 된다.
+    const { dependencies, stderr } = harness({
+      loadCassette: async () => {
+        throw new VerifyRuntimeUnavailableError();
+      },
+    });
+    const code = await runVerifyCommand(["c.json", "--command", "node"], dependencies);
+    const output = stderr.join("");
+
+    expect(code).toBe(1);
+    expect(output).toContain("VERIFY_RUNTIME_UNAVAILABLE");
+    expect(output).not.toContain("CASSETTE_READ_FAILED");
+    expect(output).toContain("의존성을 설치한 뒤");
+  });
+
+  it("평범한 읽기 실패는 여전히 CASSETTE_READ_FAILED 다", async () => {
+    const { dependencies, stderr } = harness({
+      loadCassette: async () => {
+        throw new Error("깨진 JSON");
+      },
+    });
+    await runVerifyCommand(["c.json", "--command", "node"], dependencies);
+
+    expect(stderr.join("")).toContain("CASSETTE_READ_FAILED");
   });
 
   it("카세트가 없으면 CASSETTE_NOT_FOUND 로 끝난다", async () => {

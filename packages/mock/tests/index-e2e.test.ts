@@ -251,6 +251,32 @@ describe("@mcpeak/mock", () => {
       "→ mock.on('add', ...) 의 인자로 매칭 키를 만들 수 없습니다: 중첩이 너무 깊습니다",
     );
   });
+  /**
+   * 정의 파일 경로(`assertMockDefinition`)는 미지의 툴 이름을 잡는데 `on()` 은 안 잡았다.
+   * 오타 주입이 성공한 것처럼 보이고, 사용자는 실제 호출이 미스로 떨어져 진단문을 볼 때까지
+   * 아무 신호도 못 받았다. 두 진입점이 같은 규칙을 쓴다는 README 의 계약과도 어긋났다.
+   *
+   * `toThrow("문장")` 은 chai 가 부분 일치로 보므로 뒤에 무엇이 붙어도 통과한다.
+   * `new Error(전문)` 으로 완전 일치를 건다.
+   */
+  it("on() 이 tools 에 없는 툴 이름을 거절한다", async () => {
+    const server = await start();
+
+    expect(() => server.on("get_weatherr", { city: "서울" }, { temp: 21 })).toThrow(
+      new Error(
+        `mock.on('get_weatherr', ...) 의 툴 'get_weatherr' 이 tools 에 없습니다. 있는 툴: ${tools
+          .map((t) => t.name)
+          .join(", ")}`,
+      ),
+    );
+  });
+
+  it("on() 이 선언된 툴은 그대로 받는다", async () => {
+    const server = await start();
+    const name = tools[0]?.name as string;
+
+    expect(() => server.on(name, ANY, { ok: true })).not.toThrow();
+  });
 });
 
 /**
@@ -356,6 +382,76 @@ describe("@mcpeak/mock — inputSchema 검사", () => {
       arguments: { city: "서울", days: 99 },
     });
     expect(text(badRange)).toContain("7 이하여야 합니다. 받은 값: 99");
+    await client.close();
+  });
+
+  /**
+   * 이 두 줄을 **계약 후보로 미리 고정한다.**
+   *
+   * 현재 `runner` 의 `classifyRejectionBasis` 는 이 문장을 보지 않는다. TS·Python SDK 의
+   * 접두어 화이트리스트만 보므로 목의 거절은 전부 `unverified` 로 떨어진다 — 그것이
+   * #221 이 보고한 결함이다. `runner` 가 이 문장을 지문으로 채택할지는 그 이슈에서 정한다.
+   *
+   * 채택된다면 단방향 의존(cli → runner/generate/record/mock → core) 때문에 `runner` 는
+   * `@mcpeak/mock` 을 import 할 수 없어 문장을 자기 쪽에 하드코딩할 수밖에 없다. 그러면
+   * 드리프트를 잡을 수 있는 자리가 여기뿐이 된다. 그래서 결정을 기다리는 동안 문장이
+   * 흔들리지 않도록 먼저 못 박는다 — 채택 시점에 문장이 이미 바뀌어 있으면 늦다.
+   *
+   * **부분 일치로 걸면 안 된다** — 뒤에 줄이 붙거나 조사가 바뀌어도 통과해서 목은
+   * 초록인 채로 문장만 흘러간다. 완전 일치로 건다.
+   *
+   * 이 테스트가 깨지면 문장을 되돌리거나, `runner` 오너와 상의해 양쪽을 같이 바꾼다.
+   */
+  const REJECTION_CONTRACT = [
+    "→ 이 툴이 tools/list 로 선언한 inputSchema 가 그렇게 요구합니다.",
+    "→ 거절이 의도한 것이면 responses 에 이 인자를 넣어 응답을 지정하세요.",
+  ] as const;
+
+  it("스키마 위반 거절문의 끝 두 줄이 고정돼 있다 (#221 계약 후보)", async () => {
+    const client = await connect(await startWith());
+    const result = await client.callTool({ name: "get_weather", arguments: { city: 0 } });
+
+    // 문장과 isError 는 계약의 양쪽이다. runner 는 isError 로 거절 여부를 먼저 가르고
+    // 그 다음 문장으로 근거를 판별한다. 하나만 검사하면 나머지 절반이 조용히 깨진다.
+    expect(result.isError).toBe(true);
+    const lines = text(result).split("\n");
+    expect(lines.slice(-2)).toEqual([...REJECTION_CONTRACT]);
+    await client.close();
+  });
+
+  it("위반이 여럿이어도 고정된 두 줄은 끝에 한 번만 붙는다", async () => {
+    const client = await connect(await startWith());
+    const result = await client.callTool({
+      name: "get_weather",
+      arguments: { unit: "k", days: 0 },
+    });
+
+    expect(result.isError).toBe(true);
+    const lines = text(result).split("\n");
+    expect(lines.slice(-2)).toEqual([...REJECTION_CONTRACT]);
+    // 위반 줄마다 붙으면 읽을 수 없다. 전체에서 각각 정확히 한 번이다.
+    for (const line of REJECTION_CONTRACT) expect(lines.filter((l) => l === line)).toHaveLength(1);
+    await client.close();
+  });
+
+  /**
+   * 매칭 미스는 스키마 근거 거절이 **아니다**. 둘 다 `isError: true` 라 본문으로만
+   * 구분되므로, 미스 진단문에 그 두 줄이 새면 runner 가 "서버가 스키마 근거로
+   * 거절했다" 로 잘못 읽는다. ADR-0048 이 없애려던 "우연히 통과" 가 초록으로 숨는다.
+   */
+  it("매칭 미스 진단문에는 고정된 두 줄이 섞이지 않는다", async () => {
+    const server = await startWith();
+    server.on("get_weather", { city: "서울" }, { temp: 21 });
+    const client = await connect(server);
+
+    const result = await client.callTool({
+      name: "get_weather",
+      arguments: { city: "부산" },
+    });
+
+    expect(result.isError).toBe(true);
+    expect(text(result)).toContain("주입된 응답이 없습니다");
+    for (const line of REJECTION_CONTRACT) expect(text(result)).not.toContain(line);
     await client.close();
   });
 

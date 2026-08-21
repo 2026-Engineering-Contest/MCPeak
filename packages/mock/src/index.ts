@@ -444,9 +444,20 @@ export async function createMockServer(options: MockOptions): Promise<MockServer
     throw new Error("목 서버 주소를 확인할 수 없습니다 (예상치 못한 address() 반환값).");
   }
 
+  // 정의 파일 경로는 assertMockDefinition 이 미지의 툴 이름을 잡는다. on() 도 같은 자리를
+  // 막는다 — 두 진입점이 같은 규칙을 쓴다는 것이 이 패키지의 계약이다(README「응답 매칭 규칙」).
+  // 안 막으면 오타 주입이 성공한 것처럼 보이고, 사용자는 실제 호출이 미스로 떨어져 진단문을
+  // 볼 때까지 아무 신호도 못 받는다.
+  const declaredTools = new Set(tools.map((t) => t.name));
+
   return {
     url: `http://${host}:${addr.port}/mcp`,
     on(tool: string, args: unknown, result: unknown, options?: { isError?: boolean }) {
+      if (!declaredTools.has(tool)) {
+        throw new Error(
+          `mock.on('${tool}', ...) 의 툴 '${tool}' 이 tools 에 없습니다. 있는 툴: ${[...declaredTools].join(", ")}`,
+        );
+      }
       put(registry, tool, args, result, `mock.on('${tool}', ...)`, options?.isError === true);
     },
     close: () =>

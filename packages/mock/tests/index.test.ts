@@ -251,6 +251,32 @@ describe("@mcpeak/mock", () => {
       "→ mock.on('add', ...) 의 인자로 매칭 키를 만들 수 없습니다: 중첩이 너무 깊습니다",
     );
   });
+  /**
+   * 정의 파일 경로(`assertMockDefinition`)는 미지의 툴 이름을 잡는데 `on()` 은 안 잡았다.
+   * 오타 주입이 성공한 것처럼 보이고, 사용자는 실제 호출이 미스로 떨어져 진단문을 볼 때까지
+   * 아무 신호도 못 받았다. 두 진입점이 같은 규칙을 쓴다는 README 의 계약과도 어긋났다.
+   *
+   * `toThrow("문장")` 은 chai 가 부분 일치로 보므로 뒤에 무엇이 붙어도 통과한다.
+   * `new Error(전문)` 으로 완전 일치를 건다.
+   */
+  it("on() 이 tools 에 없는 툴 이름을 거절한다", async () => {
+    const server = await start();
+
+    expect(() => server.on("get_weatherr", { city: "서울" }, { temp: 21 })).toThrow(
+      new Error(
+        `mock.on('get_weatherr', ...) 의 툴 'get_weatherr' 이 tools 에 없습니다. 있는 툴: ${tools
+          .map((t) => t.name)
+          .join(", ")}`,
+      ),
+    );
+  });
+
+  it("on() 이 선언된 툴은 그대로 받는다", async () => {
+    const server = await start();
+    const name = tools[0]?.name as string;
+
+    expect(() => server.on(name, ANY, { ok: true })).not.toThrow();
+  });
 });
 
 /**

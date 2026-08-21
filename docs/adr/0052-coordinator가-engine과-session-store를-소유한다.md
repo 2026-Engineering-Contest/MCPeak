@@ -110,15 +110,25 @@ Coordinator 통신은 다음 조건을 가진 내부 HTTP JSON 프로토콜로 �
   descriptor를 읽는다. descriptor 조회는 Adapter ID, protocol, 지원하는 interaction schema version
   집합만 반환하며 전역 API 변경, 사용자 코드 실행, 외부 호출을 해서는 안 된다. descriptor가 없거나
   중복되거나 활성 Adapter와 ID가 맞지 않으면 fail-closed한다.
-- capability discovery 뒤 한 번 핸드셰이크한다. 핸드셰이크에는 bearer token, Coordinator wire
-  schema version, 패키지 version 또는 build ID, Adapter ID별 지원 version 집합과 부모가 요청한
-  `interactionSchemaVersions`를 싣는다. 이 map은 Record에서 새 session에 사용할 version 또는
-  Replay source session에 저장된 version을 나타내는 선택값이지 capability 집합을 대신하지 않는다.
-  Coordinator는 부모·자식 capability와 선택값을 대조해 활성 Adapter마다 정확히 하나의 version을
-  합의한다.
+- capability discovery 뒤 한 번 핸드셰이크한다. bearer token은 이 요청도 `Authorization` 헤더로만
+  인증하며 JSON wire payload와 로그에는 싣지 않는다. payload에는 Coordinator wire schema version,
+  아래 package/build identity, Adapter별 `ID + protocol + 지원 version 집합`, 부모가 요청한
+  `interactionSchemaVersions`를 싣는다. 이 map은 Record에서 새 session에 사용할 version 또는 Replay
+  source session에 저장된 version을 나타내는 선택값이지 capability 집합을 대신하지 않는다.
+- Coordinator는 부모와 자식의 Adapter capability를 `ID + protocol + 지원 version 집합` 단위로
+  대조한다. protocol은 빠짐없이 exact match해야 하고 부모가 지원하는 값이어야 한다. protocol이
+  없거나 서로 다르거나 지원되지 않으면 version이 겹치더라도 합의하지 않는다. 그 뒤 선택값이 양쪽
+  지원 집합에 있는지 확인해 활성 Adapter마다 정확히 하나의 version을 합의한다.
+- package/build identity의 wire 형식은 `{ packageName, kind, value }`로 고정하며 `kind`는
+  `packageVersion` 또는 `buildId`다. Coordinator의 기대값은 부모 package/build에 내장된 metadata에서,
+  Bootstrap 값은 자식 package/build에 내장된 metadata에서 읽고 사용자 설정으로 덮어쓰지 않는다.
+  `packageVersion` 값은 배포된 `package.json`의 version이고 `buildId`는 빌드 시 내장한 opaque ID다.
+  세 필드는 비어 있지 않은 문자열이어야 하며 앞뒤 공백과 제어 문자를 허용하지 않는다. 종류나 값을
+  변환하거나 SemVer range로 비교하지 않고 `packageName`, `kind`, `value`를 모두 exact match한다.
 - package/build 검증과 version 합의가 모두 성공한 뒤에만 Bootstrap이 활성 Adapter 훅을 설치한다.
-  discovery, package/build 검증, version 합의 중 하나라도 실패하면 사용자 코드와 실제 외부 호출이
-  시작되기 전에 fail-closed한다.
+  identity 필드 누락·형식 오류·종류 불일치·값 불일치를 포함해 discovery, package/build 검증,
+  protocol 검증, version 합의 중 하나라도 실패하면 사용자 코드와 실제 외부 호출이 시작되기 전에
+  fail-closed한다.
 - 핸드셰이크 뒤에도 모든 `begin`·`complete`·`lookup` 요청에 Adapter ID, Coordinator wire schema
   version, 그 Adapter에 합의된 interaction schema version을 싣는다. Coordinator는 Adapter ID로
   합의 결과를 조회해 두 version을 함께 검증한다. 세션에 저장되는 것은 Adapter별 interaction

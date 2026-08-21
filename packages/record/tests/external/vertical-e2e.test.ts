@@ -82,9 +82,20 @@ describe("external Record/Replay vertical", () => {
       body: { city: "seoul", weather: "sunny" },
     });
     expect(originCalls).toBe(1);
-    await expect(
-      replayConnection.client.callTool("fetch_weather", { city: "busan" }),
-    ).rejects.toThrow();
+    // miss 가 네트워크로 새지 않는 것이 Replay 의 존재 이유다. 그런데 `toThrow()` 만으로는
+    // 그것을 증명하지 못한다 — 자식이 크래시해도 호출은 실패하고 카운터도 그대로다.
+    // 그래서 실패의 정체까지 본다. 이 문장이 부모의 REPLAY_MISS 에서 출발해 Coordinator 와
+    // 자식 어댑터, JSON-RPC 를 지나 호출자까지 살아 돌아왔다면 경로가 lookup 에서 끊긴 것이다.
+    //
+    // `cause` 를 보는 이유: `core` 는 최상위 message 를 안정된 카탈로그 문장으로 고정하고
+    // (`OPERATION_FAILED`), 서버가 준 원문은 `cause` 에 남긴다. 진단은 그쪽에 있다.
+    const missed = await replayConnection.client.callTool("fetch_weather", { city: "busan" }).then(
+      () => undefined,
+      (error: unknown) => error as { code?: string; cause?: { message?: string } },
+    );
+    expect(missed?.code).toBe("OPERATION_FAILED");
+    expect(missed?.cause?.message).toContain("저장된 외부 응답을 찾지 못했습니다");
+    expect(missed?.cause?.message).toContain("실제 네트워크는 호출하지 않았습니다");
     expect(originCalls).toBe(1);
 
     await replayConnection.close();

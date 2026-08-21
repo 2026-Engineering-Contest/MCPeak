@@ -185,8 +185,8 @@ node packages/cli/dist/cli.mjs test <suite.json> \
 
 Node 22.18 이상을 지원하며, CI는 최소 버전인 22.18.0과 Node 24에서 검사합니다.
 
-> **Node 25 에서는 `packages/dashboard/web` 테스트 13건이 실패합니다.** 지원 범위 밖이라 CI 는
-> 잡지 못합니다. 자기 변경과 무관하니 [#212](https://github.com/2026-Engineering-Contest/MCPeak/issues/212) 를 보세요.
+> **Node 25 에서는 `packages/dashboard/web` 테스트 13건이 실패합니다.** `engines.node` 는 하한만
+> 정하므로 Node 25 설치가 막히지는 않지만, CI 검증 대상이 아닙니다. 자기 변경과 무관하니 [#212](https://github.com/2026-Engineering-Contest/MCPeak/issues/212) 를 보세요.
 
 기여 규칙은 [CONTRIBUTING.md](./CONTRIBUTING.md) 를 먼저 읽으세요.
 

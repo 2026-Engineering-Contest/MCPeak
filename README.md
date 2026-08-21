@@ -10,8 +10,16 @@ MCP(Model Context Protocol) 서버를 **코드로 자동 테스트**하는 오�
 npm install -g @mcpeak/cli
 ```
 
-설치하면 `mcpeak` · `mcpeak-mock` 이 `PATH` 에 놓입니다. 아래 예제를 그대로 칠 수 있습니다.
-한 번만 쓸 거라면 설치 없이 `npx @mcpeak/cli test ...` 도 됩니다.
+설치하면 `mcpeak` 명령이 `PATH` 에 놓입니다. 한 번만 쓸 거라면 설치 없이
+`npx @mcpeak/cli test ...` 도 됩니다.
+
+목 서버([실제 서버 없이 테스트하기](#실제-서버-없이-테스트하기))나 웹 UI 를 함께 쓰려면 각각
+설치합니다. **전역 설치는 그 패키지 자신의 실행 파일만 `PATH` 에 놓으므로**, 의존성으로 딸려
+와도 `mcpeak-mock` · `mcpeak-dashboard` 는 따로 설치해야 생깁니다.
+
+```bash
+npm install -g @mcpeak/cli @mcpeak/mock @mcpeak/dashboard
+```
 
 ## 30초 예제
 

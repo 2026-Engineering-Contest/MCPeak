@@ -106,10 +106,13 @@ Coordinator 통신은 다음 조건을 가진 내부 HTTP JSON 프로토콜로 �
 - 기본 요청 타임아웃은 5초이고 설정 가능한 범위는 1~60초다. 타임아웃은 실제 호출 fallback이
   아니라 명시적 실패다.
 - Coordinator 연결 실패, 인증 실패, 알 수 없는 schema version은 fail-closed다.
-- Bootstrap은 전역 훅을 설치하기 전에 같은 package/build에 포함된 부작용 없는 Adapter capability
-  descriptor를 읽는다. descriptor 조회는 Adapter ID, protocol, 지원하는 interaction schema version
-  집합만 반환하며 전역 API 변경, 사용자 코드 실행, 외부 호출을 해서는 안 된다. descriptor가 없거나
-  중복되거나 활성 Adapter와 ID가 맞지 않으면 fail-closed한다.
+- Bootstrap은 전역 훅을 설치하기 전에 같은 package/build의 배포 artifact에 포함된 정적 Adapter
+  capability manifest를 읽는다. 이 manifest는 build 시 생성한 JSON이며, 실행 가능한 JavaScript
+  module의 export가 아니다. 조회 과정은 module import·evaluation 없이 파일을 읽고 검증하는 전용
+  reader만 사용한다. manifest는 Adapter ID, protocol, 지원하는 interaction schema version 집합만
+  담으며, package/build·protocol·version 검증과 훅 설치 전에 Adapter 코드나 사용자 코드를 실행하거나
+  외부 호출을 해서는 안 된다. manifest가 없거나 중복되거나 활성 Adapter와 ID가 맞지 않으면
+  fail-closed한다.
 - capability discovery 뒤 한 번 핸드셰이크한다. bearer token은 이 요청도 `Authorization` 헤더로만
   인증하며 JSON wire payload와 로그에는 싣지 않는다. payload에는 Coordinator wire schema version,
   아래 package/build identity, Adapter별 `ID + protocol + 지원 version 집합`, 부모가 요청한
@@ -199,9 +202,13 @@ Session Store 계약의 첫 구현은 Node 20에서 동작하는 인메모리 St
 영속 Store의 경로와 마이그레이션 정책도 그 후속 결정에서 고정한다.
 
 부모는 Store 쓰기 직전과 화면·리포트·번들·로그·오류 메시지로 내보내기 직전에 최신 노출 마스킹을
-강제한다. 조회 중 추가 마스킹이 필요해도 반환값만 안전하게 만들고 Store 원본을 되쓰지 않는다.
-저장본 변경은 사용자가 명시적으로 실행하는 세션 재마스킹 명령에서만 허용하며, 그 명령의 이름과
-백업·실패 정책은 세션 관리 CLI 결정에서 정한다.
+강제한다. Store에는 자식 Adapter가 최신 노출 마스킹을 적용해 보낸 interaction만 저장하며 원문은
+저장하지 않는다. 세션 version으로 만든 canonical matching 데이터는 그보다 먼저 matchKey 계산에만
+쓰고, 저장 outcome을 다시 matchKey 입력으로 사용하지 않는다. Replay는 의도적으로 이 마스킹된
+저장 outcome을 복원하며 원문 복원을 보장하지 않는다는 제한은 ADR-0053을 따른다. 조회 중 최신 목록에
+따른 추가 마스킹이 필요해도 반환값만 안전하게 만들고 Store 원본을 되쓰지 않는다. 저장본 변경은
+사용자가 명시적으로 실행하는 세션 재마스킹 명령에서만 허용하며, 그 명령의 이름과 백업·실패 정책은
+세션 관리 CLI 결정에서 정한다.
 
 ## 이유
 

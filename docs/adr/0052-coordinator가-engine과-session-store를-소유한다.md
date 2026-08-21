@@ -106,11 +106,19 @@ Coordinator 통신은 다음 조건을 가진 내부 HTTP JSON 프로토콜로 �
 - 기본 요청 타임아웃은 5초이고 설정 가능한 범위는 1~60초다. 타임아웃은 실제 호출 fallback이
   아니라 명시적 실패다.
 - Coordinator 연결 실패, 인증 실패, 알 수 없는 schema version은 fail-closed다.
-- Bootstrap은 Adapter 설치 전에 한 번 핸드셰이크한다. 핸드셰이크에는 bearer token,
-  Coordinator wire schema version, 패키지 version 또는 build ID, 그리고 Adapter ID별로 지원하는
-  interaction schema version 집합을 싣는다. 활성 Adapter마다 정확히 하나의 version을 합의하며,
-  package/build가 다르거나 어느 Adapter라도 version을 합의하지 못하면 실제 외부 호출 전에
-  실패한다.
+- Bootstrap은 전역 훅을 설치하기 전에 같은 package/build에 포함된 부작용 없는 Adapter capability
+  descriptor를 읽는다. descriptor 조회는 Adapter ID, protocol, 지원하는 interaction schema version
+  집합만 반환하며 전역 API 변경, 사용자 코드 실행, 외부 호출을 해서는 안 된다. descriptor가 없거나
+  중복되거나 활성 Adapter와 ID가 맞지 않으면 fail-closed한다.
+- capability discovery 뒤 한 번 핸드셰이크한다. 핸드셰이크에는 bearer token, Coordinator wire
+  schema version, 패키지 version 또는 build ID, Adapter ID별 지원 version 집합과 부모가 요청한
+  `interactionSchemaVersions`를 싣는다. 이 map은 Record에서 새 session에 사용할 version 또는
+  Replay source session에 저장된 version을 나타내는 선택값이지 capability 집합을 대신하지 않는다.
+  Coordinator는 부모·자식 capability와 선택값을 대조해 활성 Adapter마다 정확히 하나의 version을
+  합의한다.
+- package/build 검증과 version 합의가 모두 성공한 뒤에만 Bootstrap이 활성 Adapter 훅을 설치한다.
+  discovery, package/build 검증, version 합의 중 하나라도 실패하면 사용자 코드와 실제 외부 호출이
+  시작되기 전에 fail-closed한다.
 - 핸드셰이크 뒤에도 모든 `begin`·`complete`·`lookup` 요청에 Adapter ID, Coordinator wire schema
   version, 그 Adapter에 합의된 interaction schema version을 싣는다. Coordinator는 Adapter ID로
   합의 결과를 조회해 두 version을 함께 검증한다. 세션에 저장되는 것은 Adapter별 interaction
@@ -153,9 +161,12 @@ Coordinator는 source session에서 저장 결과를 조회해 반환한다. hit
 프로세스 fail-closed 판정을 위해 남기며, 비밀값이나 session 식별자를 포함하지 않는다.
 
 `NODE_OPTIONS` 병합 대상은 호출자가 자식 `env`에 명시한 값뿐이다. 부모 Codex/CLI 프로세스의
-`process.env.NODE_OPTIONS`를 암묵적으로 상속하지 않는다. `--import` 대상은 Windows 절대경로
-문자열이 아니라 `file://` URL로 만들며, 호출자가 준 옵션 뒤에 Bootstrap URL을 병합한다. 훅과
-Coordinator Client는 MCP stdio의 stdout에 아무것도 쓰지 않는다.
+`process.env.NODE_OPTIONS`를 암묵적으로 상속하지 않는다. 호출자 값을 Node 옵션 단위로 파싱해
+실행 코드를 선적재할 수 있는 `--require`·`-r`·`--import`·`--loader`·`--experimental-loader`와 각
+`=` 형식이 있으면 조용히 제거하지 않고 자식 실행 전에 지원 오류로 거부한다. 그래야 호출자 코드보다
+Bootstrap이 항상 먼저 실행된다. `--import` 대상은 Windows 절대경로 문자열이 아니라 `file://` URL로
+만들고, 허용된 나머지 호출자 옵션 뒤에 Bootstrap URL을 병합한다. 훅과 Coordinator Client는 MCP
+stdio의 stdout에 아무것도 쓰지 않는다.
 
 MCP 서버가 Node 손자 프로세스를 만들면 `NODE_OPTIONS`의 Bootstrap import와 `bootstrapGuard`는
 상속될 수 있지만, Coordinator 설정 env는 이미 부모 자식의 Bootstrap에서 제거됐다. 이때

@@ -41,7 +41,7 @@
 | [0027](./0027-isError-진단의-서버-응답-본문.md) | `isError` 진단이 서버 응답 본문을 함께 싣는다 | runner, cli | 채택 |
 | [0028](./0028-replay-서브커맨드의-서버-없는-실행.md) | `replay` 는 서버를 띄우지 않고, 더미 클라이언트는 `cli` 가 만든다 | cli, record | 제안 |
 | [0029](./0029-목-매칭-키-정규화-경계.md) | 매칭 키로 만들 수 없는 인자를 주입 시점에 거부하고, 해시하지 않는다 | mock | 채택 |
-| [0030](./0030-mock-src-상대-import-확장자.md) | `packages/mock/src` 의 상대 import 는 `.ts` 확장자를 쓴다 | mock | 채택 |
+| [0030](./0030-mock-src-상대-import-확장자.md) | `packages/mock/src` 의 상대 import 는 `.ts` 확장자를 쓴다 (ADR-0055 로 대체) | mock | 폐기 |
 | [0031](./0031-repair-번들과-json-분리.md) | repair 번들을 `--json` 보고서와 별도 파일로 만든다 | cli | 채택 |
 | [0032](./0032-미승인-명세에서의-repair-동작.md) | 미승인 명세에서 `repair` 는 차단하지 않고 전제를 바꾼다 | cli, generate | 채택 |
 | [0033](./0033-stderr-외부-전송-경계.md) | stderr 는 치환하지 않고 확인·상한·옵트아웃으로 다룬다 | cli, generate | 채택 |
@@ -66,7 +66,7 @@
 | [0052](./0052-coordinator가-engine과-session-store를-소유한다.md) | 부모 Coordinator가 Record/Replay Engine과 Session Store를 소유한다 | record, cli | 제안 |
 | [0053](./0053-http-외부-요청-매칭과-반복-호출-정책.md) | HTTP 외부 요청은 보수적으로 정규화하고 반복 응답은 순서대로 소비한다 | record | 제안 |
 | [0054](./0054-node-js-최소-지원-버전을-22-18로-올린다.md) | Node.js 최소 지원 버전을 22.18.0으로 올린다 | 릴리스, 전체 | 채택 |
-| [0055](./0055-mock-src-가-저장소-공통-import-관례로-돌아온다.md) | `packages/mock/src` 가 저장소 공통 import 관례로 돌아온다 (ADR-0030 대체) | mock | 제안 |
+| [0055](./0055-mock-src-가-저장소-공통-import-관례로-돌아온다.md) | `packages/mock/src` 가 저장소 공통 import 관례로 돌아온다 (ADR-0030 대체) | mock | 채택 |
 
 **상태** — `채택` 과 `승인` 이 확정된 결정입니다. `제안` 과 `초안` 은 아직 확정되지 않았으므로 이
 결정에 기대어 구현하지 마세요. 값은 각 파일 머리의 `상태` 를 그대로 옮긴 것입니다.

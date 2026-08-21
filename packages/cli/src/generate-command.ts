@@ -249,9 +249,12 @@ function generateTestsFailure(
  * `test-command.ts` 의 `coreError` 와 같은 판별인데, 그쪽은 AggregateError 안까지 내려가고
  * 진단을 함께 꺼낸다. 여기 연결 오류는 core 가 직접 던지므로 겉모양 검사로 충분하다.
  */
-function isCoreClientError(
-  value: unknown,
-): value is { readonly code: string; readonly message: string; readonly hint: string } {
+function isCoreClientError(value: unknown): value is {
+  readonly code: string;
+  readonly message: string;
+  readonly hint: string;
+  readonly diagnostics?: unknown;
+} {
   return (
     typeof value === "object" &&
     value !== null &&
@@ -264,6 +267,18 @@ function isCoreClientError(
     "hint" in value &&
     typeof value.hint === "string"
   );
+}
+
+/** core 의 stdio 프로세스 진단인지 구조로 확인한다. 일부 필드만 있는 객체는 렌더하지 않는다. */
+function processDiagnostics(value: unknown): ProcessDiagnosticsInput | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  if (!("stderr" in value) || typeof value.stderr !== "string") return undefined;
+  if (!("stderrTruncated" in value) || typeof value.stderrTruncated !== "boolean") return undefined;
+  if (!("exitCode" in value) || !(typeof value.exitCode === "number" || value.exitCode === null))
+    return undefined;
+  if (!("signal" in value) || !(typeof value.signal === "string" || value.signal === null))
+    return undefined;
+  return value as ProcessDiagnosticsInput;
 }
 
 /** 커밋에 쓰는 hard link를 출력 디렉터리가 지원하지 않거나 권한이 없는 경우. */
@@ -2024,14 +2039,19 @@ export async function runGenerateCommand(
     // 주입이 없으면 아래 폴백으로 떨어진다. 기존 동작이 그대로 남는다.
     else if (deps.GenerateTestsError !== undefined && error instanceof deps.GenerateTestsError)
       generateTestsFailure(deps, error);
-    else if (isCoreClientError(error))
+    else if (isCoreClientError(error)) {
       // 서버가 spawn 직후 죽거나 handshake 에 실패하면 사용자가 볼 근거는 core 가 만든
-      // code·message 뿐이다. GENERATE_FAILED 로 뭉개면 원인을 알 길이 없다(도그푸딩 실측 —
+      // code·message·diagnostics 다. GENERATE_FAILED 로 뭉개면 원인을 알 길이 없다(도그푸딩 실측 —
       // 존재하지 않는 디렉터리 인자, Python 서버의 import 오류가 전부 같은 한 줄로 보였다).
       deps.writeStderr(
         `오류 [GENERATE_CONNECT_FAILED/${error.code}]: ${error.message}\n해결: ${error.hint}\n`,
       );
-    else
+      const diagnostics = processDiagnostics(error.diagnostics);
+      if (diagnostics !== undefined && hasDiagnosticContent(diagnostics)) {
+        const block = renderProcessDiagnostics(diagnostics, { maxLines: DRY_RUN_STDERR_LINES });
+        if (block !== "") deps.writeStderr(`\n${block}`);
+      }
+    } else
       deps.writeStderr(
         "오류 [GENERATE_FAILED]: baseline suite를 생성하거나 저장하지 못했습니다.\n해결: MCP 서버와 출력 경로를 확인한 뒤 다시 실행하세요.\n",
       );

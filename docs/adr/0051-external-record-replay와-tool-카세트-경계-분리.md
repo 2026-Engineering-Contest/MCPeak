@@ -1,10 +1,10 @@
 # ADR-0051: External Record/Replay와 기존 Tool 카세트의 경계를 분리한다
 
-- 상태: 제안
+- 상태: 채택
 - 날짜: 2026-08-21
 - 담당: record, cli, dashboard
 - 작성자: @ddxng5 (② replay/record 파트)
-- 승인: 미승인
+- 승인: 승인 (2026-08-21, @ddxng5)
 - 참조:
   [ADR-0003](./0003-cassette-matching-key.md),
   [ADR-0028](./0028-replay-서브커맨드의-서버-없는-실행.md)

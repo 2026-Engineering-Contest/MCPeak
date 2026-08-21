@@ -1,12 +1,13 @@
 # ADR-0052: 부모 Coordinator가 Record/Replay Engine과 Session Store를 소유한다
 
-- 상태: 제안
+- 상태: 채택
 - 날짜: 2026-08-21
 - 담당: record, cli
 - 작성자: @ddxng5 (② replay/record 파트)
-- 승인: 미승인
+- 승인: 승인 (2026-08-21, @ddxng5)
 - 선행 결정:
-  [ADR-0051](./0051-external-record-replay와-tool-카세트-경계-분리.md)
+  [ADR-0051](./0051-external-record-replay와-tool-카세트-경계-분리.md),
+  [ADR-0054](./0054-node-js-최소-지원-버전을-22-18로-올린다.md)
 
 ## 배경
 

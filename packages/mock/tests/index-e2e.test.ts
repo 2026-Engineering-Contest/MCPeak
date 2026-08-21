@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import type { ToolDef } from "@mcpeak/core";
+import { connectHttp, type ToolDef, type ToolResult } from "@mcpeak/core";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -11,6 +11,14 @@ const { tools } = JSON.parse(
 
 /** 테스트가 끝나면 열린 서버를 반드시 닫는다 — 안 닫으면 vitest 가 종료되지 않는다. */
 const opened: MockServer[] = [];
+/**
+ * 테스트가 close 를 빠뜨려도 남은 연결을 정리한다. 안 닫으면 vitest 가 종료되지 않는다.
+ *
+ * 실패를 삼키지 않는다. 이미 닫힌 연결을 다시 닫아도 core 는 던지지 않으므로 가릴 이유가
+ * 없고, teardown 이 조용히 실패하면 연결 누수를 아무도 못 본다. 다만 하나가 실패해도
+ * 나머지 정리는 끝까지 시도한다 — afterEach 참조.
+ */
+const openedClients: Array<{ close(): Promise<void> }> = [];
 
 async function start(): Promise<MockServer> {
   const server = await createMockServer({ tools });
@@ -18,9 +26,46 @@ async function start(): Promise<MockServer> {
   return server;
 }
 
-async function connect(server: MockServer): Promise<Client> {
+/**
+ * HTTP 목에 **우리 클라이언트**(`core.connectHttp`)로 붙는다.
+ *
+ * 전에는 벤더 SDK 의 `Client` 로 직접 붙었다. 그러면 `core` 의 HTTP 경로가 깨져도 이 파일은
+ * 초록이라, 두 진입점 중 stdio 쪽에서만 "우리 도구로 우리를 검증한다"(CLAUDE.md)가
+ * 성립했다. stdio 목 테스트는 이미 `core.connect()` 를 쓴다.
+ *
+ * 반환 모양은 벤더 `Client` 의 것을 유지한다 — 호출부 36곳을 바꾸지 않기 위해서다.
+ * 인자 모양만 옮기고 실제 요청은 전부 `core` 를 지난다.
+ */
+async function connect(server: MockServer) {
+  const conn = await connectHttp({ url: server.url });
+  openedClients.push(conn);
+  return {
+    callTool: (req: { name: string; arguments?: unknown }): Promise<ToolResult> =>
+      conn.client.callTool(req.name, req.arguments),
+    listTools: async (): Promise<{ tools: ToolDef[] }> => ({
+      tools: [...(await conn.client.listTools())],
+    }),
+    close: () => conn.close(),
+  };
+}
+
+/**
+ * 벤더 SDK 로 직접 붙는다. **인자를 보내기 전에 검증하지 않는 클라이언트**가 필요한
+ * 테스트 전용이다.
+ *
+ * `core` 는 `assertToolArguments` 로 깊이 100 단계를 넘는 인자를 보내기 전에 거절한다
+ * (`packages/core/src/client.ts:5`, `MAX_JSON_DEPTH = 100`). 목의 상한은 512 라
+ * (ADR-0029), 목이 자기 상한을 어떻게 방어하는지는 우리 클라이언트로 **도달할 수 없다.**
+ * 실제 사용자 중에는 그런 검증을 안 하는 클라이언트도 있으므로 그 경로를 계속 검증한다.
+ *
+ * 그 외 테스트는 전부 `connect()` — 즉 `core.connectHttp` 를 쓴다.
+ */
+async function rawConnect(server: MockServer): Promise<Client> {
   const client = new Client({ name: "test", version: "0.0.0" });
   await client.connect(new StreamableHTTPClientTransport(new URL(server.url)));
+  // connect() 와 같이 등록한다. 중간 단언이 실패하면 테스트의 close() 줄에 도달하지
+  // 못하므로, 등록하지 않으면 그 연결이 남아 vitest 가 종료되지 않는다.
+  openedClients.push(client);
   return client;
 }
 
@@ -36,7 +81,16 @@ function text(result: unknown): string {
 }
 
 afterEach(async () => {
-  await Promise.all(opened.splice(0).map((s) => s.close()));
+  // Promise.all 은 첫 실패에서 끊긴다. 클라이언트 하나가 못 닫히면 남은 클라이언트도,
+  // 그 아래 서버 정리도 통째로 건너뛰어 리소스가 남는다. 전부 시도한 뒤 실패를 모아 낸다.
+  const results = [
+    ...(await Promise.allSettled(openedClients.splice(0).map((c) => c.close()))),
+    ...(await Promise.allSettled(opened.splice(0).map((s) => s.close()))),
+  ];
+  const failures = results.filter((r) => r.status === "rejected").map((r) => r.reason);
+  if (failures.length > 0) {
+    throw new AggregateError(failures, `정리 중 ${failures.length}건이 실패했습니다.`);
+  }
 });
 
 describe("@mcpeak/mock", () => {
@@ -133,8 +187,7 @@ describe("@mcpeak/mock", () => {
     const { url } = server;
     await server.close();
 
-    const client = new Client({ name: "test", version: "0.0.0" });
-    await expect(client.connect(new StreamableHTTPClientTransport(new URL(url)))).rejects.toThrow();
+    await expect(connectHttp({ url })).rejects.toThrow();
   });
 
   it("키로 만들 수 없는 인자를 주입하면 진입점과 위치를 알려준다", async () => {
@@ -189,7 +242,7 @@ describe("@mcpeak/mock", () => {
   it("너무 깊은 호출 인자는 서버를 죽이지 않고 오류 응답이 된다", async () => {
     const server = await start();
     server.on("add", { a: 1, b: 2 }, { sum: 3 });
-    const client = await connect(server);
+    const client = await rawConnect(server);
 
     // 루트가 깊이 0. 상한을 넘기려면 상한 + 2 단계가 필요하다.
     let deep: unknown = null;
@@ -215,7 +268,7 @@ describe("@mcpeak/mock", () => {
   it("깊은 배열 사슬도 같은 오류 응답이 된다", async () => {
     const server = await start();
     server.on("add", { a: 1, b: 2 }, { sum: 3 });
-    const client = await connect(server);
+    const client = await rawConnect(server);
 
     // 객체가 아니라 배열로 사슬을 만든다. stableKey 의 배열 분기가 map 콜백에
     // 인덱스를 depth 로 흘리면 가드가 안 걸리고 스택이 터진다 — 그 회귀를 잡는다.

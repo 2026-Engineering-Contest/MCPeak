@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   isAbnormalExit,
   type ProcessDiagnosticsInput,
+  processDiagnostics,
   renderProcessDiagnostics,
 } from "../src/process-diagnostics.js";
 
@@ -19,6 +20,35 @@ const bodyLines = (rendered: string): readonly string[] => rendered.split("\n").
 
 const manyLines = (count: number): string =>
   `${Array.from({ length: count }, (_, index) => `line${index + 1}`).join("\n")}\n`;
+
+describe("processDiagnostics", () => {
+  const valid = { stderr: "", stderrTruncated: false, exitCode: 0, signal: null };
+
+  it("모든 필드가 유효하면 같은 진단 객체를 반환한다", () => {
+    expect(processDiagnostics(valid)).toBe(valid);
+    expect(processDiagnostics({ ...valid, exitCode: null, signal: "SIGSEGV" })).toEqual({
+      ...valid,
+      exitCode: null,
+      signal: "SIGSEGV",
+    });
+  });
+
+  it.each([
+    ["undefined", undefined],
+    ["null", null],
+    ["필드 누락", { stderr: "", stderrTruncated: false, exitCode: 0 }],
+    ["undefined 필드", { ...valid, signal: undefined }],
+    ["잘못된 stderr 타입", { ...valid, stderr: 1 }],
+    ["잘못된 잘림 타입", { ...valid, stderrTruncated: "false" }],
+    ["NaN 종료 코드", { ...valid, exitCode: Number.NaN }],
+    ["무한 종료 코드", { ...valid, exitCode: Number.POSITIVE_INFINITY }],
+    ["소수 종료 코드", { ...valid, exitCode: 1.5 }],
+    ["빈 시그널", { ...valid, signal: "" }],
+    ["잘못된 시그널 타입", { ...valid, signal: 15 }],
+  ])("%s은 진단으로 받아들이지 않는다", (_name, value) => {
+    expect(processDiagnostics(value)).toBeUndefined();
+  });
+});
 
 describe("isAbnormalExit", () => {
   it("signal 이 있으면 참이다", () => {

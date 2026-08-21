@@ -45,7 +45,11 @@ import { repairInputs } from "./input-repair.js";
 import type { UnknownFormatSkip } from "./pre-fill-wiring.js";
 import { applyPreFill, dropSkippedTools, unknownFormatSkips } from "./pre-fill-wiring.js";
 import type { ProcessDiagnosticsInput } from "./process-diagnostics.js";
-import { hasDiagnosticContent, renderProcessDiagnostics } from "./process-diagnostics.js";
+import {
+  hasDiagnosticContent,
+  processDiagnostics,
+  renderProcessDiagnostics,
+} from "./process-diagnostics.js";
 import { proposeRepair } from "./repair-proposal.js";
 import { escapeTerminalText } from "./repair-render.js";
 import type { RepairAttempt } from "./repair-target.js";
@@ -267,18 +271,6 @@ function isCoreClientError(value: unknown): value is {
     "hint" in value &&
     typeof value.hint === "string"
   );
-}
-
-/** core 의 stdio 프로세스 진단인지 구조로 확인한다. 일부 필드만 있는 객체는 렌더하지 않는다. */
-function processDiagnostics(value: unknown): ProcessDiagnosticsInput | undefined {
-  if (typeof value !== "object" || value === null) return undefined;
-  if (!("stderr" in value) || typeof value.stderr !== "string") return undefined;
-  if (!("stderrTruncated" in value) || typeof value.stderrTruncated !== "boolean") return undefined;
-  if (!("exitCode" in value) || !(typeof value.exitCode === "number" || value.exitCode === null))
-    return undefined;
-  if (!("signal" in value) || !(typeof value.signal === "string" || value.signal === null))
-    return undefined;
-  return value as ProcessDiagnosticsInput;
 }
 
 /** 커밋에 쓰는 hard link를 출력 디렉터리가 지원하지 않거나 권한이 없는 경우. */

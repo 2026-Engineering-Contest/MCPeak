@@ -16,6 +16,30 @@ export interface RenderProcessDiagnosticsOptions {
   readonly maxLines: number;
 }
 
+/**
+ * core 의 stdio 프로세스 진단인지 구조와 값의 범위로 확인한다.
+ * 일부 필드만 있거나 프로세스 상태로 표현할 수 없는 값은 렌더하지 않는다.
+ */
+export function processDiagnostics(value: unknown): ProcessDiagnosticsInput | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  if (!("stderr" in value) || typeof value.stderr !== "string") return undefined;
+  if (!("stderrTruncated" in value) || typeof value.stderrTruncated !== "boolean") return undefined;
+  if (
+    !("exitCode" in value) ||
+    !(
+      value.exitCode === null ||
+      (typeof value.exitCode === "number" && Number.isInteger(value.exitCode))
+    )
+  )
+    return undefined;
+  if (
+    !("signal" in value) ||
+    !(value.signal === null || (typeof value.signal === "string" && value.signal.length > 0))
+  )
+    return undefined;
+  return value as ProcessDiagnosticsInput;
+}
+
 /** TAB. 이 모듈만 이스케이프 대상에서 빼는 문자다. 아래 escapeTokens 주석에 근거가 있다. */
 const TAB = 0x09;
 

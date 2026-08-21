@@ -245,8 +245,9 @@ H1·H2의 외부 호출 0회 보장은 계측된 주 MCP 서버 프로세스의 
 Session Store 계약의 첫 구현은 Node 20에서 동작하는 인메모리 Store로 한다. 이 구현으로 실제 MCP
 서버를 Record와 Replay에서 모두 실행하고, 지원하는 주 프로세스의 Node 내장 `fetch`가 Replay에서
 외부 endpoint를 0회 호출함을 먼저 검증한다. SQLite 영속 Store는 같은 계약의 후속 구현이며,
-`node:sqlite` 채택과 최소 Node 상향은 저장소 전체에 영향을 주는 별도 런타임 ADR과 이슈 #228에서
-결정한다. 이 ADR은 특정 저장 매체나 Node 상향을 Coordinator 구조의 선행 조건으로 만들지 않는다.
+`node:sqlite` 채택과 최소 Node 상향은 저장소 전체에 영향을 주는
+[ADR-0054](./0054-node-js-최소-지원-버전을-22-18로-올린다.md)와 이슈 #228에서 결정한다. 이 ADR은
+특정 저장 매체나 Node 상향을 Coordinator 구조의 선행 조건으로 만들지 않는다.
 영속 Store의 경로와 마이그레이션 정책도 그 후속 결정에서 고정한다.
 
 부모는 Store 쓰기 직전과 화면·리포트·번들·로그·오류 메시지로 내보내기 직전에 최신 노출 마스킹을

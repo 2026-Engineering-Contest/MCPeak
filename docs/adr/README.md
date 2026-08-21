@@ -65,6 +65,7 @@
 | [0051](./0051-external-record-replay와-tool-카세트-경계-분리.md) | External Record/Replay와 기존 Tool 카세트의 경계를 분리한다 | record, cli, dashboard | 제안 |
 | [0052](./0052-coordinator가-engine과-session-store를-소유한다.md) | 부모 Coordinator가 Record/Replay Engine과 Session Store를 소유한다 | record, cli | 제안 |
 | [0053](./0053-http-외부-요청-매칭과-반복-호출-정책.md) | HTTP 외부 요청은 보수적으로 정규화하고 반복 응답은 순서대로 소비한다 | record | 제안 |
+| [0054](./0054-node-js-최소-지원-버전을-22-18로-올린다.md) | Node.js 최소 지원 버전을 22.18.0으로 올린다 | 릴리스, 전체 | 채택 |
 
 **상태** — `채택` 과 `승인` 이 확정된 결정입니다. `제안` 과 `초안` 은 아직 확정되지 않았으므로 이
 결정에 기대어 구현하지 마세요. 값은 각 파일 머리의 `상태` 를 그대로 옮긴 것입니다.

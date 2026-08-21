@@ -18,7 +18,7 @@ MCP 테스트 프레임워크의 pnpm 모노레포 **뼈대만** 만들어줘. 5
 
 ### 기술 스택
 
-- TypeScript (strict), ESM, Node 20/22/24 지원
+- TypeScript (strict), ESM, Node 22.18 이상 지원
 - pnpm workspace + catalog
 - Turborepo (빌드·테스트 태스크 오케스트레이션)
 - Vitest (테스트)
@@ -116,7 +116,7 @@ PR과 main 푸시에서 실행:
 3. `pnpm typecheck`
 4. `pnpm test`
 5. `pnpm build`
-- Node 20 / 22 / 24 매트릭스
+- Node 22.18.0 / 24 매트릭스
 - changeset 없는 기능 PR에 경고를 남기는 스텝 추가
 
 ### release.yml

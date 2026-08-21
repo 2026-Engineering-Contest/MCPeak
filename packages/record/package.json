@@ -5,6 +5,9 @@
   "type": "module",
   "description": "녹화 · 재생",
   "license": "MIT",
+  "engines": {
+    "node": ">=22.18.0"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/2026-Engineering-Contest/MCPeak.git",

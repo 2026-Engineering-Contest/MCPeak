@@ -5,6 +5,9 @@
   "type": "module",
   "description": "선언형 MCP 테스트 실행 · assertion · 구조화된 리포트",
   "license": "MIT",
+  "engines": {
+    "node": ">=22.18.0"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/2026-Engineering-Contest/MCPeak.git",

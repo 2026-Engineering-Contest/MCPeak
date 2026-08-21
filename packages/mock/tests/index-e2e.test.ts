@@ -15,7 +15,8 @@ const opened: MockServer[] = [];
  * 테스트가 close 를 빠뜨려도 남은 연결을 정리한다. 안 닫으면 vitest 가 종료되지 않는다.
  *
  * 실패를 삼키지 않는다. 이미 닫힌 연결을 다시 닫아도 core 는 던지지 않으므로 가릴 이유가
- * 없고, teardown 이 조용히 실패하면 연결 누수를 아무도 못 본다.
+ * 없고, teardown 이 조용히 실패하면 연결 누수를 아무도 못 본다. 다만 하나가 실패해도
+ * 나머지 정리는 끝까지 시도한다 — afterEach 참조.
  */
 const openedClients: Array<{ close(): Promise<void> }> = [];
 
@@ -62,6 +63,9 @@ async function connect(server: MockServer) {
 async function rawConnect(server: MockServer): Promise<Client> {
   const client = new Client({ name: "test", version: "0.0.0" });
   await client.connect(new StreamableHTTPClientTransport(new URL(server.url)));
+  // connect() 와 같이 등록한다. 중간 단언이 실패하면 테스트의 close() 줄에 도달하지
+  // 못하므로, 등록하지 않으면 그 연결이 남아 vitest 가 종료되지 않는다.
+  openedClients.push(client);
   return client;
 }
 
@@ -77,8 +81,16 @@ function text(result: unknown): string {
 }
 
 afterEach(async () => {
-  await Promise.all(openedClients.splice(0).map((c) => c.close()));
-  await Promise.all(opened.splice(0).map((s) => s.close()));
+  // Promise.all 은 첫 실패에서 끊긴다. 클라이언트 하나가 못 닫히면 남은 클라이언트도,
+  // 그 아래 서버 정리도 통째로 건너뛰어 리소스가 남는다. 전부 시도한 뒤 실패를 모아 낸다.
+  const results = [
+    ...(await Promise.allSettled(openedClients.splice(0).map((c) => c.close()))),
+    ...(await Promise.allSettled(opened.splice(0).map((s) => s.close()))),
+  ];
+  const failures = results.filter((r) => r.status === "rejected").map((r) => r.reason);
+  if (failures.length > 0) {
+    throw new AggregateError(failures, `정리 중 ${failures.length}건이 실패했습니다.`);
+  }
 });
 
 describe("@mcpeak/mock", () => {

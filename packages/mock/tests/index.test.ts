@@ -380,6 +380,9 @@ describe("@mcpeak/mock — inputSchema 검사", () => {
     const client = await connect(await startWith());
     const result = await client.callTool({ name: "get_weather", arguments: { city: 0 } });
 
+    // 문장과 isError 는 계약의 양쪽이다. runner 는 isError 로 거절 여부를 먼저 가르고
+    // 그 다음 문장으로 근거를 판별한다. 하나만 검사하면 나머지 절반이 조용히 깨진다.
+    expect(result.isError).toBe(true);
     const lines = text(result).split("\n");
     expect(lines.slice(-2)).toEqual([...REJECTION_CONTRACT]);
     await client.close();
@@ -392,6 +395,7 @@ describe("@mcpeak/mock — inputSchema 검사", () => {
       arguments: { unit: "k", days: 0 },
     });
 
+    expect(result.isError).toBe(true);
     const lines = text(result).split("\n");
     expect(lines.slice(-2)).toEqual([...REJECTION_CONTRACT]);
     // 위반 줄마다 붙으면 읽을 수 없다. 전체에서 각각 정확히 한 번이다.

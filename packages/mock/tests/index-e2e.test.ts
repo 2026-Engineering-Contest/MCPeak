@@ -11,7 +11,12 @@ const { tools } = JSON.parse(
 
 /** 테스트가 끝나면 열린 서버를 반드시 닫는다 — 안 닫으면 vitest 가 종료되지 않는다. */
 const opened: MockServer[] = [];
-/** 테스트가 close 를 빠뜨려도 남은 연결을 정리한다. 안 닫으면 vitest 가 종료되지 않는다. */
+/**
+ * 테스트가 close 를 빠뜨려도 남은 연결을 정리한다. 안 닫으면 vitest 가 종료되지 않는다.
+ *
+ * 실패를 삼키지 않는다. 이미 닫힌 연결을 다시 닫아도 core 는 던지지 않으므로 가릴 이유가
+ * 없고, teardown 이 조용히 실패하면 연결 누수를 아무도 못 본다.
+ */
 const openedClients: Array<{ close(): Promise<void> }> = [];
 
 async function start(): Promise<MockServer> {
@@ -72,7 +77,7 @@ function text(result: unknown): string {
 }
 
 afterEach(async () => {
-  await Promise.all(openedClients.splice(0).map((c) => c.close().catch(() => {})));
+  await Promise.all(openedClients.splice(0).map((c) => c.close()));
   await Promise.all(opened.splice(0).map((s) => s.close()));
 });
 

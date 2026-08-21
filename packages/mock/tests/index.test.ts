@@ -359,6 +359,67 @@ describe("@mcpeak/mock — inputSchema 검사", () => {
     await client.close();
   });
 
+  /**
+   * 이 두 줄은 **runner 와의 계약**이다. 목의 거절이 스키마 근거로 나온 것인지를
+   * `runner` 의 `classifyRejectionBasis` 가 판별할 때 쓰는 지문이 이것이고
+   * (#221), 단방향 의존(cli → runner/generate/record/mock → core) 때문에 runner 는
+   * `@mcpeak/mock` 을 import 할 수 없어 문장을 자기 쪽에 하드코딩할 수밖에 없다.
+   *
+   * 그래서 드리프트를 잡을 수 있는 자리가 여기뿐이다. **부분 일치로 걸면 안 된다** —
+   * 뒤에 줄이 붙거나 조사가 바뀌어도 통과해서, 목은 초록인데 runner 만 조용히
+   * `unverified` 로 되돌아간다. 완전 일치로 건다.
+   *
+   * 이 테스트가 깨지면 문장을 되돌리거나, runner 오너와 함께 양쪽을 같이 바꾼다.
+   */
+  const REJECTION_CONTRACT = [
+    "→ 이 툴이 tools/list 로 선언한 inputSchema 가 그렇게 요구합니다.",
+    "→ 거절이 의도한 것이면 responses 에 이 인자를 넣어 응답을 지정하세요.",
+  ] as const;
+
+  it("스키마 위반 거절문의 끝 두 줄이 runner 와의 계약대로다", async () => {
+    const client = await connect(await startWith());
+    const result = await client.callTool({ name: "get_weather", arguments: { city: 0 } });
+
+    const lines = text(result).split("\n");
+    expect(lines.slice(-2)).toEqual([...REJECTION_CONTRACT]);
+    await client.close();
+  });
+
+  it("위반이 여럿이어도 계약 두 줄은 끝에 한 번만 붙는다", async () => {
+    const client = await connect(await startWith());
+    const result = await client.callTool({
+      name: "get_weather",
+      arguments: { unit: "k", days: 0 },
+    });
+
+    const lines = text(result).split("\n");
+    expect(lines.slice(-2)).toEqual([...REJECTION_CONTRACT]);
+    // 위반 줄마다 붙으면 읽을 수 없다. 전체에서 각각 정확히 한 번이다.
+    for (const line of REJECTION_CONTRACT) expect(lines.filter((l) => l === line)).toHaveLength(1);
+    await client.close();
+  });
+
+  /**
+   * 매칭 미스는 스키마 근거 거절이 **아니다**. 둘 다 `isError: true` 라 본문으로만
+   * 구분되므로, 미스 진단문에 계약 두 줄이 새면 runner 가 "서버가 스키마 근거로
+   * 거절했다" 로 잘못 읽는다. ADR-0048 이 없애려던 "우연히 통과" 가 초록으로 숨는다.
+   */
+  it("매칭 미스 진단문에는 계약 두 줄이 섞이지 않는다", async () => {
+    const server = await startWith();
+    server.on("get_weather", { city: "서울" }, { temp: 21 });
+    const client = await connect(server);
+
+    const result = await client.callTool({
+      name: "get_weather",
+      arguments: { city: "부산" },
+    });
+
+    expect(result.isError).toBe(true);
+    expect(text(result)).toContain("주입된 응답이 없습니다");
+    for (const line of REJECTION_CONTRACT) expect(text(result)).not.toContain(line);
+    await client.close();
+  });
+
   it("위반이 여럿이면 전부 내고 안내 줄은 한 번만 붙는다", async () => {
     const client = await connect(await startWith());
     const result = await client.callTool({

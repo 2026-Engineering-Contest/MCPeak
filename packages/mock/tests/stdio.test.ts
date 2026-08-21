@@ -39,7 +39,7 @@ const TOOLS: ToolDef[] = [
 const entry = fileURLToPath(new URL("./fixtures/stdio-entry.mjs", import.meta.url));
 /**
  * `src/` 는 저장소 관례대로 ".js" 로 형제 모듈을 부르는데 Node 의 ESM 리졸버는 그것을
- * ".ts" 로 매핑하지 않는다. 이 훅이 그 한 칸을 메운다 (ADR-0054). 빠뜨리면 자식이
+ * ".ts" 로 매핑하지 않는다. 이 훅이 그 한 칸을 메운다 (ADR-0055). 빠뜨리면 자식이
  * ERR_MODULE_NOT_FOUND 로 즉시 죽는다.
  */
 const tsResolve = fileURLToPath(new URL("./fixtures/register-ts-resolve.mjs", import.meta.url));

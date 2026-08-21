@@ -120,8 +120,10 @@ Coordinator 통신은 다음 조건을 가진 내부 HTTP JSON 프로토콜로 �
   source session에 저장된 version을 나타내는 선택값이지 capability 집합을 대신하지 않는다.
 - Coordinator는 부모와 자식의 Adapter capability를 `ID + protocol + 지원 version 집합` 단위로
   대조한다. protocol은 빠짐없이 exact match해야 하고 부모가 지원하는 값이어야 한다. protocol이
-  없거나 서로 다르거나 지원되지 않으면 version이 겹치더라도 합의하지 않는다. 그 뒤 선택값이 양쪽
-  지원 집합에 있는지 확인해 활성 Adapter마다 정확히 하나의 version을 합의한다.
+  없거나 서로 다르거나 지원되지 않으면 version이 겹치더라도 합의하지 않는다. 지원 version은 중복
+  없는 양의 safe integer 집합이며, 오름차순으로 정규화한 부모·자식 집합이 exact match해야 한다.
+  일부 교집합만으로 합의하지 않는다. Record는 일치한 집합의 가장 큰 version을 선택하고 Replay는
+  source session에 저장된 version만 선택한다. 선택값이 일치한 집합에 없으면 합의하지 않는다.
 - package/build identity의 wire 형식은 `{ packageName, kind, value }`로 고정하며 `kind`는
   `packageVersion` 또는 `buildId`다. Coordinator의 기대값은 부모 package/build에 내장된 metadata에서,
   Bootstrap 값은 자식 package/build에 내장된 metadata에서 읽고 사용자 설정으로 덮어쓰지 않는다.
@@ -140,11 +142,40 @@ Coordinator 통신은 다음 조건을 가진 내부 HTTP JSON 프로토콜로 �
   통신한다. 방어 심층 재검사에서 불일치가 발견되면 사용자 설정이 아니라 패키지 구성 또는 구현
   오류라고 진단하며 token과 사용자 값은 싣지 않는다.
 
+Coordinator 전용 실패는 Core의 MCP transport/lifecycle `McpClientError`와 섞지 않고
+`ExternalCoordinatorError` envelope의 고정 `code`와 `phase`로 전달한다. `phase`는 `bootstrap`,
+`discovery`, `handshake`, `request` 중 실제로 실패한 단계다.
+
+| code | phase | 의미 |
+| --- | --- | --- |
+| `NESTED_NODE_PROCESS_UNSUPPORTED` | `bootstrap` | 지원하지 않는 상속 Node 손자 프로세스 |
+| `EXTERNAL_MANIFEST_INVALID` | `discovery` | capability manifest 누락·형식 오류·중복·Adapter ID 불일치 |
+| `EXTERNAL_PACKAGE_IDENTITY_MISMATCH` | `handshake` | package/build identity 누락·형식·종류·값 불일치 |
+| `EXTERNAL_PROTOCOL_UNSUPPORTED` | `handshake` | protocol 누락·불일치·미지원 |
+| `EXTERNAL_INTERACTION_SCHEMA_UNSUPPORTED` | `handshake` | 지원 version 집합 불일치 또는 선택 version 미지원 |
+| `COORDINATOR_UNAVAILABLE` | `handshake` 또는 `request` | loopback 연결 실패 |
+| `COORDINATOR_AUTH_FAILED` | `handshake` 또는 `request` | 인증 누락·실패 |
+| `COORDINATOR_WIRE_SCHEMA_UNSUPPORTED` | `handshake` 또는 `request` | wire schema version 미지원 |
+| `COORDINATOR_TIMEOUT` | `handshake` 또는 `request` | 정해진 시간 안에 응답을 받지 못함 |
+| `EXTERNAL_REDACTION_FAILED` | `request` | 최신 노출 마스킹을 안전하게 완료하지 못함 |
+| `EXTERNAL_SERIALIZATION_FAILED` | `request` | 마스킹된 payload를 안전하게 직렬화하지 못함 |
+
+메시지는 code별 MCPeak 고정 문장을 사용한다. 진단에는 phase와 필요한 Adapter ID·protocol·schema
+version·package/build identity의 `kind`만 허용한다. token, identity의 `value`, 요청·응답·사용자 값,
+런타임이 만든 자유 텍스트는 싣지 않는다. 위 실패는 모두 실제 외부 호출 fallback 없이 fail-closed한다.
+
 Record에서는 Adapter가 요청을 정규화한 직후 Coordinator에 `begin`을 보내 interaction ID와
 occurrence를 먼저 예약한다. 예약이 성공한 뒤에만 실제 외부 호출을 수행하고, 반환값 또는 예외를
 encode해 `complete`로 저장한다. Coordinator의 완료 확인이 끝난 뒤 원래 반환값을 서버 코드에
 돌려주거나 원래 예외를 다시 던진다. 예약·저장 실패를 실행 성공으로 숨기지 않는다. begin 뒤
 자식이 종료된 interaction은 incomplete로 남고 해당 session은 성공한 Replay 원본이 될 수 없다.
+
+H1·H2에서는 `begin`·`complete`·`lookup` timeout을 자동 재시도하지 않는다. 응답이 유실되어 Store
+반영 여부를 알 수 없더라도 현재 실행을 계속하지 않고 session을 `failed`로 끝낸다. `begin`이 이미
+반영됐으면 예약은 incomplete로 남고, `complete`가 이미 반영됐으면 outcome은 남을 수 있지만 failed
+session은 Replay source가 될 수 없다. 따라서 1차 계약에는 request ID나 중복 제거 프로토콜을 넣지
+않는다. 안전한 재시도를 지원할 때 별도 schema version으로 idempotency key와 중복 응답 의미를
+정의한다.
 
 Replay에서는 Adapter가 실제 외부 호출을 수행하기 전에 정규화된 요청을 Coordinator에 보낸다.
 Coordinator는 source session에서 저장 결과를 조회해 반환한다. hit이면 Adapter가 네이티브 값으로
@@ -210,6 +241,13 @@ Session Store 계약의 첫 구현은 Node 20에서 동작하는 인메모리 St
 사용자가 명시적으로 실행하는 세션 재마스킹 명령에서만 허용하며, 그 명령의 이름과 백업·실패 정책은
 세션 관리 CLI 결정에서 정한다.
 
+마스킹이나 안전한 JSON 직렬화가 실패하면 원문 저장·반환으로 fallback하지 않는다. Record는 Store
+쓰기를 중단하고 예약된 interaction을 incomplete로 둔 채 현재 session을 `failed`로 끝낸다. Replay
+읽기·외부 출력에서 실패하면 source Store는 수정하지 않고 현재 Replay session만 `failed`로 끝낸다.
+오류에는 각각 `EXTERNAL_REDACTION_FAILED` 또는 `EXTERNAL_SERIALIZATION_FAILED`와 `request` phase,
+schema version·정규화된 민감 분류만 쓰며, 처리하지 못한 값이나 직렬화 라이브러리의 자유 텍스트는
+넣지 않는다.
+
 ## 이유
 
 Coordinator는 새로운 제품 기능이 아니라 프로세스 사이의 책임 경계다. 실제 외부 요청의 의미는
@@ -246,6 +284,8 @@ Adapter가 알고, 세션과 저장소의 의미는 부모가 안다. Engine과 
   이 명령을 대신해 저장본을 수정하지 않는다.
 - 한 명령이 MCP 서버에 두 번 연결하는 `--determinism` 흐름과 External session의 조합은 H1·H2에서
   허용하지 않는다. 두 실행의 session 수명과 source 선택은 후속 CLI 결정에서 정한다.
-- 복수 Adapter 핸드셰이크와 요청별 Adapter/version 불일치, 상속된 Node 손자의 fail-closed를
-  프로토콜 테스트로 고정한다.
+- 복수 Adapter 핸드셰이크, 지원 version 집합 불일치, 복수 version에서 Record가 가장 큰 값을 고르는
+  경우, Replay source version 고정, 요청별 Adapter/version 불일치, timeout 뒤 무재시도 session 실패,
+  Coordinator 오류의 code·phase, 마스킹·직렬화 실패의 원문 없는 fail-closed, 상속된 Node 손자의
+  fail-closed를 프로토콜 테스트로 고정한다.
 - 이 ADR 번호는 병합 직전에 다시 확인하고 충돌 시 파일명, 제목, 색인 링크를 함께 재번호한다.

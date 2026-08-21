@@ -30,6 +30,7 @@ import {
   hasDiagnosticContent,
   isAbnormalExit,
   type ProcessDiagnosticsInput,
+  processDiagnostics,
   renderProcessDiagnostics,
 } from "./process-diagnostics.js";
 import {
@@ -458,20 +459,7 @@ type CoreError = Readonly<{
   hint: string;
   diagnostics?: ProcessDiagnosticsInput;
 }>;
-/**
- * core 의 McpProcessDiagnostics 인지 구조로 확인한다. core 를 import 하지 않는다.
- * 하나라도 어긋나면 undefined 다. 설계 문서 §4.3.1.
- */
-function processDiagnostics(value: unknown): ProcessDiagnosticsInput | undefined {
-  if (typeof value !== "object" || value === null) return undefined;
-  if (!("stderr" in value) || typeof value.stderr !== "string") return undefined;
-  if (!("stderrTruncated" in value) || typeof value.stderrTruncated !== "boolean") return undefined;
-  if (!("exitCode" in value) || !(typeof value.exitCode === "number" || value.exitCode === null))
-    return undefined;
-  if (!("signal" in value) || !(typeof value.signal === "string" || value.signal === null))
-    return undefined;
-  return value as ProcessDiagnosticsInput;
-}
+/** AggregateError 내부까지 내려가 core 오류와 검증된 프로세스 진단을 꺼낸다. */
 function coreError(error: unknown): CoreError | undefined {
   const seen = new Set<object>();
   const visit = (value: unknown): CoreError | undefined => {

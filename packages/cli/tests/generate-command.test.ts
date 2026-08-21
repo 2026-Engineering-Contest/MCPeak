@@ -501,7 +501,7 @@ describe("runGenerateCommand", () => {
 
   it("연결 실패는 core 오류의 원인을 그대로 보여준다", async () => {
     // 서버가 spawn 직후 죽으면(경로 오류, Python import 실패) 사용자가 볼 근거는 core 가
-    // 만든 code·message 뿐이다. GENERATE_FAILED 로 뭉개면 소스를 읽어야 한다. 도그푸딩 실측.
+    // 만든 code·message·diagnostics 다. GENERATE_FAILED 로 뭉개면 소스를 읽어야 한다.
     const d = deps();
     const stderr: string[] = [];
     d.value.writeStderr = (text) => stderr.push(text);
@@ -510,6 +510,12 @@ describe("runGenerateCommand", () => {
         name: "McpClientError",
         code: "PROCESS_EXITED",
         hint: "명령 경로와 서버 로그를 확인하세요.",
+        diagnostics: {
+          stderr: "목 정의 파일을 읽을 수 없습니다: /없는파일.json\nENOENT\n",
+          stderrTruncated: false,
+          exitCode: 1,
+          signal: null,
+        },
       });
     });
     expect(await runGenerateCommand(argv, d.value)).toBe(1);
@@ -517,7 +523,87 @@ describe("runGenerateCommand", () => {
     expect(output).toContain("GENERATE_CONNECT_FAILED/PROCESS_EXITED");
     expect(output).toContain("요청 완료 전 MCP 서버가 종료되었습니다.");
     expect(output).toContain("명령 경로와 서버 로그를 확인하세요.");
+    expect(output).toContain("\n\n서버 프로세스 진단");
+    expect(output).toContain("종료 코드: 1  시그널: 없음");
+    expect(output).toContain("목 정의 파일을 읽을 수 없습니다: /없는파일.json");
+    expect(output).toContain("ENOENT");
     expect(output).not.toContain("GENERATE_FAILED");
+  });
+
+  it("연결 실패 진단에 내용이 없으면 블록을 붙이지 않는다", async () => {
+    const d = deps();
+    const stderr: string[] = [];
+    d.value.writeStderr = (text) => stderr.push(text);
+    d.value.connect = vi.fn(async () => {
+      throw Object.assign(new Error("MCP 서버 프로세스를 시작하지 못했습니다."), {
+        name: "McpClientError",
+        code: "PROCESS_START_FAILED",
+        hint: "command 실행 권한을 확인하세요.",
+        diagnostics: { stderr: "", stderrTruncated: false, exitCode: null, signal: null },
+      });
+    });
+    expect(await runGenerateCommand(argv, d.value)).toBe(1);
+    const output = stderr.join("");
+    expect(output).toContain("GENERATE_CONNECT_FAILED/PROCESS_START_FAILED");
+    expect(output).not.toContain("서버 프로세스 진단");
+  });
+
+  it("연결 실패 stderr가 21줄이면 마지막 20줄만 보여준다", async () => {
+    const d = deps();
+    const stderr: string[] = [];
+    d.value.writeStderr = (text) => stderr.push(text);
+    d.value.connect = vi.fn(async () => {
+      throw Object.assign(new Error("요청 완료 전 MCP 서버가 종료되었습니다."), {
+        name: "McpClientError",
+        code: "PROCESS_EXITED",
+        hint: "서버 로그를 확인하세요.",
+        diagnostics: {
+          stderr: `${Array.from(
+            { length: 21 },
+            (_, index) => `stderr-line-${String(index + 1).padStart(2, "0")}`,
+          ).join("\n")}\n`,
+          stderrTruncated: false,
+          exitCode: 1,
+          signal: null,
+        },
+      });
+    });
+    expect(await runGenerateCommand(argv, d.value)).toBe(1);
+    const output = stderr.join("");
+    expect(output).toContain("마지막 20줄");
+    expect(output).not.toContain("    stderr-line-01\n");
+    expect(output).toContain("    stderr-line-02\n");
+    expect(output).toContain("    stderr-line-21\n");
+  });
+
+  it.each([
+    [
+      "NaN 종료 코드",
+      { stderr: "boom", stderrTruncated: false, exitCode: Number.NaN, signal: null },
+    ],
+    [
+      "무한 종료 코드",
+      { stderr: "boom", stderrTruncated: false, exitCode: Number.POSITIVE_INFINITY, signal: null },
+    ],
+    ["소수 종료 코드", { stderr: "boom", stderrTruncated: false, exitCode: 1.5, signal: null }],
+    ["빈 시그널", { stderr: "boom", stderrTruncated: false, exitCode: null, signal: "" }],
+  ])("연결 실패의 %s는 진단 블록으로 렌더하지 않는다", async (_name, diagnostics) => {
+    const d = deps();
+    const stderr: string[] = [];
+    d.value.writeStderr = (text) => stderr.push(text);
+    d.value.connect = vi.fn(async () => {
+      throw Object.assign(new Error("MCP 서버 연결에 실패했습니다."), {
+        name: "McpClientError",
+        code: "CONNECT_FAILED",
+        hint: "서버 설정을 확인하세요.",
+        diagnostics,
+      });
+    });
+    expect(await runGenerateCommand(argv, d.value)).toBe(1);
+    const output = stderr.join("");
+    expect(output).toContain("GENERATE_CONNECT_FAILED/CONNECT_FAILED");
+    expect(output).not.toContain("서버 프로세스 진단");
+    expect(output).not.toContain("boom");
   });
 
   /** link가 지정한 errno로 실패하게 만든 뒤 stderr를 돌려준다. */

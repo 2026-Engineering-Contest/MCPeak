@@ -55,7 +55,7 @@ ADR-0030 이 검토한 것에 하나를 더한다.
 - `packages/mock/src` 의 형제 import 를 `.js` 로 되돌린다 — 나머지 다섯 패키지와 같다.
 - `packages/mock/tsconfig.json` 의 `allowImportingTsExtensions` 를 제거한다.
 - `tests/fixtures/ts-resolve.mjs` 가 훅 본체를, `register-ts-resolve.mjs` 가 등록을
-  맡고, `tests/stdio.test.ts` 가 자식을 띄울 때 `--import` 로 함께 싣는다.
+  맡고, `tests/stdio-e2e.test.ts` 가 자식을 띄울 때 `--import` 로 함께 싣는다.
 - 훅은 **상대 명세자이면서 같은 자리에 `.ts` 가 실재할 때만** 돌린다. 베어 명세자
   (`@mcpeak/core` 등)와 실재하지 않는 경로는 건드리지 않아 Node 가 평소의 오류를 낸다.
 
@@ -84,7 +84,7 @@ ADR-0030 이 검토한 것에 하나를 더한다.
 
 **받아들인 비용** — 픽스처를 직접 `node` 로 돌릴 때 `--import` 를 빠뜨리면
 `ERR_MODULE_NOT_FOUND` 가 난다. 그래서 이유를 `stdio-entry.mjs` 머리와
-`stdio.test.ts` 의 `tsResolve` 위에 주석으로 남겼다. 파일이 둘 늘었다.
+`stdio-e2e.test.ts` 의 `tsResolve` 위에 주석으로 남겼다. 파일이 둘 늘었다.
 
 **확인한 것** — 훅을 빼고 픽스처를 직접 돌려 `ERR_MODULE_NOT_FOUND` 로 죽는 것을
 보고, 붙이면 서버가 뜨는 것을 봤다. 훅이 실제로 무게를 지고 있다는 뜻이다.

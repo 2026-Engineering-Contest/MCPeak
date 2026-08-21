@@ -107,12 +107,14 @@ Coordinator 통신은 다음 조건을 가진 내부 HTTP JSON 프로토콜로 �
   아니라 명시적 실패다.
 - Coordinator 연결 실패, 인증 실패, 알 수 없는 schema version은 fail-closed다.
 - Bootstrap은 Adapter 설치 전에 한 번 핸드셰이크한다. 핸드셰이크에는 bearer token,
-  Coordinator wire schema version, 패키지 version 또는 build ID, 지원 Adapter와 interaction
-  schema version을 싣는다. package/build가 다르거나 어느 version도 합의되지 않으면 실제 외부
-  호출 전에 실패한다.
-- 핸드셰이크 뒤에도 모든 `begin`·`complete`·`lookup` 요청에 Coordinator wire schema version과
-  해당 interaction schema version을 싣는다. 세션에 저장되는 것은 후자이며, 전자는 실행 중
-  부모·자식 통신 형식만 검증한다.
+  Coordinator wire schema version, 패키지 version 또는 build ID, 그리고 Adapter ID별로 지원하는
+  interaction schema version 집합을 싣는다. 활성 Adapter마다 정확히 하나의 version을 합의하며,
+  package/build가 다르거나 어느 Adapter라도 version을 합의하지 못하면 실제 외부 호출 전에
+  실패한다.
+- 핸드셰이크 뒤에도 모든 `begin`·`complete`·`lookup` 요청에 Adapter ID, Coordinator wire schema
+  version, 그 Adapter에 합의된 interaction schema version을 싣는다. Coordinator는 Adapter ID로
+  합의 결과를 조회해 두 version을 함께 검증한다. 세션에 저장되는 것은 Adapter별 interaction
+  version이며, wire version은 실행 중 부모·자식 통신 형식만 검증한다.
 - 내부 endpoint와 상태 코드는 공개 API가 아니며 동일 package/build의 Bootstrap과 Coordinator만
   통신한다. 방어 심층 재검사에서 불일치가 발견되면 사용자 설정이 아니라 패키지 구성 또는 구현
   오류라고 진단하며 token과 사용자 값은 싣지 않는다.
@@ -136,29 +138,44 @@ Coordinator는 source session에서 저장 결과를 조회해 반환한다. hit
 | `coordinatorToken` | 현재 실행에만 유효한 임시 token |
 | `adapters` | 설치할 Adapter ID 목록 |
 | `coordinatorSchemaVersion` | 부모·자식 내부 통신 schema version |
-| `interactionSchemaVersion` | 현재 Record 또는 source session의 Adapter별 저장·매칭 version |
+| `interactionSchemaVersions` | Adapter ID를 키로 하고 현재 Record 또는 source session의 저장·매칭 version을 값으로 하는 map |
 | `timeoutMs` | Coordinator 요청 타임아웃 |
+| `bootstrapGuard` | 현재 External 실행에서 상속된 Bootstrap을 식별하는 비밀이 아닌 표식 |
+
+`interactionSchemaVersions`의 키 집합은 `adapters`와 정확히 같아야 한다. 빠진 키, 알 수 없는 키,
+중복 Adapter ID는 Adapter 설치 전에 실패한다. 단일 scalar version으로 여러 Adapter의 계약을
+대표하지 않는다.
 
 현재 session과 Replay source session의 선택은 bearer token에 연결된 부모 Coordinator 상태다.
 그 식별자를 자식 설정에 중복 전달하지 않는다. SQLite 경로와 마이그레이션 정보도 자식에 전달하지
 않는다. 설정은 자식 전용 env로 전달하고 argv에는 넣지 않는다. Bootstrap은 설정을 읽고 검증한
-직후 해당 env를 삭제한다.
+직후 bearer token을 포함한 Coordinator 설정 env를 삭제한다. `bootstrapGuard`만 아래 손자
+프로세스 fail-closed 판정을 위해 남기며, 비밀값이나 session 식별자를 포함하지 않는다.
 
 `NODE_OPTIONS` 병합 대상은 호출자가 자식 `env`에 명시한 값뿐이다. 부모 Codex/CLI 프로세스의
 `process.env.NODE_OPTIONS`를 암묵적으로 상속하지 않는다. `--import` 대상은 Windows 절대경로
 문자열이 아니라 `file://` URL로 만들며, 호출자가 준 옵션 뒤에 Bootstrap URL을 병합한다. 훅과
 Coordinator Client는 MCP stdio의 stdout에 아무것도 쓰지 않는다.
 
-MCP 서버가 Node 손자 프로세스를 만들면 `NODE_OPTIONS`의 Bootstrap import는 상속될 수 있지만,
-설정 env는 이미 부모 자식의 Bootstrap에서 제거됐다. 설정이 하나도 없는 Bootstrap은 경고와
-stdout 출력 없이 비활성화한다. 설정 일부만 남은 경우에는 손상된 구성으로 보고 fail-closed한다.
+MCP 서버가 Node 손자 프로세스를 만들면 `NODE_OPTIONS`의 Bootstrap import와 `bootstrapGuard`는
+상속될 수 있지만, Coordinator 설정 env는 이미 부모 자식의 Bootstrap에서 제거됐다. 이때
+Bootstrap은 조용히 비활성화하지 않고 **지원하지 않는 중첩 Node 프로세스**로 판정해 사용자 코드가
+실행되기 전에 fail-closed한다. 그래야 Replay 중 손자 프로세스의 `fetch`가 실제 네트워크로 빠지는
+것을 정상 지원처럼 숨기지 않는다. guard와 설정이 모두 없는 일반 Bootstrap import만 경고와
+stdout 출력 없이 비활성화하며, 설정 일부만 남은 경우도 손상된 구성으로 보고 fail-closed한다.
+
+H1·H2의 외부 호출 0회 보장은 계측된 주 MCP 서버 프로세스의 Node 내장 `fetch` 경계에 한정한다.
+외부 호출을 별도 Node·비Node 프로세스에 위임하는 서버는 1차 지원 범위가 아니다. 상속된 Node
+손자는 위 규칙으로 막고, 임의로 `env`나 실행 옵션을 다시 구성하는 프로세스 트리까지 투명하게
+계측한다고 주장하지 않는다. 수직 E2E에는 Node 손자 실행이 실제 사용자 코드와 외부 endpoint에
+도달하기 전에 실패하는 경우를 포함한다.
 
 Session Store 계약의 첫 구현은 Node 20에서 동작하는 인메모리 Store로 한다. 이 구현으로 실제 MCP
-서버를 Record와 Replay에서 모두 실행하고 Replay의 외부 호출이 0회임을 먼저 검증한다. SQLite
-영속 Store는 같은 계약의 후속 구현이며, `node:sqlite` 채택과 최소 Node 상향은 저장소 전체에
-영향을 주는 별도 런타임 ADR과 이슈 #228에서 결정한다. 이 ADR은 특정 저장 매체나 Node 상향을
-Coordinator 구조의 선행 조건으로 만들지 않는다. 영속 Store의 경로와 마이그레이션 정책도 그
-후속 결정에서 고정한다.
+서버를 Record와 Replay에서 모두 실행하고, 지원하는 주 프로세스의 Node 내장 `fetch`가 Replay에서
+외부 endpoint를 0회 호출함을 먼저 검증한다. SQLite 영속 Store는 같은 계약의 후속 구현이며,
+`node:sqlite` 채택과 최소 Node 상향은 저장소 전체에 영향을 주는 별도 런타임 ADR과 이슈 #228에서
+결정한다. 이 ADR은 특정 저장 매체나 Node 상향을 Coordinator 구조의 선행 조건으로 만들지 않는다.
+영속 Store의 경로와 마이그레이션 정책도 그 후속 결정에서 고정한다.
 
 부모는 Store 쓰기 직전과 화면·리포트·번들·로그·오류 메시지로 내보내기 직전에 최신 노출 마스킹을
 강제한다. 조회 중 추가 마스킹이 필요해도 반환값만 안전하게 만들고 Store 원본을 되쓰지 않는다.
@@ -181,9 +198,9 @@ Adapter가 알고, 세션과 저장소의 의미는 부모가 안다. Engine과 
 가로채지 않는다. loopback, 임시 token, 크기 상한으로 내부 endpoint의 범위를 제한한다.
 
 저장 매체 선택을 Coordinator 책임 경계와 분리하면 Node 런타임 정책이 결정되는 동안에도 Node 20
-인메모리 수직 기능으로 프로세스 경계와 Replay의 외부 호출 0회를 검증할 수 있다. 이후 SQLite를
-채택하더라도 Adapter와 Engine 계약은 바뀌지 않는다. 런타임 상향과 내장 모듈의 배포 비용은
-저장소 전체 오너가 별도 ADR에서 판단한다.
+인메모리 수직 기능으로 프로세스 경계와 지원하는 `fetch`의 Replay 외부 호출 0회를 검증할 수 있다.
+이후 SQLite를 채택하더라도 Adapter와 Engine 계약은 바뀌지 않는다. 런타임 상향과 내장 모듈의
+배포 비용은 저장소 전체 오너가 별도 ADR에서 판단한다.
 
 ## 결과
 
@@ -201,4 +218,6 @@ Adapter가 알고, 세션과 저장소의 의미는 부모가 안다. Engine과 
   이 명령을 대신해 저장본을 수정하지 않는다.
 - 한 명령이 MCP 서버에 두 번 연결하는 `--determinism` 흐름과 External session의 조합은 H1·H2에서
   허용하지 않는다. 두 실행의 session 수명과 source 선택은 후속 CLI 결정에서 정한다.
+- 복수 Adapter 핸드셰이크와 요청별 Adapter/version 불일치, 상속된 Node 손자의 fail-closed를
+  프로토콜 테스트로 고정한다.
 - 이 ADR 번호는 병합 직전에 다시 확인하고 충돌 시 파일명, 제목, 색인 링크를 함께 재번호한다.

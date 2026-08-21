@@ -9,13 +9,8 @@ import {
   findSchemaViolations,
   type SchemaViolation,
   unanalyzableReason,
-} from "./input-validation.ts";
-// 확장자가 ".ts" 인 것은 오타가 아니다. tests/fixtures/stdio-entry.mjs 가 이 파일을
-// raw node(--experimental-strip-types)로 직접 돌리는데, Node 의 ESM 리졸버는 ".js" 를
-// ".ts" 로 매핑하지 않아 ERR_MODULE_NOT_FOUND 가 난다. 저장소의 다른 패키지는 ".js" 를
-// 쓰지만 그쪽에는 소스를 그대로 실행하는 테스트가 없다.
-// packages/mock/tsconfig.json 의 allowImportingTsExtensions 가 이것과 짝이다.
-import { assertKeyable, KeyDepthError, MAX_KEY_DEPTH } from "./key-violation.ts";
+} from "./input-validation.js";
+import { assertKeyable, KeyDepthError, MAX_KEY_DEPTH } from "./key-violation.js";
 
 /**
  * 인자를 가리지 않고 매칭한다. `mock.on(tool, ANY, result)`.

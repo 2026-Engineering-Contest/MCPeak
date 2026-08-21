@@ -42,7 +42,7 @@
 | `packages/cli/src/cassette-wiring.ts` | `generate` dry-run의 auto·record 배선 | 신규 session 배선과 공유하지 않음 |
 | `packages/cli/src/generate-command.ts` | `--cassette`·`--record` 사용자 흐름 | 신규 H1·H2 뒤 별도 마이그레이션 |
 | `packages/cli/src/replay-command.ts` | 서버 없는 Tool 카세트 Replay | 신규 Replay 구현 기반으로 사용하지 않음 |
-| `packages/cli/src/verify-command.ts` | Tool 카세트와 실서버 응답 비교 | legacy가 남는 동안 유지 |
+| `packages/cli/src/verify-command.ts` | Tool 카세트와 실서버 응답 비교 | legacy가 남는 동안 유지. External 경로의 외부 API 드리프트 재검증 수단은 이 ADR 범위 밖이며 미정 |
 | `packages/cli/src/index.ts`, `help.ts` | legacy 명령 조립과 도움말 | CLI 전환 단계에서만 변경 |
 | `packages/dashboard/src/server/files.ts`, `routes.ts`, `wiring.ts` | 카세트 탐색·Replay 실행 조립 | CLI 전환 뒤 후속 변경 |
 | `packages/dashboard/web/src/screens/*` | 카세트 생성·탐색 UI | 신규 session UX가 확정된 뒤 변경 |
@@ -84,12 +84,21 @@ legacy ──X── external
 - `external`은 `Cassette`, `CassetteInteraction`, `CassetteMode`, `cassetteClient`, `McpClient`,
   `ToolResult`를 계약이나 구현에 사용하지 않는다.
 - legacy 구현도 신규 `external` 모듈을 import하지 않는다.
-- `shared`에는 어느 기록 경계에도 종속되지 않는 순수 함수만 둔다. 동일한 의미와 안전 불변조건이
-  테스트로 확인된 뒤 별도 동작 보존 변경으로 추출한다.
+- `shared`에는 어느 기록 경계에도 종속되지 않는 순수 알고리즘과 불변 version 데이터만 둔다.
+  External 공개 배선에 앞서 `stable JSON`과 민감 키 판정 알고리즘을 별도 동작 보존 변경으로
+  추출하고, legacy 테스트를 그대로 통과시킨다.
+- 민감 키 목록은 `shared`가 `V1`, `V2`처럼 이미 배포된 값을 바꾸지 않는 version별 스냅샷으로
+  제공한다. legacy는 항상 최신 목록을 쓰고, External은 해당 interaction schema version에 묶인
+  목록만 쓴다. External은 `latest` 별칭을 사용하지 않는다.
+- 민감 키 판정 알고리즘 변경은 두 경계의 계약을 함께 검토하지만, 목록 추가는 기존 스냅샷을
+  수정하지 않고 새 목록을 추가한다. legacy의 Tool matchKey는 마스킹 목록을 입력으로 쓰지 않으며,
+  External은 새 목록을 채택할 때 새 interaction schema version을 만든다.
 - 기존 `packages/record/src/index.ts`를 신규 구현 전에 대규모로 이동하거나 분할하지 않는다.
   먼저 동결하고, 필요한 순수 함수만 작은 변경 단위로 추출한다.
 - 기존 JSON 카세트와 신규 External Session은 schema version, 타입 이름, 저장 위치를 공유하지
   않는다.
+- 두 경계는 해시 입력 domain도 공유하지 않는다. legacy matchKey는 그대로 유지하고, External
+  matchKey에는 External domain과 interaction schema version을 포함한다.
 - 기존 `mcpeak replay --cassette`와 `generate --cassette`는 신규 External 흐름의 구현 기반으로
   사용하지 않는다.
 - 신규 사용자 흐름은 실제 MCP 서버를 실행하는 `test` 실행 경로에 별도 session 옵션으로
@@ -125,7 +134,9 @@ B안은 신규 기능이 완성된 뒤에도 두 Replay 의미를 같은 타입�
 - `record` 패키지 안에 일정 기간 legacy와 External 두 구현이 공존한다.
 - 신규 External 구현은 별도 디렉터리와 빌드 진입점을 갖는다.
 - 기존 카세트의 공개 API와 문서는 신규 기능이 검증될 때까지 바뀌지 않는다.
-- 공통화는 선행 목표가 아니다. 같은 의미가 테스트로 확인된 순수 코드만 후속으로 이동한다.
+- 공통화는 범용 추상화가 아니라 경계가 확인된 순수 알고리즘의 동작 보존 추출로 제한한다.
+- 민감 키 목록의 새 version은 기존 External 세션을 무효화하지 않는다. 기존 세션은 녹화 당시
+  interaction schema version에 묶인 목록으로 계속 매칭한다.
 - CLI와 dashboard는 신규 External 흐름을 연결할 때 기존 Replay 조립을 재사용하지 않는다.
 - legacy 제거는 신규 H1·H2와 CLI 전환 이후 별도 breaking 변경 및 마이그레이션 안내로 수행한다.
 - 이 ADR 번호는 병합 직전에 `docs/adr/`와 진행 중인 변경을 다시 확인한다. 충돌하면 파일명,

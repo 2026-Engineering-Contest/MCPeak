@@ -60,9 +60,9 @@ B안을 선택한다.
 
 - Record/Replay mode와 source session
 - Record/Replay Engine
-- Adapter별 schema version 검증
+- Coordinator wire schema version과 Adapter별 interaction schema version 검증
 - `protocol + matchKey + occurrence`의 저장·조회
-- Session Store와 SQLite 연결
+- Session Store와 선택된 저장 구현 연결
 - session의 running·completed·failed 상태
 - 저장 실패, Replay miss, schema 불일치 진단
 
@@ -80,7 +80,7 @@ B안을 선택한다.
 CLI
  └─ Coordinator
      ├─ Record/Replay Engine
-     └─ Session Store ── SQLite
+     └─ Session Store ── Memory(H1·H2) / SQLite(후속)
 
 자식 프로세스
 실제 MCP 서버
@@ -102,10 +102,20 @@ Coordinator 통신은 다음 조건을 가진 내부 HTTP JSON 프로토콜로 �
 - 인증 실패는 `401`, token은 맞지만 허용되지 않은 요청은 `403`으로 응답한다. 오류 body에는
   기대한 token, 받은 token, 그 일부나 길이를 넣지 않는다.
 - token 원문은 SQLite, 설정 스냅샷, stderr, 오류 메시지에 저장하지 않는다.
-- 요청·응답 크기에 고정 상한을 두며 초과는 실제 호출 우회가 아니라 명시적 실패다.
+- 요청·응답 크기는 각각 2 MiB를 상한으로 두며 초과는 실제 호출 우회가 아니라 명시적 실패다.
+- 기본 요청 타임아웃은 5초이고 설정 가능한 범위는 1~60초다. 타임아웃은 실제 호출 fallback이
+  아니라 명시적 실패다.
 - Coordinator 연결 실패, 인증 실패, 알 수 없는 schema version은 fail-closed다.
-- 내부 endpoint와 상태 코드는 공개 API가 아니며 동일 패키지 버전의 Bootstrap과 Coordinator만
-  통신한다.
+- Bootstrap은 Adapter 설치 전에 한 번 핸드셰이크한다. 핸드셰이크에는 bearer token,
+  Coordinator wire schema version, 패키지 version 또는 build ID, 지원 Adapter와 interaction
+  schema version을 싣는다. package/build가 다르거나 어느 version도 합의되지 않으면 실제 외부
+  호출 전에 실패한다.
+- 핸드셰이크 뒤에도 모든 `begin`·`complete`·`lookup` 요청에 Coordinator wire schema version과
+  해당 interaction schema version을 싣는다. 세션에 저장되는 것은 후자이며, 전자는 실행 중
+  부모·자식 통신 형식만 검증한다.
+- 내부 endpoint와 상태 코드는 공개 API가 아니며 동일 package/build의 Bootstrap과 Coordinator만
+  통신한다. 방어 심층 재검사에서 불일치가 발견되면 사용자 설정이 아니라 패키지 구성 또는 구현
+  오류라고 진단하며 token과 사용자 값은 싣지 않는다.
 
 Record에서는 Adapter가 요청을 정규화한 직후 Coordinator에 `begin`을 보내 interaction ID와
 occurrence를 먼저 예약한다. 예약이 성공한 뒤에만 실제 외부 호출을 수행하고, 반환값 또는 예외를
@@ -125,16 +135,35 @@ Coordinator는 source session에서 저장 결과를 조회해 반환한다. hit
 | `coordinatorUrl` | 현재 실행의 loopback endpoint |
 | `coordinatorToken` | 현재 실행에만 유효한 임시 token |
 | `adapters` | 설치할 Adapter ID 목록 |
+| `coordinatorSchemaVersion` | 부모·자식 내부 통신 schema version |
+| `interactionSchemaVersion` | 현재 Record 또는 source session의 Adapter별 저장·매칭 version |
+| `timeoutMs` | Coordinator 요청 타임아웃 |
 
 현재 session과 Replay source session의 선택은 bearer token에 연결된 부모 Coordinator 상태다.
 그 식별자를 자식 설정에 중복 전달하지 않는다. SQLite 경로와 마이그레이션 정보도 자식에 전달하지
-않는다. 기존 `NODE_OPTIONS`는 덮어쓰지 않고 `--import <bootstrap>`을 안전하게 병합한다. 훅과
+않는다. 설정은 자식 전용 env로 전달하고 argv에는 넣지 않는다. Bootstrap은 설정을 읽고 검증한
+직후 해당 env를 삭제한다.
+
+`NODE_OPTIONS` 병합 대상은 호출자가 자식 `env`에 명시한 값뿐이다. 부모 Codex/CLI 프로세스의
+`process.env.NODE_OPTIONS`를 암묵적으로 상속하지 않는다. `--import` 대상은 Windows 절대경로
+문자열이 아니라 `file://` URL로 만들며, 호출자가 준 옵션 뒤에 Bootstrap URL을 병합한다. 훅과
 Coordinator Client는 MCP stdio의 stdout에 아무것도 쓰지 않는다.
 
-Session Store의 1차 구현은 Node 내장 `node:sqlite`를 사용한다. `node:sqlite`를 플래그 없이
-사용할 수 있는 런타임을 기준으로 최소 Node 버전을 `22.13.0` 이상으로 올리는 것을 이 결정에
-포함한다. Node 20 지원 종료와 CI·`engines.node` 변경은 구현 PR 전에 사용자 문서와 릴리스
-영향을 함께 검토한다. 별도 native SQLite 의존성은 추가하지 않는다.
+MCP 서버가 Node 손자 프로세스를 만들면 `NODE_OPTIONS`의 Bootstrap import는 상속될 수 있지만,
+설정 env는 이미 부모 자식의 Bootstrap에서 제거됐다. 설정이 하나도 없는 Bootstrap은 경고와
+stdout 출력 없이 비활성화한다. 설정 일부만 남은 경우에는 손상된 구성으로 보고 fail-closed한다.
+
+Session Store 계약의 첫 구현은 Node 20에서 동작하는 인메모리 Store로 한다. 이 구현으로 실제 MCP
+서버를 Record와 Replay에서 모두 실행하고 Replay의 외부 호출이 0회임을 먼저 검증한다. SQLite
+영속 Store는 같은 계약의 후속 구현이며, `node:sqlite` 채택과 최소 Node 상향은 저장소 전체에
+영향을 주는 별도 런타임 ADR과 이슈 #228에서 결정한다. 이 ADR은 특정 저장 매체나 Node 상향을
+Coordinator 구조의 선행 조건으로 만들지 않는다. 영속 Store의 경로와 마이그레이션 정책도 그
+후속 결정에서 고정한다.
+
+부모는 Store 쓰기 직전과 화면·리포트·번들·로그·오류 메시지로 내보내기 직전에 최신 노출 마스킹을
+강제한다. 조회 중 추가 마스킹이 필요해도 반환값만 안전하게 만들고 Store 원본을 되쓰지 않는다.
+저장본 변경은 사용자가 명시적으로 실행하는 세션 재마스킹 명령에서만 허용하며, 그 명령의 이름과
+백업·실패 정책은 세션 관리 CLI 결정에서 정한다.
 
 ## 이유
 
@@ -151,9 +180,10 @@ Adapter가 알고, 세션과 저장소의 의미는 부모가 안다. Engine과 
 차이가 작다. 일반 forward proxy와 달리 실제 외부 트래픽을 중계하지 않으므로 HTTPS 인증서를
 가로채지 않는다. loopback, 임시 token, 크기 상한으로 내부 endpoint의 범위를 제한한다.
 
-Node 최소 버전을 올리는 비용은 있다. 그러나 이미 종료된 런타임을 위해 native SQLite 의존성과
-설치 실패 면을 새로 만드는 것보다, 0.x 단계에서 런타임 기준을 명확히 올리고 내장 모듈을 사용하는
-편이 배포와 재현성이 단순하다.
+저장 매체 선택을 Coordinator 책임 경계와 분리하면 Node 런타임 정책이 결정되는 동안에도 Node 20
+인메모리 수직 기능으로 프로세스 경계와 Replay의 외부 호출 0회를 검증할 수 있다. 이후 SQLite를
+채택하더라도 Adapter와 Engine 계약은 바뀌지 않는다. 런타임 상향과 내장 모듈의 배포 비용은
+저장소 전체 오너가 별도 ADR에서 판단한다.
 
 ## 결과
 
@@ -164,6 +194,11 @@ Node 최소 버전을 올리는 비용은 있다. 그러나 이미 종료된 런
 - `core`의 프로세스 실행·종료 구현은 재사용하되 External 의미를 `core`에 넣지 않는다.
 - CLI는 기존 `connectStdio({ env })` 경계를 사용해 Bootstrap 설정을 주입한다.
 - dashboard는 Coordinator를 직접 소유하지 않고 CLI의 실행 조립을 호출한다.
-- SQLite는 부모만 열며 자식에는 DB 경로나 라이브러리가 필요 없다.
-- 프로젝트의 최소 Node 런타임과 CI 매트릭스 변경이 후속 구현의 선행 조건이 된다.
+- SQLite를 채택할 경우 부모만 열며 자식에는 DB 경로나 라이브러리가 필요 없다.
+- 인메모리 Store로 Node 20 최소 수직 기능을 먼저 검증하고, SQLite는 같은 Store 계약의 후속
+  구현으로 교체한다.
+- 세션을 소유하는 부모 경로에는 목록·삭제·명시적 재마스킹 명령이 후속으로 필요하다. 읽기 경로는
+  이 명령을 대신해 저장본을 수정하지 않는다.
+- 한 명령이 MCP 서버에 두 번 연결하는 `--determinism` 흐름과 External session의 조합은 H1·H2에서
+  허용하지 않는다. 두 실행의 session 수명과 source 선택은 후속 CLI 결정에서 정한다.
 - 이 ADR 번호는 병합 직전에 다시 확인하고 충돌 시 파일명, 제목, 색인 링크를 함께 재번호한다.

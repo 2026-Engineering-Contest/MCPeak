@@ -5,6 +5,9 @@
   "type": "module",
   "description": "MCP 프로토콜 클라이언트 · 트랜스포트 · 프로세스 수명주기",
   "license": "MIT",
+  "engines": {
+    "node": ">=22.18.0"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/2026-Engineering-Contest/MCPeak.git",

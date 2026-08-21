@@ -5,6 +5,9 @@
   "type": "module",
   "description": "OhMyMCP 프레임워크의 CLI 진입점 (얇게 유지)",
   "license": "MIT",
+  "engines": {
+    "node": ">=22.18.0"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/2026-Engineering-Contest/MCPeak.git",

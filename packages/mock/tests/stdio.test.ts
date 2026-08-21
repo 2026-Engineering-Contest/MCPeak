@@ -39,19 +39,6 @@ const TOOLS: ToolDef[] = [
 const entry = fileURLToPath(new URL("./fixtures/stdio-entry.mjs", import.meta.url));
 const opened: McpClient[] = [];
 
-/**
- * 아래 묶음은 소스를 자식 프로세스로 띄우기 위해 `--experimental-strip-types` 를 쓰는데,
- * 그 플래그는 Node 22.6 부터 있다. Node 20 에서는 자식이 즉시 죽는다.
- *
- * **테스트 하네스의 제약이지 배포되는 코드의 제약이 아니다.** 빌드 산출물
- * (`dist/stdio.mjs`)은 순수 JS 라 Node 20 에서 정상 동작한다. verify 매트릭스의
- * Node 20 은 나머지 테스트로 사용자 환경 호환성을 계속 보증한다 (CONTRIBUTING §6).
- *
- * `assertMockDefinition` 묶음은 자식 프로세스를 쓰지 않으므로 모든 버전에서 돈다.
- */
-const [nodeMajor = 0, nodeMinor = 0] = process.versions.node.split(".").map(Number);
-const canStripTypes = nodeMajor > 22 || (nodeMajor === 22 && nodeMinor >= 6);
-
 /** stdio 목을 띄우고 core.connect() 로 붙는다. */
 async function connectMock(definition: unknown): Promise<McpClient> {
   const dir = mkdtempSync(join(tmpdir(), "mcpeak-mock-"));
@@ -78,7 +65,7 @@ afterEach(async () => {
   await Promise.all(opened.splice(0).map((c) => c.close()));
 });
 
-describe.skipIf(!canStripTypes)("@mcpeak/mock stdio", () => {
+describe("@mcpeak/mock stdio", () => {
   it("core.connect() 로 붙어 정의한 툴을 그대로 노출한다", async () => {
     const client = await connectMock({ tools: TOOLS });
 

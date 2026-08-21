@@ -183,7 +183,7 @@ node packages/cli/dist/cli.mjs test <suite.json> \
 
 > `pnpm build` 를 건너뛰면 낡은 `dist/` 를 뭅니다. 소스를 고쳤으면 다시 빌드하세요.
 
-Node 20 · 22 · 24 에서 검사하며, 빌드는 Node 22 이상이 필요합니다.
+Node 22.18 이상을 지원하며, CI는 최소 버전인 22.18.0과 Node 24에서 검사합니다.
 
 > **Node 25 에서는 `packages/dashboard/web` 테스트 13건이 실패합니다.** 지원 범위 밖이라 CI 는
 > 잡지 못합니다. 자기 변경과 무관하니 [#212](https://github.com/2026-Engineering-Contest/MCPeak/issues/212) 를 보세요.

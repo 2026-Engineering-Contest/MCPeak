@@ -5,6 +5,9 @@
   "type": "module",
   "description": "결정론적 baseline과 승인형 AI 검토로 MCP 테스트를 생성",
   "license": "MIT",
+  "engines": {
+    "node": ">=22.18.0"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/2026-Engineering-Contest/MCPeak.git",

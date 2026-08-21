@@ -17,7 +17,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: [20, 22, 24]
+        # 선언한 최소 버전 자체를 검사해야 최신 22.x에서만 우연히 통과하는 일을 막는다.
+        node: ["22.18.0", "24"]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -49,9 +50,9 @@ jobs:
     #
     # 1) verify 는 `uv` 가 없어도 돌아야 한다. 기여자 노트북에 Python 도구 체인을
     #    요구하지 않는다. 그래서 그쪽은 skip 을 허용하고, 여기서만 승격 스위치를 켠다.
-    # 2) verify 는 Node 20/22/24 매트릭스라 여기 붙이면 E2E 가 3회 돈다. 프로세스
+    # 2) verify 는 Node 22.18/24 매트릭스라 여기 붙이면 E2E 가 2회 돈다. 프로세스
     #    spawn · stdio 왕복 · 종료처럼 Node 버전에 민감한 층은 이미
-    #    packages/core/tests/stdio-integration-e2e.test.ts 가 세 버전 전부에서 본다.
+    #    packages/core/tests/stdio-integration-e2e.test.ts 가 두 버전 모두에서 본다.
     #    이 잡이 추가로 보는 것은 상대가 Python 프로세스라는 점 하나다 (ADR-0037).
     #
     # OHMYMCP_REQUIRE_E2E=1 은 "uvx 가 없으면 skip 하지 말고 실패해라" 다. 이 잡에서
@@ -94,16 +95,9 @@ jobs:
   build:
     # 빌드만 별도 잡으로 분리한다.
     #
-    # 번들러(tsdown 0.22)가 engines.node 를 "^22.18.0 || >=24.11.0" 으로 선언하고
-    # 있어 Node 20 에서는 실행 자체가 안 된다(내부에서 ES2024 의
-    # Promise.withResolvers 를 쓴다). Node 20 은 2026-04-30 자로 EOL 이라
-    # 생태계 전반이 지원을 걷는 중이고, pnpm 11 도 같은 이유로 22.13+ 를 요구한다.
-    #
-    # 빌드는 산출물을 만드는 개발 시점 작업이고, 산출물 자체는 ES2022 라 Node 20
-    # 에서 정상 동작한다. 따라서 "지원 런타임 전부에서 검사, 빌드는 최신 LTS 에서"
-    # 로 나눈다. 사용자에게 한 Node 20 지원 약속은 verify 잡이 계속 보증한다.
-    #
-    # Node 20 지원 자체를 접을지는 팀 결정 사항이다 (CONTRIBUTING §6 개정 + ADR).
+    # 번들러(tsdown 0.22)가 engines.node 를 "^22.18.0 || >=24.11.0" 으로 선언한다.
+    # verify 잡은 사용자 최소 런타임 22.18.0을 정확히 검사하고, 빌드는 최신 22.x에서
+    # 수행한다. 산출물의 TypeScript target은 ES2022로 유지한다(ADR-0054).
     runs-on: ubuntu-latest
     # Publish JUnit report 스텝은 use-actions-summary 기본값(true)으로 동작해
     # 리포트를 Actions job summary 에 쓴다. Check Run 을 만들지 않으므로

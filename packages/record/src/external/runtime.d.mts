@@ -7,7 +7,11 @@ import type {
   StoredHttpThrow,
 } from "./protocol.js";
 
+export const HTTP_MATCH_KEY_DOMAIN: "mcpeak.external.http";
+export const HTTP_INTERACTION_SCHEMA_VERSION: 1;
+
 export function stableStringify(value: unknown): string;
+export function httpMatchKey(match: HttpMatchV1): string;
 export function sensitiveKey(key: string): boolean;
 export function redactJson(value: JsonValue): JsonValue;
 export function normalizeHttpRequest(request: Request): Promise<NormalizedExternalRequest>;

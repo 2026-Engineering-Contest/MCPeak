@@ -1,6 +1,12 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
+import type { HttpMatchV1 } from "../../src/external/protocol.js";
 import {
   encodeHttpResponse,
+  encodeHttpThrow,
+  HTTP_INTERACTION_SCHEMA_VERSION,
+  HTTP_MATCH_KEY_DOMAIN,
+  httpMatchKey,
   normalizeHttpRequest,
   restoreHttpOutcome,
   stableStringify,
@@ -141,5 +147,139 @@ describe("normalizeHttpRequest", () => {
     expect(stored.body).toEqual({ nested: { accessToken: "[redacted]" } });
     expect(stored.headers).toContainEqual(["set-cookie", "[redacted]"]);
     expect(JSON.stringify(stored)).not.toContain("secret");
+  });
+});
+
+describe("matchKey envelope", () => {
+  it("domain과 schemaVersion을 해시 입력에 넣는다 — match만 해싱하지 않는다", async () => {
+    const request = new Request("https://example.com/weather?city=seoul");
+    const normalized = await normalizeHttpRequest(request);
+
+    const withEnvelope = createHash("sha256")
+      .update(
+        stableStringify({
+          domain: HTTP_MATCH_KEY_DOMAIN,
+          schemaVersion: HTTP_INTERACTION_SCHEMA_VERSION,
+          match: normalized.match,
+        }),
+        "utf8",
+      )
+      .digest("hex");
+    const bareMatch = createHash("sha256")
+      .update(stableStringify(normalized.match), "utf8")
+      .digest("hex");
+
+    expect(normalized.matchKey).toBe(withEnvelope);
+    // envelope 없이 해싱하던 시절의 값과는 반드시 달라야 한다. 같아지면 schema version 이
+    // 올라가도 키 공간이 갈라지지 않아 version 1 세션에 version 2 요청이 hit 한다.
+    expect(normalized.matchKey).not.toBe(bareMatch);
+  });
+
+  it("schemaVersion이 다르면 같은 요청이라도 다른 키가 된다", () => {
+    const match: HttpMatchV1 = {
+      method: "GET",
+      url: "https://example.com/weather",
+      headers: {},
+      body: { kind: "none" },
+    };
+    const keyOf = (schemaVersion: number) =>
+      createHash("sha256")
+        .update(stableStringify({ domain: HTTP_MATCH_KEY_DOMAIN, schemaVersion, match }), "utf8")
+        .digest("hex");
+
+    expect(keyOf(1)).toBe(httpMatchKey(match));
+    expect(keyOf(2)).not.toBe(httpMatchKey(match));
+  });
+
+  it("domain이 다르면 다른 키가 된다 — legacy 카세트와 해시 공간을 나눈다", () => {
+    const match: HttpMatchV1 = {
+      method: "GET",
+      url: "https://example.com/weather",
+      headers: {},
+      body: { kind: "none" },
+    };
+    const legacyish = createHash("sha256")
+      .update(
+        stableStringify({
+          domain: "mcpeak.legacy.tool",
+          schemaVersion: HTTP_INTERACTION_SCHEMA_VERSION,
+          match,
+        }),
+        "utf8",
+      )
+      .digest("hex");
+
+    expect(httpMatchKey(match)).not.toBe(legacyish);
+  });
+});
+
+describe("encodeHttpThrow", () => {
+  it("원본 message를 저장하지 않는다 — 자유 텍스트에는 마스킹이 걸리지 않는다", () => {
+    const error = new Error(
+      "request to https://api.example.com/v1?api_key=super-secret failed, reason: connect ECONNREFUSED",
+    );
+    error.stack = "Error: ... https://api.example.com/v1?api_key=super-secret";
+
+    const stored = encodeHttpThrow(error);
+
+    expect(stored).not.toHaveProperty("message");
+    expect(stored).not.toHaveProperty("stack");
+    expect(stored).not.toHaveProperty("cause");
+    expect(JSON.stringify(stored)).not.toContain("super-secret");
+    expect(JSON.stringify(stored)).not.toContain("api.example.com");
+  });
+
+  it("허용된 code는 failureKind로 분류해 저장한다", () => {
+    const cases: readonly (readonly [string, string])[] = [
+      ["ECONNREFUSED", "connection"],
+      ["ENOTFOUND", "dns"],
+      ["ETIMEDOUT", "timeout"],
+      ["CERT_HAS_EXPIRED", "tls"],
+      ["ABORT_ERR", "abort"],
+    ];
+    for (const [code, failureKind] of cases) {
+      const error = Object.assign(new Error("아무 문구나"), { code });
+      expect(encodeHttpThrow(error)).toEqual({ kind: "throw", failureKind, name: "Error", code });
+    }
+  });
+
+  it("목록에 없는 code는 저장하지 않는다 — code 자체가 자유 텍스트일 수 있다", () => {
+    const error = Object.assign(new Error("boom"), { code: "E_SECRET_abc123" });
+
+    const stored = encodeHttpThrow(error);
+
+    expect(stored).not.toHaveProperty("code");
+    expect(JSON.stringify(stored)).not.toContain("abc123");
+  });
+
+  it("code가 없으면 name으로 가른다", () => {
+    const abort = Object.assign(new Error("x"), { name: "AbortError" });
+    expect(encodeHttpThrow(abort)).toEqual({
+      kind: "throw",
+      failureKind: "abort",
+      name: "AbortError",
+    });
+    expect(encodeHttpThrow(new TypeError("fetch failed"))).toEqual({
+      kind: "throw",
+      failureKind: "network",
+      name: "TypeError",
+    });
+  });
+
+  it("Error가 아닌 값도 안전한 envelope가 된다", () => {
+    expect(encodeHttpThrow("문자열이 던져졌다")).toEqual({
+      kind: "throw",
+      failureKind: "unknown",
+      name: "Error",
+    });
+  });
+
+  it("복원 문장은 저장본이 아니라 failureKind에서 만든다", () => {
+    const stored = encodeHttpThrow(
+      Object.assign(new Error("원본 문구는 사라진다"), { code: "ENOTFOUND" }),
+    );
+
+    expect(() => restoreHttpOutcome(stored)).toThrow(/host 이름을 찾지 못했습니다/);
+    expect(() => restoreHttpOutcome(stored)).not.toThrow(/원본 문구/);
   });
 });

@@ -20,7 +20,12 @@ export interface SplitCommand {
 /**
  * 세그먼트 + 대상 입력을 실행 파일 하나(command)와 선행 인자(args 선두)로 분해한다.
  * CLI `--command`는 실행 파일 하나만 받는 계약이라(parseTestCommand·generate 동일)
- * 스크립트 경로·패키지명·직접 입력의 나머지 토큰은 전부 `--arg`로 가야 한다.
+ * 스크립트 경로·패키지명은 `--arg`로 가야 한다.
+ *
+ * **어느 갈래도 공백으로 쪼개지 않는다.** `custom` 이 예전에는 쪼갰는데, 그러면
+ * `node "my server.js"` 가 `--arg '"my'` · `--arg 'server.js"'` 로 깨진다 —
+ * 이 컴포넌트가 고치려던 문제가 그 갈래에만 그대로 남아 있었다(#254 리뷰).
+ * 지금은 `custom` 의 입력 전체가 실행 파일 하나이고, 인자는 칩으로만 받는다.
  */
 export function splitCommand(method: CommandMethod, target: string): SplitCommand {
   const trimmed = target.trim();
@@ -34,10 +39,8 @@ export function splitCommand(method: CommandMethod, target: string): SplitComman
       return { command: "npx", leadingArgs: [trimmed] };
     case "python":
       return { command: "python", leadingArgs: [trimmed] };
-    case "custom": {
-      const [head, ...rest] = trimmed.split(/\s+/);
-      return { command: head ?? "", leadingArgs: rest };
-    }
+    case "custom":
+      return { command: trimmed, leadingArgs: [] };
   }
 }
 
@@ -98,11 +101,11 @@ export function StepServer(props: {
       </div>
 
       <Field
-        label={props.method === "custom" ? "실행 명령" : "서버 스크립트"}
+        label={props.method === "custom" ? "실행 파일" : "서버 스크립트"}
         htmlFor={`${prefix}-target`}
         hint={
           props.method === "custom"
-            ? "실행 명령 전체를 그대로 입력합니다."
+            ? "실행 파일 하나만 적습니다. 인자는 아래 «서버 인자»로 추가하세요."
             : "직접 입력하거나 최근 사용값에서 고릅니다(프로젝트 스캔 API 없음)."
         }
       >

@@ -4,13 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import packageMetadata from "../package.json";
 import type { GenerateCommandDependencies } from "../src/generate-command.js";
-import {
-  COMMANDS,
-  nodeRepairDependencies,
-  run,
-  unavailableReplayDependencies,
-} from "../src/index.js";
-import { ReplayRuntimeUnavailableError } from "../src/replay-command.js";
+import { COMMANDS, nodeRepairDependencies, run } from "../src/index.js";
 
 type OptionalKey<T> = {
   [K in keyof T]-?: object extends Pick<T, K> ? K : never;
@@ -40,7 +34,7 @@ const OPTIONAL_GENERATE_DEPENDENCIES = {
 
 describe("mcpeak cli", () => {
   it("알려진 서브커맨드를 선언한다", () => {
-    expect(COMMANDS).toEqual(["test", "generate", "repair", "record", "replay", "mock"]);
+    expect(COMMANDS).toEqual(["test", "generate", "repair", "record", "mock"]);
   });
 
   /**
@@ -48,18 +42,6 @@ describe("mcpeak cli", () => {
    * `CLI_INTERNAL_ERROR` 로 잡혀 "이슈를 보고하세요" 가 나가고, 사용자는 자기 설치 문제로
    * 버그 리포트를 쓴다. 모듈 모킹으로는 이 경로를 재현할 수 없어 배선을 직접 본다.
    */
-  it("replay fallback 의존성이 런타임 미가용 전용 오류를 던진다", async () => {
-    const runtime = [
-      () => unavailableReplayDependencies.validateSuite({}),
-      () => unavailableReplayDependencies.loadCassette("c.json"),
-      () => unavailableReplayDependencies.startRunner({} as never),
-      () => unavailableReplayDependencies.finalize({} as never),
-      () => unavailableReplayDependencies.renderReport({} as never),
-    ];
-    for (const call of runtime) {
-      await expect(async () => await call()).rejects.toBeInstanceOf(ReplayRuntimeUnavailableError);
-    }
-  });
 
   it("사용자 입력 오류를 reject하지 않고 종료 코드 1로 반환한다", async () => {
     const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
@@ -106,6 +88,30 @@ describe("mcpeak cli", () => {
       stderr.mockRestore();
     }
   });
+
+  /**
+   * 제거된 명령의 **도움말을 물어도** 마이그레이션 안내가 나와야 한다. `help <명령>` 은
+   * 위 도움말 분기가 목록에 없는 이름을 그냥 흘려보내서, 뒤에서 `argv[0]` 인 `"help"` 를
+   * 알 수 없는 명령으로 지목했다 — 사용자가 묻지도 않은 이름을 탓하는 실패 메시지다.
+   * (`replay --help` 형태는 fall-through 가 이미 안내로 보내고 있었다. 함께 고정해 둔다.)
+   */
+  it.each([[["help", "replay"]], [["replay", "--help"]], [["help", "verify"]]])(
+    "%j 도 제거 안내를 stderr 에 쓴다(ADR-0059)",
+    async (argv) => {
+      const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+      const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+      try {
+        await expect(run(argv)).resolves.toBe(1);
+        const output = stderr.mock.calls.map(([text]) => String(text)).join("");
+        expect(output).toContain("제거되었습니다");
+        expect(output).toContain("ADR-0059");
+        expect(output).not.toContain("알 수 없는 CLI 명령");
+      } finally {
+        stdout.mockRestore();
+        stderr.mockRestore();
+      }
+    },
+  );
 
   it("--version 은 CLI package.json 버전을 stdout 에 쓴다", async () => {
     const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);

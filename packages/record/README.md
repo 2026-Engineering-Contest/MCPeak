@@ -206,7 +206,7 @@ if (cassette !== null) {
 |---|---|---|
 | 남기는 것 | 우리 → 서버 (`listTools`·`callTool`) | 서버 → 외부 API (HTTP) |
 | 재생할 때 | 감싼 클라이언트를 부르지 않는다 | **서버는 실제로 돌고**, 그 서버의 외부 호출만 막힌다 |
-| CLI | `generate --cassette` · `mcpeak replay` | `test --record-session` · `test --session` |
+| CLI | `generate --cassette` (제거 예정) | `test --record-session` · `test --session` |
 
 **Tool 카세트는 legacy 다.** External 이 서버를 실제로 실행하는 더 실제 문제에 가까운 경로라,
 [ADR-0051](../../docs/adr/0051-external-record-replay와-tool-카세트-경계-분리.md)은 두 경로가

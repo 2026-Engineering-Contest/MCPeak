@@ -601,10 +601,21 @@ async function runCliCore(
         message: "`mcpeak verify` 는 제거되었습니다. Tool 카세트와 함께 걷어냅니다(ADR-0059).",
         hint:
           "카세트 드리프트 확인이 목적이었다면 `mcpeak test` 로 실서버를 직접 검증하세요. " +
-          "외부 API 호출을 막는 것이 목적이었다면 `mcpeak test --record-session <path>` 로 먼저 " +
+          "외부 API 호출을 막는 것이 목적이었다면 " +
+          "`mcpeak test <suite.json> --command <executable> --record-session <path>` 로 먼저 " +
           "녹화한 뒤 `--session <path>` 로 재생하세요. 두 옵션은 함께 쓸 수 없습니다.",
       });
-    // replay 는 index.ts 가 가로챈다. 여기 남겨 두면 구현된 명령을 미구현이라고 말하게 된다.
+    if (argv[0] === "replay")
+      return writeFailure(dependencies, {
+        code: "CLI_USAGE",
+        message: "`mcpeak replay` 는 제거되었습니다. Tool 카세트와 함께 걷어냅니다(ADR-0059).",
+        hint:
+          "서버를 띄우지 않고 저장된 응답으로 스위트를 돌리는 것이 목적이었다면 `mcpeak-mock` 으로 " +
+          "서버를 대신하세요. 외부 API 호출만 막는 것이 목적이었다면 " +
+          "`mcpeak test <suite.json> --command <executable> --record-session <path>` 로 먼저 " +
+          "녹화한 뒤 `--session <path>` 로 재생하세요.",
+      });
+    // generate 는 index.ts 가 가로챈다. 여기 남겨 두면 구현된 명령을 미구현이라고 말하게 된다.
     if (["generate", "record", "mock"].includes(argv[0] ?? ""))
       return writeFailure(dependencies, {
         code: "COMMAND_NOT_IMPLEMENTED",

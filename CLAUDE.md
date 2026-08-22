@@ -20,7 +20,8 @@ MCP 서버를 코드로 자동 테스트하는 오픈소스 프레임워크. 5�
   ```
 - **결정론성이 핵심 가치다.** 같은 입력에 항상 같은 결과가 나와야 한다. 타임스탬프·랜덤값·실행 순서에 의존하는 코드를 넣지 마라. 녹화·재생 기능의 존재 이유가 이것이다.
 - **우리 도구로 우리를 검증한다.** `examples/`의 예제 서버에 이 도구를 적용하는 E2E가 CI에 있다. 이게 깨지면 사용자에게도 깨진 것이다.
-- 의존 방향은 단방향이다: `cli` → `runner`/`generate`/`record`/`mock` → `core`. 역방향 참조나 순환을 만들지 마라.
+- 의존 방향은 단방향이다: `dashboard` → `cli` → `runner`/`generate`/`record`/`mock` → `core`.
+  역방향 참조나 순환을 만들지 마라. `dashboard` 층은 ADR-0046 이 얹은 것이다.
 
 ## 작업 방식
 
@@ -39,7 +40,7 @@ fix(core): 서버 종료 시 좀비 프로세스 잔존 문제 해결
 ```
 
 `type`: feat / fix / docs / test / refactor / chore / ci
-`scope`: core / runner / generate / record / mock / cli / release / adr
+`scope`: core / runner / generate / record / mock / cli / dashboard / release / adr
 
 `release` 는 npm 배포·릴리스 워크플로·버저닝, `adr` 는 여러 패키지에 걸친 설계 결정 기록.
 둘 다 소유 패키지가 없는 작업이라 패키지 scope 로는 집계되지 않는다.

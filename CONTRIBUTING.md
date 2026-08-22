@@ -43,7 +43,8 @@ mcpeak/
 │   ├── generate/               # 스키마 → 테스트 코드 생성
 │   ├── record/                 # 녹화 · 재생 · 계약 스냅샷
 │   ├── mock/                   # 목 서버 · 응답 주입 (사람이 지정한 값, ADR-0005)
-│   └── cli/                    # npx @mcpeak/cli 진입점 (얇게 유지)
+│   ├── cli/                    # npx @mcpeak/cli 진입점 (얇게 유지)
+│   └── dashboard/              # 로컬 웹 UI · CLI 커맨드 함수 재사용 (ADR-0046)
 ├── examples/                   # 도그푸딩 대상 · 데모용 예제 서버
 ├── fixtures/                   # 공용 테스트 픽스처 (JSON 응답 샘플)
 ├── CONTRIBUTING.md             # 이 문서
@@ -61,7 +62,7 @@ mcpeak/
 | ① MCP 서버 테스트 | `@seodduu` `@endl24` `@sunghoon0303` | `core` · `runner` · `generate` |
 | ② replay / record | `@ddxng5` | `record` |
 | ③ mock server | `@storyrago` | `mock` |
-| 공동 | 전원 | `cli` · `fixtures` |
+| 공동 | 전원 | `cli` · `dashboard` · `fixtures` |
 
 | 패키지 | 책임 범위 |
 |---|---|
@@ -71,6 +72,7 @@ mcpeak/
 | `record` | 카세트 포맷, 요청 매칭 키, 비결정 필드 처리, 계약 스냅샷 |
 | `mock` | 목 서버(Streamable HTTP), 응답 주입 API |
 | `cli` | 각자 자기 서브커맨드만 수정 |
+| `dashboard` | 로컬 웹서버 · 화면. 판정 로직을 새로 쓰지 않고 `cli` 커맨드 함수를 부른다 (ADR-0046) |
 
 > **미정:** npm 배포·버저닝과 **도그푸딩** 담당. 3파트 분할 이전 표에서는 `mock` 오너가 겸하게 되어 있었다. §7·§10이 이 역할을 전제하므로 첫 알파 배포 전에 정해야 한다.
 
@@ -80,7 +82,9 @@ mcpeak/
 
 - **다른 사람의 패키지를 직접 고치지 않는다.** 필요하면 이슈를 열고 오너에게 넘긴다.
 - 예외: 빌드가 깨져 전원이 막힌 경우. 이때는 최소 수정 후 오너를 리뷰어로 지정하고 이슈에 사유를 남긴다.
-- `cli`와 `fixtures`는 공용이지만, 한 PR에서 여러 오너의 영역을 동시에 건드리지 않는다.
+- `cli`·`dashboard`·`fixtures`는 공용이지만, 한 PR에서 여러 오너의 영역을 동시에 건드리지 않는다.
+- **공용이라고 리뷰어가 저절로 붙지는 않는다.** CODEOWNERS에 경로가 없으면 리뷰어 0명으로 열린다.
+  공용 디렉터리를 새로 만들면 CODEOWNERS 항목을 같은 PR에서 추가한다.
 
 ---
 
@@ -133,7 +137,7 @@ docs(adr): 카세트 매칭 키 결정 기록
 ```
 
 - `type`: `feat` `fix` `docs` `test` `refactor` `chore` `ci`
-- `scope`: 패키지명(`core` `runner` `generate` `record` `mock` `cli`) 또는
+- `scope`: 패키지명(`core` `runner` `generate` `record` `mock` `cli` `dashboard`) 또는
   어느 패키지에도 속하지 않는 공통 영역(`release` `adr`)
   - `release` — npm 배포, 릴리스 워크플로, 버저닝. 소유 패키지가 없는 릴리스 담당의
     기여가 집계되지 않는 문제를 막는다(§2.1·§7).

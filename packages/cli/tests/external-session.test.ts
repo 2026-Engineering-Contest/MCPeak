@@ -75,3 +75,38 @@ describe("External 세션 상호 배타", () => {
     expect(parse(["--determinism"]).determinism).toBe(true);
   });
 });
+
+describe("배선 판정이 파서와 같은 규칙을 쓴다", () => {
+  it("--arg 가 소비한 토큰을 세션 옵션으로 오인하지 않는다", () => {
+    // `--arg` 는 하이픈으로 시작하는 값을 의도적으로 받는다. 배선이 argv 를 따로 훑으면
+    // 이 토큰을 replay 지시로 읽어, 사용자가 요청한 적 없는 세션 파일을 열고 Bootstrap 을
+    // 주입한다. Replay 라 서버의 외부 호출이 전부 실패하고 원인은 드러나지 않는다.
+    const input = parseTestCommand([
+      "suite.json",
+      "--command",
+      "node",
+      "--arg",
+      "--session=/tmp/x",
+    ]);
+
+    expect(input.args).toEqual(["--session=/tmp/x"]);
+    expect(input.sessionPath).toBeUndefined();
+    expect(input.recordSessionPath).toBeUndefined();
+  });
+
+  it("--arg 뒤에 온 --record-session 도 서버 인자로 남는다", () => {
+    const input = parseTestCommand([
+      "suite.json",
+      "--command",
+      "node",
+      "--arg",
+      "--record-session",
+      "--session",
+      "real.db",
+    ]);
+
+    expect(input.args).toEqual(["--record-session"]);
+    expect(input.sessionPath).toBe("real.db");
+    expect(input.recordSessionPath).toBeUndefined();
+  });
+});

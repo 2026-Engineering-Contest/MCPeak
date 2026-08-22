@@ -85,17 +85,15 @@ export async function startExternalWiring(options: ExternalWiringOptions): Promi
   // 두 번째 호출은 첫 결과를 그대로 준다. Store 가 이미 닫혔으므로 `handle.finish` 를 다시
   // 부르면 닫힌 DB 를 건드린다. 호출자가 정상 경로와 실패 경로 양쪽에서 닫으려 하는 것은
   // 흔한 모양이라, 그쪽에 "이미 닫았나" 를 추적시키지 않는다.
-  let settled: SessionSummary | undefined;
+  // **성공·실패와 무관하게** 한 번 시도했다는 사실을 먼저 기록한다. 성공했을 때만 기록하면
+  // `handle.finish` 가 던진 뒤 `finally` 가 store 를 이미 닫은 상태에서 두 번째 호출이 가드를
+  // 통과해, 닫힌 DB 위에서 다시 부른다 — 이 가드가 막으려던 바로 그 상황이다.
+  let settled: Promise<SessionSummary> | undefined;
   return {
     env: handle.childEnvironment,
-    async finish(status) {
-      if (settled !== undefined) return settled;
-      try {
-        settled = await handle.finish(status);
-        return settled;
-      } finally {
-        store.close();
-      }
+    finish(status) {
+      settled ??= handle.finish(status).finally(() => store.close());
+      return settled;
     },
   };
 }

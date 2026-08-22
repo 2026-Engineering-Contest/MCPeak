@@ -1214,31 +1214,32 @@ export async function runCli(
 }
 
 /**
- * argv 만 보고 External 모드를 정한다.
+ * argv 에서 External 모드를 정한다. **파싱은 `parseTestCommand` 하나만 한다.**
  *
- * `parseTestCommand` 를 다시 부르지 않는 이유는 그 함수가 사용 오류를 던지기 때문이다.
- * 배선은 파싱보다 먼저 서고, 파싱 오류는 기존 경로가 자기 문장으로 보고해야 한다. 여기서
- * 먼저 던지면 `--session` 이 붙었다는 이유만으로 오류 문구가 달라진다.
+ * 한때 여기서 argv 를 따로 훑었다. 그러면 토큰 소비 규칙이 두 벌이 되고, 두 벌은 갈라진다.
+ * 실제로 갈렸다 — `--arg` 는 하이픈으로 시작하는 값을 의도적으로 받으므로
+ *
+ *     mcpeak test s.json --command node --arg --session=/tmp/x
+ *
+ * 에서 `parseTestCommand` 는 그 토큰을 **서버 인자**로 소비하는데, 따로 훑는 쪽은 같은 것을
+ * replay 지시로 읽었다. 사용자가 요청한 적 없는 세션 파일이 열리고 Bootstrap 이 주입되며,
+ * Replay 라 서버의 외부 호출이 전부 실패한다. 원인을 짐작할 방법이 없는 실패다.
+ *
+ * 파싱 오류는 여기서 삼킨다. 배선은 파싱보다 먼저 서지만 **오류 보고는 기존 경로의 몫**이다.
+ * 여기서 던지면 `--session` 이 붙었다는 이유만으로 오류 문구가 달라진다.
  */
 function externalModeOf(
   argv: readonly string[],
 ): { readonly mode: ExternalMode; readonly path: string } | undefined {
   if (argv[0] !== "test") return undefined;
-  const read = (name: string): string | undefined => {
-    for (let index = 1; index < argv.length; index += 1) {
-      const token = argv[index] ?? "";
-      if (token === name) return argv[index + 1];
-      if (token.startsWith(`${name}=`)) return token.slice(`${name}=`.length);
-    }
+  let input: TestCommandInput;
+  try {
+    input = parseTestCommand(argv.slice(1));
+  } catch {
     return undefined;
-  };
-  const record = read("--record-session");
-  const replay = read("--session");
-  // 둘 다 있으면 여기서 고르지 않는다. `parseTestCommand` 가 상호 배타로 거절한다.
-  if (record !== undefined && replay !== undefined) return undefined;
-  if (record !== undefined && record !== "" && !record.startsWith("--"))
-    return { mode: "record", path: record };
-  if (replay !== undefined && replay !== "" && !replay.startsWith("--"))
-    return { mode: "replay", path: replay };
+  }
+  if (input.recordSessionPath !== undefined)
+    return { mode: "record", path: input.recordSessionPath };
+  if (input.sessionPath !== undefined) return { mode: "replay", path: input.sessionPath };
   return undefined;
 }

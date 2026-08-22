@@ -50,10 +50,19 @@ export function createReplayEngine(options: {
   readonly store: SessionStore;
 }): ReplayEngine {
   const source = options.store.read(options.sourceSessionId);
-  if (source === undefined || source.status !== "completed")
+  // **두 실패를 가른다.** 세션이 아예 없는 것과 있는데 미완료인 것은 사용자가 할 일이 정반대다
+  // — 앞은 경로를 고치거나 녹화를 하는 것이고, 뒤는 녹화를 다시 뜨는 것이다. 한 문장으로
+  // 합쳐 두었더니 오타 친 사람에게 "다시 녹화하라" 고 말했다(#260).
+  //
+  // 세션 id 는 문장에 넣지 않는다. CLI 는 파일 하나를 세션 하나로 쓰며 id 를 `"default"` 로
+  // 고정하는데, 사용자는 그 이름을 준 적이 없어 화면에서 무엇을 가리키는지 알 수 없다.
+  // 사용자가 아는 식별자는 **경로**이고 그것은 호출자만 안다.
+  if (source === undefined)
+    externalError("SESSION_NOT_FOUND", "세션 파일에 녹화된 External 세션이 없습니다.");
+  if (source.status !== "completed")
     externalError(
       "REPLAY_SOURCE_INVALID",
-      `External session '${options.sourceSessionId}'은 완료된 Replay 원본이 아닙니다.`,
+      "녹화가 완료되지 않은 세션입니다. 녹화 실행이 실패했을 수 있습니다.",
     );
   const cursors = new Map<string, number>();
   let consumedCount = 0;

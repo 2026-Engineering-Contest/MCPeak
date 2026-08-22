@@ -121,6 +121,61 @@ describe("classifyRejectionBasis", () => {
     ).toBe("unverified");
   });
 
+  it("임의 오류 뒤에 MCPeak 목의 고정 안내를 붙여도 확인하지 않는다", () => {
+    expect(
+      classify(
+        "get_weather",
+        [
+          "서버 내부 오류",
+          "→ 이 툴이 tools/list 로 선언한 inputSchema 가 그렇게 요구합니다.",
+          "→ 거절이 의도한 것이면 responses 에 이 인자를 넣어 응답을 지정하세요.",
+        ].join("\n"),
+      ),
+    ).toBe("unverified");
+  });
+
+  it("MCPeak 목의 위반 진단 사이에 임의 오류가 섞이면 확인하지 않는다", () => {
+    expect(
+      classify(
+        "get_weather",
+        [
+          "→ 툴 'get_weather' 의 'city' 은(는) string 이어야 합니다. 받은 값: 0 (number)",
+          "서버 내부 오류",
+          "→ 이 툴이 tools/list 로 선언한 inputSchema 가 그렇게 요구합니다.",
+          "→ 거절이 의도한 것이면 responses 에 이 인자를 넣어 응답을 지정하세요.",
+        ].join("\n"),
+      ),
+    ).toBe("unverified");
+  });
+
+  it("다른 툴의 MCPeak 목 위반 진단은 확인하지 않는다", () => {
+    expect(
+      classify(
+        "get_weather",
+        [
+          "→ 툴 'add' 의 'a' 은(는) number 이어야 합니다. 받은 값: \"1\" (string)",
+          "→ 이 툴이 tools/list 로 선언한 inputSchema 가 그렇게 요구합니다.",
+          "→ 거절이 의도한 것이면 responses 에 이 인자를 넣어 응답을 지정하세요.",
+        ].join("\n"),
+      ),
+    ).toBe("unverified");
+  });
+
+  it("MCPeak 목의 여러 inputSchema 위반 진단 형식을 함께 확인한다", () => {
+    expect(
+      classify(
+        "get_weather",
+        [
+          "→ 툴 'get_weather' 호출에 필수 필드 'city' 이(가) 없습니다. 받은 인자: {}",
+          '→ 툴 \'get_weather\' 의 \'unit\' 은(는) 선언된 값 중 하나여야 합니다: "c", "f". 받은 값: "k"',
+          "→ 툴 'get_weather' 의 'days' 은(는) 7 이하여야 합니다. 받은 값: 99",
+          "→ 이 툴이 tools/list 로 선언한 inputSchema 가 그렇게 요구합니다.",
+          "→ 거절이 의도한 것이면 responses 에 이 인자를 넣어 응답을 지정하세요.",
+        ].join("\n"),
+      ),
+    ).toBe("verified");
+  });
+
   it("툴 이름의 정규식 메타문자를 리터럴로 다룬다", () => {
     // 이스케이프를 빼면 `a.b` 의 `.` 이 임의 문자와 맞아 `aXbArguments` 를 verified 로 찍는다.
     expect(classify("a.b", "Error executing tool a.b: 1 validation error for aXbArguments")).toBe(

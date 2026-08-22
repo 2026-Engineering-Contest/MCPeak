@@ -22,9 +22,9 @@ export type RejectionBasis =
 /**
  * MCPeak 목의 스키마 위반 거절 계약 (ADR-0060).
  *
- * 첫 줄은 툴·필드·위반 종류마다 달라지므로 고정된 마지막 두 줄만 지문으로 쓴다. 매칭 미스와
- * 사용자가 주입한 거절에는 이 접미어가 없다. `packages/mock/tests/index-e2e.test.ts` 가 목 쪽
- * 문장을 완전 일치로 고정하고 있다.
+ * 고정된 마지막 두 줄과 그 앞의 위반 진단 형식을 함께 지문으로 쓴다. 접미어만 확인하면 임의
+ * 오류에도 안내문을 붙여 확인된 거절로 위장할 수 있다. `packages/mock/tests/index-e2e.test.ts` 가
+ * 목 쪽 문장을 완전 일치로 고정하고 있다.
  */
 const MCPEAK_MOCK_SCHEMA_REJECTION_SUFFIX = [
   "→ 이 툴이 tools/list 로 선언한 inputSchema 가 그렇게 요구합니다.",
@@ -66,9 +66,18 @@ export function classifyRejectionBasis(options: {
     if (pattern.test(text)) return "verified";
   }
 
-  // MCPeak 목의 자체 inputSchema 검증. 첫 위반 줄이 반드시 앞에 있고, 고정된 안내 두 줄이
-  // 본문의 정확한 끝이어야 한다. 안내만 흉내 내거나 뒤에 다른 오류가 붙은 본문은 인정하지 않는다.
-  if (text.endsWith(`\n${MCPEAK_MOCK_SCHEMA_REJECTION_SUFFIX}`)) return "verified";
+  // MCPeak 목의 자체 inputSchema 검증. 모든 앞줄이 현재 툴의 위반 진단 형식이고, 고정된 안내
+  // 두 줄이 본문의 정확한 끝이어야 한다. 임의 오류에 안내만 붙인 본문은 인정하지 않는다.
+  const mockSuffix = `\n${MCPEAK_MOCK_SCHEMA_REJECTION_SUFFIX}`;
+  if (toolName !== null && text.endsWith(mockSuffix)) {
+    const diagnosticLines = text.slice(0, -mockSuffix.length).split("\n");
+    if (
+      diagnosticLines.length > 0 &&
+      diagnosticLines.every((line) => isMcpeakMockSchemaDiagnostic(line, toolName))
+    ) {
+      return "verified";
+    }
+  }
 
   return "unverified";
 }
@@ -76,4 +85,19 @@ export function classifyRejectionBasis(options: {
 /** 툴 이름은 서버가 준 임의 문자열이다. 정규식 메타문자가 들어와도 리터럴로 다뤄야 한다. */
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** MCPeak 목의 `violationLine` 이 만드는 네 위반 종류의 한 줄 형식인지 확인한다. */
+function isMcpeakMockSchemaDiagnostic(line: string, toolName: string): boolean {
+  const tool = escapeRegExp(toolName);
+  const fieldHead = `→ 툴 '${tool}' 의 '.+' 은\\(는\\)`;
+  const patterns = [
+    new RegExp(`^→ 툴 '${tool}' 호출에 필수 필드 '.+' 이\\(가\\) 없습니다\\. 받은 인자: .+$`),
+    new RegExp(`^${fieldHead} .+ 이어야 합니다\\. 받은 값: .+ \\([^)]+\\)$`),
+    new RegExp(`^${fieldHead} 선언된 값 중 하나여야 합니다: .+\\. 받은 값: .+$`),
+    new RegExp(
+      `^${fieldHead} (?:.+ (?:이상이어야|이하여야) 합니다\\. 받은 값: .+|.+ 보다 (?:커야|작아야) 합니다\\. 받은 값: .+|.+자 (?:이상이어야|이하여야) 합니다\\. 받은 값의 길이: .+|원소가 .+개 (?:이상이어야|이하여야) 합니다\\. 받은 개수: .+)$`,
+    ),
+  ];
+  return patterns.some((pattern) => pattern.test(line));
 }

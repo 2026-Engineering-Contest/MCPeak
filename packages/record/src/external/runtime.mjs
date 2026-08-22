@@ -328,8 +328,9 @@ const pathRedactedHeaderUrl = (rawValue, baseUrl) => {
  * 값은 문법상 임의 문자열이라(`title="sk_live_…"`, `rel="Bearer TOKEN"` 도 문법에 맞는다) 이름이나
  * 문자 집합으로는 토큰을 가려낼 수 없다. 진단에 필요한 것은 "이 응답이 다음 페이지를
  * 가리켰는가" 이고 그 답은 등록된 `rel` 값 몇 개면 충분하다. 그 밖의 파라미터(`anchor` 는
- * URI-Reference 를 담는다, 확장 파라미터는 무엇이든 담을 수 있다)와 집합 밖 `rel` 값은
- * `이름=[redacted]` 로 쓴다. 문법으로 해석되지 않는 값은 통째로 가린다 — 무엇을 지워야 할지
+ * URI-Reference 를 담는다, 확장 파라미터는 무엇이든 담을 수 있다)와 집합 밖 `rel` 값은 고정
+ * 문자열 `param=[redacted]` 로 쓴다 — 파라미터 **이름**도 외부가 정하는 임의 token 이라
+ * (`sk_live_TOKEN=1` 도 문법에 맞는다) 이름을 남기면 그 자리로 샌다. 문법으로 해석되지 않는 값은 통째로 가린다 — 무엇을 지워야 할지
  * 모르는 값을 원문으로 남기지 않는다. 두 함수 모두 자기 출력에 다시 적용하면 같은 값이
  * 나온다(부모의 재검사가 바이트 비교로 "자식이 놓쳤다" 를 알아내는 전제).
  */
@@ -415,7 +416,7 @@ const pathRedactedLinkHeader = (rawValue, baseUrl) => {
       const name = (equals === -1 ? param : param.slice(0, equals)).trim().toLowerCase();
       if (name === "") return REDACTED;
       const keep = name === "rel" && equals !== -1 && knownLinkRel(param.slice(equals + 1));
-      params.push(keep ? param : `${name}=${REDACTED}`);
+      params.push(keep ? param : `param=${REDACTED}`);
     }
     stored.push([`<${href}>`, ...params].join("; "));
   }

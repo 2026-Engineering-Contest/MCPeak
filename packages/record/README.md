@@ -330,13 +330,13 @@ https://hooks.example.com/<redacted>?token=[redacted]
 | 저장 outcome `url` | 위와 같다 |
 | `location` 헤더 | 절대 URL 로 해석 후 pathname → `<redacted>` |
 | `content-location` 헤더 | 위와 같다 |
-| `link` 헤더 | 각 `<URI>` 를 위와 같이 지운다. 파라미터는 `rel` 이 등록 값(`next`·`prev`·`first`·`last`·`self` 등)일 때만 남기고, 그 밖의 `rel` 값과 다른 파라미터(`title`·`type`·`anchor` 등)는 값을 `[redacted]` 로 |
+| `link` 헤더 | 각 `<URI>` 를 위와 같이 지운다. 파라미터는 `rel` 이 등록 값(`next`·`prev`·`first`·`last`·`self` 등)일 때만 남기고, 그 밖의 `rel` 값과 다른 파라미터(`title`·`type`·`anchor`·확장 파라미터)는 이름째 `param=[redacted]` 로 |
 | `refresh` 헤더 | 지연 초는 남기고 `url=` 의 URL 을 위와 같이 지운다 |
 
 `link`·`refresh` 값이 문법대로 해석되지 않으면 통째로 `[redacted]` 다 — 무엇을 지워야 할지
 모르는 값을 원문으로 남기지 않는다. `link` 파라미터 값은 문법상 임의 문자열이라(`title="sk_…"`
 도 문법에 맞는다) 이름으로 토큰을 가려낼 수 없어서, 등록된 `rel` 값 외에는 아무 값도 원문으로
-남기지 않는다.
+남기지 않는다. 파라미터 **이름**도 외부가 정하는 임의 token 이라(`sk_live_…=1`) 같이 지운다.
 
 ```
 Link: </services/T00/B00/XXXXSECRET?cursor=2>; rel="next"

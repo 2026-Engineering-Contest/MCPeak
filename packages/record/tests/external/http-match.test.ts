@@ -317,6 +317,10 @@ describe("normalizeHttpRequest", () => {
       ],
       ["3", "3"],
       ["not a refresh /hooks/SECRET", "[redacted]"],
+      // 구분자 뒤에 url= 이 없거나 URL 이 비면 URL 로 해석하지 않고 통째로 가린다.
+      ["5; secret=TOKEN", "[redacted]"],
+      ["5, secret=TOKEN", "[redacted]"],
+      ["5; url=", "[redacted]"],
     ];
     for (const [refresh, expected] of cases) {
       const response = new Response(JSON.stringify({ ok: true }), {

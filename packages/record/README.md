@@ -331,7 +331,7 @@ https://hooks.example.com/<redacted>?token=[redacted]
 | `location` 헤더 | 절대 URL 로 해석 후 pathname → `<redacted>` |
 | `content-location` 헤더 | 위와 같다 |
 | `link` 헤더 | 각 `<URI>` 를 위와 같이 지운다. 파라미터는 `rel` 이 등록 값(`next`·`prev`·`first`·`last`·`self` 등)일 때만 남기고, 그 밖의 `rel` 값과 다른 파라미터(`title`·`type`·`anchor`·확장 파라미터)는 이름째 `param=[redacted]` 로 |
-| `refresh` 헤더 | 지연 초는 남기고 `url=` 의 URL 을 위와 같이 지운다 |
+| `refresh` 헤더 | 지연 초는 남기고 `url=` 의 URL 을 위와 같이 지운다. 구분자 뒤에 `url=` 이 없으면 해석 실패로 본다 |
 
 `link`·`refresh` 값이 문법대로 해석되지 않으면 통째로 `[redacted]` 다 — 무엇을 지워야 할지
 모르는 값을 원문으로 남기지 않는다. `link` 파라미터 값은 문법상 임의 문자열이라(`title="sk_…"`

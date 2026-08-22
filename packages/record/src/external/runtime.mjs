@@ -277,7 +277,10 @@ export async function normalizeHttpRequest(request) {
  */
 const REDIRECT_STATUS = new Set([301, 302, 303, 307, 308]);
 
-/** URL 값을 담는 응답 헤더. 이름 기반 민감 키 판정에 걸리지 않아 별도 취급이 필요하다. */
+/**
+ * 값 전체가 URL 인 응답 헤더. 이름 기반 민감 키 판정에 걸리지 않아 별도 취급이 필요하다.
+ * 값 안에 URL 을 담는 `link`·`refresh` 는 문법이 달라 따로 해석한다(`storedHeaderValue`).
+ */
 const URL_PATH_HEADER_NAMES = new Set(["location", "content-location"]);
 
 /**
@@ -315,17 +318,151 @@ const pathRedactedHeaderUrl = (rawValue, baseUrl) => {
  * 민감 키 판정이 그대로 먹는다 — `x-api-key` 의 접미 단어열이 `apikey` 다(ADR-0039).
  * 고정 목록은 `authorization` 처럼 단어 규칙만으로는 안 걸리는 이름을 위해 남긴다.
  */
+/**
+ * `link`(RFC 8288)·`refresh` 는 값 **안에** URI-Reference 를 담는다. `location` 처럼 값 전체가
+ * URL 이 아니라서 같은 함수를 쓸 수 없고, 통째로 가리면 pagination 진단(`rel="next"`)까지
+ * 사라진다. 그래서 문법을 해석해 URI 부분만 경로를 지우고 구조는 남긴다. 한때 이 둘은 ADR-0053
+ * 이 범위 밖으로 둔 잔여 유출 경로였다(#301). 다시 다루게 된 근거는 ADR-0053 개정 항목에 있다.
+ *
+ * 파라미터는 `rel` 하나만, 그것도 **값이 아래 고정 집합에 있을 때만** 원문으로 남긴다. 파라미터
+ * 값은 문법상 임의 문자열이라(`title="sk_live_…"`, `rel="Bearer TOKEN"` 도 문법에 맞는다) 이름이나
+ * 문자 집합으로는 토큰을 가려낼 수 없다. 진단에 필요한 것은 "이 응답이 다음 페이지를
+ * 가리켰는가" 이고 그 답은 등록된 `rel` 값 몇 개면 충분하다. 그 밖의 파라미터(`anchor` 는
+ * URI-Reference 를 담는다, 확장 파라미터는 무엇이든 담을 수 있다)와 집합 밖 `rel` 값은 고정
+ * 문자열 `param=[redacted]` 로 쓴다 — 파라미터 **이름**도 외부가 정하는 임의 token 이라
+ * (`sk_live_TOKEN=1` 도 문법에 맞는다) 이름을 남기면 그 자리로 샌다. 문법으로 해석되지 않는 값은 통째로 가린다 — 무엇을 지워야 할지
+ * 모르는 값을 원문으로 남기지 않는다. 두 함수 모두 자기 출력에 다시 적용하면 같은 값이
+ * 나온다(부모의 재검사가 바이트 비교로 "자식이 놓쳤다" 를 알아내는 전제).
+ */
+const LINK_REL_VALUES = new Set([
+  "next",
+  "prev",
+  "previous",
+  "first",
+  "last",
+  "self",
+  "alternate",
+  "canonical",
+  "collection",
+  "item",
+  "up",
+  "related",
+  "describedby",
+  "edit",
+  "hub",
+  "search",
+  "service",
+  "via",
+]);
+
+/** `rel` 값(token 또는 quoted-string, 공백으로 구분된 복수 값)이 전부 등록 집합 안인가. */
+const knownLinkRel = (rawValue) => {
+  const value = rawValue.trim();
+  const unquoted =
+    value.length >= 2 && value.startsWith('"') && value.endsWith('"') ? value.slice(1, -1) : value;
+  const rels = unquoted.split(/\s+/).filter((rel) => rel !== "");
+  return rels.length > 0 && rels.every((rel) => LINK_REL_VALUES.has(rel.toLowerCase()));
+};
+
+/**
+ * 따옴표(`"…"`, 백슬래시 이스케이프 포함)와 꺾쇠(`<…>`) 안의 구분자는 건너뛴다. 따옴표나
+ * 꺾쇠가 닫히지 않으면 `null` — 그 값은 해석할 수 없는 것으로 본다.
+ */
+const splitOutsideQuotes = (text, separator) => {
+  const parts = [];
+  let current = "";
+  let quoted = false;
+  let angled = false;
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    if (quoted) {
+      current += char;
+      if (char === "\\" && index + 1 < text.length) {
+        index += 1;
+        current += text[index];
+      } else if (char === '"') quoted = false;
+      continue;
+    }
+    if (char === '"') quoted = true;
+    else if (char === "<") angled = true;
+    else if (char === ">") angled = false;
+    if (char === separator && !angled) {
+      parts.push(current);
+      current = "";
+      continue;
+    }
+    current += char;
+  }
+  if (quoted || angled) return null;
+  parts.push(current);
+  return parts;
+};
+
+const pathRedactedLinkHeader = (rawValue, baseUrl) => {
+  const values = splitOutsideQuotes(rawValue, ",");
+  if (values === null) return REDACTED;
+  const stored = [];
+  for (const value of values) {
+    const parts = splitOutsideQuotes(value, ";");
+    if (parts === null) return REDACTED;
+    const target = parts[0].trim();
+    if (!target.startsWith("<") || !target.endsWith(">")) return REDACTED;
+    const href = pathRedactedHeaderUrl(target.slice(1, -1), baseUrl);
+    if (href === REDACTED) return REDACTED;
+    const params = [];
+    for (const part of parts.slice(1)) {
+      const param = part.trim();
+      const equals = param.indexOf("=");
+      const name = (equals === -1 ? param : param.slice(0, equals)).trim().toLowerCase();
+      if (name === "") return REDACTED;
+      const keep = name === "rel" && equals !== -1 && knownLinkRel(param.slice(equals + 1));
+      params.push(keep ? param : `param=${REDACTED}`);
+    }
+    stored.push([`<${href}>`, ...params].join("; "));
+  }
+  return stored.join(", ");
+};
+
+/**
+ * HTML 명세의 `Refresh` 문법: 지연 초, 선택적으로 `;`/`,` 뒤에 `url=` 와 URL(따옴표 허용).
+ * 명세는 `url=` 을 생략한 꼴도 받지만 여기서는 **필수**다 — 생략을 허용하면 `5; secret=TOKEN`
+ * 같은 값이 상대 URL 로 해석돼 `url=https://host/<redacted>` 라는, 원문에 없던 뜻으로 저장된다.
+ * 그런 값은 해석 실패로 보고 통째로 가린다. 따옴표로 시작한 값은 따옴표 대안으로만 받는다 —
+ * `url='foo'junk` 가 따옴표 없는 대안에 걸려 구조화된 값으로 저장되지 않게.
+ */
+const REFRESH_PATTERN =
+  /^\s*(\d+(?:\.\d+)?)\s*(?:[;,]\s*url\s*=\s*("[^"]*"|'[^']*'|[^\s"']\S*)\s*)?$/i;
+
+const pathRedactedRefreshHeader = (rawValue, baseUrl) => {
+  const matched = REFRESH_PATTERN.exec(rawValue);
+  if (matched === null) return REDACTED;
+  const [, delay, quotedUrl] = matched;
+  if (quotedUrl === undefined) return delay;
+  const url = /^["']/.test(quotedUrl) ? quotedUrl.slice(1, -1) : quotedUrl;
+  if (url === "") return REDACTED;
+  const href = pathRedactedHeaderUrl(url, baseUrl);
+  return href === REDACTED ? REDACTED : `${delay}; url=${href}`;
+};
+
+/**
+ * 응답 헤더 하나의 저장값. `storedResponseHeaders`(자식의 최초 저장)와 `redactStoredOutcome`
+ * (부모의 재검사)이 같은 함수를 쓴다 — 두 곳의 규칙이 갈라지면 재검사가 자식의 올바른 출력을
+ * 위반으로 잘못 잡는다.
+ */
+const storedHeaderValue = (name, rawValue, baseUrl) => {
+  if (URL_PATH_HEADER_NAMES.has(name)) return pathRedactedHeaderUrl(rawValue, baseUrl);
+  if (name === "link") return pathRedactedLinkHeader(rawValue, baseUrl);
+  if (name === "refresh") return pathRedactedRefreshHeader(rawValue, baseUrl);
+  const secret = SENSITIVE_HEADER_NAMES.has(name) || sensitiveKey(name);
+  return secret ? REDACTED : rawValue;
+};
+
 const storedResponseHeaders = (headers, baseUrl) => {
   const result = [];
   for (const [rawName, rawValue] of headers.entries()) {
     const name = rawName.toLowerCase();
     if (TRANSPORT_HEADER_NAMES.has(name)) continue;
-    if (URL_PATH_HEADER_NAMES.has(name)) {
-      result.push([name, pathRedactedHeaderUrl(rawValue, baseUrl)]);
-      continue;
-    }
-    const secret = SENSITIVE_HEADER_NAMES.has(name) || sensitiveKey(name);
-    result.push([name, secret ? REDACTED : rawValue]);
+    result.push([name, storedHeaderValue(name, rawValue, baseUrl)]);
   }
   return result;
 };
@@ -513,10 +650,7 @@ export const redactStoredOutcome = (outcome) => {
     statusText: outcome.statusText,
     headers: (outcome.headers ?? []).map(([name, value]) => {
       const lower = String(name).toLowerCase();
-      if (URL_PATH_HEADER_NAMES.has(lower))
-        return [lower, pathRedactedHeaderUrl(value, outcome.url)];
-      const secret = SENSITIVE_HEADER_NAMES.has(lower) || sensitiveKey(lower);
-      return [lower, secret ? REDACTED : value];
+      return [lower, storedHeaderValue(lower, String(value), outcome.url)];
     }),
     url: pathRedactedUrl(outcome.url),
     body: redactJson(outcome.body),

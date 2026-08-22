@@ -252,6 +252,17 @@ export async function startExternalCoordinator(
         return;
       }
       if (error instanceof ExternalRecordReplayError) {
+        // 마스킹 불변식이 깨진 세션은 400 을 돌려주는 것으로 끝내지 않고 **즉시 실패로 닫는다**
+        // (ADR-0052). 400 만 주고 running 으로 두면, 누출을 들킨 자식이 같은 interaction 을
+        // 제대로 마스킹해 다시 보내는 것으로 통과할 수 있다. 그러면 남는 녹화는 깨끗해 보이지만
+        // 새는 Adapter 가 만든 것이고, 그 사실은 아무 데도 남지 않는다.
+        if (error.code === "EXTERNAL_REDACTION_INVARIANT_VIOLATION" && engine.mode === "record") {
+          try {
+            engine.finish("failed");
+          } catch {
+            // 이미 끝난 세션이면 그대로 둔다. 원래 오류를 이 실패로 덮지 않는다.
+          }
+        }
         errorResponse(response, errorStatus(error), error.code, error.message);
         return;
       }

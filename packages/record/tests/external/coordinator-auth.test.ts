@@ -171,3 +171,84 @@ describe("Store 직전 재검사 (ADR-0052)", () => {
     expect(body).not.toContain("super-secret");
   });
 });
+
+describe("불변식 위반 뒤 세션 상태 (ADR-0052)", () => {
+  const clean = {
+    protocol: "http",
+    schemaVersion: 1,
+    matchKey: "b".repeat(64),
+    match: {
+      method: "GET",
+      url: "https://example.com/x",
+      headers: { accept: ["application/json"] },
+      body: { kind: "none" },
+    },
+    display: {
+      method: "GET",
+      url: "https://example.com/x",
+      headers: { accept: ["application/json"] },
+      body: { kind: "none" },
+    },
+  };
+
+  it("누출된 outcome을 보낸 뒤에는 제대로 마스킹해 다시 보내도 통과하지 못한다", async () => {
+    const store = createMemorySessionStore();
+    const handle = await startExternalCoordinator({ mode: "record", sessionId: "leak", store });
+    handles.push(handle);
+    const auth = {
+      authorization: `Bearer ${handle.childEnvironment.MCPEAK_EXTERNAL_COORDINATOR_TOKEN}`,
+      "content-type": "application/json",
+    };
+
+    const began = await fetch(`${handle.url}/begin`, {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ schemaVersion: 1, request: clean }),
+    });
+    expect(began.status).toBe(200);
+    const { reservation } = (await began.json()) as { reservation: { interactionId: string } };
+
+    // 자식이 응답 헤더의 토큰을 놓친 채 보낸다.
+    const leaky = await fetch(`${handle.url}/complete`, {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        schemaVersion: 1,
+        interactionId: reservation.interactionId,
+        outcome: {
+          kind: "response",
+          status: 200,
+          statusText: "OK",
+          headers: [["x-api-key", "super-secret"]],
+          url: "https://example.com/x",
+          body: { ok: true },
+        },
+      }),
+    });
+    expect(leaky.status).toBe(400);
+    expect(await leaky.text()).toContain("EXTERNAL_REDACTION_INVARIANT_VIOLATION");
+
+    // 세션이 이미 닫혔으므로 깨끗한 재시도도 받지 않는다. 400 만 주고 running 으로 두면
+    // 여기서 통과해 "새는 Adapter 가 만든 깨끗해 보이는 녹화" 가 남는다.
+    const retry = await fetch(`${handle.url}/complete`, {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        schemaVersion: 1,
+        interactionId: reservation.interactionId,
+        outcome: {
+          kind: "response",
+          status: 200,
+          statusText: "OK",
+          headers: [["x-api-key", "[redacted]"]],
+          url: "https://example.com/x",
+          body: { ok: true },
+        },
+      }),
+    });
+
+    expect(retry.status).not.toBe(200);
+    expect(store.read("leak")?.status).toBe("failed");
+    expect(store.read("leak")?.interactions[0]?.status).toBe("incomplete");
+  });
+});

@@ -142,18 +142,25 @@ ${COMMANDS}
   mcpeak <명령> --help
 `;
 
-const commandDiscovery =
+/**
+ * 명령 이름 자체가 틀렸을 때 주는 안내. **어느 서브커맨드의 사용법도 붙이지 않는다.**
+ *
+ * 오타는 "어느 옵션을 쓰나" 가 아니라 "어떤 명령이 있나" 를 모르는 상태다. 여기에 특정
+ * 서브커맨드의 플래그 목록을 붙이면 사용자가 묻지도 않은 명령의 사용법 200 자를 읽고
+ * 나서야 목록에 닿는다.
+ */
+export const COMMAND_DISCOVERY_HINT =
   "사용 가능한 명령: test, generate, repair, replay, verify. 전체 도움말: mcpeak --help";
 
-export const TEST_USAGE_HINT = `${TEST_USAGE} ${commandDiscovery}`;
+export const TEST_USAGE_HINT = `${TEST_USAGE} ${COMMAND_DISCOVERY_HINT}`;
 
-export const GENERATE_USAGE_HINT = `${GENERATE_USAGE} ${commandDiscovery}`;
+export const GENERATE_USAGE_HINT = `${GENERATE_USAGE} ${COMMAND_DISCOVERY_HINT}`;
 
-export const REPAIR_USAGE_HINT = `${REPAIR_USAGE} ${commandDiscovery}`;
+export const REPAIR_USAGE_HINT = `${REPAIR_USAGE} ${COMMAND_DISCOVERY_HINT}`;
 
-export const REPLAY_USAGE_HINT = `${REPLAY_USAGE} ${commandDiscovery}`;
+export const REPLAY_USAGE_HINT = `${REPLAY_USAGE} ${COMMAND_DISCOVERY_HINT}`;
 
-export const VERIFY_USAGE_HINT = `${VERIFY_USAGE} ${commandDiscovery}`;
+export const VERIFY_USAGE_HINT = `${VERIFY_USAGE} ${COMMAND_DISCOVERY_HINT}`;
 
 export function commandHelp(command: "test" | "generate" | "repair" | "replay" | "verify"): string {
   if (command === "verify")

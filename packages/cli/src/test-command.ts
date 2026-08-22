@@ -32,7 +32,7 @@ import { createDeterminismCapture } from "./determinism-capture.js";
 import { type ExternalMode, type ExternalWiring, startExternalWiring } from "./external-wiring.js";
 import type { FindingGroup } from "./finding-group.js";
 import { FINDING_GROUP } from "./finding-group.js";
-import { TEST_USAGE_HINT } from "./help.js";
+import { COMMAND_DISCOVERY_HINT, TEST_USAGE_HINT } from "./help.js";
 import {
   hasDiagnosticContent,
   isAbnormalExit,
@@ -585,7 +585,8 @@ async function runCliCore(
     return writeFailure(dependencies, {
       code: "CLI_USAGE",
       message: "실행할 CLI 명령이 없습니다.",
-      hint: TEST_USAGE_HINT,
+      // 명령을 아예 안 준 사람에게 필요한 것은 명령 목록이지 `test` 의 플래그가 아니다.
+      hint: COMMAND_DISCOVERY_HINT,
     });
   if (argv[0] !== "test") {
     // replay 는 index.ts 가 가로챈다. 여기 남겨 두면 구현된 명령을 미구현이라고 말하게 된다.
@@ -595,12 +596,14 @@ async function runCliCore(
         message: `'${argv[0]}' 명령은 아직 구현되지 않았습니다.`,
         // "test 명령만" 이라고 적어 두면 틀린 안내다. generate·replay·verify 는 index.ts 가
         // 가로채 실제로 동작한다. 여기 걸리는 것은 진입점이 없는 이름뿐이다.
-        hint: "사용 가능한 명령: test, generate, repair, replay, verify. 전체 도움말: mcpeak --help",
+        hint: COMMAND_DISCOVERY_HINT,
       });
     return writeFailure(dependencies, {
       code: "CLI_USAGE",
       message: `알 수 없는 CLI 명령 '${argv[0]}'입니다.`,
-      hint: TEST_USAGE_HINT,
+      // `TEST_USAGE_HINT` 를 쓰면 안 된다. 사용자가 친 것은 `test` 가 아닌데 `test` 의 플래그
+      // 11 개를 먼저 읽히고 맨 끝에 명령 목록이 온다. 바로 위 분기와 같은 안내를 준다.
+      hint: COMMAND_DISCOVERY_HINT,
     });
   }
   let input: TestCommandInput;

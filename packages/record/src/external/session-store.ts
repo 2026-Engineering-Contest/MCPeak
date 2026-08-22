@@ -95,6 +95,37 @@ interface MutableSession {
   interactions: MutableInteraction[];
 }
 
+/**
+ * 저장할 값을 **복사한 뒤 얼린다.** 양쪽이 각각 다른 문제를 막는다.
+ *
+ * **복사**는 호출자를 지킨다. 넘겨받은 객체를 그대로 얼리면 호출자 쪽에서도 불변이 되어,
+ * 그 객체를 다시 쓰려던 코드가 `TypeError` 로 죽는다. SQLite 구현은 넣을 때 직렬화하므로
+ * 호출자 객체가 멀쩡한데, 메모리만 얼리면 **저장 매체에 따라 동작이 갈린다** — 계약이
+ * 없애려는 것이 정확히 그 차이다.
+ *
+ * **얼리기**는 저장본을 지킨다. 스냅샷은 최상위만 얼리고 `request`·`outcome` 은 참조를 그대로
+ * 넘기므로, 얼려 두지 않으면 `snapshot.request.match.method = "DELETE"` 한 줄로 저장본이
+ * 바뀐다. 그러면 이미 계산된 matchKey 와 저장된 `match` 가 어긋나고 Replay 가 기록과 다른
+ * 것을 돌려준다.
+ *
+ * 읽을 때가 아니라 **쓸 때** 하는 이유는 `read` 가 반복 호출되기 때문이다. 넣을 때 한 번이면
+ * 끝나고, 저장된 뒤 이 값들이 바뀔 일도 없다 — `status` 와 `outcome` 교체는 바깥 wrapper 에서
+ * 일어난다.
+ */
+const freezeDeep = (value: unknown): void => {
+  if (typeof value !== "object" || value === null || Object.isFrozen(value)) return;
+  Object.freeze(value);
+  for (const key of Object.getOwnPropertyNames(value)) {
+    freezeDeep((value as Record<string, unknown>)[key]);
+  }
+};
+
+const storedCopy = <T>(value: T): T => {
+  const copy = structuredClone(value);
+  freezeDeep(copy);
+  return copy;
+};
+
 const interactionSnapshot = (value: MutableInteraction): StoredInteraction =>
   Object.freeze({
     interactionId: value.interactionId,
@@ -149,7 +180,11 @@ export function createMemorySessionStore(): SessionStore {
         occurrence: sameKey.length,
         recordedAt: new Date().toISOString(),
       });
-      session.interactions.push({ ...reservation, status: "incomplete", request });
+      session.interactions.push({
+        ...reservation,
+        status: "incomplete",
+        request: storedCopy(request),
+      });
       return reservation;
     },
 
@@ -163,7 +198,7 @@ export function createMemorySessionStore(): SessionStore {
       if (interaction.status === "complete")
         externalError("INTERACTION_ALREADY_COMPLETE", message.interactionAlreadyComplete);
       interaction.status = "complete";
-      interaction.outcome = outcome;
+      interaction.outcome = storedCopy(outcome);
     },
 
     lookup({ sourceSessionId, protocol, matchKey, occurrence }) {

@@ -1,5 +1,12 @@
 # @ohmymcp-hsu/generate
 
+## 0.6.1
+
+### Patch Changes
+
+- Updated dependencies [ffdd83d]
+  - @mcpeak/runner@0.9.1
+
 ## 0.6.0
 
 ### Minor Changes

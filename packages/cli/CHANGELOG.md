@@ -1,5 +1,61 @@
 # ohmymcp
 
+## 0.11.0
+
+### Minor Changes
+
+- 9c0aa96: **Breaking**: `mcpeak replay` 명령을 제거했습니다. Tool 카세트를 걷어내는 세 번째 조각입니다
+  ([ADR-0059](https://github.com/2026-Engineering-Contest/MCPeak/blob/main/docs/adr/0059-tool-카세트를-제거한다.md)).
+
+  `@mcpeak/cli/commands` 의 공개 재export 에서도 `runReplayCommand`·`parseReplayCommand`·
+  `ReplayCommandInput`·`ReplayCommandDependencies` 가 빠집니다.
+
+  **갈아타는 곳은 목적에 따라 갈립니다.**
+
+  - 서버를 띄우지 않고 저장된 응답으로 스위트를 돌리는 것이 목적이었다면 → `mcpeak-mock` 으로
+    서버를 대신하세요. 사람이 지정한 결정론적 응답이라 낡지 않습니다.
+  - 외부 API 호출만 막는 것이 목적이었다면 →
+    `mcpeak test <suite.json> --command <executable> --record-session <path>` 로 녹화하고
+    `--session <path>` 로 재생하세요. 서버는 실제로 뜨고 그 서버가 밖에 부르는 호출만 막힙니다.
+
+  `mcpeak replay` 를 실행하면 위 안내가 그대로 나옵니다.
+
+- 36bb78a: **Breaking**: `mcpeak verify` 명령을 제거했습니다. Tool 카세트를 걷어내는 첫 조각입니다
+  ([ADR-0059](https://github.com/2026-Engineering-Contest/MCPeak/blob/main/docs/adr/0059-tool-카세트를-제거한다.md)).
+
+  `verify` 는 카세트 `auto` 모드의 사각지대를 메우는 부속물이었습니다 — `auto` 는 카세트에 있는
+  요청이면 서버를 부르지 않아 응답이 바뀌어도 모르고, `verify` 가 그것을 비파괴로 확인했습니다.
+  카세트가 사라지면 그 사각지대도 사라집니다.
+
+  **갈아타는 곳은 목적에 따라 갈립니다.**
+
+  - 서버 응답이 아직 맞는지 확인하고 싶었다면 → `mcpeak test` 로 실서버를 직접 검증하세요.
+  - 외부 API 호출을 막는 것이 목적이었다면 → `mcpeak test --record-session <path>` 로 녹화하고
+    `--session <path>` 로 재생하세요. 서버는 실제로 뜨고 그 서버가 밖에 부르는 호출만 막힙니다.
+
+  `mcpeak verify` 를 실행하면 위 안내가 그대로 나옵니다. 라이브러리 함수 `verifyCassette` 는
+  `@mcpeak/record` 에 아직 남아 있습니다 — 구현 제거는 뒤 단계입니다.
+
+### Patch Changes
+
+- 3f7692d: record: 재생 원본 판정을 둘로 가릅니다. 세션이 아예 없으면 `SESSION_NOT_FOUND`, 있는데 녹화가
+  완료되지 않았으면 `REPLAY_SOURCE_INVALID` 입니다. 사용자에게 보이는 문장에서 내부 세션 id
+  (`"default"`)를 뺐습니다 — 사용자가 준 적 없는 이름이라 무엇을 가리키는지 알 수 없었습니다.
+
+  cli: `test --session` 이 세션을 열지 못했을 때 원인마다 다른 문장을 보여주고, **사용자가 준
+  경로**를 함께 싣습니다. 그리고 없는 경로로 재생을 시도해도 **그 자리에 빈 세션 파일을 만들지
+  않습니다** — `node:sqlite` 가 경로를 생성해 버려서, 오타 한 번에 빈 DB 가 남고 두 번째 실행부터는
+  "파일이 없다" 는 진단이 거짓이 됐습니다.
+
+  이전에는 없는 파일·빈 세션·실패한 녹화가 모두 같은 두 문장으로 끝났고, 재생인데 쓰기 권한을
+  확인하라고 안내했습니다(#260).
+
+- Updated dependencies [3f7692d]
+- Updated dependencies [ffdd83d]
+  - @mcpeak/record@0.3.1
+  - @mcpeak/runner@0.9.1
+  - @mcpeak/generate@0.6.1
+
 ## 0.10.0
 
 ### Minor Changes

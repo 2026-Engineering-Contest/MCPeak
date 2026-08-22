@@ -1,6 +1,6 @@
 {
   "name": "@mcpeak/generate",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "private": false,
   "type": "module",
   "description": "결정론적 baseline과 승인형 AI 검토로 MCP 테스트를 생성",

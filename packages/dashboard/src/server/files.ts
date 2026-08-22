@@ -1,6 +1,5 @@
-import { readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
-import { loadCassette } from "@mcpeak/record";
 import { validateMcpSuite } from "@mcpeak/runner";
 import type { FileContent, FileEntry, PutFileResponse } from "../api-types.js";
 
@@ -44,21 +43,6 @@ export async function listSuites(root: string): Promise<FileEntry[]> {
   return results.sort((a, b) => a.path.localeCompare(b.path));
 }
 
-/** `loadCassette`가 null이 아닌 파일만 담는다. */
-export async function listCassettes(root: string): Promise<FileEntry[]> {
-  const files = await walkJsonFiles(root);
-  const results: FileEntry[] = [];
-  for (const absolute of files) {
-    try {
-      if ((await loadCassette(absolute)) !== null)
-        results.push({ path: toRelative(root, absolute) });
-    } catch {
-      // 읽기 실패는 조용히 제외한다.
-    }
-  }
-  return results.sort((a, b) => a.path.localeCompare(b.path));
-}
-
 /** 파일을 읽어 `FileContent`로 준다. 파일이 없으면 던진다(호출부가 404로 옮긴다). */
 export async function readFileContent(root: string, absolute: string): Promise<FileContent> {
   const [content, stats] = await Promise.all([readFile(absolute, "utf8"), stat(absolute)]);
@@ -83,9 +67,4 @@ export async function writeFileContent(
   await writeFile(absolute, content, "utf8");
   const stats = await stat(absolute);
   return { saved: true, mtimeMs: stats.mtimeMs };
-}
-
-/** 파일이 없으면 던진다(호출부가 404로 옮긴다). */
-export async function deleteFile(absolute: string): Promise<void> {
-  await rm(absolute);
 }

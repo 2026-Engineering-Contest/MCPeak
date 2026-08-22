@@ -206,61 +206,6 @@ describe.sequential("대시보드 실서버 관통", () => {
     REAL_SERVER_TIMEOUT_MS,
   );
 
-  it(
-    "replay 플로우가 카세트로 서버 없이 통과한다",
-    async () => {
-      const directory = await mkdtemp(join(tmpdir(), "mcpeak-dashboard-e2e-"));
-      const server = await startDashboardServer({ port: 0, root });
-      const outPath = join(directory, "recorded-suite.json");
-      const cassettePath = join(directory, "weather.cassette.json");
-      try {
-        const generateRunId = await startRun(server, {
-          flow: "generate",
-          argv: [
-            "generate",
-            "--suite-id",
-            "weather",
-            "--name",
-            "Weather",
-            "--out",
-            outPath,
-            "--command",
-            process.execPath,
-            "--arg",
-            weatherServer,
-            "--cassette",
-            cassettePath,
-            "--record",
-          ],
-        });
-        const generated = await drainRun(server, generateRunId, {
-          choices: ["save"],
-          inputs: ["서울"],
-        });
-        expect(generated.exitCode).toBe(0);
-
-        const replayArgv = ["replay", outPath, "--cassette", cassettePath];
-        const first = await drainRun(
-          server,
-          await startRun(server, { flow: "replay", argv: replayArgv }),
-        );
-        expect(first.exitCode).toBe(0);
-
-        // 같은 요청 2회의 SSE 원문이 바이트까지 같아야 한다. 이벤트에 runId·시각이 실리면
-        // 여기서 깨진다. 재생 결정론과 이벤트 무상태성을 한 번에 잡는 단언이다.
-        const second = await drainRun(
-          server,
-          await startRun(server, { flow: "replay", argv: replayArgv }),
-        );
-        expect(second.raw).toBe(first.raw);
-      } finally {
-        await server.close();
-        await rm(directory, { recursive: true, force: true });
-      }
-    },
-    REAL_SERVER_TIMEOUT_MS,
-  );
-
   /**
    * 아래 두 건은 프론트가 실제로 보내는 argv 형태다(§5 T4: 서브커맨드를 붙이지 않는다).
    * 위 케이스들은 cli 형태로 보내고 있어 T5까지 이 결함을 못 잡았다. 계획서 §5 T6.
@@ -280,56 +225,6 @@ describe.sequential("대시보드 실서버 관통", () => {
         expect(stdoutText(outcome.events)).not.toBe("");
       } finally {
         await server.close();
-      }
-    },
-    REAL_SERVER_TIMEOUT_MS,
-  );
-
-  it(
-    "replay 플로우가 프론트 argv 형태로도 통과한다",
-    async () => {
-      const directory = await mkdtemp(join(tmpdir(), "mcpeak-dashboard-e2e-"));
-      const server = await startDashboardServer({ port: 0, root });
-      const outPath = join(directory, "recorded-suite.json");
-      const cassettePath = join(directory, "weather.cassette.json");
-      try {
-        const generateRunId = await startRun(server, {
-          flow: "generate",
-          argv: [
-            "generate",
-            "--suite-id",
-            "weather",
-            "--name",
-            "Weather",
-            "--out",
-            outPath,
-            "--command",
-            process.execPath,
-            "--arg",
-            weatherServer,
-            "--cassette",
-            cassettePath,
-            "--record",
-          ],
-        });
-        const generated = await drainRun(server, generateRunId, {
-          choices: ["save"],
-          inputs: ["서울"],
-        });
-        expect(generated.exitCode).toBe(0);
-
-        // 앞의 "replay" 가 없다. 무조건 slice(1) 하면 여기서 스위트 경로가 사라진다.
-        const outcome = await drainRun(
-          server,
-          await startRun(server, {
-            flow: "replay",
-            argv: [outPath, "--cassette", cassettePath],
-          }),
-        );
-        expect(outcome.exitCode).toBe(0);
-      } finally {
-        await server.close();
-        await rm(directory, { recursive: true, force: true });
       }
     },
     REAL_SERVER_TIMEOUT_MS,

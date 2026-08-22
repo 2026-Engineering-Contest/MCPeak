@@ -72,16 +72,13 @@ const VALID_SUITE = {
   ],
 };
 
-const VALID_CASSETTE = { version: 1, interactions: [] };
-
 async function putFile(
   server: TestServer,
-  collection: "suites" | "cassettes",
   path: string,
   content: string,
   baseMtimeMs = 0,
 ): Promise<Response> {
-  return fetch(`${server.baseUrl}/api/${collection}/${encodeURIComponent(path)}`, {
+  return fetch(`${server.baseUrl}/api/suites/${encodeURIComponent(path)}`, {
     method: "PUT",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ content, baseMtimeMs }),
@@ -263,7 +260,6 @@ describe("routes.ts", () => {
 
     const response = await putFile(
       server,
-      "suites",
       "package.json",
       JSON.stringify({ name: "replace" }),
       before.mtimeMs,
@@ -275,51 +271,15 @@ describe("routes.ts", () => {
   it("스위트 PUT은 JSON 확장자가 아닌 경로를 거절하고 파일을 만들지 않는다", async () => {
     server = await startTestServer();
 
-    const response = await putFile(server, "suites", "suite.txt", JSON.stringify(VALID_SUITE));
+    const response = await putFile(server, "suite.txt", JSON.stringify(VALID_SUITE));
     expect(response.status).toBe(400);
     await expect(stat(join(server.root, "suite.txt"))).rejects.toThrow();
-  });
-
-  it("카세트 PUT은 실제 카세트 JSON만 저장하고 의미상 잘못된 JSON은 원본을 보존한다", async () => {
-    server = await startTestServer();
-    const target = join(server.root, "cassette.json");
-    const original = JSON.stringify(VALID_CASSETTE);
-    await writeFile(target, original, "utf8");
-    const before = await stat(target);
-
-    const response = await putFile(
-      server,
-      "cassettes",
-      "cassette.json",
-      JSON.stringify({ version: 1, interactions: "not-an-array" }),
-      before.mtimeMs,
-    );
-    expect(response.status).toBe(400);
-    await expect(readFile(target, "utf8")).resolves.toBe(original);
-  });
-
-  it("카세트 DELETE는 실제 카세트만 지우고 일반 JSON은 보존한다", async () => {
-    server = await startTestServer();
-    const target = join(server.root, "package.json");
-    const original = '{"name":"keep"}\n';
-    await writeFile(target, original, "utf8");
-
-    const response = await fetch(`${server.baseUrl}/api/cassettes/package.json`, {
-      method: "DELETE",
-    });
-    expect(response.status).toBe(400);
-    await expect(readFile(target, "utf8")).resolves.toBe(original);
   });
 
   it("저장 대상의 부모 디렉터리가 없으면 고칠 방법을 알리는 4xx를 준다", async () => {
     server = await startTestServer();
 
-    const response = await putFile(
-      server,
-      "suites",
-      "missing/suite.json",
-      JSON.stringify(VALID_SUITE),
-    );
+    const response = await putFile(server, "missing/suite.json", JSON.stringify(VALID_SUITE));
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toEqual({
       error: expect.stringContaining("상위 디렉터리"),
@@ -333,7 +293,6 @@ describe("routes.ts", () => {
 
     const response = await putFile(
       server,
-      "suites",
       "suite.json",
       JSON.stringify(VALID_SUITE),
       before.mtimeMs,
@@ -349,12 +308,7 @@ describe("routes.ts", () => {
     await chmod(locked, 0o500);
 
     try {
-      const response = await putFile(
-        server,
-        "suites",
-        "locked/suite.json",
-        JSON.stringify(VALID_SUITE),
-      );
+      const response = await putFile(server, "locked/suite.json", JSON.stringify(VALID_SUITE));
       expect(response.status).toBe(400);
       await expect(response.json()).resolves.toEqual({
         error: expect.stringContaining("쓰기 권한"),

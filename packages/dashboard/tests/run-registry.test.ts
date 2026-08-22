@@ -38,7 +38,7 @@ describe("RunRegistry", () => {
 
   it("exitCode 0이 아니면 failed다", async () => {
     const registry = new RunRegistry();
-    const handle = registry.start("replay", () => Promise.resolve(3));
+    const handle = registry.start("test", () => Promise.resolve(3));
     await tick();
     expect(handle.summary.status).toBe("failed");
     expect(handle.summary.exitCode).toBe(3);

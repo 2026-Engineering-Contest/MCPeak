@@ -11,7 +11,7 @@ export type { ApiError } from "./api-types.js";
 export interface DashboardServerOptions {
   /** 0을 주면 빈 포트를 커널이 고르고, 고른 값이 반환값의 `port`에 담긴다. */
   readonly port: number;
-  /** 스위트·카세트 탐색과 경로 가드의 기준이 되는 프로젝트 루트(절대경로). */
+  /** 스위트 탐색과 경로 가드의 기준이 되는 프로젝트 루트(절대경로). */
   readonly root: string;
 }
 

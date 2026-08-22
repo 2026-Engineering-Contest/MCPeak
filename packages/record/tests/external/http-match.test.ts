@@ -234,7 +234,7 @@ describe("normalizeHttpRequest", () => {
     expect(stored.headers).toContainEqual(["location", "[redacted]"]);
   });
 
-  it("link 는 URI 의 경로만 지우고 rel 등 허용된 파라미터는 보존한다 (#301)", async () => {
+  it("link 는 URI 의 경로만 지우고 등록된 rel 값만 보존한다 (#301)", async () => {
     const response = new Response(JSON.stringify({ items: [] }), {
       status: 200,
       headers: {
@@ -252,13 +252,38 @@ describe("normalizeHttpRequest", () => {
     const stored = await encodeHttpResponse(response);
     const link = stored.headers.find(([name]) => name === "link");
 
-    // 상대 참조는 응답 URL 기준으로 해석된다. 허용 목록 밖 파라미터(anchor)는 값을 가린다.
+    // 상대 참조는 응답 URL 기준으로 해석된다. rel 이 아닌 파라미터(type·anchor)는 값을 가린다.
     expect(link?.[1]).toBe(
       '<https://example.com/<redacted>?cursor=2>; rel="next", ' +
-        '<https://other.example.com/<redacted>>; rel="prev"; type="application/json"; anchor=[redacted]',
+        '<https://other.example.com/<redacted>>; rel="prev"; type=[redacted]; anchor=[redacted]',
     );
     expect(JSON.stringify(stored)).not.toContain("SECRET");
     expect(JSON.stringify(stored)).not.toContain("ANOTHER");
+  });
+
+  it("link 파라미터 값에 실린 토큰은 이름이 무엇이든 남지 않는다 — rel 도 등록 값 밖이면 가린다", async () => {
+    const response = new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: {
+        "content-type": "application/json",
+        link:
+          `<https://example.com/a>; rel="Bearer sk_live_TOKEN1"; title="sk_live_TOKEN2"; title*=UTF-8''sk_live_TOKEN3, ` +
+          '<https://example.com/b>; rel="next last"; rel2=sk_live_TOKEN4',
+      },
+    });
+    Object.defineProperty(response, "url", {
+      value: "https://example.com/x",
+      configurable: true,
+    });
+
+    const stored = await encodeHttpResponse(response);
+    const link = stored.headers.find(([name]) => name === "link");
+
+    expect(link?.[1]).toBe(
+      "<https://example.com/<redacted>>; rel=[redacted]; title=[redacted]; title*=[redacted], " +
+        '<https://example.com/<redacted>>; rel="next last"; rel2=[redacted]',
+    );
+    expect(JSON.stringify(stored)).not.toContain("TOKEN");
   });
 
   it("link 값이 RFC 8288 문법으로 해석되지 않으면 통째로 가린다", async () => {

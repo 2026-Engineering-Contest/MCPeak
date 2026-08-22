@@ -707,9 +707,17 @@ for (const [fixture, expectedStatus, expectedSummary] of [
   const report = JSON.parse(result.out);
   assert.equal(report.schemaVersion, 1);
   assert.equal(report.status, "passed");
+  assert.equal(
+    report.cases.find((item) => item.spec.id === "schema-violation-rejected")?.rejectionBasis,
+    "verified",
+  );
+  assert.equal(
+    report.cases.find((item) => item.spec.id === "unmatched-args-miss")?.rejectionBasis,
+    "unverified",
+  );
   assert.deepEqual(report.summary, {
-    total: 4,
-    passed: 4,
+    total: 5,
+    passed: 5,
     failed: 0,
     timedOut: 0,
     cancelled: 0,

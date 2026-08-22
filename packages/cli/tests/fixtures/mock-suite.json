@@ -26,6 +26,12 @@
       "assertions": [{ "type": "isError", "expected": false }]
     },
     {
+      "id": "schema-violation-rejected",
+      "name": "inputSchema 타입 위반은 확인된 거절이 된다",
+      "operation": { "type": "callTool", "tool": "get_weather", "input": { "city": 0 } },
+      "assertions": [{ "type": "isError", "expected": true }]
+    },
+    {
       "id": "unmatched-args-miss",
       "name": "주입되지 않은 인자 조합은 도구 오류가 된다",
       "operation": { "type": "callTool", "tool": "add", "input": { "a": 9, "b": 9 } },

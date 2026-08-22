@@ -82,6 +82,45 @@ describe("classifyRejectionBasis", () => {
     expect(classify("get_weather", "→ 'city' 는 문자열이어야 합니다.")).toBe("unverified");
   });
 
+  it("MCPeak 목의 inputSchema 위반 거절은 고정 접미어로 확인한다", () => {
+    expect(
+      classify(
+        "get_weather",
+        [
+          "→ 툴 'get_weather' 의 'city' 은(는) string 이어야 합니다. 받은 값: 0 (number)",
+          "→ 이 툴이 tools/list 로 선언한 inputSchema 가 그렇게 요구합니다.",
+          "→ 거절이 의도한 것이면 responses 에 이 인자를 넣어 응답을 지정하세요.",
+        ].join("\n"),
+      ),
+    ).toBe("verified");
+  });
+
+  it("MCPeak 목의 고정 문장 뒤에 내용이 더 있으면 확인하지 않는다", () => {
+    expect(
+      classify(
+        "get_weather",
+        [
+          "→ 툴 'get_weather' 의 'city' 은(는) string 이어야 합니다. 받은 값: 0 (number)",
+          "→ 이 툴이 tools/list 로 선언한 inputSchema 가 그렇게 요구합니다.",
+          "→ 거절이 의도한 것이면 responses 에 이 인자를 넣어 응답을 지정하세요.",
+          "추가 오류",
+        ].join("\n"),
+      ),
+    ).toBe("unverified");
+  });
+
+  it("MCPeak 목의 고정 안내만 흉내낸 본문은 확인하지 않는다", () => {
+    expect(
+      classify(
+        "get_weather",
+        [
+          "→ 이 툴이 tools/list 로 선언한 inputSchema 가 그렇게 요구합니다.",
+          "→ 거절이 의도한 것이면 responses 에 이 인자를 넣어 응답을 지정하세요.",
+        ].join("\n"),
+      ),
+    ).toBe("unverified");
+  });
+
   it("툴 이름의 정규식 메타문자를 리터럴로 다룬다", () => {
     // 이스케이프를 빼면 `a.b` 의 `.` 이 임의 문자와 맞아 `aXbArguments` 를 verified 로 찍는다.
     expect(classify("a.b", "Error executing tool a.b: 1 validation error for aXbArguments")).toBe(

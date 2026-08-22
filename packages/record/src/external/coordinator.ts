@@ -158,12 +158,26 @@ const assertRedacted = (sent: unknown, rechecked: unknown, what: string): void =
  *
  * 원래 오류의 문구는 싣지 않는다. 지금은 전부 고정 문구지만, 재검사가 해석하지 못한 값이
  * 문구에 섞여 들어갈 여지를 남기지 않는다.
+ *
+ * **다만 우리가 의도적으로 거절한 것만 위반으로 다룬다.** 모든 예외를 삼키면 우리 쪽 실패까지
+ * "자식과 부모의 build 가 다르다" 로 단정하게 된다. 예를 들어 `normalizeJson` 은 깊이 상한이
+ * 없어 충분히 깊게 중첩된 **정상** JSON 본문에서 `RangeError` 를 낸다. 그것까지 이 분류에
+ * 실으면 사용자는 아무 문제 없는 build 를 뒤지게 된다 — 원인이 본문 모양인데 진단은 배포
+ * 형상을 가리킨다. 이 PR 이 고친 오진과 같은 종류다.
+ *
+ * 그래서 `ExternalRecordReplayError` 가 아닌 것은 **그대로 올린다.** 위에서 말한 `fail()` 경로는
+ * 전부 `externalError` 라 이 클래스이므로, 원래 잡으려던 것은 그대로 잡힌다. 남은 것(우리
+ * 버그·런타임 한계)은 상위에서 내부 오류로 다뤄지는 편이 정직하다.
+ *
+ * 깊이 상한 자체는 여기서 정하지 않는다. "몇 을 상한으로 할 것인가" 는 순환 참조·sparse array
+ * 처럼 정규화 규칙 목록에 들어갈 판단이라 별도로 다룬다.
  */
 const recheck = <T>(value: T, apply: (value: T) => T, what: string): void => {
   let rechecked: T;
   try {
     rechecked = apply(value);
-  } catch {
+  } catch (error) {
+    if (!(error instanceof ExternalRecordReplayError)) throw error;
     invariantViolation("unnormalizable-value");
   }
   assertRedacted(value, rechecked, what);

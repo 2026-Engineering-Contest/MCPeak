@@ -381,4 +381,86 @@ describe("불변식 위반 뒤 세션 상태 (ADR-0052)", () => {
     expect(store.read("leak")?.status).toBe("failed");
     expect(store.read("leak")?.interactions[0]?.status).toBe("incomplete");
   });
+
+  /**
+   * `throw` 갈래의 회귀 스펙이다.
+   *
+   * `redactStoredOutcome` 이 response 가 아닌 값을 **입력 그대로** 돌려주던 때, 재검사의 바이트
+   * 비교가 같은 참조끼리 비교하는 항등식이 되어 아무것도 걸러내지 못했다. 그래서 자식이 실어
+   * 보낸 낯선 필드가 검증 없이 그대로 저장됐다 — 지우려던 경로를 담아도 통과했다.
+   *
+   * response 갈래는 처음부터 알려진 필드로 재구성했기 때문에 같은 값을 실어도 걸렸다. 구멍은
+   * "재구성이 한쪽에만 있었다" 는 것 하나였고, 그래서 고친 것도 재구성을 양쪽에 두는 것이다.
+   */
+  it("throw outcome 에 실린 낯선 필드도 거부한다 — 재구성이 없으면 재검사가 항등식이 된다", async () => {
+    const store = createMemorySessionStore();
+    const handle = await startExternalCoordinator({ mode: "record", sessionId: "throwleak", store });
+    handles.push(handle);
+    const auth = {
+      authorization: `Bearer ${handle.childEnvironment.MCPEAK_EXTERNAL_COORDINATOR_TOKEN}`,
+      "content-type": "application/json",
+    };
+
+    const began = await fetch(`${handle.url}/begin`, {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ schemaVersion: 1, request: clean }),
+    });
+    expect(began.status).toBe(200);
+    const { reservation } = (await began.json()) as { reservation: { interactionId: string } };
+
+    const leaky = await fetch(`${handle.url}/complete`, {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        schemaVersion: 1,
+        interactionId: reservation.interactionId,
+        outcome: {
+          kind: "throw",
+          failureKind: "network",
+          name: "TypeError",
+          // 스키마에 없는 필드. 경로가 든 URL 을 실어 보낸다.
+          leaked: "https://hooks.slack.com/services/T00/B00/XXXXSECRET",
+        },
+      }),
+    });
+
+    expect(leaky.status).toBe(400);
+    expect(await leaky.text()).toContain("EXTERNAL_REDACTION_INVARIANT_VIOLATION");
+    expect(store.read("throwleak")?.status).toBe("failed");
+    // 저장까지 갔는지가 이 스펙의 요점이다. 상호작용이 완료로 남으면 그 안에 경로가 있다.
+    expect(store.read("throwleak")?.interactions[0]?.status).toBe("incomplete");
+  });
+
+  /** 정상적인 `throw` 는 그대로 통과해야 한다. 재구성이 멀쩡한 값을 바꾸면 전부 실패한다. */
+  it("알려진 필드만 담은 throw outcome 은 통과한다", async () => {
+    const store = createMemorySessionStore();
+    const handle = await startExternalCoordinator({ mode: "record", sessionId: "throwok", store });
+    handles.push(handle);
+    const auth = {
+      authorization: `Bearer ${handle.childEnvironment.MCPEAK_EXTERNAL_COORDINATOR_TOKEN}`,
+      "content-type": "application/json",
+    };
+
+    const began = await fetch(`${handle.url}/begin`, {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ schemaVersion: 1, request: clean }),
+    });
+    const { reservation } = (await began.json()) as { reservation: { interactionId: string } };
+
+    // `code` 는 선택 필드다. 없는 경우가 재구성에서 `null` 로 새로 생기면 비교가 어긋난다.
+    const done = await fetch(`${handle.url}/complete`, {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        schemaVersion: 1,
+        interactionId: reservation.interactionId,
+        outcome: { kind: "throw", failureKind: "network", name: "TypeError" },
+      }),
+    });
+
+    expect(done.status).toBe(200);
+    expect(store.read("throwok")?.interactions[0]?.status).toBe("complete");
+  });
 });

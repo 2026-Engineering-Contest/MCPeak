@@ -486,8 +486,26 @@ export const redactNormalizedRequest = (request) => ({
   display: redactHttpDisplay(request.display),
 });
 
-/** 저장 직전 outcome 에 마스킹을 다시 적용한다. 자식이 제대로 했다면 멱등이다. */
+/**
+ * 저장 직전 outcome 에 마스킹을 다시 적용한다. 자식이 제대로 했다면 멱등이다.
+ *
+ * **두 갈래 다 알려진 필드만 옮겨 담아 새 객체를 만든다.** 재검사의 값어치는 바이트 비교에서
+ * 나오는데(`assertRedacted`), 입력을 그대로 돌려주면 그 비교가 **같은 참조끼리 비교하는
+ * 항등식**이 되어 무엇도 걸러내지 못한다. 한때 `throw` 갈래가 그랬다 — `{kind:"throw", …,
+ * leaked:"https://host/hooks/SECRET"}` 이 검증 없이 통과해 그대로 저장됐다. `response` 는
+ * 처음부터 재구성했기 때문에 같은 값을 실어도 낯선 필드가 `rechecked` 에서 사라지고 비교가
+ * 어긋나 잡혔다. 구멍은 "재구성이 한쪽에만 있었다" 는 것 하나였다.
+ */
 export const redactStoredOutcome = (outcome) => {
+  if (outcome.kind === "throw")
+    return {
+      kind: "throw",
+      failureKind: outcome.failureKind,
+      name: outcome.name,
+      // `code` 는 선택 필드다(`StoredHttpThrow`). 없을 때 `undefined` 로 실으면 `stableStringify`
+      // 가 `normalizeJson` 에서 그것을 `null` 로 바꿔, 원본에 없던 키가 생겨 비교가 어긋난다.
+      ...(outcome.code === undefined ? {} : { code: outcome.code }),
+    };
   if (outcome.kind !== "response") return outcome;
   return {
     kind: "response",

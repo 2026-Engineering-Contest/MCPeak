@@ -4,7 +4,7 @@ import { createMcpClientAdapter } from "./client.js";
 import { NodeControlledStdioTransport } from "./controlled-stdio.js";
 import type { McpHttpDiagnostics, McpProcessDiagnostics } from "./diagnostics.js";
 import { McpClientError } from "./errors.js";
-import { HttpConnectionState, trackOperationFailures } from "./http-transport.js";
+import { HttpConnectionState } from "./http-transport.js";
 import type { ConnectOptions, HttpConnectOptions, StdioConnectOptions } from "./options.js";
 import {
   isHttpConnectOptions,
@@ -106,7 +106,7 @@ export async function connectStdio(options: StdioConnectOptions): Promise<McpStd
     throw primary;
   }
   const close = () => transport.close();
-  const operationFailureKind = () => {
+  const operationFailureKind = (_cause: unknown) => {
     const diagnostics = transport.getDiagnostics();
     if (diagnostics.exitCode !== null || diagnostics.signal !== null) return "process" as const;
     return transport.state === "failed" ? ("transport" as const) : undefined;
@@ -142,10 +142,10 @@ export async function connectHttp(options: HttpConnectOptions): Promise<McpHttpC
   const close = () => state.close(() => sdk.close());
   return {
     client: createMcpClientAdapter(
-      trackOperationFailures(sdk, state),
+      sdk,
       () => state.getDiagnostics(),
       close,
-      () => state.operationFailureKind(),
+      (cause) => state.operationFailureKind(cause),
     ),
     getDiagnostics: () => state.getDiagnostics(),
     close,

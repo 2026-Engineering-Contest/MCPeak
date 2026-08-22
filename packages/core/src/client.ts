@@ -110,10 +110,10 @@ export function createMcpClientAdapter(
   sdk: SdkClient,
   diagnostics: () => McpDiagnosticsInput,
   close: () => Promise<void> = () => Promise.resolve(),
-  operationFailureKind: () => OperationFailureKind = () => undefined,
+  operationFailureKind: (cause: unknown) => OperationFailureKind = () => undefined,
 ): McpClient {
   const operationFailure = (phase: "listTools" | "callTool", cause: unknown): McpClientError => {
-    const kind = operationFailureKind();
+    const kind = operationFailureKind(cause);
     if (kind === "process")
       return new McpClientError({
         code: "PROCESS_EXITED",

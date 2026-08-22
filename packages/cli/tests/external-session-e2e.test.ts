@@ -182,7 +182,9 @@ describe("mcpeak test 의 External 세션", () => {
     const backslashUEscape = `${String.fromCharCode(92)}u000a`;
     expect(stderr).not.toContain(backslashUEscape);
     // 200자 절단(runner 의 MAX_VALUE_STRING_CHARS)에 걸리지 않아 해결 안내가 끝까지 남는다.
-    expect(stderr).toContain("녹화를 다시 하거나, 요청이 실행마다 달라지는 값을 담고 있는지 확인하세요.");
+    expect(stderr).toContain(
+      "녹화를 다시 하거나, 요청이 실행마다 달라지는 값을 담고 있는지 확인하세요.",
+    );
   }, 30_000);
 });
 

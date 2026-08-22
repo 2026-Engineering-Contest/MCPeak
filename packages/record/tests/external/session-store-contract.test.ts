@@ -311,4 +311,30 @@ describe.each(STORES)("SessionStore 계약 — $name", ({ create }) => {
       }).not.toThrow();
     });
   });
+
+  describe("스냅샷 격리", () => {
+    it("스냅샷의 중첩 값을 고쳐도 저장본이 바뀌지 않는다", () => {
+      const store = create();
+      store.createSession("s1");
+      recordOne(store, "s1", "a");
+
+      const snapshot = store.read("s1")?.interactions[0];
+      // 최상위만 얼려 두면 이 한 줄로 저장본이 바뀐다. 그러면 이미 계산된 matchKey 와
+      // 저장된 match 가 어긋나고, Replay 가 기록과 다른 것을 돌려준다.
+      try {
+        (snapshot?.request.match as { method: string }).method = "DELETE";
+      } catch {
+        // 얼려 있으면 strict mode 에서 던진다. 던지든 무시되든 저장본만 그대로면 된다.
+      }
+      try {
+        (snapshot?.outcome as { status: number }).status = 500;
+      } catch {
+        // 위와 같다.
+      }
+
+      const stored = store.read("s1")?.interactions[0];
+      expect(stored?.request.match.method).toBe("GET");
+      expect((stored?.outcome as { status: number }).status).toBe(200);
+    });
+  });
 });

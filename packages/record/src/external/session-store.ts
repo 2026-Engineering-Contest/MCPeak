@@ -95,6 +95,26 @@ interface MutableSession {
   interactions: MutableInteraction[];
 }
 
+/**
+ * 저장 직전에 값을 통째로 얼린다.
+ *
+ * 스냅샷은 최상위만 얼리고 `request`·`outcome` 은 **참조를 그대로 넘겼다.** 그래서
+ * `snapshot.request.match.method = "DELETE"` 한 줄로 저장본이 바뀌었다 — 그러면 이미 계산된
+ * matchKey 와 저장된 `match` 가 어긋나고, Replay 가 기록과 다른 것을 돌려준다.
+ *
+ * 읽을 때 복사하지 않고 **쓸 때 한 번 얼리는** 이유는 `read` 가 반복 호출되기 때문이다.
+ * 복사는 읽을 때마다 값을 되고, 얼리기는 넣을 때 한 번이면 끝난다. 저장된 뒤 이 값들이
+ * 바뀔 일도 없다 — `status` 와 `outcome` 교체는 바깥 wrapper 에서 일어난다.
+ */
+const deepFreeze = <T>(value: T): T => {
+  if (typeof value !== "object" || value === null || Object.isFrozen(value)) return value;
+  Object.freeze(value);
+  for (const key of Object.getOwnPropertyNames(value)) {
+    deepFreeze((value as Record<string, unknown>)[key]);
+  }
+  return value;
+};
+
 const interactionSnapshot = (value: MutableInteraction): StoredInteraction =>
   Object.freeze({
     interactionId: value.interactionId,
@@ -149,7 +169,11 @@ export function createMemorySessionStore(): SessionStore {
         occurrence: sameKey.length,
         recordedAt: new Date().toISOString(),
       });
-      session.interactions.push({ ...reservation, status: "incomplete", request });
+      session.interactions.push({
+        ...reservation,
+        status: "incomplete",
+        request: deepFreeze(request),
+      });
       return reservation;
     },
 
@@ -163,7 +187,7 @@ export function createMemorySessionStore(): SessionStore {
       if (interaction.status === "complete")
         externalError("INTERACTION_ALREADY_COMPLETE", message.interactionAlreadyComplete);
       interaction.status = "complete";
-      interaction.outcome = outcome;
+      interaction.outcome = deepFreeze(outcome);
     },
 
     lookup({ sourceSessionId, protocol, matchKey, occurrence }) {

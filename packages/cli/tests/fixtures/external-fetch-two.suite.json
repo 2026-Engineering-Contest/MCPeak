@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "external-fetch-two",
+  "name": "외부 HTTP 를 두 번 부르는 서버",
+  "defaultTimeoutMs": 10000,
+  "cases": [
+    {
+      "id": "seoul-weather",
+      "name": "서울 날씨를 외부 API 에서 가져온다",
+      "operation": { "type": "callTool", "tool": "fetch_weather", "input": { "city": "seoul" } },
+      "assertions": [{ "type": "isError", "expected": false }]
+    },
+    {
+      "id": "busan-weather",
+      "name": "부산 날씨를 외부 API 에서 가져온다",
+      "operation": { "type": "callTool", "tool": "fetch_weather", "input": { "city": "busan" } },
+      "assertions": [{ "type": "isError", "expected": false }]
+    }
+  ]
+}

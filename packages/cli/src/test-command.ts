@@ -1,5 +1,11 @@
 import { extname } from "node:path";
 import type { McpStdioConnection } from "@mcpeak/core";
+/**
+ * **타입만** 가져온다. 값 import 로 바꾸면 `node:sqlite` 가 CLI 를 띄우는 것만으로 로드되어
+ * ADR-0056 이 좁혀 둔 실험 경고가 모든 실행에 다시 붙는다. `import type` 은 컴파일에서
+ * 지워지므로 `external-wiring.ts` 의 동적 로딩이 그대로 유지된다.
+ */
+import type { SessionSummary } from "@mcpeak/record/external";
 import type {
   CheckDeterminismOptions,
   DeterminismResult,
@@ -1154,6 +1160,58 @@ async function runCliCore(
 }
 
 /**
+ * 네 경고가 공유하는 마지막 줄(ADR-0057). **한 곳에 둔다** — 갈래마다 따로 쓰면 같은 한계를
+ * 사용자가 갈래마다 다르게 배우고, 범위가 넓어질 때 고쳐야 할 곳이 넷이 된다.
+ */
+const EXTERNAL_SCOPE_NOTE = "→ MCPeak은 서버가 `globalThis.fetch`로 부른 것만 잡습니다.\n";
+
+/**
+ * External 세션 요약을 사용자에게 보이는 한 문단으로 옮긴다. `undefined` 는 할 말이 없다는 뜻이다.
+ *
+ * **순서가 곧 계약이다**(ADR-0057). `consumedCount === 0` 과 `unusedCount > 0` 은 동시에 참일 수
+ * 있어서, 조건을 각각 독립적으로 세우면 한 실행에 경고가 두 번 찍힌다. 아래 순서로 먼저 걸리는
+ * 하나만 낸다.
+ *
+ * 갈래를 넷으로 나눈 이유는 **사용자가 다음에 볼 곳이 다르기 때문이다.** 원본이 비어 있는 것
+ * (녹화 단계가 아무것도 못 잡았다)과 원본은 찼는데 하나도 안 쓴 것(세션 파일을 잘못 짚었거나
+ * 서버의 호출 방식이 바뀌었다)은 같은 `consumedCount === 0` 이지만 원인이 정반대 방향에 있다.
+ * 하나로 합치면 [#258](https://github.com/2026-Engineering-Contest/MCPeak/issues/258) 의 실제
+ * 경로에서 "녹화된 호출이 재생되지 않았다" 고 말하게 되는데, 그 문장은 녹화가 있었다는 전제를
+ * 깔아 사용자를 재생 쪽으로 보낸다. 정작 볼 곳은 그 앞 단계다.
+ *
+ * 판정만 하고 쓰기는 하지 않는다 — 순수 함수라 배타성 자체를 프로세스 없이 고정할 수 있다.
+ */
+export function externalSessionNotice(summary: SessionSummary): string | undefined {
+  if (summary.mode === "record") {
+    if (summary.interactionCount > 0) return undefined;
+    return (
+      "\n알림: 이 실행에서 외부 호출이 하나도 녹화되지 않았습니다.\n" +
+      "→ 서버가 외부 API를 호출했다면 지원 범위를 벗어났는지 확인하세요.\n" +
+      EXTERNAL_SCOPE_NOTE
+    );
+  }
+  if (summary.interactionCount === 0)
+    return (
+      "\n알림: 이 세션에는 녹화된 외부 호출이 0건입니다. 재생할 것이 없었습니다.\n" +
+      "→ 녹화 실행이 외부 호출을 하나도 잡지 못했다는 뜻입니다. 이 세션은 아무 호출도 막지 못합니다.\n" +
+      EXTERNAL_SCOPE_NOTE
+    );
+  if (summary.consumedCount === 0)
+    return (
+      "\n알림: 이 실행에서 녹화된 외부 호출이 하나도 재생되지 않았습니다.\n" +
+      "→ 지원 범위 밖의 호출은 실제 네트워크로 나갔을 수 있습니다.\n" +
+      EXTERNAL_SCOPE_NOTE
+    );
+  if (summary.unusedCount > 0)
+    return (
+      `\n알림: 녹화된 외부 호출 ${summary.interactionCount}건 중 ${summary.unusedCount}건이 이번 실행에서 재생되지 않았습니다.\n` +
+      "→ 서버 코드나 실행 경로가 녹화 때와 달라졌을 수 있습니다.\n" +
+      EXTERNAL_SCOPE_NOTE
+    );
+  return undefined;
+}
+
+/**
  * `test` 실행에 External Record/Replay 수명주기를 씌운다.
  *
  * Coordinator 를 **먼저 열고 마지막에 닫는다**(ADR-0052). 그 사이에 들어가는 것이 기존 실행
@@ -1198,11 +1256,10 @@ export async function runCli(
     // 실행이 실패했으면 세션도 실패다. 실패한 실행의 녹화를 완료로 닫으면 다음 Replay 가
     // 반쪽짜리 세션을 정상 원본으로 읽는다.
     const summary = await wiring.finish(exitCode === 0 ? "completed" : "failed");
-    if (mode.mode === "replay" && summary.mode === "replay" && summary.unusedCount > 0)
-      dependencies.writeStderr(
-        `\n알림: 녹화된 외부 호출 ${summary.unusedCount}건이 이번 실행에서 쓰이지 않았습니다.\n` +
-          "→ 서버 코드가 바뀌어 호출이 줄었을 수 있습니다. 녹화를 다시 뜰지 확인하세요.\n",
-      );
+    // 실행이 실패했을 때도 낸다. `exitCode === 0` 으로 좁히면 "외부 호출이 실패해서 0건" 이라는
+    // 진짜 사고를 놓친다 — 실패 메시지 위에 한 줄 붙는 비용보다 그쪽이 크다(ADR-0057).
+    const notice = externalSessionNotice(summary);
+    if (notice !== undefined) dependencies.writeStderr(notice);
   } catch (error) {
     return writeFailure(dependencies, {
       code: "EXTERNAL_SESSION_FAILED",

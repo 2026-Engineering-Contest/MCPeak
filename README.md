@@ -93,6 +93,7 @@ mcpeak generate --suite-id weather --name "날씨 서버" --out weather.suite.js
 ```
 mcpeak test <suite.json> --command <executable> [--arg <value> ...]
              [--json] [--junit <path>] [--stderr-lines <N>]
+             [--record-session <path> | --session <path>]
 
 mcpeak generate --suite-id <id> --name <name> --out <suite.json>
                  --command <executable> [--arg <value> ...]
@@ -105,6 +106,11 @@ mcpeak generate --suite-id <id> --name <name> --out <suite.json>
 인자를 순서대로 넘깁니다.
 
 전체 도움말은 `mcpeak --help`, 서브커맨드는 `mcpeak help test` 로 봅니다.
+
+`--record-session <path>` 는 서버가 `globalThis.fetch` 로 호출한 외부 HTTP 응답을 세션 파일에
+녹화하고, `--session <path>` 는 그 응답을 재생합니다. 서버 자체는 매번 실제로 실행됩니다.
+`node:http`·`node:https` 같은 범위 밖 호출은 잡히지 않아 실제 네트워크로 나갈 수 있으며,
+MCPeak은 녹화 0건이나 재생 0건처럼 범위 밖 호출이 의심되는 실행을 종료 시점에 알립니다.
 
 ## 실제 서버 없이 테스트하기
 

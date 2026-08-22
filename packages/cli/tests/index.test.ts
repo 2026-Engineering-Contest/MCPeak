@@ -4,13 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import packageMetadata from "../package.json";
 import type { GenerateCommandDependencies } from "../src/generate-command.js";
-import {
-  COMMANDS,
-  nodeRepairDependencies,
-  run,
-  unavailableReplayDependencies,
-} from "../src/index.js";
-import { ReplayRuntimeUnavailableError } from "../src/replay-command.js";
+import { COMMANDS, nodeRepairDependencies, run } from "../src/index.js";
 
 type OptionalKey<T> = {
   [K in keyof T]-?: object extends Pick<T, K> ? K : never;
@@ -40,7 +34,7 @@ const OPTIONAL_GENERATE_DEPENDENCIES = {
 
 describe("mcpeak cli", () => {
   it("알려진 서브커맨드를 선언한다", () => {
-    expect(COMMANDS).toEqual(["test", "generate", "repair", "record", "replay", "mock"]);
+    expect(COMMANDS).toEqual(["test", "generate", "repair", "record", "mock"]);
   });
 
   /**
@@ -48,18 +42,6 @@ describe("mcpeak cli", () => {
    * `CLI_INTERNAL_ERROR` 로 잡혀 "이슈를 보고하세요" 가 나가고, 사용자는 자기 설치 문제로
    * 버그 리포트를 쓴다. 모듈 모킹으로는 이 경로를 재현할 수 없어 배선을 직접 본다.
    */
-  it("replay fallback 의존성이 런타임 미가용 전용 오류를 던진다", async () => {
-    const runtime = [
-      () => unavailableReplayDependencies.validateSuite({}),
-      () => unavailableReplayDependencies.loadCassette("c.json"),
-      () => unavailableReplayDependencies.startRunner({} as never),
-      () => unavailableReplayDependencies.finalize({} as never),
-      () => unavailableReplayDependencies.renderReport({} as never),
-    ];
-    for (const call of runtime) {
-      await expect(async () => await call()).rejects.toBeInstanceOf(ReplayRuntimeUnavailableError);
-    }
-  });
 
   it("사용자 입력 오류를 reject하지 않고 종료 코드 1로 반환한다", async () => {
     const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);

@@ -71,27 +71,10 @@ const REPAIR_OPTIONS = `옵션:
   --no-stderr        서버 stderr 를 전송에서 뺍니다. stderr 는 서버가 자유롭게 쓰는
                      텍스트라 경로·토큰·데이터가 섞일 수 있습니다
   --yes              전송 확인 화면을 건너뜁니다. 비대화형 환경에서 필요합니다`;
-
-export const REPLAY_USAGE = "사용법: mcpeak replay <suite.json> --cassette <path>";
-
-/**
- * 재생이 무엇을 하지 않는지가 이 명령의 핵심이다. 서버를 안 띄운다는 것과, 마스킹된 값에서는
- * 판정이 실제와 갈릴 수 있다는 것을 한 줄 사용법으로는 알 수 없다. ADR-0028.
- */
-const REPLAY_OPTIONS = `옵션:
-  --cassette <path>  재생할 카세트 파일입니다. 필수입니다.
-
-replay 는 MCP 서버를 실행하지 않고 카세트에 녹화된 응답만 돌려줍니다. 카세트에 없는 호출을
-만나면 실패합니다. 녹화는 \`mcpeak generate --cassette <path> --record\` 로 합니다.
-
-카세트는 저장할 때 \`token\`·\`apiKey\` 같은 이름의 값을 가립니다. 그 자리의 판정은 실제 서버와
-다를 수 있어 재생 시 경고합니다.`;
-
 const COMMANDS = `명령:
   test      JSON 테스트 명세로 MCP 서버를 실행하고 검증합니다.
   generate  MCP 서버의 툴 스키마에서 테스트 명세를 생성합니다.
-  repair    실패한 test 실행의 번들로 서버 코드의 원인 후보를 제안받습니다.
-  replay    녹화된 카세트로 서버 없이 테스트 명세를 재생합니다.`;
+  repair    실패한 test 실행의 번들로 서버 코드의 원인 후보를 제안받습니다.`;
 
 export const GLOBAL_HELP = `MCPeak — MCP 서버 테스트 프레임워크
 
@@ -109,8 +92,7 @@ ${COMMANDS}
   mcpeak <명령> --help
 `;
 
-const commandDiscovery =
-  "사용 가능한 명령: test, generate, repair, replay. 전체 도움말: mcpeak --help";
+const commandDiscovery = "사용 가능한 명령: test, generate, repair. 전체 도움말: mcpeak --help";
 
 export const TEST_USAGE_HINT = `${TEST_USAGE} ${commandDiscovery}`;
 
@@ -118,9 +100,7 @@ export const GENERATE_USAGE_HINT = `${GENERATE_USAGE} ${commandDiscovery}`;
 
 export const REPAIR_USAGE_HINT = `${REPAIR_USAGE} ${commandDiscovery}`;
 
-export const REPLAY_USAGE_HINT = `${REPLAY_USAGE} ${commandDiscovery}`;
-
-export function commandHelp(command: "test" | "generate" | "repair" | "replay"): string {
+export function commandHelp(command: "test" | "generate" | "repair"): string {
   if (command === "test")
     return `test — JSON 테스트 명세로 MCP 서버를 실행하고 검증합니다.
 
@@ -134,13 +114,6 @@ ${TEST_OPTIONS}
 ${REPAIR_USAGE}
 
 ${REPAIR_OPTIONS}
-`;
-  if (command === "replay")
-    return `replay — 녹화된 카세트로 서버 없이 테스트 명세를 재생합니다.
-
-${REPLAY_USAGE}
-
-${REPLAY_OPTIONS}
 `;
   return `generate — MCP 서버의 툴 스키마에서 테스트 명세를 생성합니다.
 

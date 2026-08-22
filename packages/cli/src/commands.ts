@@ -18,12 +18,6 @@ export {
   runRepairCommand,
 } from "./repair-command.js";
 export {
-  parseReplayCommand,
-  type ReplayCommandDependencies,
-  type ReplayCommandInput,
-  runReplayCommand,
-} from "./replay-command.js";
-export {
   type CliErrorCode,
   type CliFailure,
   parseTestCommand,

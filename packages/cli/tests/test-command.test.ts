@@ -362,6 +362,21 @@ describe("runCli", () => {
     expect(err).toContain("--session");
     expect(err).not.toContain("알 수 없는 CLI 명령");
   });
+
+  it("제거된 replay 도 제거 사실과 갈아탈 곳을 알려준다(ADR-0059)", async () => {
+    const d = deps();
+
+    expect(await runCli(["replay", "s.json", "--cassette", "c.json"], d.value)).toBe(1);
+
+    const err = d.writes.err.join("");
+    expect(err).toContain("제거되었습니다");
+    expect(err).toContain("ADR-0059");
+    // 목적에 따라 갈아탈 곳이 둘이다 — 서버 대체는 mock, 외부 호출 차단은 세션.
+    expect(err).toContain("mcpeak-mock");
+    expect(err).toContain("--record-session");
+    expect(err).toContain("--session");
+    expect(err).not.toContain("알 수 없는 CLI 명령");
+  });
   it("C1 제어 문자도 이스케이프한다", async () => {
     // U+009B 는 8비트 CSI 다. 렌더러의 escapeTerminalText 와 같은 범위를 막아야 한다.
     const d = deps();

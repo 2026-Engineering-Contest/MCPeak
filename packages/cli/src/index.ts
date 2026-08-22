@@ -3,15 +3,10 @@ import packageMetadata from "../package.json";
 import { nodeGenerateDependencies, nodeReviewIO, runGenerateCommand } from "./generate-command.js";
 import { commandHelp, GLOBAL_HELP } from "./help.js";
 import { type RepairCommandDependencies, runRepairCommand } from "./repair-command.js";
-import {
-  type ReplayCommandDependencies,
-  ReplayRuntimeUnavailableError,
-  runReplayCommand,
-} from "./replay-command.js";
 import { parseTestCommand, runCli } from "./test-command.js";
 
 export type Command = (argv: string[]) => Promise<number>;
-export const COMMANDS = ["test", "generate", "repair", "record", "replay", "mock"] as const;
+export const COMMANDS = ["test", "generate", "repair", "record", "mock"] as const;
 
 const unavailableDependencies = {
   readFile: async (): Promise<Uint8Array> => {
@@ -75,42 +70,6 @@ export function nodeRepairDependencies(
   };
 }
 
-/**
- * replay 는 `connect` 를 쓰지 않는다. 대신 카세트 로더가 필요하다. 런타임 의존성을 못 불러도
- * 사용 오류는 정상적으로 내야 하므로, 실제로 쓰이기 전에 끝나는 경로를 위해 자리만 채운다.
- *
- * **테스트가 배선을 직접 단언할 수 있도록 내보낸다.** 여기서 평범한 Error 로 되돌아가면
- * 사용자는 "이슈를 보고하세요" 를 보게 되는데, 모듈 모킹으로는 이 경로를 재현할 수 없다 —
- * `record` 와 `runner` 가 `generate-command` 를 통해 정적 import 체인에 있어서, 그것을
- * 모킹하면 `index.ts` 로드 자체가 깨진다. `nodeRepairDependencies` 를 함수로 뺀 것과 같은
- * 이유다(주입을 빠뜨려도 아무 테스트가 안 깨지는 상황을 막는다).
- */
-export const unavailableReplayDependencies: ReplayCommandDependencies = {
-  ...unavailableRuntimeDependencies,
-  /**
-   * 런타임에서 오는 의존성은 전용 오류 타입을 던진다. 평범한 Error 로 두면 `validateSuite`
-   * 자리에서 `CLI_INTERNAL_ERROR` 로 잡혀 "이슈를 보고하세요" 가 나가고, 사용자는 자기
-   * 설치 문제로 버그 리포트를 쓰게 된다. 실제로 가장 먼저 걸리는 것이 `validateSuite` 다.
-   *
-   * `unavailableRuntimeDependencies` 자체는 `test` 경로와 공유하므로 여기서만 덮는다.
-   */
-  validateSuite: (): never => {
-    throw new ReplayRuntimeUnavailableError();
-  },
-  loadCassette: async (): Promise<never> => {
-    throw new ReplayRuntimeUnavailableError();
-  },
-  startRunner: (): never => {
-    throw new ReplayRuntimeUnavailableError();
-  },
-  finalize: async (): Promise<never> => {
-    throw new ReplayRuntimeUnavailableError();
-  },
-  renderReport: (): never => {
-    throw new ReplayRuntimeUnavailableError();
-  },
-};
-
 export async function run(argv: string[]): Promise<number> {
   if (
     argv.length === 0 ||
@@ -121,12 +80,7 @@ export async function run(argv: string[]): Promise<number> {
   }
   if (argv.length === 2) {
     const command = argv[0] === "help" ? argv[1] : argv[1] === "--help" ? argv[0] : undefined;
-    if (
-      command === "test" ||
-      command === "generate" ||
-      command === "repair" ||
-      command === "replay"
-    ) {
+    if (command === "test" || command === "generate" || command === "repair") {
       process.stdout.write(commandHelp(command));
       return 0;
     }
@@ -215,26 +169,6 @@ export async function run(argv: string[]): Promise<number> {
       // 확인 화면을 띄웠으면 readline 이 열려 있다. 닫지 않으면 TTY 에서 프로세스가 안 끝난다.
       dependencies.reviewIO?.close?.();
     }
-  }
-  if (argv[0] === "replay") {
-    let runner: typeof import("@mcpeak/runner");
-    let record: typeof import("@mcpeak/record");
-    try {
-      [runner, record] = await Promise.all([import("@mcpeak/runner"), import("@mcpeak/record")]);
-    } catch {
-      return runReplayCommand(argv.slice(1), unavailableReplayDependencies);
-    }
-    return runReplayCommand(argv.slice(1), {
-      readFile,
-      validateSuite: runner.validateMcpSuite,
-      loadCassette: record.loadCassette,
-      startRunner: runner.runSuite,
-      finalize: runner.finalizeRunnerExecution,
-      renderReport: runner.renderReport,
-      colorEnabled: process.stdout.isTTY === true && process.env.NO_COLOR === undefined,
-      writeStdout: (text) => process.stdout.write(text),
-      writeStderr: (text) => process.stderr.write(text),
-    });
   }
   if (argv[0] !== "test") return runCli(argv, unavailableDependencies);
   try {

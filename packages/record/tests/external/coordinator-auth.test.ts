@@ -394,7 +394,11 @@ describe("불변식 위반 뒤 세션 상태 (ADR-0052)", () => {
    */
   it("throw outcome 에 실린 낯선 필드도 거부한다 — 재구성이 없으면 재검사가 항등식이 된다", async () => {
     const store = createMemorySessionStore();
-    const handle = await startExternalCoordinator({ mode: "record", sessionId: "throwleak", store });
+    const handle = await startExternalCoordinator({
+      mode: "record",
+      sessionId: "throwleak",
+      store,
+    });
     handles.push(handle);
     const auth = {
       authorization: `Bearer ${handle.childEnvironment.MCPEAK_EXTERNAL_COORDINATOR_TOKEN}`,
@@ -425,11 +429,67 @@ describe("불변식 위반 뒤 세션 상태 (ADR-0052)", () => {
       }),
     });
 
+    const leakyBody = await leaky.text();
     expect(leaky.status).toBe(400);
-    expect(await leaky.text()).toContain("EXTERNAL_REDACTION_INVARIANT_VIOLATION");
+    expect(leakyBody).toContain("EXTERNAL_REDACTION_INVARIANT_VIOLATION");
+    // 분류가 원인을 가리켜야 한다. 재구성이 낯선 필드를 버려 바이트 비교에 걸리기는 하지만,
+    // 그 경로로만 잡히면 "민감 값을 놓쳤다" 로 나가 사용자가 민감 키 목록 version 을 뒤진다.
+    expect(leakyBody).toContain("unknown-field");
+    expect(leakyBody).not.toContain("추가 마스킹");
+    expect(leakyBody).not.toContain("SECRET");
     expect(store.read("throwleak")?.status).toBe("failed");
     // 저장까지 갔는지가 이 스펙의 요점이다. 상호작용이 완료로 남으면 그 안에 경로가 있다.
     expect(store.read("throwleak")?.interactions[0]?.status).toBe("incomplete");
+  });
+
+  /**
+   * `response` 갈래도 같은 분류를 받아야 한다.
+   *
+   * 이쪽은 처음부터 재구성이 있어 낯선 필드가 **잡히기는** 했다. 다만 잡히는 경로가 바이트
+   * 비교뿐이라 진단이 "부모의 재검사가 추가 마스킹을 적용했습니다" 로 나갔다 — 원인은 스키마에
+   * 없는 필드인데 민감 키 목록을 가리킨다. `display` 쪽에서 고친 오진이 결과 쪽에만 남아 있었다.
+   */
+  it("response outcome 의 낯선 필드도 unknown-field 로 분류한다 — 잡히는 것과 원인을 말하는 것은 다르다", async () => {
+    const store = createMemorySessionStore();
+    const handle = await startExternalCoordinator({ mode: "record", sessionId: "resleak", store });
+    handles.push(handle);
+    const auth = {
+      authorization: `Bearer ${handle.childEnvironment.MCPEAK_EXTERNAL_COORDINATOR_TOKEN}`,
+      "content-type": "application/json",
+    };
+
+    const began = await fetch(`${handle.url}/begin`, {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ schemaVersion: 1, request: clean }),
+    });
+    const { reservation } = (await began.json()) as { reservation: { interactionId: string } };
+
+    const leaky = await fetch(`${handle.url}/complete`, {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        schemaVersion: 1,
+        interactionId: reservation.interactionId,
+        outcome: {
+          kind: "response",
+          status: 200,
+          statusText: "OK",
+          headers: [],
+          url: "https://example.com/<redacted>",
+          body: { ok: true },
+          leaked: "https://hooks.slack.com/services/T00/B00/XXXXSECRET",
+        },
+      }),
+    });
+    const body = await leaky.text();
+
+    expect(leaky.status).toBe(400);
+    expect(body).toContain("EXTERNAL_REDACTION_INVARIANT_VIOLATION");
+    expect(body).toContain("unknown-field");
+    expect(body).not.toContain("추가 마스킹");
+    expect(body).not.toContain("SECRET");
+    expect(store.read("resleak")?.status).toBe("failed");
   });
 
   /** 정상적인 `throw` 는 그대로 통과해야 한다. 재구성이 멀쩡한 값을 바꾸면 전부 실패한다. */

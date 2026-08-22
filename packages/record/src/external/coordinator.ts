@@ -11,6 +11,8 @@ import {
   type NormalizedExternalRequest,
   PROTOCOL_SCHEMA_VERSION,
   type StoredExternalOutcome,
+  type StoredHttpResponse,
+  type StoredHttpThrow,
 } from "./protocol.js";
 import {
   redactNormalizedRequest,
@@ -178,7 +180,7 @@ const recheck = <T>(value: T, apply: (value: T) => T, what: string): void => {
     rechecked = apply(value);
   } catch (error) {
     if (!(error instanceof ExternalRecordReplayError)) throw error;
-    invariantViolation("unnormalizable-value");
+    invariantViolation(what, "unnormalizable-value");
   }
   assertRedacted(value, rechecked, what);
 };
@@ -215,6 +217,31 @@ const KNOWN_DISPLAY_FIELDS = fieldNames<NormalizedExternalRequest["display"]>({
   url: true,
   headers: true,
   body: true,
+});
+
+/**
+ * 저장 outcome 의 알려진 필드. `kind` 별로 다르므로 둘로 나눈다.
+ *
+ * 낯선 필드는 재구성(`redactStoredOutcome`)이 버려서 결국 바이트 비교에 걸리기는 한다. 그런데
+ * 그때 나가는 문장은 **"부모의 재검사가 추가 마스킹을 적용했습니다"** 다 — 민감 값을 놓쳤다는
+ * 뜻이라 사용자는 민감 키 목록 version 을 뒤진다. 원인은 스키마에 없는 필드인데. `display` 쪽
+ * 에서 고친 것과 **같은 오진이 outcome 쪽에만 남아 있었다.** 여기서 먼저 걸러 분류를 맞춘다.
+ */
+const KNOWN_RESPONSE_FIELDS = fieldNames<StoredHttpResponse>({
+  kind: true,
+  status: true,
+  statusText: true,
+  headers: true,
+  url: true,
+  body: true,
+});
+
+/** `code` 는 선택 필드지만 **허용 목록**에는 있어야 한다 — 실려 올 수 있는 값이기 때문이다. */
+const KNOWN_THROW_FIELDS = fieldNames<StoredHttpThrow>({
+  kind: true,
+  failureKind: true,
+  name: true,
+  code: true,
 });
 
 /**
@@ -260,11 +287,17 @@ type InvariantClassification =
 /**
  * 변수에 함수 타입을 명시한다. `const f = (): never => …` 형태만으로는 TS 의 제어 흐름 분석이
  * "이 호출 뒤는 도달하지 않는다" 를 좁혀 주지 않아, 호출한 쪽에서 확정 할당이 깨진다.
+ *
+ * `what` 은 요청·결과 중 어느 쪽이 어긋났는지만 말한다. 위반한 필드의 이름도 값도 싣지 않는
+ * 것은 그대로다 — 둘 다 자식이 만든 값이라 지우려던 경로가 그대로 올 수 있다.
  */
-const invariantViolation: (classification: InvariantClassification) => never = (classification) =>
+const invariantViolation: (what: string, classification: InvariantClassification) => never = (
+  what,
+  classification,
+) =>
   externalError(
     "EXTERNAL_REDACTION_INVARIANT_VIOLATION",
-    `자식이 보낸 외부 요청이 wire 형식을 벗어났습니다(${classification}).\n` +
+    `자식이 보낸 ${what}이 wire 형식을 벗어났습니다(${classification}).\n` +
       "→ 저장하지 않고 세션을 실패로 둡니다. 같은 package/build의 자식과 부모가 다른 " +
       "형식을 쓴 것으로 보입니다.",
   );
@@ -282,9 +315,9 @@ const invariantViolation: (classification: InvariantClassification) => never = (
 const normalizedRequest = (value: unknown): NormalizedExternalRequest => {
   if (!plainObject(value))
     externalError("REQUEST_INVALID", "정규화된 외부 요청 형식이 잘못됐습니다.");
-  if ("match" in value) invariantViolation("match-field");
+  if ("match" in value) invariantViolation("외부 요청", "match-field");
   if (Object.keys(value).some((key) => !KNOWN_REQUEST_FIELDS.has(key)))
-    invariantViolation("unknown-field");
+    invariantViolation("외부 요청", "unknown-field");
   if (
     value.protocol !== "http" ||
     value.interactionSchemaVersion !== HTTP_INTERACTION_SCHEMA_VERSION ||
@@ -294,8 +327,8 @@ const normalizedRequest = (value: unknown): NormalizedExternalRequest => {
     externalError("REQUEST_INVALID", "정규화된 외부 요청 형식이 잘못됐습니다.");
   const display = value.display;
   if (Object.keys(display).some((key) => !KNOWN_DISPLAY_FIELDS.has(key)))
-    invariantViolation("unknown-field");
-  if (!validDisplay(display)) invariantViolation("invalid-value");
+    invariantViolation("외부 요청", "unknown-field");
+  if (!validDisplay(display)) invariantViolation("외부 요청", "invalid-value");
   // 재구성은 알려진 필드만 옮겨 담는다. 위의 거부가 이미 걸렀더라도, 실을 자리를 만들지 않는
   // 것이 "매칭 재료는 저장되지 않는다" 를 형식으로 보장하는 마지막 겹이다.
   const request: NormalizedExternalRequest = {
@@ -313,9 +346,17 @@ const normalizedRequest = (value: unknown): NormalizedExternalRequest => {
   return request;
 };
 
+/**
+ * 요청과 같은 규칙을 결과에도 적용한다(ADR-0053). 낯선 필드는 재구성이 버려서 결국 바이트
+ * 비교에 걸리지만, 그때 나가는 문장이 "민감 값을 놓쳤다" 라 원인을 잘못 가리킨다. 분류를 여기서
+ * 맞춘다 — `display` 쪽에서 이미 고친 오진이 결과 쪽에만 남아 있던 것을 메운다.
+ */
 const storedOutcome = (value: unknown): StoredExternalOutcome => {
   if (!plainObject(value) || (value.kind !== "response" && value.kind !== "throw"))
     externalError("REQUEST_INVALID", "저장할 외부 호출 결과 형식이 잘못됐습니다.");
+  const known = value.kind === "response" ? KNOWN_RESPONSE_FIELDS : KNOWN_THROW_FIELDS;
+  if (Object.keys(value).some((key) => !known.has(key)))
+    invariantViolation("호출 결과", "unknown-field");
   const outcome = value as unknown as StoredExternalOutcome;
   recheck(outcome, redactStoredOutcome, "호출 결과");
   return outcome;

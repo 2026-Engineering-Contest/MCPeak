@@ -1,5 +1,18 @@
 # @ohmymcp-hsu/core
 
+## 0.4.0
+
+### Minor Changes
+
+- e99192a: Node.js 최소 지원 버전을 22.18.0으로 올리고, 배포 패키지의 `engines.node`에 같은 요구사항을 명시합니다.
+
+### Patch Changes
+
+- 2e62615: core: 동시에 실패한 HTTP 요청들이 하나의 마지막 오류 상태를 공유하지 않고, 각 요청의 실제
+  원인에 따라 `HTTP_SESSION_LOST` 또는 `OPERATION_FAILED`로 분류되도록 수정합니다.
+- 93816a8: core: 서버가 실행 중 종료됐을 때 stderr가 있으면 그 오류를 수정하도록 안내하고, stderr가
+  비어 있으면 종료 코드나 시그널을 바탕으로 원인을 확인하도록 안내합니다.
+
 ## 0.3.0
 
 ### Minor Changes

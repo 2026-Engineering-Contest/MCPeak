@@ -1,6 +1,6 @@
 {
   "name": "@mcpeak/mock",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": false,
   "type": "module",
   "description": "목 MCP 서버 (Streamable HTTP · stdio) · 응답 주입",

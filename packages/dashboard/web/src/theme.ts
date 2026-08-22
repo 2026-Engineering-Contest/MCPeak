@@ -38,9 +38,14 @@ export function themeStorage(): ThemeStorage {
     //
     // **셋을 다 불러야 한다.** getThemeChoice 가 곧바로 getItem 을 부르므로,
     // 쓰기만 확인하고 통과시키면 읽기에서 던지는 저장소가 그대로 나간다 (#251 리뷰).
-    store.setItem(probe, "1");
-    store.getItem(probe);
-    store.removeItem(probe);
+    try {
+      store.setItem(probe, "1");
+      store.getItem(probe);
+    } finally {
+      // 읽기가 중간에 던져도 쓴 것은 지운다. finally 가 없으면 probe 키가 남는다
+      // (#251 리뷰). 지우기마저 던지면 바깥 catch 가 받아 FORGETFUL 로 간다.
+      store.removeItem(probe);
+    }
     return store;
   } catch {
     return FORGETFUL;

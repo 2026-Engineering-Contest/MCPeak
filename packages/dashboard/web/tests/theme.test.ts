@@ -106,16 +106,23 @@ describe("themeStorage", () => {
     expect(() => applyThemeChoice("dark", makeRoot(), storage)).not.toThrow();
   });
 
-  it("읽기가 던지는 저장소도 통과시키지 않는다", () => {
+  it("읽기가 던지는 저장소도 통과시키지 않고, probe 키도 남기지 않는다", () => {
     // 쓰기만 확인하면 getThemeChoice 의 첫 getItem 에서 죽는다 (#251 리뷰).
+    // 쓰기가 성공한 뒤 읽기가 던지는 경우라 probe 정리 경로까지 함께 본다.
+    const map = new Map<string, string>();
     vi.stubGlobal("localStorage", {
       getItem: () => {
         throw new Error("SecurityError");
       },
-      setItem: () => {},
-      removeItem: () => {},
+      setItem: (key: string, value: string) => {
+        map.set(key, value);
+      },
+      removeItem: (key: string) => {
+        map.delete(key);
+      },
     });
     expect(getThemeChoice(themeStorage())).toBe("system");
+    expect([...map.keys()]).toEqual([]);
   });
 
   it("정상 저장소에는 probe 키를 남기지 않는다", () => {

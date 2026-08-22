@@ -167,6 +167,7 @@ describe("connectHttp", () => {
     const error = await expectMcpError(connection.client.callTool("echo", { text: "hi" }));
     expect(error.code).toBe("HTTP_SESSION_LOST");
     expect(error.phase).toBe("transport");
+    expect(error.diagnostics).toMatchObject({ status: 404 });
   });
 
   it("14. close 는 멱등이다", async () => {

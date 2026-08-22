@@ -5,7 +5,9 @@ const diagnostics = { stderr: "", stderrTruncated: false, exitCode: null, signal
 
 function adapter(
   overrides: Partial<{ listTools: () => Promise<unknown>; callTool: () => Promise<unknown> }> = {},
-  operationFailureKind: () => "process" | "transport" | undefined = () => undefined,
+  operationFailureKind: (
+    cause: unknown,
+  ) => "process" | "transport" | "httpSession" | undefined = () => undefined,
 ) {
   const sdk = {
     listTools: vi.fn(overrides.listTools ?? (async () => ({ tools: [], nextCursor: undefined }))),
@@ -270,6 +272,41 @@ describe("McpClient SDK adapter", () => {
     await expect(transport.client.callTool("tool", {})).rejects.toMatchObject({
       code: "TRANSPORT_FAILED",
       phase: "transport",
+    });
+  });
+
+  it("동시에 실패한 작업을 각 작업의 cause로 분류한다", async () => {
+    const sessionFailure = new Error("session lost");
+    const regularFailure = new Error("regular operation failure");
+    let rejectListTools: ((cause: unknown) => void) | undefined;
+    let rejectCallTool: ((cause: unknown) => void) | undefined;
+    const { client } = adapter(
+      {
+        listTools: () =>
+          new Promise((_, reject) => {
+            rejectListTools = reject;
+          }),
+        callTool: () =>
+          new Promise((_, reject) => {
+            rejectCallTool = reject;
+          }),
+      },
+      (cause) => (cause === sessionFailure ? "httpSession" : undefined),
+    );
+
+    const listTools = client.listTools();
+    const callTool = client.callTool("tool", {});
+    rejectListTools?.(sessionFailure);
+    rejectCallTool?.(regularFailure);
+
+    const [listToolsResult, callToolResult] = await Promise.allSettled([listTools, callTool]);
+    expect(listToolsResult).toMatchObject({
+      status: "rejected",
+      reason: { code: "HTTP_SESSION_LOST", cause: sessionFailure },
+    });
+    expect(callToolResult).toMatchObject({
+      status: "rejected",
+      reason: { code: "OPERATION_FAILED", cause: regularFailure },
     });
   });
 });

@@ -56,15 +56,6 @@ export function mapConnectFailure(cause: unknown): {
   return { code: "HTTP_CONNECT_FAILED", status: null };
 }
 
-/** `createMcpClientAdapter` 가 요구하는 SDK 표면. 연결 후 실패를 가로채려고 같은 모양으로 감싼다. */
-export interface HttpSdkClient {
-  listTools(params?: { cursor?: string }): Promise<{
-    tools: readonly { name: string; description?: string; inputSchema: unknown }[];
-    nextCursor?: string;
-  }>;
-  callTool(params: { name: string; arguments: Record<string, unknown> }): Promise<unknown>;
-}
-
 /**
  * HTTP 연결 하나의 상태를 들고 있다. 프로세스 수명주기 코드를 한 줄도 재사용하지 않는다.
  * 죽일 프로세스가 없으므로 `forceClose` 도 두지 않는다(설계 §9).
@@ -73,7 +64,6 @@ export class HttpConnectionState {
   readonly #url: string;
   readonly #transport: StreamableHTTPClientTransport;
   #status: number | null = null;
-  #lastOperationFailure: unknown;
   #closed = false;
 
   constructor(options: ResolvedHttpConnectOptions) {
@@ -116,20 +106,11 @@ export class HttpConnectionState {
     });
   }
 
-  /**
-   * `operationFailureKind` 는 인자를 받지 않으므로 원인을 판정하려면 미리 기록해야 한다.
-   * 그래서 SDK 호출을 `trackOperationFailures` 로 감싼다.
-   */
-  recordOperationFailure(cause: unknown): void {
-    this.#lastOperationFailure = cause;
+  /** 404 여도 세션 ID 를 받은 적이 없으면 세션 상실이 아니라 잘못된 경로다(설계 §8.3). */
+  operationFailureKind(cause: unknown): OperationFailureKind {
     if (cause instanceof StreamableHTTPError && cause.code !== undefined && cause.code >= 0) {
       this.#status = cause.code;
     }
-  }
-
-  /** 404 여도 세션 ID 를 받은 적이 없으면 세션 상실이 아니라 잘못된 경로다(설계 §8.3). */
-  operationFailureKind(): OperationFailureKind {
-    const cause = this.#lastOperationFailure;
     if (cause instanceof StreamableHTTPError && cause.code === 404 && this.sessionId !== null) {
       return "httpSession";
     }
@@ -168,19 +149,4 @@ export class HttpConnectionState {
       // 연결도 못 한 transport 를 닫다 난 오류는 사용자에게 알릴 것이 없다.
     }
   }
-}
-
-/** 연결 후 실패의 원인을 기록하려고 SDK 호출을 감싼다. 오류는 그대로 다시 던진다. */
-export function trackOperationFailures(
-  sdk: HttpSdkClient,
-  state: HttpConnectionState,
-): HttpSdkClient {
-  const record = (cause: unknown): never => {
-    state.recordOperationFailure(cause);
-    throw cause;
-  };
-  return {
-    listTools: (params) => sdk.listTools(params).catch(record),
-    callTool: (params) => sdk.callTool(params).catch(record),
-  };
 }

@@ -2,6 +2,11 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { McpClient, ToolDef, ToolResult } from "@mcpeak/core";
+import {
+  LATEST_SENSITIVE_KEYS_VERSION,
+  sensitiveKeyIn,
+  sensitiveKeysOf,
+} from "./shared/sensitive-keys.mjs";
 
 export const CASSETTE_VERSION = 1 as const;
 export const REDACTED = "[redacted]";
@@ -50,37 +55,14 @@ export interface CassetteClientOptions {
 }
 
 /**
- * 마스킹 대상 키. 값은 구분자를 지우고 소문자로 맞춘 형태다.
+ * 마스킹 대상 키는 `shared` 가 소유한다. legacy 는 **최신 스냅샷**을 쓴다 — 목록에 단어를
+ * 추가하면 다음 녹화부터 바로 적용돼야 하기 때문이다. External 은 반대로 자기 interaction
+ * schema version 의 스냅샷에 고정된다(계획서 B-0).
  *
- * `accesstoken` · `refreshtoken` 은 접미 규칙상 `token` 에 이미 걸리지만, ADR-0003 이
- * 열거한 목록이라 그대로 둔다. 근거는 ADR-0039 다.
- *
- * **단수형만 담는다.** 복수형은 `sensitiveKey` 가 조회 시점에 흡수한다. `tokens` ·
- * `secrets` 를 항목으로 넣으면 목록이 두 배가 되는데, 항목이 늘수록 오탐이 는다는
- * ADR-0039 의 판단이 그대로 깨진다.
- *
- * `key` 로 끝나는 것은 **합성어만** 열거한다. `key` 단독은 넣지 않는다 — `apikey` 만
- * 넣고 `key` 를 뺀 ADR-0039 의 이유가 `privatekey` 계열에도 그대로 적용된다.
- * `auth` · `pwd` · `bearer` 를 뺀 이유는 ADR-0045 에 있다.
+ * 판정 알고리즘도 같은 모듈에 있다. 한때 external 이 같은 코드를 복사해 갖고 있었는데,
+ * ADR-0039·0045 의 규칙이 바뀌면 두 곳이 조용히 갈라진다.
  */
-const SENSITIVE_KEYS = new Set([
-  "authorization",
-  "apikey",
-  "accesstoken",
-  "refreshtoken",
-  "token",
-  "secret",
-  "password",
-  "cookie",
-  // 아래부터 ADR-0045. `secretkey` 는 `secret` 이 목록에 있어도 접미 조합이
-  // `key` · `secretkey` 라 어디에도 걸리지 않았다. `apikey` 와 같은 구멍이었다.
-  "privatekey",
-  "secretkey",
-  "signingkey",
-  "sessionkey",
-  "credential",
-  "passwd",
-]);
+const SENSITIVE_KEYS = sensitiveKeysOf(LATEST_SENSITIVE_KEYS_VERSION);
 
 const plainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" &&
@@ -115,47 +97,10 @@ class CassetteJsonError extends TypeError {
 }
 
 /**
- * 키를 단어로 쪼갠다. `-` · `_` 구분자와 카멜케이스 경계를 함께 본다.
- *
- * 구분자를 **지워서** 이어 붙이면 경계 정보가 사라져 `tokenCount` 와 `accessToken` 을
- * 구분할 수 없다. 그래서 지우지 않고 쪼갠다.
+ * 판정은 `shared` 가 한다. 알고리즘의 근거(접미 단어열 일치·복수형 흡수·꼬리 숫자 제거)와
+ * 그 판단이 왜 그렇게 좁은지는 `shared/sensitive-keys.mjs` 의 주석에 있다.
  */
-const keyWords = (key: string): string[] =>
-  key
-    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
-    // 연속 대문자 뒤에 단어가 오는 경우. `APIKey` → `API Key`
-    .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
-    .split(/[-_ ]+/)
-    // 꼬리 숫자는 떼어 낸다. `apiKey0` 은 여전히 API 키다. 머리 명사를 바꾸지 않으므로
-    // `cookieCount2` 가 새로 걸리지도 않는다.
-    .map((word) => word.toLowerCase().replace(/[0-9]+$/, ""))
-    .filter((word) => word.length > 0);
-
-/**
- * 키의 **접미 단어열**이 목록과 정확히 일치하면 민감으로 본다.
- *
- * 부분 문자열 포함이 아니다. 영어 합성명사는 마지막 단어가 머리라서 `accessToken` 은
- * 토큰의 일종이고 `tokenCount` 는 개수의 일종이다. 포함으로 보면 둘이 구분되지 않아
- * `tokenCount` · `passwordPolicy` · `secretariat` 이 전부 걸린다. 과잉 마스킹은 값을
- * 지우므로, ADR-0041 이후에는 "그 필드를 테스트가 영영 못 본다"가 된다.
- *
- * 접미로 보되 한 단어씩만 보지 않는 이유는 `X-Api-Key` 다. 마지막 단어 `key` 는 목록에
- * 없고 `apikey` 가 있다.
- *
- * 목록이 단수형만 담으므로 꼬리 `s` 를 뗀 형태도 함께 조회한다. 이 완화가 좁은 이유는,
- * 목록 단어에 `s` 를 붙여 만들어지는 영어 단어가 전부 그 비밀값의 복수형이기 때문이다
- * (`tokens` · `secrets` · `cookies`). 머리 명사는 건드리지 않으므로 `tokenCounts` ·
- * `secretariats` 는 계속 통과한다. 근거는 ADR-0045 이다.
- */
-const sensitiveKey = (key: string): boolean => {
-  const words = keyWords(key);
-  for (let start = words.length - 1; start >= 0; start--) {
-    const joined = words.slice(start).join("");
-    if (SENSITIVE_KEYS.has(joined)) return true;
-    if (joined.endsWith("s") && SENSITIVE_KEYS.has(joined.slice(0, -1))) return true;
-  }
-  return false;
-};
+const sensitiveKey = (key: string): boolean => sensitiveKeyIn(SENSITIVE_KEYS, key);
 
 /**
  * 객체 키 순서를 고정하고 객체의 undefined 필드를 제거하는 JSON 문자열화.

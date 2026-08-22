@@ -427,9 +427,11 @@ const pathRedactedLinkHeader = (rawValue, baseUrl) => {
  * HTML 명세의 `Refresh` 문법: 지연 초, 선택적으로 `;`/`,` 뒤에 `url=` 와 URL(따옴표 허용).
  * 명세는 `url=` 을 생략한 꼴도 받지만 여기서는 **필수**다 — 생략을 허용하면 `5; secret=TOKEN`
  * 같은 값이 상대 URL 로 해석돼 `url=https://host/<redacted>` 라는, 원문에 없던 뜻으로 저장된다.
- * 그런 값은 해석 실패로 보고 통째로 가린다.
+ * 그런 값은 해석 실패로 보고 통째로 가린다. 따옴표로 시작한 값은 따옴표 대안으로만 받는다 —
+ * `url='foo'junk` 가 따옴표 없는 대안에 걸려 구조화된 값으로 저장되지 않게.
  */
-const REFRESH_PATTERN = /^\s*(\d+(?:\.\d+)?)\s*(?:[;,]\s*url\s*=\s*("[^"]*"|'[^']*'|\S*)\s*)?$/i;
+const REFRESH_PATTERN =
+  /^\s*(\d+(?:\.\d+)?)\s*(?:[;,]\s*url\s*=\s*("[^"]*"|'[^']*'|[^\s"']\S*)\s*)?$/i;
 
 const pathRedactedRefreshHeader = (rawValue, baseUrl) => {
   const matched = REFRESH_PATTERN.exec(rawValue);

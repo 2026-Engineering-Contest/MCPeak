@@ -321,6 +321,9 @@ describe("normalizeHttpRequest", () => {
       ["5; secret=TOKEN", "[redacted]"],
       ["5, secret=TOKEN", "[redacted]"],
       ["5; url=", "[redacted]"],
+      // 따옴표가 닫힌 뒤 잔여 문자가 있으면 따옴표 없는 URL 로 다시 읽지 않는다.
+      ["5; url='https://example.com/p/SECRET'junk", "[redacted]"],
+      ['5; url="https://example.com/p/SECRET"junk', "[redacted]"],
     ];
     for (const [refresh, expected] of cases) {
       const response = new Response(JSON.stringify({ ok: true }), {

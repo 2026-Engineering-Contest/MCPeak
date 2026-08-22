@@ -177,7 +177,10 @@ describe("mcpeak test 의 External 세션", () => {
     expect(origin.calls()).toBe(1);
 
     expect(stderr).toContain("External 진단: 재생 원본에서 찾지 못한 호출 1건");
-    expect(stderr).toContain("/other");
+    // `/other` 자체는 안 보인다 — ADR-0053 이 표시 URL의 pathname을 지운다. 그래도 진단이
+    // 통째로 사라진 게 아니라 host·query·matchKey 로 식별할 수 있다는 것을 이 세 줄이 본다.
+    expect(stderr).toContain("<redacted>");
+    expect(stderr).toContain("city=seoul");
     expect(stderr).toContain("occurrence 0 · matchKey");
     // MCP 오류 채널의 이스케이프(개행 escape sequence 변환)를 겪지 않았다는 증거다.
     const backslashUEscape = `${String.fromCharCode(92)}u000a`;

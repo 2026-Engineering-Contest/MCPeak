@@ -6,6 +6,7 @@ import { ExternalRecordReplayError, externalError } from "./errors.js";
 import {
   type CompleteRecordRequest,
   DEFAULT_COORDINATOR_TIMEOUT_MS,
+  HTTP_INTERACTION_SCHEMA_VERSION,
   MAX_COORDINATOR_PAYLOAD_BYTES,
   type NormalizedExternalRequest,
   PROTOCOL_SCHEMA_VERSION,
@@ -138,17 +139,49 @@ const assertRedacted = (sent: unknown, rechecked: unknown, what: string): void =
   );
 };
 
+/** `WireHttpRequestV1` 의 알려진 필드 넷(ADR-0053). 이 밖의 필드는 형태가 맞아도 거부한다. */
+const KNOWN_REQUEST_FIELDS = new Set(["protocol", "interactionSchemaVersion", "matchKey", "display"]);
+
+/**
+ * 자식이 보낸 요청을 그대로 신뢰하지 않는다(ADR-0053). **알려진 필드만 뽑아 새 값으로
+ * 재구성**한다 — wire 형식에는 매칭 재료(`match`, 정확한 pathname 을 담는 값)를 실을 자리가
+ * 아예 없다. `match` 필드나 알려지지 않은 필드가 실려 있으면 형태가 맞아도 거부하고, 같은
+ * package/build 의 자식과 부모가 다른 형식을 쓴 것으로 보고 기존 재검사 실패 경로
+ * (`EXTERNAL_REDACTION_INVARIANT_VIOLATION`)를 그대로 태워 세션을 즉시 실패로 닫는다.
+ *
+ * 위반 진단에는 **고정된 분류만** 싣는다. 위반한 필드의 이름도 값도 싣지 않는다 — 값이
+ * 지우려던 경로인 것은 물론이고, 이름 역시 자식이 만든 값이라 그 경로가 그대로 올 수 있다.
+ */
 const normalizedRequest = (value: unknown): NormalizedExternalRequest => {
+  if (!plainObject(value))
+    externalError("REQUEST_INVALID", "정규화된 외부 요청 형식이 잘못됐습니다.");
+  if ("match" in value)
+    externalError(
+      "EXTERNAL_REDACTION_INVARIANT_VIOLATION",
+      "자식이 보낸 외부 요청에 matching 재료(match-field) 필드가 실려 있습니다.\n" +
+        "→ 저장하지 않고 세션을 실패로 둡니다. 같은 package/build의 자식과 부모가 다른 " +
+        "형식을 쓴 것으로 보입니다.",
+    );
+  if (Object.keys(value).some((key) => !KNOWN_REQUEST_FIELDS.has(key)))
+    externalError(
+      "EXTERNAL_REDACTION_INVARIANT_VIOLATION",
+      "자식이 보낸 외부 요청에 알려지지 않은 필드(unknown-field)가 있습니다.\n" +
+        "→ 저장하지 않고 세션을 실패로 둡니다. 같은 package/build의 자식과 부모가 다른 " +
+        "형식을 쓴 것으로 보입니다.",
+    );
   if (
-    !plainObject(value) ||
     value.protocol !== "http" ||
-    value.schemaVersion !== 1 ||
+    value.interactionSchemaVersion !== HTTP_INTERACTION_SCHEMA_VERSION ||
     typeof value.matchKey !== "string" ||
-    !plainObject(value.match) ||
     !plainObject(value.display)
   )
     externalError("REQUEST_INVALID", "정규화된 외부 요청 형식이 잘못됐습니다.");
-  const request = value as unknown as NormalizedExternalRequest;
+  const request: NormalizedExternalRequest = {
+    protocol: "http",
+    interactionSchemaVersion: HTTP_INTERACTION_SCHEMA_VERSION,
+    matchKey: value.matchKey,
+    display: value.display as unknown as NormalizedExternalRequest["display"],
+  };
   assertRedacted(request, redactNormalizedRequest(request), "외부 요청");
   return request;
 };

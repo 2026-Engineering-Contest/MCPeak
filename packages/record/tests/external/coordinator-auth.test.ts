@@ -67,20 +67,18 @@ describe("external coordinator authentication", () => {
 });
 
 describe("Store 직전 재검사 (ADR-0052)", () => {
-  /** 규칙을 지킨 자식이 보낼 법한 값. 민감 값은 이미 마스킹돼 있다. */
+  /**
+   * 규칙을 지킨 자식이 보낼 법한 값. 민감 값은 이미 마스킹돼 있고, `display.url` 의 pathname
+   * 도 이미 `<redacted>` 다 — 재검사(`redactNormalizedRequest`)가 다시 지워도 바이트가
+   * 같아야 멱등이다(ADR-0053). `match` 필드는 없다 — wire 형식에 실을 자리가 없다.
+   */
   const redacted = {
     protocol: "http",
-    schemaVersion: 1,
+    interactionSchemaVersion: 1,
     matchKey: "a".repeat(64),
-    match: {
-      method: "GET",
-      url: "https://example.com/data?apiKey=%5Bredacted%5D",
-      headers: { accept: ["application/json"] },
-      body: { kind: "none" },
-    },
     display: {
       method: "GET",
-      url: "https://example.com/data?apiKey=%5Bredacted%5D",
+      url: "https://example.com/<redacted>?apiKey=%5Bredacted%5D",
       headers: { accept: ["application/json"], authorization: ["[redacted]"] },
       body: { kind: "none" },
     },
@@ -119,7 +117,7 @@ describe("Store 직전 재검사 (ADR-0052)", () => {
     const handle = await start();
     const leaky = {
       ...redacted,
-      match: { ...redacted.match, url: "https://example.com/data?apiKey=super-secret" },
+      display: { ...redacted.display, url: "https://example.com/<redacted>?apiKey=super-secret" },
     };
 
     const response = await begin(handle, leaky);
@@ -129,6 +127,39 @@ describe("Store 직전 재검사 (ADR-0052)", () => {
     expect(body).toContain("EXTERNAL_REDACTION_INVARIANT_VIOLATION");
     // 오류 본문에 새어 나온 값을 다시 실으면 안 된다.
     expect(body).not.toContain("super-secret");
+  });
+
+  it("match 필드(matching 재료)가 실리면 형태가 맞아도 저장 전에 실패한다", async () => {
+    const handle = await start();
+    // wire 형식에는 match 를 실을 자리가 없다(ADR-0053). 자식이 그래도 보내면 재구성이
+    // 거부한다 — pathname 이 든 값이므로 형태 검사만으로는 못 잡는다.
+    const leaky = {
+      ...redacted,
+      match: { method: "GET", url: "https://example.com/hooks/SECRET", headers: {}, body: { kind: "none" } },
+    };
+
+    const response = await begin(handle, leaky);
+    const body = await response.text();
+
+    expect(response.status).toBe(400);
+    expect(body).toContain("EXTERNAL_REDACTION_INVARIANT_VIOLATION");
+    expect(body).not.toContain("SECRET");
+    // 위반 진단에는 고정된 분류만 싣는다 — 필드 이름도 값도 싣지 않는다.
+    expect(body).toContain("match-field");
+  });
+
+  it("알려지지 않은 필드가 실리면 형태가 맞아도 저장 전에 실패한다", async () => {
+    const handle = await start();
+    const leaky = { ...redacted, extra: "https://example.com/hooks/SECRET" };
+
+    const response = await begin(handle, leaky);
+    const body = await response.text();
+
+    expect(response.status).toBe(400);
+    expect(body).toContain("EXTERNAL_REDACTION_INVARIANT_VIOLATION");
+    expect(body).not.toContain("SECRET");
+    expect(body).not.toContain("extra");
+    expect(body).toContain("unknown-field");
   });
 
   it("자식이 헤더의 자격증명을 놓치면 저장 전에 실패한다", async () => {
@@ -153,10 +184,6 @@ describe("Store 직전 재검사 (ADR-0052)", () => {
     const handle = await start();
     const leaky = {
       ...redacted,
-      match: {
-        ...redacted.match,
-        body: { kind: "json", value: { nested: { accessToken: "super-secret" } } },
-      },
       display: {
         ...redacted.display,
         body: { kind: "json", value: { nested: { accessToken: "super-secret" } } },
@@ -175,17 +202,11 @@ describe("Store 직전 재검사 (ADR-0052)", () => {
 describe("불변식 위반 뒤 세션 상태 (ADR-0052)", () => {
   const clean = {
     protocol: "http",
-    schemaVersion: 1,
+    interactionSchemaVersion: 1,
     matchKey: "b".repeat(64),
-    match: {
-      method: "GET",
-      url: "https://example.com/x",
-      headers: { accept: ["application/json"] },
-      body: { kind: "none" },
-    },
     display: {
       method: "GET",
-      url: "https://example.com/x",
+      url: "https://example.com/<redacted>",
       headers: { accept: ["application/json"] },
       body: { kind: "none" },
     },
@@ -220,7 +241,7 @@ describe("불변식 위반 뒤 세션 상태 (ADR-0052)", () => {
           status: 200,
           statusText: "OK",
           headers: [["x-api-key", "super-secret"]],
-          url: "https://example.com/x",
+          url: "https://example.com/<redacted>",
           body: { ok: true },
         },
       }),
@@ -241,7 +262,7 @@ describe("불변식 위반 뒤 세션 상태 (ADR-0052)", () => {
           status: 200,
           statusText: "OK",
           headers: [["x-api-key", "[redacted]"]],
-          url: "https://example.com/x",
+          url: "https://example.com/<redacted>",
           body: { ok: true },
         },
       }),

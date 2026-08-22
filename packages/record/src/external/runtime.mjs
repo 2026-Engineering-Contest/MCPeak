@@ -115,7 +115,10 @@ const redactQuery = (search) => {
     .join("&");
 };
 
-const normalizedUrl = (rawUrl) => {
+/** 경로가 지워졌다는 표식. 여기서 만든 URL 만 자식 밖으로 내보낸다(ADR-0053). */
+const REDACTED_PATH = "<redacted>";
+
+const parseNormalizedUrl = (rawUrl) => {
   let parsed;
   try {
     parsed = new URL(rawUrl);
@@ -132,8 +135,28 @@ const normalizedUrl = (rawUrl) => {
     (parsed.protocol === "https:" && parsed.port === "443")
   )
     parsed.port = "";
-  const query = redactQuery(parsed.search);
-  return `${parsed.protocol}//${parsed.host}${parsed.pathname}${query === "" ? "" : `?${query}`}`;
+  parsed.search = redactQuery(parsed.search);
+  return parsed;
+};
+
+/**
+ * matchKey 계산에만 쓴다. **정확한 pathname 을 담으므로 반환값을 이 모듈 밖으로 내보내지
+ * 않는다** — 호출자는 `normalizeHttpRequest` 안의 `match` 지역 변수 하나뿐이다.
+ */
+const matchUrl = (rawUrl) => {
+  const parsed = parseNormalizedUrl(rawUrl);
+  return `${parsed.protocol}//${parsed.host}${parsed.pathname}${parsed.search}`;
+};
+
+/**
+ * 노출 마스킹. pathname 을 지운다(ADR-0053) — 경로 세그먼트에는 마스킹 판정에 쓸 이름이
+ * 없어 무엇이 비밀인지 가릴 수 없고, webhook 형태(`/services/T…/B…/XXXX`)는 경로 자체가
+ * 자격증명이다. `rawUrl` 이 이미 지워진 경로를 담고 있어도(재검사의 재적용) 이 함수는
+ * pathname 을 읽지 않으므로 멱등이다.
+ */
+const pathRedactedUrl = (rawUrl) => {
+  const parsed = parseNormalizedUrl(rawUrl);
+  return `${parsed.protocol}//${parsed.host}/${REDACTED_PATH}${parsed.search}`;
 };
 
 const jsonContentType = (value) => {
@@ -216,26 +239,54 @@ export async function normalizeHttpRequest(request) {
       value: bytesAsJson(bytes, request.headers.get("content-type") ?? "", "request"),
     };
   }
+  // 매칭 재료(HttpMatchMaterialV1). 정확한 pathname 을 담는다 — matchKey 를 얻는 즉시 버리고
+  // Coordinator 로 보내지 않는다(ADR-0053). 이 함수의 지역 변수로만 산다.
   const match = {
     method,
-    url: normalizedUrl(request.url),
+    url: matchUrl(request.url),
     headers: headers.match,
-    body,
-  };
-  const display = {
-    method,
-    url: match.url,
-    headers: headers.display,
     body,
   };
   return {
     protocol: "http",
-    schemaVersion: HTTP_INTERACTION_SCHEMA_VERSION,
+    interactionSchemaVersion: HTTP_INTERACTION_SCHEMA_VERSION,
     matchKey: httpMatchKey(match),
-    match,
-    display,
+    display: {
+      method,
+      url: pathRedactedUrl(match.url),
+      headers: headers.display,
+      body,
+    },
   };
 }
+
+/**
+ * `response.redirected` 는 런타임이 **자동으로** 따라간 경우에만 참이다. 서버 코드가
+ * `redirect: "manual"` 로 부르면 이 다섯 상태 코드가 `redirected === false` 인 채로
+ * 돌아오고, JSON 본문을 달고 있으면 아래 검사를 모두 통과해 그대로 저장될 뻔했다 — 그
+ * 응답의 `Location` 은 경로가 든 절대 URL 이라, 지우려던 경로가 응답 쪽으로 되돌아온다.
+ * 그래서 `redirected` 값과 무관하게 이 다섯 개를 거부한다(ADR-0053). `300`·`304` 는
+ * 리다이렉트가 아니므로 대상이 아니다.
+ */
+const REDIRECT_STATUS = new Set([301, 302, 303, 307, 308]);
+
+/** URL 값을 담는 응답 헤더. 이름 기반 민감 키 판정에 걸리지 않아 별도 취급이 필요하다. */
+const URL_PATH_HEADER_NAMES = new Set(["location", "content-location"]);
+
+/**
+ * `location`·`content-location` 은 RFC 9110 상 상대 참조일 수 있다(`Location: /hooks/SECRET`).
+ * 거부하지 않고 **응답 URL 을 기준으로 절대 URL 로 해석한 뒤** 같은 경로 제거 규칙을 적용한다
+ * — 거부하면 상대 `Location` 을 쓰는 정상적인 생성 응답이 통째로 실패한다(ADR-0053).
+ * 해석에 실패하는 값(형식이 URL 이 아님)은 통째로 가린다 — 무엇을 지워야 할지 모르는
+ * 값을 원문으로 남기지 않는다.
+ */
+const pathRedactedHeaderUrl = (rawValue, baseUrl) => {
+  try {
+    return pathRedactedUrl(new URL(rawValue, baseUrl).href);
+  } catch {
+    return REDACTED;
+  }
+};
 
 /**
  * 응답 헤더를 저장 형태로 바꾼다.
@@ -248,11 +299,15 @@ export async function normalizeHttpRequest(request) {
  * 민감 키 판정이 그대로 먹는다 — `x-api-key` 의 접미 단어열이 `apikey` 다(ADR-0039).
  * 고정 목록은 `authorization` 처럼 단어 규칙만으로는 안 걸리는 이름을 위해 남긴다.
  */
-const storedResponseHeaders = (headers) => {
+const storedResponseHeaders = (headers, baseUrl) => {
   const result = [];
   for (const [rawName, rawValue] of headers.entries()) {
     const name = rawName.toLowerCase();
     if (name === "content-length") continue;
+    if (URL_PATH_HEADER_NAMES.has(name)) {
+      result.push([name, pathRedactedHeaderUrl(rawValue, baseUrl)]);
+      continue;
+    }
     const secret = SENSITIVE_HEADER_NAMES.has(name) || sensitiveKey(name);
     result.push([name, secret ? REDACTED : rawValue]);
   }
@@ -260,8 +315,8 @@ const storedResponseHeaders = (headers) => {
 };
 
 export async function encodeHttpResponse(response) {
-  if (response.redirected)
-    fail("UNSUPPORTED_HTTP_RESPONSE", "redirect가 발생한 외부 HTTP 응답은 지원하지 않습니다.");
+  if (response.redirected || REDIRECT_STATUS.has(response.status))
+    fail("UNSUPPORTED_HTTP_RESPONSE", "redirect 응답(3xx)은 지원하지 않습니다.");
   const bytes = new Uint8Array(await response.arrayBuffer());
   let body;
   try {
@@ -274,8 +329,8 @@ export async function encodeHttpResponse(response) {
     kind: "response",
     status: response.status,
     statusText: response.statusText,
-    headers: storedResponseHeaders(response.headers),
-    url: normalizedUrl(response.url),
+    headers: storedResponseHeaders(response.headers, response.url),
+    url: pathRedactedUrl(response.url),
     body,
   };
 }
@@ -378,23 +433,21 @@ export function restoreHttpOutcome(outcome) {
 }
 
 /**
- * 이미 정규화된 `match`/`display` 에 **마스킹을 한 번 더 적용**한다.
+ * 이미 정규화된 `display` 에 **마스킹을 한 번 더 적용**한다.
  *
  * 자식이 제대로 마스킹했다면 이 함수는 아무것도 바꾸지 않는다 — 멱등이다. 그래서 부모는
  * 결과를 원본과 바이트 비교하는 것만으로 "자식이 뭔가 놓쳤다" 를 알 수 있다(ADR-0052 의
- * Store 직전 재검사).
+ * Store 직전 재검사). `match` 는 재검사 대상이 아니다 — wire 형식에 그 필드를 실을 자리가
+ * 없어서, 실려 있으면 이 함수에 닿기 전에 `parent` 쪽 재구성이 이미 세션을 실패로 닫는다.
  *
  * 전체 정규화를 다시 돌리지 않는 이유는 부모에게 원본 `Request` 가 없기 때문이다. 부모가
  * 가진 것은 자식이 보낸 구조뿐이고, 재검사가 보는 것도 "그 구조에 마스킹 규칙이 이미
  * 적용돼 있는가" 하나다.
  */
-const redactHttpMatch = (value, headersAreAllowlist) => {
+const redactHttpDisplay = (value) => {
   const headers = {};
   for (const name of Object.keys(value.headers ?? {}).sort()) {
     const lower = name.toLowerCase();
-    // match 는 allowlist 밖 헤더를 애초에 담지 않는다. 담겨 있으면 자식이 규칙을 어긴 것이라
-    // 여기서 지워지고, 그 차이가 바이트 비교에 걸린다.
-    if (headersAreAllowlist && !MATCH_HEADER_NAMES.has(lower)) continue;
     const secret = !MATCH_HEADER_NAMES.has(lower) || SENSITIVE_HEADER_NAMES.has(lower);
     setOwn(headers, lower, secret ? [REDACTED] : value.headers[name]);
   }
@@ -404,7 +457,7 @@ const redactHttpMatch = (value, headersAreAllowlist) => {
       : { kind: "none" };
   return {
     method: value.method,
-    url: normalizedUrl(value.url),
+    url: pathRedactedUrl(value.url),
     headers,
     body,
   };
@@ -412,10 +465,9 @@ const redactHttpMatch = (value, headersAreAllowlist) => {
 
 export const redactNormalizedRequest = (request) => ({
   protocol: request.protocol,
-  schemaVersion: request.schemaVersion,
+  interactionSchemaVersion: request.interactionSchemaVersion,
   matchKey: request.matchKey,
-  match: redactHttpMatch(request.match, true),
-  display: redactHttpMatch(request.display, false),
+  display: redactHttpDisplay(request.display),
 });
 
 /** 저장 직전 outcome 에 마스킹을 다시 적용한다. 자식이 제대로 했다면 멱등이다. */
@@ -427,10 +479,12 @@ export const redactStoredOutcome = (outcome) => {
     statusText: outcome.statusText,
     headers: (outcome.headers ?? []).map(([name, value]) => {
       const lower = String(name).toLowerCase();
+      if (URL_PATH_HEADER_NAMES.has(lower))
+        return [lower, pathRedactedHeaderUrl(value, outcome.url)];
       const secret = SENSITIVE_HEADER_NAMES.has(lower) || sensitiveKey(lower);
       return [lower, secret ? REDACTED : value];
     }),
-    url: normalizedUrl(outcome.url),
+    url: pathRedactedUrl(outcome.url),
     body: redactJson(outcome.body),
   };
 };

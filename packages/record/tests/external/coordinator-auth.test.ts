@@ -65,3 +65,109 @@ describe("external coordinator authentication", () => {
     expect(await oversized.json()).toMatchObject({ error: { code: "PAYLOAD_TOO_LARGE" } });
   });
 });
+
+describe("Store 직전 재검사 (ADR-0052)", () => {
+  /** 규칙을 지킨 자식이 보낼 법한 값. 민감 값은 이미 마스킹돼 있다. */
+  const redacted = {
+    protocol: "http",
+    schemaVersion: 1,
+    matchKey: "a".repeat(64),
+    match: {
+      method: "GET",
+      url: "https://example.com/data?apiKey=%5Bredacted%5D",
+      headers: { accept: ["application/json"] },
+      body: { kind: "none" },
+    },
+    display: {
+      method: "GET",
+      url: "https://example.com/data?apiKey=%5Bredacted%5D",
+      headers: { accept: ["application/json"], authorization: ["[redacted]"] },
+      body: { kind: "none" },
+    },
+  };
+
+  const begin = async (
+    handle: Awaited<ReturnType<typeof startExternalCoordinator>>,
+    request: unknown,
+  ) =>
+    fetch(`${handle.url}/begin`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${handle.childEnvironment.MCPEAK_EXTERNAL_COORDINATOR_TOKEN}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ schemaVersion: 1, request }),
+    });
+
+  const start = async () => {
+    const handle = await startExternalCoordinator({
+      mode: "record",
+      sessionId: "recheck",
+      store: createMemorySessionStore(),
+    });
+    handles.push(handle);
+    return handle;
+  };
+
+  it("제대로 마스킹된 요청은 그대로 통과한다 — 재적용이 멱등이다", async () => {
+    const handle = await start();
+
+    expect((await begin(handle, redacted)).status).toBe(200);
+  });
+
+  it("자식이 URL query의 토큰을 놓치면 저장 전에 실패한다", async () => {
+    const handle = await start();
+    const leaky = {
+      ...redacted,
+      match: { ...redacted.match, url: "https://example.com/data?apiKey=super-secret" },
+    };
+
+    const response = await begin(handle, leaky);
+    const body = await response.text();
+
+    expect(response.status).toBe(400);
+    expect(body).toContain("EXTERNAL_REDACTION_INVARIANT_VIOLATION");
+    // 오류 본문에 새어 나온 값을 다시 실으면 안 된다.
+    expect(body).not.toContain("super-secret");
+  });
+
+  it("자식이 헤더의 자격증명을 놓치면 저장 전에 실패한다", async () => {
+    const handle = await start();
+    const leaky = {
+      ...redacted,
+      display: {
+        ...redacted.display,
+        headers: { ...redacted.display.headers, authorization: ["Bearer super-secret"] },
+      },
+    };
+
+    const response = await begin(handle, leaky);
+    const body = await response.text();
+
+    expect(response.status).toBe(400);
+    expect(body).toContain("EXTERNAL_REDACTION_INVARIANT_VIOLATION");
+    expect(body).not.toContain("super-secret");
+  });
+
+  it("자식이 body의 민감 필드를 놓치면 저장 전에 실패한다", async () => {
+    const handle = await start();
+    const leaky = {
+      ...redacted,
+      match: {
+        ...redacted.match,
+        body: { kind: "json", value: { nested: { accessToken: "super-secret" } } },
+      },
+      display: {
+        ...redacted.display,
+        body: { kind: "json", value: { nested: { accessToken: "super-secret" } } },
+      },
+    };
+
+    const response = await begin(handle, leaky);
+    const body = await response.text();
+
+    expect(response.status).toBe(400);
+    expect(body).toContain("EXTERNAL_REDACTION_INVARIANT_VIOLATION");
+    expect(body).not.toContain("super-secret");
+  });
+});

@@ -19,3 +19,7 @@ export function encodeHttpResponse(response: Response): Promise<StoredHttpRespon
 export function encodeHttpThrow(error: unknown): StoredHttpThrow;
 export function restoreHttpOutcome(outcome: StoredExternalOutcome): Response;
 export function cloneHttpMatch(value: HttpMatchV1): HttpMatchV1;
+export function redactNormalizedRequest(
+  request: NormalizedExternalRequest,
+): NormalizedExternalRequest;
+export function redactStoredOutcome(outcome: StoredExternalOutcome): StoredExternalOutcome;

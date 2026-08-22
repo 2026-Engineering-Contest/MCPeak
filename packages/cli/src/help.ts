@@ -117,7 +117,7 @@ const COMMANDS = `명령:
   replay    녹화된 카세트로 서버 없이 테스트 명세를 재생합니다.
   verify    카세트가 아직 실서버 응답과 맞는지 확인합니다 (카세트를 고치지 않음).`;
 
-export const GLOBAL_HELP = `OhMyMCP — MCP 서버 테스트 프레임워크
+export const GLOBAL_HELP = `MCPeak — MCP 서버 테스트 프레임워크
 
 사용법: mcpeak <명령> [옵션]
         mcpeak help [명령]

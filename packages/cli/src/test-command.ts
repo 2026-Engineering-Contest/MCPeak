@@ -23,6 +23,7 @@ import {
   checkInputContract as runnerCheckInputContract,
 } from "@mcpeak/runner";
 import { createDeterminismCapture } from "./determinism-capture.js";
+import { type ExternalMode, type ExternalWiring, startExternalWiring } from "./external-wiring.js";
 import type { FindingGroup } from "./finding-group.js";
 import { FINDING_GROUP } from "./finding-group.js";
 import { TEST_USAGE_HINT } from "./help.js";
@@ -61,6 +62,10 @@ export interface TestCommandInput {
   readonly determinism: boolean;
   /** `--reset-cmd` 로 받은 초기화 명령. 각 회차 전에 1번씩 실행한다. */
   readonly resetCmd: string | undefined;
+  /** `--session`. External 세션을 재생한다. */
+  readonly sessionPath: string | undefined;
+  /** `--record-session`. External 세션을 녹화한다. */
+  readonly recordSessionPath: string | undefined;
   readonly stderrLines: number;
 }
 export type CliErrorCode =
@@ -77,6 +82,7 @@ export type CliErrorCode =
   | "JUNIT_WRITE_FAILED"
   | "REPAIR_BUNDLE_WRITE_FAILED"
   | "RESET_COMMAND_FAILED"
+  | "EXTERNAL_SESSION_FAILED"
   | "CLI_INTERNAL_ERROR";
 export interface CliFailure {
   readonly code: CliErrorCode;
@@ -88,7 +94,12 @@ export interface CliFailure {
 export interface TestCommandDependencies {
   readFile(path: string): Promise<Uint8Array>;
   validateSuite(input: unknown): SuiteValidationResult;
-  connect(options: { command: string; args: readonly string[] }): Promise<McpStdioConnection>;
+  connect(options: {
+    command: string;
+    args: readonly string[];
+    /** External 배선이 만든 자식 환경 변수. Bootstrap 주입이 여기 실린다. */
+    env?: Readonly<Record<string, string>>;
+  }): Promise<McpStdioConnection>;
   startRunner(options: RunSuiteOptions): RunnerExecution;
   finalize(options: FinalizeRunnerExecutionOptions): Promise<RunnerReport>;
   renderReport(report: RunnerReport, options?: { color?: boolean }): string;
@@ -168,6 +179,12 @@ const dictionary: Record<
     message: "초기화 명령이 실패했습니다.",
     hint: "`--reset-cmd` 명령이 단독으로 성공하는지 확인한 뒤 다시 실행하세요.",
   },
+  EXTERNAL_SESSION_FAILED: {
+    // 실제 안내는 원인 오류의 문장을 담아 호출 지점에서 만든다. 이 사전 값은 그것이 없을
+    // 때의 최소 문장이다.
+    message: "External 세션 처리에 실패했습니다.",
+    hint: "세션 파일 경로의 디렉터리가 있는지와 쓰기 권한을 확인하세요.",
+  },
   CLI_INTERNAL_ERROR: {
     message: "예상하지 못한 CLI 내부 오류가 발생했습니다.",
     hint: "다시 실행한 뒤 재현 정보와 함께 이슈를 보고하세요.",
@@ -181,6 +198,34 @@ class CliCommandError extends Error {
 const fail = (message: string): never => {
   throw new CliCommandError({ code: "CLI_USAGE", message, hint: TEST_USAGE_HINT });
 };
+
+/**
+ * `--name value` 와 `--name=value` 두 형태에서 값을 꺼낸다.
+ *
+ * 값이 `--` 로 시작하면 거절한다. `--session --json` 처럼 값을 빠뜨리면 다음 옵션이 경로로
+ * 먹히고, 그러면 "그런 파일이 없습니다" 라는 엉뚱한 곳에서 실패한다.
+ */
+const readOptionValue = (
+  argv: readonly string[],
+  token: string,
+  name: string,
+  index: number,
+): { readonly value: string; readonly index: number } => {
+  let value: string;
+  let next = index;
+  if (token === name) {
+    const candidate = argv[++next];
+    if (candidate === undefined)
+      throw new CliCommandError({
+        code: "CLI_USAGE",
+        message: `\`${name}\` 옵션 값이 필요합니다.`,
+        hint: TEST_USAGE_HINT,
+      });
+    value = candidate;
+  } else value = token.slice(`${name}=`.length);
+  if (value.trim() === "" || value.startsWith("--")) fail(`\`${name}\` 옵션 값이 필요합니다.`);
+  return { value, index: next };
+};
 export function parseTestCommand(argv: readonly string[]): TestCommandInput {
   const suitePath = argv[0] ?? "";
   if (suitePath === "") fail("테스트 명세 JSON 경로가 필요합니다.");
@@ -191,6 +236,8 @@ export function parseTestCommand(argv: readonly string[]): TestCommandInput {
   let determinism = false;
   let resetCmd: string | undefined;
   let stderrLines: number | undefined;
+  let sessionPath: string | undefined;
+  let recordSessionPath: string | undefined;
   const args: string[] = [];
   for (let index = 1; index < argv.length; index += 1) {
     const token = argv[index] ?? "";
@@ -304,6 +351,16 @@ export function parseTestCommand(argv: readonly string[]): TestCommandInput {
       if (!Number.isSafeInteger(parsedLines))
         fail("`--stderr-lines` 값은 0 이상의 정수여야 합니다.");
       stderrLines = parsedLines;
+    } else if (token === "--session" || token.startsWith("--session=")) {
+      if (sessionPath !== undefined) fail("`--session`은 한 번만 사용할 수 있습니다.");
+      const read = readOptionValue(argv, token, "--session", index);
+      sessionPath = read.value;
+      index = read.index;
+    } else if (token === "--record-session" || token.startsWith("--record-session=")) {
+      if (recordSessionPath !== undefined) fail("`--record-session`은 한 번만 사용할 수 있습니다.");
+      const read = readOptionValue(argv, token, "--record-session", index);
+      recordSessionPath = read.value;
+      index = read.index;
     } else if (token === "--json") {
       if (json) fail("`--json`은 한 번만 사용할 수 있습니다.");
       json = true;
@@ -318,6 +375,18 @@ export function parseTestCommand(argv: readonly string[]): TestCommandInput {
       message: "`--command` 옵션이 필요합니다.",
       hint: TEST_USAGE_HINT,
     });
+  // 재생과 녹화를 한 실행에 같이 시킬 수 없다. 무엇을 하려는 것인지 우리가 고를 문제가 아니다.
+  if (sessionPath !== undefined && recordSessionPath !== undefined)
+    fail("`--session`과 `--record-session`은 함께 쓸 수 없습니다. 재생과 녹화 중 하나만 고르세요.");
+  // `--determinism`은 서버에 2회 연결하는데 External 세션은 연결 하나에 묶여 있다. 2회차가
+  // 같은 세션을 쓰면 occurrence 가 어긋나고, 새 세션을 쓰면 비교 기준이 갈라진다. 어느 쪽도
+  // "같은 입력에 같은 결과" 를 말해 주지 못하므로 실행 전에 막는다.
+  if (determinism && (sessionPath !== undefined || recordSessionPath !== undefined))
+    fail(
+      "`--determinism`은 External 세션 옵션과 함께 쓸 수 없습니다.\n" +
+        "→ `--determinism`은 서버에 2회 연결하지만 External 세션은 연결 하나에 묶여 있습니다.\n" +
+        "→ 2회차가 같은 세션을 쓰면 반복 호출 순번이 어긋나고, 새 세션을 쓰면 비교 기준이 갈라집니다.",
+    );
   return Object.freeze({
     suitePath,
     command,
@@ -327,6 +396,8 @@ export function parseTestCommand(argv: readonly string[]): TestCommandInput {
     repairBundlePath,
     determinism,
     resetCmd,
+    sessionPath,
+    recordSessionPath,
     stderrLines: stderrLines ?? DEFAULT_STDERR_LINES,
   });
 }
@@ -499,9 +570,10 @@ function writeFailure(dependencies: TestCommandDependencies, failure: CliFailure
   dependencies.writeStderr(format(failure));
   return 1;
 }
-export async function runCli(
+async function runCliCore(
   argv: readonly string[],
   dependencies: TestCommandDependencies,
+  childEnv?: Readonly<Record<string, string>>,
 ): Promise<number> {
   if (argv.length === 0)
     return writeFailure(dependencies, {
@@ -515,7 +587,9 @@ export async function runCli(
       return writeFailure(dependencies, {
         code: "COMMAND_NOT_IMPLEMENTED",
         message: `'${argv[0]}' 명령은 아직 구현되지 않았습니다.`,
-        hint: "현재는 test 명령만 사용할 수 있습니다.",
+        // "test 명령만" 이라고 적어 두면 틀린 안내다. generate·replay·verify 는 index.ts 가
+        // 가로채 실제로 동작한다. 여기 걸리는 것은 진입점이 없는 이름뿐이다.
+        hint: "사용 가능한 명령: test, generate, repair, replay, verify. 전체 도움말: mcpeak --help",
       });
     return writeFailure(dependencies, {
       code: "CLI_USAGE",
@@ -609,7 +683,11 @@ export async function runCli(
   }
   let connection: McpStdioConnection;
   try {
-    connection = await dependencies.connect({ command: input.command, args: input.args });
+    connection = await dependencies.connect({
+      command: input.command,
+      args: input.args,
+      ...(childEnv === undefined ? {} : { env: childEnv }),
+    });
   } catch (error) {
     const core = coreError(error);
     const failed = writeFailure(
@@ -785,7 +863,11 @@ export async function runCli(
     }
     let second: McpStdioConnection;
     try {
-      second = await dependencies.connect({ command: input.command, args: input.args });
+      second = await dependencies.connect({
+        command: input.command,
+        args: input.args,
+        ...(childEnv === undefined ? {} : { env: childEnv }),
+      });
     } catch (error) {
       const core = coreError(error);
       return {
@@ -1069,4 +1151,94 @@ export async function runCli(
   }
   // 판정은 케이스 결과로만 정한다. 지문이 달라도 종료 코드는 바뀌지 않는다. 설계 문서 §6.
   return allPassed ? 0 : 1;
+}
+
+/**
+ * `test` 실행에 External Record/Replay 수명주기를 씌운다.
+ *
+ * Coordinator 를 **먼저 열고 마지막에 닫는다**(ADR-0052). 그 사이에 들어가는 것이 기존 실행
+ * 전부라, 성공·실패·예외 어느 경로로 빠져나가도 `finish` 가 불려야 한다. 안 불리면 SQLite
+ * 파일 핸들이 남고 Record 세션이 `running` 인 채로 남아 다음 실행이 이어 쓸 수 없다.
+ *
+ * 세션 옵션이 없으면 배선을 아예 만들지 않는다 — 기존 실행 경로가 한 글자도 달라지지 않는다.
+ */
+export async function runCli(
+  argv: readonly string[],
+  dependencies: TestCommandDependencies,
+): Promise<number> {
+  const mode = externalModeOf(argv);
+  if (mode === undefined) return runCliCore(argv, dependencies);
+
+  let wiring: ExternalWiring;
+  try {
+    wiring = await startExternalWiring({
+      mode: mode.mode,
+      sessionPath: mode.path,
+      existingNodeOptions: process.env.NODE_OPTIONS,
+    });
+  } catch (error) {
+    return writeFailure(dependencies, {
+      code: "EXTERNAL_SESSION_FAILED",
+      message: "External 세션을 열지 못했습니다.",
+      hint:
+        `${error instanceof Error ? error.message : String(error)}\n` +
+        "→ 세션 파일 경로의 디렉터리가 있는지와 쓰기 권한을 확인하세요.",
+    });
+  }
+
+  let exitCode: number;
+  try {
+    exitCode = await runCliCore(argv, dependencies, wiring.env);
+  } catch (error) {
+    await wiring.finish("failed").catch(() => undefined);
+    throw error;
+  }
+
+  try {
+    // 실행이 실패했으면 세션도 실패다. 실패한 실행의 녹화를 완료로 닫으면 다음 Replay 가
+    // 반쪽짜리 세션을 정상 원본으로 읽는다.
+    const summary = await wiring.finish(exitCode === 0 ? "completed" : "failed");
+    if (mode.mode === "replay" && summary.mode === "replay" && summary.unusedCount > 0)
+      dependencies.writeStderr(
+        `\n알림: 녹화된 외부 호출 ${summary.unusedCount}건이 이번 실행에서 쓰이지 않았습니다.\n` +
+          "→ 서버 코드가 바뀌어 호출이 줄었을 수 있습니다. 녹화를 다시 뜰지 확인하세요.\n",
+      );
+  } catch (error) {
+    return writeFailure(dependencies, {
+      code: "EXTERNAL_SESSION_FAILED",
+      message: "External 세션을 닫지 못했습니다.",
+      hint: error instanceof Error ? error.message : String(error),
+    });
+  }
+  return exitCode;
+}
+
+/**
+ * argv 만 보고 External 모드를 정한다.
+ *
+ * `parseTestCommand` 를 다시 부르지 않는 이유는 그 함수가 사용 오류를 던지기 때문이다.
+ * 배선은 파싱보다 먼저 서고, 파싱 오류는 기존 경로가 자기 문장으로 보고해야 한다. 여기서
+ * 먼저 던지면 `--session` 이 붙었다는 이유만으로 오류 문구가 달라진다.
+ */
+function externalModeOf(
+  argv: readonly string[],
+): { readonly mode: ExternalMode; readonly path: string } | undefined {
+  if (argv[0] !== "test") return undefined;
+  const read = (name: string): string | undefined => {
+    for (let index = 1; index < argv.length; index += 1) {
+      const token = argv[index] ?? "";
+      if (token === name) return argv[index + 1];
+      if (token.startsWith(`${name}=`)) return token.slice(`${name}=`.length);
+    }
+    return undefined;
+  };
+  const record = read("--record-session");
+  const replay = read("--session");
+  // 둘 다 있으면 여기서 고르지 않는다. `parseTestCommand` 가 상호 배타로 거절한다.
+  if (record !== undefined && replay !== undefined) return undefined;
+  if (record !== undefined && record !== "" && !record.startsWith("--"))
+    return { mode: "record", path: record };
+  if (replay !== undefined && replay !== "" && !replay.startsWith("--"))
+    return { mode: "replay", path: replay };
+  return undefined;
 }

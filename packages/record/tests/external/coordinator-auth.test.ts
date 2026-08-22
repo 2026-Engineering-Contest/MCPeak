@@ -190,12 +190,17 @@ describe("Store 직전 재검사 (ADR-0052)", () => {
   });
 
   /**
-   * `runtime.mjs` 는 자식에서도 돌아 `.ts` 를 import 할 수 없다. 그 제약 때문에 한때 오류를
+   * 두 결함의 회귀 스펙이다.
+   *
+   * 하나는 오류의 정체다. `runtime.mjs` 는 자식에서도 돌아 `.ts` 를 import 할 수 없어 오류를
    * `new Error()` 에 `name`·`code` 만 얹어 흉내 냈는데, 그 값은 `ExternalRecordReplayError` 의
-   * 인스턴스가 아니라서 부모의 `instanceof` 분기를 빠져나갔다 — 400 대신 500 이 나가고 세션이
-   * `running` 으로 남았다. 오류 클래스를 `errors.mjs` 로 내려 같은 인스턴스를 보게 한 회귀 스펙.
+   * 인스턴스가 아니라서 부모의 `instanceof` 분기를 빠져나갔다 — 500 이 나갔다.
+   *
+   * 다른 하나는 세션이다. 500 을 400 으로 고쳐도 code 가 `UNSUPPORTED_HTTP_URL` 이면 세션을
+   * 닫는 분기를 여전히 비껴가 `running` 으로 남았다. 재검사가 던지는 것도 자식의 계약 위반이라
+   * 그 자리에서 분류를 바꾼다. **닫힌다고 이름 붙였으면 닫히는 것을 봐야 한다.**
    */
-  it("재검사 도중 난 URL 오류도 500 이 아니라 분류된 4xx 로 나가고 세션을 닫는다", async () => {
+  it("재검사가 해석하지 못한 값은 분류된 4xx 로 나가고 세션을 실패로 닫는다", async () => {
     const store = createMemorySessionStore();
     const handle = await startExternalCoordinator({ mode: "record", sessionId: "urlfail", store });
     handles.push(handle);
@@ -217,10 +222,53 @@ describe("Store 직전 재검사 (ADR-0052)", () => {
     const body = await response.text();
 
     expect(response.status).toBe(400);
-    expect(body).toContain("UNSUPPORTED_HTTP_URL");
+    expect(body).toContain("EXTERNAL_REDACTION_INVARIANT_VIOLATION");
+    expect(body).toContain("unnormalizable-value");
     expect(body).not.toContain("COORDINATOR_INTERNAL");
     // 오류 본문에 자격증명을 다시 실으면 안 된다.
     expect(body).not.toContain("pass");
+    // 이름이 주장하는 쪽. 세션이 running 으로 남으면 자식이 값을 고쳐 다시 보내 통과할 수 있다.
+    expect(store.read("urlfail")?.status).toBe("failed");
+  });
+
+  it("알려진 필드라도 값의 형태가 다르면 거부한다 — method 는 그대로 복사되는 자리다", async () => {
+    const store = createMemorySessionStore();
+    const handle = await startExternalCoordinator({ mode: "record", sessionId: "badvalue", store });
+    handles.push(handle);
+    // `redactHttpDisplay` 는 method 를 그대로 복사하므로 값이 무엇이든 바이트 비교가 통과한다.
+    // 필드 이름만 막고 값을 안 보면 지우려던 경로가 이 자리로 저장된다(실측으로 확인했다).
+    const leaky = {
+      ...redacted,
+      display: { ...redacted.display, method: { leak: "https://example.com/hooks/SECRET" } },
+    };
+
+    const response = await begin(handle, leaky);
+    const body = await response.text();
+
+    expect(response.status).toBe(400);
+    expect(body).toContain("EXTERNAL_REDACTION_INVARIANT_VIOLATION");
+    expect(body).toContain("invalid-value");
+    expect(body).not.toContain("SECRET");
+    // 저장본에 닿지 않았는지가 이 스펙의 본론이다.
+    expect(JSON.stringify(store.read("badvalue"))).not.toContain("SECRET");
+  });
+
+  it("헤더 이름이 RFC 7230 token 이 아니면 거부한다 — 이름 자리로도 경로가 들어온다", async () => {
+    const handle = await start();
+    const leaky = {
+      ...redacted,
+      display: {
+        ...redacted.display,
+        headers: { "https://example.com/hooks/SECRET": ["x"] },
+      },
+    };
+
+    const response = await begin(handle, leaky);
+    const body = await response.text();
+
+    expect(response.status).toBe(400);
+    expect(body).toContain("invalid-value");
+    expect(body).not.toContain("SECRET");
   });
 
   it("자식이 헤더의 자격증명을 놓치면 저장 전에 실패한다", async () => {

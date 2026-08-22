@@ -12,7 +12,12 @@ import {
   PROTOCOL_SCHEMA_VERSION,
   type StoredExternalOutcome,
 } from "./protocol.js";
-import { redactNormalizedRequest, redactStoredOutcome, stableStringify } from "./runtime.mjs";
+import {
+  redactNormalizedRequest,
+  redactStoredOutcome,
+  SUPPORTED_HTTP_METHODS,
+  stableStringify,
+} from "./runtime.mjs";
 import type { SessionStore, SessionSummary } from "./session-store.js";
 
 const ENV_MODE = "MCPEAK_EXTERNAL_MODE";
@@ -140,6 +145,31 @@ const assertRedacted = (sent: unknown, rechecked: unknown, what: string): void =
 };
 
 /**
+ * 재검사를 돌리고 바이트를 비교한다. **재검사가 던지는 것도 위반으로 다룬다.**
+ *
+ * 마스킹을 다시 적용하려면 값을 해석할 수 있어야 한다. 해석 자체가 실패했다는 것은 자식이
+ * 부모가 다룰 수 없는 값을 보냈다는 뜻이고, 그것도 "같은 package/build 인데 형식이 다르다" 는
+ * 같은 신호다. 그런데 그 오류는 `UNSUPPORTED_HTTP_URL` 같은 자기 code 를 달고 나가서, 아래
+ * 서버 핸들러의 **세션을 닫는 분기를 비껴갔다** — 400 은 받지만 세션은 `running` 으로 남아,
+ * 자식이 값을 고쳐 다시 보내면 통과할 수 있었다(ADR-0052 가 막으려던 바로 그 경로다).
+ *
+ * code 목록을 넓히는 대신 **재검사 자리에서 분류를 바꾼다.** 넓히면 이 함수 밖에서 같은 code 가
+ * 날 때도 세션이 닫히고, 목록은 다음 code 가 생길 때마다 또 어긋난다.
+ *
+ * 원래 오류의 문구는 싣지 않는다. 지금은 전부 고정 문구지만, 재검사가 해석하지 못한 값이
+ * 문구에 섞여 들어갈 여지를 남기지 않는다.
+ */
+const recheck = <T>(value: T, apply: (value: T) => T, what: string): void => {
+  let rechecked: T;
+  try {
+    rechecked = apply(value);
+  } catch {
+    invariantViolation("unnormalizable-value");
+  }
+  assertRedacted(value, rechecked, what);
+};
+
+/**
  * 알려진 필드 목록을 **타입에서 뽑는다.**
  *
  * 손으로 적은 문자열 배열로 두면 `NormalizedExternalRequest` 와 조용히 어긋난다. `satisfies
@@ -173,7 +203,51 @@ const KNOWN_DISPLAY_FIELDS = fieldNames<NormalizedExternalRequest["display"]>({
   body: true,
 });
 
-const invariantViolation = (classification: "match-field" | "unknown-field"): never =>
+/**
+ * 헤더 이름은 RFC 7230 token 이다 — `/` 나 `:` 가 들어갈 수 없다. 자식의 `normalizedHeaders`
+ * 는 Fetch `Headers` 에서 이름을 받으므로 정상 경로에서는 항상 token 이고, 아닌 값이 왔다는
+ * 것은 자식이 그 경로를 거치지 않았다는 뜻이다. 이름은 재구성에서 소문자로만 바뀌고 값은
+ * 그대로 실리므로, 검사하지 않으면 이름 자리로 경로가 들어온다.
+ */
+const HEADER_NAME = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
+
+/**
+ * 알려진 **필드의 값**까지 검사한다.
+ *
+ * 필드 이름만 막으면 절반이다. `redactHttpDisplay` 는 `method` 를 **그대로 복사**하므로 값이
+ * 무엇이든 재검사의 바이트 비교가 통과한다 — `method` 자리에 URL 을 실어 보내면 지우려던
+ * 경로가 그대로 저장됐다(실측 확인). `url` 은 재검사가 경로를 지워 바이트가 달라지므로 이미
+ * 걸리지만, 걸리는 이유가 우연이면 다음 개정에서 조용히 풀린다. 넷 다 여기서 본다.
+ */
+const validDisplay = (display: Record<string, unknown>): boolean => {
+  // method 는 열거형으로 좁힌다. 문자열이기만 하면 URL 도 문자열이다.
+  if (typeof display.method !== "string" || !SUPPORTED_HTTP_METHODS.includes(display.method))
+    return false;
+  if (typeof display.url !== "string") return false;
+  if (!plainObject(display.headers)) return false;
+  for (const [name, value] of Object.entries(display.headers)) {
+    if (!HEADER_NAME.test(name)) return false;
+    if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) return false;
+  }
+  if (!plainObject(display.body)) return false;
+  // tagged union 은 kind 별로 필드가 정확히 정해져 있다. 남는 필드는 또 하나의 실을 자리다.
+  const bodyKeys = Object.keys(display.body).sort().join(",");
+  if (display.body.kind === "none") return bodyKeys === "kind";
+  if (display.body.kind === "json") return bodyKeys === "kind,value";
+  return false;
+};
+
+type InvariantClassification =
+  | "match-field"
+  | "unknown-field"
+  | "invalid-value"
+  | "unnormalizable-value";
+
+/**
+ * 변수에 함수 타입을 명시한다. `const f = (): never => …` 형태만으로는 TS 의 제어 흐름 분석이
+ * "이 호출 뒤는 도달하지 않는다" 를 좁혀 주지 않아, 호출한 쪽에서 확정 할당이 깨진다.
+ */
+const invariantViolation: (classification: InvariantClassification) => never = (classification) =>
   externalError(
     "EXTERNAL_REDACTION_INVARIANT_VIOLATION",
     `자식이 보낸 외부 요청이 wire 형식을 벗어났습니다(${classification}).\n` +
@@ -207,6 +281,7 @@ const normalizedRequest = (value: unknown): NormalizedExternalRequest => {
   const display = value.display;
   if (Object.keys(display).some((key) => !KNOWN_DISPLAY_FIELDS.has(key)))
     invariantViolation("unknown-field");
+  if (!validDisplay(display)) invariantViolation("invalid-value");
   // 재구성은 알려진 필드만 옮겨 담는다. 위의 거부가 이미 걸렀더라도, 실을 자리를 만들지 않는
   // 것이 "매칭 재료는 저장되지 않는다" 를 형식으로 보장하는 마지막 겹이다.
   const request: NormalizedExternalRequest = {
@@ -220,7 +295,7 @@ const normalizedRequest = (value: unknown): NormalizedExternalRequest => {
       body: display.body,
     } as unknown as NormalizedExternalRequest["display"],
   };
-  assertRedacted(request, redactNormalizedRequest(request), "외부 요청");
+  recheck(request, redactNormalizedRequest, "외부 요청");
   return request;
 };
 
@@ -228,7 +303,7 @@ const storedOutcome = (value: unknown): StoredExternalOutcome => {
   if (!plainObject(value) || (value.kind !== "response" && value.kind !== "throw"))
     externalError("REQUEST_INVALID", "저장할 외부 호출 결과 형식이 잘못됐습니다.");
   const outcome = value as unknown as StoredExternalOutcome;
-  assertRedacted(outcome, redactStoredOutcome(outcome), "호출 결과");
+  recheck(outcome, redactStoredOutcome, "호출 결과");
   return outcome;
 };
 

@@ -182,6 +182,9 @@ describe("mcpeak test 의 External 세션", () => {
     expect(stderr).toContain("<redacted>");
     expect(stderr).toContain("city=seoul");
     expect(stderr).toContain("occurrence 0 · matchKey");
+    // 경로가 지워졌다는 것을 직접 본다. 위 세 줄만으로는 진단이 redacted URL 과 원본 경로를
+    // **함께** 찍어도 통과한다 — 그러면 이 PR 이 막으려던 유출이 진단으로 되살아난다.
+    expect(stderr).not.toContain("/other");
     // MCP 오류 채널의 이스케이프(개행 escape sequence 변환)를 겪지 않았다는 증거다.
     const backslashUEscape = `${String.fromCharCode(92)}u000a`;
     expect(stderr).not.toContain(backslashUEscape);

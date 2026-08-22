@@ -226,9 +226,16 @@ export const httpMatchKey = (match) =>
     )
     .digest("hex");
 
+/**
+ * H1 이 지원하는 method. **부모도 이 집합으로 자식이 보낸 값을 검사한다**(`coordinator.ts`).
+ * 두 곳에 따로 적어 두면 지원 범위를 넓힐 때 한쪽만 바뀌어, 자식은 보내는데 부모가 거절하거나
+ * 그 반대가 된다. 여기 한 곳에 둔다 — `shared/limits.mjs` 가 크기 상한에서 쓰는 것과 같은 이유다.
+ */
+export const SUPPORTED_HTTP_METHODS = Object.freeze(["GET", "POST"]);
+
 export async function normalizeHttpRequest(request) {
   const method = request.method.toUpperCase();
-  if (method !== "GET" && method !== "POST")
+  if (!SUPPORTED_HTTP_METHODS.includes(method))
     fail("UNSUPPORTED_HTTP_METHOD", `외부 HTTP 요청 method '${method}'은 지원하지 않습니다.`);
   const headers = normalizedHeaders(request.headers);
   let body = { kind: "none" };

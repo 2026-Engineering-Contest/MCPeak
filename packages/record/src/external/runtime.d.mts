@@ -9,6 +9,8 @@ import type {
 
 export const HTTP_MATCH_KEY_DOMAIN: "mcpeak.external.http";
 export const HTTP_INTERACTION_SCHEMA_VERSION: 1;
+/** H1 이 지원하는 method. 자식의 정규화와 부모의 검사가 같은 값을 봐야 한다. */
+export const SUPPORTED_HTTP_METHODS: readonly string[];
 
 /**
  * matchKey 계산에만 쓰는 재료(ADR-0053 `HttpMatchMaterialV1`). 정확한 pathname 을 담으므로

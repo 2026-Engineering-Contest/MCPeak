@@ -101,6 +101,18 @@ describe("McpClientError", () => {
       "서버 stderr가 비어 있습니다. 시그널 SIGTERM의 원인을 확인한 뒤 다시 실행하세요.",
     );
   });
+
+  it("PROCESS_EXITED hint는 종료 정보를 알 수 없으면 일반 원인 확인을 안내한다", () => {
+    const error = new McpClientError({
+      code: "PROCESS_EXITED",
+      phase: "process",
+      diagnostics: { ...diagnostics, stderr: "", exitCode: null, signal: null },
+    });
+
+    expect(error.hint).toBe(
+      "서버 stderr가 비어 있습니다. 서버 종료 원인을 확인한 뒤 다시 실행하세요.",
+    );
+  });
 });
 
 describe("HTTP 오류 code", () => {

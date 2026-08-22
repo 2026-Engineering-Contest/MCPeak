@@ -358,6 +358,8 @@ describe("runCli", () => {
     // 갈아탈 곳 둘 — 목적에 따라 갈린다.
     expect(err).toContain("mcpeak test");
     expect(err).toContain("--record-session");
+    // 재생 쪽 안내가 지워져도 --record-session 단언만으로는 통과한다. 둘 다 고정한다.
+    expect(err).toContain("--session");
     expect(err).not.toContain("알 수 없는 CLI 명령");
   });
   it("C1 제어 문자도 이스케이프한다", async () => {

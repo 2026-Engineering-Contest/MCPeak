@@ -26,7 +26,11 @@ const TEST_OPTIONS = `옵션:
 **세션은 그 서버가 밖에 물어본 결과**를 남깁니다. 둘은 섞이지 않으며 파일도 따로입니다.
 
 세션 파일에는 외부 API 응답이 저장되므로 .gitignore 를 확인하세요. \`token\`·\`apiKey\` 같은
-이름의 값은 저장 전에 가려집니다.`;
+이름의 값은 저장 전에 가려집니다.
+
+Node 22.x 에서 세션 옵션을 쓰면 실행마다 \`ExperimentalWarning: SQLite is an experimental
+feature\` 가 stderr 에 찍힙니다. Node 가 \`node:sqlite\` 를 아직 실험적으로 표시하기 때문이며,
+저장된 녹화는 표준 SQLite 파일이라 영향받지 않습니다. Node 24.16.0 에서는 나오지 않습니다.`;
 
 export const GENERATE_USAGE =
   "사용법: mcpeak generate --suite-id <id> --name <name> --out <suite.json> --command <executable> [--arg <value> ...] [--baseline-only] [--provider <codex|claude>] [--model <model>] [--no-dry-run] [--cassette <path>] [--record] [--reset-cmd <command>] [--no-repair] [--force]";

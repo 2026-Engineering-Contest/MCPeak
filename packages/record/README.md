@@ -182,6 +182,22 @@ CLI 는 `mcpeak verify <cassette.json> --command <executable>` 로 감싼다.
 ([ADR-0041](../../docs/adr/0041-마스킹의-적용-경계.md)). 값이 JSON 문자열이면 이 경계에서
 파싱 가능한 경우 구조화해 마스킹하고 stable JSON 문자열로 저장한다.
 
+### External 세션과 `node:sqlite` 실험 경고
+
+External 세션은 `node:sqlite` 로 저장한다. Node 가 이 모듈을 아직 실험적으로 표시하므로
+**Node 22.x 에서는 세션을 열 때마다** stderr 에 경고가 한 줄 찍힌다.
+
+```
+(node:2845) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+```
+
+Node 24.16.0 에서는 나오지 않는다. 측정한 것은 22.18.0 과 24.16.0 두 버전이다.
+
+이 경고는 **Node 의 API 표면**에 대한 것이지 저장된 녹화에 대한 것이 아니다. 파일은 헤더가
+`SQLite format 3` 인 표준 SQLite 라서 다른 도구로도 열리고, Node 가 바인딩을 바꿔도 그대로
+읽힌다. 경고를 지우지 않는 이유와 범위를 좁힌 방법은
+[ADR-0056](../../docs/adr/0056-node-sqlite-실험-경고를-external-사용자에게만-보인다.md).
+
 ## 제외 범위
 
 첫 버전은 사용자 정의 매칭 함수, 사용자 정의 마스킹 규칙, TTL, 부분 매칭을 제공하지 않는다.

@@ -1,0 +1,36 @@
+{
+  "success": {
+    "content": [
+      {
+        "type": "text",
+        "text": "서울의 현재 날씨는 맑음, 24°C입니다."
+      }
+    ],
+    "isError": false
+  },
+  "error": {
+    "content": [
+      {
+        "type": "text",
+        "text": "지원하지 않는 도시입니다: 알 수 없음"
+      }
+    ],
+    "isError": true
+  },
+  "withNondeterministicFields": {
+    "content": [
+      {
+        "type": "text",
+        "text": "서울의 현재 날씨는 맑음, 24°C입니다."
+      }
+    ],
+    "structuredContent": {
+      "city": "서울",
+      "condition": "맑음",
+      "temperatureCelsius": 24,
+      "observedAt": "2026-08-11T12:34:56.000Z",
+      "requestId": "123e4567-e89b-12d3-a456-426614174000"
+    },
+    "isError": false
+  }
+}

@@ -10,3 +10,4 @@
 | 파일 | 설명 |
 |---|---|
 | `tools-list.sample.json` | `tools/list` 응답 형태의 더미 샘플 |
+| `tools-call.sample.json` | 정상·오류·비결정 필드를 포함한 `tools/call` 응답 형태의 더미 샘플 |

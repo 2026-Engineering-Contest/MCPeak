@@ -51,6 +51,18 @@ export interface RecordSessionSummary {
   readonly unusedCount: 0;
 }
 
+/**
+ * 재생 원본에서 찾지 못한 호출 하나. 사용자에게 보일 진단이라 `display` 필드만 담는다
+ * (ADR-0053 — 마스킹된 쪽이라 그대로 보여도 안전하다). `matchKey` 는 앞 12자만 — 세션 안에서
+ * 구분하기에는 이만큼이면 되고, 전체 64자는 한 줄을 삼킨다.
+ */
+export interface ReplayMissDetail {
+  readonly method: string;
+  readonly url: string;
+  readonly occurrence: number;
+  readonly matchKeyPrefix: string;
+}
+
 export interface ReplaySessionSummary {
   readonly mode: "replay";
   readonly sourceSessionId: string;
@@ -58,6 +70,13 @@ export interface ReplaySessionSummary {
   readonly interactionCount: number;
   readonly consumedCount: number;
   readonly unusedCount: number;
+  /**
+   * 이번 실행에서 원본에 없어 실패한 호출들. **MCP 오류 채널을 거치지 않은 원본이다** — 그
+   * 채널은 `runner` 가 테스트 대상 서버의 텍스트로 취급해 이스케이프·잘라내므로, 우리 자신의
+   * 진단이 거기 실리면 서버 텍스트와 똑같이 망가진다(#259). CLI 는 이 목록을 별도 블록으로
+   * 그대로 보여준다.
+   */
+  readonly misses: readonly ReplayMissDetail[];
 }
 
 export type SessionSummary = RecordSessionSummary | ReplaySessionSummary;

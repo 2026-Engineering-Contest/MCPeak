@@ -24,6 +24,6 @@ export { startExternalCoordinator } from "./coordinator.js";
 export type { ExternalErrorCode } from "./errors.js";
 export { ExternalRecordReplayError } from "./errors.js";
 /** `finish()` 의 반환값. 소비자가 consumed/unused 개수를 보고할 때 쓴다. */
-export type { SessionSummary } from "./session-store.js";
+export type { ReplayMissDetail, SessionSummary } from "./session-store.js";
 export type { SqliteSessionStoreOptions } from "./session-store-sqlite.js";
 export { createSqliteSessionStore } from "./session-store-sqlite.js";

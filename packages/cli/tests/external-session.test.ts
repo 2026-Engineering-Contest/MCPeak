@@ -1,6 +1,10 @@
-import type { SessionSummary } from "@mcpeak/record/external";
+import type { ReplayMissDetail, SessionSummary } from "@mcpeak/record/external";
 import { describe, expect, it } from "vitest";
-import { externalSessionNotice, parseTestCommand } from "../src/test-command.js";
+import {
+  externalSessionNotice,
+  parseTestCommand,
+  renderReplayMissDiagnostics,
+} from "../src/test-command.js";
 
 /**
  * `--session` · `--record-session` 의 파싱과 상호 배타를 본다.
@@ -141,6 +145,7 @@ const replay = (
   interactionCount,
   consumedCount,
   unusedCount,
+  misses: [],
 });
 
 const SCOPE_NOTE = "globalThis.fetch";
@@ -192,5 +197,66 @@ describe("External 세션 종료 경고", () => {
       expect(notice).toContain(SCOPE_NOTE);
       expect(notice?.endsWith("로 부른 것만 잡습니다.\n")).toBe(true);
     }
+  });
+});
+
+/**
+ * #259 — 진단이 MCP 오류 채널을 안 타는지는 `record` 쪽에서 이미 본다
+ * (`engine-memory.test.ts`). 여기서는 그 구조화된 값을 CLI 가 텍스트로 옮기는 배치만 본다.
+ */
+describe("재생 원본 miss 진단 렌더링", () => {
+  const miss = (overrides: Partial<ReplayMissDetail> = {}): ReplayMissDetail => ({
+    method: "GET",
+    url: "http://127.0.0.1:1/weather?city=busan",
+    occurrence: 0,
+    matchKeyPrefix: "949ea7651109",
+    ...overrides,
+  });
+
+  it("miss 가 없으면 빈 문자열이다", () => {
+    expect(renderReplayMissDiagnostics([])).toBe("");
+  });
+
+  it("개행이 실제 줄바꿈으로 남는다 — MCP 오류 채널의 \\u000a 이스케이프를 겪지 않는다(#259)", () => {
+    const block = renderReplayMissDiagnostics([miss()]);
+
+    expect(block).not.toContain("\\u000a");
+    expect(block.split("\n").length).toBeGreaterThan(1);
+  });
+
+  it("269자를 넘는 요청 URL 도 잘리지 않는다(#259) — 200자 상한은 runner 의 것이다", () => {
+    const longUrl = `http://127.0.0.1:1/weather?city=${"a".repeat(260)}`;
+    const block = renderReplayMissDiagnostics([miss({ url: longUrl })]);
+
+    expect(block).toContain(longUrl);
+    expect(block).not.toContain("자 생략");
+  });
+
+  it("건수와 각 호출의 method·url·occurrence·matchKey 를 보여준다", () => {
+    const block = renderReplayMissDiagnostics([
+      miss({ occurrence: 0 }),
+      miss({ method: "POST", url: "http://127.0.0.1:1/pay", occurrence: 1 }),
+    ]);
+
+    expect(block).toContain("재생 원본에서 찾지 못한 호출 2건");
+    expect(block).toContain("GET http://127.0.0.1:1/weather?city=busan");
+    expect(block).toContain("occurrence 0 · matchKey 949ea7651109…");
+    expect(block).toContain("POST http://127.0.0.1:1/pay");
+    expect(block).toContain("occurrence 1 · matchKey 949ea7651109…");
+  });
+
+  it("고칠 방법을 말한다", () => {
+    const block = renderReplayMissDiagnostics([miss()]);
+
+    expect(block).toContain("녹화된 뒤에 추가되었거나");
+    expect(block).toContain("녹화를 다시 하거나");
+  });
+
+  it("필드에 제어 문자가 섞이면 이스케이프하고, 정적 문구의 개행은 손대지 않는다", () => {
+    const bell = String.fromCharCode(7);
+    const block = renderReplayMissDiagnostics([miss({ method: `GET${bell}` })]);
+
+    expect(block).toContain("GET\\u0007");
+    expect(block).not.toContain("\\u000a");
   });
 });

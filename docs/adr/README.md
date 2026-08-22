@@ -69,6 +69,7 @@
 | [0055](./0055-mock-src-가-저장소-공통-import-관례로-돌아온다.md) | `packages/mock/src` 가 저장소 공통 import 관례로 돌아온다 (ADR-0030 대체) | mock | 채택 |
 | [0056](./0056-node-sqlite-실험-경고를-external-사용자에게만-보인다.md) | `node:sqlite` 실험 경고는 External 사용자에게만 보이고, 그 이상 숨기지 않는다 | record, cli | 채택 |
 | [0057](./0057-external-어댑터는-global-fetch-까지만-가로챈다.md) | External 어댑터는 `globalThis.fetch` 까지만 가로채고, 범위 밖은 경고로 알린다 | record, cli | 채택 |
+| [0058](./0058-external-replay-miss-진단은-mcp-오류-채널을-타지-않는다.md) | External replay-miss 진단은 MCP 오류 채널을 타지 않는다 — 구조화된 값을 별도 stderr 블록으로 보여준다 | record, cli | 채택 |
 
 **상태** — `채택` 과 `승인` 이 확정된 결정입니다. `제안` 과 `초안` 은 아직 확정되지 않았으므로 이
 결정에 기대어 구현하지 마세요. 값은 각 파일 머리의 `상태` 를 그대로 옮긴 것입니다.

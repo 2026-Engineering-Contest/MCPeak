@@ -109,6 +109,30 @@ describe("loadSession", () => {
     expect(loadSession(path)).toBeNull();
   });
 
+  it("같은 열을 가졌어도 store_version 이 다르면 null이다", () => {
+    const path = join(newDir(), "other-version.db");
+    const store = createSqliteSessionStore({ path });
+    store.createSession("s1");
+    store.close();
+    const db = new DatabaseSync(path);
+    db.exec("UPDATE meta SET value = '999' WHERE key = 'store_version';");
+    db.close();
+
+    expect(loadSession(path)).toBeNull();
+  });
+
+  it("meta 가 없는 파일은 열이 같아도 null이다", () => {
+    const path = join(newDir(), "no-meta.db");
+    const store = createSqliteSessionStore({ path });
+    store.createSession("s1");
+    store.close();
+    const db = new DatabaseSync(path);
+    db.exec("DROP TABLE meta;");
+    db.close();
+
+    expect(loadSession(path)).toBeNull();
+  });
+
   it("세션 행이 없는 빈 세션 파일이면 null이다", () => {
     const path = join(newDir(), "empty.db");
     // 스키마만 만들고 세션은 넣지 않는다. `createSession` 전의 상태다.

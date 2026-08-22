@@ -286,6 +286,12 @@ export function loadSession(path: string): SessionSnapshot | null {
     return null;
   }
   try {
+    // 열 이름이 같아도 다른 version 의 파일은 우리 세션이 아니다. 열 때 심은 `meta.store_version`
+    // 이 같은 값일 때만 읽는다 — meta 가 없거나 값이 다르면 "읽을 수 있는 세션" 이 아니다.
+    const version = db.prepare("SELECT value FROM meta WHERE key = 'store_version'").get() as
+      | { value: string }
+      | undefined;
+    if (version?.value !== String(SQLITE_STORE_VERSION)) return null;
     // 세션 파일 하나에 세션 하나다(CLI 의 `SESSION_ID`). 그래도 `ORDER BY` 를 붙이는 것은
     // 여러 건이 들어 있는 파일에서 **어느 것을 고를지가 실행마다 달라지지 않게** 하려는 것이다.
     const session = db

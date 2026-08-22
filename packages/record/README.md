@@ -188,22 +188,30 @@ CLI 는 `mcpeak verify <cassette.json> --command <executable>` 로 감싼다.
 
 ## External 세션
 
-**이 패키지는 두 가지를 녹화한다.** 여기까지의 카세트는 *우리가 서버에게 물어본 것* 을 남기고,
-External 세션은 *그 서버가 밖에 물어본 것* 을 남긴다. 겨냥하는 문제가 다르다 — 카세트는 서버를
-다시 띄우지 않으려고 쓰고, 세션은 **서버는 진짜로 돌리되 그 서버가 부르는 외부 API 만** 멈추려고
-쓴다. 유료 API 나 부작용이 있는 endpoint 를 부르는 서버가 대상이다.
+**서버가 밖으로 부르는 HTTP 호출**을 녹화·재생한다. 유료 API 나 부작용이 있는 endpoint 를
+부르는 서버가 대상이며, 재생할 때도 **서버 자체는 실제로 뜬다** — 멈추는 것은 서버가 아니라
+그 서버가 밖에 부르는 쪽이다.
+
+### Tool 카세트와 다른 점
+
+이 패키지에는 그 위에 있는 절들이 다루는 **Tool 카세트**가 이미 있다. 둘 다 "녹화·재생"이라
+헷갈리기 쉽지만 겨냥하는 문제가 다르다 — 카세트는 *우리가 서버에게 물어본 것*(서버를 다시
+띄우지 않으려고), External 세션은 *그 서버가 밖에 물어본 것*(서버는 띄우되 그 바깥 호출만
+멈추려고)을 남긴다.
 
 | | Tool 카세트 | External 세션 |
 |---|---|---|
 | 남기는 것 | 우리 → 서버 (`listTools`·`callTool`) | 서버 → 외부 API (HTTP) |
-| 가로채는 자리 | 부모의 `McpClient` 래퍼 | 자식 프로세스 안의 `globalThis.fetch` |
 | 재생할 때 | 감싼 클라이언트를 부르지 않는다 | **서버는 실제로 돌고**, 그 서버의 외부 호출만 막힌다 |
-| 파일 | JSON | SQLite |
-| 진입점 | `@mcpeak/record` | `@mcpeak/record/external` |
 | CLI | `generate --cassette` · `mcpeak replay` | `test --record-session` · `test --session` |
 
-둘은 코드 경로도 파일도 섞이지 않는다
-([ADR-0051](../../docs/adr/0051-external-record-replay와-tool-카세트-경계-분리.md)).
+**Tool 카세트는 legacy 다.** External 이 서버를 실제로 실행하는 더 실제 문제에 가까운 경로라,
+[ADR-0051](../../docs/adr/0051-external-record-replay와-tool-카세트-경계-분리.md)은 두 경로가
+당분간 공존하되 "일시적인 중복보다 영구적인 의미 혼합이 더 큰 비용"이라고 못박고, 검증이
+끝나면 **0.x breaking 변경으로 카세트를 제거한다**고 결과 절에 적어 뒀다. 지금 이 절이 카세트를
+나란히 설명하는 것은 두 기능이 대등해서가 아니라, 검증이 끝나기 전까지는 `--cassette` 를 이미
+쓰는 사용자가 새 기능과 헷갈리지 않게 하려는 것이다. 새로 시작한다면 카세트가 아니라 External
+세션을 볼 자리다.
 
 ### 잡는 범위는 `globalThis.fetch` 하나다
 

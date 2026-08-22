@@ -1,10 +1,10 @@
 # ADR-0058: External replay-miss 진단은 MCP 오류 채널을 타지 않는다
 
-- 상태: 제안
+- 상태: 채택
 - 날짜: 2026-08-22
 - 담당: record, cli
 - 작성자: @ddxng5 (② replay/record 파트)
-- 승인: 미승인
+- 승인: 승인 (2026-08-22, @ddxng5)
 - 선행 결정:
   [ADR-0013](./0013-렌더러-배치와-진단-무분기.md),
   [ADR-0052](./0052-coordinator가-engine과-session-store를-소유한다.md)

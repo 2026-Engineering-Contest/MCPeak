@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from "vitest";
-import { applyThemeChoice, getThemeChoice } from "../src/theme.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { applyThemeChoice, getThemeChoice, themeStorage } from "../src/theme.js";
 
 /** localStorage와 같은 인터페이스의 인메모리 저장소. */
 function makeStorage(initial: Record<string, string> = {}) {
@@ -61,5 +61,90 @@ describe("theme", () => {
   it("알 수 없는 저장값은 system으로 취급한다", () => {
     const storage = makeStorage({ "mcpeak-theme": "sepia" });
     expect(getThemeChoice(storage)).toBe("system");
+  });
+});
+
+describe("themeStorage", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("쓸 수 있는 저장소는 그대로 돌려준다", () => {
+    const real = makeStorage({ "mcpeak-theme": "dark" });
+    vi.stubGlobal("localStorage", real);
+    expect(themeStorage()).toBe(real);
+    expect(getThemeChoice(themeStorage())).toBe("dark");
+  });
+
+  it("메서드가 없는 껍데기면(Node 25) 던지지 않고 system으로 시작한다", () => {
+    vi.stubGlobal("localStorage", {});
+    const storage = themeStorage();
+    expect(getThemeChoice(storage)).toBe("system");
+    expect(() => applyThemeChoice("dark", makeRoot(), storage)).not.toThrow();
+  });
+
+  it("getItem 만 있는 반쪽 저장소도 통과시키지 않는다", () => {
+    // main.tsx 는 기본값 "system" 으로 removeItem 을 부른다. getItem 만 보고
+    // 통과시키면 React 마운트 전에 그 줄에서 죽는다 (#251 리뷰).
+    vi.stubGlobal("localStorage", { getItem: () => null });
+    const storage = themeStorage();
+    expect(() => applyThemeChoice("system", makeRoot(), storage)).not.toThrow();
+    expect(() => applyThemeChoice("dark", makeRoot(), storage)).not.toThrow();
+  });
+
+  it("메서드는 있는데 쓰기가 던지는 저장소도 통과시키지 않는다", () => {
+    // 용량 초과·정책 차단이 이 모양이다. typeof 검사로는 걸러지지 않는다.
+    vi.stubGlobal("localStorage", {
+      getItem: () => null,
+      setItem: () => {
+        throw new Error("QuotaExceededError");
+      },
+      removeItem: () => {},
+    });
+    const storage = themeStorage();
+    expect(getThemeChoice(storage)).toBe("system");
+    expect(() => applyThemeChoice("dark", makeRoot(), storage)).not.toThrow();
+  });
+
+  it("읽기가 던지는 저장소도 통과시키지 않고, probe 키도 남기지 않는다", () => {
+    // 쓰기만 확인하면 getThemeChoice 의 첫 getItem 에서 죽는다 (#251 리뷰).
+    // 쓰기가 성공한 뒤 읽기가 던지는 경우라 probe 정리 경로까지 함께 본다.
+    const map = new Map<string, string>();
+    vi.stubGlobal("localStorage", {
+      getItem: () => {
+        throw new Error("SecurityError");
+      },
+      setItem: (key: string, value: string) => {
+        map.set(key, value);
+      },
+      removeItem: (key: string) => {
+        map.delete(key);
+      },
+    });
+    expect(getThemeChoice(themeStorage())).toBe("system");
+    expect([...map.keys()]).toEqual([]);
+  });
+
+  it("정상 저장소에는 probe 키를 남기지 않는다", () => {
+    const real = makeStorage();
+    vi.stubGlobal("localStorage", real);
+    expect(themeStorage()).toBe(real);
+    expect(real.getItem("__mcpeak_theme_probe__")).toBeNull();
+  });
+
+  it("접근 자체가 던지면(저장소 차단) 던지지 않고 system으로 시작한다", () => {
+    const original = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+    Object.defineProperty(globalThis, "localStorage", {
+      configurable: true,
+      get(): never {
+        throw new Error("SecurityError: storage is disabled");
+      },
+    });
+    try {
+      expect(getThemeChoice(themeStorage())).toBe("system");
+    } finally {
+      if (original === undefined) delete (globalThis as { localStorage?: unknown }).localStorage;
+      else Object.defineProperty(globalThis, "localStorage", original);
+    }
   });
 });

@@ -1,7 +1,7 @@
 import type { JSX } from "react";
 import { useState } from "react";
 import type { ThemeChoice } from "../theme.js";
-import { applyThemeChoice, getThemeChoice } from "../theme.js";
+import { applyThemeChoice, getThemeChoice, themeStorage } from "../theme.js";
 
 const CYCLE: readonly ThemeChoice[] = ["system", "light", "dark"];
 
@@ -13,14 +13,15 @@ const LABELS: Record<ThemeChoice, string> = {
 
 /**
  * light/dark/system 3값 순환 버튼. 클릭마다 다음 값으로 넘어가며
- * applyThemeChoice로 data-theme 속성과 localStorage 저장을 함께 처리한다.
+ * applyThemeChoice로 data-theme 속성과 저장을 함께 처리한다. 저장소는 themeStorage()가
+ * 준다 — 쓸 수 없는 환경에서는 기억만 못 할 뿐 버튼은 그대로 동작한다(#212).
  */
 export function ThemeToggle(): JSX.Element {
-  const [choice, setChoice] = useState<ThemeChoice>(() => getThemeChoice(window.localStorage));
+  const [choice, setChoice] = useState<ThemeChoice>(() => getThemeChoice(themeStorage()));
 
   const cycle = (): void => {
     const next = CYCLE[(CYCLE.indexOf(choice) + 1) % CYCLE.length] ?? "system";
-    applyThemeChoice(next, document.documentElement, window.localStorage);
+    applyThemeChoice(next, document.documentElement, themeStorage());
     setChoice(next);
   };
 

@@ -1,6 +1,8 @@
 import type { ReplayMissDetail, SessionSummary } from "@mcpeak/record/external";
 import { describe, expect, it } from "vitest";
+import { SessionFileMissingError } from "../src/external-wiring.js";
 import {
+  externalOpenFailure,
   externalSessionNotice,
   parseTestCommand,
   renderReplayMissDiagnostics,
@@ -258,5 +260,70 @@ describe("재생 원본 miss 진단 렌더링", () => {
 
     expect(block).toContain("GET\\u0007");
     expect(block).not.toContain("\\u000a");
+  });
+});
+
+/**
+ * #260 — 세션을 열지 못했을 때의 문장을 본다.
+ *
+ * 한때 이 자리가 문장 하나로 모든 실패를 덮어서, 경로를 잘못 친 사람에게 손상된 세션의
+ * 문안과 녹화의 쓰기 권한 안내를 동시에 말했다. 갈래마다 다음에 할 일이 다르다는 것이
+ * 이 테스트가 고정하는 것이다.
+ */
+describe("External 세션 열기 실패 문장", () => {
+  const PATH = "/tmp/없는파일.db";
+  const newline = String.fromCharCode(10);
+  const coded = (code: string, message: string): Error =>
+    Object.assign(new Error(message), { code });
+
+  it("파일이 없으면 경로를 보여주고 녹화를 안내한다", () => {
+    const failure = externalOpenFailure("replay", PATH, new SessionFileMissingError(PATH));
+
+    expect(failure.message).toContain("세션 파일을 찾을 수 없습니다");
+    expect(failure.message).toContain(PATH);
+    expect(failure.hint).toContain("--record-session");
+    // 재생은 읽기다. 쓰기 권한 안내가 붙으면 사용자를 엉뚱한 곳으로 보낸다.
+    expect(failure.hint).not.toContain("쓰기 권한");
+    // 손상된 세션의 문안과 겹치지 않는다.
+    expect(failure.message).not.toContain("완료");
+  });
+
+  it("빈 세션과 미완료 세션을 다른 문장으로 가른다", () => {
+    const empty = externalOpenFailure("replay", PATH, coded("SESSION_NOT_FOUND", "x"));
+    const broken = externalOpenFailure("replay", PATH, coded("REPLAY_SOURCE_INVALID", "x"));
+
+    expect(empty.message).toContain("녹화된 외부 호출이 없습니다");
+    expect(broken.message).toContain("녹화가 완료되지 않은");
+    expect(empty.message).not.toBe(broken.message);
+    for (const failure of [empty, broken]) expect(failure.message).toContain(PATH);
+  });
+
+  it("분류하지 못한 실패는 원인을 버리지 않고 모드에 맞는 안내를 준다", () => {
+    const replay = externalOpenFailure("replay", PATH, new Error("file is not a database"));
+    const record = externalOpenFailure("record", PATH, new Error("unable to open database file"));
+
+    expect(replay.message).toContain("file is not a database");
+    expect(replay.hint).toContain("읽을 수 있는지");
+    expect(replay.hint).not.toContain("쓰기 권한");
+    // 녹화는 실제로 쓰므로 그 안내가 맞다. 이 대칭이 깨지면 안 된다.
+    expect(record.hint).toContain("쓰기 권한");
+  });
+
+  it("어느 갈래도 내부 세션 id 를 노출하지 않고 개행을 넣지 않는다", () => {
+    const failures = [
+      externalOpenFailure("replay", PATH, new SessionFileMissingError(PATH)),
+      externalOpenFailure("replay", PATH, coded("SESSION_NOT_FOUND", "x")),
+      externalOpenFailure("replay", PATH, coded("REPLAY_SOURCE_INVALID", "x")),
+      externalOpenFailure("replay", PATH, new Error("boom")),
+      externalOpenFailure("record", PATH, new Error("boom")),
+    ];
+
+    for (const failure of failures) {
+      // 사용자가 준 적 없는 이름이라 화면에서 무엇을 가리키는지 알 수 없다.
+      expect(failure.message).not.toContain("default");
+      // hint 에 개행을 넣으면 format() 이 이스케이프해 리터럴로 찍힌다.
+      expect(failure.hint).not.toContain(newline);
+      expect(failure.message).not.toContain(newline);
+    }
   });
 });

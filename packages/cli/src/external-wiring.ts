@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import type { ExternalCoordinatorHandle, SessionSummary } from "@mcpeak/record/external";
 
 /**
@@ -52,7 +53,24 @@ export interface ExternalWiring {
 /** 세션 파일 하나가 세션 하나이므로 식별자를 사용자에게 묻지 않는다. */
 const SESSION_ID = "default";
 
+/**
+ * 재생할 세션 파일이 없을 때. **Store 를 열기 전에 던진다** — `node:sqlite` 의 `DatabaseSync`
+ * 는 없는 경로를 만들어 버리므로, 열고 나서 판정하면 오타 한 번에 빈 DB 가 디스크에 남는다.
+ * 그러면 두 번째 실행부터는 "파일이 없다" 가 거짓이 되어 진단이 또 어긋난다(#260).
+ */
+export class SessionFileMissingError extends Error {
+  override readonly name = "SessionFileMissingError";
+
+  constructor(readonly path: string) {
+    super(`세션 파일이 없습니다: ${path}`);
+  }
+}
+
 export async function startExternalWiring(options: ExternalWiringOptions): Promise<ExternalWiring> {
+  // 재생은 읽기다. 없는 파일을 만들어 두고 "완료된 원본이 아니다" 라고 말하지 않는다.
+  if (options.mode === "replay" && !existsSync(options.sessionPath))
+    throw new SessionFileMissingError(options.sessionPath);
+
   const { createSqliteSessionStore, startExternalCoordinator } = await loadExternal();
   const store = createSqliteSessionStore({ path: options.sessionPath });
 

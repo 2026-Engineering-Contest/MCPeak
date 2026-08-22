@@ -1,6 +1,10 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import type { HttpMatchV1 } from "../../src/external/protocol.js";
+import {
+  type HttpMatchV1,
+  MAX_COORDINATOR_PAYLOAD_BYTES,
+  MAX_HTTP_BODY_BYTES,
+} from "../../src/external/protocol.js";
 import {
   encodeHttpResponse,
   encodeHttpThrow,
@@ -281,5 +285,49 @@ describe("encodeHttpThrow", () => {
 
     expect(() => restoreHttpOutcome(stored)).toThrow(/host 이름을 찾지 못했습니다/);
     expect(() => restoreHttpOutcome(stored)).not.toThrow(/원본 문구/);
+  });
+});
+
+describe("응답 헤더 마스킹", () => {
+  it("blocklist 밖의 토큰 헤더도 지운다 — 요청 쪽 기준과 맞춘다", async () => {
+    const response = new Response(JSON.stringify({ ok: true }), {
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": "leaked-api-key",
+        "x-auth-token": "leaked-auth-token",
+        "www-authenticate": 'Bearer realm="leaked-realm"',
+      },
+    });
+    Object.defineProperty(response, "url", { value: "https://example.com/x", configurable: true });
+
+    const stored = await encodeHttpResponse(response);
+
+    expect(JSON.stringify(stored)).not.toContain("leaked");
+    expect(stored.headers).toContainEqual(["x-api-key", "[redacted]"]);
+    expect(stored.headers).toContainEqual(["www-authenticate", "[redacted]"]);
+    // 민감하지 않은 헤더는 그대로 남는다. 전부 지우면 진단이 사라진다.
+    expect(stored.headers).toContainEqual(["content-type", "application/json"]);
+  });
+});
+
+describe("Coordinator payload 상한", () => {
+  it("HTTP 상한을 통과한 body는 Coordinator 상한도 통과한다", async () => {
+    // begin payload 는 같은 body 를 match 와 display 에 두 번 싣는다. 두 상한이 따로
+    // 정해져 있으면 "지원한다고 한 크기인데 안 되는" 구간이 생긴다.
+    const raw = JSON.stringify({ value: "x".repeat(MAX_HTTP_BODY_BYTES - 64) });
+    expect(new TextEncoder().encode(raw).byteLength).toBeLessThan(MAX_HTTP_BODY_BYTES);
+
+    const normalized = await normalizeHttpRequest(
+      new Request("https://example.com/data", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: raw,
+      }),
+    );
+    const payload = JSON.stringify({ schemaVersion: 1, request: normalized });
+
+    expect(new TextEncoder().encode(payload).byteLength).toBeLessThanOrEqual(
+      MAX_COORDINATOR_PAYLOAD_BYTES,
+    );
   });
 });

@@ -278,3 +278,24 @@ describe.each(STORES)("SessionStore 계약 — $name", ({ create }) => {
     });
   });
 });
+
+describe("INCOMPLETE_SESSION 진단", () => {
+  it("어떤 호출이 미완료인지 알려준다 — 원인 없이 세션만 실패시키지 않는다", () => {
+    const store = createMemorySessionStore();
+    store.createSession("s1");
+    store.reserve({ sessionId: "s1", request: request("a") });
+
+    let message = "";
+    try {
+      store.finish("s1", "completed");
+    } catch (error) {
+      message = (error as Error).message;
+    }
+
+    expect(message).toContain("완료되지 않은 외부 호출이 1건");
+    // 마스킹된 display 를 쓰므로 그대로 보여도 안전하다.
+    expect(message).toContain("GET https://example.com/a");
+    // 무엇을 하면 되는지까지 말한다.
+    expect(message).toContain("JSON을 돌려주는지");
+  });
+});

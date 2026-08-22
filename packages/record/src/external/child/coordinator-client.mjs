@@ -1,6 +1,5 @@
 import { request as httpRequest } from "node:http";
-
-const MAX_COORDINATOR_PAYLOAD_BYTES = 2 * 1024 * 1024;
+import { MAX_COORDINATOR_PAYLOAD_BYTES } from "../../shared/limits.mjs";
 
 const clientError = (code, message) => {
   const error = new Error(message);

@@ -1,7 +1,6 @@
 export const PROTOCOL_SCHEMA_VERSION = 1 as const;
 export const HTTP_ADAPTER_SCHEMA_VERSION = 1 as const;
-export const MAX_HTTP_BODY_BYTES = 1024 * 1024;
-export const MAX_COORDINATOR_PAYLOAD_BYTES = 2 * 1024 * 1024;
+export { MAX_COORDINATOR_PAYLOAD_BYTES, MAX_HTTP_BODY_BYTES } from "../shared/limits.mjs";
 export const DEFAULT_COORDINATOR_TIMEOUT_MS = 5_000;
 
 export type JsonPrimitive = string | number | boolean | null;

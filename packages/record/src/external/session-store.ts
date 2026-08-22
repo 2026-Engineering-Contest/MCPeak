@@ -198,14 +198,23 @@ export function createMemorySessionStore(): SessionStore {
           unusedCount: 0,
         });
       }
-      if (
-        status === "completed" &&
-        session.interactions.some((interaction) => interaction.status === "incomplete")
-      ) {
+      const incomplete = session.interactions.filter((item) => item.status === "incomplete");
+      if (status === "completed" && incomplete.length > 0) {
         session.status = "failed";
+        // 어떤 호출이 걸렸는지 말해 주지 않으면 사용자는 서버 코드 전체를 뒤져야 한다.
+        // 지원하지 않는 응답(비-JSON·redirect)에서 이 경로로 오는 것이 가장 흔하다.
+        // `display` 는 마스킹된 쪽이라 그대로 내보내도 안전하다(ADR-0053).
+        const listed = incomplete
+          .slice(0, 3)
+          .map((item) => `  - ${item.request.display.method} ${item.request.display.url}`)
+          .join("\n");
+        const rest = incomplete.length > 3 ? `\n  ... 외 ${incomplete.length - 3}건` : "";
         externalError(
           "INCOMPLETE_SESSION",
-          `External session '${sessionId}'에 완료되지 않은 interaction이 있습니다.`,
+          `External session '${sessionId}'에 완료되지 않은 외부 호출이 ${incomplete.length}건 있습니다.\n` +
+            `${listed}${rest}\n` +
+            "→ 지원하지 않는 응답(비-JSON·redirect)을 받으면 그 호출은 저장하지 않고 세션을 실패로 둡니다.\n" +
+            "→ 해당 endpoint가 JSON을 돌려주는지 확인하거나, 그 호출을 녹화 범위에서 빼세요.",
         );
       }
       session.status = status;

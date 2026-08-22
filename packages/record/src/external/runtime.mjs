@@ -1,14 +1,25 @@
 import { createHash } from "node:crypto";
+import { MAX_HTTP_BODY_BYTES } from "../shared/limits.mjs";
 import { sensitiveKeyIn, sensitiveKeysOf } from "../shared/sensitive-keys.mjs";
 
 const REDACTED = "[redacted]";
-const MAX_HTTP_BODY_BYTES = 1024 * 1024;
 const MATCH_HEADER_NAMES = new Set(["accept", "accept-language", "content-type", "range"]);
+/**
+ * 단어 규칙(`sensitiveKey`)만으로는 걸리지 않는 표준 헤더들. 접미 단어열이 `authorization`
+ * 이나 `authenticate` 라 민감 키 목록에 없기 때문이다.
+ *
+ * `*-authenticate` 계열은 값 자체가 비밀은 아니지만 Digest 인증의 nonce 와 realm 이
+ * 들어간다. 녹화본은 커밋되거나 공유되므로 보수적으로 지운다.
+ */
 const SENSITIVE_HEADER_NAMES = new Set([
   "authorization",
   "proxy-authorization",
   "cookie",
   "set-cookie",
+  "www-authenticate",
+  "proxy-authenticate",
+  "authentication-info",
+  "proxy-authentication-info",
 ]);
 export const HTTP_MATCH_KEY_DOMAIN = "mcpeak.external.http";
 export const HTTP_INTERACTION_SCHEMA_VERSION = 1;
@@ -226,12 +237,24 @@ export async function normalizeHttpRequest(request) {
   };
 }
 
+/**
+ * 응답 헤더를 저장 형태로 바꾼다.
+ *
+ * 한때 `SENSITIVE_HEADER_NAMES` 4개만 마스킹했다. 그 blocklist 에 없는 `x-api-key` ·
+ * `x-auth-token` · `www-authenticate` 는 토큰을 원문 그대로 세션에 남겼다. 요청 쪽은
+ * allowlist(`MATCH_HEADER_NAMES`)라 안전했는데 응답 쪽만 반대였다.
+ *
+ * 그래서 이름 판정에도 `sensitiveKey` 를 태운다. 헤더 이름은 `-` 로 끊긴 단어열이라
+ * 민감 키 판정이 그대로 먹는다 — `x-api-key` 의 접미 단어열이 `apikey` 다(ADR-0039).
+ * 고정 목록은 `authorization` 처럼 단어 규칙만으로는 안 걸리는 이름을 위해 남긴다.
+ */
 const storedResponseHeaders = (headers) => {
   const result = [];
   for (const [rawName, rawValue] of headers.entries()) {
     const name = rawName.toLowerCase();
     if (name === "content-length") continue;
-    result.push([name, SENSITIVE_HEADER_NAMES.has(name) ? REDACTED : rawValue]);
+    const secret = SENSITIVE_HEADER_NAMES.has(name) || sensitiveKey(name);
+    result.push([name, secret ? REDACTED : rawValue]);
   }
   return result;
 };

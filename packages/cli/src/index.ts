@@ -1,8 +1,9 @@
 import { readFile, writeFile } from "node:fs/promises";
 import packageMetadata from "../package.json";
 import { nodeGenerateDependencies, nodeReviewIO, runGenerateCommand } from "./generate-command.js";
-import { commandHelp, GLOBAL_HELP } from "./help.js";
+import { COMMAND_DISCOVERY_HINT, commandHelp, GLOBAL_HELP } from "./help.js";
 import { type RepairCommandDependencies, runRepairCommand } from "./repair-command.js";
+import { escapeTerminalText } from "./repair-render.js";
 import {
   type ReplayCommandDependencies,
   ReplayRuntimeUnavailableError,
@@ -144,6 +145,11 @@ const unavailableVerifyDependencies: VerifyCommandDependencies = {
   writeStderr: (text: string): void => void process.stderr.write(text),
 };
 
+/** `mcpeak help <이름>` 으로 볼 수 있는 명령. 위 두 갈래가 같은 목록을 봐야 한다. */
+const HELP_TOPICS = ["test", "generate", "repair", "replay", "verify"] as const;
+const isHelpTopic = (value: string | undefined): value is (typeof HELP_TOPICS)[number] =>
+  HELP_TOPICS.includes(value as (typeof HELP_TOPICS)[number]);
+
 export async function run(argv: string[]): Promise<number> {
   if (
     argv.length === 0 ||
@@ -154,16 +160,25 @@ export async function run(argv: string[]): Promise<number> {
   }
   if (argv.length === 2) {
     const command = argv[0] === "help" ? argv[1] : argv[1] === "--help" ? argv[0] : undefined;
-    if (
-      command === "test" ||
-      command === "generate" ||
-      command === "repair" ||
-      command === "replay" ||
-      command === "verify"
-    ) {
+    if (isHelpTopic(command)) {
       process.stdout.write(commandHelp(command));
       return 0;
     }
+  }
+  /**
+   * `help` 로 시작했는데 위에서 안 걸렸다면 **뒤에 붙은 인자가 틀린 것**이다.
+   *
+   * 여기서 안 막고 아래로 흘려보내면 `runCli` 가 `argv[0]` 인 `help` 를 명령으로 읽어
+   * "알 수 없는 CLI 명령 'help'입니다" 라고 한다. 사용자가 정확히 친 토큰을 틀렸다고
+   * 지목하는 셈이라, 무엇을 고쳐야 하는지가 화면에서 사라진다.
+   */
+  if (argv[0] === "help") {
+    const target = argv[1] ?? "";
+    const message = isHelpTopic(target)
+      ? `\`help ${escapeTerminalText(target)}\` 뒤에는 인자를 더 받지 않습니다.`
+      : `도움말이 없는 명령 '${escapeTerminalText(target)}'입니다.`;
+    process.stderr.write(`오류 [CLI_USAGE]: ${message}\n해결: ${COMMAND_DISCOVERY_HINT}\n`);
+    return 1;
   }
   if (argv.length === 1 && argv[0] === "--version") {
     process.stdout.write(`mcpeak ${packageMetadata.version}\n`);

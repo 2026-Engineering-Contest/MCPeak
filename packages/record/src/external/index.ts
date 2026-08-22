@@ -24,6 +24,17 @@ export { startExternalCoordinator } from "./coordinator.js";
 export type { ExternalErrorCode } from "./errors.js";
 export { ExternalRecordReplayError } from "./errors.js";
 /** `finish()` 의 반환값. 소비자가 consumed/unused 개수를 보고할 때 쓴다. */
-export type { ReplayMissDetail, SessionSummary } from "./session-store.js";
+/**
+ * `loadSession` 이 돌려주는 것. 대시보드가 목록과 타임라인을 그리려면 상호작용까지 필요하다.
+ * 스키마 세부(행 타입·DDL)는 여전히 안 나간다 — 나가는 것은 우리가 정의한 도메인 모양뿐이다.
+ */
+export type {
+  InteractionStatus,
+  ReplayMissDetail,
+  SessionSnapshot,
+  SessionStatus,
+  SessionSummary,
+  StoredInteraction,
+} from "./session-store.js";
 export type { SqliteSessionStoreOptions } from "./session-store-sqlite.js";
-export { createSqliteSessionStore } from "./session-store-sqlite.js";
+export { createSqliteSessionStore, loadSession } from "./session-store-sqlite.js";

@@ -298,6 +298,20 @@ const FAILURE_CODES = new Map([
 
 const FAILURE_NAMES = new Set(["Error", "TypeError", "AbortError"]);
 
+/**
+ * `AbortSignal.timeout()` 이 만드는 실패는 `name` 이 `TimeoutError` 이고 `code` 가 **숫자**
+ * 23 이다(수동 abort 는 `AbortError` / 20). 숫자 code 는 문자열 검사에 안 걸리고
+ * `TimeoutError` 는 아래 이름 목록에 없어서, 손대지 않으면 timeout 이 `unknown` 으로
+ * 저장된다 — Replay 때 "실패했습니다" 만 남고 시간 초과였다는 사실이 사라진다.
+ *
+ * ADR-0053 의 `StoredHttpThrowV1` 은 `name` 을 `Error` · `TypeError` · `AbortError` 셋으로
+ * 못 박았고 `TimeoutError` 를 예상하지 못했다. 열거형을 늘리는 것은 저장 형식 변경이라
+ * schema version 이 걸린다. 그래서 **의미를 담는 `failureKind` 는 `timeout` 으로 정확히
+ * 저장하고, `name` 만 허용 집합 안의 `AbortError` 로 정규화한다** — timeout 도 fetch
+ * 수준에서는 abort 이므로 거짓이 아니다. 열거형 확장은 ADR 개정에서 다룬다.
+ */
+const TIMEOUT_ERROR_NAME = "TimeoutError";
+
 /** 사용자가 보는 문장. **저장본이 아니라 복원 시점에 kind 로부터 만든다.** */
 const FAILURE_MESSAGES = {
   abort: "외부 HTTP 호출이 중단되었습니다 (abort).",
@@ -320,6 +334,9 @@ const FAILURE_MESSAGES = {
  */
 export function encodeHttpThrow(error) {
   if (!(error instanceof Error)) return { kind: "throw", failureKind: "unknown", name: "Error" };
+
+  if (error.name === TIMEOUT_ERROR_NAME)
+    return { kind: "throw", failureKind: "timeout", name: "AbortError" };
 
   const name = FAILURE_NAMES.has(error.name) ? error.name : "Error";
   const code = typeof error.code === "string" ? error.code : undefined;

@@ -331,3 +331,33 @@ describe("Coordinator payload 상한", () => {
     );
   });
 });
+
+describe("timeout 분류", () => {
+  it("AbortSignal.timeout의 TimeoutError를 timeout으로 저장한다", () => {
+    // 실측: AbortSignal.timeout() → name "TimeoutError", code 23(숫자).
+    // 숫자 code 는 문자열 검사에 안 걸리고 TimeoutError 는 허용 이름에 없어서,
+    // 처리하지 않으면 unknown 으로 떨어져 "시간 초과" 라는 사실이 사라진다.
+    const timeoutError = Object.assign(new Error("The operation was aborted due to timeout"), {
+      name: "TimeoutError",
+      code: 23,
+    });
+
+    const stored = encodeHttpThrow(timeoutError);
+
+    expect(stored.failureKind).toBe("timeout");
+    // ADR-0053 의 name 열거형에 TimeoutError 가 없어 AbortError 로 정규화한다.
+    expect(stored.name).toBe("AbortError");
+    expect(stored).not.toHaveProperty("code");
+    expect(() => restoreHttpOutcome(stored)).toThrow(/제한 시간 안에 끝나지 않았습니다/);
+  });
+
+  it("수동 abort는 여전히 abort로 남는다 — 둘을 뭉개지 않는다", () => {
+    const aborted = Object.assign(new Error("aborted"), { name: "AbortError", code: 20 });
+
+    expect(encodeHttpThrow(aborted)).toEqual({
+      kind: "throw",
+      failureKind: "abort",
+      name: "AbortError",
+    });
+  });
+});

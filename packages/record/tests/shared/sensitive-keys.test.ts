@@ -48,7 +48,8 @@ describe("민감 키 판정", () => {
 describe("version 스냅샷", () => {
   it("모르는 version은 조용히 최신으로 넘어가지 않고 던진다", () => {
     // 조용히 최신을 주면 옛 세션을 새 규칙으로 읽어 matchKey 가 어긋난다.
-    expect(() => sensitiveKeysOf(2)).toThrow(/version 2/);
+    const unknown = LATEST_SENSITIVE_KEYS_VERSION + 1;
+    expect(() => sensitiveKeysOf(unknown)).toThrow(new RegExp(`version ${unknown}`));
   });
 
   it("스냅샷은 얼어 있다 — 목록을 고치면 이미 나간 세션의 matchKey가 바뀐다", () => {

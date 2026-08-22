@@ -12,7 +12,8 @@
 
 - 서버를 띄우지 않고 저장된 응답으로 스위트를 돌리는 것이 목적이었다면 → `mcpeak-mock` 으로
   서버를 대신하세요. 사람이 지정한 결정론적 응답이라 낡지 않습니다.
-- 외부 API 호출만 막는 것이 목적이었다면 → `mcpeak test --record-session <path>` 로 녹화하고
+- 외부 API 호출만 막는 것이 목적이었다면 →
+  `mcpeak test <suite.json> --command <executable> --record-session <path>` 로 녹화하고
   `--session <path>` 로 재생하세요. 서버는 실제로 뜨고 그 서버가 밖에 부르는 호출만 막힙니다.
 
 `mcpeak replay` 를 실행하면 위 안내가 그대로 나옵니다.

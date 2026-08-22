@@ -312,6 +312,40 @@ describe.each(STORES)("SessionStore 계약 — $name", ({ create }) => {
     });
   });
 
+  describe("호출자 격리", () => {
+    it("넘긴 객체를 얼리지 않는다 — 호출자는 자기 객체를 계속 쓸 수 있다", () => {
+      const store = create();
+      store.createSession("s1");
+      const sent = request("a");
+      const reservation = store.reserve({ sessionId: "s1", request: sent });
+      const sentOutcome = outcome();
+      store.complete({
+        sessionId: "s1",
+        interactionId: reservation.interactionId,
+        outcome: sentOutcome,
+      });
+
+      // 저장본을 지키려고 호출자 객체까지 얼리면, 그 객체를 재사용하려던 코드가 죽는다.
+      // SQLite 는 넣을 때 직렬화해 호출자를 안 건드리므로, 여기가 갈리면 저장 매체에 따라
+      // 동작이 달라진다 — 계약이 없애려는 것이 그 차이다.
+      expect(() => {
+        (sent.match as { method: string }).method = "POST";
+        (sentOutcome as { status: number }).status = 500;
+      }).not.toThrow();
+    });
+
+    it("넘긴 뒤 호출자가 객체를 고쳐도 저장본은 그대로다", () => {
+      const store = create();
+      store.createSession("s1");
+      const sent = request("a");
+      store.reserve({ sessionId: "s1", request: sent });
+
+      (sent.match as { method: string }).method = "POST";
+
+      expect(store.read("s1")?.interactions[0]?.request.match.method).toBe("GET");
+    });
+  });
+
   describe("스냅샷 격리", () => {
     it("스냅샷의 중첩 값을 고쳐도 저장본이 바뀌지 않는다", () => {
       const store = create();

@@ -8,6 +8,10 @@ import { QuestionPanel } from "../components/QuestionPanel.js";
 import { StatusBadge } from "../components/StatusBadge.js";
 import { useRunEvents } from "../run-stream.js";
 
+/** repair 폼 입력란 공통 클래스. 대시보드 테마를 그대로 따른다. */
+const REPAIR_INPUT_CLASS =
+  "w-full rounded border border-line bg-surface px-3 py-1.5 font-mono text-sm text-ink";
+
 interface RunStreamPanelProps {
   readonly runId: string;
   /**
@@ -31,6 +35,13 @@ export function RunStreamPanel({
   const [answeredId, setAnsweredId] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [repairOpen, setRepairOpen] = useState(false);
+  const [bundlePath, setBundlePath] = useState("");
+  const [provider, setProvider] = useState<"claude" | "codex">("claude");
+  const [model, setModel] = useState("");
+
+  /** 세 값이 다 차야 보낸다. 예전에는 prompt 세 번을 다 통과한 뒤에야 실패했다(#223). */
+  const repairReady = bundlePath.trim() !== "" && model.trim() !== "";
 
   const doneEvent = events.find((event) => event.kind === "done");
   const exitCode = doneEvent?.kind === "done" ? doneEvent.exitCode : null;
@@ -53,33 +64,24 @@ export function RunStreamPanel({
     }
   }
 
+  /**
+   * 번들 목록 API가 없어 경로는 직접 입력받는다. 예전에는 `window.prompt` 세 번이었다.
+   * 그 방식은 테마와 따로 놀고, 되돌아갈 수 없고, provider 가 자유 입력이었다(#223).
+   *
+   * 번들이 어디서 나오는지는 화면에 적는다 — 그것을 모르면 무엇을 넣어야 하는지 알
+   * 방법이 없다는 것이 이 자리의 핵심 불만이었다.
+   */
   async function startRepair(): Promise<void> {
+    if (!repairReady) return;
     setStarting(true);
     setError(null);
     try {
-      // repair 번들 경로는 이 화면이 아는 정보 밖이다(api-types에 repair argv 스키마가
-      // 없다). generate가 만든 번들 JSON 경로를 사용자가 직접 지정하게 한다(T4 방식 유지).
-      const bundlePath = window.prompt("repair 번들 JSON 경로를 입력하세요:");
-      if (bundlePath === null || bundlePath.trim() === "") {
-        setStarting(false);
-        return;
-      }
-      const provider = (window.prompt("provider (codex 또는 claude):", "claude") ?? "").trim();
-      if (provider === "") {
-        setStarting(false);
-        return;
-      }
-      const model = (window.prompt("model:") ?? "").trim();
-      if (model === "") {
-        setStarting(false);
-        return;
-      }
       // --yes는 넣지 않는다. 승인/거부는 RepairReview 화면에서 question 이벤트로 와
       // QuestionPanel의 confirm/choose로 답한다. --yes를 넣으면 CLI가 자동 승인해 버려
       // 검토 화면이 볼 것이 없어진다.
       const response = await apiSend<StartRunResponse>("POST", "/api/runs", {
         flow: "repair",
-        argv: [bundlePath.trim(), "--provider", provider, "--model", model],
+        argv: [bundlePath.trim(), "--provider", provider, "--model", model.trim()],
       } satisfies StartRunRequest);
       window.location.hash = `#/repair/${encodeURIComponent(response.runId)}`;
     } catch (err) {
@@ -100,14 +102,88 @@ export function RunStreamPanel({
         {status === "failed" && showRepairAction && (
           <button
             type="button"
+            aria-expanded={repairOpen}
             className="rounded bg-accent px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
             disabled={starting}
-            onClick={() => void startRepair()}
+            onClick={() => setRepairOpen((open) => !open)}
           >
             repair 시작
           </button>
         )}
       </div>
+
+      {status === "failed" && showRepairAction && repairOpen && (
+        <form
+          className="space-y-4 rounded-lg border border-line bg-surface p-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void startRepair();
+          }}
+        >
+          <div className="space-y-1">
+            <label className="block text-sm font-medium text-ink" htmlFor="repair-bundle">
+              repair 번들 경로
+            </label>
+            <input
+              id="repair-bundle"
+              className={REPAIR_INPUT_CLASS}
+              value={bundlePath}
+              placeholder="예: .mcpeak/repair-bundle.json"
+              onChange={(event) => setBundlePath(event.target.value)}
+            />
+            <p className="text-xs text-ink-muted">
+              <code className="font-mono">
+                mcpeak test &lt;suite.json&gt; --repair-bundle &lt;path&gt;
+              </code>{" "}
+              로 실행했을 때 그 경로에 번들이 생깁니다. 여기에 그 경로를 적으세요.
+            </p>
+          </div>
+
+          <div className="space-y-1">
+            <label className="block text-sm font-medium text-ink" htmlFor="repair-provider">
+              provider
+            </label>
+            <select
+              id="repair-provider"
+              className={REPAIR_INPUT_CLASS}
+              value={provider}
+              onChange={(event) => setProvider(event.target.value === "codex" ? "codex" : "claude")}
+            >
+              <option value="claude">claude</option>
+              <option value="codex">codex</option>
+            </select>
+          </div>
+
+          <div className="space-y-1">
+            <label className="block text-sm font-medium text-ink" htmlFor="repair-model">
+              model
+            </label>
+            <input
+              id="repair-model"
+              className={REPAIR_INPUT_CLASS}
+              value={model}
+              onChange={(event) => setModel(event.target.value)}
+            />
+          </div>
+
+          <div className="flex gap-2">
+            <button
+              type="submit"
+              className="rounded bg-accent px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+              disabled={starting || !repairReady}
+            >
+              시작
+            </button>
+            <button
+              type="button"
+              className="rounded border border-line px-3 py-1.5 text-sm text-ink-muted"
+              onClick={() => setRepairOpen(false)}
+            >
+              취소
+            </button>
+          </div>
+        </form>
+      )}
 
       {error !== null && (
         <p className="text-sm" style={{ color: "var(--status-failed-fg)" }}>

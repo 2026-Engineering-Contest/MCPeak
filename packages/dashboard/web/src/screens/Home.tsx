@@ -9,20 +9,28 @@ import type {
 import { apiGet, apiSend } from "../api.js";
 import { FlowChip } from "../components/FlowChip.js";
 import { StatusBadge } from "../components/StatusBadge.js";
+import type { CommandMethod } from "../generate/steps/StepServer.js";
+import { StepServer, splitCommand } from "../generate/steps/StepServer.js";
 
 /**
  * Home(UI 설계 §5-1). 2열 카드: 좌측 테스트 스위트(GET /api/suites), 우측 최근 실행
- * (GET /api/runs). 실행 클릭은 서버 명령 입력을 받는 인라인 프롬프트(기본 빈 값) 후
+ * (GET /api/runs). 실행 클릭은 서버 명령 입력 폼을 열고
  * `POST /api/runs {flow:"test", argv}` 하고 `#/runs/:id`로 이동한다(구현계획 §5 U2).
- * CLI `--command`는 실행 파일 하나만 받는 계약이라 입력을 공백으로 분해해 첫 토큰만
- * `--command`, 나머지는 각각 `--arg`로 보낸다.
+ *
+ * 입력은 generate 마법사와 같은 `StepServer`를 쓴다. 한 칸에 명령 전체를 받아 공백으로
+ * 쪼개던 것이 공백 든 경로를 가진 사용자의 실행을 통째로 막고 있었다(#223). CLI
+ * `--command`가 실행 파일 하나만 받는 계약이라, 분해는 `splitCommand`가 한 벌로 한다.
  */
 export function Home(): JSX.Element {
   const [suites, setSuites] = useState<readonly FileEntry[] | null>(null);
   const [runs, setRuns] = useState<readonly RunSummary[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [promptFor, setPromptFor] = useState<string | null>(null);
-  const [command, setCommand] = useState("");
+  // generate 마법사와 같은 기본값("node"). custom 은 공백으로 쪼개므로 기본이 되면
+  // 고치려던 문제가 그대로 남는다.
+  const [method, setMethod] = useState<CommandMethod>("node");
+  const [target, setTarget] = useState("");
+  const [args, setArgs] = useState<readonly string[]>([]);
   const [startError, setStartError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
 
@@ -37,21 +45,28 @@ export function Home(): JSX.Element {
 
   function openPrompt(suitePath: string): void {
     setPromptFor(suitePath);
-    setCommand("");
+    setMethod("node");
+    setTarget("");
+    setArgs([]);
     setStartError(null);
   }
 
   async function startRun(suitePath: string): Promise<void> {
-    if (command.trim() === "") {
+    const { command, leadingArgs } = splitCommand(method, target);
+    if (command === "") {
       return;
     }
     setStarting(true);
     setStartError(null);
     try {
-      const [head, ...rest] = command.trim().split(/\s+/);
       const response = await apiSend<StartRunResponse>("POST", "/api/runs", {
         flow: "test",
-        argv: [suitePath, "--command", head ?? "", ...rest.flatMap((token) => ["--arg", token])],
+        argv: [
+          suitePath,
+          "--command",
+          command,
+          ...[...leadingArgs, ...args].flatMap((arg) => ["--arg", arg]),
+        ],
       } satisfies StartRunRequest);
       window.location.hash = `#/runs/${encodeURIComponent(response.runId)}`;
     } catch (err) {
@@ -102,36 +117,38 @@ export function Home(): JSX.Element {
                 </div>
                 {promptFor === suite.path && (
                   <form
-                    className="flex gap-2"
+                    className="space-y-4 rounded-md border border-line bg-canvas p-4"
                     onSubmit={(event) => {
                       event.preventDefault();
                       void startRun(suite.path);
                     }}
                   >
-                    <label className="sr-only" htmlFor={`command-${suite.path}`}>
-                      실행할 서버 명령 (--command)
-                    </label>
-                    <input
-                      id={`command-${suite.path}`}
-                      className="flex-1 rounded border border-line bg-surface px-3 py-1.5 font-mono text-xs text-ink"
-                      value={command}
-                      placeholder="예: node examples/weather-server/server.mjs"
-                      onChange={(event) => setCommand(event.target.value)}
+                    <StepServer
+                      idPrefix="home-run"
+                      method={method}
+                      target={target}
+                      args={args}
+                      recentCommands={[]}
+                      onMethodChange={setMethod}
+                      onTargetChange={setTarget}
+                      onArgsChange={setArgs}
                     />
-                    <button
-                      type="submit"
-                      className="rounded bg-accent px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
-                      disabled={starting || command.trim() === ""}
-                    >
-                      실행 시작
-                    </button>
-                    <button
-                      type="button"
-                      className="rounded border border-line px-3 py-1.5 text-xs text-ink-muted"
-                      onClick={() => setPromptFor(null)}
-                    >
-                      취소
-                    </button>
+                    <div className="flex gap-2">
+                      <button
+                        type="submit"
+                        className="rounded bg-accent px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+                        disabled={starting || splitCommand(method, target).command === ""}
+                      >
+                        실행 시작
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded border border-line px-3 py-1.5 text-xs text-ink-muted"
+                        onClick={() => setPromptFor(null)}
+                      >
+                        취소
+                      </button>
+                    </div>
                   </form>
                 )}
               </li>

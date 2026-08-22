@@ -50,7 +50,7 @@ describe("Home", () => {
     fireEvent.click(await screen.findByRole("button", { name: "실행" }));
     // 빈 입력이면 시작 버튼이 비활성이다.
     expect(screen.getByRole("button", { name: "실행 시작" })).toHaveProperty("disabled", true);
-    fireEvent.change(screen.getByRole("textbox"), { target: { value: "node server.js" } });
+    fireEvent.change(screen.getByLabelText("서버 스크립트"), { target: { value: "server.js" } });
     fireEvent.click(screen.getByRole("button", { name: "실행 시작" }));
 
     await waitFor(() => {
@@ -62,6 +62,59 @@ describe("Home", () => {
     expect(JSON.parse(String(post?.[1]?.body))).toEqual({
       flow: "test",
       argv: ["examples/weather/suite.json", "--command", "node", "--arg", "server.js"],
+    });
+  });
+
+  it("공백이 든 경로가 인자 하나로 그대로 간다", async () => {
+    const fetchMock = stubFetch();
+    render(<Home />);
+    fireEvent.click(await screen.findByRole("button", { name: "실행" }));
+    // 이슈 #223 의 재현 입력. 한 칸에 받아 공백으로 쪼개던 시절에는
+    // --command node --arg "my --arg server.js" 로 깨졌다.
+    fireEvent.change(screen.getByLabelText("서버 스크립트"), {
+      target: { value: "my server.js" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "실행 시작" }));
+
+    await waitFor(() => {
+      expect(window.location.hash).toBe("#/runs/run-new");
+    });
+    const post = fetchMock.mock.calls.find(([, init]) => init?.method === "POST");
+    expect(JSON.parse(String(post?.[1]?.body))).toEqual({
+      flow: "test",
+      argv: ["examples/weather/suite.json", "--command", "node", "--arg", "my server.js"],
+    });
+  });
+
+  it("서버 인자를 칩으로 더하면 스크립트 뒤에 순서대로 붙는다", async () => {
+    const fetchMock = stubFetch();
+    render(<Home />);
+    fireEvent.click(await screen.findByRole("button", { name: "실행" }));
+    fireEvent.change(screen.getByLabelText("서버 스크립트"), { target: { value: "server.js" } });
+
+    for (const value of ["--port", "3000"]) {
+      fireEvent.change(screen.getByLabelText("서버 인자"), { target: { value } });
+      fireEvent.click(screen.getByRole("button", { name: "추가" }));
+    }
+    fireEvent.click(screen.getByRole("button", { name: "실행 시작" }));
+
+    await waitFor(() => {
+      expect(window.location.hash).toBe("#/runs/run-new");
+    });
+    const post = fetchMock.mock.calls.find(([, init]) => init?.method === "POST");
+    expect(JSON.parse(String(post?.[1]?.body))).toEqual({
+      flow: "test",
+      argv: [
+        "examples/weather/suite.json",
+        "--command",
+        "node",
+        "--arg",
+        "server.js",
+        "--arg",
+        "--port",
+        "--arg",
+        "3000",
+      ],
     });
   });
 

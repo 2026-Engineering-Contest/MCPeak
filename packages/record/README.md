@@ -1,7 +1,7 @@
 # @mcpeak/record
 
-MCP 클라이언트를 카세트로 감싸 녹화·재생하고, 값이 프로세스 밖으로 나가는 경계에서
-비밀값을 제거한다.
+MCP 클라이언트를 카세트로 감싸 녹화·재생하고, 테스트 대상 서버가 **밖으로 부르는 HTTP 호출**을
+External 세션으로 녹화·재생하며, 값이 프로세스 밖으로 나가는 경계에서 비밀값을 제거한다.
 
 - **오너:** `@ddxng5` (② replay/record 파트)
 - **의존:** `@mcpeak/core`
@@ -9,6 +9,10 @@ MCP 클라이언트를 카세트로 감싸 녹화·재생하고, 값이 프로�
   [ADR-0039](../../docs/adr/0039-민감-키-목록과-매칭-경계.md),
   [ADR-0040](../../docs/adr/0040-스키마와-데이터의-마스킹-규칙-분리.md),
   [ADR-0041](../../docs/adr/0041-마스킹의-적용-경계.md))
+- **External 세션 결정:** [ADR-0051](../../docs/adr/0051-external-record-replay와-tool-카세트-경계-분리.md),
+  [ADR-0052](../../docs/adr/0052-coordinator가-engine과-session-store를-소유한다.md),
+  [ADR-0053](../../docs/adr/0053-http-외부-요청-매칭과-반복-호출-정책.md),
+  [ADR-0057](../../docs/adr/0057-external-어댑터는-global-fetch-까지만-가로챈다.md)
 
 ## 공개 API
 
@@ -182,13 +186,79 @@ CLI 는 `mcpeak verify <cassette.json> --command <executable>` 로 감싼다.
 ([ADR-0041](../../docs/adr/0041-마스킹의-적용-경계.md)). 값이 JSON 문자열이면 이 경계에서
 파싱 가능한 경우 구조화해 마스킹하고 stable JSON 문자열로 저장한다.
 
-### External 세션과 `node:sqlite` 실험 경고
+## External 세션
 
-External 세션의 첫 어댑터(`node.fetch.v1`)는 Node 의 `globalThis.fetch` 만 가로챈다.
-`node:http`·`node:https`, 그리고 그것을 직접 쓰는 axios·got·node-fetch 호출은 범위 밖이다.
-범위 밖 호출은 Coordinator 에 도달하지 않으므로 실제 네트워크로 나갈 수 있고, CLI 는 녹화
-0건·재생 0건·부분 재생 같은 종료 요약으로 그 가능성을 알린다. 범위 결정은
-[ADR-0057](../../docs/adr/0057-external-어댑터는-global-fetch-까지만-가로챈다.md)에 있다.
+**이 패키지는 두 가지를 녹화한다.** 여기까지의 카세트는 *우리가 서버에게 물어본 것* 을 남기고,
+External 세션은 *그 서버가 밖에 물어본 것* 을 남긴다. 겨냥하는 문제가 다르다 — 카세트는 서버를
+다시 띄우지 않으려고 쓰고, 세션은 **서버는 진짜로 돌리되 그 서버가 부르는 외부 API 만** 멈추려고
+쓴다. 유료 API 나 부작용이 있는 endpoint 를 부르는 서버가 대상이다.
+
+| | Tool 카세트 | External 세션 |
+|---|---|---|
+| 남기는 것 | 우리 → 서버 (`listTools`·`callTool`) | 서버 → 외부 API (HTTP) |
+| 가로채는 자리 | 부모의 `McpClient` 래퍼 | 자식 프로세스 안의 `globalThis.fetch` |
+| 재생할 때 | 감싼 클라이언트를 부르지 않는다 | **서버는 실제로 돌고**, 그 서버의 외부 호출만 막힌다 |
+| 파일 | JSON | SQLite |
+| 진입점 | `@mcpeak/record` | `@mcpeak/record/external` |
+| CLI | `generate --cassette` · `mcpeak replay` | `test --record-session` · `test --session` |
+
+둘은 코드 경로도 파일도 섞이지 않는다
+([ADR-0051](../../docs/adr/0051-external-record-replay와-tool-카세트-경계-분리.md)).
+
+### 잡는 범위는 `globalThis.fetch` 하나다
+
+첫 어댑터의 이름이 `node.fetch.v1` 이고, 그 이름 안의 `fetch` 가 곧 범위다. 아래는 **범위 밖**이라
+녹화도 재생도 되지 않는다.
+
+- `node:http` · `node:https` 직접 호출
+- 그 위에 얹힌 axios · got · node-fetch
+- Node 가 아닌 서버(Python · Go 등) — 주입이 Node 의 `--import` 훅이라 애초에 닿지 않는다
+
+**범위 밖 호출은 Coordinator 에 도달하지 않는다.** 그래서 재생 중에도 실제 네트워크로 나가고,
+막지 못한다. 대신 CLI 가 녹화 0건 · 재생 0건 · 부분 재생 같은 종료 요약으로 그 가능성을 알린다.
+범위를 이렇게 정한 이유와 대안 비교는
+[ADR-0057](../../docs/adr/0057-external-어댑터는-global-fetch-까지만-가로챈다.md).
+
+### CLI 로 쓰기
+
+세션 파일 하나가 세션 하나다. 왕복 예제는 [루트 README](../../README.md#외부-api-를-부르는-서버).
+
+```bash
+mcpeak test suite.json --command node --arg ./server.js --record-session weather.session.db
+mcpeak test suite.json --command node --arg ./server.js --session weather.session.db
+```
+
+### 라이브러리로 쓰기
+
+`@mcpeak/record/external` 이 공개하는 것은 Store 와 Coordinator 둘이다. Coordinator 가 자식에게
+실어 줄 환경 변수를 만들고, 그 환경 변수로 뜬 자식의 `fetch` 가 녹화·재생된다.
+
+```ts
+import { createSqliteSessionStore, startExternalCoordinator } from "@mcpeak/record/external";
+
+const store = createSqliteSessionStore({ path: "weather.session.db" });
+const handle = await startExternalCoordinator({
+  mode: "record",
+  sessionId: "default",
+  store,
+});
+
+try {
+  // handle.childEnvironment 를 그대로 자식 프로세스의 env 에 실어 띄운다.
+  await runServerWith(handle.childEnvironment);
+} finally {
+  const summary = await handle.finish("completed");
+  console.log(summary.interactionCount);
+  store.close();
+}
+```
+
+재생은 `{ mode: "replay", sourceSessionId, store }` 로 연다. `finish()` 를 **성공·실패 어느
+경로에서도 부르고**, 그 뒤에 `store.close()` 한다 — 안 부르면 SQLite 파일 핸들이 남고 녹화 세션이
+`running` 인 채로 남아 다음 실행이 이어 쓸 수 없다. 반환된 요약의 `interactionCount` ·
+`consumedCount` · `unusedCount` 가 CLI 종료 알림의 근거다.
+
+### `node:sqlite` 실험 경고
 
 External 세션은 `node:sqlite` 로 저장한다. Node 가 이 모듈을 아직 실험적으로 표시하므로,
 런타임에 따라 stderr 에 경고가 한 줄 찍힌다.

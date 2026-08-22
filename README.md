@@ -107,10 +107,8 @@ mcpeak generate --suite-id <id> --name <name> --out <suite.json>
 
 전체 도움말은 `mcpeak --help`, 서브커맨드는 `mcpeak help test` 로 봅니다.
 
-`--record-session <path>` 는 서버가 `globalThis.fetch` 로 호출한 외부 HTTP 응답을 세션 파일에
-녹화하고, `--session <path>` 는 그 응답을 재생합니다. 서버 자체는 매번 실제로 실행됩니다.
-`node:http`·`node:https` 같은 범위 밖 호출은 잡히지 않아 실제 네트워크로 나갈 수 있으며,
-MCPeak은 녹화 0건이나 재생 0건처럼 범위 밖 호출이 의심되는 실행을 종료 시점에 알립니다.
+`--record-session` 과 `--session` 은 **테스트 대상 서버가 밖으로 부르는 HTTP 호출**을 녹화·재생
+합니다. [외부 API 를 부르는 서버](#외부-api-를-부르는-서버) 를 보세요.
 
 ## 실제 서버 없이 테스트하기
 
@@ -132,6 +130,47 @@ mcpeak test suite.json --command mcpeak-mock --arg mock.json
 목은 **서버를 만들기 전에 설계를 먼저 검증하는 데**도 씁니다 — 정의 파일로 띄워 Claude Desktop
 같은 실제 클라이언트에 붙여보고, 거기서 `generate` 로 구현자에게 넘길 계약 초안을 뽑습니다.
 절차는 [`packages/mock` 의 설계 우선 워크플로](./packages/mock#설계-우선-워크플로)에 있습니다.
+
+## 외부 API 를 부르는 서버
+
+목으로 대체할 수 없는 것이 하나 있습니다 — **테스트 대상 서버 자신이 밖으로 부르는 HTTP 호출**
+입니다. 날씨 API, 결제, webhook 처럼 서버 안쪽에서 나가는 호출은 서버를 목으로 바꿔치기해도
+그대로 남고, 두면 테스트를 돌릴 때마다 실제로 나갑니다.
+
+External 세션은 그 호출을 한 번 녹화해 두고 이후 실행에서 재생합니다. **재생할 때도 서버는 실제로
+뜹니다** — 멈추는 것은 서버가 아니라 그 서버가 밖에 부르는 쪽입니다.
+
+```bash
+# 1) 한 번은 진짜로 나갑니다. 그 응답이 세션 파일에 남습니다.
+mcpeak test weather.suite.json --command node --arg ./server.js \
+  --record-session weather.session.db
+
+# 2) 이후로는 세션 파일에서 재생합니다. 외부 API 는 부르지 않습니다.
+mcpeak test weather.suite.json --command node --arg ./server.js \
+  --session weather.session.db
+```
+
+`--cassette` 카세트와 다릅니다. **카세트는 우리가 서버에게 물어본 결과**를, **세션은 그 서버가
+밖에 물어본 결과**를 남깁니다. 둘은 파일도 따로입니다.
+
+**잡는 범위는 서버가 `globalThis.fetch` 로 부른 호출입니다.** `node:http`·`node:https`, 그리고
+그것을 직접 쓰는 axios·got·node-fetch 로 부르는 서버는 범위 밖이라 **재생되지 않고 실제
+네트워크로 나갑니다.** 그럴 정황이 보이면 — 녹화가 0건이거나 재생이 0건이면 — 실행이 끝날 때
+알려줍니다.
+
+```
+알림: 이 실행에서 외부 호출이 하나도 녹화되지 않았습니다.
+→ 서버가 외부 API를 호출했다면 지원 범위를 벗어났는지 확인하세요.
+→ MCPeak은 서버가 `globalThis.fetch`로 부른 것만 잡습니다.
+```
+
+세션 파일에는 외부 API 응답이 그대로 들어갑니다. `token`·`apiKey` 처럼 **이름**으로 알아볼 수 있는
+값은 저장 전에 가려지지만 URL 경로는 아직 남습니다. `.gitignore` 를 확인하고, 경로 자체가
+자격증명인 webhook 을 녹화한 파일은 커밋하지 마세요
+([자세히](./packages/record#external-세션의-url-경로는-아직-저장된다)).
+
+범위를 이렇게 정한 이유는
+[ADR-0057](./docs/adr/0057-external-어댑터는-global-fetch-까지만-가로챈다.md) 에 있습니다.
 
 ## 기존 도구와의 차이
 

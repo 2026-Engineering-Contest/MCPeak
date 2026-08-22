@@ -71,6 +71,7 @@
 | [0057](./0057-external-어댑터는-global-fetch-까지만-가로챈다.md) | External 어댑터는 `globalThis.fetch` 까지만 가로채고, 범위 밖은 경고로 알린다 | record, cli | 채택 |
 | [0058](./0058-external-replay-miss-진단은-mcp-오류-채널을-타지-않는다.md) | External replay-miss 진단은 MCP 오류 채널을 타지 않는다 — 구조화된 값을 별도 stderr 블록으로 보여준다 | record, cli | 채택 |
 | [0059](./0059-tool-카세트를-제거한다.md) | Tool 카세트를 제거한다 (실행은 동결 이후, 표면 → 배선 → 구현 순서) | record, cli, dashboard | 채택 |
+| [0060](./0060-MCPeak-목의-inputSchema-거절을-접미어로-확인한다.md) | MCPeak 목의 `inputSchema` 거절을 고정 접미어로 확인한다 | runner | 채택 |
 
 **상태** — `채택` 과 `승인` 이 확정된 결정입니다. `제안` 과 `초안` 은 아직 확정되지 않았으므로 이
 결정에 기대어 구현하지 마세요. 값은 각 파일 머리의 `상태` 를 그대로 옮긴 것입니다.

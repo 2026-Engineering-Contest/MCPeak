@@ -12,12 +12,24 @@
 
 /** 거절을 기대한 케이스에서, 그 거절의 근거를 확인했는지. */
 export type RejectionBasis =
-  /** SDK 검증이 낸 거절임을 지문으로 확인했다. */
+  /** 알려진 입력 검증이 낸 거절임을 지문으로 확인했다. */
   | "verified"
   /** 거절인지 다른 실패인지 확인하지 못했다. 크래시일 수도 있다. */
   | "unverified"
   /** 거절을 기대하지 않는 케이스다. 판정 대상이 아니다. */
   | "notApplicable";
+
+/**
+ * MCPeak 목의 스키마 위반 거절 계약 (ADR-0060).
+ *
+ * 고정된 마지막 두 줄과 그 앞의 위반 진단 형식을 함께 지문으로 쓴다. 접미어만 확인하면 임의
+ * 오류에도 안내문을 붙여 확인된 거절로 위장할 수 있다. `packages/mock/tests/index-e2e.test.ts` 가
+ * 목 쪽 문장을 완전 일치로 고정하고 있다.
+ */
+const MCPEAK_MOCK_SCHEMA_REJECTION_SUFFIX = [
+  "→ 이 툴이 tools/list 로 선언한 inputSchema 가 그렇게 요구합니다.",
+  "→ 거절이 의도한 것이면 responses 에 이 인자를 넣어 응답을 지정하세요.",
+].join("\n");
 
 /**
  * 거절 근거를 확인한다. 서버를 호출하지 않는다.
@@ -33,7 +45,7 @@ export function classifyRejectionBasis(options: {
   const { expectsRejection, toolName, bodyText } = options;
   if (!expectsRejection) return "notApplicable";
   if (bodyText === null) return "unverified";
-  const text = bodyText.trimStart();
+  const text = bodyText.trim();
 
   // TS SDK. 프로토콜 검증이 낸 잘못된 인자 오류다. 핸들러 코드는 이 접두어를 만들지 않는다.
   if (text.startsWith("MCP error -32602:")) return "verified";
@@ -54,10 +66,38 @@ export function classifyRejectionBasis(options: {
     if (pattern.test(text)) return "verified";
   }
 
+  // MCPeak 목의 자체 inputSchema 검증. 모든 앞줄이 현재 툴의 위반 진단 형식이고, 고정된 안내
+  // 두 줄이 본문의 정확한 끝이어야 한다. 임의 오류에 안내만 붙인 본문은 인정하지 않는다.
+  const mockSuffix = `\n${MCPEAK_MOCK_SCHEMA_REJECTION_SUFFIX}`;
+  if (toolName !== null && text.endsWith(mockSuffix)) {
+    const diagnosticLines = text.slice(0, -mockSuffix.length).split("\n");
+    if (
+      diagnosticLines.length > 0 &&
+      diagnosticLines.every((line) => isMcpeakMockSchemaDiagnostic(line, toolName))
+    ) {
+      return "verified";
+    }
+  }
+
   return "unverified";
 }
 
 /** 툴 이름은 서버가 준 임의 문자열이다. 정규식 메타문자가 들어와도 리터럴로 다뤄야 한다. */
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** MCPeak 목의 `violationLine` 이 만드는 네 위반 종류의 한 줄 형식인지 확인한다. */
+function isMcpeakMockSchemaDiagnostic(line: string, toolName: string): boolean {
+  const tool = escapeRegExp(toolName);
+  const fieldHead = `→ 툴 '${tool}' 의 '.+' 은\\(는\\)`;
+  const patterns = [
+    new RegExp(`^→ 툴 '${tool}' 호출에 필수 필드 '.+' 이\\(가\\) 없습니다\\. 받은 인자: .+$`),
+    new RegExp(`^${fieldHead} .+ 이어야 합니다\\. 받은 값: .+ \\([^)]+\\)$`),
+    new RegExp(`^${fieldHead} 선언된 값 중 하나여야 합니다: .+\\. 받은 값: .+$`),
+    new RegExp(
+      `^${fieldHead} (?:.+ (?:이상이어야|이하여야) 합니다\\. 받은 값: .+|.+ 보다 (?:커야|작아야) 합니다\\. 받은 값: .+|.+자 (?:이상이어야|이하여야) 합니다\\. 받은 값의 길이: .+|원소가 .+개 (?:이상이어야|이하여야) 합니다\\. 받은 개수: .+)$`,
+    ),
+  ];
+  return patterns.some((pattern) => pattern.test(line));
 }

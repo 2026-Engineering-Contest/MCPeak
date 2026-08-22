@@ -42,20 +42,29 @@ export function splitCommand(method: CommandMethod, target: string): SplitComman
 }
 
 /**
- * 1단계 — 테스트할 서버. 서버 스크립트 후보 스캔 API가 없으므로 직접 입력 +
+ * 서버 실행 명령 입력. 서버 스크립트 후보 스캔 API가 없으므로 직접 입력 +
  * 최근 사용값(localStorage, datalist)만 지원한다. 서버 인자는 칩 목록으로 쌓는다.
+ *
+ * **인자를 칩으로 받는 것이 이 컴포넌트의 요점이다.** 한 칸에 명령 전체를 받아 공백으로
+ * 쪼개면 공백이 든 경로를 가진 사용자는 실행 자체를 못 한다(#223). 애초에 나눠 받으면
+ * 파싱도 따옴표 문제도 생기지 않는다.
+ *
+ * generate 4단계 마법사와 Home 의 실행 폼이 함께 쓴다. `idPrefix` 로 DOM id 를 가른다.
  */
 export function StepServer(props: {
   method: CommandMethod;
   target: string;
   args: readonly string[];
   recentCommands: readonly string[];
+  /** DOM id 접두사. 한 문서에 둘 이상 그려질 때 id 가 겹치지 않게 한다. */
+  idPrefix?: string;
   onMethodChange: (method: CommandMethod) => void;
   onTargetChange: (target: string) => void;
   onArgsChange: (args: readonly string[]) => void;
 }): JSX.Element {
   const [argDraft, setArgDraft] = useState("");
   const { command, leadingArgs } = splitCommand(props.method, props.target);
+  const prefix = props.idPrefix ?? "generate";
 
   function addArg(): void {
     if (argDraft.trim() === "") {
@@ -90,7 +99,7 @@ export function StepServer(props: {
 
       <Field
         label={props.method === "custom" ? "실행 명령" : "서버 스크립트"}
-        htmlFor="generate-target"
+        htmlFor={`${prefix}-target`}
         hint={
           props.method === "custom"
             ? "실행 명령 전체를 그대로 입력합니다."
@@ -98,13 +107,13 @@ export function StepServer(props: {
         }
       >
         <input
-          id="generate-target"
+          id={`${prefix}-target`}
           className={`${INPUT_CLASS} font-mono`}
-          list="generate-recent-commands"
+          list={`${prefix}-recent-commands`}
           value={props.target}
           onChange={(event) => props.onTargetChange(event.target.value)}
         />
-        <datalist id="generate-recent-commands">
+        <datalist id={`${prefix}-recent-commands`}>
           {props.recentCommands.map((recent) => (
             <option key={recent} value={recent} />
           ))}
@@ -112,7 +121,7 @@ export function StepServer(props: {
       </Field>
 
       <div className="space-y-2">
-        <label className="block text-sm font-medium text-ink" htmlFor="generate-arg-draft">
+        <label className="block text-sm font-medium text-ink" htmlFor={`${prefix}-arg-draft`}>
           서버 인자
         </label>
         {props.args.length > 0 && (
@@ -138,7 +147,7 @@ export function StepServer(props: {
         )}
         <div className="flex gap-2">
           <input
-            id="generate-arg-draft"
+            id={`${prefix}-arg-draft`}
             className={`${INPUT_CLASS} font-mono`}
             value={argDraft}
             placeholder="인자 하나씩 추가"

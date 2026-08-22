@@ -98,21 +98,23 @@ describe("RunView", () => {
     });
   });
 
-  it('status가 failed면 repair 시작 버튼이 있고 클릭 시 flow:"repair"를 POST한다', async () => {
+  it('status가 failed면 repair 폼을 열어 flow:"repair"를 POST한다', async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     const fetchMock = stubFetch();
-    const prompts = ["bundle.json", "claude", "claude-sonnet-5"];
-    vi.stubGlobal(
-      "prompt",
-      vi.fn(() => prompts.shift() ?? null),
-    );
+    // window.prompt 를 아예 없앤다. 남아 있으면 옛 경로가 살아 있어도 통과한다(#223).
+    vi.stubGlobal("prompt", undefined);
 
     render(<RunView runId="run-1" />);
     act(() => {
       lastSource().emit({ kind: "done", exitCode: 1 });
     });
-    const button = screen.getByRole("button", { name: "repair 시작" });
-    fireEvent.click(button);
+    fireEvent.click(screen.getByRole("button", { name: "repair 시작" }));
+
+    fireEvent.change(screen.getByLabelText("repair 번들 경로"), {
+      target: { value: "bundle.json" },
+    });
+    fireEvent.change(screen.getByLabelText("model"), { target: { value: "claude-sonnet-5" } });
+    fireEvent.click(screen.getByRole("button", { name: "시작" }));
 
     await waitFor(() => {
       expect(window.location.hash).toBe("#/repair/repair-1");
@@ -123,6 +125,40 @@ describe("RunView", () => {
       flow: "repair",
       argv: ["bundle.json", "--provider", "claude", "--model", "claude-sonnet-5"],
     });
+  });
+
+  it("repair 폼의 provider 는 자유 입력이 아니라 codex·claude 둘뿐이다", () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    stubFetch();
+    render(<RunView runId="run-1" />);
+    act(() => {
+      lastSource().emit({ kind: "done", exitCode: 1 });
+    });
+    fireEvent.click(screen.getByRole("button", { name: "repair 시작" }));
+
+    const select = screen.getByLabelText("provider") as HTMLSelectElement;
+    expect(select.tagName).toBe("SELECT");
+    expect(Array.from(select.options).map((option) => option.value)).toEqual(["claude", "codex"]);
+  });
+
+  it("repair 폼은 값이 덜 찼으면 시작 버튼이 비활성이고, 취소하면 닫힌다", () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    stubFetch();
+    render(<RunView runId="run-1" />);
+    act(() => {
+      lastSource().emit({ kind: "done", exitCode: 1 });
+    });
+    fireEvent.click(screen.getByRole("button", { name: "repair 시작" }));
+
+    // 예전에는 prompt 세 번을 다 통과한 뒤에야 실패를 알았다.
+    expect(screen.getByRole("button", { name: "시작" })).toHaveProperty("disabled", true);
+    fireEvent.change(screen.getByLabelText("repair 번들 경로"), { target: { value: "b.json" } });
+    expect(screen.getByRole("button", { name: "시작" })).toHaveProperty("disabled", true);
+    fireEvent.change(screen.getByLabelText("model"), { target: { value: "m" } });
+    expect(screen.getByRole("button", { name: "시작" })).toHaveProperty("disabled", false);
+
+    fireEvent.click(screen.getByRole("button", { name: "취소" }));
+    expect(screen.queryByLabelText("repair 번들 경로")).toBeNull();
   });
 
   it("status가 done이면 repair 버튼이 없다", () => {

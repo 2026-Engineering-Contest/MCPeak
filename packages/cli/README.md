@@ -22,7 +22,7 @@ mcpeak test packages/cli/tests/fixtures/weather-suite.json \
   --arg examples/weather-server/server.mjs
 ```
 
-문법은 `mcpeak test <suite.json> --command <executable> [--arg <value> ...] [--json] [--junit <path>] [--stderr-lines <N>]`입니다. 위 예시의 command와 arg는 `node examples/weather-server/server.mjs`로 실행됩니다. `--arg`는 반복할 수 있고, 하이픈으로 시작하는 값은 `--arg=-m`, 빈 값은 `--arg=`로 전달합니다.
+문법은 `mcpeak test <suite.json> --command <executable> [--arg <value> ...] [--json] [--junit <path>] [--stderr-lines <N>] [--record-session <path> | --session <path>]`입니다. 위 예시의 command와 arg는 `node examples/weather-server/server.mjs`로 실행됩니다. `--arg`는 반복할 수 있고, 하이픈으로 시작하는 값은 `--arg=-m`, 빈 값은 `--arg=`로 전달합니다.
 
 stdout에는 보고서만 나갑니다. 기본은 사람이 읽는 보고서이고, `--json`을 주면 `RunnerReport` JSON이 나갑니다. CLI 오류와 서버 프로세스 진단은 stderr로만 나가므로 `--json > report.json`이 깨지지 않습니다. 모든 테스트가 통과하면 종료 코드 0을, failed 또는 aborted report와 입력, 연결, 종료 오류에는 1을 반환합니다.
 
@@ -39,6 +39,11 @@ stdout은 그대로 두고 파일만 더하므로 `--json`과 함께 쓸 수 있
 XML을 만드는 단계에서 실패하면 `CLI_INTERNAL_ERROR`와 함께 종료 코드 1을 냅니다. 이때는 파일 쓰기에 도달하기 전이므로 **파일을 만들지도, 기존 파일을 덮어쓰지도 않습니다.** 직전 실행의 리포트가 그대로 남으므로, CI에서 이 경로를 읽는 도구가 낡은 리포트를 최신 결과로 오해할 수 있습니다. 종료 코드로 판정하세요.
 
 `RunnerReport`에는 시간 정보가 없어 모든 `time` 속성은 `0`입니다. "0초 걸렸다"가 아니라 "시간 정보를 갖고 있지 않다"는 뜻입니다. 근거는 [ADR-0016](../../docs/adr/0016-junit-time-속성-고정.md), 플래그 설계는 [ADR-0019](../../docs/adr/0019-junit-리포터-cli-노출-방식.md)에 있습니다.
+
+`--record-session <path>`는 서버가 `globalThis.fetch`로 호출한 외부 HTTP 응답을 녹화하고,
+`--session <path>`는 그 녹화본을 재생합니다. 서버는 재생 때도 실제로 실행됩니다. `node:http`와
+`node:https` 계층 호출은 범위 밖이라 실제 네트워크로 나갈 수 있으며, CLI는 녹화 0건이나 재생
+0건처럼 범위 밖 호출이 의심되는 실행을 stderr 알림으로 드러냅니다.
 
 `--stderr-lines <N>`은 실패했거나 서버가 비정상 종료·중단했을 때, 진단 내용이 있으면 stderr에 붙는 서버 프로세스 진단 블록의 stderr 표시 줄 수입니다. 기본값은 20이고, `0`을 주면 블록을 완전히 끕니다(그때 출력 바이트는 이 기능이 없던 때와 같습니다). 블록에는 종료 코드와 시그널, 서버가 남긴 stderr의 마지막 N줄이 담기며 잘린 사실은 헤더에 적힙니다. 서버가 정상 종료했고 stderr도 비어 있으면 보여줄 근거가 없으므로 블록을 쓰지 않습니다.
 
@@ -60,7 +65,7 @@ XML을 만드는 단계에서 실패하면 `CLI_INTERNAL_ERROR`와 함께 종료
 
 지문이 없는 명세도 정상입니다. 손으로 쓴 명세와 이 기능 이전에 만든 명세가 여기에 해당하며 실패로 취급하지 않습니다.
 
-현재는 UTF-8 JSON 단일 명세와 stdio 서버만 지원합니다. shell 문법, 여러 명세, TypeScript 모듈 명세는 지원하지 않습니다. `record`, `replay`, `mock` 명령은 아직 구현되지 않았습니다.
+현재는 UTF-8 JSON 단일 명세와 stdio 서버만 지원합니다. shell 문법, 여러 명세, TypeScript 모듈 명세는 지원하지 않습니다. `record`, `mock` 명령은 아직 구현되지 않았습니다.
 
 ## generate
 

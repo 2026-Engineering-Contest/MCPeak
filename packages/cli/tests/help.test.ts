@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { commandHelp, GENERATE_USAGE, GENERATE_USAGE_HINT } from "../src/help.js";
+import { commandHelp, GENERATE_USAGE, GENERATE_USAGE_HINT, TEST_USAGE } from "../src/help.js";
 
 /**
  * 도움말은 옵션의 유일한 설명이다. 사용법 한 줄에만 이름이 있고 설명이 없으면 사용자는
@@ -56,5 +56,19 @@ describe("generate 도움말", () => {
     // 힌트는 stderr 한 줄이다. 여기에 옵션 설명 블록이 섞이면 오류 메시지가 화면을 덮는다.
     expect(GENERATE_USAGE_HINT).toContain(GENERATE_USAGE);
     expect(GENERATE_USAGE_HINT).not.toContain("\n");
+  });
+});
+
+describe("test External 세션 도움말", () => {
+  const help = commandHelp("test");
+
+  it("세션 옵션이 사용법 줄에 나온다", () => {
+    expect(TEST_USAGE).toContain("[--session <path> | --record-session <path>]");
+  });
+
+  it("External 어댑터 범위를 globalThis.fetch 로 한정해 말한다", () => {
+    expect(help).toContain("`globalThis.fetch` 로 밖에 부른 HTTP 호출");
+    expect(help).toContain("범위 밖 호출은 실제 네트워크로 나갈 수 있어");
+    expect(help).not.toContain("외부 API 는 부르지 않습니다");
   });
 });

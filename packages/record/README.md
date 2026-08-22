@@ -184,6 +184,12 @@ CLI 는 `mcpeak verify <cassette.json> --command <executable>` 로 감싼다.
 
 ### External 세션과 `node:sqlite` 실험 경고
 
+External 세션의 첫 어댑터(`node.fetch.v1`)는 Node 의 `globalThis.fetch` 만 가로챈다.
+`node:http`·`node:https`, 그리고 그것을 직접 쓰는 axios·got·node-fetch 호출은 범위 밖이다.
+범위 밖 호출은 Coordinator 에 도달하지 않으므로 실제 네트워크로 나갈 수 있고, CLI 는 녹화
+0건·재생 0건·부분 재생 같은 종료 요약으로 그 가능성을 알린다. 범위 결정은
+[ADR-0057](../../docs/adr/0057-external-어댑터는-global-fetch-까지만-가로챈다.md)에 있다.
+
 External 세션은 `node:sqlite` 로 저장한다. Node 가 이 모듈을 아직 실험적으로 표시하므로,
 런타임에 따라 stderr 에 경고가 한 줄 찍힌다.
 

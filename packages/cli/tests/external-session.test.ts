@@ -1,5 +1,6 @@
+import type { SessionSummary } from "@mcpeak/record/external";
 import { describe, expect, it } from "vitest";
-import { parseTestCommand } from "../src/test-command.js";
+import { externalSessionNotice, parseTestCommand } from "../src/test-command.js";
 
 /**
  * `--session` · `--record-session` 의 파싱과 상호 배타를 본다.
@@ -108,5 +109,88 @@ describe("배선 판정이 파서와 같은 규칙을 쓴다", () => {
     expect(input.args).toEqual(["--record-session"]);
     expect(input.sessionPath).toBe("real.db");
     expect(input.recordSessionPath).toBeUndefined();
+  });
+});
+
+/**
+ * 종료 경고 네 갈래(ADR-0057)가 **배타적인지** 본다.
+ *
+ * 실제 녹화·재생은 `external-session-e2e.test.ts` 가 자식 프로세스로 확인한다. 여기서 보는 것은
+ * 판정 그 자체다 — `consumedCount === 0` 과 `unusedCount > 0` 은 동시에 참일 수 있어서, 조건을
+ * 독립적으로 세우면 한 실행에 경고가 두 번 찍힌다. 프로세스를 띄우면 그 조합을 만들기 어렵고
+ * 느린데, 순수 함수라 여기서 한 줄로 고정된다.
+ */
+
+const record = (interactionCount: number): SessionSummary => ({
+  mode: "record",
+  sessionId: "default",
+  status: "completed",
+  interactionCount,
+  consumedCount: 0,
+  unusedCount: 0,
+});
+
+const replay = (
+  interactionCount: number,
+  consumedCount: number,
+  unusedCount: number,
+): SessionSummary => ({
+  mode: "replay",
+  sourceSessionId: "default",
+  status: "completed",
+  interactionCount,
+  consumedCount,
+  unusedCount,
+});
+
+const SCOPE_NOTE = "globalThis.fetch";
+
+describe("External 세션 종료 경고", () => {
+  it("녹화가 0건이면 지원 범위를 확인하라고 말한다", () => {
+    const notice = externalSessionNotice(record(0));
+
+    expect(notice).toContain("외부 호출이 하나도 녹화되지 않았습니다");
+    expect(notice).toContain(SCOPE_NOTE);
+  });
+
+  it("녹화가 1건이라도 있으면 아무 말도 하지 않는다", () => {
+    expect(externalSessionNotice(record(1))).toBeUndefined();
+  });
+
+  it("재생 원본이 비었으면 녹화 쪽을 보라고 말한다", () => {
+    const notice = externalSessionNotice(replay(0, 0, 0));
+
+    // 원본이 빈 것은 재생의 문제가 아니라 그 앞 단계의 문제다. 문구가 그쪽을 가리켜야 한다.
+    expect(notice).toContain("녹화된 외부 호출이 0건입니다");
+    expect(notice).not.toContain("하나도 재생되지 않았습니다");
+  });
+
+  it("원본은 찼는데 하나도 못 썼으면 재생이 안 됐다고 말한다 — 미사용 경고는 겹치지 않는다", () => {
+    // `unusedCount` 도 3 이라 두 조건이 동시에 참이다. 여기서 갈래가 갈리면 경고가 두 번 나온다.
+    const notice = externalSessionNotice(replay(3, 0, 3));
+
+    expect(notice).toContain("하나도 재생되지 않았습니다");
+    expect(notice).not.toContain("3건 중");
+  });
+
+  it("일부만 재생되면 전체와 미재생 개수를 함께 말한다", () => {
+    const notice = externalSessionNotice(replay(3, 2, 1));
+
+    expect(notice).toContain("녹화된 외부 호출 3건 중 1건이 이번 실행에서 재생되지 않았습니다");
+    expect(notice).not.toContain("하나도");
+  });
+
+  it("전부 재생됐으면 아무 말도 하지 않는다", () => {
+    expect(externalSessionNotice(replay(3, 3, 0))).toBeUndefined();
+  });
+
+  it("말을 하는 모든 갈래가 같은 범위 안내로 끝난다", () => {
+    // 갈래마다 다른 문구로 갈라지면 사용자는 같은 한계를 갈래마다 다시 배운다.
+    for (const summary of [record(0), replay(0, 0, 0), replay(3, 0, 3), replay(3, 2, 1)]) {
+      const notice = externalSessionNotice(summary);
+
+      expect(notice).toContain(SCOPE_NOTE);
+      expect(notice?.endsWith("로 부른 것만 잡습니다.\n")).toBe(true);
+    }
   });
 });

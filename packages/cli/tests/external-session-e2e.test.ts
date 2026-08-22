@@ -25,7 +25,11 @@ vi.mock("@mcpeak/runner", async () => import("../../runner/src/index.js"));
 
 const here = resolve(fileURLToPath(new URL(".", import.meta.url)));
 const server = join(here, "fixtures/external-fetch-server.mjs");
+/** 외부 요청을 `node:http` 로 내는 서버 — ADR-0057 이 정한 지원 범위의 바깥이다. */
+const httpServer = join(here, "fixtures/external-http-server.mjs");
 const suite = join(here, "fixtures/external-fetch.suite.json");
+const threeSuite = join(here, "fixtures/external-fetch-three.suite.json");
+const twoSuite = join(here, "fixtures/external-fetch-two.suite.json");
 
 const directories: string[] = [];
 const servers: Server[] = [];
@@ -69,18 +73,48 @@ const newSessionPath = async (): Promise<string> => {
  * origin 을 `--arg` 로 넘긴다. 자식은 부모 env 를 상속하지 않으므로(SDK 의 spawn env 가
  * `{...getDefaultEnvironment(), ...options.env}` 다) 환경 변수로는 전달되지 않는다.
  */
-const runTest = (extra: readonly string[], originUrl: string): Promise<number> =>
+const runWith = (
+  serverPath: string,
+  suitePath: string,
+  extra: readonly string[],
+  originUrl: string,
+): Promise<number> =>
   run([
     "test",
-    suite,
+    suitePath,
     "--command",
     process.execPath,
     "--arg",
-    server,
+    serverPath,
     "--arg",
     originUrl,
     ...extra,
   ]);
+
+const runTest = (extra: readonly string[], originUrl: string): Promise<number> =>
+  runWith(server, suite, extra, originUrl);
+
+/**
+ * `run` 은 의존성을 받지 않고 `process.stderr` 로 직접 쓴다(`src/index.ts`). 종료 경고 문구를
+ * 보려면 그 자리에서 가로채는 수밖에 없다. 복원은 `finally` 에서 한다 — 단언이 실패해도
+ * 다음 테스트가 벙어리 stderr 를 물려받지 않는다.
+ */
+const captureStderr = async (
+  body: () => Promise<number>,
+): Promise<{ readonly exitCode: number; readonly stderr: string }> => {
+  let stderr = "";
+  const spy = vi.spyOn(process.stderr, "write").mockImplementation(((
+    chunk: string | Uint8Array,
+  ): boolean => {
+    stderr += typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8");
+    return true;
+  }) as typeof process.stderr.write);
+  try {
+    return { exitCode: await body(), stderr };
+  } finally {
+    spy.mockRestore();
+  }
+};
 
 describe("mcpeak test 의 External 세션", () => {
   it("녹화한 뒤 다른 실행에서 재생하면 외부 API 를 다시 부르지 않는다", async () => {
@@ -116,4 +150,83 @@ describe("mcpeak test 의 External 세션", () => {
     // 실패하더라도 외부로 나가지 않는 것이 Replay 의 존재 이유다.
     expect(origin.calls()).toBe(1);
   }, 30_000);
+});
+
+/**
+ * ADR-0057 의 경고가 실제로 사용자 눈에 닿는지 본다.
+ *
+ * 앞의 describe 는 **범위 안**에서 재생이 성립하는 것을 본다. 여기는 **범위 밖**이다 — 서버가
+ * `node:http` 로 부르면 어댑터가 그것을 보지 못하고, 녹화는 0건이 되며 재생은 실제 네트워크로
+ * 나간다. 그 자체는 알려진 한계이고 이 테스트가 고치는 것이 아니다. 고정하는 것은 **그때
+ * 도구가 침묵하지 않는다** 는 것이다([#258](https://github.com/2026-Engineering-Contest/MCPeak/issues/258)).
+ *
+ * 판정에 origin 카운터를 함께 쓴다. 문구만 보면 "서버가 아예 안 떠서 0건" 인 경우와 구분되지
+ * 않아, 경고가 맞게 나왔는지 테스트가 증명하지 못한다.
+ */
+describe("mcpeak test 의 External 세션 — 지원 범위 밖 경고", () => {
+  it("범위 밖 서버를 녹화하면 실제 호출은 나가고 0건 녹화를 알린다", async () => {
+    const origin = await startOrigin();
+    const sessionPath = await newSessionPath();
+
+    const { exitCode, stderr } = await captureStderr(() =>
+      runWith(httpServer, suite, ["--record-session", sessionPath], origin.url("/weather")),
+    );
+
+    // 스위트 자체는 통과한다. 종료 코드로는 아무 문제가 없어 보이는 것이 이 사고의 핵심이다.
+    expect(exitCode).toBe(0);
+    // 실제로 밖으로 나갔다. 어댑터가 보지 못했을 뿐이다.
+    expect(origin.calls()).toBe(1);
+    expect(stderr).toContain("외부 호출이 하나도 녹화되지 않았습니다");
+    expect(stderr).toContain("globalThis.fetch");
+  }, 30_000);
+
+  it("빈 세션을 재생하면 네트워크로 나가고, 원본이 비었다고 알린다", async () => {
+    const origin = await startOrigin();
+    const sessionPath = await newSessionPath();
+
+    const recorded = await runWith(
+      httpServer,
+      suite,
+      ["--record-session", sessionPath],
+      origin.url("/weather"),
+    );
+    expect(recorded).toBe(0);
+    expect(origin.calls()).toBe(1);
+
+    const { exitCode, stderr } = await captureStderr(() =>
+      runWith(httpServer, suite, ["--session", sessionPath], origin.url("/weather")),
+    );
+
+    expect(exitCode).toBe(0);
+    // 재생인데 카운터가 또 올랐다 — 이 줄이 #258 그 자체다.
+    expect(origin.calls()).toBe(2);
+    expect(stderr).toContain("녹화된 외부 호출이 0건입니다");
+    expect(stderr).toContain("globalThis.fetch");
+    // 원본이 빈 것과 원본을 못 쓴 것은 사용자가 볼 곳이 다르다. 뒤엣것 문구가 나오면 안 된다.
+    expect(stderr).not.toContain("하나도 재생되지 않았습니다");
+  }, 60_000);
+
+  it("일부만 재생되면 전체와 미재생 개수를 함께 알린다", async () => {
+    const origin = await startOrigin();
+    const sessionPath = await newSessionPath();
+
+    // 3건 녹화 — 범위 안(`fetch`) 서버다. 이쪽은 경고가 나오면 안 된다.
+    const recorded = await captureStderr(() =>
+      runWith(server, threeSuite, ["--record-session", sessionPath], origin.url("/weather")),
+    );
+    expect(recorded.exitCode).toBe(0);
+    expect(origin.calls()).toBe(3);
+    expect(recorded.stderr).not.toContain("globalThis.fetch");
+
+    // 2건짜리 스위트로 재생한다 — 녹화된 3건 중 1건이 남는다.
+    const { exitCode, stderr } = await captureStderr(() =>
+      runWith(server, twoSuite, ["--session", sessionPath], origin.url("/weather")),
+    );
+
+    expect(exitCode).toBe(0);
+    // 재생이 실제로 일어났으므로 카운터는 그대로다.
+    expect(origin.calls()).toBe(3);
+    expect(stderr).toContain("녹화된 외부 호출 3건 중 1건이 이번 실행에서 재생되지 않았습니다");
+    expect(stderr).not.toContain("하나도 재생되지 않았습니다");
+  }, 60_000);
 });

@@ -21,9 +21,23 @@ const FORGETFUL: ThemeStorage = {
  * **테마를 기억하지 못하는 것은 불편이고, 대시보드가 안 뜨는 것은 고장이다.**
  */
 export function themeStorage(): ThemeStorage {
+  const probe = "__mcpeak_theme_probe__";
   try {
     const store = globalThis.localStorage as ThemeStorage | undefined;
-    return typeof store?.getItem === "function" ? store : FORGETFUL;
+    // 세 메서드를 다 본다. getItem 만 보면 안 되는 이유는 이 모듈의 첫 호출자가
+    // main.tsx 이고, 거기서 기본값 "system" 이 removeItem 을 부르기 때문이다.
+    // getItem 만 있는 저장소를 통과시키면 그 줄에서 죽는다 (#251 리뷰).
+    if (
+      typeof store?.getItem !== "function" ||
+      typeof store.setItem !== "function" ||
+      typeof store.removeItem !== "function"
+    )
+      return FORGETFUL;
+    // 있다고 되는 것도 아니다. 저장소가 가득 찼거나 정책으로 막히면 setItem 이
+    // 던진다 — 메서드는 멀쩡히 있다. 한 번 써 보는 것 말고 확인할 방법이 없다.
+    store.setItem(probe, "1");
+    store.removeItem(probe);
+    return store;
   } catch {
     return FORGETFUL;
   }

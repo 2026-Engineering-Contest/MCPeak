@@ -83,6 +83,36 @@ describe("themeStorage", () => {
     expect(() => applyThemeChoice("dark", makeRoot(), storage)).not.toThrow();
   });
 
+  it("getItem 만 있는 반쪽 저장소도 통과시키지 않는다", () => {
+    // main.tsx 는 기본값 "system" 으로 removeItem 을 부른다. getItem 만 보고
+    // 통과시키면 React 마운트 전에 그 줄에서 죽는다 (#251 리뷰).
+    vi.stubGlobal("localStorage", { getItem: () => null });
+    const storage = themeStorage();
+    expect(() => applyThemeChoice("system", makeRoot(), storage)).not.toThrow();
+    expect(() => applyThemeChoice("dark", makeRoot(), storage)).not.toThrow();
+  });
+
+  it("메서드는 있는데 쓰기가 던지는 저장소도 통과시키지 않는다", () => {
+    // 용량 초과·정책 차단이 이 모양이다. typeof 검사로는 걸러지지 않는다.
+    vi.stubGlobal("localStorage", {
+      getItem: () => null,
+      setItem: () => {
+        throw new Error("QuotaExceededError");
+      },
+      removeItem: () => {},
+    });
+    const storage = themeStorage();
+    expect(getThemeChoice(storage)).toBe("system");
+    expect(() => applyThemeChoice("dark", makeRoot(), storage)).not.toThrow();
+  });
+
+  it("정상 저장소에는 probe 키를 남기지 않는다", () => {
+    const real = makeStorage();
+    vi.stubGlobal("localStorage", real);
+    expect(themeStorage()).toBe(real);
+    expect(real.getItem("__mcpeak_theme_probe__")).toBeNull();
+  });
+
   it("접근 자체가 던지면(저장소 차단) 던지지 않고 system으로 시작한다", () => {
     const original = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
     Object.defineProperty(globalThis, "localStorage", {

@@ -86,6 +86,25 @@ describe("memory external engine", () => {
     );
   });
 
+  it("세션이 아예 없는 것과 미완료인 것을 다른 code 로 가른다(#260)", () => {
+    // 두 실패는 사용자가 할 일이 정반대다 — 앞은 경로를 고치거나 녹화를 하는 것이고,
+    // 뒤는 녹화를 다시 뜨는 것이다. 한 code 로 합치면 CLI 가 문장을 고를 수 없다.
+    const store = createMemorySessionStore();
+
+    expect(() => createReplayEngine({ sourceSessionId: "없음", store })).toThrowError(
+      expect.objectContaining({ code: "SESSION_NOT_FOUND" }),
+    );
+
+    const record = createRecordEngine({ sessionId: "미완료", store });
+    record.begin(request());
+    expect(() => record.finish("completed")).toThrowError(
+      expect.objectContaining({ code: "INCOMPLETE_SESSION" }),
+    );
+    expect(() => createReplayEngine({ sourceSessionId: "미완료", store })).toThrowError(
+      expect.objectContaining({ code: "REPLAY_SOURCE_INVALID" }),
+    );
+  });
+
   it("Replay에 남은 interaction은 실패가 아니라 unused 요약으로 반환한다", () => {
     const store = createMemorySessionStore();
     const record = createRecordEngine({ sessionId: "partial", store });

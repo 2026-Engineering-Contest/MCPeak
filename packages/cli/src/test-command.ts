@@ -29,7 +29,12 @@ import {
   checkInputContract as runnerCheckInputContract,
 } from "@mcpeak/runner";
 import { createDeterminismCapture } from "./determinism-capture.js";
-import { type ExternalMode, type ExternalWiring, startExternalWiring } from "./external-wiring.js";
+import {
+  type ExternalMode,
+  type ExternalWiring,
+  SessionFileMissingError,
+  startExternalWiring,
+} from "./external-wiring.js";
 import type { FindingGroup } from "./finding-group.js";
 import { FINDING_GROUP } from "./finding-group.js";
 import { TEST_USAGE_HINT } from "./help.js";
@@ -1211,6 +1216,55 @@ export function renderReplayMissDiagnostics(misses: readonly ReplayMissDetail[])
  *
  * 판정만 하고 쓰기는 하지 않는다 — 순수 함수라 배타성 자체를 프로세스 없이 고정할 수 있다.
  */
+/**
+ * External 세션을 열지 못한 실패를 사용자 문장으로 옮긴다(#260).
+ *
+ * **원인마다 다음에 할 일이 다르므로 갈래마다 다른 문장을 쓴다.** 한때 이 자리가 문장 하나로
+ * 모든 실패를 덮었고, 그래서 경로를 잘못 친 사람에게 "완료된 Replay 원본이 아닙니다" 와
+ * "쓰기 권한을 확인하세요" 를 동시에 말했다 — 앞은 손상된 세션의 문안이고 뒤는 녹화의 문안이라
+ * 재생 실패에는 둘 다 맞지 않았다.
+ *
+ * **경로를 `message` 에 싣는다.** `hint` 에 두 줄을 넣으면 `format()` 이 개행을 이스케이프해
+ * `
+` 로 찍힌다(ADR-0058 과 같은 계열의 문제). 갈래마다 할 말이 한 줄이면 그 문제를
+ * 건드리지 않고도 필요한 것을 다 말할 수 있어서, `format()` 은 그대로 둔다.
+ *
+ * 세션 id 는 넣지 않는다 — 사용자가 준 적 없는 `"default"` 대신 사용자가 아는 경로를 보여준다.
+ */
+export function externalOpenFailure(mode: ExternalMode, path: string, error: unknown): CliFailure {
+  const code = (error as { code?: unknown })?.code;
+  const detail = error instanceof Error ? error.message : String(error);
+
+  if (error instanceof SessionFileMissingError)
+    return {
+      code: "EXTERNAL_SESSION_FAILED",
+      message: `세션 파일을 찾을 수 없습니다: ${path}`,
+      hint: "경로를 확인하거나, `--record-session <path>` 로 먼저 녹화하세요.",
+    };
+  if (code === "SESSION_NOT_FOUND")
+    return {
+      code: "EXTERNAL_SESSION_FAILED",
+      message: `세션 파일에 녹화된 외부 호출이 없습니다: ${path}`,
+      hint: "`--record-session` 으로 다시 녹화하세요. 빈 세션으로는 아무 호출도 막지 못합니다.",
+    };
+  if (code === "REPLAY_SOURCE_INVALID")
+    return {
+      code: "EXTERNAL_SESSION_FAILED",
+      message: `녹화가 완료되지 않은 세션입니다: ${path}`,
+      hint: "녹화 실행이 실패했을 수 있습니다. `--record-session` 으로 다시 녹화하세요.",
+    };
+  // 여기부터는 우리가 분류하지 못한 실패다. 원인 문장을 버리지 않고 그대로 보여주되,
+  // 안내는 모드에 맞는 것 하나만 준다 — 재생은 읽기라 쓰기 권한을 말할 이유가 없다.
+  return {
+    code: "EXTERNAL_SESSION_FAILED",
+    message: `External 세션을 열지 못했습니다: ${path} (${detail})`,
+    hint:
+      mode === "replay"
+        ? "경로가 맞는지와 그 파일을 읽을 수 있는지 확인하세요."
+        : "경로의 디렉터리가 있는지와 쓰기 권한을 확인하세요.",
+  };
+}
+
 export function externalSessionNotice(summary: SessionSummary): string | undefined {
   if (summary.mode === "record") {
     if (summary.interactionCount > 0) return undefined;
@@ -1265,13 +1319,7 @@ export async function runCli(
       existingNodeOptions: process.env.NODE_OPTIONS,
     });
   } catch (error) {
-    return writeFailure(dependencies, {
-      code: "EXTERNAL_SESSION_FAILED",
-      message: "External 세션을 열지 못했습니다.",
-      hint:
-        `${error instanceof Error ? error.message : String(error)}\n` +
-        "→ 세션 파일 경로의 디렉터리가 있는지와 쓰기 권한을 확인하세요.",
-    });
+    return writeFailure(dependencies, externalOpenFailure(mode.mode, mode.path, error));
   }
 
   let exitCode: number;

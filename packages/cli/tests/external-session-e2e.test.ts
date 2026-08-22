@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
@@ -265,4 +266,36 @@ describe("mcpeak test 의 External 세션 — 지원 범위 밖 경고", () => {
     expect(stderr).toContain("녹화된 외부 호출 3건 중 1건이 이번 실행에서 재생되지 않았습니다");
     expect(stderr).not.toContain("하나도 재생되지 않았습니다");
   }, 60_000);
+});
+
+/**
+ * #260 — 없는 경로를 `--session` 에 주었을 때.
+ *
+ * 판정의 핵심은 문구가 아니라 **파일이 생기지 않는다** 는 것이다. `node:sqlite` 의
+ * DatabaseSync 는 없는 경로를 만들어 버리므로, Store 를 연 뒤에 판정하면 오타 한 번에 빈 DB 가
+ * 디스크에 남는다. 그러면 두 번째 실행부터 "파일이 없다" 가 거짓이 되어 진단이 또 어긋난다.
+ */
+describe("mcpeak test 의 External 세션 — 없는 세션 파일", () => {
+  it("경로를 보여주고 실패하며, 그 경로에 파일을 만들지 않는다", async () => {
+    const origin = await startOrigin();
+    const directory = await mkdtemp(join(tmpdir(), "mcpeak-cli-missing-"));
+    directories.push(directory);
+    const missing = join(directory, "없는세션.db");
+
+    const { exitCode, stderr } = await captureStderr(() =>
+      runTest(["--session", missing], origin.url("/weather")),
+    );
+
+    expect(exitCode).not.toBe(0);
+    // 사용자가 아는 식별자는 경로다. 내부 세션 id 가 아니라 이것이 보여야 한다.
+    expect(stderr).toContain(missing);
+    expect(stderr).toContain("세션 파일을 찾을 수 없습니다");
+    expect(stderr).not.toContain("default");
+    // 재생은 읽기다 — 쓰기 권한 안내가 붙으면 사용자를 엉뚱한 곳으로 보낸다.
+    expect(stderr).not.toContain("쓰기 권한");
+    // 이것이 이 수정의 핵심 증거다.
+    expect(existsSync(missing)).toBe(false);
+    // 서버를 띄우기 전에 멈춘다.
+    expect(origin.calls()).toBe(0);
+  }, 30_000);
 });

@@ -29,6 +29,15 @@ describe("app shell", () => {
     expect(links).toEqual(NAV_LABELS);
   });
 
+  it("사이드바 로고가 제품명 MCPeak을 쓴다", async () => {
+    window.location.hash = "#/home";
+    render(<App />);
+    const nav = await screen.findByRole("navigation");
+    // 개명(ADR-0050) 이후 남아 있던 옛 이름이 화면에 노출되던 자리다.
+    expect(nav.textContent).toContain("MCPeak");
+    expect(nav.textContent).not.toContain("OhMyMCP");
+  });
+
   it('해시가 #/cassettes면 Cassettes 화면이 렌더되고 해당 항목만 aria-current="page"다', async () => {
     window.location.hash = "#/cassettes";
     render(<App />);

@@ -105,7 +105,7 @@ export function Sidebar({ active }: { readonly active: NavId }): JSX.Element {
           </svg>
         </div>
         <div>
-          <p className="text-sm font-semibold text-ink">OhMyMCP</p>
+          <p className="text-sm font-semibold text-ink">MCPeak</p>
           <p className="text-xs text-ink-muted">MCP Test Dashboard</p>
         </div>
       </div>

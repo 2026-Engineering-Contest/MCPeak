@@ -30,7 +30,8 @@ function fillStepSuite(): void {
 describe("GenerateWizard", () => {
   beforeEach(() => {
     window.location.hash = "";
-    window.localStorage.clear();
+    // Node 25는 메서드 없는 localStorage 껍데기를 전역에 둔다(#212). 지울 것도 없다.
+    window.localStorage?.clear?.();
   });
 
   afterEach(() => {

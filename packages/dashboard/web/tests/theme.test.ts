@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from "vitest";
-import { applyThemeChoice, getThemeChoice } from "../src/theme.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { applyThemeChoice, getThemeChoice, themeStorage } from "../src/theme.js";
 
 /** localStorage와 같은 인터페이스의 인메모리 저장소. */
 function makeStorage(initial: Record<string, string> = {}) {
@@ -61,5 +61,41 @@ describe("theme", () => {
   it("알 수 없는 저장값은 system으로 취급한다", () => {
     const storage = makeStorage({ "mcpeak-theme": "sepia" });
     expect(getThemeChoice(storage)).toBe("system");
+  });
+});
+
+describe("themeStorage", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("쓸 수 있는 저장소는 그대로 돌려준다", () => {
+    const real = makeStorage({ "mcpeak-theme": "dark" });
+    vi.stubGlobal("localStorage", real);
+    expect(themeStorage()).toBe(real);
+    expect(getThemeChoice(themeStorage())).toBe("dark");
+  });
+
+  it("메서드가 없는 껍데기면(Node 25) 던지지 않고 system으로 시작한다", () => {
+    vi.stubGlobal("localStorage", {});
+    const storage = themeStorage();
+    expect(getThemeChoice(storage)).toBe("system");
+    expect(() => applyThemeChoice("dark", makeRoot(), storage)).not.toThrow();
+  });
+
+  it("접근 자체가 던지면(저장소 차단) 던지지 않고 system으로 시작한다", () => {
+    const original = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+    Object.defineProperty(globalThis, "localStorage", {
+      configurable: true,
+      get(): never {
+        throw new Error("SecurityError: storage is disabled");
+      },
+    });
+    try {
+      expect(getThemeChoice(themeStorage())).toBe("system");
+    } finally {
+      if (original === undefined) delete (globalThis as { localStorage?: unknown }).localStorage;
+      else Object.defineProperty(globalThis, "localStorage", original);
+    }
   });
 });

@@ -27,6 +27,16 @@ const EXPECTED = [
 ];
 
 // ── import 조건이 ESM 산출물로 간다
+//
+// 표면만 보면 부족하다. `exports` 의 import 조건이 실수로 `.cjs` 를 가리켜도 Node 는 CJS 를
+// 동적 import 로 받아 주고 named export 까지 내주므로, 아래 표면·타입 단언은 그대로 통과한다.
+// 그래서 **해석된 경로**를 먼저 못 박는다.
+const esmPath = import.meta.resolve("@mcpeak/record/external");
+assert.match(
+  esmPath.replaceAll("\\", "/"),
+  /\/dist\/external\/index\.mjs$/,
+  `import 조건이 ESM 산출물을 가리키지 않습니다: ${esmPath}`,
+);
 const esm = await import("@mcpeak/record/external");
 assert.deepEqual(Object.keys(esm).sort(), EXPECTED, "ESM 표면이 계약과 다릅니다.");
 

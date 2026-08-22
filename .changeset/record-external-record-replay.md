@@ -16,6 +16,8 @@ mcpeak test suite.json --command node --arg server.js --session s.db          # 
 
 라이브러리로는 `@mcpeak/record/external` 서브패스가 `startExternalCoordinator` 와 `createSqliteSessionStore` 를 공개한다. 저장은 `node:sqlite` 를 쓰므로 세션 옵션을 쓴 실행에서 런타임에 따라 `ExperimentalWarning` 이 stderr 에 한 줄 나올 수 있다 (ADR-0056).
 
-**잡는 범위는 `globalThis.fetch` 하나다.** `node:http`·`node:https`·axios·got 처럼 다른 경로로 부르는 서버는 녹화되지 않는다. 어댑터는 `node.fetch.v1` 이며 확장 여지를 두고 버전을 붙였다. 범위 밖일 때 조용히 통과하는 문제는 #258 에서 다룬다.
+**잡는 범위는 `globalThis.fetch` 하나다** (ADR-0057). `node:http`·`node:https`·axios·got 처럼 다른 경로로 부르는 서버는 녹화되지 않는다. 어댑터는 `node.fetch.v1` 이며 확장 여지를 두고 버전을 붙였다.
+
+범위 밖이면 실행 끝에 알린다 — 녹화가 0건이거나 재생에서 소비한 호출이 0건이면 "이 세션은 아무 호출도 막지 못합니다" 를 낸다. 판정과 종료 코드는 바뀌지 않는다.
 
 관련 결정: ADR-0051 · ADR-0052 · ADR-0053 · ADR-0056.

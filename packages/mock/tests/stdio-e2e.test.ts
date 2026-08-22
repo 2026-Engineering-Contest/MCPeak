@@ -41,8 +41,15 @@ const entry = fileURLToPath(new URL("./fixtures/stdio-entry.mjs", import.meta.ur
  * `src/` 는 저장소 관례대로 ".js" 로 형제 모듈을 부르는데 Node 의 ESM 리졸버는 그것을
  * ".ts" 로 매핑하지 않는다. 이 훅이 그 한 칸을 메운다 (ADR-0055). 빠뜨리면 자식이
  * ERR_MODULE_NOT_FOUND 로 즉시 죽는다.
+ *
+ * **`--import` 에는 원시 경로가 아니라 URL 을 넘긴다.** Windows 절대경로를 그대로 주면 ESM
+ * 로더가 드라이브 문자를 스킴으로 읽어 `ERR_UNSUPPORTED_ESM_URL_SCHEME` 로 자식이 시작조차
+ * 못 한다 (#246). 경로에 공백이 있는 경우도 `.href` 가 인코딩해 준다. `record` 의 자식
+ * 부트스트랩(`external/coordinator.ts`)이 같은 형태다 — 같은 함정을 두 번 밟은 자리다.
+ *
+ * 위의 `entry` 는 `--import` 가 아니라 일반 argv 라서 원시 경로 그대로가 맞다.
  */
-const tsResolve = fileURLToPath(new URL("./fixtures/register-ts-resolve.mjs", import.meta.url));
+const tsResolve = new URL("./fixtures/register-ts-resolve.mjs", import.meta.url).href;
 const opened: McpClient[] = [];
 
 /** stdio 목을 띄우고 core.connect() 로 붙는다. */

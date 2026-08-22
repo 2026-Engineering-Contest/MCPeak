@@ -9,6 +9,7 @@ import {
   type HttpMatchMaterialV1,
   httpMatchKey,
   normalizeHttpRequest,
+  redactStoredOutcome,
   restoreHttpOutcome,
   stableStringify,
 } from "../../src/external/runtime.mjs";
@@ -232,6 +233,133 @@ describe("normalizeHttpRequest", () => {
 
     expect(stored.headers).toContainEqual(["location", "[redacted]"]);
   });
+
+  it("link 는 URI 의 경로만 지우고 등록된 rel 값만 보존한다 (#301)", async () => {
+    const response = new Response(JSON.stringify({ items: [] }), {
+      status: 200,
+      headers: {
+        "content-type": "application/json",
+        link:
+          '</services/T00/B00/XXXXSECRET?cursor=2>; rel="next", ' +
+          '<https://other.example.com/hooks/ANOTHER>; rel="prev"; type="application/json"; anchor="#s"',
+      },
+    });
+    Object.defineProperty(response, "url", {
+      value: "https://example.com/services/T00/B00/XXXXSECRET",
+      configurable: true,
+    });
+
+    const stored = await encodeHttpResponse(response);
+    const link = stored.headers.find(([name]) => name === "link");
+
+    // 상대 참조는 응답 URL 기준으로 해석된다. rel 이 아닌 파라미터(type·anchor)는 이름째 가린다.
+    expect(link?.[1]).toBe(
+      '<https://example.com/<redacted>?cursor=2>; rel="next", ' +
+        '<https://other.example.com/<redacted>>; rel="prev"; param=[redacted]; param=[redacted]',
+    );
+    expect(JSON.stringify(stored)).not.toContain("SECRET");
+    expect(JSON.stringify(stored)).not.toContain("ANOTHER");
+  });
+
+  it("link 파라미터의 이름·값에 실린 토큰은 남지 않는다 — rel 도 등록 값 밖이면 가린다", async () => {
+    const response = new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: {
+        "content-type": "application/json",
+        link:
+          `<https://example.com/a>; rel="Bearer sk_live_TOKEN1"; title="sk_live_TOKEN2"; title*=UTF-8''sk_live_TOKEN3, ` +
+          '<https://example.com/b>; rel="next last"; sk_live_TOKEN4=1; rel2=sk_live_TOKEN5',
+      },
+    });
+    Object.defineProperty(response, "url", {
+      value: "https://example.com/x",
+      configurable: true,
+    });
+
+    const stored = await encodeHttpResponse(response);
+    const link = stored.headers.find(([name]) => name === "link");
+
+    expect(link?.[1]).toBe(
+      "<https://example.com/<redacted>>; param=[redacted]; param=[redacted]; param=[redacted], " +
+        '<https://example.com/<redacted>>; rel="next last"; param=[redacted]; param=[redacted]',
+    );
+    expect(JSON.stringify(stored)).not.toContain("TOKEN");
+    expect(JSON.stringify(stored)).not.toContain("sk_live");
+  });
+
+  it("link 값이 RFC 8288 문법으로 해석되지 않으면 통째로 가린다", async () => {
+    for (const link of [
+      "/hooks/SECRET; rel=next",
+      "<https://example.com/hooks/SECRET",
+      "<http://>; rel=next",
+    ]) {
+      const response = new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "content-type": "application/json", link },
+      });
+      Object.defineProperty(response, "url", {
+        value: "https://example.com/x",
+        configurable: true,
+      });
+
+      const stored = await encodeHttpResponse(response);
+
+      expect(stored.headers).toContainEqual(["link", "[redacted]"]);
+    }
+  });
+
+  it("refresh 는 지연 값을 남기고 url 의 경로만 지운다 (#301)", async () => {
+    const cases: Array<[string, string]> = [
+      ["0; url=/hooks/REFRESHSECRET", "0; url=https://example.com/<redacted>"],
+      [
+        "5; URL='https://other.example.com/p/SECRET?token=x'",
+        "5; url=https://other.example.com/<redacted>?token=%5Bredacted%5D",
+      ],
+      ["3", "3"],
+      ["not a refresh /hooks/SECRET", "[redacted]"],
+      // 구분자 뒤에 url= 이 없거나 URL 이 비면 URL 로 해석하지 않고 통째로 가린다.
+      ["5; secret=TOKEN", "[redacted]"],
+      ["5, secret=TOKEN", "[redacted]"],
+      ["5; url=", "[redacted]"],
+      // 따옴표가 닫힌 뒤 잔여 문자가 있으면 따옴표 없는 URL 로 다시 읽지 않는다.
+      ["5; url='https://example.com/p/SECRET'junk", "[redacted]"],
+      ['5; url="https://example.com/p/SECRET"junk', "[redacted]"],
+    ];
+    for (const [refresh, expected] of cases) {
+      const response = new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "content-type": "application/json", refresh },
+      });
+      Object.defineProperty(response, "url", {
+        value: "https://example.com/x",
+        configurable: true,
+      });
+
+      const stored = await encodeHttpResponse(response);
+
+      expect(stored.headers).toContainEqual(["refresh", expected]);
+    }
+  });
+
+  it("link·refresh 의 저장값에 경로 제거를 다시 적용해도 바뀌지 않는다 — 부모의 재검사가 멱등이어야 한다", async () => {
+    const response = new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: {
+        "content-type": "application/json",
+        link: '</a/SECRET>; rel="next"; anchor="#x", <https://o.example.com/b/SECRET>; rel=prev',
+        refresh: "0; url=/c/SECRET",
+      },
+    });
+    Object.defineProperty(response, "url", {
+      value: "https://example.com/x",
+      configurable: true,
+    });
+
+    const stored = await encodeHttpResponse(response);
+    const rechecked = redactStoredOutcome(stored);
+
+    expect(rechecked).toEqual(stored);
+  });
 });
 
 describe("matchKey envelope", () => {
@@ -401,6 +529,32 @@ describe("응답 헤더 마스킹", () => {
     expect(stored.headers).toContainEqual(["www-authenticate", "[redacted]"]);
     // 민감하지 않은 헤더는 그대로 남는다. 전부 지우면 진단이 사라진다.
     expect(stored.headers).toContainEqual(["content-type", "application/json"]);
+  });
+
+  it("전송 표현 헤더는 저장하지 않는다 — 저장된 body 는 이미 풀린 최종 바이트다", async () => {
+    const response = new Response(JSON.stringify({ ok: true }), {
+      headers: {
+        "content-type": "application/json",
+        "content-encoding": "gzip",
+        "transfer-encoding": "chunked",
+        "content-length": "9999",
+        etag: '"keep-me"',
+      },
+    });
+    Object.defineProperty(response, "url", { value: "https://example.com/x", configurable: true });
+
+    const stored = await encodeHttpResponse(response);
+    const names = stored.headers.map(([name]) => name);
+
+    expect(names).not.toContain("content-encoding");
+    expect(names).not.toContain("transfer-encoding");
+    expect(names).not.toContain("content-length");
+    // 복원한 Response 가 평문 body 에 gzip 이라는 헤더를 달고 나가지 않는다.
+    const restored = restoreHttpOutcome(stored);
+    expect(restored.headers.get("content-encoding")).toBeNull();
+    expect(await restored.json()).toEqual({ ok: true });
+    // 전송과 무관한 헤더는 남는다.
+    expect(stored.headers).toContainEqual(["etag", '"keep-me"']);
   });
 });
 

@@ -7,10 +7,15 @@ import {
   type CompleteRecordRequest,
   DEFAULT_COORDINATOR_TIMEOUT_MS,
   HTTP_INTERACTION_SCHEMA_VERSION,
+  type HttpFailureCode,
+  type HttpFailureKind,
+  type HttpFailureName,
   MAX_COORDINATOR_PAYLOAD_BYTES,
   type NormalizedExternalRequest,
   PROTOCOL_SCHEMA_VERSION,
   type StoredExternalOutcome,
+  type StoredHttpResponse,
+  type StoredHttpThrow,
 } from "./protocol.js";
 import {
   redactNormalizedRequest,
@@ -158,13 +163,27 @@ const assertRedacted = (sent: unknown, rechecked: unknown, what: string): void =
  *
  * 원래 오류의 문구는 싣지 않는다. 지금은 전부 고정 문구지만, 재검사가 해석하지 못한 값이
  * 문구에 섞여 들어갈 여지를 남기지 않는다.
+ *
+ * **다만 우리가 의도적으로 거절한 것만 위반으로 다룬다.** 모든 예외를 삼키면 우리 쪽 실패까지
+ * "자식과 부모의 build 가 다르다" 로 단정하게 된다. 예를 들어 `normalizeJson` 은 깊이 상한이
+ * 없어 충분히 깊게 중첩된 **정상** JSON 본문에서 `RangeError` 를 낸다. 그것까지 이 분류에
+ * 실으면 사용자는 아무 문제 없는 build 를 뒤지게 된다 — 원인이 본문 모양인데 진단은 배포
+ * 형상을 가리킨다. 이 PR 이 고친 오진과 같은 종류다.
+ *
+ * 그래서 `ExternalRecordReplayError` 가 아닌 것은 **그대로 올린다.** 위에서 말한 `fail()` 경로는
+ * 전부 `externalError` 라 이 클래스이므로, 원래 잡으려던 것은 그대로 잡힌다. 남은 것(우리
+ * 버그·런타임 한계)은 상위에서 내부 오류로 다뤄지는 편이 정직하다.
+ *
+ * 깊이 상한 자체는 여기서 정하지 않는다. "몇 을 상한으로 할 것인가" 는 순환 참조·sparse array
+ * 처럼 정규화 규칙 목록에 들어갈 판단이라 별도로 다룬다.
  */
 const recheck = <T>(value: T, apply: (value: T) => T, what: string): void => {
   let rechecked: T;
   try {
     rechecked = apply(value);
-  } catch {
-    invariantViolation("unnormalizable-value");
+  } catch (error) {
+    if (!(error instanceof ExternalRecordReplayError)) throw error;
+    invariantViolation(what, "unnormalizable-value");
   }
   assertRedacted(value, rechecked, what);
 };
@@ -204,12 +223,75 @@ const KNOWN_DISPLAY_FIELDS = fieldNames<NormalizedExternalRequest["display"]>({
 });
 
 /**
+ * 저장 outcome 의 알려진 필드. `kind` 별로 다르므로 둘로 나눈다.
+ *
+ * 낯선 필드는 재구성(`redactStoredOutcome`)이 버려서 결국 바이트 비교에 걸리기는 한다. 그런데
+ * 그때 나가는 문장은 **"부모의 재검사가 추가 마스킹을 적용했습니다"** 다 — 민감 값을 놓쳤다는
+ * 뜻이라 사용자는 민감 키 목록 version 을 뒤진다. 원인은 스키마에 없는 필드인데. `display` 쪽
+ * 에서 고친 것과 **같은 오진이 outcome 쪽에만 남아 있었다.** 여기서 먼저 걸러 분류를 맞춘다.
+ */
+const KNOWN_RESPONSE_FIELDS = fieldNames<StoredHttpResponse>({
+  kind: true,
+  status: true,
+  statusText: true,
+  headers: true,
+  url: true,
+  body: true,
+});
+
+/** `code` 는 선택 필드지만 **허용 목록**에는 있어야 한다 — 실려 올 수 있는 값이기 때문이다. */
+const KNOWN_THROW_FIELDS = fieldNames<StoredHttpThrow>({
+  kind: true,
+  failureKind: true,
+  name: true,
+  code: true,
+});
+
+/**
+ * `throw` 결과의 세 필드는 **닫힌 열거형**이다(`protocol.ts`). 저장하는 것이 열거형뿐인 이유가
+ * "값의 집합이 유한하므로 새는 경로가 없다" 인데, 이 관문이 문자열이기만 하면 받아 주면 그
+ * 전제가 여기서 무너진다 — `name` 자리에 URL 을 실어 보내면 `redactStoredOutcome` 이 그대로
+ * 복사해 재검사의 바이트 비교가 통과한다. 집합은 `fieldNames` 와 같은 방식으로 타입에 묶는다.
+ */
+const FAILURE_KINDS = fieldNames<Record<HttpFailureKind, true>>({
+  abort: true,
+  timeout: true,
+  dns: true,
+  connection: true,
+  tls: true,
+  network: true,
+  unknown: true,
+});
+const FAILURE_NAMES = fieldNames<Record<HttpFailureName, true>>({
+  Error: true,
+  TypeError: true,
+  AbortError: true,
+});
+const FAILURE_CODES = fieldNames<Record<HttpFailureCode, true>>({
+  ABORT_ERR: true,
+  CERT_HAS_EXPIRED: true,
+  DEPTH_ZERO_SELF_SIGNED_CERT: true,
+  EAI_AGAIN: true,
+  ECONNREFUSED: true,
+  ECONNRESET: true,
+  ENOTFOUND: true,
+  ERR_TLS_CERT_ALTNAME_INVALID: true,
+  ETIMEDOUT: true,
+  SELF_SIGNED_CERT_IN_CHAIN: true,
+  UNABLE_TO_VERIFY_LEAF_SIGNATURE: true,
+  UND_ERR_CONNECT_TIMEOUT: true,
+});
+
+/**
  * 헤더 이름은 RFC 7230 token 이다 — `/` 나 `:` 가 들어갈 수 없다. 자식의 `normalizedHeaders`
  * 는 Fetch `Headers` 에서 이름을 받으므로 정상 경로에서는 항상 token 이고, 아닌 값이 왔다는
  * 것은 자식이 그 경로를 거치지 않았다는 뜻이다. 이름은 재구성에서 소문자로만 바뀌고 값은
  * 그대로 실리므로, 검사하지 않으면 이름 자리로 경로가 들어온다.
  */
 const HEADER_NAME = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
+
+/** RFC 7230 reason-phrase: HTAB / SP / VCHAR / obs-text. CR·LF 같은 제어문자는 올 수 없다. */
+const REASON_PHRASE = /^[\t \x21-\x7E\x80-\xFF]*$/;
 
 /**
  * 알려진 **필드의 값**까지 검사한다.
@@ -237,6 +319,37 @@ const validDisplay = (display: Record<string, unknown>): boolean => {
   return false;
 };
 
+/**
+ * `response` 결과의 알려진 **필드의 값**을 검사한다. `validDisplay` 와 같은 이유다 —
+ * `redactStoredOutcome` 은 `status`·`statusText` 를 그대로 복사하고 헤더는 이름만 소문자로
+ * 바꾸므로, 값을 보지 않으면 그 자리로 무엇이든 재검사를 통과해 세션에 남는다. `body` 는 wire
+ * 가 JSON 이라 파싱된 시점에 이미 `JsonValue` 다 — `undefined`·함수·순환은 올 수 없다.
+ */
+const validResponse = (outcome: Record<string, unknown>): boolean => {
+  if (!Number.isInteger(outcome.status) || (outcome.status as number) < 100) return false;
+  if ((outcome.status as number) > 599) return false;
+  if (typeof outcome.statusText !== "string" || !REASON_PHRASE.test(outcome.statusText))
+    return false;
+  if (typeof outcome.url !== "string") return false;
+  if (!Array.isArray(outcome.headers)) return false;
+  for (const entry of outcome.headers) {
+    if (!Array.isArray(entry) || entry.length !== 2) return false;
+    const [name, value] = entry as unknown[];
+    if (typeof name !== "string" || !HEADER_NAME.test(name)) return false;
+    if (typeof value !== "string") return false;
+  }
+  return "body" in outcome;
+};
+
+/** `throw` 결과는 세 필드 모두 닫힌 열거형이어야 한다. `code` 는 없거나 목록 안이어야 한다. */
+const validThrow = (outcome: Record<string, unknown>): boolean =>
+  typeof outcome.failureKind === "string" &&
+  FAILURE_KINDS.has(outcome.failureKind) &&
+  typeof outcome.name === "string" &&
+  FAILURE_NAMES.has(outcome.name) &&
+  (outcome.code === undefined ||
+    (typeof outcome.code === "string" && FAILURE_CODES.has(outcome.code)));
+
 type InvariantClassification =
   | "match-field"
   | "unknown-field"
@@ -246,11 +359,17 @@ type InvariantClassification =
 /**
  * 변수에 함수 타입을 명시한다. `const f = (): never => …` 형태만으로는 TS 의 제어 흐름 분석이
  * "이 호출 뒤는 도달하지 않는다" 를 좁혀 주지 않아, 호출한 쪽에서 확정 할당이 깨진다.
+ *
+ * `what` 은 요청·결과 중 어느 쪽이 어긋났는지만 말한다. 위반한 필드의 이름도 값도 싣지 않는
+ * 것은 그대로다 — 둘 다 자식이 만든 값이라 지우려던 경로가 그대로 올 수 있다.
  */
-const invariantViolation: (classification: InvariantClassification) => never = (classification) =>
+const invariantViolation: (what: string, classification: InvariantClassification) => never = (
+  what,
+  classification,
+) =>
   externalError(
     "EXTERNAL_REDACTION_INVARIANT_VIOLATION",
-    `자식이 보낸 외부 요청이 wire 형식을 벗어났습니다(${classification}).\n` +
+    `자식이 보낸 ${what}이 wire 형식을 벗어났습니다(${classification}).\n` +
       "→ 저장하지 않고 세션을 실패로 둡니다. 같은 package/build의 자식과 부모가 다른 " +
       "형식을 쓴 것으로 보입니다.",
   );
@@ -268,9 +387,9 @@ const invariantViolation: (classification: InvariantClassification) => never = (
 const normalizedRequest = (value: unknown): NormalizedExternalRequest => {
   if (!plainObject(value))
     externalError("REQUEST_INVALID", "정규화된 외부 요청 형식이 잘못됐습니다.");
-  if ("match" in value) invariantViolation("match-field");
+  if ("match" in value) invariantViolation("외부 요청", "match-field");
   if (Object.keys(value).some((key) => !KNOWN_REQUEST_FIELDS.has(key)))
-    invariantViolation("unknown-field");
+    invariantViolation("외부 요청", "unknown-field");
   if (
     value.protocol !== "http" ||
     value.interactionSchemaVersion !== HTTP_INTERACTION_SCHEMA_VERSION ||
@@ -280,8 +399,8 @@ const normalizedRequest = (value: unknown): NormalizedExternalRequest => {
     externalError("REQUEST_INVALID", "정규화된 외부 요청 형식이 잘못됐습니다.");
   const display = value.display;
   if (Object.keys(display).some((key) => !KNOWN_DISPLAY_FIELDS.has(key)))
-    invariantViolation("unknown-field");
-  if (!validDisplay(display)) invariantViolation("invalid-value");
+    invariantViolation("외부 요청", "unknown-field");
+  if (!validDisplay(display)) invariantViolation("외부 요청", "invalid-value");
   // 재구성은 알려진 필드만 옮겨 담는다. 위의 거부가 이미 걸렀더라도, 실을 자리를 만들지 않는
   // 것이 "매칭 재료는 저장되지 않는다" 를 형식으로 보장하는 마지막 겹이다.
   const request: NormalizedExternalRequest = {
@@ -299,10 +418,37 @@ const normalizedRequest = (value: unknown): NormalizedExternalRequest => {
   return request;
 };
 
+/**
+ * 요청과 같은 규칙을 결과에도 적용한다(ADR-0053). 낯선 필드는 재구성이 버려서 결국 바이트
+ * 비교에 걸리지만, 그때 나가는 문장이 "민감 값을 놓쳤다" 라 원인을 잘못 가리킨다. 분류를 여기서
+ * 맞춘다 — `display` 쪽에서 이미 고친 오진이 결과 쪽에만 남아 있던 것을 메운다.
+ */
 const storedOutcome = (value: unknown): StoredExternalOutcome => {
   if (!plainObject(value) || (value.kind !== "response" && value.kind !== "throw"))
     externalError("REQUEST_INVALID", "저장할 외부 호출 결과 형식이 잘못됐습니다.");
-  const outcome = value as unknown as StoredExternalOutcome;
+  const known = value.kind === "response" ? KNOWN_RESPONSE_FIELDS : KNOWN_THROW_FIELDS;
+  if (Object.keys(value).some((key) => !known.has(key)))
+    invariantViolation("호출 결과", "unknown-field");
+  const valid = value.kind === "response" ? validResponse(value) : validThrow(value);
+  if (!valid) invariantViolation("호출 결과", "invalid-value");
+  // 요청과 마찬가지로 알려진 필드만 옮겨 담아 재구성한다. 위의 검사가 이미 걸렀더라도 캐스팅한
+  // 원본을 그대로 넘기지 않는 것이 "검증된 값만 저장된다" 를 형식으로 보장하는 마지막 겹이다.
+  const outcome: StoredExternalOutcome =
+    value.kind === "response"
+      ? ({
+          kind: "response",
+          status: value.status,
+          statusText: value.statusText,
+          headers: value.headers,
+          url: value.url,
+          body: value.body,
+        } as unknown as StoredHttpResponse)
+      : ({
+          kind: "throw",
+          failureKind: value.failureKind,
+          name: value.name,
+          ...(value.code === undefined ? {} : { code: value.code }),
+        } as unknown as StoredHttpThrow);
   recheck(outcome, redactStoredOutcome, "호출 결과");
   return outcome;
 };

@@ -381,4 +381,270 @@ describe("불변식 위반 뒤 세션 상태 (ADR-0052)", () => {
     expect(store.read("leak")?.status).toBe("failed");
     expect(store.read("leak")?.interactions[0]?.status).toBe("incomplete");
   });
+
+  /**
+   * `throw` 갈래의 회귀 스펙이다.
+   *
+   * `redactStoredOutcome` 이 response 가 아닌 값을 **입력 그대로** 돌려주던 때, 재검사의 바이트
+   * 비교가 같은 참조끼리 비교하는 항등식이 되어 아무것도 걸러내지 못했다. 그래서 자식이 실어
+   * 보낸 낯선 필드가 검증 없이 그대로 저장됐다 — 지우려던 경로를 담아도 통과했다.
+   *
+   * response 갈래는 처음부터 알려진 필드로 재구성했기 때문에 같은 값을 실어도 걸렸다. 구멍은
+   * "재구성이 한쪽에만 있었다" 는 것 하나였고, 그래서 고친 것도 재구성을 양쪽에 두는 것이다.
+   */
+  it("throw outcome 에 실린 낯선 필드도 거부한다 — 재구성이 없으면 재검사가 항등식이 된다", async () => {
+    const store = createMemorySessionStore();
+    const handle = await startExternalCoordinator({
+      mode: "record",
+      sessionId: "throwleak",
+      store,
+    });
+    handles.push(handle);
+    const auth = {
+      authorization: `Bearer ${handle.childEnvironment.MCPEAK_EXTERNAL_COORDINATOR_TOKEN}`,
+      "content-type": "application/json",
+    };
+
+    const began = await fetch(`${handle.url}/begin`, {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ schemaVersion: 1, request: clean }),
+    });
+    expect(began.status).toBe(200);
+    const { reservation } = (await began.json()) as { reservation: { interactionId: string } };
+
+    const leaky = await fetch(`${handle.url}/complete`, {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        schemaVersion: 1,
+        interactionId: reservation.interactionId,
+        outcome: {
+          kind: "throw",
+          failureKind: "network",
+          name: "TypeError",
+          // 스키마에 없는 필드. 경로가 든 URL 을 실어 보낸다.
+          leaked: "https://hooks.slack.com/services/T00/B00/XXXXSECRET",
+        },
+      }),
+    });
+
+    const leakyBody = await leaky.text();
+    expect(leaky.status).toBe(400);
+    expect(leakyBody).toContain("EXTERNAL_REDACTION_INVARIANT_VIOLATION");
+    // 분류가 원인을 가리켜야 한다. 재구성이 낯선 필드를 버려 바이트 비교에 걸리기는 하지만,
+    // 그 경로로만 잡히면 "민감 값을 놓쳤다" 로 나가 사용자가 민감 키 목록 version 을 뒤진다.
+    expect(leakyBody).toContain("unknown-field");
+    expect(leakyBody).not.toContain("추가 마스킹");
+    expect(leakyBody).not.toContain("SECRET");
+    expect(store.read("throwleak")?.status).toBe("failed");
+    // 저장까지 갔는지가 이 스펙의 요점이다. 상호작용이 완료로 남으면 그 안에 경로가 있다.
+    expect(store.read("throwleak")?.interactions[0]?.status).toBe("incomplete");
+  });
+
+  /**
+   * `response` 갈래도 같은 분류를 받아야 한다.
+   *
+   * 이쪽은 처음부터 재구성이 있어 낯선 필드가 **잡히기는** 했다. 다만 잡히는 경로가 바이트
+   * 비교뿐이라 진단이 "부모의 재검사가 추가 마스킹을 적용했습니다" 로 나갔다 — 원인은 스키마에
+   * 없는 필드인데 민감 키 목록을 가리킨다. `display` 쪽에서 고친 오진이 결과 쪽에만 남아 있었다.
+   */
+  it("response outcome 의 낯선 필드도 unknown-field 로 분류한다 — 잡히는 것과 원인을 말하는 것은 다르다", async () => {
+    const store = createMemorySessionStore();
+    const handle = await startExternalCoordinator({ mode: "record", sessionId: "resleak", store });
+    handles.push(handle);
+    const auth = {
+      authorization: `Bearer ${handle.childEnvironment.MCPEAK_EXTERNAL_COORDINATOR_TOKEN}`,
+      "content-type": "application/json",
+    };
+
+    const began = await fetch(`${handle.url}/begin`, {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ schemaVersion: 1, request: clean }),
+    });
+    const { reservation } = (await began.json()) as { reservation: { interactionId: string } };
+
+    const leaky = await fetch(`${handle.url}/complete`, {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        schemaVersion: 1,
+        interactionId: reservation.interactionId,
+        outcome: {
+          kind: "response",
+          status: 200,
+          statusText: "OK",
+          headers: [],
+          url: "https://example.com/<redacted>",
+          body: { ok: true },
+          leaked: "https://hooks.slack.com/services/T00/B00/XXXXSECRET",
+        },
+      }),
+    });
+    const body = await leaky.text();
+
+    expect(leaky.status).toBe(400);
+    expect(body).toContain("EXTERNAL_REDACTION_INVARIANT_VIOLATION");
+    expect(body).toContain("unknown-field");
+    expect(body).not.toContain("추가 마스킹");
+    expect(body).not.toContain("SECRET");
+    expect(store.read("resleak")?.status).toBe("failed");
+  });
+
+  /**
+   * 필드 이름만 막으면 절반이다. `redactStoredOutcome` 은 `status`·`statusText` 를 그대로
+   * 복사하므로 형태가 틀린 값도 재검사의 바이트 비교를 통과한다 — 값까지 봐야 한다.
+   */
+  it("response outcome 의 알려진 필드에 실린 잘못된 값을 invalid-value 로 거부한다", async () => {
+    const store = createMemorySessionStore();
+    const handle = await startExternalCoordinator({ mode: "record", sessionId: "resval", store });
+    handles.push(handle);
+    const auth = {
+      authorization: `Bearer ${handle.childEnvironment.MCPEAK_EXTERNAL_COORDINATOR_TOKEN}`,
+      "content-type": "application/json",
+    };
+
+    const began = await fetch(`${handle.url}/begin`, {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ schemaVersion: 1, request: clean }),
+    });
+    const { reservation } = (await began.json()) as { reservation: { interactionId: string } };
+
+    const leaky = await fetch(`${handle.url}/complete`, {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        schemaVersion: 1,
+        interactionId: reservation.interactionId,
+        outcome: {
+          kind: "response",
+          status: "200",
+          statusText: "OK\r\nX-Leak: https://hooks.slack.com/services/T00/B00/XXXXSECRET",
+          headers: [],
+          url: "https://example.com/<redacted>",
+          body: { ok: true },
+        },
+      }),
+    });
+    const body = await leaky.text();
+
+    expect(leaky.status).toBe(400);
+    expect(body).toContain("EXTERNAL_REDACTION_INVARIANT_VIOLATION");
+    expect(body).toContain("invalid-value");
+    expect(body).not.toContain("SECRET");
+    expect(store.read("resval")?.status).toBe("failed");
+  });
+
+  it("response outcome 의 헤더 이름이 token 이 아니면 invalid-value 로 거부한다", async () => {
+    const store = createMemorySessionStore();
+    const handle = await startExternalCoordinator({ mode: "record", sessionId: "reshdr", store });
+    handles.push(handle);
+    const auth = {
+      authorization: `Bearer ${handle.childEnvironment.MCPEAK_EXTERNAL_COORDINATOR_TOKEN}`,
+      "content-type": "application/json",
+    };
+
+    const began = await fetch(`${handle.url}/begin`, {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ schemaVersion: 1, request: clean }),
+    });
+    const { reservation } = (await began.json()) as { reservation: { interactionId: string } };
+
+    const leaky = await fetch(`${handle.url}/complete`, {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        schemaVersion: 1,
+        interactionId: reservation.interactionId,
+        outcome: {
+          kind: "response",
+          status: 200,
+          statusText: "OK",
+          headers: [["/services/T00/B00/XXXXSECRET", "1"]],
+          url: "https://example.com/<redacted>",
+          body: null,
+        },
+      }),
+    });
+    const body = await leaky.text();
+
+    expect(leaky.status).toBe(400);
+    expect(body).toContain("invalid-value");
+    expect(body).not.toContain("SECRET");
+    expect(store.read("reshdr")?.status).toBe("failed");
+  });
+
+  /** `throw` 의 세 필드는 닫힌 열거형이다. 열거형 밖의 문자열은 자유 텍스트이고, 자유 텍스트는 저장하지 않는다. */
+  it("throw outcome 의 열거형 밖 값을 invalid-value 로 거부한다", async () => {
+    const store = createMemorySessionStore();
+    const handle = await startExternalCoordinator({ mode: "record", sessionId: "throwval", store });
+    handles.push(handle);
+    const auth = {
+      authorization: `Bearer ${handle.childEnvironment.MCPEAK_EXTERNAL_COORDINATOR_TOKEN}`,
+      "content-type": "application/json",
+    };
+
+    const began = await fetch(`${handle.url}/begin`, {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ schemaVersion: 1, request: clean }),
+    });
+    const { reservation } = (await began.json()) as { reservation: { interactionId: string } };
+
+    const leaky = await fetch(`${handle.url}/complete`, {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        schemaVersion: 1,
+        interactionId: reservation.interactionId,
+        outcome: {
+          kind: "throw",
+          failureKind: "network",
+          name: "https://hooks.slack.com/services/T00/B00/XXXXSECRET",
+        },
+      }),
+    });
+    const body = await leaky.text();
+
+    expect(leaky.status).toBe(400);
+    expect(body).toContain("EXTERNAL_REDACTION_INVARIANT_VIOLATION");
+    expect(body).toContain("invalid-value");
+    expect(body).not.toContain("SECRET");
+    expect(store.read("throwval")?.status).toBe("failed");
+  });
+
+  /** 정상적인 `throw` 는 그대로 통과해야 한다. 재구성이 멀쩡한 값을 바꾸면 전부 실패한다. */
+  it("알려진 필드만 담은 throw outcome 은 통과한다", async () => {
+    const store = createMemorySessionStore();
+    const handle = await startExternalCoordinator({ mode: "record", sessionId: "throwok", store });
+    handles.push(handle);
+    const auth = {
+      authorization: `Bearer ${handle.childEnvironment.MCPEAK_EXTERNAL_COORDINATOR_TOKEN}`,
+      "content-type": "application/json",
+    };
+
+    const began = await fetch(`${handle.url}/begin`, {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ schemaVersion: 1, request: clean }),
+    });
+    const { reservation } = (await began.json()) as { reservation: { interactionId: string } };
+
+    // `code` 는 선택 필드다. 없는 경우가 재구성에서 `null` 로 새로 생기면 비교가 어긋난다.
+    const done = await fetch(`${handle.url}/complete`, {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        schemaVersion: 1,
+        interactionId: reservation.interactionId,
+        outcome: { kind: "throw", failureKind: "network", name: "TypeError" },
+      }),
+    });
+
+    expect(done.status).toBe(200);
+    expect(store.read("throwok")?.interactions[0]?.status).toBe("complete");
+  });
 });

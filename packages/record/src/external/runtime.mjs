@@ -201,8 +201,6 @@ const normalizedHeaders = (headers) => {
   return { match, display };
 };
 
-export const cloneHttpMatch = (value) => normalizeJson(value, false);
-
 /**
  * matchKey 는 정규화한 `match` 를 그대로 해싱하지 않고 **envelope 로 감싸서** 해싱한다
  * (ADR-0053 `HttpMatchKeyEnvelopeV1`).

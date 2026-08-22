@@ -52,7 +52,7 @@ export const MCP_CLIENT_ERROR_DETAILS: Readonly<Record<McpClientErrorCode, Error
     PROCESS_EXITED: {
       phase: "process",
       message: "요청 완료 전 MCP 서버가 종료되었습니다.",
-      hint: "exit code, signal, bounded stderr를 확인하세요.",
+      hint: "서버 stderr에 나온 오류를 수정한 뒤 다시 실행하세요.",
     },
     TRANSPORT_FAILED: {
       phase: "transport",

@@ -70,6 +70,13 @@ describe("McpClientError", () => {
     });
     expect(JSON.stringify(error)).not.toContain("secret");
   });
+
+  it("PROCESS_EXITED hint는 이미 출력된 진단 확인이 아니라 수정 행동을 안내한다", () => {
+    const hint = MCP_CLIENT_ERROR_DETAILS.PROCESS_EXITED.hint;
+
+    expect(hint).toBe("서버 stderr에 나온 오류를 수정한 뒤 다시 실행하세요.");
+    expect(hint).not.toContain("exit code, signal, bounded stderr를 확인하세요.");
+  });
 });
 
 describe("HTTP 오류 code", () => {

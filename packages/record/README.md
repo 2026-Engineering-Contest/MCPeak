@@ -1,7 +1,9 @@
 # @mcpeak/record
 
 MCP 클라이언트를 카세트로 감싸 녹화·재생하고, 테스트 대상 서버가 **밖으로 부르는 HTTP 호출**을
-External 세션으로 녹화·재생하며, 값이 프로세스 밖으로 나가는 경계에서 비밀값을 제거한다.
+External 세션으로 녹화·재생하며, **이름으로 판정 가능한** 비밀값을 프로세스 밖으로 나가는
+경계에서 제거한다 — URL 경로는 이 판정에 안 걸려 External 세션에는 아직 원문으로 남는다
+([자세히](#external-세션의-url-경로는-아직-저장된다)).
 
 - **오너:** `@ddxng5` (② replay/record 파트)
 - **의존:** `@mcpeak/core`
@@ -229,7 +231,9 @@ CLI 는 `mcpeak verify <cassette.json> --command <executable>` 로 감싼다.
 
 ### CLI 로 쓰기
 
-세션 파일 하나가 세션 하나다. 왕복 예제는 [루트 README](../../README.md#외부-api-를-부르는-서버).
+**CLI 에서는** 세션 파일 하나가 세션 하나다 — `sessionId` 를 고정값 `"default"` 로 쓴다. Store
+자체는 `sessionId` 로 세션을 구분하므로 한 SQLite 파일에 여러 세션을 담을 수 있다(아래 라이브러리
+예제 참고). 왕복 예제는 [루트 README](../../README.md#외부-api-를-부르는-서버).
 
 ```bash
 mcpeak test suite.json --command node --arg ./server.js --record-session weather.session.db
@@ -251,13 +255,20 @@ const handle = await startExternalCoordinator({
   store,
 });
 
+let status: "completed" | "failed" = "completed";
 try {
   // handle.childEnvironment 를 그대로 자식 프로세스의 env 에 실어 띄운다.
   await runServerWith(handle.childEnvironment);
+} catch (error) {
+  status = "failed";
+  throw error;
 } finally {
-  const summary = await handle.finish("completed");
-  console.log(summary.interactionCount);
-  store.close();
+  try {
+    const summary = await handle.finish(status);
+    console.log(summary.interactionCount);
+  } finally {
+    store.close();
+  }
 }
 ```
 

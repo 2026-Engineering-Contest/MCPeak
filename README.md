@@ -156,9 +156,10 @@ mcpeak test weather.suite.json --command node --arg ./server.js \
 지금 함께 언급하는 이유는 [`record` 패키지 문서](./packages/record#tool-카세트와-다른-점)에 있습니다.
 
 **잡는 범위는 서버가 `globalThis.fetch` 로 부른 호출입니다.** `node:http`·`node:https`, 그리고
-그것을 직접 쓰는 axios·got·node-fetch 로 부르는 서버는 범위 밖이라 **재생되지 않고 실제
-네트워크로 나갑니다.** 그럴 정황이 보이면 — 녹화가 0건이거나 재생이 0건이면 — 실행이 끝날 때
-알려줍니다.
+그것을 직접 쓰는 axios·got·node-fetch 로 부르는 서버는 범위 밖입니다. Node 가 아닌 서버(Python·
+Go 등)도 범위 밖입니다 — 주입이 Node 의 `--import` 훅이라 애초에 닿지 않습니다. 범위 밖 호출은
+**재생되지 않고 실제 네트워크로 나갑니다.** 그럴 정황이 보이면 — 녹화가 0건이거나 재생이 0건이면
+— 실행이 끝날 때 알려줍니다.
 
 ```
 알림: 이 실행에서 외부 호출이 하나도 녹화되지 않았습니다.

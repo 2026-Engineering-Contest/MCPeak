@@ -89,6 +89,30 @@ describe("mcpeak cli", () => {
     }
   });
 
+  /**
+   * 제거된 명령의 **도움말을 물어도** 마이그레이션 안내가 나와야 한다. `help <명령>` 은
+   * 위 도움말 분기가 목록에 없는 이름을 그냥 흘려보내서, 뒤에서 `argv[0]` 인 `"help"` 를
+   * 알 수 없는 명령으로 지목했다 — 사용자가 묻지도 않은 이름을 탓하는 실패 메시지다.
+   * (`replay --help` 형태는 fall-through 가 이미 안내로 보내고 있었다. 함께 고정해 둔다.)
+   */
+  it.each([[["help", "replay"]], [["replay", "--help"]], [["help", "verify"]]])(
+    "%j 도 제거 안내를 stderr 에 쓴다(ADR-0059)",
+    async (argv) => {
+      const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+      const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+      try {
+        await expect(run(argv)).resolves.toBe(1);
+        const output = stderr.mock.calls.map(([text]) => String(text)).join("");
+        expect(output).toContain("제거되었습니다");
+        expect(output).toContain("ADR-0059");
+        expect(output).not.toContain("알 수 없는 CLI 명령");
+      } finally {
+        stdout.mockRestore();
+        stderr.mockRestore();
+      }
+    },
+  );
+
   it("--version 은 CLI package.json 버전을 stdout 에 쓴다", async () => {
     const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);

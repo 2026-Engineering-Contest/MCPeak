@@ -80,6 +80,11 @@ export async function run(argv: string[]): Promise<number> {
   }
   if (argv.length === 2) {
     const command = argv[0] === "help" ? argv[1] : argv[1] === "--help" ? argv[0] : undefined;
+    // 제거된 명령은 도움말을 물어도 마이그레이션 안내로 답한다(ADR-0059). 여기서 흘려보내면
+    // `mcpeak help replay` 가 뒤에서 `argv[0]` 인 `"help"` 를 알 수 없는 명령으로 지목한다 —
+    // 사용자가 묻지도 않은 이름을 탓하는 실패 메시지가 된다. 안내 문구의 정본은 `runCli` 다.
+    if (command === "replay" || command === "verify")
+      return runCli([command], unavailableDependencies);
     if (command === "test" || command === "generate" || command === "repair") {
       process.stdout.write(commandHelp(command));
       return 0;

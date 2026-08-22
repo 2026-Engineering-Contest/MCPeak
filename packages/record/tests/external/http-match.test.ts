@@ -402,6 +402,32 @@ describe("응답 헤더 마스킹", () => {
     // 민감하지 않은 헤더는 그대로 남는다. 전부 지우면 진단이 사라진다.
     expect(stored.headers).toContainEqual(["content-type", "application/json"]);
   });
+
+  it("전송 표현 헤더는 저장하지 않는다 — 저장된 body 는 이미 풀린 최종 바이트다", async () => {
+    const response = new Response(JSON.stringify({ ok: true }), {
+      headers: {
+        "content-type": "application/json",
+        "content-encoding": "gzip",
+        "transfer-encoding": "chunked",
+        "content-length": "9999",
+        etag: '"keep-me"',
+      },
+    });
+    Object.defineProperty(response, "url", { value: "https://example.com/x", configurable: true });
+
+    const stored = await encodeHttpResponse(response);
+    const names = stored.headers.map(([name]) => name);
+
+    expect(names).not.toContain("content-encoding");
+    expect(names).not.toContain("transfer-encoding");
+    expect(names).not.toContain("content-length");
+    // 복원한 Response 가 평문 body 에 gzip 이라는 헤더를 달고 나가지 않는다.
+    const restored = restoreHttpOutcome(stored);
+    expect(restored.headers.get("content-encoding")).toBeNull();
+    expect(await restored.json()).toEqual({ ok: true });
+    // 전송과 무관한 헤더는 남는다.
+    expect(stored.headers).toContainEqual(["etag", '"keep-me"']);
+  });
 });
 
 describe("Coordinator payload 상한", () => {

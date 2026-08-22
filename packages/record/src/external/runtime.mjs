@@ -281,6 +281,15 @@ const REDIRECT_STATUS = new Set([301, 302, 303, 307, 308]);
 const URL_PATH_HEADER_NAMES = new Set(["location", "content-location"]);
 
 /**
+ * **전송 표현**을 설명하는 헤더라 저장하지 않는다. `fetch` 가 돌려준 body 는 이미 압축이 풀리고
+ * chunk 가 합쳐진 **최종 바이트**인데, 헤더는 원래 전송 형태(`content-encoding: gzip`,
+ * `transfer-encoding: chunked`, 원문 길이)를 가리킨다. 그대로 저장하면 Replay 의
+ * `restoreHttpOutcome` 이 평문 body 에 "gzip 이다" 라는 헤더를 붙여 돌려주고, 헤더를 읽는
+ * 서버 코드는 녹화 때와 다른 응답을 본다. 저장본이 설명하는 것은 저장된 body 여야 한다.
+ */
+const TRANSPORT_HEADER_NAMES = new Set(["content-length", "content-encoding", "transfer-encoding"]);
+
+/**
  * `location`·`content-location` 은 RFC 9110 상 상대 참조일 수 있다(`Location: /hooks/SECRET`).
  * 거부하지 않고 **응답 URL 을 기준으로 절대 URL 로 해석한 뒤** 같은 경로 제거 규칙을 적용한다
  * — 거부하면 상대 `Location` 을 쓰는 정상적인 생성 응답이 통째로 실패한다(ADR-0053).
@@ -310,7 +319,7 @@ const storedResponseHeaders = (headers, baseUrl) => {
   const result = [];
   for (const [rawName, rawValue] of headers.entries()) {
     const name = rawName.toLowerCase();
-    if (name === "content-length") continue;
+    if (TRANSPORT_HEADER_NAMES.has(name)) continue;
     if (URL_PATH_HEADER_NAMES.has(name)) {
       result.push([name, pathRedactedHeaderUrl(rawValue, baseUrl)]);
       continue;

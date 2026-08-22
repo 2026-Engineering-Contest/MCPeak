@@ -1,9 +1,17 @@
-import {
-  createSqliteSessionStore,
-  type ExternalCoordinatorHandle,
-  type SessionSummary,
-  startExternalCoordinator,
-} from "@mcpeak/record/external";
+import type { ExternalCoordinatorHandle, SessionSummary } from "@mcpeak/record/external";
+
+/**
+ * `@mcpeak/record/external` 은 **세션 옵션을 실제로 쓸 때만** 불러온다.
+ *
+ * 정적 import 로 두면 `node:sqlite` 가 CLI 를 띄우는 것만으로 로드되고, Node 22.x 는 그때
+ * `ExperimentalWarning: SQLite is an experimental feature` 를 stderr 에 찍는다. 세션을 쓰지도
+ * 않은 `mcpeak test` 실행마다 그 줄이 붙는다 — 터미널 출력이 곧 UI 인 도구에서 그냥 손해다.
+ * (실제로 `dist-cli-e2e` 의 "stderr 가 비어 있다" 단언이 이걸 잡았다.)
+ *
+ * 지연 로딩이면 경고를 보는 사람은 External 을 직접 켠 사용자뿐이다. 그 경고를 아예 지울지는
+ * ADR-0054 가 남겨 둔 별도 결정이며, 라이브러리가 아니라 CLI 가 정할 몫이다.
+ */
+const loadExternal = () => import("@mcpeak/record/external");
 
 /**
  * 시험 실행에 External Record/Replay 를 배선한다.
@@ -45,6 +53,7 @@ export interface ExternalWiring {
 const SESSION_ID = "default";
 
 export async function startExternalWiring(options: ExternalWiringOptions): Promise<ExternalWiring> {
+  const { createSqliteSessionStore, startExternalCoordinator } = await loadExternal();
   const store = createSqliteSessionStore({ path: options.sessionPath });
 
   let handle: ExternalCoordinatorHandle;

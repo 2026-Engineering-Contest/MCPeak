@@ -76,12 +76,16 @@ export function createReplayEngine(options: {
       if (interaction?.outcome === undefined) {
         // `display` 는 마스킹된 쪽이라 그대로 보여도 안전하다(ADR-0053). matchKey 는 앞
         // 12자만 — 전체는 64자라 한 줄을 삼키는데, 세션 안에서 구분하기에는 이만큼이면 된다.
-        misses.push({
-          method: request.display.method,
-          url: request.display.url,
-          occurrence,
-          matchKeyPrefix: request.matchKey.slice(0, 12),
-        });
+        // 만든 자리에서 바로 얼린다 — 소비자가 `summary.misses[0].url` 을 고치면 같은 참조인
+        // 내부 `misses` 도 함께 바뀌어 이후 조회가 오염된 값을 돌려준다.
+        misses.push(
+          Object.freeze({
+            method: request.display.method,
+            url: request.display.url,
+            occurrence,
+            matchKeyPrefix: request.matchKey.slice(0, 12),
+          }),
+        );
         // 어떤 호출이 빠졌는지 말하지 않으면 사용자는 서버 코드를 뒤져 가며 짐작해야 한다.
         // 이 메시지는 MCP 오류로 나가 테스트 대상 서버가 relay 하는 방식에 달렸으므로,
         // 위 `misses` 가 진단의 정본이고 이 문구는 그 채널이 살아있을 때의 보너스일 뿐이다.

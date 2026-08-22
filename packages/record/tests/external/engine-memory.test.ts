@@ -155,4 +155,22 @@ describe("REPLAY_MISS 진단", () => {
       },
     ]);
   });
+
+  it("miss 원소를 소비자가 고쳐도 저장된 값은 오염되지 않는다", () => {
+    const store = createMemorySessionStore();
+    store.createSession("s3");
+    store.finish("s3", "completed");
+
+    const replay = createReplayEngine({ sourceSessionId: "s3", store });
+    expect(() => replay.lookup(request("never-recorded"))).toThrowError(
+      expect.objectContaining({ code: "REPLAY_MISS" }),
+    );
+
+    const first = replay.finish("completed");
+    expect(() => {
+      // biome-ignore lint/suspicious/noExplicitAny: 얼려진 객체를 강제로 고쳐 보는 테스트다.
+      (first.misses[0] as any).url = "https://tampered.example";
+    }).toThrow(TypeError);
+    expect(replay.finish("completed").misses[0]?.url).toBe("https://example.com/never-recorded");
+  });
 });

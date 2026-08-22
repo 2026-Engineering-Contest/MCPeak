@@ -4,7 +4,11 @@
 ---
 
 record: 재생 원본에서 찾지 못한 외부 호출을 `finish()` 요약의 `misses` 목록에 구조화해 담습니다.
-`ReplayMissDetail`(`method`·`url`·`occurrence`·`matchKeyPrefix`)이 새로 공개됩니다.
+새 타입 `ReplayMissDetail`(`method`·`url`·`occurrence`·`matchKeyPrefix`)이 공개됩니다.
+
+**Breaking**: `ReplaySessionSummary` 에 필수 필드 `misses` 가 추가됩니다. `SessionSummary` 를
+직접 구성하던 TypeScript 소비자(테스트 목·모킹 등)는 그 필드를 채워야 컴파일됩니다. `0.x` 이므로
+minor 로 릴리스합니다(CONTRIBUTING §7 버전 — 마감 전까지 breaking change 허용, CHANGELOG 필수).
 
 cli: `test --session` 이 녹화에 없는 호출을 만나면, 그 진단을 `record` 의 `misses` 로부터
 읽어 stderr 에 별도 블록으로 그대로 보여줍니다. 이전에는 이 진단이 MCP 오류 채널을 타고

@@ -87,44 +87,11 @@ replay 는 MCP 서버를 실행하지 않고 카세트에 녹화된 응답만 �
 카세트는 저장할 때 \`token\`·\`apiKey\` 같은 이름의 값을 가립니다. 그 자리의 판정은 실제 서버와
 다를 수 있어 재생 시 경고합니다.`;
 
-export const VERIFY_USAGE =
-  "사용법: mcpeak verify <cassette.json> --command <executable> [--arg <value> ...]";
-
-/**
- * `verify` 가 무엇을 **하지 않는지**가 이 명령의 핵심이다. 서버를 부르지만 카세트를 고치지
- * 않는다. `--record` 와 헷갈리면 사용자는 지우려던 적이 없는 파일을 지운다.
- *
- * 다만 "읽기 전용" 을 그 한 마디로 끝내면 안 된다. 읽기 전용인 것은 **카세트 파일**이고,
- * 서버 쪽으로는 녹화된 요청을 전부 다시 부른다. 메일 발송·결제·파일 쓰기 툴이 카세트에
- * 들어 있으면 그 부작용이 실제로 다시 일어난다. `--determinism` 이 툴을 2회 부른다는
- * 경고와 같은 성격이라 같은 자리에 적는다.
- */
-const VERIFY_OPTIONS = `옵션:
-  --command <executable>  MCP 서버 실행 파일입니다. 필수입니다.
-  --arg <value>           서버에 넘길 인자입니다. 여러 번 쓸 수 있습니다.
-
-verify 는 카세트에 녹화된 요청을 실서버에 다시 보내 응답이 아직 같은지 확인합니다.
-**카세트를 고치지도 저장하지도 않습니다.**
-
-읽기 전용인 것은 카세트 파일입니다. 서버 쪽은 녹화된 요청을 **전부 다시 호출**하므로,
-메일 발송·결제·파일 쓰기 같은 툴이 카세트에 있으면 그 부작용이 실제로 다시 일어납니다.
-부작용이 있는 서버에서는 샌드박스에서 쓰세요.
-
-auto 모드(\`--record\` 없는 실행)는 카세트에 있는 요청이면 서버를 부르지 않으므로, 서버
-응답이 바뀌어도 알아채지 못합니다. 이 명령이 그 드리프트를 확인하는 비파괴 경로입니다.
-
-카세트는 저장할 때 \`token\`·\`apiKey\` 같은 이름의 값을 가립니다. 그 값이 **요청 인자**에
-있었다면 원래 요청을 복원할 수 없어 "확인불가" 로 보고합니다. 응답 쪽 비밀값은 양쪽 모두
-마스킹해 비교하므로, 비밀값 자체만 바뀐 경우는 감지되지 않습니다.
-
-불일치나 호출 실패가 하나라도 있으면 종료 코드 1 입니다. 확인불가는 실패로 보지 않습니다.`;
-
 const COMMANDS = `명령:
   test      JSON 테스트 명세로 MCP 서버를 실행하고 검증합니다.
   generate  MCP 서버의 툴 스키마에서 테스트 명세를 생성합니다.
   repair    실패한 test 실행의 번들로 서버 코드의 원인 후보를 제안받습니다.
-  replay    녹화된 카세트로 서버 없이 테스트 명세를 재생합니다.
-  verify    카세트가 아직 실서버 응답과 맞는지 확인합니다 (카세트를 고치지 않음).`;
+  replay    녹화된 카세트로 서버 없이 테스트 명세를 재생합니다.`;
 
 export const GLOBAL_HELP = `MCPeak — MCP 서버 테스트 프레임워크
 
@@ -143,7 +110,7 @@ ${COMMANDS}
 `;
 
 const commandDiscovery =
-  "사용 가능한 명령: test, generate, repair, replay, verify. 전체 도움말: mcpeak --help";
+  "사용 가능한 명령: test, generate, repair, replay. 전체 도움말: mcpeak --help";
 
 export const TEST_USAGE_HINT = `${TEST_USAGE} ${commandDiscovery}`;
 
@@ -153,16 +120,7 @@ export const REPAIR_USAGE_HINT = `${REPAIR_USAGE} ${commandDiscovery}`;
 
 export const REPLAY_USAGE_HINT = `${REPLAY_USAGE} ${commandDiscovery}`;
 
-export const VERIFY_USAGE_HINT = `${VERIFY_USAGE} ${commandDiscovery}`;
-
-export function commandHelp(command: "test" | "generate" | "repair" | "replay" | "verify"): string {
-  if (command === "verify")
-    return `verify — 카세트가 아직 실서버 응답과 맞는지 확인합니다.
-
-${VERIFY_USAGE}
-
-${VERIFY_OPTIONS}
-`;
+export function commandHelp(command: "test" | "generate" | "repair" | "replay"): string {
   if (command === "test")
     return `test — JSON 테스트 명세로 MCP 서버를 실행하고 검증합니다.
 

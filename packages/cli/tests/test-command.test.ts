@@ -345,6 +345,21 @@ describe("runCli", () => {
     expect(unknown.writes.err.join("")).toContain("\\u000a");
     expect(unknown.writes.err.join("")).toContain("\\u001b");
   });
+  it("제거된 verify 는 오타가 아니라 제거됐다고 말하고 갈아탈 곳을 알려준다(ADR-0059)", async () => {
+    // 발행본 0.9.0 에 나갔던 명령이다. "알 수 없는 명령" 으로 끝내면 오타와 구분되지 않아,
+    // 스크립트가 깨진 사용자가 무엇을 고쳐야 하는지 알 수 없다.
+    const d = deps();
+
+    expect(await runCli(["verify", "c.json", "--command", "node"], d.value)).toBe(1);
+
+    const err = d.writes.err.join("");
+    expect(err).toContain("제거되었습니다");
+    expect(err).toContain("ADR-0059");
+    // 갈아탈 곳 둘 — 목적에 따라 갈린다.
+    expect(err).toContain("mcpeak test");
+    expect(err).toContain("--record-session");
+    expect(err).not.toContain("알 수 없는 CLI 명령");
+  });
   it("C1 제어 문자도 이스케이프한다", async () => {
     // U+009B 는 8비트 CSI 다. 렌더러의 escapeTerminalText 와 같은 범위를 막아야 한다.
     const d = deps();

@@ -593,14 +593,24 @@ async function runCliCore(
       hint: TEST_USAGE_HINT,
     });
   if (argv[0] !== "test") {
+    // 발행본(cli 0.9.0)에 나갔던 명령이라 "알 수 없는 명령" 으로 끝내면 오타와 구분되지
+    // 않는다. 무엇이 사라졌고 무엇으로 갈아타는지 말한다(ADR-0059 §결정 4 마이그레이션 안내).
+    if (argv[0] === "verify")
+      return writeFailure(dependencies, {
+        code: "CLI_USAGE",
+        message: "`mcpeak verify` 는 제거되었습니다. Tool 카세트와 함께 걷어냅니다(ADR-0059).",
+        hint:
+          "카세트 드리프트 확인이 목적이었다면 `mcpeak test` 로 실서버를 직접 검증하세요. " +
+          "외부 API 호출을 막는 것이 목적이었다면 `mcpeak test --record-session` 과 `--session` 을 쓰세요.",
+      });
     // replay 는 index.ts 가 가로챈다. 여기 남겨 두면 구현된 명령을 미구현이라고 말하게 된다.
     if (["generate", "record", "mock"].includes(argv[0] ?? ""))
       return writeFailure(dependencies, {
         code: "COMMAND_NOT_IMPLEMENTED",
         message: `'${argv[0]}' 명령은 아직 구현되지 않았습니다.`,
-        // "test 명령만" 이라고 적어 두면 틀린 안내다. generate·replay·verify 는 index.ts 가
+        // "test 명령만" 이라고 적어 두면 틀린 안내다. generate·replay 는 index.ts 가
         // 가로채 실제로 동작한다. 여기 걸리는 것은 진입점이 없는 이름뿐이다.
-        hint: "사용 가능한 명령: test, generate, repair, replay, verify. 전체 도움말: mcpeak --help",
+        hint: "사용 가능한 명령: test, generate, repair, replay. 전체 도움말: mcpeak --help",
       });
     return writeFailure(dependencies, {
       code: "CLI_USAGE",

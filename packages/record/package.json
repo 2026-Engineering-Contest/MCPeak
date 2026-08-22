@@ -28,6 +28,16 @@
         "types": "./dist/index.d.cts",
         "default": "./dist/index.cjs"
       }
+    },
+    "./external": {
+      "import": {
+        "types": "./dist/external/index.d.mts",
+        "default": "./dist/external/index.mjs"
+      },
+      "require": {
+        "types": "./dist/external/index.d.cts",
+        "default": "./dist/external/index.cjs"
+      }
     }
   },
   "main": "./dist/index.cjs",
@@ -38,7 +48,8 @@
   ],
   "scripts": {
     "build": "tsdown --config-loader native",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:e2e": "node tests/dist-external-e2e.mjs"
   },
   "dependencies": {
     "@mcpeak/core": "workspace:*"

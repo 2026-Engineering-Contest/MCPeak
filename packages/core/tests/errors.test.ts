@@ -71,11 +71,35 @@ describe("McpClientError", () => {
     expect(JSON.stringify(error)).not.toContain("secret");
   });
 
-  it("PROCESS_EXITED hint는 이미 출력된 진단 확인이 아니라 수정 행동을 안내한다", () => {
-    const hint = MCP_CLIENT_ERROR_DETAILS.PROCESS_EXITED.hint;
+  it("PROCESS_EXITED hint는 stderr가 있으면 그 오류를 수정하도록 안내한다", () => {
+    const error = new McpClientError({ code: "PROCESS_EXITED", phase: "process", diagnostics });
 
-    expect(hint).toBe("서버 stderr에 나온 오류를 수정한 뒤 다시 실행하세요.");
-    expect(hint).not.toContain("exit code, signal, bounded stderr를 확인하세요.");
+    expect(error.hint).toBe("서버 stderr에 나온 오류를 수정한 뒤 다시 실행하세요.");
+    expect(error.hint).not.toContain("exit code, signal, bounded stderr를 확인하세요.");
+  });
+
+  it("PROCESS_EXITED hint는 stderr가 비면 종료 코드를 안내한다", () => {
+    const error = new McpClientError({
+      code: "PROCESS_EXITED",
+      phase: "process",
+      diagnostics: { ...diagnostics, stderr: "", exitCode: 9, signal: null },
+    });
+
+    expect(error.hint).toBe(
+      "서버 stderr가 비어 있습니다. 종료 코드 9의 원인을 확인한 뒤 다시 실행하세요.",
+    );
+  });
+
+  it("PROCESS_EXITED hint는 stderr와 종료 코드가 없으면 시그널을 안내한다", () => {
+    const error = new McpClientError({
+      code: "PROCESS_EXITED",
+      phase: "process",
+      diagnostics: { ...diagnostics, stderr: "", exitCode: null, signal: "SIGTERM" },
+    });
+
+    expect(error.hint).toBe(
+      "서버 stderr가 비어 있습니다. 시그널 SIGTERM의 원인을 확인한 뒤 다시 실행하세요.",
+    );
   });
 });
 

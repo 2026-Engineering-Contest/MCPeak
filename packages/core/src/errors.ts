@@ -121,6 +121,20 @@ export const MCP_CLIENT_ERROR_DETAILS: Readonly<Record<McpClientErrorCode, Error
     },
   });
 
+function resolveHint(
+  code: McpClientErrorCode,
+  detail: ErrorDetail,
+  diagnostics: McpDiagnostics,
+): string {
+  if (code !== "PROCESS_EXITED" || diagnostics.transport !== "stdio" || diagnostics.stderr !== "")
+    return detail.hint;
+  if (diagnostics.exitCode !== null)
+    return `서버 stderr가 비어 있습니다. 종료 코드 ${diagnostics.exitCode}의 원인을 확인한 뒤 다시 실행하세요.`;
+  if (diagnostics.signal !== null)
+    return `서버 stderr가 비어 있습니다. 시그널 ${diagnostics.signal}의 원인을 확인한 뒤 다시 실행하세요.`;
+  return "서버 stderr가 비어 있습니다. 서버 종료 원인을 확인한 뒤 다시 실행하세요.";
+}
+
 export class McpClientError extends Error {
   override readonly name = "McpClientError";
   readonly code: McpClientErrorCode;
@@ -137,11 +151,11 @@ export class McpClientError extends Error {
     cause?: unknown;
   }) {
     const detail = MCP_CLIENT_ERROR_DETAILS[options.code];
+    const diagnostics: McpDiagnostics = Object.freeze(tagDiagnostics(options.diagnostics));
     super(detail.message, options.cause === undefined ? undefined : { cause: options.cause });
     this.code = options.code;
     this.phase = options.phase;
-    this.hint = detail.hint;
-    const diagnostics: McpDiagnostics = Object.freeze(tagDiagnostics(options.diagnostics));
+    this.hint = resolveHint(options.code, detail, diagnostics);
     this.diagnostics = diagnostics;
     this.cause = options.cause;
     const common = {

@@ -26,7 +26,12 @@ const TEST_OPTIONS = `옵션:
 **세션은 그 서버가 밖에 물어본 결과**를 남깁니다. 둘은 섞이지 않으며 파일도 따로입니다.
 
 세션 파일에는 외부 API 응답이 저장되므로 .gitignore 를 확인하세요. \`token\`·\`apiKey\` 같은
-이름의 값은 저장 전에 가려집니다.`;
+이름의 값은 저장 전에 가려집니다.
+
+**URL 경로에 담긴 비밀값은 가려지지 않습니다.** 마스킹은 이름을 보고 판정하는데 경로에는
+볼 이름이 없습니다. webhook 처럼 \`/services/T…/B…/XXXX\` 형태로 비밀을 경로에 두는 API 를
+녹화하면 그 값이 세션 파일에 그대로 남습니다. 경로를 자동으로 가리면 서로 다른 endpoint 가
+같은 것으로 취급돼 재생이 틀린 응답을 돌려주므로, 가리는 대신 알려 드립니다.`;
 
 export const GENERATE_USAGE =
   "사용법: mcpeak generate --suite-id <id> --name <name> --out <suite.json> --command <executable> [--arg <value> ...] [--baseline-only] [--provider <codex|claude>] [--model <model>] [--no-dry-run] [--cassette <path>] [--record] [--reset-cmd <command>] [--no-repair] [--force]";

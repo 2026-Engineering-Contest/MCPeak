@@ -362,3 +362,26 @@ describe("timeout 분류", () => {
     });
   });
 });
+
+describe("URL 경로는 마스킹하지 않는다 — 알려진 한계", () => {
+  it("경로에 박힌 비밀값은 그대로 저장된다", async () => {
+    // 마스킹은 **이름 기반**이다(ADR-0053). query 는 키 이름을 보고 판정하는데 경로
+    // 세그먼트에는 볼 이름이 없다. 그래서 webhook 형태의 URL 은 비밀이 경로에 남는다.
+    const normalized = await normalizeHttpRequest(
+      new Request("https://hooks.example.com/services/T000/B111/XXXXsecret?token=abc"),
+    );
+
+    expect(normalized.match.url).toContain("XXXXsecret");
+    expect(normalized.match.url).toContain("token=%5Bredacted%5D");
+  });
+
+  it("경로를 마스킹하면 서로 다른 endpoint 가 같은 키가 된다", async () => {
+    // 이 테스트가 이 한계를 **고치지 못하게** 막는다. 경로를 자동으로 가리면 아래 두 URL 이
+    // 같은 matchKey 가 되고, Replay 가 다른 endpoint 의 응답을 돌려준다. 비밀이 남는 것보다
+    // 나쁜 실패다 — 사용자는 틀린 답을 맞는 답으로 믿는다.
+    const first = await normalizeHttpRequest(new Request("https://example.com/hooks/AAA"));
+    const second = await normalizeHttpRequest(new Request("https://example.com/hooks/BBB"));
+
+    expect(first.matchKey).not.toBe(second.matchKey);
+  });
+});

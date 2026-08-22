@@ -182,6 +182,25 @@ CLI 는 `mcpeak verify <cassette.json> --command <executable>` 로 감싼다.
 ([ADR-0041](../../docs/adr/0041-마스킹의-적용-경계.md)). 값이 JSON 문자열이면 이 경계에서
 파싱 가능한 경우 구조화해 마스킹하고 stable JSON 문자열로 저장한다.
 
+### External 세션 — URL 경로는 가리지 않는다
+
+마스킹 판정은 **이름 기반**이다. query parameter 는 키 이름을 보고 판정하지만 **URL 경로에는
+판정할 이름이 없다.** 그래서 비밀을 경로에 담는 endpoint 는 그 값이 세션 파일에 원문으로
+남는다.
+
+```
+https://hooks.example.com/services/T000/B111/XXXXsecret?token=abc
+                                              ^^^^^^^^^^ 남는다   ^^^ 가려진다
+```
+
+자동으로 가리지 않는 이유는 그것이 **더 나쁜 실패**를 만들기 때문이다. 경로를 마스킹하면
+`/hooks/AAA` 와 `/hooks/BBB` 가 같은 matchKey 가 되어 Replay 가 다른 endpoint 의 응답을
+돌려준다. 비밀이 남는 것은 알면 피할 수 있지만, 틀린 응답을 맞는 것으로 믿는 것은 알아챌
+방법이 없다. 근거는
+[ADR-0053](../../docs/adr/0053-http-외부-요청-매칭과-반복-호출-정책.md).
+
+이런 API 를 녹화한다면 세션 파일을 커밋하지 말고 `.gitignore` 에 넣는다.
+
 ## 제외 범위
 
 첫 버전은 사용자 정의 매칭 함수, 사용자 정의 마스킹 규칙, TTL, 부분 매칭을 제공하지 않는다.

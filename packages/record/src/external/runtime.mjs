@@ -376,3 +376,61 @@ export function restoreHttpOutcome(outcome) {
     fail("UNSUPPORTED_HTTP_RESPONSE", "현재 런타임에서 Response.url을 복원할 수 없습니다.");
   return response;
 }
+
+/**
+ * 이미 정규화된 `match`/`display` 에 **마스킹을 한 번 더 적용**한다.
+ *
+ * 자식이 제대로 마스킹했다면 이 함수는 아무것도 바꾸지 않는다 — 멱등이다. 그래서 부모는
+ * 결과를 원본과 바이트 비교하는 것만으로 "자식이 뭔가 놓쳤다" 를 알 수 있다(ADR-0052 의
+ * Store 직전 재검사).
+ *
+ * 전체 정규화를 다시 돌리지 않는 이유는 부모에게 원본 `Request` 가 없기 때문이다. 부모가
+ * 가진 것은 자식이 보낸 구조뿐이고, 재검사가 보는 것도 "그 구조에 마스킹 규칙이 이미
+ * 적용돼 있는가" 하나다.
+ */
+const redactHttpMatch = (value, headersAreAllowlist) => {
+  const headers = {};
+  for (const name of Object.keys(value.headers ?? {}).sort()) {
+    const lower = name.toLowerCase();
+    // match 는 allowlist 밖 헤더를 애초에 담지 않는다. 담겨 있으면 자식이 규칙을 어긴 것이라
+    // 여기서 지워지고, 그 차이가 바이트 비교에 걸린다.
+    if (headersAreAllowlist && !MATCH_HEADER_NAMES.has(lower)) continue;
+    const secret = !MATCH_HEADER_NAMES.has(lower) || SENSITIVE_HEADER_NAMES.has(lower);
+    setOwn(headers, lower, secret ? [REDACTED] : value.headers[name]);
+  }
+  const body =
+    value.body?.kind === "json"
+      ? { kind: "json", value: redactJson(value.body.value) }
+      : { kind: "none" };
+  return {
+    method: value.method,
+    url: normalizedUrl(value.url),
+    headers,
+    body,
+  };
+};
+
+export const redactNormalizedRequest = (request) => ({
+  protocol: request.protocol,
+  schemaVersion: request.schemaVersion,
+  matchKey: request.matchKey,
+  match: redactHttpMatch(request.match, true),
+  display: redactHttpMatch(request.display, false),
+});
+
+/** 저장 직전 outcome 에 마스킹을 다시 적용한다. 자식이 제대로 했다면 멱등이다. */
+export const redactStoredOutcome = (outcome) => {
+  if (outcome.kind !== "response") return outcome;
+  return {
+    kind: "response",
+    status: outcome.status,
+    statusText: outcome.statusText,
+    headers: (outcome.headers ?? []).map(([name, value]) => {
+      const lower = String(name).toLowerCase();
+      const secret = SENSITIVE_HEADER_NAMES.has(lower) || sensitiveKey(lower);
+      return [lower, secret ? REDACTED : value];
+    }),
+    url: normalizedUrl(outcome.url),
+    body: redactJson(outcome.body),
+  };
+};

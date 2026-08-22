@@ -11,6 +11,7 @@ import {
   PROTOCOL_SCHEMA_VERSION,
   type StoredExternalOutcome,
 } from "./protocol.js";
+import { redactNormalizedRequest, redactStoredOutcome, stableStringify } from "./runtime.mjs";
 import type { SessionStore, SessionSummary } from "./session-store.js";
 
 const ENV_MODE = "MCPEAK_EXTERNAL_MODE";
@@ -114,6 +115,29 @@ const protocolRequest = (value: unknown): Record<string, unknown> => {
   return value;
 };
 
+/**
+ * 자식이 보낸 값에 **마스킹을 한 번 더 적용해 바이트를 비교한다**(ADR-0052 Store 직전 재검사).
+ *
+ * 자식이 규칙대로 마스킹했다면 재적용은 멱등이라 바이트가 같다. 달라졌다는 것은 자식이
+ * 무언가를 놓쳤다는 뜻이고, 그 "무언가" 는 곧 토큰이나 자격증명이다.
+ *
+ * 형태 검사만으로는 이걸 잡을 수 없다 — `match` 가 객체인지 보는 것과 그 안에 `Authorization`
+ * 이 원문으로 들어 있는지 보는 것은 다른 질문이다. 저장이 인메모리였을 때는 프로세스와 함께
+ * 사라졌지만, 이제 파일에 남고 커밋될 수 있다.
+ *
+ * **변환된 값을 조용히 저장하지 않는다.** 마스킹된 쪽으로 갈아치우면 자식의 결함이 가려지고
+ * 다음 요청도 같은 값을 보낸다. 실패시켜서 드러낸다.
+ */
+const assertRedacted = (sent: unknown, rechecked: unknown, what: string): void => {
+  if (stableStringify(sent) === stableStringify(rechecked)) return;
+  externalError(
+    "EXTERNAL_REDACTION_INVARIANT_VIOLATION",
+    `자식이 보낸 ${what}에 부모의 재검사가 추가 마스킹을 적용했습니다.\n` +
+      "→ 자식 Adapter가 민감 값을 놓쳤다는 뜻이라 저장하지 않고 세션을 실패로 둡니다.\n" +
+      "→ Bootstrap과 부모의 민감 키 목록 version이 어긋났는지 확인하세요.",
+  );
+};
+
 const normalizedRequest = (value: unknown): NormalizedExternalRequest => {
   if (
     !plainObject(value) ||
@@ -124,13 +148,17 @@ const normalizedRequest = (value: unknown): NormalizedExternalRequest => {
     !plainObject(value.display)
   )
     externalError("REQUEST_INVALID", "정규화된 외부 요청 형식이 잘못됐습니다.");
-  return value as unknown as NormalizedExternalRequest;
+  const request = value as unknown as NormalizedExternalRequest;
+  assertRedacted(request, redactNormalizedRequest(request), "외부 요청");
+  return request;
 };
 
 const storedOutcome = (value: unknown): StoredExternalOutcome => {
   if (!plainObject(value) || (value.kind !== "response" && value.kind !== "throw"))
     externalError("REQUEST_INVALID", "저장할 외부 호출 결과 형식이 잘못됐습니다.");
-  return value as unknown as StoredExternalOutcome;
+  const outcome = value as unknown as StoredExternalOutcome;
+  assertRedacted(outcome, redactStoredOutcome(outcome), "호출 결과");
+  return outcome;
 };
 
 const errorStatus = (error: ExternalRecordReplayError): number => {
@@ -224,6 +252,17 @@ export async function startExternalCoordinator(
         return;
       }
       if (error instanceof ExternalRecordReplayError) {
+        // 마스킹 불변식이 깨진 세션은 400 을 돌려주는 것으로 끝내지 않고 **즉시 실패로 닫는다**
+        // (ADR-0052). 400 만 주고 running 으로 두면, 누출을 들킨 자식이 같은 interaction 을
+        // 제대로 마스킹해 다시 보내는 것으로 통과할 수 있다. 그러면 남는 녹화는 깨끗해 보이지만
+        // 새는 Adapter 가 만든 것이고, 그 사실은 아무 데도 남지 않는다.
+        if (error.code === "EXTERNAL_REDACTION_INVARIANT_VIOLATION" && engine.mode === "record") {
+          try {
+            engine.finish("failed");
+          } catch {
+            // 이미 끝난 세션이면 그대로 둔다. 원래 오류를 이 실패로 덮지 않는다.
+          }
+        }
         errorResponse(response, errorStatus(error), error.code, error.message);
         return;
       }

@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { MAX_HTTP_BODY_BYTES } from "../shared/limits.mjs";
 import { sensitiveKeyIn, sensitiveKeysOf } from "../shared/sensitive-keys.mjs";
+import { externalError } from "./errors.mjs";
 
 const REDACTED = "[redacted]";
 const MATCH_HEADER_NAMES = new Set(["accept", "accept-language", "content-type", "range"]);
@@ -30,12 +31,13 @@ export const HTTP_INTERACTION_SCHEMA_VERSION = 1;
  */
 const SENSITIVE_KEYS = sensitiveKeysOf(HTTP_INTERACTION_SCHEMA_VERSION);
 
-const fail = (code, message) => {
-  const error = new Error(message);
-  error.name = "ExternalRecordReplayError";
-  error.code = code;
-  throw error;
-};
+/**
+ * **정본 오류 클래스로 던진다.** 한때 이 자리에서 `new Error()` 에 `name` 과 `code` 만 얹어
+ * 모양을 흉내 냈는데, 그 값은 `ExternalRecordReplayError` 의 인스턴스가 아니라서 부모의
+ * `error instanceof ExternalRecordReplayError` 분기를 빠져나갔다 — 400 대신 500 이 나가고
+ * 세션이 실패로 닫히지도 않았다(ADR-0052). 배경은 `errors.mjs` 주석 참고.
+ */
+const fail = externalError;
 
 export const sensitiveKey = (key) => sensitiveKeyIn(SENSITIVE_KEYS, key);
 

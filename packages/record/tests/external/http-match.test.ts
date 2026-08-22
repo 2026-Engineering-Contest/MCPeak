@@ -4,9 +4,9 @@ import { MAX_COORDINATOR_PAYLOAD_BYTES, MAX_HTTP_BODY_BYTES } from "../../src/ex
 import {
   encodeHttpResponse,
   encodeHttpThrow,
-  type HttpMatchMaterialV1,
   HTTP_INTERACTION_SCHEMA_VERSION,
   HTTP_MATCH_KEY_DOMAIN,
+  type HttpMatchMaterialV1,
   httpMatchKey,
   normalizeHttpRequest,
   restoreHttpOutcome,

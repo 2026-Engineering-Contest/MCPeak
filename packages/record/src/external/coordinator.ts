@@ -139,8 +139,47 @@ const assertRedacted = (sent: unknown, rechecked: unknown, what: string): void =
   );
 };
 
+/**
+ * 알려진 필드 목록을 **타입에서 뽑는다.**
+ *
+ * 손으로 적은 문자열 배열로 두면 `NormalizedExternalRequest` 와 조용히 어긋난다. `satisfies
+ * Record<keyof T, true>` 는 양쪽을 다 막는다 — 타입에 필드가 늘면 여기 빠진 키를 컴파일러가
+ * 요구하고, 여기에만 있는 키는 초과 프로퍼티로 걸린다. 필드 이름이 바뀌어도 마찬가지다.
+ * 실제로 이 개정이 `schemaVersion` 을 `interactionSchemaVersion` 으로 바꾸고 `match` 를 뺐는데,
+ * 그때 두 곳을 손으로 나란히 고쳐야 했다.
+ */
+const fieldNames = <T>(shape: Record<keyof T, true>): ReadonlySet<string> =>
+  new Set(Object.keys(shape));
+
 /** `WireHttpRequestV1` 의 알려진 필드 넷(ADR-0053). 이 밖의 필드는 형태가 맞아도 거부한다. */
-const KNOWN_REQUEST_FIELDS = new Set(["protocol", "interactionSchemaVersion", "matchKey", "display"]);
+const KNOWN_REQUEST_FIELDS = fieldNames<NormalizedExternalRequest>({
+  protocol: true,
+  interactionSchemaVersion: true,
+  matchKey: true,
+  display: true,
+});
+
+/**
+ * `WireHttpDisplayV1` 의 알려진 필드 넷. **중첩 필드도 같은 규칙을 받는다** — 바깥만 검사하면
+ * `display` 안에 실린 낯선 필드가 이 관문을 그냥 통과한다. 그러면 `redactHttpDisplay` 가
+ * 재구성하면서 그 필드를 조용히 버리고, 바이트 비교만 어긋나 **"부모의 재검사가 추가 마스킹을
+ * 적용했습니다"** 라는 엉뚱한 진단이 나간다 — 원인은 스키마에 없는 필드인데 사용자는 민감 키
+ * 목록 version 을 의심하게 된다.
+ */
+const KNOWN_DISPLAY_FIELDS = fieldNames<NormalizedExternalRequest["display"]>({
+  method: true,
+  url: true,
+  headers: true,
+  body: true,
+});
+
+const invariantViolation = (classification: "match-field" | "unknown-field"): never =>
+  externalError(
+    "EXTERNAL_REDACTION_INVARIANT_VIOLATION",
+    `자식이 보낸 외부 요청이 wire 형식을 벗어났습니다(${classification}).\n` +
+      "→ 저장하지 않고 세션을 실패로 둡니다. 같은 package/build의 자식과 부모가 다른 " +
+      "형식을 쓴 것으로 보입니다.",
+  );
 
 /**
  * 자식이 보낸 요청을 그대로 신뢰하지 않는다(ADR-0053). **알려진 필드만 뽑아 새 값으로
@@ -155,20 +194,9 @@ const KNOWN_REQUEST_FIELDS = new Set(["protocol", "interactionSchemaVersion", "m
 const normalizedRequest = (value: unknown): NormalizedExternalRequest => {
   if (!plainObject(value))
     externalError("REQUEST_INVALID", "정규화된 외부 요청 형식이 잘못됐습니다.");
-  if ("match" in value)
-    externalError(
-      "EXTERNAL_REDACTION_INVARIANT_VIOLATION",
-      "자식이 보낸 외부 요청에 matching 재료(match-field) 필드가 실려 있습니다.\n" +
-        "→ 저장하지 않고 세션을 실패로 둡니다. 같은 package/build의 자식과 부모가 다른 " +
-        "형식을 쓴 것으로 보입니다.",
-    );
+  if ("match" in value) invariantViolation("match-field");
   if (Object.keys(value).some((key) => !KNOWN_REQUEST_FIELDS.has(key)))
-    externalError(
-      "EXTERNAL_REDACTION_INVARIANT_VIOLATION",
-      "자식이 보낸 외부 요청에 알려지지 않은 필드(unknown-field)가 있습니다.\n" +
-        "→ 저장하지 않고 세션을 실패로 둡니다. 같은 package/build의 자식과 부모가 다른 " +
-        "형식을 쓴 것으로 보입니다.",
-    );
+    invariantViolation("unknown-field");
   if (
     value.protocol !== "http" ||
     value.interactionSchemaVersion !== HTTP_INTERACTION_SCHEMA_VERSION ||
@@ -176,11 +204,21 @@ const normalizedRequest = (value: unknown): NormalizedExternalRequest => {
     !plainObject(value.display)
   )
     externalError("REQUEST_INVALID", "정규화된 외부 요청 형식이 잘못됐습니다.");
+  const display = value.display;
+  if (Object.keys(display).some((key) => !KNOWN_DISPLAY_FIELDS.has(key)))
+    invariantViolation("unknown-field");
+  // 재구성은 알려진 필드만 옮겨 담는다. 위의 거부가 이미 걸렀더라도, 실을 자리를 만들지 않는
+  // 것이 "매칭 재료는 저장되지 않는다" 를 형식으로 보장하는 마지막 겹이다.
   const request: NormalizedExternalRequest = {
     protocol: "http",
     interactionSchemaVersion: HTTP_INTERACTION_SCHEMA_VERSION,
     matchKey: value.matchKey,
-    display: value.display as unknown as NormalizedExternalRequest["display"],
+    display: {
+      method: display.method,
+      url: display.url,
+      headers: display.headers,
+      body: display.body,
+    } as unknown as NormalizedExternalRequest["display"],
   };
   assertRedacted(request, redactNormalizedRequest(request), "외부 요청");
   return request;

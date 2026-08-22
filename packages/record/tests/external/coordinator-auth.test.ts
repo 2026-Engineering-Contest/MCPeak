@@ -135,7 +135,12 @@ describe("Store 직전 재검사 (ADR-0052)", () => {
     // 거부한다 — pathname 이 든 값이므로 형태 검사만으로는 못 잡는다.
     const leaky = {
       ...redacted,
-      match: { method: "GET", url: "https://example.com/hooks/SECRET", headers: {}, body: { kind: "none" } },
+      match: {
+        method: "GET",
+        url: "https://example.com/hooks/SECRET",
+        headers: {},
+        body: { kind: "none" },
+      },
     };
 
     const response = await begin(handle, leaky);
@@ -160,6 +165,62 @@ describe("Store 직전 재검사 (ADR-0052)", () => {
     expect(body).not.toContain("SECRET");
     expect(body).not.toContain("extra");
     expect(body).toContain("unknown-field");
+  });
+
+  it("display 안에 중첩된 낯선 필드도 같은 분류로 거부한다 — 바깥만 보면 진단이 뒤바뀐다", async () => {
+    const handle = await start();
+    // 바깥 키는 전부 알려진 것이라 최상위 검사만으로는 통과한다. 중첩까지 보지 않으면
+    // redactHttpDisplay 가 이 필드를 조용히 버리고, 바이트 비교만 어긋나 "부모의 재검사가
+    // 추가 마스킹을 적용했습니다" 라는 엉뚱한 진단이 나간다 — 원인은 스키마에 없는 필드인데
+    // 사용자는 민감 키 목록 version 을 의심하게 된다.
+    const leaky = {
+      ...redacted,
+      display: { ...redacted.display, extraLeakyField: "https://example.com/hooks/SECRET" },
+    };
+
+    const response = await begin(handle, leaky);
+    const body = await response.text();
+
+    expect(response.status).toBe(400);
+    expect(body).toContain("EXTERNAL_REDACTION_INVARIANT_VIOLATION");
+    expect(body).toContain("unknown-field");
+    expect(body).not.toContain("추가 마스킹");
+    expect(body).not.toContain("SECRET");
+    expect(body).not.toContain("extraLeakyField");
+  });
+
+  /**
+   * `runtime.mjs` 는 자식에서도 돌아 `.ts` 를 import 할 수 없다. 그 제약 때문에 한때 오류를
+   * `new Error()` 에 `name`·`code` 만 얹어 흉내 냈는데, 그 값은 `ExternalRecordReplayError` 의
+   * 인스턴스가 아니라서 부모의 `instanceof` 분기를 빠져나갔다 — 400 대신 500 이 나가고 세션이
+   * `running` 으로 남았다. 오류 클래스를 `errors.mjs` 로 내려 같은 인스턴스를 보게 한 회귀 스펙.
+   */
+  it("재검사 도중 난 URL 오류도 500 이 아니라 분류된 4xx 로 나가고 세션을 닫는다", async () => {
+    const store = createMemorySessionStore();
+    const handle = await startExternalCoordinator({ mode: "record", sessionId: "urlfail", store });
+    handles.push(handle);
+    // 자격증명이 든 URL 은 `parseNormalizedUrl` 이 거부한다. 그 거부가 재검사(redact) 경로
+    // 안에서 일어나는 것이 요점이다 — 형태 검사는 이미 통과한 뒤다.
+    const leaky = {
+      ...redacted,
+      display: { ...redacted.display, url: "https://user:pass@example.com/x" },
+    };
+
+    const response = await fetch(`${handle.url}/begin`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${handle.childEnvironment.MCPEAK_EXTERNAL_COORDINATOR_TOKEN}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ schemaVersion: 1, request: leaky }),
+    });
+    const body = await response.text();
+
+    expect(response.status).toBe(400);
+    expect(body).toContain("UNSUPPORTED_HTTP_URL");
+    expect(body).not.toContain("COORDINATOR_INTERNAL");
+    // 오류 본문에 자격증명을 다시 실으면 안 된다.
+    expect(body).not.toContain("pass");
   });
 
   it("자식이 헤더의 자격증명을 놓치면 저장 전에 실패한다", async () => {

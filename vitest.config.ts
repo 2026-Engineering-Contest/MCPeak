@@ -24,6 +24,11 @@ const resolve = {
     "@mcpeak/cli/commands": fileURLToPath(
       new URL("./packages/cli/src/commands.ts", import.meta.url),
     ),
+    // `@mcpeak/record` 보다 **먼저** 와야 한다. 위 주석의 접두 일치 문제가 그대로 적용돼,
+    // 뒤에 두면 `@mcpeak/record` 가 이 명세자를 삼켜 `.../src/index.ts/external` 로 만든다.
+    "@mcpeak/record/external": fileURLToPath(
+      new URL("./packages/record/src/external/index.ts", import.meta.url),
+    ),
     ...workspaceAliases,
   },
 };

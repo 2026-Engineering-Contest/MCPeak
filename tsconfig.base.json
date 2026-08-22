@@ -21,6 +21,7 @@
       "@mcpeak/runner": ["./packages/runner/src/index.ts"],
       "@mcpeak/generate": ["./packages/generate/src/index.ts"],
       "@mcpeak/record": ["./packages/record/src/index.ts"],
+      "@mcpeak/record/external": ["./packages/record/src/external/index.ts"],
       "@mcpeak/mock": ["./packages/mock/src/index.ts"],
       "@mcpeak/cli/commands": ["./packages/cli/src/commands.ts"]
     }

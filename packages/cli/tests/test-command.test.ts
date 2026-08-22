@@ -295,8 +295,9 @@ describe("parseTestCommand", () => {
 
 describe("runCli", () => {
   it("각 사용법 오류를 고정 message와 usage hint로 출력하고 읽기 전에 종료한다", async () => {
+    // 빈 argv 는 여기 없다. 명령 이름 자체가 없는 경우라 힌트가 `test` 사용법이 아니라
+    // 명령 목록이다. 아래 "명령을 아예 안 주면 명령 목록만 준다" 가 따로 덮는다.
     const cases: ReadonlyArray<readonly [readonly string[], string]> = [
-      [[], "실행할 CLI 명령이 없습니다."],
       [["test"], "테스트 명세 JSON 경로가 필요합니다."],
       [["test", "suite.json"], "`--command` 옵션이 필요합니다."],
       [
@@ -412,6 +413,32 @@ describe("runCli", () => {
     expect(err).toContain("--record-session");
     expect(err).toContain("--session");
     expect(err).not.toContain("알 수 없는 CLI 명령");
+  });
+
+
+  it("명령 이름이 틀리면 명령 목록만 주고 test 의 플래그는 주지 않는다", async () => {
+    const d = deps();
+    expect(await runCli(["tset"], d.value)).toBe(1);
+    const err = d.writes.err.join("");
+    expect(err).toContain("알 수 없는 CLI 명령 'tset'입니다.");
+    expect(err).toContain("사용 가능한 명령: test, generate, repair");
+    // 오타는 "어느 옵션을 쓰나" 가 아니라 "어떤 명령이 있나" 를 모르는 상태다.
+    // test 사용법을 붙이면 묻지도 않은 명령의 플래그 11개를 먼저 읽게 된다.
+    expect(err).not.toContain("--determinism");
+    expect(err).not.toContain("--record-session");
+    expect(err).not.toContain("<suite.json>");
+  });
+
+  it("명령을 아예 안 주면 명령 목록만 준다 (라이브러리 진입점 `runCli`)", async () => {
+    // 이 갈래는 `mcpeak` 바이너리로는 안 닿는다. `run()` 이 argv 0개를 먼저 가로채
+    // GLOBAL_HELP 를 찍고 0 을 낸다 — 그게 맞는 동작이라 여기서 바꾸지 않는다.
+    // 닿는 것은 `@mcpeak/cli/commands` 의 공개 `runCli` 다. 대시보드가 그 문으로 들어온다.
+    const d = deps();
+    expect(await runCli([], d.value)).toBe(1);
+    const err = d.writes.err.join("");
+    expect(err).toContain("실행할 CLI 명령이 없습니다.");
+    expect(err).toContain("사용 가능한 명령: test, generate, repair");
+    expect(err).not.toContain("--determinism");
   });
   it("C1 제어 문자도 이스케이프한다", async () => {
     // U+009B 는 8비트 CSI 다. 렌더러의 escapeTerminalText 와 같은 범위를 막아야 한다.

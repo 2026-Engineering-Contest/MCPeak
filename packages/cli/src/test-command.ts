@@ -629,7 +629,8 @@ async function runCliCore(
     return writeFailure(dependencies, {
       code: "CLI_USAGE",
       message: "실행할 CLI 명령이 없습니다.",
-      hint: TEST_USAGE_HINT,
+      // 명령을 아예 안 준 사람에게 필요한 것은 명령 목록이지 `test` 의 플래그가 아니다.
+      hint: commandDiscovery,
     });
   if (argv[0] !== "test") {
     // 발행본(cli 0.9.0)에 나갔던 명령이라 "알 수 없는 명령" 으로 끝내면 오타와 구분되지
@@ -667,7 +668,9 @@ async function runCliCore(
     return writeFailure(dependencies, {
       code: "CLI_USAGE",
       message: `알 수 없는 CLI 명령 '${escapeTerminalText(argv[0] ?? "")}'입니다.`,
-      hint: TEST_USAGE_HINT,
+      // `TEST_USAGE_HINT` 를 쓰면 안 된다. 사용자가 친 것은 `test` 가 아닌데 `test` 의 플래그
+      // 11 개를 먼저 읽히고 맨 끝에 명령 목록이 온다. 바로 위 분기와 같은 안내를 준다.
+      hint: commandDiscovery,
     });
   }
   let input: TestCommandInput;

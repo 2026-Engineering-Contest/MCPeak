@@ -319,22 +319,28 @@ describe.each(STORES)("SessionStore 계약 — $name", ({ create }) => {
       recordOne(store, "s1", "a");
 
       const snapshot = store.read("s1")?.interactions[0];
-      // 최상위만 얼려 두면 이 한 줄로 저장본이 바뀐다. 그러면 이미 계산된 matchKey 와
+      if (snapshot?.outcome === undefined) throw new Error("스냅샷을 읽지 못했습니다.");
+
+      // 최상위만 얼려 두면 이 두 줄로 저장본이 바뀐다. 그러면 이미 계산된 matchKey 와
       // 저장된 match 가 어긋나고, Replay 가 기록과 다른 것을 돌려준다.
+      //
+      // 얼려 있으면 strict mode 에서 던진다. 던지든 무시되든 **저장본만 그대로면** 된다 —
+      // 계약이 요구하는 것은 freeze 라는 수단이 아니라 오염되지 않는다는 성질이다.
       try {
-        (snapshot?.request.match as { method: string }).method = "DELETE";
+        (snapshot.request.match as { method: string }).method = "DELETE";
       } catch {
-        // 얼려 있으면 strict mode 에서 던진다. 던지든 무시되든 저장본만 그대로면 된다.
+        // 성질만 보므로 던지는 것 자체는 판정 대상이 아니다.
       }
       try {
-        (snapshot?.outcome as { status: number }).status = 500;
+        (snapshot.outcome as { status: number }).status = 500;
       } catch {
         // 위와 같다.
       }
 
       const stored = store.read("s1")?.interactions[0];
-      expect(stored?.request.match.method).toBe("GET");
-      expect((stored?.outcome as { status: number }).status).toBe(200);
+      if (stored?.outcome === undefined) throw new Error("저장본을 읽지 못했습니다.");
+      expect(stored.request.match.method).toBe("GET");
+      expect((stored.outcome as { status: number }).status).toBe(200);
     });
   });
 });

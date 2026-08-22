@@ -33,9 +33,13 @@ export function themeStorage(): ThemeStorage {
       typeof store.removeItem !== "function"
     )
       return FORGETFUL;
-    // 있다고 되는 것도 아니다. 저장소가 가득 찼거나 정책으로 막히면 setItem 이
-    // 던진다 — 메서드는 멀쩡히 있다. 한 번 써 보는 것 말고 확인할 방법이 없다.
+    // 있다고 되는 것도 아니다. 저장소가 가득 찼거나 정책으로 막히면 던진다 —
+    // 메서드는 멀쩡히 있다. 실제로 한 번씩 불러 보는 것 말고 확인할 방법이 없다.
+    //
+    // **셋을 다 불러야 한다.** getThemeChoice 가 곧바로 getItem 을 부르므로,
+    // 쓰기만 확인하고 통과시키면 읽기에서 던지는 저장소가 그대로 나간다 (#251 리뷰).
     store.setItem(probe, "1");
+    store.getItem(probe);
     store.removeItem(probe);
     return store;
   } catch {

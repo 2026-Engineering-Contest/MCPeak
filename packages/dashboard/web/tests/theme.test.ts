@@ -106,6 +106,18 @@ describe("themeStorage", () => {
     expect(() => applyThemeChoice("dark", makeRoot(), storage)).not.toThrow();
   });
 
+  it("읽기가 던지는 저장소도 통과시키지 않는다", () => {
+    // 쓰기만 확인하면 getThemeChoice 의 첫 getItem 에서 죽는다 (#251 리뷰).
+    vi.stubGlobal("localStorage", {
+      getItem: () => {
+        throw new Error("SecurityError");
+      },
+      setItem: () => {},
+      removeItem: () => {},
+    });
+    expect(getThemeChoice(themeStorage())).toBe("system");
+  });
+
   it("정상 저장소에는 probe 키를 남기지 않는다", () => {
     const real = makeStorage();
     vi.stubGlobal("localStorage", real);

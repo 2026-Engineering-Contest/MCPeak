@@ -1,5 +1,5 @@
 export const TEST_USAGE =
-  "사용법: mcpeak test <suite.json> --command <executable> [--arg <value> ...] [--determinism] [--reset-cmd <command>] [--json] [--junit <path>] [--repair-bundle <path>] [--stderr-lines <N>]";
+  "사용법: mcpeak test <suite.json> --command <executable> [--arg <value> ...] [--determinism] [--reset-cmd <command>] [--json] [--junit <path>] [--repair-bundle <path>] [--stderr-lines <N>] [--session <path> | --record-session <path>]";
 
 /**
  * 시험 실행 옵션 설명. `--determinism` 은 툴을 2회 호출하므로 부작용이 있는 서버에서 모르고
@@ -11,7 +11,22 @@ const TEST_OPTIONS = `옵션:
                         --reset-cmd 와 함께 쓰면 결정론성 확인이 되고, 없으면
                         "2회 결과가 같았다" 까지만 확인합니다
   --reset-cmd <command> 각 시험 실행 전에 이 명령을 한 번 실행합니다. 셸을 거치지
-                        않으므로 파이프나 && 는 쓸 수 없습니다`;
+                        않으므로 파이프나 && 는 쓸 수 없습니다
+  --record-session <path>
+                        서버가 **밖으로 나가는 HTTP 호출**을 녹화합니다. 서버는 실제로
+                        실행되고, 그 서버가 부르는 외부 API 의 응답만 파일에 남습니다
+  --session <path>      녹화한 외부 호출을 재생합니다. 서버는 실제로 실행되지만 외부
+                        API 는 부르지 않습니다. 녹화에 없는 호출을 만나면 실패합니다
+
+두 세션 옵션은 서로, 그리고 \`--determinism\` 과 함께 쓸 수 없습니다. \`--determinism\` 은 서버에
+2회 연결하는데 세션은 연결 하나에 묶여 있어, 2회차가 같은 세션을 쓰면 반복 호출 순번이
+어긋나고 새 세션을 쓰면 비교 기준이 갈라집니다.
+
+세션은 \`--cassette\` 카세트와 다릅니다. **카세트는 우리가 서버에게 물어본 결과**를 남기고,
+**세션은 그 서버가 밖에 물어본 결과**를 남깁니다. 둘은 섞이지 않으며 파일도 따로입니다.
+
+세션 파일에는 외부 API 응답이 저장되므로 .gitignore 를 확인하세요. \`token\`·\`apiKey\` 같은
+이름의 값은 저장 전에 가려집니다.`;
 
 export const GENERATE_USAGE =
   "사용법: mcpeak generate --suite-id <id> --name <name> --out <suite.json> --command <executable> [--arg <value> ...] [--baseline-only] [--provider <codex|claude>] [--model <model>] [--no-dry-run] [--cassette <path>] [--record] [--reset-cmd <command>] [--no-repair] [--force]";

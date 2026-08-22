@@ -144,7 +144,7 @@ async function handlePutFile(
     return;
   }
   if (!relativeOrNull.toLowerCase().endsWith(".json")) {
-    sendJson(response, 400, { error: "스위트와 카세트는 .json 확장자 파일만 저장할 수 있습니다." });
+    sendJson(response, 400, { error: "스위트는 .json 확장자 파일만 저장할 수 있습니다." });
     return;
   }
   const body = await readJsonBody<Partial<PutFileRequest>>(request);

@@ -15,6 +15,11 @@ import { describe, expect, it } from "vitest";
  * 있고, 이 파일은 그 네 개를 한 번에 밟는다.
  *
  * 이 파일이 bare specifier 로 import 하는 것 자체가 alias 검사다. 아래 단언은 나머지 셋을 본다.
+ *
+ * **다만 여기서는 dist 를 볼 수 없다.** 위의 import 는 alias 를 타 소스로 해석되고, `exports`
+ * 는 문자열로만 확인한다. 그래서 `dist/external/index.cjs` 가 없거나 require 조건이 어긋나도
+ * 이 파일은 초록이다. 그쪽은 `tests/dist-external-e2e.mjs` 가 빌드 뒤에 실제로 밟는다
+ * (CI 의 `build` 잡, `pnpm --filter @mcpeak/record test:e2e`).
  */
 
 const require = createRequire(import.meta.url);

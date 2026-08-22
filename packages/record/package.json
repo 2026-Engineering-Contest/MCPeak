@@ -48,7 +48,8 @@
   ],
   "scripts": {
     "build": "tsdown --config-loader native",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:e2e": "node tests/dist-external-e2e.mjs"
   },
   "dependencies": {
     "@mcpeak/core": "workspace:*"

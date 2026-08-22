@@ -152,6 +152,38 @@ describe("mcpeak test 의 External 세션", () => {
     // 실패하더라도 외부로 나가지 않는 것이 Replay 의 존재 이유다.
     expect(origin.calls()).toBe(1);
   }, 30_000);
+
+  /**
+   * #259 -- record 의 REPLAY_MISS 진단이 MCP 오류 채널을 타면 runner 가 서버 텍스트로
+   * 취급해 개행을 escape sequence 로 바꾸고 200자에서 자른다. 그 채널을 타지 않는
+   * renderReplayMissDiagnostics 블록이 stderr 에 그대로 실리는지를 실제 자식 프로세스로
+   * 확인한다. renderReplayMissDiagnostics 단위 테스트가 배치를, 이 테스트가 그 값이 실제
+   * 세션에서 CLI 출력까지 닿는 배선을 본다.
+   */
+  it("녹화에 없는 호출을 만나면 stderr 에 잘리지 않고 개행이 살아있는 진단을 남긴다(#259)", async () => {
+    const origin = await startOrigin();
+    const sessionPath = await newSessionPath();
+
+    const recorded = await runTest(["--record-session", sessionPath], origin.url("/recorded"));
+    expect(recorded).toBe(0);
+    expect(origin.calls()).toBe(1);
+
+    const { exitCode, stderr } = await captureStderr(() =>
+      runTest(["--session", sessionPath], origin.url("/other")),
+    );
+
+    expect(exitCode).not.toBe(0);
+    expect(origin.calls()).toBe(1);
+
+    expect(stderr).toContain("External 진단: 재생 원본에서 찾지 못한 호출 1건");
+    expect(stderr).toContain("/other");
+    expect(stderr).toContain("occurrence 0 · matchKey");
+    // MCP 오류 채널의 이스케이프(개행 escape sequence 변환)를 겪지 않았다는 증거다.
+    const backslashUEscape = `${String.fromCharCode(92)}u000a`;
+    expect(stderr).not.toContain(backslashUEscape);
+    // 200자 절단(runner 의 MAX_VALUE_STRING_CHARS)에 걸리지 않아 해결 안내가 끝까지 남는다.
+    expect(stderr).toContain("녹화를 다시 하거나, 요청이 실행마다 달라지는 값을 담고 있는지 확인하세요.");
+  }, 30_000);
 });
 
 /**

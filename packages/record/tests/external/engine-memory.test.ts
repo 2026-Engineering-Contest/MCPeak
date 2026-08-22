@@ -54,7 +54,12 @@ describe("memory external engine", () => {
     expect(() => replay.lookup(request())).toThrowError(
       expect.objectContaining({ code: "REPLAY_MISS" }),
     );
-    expect(replay.finish("completed")).toMatchObject({ consumedCount: 2, unusedCount: 0 });
+    // 이 마지막 호출이 곧 miss 다 — occurrence 2 짜리 저장본이 없다.
+    expect(replay.finish("completed")).toMatchObject({
+      consumedCount: 2,
+      unusedCount: 0,
+      misses: [{ method: "GET", occurrence: 2 }],
+    });
   });
 
   it("앞 호출이 complete되기 전 같은 matchKey begin을 거절한다", () => {
@@ -92,7 +97,11 @@ describe("memory external engine", () => {
 
     const replay = createReplayEngine({ sourceSessionId: "partial", store });
     replay.lookup(request("a"));
-    expect(replay.finish("completed")).toMatchObject({ consumedCount: 1, unusedCount: 1 });
+    expect(replay.finish("completed")).toMatchObject({
+      consumedCount: 1,
+      unusedCount: 1,
+      misses: [],
+    });
   });
 });
 
@@ -122,5 +131,28 @@ describe("REPLAY_MISS 진단", () => {
     // 왜 그런지와 어떻게 고치는지.
     expect(message).toContain("matchKey");
     expect(message).toContain("녹화를 다시 하거나");
+  });
+
+  it("MCP 오류 채널과 별개로 finish() 요약에 구조화된 진단을 남긴다(#259)", () => {
+    // 이 목록이 정본이다 — 위 message 는 테스트 대상 서버가 relay 해야만 사용자에게
+    // 닿고, 그 relay 를 `runner` 가 신뢰하지 않아 이스케이프·잘라낸다.
+    const store = createMemorySessionStore();
+    store.createSession("s2");
+    store.finish("s2", "completed");
+
+    const replay = createReplayEngine({ sourceSessionId: "s2", store });
+    expect(() => replay.lookup(request("never-recorded"))).toThrowError(
+      expect.objectContaining({ code: "REPLAY_MISS" }),
+    );
+
+    const summary = replay.finish("completed");
+    expect(summary.misses).toEqual([
+      {
+        method: "GET",
+        url: "https://example.com/never-recorded",
+        occurrence: 0,
+        matchKeyPrefix: "never-record",
+      },
+    ]);
   });
 });

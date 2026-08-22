@@ -5,7 +5,7 @@ import type { McpStdioConnection } from "@mcpeak/core";
  * ADR-0056 이 좁혀 둔 실험 경고가 모든 실행에 다시 붙는다. `import type` 은 컴파일에서
  * 지워지므로 `external-wiring.ts` 의 동적 로딩이 그대로 유지된다.
  */
-import type { SessionSummary } from "@mcpeak/record/external";
+import type { ReplayMissDetail, SessionSummary } from "@mcpeak/record/external";
 import type {
   CheckDeterminismOptions,
   DeterminismResult,
@@ -1166,6 +1166,36 @@ async function runCliCore(
 const EXTERNAL_SCOPE_NOTE = "→ MCPeak은 서버가 `globalThis.fetch`로 부른 것만 잡습니다.\n";
 
 /**
+ * 재생 원본에서 찾지 못한 호출들을 그린다. `misses` 가 비어 있으면 빈 문자열이다.
+ *
+ * **MCP 오류 채널을 타지 않는다(#259).** `record` 의 `REPLAY_MISS` 진단은 실패한 툴 호출의
+ * MCP 오류 메시지로도 나가는데, 그 채널은 `runner` 가 "테스트 대상 서버가 보낸 텍스트"로
+ * 취급해 이스케이프(개행 포함)와 200자 절단을 건다 — 우리 자신이 여러 줄로 공들여 쓴 진단이
+ * 서버 텍스트와 똑같이 망가진다. 이 함수는 `record` 가 `finish()` 요약에 구조화해 담아 준
+ * 값을 CLI 가 직접 stderr 로 쓴다. `runner` 도 그 이스케이프 규칙도 거치지 않는다.
+ *
+ * `method`·`url`·`matchKeyPrefix` 는 값 자체는 `record` 가 만들지만 원본은 테스트 대상
+ * 서버가 시도한 요청이라, 혹시 모를 제어 문자에 대비해 필드 단위로 이스케이프한다(줄 구조를
+ * 만드는 정적 문구는 이스케이프 대상이 아니다 — `process-diagnostics.ts` 와 같은 원칙).
+ */
+export function renderReplayMissDiagnostics(misses: readonly ReplayMissDetail[]): string {
+  if (misses.length === 0) return "";
+  const body = misses
+    .map(
+      (miss) =>
+        `  ${escapeTerminalText(miss.method)} ${escapeTerminalText(miss.url)}\n` +
+        `  occurrence ${miss.occurrence} · matchKey ${escapeTerminalText(miss.matchKeyPrefix)}…\n`,
+    )
+    .join("");
+  return (
+    `\nExternal 진단: 재생 원본에서 찾지 못한 호출 ${misses.length}건\n` +
+    body +
+    "→ 이 호출이 녹화된 뒤에 추가되었거나, 요청이 녹화 때와 달라져 다른 matchKey가 되었습니다.\n" +
+    "→ 녹화를 다시 하거나, 요청이 실행마다 달라지는 값을 담고 있는지 확인하세요.\n"
+  );
+}
+
+/**
  * External 세션 요약을 사용자에게 보이는 한 문단으로 옮긴다. `undefined` 는 할 말이 없다는 뜻이다.
  *
  * **순서가 곧 계약이다**(ADR-0057). `consumedCount === 0` 과 `unusedCount > 0` 은 동시에 참일 수
@@ -1258,6 +1288,11 @@ export async function runCli(
     const summary = await wiring.finish(exitCode === 0 ? "completed" : "failed");
     // 실행이 실패했을 때도 낸다. `exitCode === 0` 으로 좁히면 "외부 호출이 실패해서 0건" 이라는
     // 진짜 사고를 놓친다 — 실패 메시지 위에 한 줄 붙는 비용보다 그쪽이 크다(ADR-0057).
+    // 구조화된 진단을 먼저 보여준다 — 어느 호출이 왜 빠졌는지가 스코프 알림보다 더 구체적이다.
+    if (summary.mode === "replay") {
+      const missBlock = renderReplayMissDiagnostics(summary.misses);
+      if (missBlock !== "") dependencies.writeStderr(missBlock);
+    }
     const notice = externalSessionNotice(summary);
     if (notice !== undefined) dependencies.writeStderr(notice);
   } catch (error) {

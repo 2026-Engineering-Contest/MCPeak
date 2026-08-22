@@ -69,7 +69,7 @@ Coordinator·Engine·Store 의 소유를, 0053 이 HTTP 요청 매칭과 반복 
    |---|---|---|
    | 녹화 0건 | `record && interactionCount === 0` | 서버가 외부를 불렀다면 범위 밖인가 |
    | 원본이 빔 | `replay && interactionCount === 0` | 녹화 단계가 아무것도 못 잡았다 |
-   | 소비 0건 | `replay && consumedCount === 0` | 세션 파일이 맞는가, 호출 방식이 바뀌었나 |
+   | 소비 0건 | `replay && interactionCount > 0 && consumedCount === 0` | 세션 파일이 맞는가, 호출 방식이 바뀌었나 |
    | 부분 재생 | `replay && consumedCount > 0 && unusedCount > 0` | 서버 코드나 실행 경로가 달라졌나 |
 
    네 문구는 마지막 줄을 공유한다: `MCPeak은 서버가 globalThis.fetch로 부른 것만 잡습니다.`
@@ -112,7 +112,9 @@ A안과의 차이는 크다 — 사용자가 **두 번째 실행 전에** 안다
 
 ## 결과
 
-- 경고 네 갈래는 **순서가 곧 계약이다.** `consumedCount === 0` 과 `unusedCount > 0` 은 동시에
+- 경고 네 갈래는 **순서와 조건이 곧 계약이다.** 빈 재생 원본에서는
+  `interactionCount === 0` 과 `consumedCount === 0` 이 동시에 참이므로, 소비 0건 갈래는
+  `interactionCount > 0` 일 때만 본다. 또 `consumedCount === 0` 과 `unusedCount > 0` 도 동시에
   참일 수 있어, 조건을 독립적으로 세우면 한 실행에 경고가 두 번 찍힌다. 판정은 순수 함수 하나로
   모으고 그 배타성을 단위 테스트로 고정한다.
 - **`record` 패키지는 바뀌지 않는다.** `interactionCount`·`consumedCount`·`unusedCount` 가 이미

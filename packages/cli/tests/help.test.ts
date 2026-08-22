@@ -67,8 +67,11 @@ describe("test External 세션 도움말", () => {
   });
 
   it("External 어댑터 범위를 globalThis.fetch 로 한정해 말한다", () => {
-    expect(help).toContain("`globalThis.fetch` 로 밖에 부른 HTTP 호출");
-    expect(help).toContain("범위 밖 호출은 실제 네트워크로 나갈 수 있어");
+    expect(help).toContain("`globalThis.fetch` 로 밖에 부른 HTTP 호출만 녹화합니다");
+    expect(help).toContain("`node:http`·`node:https` 같은 범위 밖 호출은");
+    expect(help).toContain(
+      "범위 밖 호출이\n                        의심되는 경우 종료 때 알립니다",
+    );
     expect(help).not.toContain("외부 API 는 부르지 않습니다");
   });
 });

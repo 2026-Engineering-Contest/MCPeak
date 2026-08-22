@@ -63,6 +63,7 @@ const startOrigin = async (): Promise<{
   return { url: (path) => `http://127.0.0.1:${port}${path}`, calls: () => calls };
 };
 
+/** 테스트별 새 SQLite 세션 경로를 만들고, 훅에서 지울 디렉터리 목록에 등록한다. */
 const newSessionPath = async (): Promise<string> => {
   const directory = await mkdtemp(join(tmpdir(), "mcpeak-cli-session-"));
   directories.push(directory);

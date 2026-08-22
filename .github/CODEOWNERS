@@ -4,7 +4,7 @@
 #   ① MCP 서버 테스트 : @seodduu @endl24 @sunghoon0303  → core · runner · generate
 #   ② replay/record   : @ddxng5                        → record
 #   ③ mock server     : @storyrago                     → mock
-# `cli` 는 공동이며 각자 자기 서브커맨드만 수정한다 (CONTRIBUTING §2.1).
+# `cli` 와 `dashboard` 는 공동이다. `cli` 는 각자 자기 서브커맨드만 수정한다 (CONTRIBUTING §2.1).
 
 /packages/core/       @seodduu @endl24 @sunghoon0303
 /packages/runner/     @seodduu @endl24 @sunghoon0303
@@ -13,6 +13,7 @@
 /packages/mock/       @storyrago
 
 /packages/cli/        @seodduu @endl24 @sunghoon0303 @ddxng5 @storyrago
+/packages/dashboard/  @seodduu @endl24 @sunghoon0303 @ddxng5 @storyrago
 /fixtures/            @seodduu @endl24 @sunghoon0303 @ddxng5 @storyrago
 
 /docs/adr/            @seodduu @endl24 @sunghoon0303

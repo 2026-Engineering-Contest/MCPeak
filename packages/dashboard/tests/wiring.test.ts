@@ -34,10 +34,6 @@ function fakeRunnerModule(): typeof import("@mcpeak/runner") {
   } as unknown as typeof import("@mcpeak/runner");
 }
 
-function fakeRecordModule(): typeof import("@mcpeak/record") {
-  return { loadCassette: vi.fn() } as unknown as typeof import("@mcpeak/record");
-}
-
 function fakeGenerateModule(): typeof import("@mcpeak/generate") {
   const noop = vi.fn();
   return {
@@ -192,34 +188,5 @@ describe("wiring.ts executeFlow", () => {
     });
 
     expect(capturedArgv).toEqual(["test", "suite.json", "--json"]);
-  });
-
-  it("replay 플로우가 서브커맨드 없는 argv에서 스위트 경로를 보존한다", async () => {
-    const captured: (readonly string[])[] = [];
-    const io = fakeIo();
-    const loaders = {
-      loadRunner: () => Promise.resolve(fakeRunnerModule()),
-      loadRecord: () => Promise.resolve(fakeRecordModule()),
-    };
-    const runners = {
-      replay: async (argv: readonly string[]) => {
-        captured.push(argv);
-        return 0;
-      },
-    };
-
-    await executeFlow({ flow: "replay", argv: ["suite.json", "--cassette", "c.json"] }, io, {
-      runners,
-      loaders,
-    });
-    // cli 형태(서브커맨드 포함)도 같은 자리로 수렴한다.
-    await executeFlow(
-      { flow: "replay", argv: ["replay", "suite.json", "--cassette", "c.json"] },
-      io,
-      { runners, loaders },
-    );
-
-    expect(captured[0]).toEqual(["suite.json", "--cassette", "c.json"]);
-    expect(captured[1]).toEqual(["suite.json", "--cassette", "c.json"]);
   });
 });

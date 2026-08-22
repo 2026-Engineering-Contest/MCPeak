@@ -1,8 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { loadCassette } from "@mcpeak/record";
 import { validateMcpSuite } from "@mcpeak/runner";
 import type {
   AnswerRequest,
@@ -11,13 +7,7 @@ import type {
   StartRunRequest,
   StartRunResponse,
 } from "../api-types.js";
-import {
-  deleteFile,
-  listCassettes,
-  listSuites,
-  readFileContent,
-  writeFileContent,
-} from "./files.js";
+import { listSuites, readFileContent, writeFileContent } from "./files.js";
 import { resolveProjectPath } from "./paths.js";
 import type { RunIo, RunRegistry } from "./run-registry.js";
 import { formatSseEvent, formatSseEvents, SSE_HEADERS } from "./sse.js";
@@ -35,7 +25,7 @@ export interface RouterOptions {
   readonly execute?: (request: StartRunRequest, io: RunIo) => Promise<number>;
 }
 
-const RUN_FLOWS = new Set<StartRunRequest["flow"]>(["test", "generate", "replay", "repair"]);
+const RUN_FLOWS = new Set<StartRunRequest["flow"]>(["test", "generate", "repair"]);
 
 /**
  * 계획서 §4-4 HTTP 면 표를 전부 연결한다. 매칭되는 경로가 없으면 정적 서빙으로 넘긴다
@@ -64,35 +54,7 @@ export async function handleRequest(
     return;
   }
   if (method === "PUT" && pathname.startsWith("/api/suites/")) {
-    await handlePutFile(
-      request,
-      response,
-      options.root,
-      decodeParam(pathname, "/api/suites/"),
-      "suite",
-    );
-    return;
-  }
-  if (method === "GET" && pathname === "/api/cassettes") {
-    sendJson(response, 200, await listCassettes(options.root));
-    return;
-  }
-  if (method === "GET" && pathname.startsWith("/api/cassettes/")) {
-    await handleGetFile(response, options.root, decodeParam(pathname, "/api/cassettes/"));
-    return;
-  }
-  if (method === "PUT" && pathname.startsWith("/api/cassettes/")) {
-    await handlePutFile(
-      request,
-      response,
-      options.root,
-      decodeParam(pathname, "/api/cassettes/"),
-      "cassette",
-    );
-    return;
-  }
-  if (method === "DELETE" && pathname.startsWith("/api/cassettes/")) {
-    await handleDeleteFile(response, options.root, decodeParam(pathname, "/api/cassettes/"));
+    await handlePutFile(request, response, options.root, decodeParam(pathname, "/api/suites/"));
     return;
   }
   if (method === "POST" && pathname === "/api/runs") {
@@ -171,7 +133,6 @@ async function handlePutFile(
   response: ServerResponse,
   root: string,
   relativeOrNull: string | null,
-  type: "suite" | "cassette",
 ): Promise<void> {
   if (relativeOrNull === null) {
     sendJson(response, 400, { error: "경로를 해석할 수 없습니다." });
@@ -195,7 +156,7 @@ async function handlePutFile(
     sendJson(response, 400, { error: "content·baseMtimeMs가 필요합니다." });
     return;
   }
-  const validationError = await validateFileContent(type, body.content);
+  const validationError = await validateFileContent(body.content);
   if (validationError !== null) {
     sendJson(response, 400, { error: validationError });
     return;
@@ -210,38 +171,6 @@ async function handlePutFile(
       return;
     }
     throw error;
-  }
-}
-
-async function handleDeleteFile(
-  response: ServerResponse,
-  root: string,
-  relativeOrNull: string | null,
-): Promise<void> {
-  if (relativeOrNull === null) {
-    sendJson(response, 400, { error: "경로를 해석할 수 없습니다." });
-    return;
-  }
-  const absolute = resolveProjectPath(root, relativeOrNull);
-  if (absolute === null) {
-    sendJson(response, 400, { error: "허용되지 않는 경로입니다." });
-    return;
-  }
-  if (!relativeOrNull.toLowerCase().endsWith(".json")) {
-    sendJson(response, 400, { error: "카세트는 .json 확장자 파일만 삭제할 수 있습니다." });
-    return;
-  }
-  try {
-    if ((await loadCassette(absolute)) === null) {
-      sendJson(response, 404, { error: "파일을 찾을 수 없습니다." });
-      return;
-    }
-    await deleteFile(absolute);
-    response.writeHead(204);
-    response.end();
-  } catch (error) {
-    if (isErrno(error, "ENOENT")) sendJson(response, 404, { error: "파일을 찾을 수 없습니다." });
-    else sendJson(response, 400, { error: "올바른 카세트 JSON 파일만 삭제할 수 있습니다." });
   }
 }
 
@@ -321,31 +250,14 @@ function parseLastEventId(value: string | undefined): number {
   return Number(value);
 }
 
-async function validateFileContent(
-  type: "suite" | "cassette",
-  content: string,
-): Promise<string | null> {
+async function validateFileContent(content: string): Promise<string | null> {
   let parsed: unknown;
   try {
     parsed = JSON.parse(content) as unknown;
   } catch {
     return "본문 content가 올바른 JSON이 아닙니다.";
   }
-  if (type === "suite") {
-    return validateMcpSuite(parsed).valid ? null : "본문 content가 올바른 MCP 스위트가 아닙니다.";
-  }
-
-  const directory = await mkdtemp(join(tmpdir(), "mcpeak-dashboard-cassette-"));
-  const candidate = join(directory, "candidate.json");
-  try {
-    await writeFile(candidate, content, "utf8");
-    await loadCassette(candidate);
-    return null;
-  } catch {
-    return "본문 content가 올바른 카세트가 아닙니다.";
-  } finally {
-    await rm(directory, { recursive: true, force: true });
-  }
+  return validateMcpSuite(parsed).valid ? null : "본문 content가 올바른 MCP 스위트가 아닙니다.";
 }
 
 function isErrno(error: unknown, code: "ENOENT" | "EISDIR" | "EACCES"): boolean {

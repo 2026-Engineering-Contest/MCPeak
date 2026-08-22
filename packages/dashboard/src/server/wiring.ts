@@ -3,11 +3,9 @@ import {
   type GenerateCommandDependencies,
   nodeGenerateDependencies,
   type RepairCommandDependencies,
-  type ReplayCommandDependencies,
   runCli,
   runGenerateCommand,
   runRepairCommand,
-  runReplayCommand,
   type TestCommandDependencies,
 } from "@mcpeak/cli/commands";
 import type { StartRunRequest } from "../api-types.js";
@@ -25,7 +23,6 @@ import type { RunIo } from "./run-registry.js";
 export interface FlowRunners {
   readonly test: typeof runCli;
   readonly generate: typeof runGenerateCommand;
-  readonly replay: typeof runReplayCommand;
   readonly repair: typeof runRepairCommand;
 }
 
@@ -33,7 +30,6 @@ export interface FlowModuleLoaders {
   readonly loadCore: () => Promise<typeof import("@mcpeak/core")>;
   readonly loadRunner: () => Promise<typeof import("@mcpeak/runner")>;
   readonly loadGenerate: () => Promise<typeof import("@mcpeak/generate")>;
-  readonly loadRecord: () => Promise<typeof import("@mcpeak/record")>;
 }
 
 export interface ExecuteFlowOverrides {
@@ -44,7 +40,6 @@ export interface ExecuteFlowOverrides {
 const defaultRunners: FlowRunners = {
   test: runCli,
   generate: runGenerateCommand,
-  replay: runReplayCommand,
   repair: runRepairCommand,
 };
 
@@ -52,7 +47,6 @@ const defaultLoaders: FlowModuleLoaders = {
   loadCore: () => import("@mcpeak/core"),
   loadRunner: () => import("@mcpeak/runner"),
   loadGenerate: () => import("@mcpeak/generate"),
-  loadRecord: () => import("@mcpeak/record"),
 };
 
 /** 런타임 의존성 로드 실패 시 자리표시자. cli의 `unavailableDependencies`와 같은 값이다. */
@@ -77,14 +71,6 @@ function withTestSubcommand(argv: readonly string[]): readonly string[] {
   return argv[0] === "test" ? argv : ["test", ...argv];
 }
 
-/**
- * `runReplayCommand` 는 서브커맨드가 벗겨진 argv 를 받는다. cli 는 항상 붙여 보내므로
- * 무조건 `slice(1)` 했지만, 프론트는 안 붙여 보내 그 한 칸이 스위트 경로를 삼켰다.
- */
-function withoutReplaySubcommand(argv: readonly string[]): readonly string[] {
-  return argv[0] === "replay" ? argv.slice(1) : argv;
-}
-
 export function executeFlow(
   request: StartRunRequest,
   io: RunIo,
@@ -97,8 +83,6 @@ export function executeFlow(
       return executeTest(request.argv, io, runners, loaders);
     case "generate":
       return executeGenerate(request.argv, io, runners, loaders);
-    case "replay":
-      return executeReplay(request.argv, io, runners, loaders);
     case "repair":
       return executeRepair(request.argv, io, runners, loaders);
     default: {
@@ -222,44 +206,6 @@ async function executeGenerate(
     GenerateTestsError: generate.GenerateTestsError,
   };
   return runners.generate(argv, dependencies);
-}
-
-async function executeReplay(
-  argv: readonly string[],
-  io: RunIo,
-  runners: FlowRunners,
-  loaders: FlowModuleLoaders,
-): Promise<number> {
-  const commandArgv = withoutReplaySubcommand(argv);
-  const ioFields = { writeStdout: io.writeStdout, writeStderr: io.writeStderr };
-  let runner: typeof import("@mcpeak/runner");
-  let record: typeof import("@mcpeak/record");
-  try {
-    [runner, record] = await Promise.all([loaders.loadRunner(), loaders.loadRecord()]);
-  } catch {
-    const dependencies: ReplayCommandDependencies = {
-      readFile,
-      validateSuite: unavailableSync(),
-      loadCassette: unavailable(),
-      startRunner: unavailableSync(),
-      finalize: unavailable(),
-      renderReport: unavailableSync(),
-      colorEnabled: true,
-      ...ioFields,
-    };
-    return runners.replay(commandArgv, dependencies);
-  }
-  const dependencies: ReplayCommandDependencies = {
-    readFile,
-    validateSuite: runner.validateMcpSuite,
-    loadCassette: record.loadCassette,
-    startRunner: runner.runSuite,
-    finalize: runner.finalizeRunnerExecution,
-    renderReport: runner.renderReport,
-    colorEnabled: true,
-    ...ioFields,
-  };
-  return runners.replay(commandArgv, dependencies);
 }
 
 async function executeRepair(

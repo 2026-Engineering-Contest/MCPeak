@@ -8,7 +8,7 @@ function fakeFetch(): typeof fetch {
   return vi.fn(async () => new Response("[]", { status: 200 })) as unknown as typeof fetch;
 }
 
-const NAV_LABELS = ["Home", "Runs", "Generate", "Cassettes", "Repair"];
+const NAV_LABELS = ["Home", "Runs", "Generate", "Repair"];
 
 describe("app shell", () => {
   beforeEach(() => {
@@ -21,7 +21,7 @@ describe("app shell", () => {
     window.location.hash = "";
   });
 
-  it("사이드바 라벨이 순서대로 Home, Runs, Generate, Cassettes, Repair다", async () => {
+  it("사이드바 라벨이 순서대로 Home, Runs, Generate, Repair다", async () => {
     window.location.hash = "#/home";
     render(<App />);
     const nav = await screen.findByRole("navigation");
@@ -36,16 +36,6 @@ describe("app shell", () => {
     // 개명(ADR-0050) 이후 남아 있던 옛 이름이 화면에 노출되던 자리다.
     expect(nav.textContent).toContain("MCPeak");
     expect(nav.textContent).not.toContain("OhMyMCP");
-  });
-
-  it('해시가 #/cassettes면 Cassettes 화면이 렌더되고 해당 항목만 aria-current="page"다', async () => {
-    window.location.hash = "#/cassettes";
-    render(<App />);
-    // CassetteBrowser 목록 상태의 헤딩(본문 문구는 한국어 유지).
-    expect(await screen.findByRole("heading", { name: "카세트" })).toBeTruthy();
-    const current = document.querySelectorAll('[aria-current="page"]');
-    expect(current).toHaveLength(1);
-    expect(current[0]?.textContent?.trim()).toBe("Cassettes");
   });
 
   it("해시가 비어 있으면 #/home으로 온다", async () => {

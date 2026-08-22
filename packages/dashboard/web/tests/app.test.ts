@@ -15,7 +15,6 @@ describe("App", () => {
   it.each([
     ["#/runs/%", "Runs"],
     ["#/repair/%ZZ", "Repair"],
-    ["#/cassettes/foo/%", "Cassettes"],
   ])("잘못된 percent encoding 해시 %s를 식별자 없이 표시한다", (hash, label) => {
     window.location.hash = hash;
 

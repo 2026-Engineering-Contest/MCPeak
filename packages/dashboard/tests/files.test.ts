@@ -1,14 +1,8 @@
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  deleteFile,
-  listCassettes,
-  listSuites,
-  readFileContent,
-  writeFileContent,
-} from "../src/server/files.js";
+import { listSuites, readFileContent, writeFileContent } from "../src/server/files.js";
 
 const VALID_SUITE = {
   schemaVersion: 1,
@@ -25,7 +19,6 @@ const VALID_SUITE = {
   ],
 };
 
-const VALID_CASSETTE = { version: 1, interactions: [] };
 const readdirControl = vi.hoisted(() => ({ deniedDirectory: "" }));
 
 vi.mock("node:fs/promises", async (importOriginal) => {
@@ -88,14 +81,6 @@ describe("files.ts", () => {
     await expect(listSuites(root)).resolves.toEqual([{ path: "readable/valid.json" }]);
   });
 
-  it("cassettes 목록이 카세트만 담는다", async () => {
-    await writeFile(join(root, "cassette.json"), JSON.stringify(VALID_CASSETTE), "utf8");
-    await writeFile(join(root, "not-cassette.json"), JSON.stringify({ hello: "world" }), "utf8");
-
-    const entries = await listCassettes(root);
-    expect(entries).toEqual([{ path: "cassette.json" }]);
-  });
-
   it("mtime이 같으면 저장되고 새 mtime을 준다", async () => {
     const path = join(root, "suite.json");
     await writeFile(path, JSON.stringify(VALID_SUITE), "utf8");
@@ -122,14 +107,5 @@ describe("files.ts", () => {
 
     const bytesAfter = await readFile(path);
     expect(bytesAfter).toEqual(bytesBefore);
-  });
-
-  it("DELETE가 파일을 지우고 204다", async () => {
-    const path = join(root, "cassette.json");
-    await writeFile(path, JSON.stringify(VALID_CASSETTE), "utf8");
-
-    await deleteFile(path);
-
-    await expect(stat(path)).rejects.toThrow();
   });
 });

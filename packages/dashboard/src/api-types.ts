@@ -23,7 +23,6 @@ export type PendingQuestion =
 export type StartRunRequest =
   | { readonly flow: "test"; readonly argv: readonly string[] }
   | { readonly flow: "generate"; readonly argv: readonly string[] }
-  | { readonly flow: "replay"; readonly argv: readonly string[] }
   | { readonly flow: "repair"; readonly argv: readonly string[] };
 
 export interface StartRunResponse {

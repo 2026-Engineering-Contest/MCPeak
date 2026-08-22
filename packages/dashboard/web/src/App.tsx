@@ -3,7 +3,6 @@ import { useEffect, useState } from "react";
 import type { NavId } from "./components/Sidebar.js";
 import { Sidebar } from "./components/Sidebar.js";
 import { ThemeToggle } from "./components/ThemeToggle.js";
-import { CassetteBrowser } from "./screens/CassetteBrowser.js";
 import { GenerateWizard } from "./screens/GenerateWizard.js";
 import { Home } from "./screens/Home.js";
 import { RepairReview } from "./screens/RepairReview.js";
@@ -17,7 +16,6 @@ import { RunView } from "./screens/RunView.js";
  * | `#/home` (기본 리다이렉트 대상) | Home |
  * | `#/runs`, `#/runs/:id` | RunView (`#/runs`는 목록 상태) |
  * | `#/generate` | GenerateWizard |
- * | `#/cassettes` | CassetteBrowser |
  * | `#/repair/:id` | RepairReview |
  *
  */
@@ -25,7 +23,6 @@ type Route =
   | { readonly screen: "home" }
   | { readonly screen: "runs"; readonly runId: string | null }
   | { readonly screen: "generate" }
-  | { readonly screen: "cassettes"; readonly path: string | null }
   | { readonly screen: "repair"; readonly runId: string | null }
   | { readonly screen: "redirect" };
 
@@ -39,7 +36,7 @@ function decodeRouteValue(value: string): string | null {
 }
 
 /**
- * `#/runs/<runId>`, `#/cassettes/<인코딩된 경로>` 처럼 첫 세그먼트가 화면을, 그
+ * `#/runs/<runId>`, `#/repair/<runId>` 처럼 첫 세그먼트가 화면을, 그
  * 뒤가 식별자를 가리키는 해시를 해석한다. 식별자가 없으면 null이다(예: `#/runs`만
  * 있으면 실행 화면이지만 아직 특정 run을 보는 중은 아니다).
  */
@@ -57,12 +54,6 @@ function parseRoute(hash: string): Route {
   if (first === "generate") {
     return { screen: "generate" };
   }
-  if (first === "cassettes") {
-    return {
-      screen: "cassettes",
-      path: rest.length > 0 ? decodeRouteValue(rest.join("/")) : null,
-    };
-  }
   if (first === "repair") {
     return {
       screen: "repair",
@@ -77,7 +68,6 @@ const HEADER_TITLES: Record<NavId, string> = {
   home: "Home",
   runs: "Runs",
   generate: "Generate",
-  cassettes: "Cassettes",
   repair: "Repair",
 };
 
@@ -135,8 +125,6 @@ function Screen({
       return <RunView runId={route.runId} />;
     case "generate":
       return <GenerateWizard />;
-    case "cassettes":
-      return <CassetteBrowser path={route.path} />;
     case "repair":
       return <RepairReview runId={route.runId} />;
   }

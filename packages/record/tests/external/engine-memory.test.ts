@@ -95,3 +95,32 @@ describe("memory external engine", () => {
     expect(replay.finish("completed")).toMatchObject({ consumedCount: 1, unusedCount: 1 });
   });
 });
+
+describe("REPLAY_MISS 진단", () => {
+  it("어떤 호출이 빠졌는지와 다음에 무엇을 할지 알려준다", () => {
+    const store = createMemorySessionStore();
+    store.createSession("s1");
+    const reservation = store.reserve({ sessionId: "s1", request: request("recorded") });
+    store.complete({
+      sessionId: "s1",
+      interactionId: reservation.interactionId,
+      outcome: outcome(1),
+    });
+    store.finish("s1", "completed");
+
+    const replay = createReplayEngine({ sourceSessionId: "s1", store });
+    let message = "";
+    try {
+      replay.lookup(request("never-recorded"));
+    } catch (error) {
+      message = (error as Error).message;
+    }
+
+    expect(message).toContain("실제 네트워크는 호출하지 않았습니다");
+    // 무엇이 빠졌는지 — 마스킹된 display 를 쓴다.
+    expect(message).toContain("GET https://example.com/never-recorded");
+    // 왜 그런지와 어떻게 고치는지.
+    expect(message).toContain("matchKey");
+    expect(message).toContain("녹화를 다시 하거나");
+  });
+});

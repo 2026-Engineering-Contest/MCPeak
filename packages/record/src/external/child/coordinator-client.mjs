@@ -40,6 +40,14 @@ export function createCoordinatorClient(options) {
             }
             chunks.push(chunk);
           });
+          // 응답이 `end` 전에 끊기면 `error` 없이 `close` 만 오는 경우가 있다. 그때
+          // `end` 핸들러가 영영 안 돌아 promise 가 pending 으로 남는다. timeout 이 결국
+          // 걷어 가지만, 그 사이 사용자는 원인 없이 기다리고 진단도 timeout 으로 잘못
+          // 뜬다. `complete` 가 false 면 응답을 끝까지 못 받았다는 뜻이다.
+          response.on("close", () => {
+            if (response.complete) return;
+            reject(clientError("COORDINATOR_UNAVAILABLE", "Coordinator 응답이 도중에 끊겼습니다."));
+          });
           response.on("end", () => {
             if (tooLarge) {
               reject(

@@ -4,7 +4,10 @@
 - 작성일: 2026-08-21
 - 설계 기준: [ADR-0051](../../adr/0051-external-record-replay와-tool-카세트-경계-분리.md),
   [ADR-0052](../../adr/0052-coordinator가-engine과-session-store를-소유한다.md),
-  [ADR-0053](../../adr/0053-http-외부-요청-매칭과-반복-호출-정책.md) — **셋 다 `제안` · `미승인`**
+  [ADR-0053](../../adr/0053-http-외부-요청-매칭과-반복-호출-정책.md) — 이 계획서를 쓸 당시에는
+  **셋 다 `제안` · `미승인`** 이었고, 그것을 해소하는 것이 단계 A 였다. 지금은 A-1 의 blocking
+  항목이 모두 닫혀 **채택**되었으므로, 아래 서술 중 "채택된 ADR" 은 확정 사항을 가리킨다.
+  채택 자체는 이 구현과 별도 PR 로 낸다(A-5 5번).
 - 조사 기준: 브랜치 `codex/remove-record-replay-design-notes`, HEAD `d08d738`
 - 관련 이슈: [#228](https://github.com/2026-Engineering-Contest/MCPeak/issues/228) (Node 22.13 상향, 열림),
   [#227](https://github.com/2026-Engineering-Contest/MCPeak/issues/227) (`verify`·`generate` 가 서버 종료 원인을 버림 — legacy 결함이나 A-4-9 의 선례)

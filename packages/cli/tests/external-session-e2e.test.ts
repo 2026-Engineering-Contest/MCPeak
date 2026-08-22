@@ -92,6 +92,7 @@ const runWith = (
     ...extra,
   ]);
 
+/** 기본 External HTTP fixture 조합으로 `mcpeak test` 를 실행한다. */
 const runTest = (extra: readonly string[], originUrl: string): Promise<number> =>
   runWith(server, suite, extra, originUrl);
 

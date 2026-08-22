@@ -21,7 +21,7 @@ SQLite Session Store가 들어오면서 그 시점이 됐다. 실측한 사실�
 
 | 런타임 | `node:sqlite` 로드 시 |
 |---|---|
-| Node 22.18 | 프로세스마다 stderr 에 `ExperimentalWarning: SQLite is an experimental feature and might change at any time` |
+| Node 22.18.0 | `node:sqlite` 를 처음 로드할 때 stderr 에 `ExperimentalWarning: SQLite is an experimental feature and might change at any time` |
 | Node 24.16.0 | 아무것도 찍지 않는다 |
 
 측정한 것은 위 **두 버전**이다. "Node 24 이상은 조용하다" 로 일반화하지 않는다 — 경고가 어느
@@ -94,9 +94,13 @@ D안은 비용이 맞지 않는다. Node 22 는 2027년까지 LTS 이고, 최소
 
 - `cli` 의 External 배선은 동적 import 를 쓴다. 정적 import 로 되돌리면 경고가 전체 실행으로
   번지며, `build` 잡의 `dist-cli-e2e` 가 그것을 잡는다.
-- Node 22.x 에서 세션 옵션을 쓰는 사용자는 실행마다 경고 한 줄을 본다. Node 24.16.0 에서는
-  보이지 않는다. 이 차이는 `packages/record/README.md` 와 `mcpeak help test` 에 적었다 —
-  경고를 남겨 두기로 한 이상, 그것이 무엇이고 무엇이 아닌지는 설명되어 있어야 한다.
+- 경고는 프로세스가 `node:sqlite` 를 **처음 로드할 때 한 번** 나온다. 세션 수와 무관하다 —
+  모듈 로드가 프로세스당 한 번이기 때문이다. `mcpeak test` 한 번은 프로세스 하나이므로
+  세션 옵션을 쓴 실행당 최대 한 줄이 된다.
+- 22.18.0 에서 나오고 24.16.0 에서 나오지 않는 것을 실측했다. 그 사이 버전은 재지 않았으므로
+  "22 대는 나오고 24 대는 안 난다" 로 일반화하지 않는다.
+- 이 두 가지는 `packages/record/README.md` 와 `mcpeak help test` 에 적었다 — 경고를 남겨
+  두기로 한 이상, 그것이 무엇이고 무엇이 아닌지는 설명되어 있어야 한다.
 - 경고를 거르는 코드가 저장소에 없다. 나중에 필요하면 이 ADR 을 개정한다.
 - `node:sqlite` 의 동작 변화는 계약 테스트가 잡는다. 그 테스트가 22.18 매트릭스에서 빠지면
   이 결정의 근거도 함께 사라지므로, 매트릭스에서 22.18 을 뺄 때 이 ADR 을 함께 검토한다.

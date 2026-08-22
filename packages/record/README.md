@@ -184,14 +184,26 @@ CLI 는 `mcpeak verify <cassette.json> --command <executable>` 로 감싼다.
 
 ### External 세션과 `node:sqlite` 실험 경고
 
-External 세션은 `node:sqlite` 로 저장한다. Node 가 이 모듈을 아직 실험적으로 표시하므로
-**Node 22.x 에서는 세션을 열 때마다** stderr 에 경고가 한 줄 찍힌다.
+External 세션은 `node:sqlite` 로 저장한다. Node 가 이 모듈을 아직 실험적으로 표시하므로,
+런타임에 따라 stderr 에 경고가 한 줄 찍힌다.
 
 ```
 (node:2845) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 ```
 
-Node 24.16.0 에서는 나오지 않는다. 측정한 것은 22.18.0 과 24.16.0 두 버전이다.
+**프로세스에서 `node:sqlite` 를 처음 로드하는 순간 한 번** 나온다. 세션 하나당도, 호출
+하나당도 아니다 — 모듈 로드는 프로세스에서 한 번뿐이라 한 프로세스가 세션을 여러 개 열어도
+줄은 하나다. `mcpeak test` 한 번은 프로세스 하나이므로 실행당 최대 한 줄이 된다.
+
+실측한 것은 두 버전이다.
+
+| 런타임 | |
+|---|---|
+| Node 22.18.0 | 경고가 나온다 |
+| Node 24.16.0 | 나오지 않는다 |
+
+그 사이 버전은 재지 않았다. 경고가 어느 패치에서 빠졌는지 모르므로 "22 대는 나오고 24 대는
+안 나온다" 로 일반화하지 않는다.
 
 이 경고는 **Node 의 API 표면**에 대한 것이지 저장된 녹화에 대한 것이 아니다. 파일은 헤더가
 `SQLite format 3` 인 표준 SQLite 라서 다른 도구로도 열리고, Node 가 바인딩을 바꿔도 그대로

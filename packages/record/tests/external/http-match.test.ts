@@ -304,6 +304,7 @@ describe("응답 헤더 마스킹", () => {
 
     expect(JSON.stringify(stored)).not.toContain("leaked");
     expect(stored.headers).toContainEqual(["x-api-key", "[redacted]"]);
+    expect(stored.headers).toContainEqual(["x-auth-token", "[redacted]"]);
     expect(stored.headers).toContainEqual(["www-authenticate", "[redacted]"]);
     // 민감하지 않은 헤더는 그대로 남는다. 전부 지우면 진단이 사라진다.
     expect(stored.headers).toContainEqual(["content-type", "application/json"]);

@@ -2,6 +2,7 @@ import type { ReplayMissDetail, SessionSummary } from "@mcpeak/record/external";
 import { describe, expect, it } from "vitest";
 import { SessionFileMissingError } from "../src/external-wiring.js";
 import {
+  bodyUrlNotice,
   externalCloseFailure,
   externalOpenFailure,
   externalSessionNotice,
@@ -207,6 +208,65 @@ describe("External 세션 종료 경고", () => {
  * #259 — 진단이 MCP 오류 채널을 안 타는지는 `record` 쪽에서 이미 본다
  * (`engine-memory.test.ts`). 여기서는 그 구조화된 값을 CLI 가 텍스트로 옮기는 배치만 본다.
  */
+/**
+ * ADR-0062. body 에 남은 URL 을 지우지 않고 세어 알리는 자리다. **개수만 말하고 값은 싣지
+ * 않는다** — 알림이 새 유출 경로가 되면 고치려던 것을 그 자리에서 다시 만든다.
+ */
+describe("세션 본문 URL 알림 (ADR-0062)", () => {
+  const withUrls = (echoed: number, other: number, truncated = false): SessionSummary =>
+    ({ ...record(1), bodyUrls: { echoed, other, truncated } }) as SessionSummary;
+
+  it("남은 URL 이 없으면 아무 말도 하지 않는다", () => {
+    expect(bodyUrlNotice(withUrls(0, 0))).toBeUndefined();
+  });
+
+  it("record 요약에 개수가 아예 없으면(구 버전 자식) 조용하다", () => {
+    expect(bodyUrlNotice(record(1))).toBeUndefined();
+  });
+
+  it("재생에는 나오지 않는다 — 판정이 녹화 경로에서만 돈다", () => {
+    expect(bodyUrlNotice(replay(2, 2, 0))).toBeUndefined();
+  });
+
+  it("되돌아온 경로를 먼저 말하고 무엇을 해야 하는지까지 말한다", () => {
+    const notice = bodyUrlNotice(withUrls(1, 2));
+
+    expect(notice).toContain("URL 이 3건 남아 있습니다");
+    expect(notice).toContain("되돌아온 경로 1건");
+    expect(notice).toContain("그 밖의 URL 2건");
+    // 확신도 순서 — 되돌아온 경로가 그 밖보다 먼저다.
+    expect(notice?.indexOf("되돌아온 경로")).toBeLessThan(notice?.indexOf("그 밖의 URL") ?? -1);
+    // 알림으로 끝내지 않고 다음 행동을 준다.
+    expect(notice).toContain("커밋하기 전에");
+    expect(notice).toContain("폐기·재발급");
+  });
+
+  it("한 갈래만 있으면 그 줄만 낸다", () => {
+    expect(bodyUrlNotice(withUrls(2, 0))).not.toContain("그 밖의 URL");
+    expect(bodyUrlNotice(withUrls(0, 2))).not.toContain("되돌아온 경로");
+  });
+
+  /**
+   * 지문 개수 상한에 걸렸으면 이 수는 **최소값**이다. "N건" 이라고 말하면 사용자는 그 수를
+   * 다 확인하면 끝이라고 읽는다.
+   */
+  it("잘렸으면 '이상' 을 붙여 최소값임을 말한다", () => {
+    const notice = bodyUrlNotice(withUrls(1, 2, true));
+
+    expect(notice).toContain("3건 이상 남아 있습니다");
+    expect(notice).toContain("되돌아온 경로 1건 이상");
+    expect(notice).toContain("그 밖의 URL 2건 이상");
+  });
+
+  it("URL 도 그 일부도 싣지 않는다 — 개수와 고정 문구뿐이다", () => {
+    const notice = bodyUrlNotice(withUrls(3, 4)) ?? "";
+
+    expect(notice).not.toMatch(/https?:\/\//);
+    // 지문(hex)도 나가지 않는다.
+    expect(notice).not.toMatch(/[0-9a-f]{16}/);
+  });
+});
+
 describe("재생 원본 miss 진단 렌더링", () => {
   const miss = (overrides: Partial<ReplayMissDetail> = {}): ReplayMissDetail => ({
     method: "GET",

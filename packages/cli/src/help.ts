@@ -26,7 +26,9 @@ const TEST_OPTIONS = `옵션:
 어긋나고 새 세션을 쓰면 비교 기준이 갈라집니다.
 
 세션 파일에는 외부 API 응답이 저장되므로 .gitignore 를 확인하세요. \`token\`·\`apiKey\` 같은
-이름의 값은 저장 전에 가려집니다.
+이름의 값은 저장 전에 가려집니다. 다만 **본문에 실린 URL 은 가려지지 않습니다** — 이름으로
+판정할 수 없는 자리라서입니다. 녹화가 끝나면 그런 URL 이 몇 건 남았는지 알려 주며, 경로 자체가
+자격증명인 endpoint(Slack·Discord webhook 등)를 녹화했다면 커밋 전에 내용을 확인하세요.
 
 런타임에 따라 세션 옵션을 쓴 실행에서 \`ExperimentalWarning: SQLite is an experimental
 feature\` 가 stderr 에 한 줄 찍힙니다(실측: Node 22.18.0 에서 나오고 24.16.0 에서는 안 납니다).

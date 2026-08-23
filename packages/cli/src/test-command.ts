@@ -1389,6 +1389,45 @@ export function externalSessionNotice(summary: SessionSummary): string | undefin
 }
 
 /**
+ * 세션 본문에 남은 URL 을 알린다(ADR-0062).
+ *
+ * **`externalSessionNotice` 와 축이 다르므로 따로 낸다.** 그쪽은 "무엇이 녹화·재생됐는가" 를
+ * 배타적 갈래 하나로 말하는데, 이 알림은 "그 세션에 무엇이 남았는가" 라서 같은 실행에서 둘 다
+ * 나갈 수 있다. 한 함수에 합치면 그쪽의 배타성 계약이 깨진다.
+ *
+ * **재생에는 나오지 않는다.** 이 판정은 녹화 경로에서만 돌고(ADR-0062), 재생은 이미 있는
+ * 파일을 읽을 뿐이라 새로 남는 것이 없다.
+ *
+ * 개수만 말하고 **URL 도 그 일부도 싣지 않는다.** 알림이 새 유출 경로가 되면 고치려던 것을
+ * 그 자리에서 다시 만든다 — ADR-0062 결정 3번이 그 방어이고, `record` 가 지문만 넘기는 것도
+ * 같은 이유다. 사용자가 확인할 곳은 세션 파일이지 이 화면이 아니다.
+ */
+export function bodyUrlNotice(summary: SessionSummary): string | undefined {
+  if (summary.mode !== "record") return undefined;
+  const counts = summary.bodyUrls;
+  if (counts === undefined) return undefined;
+  const total = counts.echoed + counts.other;
+  if (total === 0) return undefined;
+  // 상한에 걸려 일부를 세지 못했으면 이 수는 **최소값**이다. "N건" 이라고 말하면 사용자는
+  // 그 수를 다 확인하면 끝이라고 읽는다(ADR-0062).
+  const count = (value: number): string => `${value}건${counts.truncated ? " 이상" : ""}`;
+  const lines = [`\n알림: 세션 파일 본문에 URL 이 ${count(total)} 남아 있습니다.`];
+  // 되돌아온 경로가 먼저다. 그쪽은 "우리가 지운 값이 되돌아왔다" 를 단정할 수 있고, 그 밖은
+  // 단정할 수 없다 — 위험도가 아니라 확신도의 차이라 순서로만 나타낸다.
+  if (counts.echoed > 0)
+    lines.push(
+      `  되돌아온 경로 ${count(counts.echoed)} — 이 실행의 요청 경로가 본문에 그대로 실렸습니다`,
+    );
+  if (counts.other > 0) lines.push(`  그 밖의 URL ${count(counts.other)}`);
+  lines.push(
+    "→ 경로 자체가 자격증명인 endpoint(Slack·Discord webhook 등)를 녹화했다면 그 값이 세션 파일에",
+    "  원문으로 들어 있습니다. 이름으로 판정할 수 없는 자리라 마스킹이 닿지 않습니다.",
+    "→ 커밋하기 전에 세션 파일 내용을 확인하세요. 이미 커밋했다면 그 자격증명을 폐기·재발급하세요.",
+  );
+  return `${lines.join("\n")}\n`;
+}
+
+/**
  * `test` 실행에 External Record/Replay 수명주기를 씌운다.
  *
  * Coordinator 를 **먼저 열고 마지막에 닫는다**(ADR-0052). 그 사이에 들어가는 것이 기존 실행
@@ -1436,6 +1475,10 @@ export async function runCli(
     }
     const notice = externalSessionNotice(summary);
     if (notice !== undefined) dependencies.writeStderr(notice);
+    // 축이 다른 알림이라 위 갈래와 무관하게 낸다(ADR-0062). 마지막에 두는 것은 화면 하단이
+    // 눈에 남기 때문이고, 이 알림은 커밋 전에 확인하라는 행동을 요구한다.
+    const urls = bodyUrlNotice(summary);
+    if (urls !== undefined) dependencies.writeStderr(urls);
   } catch (error) {
     return writeFailure(dependencies, externalCloseFailure(error));
   }

@@ -1,24 +1,39 @@
 import { externalError } from "./errors.js";
-import type { NormalizedExternalRequest, StoredExternalOutcome } from "./protocol.js";
 import type {
+  BodyUrlFingerprints,
+  NormalizedExternalRequest,
+  StoredExternalOutcome,
+} from "./protocol.js";
+import type {
+  BodyUrlCounts,
   InteractionReservation,
+  RecordSessionSummary,
   ReplayMissDetail,
   ReplaySessionSummary,
   SessionStore,
-  SessionSummary,
   StoredInteraction,
 } from "./session-store.js";
 
 export interface CompleteRecordInput {
   readonly interactionId: string;
   readonly outcome: StoredExternalOutcome;
+  /** ADR-0062. 자식이 body 에서 찾은 URL 지문. 저장하지 않고 세기만 한다. */
+  readonly bodyUrls?: BodyUrlFingerprints;
+}
+
+/**
+ * Engine 이 낸 녹화 요약. `bodyUrls` 를 **필수로 좁힌다** — Store 계약에서는 선택 필드지만
+ * (Store 가 채우지 않으므로), 녹화 경로를 거쳐 나온 요약에는 Engine 이 항상 채운다.
+ */
+export interface RecordEngineSummary extends RecordSessionSummary {
+  readonly bodyUrls: BodyUrlCounts;
 }
 
 export interface RecordEngine {
   readonly mode: "record";
   begin(request: NormalizedExternalRequest): InteractionReservation;
   complete(input: CompleteRecordInput): void;
-  finish(status: "completed" | "failed"): SessionSummary;
+  finish(status: "completed" | "failed"): RecordEngineSummary;
 }
 
 export interface ReplayEngine {
@@ -36,12 +51,34 @@ export function createRecordEngine(options: {
   readonly store: SessionStore;
 }): RecordEngine {
   options.store.createSession(options.sessionId);
+  // ADR-0062. 지문만 쌓는다 — 세션 전체에서 중복을 제거해야 "서로 다른 URL 의 개수" 가 되고,
+  // 그 집계는 interaction 하나만 보는 Store 가 할 수 없다. 저장소에는 쓰지 않는다.
+  const echoed = new Set<string>();
+  const other = new Set<string>();
   return {
     mode: "record",
     begin: (request) => options.store.reserve({ sessionId: options.sessionId, request }),
-    complete: ({ interactionId, outcome }) =>
-      options.store.complete({ sessionId: options.sessionId, interactionId, outcome }),
-    finish: (status) => options.store.finish(options.sessionId, status),
+    complete: ({ interactionId, outcome, bodyUrls }) => {
+      if (bodyUrls !== undefined) {
+        for (const digest of bodyUrls.echoed) echoed.add(digest);
+        for (const digest of bodyUrls.other) other.add(digest);
+      }
+      options.store.complete({ sessionId: options.sessionId, interactionId, outcome });
+    },
+    finish: (status) => {
+      const summary = options.store.finish(options.sessionId, status);
+      return Object.freeze({
+        ...summary,
+        bodyUrls: Object.freeze({
+          echoed: echoed.size,
+          // **합집합으로 판정한다.** 같은 URL 이 어떤 interaction 에서는 그 요청 경로와 맞고
+          // 다른 interaction 에서는 안 맞을 수 있다. 먼저 본 쪽을 쓰면 interaction 순서에
+          // 따라 숫자가 달라져 결정론성이 깨진다 — 한 번이라도 되돌아온 경로였으면 그쪽으로
+          // 세고, 한 지문은 정확히 한 갈래에만 센다(ADR-0062).
+          other: [...other].filter((digest) => !echoed.has(digest)).length,
+        }),
+      });
+    },
   };
 }
 

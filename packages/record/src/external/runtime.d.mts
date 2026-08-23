@@ -35,6 +35,14 @@ export function stableStringify(value: unknown): string;
 export function httpMatchKey(match: HttpMatchMaterialV1): string;
 export function sensitiveKey(key: string): boolean;
 export function redactJson(value: JsonValue): JsonValue;
+/**
+ * body 에 남은 http(s) URL 문자열의 SHA-256 hex 지문. 값은 돌려주지 않는다(ADR-0062).
+ * `echoed` 는 `requestPathname` 을 그대로 되돌려 담은 것, `other` 는 그 밖이다.
+ */
+export function bodyUrlFingerprints(
+  value: JsonValue,
+  requestPathname: string,
+): { readonly echoed: ReadonlySet<string>; readonly other: ReadonlySet<string> };
 export function normalizeHttpRequest(request: Request): Promise<NormalizedExternalRequest>;
 export function encodeHttpResponse(response: Response): Promise<StoredHttpResponse>;
 export function encodeHttpThrow(error: unknown): StoredHttpThrow;

@@ -102,10 +102,30 @@ export interface BeginRecordRequest {
   readonly request: NormalizedExternalRequest;
 }
 
+/**
+ * body 에서 찾은 URL 문자열의 **지문**이다(ADR-0062). 값이 아니라 SHA-256 hex 만 담는다 —
+ * 세는 쪽이 URL 을 볼 수 없으면서도 세션 전체에서 중복을 제거할 수 있게 하려는 것이고,
+ * 진단이 새 유출 경로가 되지 않게 하는 형식적 보장이다.
+ *
+ * 저장하지 않는다. Coordinator wire 로만 흘러 종료 요약의 개수가 된다 — 그래서
+ * `HTTP_INTERACTION_SCHEMA_VERSION` 은 이 필드와 무관하고, 기존 세션 파일도 그대로 읽힌다.
+ */
+export interface BodyUrlFingerprints {
+  /** 그 요청의 pathname 을 그대로 되돌려 담은 URL. 확실한 갈래다. */
+  readonly echoed: readonly string[];
+  /** 되돌아온 경로는 아니지만 URL 로 해석되는 문자열. 약한 신호다. */
+  readonly other: readonly string[];
+}
+
 export interface CompleteRecordRequest {
   readonly schemaVersion: typeof PROTOCOL_SCHEMA_VERSION;
   readonly interactionId: string;
   readonly outcome: StoredExternalOutcome;
+  /**
+   * 선택 필드다. 자식이 안 보내면 이 interaction 은 세는 대상이 없다는 뜻으로 다룬다 —
+   * 없는 것과 0건이 같은 뜻이라 구분할 이유가 없다.
+   */
+  readonly bodyUrls?: BodyUrlFingerprints;
 }
 
 export interface ReplayLookupRequest {

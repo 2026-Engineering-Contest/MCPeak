@@ -95,6 +95,74 @@ export const redactJson = (value) => normalizeJson(value, true);
 
 export const stableStringify = (value) => JSON.stringify(normalizeJson(value, false));
 
+/**
+ * body 에 남은 URL 문자열을 찾아 **지문만** 모은다(ADR-0062).
+ *
+ * 이름 기반 마스킹(`redactJson`)이 닿지 않는 자리다 — URL 경로 세그먼트에는 판정에 쓸 이름이
+ * 없다. ADR-0053 이 표준 자리(요청 `display.url`·헤더)의 경로를 지웠지만, 서버가 그 경로를
+ * body 로 되돌려 담으면 지운 값이 되돌아온다. pagination `links.next` 나 HAL `_links.self` 는
+ * 요청 URL 을 되돌려 만들기 때문에 그것이 우연이 아니라 구조다.
+ *
+ * **지우지는 않는다.** 저장한 body 가 곧 재생에서 서버가 받는 값이라(`restoreHttpOutcome`),
+ * 여기서 경로를 지우면 링크를 따라가는 서버가 없는 경로로 요청해 재생이 깨진다. ADR-0062 가
+ * 그 대가를 재 보고 "지우지 않고 알린다" 를 골랐다.
+ *
+ * **값을 돌려주지 않는 것이 요점이다.** 부모(Coordinator)로 나가는 것은 SHA-256 hex 뿐이라,
+ * 세는 쪽은 URL 을 볼 수 없으면서도 세션 전체에서 중복을 제거할 수 있다. 진단이 새 유출
+ * 경로가 되지 않게 하는 형식적 보장이다.
+ *
+ * @param value 마스킹을 마친 JSON body (`JsonValue`).
+ * @param requestPathname 그 요청의 **정확한** pathname. 자식 안에서만 사는 값이다.
+ */
+export const bodyUrlFingerprints = (value, requestPathname) => {
+  const echoed = new Set();
+  const other = new Set();
+  const visit = (node) => {
+    if (typeof node === "string") {
+      const url = absoluteHttpUrl(node);
+      if (url === null) return;
+      const digest = createHash("sha256").update(url.href, "utf8").digest("hex");
+      // pathname 만 비교한다. pagination 은 경로를 그대로 두고 query 만 바꿔 되돌아오므로,
+      // query 를 비교에 넣으면 정작 잡아야 할 것을 놓친다(ADR-0062).
+      //
+      // `URL` 은 percent-encoding 을 정규화하지 않아 `/a%7Eb` 와 `/a~b` 가 다르게 남는다.
+      // 그대로 문자열 비교하는 것이 맞다 — `%2F` 와 `/` 는 RFC 3986 상 다른 자원이라,
+      // 디코딩해서 맞추면 서로 다른 경로를 같다고 말하게 된다. 대가는 인코딩이 다른
+      // 되돌림을 확실한 갈래에서 놓치는 것이고, 그때도 `other` 에는 남는다.
+      (url.pathname === requestPathname ? echoed : other).add(digest);
+      return;
+    }
+    if (Array.isArray(node)) {
+      for (const item of node) visit(item);
+      return;
+    }
+    if (typeof node === "object" && node !== null) {
+      // 값만 본다. 키 이름은 대상이 아니다 — 이름으로 판정하는 일은 `redactJson` 이 이미 했다.
+      for (const key of Object.keys(node)) visit(node[key]);
+    }
+  };
+  visit(value);
+  return { echoed, other };
+};
+
+/**
+ * 문자열 **전체**가 http(s) 절대 URL 일 때만 그 `URL` 을 준다. 아니면 `null`.
+ *
+ * 문장에 URL 이 섞인 값은 대상이 아니다 — 그것은 자유 텍스트이고, ADR-0062 가 범위 밖으로
+ * 뒀다. scheme 을 http(s) 로 좁히는 것은 이 판정이 "우리가 지운 경로가 되돌아왔는가" 를 묻기
+ * 때문이다. `mailto:`·`data:` 는 `new URL` 이 받아 주지만 그 경로는 우리가 지운 적이 없고,
+ * 세어 봐야 사용자가 확인할 자리를 늘리기만 한다.
+ */
+const absoluteHttpUrl = (value) => {
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    return null;
+  }
+  return url.protocol === "http:" || url.protocol === "https:" ? url : null;
+};
+
 const decodeQueryKey = (value) => {
   try {
     return decodeURIComponent(value.replace(/\+/g, " "));

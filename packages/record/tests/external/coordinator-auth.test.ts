@@ -648,3 +648,95 @@ describe("불변식 위반 뒤 세션 상태 (ADR-0052)", () => {
     expect(store.read("throwok")?.interactions[0]?.status).toBe("complete");
   });
 });
+
+/**
+ * ADR-0062. 자식이 보내는 body URL 지문은 **지문이어야만 한다.** 원문이 실려 오면 그것은
+ * 부모와 종료 요약을 거쳐 사용자 화면까지 갈 수 있는 값이라, 이 기능이 막으려던 유출을
+ * 이 기능이 만드는 꼴이 된다. 형태를 못 박아 그 경로를 닫는지 본다.
+ */
+describe("body URL 지문 검증 (ADR-0062)", () => {
+  const DIGEST = "a".repeat(64);
+
+  /** 규칙을 지킨 자식이 보낼 법한 요청. 위 describe 의 것과 같은 모양이다. */
+  const clean = {
+    protocol: "http",
+    interactionSchemaVersion: 1,
+    matchKey: "c".repeat(64),
+    display: {
+      method: "GET",
+      url: "https://example.com/<redacted>",
+      headers: { accept: ["application/json"] },
+      body: { kind: "none" },
+    },
+  };
+
+  const openRecord = async (sessionId: string) => {
+    const store = createMemorySessionStore();
+    const handle = await startExternalCoordinator({ mode: "record", sessionId, store });
+    handles.push(handle);
+    const auth = {
+      authorization: `Bearer ${handle.childEnvironment.MCPEAK_EXTERNAL_COORDINATOR_TOKEN}`,
+      "content-type": "application/json",
+    };
+    const began = await fetch(`${handle.url}/begin`, {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ schemaVersion: 1, request: clean }),
+    });
+    const { reservation } = (await began.json()) as { reservation: { interactionId: string } };
+    return { store, handle, auth, interactionId: reservation.interactionId };
+  };
+
+  const complete = (
+    session: Awaited<ReturnType<typeof openRecord>>,
+    bodyUrls: unknown,
+  ): Promise<Response> =>
+    fetch(`${session.handle.url}/complete`, {
+      method: "POST",
+      headers: session.auth,
+      body: JSON.stringify({
+        schemaVersion: 1,
+        interactionId: session.interactionId,
+        outcome: { kind: "throw", failureKind: "network", name: "TypeError" },
+        bodyUrls,
+      }),
+    });
+
+  it("정상 지문은 통과한다", async () => {
+    const session = await openRecord("fpok");
+
+    expect((await complete(session, { echoed: [DIGEST], other: [] })).status).toBe(200);
+  });
+
+  it("URL 원문이 실려 오면 거부하고 세션을 실패로 닫는다", async () => {
+    const session = await openRecord("fpraw");
+
+    const response = await complete(session, {
+      echoed: ["https://hooks.slack.com/services/T00/B00/XXXXSECRET"],
+      other: [],
+    });
+    const body = await response.text();
+
+    expect(response.status).toBe(400);
+    expect(body).toContain("EXTERNAL_REDACTION_INVARIANT_VIOLATION");
+    expect(body).toContain("invalid-value");
+    // 거부하면서 그 값을 되돌려 말하면 같은 유출을 진단이 만든다.
+    expect(body).not.toContain("SECRET");
+    expect(session.store.read("fpraw")?.status).toBe("failed");
+  });
+
+  it("hex 가 아니거나 길이가 다른 값도 거부한다", async () => {
+    for (const bad of ["A".repeat(64), "a".repeat(63), "a".repeat(65), ""]) {
+      const session = await openRecord(`fpbad${bad.length}${bad.slice(0, 1)}`);
+      expect((await complete(session, { echoed: [], other: [bad] })).status).toBe(400);
+    }
+  });
+
+  it("낯선 필드와 배열이 아닌 값도 거부한다", async () => {
+    const extra = await openRecord("fpextra");
+    expect((await complete(extra, { echoed: [], other: [], leaked: "x" })).status).toBe(400);
+
+    const notArray = await openRecord("fparr");
+    expect((await complete(notArray, { echoed: DIGEST, other: [] })).status).toBe(400);
+  });
+});

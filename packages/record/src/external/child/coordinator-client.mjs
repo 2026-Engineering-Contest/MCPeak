@@ -104,11 +104,16 @@ export function createCoordinatorClient(options) {
       });
       return response.reservation;
     },
-    async complete(interactionId, outcome) {
+    async complete(interactionId, outcome, bodyUrls) {
       await call("/complete", {
         schemaVersion: options.schemaVersion,
         interactionId,
         outcome,
+        // 없는 것과 0건이 같은 뜻이라 빈 지문은 아예 싣지 않는다 — payload 상한이 걸린
+        // wire 에 뜻 없는 필드를 늘리지 않는다(ADR-0062).
+        ...(bodyUrls === undefined || (bodyUrls.echoed.length === 0 && bodyUrls.other.length === 0)
+          ? {}
+          : { bodyUrls }),
       });
     },
     async lookup(externalRequest) {

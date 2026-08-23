@@ -113,6 +113,45 @@ describe("mcpeak cli", () => {
     },
   );
 
+  it.each([
+    [["help", "없는명령"], "도움말이 없는 명령 '없는명령'입니다."],
+    [["help", "tset"], "도움말이 없는 명령 'tset'입니다."],
+    [["help", "test", "extra"], "`help test` 뒤의 'extra' 는 받지 않습니다."],
+  ])("%j 는 틀린 토큰을 지목하고 명령 목록을 준다", async (argv, expected) => {
+    const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    try {
+      await expect(run(argv)).resolves.toBe(1);
+      const err = stderr.mock.calls.map(([text]) => String(text)).join("");
+      expect(err).toContain(expected);
+      // 사용자가 정확히 친 `help` 를 틀렸다고 지목하면 안 된다.
+      expect(err).not.toContain("알 수 없는 CLI 명령 'help'");
+      expect(err).toContain("사용 가능한 명령: test, generate, repair");
+      expect(stdout).not.toHaveBeenCalled();
+    } finally {
+      stdout.mockRestore();
+      stderr.mockRestore();
+    }
+  });
+
+  it("help 인자의 제어 문자를 이스케이프한다", async () => {
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    try {
+      await expect(run(["help", "bad\n\u001b"])).resolves.toBe(1);
+      const err = stderr.mock.calls.map(([text]) => String(text)).join("");
+      expect(err).toContain("\\u000a");
+      expect(err).toContain("\\u001b");
+      // 남는 인자 자리도 같은 무해화를 거쳐야 한다. 이쪽은 유효한 토픽 뒤라 다른 갈래를 탄다.
+      stderr.mockClear();
+      await expect(run(["help", "test", "bad\n\u001b"])).resolves.toBe(1);
+      const extraErr = stderr.mock.calls.map(([text]) => String(text)).join("");
+      expect(extraErr).toContain("\\u000a");
+      expect(extraErr).toContain("\\u001b");
+    } finally {
+      stderr.mockRestore();
+    }
+  });
+
   it("--version 은 CLI package.json 버전을 stdout 에 쓴다", async () => {
     const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);

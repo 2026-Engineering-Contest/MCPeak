@@ -7,6 +7,7 @@ import {
   externalOpenFailure,
   externalSessionNotice,
   externalSessionOutcome,
+  outOfScopeNotice,
   parseTestCommand,
   renderReplayMissDiagnostics,
 } from "../src/test-command.js";
@@ -575,6 +576,82 @@ describe("External 세션 닫기 실패 문장", () => {
 });
 
 /**
+ * ADR-0068. 재생 중 범위 밖으로 나간 호출을 **사실로** 알린다.
+ *
+ * 이 알림의 존재 이유는 부분 커버리지다 — 어댑터가 잡은 호출이 하나라도 있으면 기존 경고 네
+ * 갈래가 전부 침묵하는데, 그 사이로 나머지가 실제 네트워크로 샌다.
+ */
+describe("범위 밖 호출 알림 (ADR-0068)", () => {
+  const leaked = (outOfScope: number | undefined): SessionSummary =>
+    ({ ...replay(3, 3, 0), ...(outOfScope === undefined ? {} : { outOfScope }) }) as SessionSummary;
+
+  it("나간 호출이 있으면 개수와 재현 불가를 말한다", () => {
+    const notice = outOfScopeNotice(leaked(2));
+
+    expect(notice).toContain("범위 밖 호출 2건이 실제 네트워크로 나갔습니다");
+    expect(notice).toContain("재현 가능하지 않습니다");
+    // 알림으로 끝내지 않고 다음 행동을 준다.
+    expect(notice).toContain("mcpeak mock");
+  });
+
+  it("0 이면 아무 말도 하지 않는다", () => {
+    expect(outOfScopeNotice(leaked(0))).toBeUndefined();
+  });
+
+  /**
+   * **부재는 0 이 아니다.** 자식이 강제 종료돼 보고 훅이 못 뛴 경우다. 여기서 "0건" 이라고
+   * 말하면 이 기능이 없애려던 거짓 안심을 그대로 되살린다 — 그 갈래의 방어는 결과 문장에
+   * 남는 조건절이 맡는다.
+   */
+  it("못 셌으면 침묵한다 — 0건이라고 말하지 않는다", () => {
+    const notice = outOfScopeNotice(leaked(undefined));
+
+    expect(notice).toBeUndefined();
+  });
+
+  it("녹화에는 나오지 않는다 — 녹화는 실제로 나가는 것이 정상이다", () => {
+    expect(outOfScopeNotice(record(3))).toBeUndefined();
+  });
+
+  it("경고 갈래와 함께 나갈 수 있다 — 축이 다르다", () => {
+    // 일부 미재생(원인: 원본과 실행 경로 차이)과 범위 밖 유출(원인: 어댑터 범위)은 동시에
+    // 참일 수 있고 원인이 다르다. 배타로 묶으면 하나가 다른 하나를 가린다.
+    const summary = { ...replay(3, 2, 1), outOfScope: 1 } as SessionSummary;
+
+    expect(externalSessionNotice(summary)).toBeDefined();
+    expect(outOfScopeNotice(summary)).toBeDefined();
+  });
+});
+
+/**
+ * ADR-0068 이 결과 문장에 준 변화. 0 을 **확인했으면** 조건절을 뗀다 — 안 떼면 관측을 붙인
+ * 의미가 화면에 안 나타난다.
+ */
+describe("결과 문장의 조건절 (ADR-0068)", () => {
+  const PATH2 = "tmp/weather.db";
+
+  it("범위 밖 0건을 확인하면 단서를 붙이지 않는다", () => {
+    const line = externalSessionOutcome(
+      { ...replay(3, 3, 0), outOfScope: 0 } as SessionSummary,
+      PATH2,
+    );
+
+    expect(line).toContain("재생했습니다");
+    expect(line).not.toContain("어댑터가 잡은 호출만 셉니다");
+  });
+
+  it("못 셌으면 단서가 남는다", () => {
+    const line = externalSessionOutcome(replay(3, 3, 0), PATH2);
+
+    expect(line).toContain("어댑터가 잡은 호출만 셉니다");
+  });
+
+  it("녹화는 셀 수단이 없어 항상 단서가 붙는다", () => {
+    expect(externalSessionOutcome(record(3), PATH2)).toContain("어댑터가 잡은 호출만 셉니다");
+  });
+});
+
+/**
  * 실패한 실행의 녹화는 재생 원본으로 **거부된다**(`EXTERNAL_SESSION_FAILED` —
  * "녹화가 완료되지 않은 세션입니다"). 그런데도 "녹화했습니다" 라고 하면 사용자는 못 쓰는
  * 파일을 가진 채 가졌다고 믿는다. ADR-0066 이 없애려던 종류의 거짓말이 이 함수 안에서 다시
@@ -621,5 +698,37 @@ describe("실패한 실행의 결과 문장 (ADR-0066)", () => {
 
       expect(spoke).toHaveLength(1);
     }
+  });
+});
+
+/**
+ * 세었으면 조건절을 떼는 갈래를 전부 본다(ADR-0068). 화면에서 경고와 조건절이 같은 말을 두 번
+ * 하는 것을 보고 고친 자리라, 세 갈래를 다 고정한다.
+ */
+describe("조건절과 사실이 겹치지 않는다 (ADR-0068)", () => {
+  const PATH4 = "tmp/weather.db";
+  const CAVEAT = "어댑터가 잡은 호출만 셉니다";
+  const counted = (outOfScope: number): SessionSummary =>
+    ({ ...replay(3, 3, 0), outOfScope }) as SessionSummary;
+
+  it("0 건을 확인하면 조건절이 없다", () => {
+    expect(externalSessionOutcome(counted(0), PATH4)).not.toContain(CAVEAT);
+  });
+
+  /**
+   * **이것이 이 수선의 요점이다.** `outOfScopeNotice` 가 "N건이 나갔습니다" 를 사실로 말하는데
+   * 그 위에 "나갈 수 있습니다" 를 얹으면 같은 말이 두 번 나가고, 조건절이 먼저 읽혀 경고를
+   * 흐린다.
+   */
+  it("N 건을 확인해도 조건절이 없다 — 사실이 그 자리를 대신한다", () => {
+    const line = externalSessionOutcome(counted(2), PATH4);
+
+    expect(line).not.toContain(CAVEAT);
+    // 사실 쪽은 그대로 나온다.
+    expect(outOfScopeNotice(counted(2))).toContain("2건이 실제 네트워크로 나갔습니다");
+  });
+
+  it("못 셌을 때만 조건절이 남는다", () => {
+    expect(externalSessionOutcome(replay(3, 3, 0), PATH4)).toContain(CAVEAT);
   });
 });

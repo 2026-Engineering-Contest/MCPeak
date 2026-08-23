@@ -1,4 +1,5 @@
 import { installFetchAdapter } from "./fetch-adapter.mjs";
+import { installOutOfScopeObserver } from "./out-of-scope-observer.mjs";
 
 const ENV_KEYS = {
   mode: "MCPEAK_EXTERNAL_MODE",
@@ -9,10 +10,19 @@ const ENV_KEYS = {
   timeoutMs: "MCPEAK_EXTERNAL_TIMEOUT_MS",
 };
 
+/**
+ * 재생에서만 오는 선택 키라 `ENV_KEYS` 와 나눠 둔다. 위 목록은 "하나라도 빠지면 설정이 깨진
+ * 것" 이라는 전부-아니면-전무 검사를 받는데, 여기 섞으면 녹화 실행이 그 검사에 걸린다.
+ */
+const ENV_OBSERVER_PATH = "MCPEAK_EXTERNAL_OBSERVER_PATH";
+
 const values = Object.fromEntries(
   Object.entries(ENV_KEYS).map(([name, key]) => [name, process.env[key]]),
 );
+const observerPath = process.env[ENV_OBSERVER_PATH];
 for (const key of Object.values(ENV_KEYS)) delete process.env[key];
+// 손자 프로세스에 새지 않게 같이 지운다. 남으면 서버가 띄운 자식이 같은 파일에 덮어쓴다.
+delete process.env[ENV_OBSERVER_PATH];
 
 const configured = Object.values(values).some((value) => value !== undefined);
 if (configured) {
@@ -38,6 +48,14 @@ if (configured) {
       schemaVersion: 1,
       timeoutMs,
     });
+    // 재생에서만 센다. 녹화는 범위 밖 호출이 실제로 나가는 것이 정상이고(그래서 안 남는다는
+    // 사실만 알리면 된다), 재생에서야 "나가면 안 되는데 나갔다" 가 된다.
+    if (values.mode === "replay" && observerPath !== undefined) {
+      installOutOfScopeObserver({
+        coordinatorHostHeader: coordinatorUrl.host,
+        reportPath: observerPath,
+      });
+    }
   } catch {
     process.stderr.write(
       "오류 [EXTERNAL_BOOTSTRAP_FAILED]: 외부 호출 Adapter를 설치하지 못했습니다.\n",

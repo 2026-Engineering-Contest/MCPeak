@@ -1399,14 +1399,12 @@ export function externalCloseFailure(error: unknown): CliFailure {
  * 개수가 전부가 아닐 수 있다는 단서.
  *
  * **이 줄이 있는 이유는 부분 커버리지다.** 서버가 `globalThis.fetch` 와 `node:http` 를 섞어
- * 쓰면 어댑터는 앞쪽만 본다. 실측하면 이렇게 된다 — 호출 2건 중 1건만 녹화되고, 재생에서는
- * 그 1건이 재생되는 동안 나머지 1건이 실제 네트워크로 나간다. **경고 네 갈래는 전부 이 상황을
- * 비켜간다**(`interactionCount > 0`·`consumedCount > 0`·`unusedCount === 0`). 단서가 없으면
- * "1건을 재생했습니다" 가 "외부 의존 없이 재현됐다" 로 읽힌다.
+ * 쓰면 어댑터는 앞쪽만 본다 — 호출 2건 중 1건만 녹화되고, 재생에서는 그 1건이 재생되는 동안
+ * 나머지 1건이 실제 네트워크로 나간다. **경고 네 갈래는 전부 이 상황을 비켜간다**
+ * (`interactionCount > 0`·`consumedCount > 0`·`unusedCount === 0`).
  *
- * **근본 수선이 오면 이 두 줄은 지운다.** 재생 중 범위 밖 호출을 실제로 셀 수 있게 되면
- * "나갈 수 있습니다" 라는 조건절이 아니라 "N건 나갔습니다" 라는 사실을 말할 수 있고, 0건인
- * 실행에서는 이 줄 자체가 군더더기가 된다. 지금은 셀 수 없어서 매번 조건절로 말한다.
+ * 녹화에는 셀 수단이 없어 항상 붙는다. 재생은 ADR-0068 이 실제로 세므로 **0 임을 확인한
+ * 실행에서는 붙지 않는다** — 조건절은 모를 때만 한다.
  */
 const PARTIAL_RECORD_NOTE =
   "  이 수는 어댑터가 잡은 호출만 셉니다. 범위 밖 호출은 세션에 남지 않습니다.\n";
@@ -1414,6 +1412,42 @@ const PARTIAL_RECORD_NOTE =
 /** 같은 단서의 재생 판. 남지 않는 것이 아니라 **실제 네트워크로 나가는** 것이 요점이다. */
 const PARTIAL_REPLAY_NOTE =
   "  이 수는 어댑터가 잡은 호출만 셉니다. 범위 밖 호출은 재생 중에도 실제 네트워크로 나갑니다.\n";
+
+/**
+ * 재생 중 범위 밖으로 나간 호출을 **사실로** 알린다(ADR-0068).
+ *
+ * `externalSessionOutcome` 과 축이 다르므로 따로 낸다 — 그쪽은 "무엇을 했는가", 이쪽은 "그
+ * 실행이 재현 가능한가" 다. 같은 실행에서 둘 다 나간다(ADR-0062 의 `bodyUrlNotice` 와 같은
+ * 이유).
+ *
+ * **세 갈래를 정확히 구분한다.** `undefined`(못 셌음)에서 침묵하는 것이 핵심이다 — 거기서
+ * "0건" 이라고 말하면 이 기능이 없애려던 거짓 안심을 그대로 되살린다. 그 경우의 방어는
+ * `PARTIAL_REPLAY_NOTE` 조건절이 계속 맡는다.
+ */
+export function outOfScopeNotice(summary: SessionSummary): string | undefined {
+  if (summary.mode !== "replay") return undefined;
+  if (summary.outOfScope === undefined) return undefined;
+  if (summary.outOfScope === 0) return undefined;
+  return (
+    `\n경고: 범위 밖 호출 ${summary.outOfScope}건이 실제 네트워크로 나갔습니다.\n` +
+    "→ 이 실행은 재현 가능하지 않습니다. 그 호출의 응답은 녹화본이 아니라 오늘의 것입니다.\n" +
+    "→ 서버가 `node:http`·axios 등으로 부른 호출입니다. 재생하려면 `fetch` 로 바꾸거나,\n" +
+    "  그 외부 의존을 `mcpeak mock` 으로 대신하세요.\n"
+  );
+}
+
+/**
+ * 조건절은 **모를 때만** 단다. 세었으면 개수가 그 자리를 대신한다.
+ *
+ * 0 건이면 붙일 이유가 없고, **N 건이어도 붙이지 않는다** — `outOfScopeNotice` 가 "N건이 실제
+ * 네트워크로 나갔습니다" 를 이미 사실로 말하는데 그 위에 "나갈 수 있습니다" 를 얹으면 같은
+ * 말을 두 번 하는 것이고, 조건절이 사실보다 먼저 읽혀 경고를 흐린다. 화면에서 실제로 그렇게
+ * 나오는 것을 보고 고쳤다.
+ */
+function replayCaveat(summary: SessionSummary): string {
+  if (summary.mode === "replay" && summary.outOfScope !== undefined) return "";
+  return PARTIAL_REPLAY_NOTE;
+}
 
 /**
  * 이 실행이 External 세션으로 **무엇을 했는지** 한 줄로 말한다(ADR-0066).
@@ -1461,7 +1495,7 @@ export function externalSessionOutcome(
   if (summary.unusedCount > 0) return undefined;
   return (
     `\n→ 녹화된 외부 호출 ${summary.interactionCount}건을 재생했습니다: ${shownPath}\n` +
-    PARTIAL_REPLAY_NOTE
+    replayCaveat(summary)
   );
 }
 
@@ -1586,6 +1620,10 @@ export async function runCli(
     }
     const notice = externalSessionNotice(summary);
     if (notice !== undefined) dependencies.writeStderr(notice);
+    // 재현 불가를 알리는 자리라 경고 갈래와 함께 나갈 수 있다(ADR-0068). 예컨대 일부 미재생
+    // 경고와 범위 밖 유출은 동시에 참일 수 있고, 둘은 원인이 다르다.
+    const leaked = outOfScopeNotice(summary);
+    if (leaked !== undefined) dependencies.writeStderr(leaked);
     // 축이 다른 알림이라 위 갈래와 무관하게 낸다(ADR-0062). 마지막에 두는 것은 화면 하단이
     // 눈에 남기 때문이고, 이 알림은 커밋 전에 확인하라는 행동을 요구한다.
     const urls = bodyUrlNotice(summary);

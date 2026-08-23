@@ -576,12 +576,12 @@ describe("External 세션 닫기 실패 문장", () => {
 });
 
 /**
- * ADR-0067. 재생 중 범위 밖으로 나간 호출을 **사실로** 알린다.
+ * ADR-0068. 재생 중 범위 밖으로 나간 호출을 **사실로** 알린다.
  *
  * 이 알림의 존재 이유는 부분 커버리지다 — 어댑터가 잡은 호출이 하나라도 있으면 기존 경고 네
  * 갈래가 전부 침묵하는데, 그 사이로 나머지가 실제 네트워크로 샌다.
  */
-describe("범위 밖 호출 알림 (ADR-0067)", () => {
+describe("범위 밖 호출 알림 (ADR-0068)", () => {
   const leaked = (outOfScope: number | undefined): SessionSummary =>
     ({ ...replay(3, 3, 0), ...(outOfScope === undefined ? {} : { outOfScope }) }) as SessionSummary;
 
@@ -624,10 +624,10 @@ describe("범위 밖 호출 알림 (ADR-0067)", () => {
 });
 
 /**
- * ADR-0067 이 결과 문장에 준 변화. 0 을 **확인했으면** 조건절을 뗀다 — 안 떼면 관측을 붙인
+ * ADR-0068 이 결과 문장에 준 변화. 0 을 **확인했으면** 조건절을 뗀다 — 안 떼면 관측을 붙인
  * 의미가 화면에 안 나타난다.
  */
-describe("결과 문장의 조건절 (ADR-0067)", () => {
+describe("결과 문장의 조건절 (ADR-0068)", () => {
   const PATH2 = "tmp/weather.db";
 
   it("범위 밖 0건을 확인하면 단서를 붙이지 않는다", () => {
@@ -648,5 +648,55 @@ describe("결과 문장의 조건절 (ADR-0067)", () => {
 
   it("녹화는 셀 수단이 없어 항상 단서가 붙는다", () => {
     expect(externalSessionOutcome(record(3), PATH2)).toContain("어댑터가 잡은 호출만 셉니다");
+  });
+});
+
+/**
+ * 실패한 실행의 녹화는 재생 원본으로 **거부된다**(`EXTERNAL_SESSION_FAILED` —
+ * "녹화가 완료되지 않은 세션입니다"). 그런데도 "녹화했습니다" 라고 하면 사용자는 못 쓰는
+ * 파일을 가진 채 가졌다고 믿는다. ADR-0066 이 없애려던 종류의 거짓말이 이 함수 안에서 다시
+ * 생기는 자리라, 상태를 갈라 고정한다.
+ */
+describe("실패한 실행의 결과 문장 (ADR-0066)", () => {
+  const PATH3 = "tmp/weather.db";
+  const failedRecord = (interactionCount: number): SessionSummary =>
+    ({ ...record(interactionCount), status: "failed" }) as SessionSummary;
+
+  it("실패한 녹화는 완료했다고 말하지 않는다", () => {
+    const line = externalSessionOutcome(failedRecord(3), PATH3);
+
+    expect(line).toContain("녹화를 완료하지 않았습니다");
+    expect(line).toContain("재생 원본으로 쓸 수 없습니다");
+    expect(line).toContain("다시 녹화하세요");
+    // 이 문장이 남아 있으면 고친 의미가 없다.
+    expect(line).not.toContain("3건을 녹화했습니다");
+  });
+
+  it("잡은 개수는 그대로 말한다 — 0건과 3건은 다른 상황이다", () => {
+    expect(externalSessionOutcome(failedRecord(3), PATH3)).toContain("3건을 잡았지만");
+  });
+
+  /**
+   * **재생은 상태로 가르지 않는다.** 실패한 재생은 재생이 실패한 것이 아니라 판정이 실패한
+   * 것이고, N건은 실제로 재생됐다. 여기서 침묵하면 실패한 실행에서 녹화·재생을 구분할 수
+   * 없어지는데, 원인을 찾을 때 그 구분이 가장 필요하다.
+   */
+  it("실패한 재생은 여전히 재생이라고 말한다", () => {
+    const line = externalSessionOutcome(
+      { ...replay(3, 3, 0), status: "failed" } as SessionSummary,
+      PATH3,
+    );
+
+    expect(line).toContain("3건을 재생했습니다");
+  });
+
+  it("실패해도 경고와의 배타성은 유지된다", () => {
+    for (const summary of [failedRecord(0), failedRecord(3)]) {
+      const spoke = [externalSessionOutcome(summary, PATH3), externalSessionNotice(summary)].filter(
+        (value) => value !== undefined,
+      );
+
+      expect(spoke).toHaveLength(1);
+    }
   });
 });

@@ -3,7 +3,7 @@
 "@mcpeak/cli": minor
 ---
 
-재생 중 **어댑터 범위 밖으로 나간 호출을 세어 알립니다**([ADR-0067](https://github.com/2026-Engineering-Contest/MCPeak/blob/main/docs/adr/0067-재생-중-범위-밖-호출을-가로채지-않고-센다.md)).
+재생 중 **어댑터 범위 밖으로 나간 호출을 세어 알립니다**([ADR-0068](https://github.com/2026-Engineering-Contest/MCPeak/blob/main/docs/adr/0068-재생-중-범위-밖-호출을-가로채지-않고-센다.md)).
 
 서버가 `globalThis.fetch` 와 `node:http`(axios·got 포함)를 섞어 쓰면 어댑터는 앞쪽만 봅니다.
 그러면 재생이 절반만 되고 나머지는 실제 네트워크로 나가는데, **기존 경고 네 갈래가 전부 그

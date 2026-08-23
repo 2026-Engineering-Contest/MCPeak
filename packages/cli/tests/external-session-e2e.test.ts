@@ -28,7 +28,7 @@ const here = resolve(fileURLToPath(new URL(".", import.meta.url)));
 const server = join(here, "fixtures/external-fetch-server.mjs");
 /** 외부 요청을 `node:http` 로 내는 서버 — ADR-0057 이 정한 지원 범위의 바깥이다. */
 const httpServer = join(here, "fixtures/external-http-server.mjs");
-/** `fetch` 와 `node:http` 를 **섞어** 쓰는 서버 — 부분 커버리지(ADR-0067). */
+/** `fetch` 와 `node:http` 를 **섞어** 쓰는 서버 — 부분 커버리지(ADR-0068). */
 const mixedServer = join(here, "fixtures/external-mixed-server.mjs");
 const suite = join(here, "fixtures/external-fetch.suite.json");
 const threeSuite = join(here, "fixtures/external-fetch-three.suite.json");
@@ -463,7 +463,7 @@ describe("mcpeak test 의 External 세션 — 본문 URL 알림(ADR-0062)", () =
 });
 
 /**
- * ADR-0067. **부분 커버리지가 이 저장소에서 가장 조용히 틀리던 자리다.**
+ * ADR-0068. **부분 커버리지가 이 저장소에서 가장 조용히 틀리던 자리다.**
  *
  * 앞의 describe 들은 전부 범위 안이거나 전부 범위 밖인 서버를 본다. 섞이면 경고 네 갈래가
  * 전부 비켜간다 — `interactionCount > 0`, `consumedCount > 0`, `unusedCount === 0`. 그래서
@@ -472,7 +472,7 @@ describe("mcpeak test 의 External 세션 — 본문 URL 알림(ADR-0062)", () =
  * 여기서 고정하는 것은 **그 유출을 사실로 말하는가** 다. "나갈 수 있습니다" 라는 조건절이
  * 아니라 개수다.
  */
-describe("mcpeak test 의 External 세션 — 부분 커버리지 (ADR-0067)", () => {
+describe("mcpeak test 의 External 세션 — 부분 커버리지 (ADR-0068)", () => {
   /** `via` 별로 세는 origin. 어느 갈래가 실제로 나갔는지를 구분해야 판정이 선다. */
   const startCountingOrigin = async (): Promise<{
     readonly url: string;

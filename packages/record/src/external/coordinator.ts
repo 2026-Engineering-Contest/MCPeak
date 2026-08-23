@@ -36,7 +36,7 @@ const ENV_TOKEN = "MCPEAK_EXTERNAL_COORDINATOR_TOKEN";
 const ENV_ADAPTERS = "MCPEAK_EXTERNAL_ADAPTERS";
 const ENV_SCHEMA = "MCPEAK_EXTERNAL_SCHEMA_VERSION";
 const ENV_TIMEOUT = "MCPEAK_EXTERNAL_TIMEOUT_MS";
-/** 재생에서만 넘긴다. 자식이 종료 시 범위 밖 호출 개수를 여기에 동기로 쓴다(ADR-0067). */
+/** 재생에서만 넘긴다. 자식이 종료 시 범위 밖 호출 개수를 여기에 동기로 쓴다(ADR-0068). */
 const ENV_OBSERVER_PATH = "MCPEAK_EXTERNAL_OBSERVER_PATH";
 
 export type StartExternalCoordinatorOptions =

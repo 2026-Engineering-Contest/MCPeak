@@ -4,7 +4,7 @@ import { createInterface } from "node:readline";
 /**
  * 한 툴 호출 안에서 **`globalThis.fetch` 로 한 번, `node:http` 로 한 번** 나간다.
  *
- * 이 픽스처가 있는 이유는 **부분 커버리지**다(ADR-0067). 전부 범위 안인 서버
+ * 이 픽스처가 있는 이유는 **부분 커버리지**다(ADR-0068). 전부 범위 안인 서버
  * (`external-fetch-server.mjs`)와 전부 범위 밖인 서버(`external-http-server.mjs`)는 이미
  * 있는데, 실제 서버는 섞어 쓴다. 그리고 섞였을 때가 가장 조용히 틀린다 — 어댑터는 앞쪽만 보고,
  * 경고 네 갈래는 전부 이 상황을 비켜가며(`interactionCount > 0`·`consumedCount > 0`·
@@ -13,7 +13,7 @@ import { createInterface } from "node:readline";
  * **`node:http` 호출이 `fetch` 뒤에 오는 순서가 중요하다.** 개수를 마지막 in-scope 호출에
  * 얹어 보내는 설계였다면 바로 이 호출을 놓친다. 순서를 바꾸지 마라.
  *
- * **지우지 마라.** 이 픽스처가 사라지면 ADR-0067 의 근거도 함께 사라진다.
+ * **지우지 마라.** 이 픽스처가 사라지면 ADR-0068 의 근거도 함께 사라진다.
  */
 
 const originUrl = process.argv[2];

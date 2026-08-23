@@ -1386,7 +1386,7 @@ export function externalCloseFailure(error: unknown): CliFailure {
  * 나머지 1건이 실제 네트워크로 나간다. **경고 네 갈래는 전부 이 상황을 비켜간다**
  * (`interactionCount > 0`·`consumedCount > 0`·`unusedCount === 0`).
  *
- * 녹화에는 셀 수단이 없어 항상 붙는다. 재생은 ADR-0067 이 실제로 세므로 **0 임을 확인한
+ * 녹화에는 셀 수단이 없어 항상 붙는다. 재생은 ADR-0068 이 실제로 세므로 **0 임을 확인한
  * 실행에서는 붙지 않는다** — 조건절은 모를 때만 한다.
  */
 const PARTIAL_RECORD_NOTE =
@@ -1397,7 +1397,7 @@ const PARTIAL_REPLAY_NOTE =
   "  이 수는 어댑터가 잡은 호출만 셉니다. 범위 밖 호출은 재생 중에도 실제 네트워크로 나갑니다.\n";
 
 /**
- * 재생 중 범위 밖으로 나간 호출을 **사실로** 알린다(ADR-0067).
+ * 재생 중 범위 밖으로 나간 호출을 **사실로** 알린다(ADR-0068).
  *
  * `externalSessionOutcome` 과 축이 다르므로 따로 낸다 — 그쪽은 "무엇을 했는가", 이쪽은 "그
  * 실행이 재현 가능한가" 다. 같은 실행에서 둘 다 나간다(ADR-0062 의 `bodyUrlNotice` 와 같은
@@ -1446,11 +1446,25 @@ export function externalSessionOutcome(
   const shownPath = escapeTerminalText(sessionPath);
   if (summary.mode === "record") {
     if (summary.interactionCount === 0) return undefined;
+    // 실행이 실패하면 세션도 `failed` 로 닫힌다(`runCli`). 그 세션은 재생 원본으로 **거부된다**
+    // ("녹화가 완료되지 않은 세션입니다"). 그런데도 "녹화했습니다" 라고 하면, 사용자는 못 쓰는
+    // 파일을 가진 채 가졌다고 믿는다 — 이 함수가 없애려던 바로 그 종류의 거짓말이다.
+    if (summary.status !== "completed") {
+      return (
+        `\n→ 이 실행이 실패해 녹화를 완료하지 않았습니다: ${shownPath}\n` +
+        `  외부 호출 ${summary.interactionCount}건을 잡았지만 재생 원본으로 쓸 수 없습니다.\n` +
+        "→ 실패 원인을 고친 뒤 다시 녹화하세요.\n"
+      );
+    }
     return (
       `\n→ 외부 호출 ${summary.interactionCount}건을 녹화했습니다: ${shownPath}\n` +
       PARTIAL_RECORD_NOTE
     );
   }
+  // **재생은 상태로 가르지 않는다.** 녹화와 비대칭인 것이 의도다 — 실패한 녹화는 산출물 자체가
+  // 못 쓰게 되지만, 실패한 재생은 재생이 실패한 것이 아니라 판정이 실패한 것이다. N건은 실제로
+  // 재생됐고 그 문장은 여전히 참이다. 여기서 침묵하면 실패한 실행에서 녹화·재생을 구분할 수
+  // 없게 되는데, 원인을 찾을 때 그 구분이 가장 필요하다.
   // 재생은 경고가 침묵하는 갈래가 하나뿐이다 — 원본이 차 있고, 하나 이상 썼고, 남은 것이 없다.
   if (summary.interactionCount === 0) return undefined;
   if (summary.consumedCount === 0) return undefined;
@@ -1582,7 +1596,7 @@ export async function runCli(
     }
     const notice = externalSessionNotice(summary);
     if (notice !== undefined) dependencies.writeStderr(notice);
-    // 재현 불가를 알리는 자리라 경고 갈래와 함께 나갈 수 있다(ADR-0067). 예컨대 일부 미재생
+    // 재현 불가를 알리는 자리라 경고 갈래와 함께 나갈 수 있다(ADR-0068). 예컨대 일부 미재생
     // 경고와 범위 밖 유출은 동시에 참일 수 있고, 둘은 원인이 다르다.
     const leaked = outOfScopeNotice(summary);
     if (leaked !== undefined) dependencies.writeStderr(leaked);

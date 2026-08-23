@@ -101,7 +101,7 @@ export interface ReplaySessionSummary {
    */
   readonly misses: readonly ReplayMissDetail[];
   /**
-   * 이 실행에서 어댑터 **범위 밖으로 나간** HTTP 호출 수(ADR-0067). `node:http`·`node:https`
+   * 이 실행에서 어댑터 **범위 밖으로 나간** HTTP 호출 수(ADR-0068). `node:http`·`node:https`
    * 와 그 위의 라이브러리를 센다 — 재생 중에도 실제 네트워크로 나가는 호출들이다.
    *
    * **`undefined` 는 0 이 아니라 "못 셌음" 이다.** 자식이 강제 종료돼 보고 훅이 못 뛰었거나

@@ -148,6 +148,42 @@ const argv = (outPath: string, extra: readonly string[]) => [
 ];
 
 describe("provider 를 못 부르는 경로", () => {
+  it("사전보완 전송 승인에서 입력이 닫히면 생성 실패로 뭉개지 않고 취소한다", async () => {
+    const stdout: string[] = [];
+    const connection = fakeConnection([]);
+    const io = reviewIO(true, stdout);
+    const close = vi.fn();
+    io.close = close;
+    const inputClosed = Object.assign(new Error("readline was closed"), {
+      code: "ERR_USE_AFTER_CLOSE",
+    });
+    io.confirm = vi.fn(async () => {
+      throw inputClosed;
+    });
+    const preFill = vi.fn(async () => ({ proposals: [] }));
+    const sessionSpy = vi.fn(createAuthoringSession);
+
+    const code = await runGenerateCommand(
+      argv("/tmp/mcpeak-pre-fill-eof.json", ["--provider", "codex", "--model", "m"]),
+      deps({
+        tools: [needsHelp],
+        connection,
+        stdout,
+        io,
+        sessionSpy: sessionSpy as never,
+        provider: { id: "codex", model: "m", preFill },
+      }),
+    );
+
+    expect(code).toBe(0);
+    expect(stdout.join("")).toContain("입력이 종료되어 검토를 취소했습니다. 저장하지 않았습니다.");
+    expect(stdout.join("")).not.toContain("GENERATE_FAILED");
+    expect(preFill).not.toHaveBeenCalled();
+    expect(sessionSpy).not.toHaveBeenCalled();
+    expect(connection.forceClose).toHaveBeenCalledOnce();
+    expect(close).toHaveBeenCalledOnce();
+  });
+
   it("--baseline-only 면 사전보완을 건너뛴다", async () => {
     const preFill = vi.fn(async () => ({ proposals: [] }));
     const connection = fakeConnection([]);

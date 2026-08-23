@@ -243,7 +243,10 @@ describe("사전보완 채택", () => {
           id: "codex",
           model: "m",
           preFill: vi.fn(async () => ({
-            proposals: [{ caseId: "needs-help-success", field: "timezone", value: "Asia/Seoul" }],
+            // provider 는 값을 JSON 문자열로 보낸다(#284).
+            proposals: [
+              { caseId: "needs-help-success", field: "timezone", valueJson: '"Asia/Seoul"' },
+            ],
           })),
         },
       }),

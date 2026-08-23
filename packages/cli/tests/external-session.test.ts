@@ -794,6 +794,21 @@ describe("녹화 시각 표시 (ADR-0069)", () => {
     expect(externalSessionOutcome(replay(3, 3, 0), PATH5)).not.toContain("녹화)");
   });
 
+  /**
+   * **UTC 라고 말하려면 UTC 임을 확인해야 한다.** 앞부분만 맞춰 보면 오프셋이 붙은 값도
+   * 통과해서 `+09:00` 을 `UTC` 로 표시한다 — 9시간 틀린 시각을 사실로 말하는 것이다. 지금은
+   * `toISOString()` 만 쓰므로 들어올 일이 없지만, 확인하지 않은 것을 단정하지 않는 쪽을
+   * 코드에 고정한다.
+   */
+  it("오프셋이 붙은 값을 UTC 라고 말하지 않는다", () => {
+    for (const offset of ["2026-05-01T09:12:33+09:00", "2026-05-01T09:12:33-05:00"]) {
+      const line = externalSessionOutcome(at(offset), PATH5);
+
+      expect(line).toContain(offset);
+      expect(line).not.toContain("UTC");
+    }
+  });
+
   it("모양이 다른 값은 손대지 않고 그대로 보여준다", () => {
     // 구 버전 파일 등. 파싱에 실패했다고 정보를 버리지 않는다.
     expect(externalSessionOutcome(at("2026/05/01"), PATH5)).toContain("(2026/05/01 녹화)");

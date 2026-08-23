@@ -555,10 +555,20 @@ describe("mcpeak test 의 External 세션 — 녹화 시각 (ADR-0069)", () => {
       runTest(["--session", sessionPath], origin.url("/weather")),
     );
 
+    const after = new Date().toISOString();
+
     expect(replayed.exitCode).toBe(0);
-    // 오늘 녹화했으니 오늘 날짜가 나온다. 값 자체를 하드코딩하지 않고 형식과 자리를 본다.
-    expect(replayed.stderr).toMatch(/\(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} UTC 녹화\)/);
-    expect(replayed.stderr).toContain(`(${before.slice(0, 10)} `);
+    const shown = /\((\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2}) UTC 녹화\)/.exec(replayed.stderr);
+    expect(shown).not.toBeNull();
+
+    // **날짜만 비교하면 자정 근처에서 깨진다** — `before` 가 어제고 녹화가 오늘일 수 있다.
+    // ISO 는 사전순이 곧 시간순이므로, 표시된 시각이 실행 구간 안에 있는지를 본다. 초 단위로
+    // 잘라 비교하는 것은 표시가 밀리초를 버리기 때문이다(내림이라 `before` 쪽도 함께 자른다).
+    const seconds = (value: string): string => value.slice(0, 19);
+    const shownIso = `${shown?.[1]}T${shown?.[2]}`;
+    expect(shownIso >= seconds(before)).toBe(true);
+    expect(shownIso <= seconds(after)).toBe(true);
+
     // 나이 판정 문구는 없다.
     expect(replayed.stderr).not.toContain("전에 녹화");
   }, 30_000);

@@ -1515,8 +1515,13 @@ function recordedAtSuffix(summary: SessionSummary): string {
   const recordedAt = summary.recordedAt;
   if (recordedAt === undefined) return "";
   // `2026-05-01T09:12:33.123Z` → `2026-05-01 09:12:33 UTC`. 순수 문자열 연산이라 기계와
-  // 무관하다. 모양이 다른 값이 오면(구 버전 파일 등) 손대지 않고 그대로 보여준다.
-  const match = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2})/.exec(recordedAt);
+  // 무관하다.
+  //
+  // **끝의 `Z` 를 필수로 요구한다.** 앞부분만 보면 `2026-05-01T09:12:33+09:00` 도 통과해서
+  // 그 값을 `09:12:33 UTC` 로 표시한다 — 9시간 틀린 시각을 사실로 말하는 것이다. 지금 우리는
+  // `toISOString()` 만 쓰므로 그런 값이 들어올 일이 없지만, **확인하지 않은 것을 단정하지
+  // 않는다** 는 쪽을 코드에 남긴다. 모양이 다르면(구 버전 파일 등) 손대지 않고 원문을 보여준다.
+  const match = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2})(?:\.\d+)?Z$/.exec(recordedAt);
   const shown = match === null ? escapeTerminalText(recordedAt) : `${match[1]} ${match[2]} UTC`;
   return ` (${shown} 녹화)`;
 }

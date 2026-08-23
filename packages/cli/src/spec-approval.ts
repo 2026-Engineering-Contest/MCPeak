@@ -68,16 +68,21 @@ export function shouldShowSpecApproval(result: SpecApprovalResult, allPassed: bo
 }
 
 /** 반환은 개행으로 끝난다. 호출자가 앞에 빈 줄을 붙인다. 설계 문서 §7.2. */
-export function renderSpecApproval(result: SpecApprovalResult): string {
+export function renderSpecApproval(result: SpecApprovalResult, allPassed: boolean): string {
   if (result.state === "matched") return `명세: 승인 시점과 동일 (${short(result.fingerprint)})\n`;
   if (result.state === "absent")
     return (
       "명세: 승인 지문이 없습니다 (미고정)\n" +
       "  → mcpeak generate 로 승인한 명세가 아니거나 승인 이전 버전으로 만든 파일입니다.\n"
     );
+  const outcome = allPassed
+    ? "  → 승인받지 않은 현재 명세로 모든 테스트가 통과했습니다.\n"
+    : "  → 실패 원인에서 명세 변경을 배제할 수 없습니다.\n";
   return (
-    "명세: 승인 시점 이후 변경됨\n" +
+    "명세: 현재 명세와 저장된 approval.fingerprint가 불일치함\n" +
     `  → 승인 ${short(result.approvedFingerprint ?? "")}   현재 ${short(result.fingerprint)}\n` +
-    "  → 실패 원인에서 명세 변경을 배제할 수 없습니다. 명세 diff 를 먼저 확인하세요.\n"
+    outcome +
+    "  → 지문만으로는 변경 내용을 알 수 없습니다. 버전 관리에서 명세를 비교하세요.\n" +
+    "  → 의도한 변경이면 같은 설정으로 mcpeak generate 를 다시 실행하고 --force 로 재승인하세요.\n"
   );
 }

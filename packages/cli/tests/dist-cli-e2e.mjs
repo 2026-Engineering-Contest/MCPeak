@@ -373,7 +373,10 @@ for (const [fixture, expectedStatus, expectedSummary] of [
     changedValue.cases[0].name = `${changedValue.cases[0].name}x`;
     await writeFile(changed, `${JSON.stringify(changedValue, null, 2)}\n`, "utf8");
     const mismatched = await runTest(changed);
-    assert.ok(mismatched.out.includes("승인 시점 이후 변경됨"), mismatched.out);
+    assert.ok(
+      mismatched.out.includes("현재 명세와 저장된 approval.fingerprint가 불일치함"),
+      mismatched.out,
+    );
     // 판정은 케이스 결과로만 정해진다. 지문이 달라도 종료 코드가 바뀌지 않는다. 설계 §6.
     assert.equal(mismatched.code, matched.code);
     // 하위 호환의 실측. 지문 없는 명세도 검증을 통과하고 그대로 실행된다.

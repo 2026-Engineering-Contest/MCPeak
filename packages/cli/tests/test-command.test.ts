@@ -938,10 +938,11 @@ describe("승인 지문 대조 표시", () => {
   it("전부 통과 + 지문 없음이면 stdout 에 명세 줄이 없다", async () => {
     expect((await runText(suite)).out).not.toContain("명세:");
   });
-  it("전부 통과 + 지문 불일치면 변경 사실을 알린다", async () => {
-    expect((await runText(approvedSuite(WRONG_FINGERPRINT))).out).toContain(
-      "승인 시점 이후 변경됨",
-    );
+  it("전부 통과 + 지문 불일치면 현재 명세와 저장된 지문의 불일치를 알린다", async () => {
+    const { out } = await runText(approvedSuite(WRONG_FINGERPRINT));
+    expect(out).toContain("현재 명세와 저장된 approval.fingerprint가 불일치함");
+    expect(out).toContain("승인받지 않은 현재 명세로 모든 테스트가 통과했습니다.");
+    expect(out).not.toContain("실패 원인");
   });
   it("실패가 있으면 지문이 일치해도 알린다", async () => {
     expect((await runText(approvedSuite(fingerprint), "failed")).out).toContain("승인 시점과 동일");
@@ -956,6 +957,10 @@ describe("승인 지문 대조 표시", () => {
     );
     expect(out).not.toContain(WRONG_FINGERPRINT);
     expect(out).not.toContain(fingerprint);
+    expect(out).toContain("실패 원인에서 명세 변경을 배제할 수 없습니다.");
+    expect(out).not.toContain("모든 테스트가 통과했습니다");
+    expect(out).toContain("지문만으로는 변경 내용을 알 수 없습니다.");
+    expect(out).toContain("mcpeak generate 를 다시 실행하고 --force 로 재승인하세요.");
   });
   it("명세 줄은 보고서 뒤에 오고 그 앞에 빈 줄이 하나 있다", async () => {
     const { out } = await runText(suite, "failed");
@@ -1487,13 +1492,14 @@ describe("test 보고서 / 승인 시점 서버 결함 표시", () => {
   });
 
   it("지문이 불일치면 참고 줄이 안 붙는다", async () => {
-    // 명세가 바뀌었으면 승인 시점 판정이 지금 케이스에 해당하는지 알 수 없다. 설계 문서 §9.
+    // 현재 명세와 저장된 승인 지문이 어긋나면 승인 시점 판정이 지금 케이스에 해당하는지
+    // 알 수 없다. 설계 문서 §9.
     const out = await run({
       suite: defectSuite(defectApproval, WRONG_FINGERPRINT),
       statuses: { "broken-case": "failed" },
     });
     expect(out.stdout).not.toContain(NOTE);
-    expect(out.stdout).toContain("승인 시점 이후 변경됨");
+    expect(out.stdout).toContain("현재 명세와 저장된 approval.fingerprint가 불일치함");
   });
 
   it("참고 줄이 붙어도 종료 코드가 그대로다", async () => {

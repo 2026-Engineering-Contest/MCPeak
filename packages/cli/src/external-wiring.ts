@@ -72,7 +72,13 @@ export async function startExternalWiring(options: ExternalWiringOptions): Promi
     throw new SessionFileMissingError(options.sessionPath);
 
   const { createSqliteSessionStore, startExternalCoordinator } = await loadExternal();
-  const store = createSqliteSessionStore({ path: options.sessionPath });
+  // 재생은 읽기다(#291). readOnly 를 안 넘기면 저장소가 스키마 DDL 을 무조건 심어, 읽기
+  // 전용(chmod 444) 세션은 재생이 안 되고 0바이트 파일을 넘긴 실패한 실행이 그 파일을 빈
+  // 세션 DB 로 덮어썼다 — 실패한 실행이 사용자 파일을 바꾸는 것이 결함의 핵심이었다.
+  const store = createSqliteSessionStore({
+    path: options.sessionPath,
+    readOnly: options.mode === "replay",
+  });
 
   let handle: ExternalCoordinatorHandle;
   try {

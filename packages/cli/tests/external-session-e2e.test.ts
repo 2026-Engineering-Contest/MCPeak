@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { chmodSync, existsSync, statSync, writeFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
@@ -302,6 +302,51 @@ describe("mcpeak test 의 External 세션 — 없는 세션 파일", () => {
     // 이것이 이 수정의 핵심 증거다.
     expect(existsSync(missing)).toBe(false);
     // 서버를 띄우기 전에 멈춘다.
+    expect(origin.calls()).toBe(0);
+  }, 30_000);
+});
+
+/**
+ * #291. `--session` 재생은 읽기여야 하는데, 배선이 저장소를 늘 쓰기로 열면 두 증상이 난다 —
+ * 읽기 전용(chmod 444) 세션이 재생되지 않고, 실패한 실행이 0바이트 파일을 빈 세션 DB 로
+ * 덮어쓴다. `external-wiring.ts` 가 재생일 때 `readOnly: true` 를 넘기는지를 실제 CLI 로
+ * 확인한다 — record 쪽 단위 테스트(`session-store-sqlite.test.ts`)는 저장소 자체의 계약만
+ * 보고, 이 배선이 실제로 그 옵션을 넘기는지는 보지 않는다.
+ */
+describe("mcpeak test 의 External 세션 — 재생은 파일을 만들지도 고치지도 않는다(#291)", () => {
+  it("읽기 전용(444) 세션 파일도 재생된다", async () => {
+    const origin = await startOrigin();
+    const sessionPath = await newSessionPath();
+
+    const recorded = await runTest(["--record-session", sessionPath], origin.url("/weather"));
+    expect(recorded).toBe(0);
+    expect(origin.calls()).toBe(1);
+
+    chmodSync(sessionPath, 0o444);
+    const replayed = await runTest(["--session", sessionPath], origin.url("/weather"));
+
+    expect(replayed).toBe(0);
+    expect(origin.calls()).toBe(1);
+    // Windows 는 `chmod` 로 소유자의 쓰기를 막지 못한다 — 그래도 읽기가 되는 것 자체는
+    // 플랫폼과 무관하므로 위 단언은 유효하다. 여기서는 표시만 남긴다.
+  }, 30_000);
+
+  it("0바이트 세션 파일로 재생을 시도해도 그 파일을 건드리지 않는다", async () => {
+    const origin = await startOrigin();
+    const directory = await mkdtemp(join(tmpdir(), "mcpeak-cli-empty-"));
+    directories.push(directory);
+    const emptyPath = join(directory, "empty.session");
+    writeFileSync(emptyPath, "");
+
+    const { exitCode, stderr } = await captureStderr(() =>
+      runTest(["--session", emptyPath], origin.url("/weather")),
+    );
+
+    expect(exitCode).not.toBe(0);
+    expect(stderr).toContain(emptyPath);
+    // 이것이 이 수정의 핵심 증거다 — 예전에는 실패한 실행이 이 자리를 36,864바이트짜리
+    // 빈 세션 DB 로 덮어썼다.
+    expect(statSync(emptyPath).size).toBe(0);
     expect(origin.calls()).toBe(0);
   }, 30_000);
 });

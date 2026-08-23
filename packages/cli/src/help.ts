@@ -86,7 +86,13 @@ ${COMMANDS}
   mcpeak <명령> --help
 `;
 
-const commandDiscovery = "사용 가능한 명령: test, generate, repair. 전체 도움말: mcpeak --help";
+/**
+ * 여러 실패 안내가 이 문구를 그대로 되풀이한다. `export` 하는 이유는 `test-command.ts` 의
+ * `COMMAND_NOT_IMPLEMENTED` 안내가 한때 이 목록을 손으로 베껴 적었다가 `replay` 제거(ADR-0059)
+ * 뒤에도 낡은 채 남았기 때문이다(#289). 정본을 하나만 두면 같은 일이 되풀이되지 않는다.
+ */
+export const commandDiscovery =
+  "사용 가능한 명령: test, generate, repair. 전체 도움말: mcpeak --help";
 
 export const TEST_USAGE_HINT = `${TEST_USAGE} ${commandDiscovery}`;
 

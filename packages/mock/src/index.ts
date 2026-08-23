@@ -567,6 +567,9 @@ export async function serveStdio(
   assertMockDefinition(definition, definitionPath);
   noticeUnanalyzable(definition.tools);
   const origin = definitionPath === undefined ? "정의 파일" : `정의 파일 ${definitionPath}`;
-  const server = buildServer(definition.tools, seed(definition, origin), origin);
+  // `origin` 은 주입 오류의 출처 표기이고, 미스 진단문이 가리킬 파일은 `definitionPath` 다.
+  // 여기에 `origin` 을 넘기면 경로 없이 부른 호출에서 "정의 파일 의 responses" 처럼 가리킬
+  // 파일이 없는 문장이 나간다. 둘은 다른 값이다.
+  const server = buildServer(definition.tools, seed(definition, origin), definitionPath);
   await server.connect(new StdioServerTransport());
 }

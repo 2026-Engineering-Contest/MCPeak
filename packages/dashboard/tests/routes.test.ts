@@ -211,6 +211,23 @@ describe("routes.ts", () => {
     expect(response.status).toBe(404);
   });
 
+  it("GET /api/meta 가 스위트 탐색 루트를 준다", async () => {
+    server = await startTestServer();
+    const response = await fetch(`${server.baseUrl}/api/meta`);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ root: server.root });
+  });
+
+  /**
+   * `/api/health` 는 스캐폴드 검증용으로 `{ ok: true }` 를 완전 일치로 잠가 둔 자리다
+   * (tests/scaffold.test.ts). `/api/meta` 를 더하면서 여기에 root 가 새지 않았는지 못박는다.
+   */
+  it("GET /api/health 는 root 를 싣지 않는다", async () => {
+    server = await startTestServer();
+    const response = await fetch(`${server.baseUrl}/api/health`);
+    expect(await response.json()).toEqual({ ok: true });
+  });
+
   it("경로 탈출 요청은 400이다", async () => {
     server = await startTestServer();
     const response = await fetch(`${server.baseUrl}/api/suites/..%2F..%2Fetc%2Fpasswd`);

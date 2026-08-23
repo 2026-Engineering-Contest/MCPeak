@@ -205,7 +205,7 @@ describe("provider process", () => {
         ...spec,
         classifyFailure: (streams) => {
           seen.push({ ...streams });
-          return "unknownModel";
+          return { reason: "unknownModel" };
         },
       },
       s.deps,
@@ -238,7 +238,7 @@ describe("provider process", () => {
         ...spec,
         classifyFailure: () => {
           calls++;
-          return "serverError";
+          return { reason: "serverError" };
         },
       },
       s.deps,

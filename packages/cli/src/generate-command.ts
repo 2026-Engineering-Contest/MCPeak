@@ -710,6 +710,13 @@ function exitMessage(failure: PublicProviderFailure, model: string): string {
       return `오류 [GENERATE_PROVIDER_REQUEST]: ${id}가 요청을 거절했습니다. 모델: ${model}\n해결: 두 가지를 확인하세요.\n  1. 모델 이름이 이 계정에서 쓸 수 있는지. ${id} 기본값은 ${fallback}입니다.\n  2. provider가 전송 schema를 받아들이는지. 반복되면 다른 provider로 시도하세요.\n`;
     case "serverError":
       return `오류 [GENERATE_PROVIDER_SERVER]: ${id} 쪽 서버 오류입니다.\n해결: 잠시 뒤 다시 요청하세요. 계속되면 provider 상태 페이지를 확인하세요.\n`;
+    // 설치된 CLI 버전에 우리가 넘긴 옵션이 없으면 요청이 API 에 닿지도 못한다. 예전에는 근거가
+    // 없어 이 경우가 아래 default 로 떨어졌고, 화면이 로그인·모델을 확인하라고 했다(#285).
+    case "unknownOption": {
+      // 옵션 이름은 우리 args 에서 고른 값이다. 없으면 라벨째 뺀다.
+      const option = failure.option === undefined ? "" : ` 옵션: ${failure.option}`;
+      return `오류 [GENERATE_PROVIDER_OPTION]: 설치된 ${id}가 우리가 넘긴 옵션을 모릅니다.${option}\n  → 로그인도 모델도 원인이 아닙니다. CLI가 뜨기도 전에 옵션 해석에서 멈췄습니다.\n해결: \`${id} --version\` 으로 버전을 확인하고 최신 버전으로 올리세요.\n`;
+    }
     default: {
       // exitCode도 변수다. `코드 3로`는 "삼으로"라 틀린다. 라벨 형태로 조사를 떼어 둔다.
       const exit = failure.exitCode === undefined ? "" : `종료 코드: ${failure.exitCode}, `;

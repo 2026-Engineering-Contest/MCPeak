@@ -98,6 +98,11 @@ export interface PublicProviderFailure {
   readonly exitCode?: number;
   /** 닫힌 enum이며 CLI 안내 분기에만 쓴다. raw stream 문자열은 절대 담기지 않는다. */
   readonly reason?: AuthoringProviderFailureReason;
+  /**
+   * `reason` 이 `unknownOption` 일 때 그 옵션 이름. 우리가 넘긴 args 에서 고른 값이고
+   * 옵션 모양 검사를 한 번 더 거친다. provider 텍스트가 아니다(ADR-0065).
+   */
+  readonly option?: string;
   readonly stderr?: { readonly captured: boolean; readonly truncated: boolean };
 }
 
@@ -135,7 +140,15 @@ export const providerFailureReasons = new Set<AuthoringProviderFailureReason>([
   "rateLimited",
   "badRequest",
   "serverError",
+  "unknownOption",
 ]);
+/**
+ * 화면에 실을 옵션 이름의 모양. `unknownOption` 만 자유 문자열을 들고 오므로 여기서 한 번 더 좁힌다.
+ *
+ * `providers.ts` 는 우리 args 에서 고른 값만 넣지만, 이 함수는 `unknown` 을 받는 경계다.
+ * 조작된 오류 객체가 임의 문자열을 실어 보낼 수 있으므로 옵션 모양이 아닌 것은 버린다.
+ */
+const OPTION_SHAPE = /^--?[A-Za-z][\w-]{0,63}$/;
 const plain = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" &&
   value !== null &&
@@ -206,6 +219,7 @@ export function publicProviderFailure(
     code?: unknown;
     exitCode?: unknown;
     reason?: unknown;
+    option?: unknown;
     stderr?: { captured?: unknown; truncated?: unknown };
   };
   const code =
@@ -229,12 +243,20 @@ export function publicProviderFailure(
     providerFailureReasons.has(source.reason as AuthoringProviderFailureReason)
       ? (source.reason as AuthoringProviderFailureReason)
       : undefined;
+  // 옵션 이름은 `unknownOption` 일 때만, 그리고 옵션 모양일 때만 싣는다.
+  const option =
+    reason === "unknownOption" &&
+    typeof source?.option === "string" &&
+    OPTION_SHAPE.test(source.option)
+      ? source.option
+      : undefined;
   return {
     providerId: state.providerId,
     code,
     timeoutMs: state.timeoutMs,
     exitCode,
     reason,
+    option,
     stderr,
   };
 }

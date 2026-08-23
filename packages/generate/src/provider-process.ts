@@ -14,15 +14,28 @@ export type AuthoringProviderFailureCode =
   | "internal";
 
 /**
- * 비정상 종료의 원인 분류. CLI가 돌려준 숫자 상태 코드에서만 유도하는 닫힌 enum이며,
- * raw stream의 어떤 부분 문자열도 여기에 담기지 않는다. 근거가 없으면 undefined다.
+ * 비정상 종료의 원인 분류. 닫힌 enum이며 raw stream의 어떤 부분 문자열도 여기에 담기지 않는다.
+ * 근거가 없으면 undefined다.
+ *
+ * `unknownOption` 만 숫자 상태 코드가 아니라 stderr 문장에서 유도한다. 그 경우에도 화면에 나가는
+ * 옵션 이름은 stderr 가 아니라 **우리가 넘긴 args 배열의 원소**다. 근거는 ADR-0065.
  */
 export type AuthoringProviderFailureReason =
   | "notAuthenticated"
   | "unknownModel"
   | "rateLimited"
   | "badRequest"
-  | "serverError";
+  | "serverError"
+  | "unknownOption";
+
+/**
+ * 분류 결과. 사유만으로는 `unknownOption` 이 어느 옵션을 가리키는지 말할 수 없어 함께 돌려준다.
+ */
+export interface ProviderFailureClassification {
+  readonly reason: AuthoringProviderFailureReason;
+  /** `unknownOption` 일 때만 채운다. provider 텍스트가 아니라 우리 args 배열의 원소다. */
+  readonly option?: string;
+}
 
 export interface ProviderProcessChild {
   readonly stdin: {
@@ -73,7 +86,7 @@ export interface ProviderProcessSpec {
   readonly classifyFailure?: (streams: {
     readonly stdout: string;
     readonly stderr: string;
-  }) => AuthoringProviderFailureReason | undefined;
+  }) => ProviderFailureClassification | undefined;
 }
 export type ProviderProcessResult =
   | {
@@ -86,6 +99,8 @@ export type ProviderProcessResult =
       readonly code: AuthoringProviderFailureCode;
       readonly exitCode?: number;
       readonly reason?: AuthoringProviderFailureReason;
+      /** `reason` 이 `unknownOption` 일 때 그 옵션 이름. 우리 args 배열의 원소다. */
+      readonly option?: string;
       readonly stderr?: { readonly captured: boolean; readonly truncated: boolean };
     };
 
@@ -239,7 +254,7 @@ export async function runProviderProcess(
         return;
       }
       if (code !== 0) {
-        let classified: AuthoringProviderFailureReason | undefined;
+        let classified: ProviderFailureClassification | undefined;
         if (spec.classifyFailure !== undefined) {
           try {
             output += decoder.decode();
@@ -256,7 +271,8 @@ export async function runProviderProcess(
           ok: false,
           code: "nonZeroExit",
           exitCode: code ?? undefined,
-          ...(classified === undefined ? {} : { reason: classified }),
+          ...(classified === undefined ? {} : { reason: classified.reason }),
+          ...(classified?.option === undefined ? {} : { option: classified.option }),
           stderr: diagnostics(),
         });
         return;

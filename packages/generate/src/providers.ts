@@ -10,6 +10,7 @@ import { type PreFillProvider, preFillPrompt } from "./pre-fill.js";
 import {
   type AuthoringProviderFailureCode,
   type AuthoringProviderFailureReason,
+  type ProviderFailureClassification,
   type ProviderProcessResult,
   type ProviderProcessSpec,
   runProviderProcess,
@@ -56,18 +57,21 @@ const plain = (value: unknown): value is Record<string, unknown> =>
 export class AuthoringProviderError extends Error {
   readonly exitCode?: number;
   readonly reason?: AuthoringProviderFailureReason;
+  /** `reason` 이 `unknownOption` 일 때 그 옵션 이름. 우리 args 에서 고른 값이다(ADR-0065). */
+  readonly option?: string;
   readonly stderr?: { readonly captured: boolean; readonly truncated: boolean };
 
   constructor(
     readonly code: AuthoringProviderFailureCode,
     diagnostics?: Pick<
       Extract<ProviderProcessResult, { readonly ok: false }>,
-      "exitCode" | "reason" | "stderr"
+      "exitCode" | "reason" | "option" | "stderr"
     >,
   ) {
     super("provider 요청을 완료하지 못했습니다.");
     this.exitCode = diagnostics?.exitCode;
     this.reason = diagnostics?.reason;
+    this.option = diagnostics?.option;
     this.stderr = diagnostics?.stderr;
   }
 }
@@ -93,44 +97,80 @@ function reasonByStatus(status: number): AuthoringProviderFailureReason | undefi
  * raw stream은 이 함수 밖으로 나가지 않고 반환값은 닫힌 enum이므로 유출도 거짓 성공도 생기지 않는다.
  */
 const CODEX_ERROR_LINE = /^ERROR: (\{.*)$/;
-function classifyCodexFailure(streams: {
-  readonly stdout: string;
-  readonly stderr: string;
-}): AuthoringProviderFailureReason | undefined {
-  for (const line of streams.stderr.split("\n")) {
-    const match = CODEX_ERROR_LINE.exec(line);
-    if (match === null) continue;
-    let payload: unknown;
-    try {
-      payload = JSON.parse(match[1] as string);
-    } catch {
-      continue;
-    }
-    if (!plain(payload)) continue;
-    if (Number.isInteger(payload.status)) return reasonByStatus(payload.status as number);
-  }
-  return undefined;
+
+/**
+ * CLI 가 우리가 넘긴 옵션을 몰라 인자 해석에서 죽은 경우. 설치된 CLI 버전에 그 옵션이 없으면
+ * 요청이 API 에 닿지도 못하는데, 상태 코드가 없으니 기존 분류로는 근거가 하나도 남지 않았다.
+ * 그래서 화면이 로그인·모델을 확인하라는 엉뚱한 안내를 했다(#285).
+ *
+ * **이름은 stderr 에서 읽지 않고 우리 args 목록에서 고른다.** stderr 에는 우리가 보낸 프롬프트가
+ * echo 되고 그 안에 untrusted 한 툴 설명이 있다. `find` 로 고르므로 화면에 나가는 문자열은
+ * provider 텍스트가 아니라 우리가 만든 배열의 원소다. 우리 것이 아니면 분류하지 않는다.
+ */
+const UNKNOWN_OPTION_LINE = /unknown option '([^']+)'/;
+function unknownOption(stderr: string, options: readonly string[]): string | undefined {
+  const match = UNKNOWN_OPTION_LINE.exec(stderr);
+  if (match === null) return undefined;
+  return options.find((option) => option === match[1]);
 }
+
+/**
+ * args 에서 옵션 이름만 고른다. 값은 뺀다 — 모델 이름 같은 값이 옵션 이름과 같아지는 우연에
+ * 기대지 않기 위해서다. `-` 하나짜리 stdin 표시도 옵션이 아니므로 빠진다.
+ */
+const optionsOf = (args: readonly string[]): readonly string[] =>
+  args.filter((arg) => arg.startsWith("--") || /^-[A-Za-z]$/.test(arg));
+
+const classifyCodexFailure =
+  (args: readonly string[]) =>
+  (streams: {
+    readonly stdout: string;
+    readonly stderr: string;
+  }): ProviderFailureClassification | undefined => {
+    const option = unknownOption(streams.stderr, args);
+    if (option !== undefined) return { reason: "unknownOption", option };
+    for (const line of streams.stderr.split("\n")) {
+      const match = CODEX_ERROR_LINE.exec(line);
+      if (match === null) continue;
+      let payload: unknown;
+      try {
+        payload = JSON.parse(match[1] as string);
+      } catch {
+        continue;
+      }
+      if (!plain(payload)) continue;
+      if (Number.isInteger(payload.status)) {
+        const reason = reasonByStatus(payload.status as number);
+        return reason === undefined ? undefined : { reason };
+      }
+    }
+    return undefined;
+  };
 /**
  * claude는 실패해도 stderr가 비어 있고 stdout envelope의 `api_error_status`에만 신호가 있다.
  * 실패 응답도 subtype이 "success"라서 subtype으로 판정하면 안 되고, 정상 성공 응답은 이 필드를
  * null로 담으므로 정수일 때만 분류한다.
  */
-function classifyClaudeFailure(streams: {
-  readonly stdout: string;
-  readonly stderr: string;
-}): AuthoringProviderFailureReason | undefined {
-  let envelope: unknown;
-  try {
-    envelope = JSON.parse(streams.stdout);
-  } catch {
-    return undefined;
-  }
-  if (!plain(envelope)) return undefined;
-  return Number.isInteger(envelope.api_error_status)
-    ? reasonByStatus(envelope.api_error_status as number)
-    : undefined;
-}
+const classifyClaudeFailure =
+  (args: readonly string[]) =>
+  (streams: {
+    readonly stdout: string;
+    readonly stderr: string;
+  }): ProviderFailureClassification | undefined => {
+    // 옵션 해석에서 죽으면 stdout envelope 자체가 없다. 상태 코드보다 먼저 본다(#285).
+    const option = unknownOption(streams.stderr, args);
+    if (option !== undefined) return { reason: "unknownOption", option };
+    let envelope: unknown;
+    try {
+      envelope = JSON.parse(streams.stdout);
+    } catch {
+      return undefined;
+    }
+    if (!plain(envelope)) return undefined;
+    if (!Number.isInteger(envelope.api_error_status)) return undefined;
+    const reason = reasonByStatus(envelope.api_error_status as number);
+    return reason === undefined ? undefined : { reason };
+  };
 type Runner = (spec: ProviderProcessSpec) => Promise<ProviderProcessResult>;
 type Options = {
   readonly run?: Runner;
@@ -244,51 +284,54 @@ function makeProvider(
       // 진단 경로도 이 이름을 쓴다. 실행마다 만드는 임시 cwd 안의 파일이라 이름은 동작에
       // 영향이 없고, authoring 과 진단의 차이를 stdin·스키마 둘로만 유지하기 위해서다.
       const schemaName = "authoring-output-schema.json";
+      const codexArgs = (cwd: string) => [
+        "exec",
+        "-C",
+        cwd,
+        "-m",
+        model,
+        "-c",
+        'model_reasoning_effort="low"',
+        "-s",
+        "read-only",
+        "--ephemeral",
+        "--ignore-user-config",
+        "--ignore-rules",
+        "--skip-git-repo-check",
+        "--output-schema",
+        join(cwd, schemaName),
+        "-",
+      ];
       return run({
         ...common,
         command: "codex",
-        args: (cwd) => [
-          "exec",
-          "-C",
-          cwd,
-          "-m",
-          model,
-          "-c",
-          'model_reasoning_effort="low"',
-          "-s",
-          "read-only",
-          "--ephemeral",
-          "--ignore-user-config",
-          "--ignore-rules",
-          "--skip-git-repo-check",
-          "--output-schema",
-          join(cwd, schemaName),
-          "-",
-        ],
+        args: codexArgs,
         files: [{ name: schemaName, contents: JSON.stringify(schema) }],
-        classifyFailure: classifyCodexFailure,
+        // cwd 는 값 자리에만 오므로 옵션 목록에 영향이 없다. 빈 문자열로 한 번 만들어 뽑는다.
+        classifyFailure: classifyCodexFailure(optionsOf(codexArgs(""))),
       });
     }
+    const claudeArgs = [
+      "-p",
+      "--safe-mode",
+      "--model",
+      model,
+      "--tools",
+      "",
+      "--no-session-persistence",
+      "--strict-mcp-config",
+      "--mcp-config",
+      '{"mcpServers":{}}',
+      "--output-format",
+      "json",
+      "--json-schema",
+      JSON.stringify(schema),
+    ];
     return run({
       ...common,
       command: "claude",
-      args: [
-        "-p",
-        "--safe-mode",
-        "--model",
-        model,
-        "--tools",
-        "",
-        "--no-session-persistence",
-        "--strict-mcp-config",
-        "--mcp-config",
-        '{"mcpServers":{}}',
-        "--output-format",
-        "json",
-        "--json-schema",
-        JSON.stringify(schema),
-      ],
-      classifyFailure: classifyClaudeFailure,
+      args: claudeArgs,
+      classifyFailure: classifyClaudeFailure(optionsOf(claudeArgs)),
     });
   };
   return {

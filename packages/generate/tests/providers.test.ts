@@ -7,7 +7,7 @@ import {
   prepareAuthoringRequest,
 } from "../src/index.js";
 import type {
-  AuthoringProviderFailureReason,
+  ProviderFailureClassification,
   ProviderProcessResult,
 } from "../src/provider-process.js";
 import {
@@ -81,11 +81,11 @@ function runner(value: ProviderProcessResult) {
 }
 
 /** provider 어댑터가 spec에 주입한 classifyFailure를 꺼내 픽스처 스트림으로 직접 부른다. */
-async function reasonOf(
+async function classificationOf(
   provider: ReturnType<typeof createCodexAuthoringProvider>,
   calls: unknown[],
   streams: { stdout: string; stderr: string },
-): Promise<AuthoringProviderFailureReason | undefined> {
+): Promise<ProviderFailureClassification | undefined> {
   await provider
     .author(preview().request, { timeoutMs: 1 })
     .then(() => undefined)
@@ -94,24 +94,28 @@ async function reasonOf(
     classifyFailure?: (input: {
       stdout: string;
       stderr: string;
-    }) => AuthoringProviderFailureReason | undefined;
+    }) => ProviderFailureClassification | undefined;
   };
   return spec.classifyFailure?.(streams);
 }
-const codexReason = (stderr: string, stdout = "") => {
+const codexClassification = (stderr: string, stdout = "") => {
   const r = runner({ ok: false, code: "nonZeroExit", exitCode: 1 });
-  return reasonOf(createCodexAuthoringProvider({ run: r.run, model: "m" }), r.calls, {
+  return classificationOf(createCodexAuthoringProvider({ run: r.run, model: "m" }), r.calls, {
     stdout,
     stderr,
   });
 };
-const claudeReason = (stdout: string, stderr = "") => {
+const claudeClassification = (stdout: string, stderr = "") => {
   const r = runner({ ok: false, code: "nonZeroExit", exitCode: 1 });
-  return reasonOf(createClaudeAuthoringProvider({ run: r.run, model: "m" }), r.calls, {
+  return classificationOf(createClaudeAuthoringProvider({ run: r.run, model: "m" }), r.calls, {
     stdout,
     stderr,
   });
 };
+const codexReason = async (stderr: string, stdout = "") =>
+  (await codexClassification(stderr, stdout))?.reason;
+const claudeReason = async (stdout: string, stderr = "") =>
+  (await claudeClassification(stdout, stderr))?.reason;
 
 describe("provider adapters", () => {
   it("Codex를 빈 cwd의 read-only ephemeral structured 실행으로 호출한다", async () => {
@@ -645,6 +649,55 @@ describe("provider adapters", () => {
     expect(combined).not.toContain("no-such-model");
     expect(failure).toMatchObject({ code: "nonZeroExit", reason: "unknownModel" });
   });
+  it("claude 가 우리 옵션을 모르면 unknownOption 으로 분류하고 이름을 싣는다", async () => {
+    // #285: 2.1.148 은 --safe-mode 를 몰라 CLI 가 뜨기도 전에 죽는데, 근거가 하나도 안 남아
+    // 화면이 로그인·모델을 확인하라고 했다.
+    expect(await claudeClassification("", "error: unknown option '--safe-mode'")).toEqual({
+      reason: "unknownOption",
+      option: "--safe-mode",
+    });
+  });
+  it("codex 도 같은 규칙으로 분류한다", async () => {
+    expect(await codexClassification("error: unknown option '--ephemeral'")).toEqual({
+      reason: "unknownOption",
+      option: "--ephemeral",
+    });
+  });
+  it("우리가 넘기지 않은 옵션 이름은 분류하지 않는다", async () => {
+    // 핵심. stderr 에는 우리 프롬프트가 echo 되고 그 안에 untrusted 한 툴 설명이 있다.
+    // 이름을 stderr 에서 읽으면 남의 문자열이 화면으로 나간다.
+    expect(
+      await claudeClassification("", "error: unknown option '--UNTRUSTED_MARKER'"),
+    ).toBeUndefined();
+  });
+  it("옵션 이름 자리에 값이 와도 분류하지 않는다", async () => {
+    // args 에는 모델 이름 같은 값도 들어 있다. 옵션 이름만 골라 대조한다.
+    expect(await claudeClassification("", "error: unknown option 'm'")).toBeUndefined();
+  });
+  it("unknownOption 이 상태 코드 분류보다 먼저다", async () => {
+    // 옵션 해석에서 죽으면 stdout envelope 자체가 없다. 그래도 순서를 고정해 둔다.
+    expect(
+      await claudeClassification(
+        JSON.stringify(CLAUDE_UNKNOWN_MODEL_STDOUT),
+        "error: unknown option '--safe-mode'",
+      ),
+    ).toMatchObject({ reason: "unknownOption" });
+  });
+  it("unknownOption 이 화면용 실패에 option 까지 실어 온다", async () => {
+    const r = runner({
+      ok: false,
+      code: "nonZeroExit",
+      exitCode: 1,
+      reason: "unknownOption",
+      option: "--safe-mode",
+    });
+    const error = await createClaudeAuthoringProvider({ run: r.run, model: "m" })
+      .author(preview().request, { timeoutMs: 1 })
+      .then(() => undefined)
+      .catch((thrown: unknown) => thrown);
+    expect(error).toMatchObject({ reason: "unknownOption", option: "--safe-mode" });
+  });
+
   // 아래 둘은 진단 통로(T4)를 더해도 authoring 경로가 그대로인지 보는 확인용이다.
   it("진단 배선을 더해도 author 의 stdin 에 suite 스키마 안내가 그대로 있다", async () => {
     const r = runner({ ok: true, value: { status: "questions", questions: ["q"] } });

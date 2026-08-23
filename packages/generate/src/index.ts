@@ -121,6 +121,7 @@ export {
 export type {
   AuthoringProviderFailureCode,
   AuthoringProviderFailureReason,
+  ProviderFailureClassification,
   ProviderProcessChild,
   ProviderProcessDeps,
   ProviderProcessResult,

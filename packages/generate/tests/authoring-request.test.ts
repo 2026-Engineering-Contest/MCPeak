@@ -266,6 +266,56 @@ describe("authoring request", () => {
     expect(result.failure.reason).toBeUndefined();
     expect(JSON.stringify(result)).not.toContain("arbitraryString");
   });
+  it("unknownOption 의 옵션 이름을 화면용 실패에 싣는다", async () => {
+    const preview = prepareAuthoringRequest(options());
+    const rawError = Object.assign(new Error("boom"), {
+      code: "nonZeroExit",
+      exitCode: 1,
+      reason: "unknownOption",
+      option: "--safe-mode",
+    });
+    const result = await dispatchAuthoringRequest({
+      provider: { id: "codex", author: async () => Promise.reject(rawError) },
+      preview,
+      approval: { approved: true, fingerprint: preview.fingerprint },
+    });
+    if (result.status !== "providerFailed") throw new Error("providerFailed가 필요합니다.");
+    expect(result.failure.option).toBe("--safe-mode");
+  });
+  it("옵션 모양이 아닌 option 값은 버린다", async () => {
+    // 이 함수는 unknown 을 받는 경계다. 조작된 오류 객체가 임의 문자열을 실어 보낼 수 있다.
+    const preview = prepareAuthoringRequest(options());
+    const rawError = Object.assign(new Error("boom"), {
+      code: "nonZeroExit",
+      exitCode: 1,
+      reason: "unknownOption",
+      option: "UNTRUSTED_MARKER 자유 텍스트가 그대로 화면에 나가면 안 된다",
+    });
+    const result = await dispatchAuthoringRequest({
+      provider: { id: "codex", author: async () => Promise.reject(rawError) },
+      preview,
+      approval: { approved: true, fingerprint: preview.fingerprint },
+    });
+    if (result.status !== "providerFailed") throw new Error("providerFailed가 필요합니다.");
+    expect(result.failure.option).toBeUndefined();
+    expect(JSON.stringify(result)).not.toContain("UNTRUSTED_MARKER");
+  });
+  it("reason 이 unknownOption 이 아니면 option 을 싣지 않는다", async () => {
+    const preview = prepareAuthoringRequest(options());
+    const rawError = Object.assign(new Error("boom"), {
+      code: "nonZeroExit",
+      exitCode: 1,
+      reason: "rateLimited",
+      option: "--safe-mode",
+    });
+    const result = await dispatchAuthoringRequest({
+      provider: { id: "codex", author: async () => Promise.reject(rawError) },
+      preview,
+      approval: { approved: true, fingerprint: preview.fingerprint },
+    });
+    if (result.status !== "providerFailed") throw new Error("providerFailed가 필요합니다.");
+    expect(result.failure.option).toBeUndefined();
+  });
   it("기존 stderr {captured, truncated} 모양이 그대로다", async () => {
     const preview = prepareAuthoringRequest(options());
     const rawError = Object.assign(new Error("boom"), {

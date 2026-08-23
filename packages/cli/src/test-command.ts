@@ -1521,8 +1521,12 @@ function recordedAtSuffix(summary: SessionSummary): string {
   // 그 값을 `09:12:33 UTC` 로 표시한다 — 9시간 틀린 시각을 사실로 말하는 것이다. 지금 우리는
   // `toISOString()` 만 쓰므로 그런 값이 들어올 일이 없지만, **확인하지 않은 것을 단정하지
   // 않는다** 는 쪽을 코드에 남긴다. 모양이 다르면(구 버전 파일 등) 손대지 않고 원문을 보여준다.
-  const match = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2})(?:\.\d+)?Z$/.exec(recordedAt);
-  const shown = match === null ? escapeTerminalText(recordedAt) : formatUtc(match[1], match[2]);
+  const [, date, time] =
+    /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2})(?:\.\d+)?Z$/.exec(recordedAt) ?? [];
+  const shown =
+    date === undefined || time === undefined
+      ? escapeTerminalText(recordedAt)
+      : formatUtc(date, time);
   return ` (${shown} 녹화)`;
 }
 

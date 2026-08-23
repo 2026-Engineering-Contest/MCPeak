@@ -638,7 +638,15 @@ export async function startExternalCoordinator(
   const url = `http://127.0.0.1:${(address as AddressInfo).port}`;
   // 재생에서만 관측한다. 디렉터리째 만들어 두면 정리가 파일 하나 지우는 것으로 끝나지 않고
   // 자식이 엉뚱한 이름을 써도 남는 것이 없다.
-  const observer = options.mode === "replay" ? createObserverSidecar() : undefined;
+  //
+  // **실패해도 재생을 막지 않는다.** `mkdtempSync` 는 tmpdir 이 없거나 쓸 수 없으면 던진다
+  // (EACCES·ENOENT). 그걸 그대로 올리면 **진단 기능이 멀쩡한 재생을 죽인다** — 그리고 여기는
+  // 서버가 이미 listen 중이라, 던지고 나가면 그 소켓이 닫히지 않은 채 남는다.
+  //
+  // 대신 관측만 포기한다. 요약의 `outOfScope` 가 `undefined` 로 남고, 그것은 이 설계가 이미
+  // 1급으로 다루는 상태다 — "0 건" 이 아니라 "못 셌음" 이고, CLI 는 그 갈래에서 조건절 단서를
+  // 그대로 유지한다. 사용자는 덜 알게 되지만 잘못 알게 되지는 않는다.
+  const observer = options.mode === "replay" ? tryCreateObserverSidecar() : undefined;
   const childEnvironment = Object.freeze({
     [ENV_MODE]: options.mode,
     [ENV_URL]: url,
@@ -670,11 +678,29 @@ export async function startExternalCoordinator(
 }
 
 /**
+ * 사이드카를 만들되 **실패를 삼킨다.** 관측은 진단이지 실행 조건이 아니다 — tmpdir 을 못 써서
+ * 재생 전체가 실패하면 얻는 것보다 잃는 것이 크다. 못 만들면 `undefined` 를 돌려 "관측 없음"
+ * 으로 굴러가고, 요약의 `outOfScope` 는 "못 셌음" 으로 남는다.
+ */
+function tryCreateObserverSidecar(): ObserverSidecar | undefined {
+  try {
+    return createObserverSidecar();
+  } catch {
+    return undefined;
+  }
+}
+
+interface ObserverSidecar {
+  readonly path: string;
+  read(): number | undefined;
+}
+
+/**
  * 자식이 종료 시 개수를 쓸 자리. 비동기 비콘 대신 파일을 쓰는 이유는
  * `out-of-scope-observer.mjs` 에 적었다 — 마지막 호출이 종료와 경합하면, 잃는 것이 하필 이
  * 기능이 잡으려는 모양이다.
  */
-function createObserverSidecar(): { readonly path: string; read(): number | undefined } {
+function createObserverSidecar(): ObserverSidecar {
   const directory = mkdtempSync(join(tmpdir(), "mcpeak-external-observer-"));
   const path = join(directory, "out-of-scope.json");
   return {

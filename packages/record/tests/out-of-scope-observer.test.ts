@@ -178,3 +178,78 @@ describe("범위 밖 호출 관측", () => {
     expect(JSON.parse(readFileSync(path, "utf8"))).toEqual({ outOfScope: 1 });
   });
 });
+
+/**
+ * 관측은 **진단이지 실행 조건이 아니다.** tmpdir 을 못 써서 재생 전체가 실패하면 얻는 것보다
+ * 잃는 것이 크고, 게다가 그 자리는 Coordinator 서버가 이미 listen 중이라 던지고 나가면 소켓이
+ * 남는다. 못 만들면 관측만 포기하고 실행은 그대로 굴러가야 한다.
+ */
+describe("사이드카를 못 만들어도 재생을 막지 않는다", () => {
+  const OBSERVER_ENV = "MCPEAK_EXTERNAL_OBSERVER_PATH";
+
+  /** 완료된 빈 재생 원본. Coordinator 를 열려면 원본 세션이 있어야 한다. */
+  const replaySource = async () => {
+    const { createMemorySessionStore } = await import("../src/external/session-store.js");
+    const store = createMemorySessionStore();
+    store.createSession("default");
+    store.finish("default", "completed");
+    return store;
+  };
+
+  /**
+   * **대조군이 있어야 이 테스트가 헛돌지 않는다.** 아래 실패 케이스만 두면, 관측이 애초에
+   * 설치되지 않는 어떤 이유로든 통과해 버린다. 정상 tmpdir 에서 env 키가 실제로 붙는다는
+   * 것을 먼저 고정한다.
+   */
+  it("정상 tmpdir 에서는 자식에게 보고 경로를 넘긴다", async () => {
+    const { startExternalCoordinator } = await import("../src/external/coordinator.js");
+    const store = await replaySource();
+    try {
+      const handle = await startExternalCoordinator({
+        mode: "replay",
+        sourceSessionId: "default",
+        store,
+      });
+
+      expect(handle.childEnvironment[OBSERVER_ENV]).toBeDefined();
+
+      await handle.finish("completed");
+    } finally {
+      store.close();
+    }
+  });
+
+  it("tmpdir 을 못 쓰면 관측만 포기하고 Coordinator 는 뜬다", async () => {
+    const { startExternalCoordinator } = await import("../src/external/coordinator.js");
+    const store = await replaySource();
+    // `os.tmpdir()` 이 보는 이름은 플랫폼마다 다르다 — POSIX 는 TMPDIR, Windows 는 TEMP·TMP.
+    const keys = ["TMPDIR", "TEMP", "TMP"] as const;
+    const saved = keys.map((key) => [key, process.env[key]] as const);
+    const broken = join(tmpdir(), "mcpeak-nonexistent", "still-nope");
+    for (const key of keys) process.env[key] = broken;
+
+    try {
+      const handle = await startExternalCoordinator({
+        mode: "replay",
+        sourceSessionId: "default",
+        store,
+      });
+
+      // 관측은 없다 — 자식에게 보고 경로를 넘기지 않는다.
+      expect(handle.childEnvironment[OBSERVER_ENV]).toBeUndefined();
+
+      const summary = await handle.finish("completed");
+
+      // 그래도 재생 세션은 정상으로 닫힌다.
+      expect(summary.mode).toBe("replay");
+      // 0 이 아니라 "못 셌음" 이다. 여기서 0 이 나오면 거짓 안심이 되살아난다.
+      expect((summary as { outOfScope?: number }).outOfScope).toBeUndefined();
+    } finally {
+      for (const [key, value] of saved) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+      store.close();
+    }
+  });
+});

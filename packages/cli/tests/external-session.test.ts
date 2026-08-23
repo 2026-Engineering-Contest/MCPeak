@@ -700,3 +700,35 @@ describe("실패한 실행의 결과 문장 (ADR-0066)", () => {
     }
   });
 });
+
+/**
+ * 세었으면 조건절을 떼는 갈래를 전부 본다(ADR-0068). 화면에서 경고와 조건절이 같은 말을 두 번
+ * 하는 것을 보고 고친 자리라, 세 갈래를 다 고정한다.
+ */
+describe("조건절과 사실이 겹치지 않는다 (ADR-0068)", () => {
+  const PATH4 = "tmp/weather.db";
+  const CAVEAT = "어댑터가 잡은 호출만 셉니다";
+  const counted = (outOfScope: number): SessionSummary =>
+    ({ ...replay(3, 3, 0), outOfScope }) as SessionSummary;
+
+  it("0 건을 확인하면 조건절이 없다", () => {
+    expect(externalSessionOutcome(counted(0), PATH4)).not.toContain(CAVEAT);
+  });
+
+  /**
+   * **이것이 이 수선의 요점이다.** `outOfScopeNotice` 가 "N건이 나갔습니다" 를 사실로 말하는데
+   * 그 위에 "나갈 수 있습니다" 를 얹으면 같은 말이 두 번 나가고, 조건절이 먼저 읽혀 경고를
+   * 흐린다.
+   */
+  it("N 건을 확인해도 조건절이 없다 — 사실이 그 자리를 대신한다", () => {
+    const line = externalSessionOutcome(counted(2), PATH4);
+
+    expect(line).not.toContain(CAVEAT);
+    // 사실 쪽은 그대로 나온다.
+    expect(outOfScopeNotice(counted(2))).toContain("2건이 실제 네트워크로 나갔습니다");
+  });
+
+  it("못 셌을 때만 조건절이 남는다", () => {
+    expect(externalSessionOutcome(replay(3, 3, 0), PATH4)).toContain(CAVEAT);
+  });
+});

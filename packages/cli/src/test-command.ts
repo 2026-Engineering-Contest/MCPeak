@@ -1436,9 +1436,16 @@ export function outOfScopeNotice(summary: SessionSummary): string | undefined {
   );
 }
 
-/** 재생에서 0 임을 **확인했으면** 조건절을 붙이지 않는다. 모를 때만 조건절을 단다. */
+/**
+ * 조건절은 **모를 때만** 단다. 세었으면 개수가 그 자리를 대신한다.
+ *
+ * 0 건이면 붙일 이유가 없고, **N 건이어도 붙이지 않는다** — `outOfScopeNotice` 가 "N건이 실제
+ * 네트워크로 나갔습니다" 를 이미 사실로 말하는데 그 위에 "나갈 수 있습니다" 를 얹으면 같은
+ * 말을 두 번 하는 것이고, 조건절이 사실보다 먼저 읽혀 경고를 흐린다. 화면에서 실제로 그렇게
+ * 나오는 것을 보고 고쳤다.
+ */
 function replayCaveat(summary: SessionSummary): string {
-  if (summary.mode === "replay" && summary.outOfScope === 0) return "";
+  if (summary.mode === "replay" && summary.outOfScope !== undefined) return "";
   return PARTIAL_REPLAY_NOTE;
 }
 

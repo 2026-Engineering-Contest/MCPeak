@@ -1923,6 +1923,11 @@ export async function runGenerateCommand(
   } catch (error) {
     if (connection !== undefined) await connection.forceClose().catch(() => undefined);
     // 같은 결함이 비대화형 경로에도 있었다. 여기서도 원인이 뭉개지면 안 된다.
+    if (isReviewInputClosed(error)) {
+      deps.reviewIO?.close?.();
+      deps.writeStdout("입력이 종료되어 검토를 취소했습니다. 저장하지 않았습니다.\n");
+      return 0;
+    }
     if (error instanceof OutputExistsError) outputExistsFailure(deps, error.path);
     else if (error instanceof OutputReplaceError)
       outputReplaceFailure(deps, error.path, error.code);

@@ -1,9 +1,9 @@
 import type { JSX } from "react";
 import type { GenerateForm } from "../build-argv.js";
 import { buildGenerateArgv } from "../build-argv.js";
-import { Field, INPUT_CLASS, Toggle } from "./fields.js";
+import { Field, INPUT_CLASS } from "./fields.js";
 
-type ConfirmFields = Pick<GenerateForm, "cassettePath" | "resetCmd" | "record">;
+type ConfirmFields = Pick<GenerateForm, "resetCmd">;
 
 /** argv 한 토큰을 셸 표기로 감싼다(표시 전용, 전송은 배열 그대로). */
 function quoteToken(token: string): string {
@@ -19,9 +19,8 @@ export function formatCliCommand(argv: readonly string[]): string {
 }
 
 /**
- * 4단계 — 녹화와 확인. 시험 실행을 끄면 카세트·초기화 입력을 비활성하고
- * (--no-dry-run은 --cassette·--reset-cmd와 함께 쓸 수 없다), 재녹화 체크는
- * 카세트 경로가 있을 때만 활성한다(--record는 --cassette 전제). UI 설계 §5-3.
+ * 4단계 — 초기화와 확인. 시험 실행을 끄면 초기화 입력을 비활성한다
+ * (--no-dry-run은 --reset-cmd와 함께 쓸 수 없다). UI 설계 §5-3.
  */
 export function StepConfirm(props: {
   form: GenerateForm;
@@ -49,32 +48,11 @@ export function StepConfirm(props: {
     ],
     ["시험 실행", form.dryRun ? "켬" : "끔"],
     ["자동 교정", form.repair ? "켬" : "끔"],
-    [
-      "카세트",
-      form.cassettePath === "" ? "녹화 없음" : form.cassettePath + (form.record ? " (재녹화)" : ""),
-    ],
     ["초기화 명령", form.resetCmd === "" ? "없음" : form.resetCmd],
   ];
 
   return (
     <div className="space-y-5">
-      <Field
-        label="카세트 저장 위치 (선택)"
-        htmlFor="generate-cassette"
-        hint={
-          form.dryRun
-            ? "비우면 녹화하지 않습니다."
-            : "시험 실행이 꺼져 있어 카세트를 녹화할 수 없습니다."
-        }
-      >
-        <input
-          id="generate-cassette"
-          className={`${INPUT_CLASS} font-mono`}
-          value={form.cassettePath}
-          disabled={!form.dryRun}
-          onChange={(event) => props.onChange({ cassettePath: event.target.value })}
-        />
-      </Field>
       <Field
         label="시험 실행 전 초기화 명령 (선택)"
         htmlFor="generate-reset-cmd"
@@ -92,19 +70,6 @@ export function StepConfirm(props: {
           onChange={(event) => props.onChange({ resetCmd: event.target.value })}
         />
       </Field>
-      <Toggle
-        id="generate-record"
-        label="재녹화 (--record)"
-        checked={form.record}
-        disabled={form.cassettePath === ""}
-        hint={
-          form.cassettePath === ""
-            ? "카세트 저장 위치가 있어야 재녹화할 수 있습니다."
-            : "기존 카세트를 지우고 다시 녹화합니다."
-        }
-        onChange={(record) => props.onChange({ record })}
-      />
-
       <div className="rounded-lg border border-line">
         <p className="border-b border-line px-3 py-2 text-xs font-semibold text-ink-muted">
           선택 요약

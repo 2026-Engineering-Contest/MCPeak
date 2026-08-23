@@ -125,21 +125,35 @@ function execute(args) {
     assert.equal(result.err, "");
     assert.ok(result.out.includes(usage));
   }
-  // 시험 실행 옵션 다섯이 배포 산출물의 도움말에 있어야 한다. 옵션을 소스에만 넣고 번들에서
+  // 현재 시험 실행 옵션이 배포 산출물의 도움말에 있어야 한다. 옵션을 소스에만 넣고 번들에서
   // 빠뜨리면 사용자는 존재를 알 방법이 없다.
   {
     const generateHelp = await execute(["generate", "--help"]);
-    for (const option of [
-      "--no-dry-run",
-      "--cassette <path>",
-      "--record",
-      "--reset-cmd <command>",
-      "--no-repair",
-      "--force",
-    ])
+    for (const option of ["--no-dry-run", "--reset-cmd <command>", "--no-repair", "--force"])
       assert.ok(generateHelp.out.includes(option), option);
+    assert.ok(!generateHelp.out.includes("--cassette"), generateHelp.out);
+    assert.ok(!generateHelp.out.includes("--record"), generateHelp.out);
     assert.ok(generateHelp.out.includes("실패가 곧바로 분류 화면으로 갑니다"), generateHelp.out);
-    assert.ok(generateHelp.out.includes(".gitignore 를 확인하세요"), generateHelp.out);
+  }
+  // 발행본에 있던 옵션이라 unknown-option으로 뭉개지 않고 제거와 대체 경로를 안내한다.
+  for (const removed of [["--cassette", "c.json"], ["--record"]]) {
+    const result = await execute([
+      "generate",
+      "--suite-id",
+      "x",
+      "--name",
+      "n",
+      "--out",
+      "x.json",
+      "--command",
+      "node",
+      ...removed,
+    ]);
+    assert.equal(result.code, 1);
+    assert.ok(result.err.includes("오류 [CLI_USAGE]"), result.err);
+    assert.ok(result.err.includes("제거되었습니다"), result.err);
+    assert.ok(result.err.includes("--record-session"), result.err);
+    assert.ok(result.err.includes("mcpeak-mock"), result.err);
   }
   const version = await execute(["--version"]);
   assert.equal(version.code, 0);

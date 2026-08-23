@@ -98,8 +98,7 @@ mcpeak test <suite.json> --command <executable> [--arg <value> ...]
 mcpeak generate --suite-id <id> --name <name> --out <suite.json>
                  --command <executable> [--arg <value> ...]
                  [--baseline-only] [--provider <codex|claude>] [--model <model>]
-                 [--no-dry-run] [--cassette <path>] [--record]
-                 [--reset-cmd <command>] [--no-repair]
+                 [--no-dry-run] [--reset-cmd <command>] [--no-repair]
 ```
 
 `--command` 와 `--arg` 가 **테스트 대상 서버를 띄우는 방법**입니다. `--arg` 를 여러 번 써서
@@ -149,11 +148,6 @@ mcpeak test weather.suite.json --command node --arg ./server.js \
 mcpeak test weather.suite.json --command node --arg ./server.js \
   --session weather.session.db
 ```
-
-`--cassette` 카세트와 다릅니다. **카세트는 우리가 서버에게 물어본 결과**를, **세션은 그 서버가
-밖에 물어본 결과**를 남깁니다. 둘은 파일도 따로입니다. 카세트는 legacy 경로라 검증이 끝나면
-제거될 예정이고([ADR-0051](./docs/adr/0051-external-record-replay와-tool-카세트-경계-분리.md)),
-지금 함께 언급하는 이유는 [`record` 패키지 문서](./packages/record#tool-카세트와-다른-점)에 있습니다.
 
 **잡는 범위는 서버가 `globalThis.fetch` 로 부른 호출입니다.** `node:http`·`node:https`, 그리고
 그것을 직접 쓰는 axios·got·node-fetch 로 부르는 서버는 범위 밖입니다. Node 가 아닌 서버(Python·

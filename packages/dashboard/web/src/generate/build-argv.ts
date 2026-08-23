@@ -15,8 +15,6 @@ export interface GenerateForm {
   readonly model: string; // 빈 문자열 = 미지정
   readonly dryRun: boolean; // 기본 true
   readonly repair: boolean; // 기본 true
-  readonly cassettePath: string; // 빈 문자열 = 녹화 없음
-  readonly record: boolean;
   readonly resetCmd: string; // 빈 문자열 = 미지정
 }
 
@@ -38,14 +36,8 @@ export function buildGenerateArgv(form: GenerateForm): readonly string[] {
   if (!form.dryRun && !form.repair) {
     throw new Error("시험 실행과 자동 교정을 동시에 끌 수 없습니다.");
   }
-  if (!form.dryRun && form.cassettePath !== "") {
-    throw new Error("시험 실행을 끄면 카세트를 녹화할 수 없습니다.");
-  }
   if (!form.dryRun && form.resetCmd !== "") {
     throw new Error("시험 실행을 끄면 초기화 명령을 쓸 수 없습니다.");
-  }
-  if (form.record && form.cassettePath === "") {
-    throw new Error("재녹화는 카세트 저장 위치가 있어야 합니다.");
   }
 
   // argv 순서는 §4-4 표(1~14행)로 고정한다. 같은 폼이면 항상 같은 배열(결정론).
@@ -73,12 +65,6 @@ export function buildGenerateArgv(form: GenerateForm): readonly string[] {
   }
   if (!form.repair) {
     argv.push("--no-repair");
-  }
-  if (form.cassettePath !== "") {
-    argv.push("--cassette", form.cassettePath);
-  }
-  if (form.record) {
-    argv.push("--record");
   }
   if (form.resetCmd !== "") {
     argv.push("--reset-cmd", form.resetCmd);

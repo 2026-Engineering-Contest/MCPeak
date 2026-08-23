@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { ReviewIO } from "../src/generate-command.js";
 import type { RepairBundle } from "../src/repair-bundle.js";
 import { type RepairCommandDependencies, runRepairCommand } from "../src/repair-command.js";
+import { renderRepairProviderFailure } from "../src/repair-render.js";
 
 const ARGV = ["bundle.json", "--provider", "codex", "--model", "gpt-5-codex"];
 
@@ -489,5 +490,43 @@ describe("repair 화면", () => {
     });
     await runRepairCommand([...ARGV, "--yes"], matched.value);
     expect(matched.writes.out.join("")).not.toContain("분류");
+  });
+});
+
+describe("provider 실패 안내 (#285)", () => {
+  it("unknownOption 이면 설치·인증을 확인하라고 하지 않는다", async () => {
+    // 옵션 해석에서 죽은 것은 설치·인증 문제가 아니다. 같은 문장을 쓰면 안내를 따라가도
+    // 원인에 닿지 못한다.
+    const text = renderRepairProviderFailure({
+      providerId: "claude",
+      code: "nonZeroExit",
+      reason: "unknownOption",
+      option: "--safe-mode",
+    });
+    expect(text).toContain("REPAIR_PROVIDER_OPTION");
+    expect(text).toContain("옵션: --safe-mode");
+    expect(text).not.toContain("설치와 인증을 확인");
+    // 파일 불변 약속은 어느 갈래에서도 유지한다.
+    expect(text).toContain("파일은 하나도 바뀌지 않았습니다");
+  });
+
+  it("옵션 이름이 없으면 라벨째 뺀다", async () => {
+    const text = renderRepairProviderFailure({
+      providerId: "codex",
+      code: "nonZeroExit",
+      reason: "unknownOption",
+    });
+    expect(text).toContain("REPAIR_PROVIDER_OPTION");
+    expect(text).not.toContain("옵션:");
+  });
+
+  it("다른 사유의 문장은 그대로다", async () => {
+    const text = renderRepairProviderFailure({
+      providerId: "codex",
+      code: "nonZeroExit",
+      reason: "rateLimited",
+    });
+    expect(text).toContain("REPAIR_PROVIDER_FAILED");
+    expect(text).toContain("설치와 인증을 확인");
   });
 });

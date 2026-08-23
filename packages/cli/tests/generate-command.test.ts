@@ -1490,6 +1490,33 @@ describe("AI 대화형 검토", () => {
         expect(output).toContain("` 명령으로");
       }
   });
+  it("unknownOption이면 로그인·모델을 확인하라고 하지 않는다", async () => {
+    // #285 회귀 고정. 옵션 해석에서 죽었는데 로그인을 확인하라고 하면 안내를 따라가도
+    // 절대 못 푼다.
+    const output = await failOn("claude", "haiku", {
+      ...exited,
+      reason: "unknownOption",
+      option: "--safe-mode",
+    });
+    expect(output).toContain("GENERATE_PROVIDER_OPTION");
+    expect(output).toContain("옵션: --safe-mode");
+    expect(output).not.toContain("claude /status");
+    expect(output).not.toContain("로그인 상태를 확인");
+  });
+  it("unknownOption이면 버전을 확인하라고 안내한다", async () => {
+    const output = await failOn("codex", "gpt-5.6-luna", {
+      ...exited,
+      reason: "unknownOption",
+      option: "--ephemeral",
+    });
+    expect(output).toContain("codex --version");
+    expect(output).toContain("최신 버전으로 올리세요");
+  });
+  it("옵션 이름이 없으면 라벨째 빼고 안내한다", async () => {
+    const output = await failOn("claude", "haiku", { ...exited, reason: "unknownOption" });
+    expect(output).toContain("GENERATE_PROVIDER_OPTION");
+    expect(output).not.toContain("옵션:");
+  });
   it("notAuthenticated면 provider에 맞는 인증 확인 명령만 안내한다", async () => {
     const codex = await failOn("codex", "gpt-5.6-luna", { ...exited, reason: "notAuthenticated" });
     expect(codex).toContain("GENERATE_PROVIDER_AUTH");

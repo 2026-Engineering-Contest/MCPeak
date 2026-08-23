@@ -285,7 +285,14 @@ export function renderRepairProviderFailure(failure: {
   providerId: "codex" | "claude";
   code: string;
   reason?: string;
+  option?: string;
 }): string {
+  // 옵션을 모르는 것은 설치·인증 문제가 아니다. 같은 문장을 쓰면 안내를 따라가도 원인에 닿지
+  // 못한다(#285). 옵션 이름은 우리 args 에서 고른 값이라 provider 텍스트가 아니다.
+  if (failure.reason === "unknownOption") {
+    const option = failure.option === undefined ? "" : ` 옵션: ${failure.option}`;
+    return `오류 [REPAIR_PROVIDER_OPTION]: 설치된 ${failure.providerId} 가 우리가 넘긴 옵션을 모릅니다.${option}\n  → 설치도 인증도 원인이 아닙니다. CLI 가 뜨기도 전에 옵션 해석에서 멈췄습니다.\n해결: \`${failure.providerId} --version\` 으로 버전을 확인하고 최신 버전으로 올리세요. 파일은 하나도 바뀌지 않았습니다.\n`;
+  }
   const reason = failure.reason === undefined ? "" : ` (${failure.reason})`;
   return `오류 [REPAIR_PROVIDER_FAILED]: ${failure.providerId} 에게 진단을 받지 못했습니다. 코드: ${failure.code}${reason}\n해결: \`${failure.providerId} --version\` 으로 설치와 인증을 확인한 뒤 다시 실행하세요. 파일은 하나도 바뀌지 않았습니다.\n`;
 }

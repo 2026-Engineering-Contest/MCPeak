@@ -1122,7 +1122,7 @@ async function runCliCore(
       // 지문은 우리가 만든 hex 라 제어 문자가 섞일 수 없다. 이스케이프가 필요 없는 유일한
       // 표시 항목이다. 앞의 빈 줄은 진단 블록과 같은 레이아웃 규칙이다. 설계 문서 §7.2.
       if (shouldShowSpecApproval(specApproval, allPassed))
-        dependencies.writeStdout(`\n${renderSpecApproval(specApproval)}`);
+        dependencies.writeStdout(`\n${renderSpecApproval(specApproval, allPassed)}`);
       /**
        * 결정론성 블록은 보고서 뒤, 다른 블록과 같은 레이아웃 규칙(앞에 빈 줄)을 따른다.
        * `--determinism` 없이는 한 줄도 찍지 않는다. 설계 문서 §8.

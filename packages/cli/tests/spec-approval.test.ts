@@ -97,9 +97,16 @@ describe("shouldShowSpecApproval", () => {
 });
 
 describe("renderSpecApproval", () => {
-  const matched = renderSpecApproval(checkSpecApproval(approved(fingerprint)));
-  const absent = renderSpecApproval(checkSpecApproval(suite));
-  const mismatched = renderSpecApproval(checkSpecApproval(approved(WRONG_FINGERPRINT)));
+  const matched = renderSpecApproval(checkSpecApproval(approved(fingerprint)), false);
+  const absent = renderSpecApproval(checkSpecApproval(suite), false);
+  const mismatchedPassed = renderSpecApproval(
+    checkSpecApproval(approved(WRONG_FINGERPRINT)),
+    true,
+  );
+  const mismatchedFailed = renderSpecApproval(
+    checkSpecApproval(approved(WRONG_FINGERPRINT)),
+    false,
+  );
 
   it("matched 문장은 앞 12자와 말줄임표를 담는다", () => {
     expect(matched.startsWith("명세: 승인 시점과 동일 (")).toBe(true);
@@ -112,18 +119,31 @@ describe("renderSpecApproval", () => {
         "  → mcpeak generate 로 승인한 명세가 아니거나 승인 이전 버전으로 만든 파일입니다.\n",
     );
   });
-  it("mismatched 문장 3줄이 설계 문서 §7.2 와 같고 두 값이 각각 앞 12자다", () => {
-    expect(mismatched).toBe(
+  it("전부 통과한 mismatched 는 승인받지 않은 명세로 통과한 상황을 말한다", () => {
+    expect(mismatchedPassed).toBe(
       "명세: 승인 시점 이후 변경됨\n" +
         `  → 승인 ${WRONG_FINGERPRINT.slice(0, 12)}…   현재 ${fingerprint.slice(0, 12)}…\n` +
-        "  → 실패 원인에서 명세 변경을 배제할 수 없습니다. 명세 diff 를 먼저 확인하세요.\n",
+        "  → 승인받지 않은 현재 명세로 모든 테스트가 통과했습니다.\n" +
+        "  → 지문만으로는 변경 내용을 알 수 없습니다. 버전 관리에서 명세를 비교하세요.\n" +
+        "  → 의도한 변경이면 같은 설정으로 mcpeak generate 를 다시 실행하고 --force 로 재승인하세요.\n",
+    );
+  });
+  it("실패한 mismatched 는 실패 원인에서 명세 변경을 배제할 수 없다고 말한다", () => {
+    expect(mismatchedFailed).toBe(
+      "명세: 승인 시점 이후 변경됨\n" +
+        `  → 승인 ${WRONG_FINGERPRINT.slice(0, 12)}…   현재 ${fingerprint.slice(0, 12)}…\n` +
+        "  → 실패 원인에서 명세 변경을 배제할 수 없습니다.\n" +
+        "  → 지문만으로는 변경 내용을 알 수 없습니다. 버전 관리에서 명세를 비교하세요.\n" +
+        "  → 의도한 변경이면 같은 설정으로 mcpeak generate 를 다시 실행하고 --force 로 재승인하세요.\n",
     );
   });
   it("세 문장 모두 개행으로 끝난다", () => {
-    for (const text of [matched, absent, mismatched]) expect(text.endsWith("\n")).toBe(true);
+    for (const text of [matched, absent, mismatchedPassed, mismatchedFailed])
+      expect(text.endsWith("\n")).toBe(true);
   });
   it("반환에 ANSI 이스케이프가 없다", () => {
     // 지문은 우리가 만든 hex 라 제어 문자가 섞일 수 없고, 색도 입히지 않는다. 설계 문서 §7.2.
-    for (const text of [matched, absent, mismatched]) expect(text.includes("\u001b")).toBe(false);
+    for (const text of [matched, absent, mismatchedPassed, mismatchedFailed])
+      expect(text.includes("\u001b")).toBe(false);
   });
 });

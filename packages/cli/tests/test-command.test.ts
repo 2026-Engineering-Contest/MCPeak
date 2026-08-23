@@ -939,9 +939,10 @@ describe("승인 지문 대조 표시", () => {
     expect((await runText(suite)).out).not.toContain("명세:");
   });
   it("전부 통과 + 지문 불일치면 변경 사실을 알린다", async () => {
-    expect((await runText(approvedSuite(WRONG_FINGERPRINT))).out).toContain(
-      "승인 시점 이후 변경됨",
-    );
+    const { out } = await runText(approvedSuite(WRONG_FINGERPRINT));
+    expect(out).toContain("승인 시점 이후 변경됨");
+    expect(out).toContain("승인받지 않은 현재 명세로 모든 테스트가 통과했습니다.");
+    expect(out).not.toContain("실패 원인");
   });
   it("실패가 있으면 지문이 일치해도 알린다", async () => {
     expect((await runText(approvedSuite(fingerprint), "failed")).out).toContain("승인 시점과 동일");
@@ -956,6 +957,10 @@ describe("승인 지문 대조 표시", () => {
     );
     expect(out).not.toContain(WRONG_FINGERPRINT);
     expect(out).not.toContain(fingerprint);
+    expect(out).toContain("실패 원인에서 명세 변경을 배제할 수 없습니다.");
+    expect(out).not.toContain("모든 테스트가 통과했습니다");
+    expect(out).toContain("지문만으로는 변경 내용을 알 수 없습니다.");
+    expect(out).toContain("mcpeak generate 를 다시 실행하고 --force 로 재승인하세요.");
   });
   it("명세 줄은 보고서 뒤에 오고 그 앞에 빈 줄이 하나 있다", async () => {
     const { out } = await runText(suite, "failed");

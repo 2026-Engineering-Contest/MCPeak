@@ -11,7 +11,23 @@ import { suiteFingerprint } from "@mcpeak/runner";
 import { describe, expect, it, vi } from "vitest";
 import { TEST_USAGE_HINT } from "../src/help.js";
 import { ResetCommandError } from "../src/reset-hook.js";
-import { parseTestCommand, runCli, type TestCommandDependencies } from "../src/test-command.js";
+import {
+  parseTestCommand,
+  runCli,
+  type TestCommandDependencies,
+  type TestCommandInput,
+} from "../src/test-command.js";
+
+/**
+ * stdio 대상의 인자만 꺼낸다. `--url` 이 생기면서 `input.args` 가 `input.target` 아래로
+ * 들어갔다(#137). 대상이 stdio 가 아니면 그 자리에서 깨뜨린다 — 조용히 빈 배열을 돌려주면
+ * 무엇을 파싱했는지 모르는 채로 단언이 통과한다.
+ */
+const stdioArgs = (input: TestCommandInput): readonly string[] => {
+  if (input.target.transport !== "stdio")
+    throw new Error(`stdio 대상이 아니다: ${input.target.transport}`);
+  return input.target.args;
+};
 
 const suite: TestSuiteSpec = { schemaVersion: 1, id: "suite", name: "Suite", cases: [] };
 /**
@@ -115,8 +131,7 @@ describe("parseTestCommand", () => {
     const input = parseTestCommand(["suite.json", "--command", "node", "--arg", "a", "--arg", "b"]);
     expect(input).toEqual({
       suitePath: "suite.json",
-      command: "node",
-      args: ["a", "b"],
+      target: { transport: "stdio", command: "node", args: ["a", "b"] },
       json: false,
       junitPath: undefined,
       determinism: false,
@@ -124,13 +139,13 @@ describe("parseTestCommand", () => {
       stderrLines: 20,
     });
     expect(Object.isFrozen(input)).toBe(true);
-    expect(Object.isFrozen(input.args)).toBe(true);
+    expect(Object.isFrozen(input.target)).toBe(true);
+    expect(Object.isFrozen(stdioArgs(input))).toBe(true);
   });
   it("equals 형식과 하이픈·빈 문자열 arg를 보존한다", () => {
     expect(parseTestCommand(["suite.json", "--command=node", "--arg=-m", "--arg="])).toEqual({
       suitePath: "suite.json",
-      command: "node",
-      args: ["-m", ""],
+      target: { transport: "stdio", command: "node", args: ["-m", ""] },
       json: false,
       junitPath: undefined,
       determinism: false,
@@ -150,7 +165,7 @@ describe("parseTestCommand", () => {
       "--arg",
       "@modelcontextprotocol/server-memory",
     ]);
-    expect(input.args).toEqual(["-y", "@modelcontextprotocol/server-memory"]);
+    expect(stdioArgs(input)).toEqual(["-y", "@modelcontextprotocol/server-memory"]);
   });
   it("parseTestCommand가 json 기본값 false를 낸다", () => {
     expect(parseTestCommand(["suite.json", "--command", "node"]).json).toBe(false);
@@ -299,7 +314,7 @@ describe("runCli", () => {
     // 명령 목록이다. 아래 "명령을 아예 안 주면 명령 목록만 준다" 가 따로 덮는다.
     const cases: ReadonlyArray<readonly [readonly string[], string]> = [
       [["test"], "테스트 명세 JSON 경로가 필요합니다."],
-      [["test", "suite.json"], "`--command` 옵션이 필요합니다."],
+      [["test", "suite.json"], "`--command` 또는 `--url` 옵션이 필요합니다."],
       [
         ["test", "suite.json", "--command", "a", "--command", "b"],
         "`--command`는 한 번만 사용할 수 있습니다.",
@@ -2069,5 +2084,207 @@ describe("결정론성 확인 — 종료 절차 계약", () => {
     // 좀비 프로세스를 남기지 않는다. 2회차 연결은 우리가 책임지고 닫는다.
     expect(d.conn.forceClose).toHaveBeenCalledTimes(1);
     expect(d.writes.out.join("")).toContain("2회차 실행 또는 서버 종료 실패");
+  });
+});
+
+/**
+ * `--url` 로 원격 서버를 지정하는 경로의 파싱(#137).
+ *
+ * 여기서 보는 것은 **잘못 쓴 조합을 서버에 붙기 전에 막는가** 다. stdio 전용 옵션을 원격
+ * 대상과 함께 받아 놓고 조용히 무시하면, 사용자는 그 옵션이 걸린 줄 알고 실행 결과를 읽는다.
+ * `--stderr-lines` 와 External 세션 옵션이 그런 자리다.
+ */
+describe("parseTestCommand — 원격(--url) 대상", () => {
+  const failureOf = (argv: readonly string[]): string => {
+    try {
+      parseTestCommand([...argv]);
+    } catch (error) {
+      return (error as { failure?: { message?: string } }).failure?.message ?? "";
+    }
+    throw new Error("거절하지 않았다");
+  };
+
+  it("--url 만 주면 http 대상을 만든다", () => {
+    const input = parseTestCommand(["suite.json", "--url", "https://mcp.example.com/v1"]);
+    expect(input.target).toEqual({
+      transport: "http",
+      url: "https://mcp.example.com/v1",
+      headerEnv: {},
+    });
+    expect(Object.isFrozen(input.target)).toBe(true);
+  });
+
+  it("--header-env 를 헤더 이름 → 환경변수 이름으로 모은다", () => {
+    const input = parseTestCommand([
+      "suite.json",
+      "--url",
+      "https://mcp.example.com/v1",
+      "--header-env",
+      "Authorization=MCP_TOKEN",
+      "--header-env=X-Api-Key=MCP_KEY",
+    ]);
+    expect(input.target).toMatchObject({
+      headerEnv: { Authorization: "MCP_TOKEN", "X-Api-Key": "MCP_KEY" },
+    });
+  });
+
+  it("같은 헤더를 두 번 지정하면 거절한다", () => {
+    expect(
+      failureOf([
+        "suite.json",
+        "--url",
+        "https://x/v1",
+        "--header-env",
+        "Authorization=A",
+        "--header-env",
+        "Authorization=B",
+      ]),
+    ).toContain("두 번 지정됐습니다");
+  });
+
+  it("--command 와 --url 을 함께 주면 둘 다 이름을 대며 거절한다", () => {
+    const message = failureOf(["suite.json", "--command", "node", "--url", "https://x/v1"]);
+    expect(message).toContain("`--command`");
+    expect(message).toContain("`--url`");
+  });
+
+  it("둘 다 없으면 두 이름을 함께 안내한다", () => {
+    expect(failureOf(["suite.json"])).toBe("`--command` 또는 `--url` 옵션이 필요합니다.");
+  });
+
+  it("--arg 는 --url 과 함께 쓸 수 없다", () => {
+    expect(failureOf(["suite.json", "--url", "https://x/v1", "--arg", "a"])).toContain(
+      "띄울 프로세스가 없습니다",
+    );
+  });
+
+  it("--header-env 는 --command 와 함께 쓸 수 없다", () => {
+    expect(
+      failureOf(["suite.json", "--command", "node", "--header-env", "Authorization=T"]),
+    ).toContain("`--url` 과 함께만");
+  });
+
+  /**
+   * 명시했는데 조용히 무시하면 "막은 척" 이 된다. 반대로 기본값까지 거절하면 `--url` 사용자가
+   * 전원 막힌다. 두 케이스가 그 경계를 고정한다.
+   */
+  it("--stderr-lines 를 명시하면 --url 과 함께 쓸 수 없다", () => {
+    expect(failureOf(["suite.json", "--url", "https://x/v1", "--stderr-lines", "5"])).toContain(
+      "그 프로세스가 없습니다",
+    );
+  });
+  it("--stderr-lines 를 명시하지 않으면 --url 이 그대로 통과한다", () => {
+    expect(parseTestCommand(["suite.json", "--url", "https://x/v1"]).stderrLines).toBe(20);
+  });
+
+  it.each(["--session", "--record-session"])("%s 는 --url 과 함께 쓸 수 없다", (option) => {
+    expect(failureOf(["suite.json", "--url", "https://x/v1", option, "s.db"])).toContain(
+      "그 주입 지점이 없습니다",
+    );
+  });
+
+  it("--determinism 은 --url 과 함께 쓸 수 있다", () => {
+    // 2회 연결은 원격 서버에도 성립한다. 막을 이유가 없는 조합까지 막으면 기능이 준다.
+    expect(
+      parseTestCommand(["suite.json", "--url", "https://x/v1", "--determinism"]).determinism,
+    ).toBe(true);
+  });
+
+  it("URL 이 아닌 값을 거절한다", () => {
+    expect(failureOf(["suite.json", "--url", "mcp.example.com"])).toContain(
+      "올바른 URL 이 아닙니다",
+    );
+  });
+});
+
+/**
+ * 중복 검사가 `header in headerEnv` 라, 맵이 평범한 `{}` 면 프로토타입에서 물려받는 이름이
+ * 처음 쓰였는데도 "두 번 지정됐다" 로 거절된다. 셋 다 유효한 헤더 이름이다(#137).
+ */
+describe("parseTestCommand — 프로토타입에서 물려받는 헤더 이름", () => {
+  it.each(["constructor", "toString", "__proto__"])(
+    "'%s' 를 처음 쓰면 중복으로 오인하지 않는다",
+    (header) => {
+      const input = parseTestCommand([
+        "suite.json",
+        "--url",
+        "https://x/v1",
+        "--header-env",
+        `${header}=MCP_TOKEN`,
+      ]);
+      expect(input.target).toMatchObject({ transport: "http" });
+      if (input.target.transport !== "http") return;
+      expect(Object.hasOwn(input.target.headerEnv, header)).toBe(true);
+    },
+  );
+
+  it("같은 이름을 두 번 쓰면 여전히 거절한다", () => {
+    expect(() =>
+      parseTestCommand([
+        "suite.json",
+        "--url",
+        "https://x/v1",
+        "--header-env",
+        "constructor=A",
+        "--header-env",
+        "constructor=B",
+      ]),
+    ).toThrow();
+  });
+});
+
+/**
+ * HTTP 헤더 이름은 대소문자를 구분하지 않는다. 표기만 다른 같은 헤더를 둘 다 받으면
+ * undici `Headers` 가 두 값을 `Bearer A, Bearer B` 로 이어 붙여 보낸다 — 자격증명이면
+ * 서버는 401 만 돌려주고 사용자는 자기가 두 번 쓴 것이 원인인 줄 모른다(#137).
+ */
+describe("parseTestCommand — 헤더 이름의 대소문자", () => {
+  const failureOf = (argv: readonly string[]): string => {
+    try {
+      parseTestCommand([...argv]);
+    } catch (error) {
+      return (error as { failure?: { message?: string } }).failure?.message ?? "";
+    }
+    throw new Error("거절하지 않았다");
+  };
+
+  it("표기만 다른 같은 헤더를 거절하고 두 표기를 모두 보여준다", () => {
+    const message = failureOf([
+      "suite.json",
+      "--url",
+      "https://x/v1",
+      "--header-env",
+      "Authorization=A",
+      "--header-env",
+      "authorization=B",
+    ]);
+    expect(message).toContain("authorization");
+    expect(message).toContain("Authorization");
+    expect(message).toContain("대소문자를 구분하지 않습니다");
+  });
+
+  it("표기가 완전히 같으면 중복이라고만 말한다", () => {
+    const message = failureOf([
+      "suite.json",
+      "--url",
+      "https://x/v1",
+      "--header-env",
+      "Authorization=A",
+      "--header-env",
+      "Authorization=B",
+    ]);
+    expect(message).toContain("두 번 지정됐습니다");
+    expect(message).not.toContain("대소문자");
+  });
+
+  it("사용자가 쓴 표기를 그대로 보관한다", () => {
+    const input = parseTestCommand([
+      "suite.json",
+      "--url",
+      "https://x/v1",
+      "--header-env",
+      "X-Api-Key=MCP_KEY",
+    ]);
+    expect(input.target).toMatchObject({ headerEnv: { "X-Api-Key": "MCP_KEY" } });
   });
 });

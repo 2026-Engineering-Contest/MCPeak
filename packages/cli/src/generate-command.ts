@@ -1,7 +1,7 @@
 import { access, link, open, readFile, unlink } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { createInterface } from "node:readline/promises";
-import type { McpStdioConnection, ToolDef } from "@mcpeak/core";
+import type { McpHttpConnection, McpStdioConnection, ToolDef } from "@mcpeak/core";
 import type {
   AuthoringDiffPreview,
   AuthoringExecutionSnapshot,
@@ -33,16 +33,26 @@ import type {
   TestSuiteSpec,
 } from "@mcpeak/runner";
 import { describeSpecFinding, suiteFingerprint } from "@mcpeak/runner";
+import {
+  type CliConnection,
+  type ConnectTarget,
+  ConnectTargetError,
+  createHeaderEnvCollector,
+  describeTarget,
+  openConnection,
+  parseHeaderEnvOption,
+  parseUrlOption,
+} from "./connect-target.js";
 import type { DryRunCaseOutcome, DryRunResult } from "./dry-run.js";
 import { runDryRun } from "./dry-run.js";
 import { reviewDryRun } from "./dry-run-review.js";
 import type { FindingGroup } from "./finding-group.js";
 import { FINDING_GROUP } from "./finding-group.js";
 import { GENERATE_USAGE_HINT } from "./help.js";
+import { httpDiagnostics, renderHttpDiagnostics } from "./http-diagnostics.js";
 import { repairInputs } from "./input-repair.js";
 import type { UnknownFormatSkip } from "./pre-fill-wiring.js";
 import { applyPreFill, dropSkippedTools, unknownFormatSkips } from "./pre-fill-wiring.js";
-import type { ProcessDiagnosticsInput } from "./process-diagnostics.js";
 import {
   hasDiagnosticContent,
   processDiagnostics,
@@ -60,8 +70,11 @@ export interface GenerateCommandInput {
   readonly suiteId: string;
   readonly name: string;
   readonly outPath: string;
-  readonly command: string;
-  readonly args: readonly string[];
+  /**
+   * 명세를 뽑을 대상. `--command`/`--arg` 면 stdio, `--url` 이면 Streamable HTTP 다(#137).
+   * `command` · `args` 두 필드를 이 하나로 바꾼 근거는 `TestCommandInput.target` 과 같다.
+   */
+  readonly target: ConnectTarget;
   readonly baselineOnly: boolean;
   readonly provider?: "codex" | "claude";
   readonly model?: string;
@@ -76,6 +89,16 @@ export interface GenerateCommandInput {
 }
 export interface GenerateCommandDependencies {
   connect(options: { command: string; args: readonly string[] }): Promise<McpStdioConnection>;
+  /**
+   * 원격(Streamable HTTP) 대상용 연결. `core.connectHttp` 다. 선택 사항으로 두는 근거는
+   * `TestCommandDependencies.connectHttp` 와 같다(#137).
+   */
+  connectHttp?(options: {
+    url: string;
+    headers?: Readonly<Record<string, string>>;
+  }): Promise<McpHttpConnection>;
+  /** `--header-env` 가 가리키는 환경변수를 읽는다. CLI 가 `process` 를 직접 읽지 않기 위한 주입점. */
+  readEnv?(name: string): string | undefined;
   createBaselineSuite(
     tools: readonly ToolDef[],
     options: { suiteId: string; suiteName: string },
@@ -300,6 +323,8 @@ const optionNames = new Set([
   "--out",
   "--command",
   "--arg",
+  "--url",
+  "--header-env",
   "--baseline-only",
   "--provider",
   "--model",
@@ -332,6 +357,8 @@ export function parseGenerateCommand(argv: readonly string[]): GenerateCommandIn
   const values = new Map<string, string>();
   const args: string[] = [];
   const flags = new Set<string>();
+  // `--arg` 와 같이 되풀이할 수 있는 옵션이라 `values` 맵에 넣지 않는다(#137).
+  const headerEnv = createHeaderEnvCollector();
   for (let index = 0; index < argv.length; index++) {
     const item = argv[index];
     if (item === undefined) continue;
@@ -354,11 +381,46 @@ export function parseGenerateCommand(argv: readonly string[]): GenerateCommandIn
       args.push(value);
       continue;
     }
+    if (option === "--header-env") {
+      const parsed = parseHeaderEnvOption(value);
+      if (!parsed.ok) throw new UsageError(parsed.message);
+      const rejected = headerEnv.add(parsed.value.header, parsed.value.envName);
+      if (rejected !== undefined) throw new UsageError(rejected);
+      continue;
+    }
     if (values.has(option)) throw new UsageError(`\`${option}\`는 한 번만 사용할 수 있습니다.`);
     values.set(option, value);
   }
-  for (const option of ["--suite-id", "--name", "--out", "--command"] as const)
+  for (const option of ["--suite-id", "--name", "--out"] as const)
     if (values.get(option) === undefined) throw new UsageError(`\`${option}\` 옵션이 필요합니다.`);
+  // transport 확정. 규칙과 문장은 `test` 와 같아야 한다 — 같은 사람이 두 커맨드를 잇달아
+  // 쓰는데 한쪽만 다르게 거절하면 그 차이를 기능으로 읽는다(#137).
+  const command = values.get("--command");
+  const rawUrl = values.get("--url");
+  if (command !== undefined && rawUrl !== undefined)
+    throw new UsageError(
+      "`--command` 와 `--url` 은 함께 쓸 수 없습니다.\n" +
+        "→ `--command` 는 서버를 프로세스로 띄우고, `--url` 은 이미 떠 있는 원격 서버에 붙습니다.\n" +
+        "→ 둘 중 무엇에서 명세를 뽑을지 하나만 고르세요.",
+    );
+  if (command === undefined && rawUrl === undefined)
+    throw new UsageError("`--command` 또는 `--url` 옵션이 필요합니다.");
+  if (rawUrl !== undefined && args.length > 0)
+    throw new UsageError(
+      "`--arg` 는 `--url` 과 함께 쓸 수 없습니다.\n" +
+        "→ `--arg` 는 우리가 띄우는 프로세스에 넘길 인자입니다. 원격 서버에는 띄울 프로세스가 없습니다.",
+    );
+  if (command !== undefined && !headerEnv.isEmpty())
+    throw new UsageError(
+      "`--header-env` 는 `--url` 과 함께만 쓸 수 있습니다.\n" +
+        "→ 헤더는 HTTP 요청에 실립니다. `--command` 로 띄운 서버와는 stdio 로 이야기합니다.",
+    );
+  const url = ((): string | undefined => {
+    if (rawUrl === undefined) return undefined;
+    const parsed = parseUrlOption(rawUrl);
+    if (!parsed.ok) throw new UsageError(parsed.message);
+    return parsed.value;
+  })();
   const outPath = values.get("--out") as string;
   if (!outPath.toLowerCase().endsWith(".json"))
     throw new UsageError("`--out`은 .json 파일이어야 합니다.");
@@ -384,8 +446,19 @@ export function parseGenerateCommand(argv: readonly string[]): GenerateCommandIn
     suiteId: values.get("--suite-id") as string,
     name: values.get("--name") as string,
     outPath,
-    command: values.get("--command") as string,
-    args: Object.freeze(args),
+    target:
+      url === undefined
+        ? Object.freeze({
+            transport: "stdio" as const,
+            // 위 두 검사가 "둘 다" 와 "둘 다 아님" 을 걷어냈으므로 여기 오면 반드시 있다.
+            command: command as string,
+            args: Object.freeze(args),
+          })
+        : Object.freeze({
+            transport: "http" as const,
+            url,
+            headerEnv: headerEnv.snapshot(),
+          }),
     baselineOnly: flags.has("--baseline-only"),
     provider: rawProvider,
     model: values.get("--model"),
@@ -1065,7 +1138,11 @@ function writeDryRunAborted(
   io: ReviewIO,
   result: DryRunResult,
   totalCases: number,
-  diagnostics: ProcessDiagnosticsInput | undefined,
+  /**
+   * `connection.getDiagnostics()` 의 원값. 좁힌 타입이 아니라 원값을 받는 이유는 대상이
+   * stdio 일 수도 원격일 수도 있어서다 — 두 구조 가드가 여기서 갈래를 고른다(#137).
+   */
+  diagnostics: unknown,
 ): void {
   const aborted = result.aborted;
   if (aborted === undefined) return;
@@ -1078,10 +1155,18 @@ function writeDryRunAborted(
         : "✗ 시험 실행을 마치지 못했습니다.\n",
   );
   io.write(`  → ${aborted.detail}\n`);
-  if (diagnostics !== undefined && hasDiagnosticContent(diagnostics)) {
-    const block = renderProcessDiagnostics(diagnostics, { maxLines: DRY_RUN_STDERR_LINES });
+  const local = processDiagnostics(diagnostics);
+  if (local !== undefined && hasDiagnosticContent(local)) {
+    const block = renderProcessDiagnostics(local, { maxLines: DRY_RUN_STDERR_LINES });
     if (block !== "") io.write(`\n${block}`);
   }
+  /**
+   * 원격 대상. 내용 판정을 걸지 않는다 — 이 함수는 위에서 `aborted === undefined` 면 이미
+   * 돌아갔으므로 **중단된 실행에서만** 여기 닿는다. 그 자리에서는 상태 코드가 없어도 어느
+   * 엔드포인트에서 끊겼는지가 정보다. `test` 의 연결 실패 경로와 같은 규칙이다.
+   */
+  const remote = httpDiagnostics(diagnostics);
+  if (remote !== undefined) io.write(`\n${renderHttpDiagnostics(remote)}`);
   io.write("\n저장하지 않았습니다. 서버를 고친 뒤 다시 save 를 고르세요.\n");
 }
 
@@ -1111,7 +1196,7 @@ async function runInteractiveReview(
   tools: readonly ToolDef[],
   session: AuthoringSessionView,
   deps: GenerateCommandDependencies,
-  connection: McpStdioConnection,
+  connection: CliConnection,
   skippedTools: readonly SkippedTool[] = [],
 ): Promise<number> {
   const io = deps.reviewIO;
@@ -1127,8 +1212,13 @@ async function runInteractiveReview(
   let candidate: SanitizedAuthoringCandidate | undefined = session.workingCandidate;
   let preferred = input.provider;
   let model = input.model;
-  /** 진단 읽기가 판정을 바꾸면 안 된다. getDiagnostics 가 던지면 삼킨다. */
-  const diagnostics = (): ProcessDiagnosticsInput | undefined => {
+  /**
+   * 진단 읽기가 판정을 바꾸면 안 된다. getDiagnostics 가 던지면 삼킨다.
+   *
+   * 좁히지 않고 원값을 넘긴다. 여기서 `processDiagnostics` 로 좁히면 원격 대상의 진단이
+   * 버려져, 시험 실행이 중단됐을 때 엔드포인트도 상태 코드도 화면에 닿지 못한다(#137).
+   */
+  const diagnostics = (): unknown => {
     try {
       return connection.getDiagnostics();
     } catch {
@@ -1166,7 +1256,7 @@ async function runInteractiveReview(
         } else {
           writeDryRunNotice(io, {
             caseCount,
-            target: [input.command, ...input.args].join(" "),
+            target: describeTarget(input.target),
             resetCmd: input.resetCmd,
             repair: input.repair,
           });
@@ -1747,7 +1837,7 @@ async function runPreFill(
   tools: readonly ToolDef[],
   baseline: BaselineGenerationResult,
   deps: GenerateCommandDependencies,
-  client: McpStdioConnection["client"],
+  client: CliConnection["client"],
 ): Promise<PreFillOutcome> {
   const skip: PreFillOutcome = { suite: baseline.suite, preFilledCaseIds: [] };
   const io = deps.reviewIO;
@@ -1849,21 +1939,25 @@ export async function runGenerateCommand(
     );
     return 1;
   }
-  let connection: McpStdioConnection | undefined;
+  let connection: CliConnection | undefined;
   /**
    * 대화형 검토는 아래 try 밖에서 돌린다. 검토가 던지는 오류를 여기 catch 가 삼키면
    * `GENERATE_FAILED` 로 뭉개지는데, 그 경로는 원래 호출자에게 그대로 올라가야 한다.
    */
   let review:
     | {
-        readonly active: McpStdioConnection;
+        readonly active: CliConnection;
         readonly session: AuthoringSessionView;
         readonly tools: readonly ToolDef[];
         readonly skippedTools: readonly SkippedTool[];
       }
     | undefined;
   try {
-    connection = await deps.connect({ command: input.command, args: input.args });
+    connection = await openConnection(input.target, {
+      connectStdio: deps.connect,
+      ...(deps.connectHttp === undefined ? {} : { connectHttp: deps.connectHttp }),
+      ...(deps.readEnv === undefined ? {} : { readEnv: deps.readEnv }),
+    });
     const active = connection;
     const tools = await active.client.listTools();
     // 시험 실행이 검토 메뉴 안쪽에서 일어나므로 대화형 경로는 여기서 닫지 않는다. 검토가 끝난
@@ -1928,6 +2022,12 @@ export async function runGenerateCommand(
       deps.writeStdout("입력이 종료되어 검토를 취소했습니다. 저장하지 않았습니다.\n");
       return 0;
     }
+    // 연결 전에 멈춘 경우다(원격 미지원 진입점, 빈 환경변수). core 오류가 아니므로 진단이
+    // 없고, 고칠 곳도 서버가 아니라 명령줄이다(#137).
+    if (error instanceof ConnectTargetError) {
+      deps.writeStderr(`오류 [CLI_USAGE]: ${error.message}\n해결: ${GENERATE_USAGE_HINT}\n`);
+      return 1;
+    }
     if (error instanceof OutputExistsError) outputExistsFailure(deps, error.path);
     else if (error instanceof OutputReplaceError)
       outputReplaceFailure(deps, error.path, error.code);
@@ -1948,6 +2048,10 @@ export async function runGenerateCommand(
         const block = renderProcessDiagnostics(diagnostics, { maxLines: DRY_RUN_STDERR_LINES });
         if (block !== "") deps.writeStderr(`\n${block}`);
       }
+      // 원격 대상의 진단. 연결이 실패한 자리라 상태 코드가 없어도(DNS 실패, 연결 거부)
+      // 어느 엔드포인트에 붙으려다 실패했는지가 정보다. `test` 의 같은 경로와 규칙이 같다(#137).
+      const remote = httpDiagnostics(error.diagnostics);
+      if (remote !== undefined) deps.writeStderr(`\n${renderHttpDiagnostics(remote)}`);
     } else
       deps.writeStderr(
         "오류 [GENERATE_FAILED]: baseline suite를 생성하거나 저장하지 못했습니다.\n해결: MCP 서버와 출력 경로를 확인한 뒤 다시 실행하세요.\n",

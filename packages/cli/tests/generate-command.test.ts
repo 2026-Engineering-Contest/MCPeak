@@ -192,8 +192,7 @@ describe("parseGenerateCommand", () => {
       suiteId: "weather",
       name: "Weather",
       outPath: "out.json",
-      command: "node",
-      args: ["one", "two"],
+      target: { transport: "stdio", command: "node", args: ["one", "two"] },
       baselineOnly: true,
       provider: undefined,
       model: undefined,
@@ -302,7 +301,7 @@ describe("parseGenerateCommand", () => {
         "--arg=-m",
         "--arg=",
       ]),
-    ).toMatchObject({ args: ["-m", ""] });
+    ).toMatchObject({ target: { transport: "stdio", command: "node", args: ["-m", ""] } });
   });
   it("누락·중복·unknown·추가 위치 인자를 사용법 오류로 거절한다", () => {
     for (const argv of [
@@ -3616,5 +3615,77 @@ describe("generate 구조화된 오류 출력 (#136)", () => {
     const { code } = await runWith(schemaError);
 
     expect(code).toBe(1);
+  });
+});
+
+/**
+ * `--url` 로 원격 서버에서 명세를 뽑는 경로의 파싱(#137).
+ *
+ * 규칙과 문장은 `test` 쪽과 같아야 한다. 같은 사람이 `generate` 로 뽑고 `test` 로 돌리는데
+ * 한쪽만 다르게 거절하면 그 차이를 기능으로 읽는다.
+ */
+describe("parseGenerateCommand — 원격(--url) 대상", () => {
+  const base = ["--suite-id", "x", "--name", "n", "--out", "x.json"] as const;
+  const messageOf = (extra: readonly string[]): string => {
+    try {
+      parseGenerateCommand([...base, ...extra]);
+    } catch (error) {
+      return (error as Error).message;
+    }
+    throw new Error("거절하지 않았다");
+  };
+
+  it("--url 만 주면 http 대상을 만든다", () => {
+    expect(parseGenerateCommand([...base, "--url", "https://x/v1"]).target).toEqual({
+      transport: "http",
+      url: "https://x/v1",
+      headerEnv: {},
+    });
+  });
+
+  it("--header-env 를 되풀이해 모은다", () => {
+    expect(
+      parseGenerateCommand([
+        ...base,
+        "--url",
+        "https://x/v1",
+        "--header-env",
+        "Authorization=MCP_TOKEN",
+        "--header-env",
+        "X-Api-Key=MCP_KEY",
+      ]).target,
+    ).toMatchObject({ headerEnv: { Authorization: "MCP_TOKEN", "X-Api-Key": "MCP_KEY" } });
+  });
+
+  it("--command 와 --url 을 함께 주면 거절한다", () => {
+    expect(messageOf(["--command", "node", "--url", "https://x/v1"])).toContain(
+      "함께 쓸 수 없습니다",
+    );
+  });
+
+  it("둘 다 없으면 두 이름을 함께 안내한다", () => {
+    expect(messageOf([])).toBe("`--command` 또는 `--url` 옵션이 필요합니다.");
+  });
+
+  it("--arg 는 --url 과 함께 쓸 수 없다", () => {
+    expect(messageOf(["--url", "https://x/v1", "--arg", "a"])).toContain(
+      "띄울 프로세스가 없습니다",
+    );
+  });
+
+  it("--header-env 는 --command 와 함께 쓸 수 없다", () => {
+    expect(messageOf(["--command", "node", "--header-env", "Authorization=T"])).toContain(
+      "`--url` 과 함께만",
+    );
+  });
+
+  it("환경변수 이름 자리에 값을 직접 넣으면 거절한다", () => {
+    expect(
+      messageOf(["--url", "https://x/v1", "--header-env", "Authorization=Bearer abc"]),
+    ).toContain("`ps` 목록과 셸 히스토리");
+  });
+
+  it("URL 이 아닌 값을 거절한다", () => {
+    expect(messageOf(["--url", "mcp.example.com"])).toContain("올바른 URL 이 아닙니다");
   });
 });

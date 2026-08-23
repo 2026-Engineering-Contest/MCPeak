@@ -10,7 +10,15 @@ import {
   outOfScopeNotice,
   parseTestCommand,
   renderReplayMissDiagnostics,
+  type TestCommandInput,
 } from "../src/test-command.js";
+
+/** stdio 대상의 인자만 꺼낸다. 근거는 `test-command.test.ts` 의 같은 이름 헬퍼에 있다(#137). */
+const stdioArgs = (input: TestCommandInput): readonly string[] => {
+  if (input.target.transport !== "stdio")
+    throw new Error(`stdio 대상이 아니다: ${input.target.transport}`);
+  return input.target.args;
+};
 
 /**
  * `--session` · `--record-session` 의 파싱과 상호 배타를 본다.
@@ -100,7 +108,7 @@ describe("배선 판정이 파서와 같은 규칙을 쓴다", () => {
       "--session=/tmp/x",
     ]);
 
-    expect(input.args).toEqual(["--session=/tmp/x"]);
+    expect(stdioArgs(input)).toEqual(["--session=/tmp/x"]);
     expect(input.sessionPath).toBeUndefined();
     expect(input.recordSessionPath).toBeUndefined();
   });
@@ -116,7 +124,7 @@ describe("배선 판정이 파서와 같은 규칙을 쓴다", () => {
       "real.db",
     ]);
 
-    expect(input.args).toEqual(["--record-session"]);
+    expect(stdioArgs(input)).toEqual(["--record-session"]);
     expect(input.sessionPath).toBe("real.db");
     expect(input.recordSessionPath).toBeUndefined();
   });

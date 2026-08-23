@@ -10,13 +10,23 @@ type OptionalKey<T> = {
   [K in keyof T]-?: object extends Pick<T, K> ? K : never;
 }[keyof T];
 
-type OptionalFunctionDependencyKey = {
-  [K in OptionalKey<GenerateCommandDependencies>]: NonNullable<
-    GenerateCommandDependencies[K]
-  > extends (...args: never[]) => unknown
-    ? K
-    : never;
-}[OptionalKey<GenerateCommandDependencies>];
+/**
+ * `@mcpeak/generate` 가 아니라 `@mcpeak/core` 에서 오는 선택 의존이다(#137). 아래 배선
+ * 단언은 generate 모듈의 export 와 키 이름으로 대조하므로 이 둘은 대상에서 뺀다. 빼는 대신
+ * 같은 테스트 안에서 core 배선을 따로 단언한다 — 목록에서 빠진 것과 안 보는 것은 다르다.
+ */
+type CoreBackedDependencyKey = "connectHttp" | "readEnv";
+
+type OptionalFunctionDependencyKey = Exclude<
+  {
+    [K in OptionalKey<GenerateCommandDependencies>]: NonNullable<
+      GenerateCommandDependencies[K]
+    > extends (...args: never[]) => unknown
+      ? K
+      : never;
+  }[OptionalKey<GenerateCommandDependencies>],
+  CoreBackedDependencyKey
+>;
 
 const OPTIONAL_GENERATE_DEPENDENCIES = {
   prepareAuthoringRequest: true,
@@ -182,9 +192,10 @@ describe("mcpeak cli", () => {
 
     try {
       vi.resetModules();
-      const [{ run: isolatedRun }, generate] = await Promise.all([
+      const [{ run: isolatedRun }, generate, core] = await Promise.all([
         import("../src/index.js"),
         import("@mcpeak/generate"),
+        import("@mcpeak/core"),
       ]);
 
       await expect(isolatedRun(["generate"])).resolves.toBe(0);
@@ -196,6 +207,10 @@ describe("mcpeak cli", () => {
       expect(
         Object.fromEntries(dependencyKeys.map((key) => [key, capturedDependencies?.[key]])),
       ).toEqual(Object.fromEntries(dependencyKeys.map((key) => [key, generate[key]])));
+      // core 에서 오는 배선(#137). `--url` 이 배선되지 않으면 원격 대상이 "지원하지 않습니다"
+      // 로 떨어지는데, 그 문장은 사용자가 고칠 수 없는 자리라 여기서 막는다.
+      expect(capturedDependencies?.connectHttp).toBe(core.connectHttp);
+      expect(typeof capturedDependencies?.readEnv).toBe("function");
     } finally {
       vi.doUnmock("../src/generate-command.js");
       vi.resetModules();

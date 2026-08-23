@@ -1,5 +1,5 @@
 import { extname } from "node:path";
-import type { McpStdioConnection } from "@mcpeak/core";
+import type { McpHttpConnection, McpStdioConnection } from "@mcpeak/core";
 /**
  * **타입만** 가져온다. 값 import 로 바꾸면 `node:sqlite` 가 CLI 를 띄우는 것만으로 로드되어
  * ADR-0056 이 좁혀 둔 실험 경고가 모든 실행에 다시 붙는다. `import type` 은 컴파일에서
@@ -29,6 +29,15 @@ import {
   checkDeterminism as runnerCheckDeterminism,
   checkInputContract as runnerCheckInputContract,
 } from "@mcpeak/runner";
+import {
+  type CliConnection,
+  type ConnectTarget,
+  ConnectTargetError,
+  createHeaderEnvCollector,
+  openConnection,
+  parseHeaderEnvOption,
+  parseUrlOption,
+} from "./connect-target.js";
 import { createDeterminismCapture } from "./determinism-capture.js";
 import {
   type ExternalMode,
@@ -39,6 +48,12 @@ import {
 import type { FindingGroup } from "./finding-group.js";
 import { FINDING_GROUP } from "./finding-group.js";
 import { commandDiscovery, TEST_USAGE_HINT } from "./help.js";
+import {
+  type HttpDiagnosticsInput,
+  hasHttpDiagnosticContent,
+  httpDiagnostics,
+  renderHttpDiagnostics,
+} from "./http-diagnostics.js";
 import {
   hasDiagnosticContent,
   isAbnormalExit,
@@ -63,8 +78,14 @@ import {
 
 export interface TestCommandInput {
   readonly suitePath: string;
-  readonly command: string;
-  readonly args: readonly string[];
+  /**
+   * 붙을 대상. `--command`/`--arg` 면 stdio, `--url` 이면 Streamable HTTP 다(#137).
+   *
+   * `command` · `args` 두 필드를 이 하나로 바꿨다. 두 transport 를 나란히 두면 "url 이
+   * 있으면 command 는 무시" 같은 규칙이 읽는 자리마다 되풀이되고, 그 규칙이 한 군데서만
+   * 어긋나도 사용자가 지정하지 않은 곳에 붙는다.
+   */
+  readonly target: ConnectTarget;
   readonly json: boolean;
   /** `--junit` 로 받은 XML 출력 경로. 지정하지 않으면 undefined 이고 XML 을 만들지 않는다. */
   readonly junitPath: string | undefined;
@@ -112,6 +133,22 @@ export interface TestCommandDependencies {
     /** External 배선이 만든 자식 환경 변수. Bootstrap 주입이 여기 실린다. */
     env?: Readonly<Record<string, string>>;
   }): Promise<McpStdioConnection>;
+  /**
+   * 원격(Streamable HTTP) 대상용 연결. `core.connectHttp` 다.
+   *
+   * **선택 사항으로 둔다.** 위 `checkInputContract` 와 같은 이유다 — 진입점의 "런타임 의존성
+   * 없음" 경로와 대시보드처럼 stdio 만 배선한 호출자가 이 필드를 채울 수 없다. 없으면
+   * `--url` 이 조용히 stdio 로 떨어지지 않고 무엇이 없는지 말하고 멈춘다(#137).
+   */
+  connectHttp?(options: {
+    url: string;
+    headers?: Readonly<Record<string, string>>;
+  }): Promise<McpHttpConnection>;
+  /**
+   * `--header-env` 가 가리키는 환경변수를 읽는다. 이것이 없으면 `--header-env` 를 쓸 수 없다.
+   * CLI 코드가 `process` 를 직접 읽지 않기 위한 주입점이다(ADR-0013).
+   */
+  readEnv?(name: string): string | undefined;
   startRunner(options: RunSuiteOptions): RunnerExecution;
   finalize(options: FinalizeRunnerExecutionOptions): Promise<RunnerReport>;
   renderReport(report: RunnerReport, options?: { color?: boolean }): string;
@@ -242,6 +279,7 @@ export function parseTestCommand(argv: readonly string[]): TestCommandInput {
   const suitePath = argv[0] ?? "";
   if (suitePath === "") fail("테스트 명세 JSON 경로가 필요합니다.");
   let command: string | undefined;
+  let url: string | undefined;
   let json = false;
   let junitPath: string | undefined;
   let repairBundlePath: string | undefined;
@@ -251,6 +289,7 @@ export function parseTestCommand(argv: readonly string[]): TestCommandInput {
   let sessionPath: string | undefined;
   let recordSessionPath: string | undefined;
   const args: string[] = [];
+  const headerEnv = createHeaderEnvCollector();
   for (let index = 1; index < argv.length; index += 1) {
     const token = argv[index] ?? "";
     if (token === "--command" || token.startsWith("--command=")) {
@@ -269,6 +308,23 @@ export function parseTestCommand(argv: readonly string[]): TestCommandInput {
       if (value === "") fail("`--command` 옵션 값이 필요합니다.");
       if (value.startsWith("--")) fail("`--command` 옵션 값이 필요합니다.");
       command = value;
+    } else if (token === "--url" || token.startsWith("--url=")) {
+      // 값 검사는 `--command` 와 같은 규칙이다. URL 자리의 플래그는 값을 빠뜨린 오타다.
+      if (url !== undefined) fail("`--url`은 한 번만 사용할 수 있습니다.");
+      const read = readOptionValue(argv, token, "--url", index);
+      index = read.index;
+      const parsed = parseUrlOption(read.value);
+      if (!parsed.ok) fail(parsed.message);
+      else url = parsed.value;
+    } else if (token === "--header-env" || token.startsWith("--header-env=")) {
+      const read = readOptionValue(argv, token, "--header-env", index);
+      index = read.index;
+      const parsed = parseHeaderEnvOption(read.value);
+      if (!parsed.ok) fail(parsed.message);
+      else {
+        const rejected = headerEnv.add(parsed.value.header, parsed.value.envName);
+        if (rejected !== undefined) fail(rejected);
+      }
     } else if (token === "--arg" || token.startsWith("--arg=")) {
       let value: string;
       if (token === "--arg") {
@@ -382,12 +438,46 @@ export function parseTestCommand(argv: readonly string[]): TestCommandInput {
       fail(`지원하지 않는 test 옵션 '${escapeTerminalText(token)}'입니다.`);
     else fail(`추가 위치 인자 '${escapeTerminalText(token)}'는 허용되지 않습니다.`);
   }
-  if (command === undefined)
+  // transport 는 여기서 확정한다. 아래 검사들이 "둘 다" 와 "둘 다 아님" 을 먼저 걷어내므로
+  // 그 아래로는 `target` 하나만 흐른다(#137).
+  if (command !== undefined && url !== undefined)
+    fail(
+      "`--command` 와 `--url` 은 함께 쓸 수 없습니다.\n" +
+        "→ `--command` 는 서버를 프로세스로 띄우고, `--url` 은 이미 떠 있는 원격 서버에 붙습니다.\n" +
+        "→ 둘 중 무엇을 검사할지 하나만 고르세요.",
+    );
+  if (command === undefined && url === undefined)
     throw new CliCommandError({
       code: "CLI_USAGE",
-      message: "`--command` 옵션이 필요합니다.",
+      message: "`--command` 또는 `--url` 옵션이 필요합니다.",
       hint: TEST_USAGE_HINT,
     });
+  if (url !== undefined && args.length > 0)
+    fail(
+      "`--arg` 는 `--url` 과 함께 쓸 수 없습니다.\n" +
+        "→ `--arg` 는 우리가 띄우는 프로세스에 넘길 인자입니다. 원격 서버에는 띄울 프로세스가 없습니다.",
+    );
+  if (command !== undefined && !headerEnv.isEmpty())
+    fail(
+      "`--header-env` 는 `--url` 과 함께만 쓸 수 있습니다.\n" +
+        "→ 헤더는 HTTP 요청에 실립니다. `--command` 로 띄운 서버와는 stdio 로 이야기합니다.",
+    );
+  // 명시했는데 조용히 무시하면 "막은 척" 이 된다. 기본값이면 무시한다 — 기본값까지 거절하면
+  // `--url` 을 쓰는 사용자가 전원 막힌다.
+  if (url !== undefined && stderrLines !== undefined)
+    fail(
+      "`--stderr-lines` 는 `--url` 과 함께 쓸 수 없습니다.\n" +
+        "→ 이 옵션은 우리가 띄운 프로세스의 stderr 를 보여줍니다. 원격 서버에는 그 프로세스가 없습니다.\n" +
+        "→ 원격 서버 실패는 엔드포인트와 HTTP 상태로 진단합니다. 그 블록은 항상 나옵니다.",
+    );
+  // External 배선은 자식 프로세스 환경변수로 bootstrap 을 주입한다. 원격 서버에는 그 자식이
+  // 없으므로 녹화도 재생도 성립하지 않는다. 실행한 뒤 빈 세션으로 끝나게 두지 않는다.
+  if (url !== undefined && (sessionPath !== undefined || recordSessionPath !== undefined))
+    fail(
+      "External 세션 옵션은 `--url` 과 함께 쓸 수 없습니다.\n" +
+        "→ External 배선은 우리가 띄운 자식 프로세스의 환경변수로 들어갑니다.\n" +
+        "→ 원격 서버는 우리가 띄우지 않으므로 그 주입 지점이 없습니다.",
+    );
   // 재생과 녹화를 한 실행에 같이 시킬 수 없다. 무엇을 하려는 것인지 우리가 고를 문제가 아니다.
   if (sessionPath !== undefined && recordSessionPath !== undefined)
     fail("`--session`과 `--record-session`은 함께 쓸 수 없습니다. 재생과 녹화 중 하나만 고르세요.");
@@ -402,8 +492,20 @@ export function parseTestCommand(argv: readonly string[]): TestCommandInput {
     );
   return Object.freeze({
     suitePath,
-    command,
-    args: Object.freeze(args),
+    target:
+      url === undefined
+        ? Object.freeze({
+            transport: "stdio" as const,
+            // 위 두 검사가 `command === undefined && url === undefined` 와 둘 다 있는 경우를
+            // 이미 걷어냈으므로, 여기 오면 `command` 는 반드시 있다.
+            command: command as string,
+            args: Object.freeze(args),
+          })
+        : Object.freeze({
+            transport: "http" as const,
+            url,
+            headerEnv: headerEnv.snapshot(),
+          }),
     json,
     junitPath,
     repairBundlePath,
@@ -580,8 +682,13 @@ type CoreError = Readonly<{
   message: string;
   hint: string;
   diagnostics?: ProcessDiagnosticsInput;
+  /**
+   * 원격 대상의 진단. 위 `diagnostics` 와 **동시에 채워지지 않는다** — 두 구조 가드가 서로를
+   * 배제하므로 transport 하나당 한쪽만 값이 된다(ADR-0020 의 유니온).
+   */
+  httpDiagnostics?: HttpDiagnosticsInput;
 }>;
-/** AggregateError 내부까지 내려가 core 오류와 검증된 프로세스 진단을 꺼낸다. */
+/** AggregateError 내부까지 내려가 core 오류와 검증된 진단을 꺼낸다. */
 function coreError(error: unknown): CoreError | undefined {
   const seen = new Set<object>();
   const visit = (value: unknown): CoreError | undefined => {
@@ -603,6 +710,9 @@ function coreError(error: unknown): CoreError | undefined {
         message: value.message,
         hint: value.hint,
         diagnostics: processDiagnostics(
+          "diagnostics" in value ? (value as { diagnostics: unknown }).diagnostics : undefined,
+        ),
+        httpDiagnostics: httpDiagnostics(
           "diagnostics" in value ? (value as { diagnostics: unknown }).diagnostics : undefined,
         ),
       });
@@ -758,14 +868,31 @@ async function runCliCore(
       );
     }
   }
-  let connection: McpStdioConnection;
+  /**
+   * 두 transport 의 연결 주입점을 한 묶음으로 만든다. `--determinism` 의 2회차도 같은 것을
+   * 쓴다 — 회차마다 다른 대상에 붙으면 비교가 뜻을 잃는다.
+   */
+  const connectDependencies = {
+    connectStdio: dependencies.connect,
+    ...(dependencies.connectHttp === undefined ? {} : { connectHttp: dependencies.connectHttp }),
+    ...(dependencies.readEnv === undefined ? {} : { readEnv: dependencies.readEnv }),
+  };
+  let connection: CliConnection;
   try {
-    connection = await dependencies.connect({
-      command: input.command,
-      args: input.args,
-      ...(childEnv === undefined ? {} : { env: childEnv }),
-    });
+    connection = await openConnection(
+      input.target,
+      connectDependencies,
+      childEnv === undefined ? undefined : { env: childEnv },
+    );
   } catch (error) {
+    // 연결 전에 멈춘 경우다(원격 미지원 진입점, 빈 환경변수). core 오류가 아니므로 진단이
+    // 없고, 고칠 곳도 서버가 아니라 명령줄이다. 사용 오류로 낸다.
+    if (error instanceof ConnectTargetError)
+      return writeFailure(dependencies, {
+        code: "CLI_USAGE",
+        message: error.message,
+        hint: TEST_USAGE_HINT,
+      });
     const core = coreError(error);
     const failed = writeFailure(
       dependencies,
@@ -789,19 +916,33 @@ async function runCliCore(
       const block = renderProcessDiagnostics(diagnostics, { maxLines: input.stderrLines });
       if (block !== "") dependencies.writeStderr(`\n${block}`);
     }
+    /**
+     * 원격 대상의 진단. `--stderr-lines` 로 억제하지 않는다 — 파서가 그 옵션과 `--url` 의
+     * 동시 사용을 막으므로 값이 항상 기본값이라 조건이 뜻을 잃는다.
+     *
+     * 내용 판정(`hasHttpDiagnosticContent`)도 걸지 않는다. 연결이 실패한 자리에서는 상태
+     * 코드가 없어도(DNS 실패, 연결 거부) **어느 엔드포인트에 붙으려다 실패했는지**가 정보다.
+     */
+    const remote = core?.httpDiagnostics;
+    if (remote !== undefined) dependencies.writeStderr(`\n${renderHttpDiagnostics(remote)}`);
     return failed;
   }
   /**
    * 진단 스냅샷. 읽기를 시도했다는 사실과 그 결과를 함께 담는다. `undefined` 를 센티널로 쓰면
    * "아직 안 읽었다" 와 "읽다 실패했다" 가 섞여, 실패했을 때 다시 읽는 일이 생긴다. §4.3.1.
    */
-  type DiagnosticsSnapshot = { readonly value: ProcessDiagnosticsInput | undefined };
+  type DiagnosticsSnapshot = {
+    readonly value: ProcessDiagnosticsInput | undefined;
+    /** 원격 대상의 진단. 위 `value` 와 동시에 채워지지 않는다 — 두 가드가 서로를 배제한다. */
+    readonly remote: HttpDiagnosticsInput | undefined;
+  };
   /** 진단 출력 실패가 판정을 바꾸면 안 된다. getDiagnostics 가 던지면 삼킨다. §4.3.1. */
   const snapshotDiagnostics = (): DiagnosticsSnapshot => {
     try {
-      return { value: connection.getDiagnostics() };
+      const raw = connection.getDiagnostics();
+      return { value: processDiagnostics(raw), remote: httpDiagnostics(raw) };
     } catch {
-      return { value: undefined };
+      return { value: undefined, remote: undefined };
     }
   };
   /**
@@ -811,10 +952,24 @@ async function runCliCore(
    * 않기 위해서다(설계 문서 §4.3).
    */
   const writeDiagnostics = (snapshot?: DiagnosticsSnapshot): void => {
-    if (input.stderrLines === 0) return;
     // 스냅샷을 받았으면 그 결과가 전부다. 실패했더라도 다시 읽지 않는다. 다시 읽으면 우리가
     // 프로세스를 정리한 뒤의 상태를 서버 탓으로 보고하게 된다.
-    const diagnostics = (snapshot ?? snapshotDiagnostics()).value;
+    const taken = snapshot ?? snapshotDiagnostics();
+    /**
+     * 원격 대상. `--stderr-lines` 로 억제하지 않는다 — stdio 전용 옵션이고 파서가 `--url`
+     * 과의 동시 사용을 막으므로 여기서는 조건이 뜻을 잃는다.
+     *
+     * 다만 내용 판정은 **건다.** 연결 실패 경로와 달리 여기는 실행이 끝난 뒤라, core 가
+     * 상태 코드를 채우지 않은 성공한 실행에서도 불린다. 판정 없이 그리면 초록불 뒤에 매번
+     * 빈 진단 블록이 붙는다.
+     */
+    if (taken.remote !== undefined) {
+      if (hasHttpDiagnosticContent(taken.remote))
+        dependencies.writeStderr(`\n${renderHttpDiagnostics(taken.remote)}`);
+      return;
+    }
+    if (input.stderrLines === 0) return;
+    const diagnostics = taken.value;
     if (diagnostics === undefined) return;
     // 정보가 없는 블록은 소음이다. 설계 문서 §4.3. 판정은 렌더러가 아니라 여기에 둔다.
     if (!hasDiagnosticContent(diagnostics)) return;
@@ -922,9 +1077,11 @@ async function runCliCore(
    */
   const determinismOutcome: DeterminismOutcome | undefined = await (async () => {
     if (firstCapture === undefined) return undefined;
-    const snapshotOf = (target: McpStdioConnection): ProcessDiagnosticsInput | undefined => {
+    const snapshotOf = (target: CliConnection): ProcessDiagnosticsInput | undefined => {
       try {
-        return target.getDiagnostics();
+        // 원격 대상이면 구조 가드가 `undefined` 를 낸다. 결정론성 블록의 진단 자리는
+        // 프로세스 진단만 그리므로, HTTP 진단을 여기에 실으면 stdio 블록이 남의 값을 그린다.
+        return processDiagnostics(target.getDiagnostics());
       } catch {
         return undefined;
       }
@@ -942,13 +1099,13 @@ async function runCliCore(
         return { kind: "incomplete", reason };
       }
     }
-    let second: McpStdioConnection;
+    let second: CliConnection;
     try {
-      second = await dependencies.connect({
-        command: input.command,
-        args: input.args,
-        ...(childEnv === undefined ? {} : { env: childEnv }),
-      });
+      second = await openConnection(
+        input.target,
+        connectDependencies,
+        childEnv === undefined ? undefined : { env: childEnv },
+      );
     } catch (error) {
       const core = coreError(error);
       return {

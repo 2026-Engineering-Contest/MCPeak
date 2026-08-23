@@ -1,10 +1,10 @@
 # ADR-0065: 옵션 이름은 stderr 가 아니라 우리 args 에서 고른다
 
-- 상태: 제안
+- 상태: 채택
 - 날짜: 2026-08-23
 - 담당: generate (화면 문장은 cli)
 - 작성자: @endl24 (① MCP 서버 테스트 파트)
-- 승인: 미승인. 아래 '승인' 절 참조
+- 승인: 승인 (2026-08-23, @endl24 · ① MCP 서버 테스트 파트 오너가 검토하고 결정)
 - 선행 결정: [ADR-0033](./0033-stderr-외부-전송-경계.md), [ADR-0034](./0034-provider-진단-통로-분리.md)
 - 참조: [#285](https://github.com/2026-Engineering-Contest/MCPeak/issues/285)
 
@@ -93,10 +93,10 @@ stderr 를 뒤져야 한다. 이 저장소에서 실패 메시지는 제품이�
 
 ## 승인
 
-- 상태: 미승인.
+- 상태: 승인 (2026-08-23, @endl24 · ① MCP 서버 테스트 파트 오너).
 - 필요한 승인: `generate` 오너. 공개 타입 두 개(`AuthoringProviderFailureReason`,
   `classifyFailure` 반환형)의 모양이 바뀐다.
-- 확정 방법: PR 이 머지되면 이 결정이 코드로 확정된다. 그때 이 절과 문서 머리의 `상태` 를 `채택` 으로
-  바꾸고 승인일과 승인한 오너를 적는다.
+- 확정: [PR #322](https://github.com/2026-Engineering-Contest/MCPeak/pull/322) 가 머지되어 이 결정이
+  코드로 확정됐다.
 - 되돌리는 조건: provider CLI 들이 옵션 거절을 상태 코드나 구조화된 출력으로 알리게 되면 문자열
   대조를 걷어내고 기존 숫자 분류로 되돌린다.

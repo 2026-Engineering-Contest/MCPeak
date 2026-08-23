@@ -47,6 +47,13 @@
 
 ## HTTP — 외부 프로그램용
 
+라이브러리로 부르는 경로라 **프로젝트에 설치해야** 합니다. 전역 설치(`npm i -g`)는 실행 파일만
+놓으므로 `import` 가 `ERR_MODULE_NOT_FOUND` 로 깨집니다.
+
+```bash
+npm install --save-dev @mcpeak/mock
+```
+
 ```ts
 import { ANY, createMockServer } from "@mcpeak/mock";
 

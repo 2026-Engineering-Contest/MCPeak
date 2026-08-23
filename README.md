@@ -50,14 +50,18 @@ npm install -g @mcpeak/cli @mcpeak/mock @mcpeak/dashboard
 서버를 띄우는 방법과 함께 넘긴다.
 
 ```bash
-mcpeak test weather.suite.json --command node --arg ./server.js
+mcpeak test weather.suite.json --command node --arg examples/weather-server/server.mjs
 ```
+
+> 예제 서버는 이 저장소의 `examples/weather-server/` 에 있습니다. **npm 으로만 설치했다면**
+> 아직 붙일 서버가 없으니 [서버 없이 목으로 시작](#실제-서버-없이-테스트하기)하세요. **위 명세를
+> 그대로 쓰고** 목 정의 JSON 하나만 더 만들면 같은 두 케이스가 그대로 통과합니다.
 
 ```
 날씨 서버  (2 cases)
 
-✓ tool-exists      get_weather 도구를 제공한다
-✓ seoul-succeeds   서울 날씨를 정상 조회한다
+✓ tool-exists     get_weather 도구를 제공한다
+✓ seoul-succeeds  서울 날씨를 정상 조회한다
 
 2 passed  (2 total)
 ```
@@ -67,9 +71,17 @@ mcpeak test weather.suite.json --command node --arg ./server.js
 - **케이스가 실패하면** 어느 단언이 무엇과 왜 다른지, 그리고 어떻게 고치는지가 나옵니다.
   ```
   ✗ missing-tool  존재하지 않는 도구를 요구한다
-      toolExists  툴 'missing_weather_tool'를 찾을 수 없습니다.
+      toolExists  툴 'missing_weather_tool'을(를) 찾을 수 없습니다. 발견된 툴: 'add', 'get_weather'
       해결: 서버의 tools/list 응답과 테스트 명세를 확인하세요.
+
+  1 failed  (1 total)
+
+  명세: 승인 지문이 없습니다 (미고정)
+    → mcpeak generate 로 승인한 명세가 아니거나 승인 이전 버전으로 만든 파일입니다.
   ```
+
+  마지막 두 줄은 **손으로 쓴 명세**에 붙습니다. `generate` 로 승인받은 명세면 대신 승인 시점과
+  같은지를 알려줍니다.
 - **명세를 못 읽거나 서버에 못 붙는 등 실행 자체가 실패하면** 원인 코드와 해결 방법이 나옵니다.
   ```
   오류 [MCP_CONNECTION_FAILED/PROCESS_START_FAILED]: MCP 서버 프로세스를 시작하지 못했습니다.
@@ -92,13 +104,17 @@ mcpeak generate --suite-id weather --name "날씨 서버" --out weather.suite.js
 
 ```
 mcpeak test <suite.json> --command <executable> [--arg <value> ...]
-             [--json] [--junit <path>] [--stderr-lines <N>]
-             [--record-session <path> | --session <path>]
+             [--determinism] [--reset-cmd <command>]
+             [--json] [--junit <path>] [--repair-bundle <path>] [--stderr-lines <N>]
+             [--session <path> | --record-session <path>]
 
 mcpeak generate --suite-id <id> --name <name> --out <suite.json>
                  --command <executable> [--arg <value> ...]
                  [--baseline-only] [--provider <codex|claude>] [--model <model>]
                  [--no-dry-run] [--reset-cmd <command>] [--no-repair] [--force]
+
+mcpeak repair <bundle.json> --provider <codex|claude> --model <model>
+               [--max-cases <N>] [--no-stderr] [--yes]
 ```
 
 `--command` 와 `--arg` 가 **테스트 대상 서버를 띄우는 방법**입니다. `--arg` 를 여러 번 써서

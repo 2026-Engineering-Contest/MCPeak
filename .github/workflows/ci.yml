@@ -215,11 +215,24 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
-      # `||` 로 삼키지 않는다. 그 한 글자가 "탐지했지만 SUCCESS 로 찍는" 상태를 만들었다.
+      # `||` 로 실패를 받아 블록에서 `exit 1` 한다. 한때 그 자리가 `|| echo` 뿐이라
+      # **탐지하고도 SUCCESS 로 찍혔다**(#264).
+      #
+      # 실패 원인을 가른다. `changeset status` 는 changeset 누락 말고 설정 오류나 잘못된
+      # `--since` ref 로도 1 을 낸다. 전부 "changeset 이 없습니다" 로 안내하면 원인을 잘못
+      # 지목한다 — 이 저장소에서 실패 메시지는 제품이다(CLAUDE.md).
       - name: Require a changeset
         run: |
-          pnpm changeset status --since=origin/${{ github.base_ref }} || {
+          if output=$(pnpm changeset status --since=origin/${{ github.base_ref }} 2>&1); then
+            echo "$output"
+            exit 0
+          fi
+          echo "$output"
+          if echo "$output" | grep -q "no changesets were found"; then
             echo "::error::changeset 이 없습니다. 'pnpm changeset' 으로 릴리스 노트를 추가하세요."
-            echo "::error::릴리스가 필요 없는 변경이면 'pnpm changeset add --empty' 로 빈 changeset 을 넣으세요."
-            exit 1
-          }
+            echo "::error::릴리스가 필요 없는 변경이면 'pnpm changeset add --empty' 로 빈 changeset 을 넣고 커밋하세요."
+          else
+            echo "::error::changeset status 가 실패했습니다. 위 출력을 보세요 — changeset 누락이 아니라"
+            echo "::error::설정이나 --since 기준(origin/${{ github.base_ref }})의 문제일 수 있습니다."
+          fi
+          exit 1

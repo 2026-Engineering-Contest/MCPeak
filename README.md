@@ -54,8 +54,8 @@ mcpeak test weather.suite.json --command node --arg examples/weather-server/serv
 ```
 
 > 예제 서버는 이 저장소의 `examples/weather-server/` 에 있습니다. **npm 으로만 설치했다면**
-> 아직 붙일 서버가 없으니 [서버 없이 목으로 시작](#실제-서버-없이-테스트하기)하세요 — JSON 파일
-> 하나면 됩니다.
+> 아직 붙일 서버가 없으니 [서버 없이 목으로 시작](#실제-서버-없이-테스트하기)하세요. **위 명세를
+> 그대로 쓰고** 목 정의 JSON 하나만 더 만들면 같은 두 케이스가 그대로 통과합니다.
 
 ```
 날씨 서버  (2 cases)

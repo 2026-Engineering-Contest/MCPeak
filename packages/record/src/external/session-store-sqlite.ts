@@ -96,18 +96,125 @@ const toInteraction = (row: InteractionRow): StoredInteraction =>
 export interface SqliteSessionStoreOptions {
   /** DB 파일 경로. 생략하면 프로세스 수명만큼 사는 인메모리 DB 다. */
   readonly path?: string;
+  /**
+   * 재생처럼 **읽기만 하는** 경로에서 켠다. 켜면 DB 를 읽기 전용으로 열고 DDL·`meta` INSERT
+   * 를 돌리지 않는다 — **주어진 파일을 만들지도 고치지도 않는다.**
+   *
+   * 끄면(기본) 지금까지처럼 없는 경로에 파일을 만들고 스키마를 심는다. 녹화의 동작이다.
+   *
+   * 이 구분이 필요한 이유는 껐을 때의 부작용이 재생에서 결함이 되기 때문이다. 재생은 읽기인데
+   * 스키마를 무조건 심으면 (1) 읽기 전용(chmod 444) 세션은 `attempt to write a readonly
+   * database` 로 한 건도 재생되지 않고, (2) 0바이트 파일을 넘기면 **실패한 실행이 사용자
+   * 파일을 빈 세션 DB 로 덮어쓴다.** 실패한 실행이 사용자 파일을 바꾸지 않는 것이 기준이다.
+   */
+  readonly readOnly?: boolean;
 }
 
-export function createSqliteSessionStore(options: SqliteSessionStoreOptions = {}): SessionStore {
-  const db = new DatabaseSync(options.path ?? ":memory:");
-  // 외래 키는 기본이 꺼져 있다. 세션을 지우면 interaction 이 남는 것을 DB 가 막게 한다.
-  db.exec("PRAGMA foreign_keys = ON;");
-  db.exec(SCHEMA);
-  db.prepare("INSERT OR IGNORE INTO meta (key, value) VALUES ('store_version', ?)").run(
-    String(SQLITE_STORE_VERSION),
-  );
+/** 읽기 전용으로 열 때 "이 파일이 우리 세션인가" 를 판정한 결과. */
+type ReadOnlyProbe = "ok" | "not-a-session" | "version-mismatch";
 
-  const statements = {
+/**
+ * `loadSession` 과 같은 판정을 쓴다 — 열 이름이 같아도 다른 version 의 파일은 우리 세션이
+ * 아니다. 다만 답은 다르게 쓴다. `loadSession` 은 판별기라 `null` 이지만, 여기는 사용자가
+ * **이 파일로 재생하겠다고 지목한** 자리라 왜 안 되는지를 말해야 한다.
+ */
+const probeSessionFile = (db: DatabaseSync): ReadOnlyProbe => {
+  let version: { value: string } | undefined;
+  try {
+    version = db.prepare("SELECT value FROM meta WHERE key = 'store_version'").get() as
+      | { value: string }
+      | undefined;
+  } catch {
+    // `meta` 테이블이 없다. SQLite 이긴 하나 우리가 만든 파일이 아니다.
+    return "not-a-session";
+  }
+  if (version === undefined) return "not-a-session";
+  return version.value === String(SQLITE_STORE_VERSION) ? "ok" : "version-mismatch";
+};
+
+const openReadOnly = (path: string): DatabaseSync => {
+  let db: DatabaseSync;
+  try {
+    db = new DatabaseSync(path, { readOnly: true });
+  } catch {
+    // 없는 경로이거나 열 수 없는 파일이다. **읽기 전용이라 이 실패가 파일을 만들지 않는다** —
+    // 기본 모드로 열었다면 여기서 빈 DB 가 생겼다.
+    externalError(
+      "SESSION_NOT_FOUND",
+      "세션 파일을 열지 못했습니다. 경로가 없거나 읽을 수 없습니다.",
+    );
+  }
+  const probe = probeSessionFile(db);
+  if (probe === "ok") return db;
+  db.close();
+  if (probe === "version-mismatch")
+    externalError(
+      "SCHEMA_VERSION_UNSUPPORTED",
+      `이 세션 파일은 지원하지 않는 store version 입니다(현재 ${SQLITE_STORE_VERSION}).\n` +
+        "→ 이 버전의 mcpeak 으로 다시 녹화하세요.",
+    );
+  externalError(
+    "SESSION_NOT_FOUND",
+    "이 파일에는 녹화된 External 세션이 없습니다.\n" +
+      "→ 녹화할 때 지정한 세션 파일 경로가 맞는지 확인하세요.",
+  );
+};
+
+export function createSqliteSessionStore(options: SqliteSessionStoreOptions = {}): SessionStore {
+  const readOnly = options.readOnly === true;
+  // 인메모리 DB 를 읽기 전용으로 여는 것은 빈 DB 를 읽겠다는 말이라 항상 실패한다. 그
+  // 실패를 SQLite 문장으로 받지 않고 여기서 부른 쪽의 실수로 지목한다.
+  if (readOnly && options.path === undefined)
+    externalError("REQUEST_INVALID", "읽기 전용 세션 저장소에는 파일 경로가 필요합니다.");
+
+  const db = readOnly
+    ? openReadOnly(options.path as string)
+    : new DatabaseSync(options.path ?? ":memory:");
+  if (!readOnly) {
+    // 외래 키는 기본이 꺼져 있다. 세션을 지우면 interaction 이 남는 것을 DB 가 막게 한다.
+    db.exec("PRAGMA foreign_keys = ON;");
+    db.exec(SCHEMA);
+    db.prepare("INSERT OR IGNORE INTO meta (key, value) VALUES ('store_version', ?)").run(
+      String(SQLITE_STORE_VERSION),
+    );
+  }
+
+  /**
+   * 읽기 전용 저장소에 쓰기를 요청한 자리. SQLite 에 맡기면 `attempt to write a readonly
+   * database` 가 그대로 사용자에게 나가는데, 그것은 우리 어휘가 아니고 무엇을 잘못했는지도
+   * 말하지 않는다. 부른 쪽의 실수를 여기서 지목한다.
+   */
+  const rejectWrite = (what: string): never =>
+    externalError(
+      "REQUEST_INVALID",
+      `읽기 전용으로 연 세션 저장소에 ${what}을 요청했습니다.\n` +
+        "→ 녹화하려면 읽기 전용이 아닌 저장소로 여세요.",
+    );
+
+  /**
+   * 문장 준비를 감싼다. **`meta.store_version` 만으로는 우리 파일임을 다 말하지 못하기
+   * 때문이다** — 그 행 하나만 든 파일도 판정을 통과하고, 그러면 여기서 `no such table:
+   * sessions` 라는 SQLite 원문이 사용자에게 그대로 나가고 DB 핸들도 열린 채 남는다.
+   *
+   * 준비가 실패한다는 것은 우리 스키마가 아니라는 뜻이다. 읽기 전용은 **우리가 만들지 않은
+   * 파일을 받는 자리**라 그 판정을 여기서 내려야 한다. 쓰기 모드는 바로 위에서 DDL 을 심었으니
+   * 준비가 실패하면 그것은 우리 결함이고, 삼키지 않고 그대로 올린다.
+   */
+  const prepared = <T>(build: () => T): T => {
+    try {
+      return build();
+    } catch (error) {
+      if (db.isOpen) db.close();
+      if (!readOnly) throw error;
+      externalError(
+        "SESSION_NOT_FOUND",
+        "이 파일에는 녹화된 External 세션이 없습니다.\n" +
+          "→ 녹화할 때 지정한 세션 파일 경로가 맞는지 확인하세요.",
+      );
+    }
+  };
+
+  const statements = prepared(() => ({
     insertSession: db.prepare("INSERT INTO sessions (session_id, status) VALUES (?, 'running')"),
     findSession: db.prepare("SELECT status FROM sessions WHERE session_id = ?"),
     setStatus: db.prepare("UPDATE sessions SET status = ? WHERE session_id = ?"),
@@ -139,7 +246,7 @@ export function createSqliteSessionStore(options: SqliteSessionStoreOptions = {}
         WHERE session_id = ? AND status = 'incomplete' ORDER BY ordinal`,
     ),
     listAll: db.prepare("SELECT * FROM interactions WHERE session_id = ? ORDER BY ordinal"),
-  };
+  }));
 
   const sessionStatus = (sessionId: string): SessionStatus | undefined => {
     const row = statements.findSession.get(sessionId) as { status: SessionStatus } | undefined;
@@ -167,6 +274,7 @@ export function createSqliteSessionStore(options: SqliteSessionStoreOptions = {}
 
   return {
     createSession(sessionId) {
+      if (readOnly) rejectWrite("세션 생성");
       if (sessionId.length === 0) externalError("REQUEST_INVALID", "sessionId가 비어 있습니다.");
       if (sessionStatus(sessionId) !== undefined)
         externalError("SESSION_ALREADY_EXISTS", message.sessionAlreadyExists(sessionId));
@@ -174,6 +282,7 @@ export function createSqliteSessionStore(options: SqliteSessionStoreOptions = {}
     },
 
     reserve({ sessionId, request }) {
+      if (readOnly) rejectWrite("외부 호출 기록");
       if (requiredStatus(sessionId) !== "running")
         externalError("SESSION_NOT_RUNNING", message.sessionNotRunning(sessionId));
 
@@ -204,6 +313,7 @@ export function createSqliteSessionStore(options: SqliteSessionStoreOptions = {}
     },
 
     complete({ sessionId, interactionId, outcome }) {
+      if (readOnly) rejectWrite("외부 호출 결과 저장");
       if (requiredStatus(sessionId) !== "running")
         externalError("SESSION_NOT_RUNNING", message.sessionNotRunning(sessionId));
       const row = statements.findInteraction.get(sessionId, interactionId) as
@@ -225,6 +335,7 @@ export function createSqliteSessionStore(options: SqliteSessionStoreOptions = {}
     },
 
     finish(sessionId, status) {
+      if (readOnly) rejectWrite("세션 종료 기록");
       const current = requiredStatus(sessionId);
       // 이미 끝난 세션은 요청한 status 를 무시하고 기존 상태를 그대로 돌려준다. 되살리면
       // 저장된 녹화의 의미가 사후에 바뀐다.

@@ -1,7 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import packageMetadata from "../package.json";
 import { nodeGenerateDependencies, nodeReviewIO, runGenerateCommand } from "./generate-command.js";
-import { COMMAND_DISCOVERY_HINT, commandHelp, GLOBAL_HELP } from "./help.js";
+import { commandDiscovery, commandHelp, GLOBAL_HELP } from "./help.js";
 import { type RepairCommandDependencies, runRepairCommand } from "./repair-command.js";
 import { escapeTerminalText } from "./repair-render.js";
 import { parseTestCommand, runCli } from "./test-command.js";
@@ -109,7 +109,7 @@ export async function run(argv: string[]): Promise<number> {
     const message = isHelpTopic(target)
       ? `\`help ${escapeTerminalText(target)}\` 뒤에는 인자를 더 받지 않습니다.`
       : `도움말이 없는 명령 '${escapeTerminalText(target)}'입니다.`;
-    process.stderr.write(`오류 [CLI_USAGE]: ${message}\n해결: ${COMMAND_DISCOVERY_HINT}\n`);
+    process.stderr.write(`오류 [CLI_USAGE]: ${message}\n해결: ${commandDiscovery}\n`);
     return 1;
   }
   if (argv.length === 1 && argv[0] === "--version") {

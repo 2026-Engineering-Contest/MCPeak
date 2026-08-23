@@ -40,8 +40,52 @@ const allDeclared: ToolDef = {
   },
 };
 
+/** 객체·배열 필드. 안쪽 값에 근거가 없어 사전보완 대상이고, 제안 값이 스칼라가 아니다. */
+const nested: ToolDef = {
+  name: "nested",
+  inputSchema: {
+    type: "object",
+    required: ["profile", "tags"],
+    properties: {
+      profile: { type: "object", required: ["city"], properties: { city: { type: "string" } } },
+      tags: { type: "array", items: { type: "string" } },
+    },
+  },
+};
+
+/** 제약 없는 정수 필드. 근거가 없어 사전보완 대상이고, 문자열 값은 선언을 어긴다. */
+const looseInt: ToolDef = {
+  name: "loose-int",
+  inputSchema: { type: "object", required: ["size"], properties: { size: { type: "integer" } } },
+};
+
+/**
+ * 스키마 안의 빈 서브스키마 `{}` 위치. codex 는 `type` 키가 없는 빈 스키마를
+ * `invalid_json_schema` 400 으로 거절한다(#284).
+ */
+const emptySchemaPaths = (node: unknown, path = "$"): readonly string[] => {
+  if (Array.isArray(node))
+    return node.flatMap((item, index) => emptySchemaPaths(item, `${path}[${index}]`));
+  if (node === null || typeof node !== "object") return [];
+  const entries = Object.entries(node);
+  return [
+    ...(entries.length === 0 ? [path] : []),
+    ...entries.flatMap(([key, value]) => emptySchemaPaths(value, `${path}.${key}`)),
+  ];
+};
+
 const baselineOf = (tools: readonly ToolDef[]) =>
   createBaselineSuite([...tools], { suiteId: "s", suiteName: "s" });
+
+/**
+ * 전송 형식의 제안 한 건. provider 는 값을 `valueJson` 문자열로 보낸다(#284).
+ * 인코딩 자체를 확인하는 테스트는 이 도우미를 쓰지 않고 문자열을 직접 적는다.
+ */
+const wire = (caseId: string, field: string, value: unknown) => ({
+  caseId,
+  field,
+  valueJson: JSON.stringify(value),
+});
 
 const requestFor = (tools: readonly ToolDef[]) => {
   const result = baselineOf(tools);
@@ -97,6 +141,24 @@ describe("preparePreFillRequest", () => {
     });
   });
 
+  it("전송 스키마에 빈 서브스키마가 없다", () => {
+    // #284 회귀 고정. `value: {}` 하나로 codex 가 요청을 통째로 400 으로 거절했다.
+    expect(emptySchemaPaths(requestFor([needsHelp])?.outputSchema)).toEqual([]);
+  });
+
+  it("제안 값을 valueJson 문자열로 받는다", () => {
+    expect(requestFor([needsHelp])?.outputSchema).toMatchObject({
+      properties: {
+        proposals: {
+          items: {
+            required: ["caseId", "field", "valueJson"],
+            properties: { valueJson: { type: "string" } },
+          },
+        },
+      },
+    });
+  });
+
   it("툴 선언을 요청에 싣는다", () => {
     const tool = requestFor([needsHelp])?.tools[0];
     expect(tool?.description).toBe("시각을 돌려준다");
@@ -119,7 +181,7 @@ describe("validatePreFillResult", () => {
 
   it("정상 제안을 받는다", () => {
     const result = validatePreFillResult(
-      { proposals: [{ caseId, field: "timezone", value: "Asia/Seoul" }] },
+      { proposals: [wire(caseId, "timezone", "Asia/Seoul")] },
       request,
     );
     expect(result.accepted).toEqual([{ caseId, field: "timezone", value: "Asia/Seoul" }]);
@@ -128,7 +190,7 @@ describe("validatePreFillResult", () => {
 
   it("요청 enum 밖 caseId 는 사유와 함께 버린다", () => {
     const result = validatePreFillResult(
-      { proposals: [{ caseId: "a,b,c", field: "timezone", value: "Asia/Seoul" }] },
+      { proposals: [wire("a,b,c", "timezone", "Asia/Seoul")] },
       request,
     );
     expect(result.accepted).toHaveLength(0);
@@ -136,29 +198,20 @@ describe("validatePreFillResult", () => {
   });
 
   it("declared 필드를 가리키면 버린다", () => {
-    const result = validatePreFillResult(
-      { proposals: [{ caseId, field: "unit", value: "f" }] },
-      request,
-    );
+    const result = validatePreFillResult({ proposals: [wire(caseId, "unit", "f")] }, request);
     expect(result.accepted).toHaveLength(0);
     expect(result.discarded[0]?.reason).toContain("근거 있는 값");
     expect(result.discarded[0]?.field).toBe("unit");
   });
 
   it("선언을 어기는 값은 버린다", () => {
-    const result = validatePreFillResult(
-      { proposals: [{ caseId, field: "timezone", value: 0 }] },
-      request,
-    );
+    const result = validatePreFillResult({ proposals: [wire(caseId, "timezone", 0)] }, request);
     expect(result.accepted).toHaveLength(0);
     expect(result.discarded[0]?.reason).toContain("서버 선언");
   });
 
   it("그 케이스에 없는 필드는 버린다", () => {
-    const result = validatePreFillResult(
-      { proposals: [{ caseId, field: "nope", value: 1 }] },
-      request,
-    );
+    const result = validatePreFillResult({ proposals: [wire(caseId, "nope", 1)] }, request);
     expect(result.discarded[0]?.reason).toContain("없는 필드");
   });
 
@@ -177,10 +230,7 @@ describe("validatePreFillResult", () => {
   });
 
   it("버린 항목마다 caseId 와 field 를 남긴다", () => {
-    const result = validatePreFillResult(
-      { proposals: [{ caseId, field: "unit", value: "f" }] },
-      request,
-    );
+    const result = validatePreFillResult({ proposals: [wire(caseId, "unit", "f")] }, request);
     expect(result.discarded[0]).toMatchObject({ caseId, field: "unit" });
   });
 
@@ -188,16 +238,89 @@ describe("validatePreFillResult", () => {
     const two = requestFor([needsHelp, { ...needsHelp, name: "needs-help-2" }]);
     if (two === null) throw new Error("요청이 만들어져야 한다");
     const ids = two.cases.map((item) => item.caseId);
+    const [first, second] = ids;
+    if (first === undefined || second === undefined) throw new Error("케이스가 둘이어야 한다");
     const result = validatePreFillResult(
-      {
-        proposals: [
-          { caseId: ids[1], field: "timezone", value: "UTC" },
-          { caseId: ids[0], field: "timezone", value: "Asia/Seoul" },
-        ],
-      },
+      { proposals: [wire(second, "timezone", "UTC"), wire(first, "timezone", "Asia/Seoul")] },
       two,
     );
     expect(result.accepted.map((item) => item.caseId)).toEqual(ids);
+  });
+});
+
+describe("valueJson 되돌리기 (#284)", () => {
+  const request = requestFor([needsHelp]);
+  const nestedRequest = requestFor([nested]);
+  const intRequest = requestFor([looseInt]);
+  if (request === null || nestedRequest === null || intRequest === null)
+    throw new Error("요청이 만들어져야 한다");
+  const caseId = "needs-help-success";
+
+  /**
+   * 타입이 살아 돌아오는지가 요점이다. 문자열 `"42"` 와 숫자 `42` 를 구분하지 못하면 정수 필드에
+   * 문자열이 실린다. 통과했다는 사실 자체가 증거다 — 타입이 틀리면 선언 대조에서 버려진다.
+   *
+   * boolean 과 null 은 여기 없다. 후보가 사실상 하나뿐이라 provenance 가 declared 로 세고,
+   * 그래서 사전보완 대상이 되는 길 자체가 없다(`provenance.ts` 의 같은 판정).
+   */
+  const table: readonly (readonly [
+    string,
+    NonNullable<typeof request>,
+    string,
+    string,
+    string,
+    unknown,
+  ])[] = [
+    ["문자열", request, caseId, "timezone", '"Asia/Seoul"', "Asia/Seoul"],
+    ["정수", intRequest, "loose-int-success", "size", "42", 42],
+    ["객체", nestedRequest, "nested-success", "profile", '{"city":"서울"}', { city: "서울" }],
+    ["배열", nestedRequest, "nested-success", "tags", '["a","b"]', ["a", "b"]],
+  ];
+  for (const [label, target, id, field, valueJson, expected] of table) {
+    it(`${label} 값을 원래 타입으로 되돌린다`, () => {
+      const result = validatePreFillResult(
+        { proposals: [{ caseId: id, field, valueJson }] },
+        target,
+      );
+      expect(result.discarded).toHaveLength(0);
+      expect(result.accepted[0]?.value).toEqual(expected);
+    });
+  }
+
+  it("JSON 이 아니면 날것 문자열을 값으로 본다", () => {
+    // 문자열 값에 따옴표를 빼고 보내는 것이 provider 의 흔한 실수다. 그 하나로 정상 제안을
+    // 통째로 버리면 이 통로가 있으나 마나 해진다.
+    const result = validatePreFillResult(
+      { proposals: [{ caseId, field: "timezone", valueJson: "Asia/Seoul" }] },
+      request,
+    );
+    expect(result.accepted).toEqual([{ caseId, field: "timezone", value: "Asia/Seoul" }]);
+  });
+
+  it("날것 문자열이어도 선언을 어기면 버린다", () => {
+    // 관대하게 읽는 것이 잘못된 타입을 명세에 싣는 길이 되지는 않는다는 확인이다.
+    const result = validatePreFillResult(
+      { proposals: [{ caseId: "loose-int-success", field: "size", valueJson: "abc" }] },
+      intRequest,
+    );
+    expect(result.accepted).toHaveLength(0);
+    expect(result.discarded[0]?.reason).toContain("서버 선언");
+  });
+
+  it("valueJson 이 문자열이 아니면 모양 사유로 버린다", () => {
+    const result = validatePreFillResult(
+      { proposals: [{ caseId, field: "timezone", valueJson: 42 }] },
+      request,
+    );
+    expect(result.accepted).toHaveLength(0);
+    expect(result.discarded[0]?.reason).toContain("모양");
+  });
+
+  it("같은 응답이면 같은 결과다", () => {
+    const raw = { proposals: [wire(caseId, "timezone", "Asia/Seoul")] };
+    expect(JSON.stringify(validatePreFillResult(raw, request))).toBe(
+      JSON.stringify(validatePreFillResult(raw, request)),
+    );
   });
 });
 
@@ -256,7 +379,7 @@ describe("previewPreFillRequest · dispatchPreFillRequest", () => {
     const view = preview();
     const result = await dispatchPreFillRequest({
       provider: provider(async () => ({
-        proposals: [{ caseId, field: "timezone", value: "Asia/Seoul" }],
+        proposals: [wire(caseId, "timezone", "Asia/Seoul")],
       })),
       preview: view,
       approval: approvedOf(view),
@@ -288,7 +411,7 @@ describe("previewPreFillRequest · dispatchPreFillRequest", () => {
     });
     const result = await dispatchPreFillRequest({
       provider: provider(async () => ({
-        proposals: [{ caseId, field: "timezone", value: "x".repeat(500) }],
+        proposals: [wire(caseId, "timezone", "x".repeat(500))],
       })),
       preview: view,
       approval: approvedOf(view),
@@ -340,6 +463,14 @@ describe("리뷰 지적 회귀 (PR #152)", () => {
     expect(prompt).toContain("도구, shell, subagent, MCP, 파일 접근을 사용하지 않습니다");
   });
 
+  it("프롬프트가 valueJson 직렬화 규칙을 알린다", () => {
+    // 스키마는 valueJson 이 문자열이라는 것까지만 말한다. 무엇을 담아야 하는지는 프롬프트가
+    // 알린다. ADR-0007 이 suiteJson 형식을 프롬프트 본문으로 알린 것과 같다.
+    const request = requestFor([needsHelp]);
+    const prompt = preFillPrompt(request as NonNullable<typeof request>);
+    expect(prompt).toContain("valueJson 에는 값을 JSON 으로 직렬화해 담습니다");
+  });
+
   it("선언을 못 찾는 요청의 제안은 버린다", () => {
     // validatePreFillResult 는 public export 다. preparePreFillRequest 를 안 거친 요청이
     // 들어오면 선언이 없어 검사할 근거가 없다. 통과시키면 위반 값이 그대로 명세에 실린다.
@@ -356,7 +487,7 @@ describe("리뷰 지적 회귀 (PR #152)", () => {
       omitted: { tools: 0 },
     } as unknown as Parameters<typeof validatePreFillResult>[1];
     const result = validatePreFillResult(
-      { proposals: [{ caseId: "c1", field: "timezone", value: "Asia/Seoul" }] },
+      { proposals: [wire("c1", "timezone", "Asia/Seoul")] },
       handmade,
     );
     expect(result.accepted).toHaveLength(0);

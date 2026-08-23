@@ -1522,8 +1522,24 @@ function recordedAtSuffix(summary: SessionSummary): string {
   // `toISOString()` 만 쓰므로 그런 값이 들어올 일이 없지만, **확인하지 않은 것을 단정하지
   // 않는다** 는 쪽을 코드에 남긴다. 모양이 다르면(구 버전 파일 등) 손대지 않고 원문을 보여준다.
   const match = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2})(?:\.\d+)?Z$/.exec(recordedAt);
-  const shown = match === null ? escapeTerminalText(recordedAt) : `${match[1]} ${match[2]} UTC`;
+  const shown = match === null ? escapeTerminalText(recordedAt) : formatUtc(match[1], match[2]);
   return ` (${shown} 녹화)`;
+}
+
+/**
+ * 모양이 맞아도 **값이 달력에 없을 수 있다.** `2026-02-30` 은 `NaN` 이 아니라 **3월 2일로
+ * 굴러간다**(실측). 그래서 `isNaN` 검사로는 못 잡고 왕복 비교를 해야 한다 — 다시 직렬화한
+ * 값이 원래 문자열과 같을 때만 우리가 읽은 대로인 것이다.
+ *
+ * 파싱은 시계를 읽지 않으므로 결정론에 영향이 없다. 확인에 실패하면 원문을 그대로 보여준다 —
+ * 손대지 않는 쪽이 없는 날짜를 그럴듯하게 포장하는 것보다 낫다.
+ */
+function formatUtc(date: string, time: string): string {
+  const iso = `${date}T${time}`;
+  const parsed = new Date(`${iso}Z`);
+  if (Number.isNaN(parsed.getTime()) || !parsed.toISOString().startsWith(iso))
+    return escapeTerminalText(`${iso}Z`);
+  return `${date} ${time} UTC`;
 }
 
 export function externalSessionNotice(summary: SessionSummary): string | undefined {

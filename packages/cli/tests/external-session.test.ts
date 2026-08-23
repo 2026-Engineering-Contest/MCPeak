@@ -809,6 +809,31 @@ describe("녹화 시각 표시 (ADR-0069)", () => {
     }
   });
 
+  /**
+   * 모양이 맞아도 값이 달력에 없을 수 있다. `2026-02-30` 은 `NaN` 이 아니라 **3월 2일로
+   * 굴러가므로**(JS `Date` 의 실제 동작) `isNaN` 검사로는 못 잡는다. 왕복 비교가 필요하다.
+   */
+  it("없는 날짜를 UTC 로 포장하지 않는다", () => {
+    const line = externalSessionOutcome(at("2026-02-30T12:00:00Z"), PATH5);
+
+    expect(line).toContain("(2026-02-30T12:00:00Z 녹화)");
+    expect(line).not.toContain("UTC");
+    // 굴러간 값(3월 2일)을 보여주는 것이 가장 나쁘다 — 저장에 없는 날짜를 지어낸 것이다.
+    expect(line).not.toContain("03-02");
+  });
+
+  it("범위를 벗어난 값도 원문으로 남긴다", () => {
+    for (const bad of ["2026-13-01T12:00:00Z", "2026-05-01T25:00:00Z"]) {
+      expect(externalSessionOutcome(at(bad), PATH5)).toContain(`(${bad} 녹화)`);
+    }
+  });
+
+  it("윤일은 정상으로 다룬다 — 검사가 지나치게 빡빡하지 않다", () => {
+    expect(externalSessionOutcome(at("2024-02-29T00:00:00Z"), PATH5)).toContain(
+      "(2024-02-29 00:00:00 UTC 녹화)",
+    );
+  });
+
   it("모양이 다른 값은 손대지 않고 그대로 보여준다", () => {
     // 구 버전 파일 등. 파싱에 실패했다고 정보를 버리지 않는다.
     expect(externalSessionOutcome(at("2026/05/01"), PATH5)).toContain("(2026/05/01 녹화)");

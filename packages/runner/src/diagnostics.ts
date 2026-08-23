@@ -113,9 +113,10 @@ function normalizeWithDepth(value: unknown, depth: number): NormalizedThrownValu
 }
 
 export function toolNotFoundDiagnostic(expected: string, actual: string[]): RunnerDiagnostic {
+  const discovered = actual.length === 0 ? "(없음)" : actual.map((tool) => `'${tool}'`).join(", ");
   return {
     code: "TOOL_NOT_FOUND",
-    message: `툴 '${expected}'를 찾을 수 없습니다.`,
+    message: `툴 '${expected}'을(를) 찾을 수 없습니다. 발견된 툴: ${discovered}`,
     expected,
     actual,
     hint: "서버의 tools/list 응답과 테스트 명세를 확인하세요.",

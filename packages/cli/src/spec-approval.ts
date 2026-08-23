@@ -79,7 +79,7 @@ export function renderSpecApproval(result: SpecApprovalResult, allPassed: boolea
     ? "  → 승인받지 않은 현재 명세로 모든 테스트가 통과했습니다.\n"
     : "  → 실패 원인에서 명세 변경을 배제할 수 없습니다.\n";
   return (
-    "명세: 승인 시점 이후 변경됨\n" +
+    "명세: 현재 명세와 저장된 approval.fingerprint가 불일치함\n" +
     `  → 승인 ${short(result.approvedFingerprint ?? "")}   현재 ${short(result.fingerprint)}\n` +
     outcome +
     "  → 지문만으로는 변경 내용을 알 수 없습니다. 버전 관리에서 명세를 비교하세요.\n" +

@@ -756,8 +756,12 @@ async function runCliCore(
         ? { code: "MCP_CONNECTION_FAILED", ...dictionary.MCP_CONNECTION_FAILED }
         : {
             code: "MCP_CONNECTION_FAILED",
-            message: core.message,
-            hint: core.hint,
+            // `core.message`·`core.hint` 는 지금은 `@mcpeak/core` 의 고정 열거형 문구뿐이라
+            // 안전하지만, 타입은 `string` 이라 그 사실을 여기서 강제하지 못한다. `format()`
+            // 이 더 이상 통째로 이스케이프하지 않으므로(#289), 패키지 경계를 넘어온 값은
+            // 여기서 직접 건다 — core 쪽에 다치는 값이 생겨도 이 자리가 계속 안전하다.
+            message: escapeTerminalText(core.message),
+            hint: escapeTerminalText(core.hint),
             coreCode: core.code,
           },
     );
@@ -1336,6 +1340,24 @@ export function externalOpenFailure(mode: ExternalMode, path: string, error: unk
   };
 }
 
+/**
+ * `wiring.finish()` 가 세션을 닫는 데 실패했을 때(#289). record 의 store `finish()` 는 코드
+ * 둘만 던진다 — `SESSION_NOT_RUNNING`(한 줄) 과 `INCOMPLETE_SESSION`(record 가 여러 줄로
+ * 쓴, 이미 마스킹된 안전한 진단. `display` 는 ADR-0053 이 마스킹을 보장한다).
+ *
+ * `INCOMPLETE_SESSION` 은 그대로 둬야 구조가 산다. 그 밖은 한 줄이라 이스케이프해도 잃을
+ * 구조가 없고, 어떤 값이 올지 모르는 자리이므로 기본은 이스케이프한다.
+ */
+export function externalCloseFailure(error: unknown): CliFailure {
+  const code = (error as { code?: unknown })?.code;
+  const detail = error instanceof Error ? error.message : String(error);
+  return {
+    code: "EXTERNAL_SESSION_FAILED",
+    message: "External 세션을 닫지 못했습니다.",
+    hint: code === "INCOMPLETE_SESSION" ? detail : escapeTerminalText(detail),
+  };
+}
+
 export function externalSessionNotice(summary: SessionSummary): string | undefined {
   if (summary.mode === "record") {
     if (summary.interactionCount > 0) return undefined;
@@ -1415,11 +1437,7 @@ export async function runCli(
     const notice = externalSessionNotice(summary);
     if (notice !== undefined) dependencies.writeStderr(notice);
   } catch (error) {
-    return writeFailure(dependencies, {
-      code: "EXTERNAL_SESSION_FAILED",
-      message: "External 세션을 닫지 못했습니다.",
-      hint: error instanceof Error ? error.message : String(error),
-    });
+    return writeFailure(dependencies, externalCloseFailure(error));
   }
   return exitCode;
 }

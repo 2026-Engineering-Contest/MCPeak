@@ -323,9 +323,15 @@ describe("runCli", () => {
     }
   });
   it("알 수 없는 옵션·추가 위치 인자에 실린 제어 문자를 이스케이프한다(#289)", async () => {
-    const d = deps();
-    await runCli(["test", "suite.json", "--command", "a", "--bad\n"], d.value);
-    expect(d.writes.err.join("")).toContain("--bad\\u000a");
+    const option = deps();
+    await runCli(["test", "suite.json", "--command", "a", "--bad\n"], option.value);
+    expect(option.writes.err.join("")).toContain("--bad\\u000a");
+
+    // 옵션(`-` 로 시작)과 위치 인자는 서로 다른 분기(parseTestCommand 의 두 fail 호출)라
+    // 옵션 쪽만 확인하면 위치 인자 분기가 이스케이프를 놓쳐도 잡히지 않는다.
+    const positional = deps();
+    await runCli(["test", "suite.json", "--command", "a", "extra\n"], positional.value);
+    expect(positional.writes.err.join("")).toContain("extra\\u000a");
   });
   it("중복 command, 값 없는 option, 알 수 없는 option과 추가 위치 인자를 거절한다", async () => {
     for (const argv of [
@@ -641,6 +647,25 @@ describe("runCli", () => {
     expect(text).toContain("MCP_CONNECTION_FAILED/PROCESS_START_FAILED");
     expect(text).not.toContain("SECRET");
     expect(text).not.toContain("secret-command");
+  });
+  /**
+   * `@mcpeak/core` 의 실제 McpClientError 문구는 전부 고정 열거형이라 지금은 제어 문자가
+   * 실릴 수 없다. 다만 `format()` 이 더 이상 message·hint 를 통째로 이스케이프하지 않으므로
+   * (#289), `coreError()` 가 돌려주는 값을 여기서 직접 걸지 않으면 core 쪽에 다치는 값이
+   * 생기는 순간 화면이 깨진다 — 그 계약을 이 테스트가 고정한다.
+   */
+  it("core 오류의 message·hint 에 실린 제어 문자도 이스케이프한다", async () => {
+    const error = {
+      name: "McpClientError" as const,
+      code: "PROCESS_START_FAILED",
+      message: "연결 실패\n주입된 줄",
+      hint: "설정을 확인하세요.",
+    };
+    const d = deps({ connect: async () => Promise.reject(error) });
+    await runCli(["test", "x.json", "--command", "node"], d.value);
+    const text = d.writes.err.join("");
+    expect(text).toContain("\\u000a");
+    expect(text).not.toContain("연결 실패\n주입된 줄");
   });
   it("Runner 시작 실패에는 force cleanup만 하고 finalizer 실패 뒤 추가 종료하지 않는다", async () => {
     const start = deps({
@@ -1681,8 +1706,9 @@ describe("결정론성 확인", () => {
     // hint 문장이 경계 없이 붙어 `... repository 명령이 단독으로` 처럼 읽혔다.
     expect(err).toContain("종료 코드: 128");
     expect(err).toContain("stderr 마지막 3줄: fatal: not a git repository");
-    expect(err).not.toContain("repository명령");
-    expect(err).not.toContain("repository 명령");
+    // 부재 확인만으로는 두 문자열이 다른 이유로 안 붙어 있어도(예: 사이에 그냥 이스케이프
+    // 시퀀스만 남아도) 통과한다. 경계 자체가 실제 개행인지 직접 확인한다.
+    expect(err).toContain("fatal: not a git repository\n해결:");
     // 진단은 message 에, hint 는 다음 행동 한 문장만 — 사전값이 갖고 있던 플래그 이름이
     // 동적 안내에서 빠졌던 것도 이 조합이 복원한다.
     expect(err).toContain("`--reset-cmd` 명령이 단독으로 성공하는지 확인한 뒤 다시 실행하세요.");

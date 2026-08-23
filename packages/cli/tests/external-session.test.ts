@@ -2,6 +2,7 @@ import type { ReplayMissDetail, SessionSummary } from "@mcpeak/record/external";
 import { describe, expect, it } from "vitest";
 import { SessionFileMissingError } from "../src/external-wiring.js";
 import {
+  externalCloseFailure,
   externalOpenFailure,
   externalSessionNotice,
   parseTestCommand,
@@ -385,5 +386,42 @@ describe("External 세션 열기 실패 문장", () => {
     );
     expect(fallback.message).toContain("\\u001b");
     expect(fallback.message).not.toContain(String.fromCharCode(27));
+  });
+});
+
+/**
+ * `wiring.finish()` 실패를 사용자 문장으로 옮긴다(#289). record 의 store `finish()` 가
+ * 던질 수 있는 코드는 둘뿐이다 — `SESSION_NOT_RUNNING`(한 줄) 과 `INCOMPLETE_SESSION`
+ * (record 가 여러 줄로 쓴, 이미 마스킹된 진단). 이 갈래를 놓치면 CodeRabbit 이 지적한 대로
+ * `error.message` 를 이스케이프 없이 그대로 hint 에 실어 화면을 깨뜨릴 수 있었다.
+ */
+describe("External 세션 닫기 실패 문장", () => {
+  const coded = (code: string, message: string): Error =>
+    Object.assign(new Error(message), { code });
+
+  it("INCOMPLETE_SESSION 은 record 의 여러 줄 진단을 그대로 보여준다", () => {
+    const detail =
+      "External session 'default'에 완료되지 않은 외부 호출이 1건 있습니다.\n" +
+      "  - GET https://example.com/<redacted>\n" +
+      "→ 지원하지 않는 응답을 받으면 그 호출은 저장하지 않고 세션을 실패로 둡니다.";
+    const failure = externalCloseFailure(coded("INCOMPLETE_SESSION", detail));
+
+    expect(failure.hint).toBe(detail);
+  });
+
+  it("그 밖의 원인은 이스케이프해서 화면을 깨뜨릴 값을 막는다", () => {
+    const failure = externalCloseFailure(
+      coded("SESSION_NOT_RUNNING", `boom${String.fromCharCode(27)}[31m`),
+    );
+
+    expect(failure.hint).toContain("\\u001b");
+    expect(failure.hint).not.toContain(String.fromCharCode(27));
+  });
+
+  it("Error 가 아닌 값도 문자열로 다뤄 죽지 않는다", () => {
+    const failure = externalCloseFailure("문자열 원인");
+
+    expect(failure.hint).toBe("문자열 원인");
+    expect(failure.message).toContain("닫지 못했습니다");
   });
 });

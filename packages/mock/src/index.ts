@@ -167,7 +167,10 @@ function undeclaredToolMessage(tool: string, declared: readonly string[]): strin
       ? `→ 선언된 툴: ${declared.map((t) => `'${t}'`).join(", ")}`
       : "→ 선언된 툴이 하나도 없습니다.",
     "→ tools/list 로 광고하지 않은 이름이라 어떤 응답도 주입할 수 없습니다.",
-    `→ 이 툴이 필요하면 정의의 tools 에 { "name": "${tool}", "inputSchema": … } 를 먼저 추가하세요.`,
+    // 이 줄만 JSON.stringify 로 감싼다. 그대로 복사해 붙이는 조각이라 툴 이름에 따옴표나
+    // 역슬래시가 있으면 유효하지 않은 JSON 이 된다. `tool` 은 클라이언트가 보낸 값이다.
+    // 위 산문 줄들은 이 패키지 관례(`'${tool}'`)를 따른다 — 7군데가 같은 형태다.
+    `→ 이 툴이 필요하면 정의의 tools 에 { "name": ${JSON.stringify(tool)}, "inputSchema": … } 를 먼저 추가하세요.`,
   ].join("\n");
 }
 

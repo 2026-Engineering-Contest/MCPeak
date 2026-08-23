@@ -190,7 +190,12 @@ jobs:
           fail-on-error: false
 
   changeset-check:
-    # 기능 PR에 changeset이 없으면 경고만 남긴다 (머지 차단 아님).
+    # 기능 PR에 changeset이 없으면 **실패시킨다**(ADR-0063).
+    #
+    # 한때 경고만 남겼다. 그 결과 External Record/Replay 기능 전체가 changeset 없이 PR 4개로
+    # 나갔고(#234·#245·#247·#249), 새 공개 서브패스와 CLI 플래그 둘이 CHANGELOG 에 한 줄도
+    # 없이 발행될 뻔했다. 잡아낸 것은 CI 가 아니라 릴리스 직전에 사람이 대기 changeset 을
+    # 눈으로 센 것이었다 — 읽히지 않는 경고는 없는 것과 같다(#264).
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
@@ -210,7 +215,11 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
-      - name: Warn if no changeset
+      # `||` 로 삼키지 않는다. 그 한 글자가 "탐지했지만 SUCCESS 로 찍는" 상태를 만들었다.
+      - name: Require a changeset
         run: |
-          pnpm changeset status --since=origin/${{ github.base_ref }} \
-            || echo "::warning::changeset 이 없습니다. 공개 API가 바뀌었다면 'pnpm changeset' 을 추가하세요."
+          pnpm changeset status --since=origin/${{ github.base_ref }} || {
+            echo "::error::changeset 이 없습니다. 'pnpm changeset' 으로 릴리스 노트를 추가하세요."
+            echo "::error::릴리스가 필요 없는 변경이면 'pnpm changeset add --empty' 로 빈 changeset 을 넣으세요."
+            exit 1
+          }

@@ -10,6 +10,7 @@
  */
 
 import type { McpClient, McpHttpConnection, McpStdioConnection } from "@mcpeak/core";
+import { escapeTerminalText } from "./repair-render.js";
 
 /** 파서가 확정한 연결 대상. */
 export type ConnectTarget =
@@ -91,6 +92,35 @@ const HTTP_TOKEN_PATTERN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
  */
 const ENV_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
+/** 되짚어 준 값 하나의 표시 상한. `process-diagnostics.ts` 의 `MAX_LINE_CHARACTERS` 와 같다. */
+const MAX_ECHOED_CHARACTERS = 200;
+
+/**
+ * 오류 문장에 되짚어 넣는 **사용자 입력**을 무해하게 만든다.
+ *
+ * 값 단위로만 건다. 문장 전체에 걸면 우리가 쓴 개행(`\n→ …`)까지 이스케이프되어 안내가 한 줄로
+ * 뭉개진다 — #289 가 정확히 그 결함이었다.
+ *
+ * 거는 이유는 `format()` 이 더 이상 `failure.message` 를 통째로 이스케이프하지 않기 때문이다.
+ * `mcpeak test s.json --url $'\e[2J…'` 처럼 ANSI 를 실은 인자가 그대로 터미널에 닿을 수 있다.
+ */
+function echoValue(value: string): string {
+  const escaped = escapeTerminalText(value);
+  return escaped.length <= MAX_ECHOED_CHARACTERS
+    ? escaped
+    : `${escaped.slice(0, MAX_ECHOED_CHARACTERS)}…`;
+}
+
+/**
+ * 비밀값을 셸 히스토리에 남기지 않고 환경변수에 넣는 방법. 안내 문장이 되풀이해 쓴다.
+ *
+ * **`MCP_TOKEN='Bearer …' mcpeak …` 를 예시로 쓰지 않는다.** 그 한 줄은 환경변수를 쓰긴 하지만
+ * 명령 자체가 히스토리 파일에 토큰째로 남아, 이 옵션이 막으려던 노출의 절반을 그대로 만든다.
+ * 우리가 권하는 예시가 우리 근거를 깎으면 안 된다.
+ */
+const SECRET_INPUT_HINT =
+  "값은 셸 히스토리에 남지 않게 넣으세요. 예: `read -rs MCP_TOKEN; export MCP_TOKEN`";
+
 /**
  * `--url` 값을 검증한다.
  *
@@ -103,13 +133,13 @@ export function parseUrlOption(raw: string): TargetResult<string> {
     url = new URL(raw);
   } catch {
     return err(
-      `\`--url\` 값이 올바른 URL 이 아닙니다: '${raw}'\n` +
+      `\`--url\` 값이 올바른 URL 이 아닙니다: '${echoValue(raw)}'\n` +
         "→ 스킴을 포함한 절대 URL 이어야 합니다. 예: https://mcp.example.com/v1",
     );
   }
   if (url.protocol !== "http:" && url.protocol !== "https:")
     return err(
-      `\`--url\` 은 http 또는 https 만 받습니다. 받은 스킴: '${url.protocol.replace(":", "")}'\n` +
+      `\`--url\` 은 http 또는 https 만 받습니다. 받은 스킴: '${echoValue(url.protocol.replace(":", ""))}'\n` +
         "→ Streamable HTTP MCP 서버의 엔드포인트를 넘기세요.",
     );
   if (url.username !== "" || url.password !== "")
@@ -132,21 +162,21 @@ export function parseHeaderEnvOption(
   const separator = raw.indexOf("=");
   if (separator <= 0)
     return err(
-      `\`--header-env\` 값의 형식이 올바르지 않습니다: '${raw}'\n` +
+      `\`--header-env\` 값의 형식이 올바르지 않습니다: '${echoValue(raw)}'\n` +
         "→ `<헤더이름>=<환경변수이름>` 형식이어야 합니다. 예: --header-env Authorization=MCP_TOKEN",
     );
   const header = raw.slice(0, separator);
   const envName = raw.slice(separator + 1);
   if (!HTTP_TOKEN_PATTERN.test(header))
     return err(
-      `\`--header-env\` 의 헤더 이름에 쓸 수 없는 문자가 있습니다: '${header}'\n` +
+      `\`--header-env\` 의 헤더 이름에 쓸 수 없는 문자가 있습니다: '${echoValue(header)}'\n` +
         "→ 헤더 이름은 공백 없는 토큰이어야 합니다. 예: Authorization, X-Api-Key",
     );
   if (!ENV_NAME_PATTERN.test(envName))
     return err(
-      `\`--header-env\` 의 '${header}' 자리에 환경변수 **이름**이 아닌 값이 온 것 같습니다: '${envName}'\n` +
+      `\`--header-env\` 의 '${echoValue(header)}' 자리에 환경변수 **이름**이 아닌 값이 온 것 같습니다: '${echoValue(envName)}'\n` +
         "→ 이 옵션은 헤더 값을 직접 받지 않습니다. 값을 argv 에 실으면 `ps` 목록과 셸 히스토리에 남습니다.\n" +
-        "→ 값은 환경변수에 넣고 그 이름만 넘기세요. 예: MCP_TOKEN='Bearer …' mcpeak … --header-env Authorization=MCP_TOKEN",
+        `→ 값은 환경변수에 넣고 그 이름만 넘기세요. ${SECRET_INPUT_HINT}`,
     );
   return ok({ header, envName });
 }
@@ -225,14 +255,14 @@ function resolveHeaders(
     const value = readEnv(envName);
     if (value === undefined || value === "")
       return err(
-        `환경변수 '${envName}' 이 비어 있어 '${header}' 헤더를 만들 수 없습니다.\n` +
-          `→ 값을 넣고 다시 실행하세요. 예: ${envName}='…' mcpeak …`,
+        `환경변수 '${echoValue(envName)}' 이 비어 있어 '${echoValue(header)}' 헤더를 만들 수 없습니다.\n` +
+          `→ ${SECRET_INPUT_HINT}`,
       );
     // 값에 개행이 섞이면 요청을 쪼갤 수 있다. `core` 도 같은 검사를 하지만, 그쪽 문장은
     // 환경변수를 모르므로 무엇을 고쳐야 하는지 말해 주지 못한다.
     if (/[\r\n\0]/.test(value))
       return err(
-        `환경변수 '${envName}' 의 값에 개행이나 NUL 이 들어 있어 '${header}' 헤더로 쓸 수 없습니다.\n` +
+        `환경변수 '${echoValue(envName)}' 의 값에 개행이나 NUL 이 들어 있어 '${echoValue(header)}' 헤더로 쓸 수 없습니다.\n` +
           "→ 값 끝의 줄바꿈이 흔한 원인입니다. 값을 확인하고 다시 실행하세요.",
       );
     headers[header] = value;

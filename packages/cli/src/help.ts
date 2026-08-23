@@ -5,15 +5,16 @@
  * `--header-env` 가 값을 직접 받지 않는 이유를 여기서 말한다. 이유를 모르면 이 옵션은 그냥
  * 번거로운 `--header` 로 보이고, 사용자는 우회로를 찾다가 우리가 막으려던 그 노출을 만든다.
  */
-export const REMOTE_TARGET_OPTIONS = `  --url <URL>           이미 떠 있는 Streamable HTTP MCP 서버에 붙습니다. \`--command\`
+export const REMOTE_TARGET_OPTIONS = `  --url <URL>           이미 떠 있는 Streamable HTTP MCP 서버에 붙습니다. \`--command\` 및
                         \`--arg\` 와 함께 쓸 수 없고, 띄울 프로세스가 없으므로 stdio
                         전용 옵션도 받지 않습니다. 어느 옵션이 그런지는 함께 썼을 때
                         오류 문장이 말합니다
   --header-env <헤더이름>=<환경변수이름>
                         요청 헤더를 환경변수에서 읽어 붙입니다. 값을 직접 받지 않는
                         이유는 명령줄에 쓴 토큰이 \`ps\` 목록과 셸 히스토리에 그대로
-                        남기 때문입니다. 예: MCP_TOKEN='Bearer …' mcpeak …
-                        --header-env Authorization=MCP_TOKEN`;
+                        남기 때문입니다. 값을 넣을 때도 히스토리에 남기지 마세요:
+                          read -rs MCP_TOKEN; export MCP_TOKEN
+                          mcpeak … --header-env Authorization=MCP_TOKEN`;
 
 export const TEST_USAGE =
   "사용법: mcpeak test <suite.json> (--command <executable> [--arg <value> ...] | --url <URL> [--header-env <헤더이름>=<환경변수이름> ...]) [--determinism] [--reset-cmd <command>] [--json] [--junit <path>] [--repair-bundle <path>] [--stderr-lines <N>] [--session <path> | --record-session <path>]";

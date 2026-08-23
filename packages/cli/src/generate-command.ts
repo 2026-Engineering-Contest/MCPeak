@@ -52,7 +52,6 @@ import { httpDiagnostics, renderHttpDiagnostics } from "./http-diagnostics.js";
 import { repairInputs } from "./input-repair.js";
 import type { UnknownFormatSkip } from "./pre-fill-wiring.js";
 import { applyPreFill, dropSkippedTools, unknownFormatSkips } from "./pre-fill-wiring.js";
-import type { ProcessDiagnosticsInput } from "./process-diagnostics.js";
 import {
   hasDiagnosticContent,
   processDiagnostics,
@@ -1143,7 +1142,11 @@ function writeDryRunAborted(
   io: ReviewIO,
   result: DryRunResult,
   totalCases: number,
-  diagnostics: ProcessDiagnosticsInput | undefined,
+  /**
+   * `connection.getDiagnostics()` 의 원값. 좁힌 타입이 아니라 원값을 받는 이유는 대상이
+   * stdio 일 수도 원격일 수도 있어서다 — 두 구조 가드가 여기서 갈래를 고른다(#137).
+   */
+  diagnostics: unknown,
 ): void {
   const aborted = result.aborted;
   if (aborted === undefined) return;
@@ -1156,10 +1159,18 @@ function writeDryRunAborted(
         : "✗ 시험 실행을 마치지 못했습니다.\n",
   );
   io.write(`  → ${aborted.detail}\n`);
-  if (diagnostics !== undefined && hasDiagnosticContent(diagnostics)) {
-    const block = renderProcessDiagnostics(diagnostics, { maxLines: DRY_RUN_STDERR_LINES });
+  const local = processDiagnostics(diagnostics);
+  if (local !== undefined && hasDiagnosticContent(local)) {
+    const block = renderProcessDiagnostics(local, { maxLines: DRY_RUN_STDERR_LINES });
     if (block !== "") io.write(`\n${block}`);
   }
+  /**
+   * 원격 대상. 내용 판정을 걸지 않는다 — 이 함수는 위에서 `aborted === undefined` 면 이미
+   * 돌아갔으므로 **중단된 실행에서만** 여기 닿는다. 그 자리에서는 상태 코드가 없어도 어느
+   * 엔드포인트에서 끊겼는지가 정보다. `test` 의 연결 실패 경로와 같은 규칙이다.
+   */
+  const remote = httpDiagnostics(diagnostics);
+  if (remote !== undefined) io.write(`\n${renderHttpDiagnostics(remote)}`);
   io.write("\n저장하지 않았습니다. 서버를 고친 뒤 다시 save 를 고르세요.\n");
 }
 
@@ -1205,12 +1216,15 @@ async function runInteractiveReview(
   let candidate: SanitizedAuthoringCandidate | undefined = session.workingCandidate;
   let preferred = input.provider;
   let model = input.model;
-  /** 진단 읽기가 판정을 바꾸면 안 된다. getDiagnostics 가 던지면 삼킨다. */
-  const diagnostics = (): ProcessDiagnosticsInput | undefined => {
+  /**
+   * 진단 읽기가 판정을 바꾸면 안 된다. getDiagnostics 가 던지면 삼킨다.
+   *
+   * 좁히지 않고 원값을 넘긴다. 여기서 `processDiagnostics` 로 좁히면 원격 대상의 진단이
+   * 버려져, 시험 실행이 중단됐을 때 엔드포인트도 상태 코드도 화면에 닿지 못한다(#137).
+   */
+  const diagnostics = (): unknown => {
     try {
-      // 원격 대상이면 구조 가드가 `undefined` 를 낸다. 이 자리가 그리는 것은 프로세스
-      // 진단(stderr·종료 코드)이라 HTTP 진단을 실으면 남의 값을 그린다(#137).
-      return processDiagnostics(connection.getDiagnostics());
+      return connection.getDiagnostics();
     } catch {
       return undefined;
     }

@@ -7,6 +7,7 @@ import {
   openConnection,
   parseHeaderEnvOption,
   parseUrlOption,
+  type TargetResult,
 } from "../src/connect-target.js";
 
 const client = {} as McpClient;
@@ -233,5 +234,56 @@ describe("openConnection", () => {
     await opened.forceClose();
 
     expect(connection.close).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * 오류 문장에 되짚어 넣는 사용자 입력을 이스케이프한다.
+ *
+ * `format()` 은 `failure.message` 를 통째로 이스케이프하지 않는다(#289 가 그렇게 바꿨다 —
+ * 우리가 쓴 개행이 뭉개졌기 때문이다). 그래서 되짚는 값은 **값 단위로** 우리가 건다.
+ * 안 걸면 `--url $'\\e[2J…'` 같은 인자가 터미널 제어 시퀀스째로 화면에 닿는다.
+ */
+describe("오류 문장의 사용자 입력 이스케이프", () => {
+  /** 실제 ESC 문자. 소스에 날것으로 두지 않는다. */
+  const ESC = "\u001b";
+
+  const messageOf = (result: TargetResult<unknown>): string => {
+    expect(result.ok).toBe(false);
+    return result.ok ? "" : result.message;
+  };
+
+  it("--url 값의 제어 문자가 문장에 그대로 실리지 않는다", () => {
+    const message = messageOf(parseUrlOption(`${ESC}[2Jmcp.example.com`));
+    expect(message).not.toContain(ESC);
+    expect(message).toContain("\\u001b[2Jmcp.example.com");
+  });
+
+  it("--header-env 의 헤더 이름과 환경변수 이름도 이스케이프한다", () => {
+    expect(messageOf(parseHeaderEnvOption(`${ESC}[31mAuthorization=MCP_TOKEN`))).not.toContain(ESC);
+    expect(messageOf(parseHeaderEnvOption(`Authorization=${ESC}[31mBearer x`))).not.toContain(ESC);
+  });
+
+  /** 우리가 쓴 `\n→ …` 구조는 살아 있어야 한다. 문장 전체에 걸면 안 되는 이유다. */
+  it("우리가 쓴 개행은 살린다", () => {
+    const message = messageOf(parseHeaderEnvOption("Authorization=Bearer abc"));
+    expect(message.split("\n").length).toBeGreaterThan(1);
+    expect(message).not.toContain("\\u000a");
+  });
+
+  it("지나치게 긴 값은 잘라서 되짚는다", () => {
+    const message = messageOf(parseUrlOption("x".repeat(5000)));
+    expect(message).toContain("…");
+    expect(message.length).toBeLessThan(500);
+  });
+
+  /**
+   * 안내가 `VAR='값' cmd` 를 권하면 그 명령이 히스토리에 토큰째로 남아, 이 옵션이 막으려던
+   * 노출의 절반을 우리가 되살린다(ADR-0070).
+   */
+  it("비밀 입력 안내가 토큰을 명령줄에 넣는 형태를 권하지 않는다", () => {
+    const message = messageOf(parseHeaderEnvOption("Authorization=Bearer abc"));
+    expect(message).toContain("read -rs");
+    expect(message).not.toMatch(/MCP_TOKEN='[^']/);
   });
 });

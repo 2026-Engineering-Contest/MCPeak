@@ -4,12 +4,14 @@ import type { AddressInfo } from "node:net";
 import { createRecordEngine, createReplayEngine, type ExternalEngine } from "./engine.js";
 import { ExternalRecordReplayError, externalError } from "./errors.js";
 import {
+  type BodyUrlFingerprints,
   type CompleteRecordRequest,
   DEFAULT_COORDINATOR_TIMEOUT_MS,
   HTTP_INTERACTION_SCHEMA_VERSION,
   type HttpFailureCode,
   type HttpFailureKind,
   type HttpFailureName,
+  MAX_BODY_URL_FINGERPRINTS,
   MAX_COORDINATOR_PAYLOAD_BYTES,
   type NormalizedExternalRequest,
   PROTOCOL_SCHEMA_VERSION,
@@ -453,6 +455,51 @@ const storedOutcome = (value: unknown): StoredExternalOutcome => {
   return outcome;
 };
 
+/** SHA-256 hex. 자식이 보낸 지문이 이 형태를 벗어나면 우리 자식이 만든 값이 아니다. */
+const SHA256_HEX = /^[0-9a-f]{64}$/;
+
+/**
+ * 자식이 보낸 body URL 지문을 검증하고 재구성한다(ADR-0062).
+ *
+ * **여기 오는 값은 지문이어야만 한다.** 자식이 실수로 URL 원문을 실어 보내면 그것은
+ * 부모 프로세스와 종료 요약을 거쳐 사용자 화면까지 갈 수 있는 값이고, 이 기능이 막으려던
+ * 유출을 이 기능이 만드는 꼴이 된다. 형태를 못 박아 그 경로를 닫는다 — 64자 hex 가 아닌
+ * 값은 재구성이 버리는 것이 아니라 세션을 실패로 닫는다.
+ *
+ * 요청 쪽 재구성과 같은 이유로 **알려진 필드만 새 배열로 옮겨 담는다.**
+ */
+const KNOWN_FINGERPRINT_FIELDS = fieldNames<BodyUrlFingerprints>({
+  echoed: true,
+  other: true,
+  truncated: true,
+});
+
+const bodyUrlFingerprints = (value: unknown): BodyUrlFingerprints => {
+  if (!plainObject(value)) invariantViolation("body URL 지문", "invalid-value");
+  if (Object.keys(value).some((key) => !KNOWN_FINGERPRINT_FIELDS.has(key)))
+    invariantViolation("body URL 지문", "unknown-field");
+  if (value.truncated !== undefined && typeof value.truncated !== "boolean")
+    invariantViolation("body URL 지문", "invalid-value");
+  const digests = (raw: unknown): string[] => {
+    if (!Array.isArray(raw)) invariantViolation("body URL 지문", "invalid-value");
+    for (const item of raw)
+      if (typeof item !== "string" || !SHA256_HEX.test(item))
+        invariantViolation("body URL 지문", "invalid-value");
+    return raw as string[];
+  };
+  const echoed = digests(value.echoed);
+  const other = digests(value.other);
+  // 자식이 상한을 지키지 않으면 payload 가 Coordinator 상한을 넘겨 녹화가 통째로 실패한다.
+  // 여기서 먼저 거절해 원인을 "상한 위반" 으로 지목한다 — 413 만 받으면 무엇이 컸는지 모른다.
+  if (echoed.length + other.length > MAX_BODY_URL_FINGERPRINTS)
+    invariantViolation("body URL 지문", "invalid-value");
+  return Object.freeze({
+    echoed: Object.freeze(echoed),
+    other: Object.freeze(other),
+    ...(value.truncated === true ? { truncated: true } : {}),
+  });
+};
+
 const errorStatus = (error: ExternalRecordReplayError): number => {
   if (error.code === "PAYLOAD_TOO_LARGE") return 413;
   if (error.code === "REPLAY_MISS") return 404;
@@ -521,6 +568,9 @@ export async function startExternalCoordinator(
         engine.complete({
           interactionId: complete.interactionId,
           outcome: storedOutcome(complete.outcome),
+          ...(complete.bodyUrls === undefined
+            ? {}
+            : { bodyUrls: bodyUrlFingerprints(complete.bodyUrls) }),
         });
         json(response, 200, { completed: true });
         return;

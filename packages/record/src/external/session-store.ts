@@ -42,6 +42,22 @@ export interface SessionSnapshot {
   readonly interactions: readonly StoredInteraction[];
 }
 
+/**
+ * 세션 안에서 **서로 다른** URL 의 개수다(ADR-0062). 값은 담지 않는다 — 진단이 새 유출 경로가
+ * 되지 않게 하는 형식적 보장이다.
+ */
+export interface BodyUrlCounts {
+  /** 그 요청의 pathname 을 그대로 되돌려 담은 URL. 확실한 갈래다. */
+  readonly echoed: number;
+  /** 되돌아온 경로는 아니지만 URL 로 해석되는 문자열. 약한 신호다. */
+  readonly other: number;
+  /**
+   * 지문 개수 상한에 걸려 일부를 세지 못했다는 표시. 참이면 위 개수는 **최소값**이다 —
+   * 화면에는 "N건" 이 아니라 "N건 이상" 으로 나가야 한다.
+   */
+  readonly truncated: boolean;
+}
+
 export interface RecordSessionSummary {
   readonly mode: "record";
   readonly sessionId: string;
@@ -49,6 +65,13 @@ export interface RecordSessionSummary {
   readonly interactionCount: number;
   readonly consumedCount: 0;
   readonly unusedCount: 0;
+  /**
+   * **Store 는 채우지 않는다.** 세션 전체에서 중복을 제거해야 나오는 값이라 interaction 하나만
+   * 보는 Store 의 일이 아니고, 애초에 저장하지도 않는다(ADR-0062). 이 필드를 채우는 것은
+   * Engine 이며, 그래서 `RecordEngineSummary` 는 이것을 필수로 좁힌다 — 녹화 경로를 거쳐
+   * 나온 요약에는 항상 있다.
+   */
+  readonly bodyUrls?: BodyUrlCounts;
 }
 
 /**

@@ -29,6 +29,8 @@ export { ExternalRecordReplayError } from "./errors.js";
  * 스키마 세부(행 타입·DDL)는 여전히 안 나간다 — 나가는 것은 우리가 정의한 도메인 모양뿐이다.
  */
 export type {
+  /** ADR-0062. 종료 요약이 싣는 body URL 개수. 값은 담지 않는다. */
+  BodyUrlCounts,
   InteractionStatus,
   ReplayMissDetail,
   SessionSnapshot,

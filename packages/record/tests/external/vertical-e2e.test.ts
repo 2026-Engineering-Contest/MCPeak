@@ -118,4 +118,65 @@ describe("external Record/Replay vertical", () => {
       unusedCount: 0,
     });
   }, 20_000);
+
+  /**
+   * ADR-0062. 자식이 body 에서 URL 을 찾아 지문을 만들고, 그것이 부모의 종료 요약까지
+   * 닿는지를 **실제 자식 프로세스로** 확인한다. 단위 테스트는 두 층을 따로 보지만, 그 층이
+   * 실제로 이어져 있는지는 여기서만 드러난다.
+   *
+   * origin 이 자기 요청 URL 을 body 로 되돌려 담게 한다 — pagination `next` 가 하는 일이고,
+   * 경로가 자격증명인 endpoint 에서 ADR-0053 이 지운 값이 되돌아오는 바로 그 모양이다.
+   */
+  it("body 로 되돌아온 요청 경로를 세어 종료 요약에 싣는다", async () => {
+    const origin = createServer((request, response) => {
+      const requested = new URL(request.url ?? "/", "http://127.0.0.1");
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(
+        JSON.stringify({
+          city: requested.searchParams.get("city"),
+          // 요청 경로를 그대로 되돌려 담는다(echoed). query 만 다르다.
+          next: `http://127.0.0.1:${(origin.address() as { port: number }).port}${requested.pathname}?page=2`,
+          // 경로가 다른 URL 은 약한 갈래로 간다(other).
+          docs: "https://docs.example.com/guide",
+        }),
+      );
+    });
+    await new Promise<void>((resolve, reject) => {
+      origin.once("error", reject);
+      origin.listen(0, "127.0.0.1", resolve);
+    });
+    cleanups.push(
+      () =>
+        new Promise<void>((resolve, reject) =>
+          origin.close((error) => (error === undefined ? resolve() : reject(error))),
+        ),
+    );
+    const address = origin.address();
+    if (address === null || typeof address === "string") throw new Error("origin address missing");
+    const originUrl = `http://127.0.0.1:${address.port}/weather`;
+    const fixture = fileURLToPath(
+      new URL("../fixtures/external/fetch-mcp-server.mjs", import.meta.url),
+    );
+
+    const handle = await startExternalCoordinator({
+      mode: "record",
+      sessionId: "bodyurl",
+      store: createMemorySessionStore(),
+    });
+    cleanups.push(() => handle.finish("failed").then(() => undefined));
+    const connection = await connectStdio({
+      command: process.execPath,
+      args: [fixture],
+      env: { ...handle.childEnvironment, MCPEAK_TEST_ORIGIN_URL: originUrl },
+    });
+    await connection.client.callTool("fetch_weather", { city: "seoul" });
+    await connection.close();
+    const summary = await handle.finish("completed");
+
+    if (summary.mode !== "record") throw new Error("record 요약이어야 한다");
+    expect(summary.bodyUrls).toEqual({ echoed: 1, other: 1, truncated: false });
+    // 값은 요약에 실리지 않는다 — 사용자에게 가는 것은 개수뿐이다(ADR-0062 결정 3).
+    expect(JSON.stringify(summary)).not.toContain("127.0.0.1");
+    expect(JSON.stringify(summary)).not.toContain("docs.example.com");
+  }, 30_000);
 });

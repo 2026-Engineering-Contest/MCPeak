@@ -5,7 +5,6 @@ import { createServer, get, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-// @ts-expect-error — .mjs 구현에 타입 선언이 없다. 저장소의 다른 child 모듈과 같은 취급이다.
 import {
   installOutOfScopeObserver,
   observerChannelName,

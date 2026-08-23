@@ -191,7 +191,30 @@ export function createSqliteSessionStore(options: SqliteSessionStoreOptions = {}
         "→ 녹화하려면 읽기 전용이 아닌 저장소로 여세요.",
     );
 
-  const statements = {
+  /**
+   * 문장 준비를 감싼다. **`meta.store_version` 만으로는 우리 파일임을 다 말하지 못하기
+   * 때문이다** — 그 행 하나만 든 파일도 판정을 통과하고, 그러면 여기서 `no such table:
+   * sessions` 라는 SQLite 원문이 사용자에게 그대로 나가고 DB 핸들도 열린 채 남는다.
+   *
+   * 준비가 실패한다는 것은 우리 스키마가 아니라는 뜻이다. 읽기 전용은 **우리가 만들지 않은
+   * 파일을 받는 자리**라 그 판정을 여기서 내려야 한다. 쓰기 모드는 바로 위에서 DDL 을 심었으니
+   * 준비가 실패하면 그것은 우리 결함이고, 삼키지 않고 그대로 올린다.
+   */
+  const prepared = <T>(build: () => T): T => {
+    try {
+      return build();
+    } catch (error) {
+      if (db.isOpen) db.close();
+      if (!readOnly) throw error;
+      externalError(
+        "SESSION_NOT_FOUND",
+        "이 파일에는 녹화된 External 세션이 없습니다.\n" +
+          "→ 녹화할 때 지정한 세션 파일 경로가 맞는지 확인하세요.",
+      );
+    }
+  };
+
+  const statements = prepared(() => ({
     insertSession: db.prepare("INSERT INTO sessions (session_id, status) VALUES (?, 'running')"),
     findSession: db.prepare("SELECT status FROM sessions WHERE session_id = ?"),
     setStatus: db.prepare("UPDATE sessions SET status = ? WHERE session_id = ?"),
@@ -223,7 +246,7 @@ export function createSqliteSessionStore(options: SqliteSessionStoreOptions = {}
         WHERE session_id = ? AND status = 'incomplete' ORDER BY ordinal`,
     ),
     listAll: db.prepare("SELECT * FROM interactions WHERE session_id = ? ORDER BY ordinal"),
-  };
+  }));
 
   const sessionStatus = (sessionId: string): SessionStatus | undefined => {
     const row = statements.findSession.get(sessionId) as { status: SessionStatus } | undefined;

@@ -264,6 +264,26 @@ describe("SQLite Session Store", () => {
       );
     });
 
+    /**
+     * `meta.store_version` 만으로는 우리 파일임을 다 말하지 못한다. 그 행 하나만 든 파일도
+     * 판정을 통과해서, 문장 준비 단계에서 `no such table: sessions` 라는 SQLite 원문이
+     * 사용자에게 그대로 나가고 **DB 핸들도 열린 채 남았다.**
+     */
+    it("meta 만 있고 세션 테이블이 없는 파일도 우리 문장으로 거부한다 — 핸들을 남기지 않는다", () => {
+      const path = newDbPath();
+      const raw = openRaw(path);
+      raw.exec("CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);");
+      raw
+        .prepare("INSERT INTO meta (key, value) VALUES ('store_version', ?)")
+        .run(String(SQLITE_STORE_VERSION));
+
+      expect(() => createSqliteSessionStore({ path, readOnly: true })).toThrow(
+        /녹화된 External 세션이 없습니다/,
+      );
+      // SQLite 원문이 새어 나가면 사용자는 우리 어휘가 아닌 문장을 읽는다.
+      expect(() => createSqliteSessionStore({ path, readOnly: true })).not.toThrow(/no such table/);
+    });
+
     it("store version 이 다르면 다시 녹화하라고 말한다 — '세션이 없다' 와 다른 원인이다", () => {
       const path = recorded();
       const raw = openRaw(path);

@@ -1,10 +1,10 @@
 # ADR-0066: External 세션은 성공했을 때도 무엇을 했는지 말한다
 
-- 상태: 제안
+- 상태: 채택
 - 날짜: 2026-08-23
 - 담당: cli, record
 - 작성자: @ddxng5 (② replay/record 파트)
-- 승인: 미승인
+- 승인: 승인 (2026-08-23, @ddxng5 · ② replay/record 파트 오너가 검토하고 결정)
 - 선행 결정:
   [ADR-0046](./0046-대시보드를-로컬-웹서버로-만든다.md),
   [ADR-0051](./0051-external-record-replay와-tool-카세트-경계-분리.md),

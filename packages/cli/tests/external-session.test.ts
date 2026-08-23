@@ -7,6 +7,7 @@ import {
   externalOpenFailure,
   externalSessionNotice,
   externalSessionOutcome,
+  outOfScopeNotice,
   parseTestCommand,
   renderReplayMissDiagnostics,
 } from "../src/test-command.js";
@@ -571,5 +572,81 @@ describe("External 세션 닫기 실패 문장", () => {
 
     expect(failure.hint).toBe("문자열 원인");
     expect(failure.message).toContain("닫지 못했습니다");
+  });
+});
+
+/**
+ * ADR-0067. 재생 중 범위 밖으로 나간 호출을 **사실로** 알린다.
+ *
+ * 이 알림의 존재 이유는 부분 커버리지다 — 어댑터가 잡은 호출이 하나라도 있으면 기존 경고 네
+ * 갈래가 전부 침묵하는데, 그 사이로 나머지가 실제 네트워크로 샌다.
+ */
+describe("범위 밖 호출 알림 (ADR-0067)", () => {
+  const leaked = (outOfScope: number | undefined): SessionSummary =>
+    ({ ...replay(3, 3, 0), ...(outOfScope === undefined ? {} : { outOfScope }) }) as SessionSummary;
+
+  it("나간 호출이 있으면 개수와 재현 불가를 말한다", () => {
+    const notice = outOfScopeNotice(leaked(2));
+
+    expect(notice).toContain("범위 밖 호출 2건이 실제 네트워크로 나갔습니다");
+    expect(notice).toContain("재현 가능하지 않습니다");
+    // 알림으로 끝내지 않고 다음 행동을 준다.
+    expect(notice).toContain("mcpeak mock");
+  });
+
+  it("0 이면 아무 말도 하지 않는다", () => {
+    expect(outOfScopeNotice(leaked(0))).toBeUndefined();
+  });
+
+  /**
+   * **부재는 0 이 아니다.** 자식이 강제 종료돼 보고 훅이 못 뛴 경우다. 여기서 "0건" 이라고
+   * 말하면 이 기능이 없애려던 거짓 안심을 그대로 되살린다 — 그 갈래의 방어는 결과 문장에
+   * 남는 조건절이 맡는다.
+   */
+  it("못 셌으면 침묵한다 — 0건이라고 말하지 않는다", () => {
+    const notice = outOfScopeNotice(leaked(undefined));
+
+    expect(notice).toBeUndefined();
+  });
+
+  it("녹화에는 나오지 않는다 — 녹화는 실제로 나가는 것이 정상이다", () => {
+    expect(outOfScopeNotice(record(3))).toBeUndefined();
+  });
+
+  it("경고 갈래와 함께 나갈 수 있다 — 축이 다르다", () => {
+    // 일부 미재생(원인: 원본과 실행 경로 차이)과 범위 밖 유출(원인: 어댑터 범위)은 동시에
+    // 참일 수 있고 원인이 다르다. 배타로 묶으면 하나가 다른 하나를 가린다.
+    const summary = { ...replay(3, 2, 1), outOfScope: 1 } as SessionSummary;
+
+    expect(externalSessionNotice(summary)).toBeDefined();
+    expect(outOfScopeNotice(summary)).toBeDefined();
+  });
+});
+
+/**
+ * ADR-0067 이 결과 문장에 준 변화. 0 을 **확인했으면** 조건절을 뗀다 — 안 떼면 관측을 붙인
+ * 의미가 화면에 안 나타난다.
+ */
+describe("결과 문장의 조건절 (ADR-0067)", () => {
+  const PATH2 = "tmp/weather.db";
+
+  it("범위 밖 0건을 확인하면 단서를 붙이지 않는다", () => {
+    const line = externalSessionOutcome(
+      { ...replay(3, 3, 0), outOfScope: 0 } as SessionSummary,
+      PATH2,
+    );
+
+    expect(line).toContain("재생했습니다");
+    expect(line).not.toContain("어댑터가 잡은 호출만 셉니다");
+  });
+
+  it("못 셌으면 단서가 남는다", () => {
+    const line = externalSessionOutcome(replay(3, 3, 0), PATH2);
+
+    expect(line).toContain("어댑터가 잡은 호출만 셉니다");
+  });
+
+  it("녹화는 셀 수단이 없어 항상 단서가 붙는다", () => {
+    expect(externalSessionOutcome(record(3), PATH2)).toContain("어댑터가 잡은 호출만 셉니다");
   });
 });

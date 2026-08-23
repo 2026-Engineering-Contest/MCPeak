@@ -28,6 +28,8 @@ const here = resolve(fileURLToPath(new URL(".", import.meta.url)));
 const server = join(here, "fixtures/external-fetch-server.mjs");
 /** 외부 요청을 `node:http` 로 내는 서버 — ADR-0057 이 정한 지원 범위의 바깥이다. */
 const httpServer = join(here, "fixtures/external-http-server.mjs");
+/** `fetch` 와 `node:http` 를 **섞어** 쓰는 서버 — 부분 커버리지(ADR-0067). */
+const mixedServer = join(here, "fixtures/external-mixed-server.mjs");
 const suite = join(here, "fixtures/external-fetch.suite.json");
 const threeSuite = join(here, "fixtures/external-fetch-three.suite.json");
 const twoSuite = join(here, "fixtures/external-fetch-two.suite.json");
@@ -457,5 +459,82 @@ describe("mcpeak test 의 External 세션 — 본문 URL 알림(ADR-0062)", () =
     expect(replayed.exitCode).toBe(0);
     // 재생은 이미 있는 파일을 읽을 뿐이라 새로 남는 것이 없다(ADR-0062).
     expect(replayed.stderr).not.toContain("세션 파일 본문에 URL");
+  }, 30_000);
+});
+
+/**
+ * ADR-0067. **부분 커버리지가 이 저장소에서 가장 조용히 틀리던 자리다.**
+ *
+ * 앞의 describe 들은 전부 범위 안이거나 전부 범위 밖인 서버를 본다. 섞이면 경고 네 갈래가
+ * 전부 비켜간다 — `interactionCount > 0`, `consumedCount > 0`, `unusedCount === 0`. 그래서
+ * 재생 절반이 실제 네트워크로 나가는데도 화면에는 초록과 "N건을 재생했습니다" 만 남았다.
+ *
+ * 여기서 고정하는 것은 **그 유출을 사실로 말하는가** 다. "나갈 수 있습니다" 라는 조건절이
+ * 아니라 개수다.
+ */
+describe("mcpeak test 의 External 세션 — 부분 커버리지 (ADR-0067)", () => {
+  /** `via` 별로 세는 origin. 어느 갈래가 실제로 나갔는지를 구분해야 판정이 선다. */
+  const startCountingOrigin = async (): Promise<{
+    readonly url: string;
+    readonly hits: () => { readonly fetch: number; readonly http: number };
+  }> => {
+    const counts = { fetch: 0, http: 0 };
+    const origin = createServer((request, response) => {
+      const via = new URL(request.url ?? "/", "http://127.0.0.1").searchParams.get("via");
+      if (via === "fetch") counts.fetch += 1;
+      if (via === "http") counts.http += 1;
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ via, weather: "sunny" }));
+    });
+    servers.push(origin);
+    await new Promise<void>((done) => origin.listen(0, "127.0.0.1", done));
+    const { port } = origin.address() as { port: number };
+    return { url: `http://127.0.0.1:${port}/weather`, hits: () => ({ ...counts }) };
+  };
+
+  it("재생 중 실제로 나간 범위 밖 호출을 개수로 알린다", async () => {
+    const origin = await startCountingOrigin();
+    const sessionPath = await newSessionPath();
+
+    const recorded = await captureStderr(() =>
+      runWith(mixedServer, suite, ["--record-session", sessionPath], origin.url),
+    );
+    expect(recorded.exitCode).toBe(0);
+    // 녹화는 두 갈래 다 실제로 나간다. 세션에 남는 것은 fetch 쪽 하나뿐이다.
+    expect(origin.hits()).toEqual({ fetch: 1, http: 1 });
+    expect(recorded.stderr).toContain("외부 호출 1건을 녹화했습니다");
+
+    const replayed = await captureStderr(() =>
+      runWith(mixedServer, suite, ["--session", sessionPath], origin.url),
+    );
+
+    expect(replayed.exitCode).toBe(0);
+    // 재생: fetch 는 안 나가고(재생됨) node:http 만 실제로 또 나갔다.
+    expect(origin.hits()).toEqual({ fetch: 1, http: 2 });
+
+    // 기존 경고 갈래는 여전히 침묵한다 — 그것이 이 기능이 필요한 이유다.
+    expect(replayed.stderr).not.toContain("재생되지 않았습니다");
+    // 조건절이 아니라 사실을 말한다.
+    expect(replayed.stderr).toContain("범위 밖 호출 1건이 실제 네트워크로 나갔습니다");
+    expect(replayed.stderr).toContain("재현 가능하지 않습니다");
+  }, 30_000);
+
+  /**
+   * 0 을 **확인한** 실행에서는 조건절을 떼야 한다. 안 떼면 이 기능이 들어와도 화면은 예전과
+   * 같고, 사용자는 정상 실행에서까지 "나갈 수 있습니다" 를 계속 읽는다.
+   */
+  it("범위 밖 호출이 없으면 조건절 단서를 붙이지 않는다", async () => {
+    const origin = await startOrigin();
+    const sessionPath = await newSessionPath();
+
+    await runTest(["--record-session", sessionPath], origin.url("/weather"));
+    const replayed = await captureStderr(() =>
+      runTest(["--session", sessionPath], origin.url("/weather")),
+    );
+
+    expect(replayed.exitCode).toBe(0);
+    expect(replayed.stderr).toContain("재생했습니다");
+    expect(replayed.stderr).not.toContain("범위 밖 호출은 재생 중에도");
+    expect(replayed.stderr).not.toContain("실제 네트워크로 나갔습니다");
   }, 30_000);
 });

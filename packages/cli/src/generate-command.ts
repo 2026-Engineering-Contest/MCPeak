@@ -21,7 +21,6 @@ import type {
   TestCaseOrigin,
   ToolCoverage,
 } from "@mcpeak/generate";
-import type { Cassette, CassetteMode } from "@mcpeak/record";
 import type {
   CallToolCaseSpec,
   ContractAxisKind,
@@ -34,7 +33,6 @@ import type {
   TestSuiteSpec,
 } from "@mcpeak/runner";
 import { describeSpecFinding, suiteFingerprint } from "@mcpeak/runner";
-import { wireCassette } from "./cassette-wiring.js";
 import type { DryRunCaseOutcome, DryRunResult } from "./dry-run.js";
 import { runDryRun } from "./dry-run.js";
 import { reviewDryRun } from "./dry-run-review.js";
@@ -69,10 +67,6 @@ export interface GenerateCommandInput {
   readonly model?: string;
   /** 승인 전 시험 실행 여부. 기본은 실행이고 `--no-dry-run` 이 끈다. 설계 문서 §4.3. */
   readonly dryRun: boolean;
-  /** `--cassette` 경로. 없으면 서버를 직접 부른다. */
-  readonly cassettePath?: string;
-  /** `--record`. 카세트 파일이 있어도 새로 녹화한다. */
-  readonly forceRecord: boolean;
   /** `--force`. `--out` 에 파일이 있으면 지우고 새로 쓴다. 설계 문서 §5. */
   readonly force: boolean;
   /** `--reset-cmd`. 시험 실행 직전 1회 실행한다. */
@@ -154,15 +148,6 @@ export interface GenerateCommandDependencies {
    * 동일성도 보장된다. 위 6개 필드가 같은 방식이다.
    */
   GenerateTestsError?: typeof import("@mcpeak/generate").GenerateTestsError;
-  /**
-   * 카세트 파일 입출력. 주입점을 여기 하나만 두는 이유는 시험 실행 경로에서 파일시스템을
-   * 만지는 곳이 이것뿐이기 때문이다. 나머지(`runDryRun`·`reviewDryRun`)는 주입한 client 와
-   * io 만 쓰므로 테스트가 실제 구현을 그대로 돌린다.
-   */
-  cassetteIo?: {
-    load(path: string): Promise<Cassette | null>;
-    save(path: string, cassette: Cassette): Promise<void>;
-  };
 }
 export interface ReviewIO {
   input(message: string): Promise<string>;
@@ -319,20 +304,19 @@ const optionNames = new Set([
   "--provider",
   "--model",
   "--no-dry-run",
-  "--cassette",
-  "--record",
   "--reset-cmd",
   "--no-repair",
   "--force",
 ]);
 /** 값을 받지 않는 옵션. `=` 를 붙여 쓸 수 없고 두 번 쓸 수 없다. */
-const flagNames = new Set([
-  "--baseline-only",
-  "--no-dry-run",
-  "--record",
-  "--no-repair",
-  "--force",
-]);
+const flagNames = new Set(["--baseline-only", "--no-dry-run", "--no-repair", "--force"]);
+const removedGenerateOptions = new Set(["--cassette", "--record"]);
+const removedGenerateOptionMessage = (option: string): string =>
+  `\`${option}\` generate 옵션은 Tool 카세트와 함께 제거되었습니다(ADR-0059). ` +
+  "시험 실행은 서버를 직접 호출합니다. 서버의 외부 HTTP 호출을 녹화하려면 " +
+  "`mcpeak test <suite.json> --command <executable> --record-session <path>`를, " +
+  "재생하려면 `mcpeak test <suite.json> --command <executable> --session <path>`를 사용하세요. " +
+  "서버를 대신하려면 `mcpeak test <suite.json> --command mcpeak-mock --arg <mock.json>`을 사용하세요.";
 function optionValue(argv: readonly string[], index: number, option: string): [string, number] {
   const item = argv[index];
   if (item === undefined) throw new UsageError(`\`${option}\` 옵션 값이 필요합니다.`);
@@ -354,6 +338,8 @@ export function parseGenerateCommand(argv: readonly string[]): GenerateCommandIn
     const option = item.includes("=") ? item.slice(0, item.indexOf("=")) : item;
     if (!option.startsWith("--"))
       throw new UsageError(`추가 위치 인자 '${item}'는 허용되지 않습니다.`);
+    if (removedGenerateOptions.has(option))
+      throw new UsageError(removedGenerateOptionMessage(option));
     if (!optionNames.has(option))
       throw new UsageError(`지원하지 않는 generate 옵션 '${option}'입니다.`);
     if (flagNames.has(option)) {
@@ -387,16 +373,11 @@ export function parseGenerateCommand(argv: readonly string[]): GenerateCommandIn
   // 사용자가 둘 중 하나를 착각한 것이다. 조용히 무시하는 대신 사용 오류로 돌려준다.
   if (!dryRun && !repair)
     throw new UsageError("`--no-dry-run`과 `--no-repair`는 함께 사용할 수 없습니다.");
-  const cassettePath = values.get("--cassette");
   const resetCmd = values.get("--reset-cmd");
-  // 시험 실행을 끄면 서버를 접촉하지 않는다. 카세트와 초기화는 접촉을 전제한 옵션이므로 함께
-  // 주면 둘 중 하나가 조용히 무시된다. 무시하는 대신 사용 오류로 돌려준다.
-  if (!dryRun && cassettePath !== undefined)
-    throw new UsageError("`--no-dry-run`과 `--cassette`는 함께 사용할 수 없습니다.");
+  // 시험 실행을 끄면 서버를 접촉하지 않는다. 초기화는 접촉을 전제한 옵션이므로 함께 주면
+  // 조용히 무시된다. 무시하는 대신 사용 오류로 돌려준다.
   if (!dryRun && resetCmd !== undefined)
     throw new UsageError("`--no-dry-run`과 `--reset-cmd`는 함께 사용할 수 없습니다.");
-  if (flags.has("--record") && cassettePath === undefined)
-    throw new UsageError("`--record`는 `--cassette`와 함께만 사용할 수 있습니다.");
   if (resetCmd !== undefined && resetCmd.trim() === "")
     throw new UsageError("`--reset-cmd` 옵션 값이 필요합니다.");
   return Object.freeze({
@@ -409,8 +390,6 @@ export function parseGenerateCommand(argv: readonly string[]): GenerateCommandIn
     provider: rawProvider,
     model: values.get("--model"),
     dryRun,
-    cassettePath,
-    forceRecord: flags.has("--record"),
     force: flags.has("--force"),
     resetCmd,
     repair,
@@ -798,13 +777,12 @@ const detailBlock = (detail: string): string =>
         .map((line) => `  ${line}`)
         .join("\n")}\n`;
 
-/** 시험 실행 고지(§8.1). 카세트와 초기화는 값이 있을 때만 줄이 나간다. */
+/** 시험 실행 고지(§8.1). 초기화는 값이 있을 때만 줄이 나간다. */
 function writeDryRunNotice(
   io: ReviewIO,
   notice: {
     readonly caseCount: number;
     readonly target: string;
-    readonly cassette?: { readonly path: string; readonly fresh: boolean };
     readonly resetCmd?: string;
     /** 교정 단계가 켜져 있는가. 켜져 있으면 실제 호출 수가 케이스 수보다 많을 수 있다(§10). */
     readonly repair: boolean;
@@ -812,10 +790,6 @@ function writeDryRunNotice(
 ): void {
   io.write(`시험 실행: 케이스 ${notice.caseCount}개를 실제 서버에 보냅니다.\n`);
   io.write(`  대상: ${notice.target}\n`);
-  if (notice.cassette !== undefined)
-    io.write(
-      `  카세트: ${notice.cassette.path} (${notice.cassette.fresh ? "신규 녹화" : "재생"})\n`,
-    );
   if (notice.resetCmd !== undefined) io.write(`  초기화: ${notice.resetCmd}\n`);
   if (notice.repair) io.write("  실패한 케이스는 값을 고쳐 최대 2회까지 다시 호출합니다.\n");
   io.write(
@@ -1104,19 +1078,8 @@ function writeDryRunAborted(
   io.write("\n저장하지 않았습니다. 서버를 고친 뒤 다시 save 를 고르세요.\n");
 }
 
-/**
- * 분류가 저장을 막았을 때의 안내(§8.3). 마지막 줄은 **실제 카세트 모드**로 갈린다.
- *
- * 재생은 `auto` 에서만 일어난다. 신규 녹화(`record`)는 회차마다 전량을 다시 서버로 보내므로
- * "나머지는 카세트에서 재생됩니다" 가 거짓이 된다. 그래서 경로 유무가 아니라 `wireCassette`
- * 가 정한 모드를 받는다.
- */
-function writeReviewBlocked(
-  io: ReviewIO,
-  specErrors: number,
-  caseCount: number,
-  cassetteMode: CassetteMode | undefined,
-): void {
+/** 분류가 저장을 막았을 때의 안내(§8.3). */
+function writeReviewBlocked(io: ReviewIO, specErrors: number, caseCount: number): void {
   io.write("\n");
   if (specErrors > 0) {
     io.write(`  명세 오류 ${specErrors}건이 있어 저장할 수 없습니다.\n`);
@@ -1125,16 +1088,7 @@ function writeReviewBlocked(
     // 보류는 고칠 것이 없다. revise·edit 으로 보내면 사용자가 고칠 데를 찾다 만다.
     io.write("  분류하지 않은 케이스가 있어 저장할 수 없습니다.\n");
   }
-  if (cassetteMode === "auto") {
-    io.write("  → 고친 케이스만 서버에 다시 나갑니다. 나머지는 카세트에서 재생됩니다.\n");
-    return;
-  }
   io.write(`  → 다시 save 를 고르면 케이스 ${caseCount}개가 모두 서버에 다시 나갑니다.\n`);
-  io.write(
-    cassetteMode === undefined
-      ? "    반복 비용이 부담되면 --cassette 를 쓰세요.\n"
-      : "    신규 녹화 중이라 이번 세션에서는 재생하지 않습니다.\n",
-  );
 }
 
 /** 초기화 명령 실패 안내. stderr 은 마지막 3줄만 보여준다. 설계 문서 §6. */
@@ -1166,14 +1120,6 @@ async function runInteractiveReview(
   let candidate: SanitizedAuthoringCandidate | undefined = session.workingCandidate;
   let preferred = input.provider;
   let model = input.model;
-  /**
-   * 카세트 배선은 검토 세션에 하나뿐이고 `save` 를 여러 번 골라도 같은 것을 쓴다. 시도마다 새로
-   * 만들면 저장이 막힌 첫 시도의 녹화가 통째로 버려지고, "고친 케이스만 서버에 다시 나갑니다"
-   * (§8.3)가 거짓이 된다. flush 는 저장에 성공한 뒤 한 번만 부른다.
-   */
-  let cassette: Awaited<ReturnType<typeof wireCassette>> | undefined;
-  /** 이미 화면에 낸 카세트 경고 수. 배선이 세션당 하나라 경고도 누적된다. 회차마다 새것만 낸다. */
-  let printedWarnings = 0;
   /** 진단 읽기가 판정을 바꾸면 안 된다. getDiagnostics 가 던지면 삼킨다. */
   const diagnostics = (): ProcessDiagnosticsInput | undefined => {
     try {
@@ -1211,24 +1157,9 @@ async function runInteractiveReview(
           );
           if (!(await io.confirm("   계속할까요?"))) continue;
         } else {
-          const path = input.cassettePath;
           writeDryRunNotice(io, {
             caseCount,
             target: [input.command, ...input.args].join(" "),
-            // 배선이 이미 있으면 그것이 정한 모드를 그대로 쓴다. 첫 회차는 아직 배선 전이라
-            // 파일 존재로 정하는데, 이는 `wireCassette` 의 규칙(§5.2)과 같은 판정이다.
-            // `loadCassette` 는 파일이 없을 때만 null 을 주고 나머지는 던지기 때문이다.
-            ...(path === undefined
-              ? {}
-              : {
-                  cassette: {
-                    path,
-                    fresh:
-                      cassette === undefined
-                        ? input.forceRecord || !(await deps.exists(path))
-                        : cassette.mode === "record",
-                  },
-                }),
             resetCmd: input.resetCmd,
             repair: input.repair,
           });
@@ -1243,19 +1174,10 @@ async function runInteractiveReview(
             }
             io.write(`▸ 초기화: ${input.resetCmd}\n`);
           }
-          if (cassette === undefined)
-            cassette = await wireCassette({
-              inner: connection.client,
-              path: input.cassettePath,
-              forceRecord: input.forceRecord,
-              io: deps.cassetteIo,
-            });
           // 진행 표시는 한 번만 나간다. 중간 갱신에 터미널 제어 문자를 쓰면 파이프로 받은
           // 출력이 깨지고 그 출력을 E2E 가 비교한다.
           io.write(`▸ 시험 실행 중... ${caseCount}/${caseCount}\n`);
-          const result = await runDryRun({ client: cassette.client, suite: dryRunSuite });
-          for (const warning of cassette.warnings.slice(printedWarnings)) io.write(`${warning}\n`);
-          printedWarnings = cassette.warnings.length;
+          const result = await runDryRun({ client: connection.client, suite: dryRunSuite });
           if (result.aborted !== undefined) {
             writeDryRunAborted(io, result, caseCount, diagnostics());
             continue;
@@ -1285,7 +1207,6 @@ async function runInteractiveReview(
             preferred === undefined
               ? undefined
               : deps.providers?.[preferred]?.(model ?? defaultModel(preferred));
-          const wired = cassette;
           const targets = input.repair
             ? selectRepairTargets({
                 suite: dryRunSuite,
@@ -1307,7 +1228,7 @@ async function runInteractiveReview(
                 const spec = dryRunSuite.cases.find((item) => item.id === caseId);
                 if (spec === undefined || !isCallTool(spec)) return { passed: false, detail: "" };
                 const one = await runDryRun({
-                  client: wired.client,
+                  client: connection.client,
                   suite: {
                     ...dryRunSuite,
                     cases: [
@@ -1380,15 +1301,10 @@ async function runInteractiveReview(
               ),
             };
           }
-          // 교정 재실행도 서버를 부르므로 카세트가 새 경고를 붙일 수 있다. 여기서 비우지
-          // 않으면 그 경고는 다음 save 회차에서만 나오고, 저장으로 끝나면 영영 안 나온다.
-          // 재생 중 교정한 입력값이 카세트에 없어 실제 서버로 나갔다는 사실이 이 경고다.
-          for (const warning of cassette.warnings.slice(printedWarnings)) io.write(`${warning}\n`);
-          printedWarnings = cassette.warnings.length;
           // 11. 남은 실패를 분류(§8.3). 교정을 시도했던 케이스는 이력이 함께 나온다(§8.7).
           const review = await reviewDryRun(io, effective, attempts);
           if (!review.cleared) {
-            writeReviewBlocked(io, review.specErrors.length, caseCount, cassette.mode);
+            writeReviewBlocked(io, review.specErrors.length, caseCount);
             continue;
           }
           approvals = review.approvals;
@@ -1410,29 +1326,6 @@ async function runInteractiveReview(
         try {
           const finalSuite = deps.getAuthoringExecutionSuite(final.snapshot);
           await saveSuite(input, finalSuite, final.snapshot.fingerprint, deps, approvals);
-          // 저장이 끝난 뒤에만 부른다. flush 는 내부에서 inner.close() 까지 부르므로 이보다
-          // 앞이면 저장 직전에 연결이 죽는다.
-          //
-          // 오류 경계를 저장과 분리한다. 카세트 저장 실패는 명세 저장 실패가 아니다. 같이 묶으면
-          // 이미 파일이 만들어진 뒤에 SAVE_FAILED 를 말하고, 이어지는 재시도는 OUTPUT_EXISTS 로
-          // 막히는데 그때 연결은 flush 가 이미 닫아 놓은 상태다.
-          let cassetteSaved = false;
-          try {
-            await cassette?.flush();
-            cassetteSaved = true;
-          } catch {
-            io.write("⚠ 카세트를 저장하지 못했습니다. 명세는 저장됐습니다.\n");
-          }
-          // flush 가 붙인 경고(`--record` 로 사라지는 기존 녹화본)를 내는 유일한 지점이다.
-          // 그 경고는 recorder.close() 안에서야 확정되므로 앞의 두 출력 지점(시험 실행 후 ·
-          // 교정 후)에는 아직 존재하지 않는다. 여기서 안 내면 영영 나오지 않는다.
-          //
-          // 저장에 실패했으면 내지 않는다. 파일이 그대로인데 "사라집니다" 라고 말하게 된다.
-          if (cassetteSaved && cassette !== undefined) {
-            for (const warning of cassette.warnings.slice(printedWarnings))
-              io.write(`${warning}\n`);
-            printedWarnings = cassette.warnings.length;
-          }
           // 최종 suite 는 baseline 과 다르다. 사용자가 케이스를 지웠거나 AI 후보를 적용했을 수
           // 있으므로 저장한 그 suite 로 다시 계산한다.
           //

@@ -25,9 +25,6 @@ const TEST_OPTIONS = `옵션:
 2회 연결하는데 세션은 연결 하나에 묶여 있어, 2회차가 같은 세션을 쓰면 반복 호출 순번이
 어긋나고 새 세션을 쓰면 비교 기준이 갈라집니다.
 
-세션은 \`--cassette\` 카세트와 다릅니다. **카세트는 우리가 서버에게 물어본 결과**를 남기고,
-**세션은 그 서버가 밖에 물어본 결과**를 남깁니다. 둘은 섞이지 않으며 파일도 따로입니다.
-
 세션 파일에는 외부 API 응답이 저장되므로 .gitignore 를 확인하세요. \`token\`·\`apiKey\` 같은
 이름의 값은 저장 전에 가려집니다.
 
@@ -38,18 +35,15 @@ feature\` 가 stderr 에 한 줄 찍힙니다(실측: Node 22.18.0 에서 나오
 SQLite 파일이라 영향받지 않습니다.**`;
 
 export const GENERATE_USAGE =
-  "사용법: mcpeak generate --suite-id <id> --name <name> --out <suite.json> --command <executable> [--arg <value> ...] [--baseline-only] [--provider <codex|claude>] [--model <model>] [--no-dry-run] [--cassette <path>] [--record] [--reset-cmd <command>] [--no-repair] [--force]";
+  "사용법: mcpeak generate --suite-id <id> --name <name> --out <suite.json> --command <executable> [--arg <value> ...] [--baseline-only] [--provider <codex|claude>] [--model <model>] [--no-dry-run] [--reset-cmd <command>] [--no-repair] [--force]";
 
 /**
- * 시험 실행 옵션 설명. 사용법 한 줄로는 `--cassette` 가 무엇을 파일로 남기는지, `--reset-cmd`
- * 가 셸을 거치지 않는다는 제약을 알 수 없다. 둘 다 모르고 쓰면 사고가 나는 값이다.
+ * 시험 실행 옵션 설명. 사용법 한 줄로는 `--reset-cmd` 가 셸을 거치지 않는다는 제약을 알 수
+ * 없다. 모르고 쓰면 사고가 나는 값이다.
  */
 const GENERATE_DRY_RUN_OPTIONS = `옵션:
   --no-dry-run          승인 전 시험 실행을 건너뜁니다. 케이스가 실제 서버에서 확인되지
                         않은 채 저장됩니다
-  --cassette <path>     서버 응답을 녹화·재생합니다. 반복 실행에서 서버를 다시 부르지
-                        않습니다. 응답 전문이 저장되므로 .gitignore 를 확인하세요
-  --record              카세트를 처음부터 다시 녹화합니다 (--cassette 필요)
   --reset-cmd <command> 시험 실행 전에 이 명령을 한 번 실행합니다. 셸을 거치지 않으므로
                         파이프나 && 는 쓸 수 없습니다
   --no-repair           시험 실행이 실패해도 입력값을 고쳐 다시 시도하지 않습니다.

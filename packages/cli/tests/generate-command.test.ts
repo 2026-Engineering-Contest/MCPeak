@@ -22,7 +22,6 @@ import {
   type SanitizedAuthoringCandidate,
   sha256,
 } from "@mcpeak/generate";
-import { type Cassette, matchKey } from "@mcpeak/record";
 import type {
   CallToolCaseSpec,
   ContractAxisKind,
@@ -199,30 +198,23 @@ describe("parseGenerateCommand", () => {
       provider: undefined,
       model: undefined,
       dryRun: true,
-      cassettePath: undefined,
-      forceRecord: false,
       force: false,
       resetCmd: undefined,
       repair: true,
     });
   });
-  it("시험 실행 옵션 넷을 파싱한다", () => {
+  it("시험 실행 옵션을 파싱한다", () => {
     expect(
       parseGenerateCommand([
         "--suite-id=weather",
         "--name=Weather",
         "--out=out.json",
         "--command=node",
-        "--cassette",
-        ".mcpeak/w.json",
-        "--record",
         "--reset-cmd",
         "npm run seed",
       ]),
     ).toMatchObject({
       dryRun: true,
-      cassettePath: ".mcpeak/w.json",
-      forceRecord: true,
       resetCmd: "npm run seed",
     });
   });
@@ -242,18 +234,44 @@ describe("parseGenerateCommand", () => {
     const cases: readonly (readonly string[])[] = [
       // --no-dry-run 을 두 번
       [...base, "--no-dry-run", "--no-dry-run"],
-      // --no-dry-run 과 --cassette
-      [...base, "--no-dry-run", "--cassette", "c.json"],
       // --no-dry-run 과 --reset-cmd
       [...base, "--no-dry-run", "--reset-cmd", "npm run seed"],
-      // --record 를 --cassette 없이
-      [...base, "--record"],
       // --reset-cmd 값이 빈 문자열
       [...base, "--reset-cmd="],
-      // --cassette 를 두 번
-      [...base, "--cassette", "a.json", "--cassette", "b.json"],
     ];
     for (const argv of cases) expect(() => parseGenerateCommand(argv)).toThrow();
+  });
+  it.each(["--cassette", "--cassette=c.json", "--record"])(
+    "제거된 %s 옵션은 제거 사실과 External 세션 대체 경로를 알린다",
+    (removed) => {
+      const base = ["--suite-id=x", "--name=n", "--out=x.json", "--command=node"];
+      expect(() => parseGenerateCommand([...base, removed])).toThrowError(/제거되었습니다/);
+      expect(() => parseGenerateCommand([...base, removed])).toThrowError(/--record-session/);
+      expect(() => parseGenerateCommand([...base, removed])).toThrowError(/--session/);
+    },
+  );
+  it("제거 안내는 CLI_USAGE로 출력되고 서버에 연결하지 않는다", async () => {
+    const stderr: string[] = [];
+    const d = deps({ writeStderr: (text) => stderr.push(text) });
+    const argv = [
+      "generate",
+      "--suite-id=x",
+      "--name=n",
+      "--out=x.json",
+      "--command=node",
+      "--cassette=c.json",
+    ];
+
+    await expect(runGenerateCommand(argv, d.value)).resolves.toBe(1);
+    expect(stderr.join("")).toContain("오류 [CLI_USAGE]");
+    expect(stderr.join("")).toContain("제거되었습니다");
+    expect(stderr.join("")).toContain(
+      "mcpeak test <suite.json> --command <executable> --record-session <path>",
+    );
+    expect(stderr.join("")).toContain(
+      "mcpeak test <suite.json> --command mcpeak-mock --arg <mock.json>",
+    );
+    expect(d.value.connect).not.toHaveBeenCalled();
   });
   it("--no-repair 를 두 번 주면 사용 오류다", () => {
     const base = ["--suite-id=x", "--name=n", "--out=x.json", "--command=node"];
@@ -2050,9 +2068,9 @@ describe("케이스 수 고지", () => {
 });
 
 /**
- * 승인 전 시험 실행 게이트. 실제 `runDryRun`·`reviewDryRun`·`wireCassette` 를 그대로 돌리고
- * 서버와 카세트 파일만 인메모리로 바꾼다. 게이트가 무엇을 묻고 무엇을 저장하는지가 관심사이므로
- * 그 세 모듈을 스텁으로 바꾸면 확인할 것이 남지 않는다.
+ * 승인 전 시험 실행 게이트. 실제 `runDryRun`·`reviewDryRun` 을 그대로 돌리고 서버만
+ * 인메모리로 바꾼다. 게이트가 무엇을 묻고 무엇을 저장하는지가 관심사이므로 두 모듈을
+ * 스텁으로 바꾸면 확인할 것이 남지 않는다.
  */
 describe("generate 시험 실행 게이트", () => {
   const gateTools: ToolDef[] = [
@@ -2098,8 +2116,6 @@ describe("generate 시험 실행 게이트", () => {
           exitCode: number | null;
           signal: string | null;
         };
-    /** 카세트 파일 대용. 두 번의 save 사이에 살아남아야 하므로 밖에서 넘긴다. */
-    readonly cassetteStore?: Map<string, Cassette>;
     /** 서버가 선언하는 툴. 교정 대상이 둘 이상인 경우를 만들 때 바꾼다. */
     readonly tools?: ToolDef[];
     /** baseline 생성 결과를 통째로 갈아 끼운다. 본문 단언이 달린 케이스를 만들 때 쓴다. */
@@ -2161,7 +2177,6 @@ describe("generate 시험 실행 게이트", () => {
       }),
       forceClose: vi.fn(async () => undefined),
     };
-    const store = options.cassetteStore ?? new Map<string, Cassette>();
     const value: GenerateCommandDependencies = {
       connect: vi.fn(async () => connection),
       createBaselineSuite:
@@ -2204,12 +2219,6 @@ describe("generate 시험 실행 게이트", () => {
       prepareRejectionDiagnosisRequests:
         options.prepareRejectionDiagnosisRequests ?? prepareRejectionDiagnosisRequests,
       dispatchRejectionDiagnosis,
-      cassetteIo: {
-        load: async (path) => store.get(path) ?? null,
-        save: async (path, cassette) => {
-          store.set(path, cassette);
-        },
-      },
     };
     return {
       value,
@@ -2217,7 +2226,6 @@ describe("generate 시험 실행 게이트", () => {
       screen,
       stderr,
       calls,
-      store,
       closeCount: () => closes,
       savedSuite: () =>
         saved === ""
@@ -2684,8 +2692,7 @@ describe("generate 시험 실행 게이트", () => {
     expect(d.output()).toContain("명세 오류 1건이 있어 저장할 수 없습니다.");
     expect(d.output()).toContain("검토 메뉴의 revise 또는 edit");
     expect(d.value.openTemp).not.toHaveBeenCalled();
-    // 카세트가 없으면 전량이 다시 나간다는 사실을 알려야 한다.
-    expect(d.output()).toContain("--cassette 를 쓰세요");
+    expect(d.output()).toContain(`케이스 ${baselineCases.length}개가 모두 서버에 다시 나갑니다.`);
     expect(d.io.choose).toHaveBeenCalledTimes(2);
   });
 
@@ -2763,173 +2770,6 @@ describe("generate 시험 실행 게이트", () => {
     expect(output.indexOf(`▸ 초기화: ${command}`)).toBeLessThan(
       output.indexOf("▸ 시험 실행 중..."),
     );
-  });
-
-  it("--cassette 를 주면 2회차 save 에서 inner 호출이 새 케이스 수만큼만 늘어난다", async () => {
-    // 1회차는 파일이 없으므로 record 모드다. 전량이 서버로 나가고 flush 가 카세트를 남긴다.
-    const store = new Map<string, Cassette>();
-    const first = gateDeps({
-      choices: ["save"],
-      inputs: Array.from({ length: failingCases }, () => "s"),
-      confirms: [true, true],
-      cassetteStore: store,
-    });
-    await expect(
-      runGenerateCommand([...gateArgv, "--cassette", ".mcpeak/w.json"], first.value),
-    ).resolves.toBe(0);
-    expect(first.calls).toHaveLength(baselineCases.length);
-    expect(store.get(".mcpeak/w.json")?.interactions.length).toBeGreaterThan(0);
-    expect(first.output()).toContain("  카세트: .mcpeak/w.json (신규 녹화)\n");
-
-    // 2회차는 파일이 있으므로 auto 모드다. 명세가 그대로면 새 케이스가 0개이고 서버를 다시
-    // 부르지 않는다. exists 는 출력 파일용 스텁이므로 카세트 존재는 따로 알려 준다.
-    const second = gateDeps({
-      choices: ["save"],
-      inputs: Array.from({ length: failingCases }, () => "s"),
-      confirms: [true, true],
-      cassetteStore: store,
-    });
-    second.value.exists = vi.fn(async (path: string) => path === ".mcpeak/w.json");
-    await expect(
-      runGenerateCommand([...gateArgv, "--cassette", ".mcpeak/w.json"], second.value),
-    ).resolves.toBe(0);
-    expect(second.calls).toEqual([]);
-    expect(second.output()).toContain("  카세트: .mcpeak/w.json (재생)\n");
-  });
-
-  it("카세트 경고가 화면에 그대로 나온다", async () => {
-    let round = 0;
-    const d = gateDeps({
-      choices: ["save", "save"],
-      inputs: [
-        ...Array.from({ length: failingCases }, () => "?"),
-        ...Array.from({ length: failingCases }, () => "?"),
-      ],
-      confirms: [true, true],
-      // 같은 요청에 회차마다 다른 응답을 준다. record 가 경고를 만든다.
-      respond: () => ({
-        content: [{ type: "text", text: `round ${round++}` }],
-        isError: false,
-        raw: { round },
-      }),
-    });
-    await runGenerateCommand([...gateArgv, "--cassette", ".mcpeak/w.json", "--record"], d.value);
-    expect(d.output()).toContain("→ 같은 요청에 다른 응답이 왔습니다: weather(");
-  });
-
-  it("회차마다 새 카세트 경고만 나온다", async () => {
-    // 배선은 세션당 하나라 warnings 가 누적된다. 회차마다 전량을 다시 찍으면 사용자는 이번에
-    // 새로 생긴 경고를 구분할 수 없다.
-    const rounds = 3;
-    const d = gateDeps({
-      choices: Array.from({ length: rounds }, () => "save"),
-      inputs: Array.from({ length: rounds * failingCases }, () => "?"),
-      confirms: Array.from({ length: rounds }, () => true),
-      // 같은 요청에 회차마다 다른 응답을 준다. 2회차부터 회차당 같은 수의 경고가 새로 생긴다.
-      respond: (name, _args, call) => ({
-        content: [{ type: "text", text: `${name} ${call}` }],
-        isError: false,
-        raw: { call },
-      }),
-    });
-    await runGenerateCommand([...gateArgv, "--cassette", ".mcpeak/w.json"], d.value);
-    const marker = "→ 같은 요청에 다른 응답이 왔습니다:";
-    const perRound = d
-      .output()
-      .split("▸ 시험 실행 중...")
-      .slice(1)
-      .map((segment) => segment.split(marker).length - 1);
-    expect(perRound).toHaveLength(rounds);
-    expect(perRound[1]).toBeGreaterThan(0);
-    // 3회차가 2회차보다 많으면 1회차 몫을 다시 찍은 것이다.
-    expect(perRound[2]).toBe(perRound[1]);
-  });
-
-  it("신규 녹화 중에는 재생된다고 말하지 않는다", async () => {
-    // record 모드는 회차마다 전량을 다시 보낸다. auto 로 갈 때만 재생이 일어난다.
-    const d = gateDeps({
-      choices: ["save", "cancel"],
-      inputs: Array.from({ length: failingCases }, () => "?"),
-      confirms: [true],
-    });
-    await runGenerateCommand([...gateArgv, "--cassette", ".mcpeak/w.json"], d.value);
-    const output = d.output();
-    expect(output).not.toContain("나머지는 카세트에서 재생됩니다");
-    expect(output).toContain(`케이스 ${baselineCases.length}개가 모두 서버에 다시 나갑니다.`);
-    // 이미 --cassette 를 쓰는 중이다. 쓰라고 하면 안 된다.
-    expect(output).not.toContain("--cassette 를 쓰세요");
-  });
-
-  it("카세트를 재생 중이면 고친 케이스만 다시 나간다고 말한다", async () => {
-    const store = new Map<string, Cassette>();
-    const first = gateDeps({
-      choices: ["save"],
-      inputs: Array.from({ length: failingCases }, () => "s"),
-      confirms: [true, true],
-      cassetteStore: store,
-    });
-    await runGenerateCommand([...gateArgv, "--cassette", ".mcpeak/w.json"], first.value);
-
-    const second = gateDeps({
-      choices: ["save", "cancel"],
-      inputs: Array.from({ length: failingCases }, () => "?"),
-      confirms: [true],
-      cassetteStore: store,
-    });
-    second.value.exists = vi.fn(async (path: string) => path === ".mcpeak/w.json");
-    await runGenerateCommand([...gateArgv, "--cassette", ".mcpeak/w.json"], second.value);
-    expect(second.output()).toContain("나머지는 카세트에서 재생됩니다");
-  });
-
-  it("카세트 저장이 실패해도 명세 저장 실패로 보고하지 않는다", async () => {
-    const d = gateDeps({
-      choices: ["save"],
-      inputs: Array.from({ length: failingCases }, () => "s"),
-      confirms: [true, true],
-    });
-    d.value.cassetteIo = {
-      load: async () => null,
-      save: async () => {
-        throw new Error("EACCES");
-      },
-    };
-    await expect(
-      runGenerateCommand([...gateArgv, "--cassette", ".mcpeak/w.json"], d.value),
-    ).resolves.toBe(0);
-    expect(d.output()).toContain("⚠ 카세트를 저장하지 못했습니다.");
-    expect(d.stderr.join("")).not.toContain("GENERATE_SAVE_FAILED");
-    expect(d.value.link).toHaveBeenCalledOnce();
-  });
-
-  it("카세트 저장이 실패하면 축소 경고를 내지 않는다", async () => {
-    // 파일이 그대로인데 "사라집니다" 라고 말하면 거짓이다. record 는 onFlush 성공 뒤에 경고를
-    // 넘기지만 실제 파일 쓰기는 그 뒤 io.save 라, 출력은 저장 성공까지 기다려야 한다.
-    const stale: Cassette = {
-      version: 1,
-      interactions: [
-        {
-          key: matchKey("weather", { city: "부산" }),
-          request: { toolName: "weather", args: { city: "부산" } },
-          response: { content: [{ type: "text", text: "ok" }], isError: false, raw: { ok: true } },
-        },
-      ],
-    };
-    const d = gateDeps({
-      choices: ["save"],
-      inputs: Array.from({ length: failingCases }, () => "s"),
-      confirms: [true, true],
-    });
-    d.value.cassetteIo = {
-      load: async () => stale,
-      save: async () => {
-        throw new Error("EACCES");
-      },
-    };
-    await expect(
-      runGenerateCommand([...gateArgv, "--cassette", ".mcpeak/w.json", "--record"], d.value),
-    ).resolves.toBe(0);
-    expect(d.output()).toContain("⚠ 카세트를 저장하지 못했습니다.");
-    expect(d.output()).not.toContain("지웁니다");
   });
 
   it("approval.cases 가 실려도 suiteFingerprint 가 안 바뀐다", async () => {

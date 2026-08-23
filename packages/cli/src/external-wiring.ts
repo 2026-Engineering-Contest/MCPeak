@@ -17,8 +17,8 @@ const loadExternal = () => import("@mcpeak/record/external");
 /**
  * 시험 실행에 External Record/Replay 를 배선한다.
  *
- * **`cassette-wiring.ts` 를 재사용하지 않는다**(ADR-0051). 그쪽은 `McpClient` 를 감싸 Tool
- * 호출을 가로채고, 이쪽은 감쌀 것이 없다 — 자식 프로세스에 넘길 **환경 변수만** 만든다.
+ * 제거된 Tool 카세트 배선과 달리(ADR-0051), 이쪽은 감쌀 것이 없다 — 자식 프로세스에 넘길
+ * **환경 변수만** 만든다.
  * 가로채는 지점이 부모의 클라이언트가 아니라 자식 안의 `fetch` 이기 때문이다.
  *
  * 그래서 이 배선의 산출물은 `env` 하나다. `connect` 가 그것을 자식에게 넘기면, Bootstrap 이

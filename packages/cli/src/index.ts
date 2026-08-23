@@ -106,9 +106,13 @@ export async function run(argv: string[]): Promise<number> {
    */
   if (argv[0] === "help") {
     const target = argv[1] ?? "";
-    const message = isHelpTopic(target)
-      ? `\`help ${escapeTerminalText(target)}\` 뒤에는 인자를 더 받지 않습니다.`
-      : `도움말이 없는 명령 '${escapeTerminalText(target)}'입니다.`;
+    // 남는 인자를 문장에 싣는다. 무엇이 남았는지 안 보여주면 사용자는 `help test` 를 다시
+    // 쳐 보고서야 뒤 토큰이 문제였다는 것을 안다 — 도구가 이미 쥐고 있는 정보다.
+    const extra = argv[2];
+    const message =
+      isHelpTopic(target) && extra !== undefined
+        ? `\`help ${escapeTerminalText(target)}\` 뒤의 '${escapeTerminalText(extra)}' 는 받지 않습니다.`
+        : `도움말이 없는 명령 '${escapeTerminalText(target)}'입니다.`;
     process.stderr.write(`오류 [CLI_USAGE]: ${message}\n해결: ${commandDiscovery}\n`);
     return 1;
   }

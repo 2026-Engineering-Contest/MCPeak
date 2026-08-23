@@ -99,10 +99,7 @@ describe("shouldShowSpecApproval", () => {
 describe("renderSpecApproval", () => {
   const matched = renderSpecApproval(checkSpecApproval(approved(fingerprint)), false);
   const absent = renderSpecApproval(checkSpecApproval(suite), false);
-  const mismatchedPassed = renderSpecApproval(
-    checkSpecApproval(approved(WRONG_FINGERPRINT)),
-    true,
-  );
+  const mismatchedPassed = renderSpecApproval(checkSpecApproval(approved(WRONG_FINGERPRINT)), true);
   const mismatchedFailed = renderSpecApproval(
     checkSpecApproval(approved(WRONG_FINGERPRINT)),
     false,

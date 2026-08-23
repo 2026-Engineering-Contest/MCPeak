@@ -73,7 +73,7 @@ export interface PreFillCase {
  * `minLength`·`minItems` 없음.
  *
  * 제안 값은 `valueJson` 문자열로 받는다. 임의 JSON 을 스키마로 표현할 수 없어서다.
- * 근거는 `docs/adr/0063-사전보완-제안-값을-json-문자열로-받는다.md`.
+ * 근거는 `docs/adr/0064-사전보완-제안-값을-json-문자열로-받는다.md`.
  */
 export interface PreFillOutputSchema {
   readonly type: "object";

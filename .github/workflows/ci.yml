@@ -190,8 +190,23 @@ jobs:
           fail-on-error: false
 
   changeset-check:
-    # 기능 PR에 changeset이 없으면 경고만 남긴다 (머지 차단 아님).
-    if: github.event_name == 'pull_request'
+    # 기능 PR에 changeset이 없으면 **실패시킨다**(ADR-0063).
+    #
+    # 한때 경고만 남겼다. 그 결과 External Record/Replay 기능 전체가 changeset 없이 PR 4개로
+    # 나갔고(#234·#245·#247·#249), 새 공개 서브패스와 CLI 플래그 둘이 CHANGELOG 에 한 줄도
+    # 없이 발행될 뻔했다. 잡아낸 것은 CI 가 아니라 릴리스 직전에 사람이 대기 changeset 을
+    # 눈으로 센 것이었다 — 읽히지 않는 경고는 없는 것과 같다(#264).
+    # **Version Packages PR 은 뺀다.** `changesets/action` 이 만드는 그 PR 은 changeset 을
+    # 소비해 지우고 버전·CHANGELOG 를 올린다 — 패키지는 바뀌었는데 changeset 은 없는 상태라
+    # 이 검사에 걸린다. 넣어 두면 릴리스 자동화가 영구히 막힌다(실측: exit 1).
+    #
+    # 세 조건을 **모두** 만족할 때만 뺀다. 브랜치 이름만 보면 같은 이름으로 올린 아무 PR 이나
+    # 게이트를 지나간다 — 우회가 쉬운 예외는 게이트의 신뢰도를 깎는다.
+    if: >-
+      github.event_name == 'pull_request' &&
+      !(github.head_ref == 'changeset-release/main' &&
+        github.base_ref == 'main' &&
+        github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -210,7 +225,24 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
-      - name: Warn if no changeset
+      # 실패를 **삼키지 않는다.** 한때 이 자리가 `|| echo` 뿐이라 탐지하고도 SUCCESS 로
+      # 찍혔다(#264). 지금은 출력을 잡아 두고 `if/else` 로 갈라 마지막에 `exit 1` 한다.
+      #
+      # 실패 원인을 가른다. `changeset status` 는 changeset 누락 말고 설정 오류나 잘못된
+      # `--since` ref 로도 1 을 낸다. 전부 "changeset 이 없습니다" 로 안내하면 원인을 잘못
+      # 지목한다 — 이 저장소에서 실패 메시지는 제품이다(CLAUDE.md).
+      - name: Require a changeset
         run: |
-          pnpm changeset status --since=origin/${{ github.base_ref }} \
-            || echo "::warning::changeset 이 없습니다. 공개 API가 바뀌었다면 'pnpm changeset' 을 추가하세요."
+          if output=$(pnpm changeset status --since=origin/${{ github.base_ref }} 2>&1); then
+            echo "$output"
+            exit 0
+          fi
+          echo "$output"
+          if echo "$output" | grep -q "no changesets were found"; then
+            echo "::error::changeset 이 없습니다. 'pnpm changeset' 으로 릴리스 노트를 추가하세요."
+            echo "::error::릴리스가 필요 없는 변경이면 'pnpm changeset add --empty' 로 빈 changeset 을 넣고 커밋하세요."
+          else
+            echo "::error::changeset status 가 실패했습니다. 위 출력을 보세요 — changeset 누락이 아니라"
+            echo "::error::설정이나 --since 기준(origin/${{ github.base_ref }})의 문제일 수 있습니다."
+          fi
+          exit 1

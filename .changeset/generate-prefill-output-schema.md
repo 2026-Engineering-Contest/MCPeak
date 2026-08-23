@@ -2,7 +2,7 @@
 "@mcpeak/generate": minor
 ---
 
-AI 사전보완이 codex 에서 **한 번도 성공하지 않던** 문제를 고칩니다([#284](https://github.com/2026-Engineering-Contest/MCPeak/issues/284), [ADR-0063](https://github.com/2026-Engineering-Contest/MCPeak/blob/main/docs/adr/0063-사전보완-제안-값을-json-문자열로-받는다.md)).
+AI 사전보완이 codex 에서 **한 번도 성공하지 않던** 문제를 고칩니다([#284](https://github.com/2026-Engineering-Contest/MCPeak/issues/284), [ADR-0064](https://github.com/2026-Engineering-Contest/MCPeak/blob/main/docs/adr/0064-사전보완-제안-값을-json-문자열로-받는다.md)).
 
 원인은 provider 도 인증도 아니고 우리가 만들어 보내는 출력 스키마였습니다. 제안 값을 빈 스키마
 `value: {}` 로 두었는데, codex 는 모든 property 에 `type` 키를 요구해 요청을 통째로 거절합니다.

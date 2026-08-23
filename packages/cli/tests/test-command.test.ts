@@ -415,7 +415,6 @@ describe("runCli", () => {
     expect(err).not.toContain("알 수 없는 CLI 명령");
   });
 
-
   it("명령 이름이 틀리면 명령 목록만 주고 test 의 플래그는 주지 않는다", async () => {
     const d = deps();
     expect(await runCli(["tset"], d.value)).toBe(1);

@@ -1,0 +1,12 @@
+# 줄바꿈을 저장소 차원에서 LF 로 고정한다(#305).
+#
+# 없으면 정책이 **각자의 git 전역 설정**에 맡겨진다. Windows Git 설치 기본값이
+# `core.autocrlf=true` 라, 저장소 내용이 전부 LF 인데도 체크아웃이 CRLF 로 되고
+# biome 이 그것을 전부 format 위반으로 잡는다(실측 242건). `pnpm format` 을 돌려도
+# 다음 체크아웃에서 되돌아오고 커밋에는 아무 변화가 없어, **git 은 깨끗한데 로컬만
+# 계속 빨간** 상태가 반복된다. CI 는 ubuntu 라 재현되지 않는다.
+#
+# `text=auto` 는 git 이 텍스트로 판정한 파일만 대상으로 한다 — png·db 같은 바이너리는
+# 건드리지 않는다. `eol=lf` 는 체크아웃 줄바꿈을 OS 와 무관하게 고정하며 개인의
+# `core.autocrlf` 를 덮는다. `biome.json` 은 바꾸지 않는다 — 기본값이 이미 `lf` 다.
+* text=auto eol=lf

@@ -144,6 +144,10 @@ export async function run(argv: string[]): Promise<number> {
     return runGenerateCommand(argv, {
       ...nodeGenerateDependencies(),
       connect: core.connectStdio,
+      // 원격(Streamable HTTP) 대상용 배선(#137). `readEnv` 는 `--header-env` 가 가리키는
+      // 환경변수를 읽는 유일한 지점이다 — CLI 코드는 `process` 를 직접 읽지 않는다.
+      connectHttp: core.connectHttp,
+      readEnv: (name: string) => process.env[name],
       createBaselineSuite: generate.createBaselineSuite,
       createAuthoringSession: generate.createAuthoringSession,
       finalizeAuthoringDraft: generate.finalizeAuthoringDraft,
@@ -220,6 +224,9 @@ export async function run(argv: string[]): Promise<number> {
     readFile,
     validateSuite: runner.validateMcpSuite,
     connect: core.connectStdio,
+    // 원격(Streamable HTTP) 대상용 배선(#137). 근거는 generate 분기의 같은 두 줄과 같다.
+    connectHttp: core.connectHttp,
+    readEnv: (name: string) => process.env[name],
     startRunner: runner.runSuite,
     finalize: runner.finalizeRunnerExecution,
     renderReport: runner.renderReport,

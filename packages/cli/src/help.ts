@@ -1,5 +1,22 @@
+/**
+ * 원격(Streamable HTTP) 대상 옵션. `test` 와 `generate` 가 같은 문장을 쓴다 — 같은 사람이
+ * 두 커맨드를 잇달아 쓰는데 설명이 다르면 그 차이를 기능으로 읽는다(#137).
+ *
+ * `--header-env` 가 값을 직접 받지 않는 이유를 여기서 말한다. 이유를 모르면 이 옵션은 그냥
+ * 번거로운 `--header` 로 보이고, 사용자는 우회로를 찾다가 우리가 막으려던 그 노출을 만든다.
+ */
+export const REMOTE_TARGET_OPTIONS = `  --url <URL>           이미 떠 있는 Streamable HTTP MCP 서버에 붙습니다. \`--command\`
+                        \`--arg\` 와 함께 쓸 수 없고, 띄울 프로세스가 없으므로 stdio
+                        전용 옵션도 받지 않습니다. 어느 옵션이 그런지는 함께 썼을 때
+                        오류 문장이 말합니다
+  --header-env <헤더이름>=<환경변수이름>
+                        요청 헤더를 환경변수에서 읽어 붙입니다. 값을 직접 받지 않는
+                        이유는 명령줄에 쓴 토큰이 \`ps\` 목록과 셸 히스토리에 그대로
+                        남기 때문입니다. 예: MCP_TOKEN='Bearer …' mcpeak …
+                        --header-env Authorization=MCP_TOKEN`;
+
 export const TEST_USAGE =
-  "사용법: mcpeak test <suite.json> --command <executable> [--arg <value> ...] [--determinism] [--reset-cmd <command>] [--json] [--junit <path>] [--repair-bundle <path>] [--stderr-lines <N>] [--session <path> | --record-session <path>]";
+  "사용법: mcpeak test <suite.json> (--command <executable> [--arg <value> ...] | --url <URL> [--header-env <헤더이름>=<환경변수이름> ...]) [--determinism] [--reset-cmd <command>] [--json] [--junit <path>] [--repair-bundle <path>] [--stderr-lines <N>] [--session <path> | --record-session <path>]";
 
 /**
  * 시험 실행 옵션 설명. `--determinism` 은 툴을 2회 호출하므로 부작용이 있는 서버에서 모르고
@@ -12,6 +29,7 @@ const TEST_OPTIONS = `옵션:
                         "2회 결과가 같았다" 까지만 확인합니다
   --reset-cmd <command> 각 시험 실행 전에 이 명령을 한 번 실행합니다. 셸을 거치지
                         않으므로 파이프나 && 는 쓸 수 없습니다
+${REMOTE_TARGET_OPTIONS}
   --record-session <path>
                         서버가 \`globalThis.fetch\` 로 밖에 부른 HTTP 호출만 녹화합니다.
                         서버는 실제로 실행됩니다. \`node:http\`·\`node:https\` 같은 범위 밖 호출은
@@ -37,7 +55,7 @@ feature\` 가 stderr 에 한 줄 찍힙니다(실측: Node 22.18.0 에서 나오
 SQLite 파일이라 영향받지 않습니다.**`;
 
 export const GENERATE_USAGE =
-  "사용법: mcpeak generate --suite-id <id> --name <name> --out <suite.json> --command <executable> [--arg <value> ...] [--baseline-only] [--provider <codex|claude>] [--model <model>] [--no-dry-run] [--reset-cmd <command>] [--no-repair] [--force]";
+  "사용법: mcpeak generate --suite-id <id> --name <name> --out <suite.json> (--command <executable> [--arg <value> ...] | --url <URL> [--header-env <헤더이름>=<환경변수이름> ...]) [--baseline-only] [--provider <codex|claude>] [--model <model>] [--no-dry-run] [--reset-cmd <command>] [--no-repair] [--force]";
 
 /**
  * 시험 실행 옵션 설명. 사용법 한 줄로는 `--reset-cmd` 가 셸을 거치지 않는다는 제약을 알 수
@@ -51,7 +69,8 @@ const GENERATE_DRY_RUN_OPTIONS = `옵션:
   --no-repair           시험 실행이 실패해도 입력값을 고쳐 다시 시도하지 않습니다.
                         실패가 곧바로 분류 화면으로 갑니다
   --force               \`--out\` 경로에 파일이 있으면 지우고 새로 씁니다. 기본은 저장을
-                        멈추는 것입니다`;
+                        멈추는 것입니다
+${REMOTE_TARGET_OPTIONS}`;
 
 export const REPAIR_USAGE =
   "사용법: mcpeak repair <bundle.json> --provider <codex|claude> --model <model> [--max-cases <N>] [--no-stderr] [--yes]";

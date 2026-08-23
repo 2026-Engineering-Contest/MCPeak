@@ -33,6 +33,7 @@ import {
   type CliConnection,
   type ConnectTarget,
   ConnectTargetError,
+  createHeaderEnvCollector,
   openConnection,
   parseHeaderEnvOption,
   parseUrlOption,
@@ -288,12 +289,7 @@ export function parseTestCommand(argv: readonly string[]): TestCommandInput {
   let sessionPath: string | undefined;
   let recordSessionPath: string | undefined;
   const args: string[] = [];
-  /**
-   * **null 프로토타입으로 만든다.** 아래 중복 검사가 `header in headerEnv` 이므로 평범한 `{}`
-   * 면 `constructor` · `toString` · `__proto__` 같은 이름이 처음 쓰였는데도 "두 번 지정됐다" 로
-   * 거절된다. 셋 다 RFC 9110 토큰을 통과하는 유효한 헤더 이름이다.
-   */
-  const headerEnv: Record<string, string> = Object.create(null);
+  const headerEnv = createHeaderEnvCollector();
   for (let index = 1; index < argv.length; index += 1) {
     const token = argv[index] ?? "";
     if (token === "--command" || token.startsWith("--command=")) {
@@ -326,11 +322,8 @@ export function parseTestCommand(argv: readonly string[]): TestCommandInput {
       const parsed = parseHeaderEnvOption(read.value);
       if (!parsed.ok) fail(parsed.message);
       else {
-        // 같은 헤더를 두 번 지정하면 뒤가 이긴다고 정하지 않는다. 어느 쪽을 의도했는지
-        // 우리가 고를 문제가 아니다. `--command` 중복과 같은 규칙이다.
-        if (parsed.value.header in headerEnv)
-          fail(`\`--header-env\` 의 '${parsed.value.header}' 헤더가 두 번 지정됐습니다.`);
-        headerEnv[parsed.value.header] = parsed.value.envName;
+        const rejected = headerEnv.add(parsed.value.header, parsed.value.envName);
+        if (rejected !== undefined) fail(rejected);
       }
     } else if (token === "--arg" || token.startsWith("--arg=")) {
       let value: string;
@@ -464,7 +457,7 @@ export function parseTestCommand(argv: readonly string[]): TestCommandInput {
       "`--arg` 는 `--url` 과 함께 쓸 수 없습니다.\n" +
         "→ `--arg` 는 우리가 띄우는 프로세스에 넘길 인자입니다. 원격 서버에는 띄울 프로세스가 없습니다.",
     );
-  if (command !== undefined && Object.keys(headerEnv).length > 0)
+  if (command !== undefined && !headerEnv.isEmpty())
     fail(
       "`--header-env` 는 `--url` 과 함께만 쓸 수 있습니다.\n" +
         "→ 헤더는 HTTP 요청에 실립니다. `--command` 로 띄운 서버와는 stdio 로 이야기합니다.",
@@ -511,7 +504,7 @@ export function parseTestCommand(argv: readonly string[]): TestCommandInput {
         : Object.freeze({
             transport: "http" as const,
             url,
-            headerEnv: Object.freeze({ ...headerEnv }),
+            headerEnv: headerEnv.snapshot(),
           }),
     json,
     junitPath,

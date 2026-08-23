@@ -2232,3 +2232,59 @@ describe("parseTestCommand — 프로토타입에서 물려받는 헤더 이름"
     ).toThrow();
   });
 });
+
+/**
+ * HTTP 헤더 이름은 대소문자를 구분하지 않는다. 표기만 다른 같은 헤더를 둘 다 받으면
+ * undici `Headers` 가 두 값을 `Bearer A, Bearer B` 로 이어 붙여 보낸다 — 자격증명이면
+ * 서버는 401 만 돌려주고 사용자는 자기가 두 번 쓴 것이 원인인 줄 모른다(#137).
+ */
+describe("parseTestCommand — 헤더 이름의 대소문자", () => {
+  const failureOf = (argv: readonly string[]): string => {
+    try {
+      parseTestCommand([...argv]);
+    } catch (error) {
+      return (error as { failure?: { message?: string } }).failure?.message ?? "";
+    }
+    throw new Error("거절하지 않았다");
+  };
+
+  it("표기만 다른 같은 헤더를 거절하고 두 표기를 모두 보여준다", () => {
+    const message = failureOf([
+      "suite.json",
+      "--url",
+      "https://x/v1",
+      "--header-env",
+      "Authorization=A",
+      "--header-env",
+      "authorization=B",
+    ]);
+    expect(message).toContain("authorization");
+    expect(message).toContain("Authorization");
+    expect(message).toContain("대소문자를 구분하지 않습니다");
+  });
+
+  it("표기가 완전히 같으면 중복이라고만 말한다", () => {
+    const message = failureOf([
+      "suite.json",
+      "--url",
+      "https://x/v1",
+      "--header-env",
+      "Authorization=A",
+      "--header-env",
+      "Authorization=B",
+    ]);
+    expect(message).toContain("두 번 지정됐습니다");
+    expect(message).not.toContain("대소문자");
+  });
+
+  it("사용자가 쓴 표기를 그대로 보관한다", () => {
+    const input = parseTestCommand([
+      "suite.json",
+      "--url",
+      "https://x/v1",
+      "--header-env",
+      "X-Api-Key=MCP_KEY",
+    ]);
+    expect(input.target).toMatchObject({ headerEnv: { "X-Api-Key": "MCP_KEY" } });
+  });
+});

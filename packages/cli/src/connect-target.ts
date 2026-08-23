@@ -181,6 +181,57 @@ export function parseHeaderEnvOption(
   return ok({ header, envName });
 }
 
+/**
+ * `--header-env` 를 모으는 누산기. `test` 와 `generate` 가 같은 것을 쓴다 — 중복 규칙이
+ * 갈라지면 같은 명령줄이 한쪽에서만 거절된다.
+ *
+ * **HTTP 헤더 이름은 대소문자를 구분하지 않는다.** `Authorization` 과 `authorization` 을
+ * 둘 다 받으면 두 값이 하나로 합쳐져 `Bearer A, Bearer B` 가 나간다(undici `Headers` 가
+ * 같은 이름을 append 로 잇는다). 자격증명이라면 서버는 401 만 돌려주고, 사용자는 자기가
+ * 두 번 쓴 것이 원인이라는 것을 알 길이 없다. 그래서 정규화한 이름으로 판정한다.
+ *
+ * 표기는 사용자가 쓴 그대로 보관한다. 와이어에서는 차이가 없지만 오류 문장이 사용자의
+ * 표기를 되짚어야 자기가 무엇을 썼는지 알아본다.
+ */
+export interface HeaderEnvCollector {
+  /** 받아들이면 `undefined`, 거절하면 그 이유. 문장은 서브커맨드가 자기 hint 를 붙여 던진다. */
+  add(header: string, envName: string): string | undefined;
+  isEmpty(): boolean;
+  /** 파서가 `target` 에 실을 값. */
+  snapshot(): Readonly<Record<string, string>>;
+}
+
+export function createHeaderEnvCollector(): HeaderEnvCollector {
+  /** 소문자 이름 → 처음 쓴 표기. */
+  const seen = new Map<string, string>();
+  /**
+   * null 프로토타입으로 만든다. 평범한 `{}` 에 `values["__proto__"] = …` 를 하면 값이 조용히
+   * 사라진다(프로토타입 설정으로 해석되고 문자열이라 무시된다). `__proto__` · `constructor` ·
+   * `toString` 은 모두 RFC 9110 토큰을 통과하는 유효한 헤더 이름이다.
+   */
+  const values: Record<string, string> = Object.create(null);
+  return {
+    add(header, envName) {
+      const first = seen.get(header.toLowerCase());
+      // 같은 헤더를 두 번 지정하면 뒤가 이긴다고 정하지 않는다. 어느 쪽을 의도했는지 우리가
+      // 고를 문제가 아니다. 다른 옵션의 중복 규칙과 같다.
+      if (first === header)
+        return `\`--header-env\` 의 '${echoValue(header)}' 헤더가 두 번 지정됐습니다.`;
+      if (first !== undefined)
+        return (
+          `\`--header-env\` 의 '${echoValue(header)}' 는 앞서 지정한 '${echoValue(first)}' 와 같은 헤더입니다.\n` +
+          "→ HTTP 헤더 이름은 대소문자를 구분하지 않습니다. 둘 중 하나만 남기세요."
+        );
+      seen.set(header.toLowerCase(), header);
+      values[header] = envName;
+      return undefined;
+    },
+    isEmpty: () => seen.size === 0,
+    // 스프레드는 CreateDataProperty 라 `__proto__` 도 own 프로퍼티로 복사된다.
+    snapshot: () => Object.freeze({ ...values }),
+  };
+}
+
 /** 대상을 사람이 읽는 한 조각으로 만든다. 오류 문장이 무엇에 붙으려 했는지 말할 때 쓴다. */
 export function describeTarget(target: ConnectTarget): string {
   return target.transport === "stdio" ? [target.command, ...target.args].join(" ") : target.url;

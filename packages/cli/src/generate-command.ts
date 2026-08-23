@@ -37,6 +37,7 @@ import {
   type CliConnection,
   type ConnectTarget,
   ConnectTargetError,
+  createHeaderEnvCollector,
   describeTarget,
   openConnection,
   parseHeaderEnvOption,
@@ -356,11 +357,8 @@ export function parseGenerateCommand(argv: readonly string[]): GenerateCommandIn
   const values = new Map<string, string>();
   const args: string[] = [];
   const flags = new Set<string>();
-  /**
-   * `--arg` 와 같이 되풀이할 수 있는 옵션이라 `values` 맵에 넣지 않는다(#137).
-   * null 프로토타입인 근거는 `test-command.ts` 의 같은 맵과 같다.
-   */
-  const headerEnv: Record<string, string> = Object.create(null);
+  // `--arg` 와 같이 되풀이할 수 있는 옵션이라 `values` 맵에 넣지 않는다(#137).
+  const headerEnv = createHeaderEnvCollector();
   for (let index = 0; index < argv.length; index++) {
     const item = argv[index];
     if (item === undefined) continue;
@@ -386,13 +384,8 @@ export function parseGenerateCommand(argv: readonly string[]): GenerateCommandIn
     if (option === "--header-env") {
       const parsed = parseHeaderEnvOption(value);
       if (!parsed.ok) throw new UsageError(parsed.message);
-      // 같은 헤더를 두 번 지정하면 뒤가 이긴다고 정하지 않는다. 어느 쪽을 의도했는지 우리가
-      // 고를 문제가 아니다. 다른 옵션의 중복 규칙과 같다.
-      if (parsed.value.header in headerEnv)
-        throw new UsageError(
-          `\`--header-env\` 의 '${parsed.value.header}' 헤더가 두 번 지정됐습니다.`,
-        );
-      headerEnv[parsed.value.header] = parsed.value.envName;
+      const rejected = headerEnv.add(parsed.value.header, parsed.value.envName);
+      if (rejected !== undefined) throw new UsageError(rejected);
       continue;
     }
     if (values.has(option)) throw new UsageError(`\`${option}\`는 한 번만 사용할 수 있습니다.`);
@@ -417,7 +410,7 @@ export function parseGenerateCommand(argv: readonly string[]): GenerateCommandIn
       "`--arg` 는 `--url` 과 함께 쓸 수 없습니다.\n" +
         "→ `--arg` 는 우리가 띄우는 프로세스에 넘길 인자입니다. 원격 서버에는 띄울 프로세스가 없습니다.",
     );
-  if (command !== undefined && Object.keys(headerEnv).length > 0)
+  if (command !== undefined && !headerEnv.isEmpty())
     throw new UsageError(
       "`--header-env` 는 `--url` 과 함께만 쓸 수 있습니다.\n" +
         "→ 헤더는 HTTP 요청에 실립니다. `--command` 로 띄운 서버와는 stdio 로 이야기합니다.",
@@ -464,7 +457,7 @@ export function parseGenerateCommand(argv: readonly string[]): GenerateCommandIn
         : Object.freeze({
             transport: "http" as const,
             url,
-            headerEnv: Object.freeze({ ...headerEnv }),
+            headerEnv: headerEnv.snapshot(),
           }),
     baselineOnly: flags.has("--baseline-only"),
     provider: rawProvider,

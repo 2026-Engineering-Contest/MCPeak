@@ -36,6 +36,7 @@ export interface PreFillProposal {
   readonly caseId: string;
   /** baseline 이 placeholder 또는 unknownFormat 을 넣은 필드만 허용한다. */
   readonly field: string;
+  /** provider 는 `valueJson` 문자열로 보낸다. 여기 담기는 것은 그것을 되돌린 값이다. */
   readonly value: JsonValue;
 }
 
@@ -70,6 +71,9 @@ export interface PreFillCase {
  *
  * ADR-0007 제약을 지킨다. 최상위 조합자 없음, `$ref`/`$defs` 없음, 재귀 없음,
  * `minLength`·`minItems` 없음.
+ *
+ * 제안 값은 `valueJson` 문자열로 받는다. 임의 JSON 을 스키마로 표현할 수 없어서다.
+ * 근거는 `docs/adr/0064-사전보완-제안-값을-json-문자열로-받는다.md`.
  */
 export interface PreFillOutputSchema {
   readonly type: "object";
@@ -87,7 +91,7 @@ export interface PreFillOutputSchema {
             | { readonly type: "string"; readonly pattern: string }
             | { readonly enum: readonly string[] };
           readonly field: { readonly type: "string"; readonly pattern: string };
-          readonly value: Record<string, never>;
+          readonly valueJson: { readonly type: "string" };
         };
       };
     };
@@ -175,12 +179,17 @@ function buildOutputSchema(caseIds: readonly string[]): PreFillOutputSchema {
         items: {
           type: "object",
           additionalProperties: false,
-          required: ["caseId", "field", "value"],
+          required: ["caseId", "field", "valueJson"],
           properties: {
             caseId,
             field: { type: "string", pattern: "\\S" },
             // 값의 타입은 필드마다 다르다. 여기서 좁히면 정수 필드에 문자열을 받을 수 없다.
-            value: {},
+            // 그렇다고 빈 스키마 `{}` 로 둘 수도 없다. codex 는 모든 property 에 `type` 을 요구해
+            // `invalid_json_schema` 400 으로 거절하고, 그래서 사전보완이 한 번도 안 돌았다(#284).
+            // 타입을 전부 나열하는 길도 막혀 있다 — `object` 를 넣는 순간 strict mode 가 요구하는
+            // "모든 객체에 additionalProperties: false" 에 걸린다(ADR-0007 배경).
+            // 스키마로 좁힐 수 없는 값은 JSON 문자열로 받는다. `suiteJson` 과 같은 방식이다.
+            valueJson: { type: "string" },
           },
         },
       },
@@ -287,6 +296,10 @@ export function preFillPrompt(request: PreFillRequest): string {
     "- caseId 는 아래 목록에 있는 것만 씁니다. 여러 개를 이어 붙이지 마세요.",
     "- 서버가 선언한 type · enum · 범위를 지키는 값만 제안합니다.",
     "- 확신이 없으면 그 필드를 비워 두세요. 틀린 값보다 없는 편이 낫습니다.",
+    // 스키마는 valueJson 이 문자열이라는 것까지만 말한다. 안에 무엇을 담아야 하는지는
+    // 여기서 알린다. ADR-0007 이 suiteJson 형식을 프롬프트 본문으로 알린 것과 같다.
+    '- valueJson 에는 값을 JSON 으로 직렬화해 담습니다. 문자열이면 "Asia/Seoul", 숫자면 42,' +
+      ' 참거짓이면 true, 객체면 {"a":1} 입니다.',
     // 툴 설명·inputSchema·케이스 값은 전부 사용자 서버가 준 것이라 신뢰할 수 없다. authoring
     // 통로가 UNTRUSTED_WARNING·FIXED_INSTRUCTION 으로 막는 것과 같은 위험이고, 여기가 더
     // 직접적이다. 제안 값이 그대로 명세에 들어가 사용자 서버 호출로 이어진다.
@@ -442,6 +455,24 @@ const DISCARD_REASON = {
 } as const;
 
 /**
+ * `valueJson` 을 값으로 되돌린다.
+ *
+ * JSON 으로 읽히지 않으면 날것 문자열을 그대로 값으로 본다. 문자열 값에 따옴표를 빼고 보내는
+ * 것이 provider 의 흔한 실수인데, 그 하나로 정상 제안을 통째로 버리면 이 통로가 있으나 마나 해진다.
+ *
+ * 관대하게 읽어도 잘못된 값이 명세에 실리지는 않는다. 되돌린 값이 서버 선언을 어기는지는 아래
+ * `violatesDeclaration` 이 그대로 판정한다. 숫자 필드에 `abc` 가 오면 문자열 "abc" 로 읽히고,
+ * 그 다음 줄에서 선언 위반으로 버려진다.
+ */
+function parseProposedValue(valueJson: string): JsonValue {
+  try {
+    return JSON.parse(valueJson) as JsonValue;
+  } catch {
+    return valueJson;
+  }
+}
+
+/**
  * 제안 값이 그 필드의 서버 선언을 어기는지. 판정을 `runner` 에 위임한다.
  *
  * 여기서 타입·enum·범위 판정을 새로 쓰면 `test` 실행이 쓰는 규칙과 갈린다. 같은 값을 두고
@@ -497,7 +528,9 @@ export function validatePreFillResult(raw: unknown, request: PreFillRequest): Pr
     }
     const caseId = typeof proposal.caseId === "string" ? proposal.caseId : "";
     const field = typeof proposal.field === "string" ? proposal.field : "";
-    if (caseId === "" || field === "" || !("value" in proposal)) {
+    // 문자열이 아닌 valueJson 은 모양이 어긋난 것이다. 여기서 값을 읽지는 않는다.
+    const valueJson = typeof proposal.valueJson === "string" ? proposal.valueJson : null;
+    if (caseId === "" || field === "" || valueJson === null) {
       discarded.push({ caseId, field, reason: DISCARD_REASON.shape });
       continue;
     }
@@ -517,7 +550,7 @@ export function validatePreFillResult(raw: unknown, request: PreFillRequest): Pr
       continue;
     }
     const tool = tools.get(target.tool);
-    const value = proposal.value as JsonValue;
+    const value = parseProposedValue(valueJson);
     // 선언을 못 찾으면 검사할 근거가 없다. 통과시키지 않고 버린다. 이 함수는 public export 라
     // preparePreFillRequest 를 안 거친 요청이 들어올 수 있고, 그때 unredactedTools 가 비어
     // 선언 위반 값이 그대로 명세에 실린다. 근거 없이 통과시키는 쪽이 버리는 쪽보다 비싸다.

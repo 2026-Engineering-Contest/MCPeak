@@ -301,45 +301,62 @@ describe("routes.ts", () => {
     await expect(response.json()).resolves.toEqual({ error: expect.stringContaining("디렉터리") });
   });
 
-  it("쓰기 권한이 없으면 고칠 방법을 알리는 4xx를 준다", async () => {
-    server = await startTestServer();
-    const locked = join(server.root, "locked");
-    await mkdir(locked);
-    await chmod(locked, 0o500);
+  /**
+   * **Windows 에서는 이 상황을 만들 수 없다.** NTFS 는 POSIX mode bit 를 무시하므로
+   * `chmod(0o500)` 을 걸어도 파일이 그대로 써져 200 이 온다 — 검증하려는 `EACCES` 분류에
+   * 닿기 전에 전제가 성립하지 않는다(#304). 제품 코드는 그 환경에서도 정상이며, 여기서
+   * 건너뛰는 것은 **재현 수단이 없다는 사실**이다.
+   */
+  it.skipIf(process.platform === "win32")(
+    "쓰기 권한이 없으면 고칠 방법을 알리는 4xx를 준다",
+    async () => {
+      server = await startTestServer();
+      const locked = join(server.root, "locked");
+      await mkdir(locked);
+      await chmod(locked, 0o500);
 
-    try {
-      const response = await putFile(server, "locked/suite.json", JSON.stringify(VALID_SUITE));
-      expect(response.status).toBe(400);
-      await expect(response.json()).resolves.toEqual({
-        error: expect.stringContaining("쓰기 권한"),
-      });
-    } finally {
-      await chmod(locked, 0o700);
-    }
-  });
+      try {
+        const response = await putFile(server, "locked/suite.json", JSON.stringify(VALID_SUITE));
+        expect(response.status).toBe(400);
+        await expect(response.json()).resolves.toEqual({
+          error: expect.stringContaining("쓰기 권한"),
+        });
+      } finally {
+        await chmod(locked, 0o700);
+      }
+    },
+  );
 
-  it("분류하지 않은 파일 시스템 오류는 상위 generic 500 응답으로 전파한다", async () => {
-    const root = await mkdtemp(join(tmpdir(), "mcpeak-dashboard-generic-error-"));
-    const dashboard = await startDashboardServer({ port: 0, root });
-    const tooLongName = `${"a".repeat(300)}.json`;
+  /**
+   * **errno 가 플랫폼마다 다르다.** 300자 파일명은 Linux 에서 `ENAMETOOLONG`(우리가 분류하지
+   * 않는 코드 → 500)이지만 Windows 는 다른 errno 를 내 400 분기에 잡힌다(#304). "분류하지
+   * 않은 오류" 라는 전제를 그 환경에서 만들 수단이 없다.
+   */
+  it.skipIf(process.platform === "win32")(
+    "분류하지 않은 파일 시스템 오류는 상위 generic 500 응답으로 전파한다",
+    async () => {
+      const root = await mkdtemp(join(tmpdir(), "mcpeak-dashboard-generic-error-"));
+      const dashboard = await startDashboardServer({ port: 0, root });
+      const tooLongName = `${"a".repeat(300)}.json`;
 
-    try {
-      const response = await fetch(
-        `http://127.0.0.1:${dashboard.port}/api/suites/${encodeURIComponent(tooLongName)}`,
-        {
-          method: "PUT",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ content: JSON.stringify(VALID_SUITE), baseMtimeMs: 0 }),
-        },
-      );
+      try {
+        const response = await fetch(
+          `http://127.0.0.1:${dashboard.port}/api/suites/${encodeURIComponent(tooLongName)}`,
+          {
+            method: "PUT",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ content: JSON.stringify(VALID_SUITE), baseMtimeMs: 0 }),
+          },
+        );
 
-      expect(response.status).toBe(500);
-      await expect(response.json()).resolves.toEqual({
-        error: expect.stringContaining("서버 내부 오류:"),
-      });
-    } finally {
-      await dashboard.close();
-      await rm(root, { recursive: true, force: true });
-    }
-  });
+        expect(response.status).toBe(500);
+        await expect(response.json()).resolves.toEqual({
+          error: expect.stringContaining("서버 내부 오류:"),
+        });
+      } finally {
+        await dashboard.close();
+        await rm(root, { recursive: true, force: true });
+      }
+    },
+  );
 });

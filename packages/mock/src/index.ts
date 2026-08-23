@@ -153,6 +153,24 @@ function lookup(
   return { hit: false };
 }
 
+/**
+ * `tools` 에 없는 이름으로 호출됐을 때의 문장.
+ *
+ * **주입 미스와 갈라 적는다.** 둘을 "주입된 응답이 없습니다" 하나로 뭉개면 진단문이 시키는
+ * `mock.on('<없는툴>', ...)` 이 곧바로 거절당해(`declaredTools` 검사) 사용자가 막다른 길에
+ * 선다. 고칠 자리가 다르다 — 이쪽은 `responses` 가 아니라 `tools` 다.
+ */
+function undeclaredToolMessage(tool: string, declared: readonly string[]): string {
+  return [
+    `→ 툴 '${tool}' 은(는) 이 목 서버가 선언한 툴이 아닙니다.`,
+    declared.length > 0
+      ? `→ 선언된 툴: ${declared.map((t) => `'${t}'`).join(", ")}`
+      : "→ 선언된 툴이 하나도 없습니다.",
+    "→ tools/list 로 광고하지 않은 이름이라 어떤 응답도 주입할 수 없습니다.",
+    `→ 이 툴이 필요하면 정의의 tools 에 { "name": "${tool}", "inputSchema": … } 를 먼저 추가하세요.`,
+  ].join("\n");
+}
+
 /** 주입된 응답이 없을 때 사용자가 읽을 문장을 만든다. 실패 메시지가 곧 제품이다. */
 function missMessage(tool: string, args: unknown, registry: Registry): string {
   const lines = [
@@ -356,6 +374,17 @@ function buildServer(tools: ToolDef[], registry: Registry): Server {
   const schemas = new Map(tools.map((tool) => [tool.name, tool.inputSchema]));
   server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools }));
   server.setRequestHandler(CallToolRequestSchema, async (req) => {
+    // 선언 여부를 주입 조회보다 **먼저** 본다. 주입 경로(`on`·정의 파일)는 이미 미지의 툴
+    // 이름을 막는데(#239) 호출 경로만 그 지식을 안 썼다. 두 진입점이 같은 규칙을 쓴다는
+    // 것이 이 패키지의 계약이다(README「응답 매칭 규칙」).
+    if (!schemas.has(req.params.name)) {
+      return {
+        content: [
+          { type: "text", text: undeclaredToolMessage(req.params.name, [...schemas.keys()]) },
+        ],
+        isError: true,
+      };
+    }
     let outcome: ReturnType<typeof lookup>;
     try {
       outcome = lookup(registry, req.params.name, req.params.arguments);

@@ -37,7 +37,7 @@ import {
 } from "./external-wiring.js";
 import type { FindingGroup } from "./finding-group.js";
 import { FINDING_GROUP } from "./finding-group.js";
-import { TEST_USAGE_HINT } from "./help.js";
+import { commandDiscovery, TEST_USAGE_HINT } from "./help.js";
 import {
   hasDiagnosticContent,
   isAbnormalExit,
@@ -377,8 +377,9 @@ export function parseTestCommand(argv: readonly string[]): TestCommandInput {
       json = true;
     } else if (token.startsWith("--json=")) {
       fail("`--json`은 값을 받지 않습니다.");
-    } else if (token.startsWith("-")) fail(`지원하지 않는 test 옵션 '${token}'입니다.`);
-    else fail(`추가 위치 인자 '${token}'는 허용되지 않습니다.`);
+    } else if (token.startsWith("-"))
+      fail(`지원하지 않는 test 옵션 '${escapeTerminalText(token)}'입니다.`);
+    else fail(`추가 위치 인자 '${escapeTerminalText(token)}'는 허용되지 않습니다.`);
   }
   if (command === undefined)
     throw new CliCommandError({
@@ -515,21 +516,46 @@ function renderDeterminism(
     `${blocks}\n`
   );
 }
-/** 초기화 명령 실패 안내. 한 줄로 유지한다. hint 의 개행은 format 이 이스케이프한다. */
+/**
+ * 초기화 명령 실패 안내.
+ *
+ * 진단(종료 코드·stderr 꼬리)과 다음 행동(hint)을 한 줄에 눌러 담지 않는다(#289). 예전에는
+ * 그 둘을 이어 붙이며 경계를 두지 않아 `... ENOENT 명령이 단독으로 성공하는지 ...` 처럼
+ * `ENOENT` 가 `명령` 을 수식하는 말로 읽혔다. 진단은 `message` 에 줄을 나눠 담고, `hint` 는
+ * 다음에 할 일 한 문장만 남긴다 — `format()` 이 이제 개행을 이스케이프하지 않으므로
+ * (`--reset-cmd` 명령이 단독으로) 그대로 구조가 유지된다.
+ *
+ * `error.command`·stderr 꼬리는 사용자가 지정한 명령과 그 명령이 만든 출력이라, 우리 문장이
+ * 아닌 값이 섞이는 자리다. 화면을 깨뜨릴 제어 문자가 실려도 그대로 나가지 않도록 이스케이프한다.
+ */
 function resetFailure(error: ResetCommandError): CliFailure {
   const exit = error.exitCode === null ? "없음" : String(error.exitCode);
   const tail = error.stderr.split("\n").filter(Boolean).slice(-3).join(" | ");
-  const stderr = tail === "" ? "" : ` stderr 마지막 3줄: ${tail}`;
+  const stderrLine = tail === "" ? "" : `\n  stderr 마지막 3줄: ${escapeTerminalText(tail)}`;
   return {
     code: "RESET_COMMAND_FAILED",
-    message: `초기화 명령이 실패했습니다: ${error.command}`,
-    hint: `종료 코드: ${exit}.${stderr} 명령이 단독으로 성공하는지 확인한 뒤 다시 실행하세요.`,
+    message:
+      `초기화 명령이 실패했습니다: ${escapeTerminalText(error.command)}\n` +
+      `  종료 코드: ${exit}${stderrLine}`,
+    hint: "`--reset-cmd` 명령이 단독으로 성공하는지 확인한 뒤 다시 실행하세요.",
   };
 }
+/**
+ * `message`·`hint` 는 **여기서 이스케이프하지 않는다**(#289). 그 필드는 우리가 여러 줄로
+ * 공들여 쓴 안내와, 자식 프로세스·경로처럼 신뢰 못 할 값이 섞여 있다 — 어느 부분이 우리 글이고
+ * 어느 부분이 남의 값인지는 필드를 다 만든 뒤인 여기서는 구분할 수 없다. 그래서 이스케이프는
+ * **만드는 자리에서, 신뢰 못 할 값에만** 건다(`resetFailure`·`externalOpenFailure`·옵션 파싱의
+ * `escapeTerminalText(token)` 호출들). 우리가 쓴 리터럴 개행은 그 자리를 거치지 않으므로
+ * 구조를 유지한 채 여기까지 그대로 온다.
+ *
+ * `code`·`issue.*` 는 계속 통째로 건다. `code` 는 항상 우리 열거형이라 무해하고, `issue.*` 는
+ * `validateSuite` 가 주는 데이터 레코드라 우리가 개행을 심을 자리가 아니다 — 한 줄 필드에
+ * 통째로 걸어도 잃을 구조가 없다.
+ */
 function format(failure: CliFailure): string {
   const code =
     failure.coreCode === undefined ? failure.code : `${failure.code}/${failure.coreCode}`;
-  let result = `오류 [${escapeTerminalText(code)}]: ${escapeTerminalText(failure.message)}\n해결: ${escapeTerminalText(failure.hint)}`;
+  let result = `오류 [${escapeTerminalText(code)}]: ${failure.message}\n해결: ${failure.hint}`;
   for (const issue of failure.issues ?? [])
     result += `\n- [${escapeTerminalText(issue.code)}] ${escapeTerminalText(issue.path)}: ${escapeTerminalText(issue.message)}\n  해결: ${escapeTerminalText(issue.hint)}`;
   return `${result}\n`;
@@ -619,14 +645,15 @@ async function runCliCore(
     if (["generate", "record", "mock"].includes(argv[0] ?? ""))
       return writeFailure(dependencies, {
         code: "COMMAND_NOT_IMPLEMENTED",
-        message: `'${argv[0]}' 명령은 아직 구현되지 않았습니다.`,
-        // "test 명령만" 이라고 적어 두면 틀린 안내다. generate·replay 는 index.ts 가
-        // 가로채 실제로 동작한다. 여기 걸리는 것은 진입점이 없는 이름뿐이다.
-        hint: "사용 가능한 명령: test, generate, repair, replay. 전체 도움말: mcpeak --help",
+        message: `'${escapeTerminalText(argv[0] ?? "")}' 명령은 아직 구현되지 않았습니다.`,
+        // "test 명령만" 이라고 적어 두면 틀린 안내다. generate 는 index.ts 가 가로채 실제로
+        // 동작한다. `replay` 는 위에서 먼저 걸려 여기 오지 않는다(ADR-0059 로 제거됐다).
+        // 여기 걸리는 것은 진입점이 없는 이름뿐이다.
+        hint: commandDiscovery,
       });
     return writeFailure(dependencies, {
       code: "CLI_USAGE",
-      message: `알 수 없는 CLI 명령 '${argv[0]}'입니다.`,
+      message: `알 수 없는 CLI 명령 '${escapeTerminalText(argv[0] ?? "")}'입니다.`,
       hint: TEST_USAGE_HINT,
     });
   }
@@ -729,8 +756,12 @@ async function runCliCore(
         ? { code: "MCP_CONNECTION_FAILED", ...dictionary.MCP_CONNECTION_FAILED }
         : {
             code: "MCP_CONNECTION_FAILED",
-            message: core.message,
-            hint: core.hint,
+            // `core.message`·`core.hint` 는 지금은 `@mcpeak/core` 의 고정 열거형 문구뿐이라
+            // 안전하지만, 타입은 `string` 이라 그 사실을 여기서 강제하지 못한다. `format()`
+            // 이 더 이상 통째로 이스케이프하지 않으므로(#289), 패키지 경계를 넘어온 값은
+            // 여기서 직접 건다 — core 쪽에 다치는 값이 생겨도 이 자리가 계속 안전하다.
+            message: escapeTerminalText(core.message),
+            hint: escapeTerminalText(core.hint),
             coreCode: core.code,
           },
     );
@@ -1239,51 +1270,91 @@ export function renderReplayMissDiagnostics(misses: readonly ReplayMissDetail[])
  * 판정만 하고 쓰기는 하지 않는다 — 순수 함수라 배타성 자체를 프로세스 없이 고정할 수 있다.
  */
 /**
- * External 세션을 열지 못한 실패를 사용자 문장으로 옮긴다(#260).
+ * External 세션을 열지 못한 실패를 사용자 문장으로 옮긴다(#260, #290).
  *
  * **원인마다 다음에 할 일이 다르므로 갈래마다 다른 문장을 쓴다.** 한때 이 자리가 문장 하나로
  * 모든 실패를 덮었고, 그래서 경로를 잘못 친 사람에게 "완료된 Replay 원본이 아닙니다" 와
  * "쓰기 권한을 확인하세요" 를 동시에 말했다 — 앞은 손상된 세션의 문안이고 뒤는 녹화의 문안이라
  * 재생 실패에는 둘 다 맞지 않았다.
  *
- * **경로를 `message` 에 싣는다.** `hint` 에 두 줄을 넣으면 `format()` 이 개행을 이스케이프해
- * `
-` 로 찍힌다(ADR-0058 과 같은 계열의 문제). 갈래마다 할 말이 한 줄이면 그 문제를
- * 건드리지 않고도 필요한 것을 다 말할 수 있어서, `format()` 은 그대로 둔다.
+ * **경로를 `message` 에 싣는다.** 세션 id 는 넣지 않는다 — 사용자가 준 적 없는 `"default"`
+ * 대신 사용자가 아는 경로를 보여준다.
  *
- * 세션 id 는 넣지 않는다 — 사용자가 준 적 없는 `"default"` 대신 사용자가 아는 경로를 보여준다.
+ * `path`·`detail` 은 우리 문장이 아니다. `path` 는 사용자가 CLI 에 그대로 타이핑한 값이고
+ * `detail` 은 record 가 던진 오류의 원문(SQLite 원문을 포함할 수 있다)이라, 둘 다 화면을
+ * 깨뜨릴 값이 실릴 수 있어 이스케이프한다(#289) — `message` 안에서 그 부분만 걸고, `format()`
+ * 은 이제 필드 전체를 다시 이스케이프하지 않는다.
  */
 export function externalOpenFailure(mode: ExternalMode, path: string, error: unknown): CliFailure {
   const code = (error as { code?: unknown })?.code;
   const detail = error instanceof Error ? error.message : String(error);
+  const shownPath = escapeTerminalText(path);
 
   if (error instanceof SessionFileMissingError)
     return {
       code: "EXTERNAL_SESSION_FAILED",
-      message: `세션 파일을 찾을 수 없습니다: ${path}`,
+      message: `세션 파일을 찾을 수 없습니다: ${shownPath}`,
       hint: "경로를 확인하거나, `--record-session <path>` 로 먼저 녹화하세요.",
     };
   if (code === "SESSION_NOT_FOUND")
     return {
       code: "EXTERNAL_SESSION_FAILED",
-      message: `세션 파일에 녹화된 외부 호출이 없습니다: ${path}`,
+      message: `세션 파일에 녹화된 외부 호출이 없습니다: ${shownPath}`,
       hint: "`--record-session` 으로 다시 녹화하세요. 빈 세션으로는 아무 호출도 막지 못합니다.",
     };
   if (code === "REPLAY_SOURCE_INVALID")
     return {
       code: "EXTERNAL_SESSION_FAILED",
-      message: `녹화가 완료되지 않은 세션입니다: ${path}`,
+      message: `녹화가 완료되지 않은 세션입니다: ${shownPath}`,
       hint: "녹화 실행이 실패했을 수 있습니다. `--record-session` 으로 다시 녹화하세요.",
+    };
+  // record 가 이 코드에 붙이는 원문(detail)은 두 줄짜리 안내다(ADR-0061). fallback 으로
+  // 떨어져 그 원문을 그대로 이스케이프하면 안의 개행이 이스케이프 시퀀스로 찍혀, record
+  // 쪽에서 이미 고친 문제(#289)가 여기서 재발한다 — 그래서 우리 문장으로 갈아 별도 갈래를 둔다.
+  if (code === "SCHEMA_VERSION_UNSUPPORTED")
+    return {
+      code: "EXTERNAL_SESSION_FAILED",
+      message: `이 버전의 mcpeak 이 지원하지 않는 세션 파일입니다: ${shownPath}`,
+      hint: "이 버전의 mcpeak 으로 다시 녹화하세요.",
+    };
+  // #290. 갈래를 셋만 보고 넷째(이미 존재)를 놓치면, 녹화를 두 번 돌린 흔한 실수가 아래
+  // fallback 으로 떨어져 "쓰기 권한을 확인하세요" 를 듣는다 — 권한은 멀쩡하고, 오히려 있는
+  // 파일을 지키려고 막은 것이라 원인과 반대 방향이다.
+  if (code === "SESSION_ALREADY_EXISTS")
+    return {
+      code: "EXTERNAL_SESSION_FAILED",
+      message: `세션 파일에 이미 녹화가 있습니다: ${shownPath}`,
+      hint:
+        "기존 녹화를 덮어쓰지 않습니다. 다른 `--record-session` 경로를 쓰거나, " +
+        "다시 녹화하려면 그 파일을 지우세요.",
     };
   // 여기부터는 우리가 분류하지 못한 실패다. 원인 문장을 버리지 않고 그대로 보여주되,
   // 안내는 모드에 맞는 것 하나만 준다 — 재생은 읽기라 쓰기 권한을 말할 이유가 없다.
   return {
     code: "EXTERNAL_SESSION_FAILED",
-    message: `External 세션을 열지 못했습니다: ${path} (${detail})`,
+    message: `External 세션을 열지 못했습니다: ${shownPath} (${escapeTerminalText(detail)})`,
     hint:
       mode === "replay"
         ? "경로가 맞는지와 그 파일을 읽을 수 있는지 확인하세요."
         : "경로의 디렉터리가 있는지와 쓰기 권한을 확인하세요.",
+  };
+}
+
+/**
+ * `wiring.finish()` 가 세션을 닫는 데 실패했을 때(#289). record 의 store `finish()` 는 코드
+ * 둘만 던진다 — `SESSION_NOT_RUNNING`(한 줄) 과 `INCOMPLETE_SESSION`(record 가 여러 줄로
+ * 쓴, 이미 마스킹된 안전한 진단. `display` 는 ADR-0053 이 마스킹을 보장한다).
+ *
+ * `INCOMPLETE_SESSION` 은 그대로 둬야 구조가 산다. 그 밖은 한 줄이라 이스케이프해도 잃을
+ * 구조가 없고, 어떤 값이 올지 모르는 자리이므로 기본은 이스케이프한다.
+ */
+export function externalCloseFailure(error: unknown): CliFailure {
+  const code = (error as { code?: unknown })?.code;
+  const detail = error instanceof Error ? error.message : String(error);
+  return {
+    code: "EXTERNAL_SESSION_FAILED",
+    message: "External 세션을 닫지 못했습니다.",
+    hint: code === "INCOMPLETE_SESSION" ? detail : escapeTerminalText(detail),
   };
 }
 
@@ -1366,11 +1437,7 @@ export async function runCli(
     const notice = externalSessionNotice(summary);
     if (notice !== undefined) dependencies.writeStderr(notice);
   } catch (error) {
-    return writeFailure(dependencies, {
-      code: "EXTERNAL_SESSION_FAILED",
-      message: "External 세션을 닫지 못했습니다.",
-      hint: error instanceof Error ? error.message : String(error),
-    });
+    return writeFailure(dependencies, externalCloseFailure(error));
   }
   return exitCode;
 }

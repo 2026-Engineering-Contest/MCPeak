@@ -322,6 +322,17 @@ describe("runCli", () => {
       expect(d.value.connect).not.toHaveBeenCalled();
     }
   });
+  it("알 수 없는 옵션·추가 위치 인자에 실린 제어 문자를 이스케이프한다(#289)", async () => {
+    const option = deps();
+    await runCli(["test", "suite.json", "--command", "a", "--bad\n"], option.value);
+    expect(option.writes.err.join("")).toContain("--bad\\u000a");
+
+    // 옵션(`-` 로 시작)과 위치 인자는 서로 다른 분기(parseTestCommand 의 두 fail 호출)라
+    // 옵션 쪽만 확인하면 위치 인자 분기가 이스케이프를 놓쳐도 잡히지 않는다.
+    const positional = deps();
+    await runCli(["test", "suite.json", "--command", "a", "extra\n"], positional.value);
+    expect(positional.writes.err.join("")).toContain("extra\\u000a");
+  });
   it("중복 command, 값 없는 option, 알 수 없는 option과 추가 위치 인자를 거절한다", async () => {
     for (const argv of [
       ["test", "x.json", "--command", "a", "--command", "b"],
@@ -344,6 +355,31 @@ describe("runCli", () => {
     await runCli(["bad\n\u001b"], unknown.value);
     expect(unknown.writes.err.join("")).toContain("\\u000a");
     expect(unknown.writes.err.join("")).toContain("\\u001b");
+  });
+  it("record·mock 도 아직 구현되지 않은 것으로 안내하고, 사라진 replay 를 사용 가능한 명령에 넣지 않는다(#289)", async () => {
+    for (const name of ["record", "mock"]) {
+      const d = deps();
+      await runCli([name], d.value);
+      const err = d.writes.err.join("");
+      expect(err).toContain("COMMAND_NOT_IMPLEMENTED");
+      expect(err).toContain(`'${name}' 명령은 아직 구현되지 않았습니다`);
+      // ADR-0059 로 걷힌 명령이다. 사용 가능하다고 안내하면 사용자를 다시 막다른 곳으로 보낸다.
+      expect(err).not.toContain("replay");
+    }
+  });
+  // #289. format() 이 예전에는 message·hint 를 통째로 이스케이프해, 우리가 3줄로 쓴 설명이
+  // 화면에서 이스케이프 시퀀스 두 개로 이어진 한 줄이 됐다. 여기는 이스케이프 대상이 될
+  // 신뢰 못 할 값이 전혀 없는, 순수하게 우리가 쓴 정적 문구다 - 실제 개행으로 나가야 한다.
+  it("--determinism 과 세션 옵션 충돌 안내가 실제 개행으로 여러 줄에 나간다", async () => {
+    const d = deps();
+    await runCli(
+      ["test", "suite.json", "--command", "node", "--determinism", "--session", "x.db"],
+      d.value,
+    );
+    const err = d.writes.err.join("");
+    expect(err).toContain("`--determinism`은 External 세션 옵션과 함께 쓸 수 없습니다.\n");
+    expect(err).toContain("→ `--determinism`은 서버에 2회 연결하지만");
+    expect(err).not.toContain("\\u000a");
   });
   it("제거된 verify 는 오타가 아니라 제거됐다고 말하고 갈아탈 곳을 알려준다(ADR-0059)", async () => {
     // 발행본 0.9.0 에 나갔던 명령이다. "알 수 없는 명령" 으로 끝내면 오타와 구분되지 않아,
@@ -611,6 +647,25 @@ describe("runCli", () => {
     expect(text).toContain("MCP_CONNECTION_FAILED/PROCESS_START_FAILED");
     expect(text).not.toContain("SECRET");
     expect(text).not.toContain("secret-command");
+  });
+  /**
+   * `@mcpeak/core` 의 실제 McpClientError 문구는 전부 고정 열거형이라 지금은 제어 문자가
+   * 실릴 수 없다. 다만 `format()` 이 더 이상 message·hint 를 통째로 이스케이프하지 않으므로
+   * (#289), `coreError()` 가 돌려주는 값을 여기서 직접 걸지 않으면 core 쪽에 다치는 값이
+   * 생기는 순간 화면이 깨진다 — 그 계약을 이 테스트가 고정한다.
+   */
+  it("core 오류의 message·hint 에 실린 제어 문자도 이스케이프한다", async () => {
+    const error = {
+      name: "McpClientError" as const,
+      code: "PROCESS_START_FAILED",
+      message: "연결 실패\n주입된 줄",
+      hint: "설정을 확인하세요.",
+    };
+    const d = deps({ connect: async () => Promise.reject(error) });
+    await runCli(["test", "x.json", "--command", "node"], d.value);
+    const text = d.writes.err.join("");
+    expect(text).toContain("\\u000a");
+    expect(text).not.toContain("연결 실패\n주입된 줄");
   });
   it("Runner 시작 실패에는 force cleanup만 하고 finalizer 실패 뒤 추가 종료하지 않는다", async () => {
     const start = deps({
@@ -1653,6 +1708,16 @@ describe("결정론성 확인", () => {
     expect(err).toContain("git checkout .");
     expect(err).toContain("128");
     expect(err).toContain("fatal: not a git repository");
+    // #289 — 진단과 다음 행동을 한 줄에 눌러 담지 않는다. 예전에는 stderr 꼬리 바로 뒤에
+    // hint 문장이 경계 없이 붙어 `... repository 명령이 단독으로` 처럼 읽혔다.
+    expect(err).toContain("종료 코드: 128");
+    expect(err).toContain("stderr 마지막 3줄: fatal: not a git repository");
+    // 부재 확인만으로는 두 문자열이 다른 이유로 안 붙어 있어도(예: 사이에 그냥 이스케이프
+    // 시퀀스만 남아도) 통과한다. 경계 자체가 실제 개행인지 직접 확인한다.
+    expect(err).toContain("fatal: not a git repository\n해결:");
+    // 진단은 message 에, hint 는 다음 행동 한 문장만 — 사전값이 갖고 있던 플래그 이름이
+    // 동적 안내에서 빠졌던 것도 이 조합이 복원한다.
+    expect(err).toContain("`--reset-cmd` 명령이 단독으로 성공하는지 확인한 뒤 다시 실행하세요.");
   });
 
   it("복원이 ResetCommandError 가 아닌 오류로 죽어도 사전 문장으로 나간다", async () => {

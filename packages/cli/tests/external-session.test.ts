@@ -2,6 +2,7 @@ import type { ReplayMissDetail, SessionSummary } from "@mcpeak/record/external";
 import { describe, expect, it } from "vitest";
 import { SessionFileMissingError } from "../src/external-wiring.js";
 import {
+  externalCloseFailure,
   externalOpenFailure,
   externalSessionNotice,
   parseTestCommand,
@@ -309,7 +310,7 @@ describe("External 세션 열기 실패 문장", () => {
     expect(record.hint).toContain("쓰기 권한");
   });
 
-  it("어느 갈래도 내부 세션 id 를 노출하지 않고 개행을 넣지 않는다", () => {
+  it("어느 갈래도 내부 세션 id 를 노출하지 않고, 이 갈래들은 한 줄이다", () => {
     const failures = [
       externalOpenFailure("replay", PATH, new SessionFileMissingError(PATH)),
       externalOpenFailure("replay", PATH, coded("SESSION_NOT_FOUND", "x")),
@@ -321,9 +322,106 @@ describe("External 세션 열기 실패 문장", () => {
     for (const failure of failures) {
       // 사용자가 준 적 없는 이름이라 화면에서 무엇을 가리키는지 알 수 없다.
       expect(failure.message).not.toContain("default");
-      // hint 에 개행을 넣으면 format() 이 이스케이프해 리터럴로 찍힌다.
+      // 이 갈래들은 할 말이 원래 한 줄이다 — resetFailure 처럼 진단을 나눠 담을 이유가
+      // 없다. format() 은 이제 message·hint 를 다시 이스케이프하지 않으므로(#289), 여기서
+      // 개행이 없다는 것은 format() 이 지켜서가 아니라 우리가 애초에 한 줄로 썼기 때문이다.
       expect(failure.hint).not.toContain(newline);
       expect(failure.message).not.toContain(newline);
     }
+  });
+
+  /**
+   * #290 이 지목한 잔여 갈래 1 — `SESSION_ALREADY_EXISTS` 가 갈래 없이 fallback 으로 떨어져
+   * "쓰기 권한을 확인하세요" 를 듣던 자리. 권한은 멀쩡하고, 오히려 있는 파일을 지키려고
+   * 막은 것이라 원인과 반대 방향이었다.
+   */
+  it("이미 존재하는 세션에 다시 녹화하면 원인에 맞는 안내를 준다", () => {
+    const failure = externalOpenFailure("record", PATH, coded("SESSION_ALREADY_EXISTS", "x"));
+
+    expect(failure.message).toContain("이미 녹화가 있습니다");
+    expect(failure.message).toContain(PATH);
+    expect(failure.hint).not.toContain("쓰기 권한");
+    expect(failure.hint).toContain("--record-session");
+  });
+
+  /**
+   * ADR-0061 로 재생이 읽기 전용이 되면서 새로 닿을 수 있게 된 코드다. record 가 이 코드에
+   * 붙이는 원문은 두 줄인데(`SCHEMA_VERSION_UNSUPPORTED` 문구), fallback 으로 떨어져 그
+   * 원문을 그대로 이스케이프하면 안의 개행이 escape sequence 로 찍혀 #289 가 고친 문제가
+   * 재발한다 — 그래서 우리 문장으로 가는 별도 갈래가 필요하다.
+   */
+  it("store version 이 다른 세션은 다시 녹화하라고 말하고 record 의 원문을 새지 않는다", () => {
+    const failure = externalOpenFailure(
+      "replay",
+      PATH,
+      coded(
+        "SCHEMA_VERSION_UNSUPPORTED",
+        "이 세션 파일은 지원하지 않는 store version 입니다(현재 1).\n→ 이 버전의 mcpeak 으로 다시 녹화하세요.",
+      ),
+    );
+
+    expect(failure.message).not.toContain(newline);
+    expect(failure.hint).not.toContain(newline);
+    expect(failure.hint).toContain("다시 녹화");
+  });
+
+  /**
+   * `path`·record 원문은 사용자가 타이핑한 값·record 가 던진 오류 원문이라 우리 글이 아니다
+   * (#289). 화면을 깨뜨릴 제어 문자가 실려도 이스케이프되어 나가는지 본다.
+   */
+  it("경로와 원인 문장에 실린 제어 문자를 이스케이프한다", () => {
+    const dirtyPath = "bad\npath";
+    const missing = externalOpenFailure(
+      "replay",
+      dirtyPath,
+      new SessionFileMissingError(dirtyPath),
+    );
+    expect(missing.message).toContain("\\u000a");
+    expect(missing.message).not.toContain(newline);
+
+    const fallback = externalOpenFailure(
+      "record",
+      PATH,
+      new Error(`boom${String.fromCharCode(27)}[31m`),
+    );
+    expect(fallback.message).toContain("\\u001b");
+    expect(fallback.message).not.toContain(String.fromCharCode(27));
+  });
+});
+
+/**
+ * `wiring.finish()` 실패를 사용자 문장으로 옮긴다(#289). record 의 store `finish()` 가
+ * 던질 수 있는 코드는 둘뿐이다 — `SESSION_NOT_RUNNING`(한 줄) 과 `INCOMPLETE_SESSION`
+ * (record 가 여러 줄로 쓴, 이미 마스킹된 진단). 이 갈래를 놓치면 CodeRabbit 이 지적한 대로
+ * `error.message` 를 이스케이프 없이 그대로 hint 에 실어 화면을 깨뜨릴 수 있었다.
+ */
+describe("External 세션 닫기 실패 문장", () => {
+  const coded = (code: string, message: string): Error =>
+    Object.assign(new Error(message), { code });
+
+  it("INCOMPLETE_SESSION 은 record 의 여러 줄 진단을 그대로 보여준다", () => {
+    const detail =
+      "External session 'default'에 완료되지 않은 외부 호출이 1건 있습니다.\n" +
+      "  - GET https://example.com/<redacted>\n" +
+      "→ 지원하지 않는 응답을 받으면 그 호출은 저장하지 않고 세션을 실패로 둡니다.";
+    const failure = externalCloseFailure(coded("INCOMPLETE_SESSION", detail));
+
+    expect(failure.hint).toBe(detail);
+  });
+
+  it("그 밖의 원인은 이스케이프해서 화면을 깨뜨릴 값을 막는다", () => {
+    const failure = externalCloseFailure(
+      coded("SESSION_NOT_RUNNING", `boom${String.fromCharCode(27)}[31m`),
+    );
+
+    expect(failure.hint).toContain("\\u001b");
+    expect(failure.hint).not.toContain(String.fromCharCode(27));
+  });
+
+  it("Error 가 아닌 값도 문자열로 다뤄 죽지 않는다", () => {
+    const failure = externalCloseFailure("문자열 원인");
+
+    expect(failure.hint).toBe("문자열 원인");
+    expect(failure.message).toContain("닫지 못했습니다");
   });
 });

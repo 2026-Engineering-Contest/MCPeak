@@ -286,6 +286,21 @@ describe("checkDeterminism", () => {
     expect(result.differences[0]?.hint).toBeUndefined();
   });
 
+  it("마스크와 같은 토큰이 본문에 있어도 없는 원인을 지목하지 않는다", () => {
+    // 마스크가 고정값이면 여기서 두 문자열이 마스킹 후 같아져 randomId 가 나온다. 실제로는
+    // UUID 와 그 토큰의 자리가 맞바뀐 것이라 UUID 하나로 설명되는 차이가 아니다.
+    const token = "\uFFFFr";
+    const run1 = `{"a":"a2901751-fafb-4942-8ecd-52d019cd7865","b":"${token}"}`;
+    const run2 = `{"a":"${token}","b":"f480ac48-a7f3-4698-a557-d5ff48785907"}`;
+    const result = checkDeterminism({
+      first: [observation({ response: withText(run1) })],
+      second: [observation({ response: withText(run2) })],
+      stateRestored: true,
+    });
+    expect(result.differences).toHaveLength(1);
+    expect(result.differences[0]?.hint).toBeUndefined();
+  });
+
   it("패턴 자리 수가 다르면 힌트를 달지 않는다", () => {
     const run1 = '{"ids":["a2901751-fafb-4942-8ecd-52d019cd7865"]}';
     const run2 =

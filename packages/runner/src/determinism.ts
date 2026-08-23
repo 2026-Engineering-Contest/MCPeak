@@ -142,6 +142,9 @@ const findFirstDifference = (firstRoot: unknown, secondRoot: unknown): DiffHit |
 const formatValue = (value: MaybeMissing, redaction?: RunnerRedactionOptions): string =>
   value === MISSING ? "(없음)" : clampObservedText(canonicalJson(value), redaction);
 
+/** 마스크가 본문과 겹칠 때 덧붙이는 문자. 비문자라 서버 본문에 나올 일이 거의 없다. */
+const MASK_FILLER = "\uFFFF";
+
 /**
  * §6 휴리스틱. 패턴은 **앵커 없이** 찾는다 — 실서버는 결과를 JSON 으로 만들어 text 블록에
  * 문자열로 감싸 보내는 것이 기본이고, 그러면 비교 지점이 값 하나가 아니라 JSON 전문 한
@@ -175,8 +178,10 @@ const HINT_PATTERNS = [
 /**
  * 두 문자열의 차이를 패턴 하나로 설명할 수 있으면 그 이름을 낸다.
  *
- * 마스크가 비문자 U+FFFF 로 시작하는 것은 서버 본문과 겹치지 않기 위해서다. 겹치면 마스킹한
- * 두 문자열이 우연히 같아져 없는 원인을 지목한다.
+ * 마스크가 비문자 U+FFFF 로 시작하는 것은 서버 본문과 겹치지 않기 위해서다. 다만 시작 문자만으로는
+ * 모자란다 — 그 토큰이 실제로 본문에 실려 있으면 마스킹한 두 문자열이 우연히 같아져 없는 원인을
+ * 지목한다. 그래서 치환 전에 **양쪽 본문에 없는 토큰이 될 때까지** 늘린다. 문자열이 유한하므로
+ * 늘리기는 반드시 끝난다.
  *
  * `match`·`replace` 는 g 플래그 정규식의 `lastIndex` 를 매번 0 으로 되돌리므로 모듈 상수를
  * 공유해도 호출 순서에 결과가 걸리지 않는다. 결정론성이 핵심 가치라 기대는 성질을 적어 둔다.
@@ -188,9 +193,11 @@ const detectStringHint = (first: string, second: string): DeterminismHint | unde
   for (const candidate of HINT_PATTERNS) {
     const leftHits = left.match(candidate.pattern) ?? [];
     const rightHits = right.match(candidate.pattern) ?? [];
+    let mask = candidate.mask;
+    while (left.includes(mask) || right.includes(mask)) mask += MASK_FILLER;
     // 후보로 잡지 않은 패턴도 가린다. 뒤 패턴이 이 자리를 다시 집는 것을 막는 것이 목적이다.
-    left = left.replace(candidate.pattern, candidate.mask);
-    right = right.replace(candidate.pattern, candidate.mask);
+    left = left.replace(candidate.pattern, mask);
+    right = right.replace(candidate.pattern, mask);
     if (hint !== undefined) continue;
     // 자리 수가 다르면 값이 대응되지 않는다. 정렬을 추정하지 않고 이 패턴은 넘긴다.
     if (leftHits.length !== rightHits.length) continue;

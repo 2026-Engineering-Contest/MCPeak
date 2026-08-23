@@ -4,6 +4,7 @@ import type {
   AnswerRequest,
   ApiError,
   PutFileRequest,
+  ServerMeta,
   StartRunRequest,
   StartRunResponse,
 } from "../api-types.js";
@@ -43,6 +44,14 @@ export async function handleRequest(
 
   if (method === "GET" && pathname === "/api/health") {
     sendJson(response, 200, { ok: true });
+    return;
+  }
+  // health 를 확장하지 않고 라우트를 따로 둔다. `/api/health` 는 스캐폴드 검증용으로
+  // `{ ok: true }` 를 완전 일치로 잠가 둔 자리이고(tests/scaffold.test.ts), 헬스 프로브에
+  // 설정값을 얹으면 이름이 하는 일과 어긋난다. ADR-0071.
+  if (method === "GET" && pathname === "/api/meta") {
+    const meta: ServerMeta = { root: options.root };
+    sendJson(response, 200, meta);
     return;
   }
   if (method === "GET" && pathname === "/api/suites") {

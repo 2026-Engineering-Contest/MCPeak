@@ -45,6 +45,15 @@ export interface AnswerRequest {
   readonly value: string;
 }
 
+/**
+ * GET /api/meta — 서버가 스위트를 찾는 기준 디렉터리(절대경로, 서버를 띄운 cwd).
+ * `FileEntry.path` 가 이 경로 기준의 상대경로다. 첫 화면이 비는 이유는 거의 언제나
+ * 이 값이라, 화면이 그것을 말하려면 클라이언트가 이 값을 알아야 한다(#296).
+ */
+export interface ServerMeta {
+  readonly root: string;
+}
+
 /** 파일 리소스 공통. path는 프로젝트 루트 기준 상대경로다. */
 export interface FileEntry {
   readonly path: string;

@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import type {
   FileEntry,
   RunSummary,
+  ServerMeta,
   StartRunRequest,
   StartRunResponse,
 } from "../../../src/api-types.js";
@@ -39,6 +40,11 @@ const SESSION_HINTS: Record<SessionMode, string> = {
  */
 export function Home(): JSX.Element {
   const [suites, setSuites] = useState<readonly FileEntry[] | null>(null);
+  /**
+   * 스위트 탐색 루트. 목록이 비었을 때 그 이유를 말하는 데만 쓴다. 못 받아도 화면은
+   * 살아야 하므로 실패는 삼키고 null 로 둔다 — 그 경우 경로 없이 나머지 안내만 나간다.
+   */
+  const [root, setRoot] = useState<string | null>(null);
   const [runs, setRuns] = useState<readonly RunSummary[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [promptFor, setPromptFor] = useState<string | null>(null);
@@ -61,6 +67,9 @@ export function Home(): JSX.Element {
     apiGet<RunSummary[]>("/api/runs")
       .then(setRuns)
       .catch((err: unknown) => setLoadError(err instanceof Error ? err.message : String(err)));
+    apiGet<ServerMeta>("/api/meta")
+      .then((meta) => setRoot(meta.root))
+      .catch(() => setRoot(null));
   }, []);
 
   function openPrompt(suitePath: string): void {
@@ -134,7 +143,20 @@ export function Home(): JSX.Element {
               <li className="px-4 py-3 text-sm text-ink-muted">불러오는 중...</li>
             )}
             {suites !== null && suites.length === 0 && (
-              <li className="px-4 py-3 text-sm text-ink-muted">스위트가 없습니다.</li>
+              <li className="space-y-1 px-4 py-3 text-sm text-ink-muted">
+                <p>
+                  이 디렉터리 아래에서 스위트를 찾지 못했습니다{root ? ": " : "."}
+                  {root ? <span className="font-mono text-xs text-ink">{root}</span> : null}
+                </p>
+                <p>
+                  → 스위트가 있는 디렉터리에서 mcpeak-dashboard 를 다시 띄우거나, 왼쪽 Generate 로
+                  새로 만드세요.
+                </p>
+                <p className="text-xs">
+                  목록에는 스위트 형식을 통과한 .json 만 담습니다. node_modules · .git · dist 아래는
+                  보지 않습니다.
+                </p>
+              </li>
             )}
             {suites?.map((suite) => (
               <li key={suite.path} className="space-y-2 px-4 py-3">

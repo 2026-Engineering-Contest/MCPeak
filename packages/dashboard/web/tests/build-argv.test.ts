@@ -17,8 +17,6 @@ const BASE: GenerateForm = {
   model: "",
   dryRun: true,
   repair: true,
-  cassettePath: "",
-  record: false,
   resetCmd: "",
 };
 
@@ -64,21 +62,12 @@ describe("buildGenerateArgv", () => {
     expect(argv).toContain("--no-dry-run");
   });
 
-  it("dryRun 끔 + 카세트는 throw한다(초기화 명령, 자동 교정 동시 끔도 각각)", () => {
-    expect(() =>
-      buildGenerateArgv({ ...BASE, dryRun: false, cassettePath: "cassette.json" }),
-    ).toThrowError("시험 실행을 끄면 카세트를 녹화할 수 없습니다.");
+  it("dryRun 끔 + 초기화 명령, 자동 교정 동시 끔은 각각 throw한다", () => {
     expect(() =>
       buildGenerateArgv({ ...BASE, dryRun: false, resetCmd: "rm -rf tmp" }),
     ).toThrowError("시험 실행을 끄면 초기화 명령을 쓸 수 없습니다.");
     expect(() => buildGenerateArgv({ ...BASE, dryRun: false, repair: false })).toThrowError(
       "시험 실행과 자동 교정을 동시에 끌 수 없습니다.",
-    );
-  });
-
-  it("record인데 카세트가 비면 throw한다", () => {
-    expect(() => buildGenerateArgv({ ...BASE, record: true })).toThrowError(
-      "재녹화는 카세트 저장 위치가 있어야 합니다.",
     );
   });
 
@@ -103,8 +92,6 @@ describe("buildGenerateArgv", () => {
       args: ["--flag", "값"],
       force: true,
       model: "claude-sonnet-5",
-      cassettePath: "cassette.json",
-      record: true,
       resetCmd: "./reset.sh",
     };
     expect(buildGenerateArgv(form)).toEqual(buildGenerateArgv(form));

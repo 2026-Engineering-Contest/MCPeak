@@ -118,6 +118,82 @@ describe("Home", () => {
     });
   });
 
+  /**
+   * ADR-0066 후속. argv 조립 자체는 `build-test-argv.test.ts` 가 전량 단언하므로, 여기서는
+   * **화면에서 그 폼에 닿을 수 있는가** 만 본다 — 지금까지는 API 를 직접 부르지 않으면 녹화를
+   * 켤 방법이 없었다.
+   */
+  const openFormWithServer = async (): Promise<void> => {
+    fireEvent.click(await screen.findByRole("button", { name: "실행" }));
+    fireEvent.change(screen.getByLabelText("서버 스크립트"), { target: { value: "server.js" } });
+  };
+
+  it("기본은 세션을 쓰지 않는다 — 경로 칸도 없다", async () => {
+    stubFetch();
+    render(<Home />);
+    await openFormWithServer();
+
+    expect(screen.getByRole("button", { name: "사용 안 함" }).getAttribute("aria-pressed")).toBe(
+      "true",
+    );
+    expect(screen.queryByLabelText("세션 파일 경로")).toBeNull();
+  });
+
+  it("녹화를 고르고 경로를 적으면 argv 에 --record-session 이 실린다", async () => {
+    const fetchMock = stubFetch();
+    render(<Home />);
+    await openFormWithServer();
+    fireEvent.click(screen.getByRole("button", { name: "외부 호출 녹화" }));
+    fireEvent.change(screen.getByLabelText("세션 파일 경로"), { target: { value: "tmp/s.db" } });
+    fireEvent.click(screen.getByRole("button", { name: "실행 시작" }));
+
+    await waitFor(() => {
+      expect(window.location.hash).toBe("#/runs/run-new");
+    });
+    const post = fetchMock.mock.calls.find(([, init]) => init?.method === "POST");
+    expect(JSON.parse(String(post?.[1]?.body)).argv).toEqual([
+      "examples/weather/suite.json",
+      "--command",
+      "node",
+      "--arg",
+      "server.js",
+      "--record-session",
+      "tmp/s.db",
+    ]);
+  });
+
+  it("재생을 고르면 --session 으로 간다 — 두 옵션이 함께 실리지 않는다", async () => {
+    const fetchMock = stubFetch();
+    render(<Home />);
+    await openFormWithServer();
+    // 녹화를 먼저 골랐다가 재생으로 바꾼다. 세그먼트라 앞 선택이 남으면 안 된다.
+    fireEvent.click(screen.getByRole("button", { name: "외부 호출 녹화" }));
+    fireEvent.click(screen.getByRole("button", { name: "녹화본 재생" }));
+    fireEvent.change(screen.getByLabelText("세션 파일 경로"), { target: { value: "tmp/s.db" } });
+    fireEvent.click(screen.getByRole("button", { name: "실행 시작" }));
+
+    await waitFor(() => {
+      expect(window.location.hash).toBe("#/runs/run-new");
+    });
+    const argv: readonly string[] = JSON.parse(
+      String(fetchMock.mock.calls.find(([, init]) => init?.method === "POST")?.[1]?.body),
+    ).argv;
+    expect(argv).toContain("--session");
+    expect(argv).not.toContain("--record-session");
+  });
+
+  it("세션을 켰는데 경로가 비면 실행 버튼이 비활성이다", async () => {
+    stubFetch();
+    render(<Home />);
+    await openFormWithServer();
+    // 명령은 다 찼으므로, 비활성의 사유는 세션 경로뿐이다.
+    expect(screen.getByRole("button", { name: "실행 시작" })).toHaveProperty("disabled", false);
+
+    fireEvent.click(screen.getByRole("button", { name: "외부 호출 녹화" }));
+
+    expect(screen.getByRole("button", { name: "실행 시작" })).toHaveProperty("disabled", true);
+  });
+
   it("최근 실행 행이 flow 칩과 상태 뱃지를 함께 그린다", async () => {
     stubFetch();
     render(<Home />);

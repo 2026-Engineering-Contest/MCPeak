@@ -135,6 +135,35 @@ describe("mcpeak test 의 External 세션", () => {
     expect(origin.calls()).toBe(1);
   }, 30_000);
 
+  /**
+   * ADR-0066. 위 테스트가 증명하는 것은 **재생이 일어났다** 이고, 이 테스트가 보는 것은
+   * **사용자가 그것을 알 수 있는가** 다. 둘은 다른 성질이다 — 실제로 녹화와 재생의 화면 출력이
+   * 바이트까지 같았고, 그래서 대시보드에서 어느 쪽인지 구분할 방법이 없었다.
+   *
+   * 순수 함수 단위는 `external-session.test.ts` 가 본다. 여기서는 그 문장이 실제 실행 경로를
+   * 타고 stderr 까지 나오는지만 본다.
+   */
+  it("성공한 녹화와 재생이 각각 무엇을 했는지 stderr 로 말한다", async () => {
+    const origin = await startOrigin();
+    const sessionPath = await newSessionPath();
+
+    const recording = await captureStderr(() =>
+      runTest(["--record-session", sessionPath], origin.url("/weather")),
+    );
+    expect(recording.exitCode).toBe(0);
+    expect(recording.stderr).toContain("외부 호출 1건을 녹화했습니다");
+    expect(recording.stderr).toContain(sessionPath);
+
+    const replaying = await captureStderr(() =>
+      runTest(["--session", sessionPath], origin.url("/weather")),
+    );
+    expect(replaying.exitCode).toBe(0);
+    expect(replaying.stderr).toContain("녹화된 외부 호출 1건을 재생했습니다");
+
+    // 이것이 이 기능의 전부다 — 두 실행의 화면이 서로 달라야 한다.
+    expect(recording.stderr).not.toBe(replaying.stderr);
+  }, 30_000);
+
   it("녹화에 없는 호출을 만나면 네트워크로 새지 않고 실패한다", async () => {
     const origin = await startOrigin();
     const sessionPath = await newSessionPath();

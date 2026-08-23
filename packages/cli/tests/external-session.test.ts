@@ -6,6 +6,7 @@ import {
   externalCloseFailure,
   externalOpenFailure,
   externalSessionNotice,
+  externalSessionOutcome,
   parseTestCommand,
   renderReplayMissDiagnostics,
 } from "../src/test-command.js";
@@ -200,6 +201,71 @@ describe("External 세션 종료 경고", () => {
 
       expect(notice).toContain(SCOPE_NOTE);
       expect(notice?.endsWith("로 부른 것만 잡습니다.\n")).toBe(true);
+    }
+  });
+});
+
+/**
+ * ADR-0066. 성공한 실행도 무엇을 했는지 말한다. 녹화와 재생은 리포트가 같은 모양으로 나오므로,
+ * 이 한 줄이 없으면 사용자는 방금 본 결과가 실제 호출인지 재생인지 구분할 수 없다.
+ */
+describe("External 세션 결과 보고 (ADR-0066)", () => {
+  const PATH = "tmp/weather.db";
+
+  it("녹화가 됐으면 건수와 세션 경로를 말한다", () => {
+    const line = externalSessionOutcome(record(3), PATH);
+
+    expect(line).toContain("외부 호출 3건을 녹화했습니다");
+    expect(line).toContain(PATH);
+  });
+
+  it("전부 재생됐으면 재생이라고 말한다 — 녹화와 다른 문장이어야 구분된다", () => {
+    const line = externalSessionOutcome(replay(3, 3, 0), PATH);
+
+    expect(line).toContain("녹화된 외부 호출 3건을 재생했습니다");
+    expect(line).toContain(PATH);
+    // 두 갈래가 같은 동사로 끝나면 화면만 보고는 여전히 구분할 수 없다.
+    expect(line).not.toContain("녹화했습니다");
+  });
+
+  it("범위 안내를 반복하지 않는다 — 그 문장은 경고 갈래의 몫이다", () => {
+    expect(externalSessionOutcome(record(3), PATH)).not.toContain(SCOPE_NOTE);
+    expect(externalSessionOutcome(replay(3, 3, 0), PATH)).not.toContain(SCOPE_NOTE);
+  });
+
+  it("경로는 다른 세션 문장과 같은 규칙으로 이스케이프한다", () => {
+    // 경로는 사용자가 준 값이다. 그대로 실으면 우리 문장이 터미널 제어에 열린다.
+    const line = externalSessionOutcome(record(1), "tmp/\u001b[31mred.db");
+
+    expect(line).not.toContain("\u001b");
+  });
+
+  it("같은 요약이면 같은 문장이다", () => {
+    expect(externalSessionOutcome(record(2), PATH)).toBe(externalSessionOutcome(record(2), PATH));
+  });
+
+  /**
+   * **이 매트릭스가 계약이다.** 두 함수의 갈래는 서로를 보지 않고 각자 판정하므로, 한쪽 조건을
+   * 고치면 겹치거나(같은 사실을 두 번) 비거나(아무 말도 없음) 한다. 주석으로는 못 막는다.
+   */
+  it("경고와 정확히 배타다 — 어느 갈래에서도 둘 중 하나만 나온다", () => {
+    const every = [
+      record(0),
+      record(1),
+      record(5),
+      replay(0, 0, 0),
+      replay(3, 0, 3),
+      replay(3, 2, 1),
+      replay(3, 3, 0),
+      replay(1, 1, 0),
+    ];
+
+    for (const summary of every) {
+      const spoke = [externalSessionOutcome(summary, PATH), externalSessionNotice(summary)].filter(
+        (value) => value !== undefined,
+      );
+
+      expect(spoke).toHaveLength(1);
     }
   });
 });

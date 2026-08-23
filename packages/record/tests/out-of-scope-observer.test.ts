@@ -225,7 +225,12 @@ describe("사이드카를 못 만들어도 재생을 막지 않는다", () => {
     // `os.tmpdir()` 이 보는 이름은 플랫폼마다 다르다 — POSIX 는 TMPDIR, Windows 는 TEMP·TMP.
     const keys = ["TMPDIR", "TEMP", "TMP"] as const;
     const saved = keys.map((key) => [key, process.env[key]] as const);
-    const broken = join(tmpdir(), "mcpeak-nonexistent", "still-nope");
+    // 고정 이름을 쓰면 그 경로가 어쩌다 생긴 실행에서 `mkdtempSync` 가 성공해 버린다. 실제로
+    // 만든 디렉터리 **안의 없는 하위 경로**를 가리켜, 고유하면서 확실히 없는 자리를 만든다.
+    // (`mkdtempSync` 는 부모가 없으면 ENOENT 다.)
+    const parent = await mkdtemp(join(tmpdir(), "mcpeak-observer-broken-"));
+    directories.push(parent);
+    const broken = join(parent, "missing", "nope");
     for (const key of keys) process.env[key] = broken;
 
     try {

@@ -53,7 +53,10 @@ const tsResolve = new URL("./fixtures/register-ts-resolve.mjs", import.meta.url)
 const opened: McpClient[] = [];
 
 /** stdio 목을 띄우고 core.connect() 로 붙는다. */
-async function connectMock(definition: unknown): Promise<McpClient> {
+async function connectMock(
+  definition: unknown,
+  options?: { omitPath?: boolean },
+): Promise<McpClient> {
   const dir = mkdtempSync(join(tmpdir(), "mcpeak-mock-"));
   const path = join(dir, "definition.json");
   writeFileSync(path, JSON.stringify(definition), "utf8");
@@ -61,6 +64,9 @@ async function connectMock(definition: unknown): Promise<McpClient> {
   const client = await connect({
     command: process.execPath,
     args: ["--experimental-strip-types", "--no-warnings", "--import", tsResolve, entry, path],
+    // 경로를 안 넘긴 `serveStdio(definition)` 호출을 재현한다. 배포 진입점은 늘 경로를 주므로
+    // 이 갈래는 여기서만 만들 수 있다.
+    ...(options?.omitPath === true ? { env: { MOCK_OMIT_PATH: "1" } } : {}),
   });
   opened.push(client);
   return client;
@@ -229,5 +235,43 @@ describe("assertMockDefinition — 정의 파일 검증", () => {
     expect(body).toContain("선언한 툴이 아닙니다");
     expect(body).toContain("add");
     expect(body).not.toContain("주입된 응답이 없습니다");
+  });
+
+  it("stdio 미스 진단문은 mock.on 이 아니라 정의 파일의 responses 를 가리킨다", async () => {
+    // 정의 파일로 쓰는 사람 화면에는 mock.on 이라는 코드가 없다. README 에도 안 나온다.
+    // 시키는 대로 할 수 없는 안내를 주면 안 된다.
+    const client = await connectMock({
+      tools: [
+        { name: "add", inputSchema: { type: "object", properties: { a: { type: "number" } } } },
+      ],
+      responses: [{ tool: "add", args: { a: 1 }, result: { sum: 1 } }],
+    });
+
+    const body = text(await client.callTool("add", { a: 9 }));
+
+    expect(body).toContain("주입된 응답이 없습니다");
+    expect(body).toContain("responses");
+    expect(body).toContain("definition.json");
+    expect(body).not.toContain("mock.on(");
+  });
+
+  it("경로 없이 serveStdio 를 부르면 가리킬 파일이 없는 문장을 내지 않는다", async () => {
+    // `buildServer` 에 `origin`("정의 파일")을 넘기면 "정의 파일 의 responses" 처럼 가리킬
+    // 파일이 없는 문장이 나간다. 실제로 한 번 그렇게 냈고 리뷰에서 잡혔다.
+    const client = await connectMock(
+      {
+        tools: [
+          { name: "add", inputSchema: { type: "object", properties: { a: { type: "number" } } } },
+        ],
+        responses: [{ tool: "add", args: { a: 1 }, result: { sum: 1 } }],
+      },
+      { omitPath: true },
+    );
+
+    const body = text(await client.callTool("add", { a: 9 }));
+
+    expect(body).toContain("주입된 응답이 없습니다");
+    expect(body).not.toMatch(/정의 파일 의/);
+    expect(body).toContain("mock.on(");
   });
 });

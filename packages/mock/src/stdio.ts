@@ -62,7 +62,7 @@ export async function main(argv: readonly string[]): Promise<void> {
     fail(error instanceof Error ? error.message : String(error));
   }
 
-  await serveStdio(parsed);
+  await serveStdio(parsed, path);
 }
 
 // top-level await 를 쓰지 않는다 — 빌드가 cjs 도 함께 내는데 그쪽에서 지원되지 않는다.

@@ -9,4 +9,12 @@
 import { readFileSync } from "node:fs";
 import { serveStdio } from "../../src/index.js";
 
-await serveStdio(JSON.parse(readFileSync(process.argv[2], "utf8")));
+// 배포 진입점(src/stdio.ts)이 정의 파일 경로를 함께 넘긴다. 미스 진단문이 그 경로를
+// 가리켜야 하므로 여기서도 같은 인자를 넘긴다 — 안 맞추면 테스트만 다른 코드를 탄다.
+//
+// `MOCK_OMIT_PATH` 는 **경로를 안 준 호출**을 재현하려고 둔다. 그 갈래에서 가리킬 파일이
+// 없는 문장을 내지 않는지 고정해야 하는데, 배포 진입점은 늘 경로를 주므로 여기서만 만든다.
+const definition = JSON.parse(readFileSync(process.argv[2], "utf8"));
+await (process.env.MOCK_OMIT_PATH === "1"
+  ? serveStdio(definition)
+  : serveStdio(definition, process.argv[2]));

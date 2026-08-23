@@ -674,6 +674,19 @@ describe("provider adapters", () => {
     // args 에는 모델 이름 같은 값도 들어 있다. 옵션 이름만 골라 대조한다.
     expect(await claudeClassification("", "error: unknown option 'm'")).toBeUndefined();
   });
+  it("모델 이름이 -- 로 시작해도 옵션으로 세지 않는다", async () => {
+    // 모양으로 가르면(`--` 로 시작하면 옵션) 이 값이 옵션 목록에 들어간다. 그러면 CLI 가
+    // 모델을 거절했는데 화면은 "CLI 버전을 올려라" 라고 하게 된다. 원인이 아예 다르다.
+    for (const create of [createClaudeAuthoringProvider, createCodexAuthoringProvider]) {
+      const r = runner({ ok: false, code: "nonZeroExit", exitCode: 1 });
+      const result = await classificationOf(
+        create({ run: r.run, model: "--unsupported-model" }),
+        r.calls,
+        { stdout: "", stderr: "error: unknown option '--unsupported-model'" },
+      );
+      expect(result).toBeUndefined();
+    }
+  });
   it("unknownOption 이 상태 코드 분류보다 먼저다", async () => {
     // 옵션 해석에서 죽으면 stdout envelope 자체가 없다. 그래도 순서를 고정해 둔다.
     expect(

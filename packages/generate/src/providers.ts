@@ -115,11 +115,19 @@ function unknownOption(stderr: string, options: readonly string[]): string | und
 }
 
 /**
- * args 에서 옵션 이름만 고른다. 값은 뺀다 — 모델 이름 같은 값이 옵션 이름과 같아지는 우연에
- * 기대지 않기 위해서다. `-` 하나짜리 stdin 표시도 옵션이 아니므로 빠진다.
+ * 인자를 `[이름, ...값]` 짝으로 적는다. 평평한 문자열 배열로 적으면 값과 옵션을 가를 수 없다.
+ *
+ * 모양으로 가르는 방법(`--` 로 시작하면 옵션)은 틀린다. 사용자가 `--model --unsupported-model`
+ * 을 주면 그 **값**이 옵션 목록에 들어가고, CLI 가 그것을 거절했을 때 "모델 이름이 틀렸다" 가
+ * 아니라 "CLI 버전을 올려라" 라는 엉뚱한 안내가 나간다. 짝으로 적으면 그 갈래가 아예 없다.
  */
-const optionsOf = (args: readonly string[]): readonly string[] =>
-  args.filter((arg) => arg.startsWith("--") || /^-[A-Za-z]$/.test(arg));
+type ArgSpec = readonly (readonly [name: string, ...values: string[]])[];
+
+const argsOf = (spec: ArgSpec): string[] => spec.flatMap((entry) => [...entry]);
+
+/** 짝의 첫 자리 중 옵션인 것만. `exec` 같은 서브커맨드와 `-` 하나짜리 stdin 표시는 빠진다. */
+const optionsOf = (spec: ArgSpec): readonly string[] =>
+  spec.flatMap(([name]) => (name.startsWith("-") && name !== "-" ? [name] : []));
 
 const classifyCodexFailure =
   (args: readonly string[]) =>
@@ -284,54 +292,44 @@ function makeProvider(
       // 진단 경로도 이 이름을 쓴다. 실행마다 만드는 임시 cwd 안의 파일이라 이름은 동작에
       // 영향이 없고, authoring 과 진단의 차이를 stdin·스키마 둘로만 유지하기 위해서다.
       const schemaName = "authoring-output-schema.json";
-      const codexArgs = (cwd: string) => [
-        "exec",
-        "-C",
-        cwd,
-        "-m",
-        model,
-        "-c",
-        'model_reasoning_effort="low"',
-        "-s",
-        "read-only",
-        "--ephemeral",
-        "--ignore-user-config",
-        "--ignore-rules",
-        "--skip-git-repo-check",
-        "--output-schema",
-        join(cwd, schemaName),
-        "-",
+      const codexSpec = (cwd: string): ArgSpec => [
+        ["exec"],
+        ["-C", cwd],
+        ["-m", model],
+        ["-c", 'model_reasoning_effort="low"'],
+        ["-s", "read-only"],
+        ["--ephemeral"],
+        ["--ignore-user-config"],
+        ["--ignore-rules"],
+        ["--skip-git-repo-check"],
+        ["--output-schema", join(cwd, schemaName)],
+        ["-"],
       ];
       return run({
         ...common,
         command: "codex",
-        args: codexArgs,
+        args: (cwd) => argsOf(codexSpec(cwd)),
         files: [{ name: schemaName, contents: JSON.stringify(schema) }],
-        // cwd 는 값 자리에만 오므로 옵션 목록에 영향이 없다. 빈 문자열로 한 번 만들어 뽑는다.
-        classifyFailure: classifyCodexFailure(optionsOf(codexArgs(""))),
+        // 옵션 이름은 cwd 와 무관하다. 값 자리에만 오므로 아무 값으로 한 번 만들어 뽑는다.
+        classifyFailure: classifyCodexFailure(optionsOf(codexSpec(""))),
       });
     }
-    const claudeArgs = [
-      "-p",
-      "--safe-mode",
-      "--model",
-      model,
-      "--tools",
-      "",
-      "--no-session-persistence",
-      "--strict-mcp-config",
-      "--mcp-config",
-      '{"mcpServers":{}}',
-      "--output-format",
-      "json",
-      "--json-schema",
-      JSON.stringify(schema),
+    const claudeSpec: ArgSpec = [
+      ["-p"],
+      ["--safe-mode"],
+      ["--model", model],
+      ["--tools", ""],
+      ["--no-session-persistence"],
+      ["--strict-mcp-config"],
+      ["--mcp-config", '{"mcpServers":{}}'],
+      ["--output-format", "json"],
+      ["--json-schema", JSON.stringify(schema)],
     ];
     return run({
       ...common,
       command: "claude",
-      args: claudeArgs,
-      classifyFailure: classifyClaudeFailure(optionsOf(claudeArgs)),
+      args: argsOf(claudeSpec),
+      classifyFailure: classifyClaudeFailure(optionsOf(claudeSpec)),
     });
   };
   return {

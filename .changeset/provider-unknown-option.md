@@ -3,7 +3,7 @@
 "@mcpeak/cli": minor
 ---
 
-provider CLI 가 우리가 넘긴 옵션을 몰라 죽었을 때 **화면이 원인을 말합니다**([#285](https://github.com/2026-Engineering-Contest/MCPeak/issues/285), [ADR-0065](https://github.com/2026-Engineering-Contest/MCPeak/blob/main/docs/adr/0065-옵션-거절은-우리-args-에서-이름을-고른다.md)).
+provider CLI 가 우리가 넘긴 옵션을 몰라 죽었을 때 **화면이 원인을 말합니다**([#285](https://github.com/2026-Engineering-Contest/MCPeak/issues/285), [ADR-0065](https://github.com/2026-Engineering-Contest/MCPeak/blob/main/docs/adr/0065-옵션-이름은-stderr-가-아니라-우리-args-에서-고른다.md)).
 
 설치된 CLI 버전에 우리가 넘긴 옵션이 없으면 요청이 API 에 닿기도 전에 죽습니다. 이 실패는 HTTP 상태
 코드를 남기지 않아 분류가 비었고, 화면은 `default` 갈래로 떨어져 **로그인과 모델을 확인하라고**

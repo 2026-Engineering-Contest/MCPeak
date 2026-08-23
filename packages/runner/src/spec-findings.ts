@@ -73,6 +73,11 @@ const literal = (value: JsonValue | undefined): string =>
 const suggest = (finding: SpecFinding, tail: string): string =>
   finding.suggestion === undefined ? "" : `. ${tail}: '${escapeInline(finding.suggestion)}'`;
 
+/**
+ * 입력 스키마를 해석하지 못한 안정적인 사유를 사용자가 바로 고칠 수 있는 문장으로 만든다.
+ * reason 은 분석기가 고른 제한된 값이지만 공개 타입의 입력일 수도 있으므로 기본 분기에서도
+ * 한 줄 출력 계약에 맞게 이스케이프한다.
+ */
 const describeUnanalyzableSchema = (finding: SpecFinding): string => {
   const tool = literal(finding.actual);
   switch (finding.reason) {

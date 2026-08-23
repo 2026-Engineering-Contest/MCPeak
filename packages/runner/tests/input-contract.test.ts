@@ -332,6 +332,7 @@ describe("해석 불가 처리 (설계 §10.3, ADR-0015)", () => {
         code: "SCHEMA_NOT_ANALYZABLE",
         severity: "advisory",
         actual: "get_weather",
+        reason: keyword,
       });
     });
   }
@@ -345,7 +346,10 @@ describe("해석 불가 처리 (설계 §10.3, ADR-0015)", () => {
   it("properties 가 없으면 SCHEMA_NOT_ANALYZABLE", () => {
     const result = check({ type: "object", required: ["city"] }, {});
     expect(result.findings).toHaveLength(1);
-    expect(result.findings[0]?.code).toBe("SCHEMA_NOT_ANALYZABLE");
+    expect(result.findings[0]).toMatchObject({
+      code: "SCHEMA_NOT_ANALYZABLE",
+      reason: "properties",
+    });
   });
 
   it("inputSchema 가 null 이면 SCHEMA_NOT_ANALYZABLE", () => {
@@ -488,7 +492,11 @@ describe("리뷰 회귀: type 배열과 중복 툴 이름", () => {
     ];
     const suite = suiteOf(callTool("case-1", "dup", { a: "값" }));
     const result = checkInputContract({ suite, tools });
-    expect(result.findings.map((f) => f.code)).toEqual(["SCHEMA_NOT_ANALYZABLE"]);
+    expect(result.findings).toHaveLength(1);
+    expect(result.findings[0]).toMatchObject({
+      code: "SCHEMA_NOT_ANALYZABLE",
+      reason: "duplicateTool",
+    });
   });
 
   it("중복 선언의 순서를 뒤집어도 결과가 같다", () => {

@@ -119,7 +119,16 @@ mcpeak test suite.json --command mcpeak-mock --arg mock.json
 
 ```json
 {
-  "tools": [{ "name": "get_weather", "inputSchema": { "type": "object" } }],
+  "tools": [
+    {
+      "name": "get_weather",
+      "inputSchema": {
+        "type": "object",
+        "properties": { "city": { "type": "string" } },
+        "required": ["city"]
+      }
+    }
+  ],
   "responses": [{ "tool": "get_weather", "args": { "city": "서울" }, "result": { "tempC": 21 } }]
 }
 ```

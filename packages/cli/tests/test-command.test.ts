@@ -1191,6 +1191,9 @@ describe("입력 계약 참고 문장", () => {
   const unanalyzableTools: ToolDef[] = [
     { name: "get_weather", inputSchema: { anyOf: [{ type: "object" }] } },
   ];
+  const missingPropertiesTools: ToolDef[] = [
+    { name: "get_weather", inputSchema: { type: "object" } },
+  ];
   const cleanSuite = suiteOf(callCase("clean-case", { city: "Seoul" }, 1));
   /** 케이스별 status 만 주면 나머지는 그 결과에서 따라 나온다. */
   const reportWith = (
@@ -1344,9 +1347,21 @@ describe("입력 계약 참고 문장", () => {
     });
     expect(out.stdout).toContain("참고: skipped-case 의 입력 검사를 건너뛰었습니다");
     expect(out.stdout).toContain(
-      "→ 'get_weather' 의 입력 스키마를 해석하지 못해 이 툴의 입력 검사를 건너뜁니다",
+      "→ 'get_weather' 의 inputSchema 에 지원하지 않는 JSON Schema 키워드 'anyOf' 가 있어 입력 검사를 건너뜁니다. type, properties, required 중심으로 스키마를 단순화하세요",
     );
     expect(out.stdout).not.toContain("의 입력이 서버 선언과 다릅니다");
+  });
+  it("전부 통과해도 입력 스키마를 해석하지 못했으면 사유와 조치를 알린다 (#288)", async () => {
+    const out = await runTest({
+      suite: suiteOf(callCase("passed-skipped-case", { city: "Seoul" }, 1)),
+      tools: missingPropertiesTools,
+      statuses: { "passed-skipped-case": "passed" },
+    });
+    expect(out.stdout).toContain("참고: passed-skipped-case 의 입력 검사를 건너뛰었습니다");
+    expect(out.stdout).toContain(
+      "→ 'get_weather' 의 inputSchema 에 properties 가 없거나 객체가 아니어서 입력 검사를 건너뜁니다. properties 와 required 를 채우세요",
+    );
+    expect(out.exitCode).toBe(0);
   });
   it("건너뜀 블록은 단언 실질성 블록 뒤에 온다", async () => {
     const out = await runTest({

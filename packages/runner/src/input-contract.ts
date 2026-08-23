@@ -2,7 +2,7 @@ import type { ToolDef } from "@mcpeak/core";
 import { expectedIsError } from "./case-expectation.js";
 import type { ContractRange } from "./contract-range.js";
 import { rangeYieldsViolation, violatesRange } from "./contract-range.js";
-import type { NormalizedInputSchema } from "./input-schema.js";
+import type { InputSchemaAnalysis } from "./input-schema.js";
 import { analyzeInputSchema, judgeField } from "./input-schema.js";
 import { byCodeUnit } from "./ordering.js";
 import { plainObject, typeName } from "./schema-match.js";
@@ -148,15 +148,16 @@ export function checkInputContract(options: InputContractOptions): SpecFindingsR
   const declaredTools = new Map<string, ToolDef>();
   for (const tool of tools) if (!declaredTools.has(tool.name)) declaredTools.set(tool.name, tool);
   const toolNames = [...declaredTools.keys()].sort(byCodeUnit);
-  /** 같은 툴을 여러 케이스가 쓰므로 정규화를 한 번만 한다. null 도 캐시한다. */
-  const normalized = new Map<string, NormalizedInputSchema | null>();
-  const normalizeOnce = (tool: ToolDef): NormalizedInputSchema | null => {
-    if (!normalized.has(tool.name))
-      normalized.set(
-        tool.name,
-        duplicated.has(tool.name) ? null : analyzeInputSchema(tool.inputSchema).schema,
-      );
-    return normalized.get(tool.name) ?? null;
+  /** 같은 툴을 여러 케이스가 쓰므로 분석을 한 번만 한다. 실패 사유도 함께 캐시한다. */
+  const analyses = new Map<string, InputSchemaAnalysis>();
+  const analyzeOnce = (tool: ToolDef): InputSchemaAnalysis => {
+    const cached = analyses.get(tool.name);
+    if (cached !== undefined) return cached;
+    const analysis = duplicated.has(tool.name)
+      ? { schema: null, unanalyzableReason: "duplicateTool", unanalyzedFields: [] }
+      : analyzeInputSchema(tool.inputSchema);
+    analyses.set(tool.name, analysis);
+    return analysis;
   };
 
   const findings: SpecFinding[] = [];
@@ -186,7 +187,8 @@ export function checkInputContract(options: InputContractOptions): SpecFindingsR
         ),
       );
     } else {
-      const schema = normalizeOnce(tool);
+      const analysis = analyzeOnce(tool);
+      const schema = analysis.schema;
       if (schema === null) {
         caseFindings.push({
           code: "SCHEMA_NOT_ANALYZABLE",
@@ -194,6 +196,7 @@ export function checkInputContract(options: InputContractOptions): SpecFindingsR
           caseId,
           path: "operation.tool",
           actual: toolName,
+          reason: analysis.unanalyzableReason ?? "schema",
         });
       } else {
         const input = testCase.operation.input;

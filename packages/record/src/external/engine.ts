@@ -55,21 +55,26 @@ export function createRecordEngine(options: {
   // 그 집계는 interaction 하나만 보는 Store 가 할 수 없다. 저장소에는 쓰지 않는다.
   const echoed = new Set<string>();
   const other = new Set<string>();
+  let truncated = false;
   return {
     mode: "record",
     begin: (request) => options.store.reserve({ sessionId: options.sessionId, request }),
     complete: ({ interactionId, outcome, bodyUrls }) => {
-      if (bodyUrls !== undefined) {
-        for (const digest of bodyUrls.echoed) echoed.add(digest);
-        for (const digest of bodyUrls.other) other.add(digest);
-      }
+      // **저장을 먼저 성공시키고 그 뒤에 센다.** 순서를 뒤집으면 `INTERACTION_NOT_FOUND` 나
+      // `INTERACTION_ALREADY_COMPLETE` 로 거절된 interaction 의 지문이 집계에 남아, 세션에
+      // 없는 URL 을 있다고 말하게 된다.
       options.store.complete({ sessionId: options.sessionId, interactionId, outcome });
+      if (bodyUrls === undefined) return;
+      for (const digest of bodyUrls.echoed) echoed.add(digest);
+      for (const digest of bodyUrls.other) other.add(digest);
+      if (bodyUrls.truncated === true) truncated = true;
     },
     finish: (status) => {
       const summary = options.store.finish(options.sessionId, status);
       return Object.freeze({
         ...summary,
         bodyUrls: Object.freeze({
+          truncated,
           echoed: echoed.size,
           // **합집합으로 판정한다.** 같은 URL 이 어떤 interaction 에서는 그 요청 경로와 맞고
           // 다른 interaction 에서는 안 맞을 수 있다. 먼저 본 쪽을 쓰면 interaction 순서에

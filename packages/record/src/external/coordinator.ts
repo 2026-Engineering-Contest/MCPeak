@@ -11,6 +11,7 @@ import {
   type HttpFailureCode,
   type HttpFailureKind,
   type HttpFailureName,
+  MAX_BODY_URL_FINGERPRINTS,
   MAX_COORDINATOR_PAYLOAD_BYTES,
   type NormalizedExternalRequest,
   PROTOCOL_SCHEMA_VERSION,
@@ -467,10 +468,18 @@ const SHA256_HEX = /^[0-9a-f]{64}$/;
  *
  * 요청 쪽 재구성과 같은 이유로 **알려진 필드만 새 배열로 옮겨 담는다.**
  */
+const KNOWN_FINGERPRINT_FIELDS = fieldNames<BodyUrlFingerprints>({
+  echoed: true,
+  other: true,
+  truncated: true,
+});
+
 const bodyUrlFingerprints = (value: unknown): BodyUrlFingerprints => {
   if (!plainObject(value)) invariantViolation("body URL 지문", "invalid-value");
-  if (Object.keys(value).some((key) => key !== "echoed" && key !== "other"))
+  if (Object.keys(value).some((key) => !KNOWN_FINGERPRINT_FIELDS.has(key)))
     invariantViolation("body URL 지문", "unknown-field");
+  if (value.truncated !== undefined && typeof value.truncated !== "boolean")
+    invariantViolation("body URL 지문", "invalid-value");
   const digests = (raw: unknown): string[] => {
     if (!Array.isArray(raw)) invariantViolation("body URL 지문", "invalid-value");
     for (const item of raw)
@@ -478,9 +487,16 @@ const bodyUrlFingerprints = (value: unknown): BodyUrlFingerprints => {
         invariantViolation("body URL 지문", "invalid-value");
     return raw as string[];
   };
+  const echoed = digests(value.echoed);
+  const other = digests(value.other);
+  // 자식이 상한을 지키지 않으면 payload 가 Coordinator 상한을 넘겨 녹화가 통째로 실패한다.
+  // 여기서 먼저 거절해 원인을 "상한 위반" 으로 지목한다 — 413 만 받으면 무엇이 컸는지 모른다.
+  if (echoed.length + other.length > MAX_BODY_URL_FINGERPRINTS)
+    invariantViolation("body URL 지문", "invalid-value");
   return Object.freeze({
-    echoed: Object.freeze(digests(value.echoed)),
-    other: Object.freeze(digests(value.other)),
+    echoed: Object.freeze(echoed),
+    other: Object.freeze(other),
+    ...(value.truncated === true ? { truncated: true } : {}),
   });
 };
 

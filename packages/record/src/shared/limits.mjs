@@ -24,3 +24,22 @@ export const MAX_HTTP_BODY_BYTES = 1024 * 1024;
  * 된다.
  */
 export const MAX_COORDINATOR_PAYLOAD_BYTES = MAX_HTTP_BODY_BYTES + 128 * 1024;
+
+/**
+ * `complete` 하나에 실을 수 있는 body URL 지문의 개수 상한(ADR-0062).
+ *
+ * **위 주석이 경고한 함정이 실제로 여기서 났다.** 1 MiB 상한을 통과하는 정상 body 가 고유
+ * URL 을 49,932개까지 담을 수 있고(실측), 그 지문을 전부 실으면 payload 가 4.39 MB 가 되어
+ * Coordinator 상한 1.18 MB 를 크게 넘는다. 그러면 **URL 이 많다는 이유만으로 정상 녹화가
+ * `PAYLOAD_TOO_LARGE` 로 실패한다** — 알리자고 만든 기능이 녹화를 깨뜨리는 꼴이다.
+ *
+ * 지문 하나는 JSON 에서 67바이트(hex 64 + 따옴표 2 + 콤마 1)를 쓴다. 512개면 34 KB 로 위
+ * 128 KiB 여유분의 4분의 1이라, `outcome` 이 1 MiB 를 꽉 채운 최악의 경우에도 메타데이터가
+ * 들어갈 자리가 넉넉히 남는다. **2의 거듭제곱으로 잡은 것은 의도를 읽히게 하려는 것이고,
+ * 실제 근거는 이 여유분 계산이다** — 계산이 바뀌면 이 수도 바꾼다.
+ *
+ * 이 수를 넘는 body 는 `truncated` 로 표시해 "최소 N건" 이라고 말한다. 잘라내는 쪽을 고른
+ * 것은 그 interaction 을 통째로 세지 않는 것보다 정직하기 때문이다 — URL 이 512개 넘는
+ * 응답에서 필요한 답은 정확한 수가 아니라 "많다" 이다.
+ */
+export const MAX_BODY_URL_FINGERPRINTS = 512;

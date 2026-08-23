@@ -51,6 +51,11 @@ export interface BodyUrlCounts {
   readonly echoed: number;
   /** 되돌아온 경로는 아니지만 URL 로 해석되는 문자열. 약한 신호다. */
   readonly other: number;
+  /**
+   * 지문 개수 상한에 걸려 일부를 세지 못했다는 표시. 참이면 위 개수는 **최소값**이다 —
+   * 화면에는 "N건" 이 아니라 "N건 이상" 으로 나가야 한다.
+   */
+  readonly truncated: boolean;
 }
 
 export interface RecordSessionSummary {

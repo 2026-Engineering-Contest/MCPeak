@@ -174,7 +174,7 @@ describe("external Record/Replay vertical", () => {
     const summary = await handle.finish("completed");
 
     if (summary.mode !== "record") throw new Error("record 요약이어야 한다");
-    expect(summary.bodyUrls).toEqual({ echoed: 1, other: 1 });
+    expect(summary.bodyUrls).toEqual({ echoed: 1, other: 1, truncated: false });
     // 값은 요약에 실리지 않는다 — 사용자에게 가는 것은 개수뿐이다(ADR-0062 결정 3).
     expect(JSON.stringify(summary)).not.toContain("127.0.0.1");
     expect(JSON.stringify(summary)).not.toContain("docs.example.com");

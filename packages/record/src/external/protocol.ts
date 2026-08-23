@@ -8,7 +8,11 @@
 import type { HTTP_INTERACTION_SCHEMA_VERSION } from "./runtime.mjs";
 
 export const PROTOCOL_SCHEMA_VERSION = 1 as const;
-export { MAX_COORDINATOR_PAYLOAD_BYTES, MAX_HTTP_BODY_BYTES } from "../shared/limits.mjs";
+export {
+  MAX_BODY_URL_FINGERPRINTS,
+  MAX_COORDINATOR_PAYLOAD_BYTES,
+  MAX_HTTP_BODY_BYTES,
+} from "../shared/limits.mjs";
 export { HTTP_INTERACTION_SCHEMA_VERSION } from "./runtime.mjs";
 export const DEFAULT_COORDINATOR_TIMEOUT_MS = 5_000;
 
@@ -115,6 +119,11 @@ export interface BodyUrlFingerprints {
   readonly echoed: readonly string[];
   /** 되돌아온 경로는 아니지만 URL 로 해석되는 문자열. 약한 신호다. */
   readonly other: readonly string[];
+  /**
+   * 개수 상한(`MAX_BODY_URL_FINGERPRINTS`)에 걸려 일부를 버렸다는 표시. 이 값이 참이면
+   * 위 배열은 **전부가 아니고**, 세는 쪽은 "최소 N건" 으로 말해야 한다.
+   */
+  readonly truncated?: boolean;
 }
 
 export interface CompleteRecordRequest {

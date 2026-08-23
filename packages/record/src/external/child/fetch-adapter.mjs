@@ -1,3 +1,4 @@
+import { MAX_BODY_URL_FINGERPRINTS } from "../../shared/limits.mjs";
 import {
   bodyUrlFingerprints,
   encodeHttpResponse,
@@ -10,14 +11,29 @@ import { createCoordinatorClient } from "./coordinator-client.mjs";
 const INSTALLATION = Symbol.for("mcpeak.external.fetch-adapter");
 
 /**
- * 지문 집합들을 wire 형태(배열)로 합친다. `Set` 은 `JSON.stringify` 가 `{}` 로 만들어 조용히
- * 사라지므로 여기서 반드시 배열로 바꾼다. 중복 제거는 부모가 세션 전체에서 하므로 여기서는
- * 이어 붙이기만 한다.
+ * 지문 집합들을 wire 형태(배열)로 합친다.
+ *
+ * `Set` 은 `JSON.stringify` 가 `{}` 로 만들어 **조용히 사라지므로** 여기서 반드시 배열로
+ * 바꾼다. 그대로 실으면 지문이 없어져 개수가 늘 0 이 되고, 그 실패는 아무 데도 안 남는다.
+ *
+ * **개수 상한을 여기서 건다.** 1 MiB 를 통과하는 정상 body 가 고유 URL 을 5만 개 가까이 담을
+ * 수 있어(실측), 전부 실으면 Coordinator payload 상한을 넘겨 **정상 녹화가 실패한다.**
+ * `echoed` 를 먼저 채우는 것은 그쪽이 확실한 갈래라 사용자가 먼저 봐야 할 것이기 때문이다.
  */
-const wire = (...found) => ({
-  echoed: found.flatMap((one) => [...one.echoed]),
-  other: found.flatMap((one) => [...one.other]),
-});
+const wire = (...found) => {
+  const echoed = new Set(found.flatMap((one) => [...one.echoed]));
+  const other = new Set(found.flatMap((one) => [...one.other]));
+  const kept = { echoed: [...echoed], other: [] };
+  for (const digest of other) {
+    if (kept.echoed.length + kept.other.length >= MAX_BODY_URL_FINGERPRINTS) break;
+    kept.other.push(digest);
+  }
+  // `echoed` 만으로 상한을 넘길 수도 있다. 그때도 잘라야 payload 가 상한 안에 든다.
+  if (kept.echoed.length > MAX_BODY_URL_FINGERPRINTS)
+    kept.echoed = kept.echoed.slice(0, MAX_BODY_URL_FINGERPRINTS);
+  const dropped = echoed.size + other.size - (kept.echoed.length + kept.other.length);
+  return dropped === 0 ? kept : { ...kept, truncated: true };
+};
 
 export function installFetchAdapter(options) {
   if (globalThis[INSTALLATION] === true) return;

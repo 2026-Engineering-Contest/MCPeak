@@ -228,9 +228,31 @@ describe("External 세션 결과 보고 (ADR-0066)", () => {
     expect(line).not.toContain("녹화했습니다");
   });
 
-  it("범위 안내를 반복하지 않는다 — 그 문장은 경고 갈래의 몫이다", () => {
+  it("범위 안내 전문을 반복하지 않는다 — 그 문장은 경고 갈래의 몫이다", () => {
     expect(externalSessionOutcome(record(3), PATH)).not.toContain(SCOPE_NOTE);
     expect(externalSessionOutcome(replay(3, 3, 0), PATH)).not.toContain(SCOPE_NOTE);
+  });
+
+  /**
+   * **부분 커버리지가 이 단서의 존재 이유다.** 서버가 `fetch` 와 `node:http` 를 섞어 쓰면
+   * 어댑터는 앞쪽만 본다 — 실측하면 2건 중 1건만 녹화되고, 재생에서 나머지 1건이 실제
+   * 네트워크로 나간다. 그런데 경고 네 갈래가 전부 그 상황을 비켜가므로 화면에는 이 문장만
+   * 남는다. 개수를 단정하면 "그게 전부" 로 읽힌다.
+   */
+  it("녹화 개수가 전부가 아닐 수 있다고 말한다", () => {
+    const line = externalSessionOutcome(record(3), PATH);
+
+    expect(line).toContain("어댑터가 잡은 호출만 셉니다");
+    expect(line).toContain("세션에 남지 않습니다");
+  });
+
+  it("재생은 범위 밖 호출이 실제 네트워크로 나간다고 말한다", () => {
+    const line = externalSessionOutcome(replay(3, 3, 0), PATH);
+
+    expect(line).toContain("어댑터가 잡은 호출만 셉니다");
+    // 녹화와 결과가 다르다. 녹화는 안 남는 것이고 재생은 나가는 것이다.
+    expect(line).toContain("실제 네트워크로 나갑니다");
+    expect(line).not.toContain("세션에 남지 않습니다");
   });
 
   it("경로는 다른 세션 문장과 같은 규칙으로 이스케이프한다", () => {

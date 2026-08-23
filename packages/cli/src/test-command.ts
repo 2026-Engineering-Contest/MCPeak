@@ -1379,6 +1379,26 @@ export function externalCloseFailure(error: unknown): CliFailure {
 }
 
 /**
+ * 개수가 전부가 아닐 수 있다는 단서.
+ *
+ * **이 줄이 있는 이유는 부분 커버리지다.** 서버가 `globalThis.fetch` 와 `node:http` 를 섞어
+ * 쓰면 어댑터는 앞쪽만 본다. 실측하면 이렇게 된다 — 호출 2건 중 1건만 녹화되고, 재생에서는
+ * 그 1건이 재생되는 동안 나머지 1건이 실제 네트워크로 나간다. **경고 네 갈래는 전부 이 상황을
+ * 비켜간다**(`interactionCount > 0`·`consumedCount > 0`·`unusedCount === 0`). 단서가 없으면
+ * "1건을 재생했습니다" 가 "외부 의존 없이 재현됐다" 로 읽힌다.
+ *
+ * **근본 수선이 오면 이 두 줄은 지운다.** 재생 중 범위 밖 호출을 실제로 셀 수 있게 되면
+ * "나갈 수 있습니다" 라는 조건절이 아니라 "N건 나갔습니다" 라는 사실을 말할 수 있고, 0건인
+ * 실행에서는 이 줄 자체가 군더더기가 된다. 지금은 셀 수 없어서 매번 조건절로 말한다.
+ */
+const PARTIAL_RECORD_NOTE =
+  "  이 수는 어댑터가 잡은 호출만 셉니다. 범위 밖 호출은 세션에 남지 않습니다.\n";
+
+/** 같은 단서의 재생 판. 남지 않는 것이 아니라 **실제 네트워크로 나가는** 것이 요점이다. */
+const PARTIAL_REPLAY_NOTE =
+  "  이 수는 어댑터가 잡은 호출만 셉니다. 범위 밖 호출은 재생 중에도 실제 네트워크로 나갑니다.\n";
+
+/**
  * 이 실행이 External 세션으로 **무엇을 했는지** 한 줄로 말한다(ADR-0066).
  *
  * 성공한 실행이 아무 말도 하지 않으면, 사용자가 방금 본 리포트가 실제 네트워크를 탄 결과인지
@@ -1388,8 +1408,8 @@ export function externalCloseFailure(error: unknown): CliFailure {
  * 나오면 같은 사실을 두 번 말하고, 둘 다 침묵하면 이 함수를 만든 이유가 그 갈래에서 사라진다.
  * 그 배타성은 이 주석이 아니라 `external-session.test.ts` 의 매트릭스가 지킨다.
  *
- * **범위 한계(ADR-0057)를 여기서 다시 말하지 않는다.** `EXTERNAL_SCOPE_NOTE` 가 경고 갈래마다
- * 이미 반복하고 있고, 정상 경로에서까지 매번 붙이면 그 문장이 읽히지 않게 된다.
+ * **`EXTERNAL_SCOPE_NOTE` 전문은 여기서 반복하지 않는다.** 경고 갈래마다 이미 나오고, 정상
+ * 경로에서까지 매번 붙이면 그 문장이 읽히지 않게 된다. 대신 아래 한 줄짜리 단서만 붙인다.
  */
 export function externalSessionOutcome(
   summary: SessionSummary,
@@ -1399,13 +1419,19 @@ export function externalSessionOutcome(
   const shownPath = escapeTerminalText(sessionPath);
   if (summary.mode === "record") {
     if (summary.interactionCount === 0) return undefined;
-    return `\n→ 외부 호출 ${summary.interactionCount}건을 녹화했습니다: ${shownPath}\n`;
+    return (
+      `\n→ 외부 호출 ${summary.interactionCount}건을 녹화했습니다: ${shownPath}\n` +
+      PARTIAL_RECORD_NOTE
+    );
   }
   // 재생은 경고가 침묵하는 갈래가 하나뿐이다 — 원본이 차 있고, 하나 이상 썼고, 남은 것이 없다.
   if (summary.interactionCount === 0) return undefined;
   if (summary.consumedCount === 0) return undefined;
   if (summary.unusedCount > 0) return undefined;
-  return `\n→ 녹화된 외부 호출 ${summary.interactionCount}건을 재생했습니다: ${shownPath}\n`;
+  return (
+    `\n→ 녹화된 외부 호출 ${summary.interactionCount}건을 재생했습니다: ${shownPath}\n` +
+    PARTIAL_REPLAY_NOTE
+  );
 }
 
 export function externalSessionNotice(summary: SessionSummary): string | undefined {

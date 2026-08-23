@@ -1,8 +1,9 @@
 import { readFile, writeFile } from "node:fs/promises";
 import packageMetadata from "../package.json";
 import { nodeGenerateDependencies, nodeReviewIO, runGenerateCommand } from "./generate-command.js";
-import { commandHelp, GLOBAL_HELP } from "./help.js";
+import { commandDiscovery, commandHelp, GLOBAL_HELP } from "./help.js";
 import { type RepairCommandDependencies, runRepairCommand } from "./repair-command.js";
+import { escapeTerminalText } from "./repair-render.js";
 import { parseTestCommand, runCli } from "./test-command.js";
 
 export type Command = (argv: string[]) => Promise<number>;
@@ -70,6 +71,12 @@ export function nodeRepairDependencies(
   };
 }
 
+/** `mcpeak help <이름>` 으로 볼 수 있는 명령. 위 두 갈래가 같은 목록을 봐야 한다. */
+// `replay`·`verify` 는 ADR-0059 로 제거됐다. 그 둘은 위쪽에서 마이그레이션 안내로 간다.
+const HELP_TOPICS = ["test", "generate", "repair"] as const;
+const isHelpTopic = (value: string | undefined): value is (typeof HELP_TOPICS)[number] =>
+  HELP_TOPICS.includes(value as (typeof HELP_TOPICS)[number]);
+
 export async function run(argv: string[]): Promise<number> {
   if (
     argv.length === 0 ||
@@ -85,10 +92,29 @@ export async function run(argv: string[]): Promise<number> {
     // 사용자가 묻지도 않은 이름을 탓하는 실패 메시지가 된다. 안내 문구의 정본은 `runCli` 다.
     if (command === "replay" || command === "verify")
       return runCli([command], unavailableDependencies);
-    if (command === "test" || command === "generate" || command === "repair") {
+    if (isHelpTopic(command)) {
       process.stdout.write(commandHelp(command));
       return 0;
     }
+  }
+  /**
+   * `help` 로 시작했는데 위에서 안 걸렸다면 **뒤에 붙은 인자가 틀린 것**이다.
+   *
+   * 여기서 안 막고 아래로 흘려보내면 `runCli` 가 `argv[0]` 인 `help` 를 명령으로 읽어
+   * "알 수 없는 CLI 명령 'help'입니다" 라고 한다. 사용자가 정확히 친 토큰을 틀렸다고
+   * 지목하는 셈이라, 무엇을 고쳐야 하는지가 화면에서 사라진다.
+   */
+  if (argv[0] === "help") {
+    const target = argv[1] ?? "";
+    // 남는 인자를 문장에 싣는다. 무엇이 남았는지 안 보여주면 사용자는 `help test` 를 다시
+    // 쳐 보고서야 뒤 토큰이 문제였다는 것을 안다 — 도구가 이미 쥐고 있는 정보다.
+    const extra = argv[2];
+    const message =
+      isHelpTopic(target) && extra !== undefined
+        ? `\`help ${escapeTerminalText(target)}\` 뒤의 '${escapeTerminalText(extra)}' 는 받지 않습니다.`
+        : `도움말이 없는 명령 '${escapeTerminalText(target)}'입니다.`;
+    process.stderr.write(`오류 [CLI_USAGE]: ${message}\n해결: ${commandDiscovery}\n`);
+    return 1;
   }
   if (argv.length === 1 && argv[0] === "--version") {
     process.stdout.write(`mcpeak ${packageMetadata.version}\n`);

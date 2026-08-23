@@ -89,9 +89,16 @@ describe("describeSpecFinding 문안 (설계 문서 §7)", () => {
   it("SCHEMA_NOT_ANALYZABLE", () => {
     expect(
       describeSpecFinding(
-        finding({ code: "SCHEMA_NOT_ANALYZABLE", severity: "advisory", actual: "get_weather" }),
+        finding({
+          code: "SCHEMA_NOT_ANALYZABLE",
+          severity: "advisory",
+          actual: "get_weather",
+          reason: "properties",
+        }),
       ),
-    ).toBe("'get_weather' 의 입력 스키마를 해석하지 못해 이 툴의 입력 검사를 건너뜁니다");
+    ).toBe(
+      "'get_weather' 의 inputSchema 에 properties 가 없거나 객체가 아니어서 입력 검사를 건너뜁니다. properties 와 required 를 채우세요",
+    );
   });
 
   it("REJECTION_WITHOUT_VIOLATION", () => {

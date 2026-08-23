@@ -18,6 +18,8 @@ export interface SpecFinding {
   readonly expected?: JsonValue;
   /** 명세에 적힌 값. 없으면 생략한다. 가공하지 않은 원본이다. */
   readonly actual?: JsonValue;
+  /** 판정을 수행하지 못한 안정적인 사유. 현재는 SCHEMA_NOT_ANALYZABLE 에만 쓴다. */
+  readonly reason?: string;
   /** 오타 후보 등 단일 제안. 설계 문서 §5.4의 규칙으로 정해지며 없으면 생략한다. */
   readonly suggestion?: string;
 }
@@ -70,6 +72,24 @@ const literal = (value: JsonValue | undefined): string =>
 /** suggestion은 언제나 문자열이므로 작은따옴표만 붙인다. */
 const suggest = (finding: SpecFinding, tail: string): string =>
   finding.suggestion === undefined ? "" : `. ${tail}: '${escapeInline(finding.suggestion)}'`;
+
+const describeUnanalyzableSchema = (finding: SpecFinding): string => {
+  const tool = literal(finding.actual);
+  switch (finding.reason) {
+    case "properties":
+      return `${tool} 의 inputSchema 에 properties 가 없거나 객체가 아니어서 입력 검사를 건너뜁니다. properties 와 required 를 채우세요`;
+    case "type":
+      return `${tool} 의 inputSchema type 이 object 가 아니어서 입력 검사를 건너뜁니다. type 을 object 로 지정하고 properties 와 required 를 채우세요`;
+    case "schema":
+      return `${tool} 의 inputSchema 가 객체가 아니어서 입력 검사를 건너뜁니다. 객체 스키마에 type, properties, required 를 채우세요`;
+    case "duplicateTool":
+      return `${tool} 이 tools/list 에 중복 선언되어 어느 inputSchema 를 쓸지 정할 수 없어 입력 검사를 건너뜁니다. 같은 이름의 툴 선언을 하나만 남기세요`;
+    case undefined:
+      return `${tool} 의 입력 스키마를 해석하지 못해 이 툴의 입력 검사를 건너뜁니다. inputSchema 의 type, properties, required 를 확인하세요`;
+    default:
+      return `${tool} 의 inputSchema 에 지원하지 않는 JSON Schema 키워드 '${escapeInline(finding.reason)}' 가 있어 입력 검사를 건너뜁니다. type, properties, required 중심으로 스키마를 단순화하세요`;
+  }
+};
 
 /**
  * 선언된 범위를 사람이 읽는 구절로 만든다. **선언된 항목만 적는다.** 없는 항목을 추측해
@@ -125,7 +145,7 @@ export function describeSpecFinding(finding: SpecFinding): string {
     case "RANGE_MISMATCH":
       return `${path} 값 ${literal(actual)} 이 선언된 범위를 벗어납니다. 서버 선언: ${describeRange(expected)}. 값을 범위 안으로 고치거나, 거절을 기대하는 케이스라면 expectError 를 지정하세요`;
     case "SCHEMA_NOT_ANALYZABLE":
-      return `${literal(actual)} 의 입력 스키마를 해석하지 못해 이 툴의 입력 검사를 건너뜁니다`;
+      return describeUnanalyzableSchema(finding);
     case "REJECTION_WITHOUT_VIOLATION":
       return "거절을 기대하지만 입력이 서버 선언을 어기지 않습니다. 서버가 선언 밖 제약으로 거절한다면 그대로 두고, 아니라면 입력을 확인하세요";
     case "VACUOUS_MIN_LENGTH":

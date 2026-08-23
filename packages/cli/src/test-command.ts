@@ -19,6 +19,7 @@ import type {
   SuiteCaseApproval,
   SuiteValidationIssue,
   SuiteValidationResult,
+  TestCaseResult,
   TestSuiteSpec,
 } from "@mcpeak/runner";
 import {
@@ -1030,7 +1031,8 @@ async function runCliCore(
   /**
    * 툴 목록이 비면 입력 계약 대조는 건너뛴다. 목록이 비었을 때 대조하면 모든 케이스가
    * `TOOL_NOT_DECLARED` 로 걸려 실패 원인과 무관한 줄만 늘어난다. 단언 실질성은 툴이 필요
-   * 없으므로 항상 돈다. 표시는 실패한 케이스에 한한다. 설계 문서 §7.
+   * 없으므로 항상 돈다. 위반 참고는 실패한 케이스에만 표시하지만, 검사를 건너뛴 사실은
+   * 통과 케이스에서도 보존한다. 설계 문서 §7.
    *
    * 검사가 던져도 판정과 exit code 는 바뀌지 않아야 하므로 삼킨다. `validated.value` 는 이미
    * `validateMcpSuite` 를 통과했으니 도달할 일이 없는 경로이고, 도달했다면 그것은 비차단
@@ -1038,15 +1040,18 @@ async function runCliCore(
    */
   const specFindings: readonly SpecFinding[] = (() => {
     /**
-     * 실패한 케이스의 버킷을 보고서의 케이스 순서로 먼저 만든다. 두 검사 결과를 이어 붙인
+     * 케이스 버킷을 보고서의 케이스 순서로 먼저 만든다. 두 검사 결과를 이어 붙인
      * 뒤에 `caseId` 로 묶으면 앞 케이스에 단언 finding 만 있고 뒤 케이스에 입력 계약 finding
      * 이 있을 때 뒤 케이스가 먼저 들어와 순서가 뒤집힌다. 케이스 사이 순서는 검사 종류가
      * 아니라 보고서가 정한다. 한 케이스 안의 블록 순서는 `FINDING_GROUP_ORDER` 가 맡는다.
      * 없는 키를 만들지 않으므로 버킷에 없는 caseId 는 그대로 걸러진다.
      */
     const buckets = new Map<string, SpecFinding[]>();
-    for (const item of finalReport.cases)
-      if (item.status !== "passed") buckets.set(item.spec.id, []);
+    const statuses = new Map<string, TestCaseResult["status"]>();
+    for (const item of finalReport.cases) {
+      buckets.set(item.spec.id, []);
+      statuses.set(item.spec.id, item.status);
+    }
     try {
       const inputContract = dependencies.checkInputContract ?? runnerCheckInputContract;
       const assertionSubstance =
@@ -1055,7 +1060,11 @@ async function runCliCore(
         ...(tools.length === 0 ? [] : inputContract({ suite: validated.value, tools }).findings),
         ...assertionSubstance(validated.value).findings,
       ];
-      for (const finding of found) buckets.get(finding.caseId)?.push(finding);
+      for (const finding of found) {
+        if (statuses.get(finding.caseId) === "passed" && FINDING_GROUP[finding.code] !== "skipped")
+          continue;
+        buckets.get(finding.caseId)?.push(finding);
+      }
       return [...buckets.values()].flat();
     } catch {
       return [];
@@ -1146,9 +1155,14 @@ async function runCliCore(
          * `byCase` 에 없어서 이 목록으로 순회해야 빠지지 않는다.
          */
         for (const item of finalReport.cases) {
-          if (item.status === "passed") continue;
           const caseId = item.spec.id;
-          const list = byCase.get(caseId) ?? [];
+          const allFindings = byCase.get(caseId) ?? [];
+          // 통과 케이스의 위반 참고는 기존처럼 숨기되, 검사를 수행하지 못했다는 사실은 숨기지
+          // 않는다. 초록 실행에서 이 finding 을 빼면 사용자는 입력 계약이 검증됐다고 읽는다.
+          const list =
+            item.status === "passed"
+              ? allFindings.filter((finding) => FINDING_GROUP[finding.code] === "skipped")
+              : allFindings;
           for (const group of FINDING_GROUP_ORDER) {
             const grouped = list.filter((finding) => FINDING_GROUP[finding.code] === group);
             if (grouped.length === 0) continue;

@@ -809,15 +809,23 @@ for (const [fixture, expectedStatus, expectedSummary] of [
       );
     await expectExited(pidFile);
 
-    // 4. 쓸 수 없는 경로: 전부 통과여도 1 이다. 리포트 없이 초록이 되면 안 된다.
+    // 4. 쓸 수 없는 경로: 전부 통과여도 1 이지만 시험 결과 stdout 은 보존한다(#294).
+    const unwritablePath = join(dir, "no-such-dir", "junit.xml");
     const unwritable = await execute(
-      args("weather-suite.json", join(dir, "no-such-dir", "junit.xml")),
+      args("weather-suite.json", unwritablePath),
     );
     assert.equal(unwritable.code, 1);
-    assert.equal(unwritable.out, "");
+    assert.ok(
+      unwritable.out.includes("3 passed"),
+      `JUnit 쓰기 실패 뒤 stdout 에 시험 결과가 없습니다. 실제 출력:\n${unwritable.out}`,
+    );
     assert.ok(
       unwritable.err.includes("JUNIT_WRITE_FAILED"),
       `stderr 에 'JUNIT_WRITE_FAILED' 가 없습니다. 실제 출력:\n${unwritable.err}`,
+    );
+    assert.ok(
+      unwritable.err.includes(unwritablePath) && unwritable.err.includes("ENOENT"),
+      `stderr 에 시도한 경로와 errno 가 없습니다. 실제 출력:\n${unwritable.err}`,
     );
     await expectExited(pidFile);
   } finally {

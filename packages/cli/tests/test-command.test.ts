@@ -577,21 +577,21 @@ describe("runCli", () => {
     await runCli(["test", "x.json", "--command", "node", "--junit", "out.xml"], d.value);
     expect(order).toEqual(["writeFile", "writeStdout"]);
   });
-  it("writeFile 이 실패하면 전부 통과여도 JUNIT_WRITE_FAILED 로 1 을 낸다", async () => {
+  it("writeFile 이 실패해도 결과를 출력하고 경로·errno와 JUNIT_WRITE_FAILED로 1을 낸다", async () => {
     const d = deps({
       writeFile: async () => {
-        throw new Error("EACCES");
+        throw Object.assign(new Error("EACCES: permission denied"), { code: "EACCES" });
       },
     });
     expect(
       await runCli(["test", "x.json", "--command", "node", "--junit", "out.xml"], d.value),
     ).toBe(1);
     expect(d.writes.err.join("")).toBe(
-      "오류 [JUNIT_WRITE_FAILED]: JUnit XML 파일을 쓰지 못했습니다.\n" +
+      "오류 [JUNIT_WRITE_FAILED]: JUnit XML 파일을 쓰지 못했습니다: out.xml\n" +
+        "  errno: EACCES\n" +
         "해결: `--junit` 경로의 디렉터리가 존재하는지와 쓰기 권한을 확인하세요.\n",
     );
-    // 파일을 못 썼으면 보고서도 내지 않는다. 성공한 것처럼 보이는 stdout 을 남기지 않는다.
-    expect(d.writes.out).toEqual([]);
+    expect(d.writes.out.join("")).toBe(RENDERED);
   });
   it("renderJUnit 이 던지면 CLI_INTERNAL_ERROR 가 되고 파일을 쓰지 않는다", async () => {
     const d = deps({

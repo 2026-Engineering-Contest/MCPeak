@@ -540,6 +540,19 @@ function resetFailure(error: ResetCommandError): CliFailure {
     hint: "`--reset-cmd` 명령이 단독으로 성공하는지 확인한 뒤 다시 실행하세요.",
   };
 }
+
+/** JUnit 파일 쓰기 실패에 사용자가 지정한 경로와 운영체제 오류 코드를 남긴다(#294). */
+function junitWriteFailure(path: string, error: unknown): CliFailure {
+  const code = (error as { code?: unknown } | null)?.code;
+  const errno = typeof code === "string" || typeof code === "number" ? String(code) : "알 수 없음";
+  return {
+    code: "JUNIT_WRITE_FAILED",
+    message:
+      `JUnit XML 파일을 쓰지 못했습니다: ${escapeTerminalText(path)}\n` +
+      `  errno: ${escapeTerminalText(errno)}`,
+    hint: dictionary.JUNIT_WRITE_FAILED.hint,
+  };
+}
 /**
  * `message`·`hint` 는 **여기서 이스케이프하지 않는다**(#289). 그 필드는 우리가 여러 줄로
  * 공들여 쓴 안내와, 자식 프로세스·경로처럼 신뢰 못 할 값이 섞여 있다 — 어느 부분이 우리 글이고
@@ -872,6 +885,7 @@ async function runCliCore(
    * 있는데, 그때 사용자가 `--junit` 으로 명시적으로 요청한 산출물까지 함께 잃을 이유가 없다.
    * `--junit` 을 주지 않으면 이 블록을 통째로 건너뛰므로 기존 순서와 동일하다. ADR-0019.
    */
+  let deferredJunitFailure: CliFailure | undefined;
   if (input.junitPath !== undefined) {
     let xml: string;
     try {
@@ -885,13 +899,12 @@ async function runCliCore(
     }
     try {
       await dependencies.writeFile(input.junitPath, xml);
-    } catch {
+    } catch (error) {
       // 전부 통과여도 1 이다. 조용히 0 을 내면 CI 는 리포트 파일 없이 초록이 되고, 사용자는
-      // 리포트가 사라진 것을 한참 뒤에야 안다. 원인이 로컬 I/O 이므로 진단은 쓰지 않는다.
-      return writeFailure(dependencies, {
-        code: "JUNIT_WRITE_FAILED",
-        ...dictionary.JUNIT_WRITE_FAILED,
-      });
+      // 리포트가 사라진 것을 한참 뒤에야 안다. 다만 여기서 반환하면 시험 결과 stdout 까지
+      // 사라진다(#294). 실패를 보관해 결과를 전부 렌더한 뒤 보고한다. 원인이 로컬 I/O 이므로
+      // 서버 진단은 쓰지 않는다.
+      deferredJunitFailure = junitWriteFailure(input.junitPath, error);
     }
   }
   /**
@@ -1184,6 +1197,8 @@ async function runCliCore(
       ...dictionary.CLI_INTERNAL_ERROR,
     });
   }
+  if (deferredJunitFailure !== undefined)
+    return writeFailure(dependencies, deferredJunitFailure);
   const settled = snapshotDiagnostics();
   // 전부 통과여도 비정상 종료면 쓴다. 종료 경로의 결함을 숨기지 않는다. 설계 문서 §4.3.
   if (!allPassed || (settled.value !== undefined && isAbnormalExit(settled.value)))

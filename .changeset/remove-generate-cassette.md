@@ -1,11 +1,9 @@
 ---
 "@mcpeak/cli": minor
-"@mcpeak/dashboard": minor
 ---
 
 **Breaking**: `mcpeak generate`의 Tool 카세트 옵션 `--cassette`와 `--record`를 제거했습니다.
-대시보드 Generate 마법사에서도 카세트 경로와 재녹화 입력을 제거했습니다. 이는 Tool 카세트를
-걷어내는 마지막 사용자 표면입니다
+이는 CLI에 남아 있던 Tool 카세트 사용자 표면을 제거하는 변경입니다
 ([ADR-0059](https://github.com/2026-Engineering-Contest/MCPeak/blob/main/docs/adr/0059-tool-카세트를-제거한다.md)).
 
 `generate` 시험 실행은 이제 항상 실제 MCP 서버를 직접 호출합니다. 제거된 옵션을 사용하면

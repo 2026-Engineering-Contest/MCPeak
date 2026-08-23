@@ -11,7 +11,7 @@ import type { CommandMethod } from "../generate/steps/StepServer.js";
 import { StepServer, splitCommand } from "../generate/steps/StepServer.js";
 import { StepSuite } from "../generate/steps/StepSuite.js";
 
-const STEPS = ["테스트할 서버", "만들어질 스위트", "생성 방식", "초기화와 확인"] as const;
+const STEPS = ["테스트할 서버", "만들어질 스위트", "생성 방식", "녹화와 확인"] as const;
 
 const RECENT_KEY = "mcpeak-generate-recent-commands";
 
@@ -62,6 +62,8 @@ const INITIAL_STATE: WizardState = {
   model: "",
   dryRun: true,
   repair: true,
+  cassettePath: "",
+  record: false,
   resetCmd: "",
 };
 
@@ -90,11 +92,11 @@ export function GenerateWizard(): JSX.Element {
   function patch(partial: Partial<WizardState>): void {
     setState((previous) => {
       const next = { ...previous, ...partial };
-      // 시험 실행을 끄면 그에 종속된 초기화 명령을 함께 비운다.
+      // 시험 실행을 끄면 그에 종속된 값(카세트·초기화 명령·재녹화)을 함께 비운다.
       // 값이 남으면 4단계 입력이 잠긴 채 buildGenerateArgv가 throw해 복구 경로가
       // 없다(PR #199 리뷰 반영).
       if (partial.dryRun === false) {
-        return { ...next, resetCmd: "" };
+        return { ...next, cassettePath: "", resetCmd: "", record: false };
       }
       return next;
     });

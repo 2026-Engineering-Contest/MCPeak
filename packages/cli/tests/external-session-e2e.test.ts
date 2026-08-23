@@ -538,3 +538,57 @@ describe("mcpeak test 의 External 세션 — 부분 커버리지 (ADR-0068)", (
     expect(replayed.stderr).not.toContain("실제 네트워크로 나갔습니다");
   }, 30_000);
 });
+
+/**
+ * ADR-0069. 순수 함수 단위는 `external-session.test.ts` 가 본다. 여기서는 그 시각이 **실제
+ * SQLite 세션에서 나와** stderr 까지 닿는지만 본다 — 저장·조회·표시가 한 줄로 이어지는지가
+ * 이 테스트의 몫이다.
+ */
+describe("mcpeak test 의 External 세션 — 녹화 시각 (ADR-0069)", () => {
+  it("재생이 원본을 언제 녹화했는지 말한다", async () => {
+    const origin = await startOrigin();
+    const sessionPath = await newSessionPath();
+
+    const before = new Date().toISOString();
+    await runTest(["--record-session", sessionPath], origin.url("/weather"));
+    const replayed = await captureStderr(() =>
+      runTest(["--session", sessionPath], origin.url("/weather")),
+    );
+
+    const after = new Date().toISOString();
+
+    expect(replayed.exitCode).toBe(0);
+    const shown = /\((\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2}) UTC 녹화\)/.exec(replayed.stderr);
+    expect(shown).not.toBeNull();
+
+    // **날짜만 비교하면 자정 근처에서 깨진다** — `before` 가 어제고 녹화가 오늘일 수 있다.
+    // ISO 는 사전순이 곧 시간순이므로, 표시된 시각이 실행 구간 안에 있는지를 본다. 초 단위로
+    // 잘라 비교하는 것은 표시가 밀리초를 버리기 때문이다(내림이라 `before` 쪽도 함께 자른다).
+    const seconds = (value: string): string => value.slice(0, 19);
+    const shownIso = `${shown?.[1]}T${shown?.[2]}`;
+    expect(shownIso >= seconds(before)).toBe(true);
+    expect(shownIso <= seconds(after)).toBe(true);
+
+    // 나이 판정 문구는 없다.
+    expect(replayed.stderr).not.toContain("전에 녹화");
+  }, 30_000);
+
+  /**
+   * **결정론.** 같은 세션을 두 번 재생하면 stderr 가 바이트까지 같아야 한다. 나이를 계산하면
+   * 여기가 흔들린다 — 대시보드가 SSE 바이트 동일을 단언하는 것과 같은 성질이다.
+   */
+  it("같은 세션을 두 번 재생하면 같은 시각을 낸다", async () => {
+    const origin = await startOrigin();
+    const sessionPath = await newSessionPath();
+
+    await runTest(["--record-session", sessionPath], origin.url("/weather"));
+    const first = await captureStderr(() =>
+      runTest(["--session", sessionPath], origin.url("/weather")),
+    );
+    const second = await captureStderr(() =>
+      runTest(["--session", sessionPath], origin.url("/weather")),
+    );
+
+    expect(second.stderr).toBe(first.stderr);
+  }, 30_000);
+});

@@ -1494,9 +1494,60 @@ export function externalSessionOutcome(
   if (summary.consumedCount === 0) return undefined;
   if (summary.unusedCount > 0) return undefined;
   return (
-    `\n→ 녹화된 외부 호출 ${summary.interactionCount}건을 재생했습니다: ${shownPath}\n` +
+    `\n→ 녹화된 외부 호출 ${summary.interactionCount}건을 재생했습니다: ${shownPath}${recordedAtSuffix(summary)}\n` +
     replayCaveat(summary)
   );
+}
+
+/**
+ * 원본을 **언제** 녹화했는지 덧붙인다(ADR-0069). 없으면 아무것도 안 붙인다.
+ *
+ * **나이가 아니라 시각이다.** "12일 전" 이나 "30일 넘었습니다" 는 지금 시각을 읽어야 하고,
+ * 그러면 같은 세션의 같은 재생이 날마다 다른 바이트를 낸다 — 결정론이 이 저장소의 핵심
+ * 가치이고 대시보드 e2e 가 SSE 바이트 동일을 단언한다. 낡았는지 판정하는 것은 사람의 몫이다.
+ *
+ * **`toLocale*` 를 쓰지 않는다.** 기계의 로캘·타임존에 따라 같은 세션이 CI 와 로컬에서 다른
+ * 문자열을 낸다. ISO 를 자르고 `UTC` 를 명시한다 — 표기를 안 붙이면 KST 사용자가 자기 시간으로
+ * 읽어 9시간을 착각한다. 밀리초는 낡음을 판단하는 데 쓸모가 없어 뺀다.
+ */
+function recordedAtSuffix(summary: SessionSummary): string {
+  if (summary.mode !== "replay") return "";
+  const recordedAt = summary.recordedAt;
+  if (recordedAt === undefined) return "";
+  // `2026-05-01T09:12:33.123Z` → `2026-05-01 09:12:33 UTC`. 순수 문자열 연산이라 기계와
+  // 무관하다.
+  //
+  // **끝의 `Z` 를 필수로 요구한다.** 앞부분만 보면 `2026-05-01T09:12:33+09:00` 도 통과해서
+  // 그 값을 `09:12:33 UTC` 로 표시한다 — 9시간 틀린 시각을 사실로 말하는 것이다. 지금 우리는
+  // `toISOString()` 만 쓰므로 그런 값이 들어올 일이 없지만, **확인하지 않은 것을 단정하지
+  // 않는다** 는 쪽을 코드에 남긴다. 모양이 다르면(구 버전 파일 등) 손대지 않고 원문을 보여준다.
+  const [, date, time] =
+    /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2})(?:\.\d+)?Z$/.exec(recordedAt) ?? [];
+  const shown =
+    date === undefined || time === undefined
+      ? escapeTerminalText(recordedAt)
+      : formatUtc(recordedAt, date, time);
+  return ` (${shown} 녹화)`;
+}
+
+/**
+ * 모양이 맞아도 **값이 달력에 없을 수 있다.** `2026-02-30` 은 `NaN` 이 아니라 **3월 2일로
+ * 굴러간다**(실측). 그래서 `isNaN` 검사로는 못 잡고 왕복 비교를 해야 한다 — 다시 직렬화한
+ * 값이 원래 문자열과 같을 때만 우리가 읽은 대로인 것이다.
+ *
+ * 파싱은 시계를 읽지 않으므로 결정론에 영향이 없다. 확인에 실패하면 원문을 그대로 보여준다 —
+ * 손대지 않는 쪽이 없는 날짜를 그럴듯하게 포장하는 것보다 낫다.
+ *
+ * **그래서 `recordedAt` 원문을 받는다.** 잘라낸 조각으로 되짚어 만들면 정규식이 허용한 소수
+ * 초가 사라져(`2026-02-30T12:00:00.123Z` → `...12:00:00Z`), "원문을 그대로 보여준다" 는 이
+ * 함수의 계약이 실패 경로에서만 조용히 깨진다.
+ */
+function formatUtc(recordedAt: string, date: string, time: string): string {
+  const iso = `${date}T${time}`;
+  const parsed = new Date(`${iso}Z`);
+  if (Number.isNaN(parsed.getTime()) || !parsed.toISOString().startsWith(iso))
+    return escapeTerminalText(recordedAt);
+  return `${date} ${time} UTC`;
 }
 
 export function externalSessionNotice(summary: SessionSummary): string | undefined {

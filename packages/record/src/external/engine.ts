@@ -154,6 +154,10 @@ export function createReplayEngine(options: {
       return { ...interaction, outcome: interaction.outcome };
     },
     finish(status) {
+      // `interactions` 는 `ordinal` 순이고 `recordedAt` 은 reserve 시점에 찍히므로, 첫 항목이
+      // 가장 먼저 녹화된 것이다. **지금 시각을 읽지 않는다** — 나이 계산은 이 요약의 일이
+      // 아니고, 애초에 아무도 할 일이 아니다(ADR-0069).
+      const first = source.interactions[0];
       return Object.freeze({
         mode: "replay",
         sourceSessionId: options.sourceSessionId,
@@ -161,6 +165,7 @@ export function createReplayEngine(options: {
         interactionCount: source.interactions.length,
         consumedCount,
         unusedCount: Math.max(0, source.interactions.length - consumedCount),
+        ...(first === undefined ? {} : { recordedAt: first.recordedAt }),
         misses: Object.freeze(misses.slice()),
       });
     },

@@ -1494,9 +1494,31 @@ export function externalSessionOutcome(
   if (summary.consumedCount === 0) return undefined;
   if (summary.unusedCount > 0) return undefined;
   return (
-    `\n→ 녹화된 외부 호출 ${summary.interactionCount}건을 재생했습니다: ${shownPath}\n` +
+    `\n→ 녹화된 외부 호출 ${summary.interactionCount}건을 재생했습니다: ${shownPath}${recordedAtSuffix(summary)}\n` +
     replayCaveat(summary)
   );
+}
+
+/**
+ * 원본을 **언제** 녹화했는지 덧붙인다(ADR-0069). 없으면 아무것도 안 붙인다.
+ *
+ * **나이가 아니라 시각이다.** "12일 전" 이나 "30일 넘었습니다" 는 지금 시각을 읽어야 하고,
+ * 그러면 같은 세션의 같은 재생이 날마다 다른 바이트를 낸다 — 결정론이 이 저장소의 핵심
+ * 가치이고 대시보드 e2e 가 SSE 바이트 동일을 단언한다. 낡았는지 판정하는 것은 사람의 몫이다.
+ *
+ * **`toLocale*` 를 쓰지 않는다.** 기계의 로캘·타임존에 따라 같은 세션이 CI 와 로컬에서 다른
+ * 문자열을 낸다. ISO 를 자르고 `UTC` 를 명시한다 — 표기를 안 붙이면 KST 사용자가 자기 시간으로
+ * 읽어 9시간을 착각한다. 밀리초는 낡음을 판단하는 데 쓸모가 없어 뺀다.
+ */
+function recordedAtSuffix(summary: SessionSummary): string {
+  if (summary.mode !== "replay") return "";
+  const recordedAt = summary.recordedAt;
+  if (recordedAt === undefined) return "";
+  // `2026-05-01T09:12:33.123Z` → `2026-05-01 09:12:33 UTC`. 순수 문자열 연산이라 기계와
+  // 무관하다. 모양이 다른 값이 오면(구 버전 파일 등) 손대지 않고 그대로 보여준다.
+  const match = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2})/.exec(recordedAt);
+  const shown = match === null ? escapeTerminalText(recordedAt) : `${match[1]} ${match[2]} UTC`;
+  return ` (${shown} 녹화)`;
 }
 
 export function externalSessionNotice(summary: SessionSummary): string | undefined {

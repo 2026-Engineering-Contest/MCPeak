@@ -538,3 +538,47 @@ describe("mcpeak test 의 External 세션 — 부분 커버리지 (ADR-0068)", (
     expect(replayed.stderr).not.toContain("실제 네트워크로 나갔습니다");
   }, 30_000);
 });
+
+/**
+ * ADR-0069. 순수 함수 단위는 `external-session.test.ts` 가 본다. 여기서는 그 시각이 **실제
+ * SQLite 세션에서 나와** stderr 까지 닿는지만 본다 — 저장·조회·표시가 한 줄로 이어지는지가
+ * 이 테스트의 몫이다.
+ */
+describe("mcpeak test 의 External 세션 — 녹화 시각 (ADR-0069)", () => {
+  it("재생이 원본을 언제 녹화했는지 말한다", async () => {
+    const origin = await startOrigin();
+    const sessionPath = await newSessionPath();
+
+    const before = new Date().toISOString();
+    await runTest(["--record-session", sessionPath], origin.url("/weather"));
+    const replayed = await captureStderr(() =>
+      runTest(["--session", sessionPath], origin.url("/weather")),
+    );
+
+    expect(replayed.exitCode).toBe(0);
+    // 오늘 녹화했으니 오늘 날짜가 나온다. 값 자체를 하드코딩하지 않고 형식과 자리를 본다.
+    expect(replayed.stderr).toMatch(/\(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} UTC 녹화\)/);
+    expect(replayed.stderr).toContain(`(${before.slice(0, 10)} `);
+    // 나이 판정 문구는 없다.
+    expect(replayed.stderr).not.toContain("전에 녹화");
+  }, 30_000);
+
+  /**
+   * **결정론.** 같은 세션을 두 번 재생하면 stderr 가 바이트까지 같아야 한다. 나이를 계산하면
+   * 여기가 흔들린다 — 대시보드가 SSE 바이트 동일을 단언하는 것과 같은 성질이다.
+   */
+  it("같은 세션을 두 번 재생하면 같은 시각을 낸다", async () => {
+    const origin = await startOrigin();
+    const sessionPath = await newSessionPath();
+
+    await runTest(["--record-session", sessionPath], origin.url("/weather"));
+    const first = await captureStderr(() =>
+      runTest(["--session", sessionPath], origin.url("/weather")),
+    );
+    const second = await captureStderr(() =>
+      runTest(["--session", sessionPath], origin.url("/weather")),
+    );
+
+    expect(second.stderr).toBe(first.stderr);
+  }, 30_000);
+});

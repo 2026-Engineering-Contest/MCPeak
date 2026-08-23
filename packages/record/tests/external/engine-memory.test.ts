@@ -187,3 +187,50 @@ describe("REPLAY_MISS 진단", () => {
     expect(replay.finish("completed").misses[0]?.url).toBe("https://example.com/never-recorded");
   });
 });
+
+/**
+ * ADR-0069. 재생 요약이 **원본을 언제 녹화했는지** 싣는다. 나이는 계산하지 않는다 — 지금
+ * 시각을 읽는 순간 같은 세션의 같은 재생이 날마다 다른 값을 낸다.
+ */
+describe("재생 요약의 녹화 시각", () => {
+  it("원본에서 가장 먼저 녹화된 시각을 싣는다", () => {
+    const store = createMemorySessionStore();
+    const record = createRecordEngine({ sessionId: "aged", store });
+    const first = record.begin(request("a"));
+    record.complete({ interactionId: first.interactionId, outcome: outcome(1) });
+    const second = record.begin(request("b"));
+    record.complete({ interactionId: second.interactionId, outcome: outcome(2) });
+    record.finish("completed");
+
+    const summary = createReplayEngine({ sourceSessionId: "aged", store }).finish("completed");
+
+    // 두 번째가 아니라 **첫 번째** 시각이다. 세션이 언제 시작됐는지가 낡음의 기준이다.
+    expect(summary).toMatchObject({ mode: "replay", recordedAt: first.recordedAt });
+  });
+
+  /**
+   * 요약을 두 번 만들어도 같은 값이어야 한다. 여기서 지금 시각을 읽으면 이 단언이 흔들린다.
+   */
+  it("요약을 다시 만들어도 같은 시각이다 — 지금 시각을 읽지 않는다", () => {
+    const store = createMemorySessionStore();
+    const record = createRecordEngine({ sessionId: "stable", store });
+    const only = record.begin(request());
+    record.complete({ interactionId: only.interactionId, outcome: outcome(1) });
+    record.finish("completed");
+
+    const once = createReplayEngine({ sourceSessionId: "stable", store }).finish("completed");
+    const twice = createReplayEngine({ sourceSessionId: "stable", store }).finish("completed");
+
+    expect(twice).toEqual(once);
+  });
+
+  it("원본이 비었으면 시각이 없다", () => {
+    const store = createMemorySessionStore();
+    createRecordEngine({ sessionId: "empty", store }).finish("completed");
+
+    const summary = createReplayEngine({ sourceSessionId: "empty", store }).finish("completed");
+
+    // 없는 것을 빈 문자열이나 지금 시각으로 채우지 않는다.
+    expect(summary).not.toHaveProperty("recordedAt");
+  });
+});

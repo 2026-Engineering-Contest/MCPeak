@@ -6,16 +6,21 @@ import { defineConfig } from "tsdown";
 // 고정해 그 분기를 없앤다(결정론성, CLAUDE.md). native 로더는 순수 ESM 만
 // 읽으므로 설정 파일은 .ts 가 아니라 .mjs 여야 한다.
 export default defineConfig({
-  // 세 진입점을 함께 낸다. 공통 루트가 `src` 라 출력이 `dist/index`, `dist/external/index`,
-  // `dist/external/child/bootstrap` 으로 구조를 유지한다.
+  // 출력 경로를 **객체로 명시한다.** 배열로 두면 tsdown 이 entry 들의 공통 디렉터리를 루트로
+  // 잡는데, 카세트(`src/index.ts`)가 사라지면서 그 루트가 `src` 에서 `src/external` 로
+  // 좁아져 산출물이 `dist/external/index` → `dist/index` 로 조용히 옮겨간다. 발행된 경로가
+  // 무관한 파일의 삭제에 따라 움직이는 것은 결정론성 문제다(CLAUDE.md). 여기서 못 박는다.
   //
-  // bootstrap 이 별도 entry 인 것이 요점이다. Coordinator 는 자식을 띄울 때
-  // `new URL("./child/bootstrap.mjs", import.meta.url)` 로 그 파일을 가리키므로, 번들에
-  // 삼켜지면 가리킬 파일이 사라진다. entry 로 두면 `dist/external/` 옆에 남는다.
+  // bootstrap 이 별도 entry 인 것은 그대로 요점이다. Coordinator 는 자식을 띄울 때
+  // `new URL("./child/bootstrap.mjs", import.meta.url)` 로 그 파일을 가리키므로, 출력이
+  // `dist/external/index` 옆의 `dist/external/child/` 에 있어야 상대 경로가 맞는다.
   //
   // 자식은 별도 프로세스라 모듈 인스턴스를 공유하지 않는다. bootstrap 번들이 runtime 코드를
   // 한 벌 더 갖는 것은 중복이 아니라 자립이다 — 상대 경로가 깨질 여지가 없다.
-  entry: ["src/index.ts", "src/external/index.ts", "src/external/child/bootstrap.mjs"],
+  entry: {
+    "external/index": "src/external/index.ts",
+    "external/child/bootstrap": "src/external/child/bootstrap.mjs",
+  },
   format: ["esm", "cjs"],
   dts: true,
   clean: true,

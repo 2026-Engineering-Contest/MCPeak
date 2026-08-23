@@ -136,11 +136,7 @@ importers:
         specifier: 'catalog:'
         version: 1.30.0(zod@4.4.3)
 
-  packages/record:
-    dependencies:
-      '@mcpeak/core':
-        specifier: workspace:*
-        version: link:../core
+  packages/record: {}
 
   packages/runner:
     dependencies:

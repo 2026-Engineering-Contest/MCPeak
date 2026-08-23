@@ -811,9 +811,7 @@ for (const [fixture, expectedStatus, expectedSummary] of [
 
     // 4. 쓸 수 없는 경로: 전부 통과여도 1 이지만 시험 결과 stdout 은 보존한다(#294).
     const unwritablePath = join(dir, "no-such-dir", "junit.xml");
-    const unwritable = await execute(
-      args("weather-suite.json", unwritablePath),
-    );
+    const unwritable = await execute(args("weather-suite.json", unwritablePath));
     assert.equal(unwritable.code, 1);
     assert.ok(
       unwritable.out.includes("3 passed"),

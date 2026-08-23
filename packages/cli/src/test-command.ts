@@ -1197,8 +1197,6 @@ async function runCliCore(
       ...dictionary.CLI_INTERNAL_ERROR,
     });
   }
-  if (deferredJunitFailure !== undefined)
-    return writeFailure(dependencies, deferredJunitFailure);
   const settled = snapshotDiagnostics();
   // 전부 통과여도 비정상 종료면 쓴다. 종료 경로의 결함을 숨기지 않는다. 설계 문서 §4.3.
   if (!allPassed || (settled.value !== undefined && isAbnormalExit(settled.value)))
@@ -1208,6 +1206,7 @@ async function runCliCore(
    * 상태를 서버 탓으로 적게 된다. `--repair-bundle` 을 주지 않으면 이 블록을 통째로 건너뛰므로
    * 기존 경로의 출력과 종료 코드가 그대로다. 계획서 완료 조건 2.
    */
+  let deferredRepairBundleFailure: CliFailure | undefined;
   if (input.repairBundlePath !== undefined) {
     const bundle = buildRepairBundle({
       report: finalReport,
@@ -1221,13 +1220,19 @@ async function runCliCore(
         await dependencies.writeFile(input.repairBundlePath, serializeRepairBundle(bundle));
       } catch {
         // 전부 통과여도 1 이다. 조용히 0 을 내면 CI 는 번들 없이 초록이 되고, 사용자는 파일이
-        // 없다는 것을 한참 뒤에야 안다. 원인이 로컬 I/O 이므로 진단은 쓰지 않는다.
-        return writeFailure(dependencies, {
+        // 없다는 것을 한참 뒤에야 안다. JUnit 쓰기도 실패했을 수 있으므로 여기서 반환하지 않고
+        // 두 산출물 오류를 모두 보고한다. 원인이 로컬 I/O 이므로 진단은 쓰지 않는다.
+        deferredRepairBundleFailure = {
           code: "REPAIR_BUNDLE_WRITE_FAILED",
           ...dictionary.REPAIR_BUNDLE_WRITE_FAILED,
-        });
+        };
       }
   }
+  // 두 산출물은 독립적으로 요청한 것이다. 하나가 실패해도 다른 쓰기를 시도하고, 둘 다 실패하면
+  // 사용자가 어느 파일이 없는지 모두 알 수 있도록 두 오류를 요청 순서대로 보고한다.
+  for (const failure of [deferredJunitFailure, deferredRepairBundleFailure])
+    if (failure !== undefined) writeFailure(dependencies, failure);
+  if (deferredJunitFailure !== undefined || deferredRepairBundleFailure !== undefined) return 1;
   // 판정은 케이스 결과로만 정한다. 지문이 달라도 종료 코드는 바뀌지 않는다. 설계 문서 §6.
   return allPassed ? 0 : 1;
 }

@@ -243,6 +243,66 @@ function deps(overrides: Partial<TestCommandDependencies> = {}) {
 }
 
 describe("--repair-bundle 쓰기", () => {
+  it("JUnit 쓰기가 실패해도 repair bundle을 만들고 JUnit 오류를 보고한다", async () => {
+    const failing = report([caseResult()]);
+    const d = deps({
+      finalize: vi.fn(async () => failing),
+      writeFile: vi.fn(async (path) => {
+        if (path === "junit.xml")
+          throw Object.assign(new Error("ENOENT: no such directory"), { code: "ENOENT" });
+      }),
+    });
+    const code = await runCli(
+      [
+        "test",
+        "suite.json",
+        "--command",
+        "node",
+        "--junit",
+        "junit.xml",
+        "--repair-bundle",
+        "bundle.json",
+      ],
+      d.value,
+    );
+    expect(code).toBe(1);
+    expect(
+      (d.value.writeFile as ReturnType<typeof vi.fn>).mock.calls.map((call) => call[0]),
+    ).toEqual(["junit.xml", "bundle.json"]);
+    expect(d.writes.err.join("")).toContain("JUNIT_WRITE_FAILED");
+    expect(d.writes.err.join("")).not.toContain("REPAIR_BUNDLE_WRITE_FAILED");
+  });
+
+  it("JUnit과 repair bundle 쓰기가 모두 실패하면 두 오류를 모두 보고한다", async () => {
+    const failing = report([caseResult()]);
+    const d = deps({
+      finalize: vi.fn(async () => failing),
+      writeFile: vi.fn(async (path) => {
+        throw Object.assign(new Error(`EACCES: ${path}`), { code: "EACCES" });
+      }),
+    });
+    const code = await runCli(
+      [
+        "test",
+        "suite.json",
+        "--command",
+        "node",
+        "--junit",
+        "junit.xml",
+        "--repair-bundle",
+        "bundle.json",
+      ],
+      d.value,
+    );
+    expect(code).toBe(1);
+    expect(
+      (d.value.writeFile as ReturnType<typeof vi.fn>).mock.calls.map((call) => call[0]),
+    ).toEqual(["junit.xml", "bundle.json"]);
+    const stderr = d.writes.err.join("");
+    expect(stderr).toContain("JUNIT_WRITE_FAILED");
+    expect(stderr).toContain("REPAIR_BUNDLE_WRITE_FAILED");
+  });
+
   it("쓰기 실패 시 전부 통과여도 종료 코드가 0이 아니고 REPAIR_BUNDLE_WRITE_FAILED 가 뜬다", async () => {
     const failing = report([caseResult()]);
     const d = deps({

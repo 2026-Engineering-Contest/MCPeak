@@ -593,6 +593,21 @@ describe("runCli", () => {
     );
     expect(d.writes.out.join("")).toBe(RENDERED);
   });
+  it("JUnit 쓰기 실패 뒤에도 비정상 종료 진단을 출력한다", async () => {
+    const d = deps({
+      writeFile: async () => {
+        throw Object.assign(new Error("EACCES: permission denied"), { code: "EACCES" });
+      },
+    });
+    d.conn.getDiagnostics = () => diagnostics({ exitCode: 1, stderr: "server boom\n" });
+    expect(
+      await runCli(["test", "x.json", "--command", "node", "--junit", "out.xml"], d.value),
+    ).toBe(1);
+    const stderr = d.writes.err.join("");
+    expect(stderr).toContain("서버 프로세스 진단");
+    expect(stderr).toContain("server boom");
+    expect(stderr).toContain("JUNIT_WRITE_FAILED");
+  });
   it("renderJUnit 이 던지면 CLI_INTERNAL_ERROR 가 되고 파일을 쓰지 않는다", async () => {
     const d = deps({
       renderJUnit: () => {

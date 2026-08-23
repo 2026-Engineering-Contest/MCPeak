@@ -350,3 +350,83 @@ describe("mcpeak test 의 External 세션 — 재생은 파일을 만들지도 �
     expect(origin.calls()).toBe(0);
   }, 30_000);
 });
+
+/**
+ * ADR-0062. `record` 가 센 개수가 **실제 CLI 의 stderr 까지** 닿는지 본다. 단위 테스트는
+ * 문구를 고정하지만, 배선이 이어져 있는지는 여기서만 드러난다.
+ */
+describe("mcpeak test 의 External 세션 — 본문 URL 알림(ADR-0062)", () => {
+  it("응답 본문이 요청 경로를 되돌려 담으면 커밋 전 확인하라고 알린다", async () => {
+    let port = 0;
+    const origin = createServer((request, response) => {
+      const requested = new URL(request.url ?? "/", "http://127.0.0.1");
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(
+        JSON.stringify({
+          city: requested.searchParams.get("city"),
+          // 요청 경로를 그대로 되돌려 담는다 — pagination `next` 가 하는 일이다.
+          next: `http://127.0.0.1:${port}${requested.pathname}?page=2`,
+          docs: "https://docs.example.com/guide",
+        }),
+      );
+    });
+    servers.push(origin);
+    await new Promise<void>((done) => origin.listen(0, "127.0.0.1", done));
+    port = (origin.address() as { port: number }).port;
+    const sessionPath = await newSessionPath();
+
+    const { exitCode, stderr } = await captureStderr(() =>
+      runTest(["--record-session", sessionPath], `http://127.0.0.1:${port}/weather`),
+    );
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toContain("세션 파일 본문에 URL 이 2건 남아 있습니다");
+    expect(stderr).toContain("되돌아온 경로 1건");
+    expect(stderr).toContain("그 밖의 URL 1건");
+    expect(stderr).toContain("커밋하기 전에");
+    // 알림이 새 유출 경로가 되면 안 된다 — 개수만 말하고 URL 은 싣지 않는다.
+    expect(stderr).not.toContain("docs.example.com");
+    expect(stderr).not.toContain("?page=2");
+  }, 30_000);
+
+  it("본문에 URL 이 없으면 이 알림을 내지 않는다", async () => {
+    const origin = await startOrigin();
+    const sessionPath = await newSessionPath();
+
+    const { stderr } = await captureStderr(() =>
+      runTest(["--record-session", sessionPath], origin.url("/weather")),
+    );
+
+    expect(stderr).not.toContain("세션 파일 본문에 URL");
+  }, 30_000);
+
+  it("재생에는 이 알림이 나오지 않는다", async () => {
+    let port = 0;
+    const origin = createServer((request, response) => {
+      const requested = new URL(request.url ?? "/", "http://127.0.0.1");
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(
+        JSON.stringify({
+          city: requested.searchParams.get("city"),
+          next: `http://127.0.0.1:${port}${requested.pathname}?page=2`,
+        }),
+      );
+    });
+    servers.push(origin);
+    await new Promise<void>((done) => origin.listen(0, "127.0.0.1", done));
+    port = (origin.address() as { port: number }).port;
+    const originUrl = `http://127.0.0.1:${port}/weather`;
+    const sessionPath = await newSessionPath();
+
+    const recorded = await captureStderr(() =>
+      runTest(["--record-session", sessionPath], originUrl),
+    );
+    expect(recorded.stderr).toContain("세션 파일 본문에 URL");
+
+    const replayed = await captureStderr(() => runTest(["--session", sessionPath], originUrl));
+
+    expect(replayed.exitCode).toBe(0);
+    // 재생은 이미 있는 파일을 읽을 뿐이라 새로 남는 것이 없다(ADR-0062).
+    expect(replayed.stderr).not.toContain("세션 파일 본문에 URL");
+  }, 30_000);
+});

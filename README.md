@@ -98,7 +98,7 @@ mcpeak test <suite.json> --command <executable> [--arg <value> ...]
 mcpeak generate --suite-id <id> --name <name> --out <suite.json>
                  --command <executable> [--arg <value> ...]
                  [--baseline-only] [--provider <codex|claude>] [--model <model>]
-                 [--no-dry-run] [--reset-cmd <command>] [--no-repair]
+                 [--no-dry-run] [--reset-cmd <command>] [--no-repair] [--force]
 ```
 
 `--command` 와 `--arg` 가 **테스트 대상 서버를 띄우는 방법**입니다. `--arg` 를 여러 번 써서

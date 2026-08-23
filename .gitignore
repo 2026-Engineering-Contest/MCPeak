@@ -16,3 +16,7 @@ coverage/
 /AGENTS.md
 /.agents/
 /docs/conventions/
+
+# Local Claude configuration
+/CLAUDE.local.md
+/.claude/worktrees/

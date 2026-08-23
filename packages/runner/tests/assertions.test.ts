@@ -14,7 +14,7 @@ describe("Runner assertion", () => {
       status: "failed",
       diagnostic: {
         code: "TOOL_NOT_FOUND",
-        message: "툴 'missing'를 찾을 수 없습니다.",
+        message: "툴 'missing'을(를) 찾을 수 없습니다. 발견된 툴: 'add', 'get_weather'",
         expected: "missing",
         actual: ["add", "get_weather"],
         hint: "서버의 tools/list 응답과 테스트 명세를 확인하세요.",
@@ -39,6 +39,13 @@ describe("Runner assertion", () => {
       ).diagnostic?.actual,
     ).toEqual(["A", "a", "가"]);
     expect(localeCompare).not.toHaveBeenCalled();
+  });
+
+  it("서버가 선언한 툴이 없으면 발견된 툴이 없다고 알린다", () => {
+    expect(assertToolExists([], { type: "toolExists", tool: "missing" }).diagnostic).toMatchObject({
+      message: "툴 'missing'을(를) 찾을 수 없습니다. 발견된 툴: (없음)",
+      actual: [],
+    });
   });
 
   it("isError 불일치를 구조화된 진단으로 실패시킨다", () => {

@@ -196,6 +196,108 @@ describe("checkDeterminism", () => {
     expect(result.differences[0]?.hint).toBe("numericDrift");
   });
 
+  // 아래는 실서버 기본 형태다(#293). 서버는 결과를 JSON 으로 만들어 text 블록에 문자열로 감싸
+  // 보내므로, 비교 지점이 값 하나가 아니라 JSON 전문 한 덩어리가 된다.
+  it("JSON 전문 문자열 안의 타임스탬프가 달라지면 timestamp 를 단다", () => {
+    const run1 = '{"label":"example","timestamp":"2026-08-22T16:59:59.929Z","seq":1}';
+    const run2 = '{"label":"example","timestamp":"2026-08-22T17:00:00.034Z","seq":1}';
+    const result = checkDeterminism({
+      first: [observation({ response: withText(run1) })],
+      second: [observation({ response: withText(run2) })],
+      stateRestored: true,
+    });
+    expect(result.differences[0]?.hint).toBe("timestamp");
+  });
+
+  it("JSON 전문 문자열 안의 UUID 가 달라지면 randomId 를 단다", () => {
+    const run1 = '{"user":"example","token":"a2901751-fafb-4942-8ecd-52d019cd7865"}';
+    const run2 = '{"user":"example","token":"f480ac48-a7f3-4698-a557-d5ff48785907"}';
+    const result = checkDeterminism({
+      first: [observation({ response: withText(run1) })],
+      second: [observation({ response: withText(run2) })],
+      stateRestored: true,
+    });
+    expect(result.differences[0]?.hint).toBe("randomId");
+  });
+
+  it("JSON 전문 문자열 안의 숫자가 달라지면 numericDrift 를 단다", () => {
+    const result = checkDeterminism({
+      first: [observation({ response: withText('{"sensor":"example","value":22.92}') })],
+      second: [observation({ response: withText('{"sensor":"example","value":21.64}') })],
+      stateRestored: true,
+    });
+    expect(result.differences[0]?.hint).toBe("numericDrift");
+  });
+
+  it("원시 숫자 문자열 쌍에 numericDrift 를 단다", () => {
+    // text 블록은 언제나 string 이라 typeof number 분기로는 이 자리에 닿지 못했다.
+    const result = checkDeterminism({
+      first: [observation({ response: withText("23.41") })],
+      second: [observation({ response: withText("24.35") })],
+      stateRestored: true,
+    });
+    expect(result.differences[0]?.hint).toBe("numericDrift");
+  });
+
+  it("타임스탬프와 숫자가 함께 달라지면 timestamp 를 단다", () => {
+    const run1 = '{"at":"2026-08-22T16:59:59Z","value":22.92}';
+    const run2 = '{"at":"2026-08-22T17:00:00Z","value":21.64}';
+    const result = checkDeterminism({
+      first: [observation({ response: withText(run1) })],
+      second: [observation({ response: withText(run2) })],
+      stateRestored: true,
+    });
+    expect(result.differences[0]?.hint).toBe("timestamp");
+  });
+
+  it("UUID 는 같고 숫자만 달라지면 randomId 가 아니라 numericDrift 를 단다", () => {
+    const run1 = '{"token":"a2901751-fafb-4942-8ecd-52d019cd7865","seq":1}';
+    const run2 = '{"token":"a2901751-fafb-4942-8ecd-52d019cd7865","seq":2}';
+    const result = checkDeterminism({
+      first: [observation({ response: withText(run1) })],
+      second: [observation({ response: withText(run2) })],
+      stateRestored: true,
+    });
+    expect(result.differences[0]?.hint).toBe("numericDrift");
+  });
+
+  it("타임스탬프는 같고 숫자만 달라지면 timestamp 를 달지 않는다", () => {
+    // 앵커 없는 test() 로 판정하던 시절의 오귀속. 시간은 그대로인데 시간 탓을 했다.
+    const run1 = '{"at":"2026-08-22T16:59:59Z","seq":1}';
+    const run2 = '{"at":"2026-08-22T16:59:59Z","seq":2}';
+    const result = checkDeterminism({
+      first: [observation({ response: withText(run1) })],
+      second: [observation({ response: withText(run2) })],
+      stateRestored: true,
+    });
+    expect(result.differences[0]?.hint).toBe("numericDrift");
+  });
+
+  it("패턴 밖 차이가 함께 있으면 힌트를 달지 않는다", () => {
+    // 짚어준 값을 고쳐도 여전히 다르다. 그럴 때는 원인을 단정하지 않는다.
+    const run1 = '{"token":"a2901751-fafb-4942-8ecd-52d019cd7865","city":"서울"}';
+    const run2 = '{"token":"f480ac48-a7f3-4698-a557-d5ff48785907","city":"부산"}';
+    const result = checkDeterminism({
+      first: [observation({ response: withText(run1) })],
+      second: [observation({ response: withText(run2) })],
+      stateRestored: true,
+    });
+    expect(result.differences).toHaveLength(1);
+    expect(result.differences[0]?.hint).toBeUndefined();
+  });
+
+  it("패턴 자리 수가 다르면 힌트를 달지 않는다", () => {
+    const run1 = '{"ids":["a2901751-fafb-4942-8ecd-52d019cd7865"]}';
+    const run2 =
+      '{"ids":["f480ac48-a7f3-4698-a557-d5ff48785907","3f2504e0-4f89-11d3-9a0c-0305e82c3301"]}';
+    const result = checkDeterminism({
+      first: [observation({ response: withText(run1) })],
+      second: [observation({ response: withText(run2) })],
+      stateRestored: true,
+    });
+    expect(result.differences[0]?.hint).toBeUndefined();
+  });
+
   it("패턴 밖 문자열 쌍에는 힌트가 없다", () => {
     const result = checkDeterminism({
       first: [observation({ response: withText("서울") })],

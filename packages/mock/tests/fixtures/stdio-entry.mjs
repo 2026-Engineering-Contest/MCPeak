@@ -9,4 +9,6 @@
 import { readFileSync } from "node:fs";
 import { serveStdio } from "../../src/index.js";
 
-await serveStdio(JSON.parse(readFileSync(process.argv[2], "utf8")));
+// 배포 진입점(src/stdio.ts)이 정의 파일 경로를 함께 넘긴다. 미스 진단문이 그 경로를
+// 가리켜야 하므로 여기서도 같은 인자를 넘긴다 — 안 맞추면 테스트만 다른 코드를 탄다.
+await serveStdio(JSON.parse(readFileSync(process.argv[2], "utf8")), process.argv[2]);

@@ -229,5 +229,23 @@ describe("assertMockDefinition — 정의 파일 검증", () => {
     expect(body).toContain("선언한 툴이 아닙니다");
     expect(body).toContain("add");
     expect(body).not.toContain("주입된 응답이 없습니다");
+  it("stdio 미스 진단문은 mock.on 이 아니라 정의 파일의 responses 를 가리킨다", () => {
+    // 정의 파일로 쓰는 사람 화면에는 mock.on 이라는 코드가 없다. README 에도 안 나온다.
+    // 시키는 대로 할 수 없는 안내를 주면 안 된다.
+    return (async () => {
+      const client = await connectMock({
+        tools: [
+          { name: "add", inputSchema: { type: "object", properties: { a: { type: "number" } } } },
+        ],
+        responses: [{ tool: "add", args: { a: 1 }, result: { sum: 1 } }],
+      });
+
+      const body = text(await client.callTool("add", { a: 9 }));
+
+      expect(body).toContain("주입된 응답이 없습니다");
+      expect(body).toContain("responses");
+      expect(body).toContain("definition.json");
+      expect(body).not.toContain("mock.on(");
+    })();
   });
 });

@@ -185,6 +185,41 @@ describe("@mcpeak/mock", () => {
   it("선언조차 없는 툴 호출은 '주입 안 됨' 이 아니라 '선언 안 됨' 으로 답한다", async () => {
     // 없는 툴과 주입 안 된 툴은 고칠 자리가 다르다. 하나로 뭉개면 진단문이 시키는
     // mock.on('subtract', ...) 이 곧바로 거절당해 사용자가 막다른 길에 선다.
+  it("같은 툴·같은 인자를 두 번 주입하면 거절하고 앞선 자리를 지목한다", async () => {
+    // 조용히 덮으면 계약서 한 줄이 신호 없이 사라진다. 오타 주입을 막은 것과 같은 이유다(#239).
+    const server = await start();
+    server.on("add", { a: 1, b: 2 }, { sum: 3 });
+
+    expect(() => server.on("add", { a: 1, b: 2 }, { sum: 999 })).toThrow(/도달할 수 없는 주입/);
+
+    // 첫 응답이 살아 있어야 한다. 거절했는데 덮여 있으면 최악이다.
+    const client = await connect(server);
+    const result = await client.callTool({ name: "add", arguments: { a: 1, b: 2 } });
+    expect(text(result)).toContain('"sum":3');
+    await client.close();
+  });
+
+  it("같은 툴에 ANY 를 두 번 주입해도 거절한다", async () => {
+    const server = await start();
+    server.on("add", ANY, { sum: 0 });
+
+    expect(() => server.on("add", ANY, { sum: 999 })).toThrow(/도달할 수 없는 주입/);
+  });
+
+  it("옵션의 responses 에 중복이 있으면 두 자리를 다 짚어 거절한다", async () => {
+    await expect(
+      createMockServer({
+        tools,
+        responses: [
+          { tool: "add", args: { a: 1, b: 2 }, result: { sum: 3 } },
+          { tool: "add", args: { a: 1, b: 2 }, result: { sum: 999 } },
+        ],
+      }),
+    ).rejects.toThrow(/responses\[0\][\s\S]*responses\[1\]|responses\[1\][\s\S]*responses\[0\]/);
+  });
+
+  it("HTTP 미스 진단문은 mock.on 을 가리킨다", async () => {
+    // 진입점이 갈리는지 stdio 쪽과 짝으로 고정한다.
     const server = await start();
     server.on("add", { a: 1, b: 2 }, { sum: 3 });
     const client = await connect(server);
@@ -214,6 +249,10 @@ describe("@mcpeak/mock", () => {
     expect(body).toContain("주입된 응답이 없습니다");
     expect(body).not.toContain("선언한 툴이 아닙니다");
 
+    const result = await client.callTool({ name: "add", arguments: { a: 5, b: 7 } });
+
+    expect(text(result)).toContain("mock.on(");
+    expect(text(result)).not.toContain("정의 파일");
     await client.close();
   });
 
@@ -270,7 +309,7 @@ describe("@mcpeak/mock", () => {
         responses: [{ tool: "add", args: { a: NaN }, result: { sum: 0 } }],
       }),
     ).rejects.toThrow(
-      "→ 정의 파일의 responses[0] 의 인자로 매칭 키를 만들 수 없습니다: 유한하지 않은 수",
+      "→ createMockServer 옵션의 responses[0] 의 인자로 매칭 키를 만들 수 없습니다: 유한하지 않은 수",
     );
   });
 

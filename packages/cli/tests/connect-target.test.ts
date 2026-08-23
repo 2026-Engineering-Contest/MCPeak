@@ -287,3 +287,42 @@ describe("오류 문장의 사용자 입력 이스케이프", () => {
     expect(message).not.toMatch(/MCP_TOKEN='[^']/);
   });
 });
+
+/**
+ * 프로토타입에서 물려받는 이름들. `constructor` · `toString` · `__proto__` 는 모두 RFC 9110
+ * 토큰을 통과하는 **유효한 헤더 이름**인데, 평범한 `{}` 를 맵으로 쓰면 셋 다 오작동한다 —
+ * 중복 검사(`in`)가 첫 사용을 두 번째로 오인하고, `__proto__` 는 할당이 조용히 사라진다.
+ */
+describe("프로토타입에서 물려받는 헤더 이름", () => {
+  it("__proto__ 헤더가 실제로 요청에 실린다", async () => {
+    // 인자 타입을 선언해야 `mock.calls[0][0]` 로 넘어간 값을 볼 수 있다.
+    const connectHttp = vi.fn(
+      async (_options: { url: string; headers?: Readonly<Record<string, string>> }) =>
+        httpConnection(),
+    );
+
+    // 리터럴의 `__proto__:` 는 프로토타입 설정 문법이라 own 프로퍼티가 안 생긴다.
+    // 계산된 키로 써야 파서가 실제로 만드는 모양과 같아진다.
+    await openConnection(httpTarget({ ["__proto__"]: "MCP_TOKEN" }), {
+      connectStdio: vi.fn(async () => stdioConnection()),
+      connectHttp,
+      readEnv: () => "Bearer abc",
+    });
+
+    const headers = connectHttp.mock.calls[0]?.[0].headers ?? {};
+    // 조용히 사라지면 사용자가 지정한 헤더 없이 요청이 나간다. 실패보다 나쁜 종류다.
+    expect(Object.hasOwn(headers, "__proto__")).toBe(true);
+    // 값은 `headers.__proto__` 로 읽지 않는다 — 그 접근 자체가 이 테스트가 막으려는 함정이다.
+    expect(Object.entries(headers)).toContainEqual(["__proto__", "Bearer abc"]);
+  });
+
+  it.each(["constructor", "toString", "__proto__"])(
+    "'%s' 를 헤더 이름으로 받아들인다",
+    (header) => {
+      expect(parseHeaderEnvOption(`${header}=MCP_TOKEN`)).toEqual({
+        ok: true,
+        value: { header, envName: "MCP_TOKEN" },
+      });
+    },
+  );
+});

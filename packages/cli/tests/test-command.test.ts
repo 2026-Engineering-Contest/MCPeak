@@ -2196,3 +2196,39 @@ describe("parseTestCommand — 원격(--url) 대상", () => {
     );
   });
 });
+
+/**
+ * 중복 검사가 `header in headerEnv` 라, 맵이 평범한 `{}` 면 프로토타입에서 물려받는 이름이
+ * 처음 쓰였는데도 "두 번 지정됐다" 로 거절된다. 셋 다 유효한 헤더 이름이다(#137).
+ */
+describe("parseTestCommand — 프로토타입에서 물려받는 헤더 이름", () => {
+  it.each(["constructor", "toString", "__proto__"])(
+    "'%s' 를 처음 쓰면 중복으로 오인하지 않는다",
+    (header) => {
+      const input = parseTestCommand([
+        "suite.json",
+        "--url",
+        "https://x/v1",
+        "--header-env",
+        `${header}=MCP_TOKEN`,
+      ]);
+      expect(input.target).toMatchObject({ transport: "http" });
+      if (input.target.transport !== "http") return;
+      expect(Object.hasOwn(input.target.headerEnv, header)).toBe(true);
+    },
+  );
+
+  it("같은 이름을 두 번 쓰면 여전히 거절한다", () => {
+    expect(() =>
+      parseTestCommand([
+        "suite.json",
+        "--url",
+        "https://x/v1",
+        "--header-env",
+        "constructor=A",
+        "--header-env",
+        "constructor=B",
+      ]),
+    ).toThrow();
+  });
+});

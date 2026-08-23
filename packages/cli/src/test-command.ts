@@ -288,7 +288,12 @@ export function parseTestCommand(argv: readonly string[]): TestCommandInput {
   let sessionPath: string | undefined;
   let recordSessionPath: string | undefined;
   const args: string[] = [];
-  const headerEnv: Record<string, string> = {};
+  /**
+   * **null 프로토타입으로 만든다.** 아래 중복 검사가 `header in headerEnv` 이므로 평범한 `{}`
+   * 면 `constructor` · `toString` · `__proto__` 같은 이름이 처음 쓰였는데도 "두 번 지정됐다" 로
+   * 거절된다. 셋 다 RFC 9110 토큰을 통과하는 유효한 헤더 이름이다.
+   */
+  const headerEnv: Record<string, string> = Object.create(null);
   for (let index = 1; index < argv.length; index += 1) {
     const token = argv[index] ?? "";
     if (token === "--command" || token.startsWith("--command=")) {

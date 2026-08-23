@@ -356,8 +356,11 @@ export function parseGenerateCommand(argv: readonly string[]): GenerateCommandIn
   const values = new Map<string, string>();
   const args: string[] = [];
   const flags = new Set<string>();
-  // `--arg` 와 같이 되풀이할 수 있는 옵션이라 `values` 맵에 넣지 않는다(#137).
-  const headerEnv: Record<string, string> = {};
+  /**
+   * `--arg` 와 같이 되풀이할 수 있는 옵션이라 `values` 맵에 넣지 않는다(#137).
+   * null 프로토타입인 근거는 `test-command.ts` 의 같은 맵과 같다.
+   */
+  const headerEnv: Record<string, string> = Object.create(null);
   for (let index = 0; index < argv.length; index++) {
     const item = argv[index];
     if (item === undefined) continue;

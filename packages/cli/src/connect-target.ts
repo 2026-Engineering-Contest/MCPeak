@@ -250,7 +250,13 @@ function resolveHeaders(
       "이 진입점은 `--header-env` 를 지원하지 않습니다 (환경변수를 읽을 수 없습니다).\n" +
         "→ 인증이 필요 없는 엔드포인트인지 확인하거나 터미널에서 `mcpeak` 을 직접 실행하세요.",
     );
-  const headers: Record<string, string> = {};
+  /**
+   * **null 프로토타입으로 만든다.** 평범한 `{}` 에 `headers["__proto__"] = …` 를 하면 값이
+   * 조용히 사라진다(프로토타입 설정으로 해석되고 문자열이라 무시된다). `__proto__` 는 RFC 9110
+   * 토큰을 통과하는 유효한 헤더 이름이므로, 그대로 두면 사용자가 지정한 헤더가 아무 말 없이
+   * 빠진 채 요청이 나간다.
+   */
+  const headers: Record<string, string> = Object.create(null);
   for (const [header, envName] of entries) {
     const value = readEnv(envName);
     if (value === undefined || value === "")

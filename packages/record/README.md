@@ -144,6 +144,12 @@ try {
 }
 ```
 
+재생은 `{ mode: "replay", sourceSessionId, store }` 로 열고, **그 store 는
+`createSqliteSessionStore({ path, readOnly: true })` 로 연다.** 재생은 읽기이므로 파일을 만들
+이유도 고칠 이유도 없다 — 읽기 전용으로 열지 않으면 스키마 DDL 이 무조건 돌아서, 읽기
+전용(chmod 444) 세션은 재생되지 않고 0바이트 파일을 넘기면 실패한 실행이 그 파일을 빈 세션
+DB 로 덮어쓴다.
+
 재생은 `{ mode: "replay", sourceSessionId, store }` 로 연다. `finish()` 를 **성공·실패 어느
 경로에서도 부르고**, 그 뒤에 `store.close()` 한다 — 안 부르면 SQLite 파일 핸들이 남고 녹화 세션이
 `running` 인 채로 남아 다음 실행이 이어 쓸 수 없다. 반환된 요약의 `interactionCount` ·

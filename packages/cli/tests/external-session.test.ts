@@ -6,6 +6,7 @@ import {
   externalCloseFailure,
   externalOpenFailure,
   externalSessionNotice,
+  externalSessionOutcome,
   parseTestCommand,
   renderReplayMissDiagnostics,
 } from "../src/test-command.js";
@@ -200,6 +201,93 @@ describe("External 세션 종료 경고", () => {
 
       expect(notice).toContain(SCOPE_NOTE);
       expect(notice?.endsWith("로 부른 것만 잡습니다.\n")).toBe(true);
+    }
+  });
+});
+
+/**
+ * ADR-0066. 성공한 실행도 무엇을 했는지 말한다. 녹화와 재생은 리포트가 같은 모양으로 나오므로,
+ * 이 한 줄이 없으면 사용자는 방금 본 결과가 실제 호출인지 재생인지 구분할 수 없다.
+ */
+describe("External 세션 결과 보고 (ADR-0066)", () => {
+  const PATH = "tmp/weather.db";
+
+  it("녹화가 됐으면 건수와 세션 경로를 말한다", () => {
+    const line = externalSessionOutcome(record(3), PATH);
+
+    expect(line).toContain("외부 호출 3건을 녹화했습니다");
+    expect(line).toContain(PATH);
+  });
+
+  it("전부 재생됐으면 재생이라고 말한다 — 녹화와 다른 문장이어야 구분된다", () => {
+    const line = externalSessionOutcome(replay(3, 3, 0), PATH);
+
+    expect(line).toContain("녹화된 외부 호출 3건을 재생했습니다");
+    expect(line).toContain(PATH);
+    // 두 갈래가 같은 동사로 끝나면 화면만 보고는 여전히 구분할 수 없다.
+    expect(line).not.toContain("녹화했습니다");
+  });
+
+  it("범위 안내 전문을 반복하지 않는다 — 그 문장은 경고 갈래의 몫이다", () => {
+    expect(externalSessionOutcome(record(3), PATH)).not.toContain(SCOPE_NOTE);
+    expect(externalSessionOutcome(replay(3, 3, 0), PATH)).not.toContain(SCOPE_NOTE);
+  });
+
+  /**
+   * **부분 커버리지가 이 단서의 존재 이유다.** 서버가 `fetch` 와 `node:http` 를 섞어 쓰면
+   * 어댑터는 앞쪽만 본다 — 실측하면 2건 중 1건만 녹화되고, 재생에서 나머지 1건이 실제
+   * 네트워크로 나간다. 그런데 경고 네 갈래가 전부 그 상황을 비켜가므로 화면에는 이 문장만
+   * 남는다. 개수를 단정하면 "그게 전부" 로 읽힌다.
+   */
+  it("녹화 개수가 전부가 아닐 수 있다고 말한다", () => {
+    const line = externalSessionOutcome(record(3), PATH);
+
+    expect(line).toContain("어댑터가 잡은 호출만 셉니다");
+    expect(line).toContain("세션에 남지 않습니다");
+  });
+
+  it("재생은 범위 밖 호출이 실제 네트워크로 나간다고 말한다", () => {
+    const line = externalSessionOutcome(replay(3, 3, 0), PATH);
+
+    expect(line).toContain("어댑터가 잡은 호출만 셉니다");
+    // 녹화와 결과가 다르다. 녹화는 안 남는 것이고 재생은 나가는 것이다.
+    expect(line).toContain("실제 네트워크로 나갑니다");
+    expect(line).not.toContain("세션에 남지 않습니다");
+  });
+
+  it("경로는 다른 세션 문장과 같은 규칙으로 이스케이프한다", () => {
+    // 경로는 사용자가 준 값이다. 그대로 실으면 우리 문장이 터미널 제어에 열린다.
+    const line = externalSessionOutcome(record(1), "tmp/\u001b[31mred.db");
+
+    expect(line).not.toContain("\u001b");
+  });
+
+  it("같은 요약이면 같은 문장이다", () => {
+    expect(externalSessionOutcome(record(2), PATH)).toBe(externalSessionOutcome(record(2), PATH));
+  });
+
+  /**
+   * **이 매트릭스가 계약이다.** 두 함수의 갈래는 서로를 보지 않고 각자 판정하므로, 한쪽 조건을
+   * 고치면 겹치거나(같은 사실을 두 번) 비거나(아무 말도 없음) 한다. 주석으로는 못 막는다.
+   */
+  it("경고와 정확히 배타다 — 어느 갈래에서도 둘 중 하나만 나온다", () => {
+    const every = [
+      record(0),
+      record(1),
+      record(5),
+      replay(0, 0, 0),
+      replay(3, 0, 3),
+      replay(3, 2, 1),
+      replay(3, 3, 0),
+      replay(1, 1, 0),
+    ];
+
+    for (const summary of every) {
+      const spoke = [externalSessionOutcome(summary, PATH), externalSessionNotice(summary)].filter(
+        (value) => value !== undefined,
+      );
+
+      expect(spoke).toHaveLength(1);
     }
   });
 });
@@ -483,5 +571,55 @@ describe("External 세션 닫기 실패 문장", () => {
 
     expect(failure.hint).toBe("문자열 원인");
     expect(failure.message).toContain("닫지 못했습니다");
+  });
+});
+
+/**
+ * 실패한 실행의 녹화는 재생 원본으로 **거부된다**(`EXTERNAL_SESSION_FAILED` —
+ * "녹화가 완료되지 않은 세션입니다"). 그런데도 "녹화했습니다" 라고 하면 사용자는 못 쓰는
+ * 파일을 가진 채 가졌다고 믿는다. ADR-0066 이 없애려던 종류의 거짓말이 이 함수 안에서 다시
+ * 생기는 자리라, 상태를 갈라 고정한다.
+ */
+describe("실패한 실행의 결과 문장 (ADR-0066)", () => {
+  const PATH3 = "tmp/weather.db";
+  const failedRecord = (interactionCount: number): SessionSummary =>
+    ({ ...record(interactionCount), status: "failed" }) as SessionSummary;
+
+  it("실패한 녹화는 완료했다고 말하지 않는다", () => {
+    const line = externalSessionOutcome(failedRecord(3), PATH3);
+
+    expect(line).toContain("녹화를 완료하지 않았습니다");
+    expect(line).toContain("재생 원본으로 쓸 수 없습니다");
+    expect(line).toContain("다시 녹화하세요");
+    // 이 문장이 남아 있으면 고친 의미가 없다.
+    expect(line).not.toContain("3건을 녹화했습니다");
+  });
+
+  it("잡은 개수는 그대로 말한다 — 0건과 3건은 다른 상황이다", () => {
+    expect(externalSessionOutcome(failedRecord(3), PATH3)).toContain("3건을 잡았지만");
+  });
+
+  /**
+   * **재생은 상태로 가르지 않는다.** 실패한 재생은 재생이 실패한 것이 아니라 판정이 실패한
+   * 것이고, N건은 실제로 재생됐다. 여기서 침묵하면 실패한 실행에서 녹화·재생을 구분할 수
+   * 없어지는데, 원인을 찾을 때 그 구분이 가장 필요하다.
+   */
+  it("실패한 재생은 여전히 재생이라고 말한다", () => {
+    const line = externalSessionOutcome(
+      { ...replay(3, 3, 0), status: "failed" } as SessionSummary,
+      PATH3,
+    );
+
+    expect(line).toContain("3건을 재생했습니다");
+  });
+
+  it("실패해도 경고와의 배타성은 유지된다", () => {
+    for (const summary of [failedRecord(0), failedRecord(3)]) {
+      const spoke = [externalSessionOutcome(summary, PATH3), externalSessionNotice(summary)].filter(
+        (value) => value !== undefined,
+      );
+
+      expect(spoke).toHaveLength(1);
+    }
   });
 });

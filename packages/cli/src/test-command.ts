@@ -1526,7 +1526,7 @@ function recordedAtSuffix(summary: SessionSummary): string {
   const shown =
     date === undefined || time === undefined
       ? escapeTerminalText(recordedAt)
-      : formatUtc(date, time);
+      : formatUtc(recordedAt, date, time);
   return ` (${shown} 녹화)`;
 }
 
@@ -1537,12 +1537,16 @@ function recordedAtSuffix(summary: SessionSummary): string {
  *
  * 파싱은 시계를 읽지 않으므로 결정론에 영향이 없다. 확인에 실패하면 원문을 그대로 보여준다 —
  * 손대지 않는 쪽이 없는 날짜를 그럴듯하게 포장하는 것보다 낫다.
+ *
+ * **그래서 `recordedAt` 원문을 받는다.** 잘라낸 조각으로 되짚어 만들면 정규식이 허용한 소수
+ * 초가 사라져(`2026-02-30T12:00:00.123Z` → `...12:00:00Z`), "원문을 그대로 보여준다" 는 이
+ * 함수의 계약이 실패 경로에서만 조용히 깨진다.
  */
-function formatUtc(date: string, time: string): string {
+function formatUtc(recordedAt: string, date: string, time: string): string {
   const iso = `${date}T${time}`;
   const parsed = new Date(`${iso}Z`);
   if (Number.isNaN(parsed.getTime()) || !parsed.toISOString().startsWith(iso))
-    return escapeTerminalText(`${iso}Z`);
+    return escapeTerminalText(recordedAt);
   return `${date} ${time} UTC`;
 }
 

@@ -822,6 +822,16 @@ describe("녹화 시각 표시 (ADR-0069)", () => {
     expect(line).not.toContain("03-02");
   });
 
+  /**
+   * 실패 경로가 조각으로 값을 되짚어 만들면 정규식이 허용한 소수 초가 사라진다. "원문을
+   * 그대로 보여준다" 는 계약이 **실패했을 때만** 조용히 깨지는 자리라 따로 고정한다.
+   */
+  it("무효한 값의 소수 초도 잃지 않는다", () => {
+    const raw = "2026-02-30T12:00:00.123Z";
+
+    expect(externalSessionOutcome(at(raw), PATH5)).toContain(`(${raw} 녹화)`);
+  });
+
   it("범위를 벗어난 값도 원문으로 남긴다", () => {
     for (const bad of ["2026-13-01T12:00:00Z", "2026-05-01T25:00:00Z"]) {
       expect(externalSessionOutcome(at(bad), PATH5)).toContain(`(${bad} 녹화)`);

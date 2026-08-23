@@ -182,6 +182,41 @@ describe("@mcpeak/mock", () => {
     await client.close();
   });
 
+  it("선언조차 없는 툴 호출은 '주입 안 됨' 이 아니라 '선언 안 됨' 으로 답한다", async () => {
+    // 없는 툴과 주입 안 된 툴은 고칠 자리가 다르다. 하나로 뭉개면 진단문이 시키는
+    // mock.on('subtract', ...) 이 곧바로 거절당해 사용자가 막다른 길에 선다.
+    const server = await start();
+    server.on("add", { a: 1, b: 2 }, { sum: 3 });
+    const client = await connect(server);
+
+    const result = await client.callTool({ name: "subtract", arguments: { a: 1 } });
+
+    expect(result.isError).toBe(true);
+    const body = text(result);
+    expect(body).toContain("선언한 툴이 아닙니다");
+    // 선언 목록을 보여준다. 도구가 이미 쥐고 있는 값이다.
+    expect(body).toContain("get_weather");
+    expect(body).toContain("add");
+    // 주입 갈래의 문장을 섞지 않는다.
+    expect(body).not.toContain("주입된 응답이 없습니다");
+
+    await client.close();
+  });
+
+  it("선언은 됐는데 주입만 안 된 툴은 선언 안 됨으로 오인하지 않는다", async () => {
+    const server = await start();
+    const client = await connect(server);
+
+    const result = await client.callTool({ name: "get_weather", arguments: { city: "서울" } });
+
+    expect(result.isError).toBe(true);
+    const body = text(result);
+    expect(body).toContain("주입된 응답이 없습니다");
+    expect(body).not.toContain("선언한 툴이 아닙니다");
+
+    await client.close();
+  });
+
   it("close() 이후에는 연결되지 않는다", async () => {
     const server = await createMockServer({ tools });
     const { url } = server;

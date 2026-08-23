@@ -212,4 +212,22 @@ describe("assertMockDefinition — 정의 파일 검증", () => {
     ).not.toThrow();
     expect(() => assertMockDefinition({ tools: [] })).not.toThrow();
   });
+
+  it("선언조차 없는 툴 호출은 stdio 에서도 '선언 안 됨' 으로 답한다", async () => {
+    // buildServer 를 HTTP 와 공유하므로 두 진입점에서 같은 판정이 나오는지 고정한다.
+    const client = await connectMock({
+      tools: [
+        { name: "add", inputSchema: { type: "object", properties: { a: { type: "number" } } } },
+      ],
+      responses: [{ tool: "add", args: { a: 1 }, result: { sum: 1 } }],
+    });
+
+    const result = await client.callTool("subtract", { a: 1 });
+
+    expect((result as { isError?: boolean }).isError).toBe(true);
+    const body = text(result);
+    expect(body).toContain("선언한 툴이 아닙니다");
+    expect(body).toContain("add");
+    expect(body).not.toContain("주입된 응답이 없습니다");
+  });
 });

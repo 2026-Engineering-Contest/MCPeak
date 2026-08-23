@@ -10,7 +10,9 @@ import { defineConfig } from "vitest/config";
  * 목록이 어긋나면 타입체크 녹색과 테스트 실패가 동시에 나타난다.
  */
 const workspaceAliases = Object.fromEntries(
-  (["core", "runner", "generate", "record", "mock"] as const).map((name) => [
+  // `record` 는 여기 없다. 그 패키지는 진입점이 `src/index.ts` 가 아니라
+  // `src/external/index.ts` 라, 아래에서 따로 적는다(ADR-0059 로 카세트가 사라진 결과).
+  (["core", "runner", "generate", "mock"] as const).map((name) => [
     `@mcpeak/${name}`,
     fileURLToPath(new URL(`./packages/${name}/src/index.ts`, import.meta.url)),
   ]),
@@ -27,6 +29,11 @@ const resolve = {
     // `@mcpeak/record` 보다 **먼저** 와야 한다. 위 주석의 접두 일치 문제가 그대로 적용돼,
     // 뒤에 두면 `@mcpeak/record` 가 이 명세자를 삼켜 `.../src/index.ts/external` 로 만든다.
     "@mcpeak/record/external": fileURLToPath(
+      new URL("./packages/record/src/external/index.ts", import.meta.url),
+    ),
+    // 루트와 `/external` 이 같은 파일을 가리킨다. `package.json` 의 `exports` 가 그렇고,
+    // 그 이유는 카세트가 사라진 뒤 이 패키지의 API 가 하나뿐이기 때문이다.
+    "@mcpeak/record": fileURLToPath(
       new URL("./packages/record/src/external/index.ts", import.meta.url),
     ),
     ...workspaceAliases,

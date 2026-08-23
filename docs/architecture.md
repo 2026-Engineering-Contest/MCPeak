@@ -70,15 +70,19 @@ cli → record / mock → core
 
 ## 3. 왜 단계가 아니라 병렬인가
 
-**`connect()`를 호출하는 패키지가 하나도 없다.** 네 패키지 모두 core의 산출물을 *인자로 받는다*:
+**`connect()`를 호출하는 패키지가 하나도 없다.** core의 산출물을 *인자로 받거나*, 아예 쓰지 않는다:
 
 ```ts
 createMcpTest({ client: McpClient }, body)   // runner   — client 를 받는다
 generateTests(tools: ToolDef[], opts)        // generate — tools 를 받는다
-cassetteClient(inner: McpClient, opts)       // record   — client 를 받는다
+startExternalCoordinator({ mode, store })    // record   — core 를 쓰지 않는다
 createMockServer({ tools: ToolDef[] })       // mock     — tools 를 받는다
 connect(opts): Promise<McpClient>            // core     — 값을 만드는 유일한 함수
 ```
+
+`record` 는 [ADR-0059](./adr/0059-tool-카세트를-제거한다.md)로 Tool 카세트를 걷어내면서
+`McpClient` 를 감싸는 자리가 사라져 core 의존 자체를 놓았다. 아래 결론이 약해지는 것이 아니라
+그 방향으로 한 칸 더 간 것이다.
 
 즉 core의 **타입**만 있으면 되고, **구현**은 필요 없다. 그리고 타입은 이미 동결돼 있다 (`packages/core/src/types.ts`, CONTRIBUTING §3).
 

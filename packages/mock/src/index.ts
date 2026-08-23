@@ -102,6 +102,8 @@ function stableKey(value: unknown, depth = 0): string {
 interface StoredResponse {
   result: unknown;
   isError: boolean;
+  /** 이 응답을 주입한 자리. 중복 주입을 거절할 때 **앞선 자리**를 지목하는 데 쓴다. */
+  source: string;
 }
 
 /** 주입된 응답 저장소. 인자 지정본과 ANY 본을 따로 둔다. */
@@ -122,15 +124,38 @@ function put(
   source: string,
   isError = false,
 ): void {
-  const stored: StoredResponse = { result, isError };
+  const stored: StoredResponse = { result, isError, source };
   // ANY 는 Symbol.for(...) 라서 assertKeyable 의 notJson 에 걸린다.
   // 검사를 이 분기보다 앞에 두면 정상 기능이 죽는다.
   if (args === ANY) {
+    rejectDuplicate(registry.any.get(tool), source, `툴 '${tool}' 의 ANY 응답`);
     registry.any.set(tool, stored);
     return;
   }
   assertKeyable(args ?? {}, source);
-  registry.exact.set(`${tool}|${stableKey(args ?? {})}`, stored);
+  const key = stableKey(args ?? {});
+  rejectDuplicate(registry.exact.get(`${tool}|${key}`), source, `툴 '${tool}' 의 인자 ${key}`);
+  registry.exact.set(`${tool}|${key}`, stored);
+}
+
+/**
+ * 같은 자리에 두 번째 응답이 오면 거절한다.
+ *
+ * 전에는 조용히 덮었다. 그러면 계약서 한 줄이 **아무 신호 없이** 사라지고, 사용자는 끝까지
+ * 초록불만 본다. 오타 주입을 막은 것과 같은 이유다(#239) — 다만 오타는 결국 미스 진단문이라도
+ * 뜨는데 중복은 그마저도 안 뜬다.
+ */
+function rejectDuplicate(existing: StoredResponse | undefined, source: string, what: string): void {
+  if (existing === undefined) return;
+  throw new Error(
+    [
+      // 변수 뒤에 조사를 붙이지 않는다. 앞이 코드 토큰(`mock.on('add', ...)`)이거나 JSON
+      // 조각이라 은/는·이/가가 다 어색해진다. 콜론으로 끊어 그 문제를 없앤다.
+      `→ 도달할 수 없는 주입입니다: ${source}`,
+      `→ 앞선 선언: ${existing.source} — ${what}`,
+      "→ 같은 자리에 응답이 둘이면 뒤엣것이 앞엣것을 가려 하나는 영원히 안 쓰입니다. 하나만 남기세요.",
+    ].join("\n"),
+  );
 }
 
 /**
@@ -174,8 +199,19 @@ function undeclaredToolMessage(tool: string, declared: readonly string[]): strin
   ].join("\n");
 }
 
-/** 주입된 응답이 없을 때 사용자가 읽을 문장을 만든다. 실패 메시지가 곧 제품이다. */
-function missMessage(tool: string, args: unknown, registry: Registry): string {
+/**
+ * 주입된 응답이 없을 때 사용자가 읽을 문장을 만든다. 실패 메시지가 곧 제품이다.
+ *
+ * **진입점에 따라 고칠 자리가 다르다.** 정의 파일로 띄운 사람 화면에는 `mock.on` 이라는 코드가
+ * 없다 — README 에도 안 나오는 API 다. 시키는 대로 할 수 없는 안내를 주면 안 된다.
+ * `definitionPath` 가 있으면 stdio(정의 파일), 없으면 라이브러리(HTTP)다.
+ */
+function missMessage(
+  tool: string,
+  args: unknown,
+  registry: Registry,
+  definitionPath?: string,
+): string {
   const lines = [
     `→ 툴 '${tool}' 을(를) 인자 ${stableKey(args ?? {})} 로 호출했지만 주입된 응답이 없습니다.`,
   ];
@@ -185,8 +221,16 @@ function missMessage(tool: string, args: unknown, registry: Registry): string {
 
   if (forTool.length > 0) {
     lines.push(`→ 이 툴에 주입된 인자: ${forTool.join(", ")}`);
-    lines.push("→ mock.on(툴이름, 인자, 응답) 의 인자가 호출과 일치하는지 확인하세요.");
-    lines.push("→ 인자를 가리지 않으려면 mock.on(툴이름, ANY, 응답) — 정의 파일에서는 args 생략.");
+    lines.push(
+      definitionPath === undefined
+        ? "→ mock.on(툴이름, 인자, 응답) 의 인자가 호출과 일치하는지 확인하세요."
+        : `→ ${definitionPath} 의 responses 에서 이 툴의 args 가 호출과 일치하는지 확인하세요.`,
+    );
+    lines.push(
+      definitionPath === undefined
+        ? "→ 인자를 가리지 않으려면 mock.on(툴이름, ANY, 응답) 을 쓰세요."
+        : "→ 인자를 가리지 않으려면 그 항목에서 args 를 생략하세요.",
+    );
   } else {
     const tools = [
       ...new Set(
@@ -198,7 +242,11 @@ function missMessage(tool: string, args: unknown, registry: Registry): string {
         ? `→ 주입된 툴: ${tools.map((t) => `'${t}'`).join(", ")}`
         : "→ 아직 아무 응답도 주입되지 않았습니다.",
     );
-    lines.push("→ mock.on(툴이름, 인자, 응답) 을 호출했는지 확인하세요.");
+    lines.push(
+      definitionPath === undefined
+        ? "→ mock.on(툴이름, 인자, 응답) 을 호출했는지 확인하세요."
+        : `→ ${definitionPath} 의 responses 에 { "tool": "${tool}", "args": …, "result": … } 를 추가하세요.`,
+    );
   }
   return lines.join("\n");
 }
@@ -352,7 +400,7 @@ export function assertMockDefinition(
 }
 
 /** 정의를 레지스트리로 옮긴다. `args` 가 없으면 ANY 로 취급한다. */
-function seed(definition: MockDefinition): Registry {
+function seed(definition: MockDefinition, origin: string): Registry {
   const registry = createRegistry();
   const responses = definition.responses ?? [];
   for (const [index, r] of responses.entries()) {
@@ -361,7 +409,7 @@ function seed(definition: MockDefinition): Registry {
       r.tool,
       "args" in r ? r.args : ANY,
       r.result,
-      `정의 파일의 responses[${index}]`,
+      `${origin}의 responses[${index}]`,
       r.isError === true,
     );
   }
@@ -369,7 +417,7 @@ function seed(definition: MockDefinition): Registry {
 }
 
 /** 요청 핸들러를 등록한 MCP 서버를 만든다. HTTP·stdio 가 이것을 공유한다. */
-function buildServer(tools: ToolDef[], registry: Registry): Server {
+function buildServer(tools: ToolDef[], registry: Registry, definitionPath?: string): Server {
   const server = new Server(
     { name: "mcpeak-mock", version: "0.0.0" },
     { capabilities: { tools: {} } },
@@ -427,7 +475,10 @@ function buildServer(tools: ToolDef[], registry: Registry): Server {
 
     return {
       content: [
-        { type: "text", text: missMessage(req.params.name, req.params.arguments, registry) },
+        {
+          type: "text",
+          text: missMessage(req.params.name, req.params.arguments, registry, definitionPath),
+        },
       ],
       isError: true,
     };
@@ -446,7 +497,7 @@ export async function createMockServer(options: MockOptions): Promise<MockServer
   const { tools, port = 0, host = "127.0.0.1" } = options;
   assertMockDefinition(options, "createMockServer 옵션");
   noticeUnanalyzable(tools);
-  const registry = seed(options);
+  const registry = seed(options, "createMockServer 옵션");
 
   // stateless 모드는 요청마다 새 Server/transport 를 요구한다.
   // (SDK: "Stateless transport cannot be reused across requests.")
@@ -509,9 +560,16 @@ export async function createMockServer(options: MockOptions): Promise<MockServer
  * `core.connect({ command, args })` 로 붙을 수 있어, 우리 도구로 목을 검증하는
  * 경로가 이것이다 (CONTRIBUTING §6).
  */
-export async function serveStdio(definition: MockDefinition): Promise<void> {
-  assertMockDefinition(definition);
+export async function serveStdio(
+  definition: MockDefinition,
+  definitionPath?: string,
+): Promise<void> {
+  assertMockDefinition(definition, definitionPath);
   noticeUnanalyzable(definition.tools);
-  const server = buildServer(definition.tools, seed(definition));
+  const origin = definitionPath === undefined ? "정의 파일" : `정의 파일 ${definitionPath}`;
+  // `origin` 은 주입 오류의 출처 표기이고, 미스 진단문이 가리킬 파일은 `definitionPath` 다.
+  // 여기에 `origin` 을 넘기면 경로 없이 부른 호출에서 "정의 파일 의 responses" 처럼 가리킬
+  // 파일이 없는 문장이 나간다. 둘은 다른 값이다.
+  const server = buildServer(definition.tools, seed(definition, origin), definitionPath);
   await server.connect(new StdioServerTransport());
 }

@@ -740,3 +740,124 @@ describe("조건절과 사실이 겹치지 않는다 (ADR-0068)", () => {
     expect(externalSessionOutcome(replay(3, 3, 0), PATH4)).toContain(CAVEAT);
   });
 });
+
+/**
+ * ADR-0069. 원본을 **언제** 녹화했는지 보인다. 낡았는지 판정하지는 않는다.
+ *
+ * 여기서 지키는 것은 두 가지다 — 시각을 보여주는가, 그리고 **나이를 계산하지 않는가.**
+ * 뒤쪽이 더 중요하다. 나이나 임계값 경고는 지금 시각을 읽어야 하고, 그러면 같은 세션의 같은
+ * 재생이 날마다 다른 바이트를 낸다.
+ */
+describe("녹화 시각 표시 (ADR-0069)", () => {
+  const PATH5 = "tmp/weather.db";
+  const at = (recordedAt: string): SessionSummary =>
+    ({ ...replay(3, 3, 0), recordedAt }) as SessionSummary;
+
+  it("재생 문장에 녹화 시각을 UTC 로 덧붙인다", () => {
+    const line = externalSessionOutcome(at("2026-05-01T09:12:33.123Z"), PATH5);
+
+    expect(line).toContain("(2026-05-01 09:12:33 UTC 녹화)");
+    // 밀리초는 낡음 판단에 쓸모가 없다.
+    expect(line).not.toContain(".123");
+  });
+
+  /**
+   * **이 테스트가 이 기능의 핵심 제약이다.** 나이를 계산하는 순간 출력이 시계에 묶이고,
+   * 대시보드 e2e 의 "같은 실행은 바이트까지 같다" 단언이 깨진다.
+   */
+  it("나이를 계산하지 않는다 — 같은 요약이면 언제 불러도 같은 문자열", () => {
+    const summary = at("2020-01-02T03:04:05.000Z");
+    const first = externalSessionOutcome(summary, PATH5);
+
+    expect(externalSessionOutcome(summary, PATH5)).toBe(first);
+    // 아주 오래된 녹화여도 판정 문구가 붙지 않는다.
+    expect(first).not.toContain("전");
+    expect(first).not.toContain("오래");
+    expect(first).not.toContain("낡");
+  });
+
+  /**
+   * `toLocale*` 를 쓰면 기계의 로캘·타임존에 따라 같은 세션이 CI 와 로컬에서 다른 문자열을
+   * 낸다. 타임존을 바꿔도 출력이 그대로여야 한다.
+   */
+  it("타임존을 바꿔도 같은 문자열이다", () => {
+    const summary = at("2026-05-01T23:30:00.000Z");
+    const saved = process.env.TZ;
+    try {
+      process.env.TZ = "UTC";
+      const utc = externalSessionOutcome(summary, PATH5);
+      process.env.TZ = "Asia/Seoul";
+      const seoul = externalSessionOutcome(summary, PATH5);
+
+      expect(seoul).toBe(utc);
+      // 날짜가 KST 로 넘어가 5월 2일이 되면 안 된다.
+      expect(seoul).toContain("2026-05-01 23:30:00 UTC");
+    } finally {
+      if (saved === undefined) delete process.env.TZ;
+      else process.env.TZ = saved;
+    }
+  });
+
+  it("시각이 없으면 아무것도 붙이지 않는다", () => {
+    expect(externalSessionOutcome(replay(3, 3, 0), PATH5)).not.toContain("녹화)");
+  });
+
+  /**
+   * **UTC 라고 말하려면 UTC 임을 확인해야 한다.** 앞부분만 맞춰 보면 오프셋이 붙은 값도
+   * 통과해서 `+09:00` 을 `UTC` 로 표시한다 — 9시간 틀린 시각을 사실로 말하는 것이다. 지금은
+   * `toISOString()` 만 쓰므로 들어올 일이 없지만, 확인하지 않은 것을 단정하지 않는 쪽을
+   * 코드에 고정한다.
+   */
+  it("오프셋이 붙은 값을 UTC 라고 말하지 않는다", () => {
+    for (const offset of ["2026-05-01T09:12:33+09:00", "2026-05-01T09:12:33-05:00"]) {
+      const line = externalSessionOutcome(at(offset), PATH5);
+
+      expect(line).toContain(offset);
+      expect(line).not.toContain("UTC");
+    }
+  });
+
+  /**
+   * 모양이 맞아도 값이 달력에 없을 수 있다. `2026-02-30` 은 `NaN` 이 아니라 **3월 2일로
+   * 굴러가므로**(JS `Date` 의 실제 동작) `isNaN` 검사로는 못 잡는다. 왕복 비교가 필요하다.
+   */
+  it("없는 날짜를 UTC 로 포장하지 않는다", () => {
+    const line = externalSessionOutcome(at("2026-02-30T12:00:00Z"), PATH5);
+
+    expect(line).toContain("(2026-02-30T12:00:00Z 녹화)");
+    expect(line).not.toContain("UTC");
+    // 굴러간 값(3월 2일)을 보여주는 것이 가장 나쁘다 — 저장에 없는 날짜를 지어낸 것이다.
+    expect(line).not.toContain("03-02");
+  });
+
+  /**
+   * 실패 경로가 조각으로 값을 되짚어 만들면 정규식이 허용한 소수 초가 사라진다. "원문을
+   * 그대로 보여준다" 는 계약이 **실패했을 때만** 조용히 깨지는 자리라 따로 고정한다.
+   */
+  it("무효한 값의 소수 초도 잃지 않는다", () => {
+    const raw = "2026-02-30T12:00:00.123Z";
+
+    expect(externalSessionOutcome(at(raw), PATH5)).toContain(`(${raw} 녹화)`);
+  });
+
+  it("범위를 벗어난 값도 원문으로 남긴다", () => {
+    for (const bad of ["2026-13-01T12:00:00Z", "2026-05-01T25:00:00Z"]) {
+      expect(externalSessionOutcome(at(bad), PATH5)).toContain(`(${bad} 녹화)`);
+    }
+  });
+
+  it("윤일은 정상으로 다룬다 — 검사가 지나치게 빡빡하지 않다", () => {
+    expect(externalSessionOutcome(at("2024-02-29T00:00:00Z"), PATH5)).toContain(
+      "(2024-02-29 00:00:00 UTC 녹화)",
+    );
+  });
+
+  it("모양이 다른 값은 손대지 않고 그대로 보여준다", () => {
+    // 구 버전 파일 등. 파싱에 실패했다고 정보를 버리지 않는다.
+    expect(externalSessionOutcome(at("2026/05/01"), PATH5)).toContain("(2026/05/01 녹화)");
+  });
+
+  it("녹화 실행에는 붙지 않는다 — 지금 시각이라 쓸모없고 비결정적이다", () => {
+    expect(externalSessionOutcome(record(3), PATH5)).not.toContain("녹화)");
+  });
+});

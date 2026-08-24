@@ -64,6 +64,23 @@ describe.sequential("실제로 죽는 서버", () => {
     expect(report.summary.rejectionUnverified).toBe(0);
   });
 
+  it("죽은 케이스의 해결 안내가 core 의 안내 그대로다", async () => {
+    // #222 가 닫은 그 문장이다. 러너가 자기 한 문장("MCP 서버 프로세스와 연결 상태를
+    // 확인하세요")으로 덮으면, 화면 아래 프로세스 진단 블록이 이미 보여주는 것을 확인하라는
+    // 순환이 된다(#279 의 `## 함께`). 실제로 core 의 안내가 여기까지 오는지는 프로세스를 진짜
+    // 죽여 봐야 안다.
+    const connection = await connectStdio({ command: process.execPath, args: [dyingServer] });
+    connections.add(connection);
+
+    const report = await runSuite({ client: connection.client, suite }).report;
+    const hint = report.cases[0]?.operation.diagnostic?.hint;
+
+    expect(hint).not.toBe("MCP 서버 프로세스와 연결 상태를 확인하세요.");
+    // stderr 를 관측했는지에 따라 core 가 두 문장 중 하나를 준다(`errors.ts` 의 resolveHint).
+    // 둘 다 사용자가 **할 일**을 말한다. 어느 쪽이 오는지는 종료 관측 순서에 달려 있다.
+    expect(hint).toMatch(/다시 실행하세요\.$/);
+  });
+
   it("화면이 한 줄로 원인을 말한다", async () => {
     const connection = await connectStdio({ command: process.execPath, args: [dyingServer] });
     connections.add(connection);

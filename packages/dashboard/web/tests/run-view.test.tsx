@@ -181,6 +181,36 @@ describe("RunView", () => {
     expect(screen.queryByLabelText("repair 번들 경로")).toBeNull();
   });
 
+  it("repair 폼은 시작 버튼이 꺼진 이유를 버튼 옆에 말한다", () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    stubFetch();
+    render(<RunView runId="run-1" />);
+    act(() => {
+      lastSource().emit({ kind: "done", exitCode: 1 });
+    });
+    fireEvent.click(screen.getByRole("button", { name: "repair 시작" }));
+
+    // 버튼이 꺼진 이유가 침묵하면 사용자는 폼 전체를 다시 의심한다(#354).
+    expect(screen.getByText("repair 번들 경로를 입력하세요.")).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("repair 번들 경로"), { target: { value: "b.json" } });
+    expect(screen.queryByText("repair 번들 경로를 입력하세요.")).toBeNull();
+    expect(screen.getByText("model 을 입력하세요.")).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("model"), { target: { value: "m" } });
+    expect(screen.queryByText("model 을 입력하세요.")).toBeNull();
+  });
+
+  it("repair 의 model 칸은 필수임을 표시한다 — generate 의 '모델 (선택)' 과 다르다", () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    stubFetch();
+    render(<RunView runId="run-1" />);
+    act(() => {
+      lastSource().emit({ kind: "done", exitCode: 1 });
+    });
+    fireEvent.click(screen.getByRole("button", { name: "repair 시작" }));
+
+    expect(screen.getByText("repair 는 모델 지정이 필수입니다.")).toBeTruthy();
+  });
+
   it("status가 done이면 repair 버튼이 없다", () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     stubFetch();

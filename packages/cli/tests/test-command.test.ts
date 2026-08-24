@@ -173,6 +173,47 @@ describe("parseTestCommand", () => {
   it("parseTestCommand가 json true를 낸다", () => {
     expect(parseTestCommand(["suite.json", "--command", "node", "--json"]).json).toBe(true);
   });
+  /**
+   * #242. npm · cargo · docker 관례다. **뒤에 오는 것을 해석하지 않는 것**이 핵심이라,
+   * 옵션처럼 생긴 값이 와도 우리 옵션으로 읽히지 않는다.
+   */
+  it("-- 뒤의 첫 토큰이 실행 파일, 나머지가 인자다", () => {
+    const parsed = parseTestCommand(["suite.json", "--", "node", "server.mjs", "--port", "0"]);
+    expect(parsed.target).toEqual({
+      transport: "stdio",
+      command: "node",
+      args: ["server.mjs", "--port", "0"],
+    });
+  });
+
+  it("-- 뒤의 옵션처럼 생긴 값을 우리 옵션으로 읽지 않는다", () => {
+    // `--json` 은 우리 옵션이지만 `--` 뒤에 있으므로 서버 인자다.
+    const parsed = parseTestCommand(["suite.json", "--", "node", "s.mjs", "--json"]);
+    expect(parsed.json).toBe(false);
+    expect(parsed.target).toEqual({
+      transport: "stdio",
+      command: "node",
+      args: ["s.mjs", "--json"],
+    });
+  });
+
+  it("--command 와 -- 를 함께 쓰면 사용 오류다", () => {
+    expect(() => parseTestCommand(["suite.json", "--command", "node", "--", "other"])).toThrow(
+      /함께 쓸 수 없습니다/,
+    );
+  });
+
+  it("-- 뒤가 비면 사용 오류다", () => {
+    expect(() => parseTestCommand(["suite.json", "--"])).toThrow(/실행할 명령이 없습니다/);
+  });
+
+  /** `--arg` 로 준 값이 통과 인자 **앞에** 조용히 끼어들면 사용자가 적지 않은 순서가 된다. */
+  it("--arg 와 -- 를 함께 쓰면 사용 오류다", () => {
+    expect(() => parseTestCommand(["suite.json", "--arg", "x", "--", "node"])).toThrow(
+      /`--arg` 와 `--` 를 함께 쓸 수 없습니다/,
+    );
+  });
+
   it("--junit <path> 를 파싱한다", () => {
     expect(
       parseTestCommand(["suite.json", "--command", "node", "--junit", "reports/junit.xml"])

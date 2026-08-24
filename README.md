@@ -50,7 +50,7 @@ npm install -g @mcpeak/cli @mcpeak/mock @mcpeak/dashboard
 서버를 띄우는 방법과 함께 넘긴다.
 
 ```bash
-mcpeak test weather.suite.json --command node --arg examples/weather-server/server.mjs
+mcpeak test weather.suite.json -- node examples/weather-server/server.mjs
 ```
 
 > 예제 서버는 이 저장소의 `examples/weather-server/` 에 있습니다. **npm 으로만 설치했다면**
@@ -93,9 +93,11 @@ mcpeak test weather.suite.json --command node --arg examples/weather-server/serv
 서버의 툴 스키마를 읽어 명세를 만들어 줍니다.
 
 ```bash
-mcpeak generate --suite-id weather --name "날씨 서버" --out weather.suite.json \
-  --command node --arg ./server.js
+mcpeak generate --out weather.suite.json -- node ./server.js
 ```
+
+`--` 뒤는 전부 서버를 띄울 명령입니다. 스위트 id 와 이름은 `--out` 파일명에서 뽑습니다
+(`weather.suite.json` → `weather`). 직접 정하려면 `--suite-id` · `--name` 을 쓰세요.
 
 기본은 실제 서버에 한 번 돌려보고(시험 실행) 사람이 승인하는 흐름입니다.
 `--baseline-only` 를 붙이면 AI 없이 결정론적으로만 만듭니다.
@@ -103,13 +105,13 @@ mcpeak generate --suite-id weather --name "날씨 서버" --out weather.suite.js
 ## CLI
 
 ```
-mcpeak test <suite.json> --command <executable> [--arg <value> ...]
+mcpeak test <suite.json> -- <executable> [args...]
              [--determinism] [--reset-cmd <command>]
              [--json] [--junit <path>] [--repair-bundle <path>] [--stderr-lines <N>]
              [--session <path> | --record-session <path>]
 
-mcpeak generate --suite-id <id> --name <name> --out <suite.json>
-                 --command <executable> [--arg <value> ...]
+mcpeak generate --out <suite.json> -- <executable> [args...]
+                 [--suite-id <id>] [--name <name>]
                  [--baseline-only] [--provider <codex|claude>] [--model <model>]
                  [--no-dry-run] [--reset-cmd <command>] [--no-repair] [--force]
 
@@ -117,8 +119,10 @@ mcpeak repair <bundle.json> --provider <codex|claude> --model <model>
                [--max-cases <N>] [--no-stderr] [--yes]
 ```
 
-`--command` 와 `--arg` 가 **테스트 대상 서버를 띄우는 방법**입니다. `--arg` 를 여러 번 써서
-인자를 순서대로 넘깁니다.
+`--` 뒤가 **테스트 대상 서버를 띄우는 방법**입니다. 첫 토큰이 실행 파일, 나머지가 그 인자이고,
+그 뒤는 우리가 해석하지 않으므로 `--port 0` 같은 값을 그대로 넘길 수 있습니다.
+
+`--command <executable> [--arg <value> ...]` 도 그대로 됩니다. 둘을 함께 쓸 수는 없습니다.
 
 전체 도움말은 `mcpeak --help`, 서브커맨드는 `mcpeak help test` 로 봅니다.
 

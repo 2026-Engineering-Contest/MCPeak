@@ -84,8 +84,8 @@ describe("mcpeak cli", () => {
   it.each([
     [["help", "test"], "mcpeak test <suite.json>"],
     [["test", "--help"], "mcpeak test <suite.json>"],
-    [["help", "generate"], "mcpeak generate --suite-id <id>"],
-    [["generate", "--help"], "mcpeak generate --suite-id <id>"],
+    [["help", "generate"], "mcpeak generate --out <suite.json>"],
+    [["generate", "--help"], "mcpeak generate --out <suite.json>"],
   ])("%j 는 해당 서브커맨드 도움말을 stdout 에 쓴다", async (argv, expected) => {
     const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { PendingQuestion, RunEvent, RunStatus, RunSummary } from "../../src/api-types.js";
-import { apiGet } from "./api.js";
+import { ApiRequestError, apiGet } from "./api.js";
 
 export interface RunEventsState {
   readonly events: readonly RunEvent[];
@@ -37,6 +37,15 @@ const EVENT_SOURCE_CLOSED = 2;
 const MISSING_RUN_HINT =
   "→ 대시보드는 실행 이력을 메모리에만 둡니다. 서버를 다시 시작했다면 이전 run 은 남아 있지 않습니다.\n" +
   "→ 홈 화면의 최근 실행 목록에서 살아 있는 run 을 고르거나, 새 실행을 시작하세요.";
+
+/**
+ * 404 가 아닌 실패 — 5xx, 네트워크 오류, 본문 파싱 실패 등. **이 경우 run 이 없다고 말하면
+ * 안 된다.** run 은 살아 있는데 조회만 실패한 것일 수 있고, 그러면 안내가 거짓이 된다.
+ * 우리가 아는 것은 "확인하지 못했다" 뿐이다.
+ */
+const STATUS_UNKNOWN_HINT =
+  "→ 실행 상태를 확인하지 못했습니다. run 이 없다는 뜻은 아닙니다.\n" +
+  "→ 아래 터미널 출력은 계속 받습니다. 새로고침하면 상태를 다시 물어봅니다.";
 
 /**
  * `GET /api/runs/:id/events` SSE를 구독해 이벤트를 순서대로 쌓는다.
@@ -85,7 +94,11 @@ export function useRunEvents(runId: string | null): RunEventsState {
       } catch (caught: unknown) {
         if (cancelled) return;
         const reason = caught instanceof Error ? caught.message : String(caught);
-        setState((previous) => ({ ...previous, error: `${reason}\n${MISSING_RUN_HINT}` }));
+        // 404 만 "없다" 로 읽는다. `apiGet` 은 모든 non-OK 에서 reject 하므로 상태를 안 보면
+        // 5xx·네트워크 오류까지 run-없음 안내로 묶여 살아 있는 run 에 거짓을 말한다.
+        const missing = caught instanceof ApiRequestError && caught.status === 404;
+        const hint = missing ? MISSING_RUN_HINT : STATUS_UNKNOWN_HINT;
+        setState((previous) => ({ ...previous, error: `${reason}\n${hint}` }));
       }
     };
 
@@ -99,19 +112,22 @@ export function useRunEvents(runId: string | null): RunEventsState {
       setState((previous) => {
         if (previous.events.some((received) => received.id === event.id)) return previous;
         const events = [...previous.events, event];
+        // 이벤트가 흐른다는 것이 곧 이 run 이 있다는 증거다. 앞선 조회 실패로 세운 안내가
+        // 남아 있으면 살아 있는 run 화면에 "확인할 수 없음" 이 붙어 있게 된다.
+        const base = previous.error === null ? previous : { ...previous, error: null };
 
         if (event.kind === "question") {
-          return { ...previous, events, status: "waiting-input", pendingQuestion: event.question };
+          return { ...base, events, status: "waiting-input", pendingQuestion: event.question };
         }
 
         if (event.kind === "done") {
           const status: RunStatus = event.exitCode === 0 ? "done" : "failed";
-          return { ...previous, events, status, pendingQuestion: null };
+          return { ...base, events, status, pendingQuestion: null };
         }
 
         // stdout/stderr는 pendingQuestion을 건드리지 않는다. 질문과 답 사이에 낀 출력
         // 한 줄이 패널을 지워 응답 불가 상태로 만드는 일을 막는다.
-        return { ...previous, events, status: "running" };
+        return { ...base, events, status: "running" };
       });
     };
 

@@ -62,6 +62,13 @@ function stubFetch(summary: RunSummary | null = RUNNING): ReturnType<typeof vi.f
   return mock;
 }
 
+/** 404 가 아닌 실패. run 이 없다는 뜻이 아니므로 안내가 달라야 한다. */
+function stubFetchFailing(status: number, message: string): ReturnType<typeof vi.fn> {
+  const mock = vi.fn(async () => new Response(JSON.stringify({ error: message }), { status }));
+  vi.stubGlobal("fetch", mock);
+  return mock;
+}
+
 describe("useRunEvents", () => {
   beforeEach(() => {
     stubFetch();
@@ -318,5 +325,39 @@ describe("useRunEvents", () => {
 
     expect(result.current.error).toBeNull();
     expect((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.length).toBe(before);
+  });
+
+  /**
+   * `apiGet` 은 **모든** non-OK 에서 reject 한다. 상태를 안 보고 묶으면 5xx·네트워크 오류에도
+   * "그런 run이 없습니다" 안내가 붙어 **살아 있는 run 에 거짓을 말한다.**
+   */
+  it("404 가 아닌 조회 실패에는 run-없음 안내를 붙이지 않는다", async () => {
+    stubFetchFailing(500, "내부 오류가 발생했습니다.");
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const { result } = renderHook(() => useRunEvents("run-1"));
+
+    await waitFor(() => {
+      expect(result.current.error).not.toBeNull();
+    });
+    expect(result.current.error).toContain("내부 오류가 발생했습니다.");
+    expect(result.current.error).not.toContain("메모리에만");
+    expect(result.current.error).toContain("run 이 없다는 뜻은 아닙니다");
+  });
+
+  /** 이벤트가 흐른다는 것이 곧 run 이 있다는 증거다. 앞선 조회 실패 안내는 걷어야 한다. */
+  it("SSE 이벤트가 도착하면 앞선 조회 실패 안내를 해제한다", async () => {
+    stubFetchFailing(500, "내부 오류가 발생했습니다.");
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const { result } = renderHook(() => useRunEvents("run-1"));
+    await waitFor(() => {
+      expect(result.current.error).not.toBeNull();
+    });
+
+    act(() => {
+      FakeEventSource.instances[0]?.emit({ kind: "stdout", html: "살아 있다", id: 1 });
+    });
+
+    expect(result.current.error).toBeNull();
+    expect(result.current.status).toBe("running");
   });
 });

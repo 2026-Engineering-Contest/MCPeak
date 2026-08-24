@@ -49,6 +49,7 @@
   "scripts": {
     "build": "tsdown --config-loader native",
     "typecheck": "tsc --noEmit",
+    "test": "vitest run --root ../.. packages/record",
     "test:e2e": "node tests/dist-external-e2e.mjs"
   }
 }

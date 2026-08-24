@@ -38,7 +38,8 @@
   ],
   "scripts": {
     "build": "tsdown --config-loader native",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --root ../.. packages/runner"
   },
   "dependencies": {
     "@mcpeak/core": "workspace:*"

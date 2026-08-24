@@ -117,8 +117,8 @@ function execute(args) {
   for (const [args, usage] of [
     [["help", "test"], "mcpeak test <suite.json>"],
     [["test", "--help"], "mcpeak test <suite.json>"],
-    [["help", "generate"], "mcpeak generate --suite-id <id>"],
-    [["generate", "--help"], "mcpeak generate --suite-id <id>"],
+    [["help", "generate"], "mcpeak generate --out <suite.json>"],
+    [["generate", "--help"], "mcpeak generate --out <suite.json>"],
   ]) {
     const result = await execute(args);
     assert.equal(result.code, 0);
@@ -826,6 +826,80 @@ for (const [fixture, expectedStatus, expectedSummary] of [
       `stderr 에 시도한 경로와 errno 가 없습니다. 실제 출력:\n${unwritable.err}`,
     );
     await expectExited(pidFile);
+  } finally {
+    await cleanupPid(pidFile);
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+// `--` 통과 인자 (ADR-0076). 배포 산출물에서 확인한다 — 파서 분기는 유닛테스트가 보지만,
+// 번들된 CLI 가 실제 서버를 그 인자로 띄우는지는 여기서만 드러난다.
+{
+  const dir = await mkdtemp(join(tmpdir(), "mcpeak-dist-dashdash-"));
+  const pidFile = join(dir, "pid");
+  const suite = join(here, "fixtures", "weather-suite.json");
+  try {
+    // 1. `--command`/`--arg` 와 `--` 가 같은 결과를 낸다. 래퍼가 인자 셋을 받으므로
+    //    `--` 뒤에 그대로 나열하면 된다 — 그 나열이 해석되지 않는다는 것이 이 기능이다.
+    const viaFlags = await execute([
+      "test",
+      suite,
+      "--command",
+      process.execPath,
+      "--arg",
+      wrapper,
+      "--arg",
+      pidFile,
+      "--arg",
+      server,
+    ]);
+    await expectExited(pidFile);
+    const viaDashDash = await execute([
+      "test",
+      suite,
+      "--",
+      process.execPath,
+      wrapper,
+      pidFile,
+      server,
+    ]);
+    await expectExited(pidFile);
+
+    assert.equal(
+      viaDashDash.code,
+      viaFlags.code,
+      `--command 와 -- 의 종료 코드가 다릅니다. flags=${viaFlags.code} dashdash=${viaDashDash.code}`,
+    );
+    assert.ok(
+      viaDashDash.out.includes("passed"),
+      `-- 통과로 띄운 실행의 stdout 에 결과가 없습니다. 실제 출력:\n${viaDashDash.out}`,
+    );
+
+    // 2. 함께 쓰면 사용 오류다. 대상이 둘이 되면 어느 쪽을 띄울지 화면이 말할 수 없다.
+    const both = await execute(["test", suite, "--command", process.execPath, "--", server]);
+    assert.equal(both.code, 1);
+    assert.ok(
+      both.err.includes("함께 쓸 수 없습니다"),
+      `stderr 에 배타 안내가 없습니다. 실제 출력:\n${both.err}`,
+    );
+
+    // 3. `--` 뒤가 비면 사용 오류다.
+    const empty = await execute(["test", suite, "--"]);
+    assert.equal(empty.code, 1);
+    assert.ok(
+      empty.err.includes("실행할 명령이 없습니다"),
+      `stderr 에 빈 통과 안내가 없습니다. 실제 출력:\n${empty.err}`,
+    );
+
+    // 4. 도움말이 새 문법과 승인 지문 결합을 말한다. 옵션을 소스에만 넣고 번들에서
+    //    빠뜨리면 사용자는 존재를 알 방법이 없다.
+    const help = await execute(["help", "generate"]);
+    assert.equal(help.code, 0);
+    for (const expected of ["-- <executable> [args...]", "--suite-id <id>", "승인 지문"])
+      assert.ok(
+        help.out.includes(expected),
+        `generate 도움말에 '${expected}' 가 없습니다. 실제 출력:\n${help.out}`,
+      );
   } finally {
     await cleanupPid(pidFile);
     await rm(dir, { recursive: true, force: true });

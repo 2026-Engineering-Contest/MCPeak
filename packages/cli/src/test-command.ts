@@ -645,15 +645,95 @@ function resetFailure(error: ResetCommandError): CliFailure {
 }
 
 /** JUnit 파일 쓰기 실패에 사용자가 지정한 경로와 운영체제 오류 코드를 남긴다(#294). */
-function junitWriteFailure(path: string, error: unknown): CliFailure {
+/**
+ * 노드 오류의 `code`. 문자열(`ENOENT`)이거나 숫자일 수 있고, 둘 다 아니면 우리가 아는 것이
+ * 없다. `junitWriteFailure` 가 쓰던 것을 꺼내 다른 실패 생성기와 함께 쓴다(#276).
+ */
+function errnoOf(error: unknown): string {
   const code = (error as { code?: unknown } | null)?.code;
-  const errno = typeof code === "string" || typeof code === "number" ? String(code) : "알 수 없음";
+  return typeof code === "string" || typeof code === "number" ? String(code) : "알 수 없음";
+}
+
+function junitWriteFailure(path: string, error: unknown): CliFailure {
   return {
     code: "JUNIT_WRITE_FAILED",
     message:
       `JUnit XML 파일을 쓰지 못했습니다: ${escapeTerminalText(path)}\n` +
-      `  errno: ${escapeTerminalText(errno)}`,
+      `  errno: ${escapeTerminalText(errnoOf(error))}`,
     hint: dictionary.JUNIT_WRITE_FAILED.hint,
+  };
+}
+
+/**
+ * `--repair-bundle` 쓰기 실패. 짝인 `junitWriteFailure` 와 같은 모양이어야 한다 — 같은 실행에서
+ * 둘 다 실패할 수 있고, 그때 한쪽만 경로를 싣고 있으면 사용자가 어느 파일이 없는지 알 수 없다.
+ */
+function repairBundleWriteFailure(path: string, error: unknown): CliFailure {
+  return {
+    code: "REPAIR_BUNDLE_WRITE_FAILED",
+    message:
+      `repair 번들 파일을 쓰지 못했습니다: ${escapeTerminalText(path)}\n` +
+      `  errno: ${escapeTerminalText(errnoOf(error))}`,
+    hint: dictionary.REPAIR_BUNDLE_WRITE_FAILED.hint,
+  };
+}
+
+/**
+ * 명세 읽기 실패. **errno 별로 다음 행동이 다르다** — 파일이 없으면 경로를 고치고, 권한이
+ * 없으면 권한을 고친다. 둘을 한 문장으로 묶으면 사용자에게 둘 다 확인하게 만든다(#276).
+ * 어느 쪽인지 아는데 안 말할 이유가 없다.
+ */
+function suiteReadFailure(path: string, error: unknown): CliFailure {
+  const shown = escapeTerminalText(path);
+  const errno = errnoOf(error);
+  if (errno === "ENOENT")
+    return {
+      code: "SUITE_READ_FAILED",
+      message: `테스트 명세 파일이 그 경로에 없습니다: ${shown}`,
+      hint: "경로와 파일 이름을 확인하세요. 상대 경로는 명령을 실행한 디렉터리 기준입니다.",
+    };
+  if (errno === "EACCES" || errno === "EPERM")
+    return {
+      code: "SUITE_READ_FAILED",
+      message: `테스트 명세 파일을 읽을 권한이 없습니다: ${shown}`,
+      hint: "그 파일의 읽기 권한을 확인하세요. 경로 자체는 찾았습니다.",
+    };
+  if (errno === "EISDIR")
+    return {
+      code: "SUITE_READ_FAILED",
+      message: `그 경로는 파일이 아니라 디렉터리입니다: ${shown}`,
+      hint: "스위트 JSON 파일의 경로를 주세요.",
+    };
+  return {
+    code: "SUITE_READ_FAILED",
+    message:
+      `테스트 명세 파일을 읽지 못했습니다: ${shown}\n` + `  errno: ${escapeTerminalText(errno)}`,
+    hint: dictionary.SUITE_READ_FAILED.hint,
+  };
+}
+
+function suiteEncodingFailure(path: string): CliFailure {
+  return {
+    code: "SUITE_ENCODING_INVALID",
+    message: `테스트 명세 파일이 유효한 UTF-8이 아닙니다: ${escapeTerminalText(path)}`,
+    hint: dictionary.SUITE_ENCODING_INVALID.hint,
+  };
+}
+
+/**
+ * JSON 문법 실패. **파서가 준 문장을 그대로 통과시킨다.** 위치 표기는 런타임마다 다르다 —
+ * `at position 7 (line 1 column 8)` 을 주는 경우도 있고 깨진 자리의 스니펫만 주는 경우도 있다
+ * (Node 25 실측). 우리가 형식을 고정하면 어느 한쪽에서 거짓이 되므로, 그 문장을 옮기고
+ * 경로만 우리가 더한다. 파서 문장에는 사용자 파일 내용 조각이 섞이므로 이스케이프한다.
+ */
+function suiteJsonFailure(path: string, error: unknown): CliFailure {
+  const reason = error instanceof Error ? error.message : String(error);
+  return {
+    code: "SUITE_JSON_INVALID",
+    message:
+      `테스트 명세의 JSON 문법이 유효하지 않습니다: ${escapeTerminalText(path)}\n` +
+      `  ${escapeTerminalText(reason)}`,
+    hint: dictionary.SUITE_JSON_INVALID.hint,
   };
 }
 /**
@@ -803,29 +883,20 @@ async function runCliCore(
   let bytes: Uint8Array;
   try {
     bytes = await dependencies.readFile(input.suitePath);
-  } catch {
-    return writeFailure(dependencies, {
-      code: "SUITE_READ_FAILED",
-      ...dictionary.SUITE_READ_FAILED,
-    });
+  } catch (error: unknown) {
+    return writeFailure(dependencies, suiteReadFailure(input.suitePath, error));
   }
   let decoded: string;
   try {
     decoded = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
   } catch {
-    return writeFailure(dependencies, {
-      code: "SUITE_ENCODING_INVALID",
-      ...dictionary.SUITE_ENCODING_INVALID,
-    });
+    return writeFailure(dependencies, suiteEncodingFailure(input.suitePath));
   }
   let parsed: unknown;
   try {
     parsed = JSON.parse(decoded);
-  } catch {
-    return writeFailure(dependencies, {
-      code: "SUITE_JSON_INVALID",
-      ...dictionary.SUITE_JSON_INVALID,
-    });
+  } catch (error: unknown) {
+    return writeFailure(dependencies, suiteJsonFailure(input.suitePath, error));
   }
   let validated: SuiteValidationResult;
   try {
@@ -1392,14 +1463,11 @@ async function runCliCore(
     else
       try {
         await dependencies.writeFile(input.repairBundlePath, serializeRepairBundle(bundle));
-      } catch {
+      } catch (error: unknown) {
         // 전부 통과여도 1 이다. 조용히 0 을 내면 CI 는 번들 없이 초록이 되고, 사용자는 파일이
         // 없다는 것을 한참 뒤에야 안다. JUnit 쓰기도 실패했을 수 있으므로 여기서 반환하지 않고
         // 두 산출물 오류를 모두 보고한다. 원인이 로컬 I/O 이므로 진단은 쓰지 않는다.
-        deferredRepairBundleFailure = {
-          code: "REPAIR_BUNDLE_WRITE_FAILED",
-          ...dictionary.REPAIR_BUNDLE_WRITE_FAILED,
-        };
+        deferredRepairBundleFailure = repairBundleWriteFailure(input.repairBundlePath, error);
       }
   }
   // 두 산출물은 독립적으로 요청한 것이다. 하나가 실패해도 다른 쓰기를 시도하고, 둘 다 실패하면

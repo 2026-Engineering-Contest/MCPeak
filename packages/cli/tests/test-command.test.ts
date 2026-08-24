@@ -832,6 +832,79 @@ describe("runCli", () => {
     expect(text).toContain("SUITE_READ_FAILED");
     expect(text).not.toMatch(/SECRET|absolute|Error:|stack/);
   });
+  /**
+   * #276. 고치기 전에는 네 자리가 `} catch {` 로 오류를 **바인딩조차 하지 않고** 정적 사전
+   * 문장만 내보냈다. "경로를 확인하세요" 라면서 그 경로가 화면에 없었다.
+   */
+  it("파일이 없으면 경로를 싣고 권한 문제와 구분해 말한다", async () => {
+    const d = deps({
+      readFile: async () => {
+        throw Object.assign(new Error("stat failed"), { code: "ENOENT" });
+      },
+    });
+    await runCli(["test", "specs/none.suite.json", "--command", "node"], d.value);
+    const text = d.writes.err.join("");
+    expect(text).toContain("SUITE_READ_FAILED");
+    expect(text).toContain("specs/none.suite.json");
+    expect(text).toContain("그 경로에 없습니다");
+    // 권한 얘기를 함께 하지 않는다. 어느 쪽인지 아는데 둘 다 확인하라고 하면 안 된다.
+    expect(text).not.toContain("권한");
+  });
+
+  it("읽기 권한이 없으면 경로를 찾았다는 사실까지 말한다", async () => {
+    const d = deps({
+      readFile: async () => {
+        throw Object.assign(new Error("denied"), { code: "EACCES" });
+      },
+    });
+    await runCli(["test", "locked.suite.json", "--command", "node"], d.value);
+    const text = d.writes.err.join("");
+    expect(text).toContain("locked.suite.json");
+    expect(text).toContain("읽을 권한이 없습니다");
+    expect(text).toContain("경로 자체는 찾았습니다");
+  });
+
+  it("모르는 errno 는 그 값을 그대로 싣는다", async () => {
+    const d = deps({
+      readFile: async () => {
+        throw Object.assign(new Error("weird"), { code: "EMFILE" });
+      },
+    });
+    await runCli(["test", "x.suite.json", "--command", "node"], d.value);
+    const text = d.writes.err.join("");
+    expect(text).toContain("x.suite.json");
+    expect(text).toContain("errno: EMFILE");
+  });
+
+  it("UTF-8 이 아니면 어느 파일인지 말한다", async () => {
+    const d = deps({ readFile: async () => new Uint8Array([0xc3, 0x28]) });
+    await runCli(["test", "bad-utf8.suite.json", "--command", "node"], d.value);
+    const text = d.writes.err.join("");
+    expect(text).toContain("SUITE_ENCODING_INVALID");
+    expect(text).toContain("bad-utf8.suite.json");
+  });
+
+  /**
+   * 파서 문장을 그대로 옮긴다. 위치 표기는 런타임마다 다르므로(`at position N` 을 주기도 하고
+   * 스니펫만 주기도 한다) **형식을 단언하지 않는다.** 파서가 준 것이 실렸는지만 본다.
+   */
+  it("JSON 이 깨지면 경로와 파서가 준 위치 정보를 함께 싣는다", async () => {
+    const broken = '{ "schemaVersion": 1, }';
+    let parserMessage = "";
+    try {
+      JSON.parse(broken);
+    } catch (error) {
+      parserMessage = (error as Error).message;
+    }
+    const d = deps({ readFile: async () => new TextEncoder().encode(broken) });
+    await runCli(["test", "broken.suite.json", "--command", "node"], d.value);
+    const text = d.writes.err.join("");
+    expect(text).toContain("SUITE_JSON_INVALID");
+    expect(text).toContain("broken.suite.json");
+    expect(parserMessage).not.toBe("");
+    expect(text).toContain(parserMessage);
+  });
+
   it("validator가 반환한 valid suite reference를 startRunner에 그대로 전달한다", async () => {
     const validSuite: TestSuiteSpec = {
       schemaVersion: 1,

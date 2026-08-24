@@ -301,6 +301,11 @@ describe("--repair-bundle 쓰기", () => {
     const stderr = d.writes.err.join("");
     expect(stderr).toContain("JUNIT_WRITE_FAILED");
     expect(stderr).toContain("REPAIR_BUNDLE_WRITE_FAILED");
+    // 짝인 두 오류가 같은 모양이어야 한다(#276). 한쪽만 경로를 싣고 있으면 같은 실행에서
+    // 둘 다 실패했을 때 사용자가 어느 파일이 없는지 알 수 없다.
+    expect(stderr).toContain("junit.xml");
+    expect(stderr).toContain("bundle.json");
+    expect(stderr.match(/errno: EACCES/g)).toHaveLength(2);
   });
 
   it("쓰기 실패 시 전부 통과여도 종료 코드가 0이 아니고 REPAIR_BUNDLE_WRITE_FAILED 가 뜬다", async () => {

@@ -15,8 +15,18 @@ const tools = (
 interface FakeClientOptions {
   /** 툴 이름별 응답. 없으면 정상 응답을 만든다. */
   readonly responses?: Readonly<Record<string, ToolResult>>;
-  /** 이 툴을 부르면 던진다. 서버가 죽은 상황을 흉내 낸다. */
+  /**
+   * 이 툴을 부르면 던진다. **서버는 살아 있다** — 코드 없는 오류라 러너는 연결 상실로 보지
+   * 않고 다음 케이스로 간다(ADR-0073).
+   */
   readonly throwOn?: string;
+  /**
+   * 이 횟수만큼 호출이 지나면 그다음부터 프로세스 사망 오류로 던진다. 서버가 도중에 죽는
+   * 상황이다. 죽은 뒤에는 어느 툴을 부르든 같은 오류가 난다.
+   */
+  readonly killAfter?: number;
+  /** `killAfter` 가 낸 오류에 실을 종료 코드. 생략하면 종료 코드를 관측하지 못한 상황이다. */
+  readonly killExitCode?: number;
   /** 이 툴을 부르면 늦게 응답한다. 제한 시간 초과를 흉내 낸다. */
   readonly hangOn?: string;
   /** `hangOn` 이 응답하기까지의 시간. 생략하면 끝내 응답하지 않는다. */
@@ -29,6 +39,16 @@ interface FakeClient extends McpClient {
   /** 실제로 응답까지 끝난 호출. 러너가 기다리기를 그만둔 뒤에도 여기에 추가된다. */
   readonly settled: string[];
 }
+
+/**
+ * core 가 프로세스 사망 뒤의 호출에 붙이는 오류. 러너는 클래스 정체가 아니라 이 **구조**를 보고
+ * 연결 상실을 판정하므로(`classifyConnectionLoss`) 구조만 흉내 낸다.
+ */
+const processExitedError = (exitCode?: number): Error =>
+  Object.assign(new Error("Not connected"), {
+    code: "PROCESS_EXITED",
+    diagnostics: { transport: "stdio", exitCode: exitCode ?? null, signal: null, stderr: "" },
+  });
 
 const okResult = (tool: string): ToolResult => ({
   content: [{ type: "text", text: `${tool} ok` }],
@@ -49,6 +69,9 @@ const fakeClient = (options: FakeClientOptions = {}): FakeClient => {
     },
     async callTool(name) {
       calls.push(name);
+      // 죽은 뒤가 먼저다. 서버가 이미 죽었으면 그 툴이 무엇이었는지는 더 이상 중요하지 않다.
+      if (options.killAfter !== undefined && calls.length > options.killAfter)
+        throw processExitedError(options.killExitCode);
       if (options.throwOn === name) throw new Error("socket hang up");
       if (options.hangOn === name) {
         await new Promise<void>((resolve) => {
@@ -138,22 +161,72 @@ describe("runDryRun", () => {
     expect(result.outcomes.map((outcome) => outcome.caseId)).toEqual(["a", "b", "c"]);
   });
 
-  it("client.callTool 이 던지면 aborted.reason 이 connectionLost 이고 툴 이름이 detail 에 있다", async () => {
+  it("서버가 죽으면 aborted.reason 이 connectionLost 이고 사유와 종료 코드를 말한다", async () => {
     const suite = suiteOf([callCase("a", "get_weather"), callCase("b", "add")]);
-    const result = await runDryRun({ client: fakeClient({ throwOn: "add" }), suite });
+    const client = fakeClient({ killAfter: 1, killExitCode: 42 });
+    const result = await runDryRun({ client, suite });
     expect(result.aborted?.reason).toBe("connectionLost");
-    expect(result.aborted?.detail).toContain("add");
+    // 사유·종료 코드가 문장에 있어야 사용자가 다음에 무엇을 볼지 안다. "실행이 중단됐습니다" 로
+    // 뭉개면 취소 신호와 구분되지 않는다.
+    expect(result.aborted?.detail).toBe(
+      "케이스 'add 케이스 b' 에서 서버 프로세스가 종료됐습니다 (종료 코드 42). 남은 케이스는 실행되지 않았습니다.",
+    );
   });
 
-  it("aborted 여도 그때까지 끝난 케이스가 outcomes 에 남는다", async () => {
+  it("종료 코드를 관측하지 못했으면 괄호를 만들지 않는다", async () => {
+    // `(종료 코드 없음)` 은 관측하지 못한 것을 관측했다고 말하는 것이다.
+    const suite = suiteOf([callCase("a", "get_weather"), callCase("b", "add")]);
+    const result = await runDryRun({ client: fakeClient({ killAfter: 1 }), suite });
+    expect(result.aborted?.detail).toBe(
+      "케이스 'add 케이스 b' 에서 서버 프로세스가 종료됐습니다. 남은 케이스는 실행되지 않았습니다.",
+    );
+  });
+
+  it("연결이 끊겨도 그때까지 끝난 케이스가 outcomes 에 남는다", async () => {
+    const suite = suiteOf([
+      callCase("a", "get_weather"),
+      callCase("b", "add"),
+      callCase("c", "get_weather"),
+    ]);
+    const result = await runDryRun({ client: fakeClient({ killAfter: 1 }), suite });
+    // 끊긴 케이스 b 는 남는다. 그 호출은 실제로 나갔고 실패는 사실이다. c 는 안 돌았다.
+    expect(result.outcomes.map((outcome) => outcome.caseId)).toEqual(["a", "b"]);
+    expect(result.outcomes[0]?.status).toBe("passed");
+    expect(result.outcomes.some((outcome) => outcome.status === "notRun")).toBe(false);
+  });
+
+  it("서버가 살아서 낸 툴 오류는 중단이 아니다", async () => {
+    // 오류를 던진 호출과 죽은 서버는 다르다. 이것을 섞으면 툴 하나가 오류를 낼 때마다 시험
+    // 실행이 통째로 중단되고, 사용자는 멀쩡한 뒤 케이스의 판정을 못 본다.
     const suite = suiteOf([
       callCase("a", "get_weather"),
       callCase("b", "add"),
       callCase("c", "get_weather"),
     ]);
     const result = await runDryRun({ client: fakeClient({ throwOn: "add" }), suite });
-    expect(result.outcomes.map((outcome) => outcome.caseId)).toEqual(["a", "b"]);
-    expect(result.outcomes[0]?.status).toBe("passed");
+    expect(result.aborted).toBeUndefined();
+    expect(result.outcomes.map((outcome) => outcome.caseId)).toEqual(["a", "b", "c"]);
+    expect(result.outcomes.map((outcome) => outcome.status)).toEqual([
+      "passed",
+      "failed",
+      "passed",
+    ]);
+  });
+
+  it("앞선 툴 오류가 있어도 실제로 끊긴 지점에서 자른다", async () => {
+    // 예전 휴리스틱은 진단 코드가 `OPERATION_FAILED` 인 **첫** 케이스에서 잘랐다. 그 코드는
+    // 살아 있는 서버의 툴 오류에도 붙으므로, 케이스 a 에서 자르고 b·c 의 판정을 버렸다.
+    const suite = suiteOf([
+      callCase("a", "add"),
+      callCase("b", "get_weather"),
+      callCase("c", "get_weather"),
+      callCase("d", "get_weather"),
+    ]);
+    const client = fakeClient({ throwOn: "add", killAfter: 2, killExitCode: 1 });
+    const result = await runDryRun({ client, suite });
+    expect(result.outcomes.map((outcome) => outcome.caseId)).toEqual(["a", "b", "c"]);
+    expect(result.aborted?.reason).toBe("connectionLost");
+    expect(result.aborted?.detail).toContain("get_weather 케이스 c");
   });
 
   it("케이스 하나가 상한을 넘으면 그 케이스를 줄이라고 안내한다", async () => {

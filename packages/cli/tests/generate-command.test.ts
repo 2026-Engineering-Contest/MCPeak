@@ -2738,7 +2738,12 @@ describe("generate 시험 실행 게이트", () => {
       choices: ["save", "cancel"],
       confirms: [true],
       respond: () => {
-        throw new Error("socket hang up");
+        // core 가 프로세스 사망 뒤의 호출에 붙이는 모양. 러너는 이 코드를 보고 멈춘다
+        // (#279 · ADR-0073). 코드 없는 오류는 서버가 살아서 낸 툴 오류라 중단이 아니다.
+        throw Object.assign(new Error("Not connected"), {
+          code: "PROCESS_EXITED",
+          diagnostics: { transport: "stdio", exitCode: 1, signal: null, stderr: "" },
+        });
       },
       diagnostics: () => ({
         stderr: "FATAL: heap out of memory\n",
@@ -2750,7 +2755,7 @@ describe("generate 시험 실행 게이트", () => {
     await expect(runGenerateCommand(gateArgv, d.value)).resolves.toBe(0);
     expect(d.output()).toContain("✗ 시험 실행을 마치지 못했습니다.");
     expect(d.output()).toContain("케이스에서 연결이 끊겼습니다.");
-    expect(d.output()).toContain("툴 'weather' 호출 중 오류가 발생했습니다.");
+    expect(d.output()).toContain("서버 프로세스가 종료됐습니다 (종료 코드 1)");
     expect(d.output()).toContain("FATAL: heap out of memory");
     expect(d.output()).toContain("저장하지 않았습니다. 서버를 고친 뒤 다시 save 를 고르세요.");
     expect(d.value.openTemp).not.toHaveBeenCalled();

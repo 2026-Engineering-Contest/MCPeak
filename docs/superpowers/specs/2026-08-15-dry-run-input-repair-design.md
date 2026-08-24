@@ -319,27 +319,6 @@ AI 제안은 별도 옵션을 두지 않는다. `--provider` 가 있으면 쓰�
 > 서버에 귀속하면 사용자가 AI 가 관여한 사실 자체를 알 수 없다. provider 표기를 못 받은
 > 경우에도 서버라고 말하지 않고 `AI 가` 로 적는다.
 
-### 8.6.2 전송 승인 (AI 제안을 요청하기 전)
-
-`propose` 는 실패한 케이스의 **명세와 서버 응답 원문**을 외부 provider 로 보낸다. 사전보완 ·
-authoring 과 **같은 승인 화면을 같은 형식으로** 찍고 묻는다. 전송 데이터 목록만 이 통로의
-실제 내용으로 바꾼다.
-
-```
-Provider: codex
-Model: gpt-5.6-luna
-Payload: 3721 bytes
-Result limit: 65536 bytes
-Timeout: 120000ms
-Fingerprint: 3f2a…
-전송 데이터: 실패한 케이스의 명세와 서버 응답 원문, baseline suite, current candidate, 툴 이름·설명·inputSchema
-이 요청을 전송할까요? [y/N]
-```
-
-거절하면 요청을 보내지 않고 사람 입력(§8.6.1)으로 간다. **보낼 근거가 없는 경우**(서버 응답이
-비었거나 치환 뒤 본문이 사라진 경우)에는 묻지도 않는다 — 답이 없는 질문으로 사람을 세우지
-않는다.
-
 ### 8.6.1 입력값 교정 (근거가 없을 때)
 
 ```
@@ -370,6 +349,27 @@ Fingerprint: 3f2a…
 ```
       같은 값을 get_weather.city 를 쓰는 케이스 4건에 함께 적용합니다.
 ```
+
+### 8.6.4 전송 승인 (AI 제안을 요청하기 전)
+
+`propose` 는 실패한 케이스의 **명세와 서버 응답 원문**을 외부 provider 로 보낸다. 사전보완 ·
+authoring 과 **같은 승인 화면을 같은 형식으로** 찍고 묻는다. 전송 데이터 목록만 이 통로의
+실제 내용으로 바꾼다.
+
+```
+Provider: codex
+Model: gpt-5.6-luna
+Payload: 3721 bytes
+Result limit: 65536 bytes
+Timeout: 120000ms
+Fingerprint: 3f2a…
+전송 데이터: 실패한 케이스의 명세와 서버 응답 원문, baseline suite, current candidate, 툴 이름·설명·inputSchema
+이 요청을 전송할까요? [y/N]
+```
+
+거절하면 요청을 보내지 않고 사람 입력(§8.6.1)으로 간다. **보낼 근거가 없는 경우**(서버 응답이
+비었거나 치환 뒤 본문이 사라진 경우)에는 묻지도 않는다 — 답이 없는 질문으로 사람을 세우지
+않는다.
 
 ### 8.7 분류 화면의 시도 이력
 

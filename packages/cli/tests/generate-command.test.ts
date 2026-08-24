@@ -3144,6 +3144,26 @@ describe("generate 시험 실행 게이트", () => {
     });
 
     /**
+     * provider **인스턴스**가 없으면 전송이 없다. id 만 보고 안내하면 "보냅니다" 가 거짓이
+     * 된다(#286 리뷰). 팩토리가 undefined 를 주는 갈래를 못박는다.
+     */
+    it("provider 팩토리가 없으면 전송 안내를 하지 않는다", async () => {
+      const d = gateDeps({
+        choices: ["save"],
+        baseline: bodySchemaBaseline(),
+        providers: {},
+        inputs: ["서울"],
+        confirms: [true, true],
+        respond: onlyAccepts("서울"),
+      });
+      await runGenerateCommand(proposalArgv, d.value);
+      const text = d.output();
+      expect(text).toContain("실패한 케이스는 값을 고쳐 최대 2회까지 다시 호출합니다.");
+      expect(text).not.toContain("값 제안에");
+      expect(text).not.toContain("이 요청을 전송할까요?");
+    });
+
+    /**
      * #286 의 끝단 확인. 사용자가 전송을 거절하면 provider 를 부르지 않고 사람 입력으로 간다.
      * 고치기 전에는 이 화면이 아예 없어서 거절할 기회조차 없었다.
      */

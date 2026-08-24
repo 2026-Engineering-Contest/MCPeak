@@ -1276,15 +1276,23 @@ async function runInteractiveReview(
           );
           if (!(await io.confirm("   계속할까요?"))) continue;
         } else {
+          // AI 제안은 `--provider` 가 있을 때만 쓴다. 별도 옵션을 두지 않는다(§7).
+          //
+          // **안내보다 먼저 만든다.** id 만 보고 안내하면 팩토리가 undefined 를 주는 경우에
+          // 전송이 없는데 "보냅니다" 라고 말하게 된다 — 안내가 거짓이 된다.
+          const repairProvider =
+            preferred === undefined
+              ? undefined
+              : deps.providers?.[preferred]?.(model ?? defaultModel(preferred));
           writeDryRunNotice(io, {
             caseCount,
             target: describeTarget(input.target),
             resetCmd: input.resetCmd,
             repair: input.repair,
             repairProvider:
-              preferred === undefined
+              repairProvider === undefined
                 ? undefined
-                : `${preferred}(${model ?? defaultModel(preferred)})`,
+                : `${repairProvider.id}(${repairProvider.model ?? ""})`,
           });
           if (!(await io.confirm("계속할까요?"))) continue;
           if (input.resetCmd !== undefined) {
@@ -1325,11 +1333,6 @@ async function runInteractiveReview(
             model: model ?? (preferred === undefined ? "" : defaultModel(preferred)),
           });
           // 9. 입력값 교정(§4). 대상이 없으면 아무것도 묻지 않는다.
-          // AI 제안은 `--provider` 가 있을 때만 쓴다. 별도 옵션을 두지 않는다(§7).
-          const repairProvider =
-            preferred === undefined
-              ? undefined
-              : deps.providers?.[preferred]?.(model ?? defaultModel(preferred));
           const targets = input.repair
             ? selectRepairTargets({
                 suite: dryRunSuite,

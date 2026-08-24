@@ -12,6 +12,8 @@ export interface RenderReportOptions {
 const INDENT = "    ";
 /** 열 사이 구분. 헤더, 케이스 줄, 단언 줄, 요약 줄에서 같은 값을 쓴다. */
 const GAP = "  ";
+/** 위반·notes 줄의 글머리. */
+const BULLET = "→";
 
 /** 케이스 상태 기호. 설계 문서 §5.2. 환경에 따라 바뀌지 않는다. */
 const MARKS: Readonly<Record<TestCaseResult["status"], { glyph: string; sgr: string }>> = {
@@ -47,6 +49,30 @@ const escapeTerminalText = (value: string): string =>
       ? `\\u${codePoint.toString(16).padStart(4, "0")}`
       : character;
   }).join("");
+
+/**
+ * 위반·notes 의 글머리 줄 하나를 만든다.
+ *
+ * **줄이 이미 `→` 로 시작하면 우리 글머리를 붙이지 않는다.** 붙이면 `→ → ...` 가 된다(#280).
+ * `→` 글머리는 이 저장소가 권장하는 실패 메시지 형식이라(`CLAUDE.md`,
+ * `examples/weather-server/server.mjs`) 우리 안내를 따른 서버가 전부 이 자리에 걸린다.
+ *
+ * **서버 문장 자체는 고치지 않는다.** 여기서 하는 일은 우리 글머리를 안 붙이는 것뿐이고,
+ * `note` 원문은 그대로 나간다. 원문에 의존하는 곳이 셋이다 — `rejection-basis` 의 목 거절
+ * 지문이 `→` 글머리를 완전 일치로 요구하고(ADR-0060), `--json` 의 `notes` 가 이 값이며,
+ * cli 의 교정 요청 문안이 이 줄을 그대로 싣는다(`diagnostics.ts` 의 `responseBodyNotes`).
+ *
+ * 선행 공백은 보존한다. 서버가 하위 항목을 들여쓴 것이므로 우리가 펴면 계층이 사라진다.
+ * 화살표가 둘 이상이면 그대로 둔다 — 우리가 하나를 안 붙이는 데까지가 이 함수의 몫이다.
+ *
+ * 이스케이프가 먼저, 판정이 나중이다. `hintLine` 과 같은 순서다(설계 문서 §6).
+ */
+const bulletLine = (text: string): string => {
+  const escaped = escapeTerminalText(text);
+  return escaped.trimStart().startsWith(BULLET)
+    ? `${INDENT}${escaped}`
+    : `${INDENT}${BULLET} ${escaped}`;
+};
 
 /**
  * 코드 포인트 수. 표시 폭이 아니다. 설계 문서 §5.2의 알려진 한계를 그대로 받는다.
@@ -177,7 +203,7 @@ export function renderReport(report: RunnerReport, options?: RenderReportOptions
       // 서버가 준 이유(원인 체인)가 여기 실린다. 안 그리면 executor 가 살려 온 이유를
       // 화면이 다시 버린다(adoption.md §2.5 넷째). 이유를 본 뒤 해결을 읽도록 hint 앞이다.
       for (const note of operationDiagnostic.notes ?? []) {
-        lines.push(`${INDENT}→ ${escapeTerminalText(note)}`);
+        lines.push(bulletLine(note));
       }
       lines.push(hintLine(operationDiagnostic.hint));
     }
@@ -194,12 +220,12 @@ export function renderReport(report: RunnerReport, options?: RenderReportOptions
         `${INDENT}${pad(escapeTerminalText(assertion.spec.type), typeColumn)}${GAP}${prefix}${escapeTerminalText(assertion.diagnostic.message)}`,
       );
       for (const violation of assertion.diagnostic.violations ?? []) {
-        lines.push(`${INDENT}→ ${escapeTerminalText(violation.message)}`);
+        lines.push(bulletLine(violation.message));
       }
       // notes 는 위반 다음이다. 위반은 우리가 낸 판정이고 notes 는 서버가 준 값이라,
       // 판정을 먼저 읽고 근거를 나중에 읽는 순서가 된다. ADR-0027.
       for (const note of assertion.diagnostic.notes ?? []) {
-        lines.push(`${INDENT}→ ${escapeTerminalText(note)}`);
+        lines.push(bulletLine(note));
       }
       lines.push(hintLine(assertion.diagnostic.hint));
     }

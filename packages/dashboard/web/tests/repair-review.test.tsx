@@ -78,11 +78,16 @@ describe("RepairReview", () => {
       });
     });
     fireEvent.click(screen.getByText("예"));
+    // run-stream의 summary seed GET(#295)이 섞이므로 POST만 세어 본다.
+    const posts = (): Array<[RequestInfo | URL, RequestInit | undefined]> =>
+      (fetchMock.mock.calls as Array<[RequestInfo | URL, RequestInit | undefined]>).filter(
+        ([, init]) => init?.method === "POST",
+      );
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(posts()).toHaveLength(1);
     });
-    expect(String(fetchMock.mock.calls[0]?.[0])).toBe("/api/runs/repair-1/answer");
-    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({
+    expect(String(posts()[0]?.[0])).toBe("/api/runs/repair-1/answer");
+    expect(JSON.parse(String(posts()[0]?.[1]?.body))).toEqual({
       questionId: "q1",
       value: "y",
     });
@@ -95,9 +100,9 @@ describe("RepairReview", () => {
     });
     fireEvent.click(screen.getByText("아니오"));
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(posts()).toHaveLength(2);
     });
-    expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toEqual({
+    expect(JSON.parse(String(posts()[1]?.[1]?.body))).toEqual({
       questionId: "q2",
       value: "n",
     });

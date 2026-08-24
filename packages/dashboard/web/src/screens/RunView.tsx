@@ -31,7 +31,7 @@ export function RunStreamPanel({
   runId,
   showRepairAction = true,
 }: RunStreamPanelProps): JSX.Element {
-  const { events, status, pendingQuestion } = useRunEvents(runId);
+  const { events, status, pendingQuestion, error: streamError } = useRunEvents(runId);
   const [answeredId, setAnsweredId] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -97,7 +97,8 @@ export function RunStreamPanel({
         {status !== null ? (
           <StatusBadge status={status} exitCode={exitCode} />
         ) : (
-          <span className="text-xs text-ink-muted">대기</span>
+          // 스트림이 죽었으면 "대기"를 떼고 아래 streamError 문장만 남긴다(#295).
+          streamError === null && <span className="text-xs text-ink-muted">대기</span>
         )}
         {status === "failed" && showRepairAction && (
           <button
@@ -111,6 +112,12 @@ export function RunStreamPanel({
           </button>
         )}
       </div>
+
+      {streamError !== null && (
+        <p className="text-sm" style={{ color: "var(--status-failed-fg)" }}>
+          {streamError}
+        </p>
+      )}
 
       {status === "failed" && showRepairAction && repairOpen && (
         <form

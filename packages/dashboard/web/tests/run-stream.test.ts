@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
-import { renderHook } from "@testing-library/react";
+import { renderHook, waitFor } from "@testing-library/react";
 import { act } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { RunEvent } from "../../src/api-types.js";
+import type { RunEvent, RunSummary } from "../../src/api-types.js";
 import { useRunEvents } from "../src/run-stream.js";
 
 /**
@@ -14,6 +14,9 @@ class FakeEventSource {
 
   readonly url: string;
   onmessage: ((event: MessageEvent<string>) => void) | null = null;
+  onerror: (() => void) | null = null;
+  /** 기본값은 OPEN(1). 테스트가 CLOSED(2)·CONNECTING(0)으로 바꿔 실패를 흉내낸다. */
+  readyState = 1;
   closed = false;
 
   constructor(url: string) {
@@ -28,6 +31,18 @@ class FakeEventSource {
   close(): void {
     this.closed = true;
   }
+}
+
+/** `GET /api/runs/:id`(summary seed·onerror 재조회)가 받는 응답을 정한다. */
+function stubSummaryFetch(response: () => Promise<Response>): ReturnType<typeof vi.fn> {
+  const fetchMock = vi.fn(response);
+  vi.stubGlobal("fetch", fetchMock);
+  return fetchMock;
+}
+
+function summaryResponse(status: RunSummary["status"]): Response {
+  const summary: RunSummary = { runId: "run-1", flow: "test", status, exitCode: null };
+  return new Response(JSON.stringify(summary), { status: 200 });
 }
 
 describe("useRunEvents", () => {
@@ -176,5 +191,93 @@ describe("useRunEvents", () => {
     renderHook(() => useRunEvents(null));
 
     expect(FakeEventSource.instances).toHaveLength(0);
+  });
+
+  it("첫 이벤트가 오기 전에는 summary의 status로 공백을 메운다 (#295)", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    stubSummaryFetch(async () => summaryResponse("running"));
+    const { result } = renderHook(() => useRunEvents("run-1"));
+
+    await waitFor(() => {
+      expect(result.current.status).toBe("running");
+    });
+    expect(result.current.error).toBeNull();
+  });
+
+  it("늦게 도착한 summary가 SSE가 이미 정한 status를 덮어쓰지 않는다 (#295)", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    let resolveSummary!: (value: Response) => void;
+    stubSummaryFetch(
+      () =>
+        new Promise<Response>((resolve) => {
+          resolveSummary = resolve;
+        }),
+    );
+    const { result } = renderHook(() => useRunEvents("run-1"));
+    const source = FakeEventSource.instances[0];
+
+    act(() => {
+      source?.emit({ kind: "done", exitCode: 0, id: 1 });
+    });
+    expect(result.current.status).toBe("done");
+
+    // run은 summary 응답 시점엔 아직 running이었다는 시나리오.
+    resolveSummary(summaryResponse("running"));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(result.current.status).toBe("done");
+  });
+
+  it("스트림이 닫히고 run 조회가 404면 서버 메시지와 휘발성 안내를 error로 노출한다 (#295)", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    stubSummaryFetch(
+      async () => new Response(JSON.stringify({ error: "그런 run이 없습니다." }), { status: 404 }),
+    );
+    const { result } = renderHook(() => useRunEvents("does-not-exist"));
+    const source = FakeEventSource.instances[0];
+
+    act(() => {
+      if (source !== undefined) source.readyState = 2;
+      source?.onerror?.();
+    });
+
+    await waitFor(() => {
+      expect(result.current.error).toContain("그런 run이 없습니다.");
+    });
+    expect(result.current.error).toContain("메모리에만 있어 서버를 재시작하면 사라집니다");
+  });
+
+  it("run은 있는데 스트림만 닫혔으면 새로고침 안내를 노출한다 (#295)", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    stubSummaryFetch(async () => summaryResponse("running"));
+    const { result } = renderHook(() => useRunEvents("run-1"));
+    const source = FakeEventSource.instances[0];
+
+    act(() => {
+      if (source !== undefined) source.readyState = 2;
+      source?.onerror?.();
+    });
+
+    await waitFor(() => {
+      expect(result.current.error).toContain("페이지를 새로 고치면");
+    });
+  });
+
+  it("일시 단절(자동 재접속 중)에는 error를 세우지 않는다", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    stubSummaryFetch(async () => summaryResponse("running"));
+    const { result } = renderHook(() => useRunEvents("run-1"));
+    const source = FakeEventSource.instances[0];
+
+    act(() => {
+      if (source !== undefined) source.readyState = 0;
+      source?.onerror?.();
+    });
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(result.current.error).toBeNull();
   });
 });

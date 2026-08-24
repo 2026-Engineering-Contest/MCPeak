@@ -10,6 +10,9 @@ class FakeEventSource {
 
   readonly url: string;
   onmessage: ((event: MessageEvent<string>) => void) | null = null;
+  onerror: (() => void) | null = null;
+  /** 기본값은 OPEN(1). 테스트가 CLOSED(2)로 바꿔 스트림 실패를 흉내낸다. */
+  readyState = 1;
   closed = false;
 
   constructor(url: string) {
@@ -38,12 +41,29 @@ function lastSource(): FakeEventSource {
   return source;
 }
 
+/**
+ * POST(run 시작·answer)는 runId 응답, 그 외 GET은 run-stream의 summary seed가 읽는
+ * `GET /api/runs/:id` 응답을 준다(#295 이후 마운트마다 이 GET이 한 번 나간다).
+ */
 function stubFetch(): ReturnType<typeof vi.fn> {
-  const fetchMock = vi.fn(
-    async () => new Response(JSON.stringify({ runId: "repair-1" }), { status: 200 }),
-  );
+  const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+    if (init?.method === "POST") {
+      return new Response(JSON.stringify({ runId: "repair-1" }), { status: 200 });
+    }
+    return new Response(
+      JSON.stringify({ runId: "run-1", flow: "test", status: "running", exitCode: null }),
+      { status: 200 },
+    );
+  });
   vi.stubGlobal("fetch", fetchMock);
   return fetchMock;
+}
+
+/** summary seed GET을 건너뛰고 POST 호출만 본다. */
+function postCalls(fetchMock: ReturnType<typeof vi.fn>): Array<[RequestInfo | URL, RequestInit?]> {
+  return (fetchMock.mock.calls as Array<[RequestInfo | URL, RequestInit?]>).filter(
+    ([, init]) => init?.method === "POST",
+  );
 }
 
 describe("RunView", () => {
@@ -87,9 +107,9 @@ describe("RunView", () => {
     fireEvent.click(screen.getByText("예"));
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalled();
+      expect(postCalls(fetchMock)).toHaveLength(1);
     });
-    const [url, init] = fetchMock.mock.calls[0] ?? [];
+    const [url, init] = postCalls(fetchMock)[0] ?? [];
     expect(url).toBe("/api/runs/run-1/answer");
     expect(JSON.parse(String(init?.body))).toEqual({ questionId: "q1", value: "y" });
     // 답변 후 패널은 사라진다.
@@ -119,7 +139,7 @@ describe("RunView", () => {
     await waitFor(() => {
       expect(window.location.hash).toBe("#/repair/repair-1");
     });
-    const [url, init] = fetchMock.mock.calls[0] ?? [];
+    const [url, init] = postCalls(fetchMock)[0] ?? [];
     expect(url).toBe("/api/runs");
     expect(JSON.parse(String(init?.body))).toEqual({
       flow: "repair",
@@ -159,6 +179,35 @@ describe("RunView", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "취소" }));
     expect(screen.queryByLabelText("repair 번들 경로")).toBeNull();
+  });
+
+  it("첫 이벤트가 오기 전에도 summary가 running이면 '실행 중' 배지를 단다 (#295)", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    stubFetch();
+    render(<RunView runId="run-1" />);
+
+    // 이벤트를 하나도 emit하지 않는다 — mcpeak test는 끝날 때까지 stdout이 없다.
+    expect(await screen.findByText("실행 중")).toBeTruthy();
+    expect(screen.queryByText("대기")).toBeNull();
+  });
+
+  it("없는 run이면 서버의 404 메시지와 휘발성 안내가 보인다 (#295)", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const fetchMock = vi.fn(
+      async () => new Response(JSON.stringify({ error: "그런 run이 없습니다." }), { status: 404 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    render(<RunView runId="does-not-exist" />);
+
+    act(() => {
+      const source = lastSource();
+      source.readyState = 2;
+      source.onerror?.();
+    });
+
+    expect(await screen.findByText(/그런 run이 없습니다\./)).toBeTruthy();
+    expect(screen.getByText(/서버를 재시작하면 사라집니다/)).toBeTruthy();
+    expect(screen.queryByText("대기")).toBeNull();
   });
 
   it("status가 done이면 repair 버튼이 없다", () => {

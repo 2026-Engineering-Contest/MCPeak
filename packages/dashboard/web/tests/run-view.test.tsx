@@ -38,12 +38,32 @@ function lastSource(): FakeEventSource {
   return source;
 }
 
+/**
+ * 훅이 마운트마다 `GET /api/runs/:id` 로 summary 를 읽는다(#295). URL 로 갈라 주지 않으면
+ * 그 요청이 `{runId:"repair-1"}` 로 파싱돼 `status: undefined` 인 RunSummary 가 되고,
+ * StatusBadge 가 정의되지 않은 상태로 렌더된다.
+ */
 function stubFetch(): ReturnType<typeof vi.fn> {
-  const fetchMock = vi.fn(
-    async () => new Response(JSON.stringify({ runId: "repair-1" }), { status: 200 }),
-  );
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    if ((init?.method ?? "GET") === "GET" && /^\/api\/runs\/[^/]+$/.test(String(input))) {
+      return new Response(
+        JSON.stringify({ runId: "run-1", flow: "test", status: "running", exitCode: null }),
+        { status: 200 },
+      );
+    }
+    return new Response(JSON.stringify({ runId: "repair-1" }), { status: 200 });
+  });
   vi.stubGlobal("fetch", fetchMock);
   return fetchMock;
+}
+
+/** 마운트 summary GET 을 빼고 테스트가 노리는 쓰기 요청만 고른다. */
+function writeCalls(
+  mock: ReturnType<typeof vi.fn>,
+): Array<readonly [string, RequestInit | undefined]> {
+  return mock.mock.calls
+    .map((call) => [String(call[0]), call[1] as RequestInit | undefined] as const)
+    .filter(([, init]) => (init?.method ?? "GET") !== "GET");
 }
 
 describe("RunView", () => {
@@ -89,7 +109,7 @@ describe("RunView", () => {
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalled();
     });
-    const [url, init] = fetchMock.mock.calls[0] ?? [];
+    const [url, init] = writeCalls(fetchMock)[0] ?? [];
     expect(url).toBe("/api/runs/run-1/answer");
     expect(JSON.parse(String(init?.body))).toEqual({ questionId: "q1", value: "y" });
     // 답변 후 패널은 사라진다.
@@ -119,7 +139,7 @@ describe("RunView", () => {
     await waitFor(() => {
       expect(window.location.hash).toBe("#/repair/repair-1");
     });
-    const [url, init] = fetchMock.mock.calls[0] ?? [];
+    const [url, init] = writeCalls(fetchMock)[0] ?? [];
     expect(url).toBe("/api/runs");
     expect(JSON.parse(String(init?.body))).toEqual({
       flow: "repair",
@@ -170,5 +190,39 @@ describe("RunView", () => {
     });
     expect(screen.getByText("완료 · exit 0")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "repair 시작" })).toBeNull();
+  });
+
+  /**
+   * #295. 고치기 전에는 이 화면과 "도는 run" 화면이 **글자 하나 다르지 않았다** — 둘 다
+   * "대기" 였다. `RunStatus` 에 "대기" 라는 값은 없다. 모르는 것을 아는 척한 문구였다.
+   */
+  it("없는 run 이면 서버가 준 문장을 화면에 낸다", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ error: "그런 run이 없습니다." }), { status: 404 }),
+      ),
+    );
+    render(<RunView runId="does-not-exist" />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/그런 run이 없습니다/)).toBeTruthy();
+    });
+    expect(screen.getByText("상태를 확인할 수 없음")).toBeTruthy();
+    expect(screen.queryByText("대기")).toBeNull();
+  });
+
+  /** 이벤트가 오기 전에도 서버가 아는 상태를 뱃지로 낸다. */
+  it("이벤트가 없어도 서버 status 를 뱃지로 낸다", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    stubFetch();
+    render(<RunView runId="run-1" />);
+
+    await waitFor(() => {
+      expect(screen.queryByText("상태를 확인하는 중...")).toBeNull();
+    });
+    expect(screen.queryByText("대기")).toBeNull();
   });
 });

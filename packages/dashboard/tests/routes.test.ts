@@ -209,6 +209,9 @@ describe("routes.ts", () => {
     server = await startTestServer();
     const response = await fetch(`${server.baseUrl}/api/runs/no-such-run`);
     expect(response.status).toBe(404);
+    // 이 문장은 그대로 화면에 나간다(#295). 발원지에서 못박지 않으면 아무 데서도
+    // 고정되지 않는다 — 고치기 전에는 저장소 전체에 이 문자열 단언이 0건이었다.
+    expect(await response.json()).toEqual({ error: "그런 run이 없습니다." });
   });
 
   it("GET /api/meta 가 스위트 탐색 루트를 준다", async () => {

@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
-import { renderHook } from "@testing-library/react";
+import { cleanup, renderHook, waitFor } from "@testing-library/react";
 import { act } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import type { RunEvent } from "../../src/api-types.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { RunEvent, RunSummary } from "../../src/api-types.js";
 import { useRunEvents } from "../src/run-stream.js";
 
 /**
@@ -14,6 +14,9 @@ class FakeEventSource {
 
   readonly url: string;
   onmessage: ((event: MessageEvent<string>) => void) | null = null;
+  onerror: (() => void) | null = null;
+  /** 0=CONNECTING · 1=OPEN · 2=CLOSED. 훅이 이 값으로 영구 실패와 재연결을 가른다. */
+  readyState = 1;
   closed = false;
 
   constructor(url: string) {
@@ -25,13 +28,47 @@ class FakeEventSource {
     this.onmessage?.({ data: JSON.stringify(event) } as MessageEvent<string>);
   }
 
+  /** 200 이 아닌 응답 — 스펙상 연결을 실패시키고 재시도하지 않는다. */
+  failClosed(): void {
+    this.readyState = 2;
+    this.onerror?.();
+  }
+
+  /** 끊김 — 브라우저가 알아서 다시 붙는다. 사람에게 알릴 일이 아니다. */
+  failReconnecting(): void {
+    this.readyState = 0;
+    this.onerror?.();
+  }
+
   close(): void {
     this.closed = true;
   }
 }
 
+const RUNNING: RunSummary = { runId: "run-1", flow: "test", status: "running", exitCode: null };
+
+/**
+ * 훅이 마운트마다 `GET /api/runs/:id` 를 한 번 부른다. 스텁이 없으면 상대경로 fetch 가
+ * 실제로 나가 `Failed to parse URL` 로 떨어지고, 그 setState 가 `act()` 밖에서 일어난다.
+ * 기존 케이스 7건이 전부 그 경로를 지나므로 **기본 스텁이 반드시 있어야 한다.**
+ */
+function stubFetch(summary: RunSummary | null = RUNNING): ReturnType<typeof vi.fn> {
+  const mock = vi.fn(async () =>
+    summary === null
+      ? new Response(JSON.stringify({ error: "그런 run이 없습니다." }), { status: 404 })
+      : new Response(JSON.stringify(summary), { status: 200 }),
+  );
+  vi.stubGlobal("fetch", mock);
+  return mock;
+}
+
 describe("useRunEvents", () => {
+  beforeEach(() => {
+    stubFetch();
+  });
+
   afterEach(() => {
+    cleanup();
     vi.unstubAllGlobals();
     FakeEventSource.instances = [];
   });
@@ -176,5 +213,110 @@ describe("useRunEvents", () => {
     renderHook(() => useRunEvents(null));
 
     expect(FakeEventSource.instances).toHaveLength(0);
+  });
+
+  /**
+   * #295 의 첫 증상. `mcpeak test` 는 끝날 때까지 stdout 을 뱉지 않으므로 SSE 이벤트가
+   * 0건이고, 고치기 전에는 실행 내내 status 가 null 이었다. 서버는 그동안 계속
+   * `status:"running"` 을 주고 있었다.
+   */
+  it("이벤트가 한 건도 없어도 서버 summary 로 status 를 채운다", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const { result } = renderHook(() => useRunEvents("run-1"));
+
+    await waitFor(() => {
+      expect(result.current.status).toBe("running");
+    });
+    expect(result.current.events).toEqual([]);
+    expect(result.current.error).toBeNull();
+  });
+
+  /**
+   * #295 의 둘째 증상. 없는 run 을 열면 서버가 404 본문에 문장을 실어 보내는데
+   * 화면이 그것을 버렸다. `EventSource` 는 본문을 주지 않으므로 `apiGet` 이 가져온다.
+   */
+  it("없는 run 이면 서버가 준 문장과 메모리 한계 안내를 함께 싣는다", async () => {
+    stubFetch(null);
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const { result } = renderHook(() => useRunEvents("does-not-exist"));
+
+    await waitFor(() => {
+      expect(result.current.error).not.toBeNull();
+    });
+    expect(result.current.error).toContain("그런 run이 없습니다.");
+    expect(result.current.error).toContain("메모리에만");
+    expect(result.current.status).toBeNull();
+  });
+
+  /**
+   * 화면 컨트롤 이름을 부르지 않는다. 이 패널을 `RepairReview` 도 쓰는데 그 화면에는
+   * `← Runs` 링크가 없어서, 없는 버튼을 누르라고 하는 안내가 된다.
+   */
+  it("안내가 없는 화면 컨트롤을 지목하지 않는다", async () => {
+    stubFetch(null);
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const { result } = renderHook(() => useRunEvents("does-not-exist"));
+
+    await waitFor(() => {
+      expect(result.current.error).not.toBeNull();
+    });
+    expect(result.current.error).not.toContain("← Runs");
+  });
+
+  /**
+   * 도착 순서에 결과가 좌우되면 안 된다. SSE 이벤트가 먼저 상태를 세웠으면 그쪽이 더
+   * 새 정보이므로 늦게 온 summary 가 덮지 않는다.
+   */
+  it("SSE 가 먼저 세운 status 를 늦게 온 summary 가 덮지 않는다", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const { result } = renderHook(() => useRunEvents("run-1"));
+    const source = FakeEventSource.instances[0];
+
+    act(() => {
+      source?.emit({ kind: "done", exitCode: 0, id: 1 });
+    });
+    expect(result.current.status).toBe("done");
+
+    await waitFor(() => {
+      expect(result.current.events).toHaveLength(1);
+    });
+    expect(result.current.status).toBe("done");
+  });
+
+  /** 영구 실패(CLOSED)일 때만 다시 물어본다. */
+  it("스트림이 영구 실패하면 서버에 다시 물어 사라진 run 을 알린다", async () => {
+    const mock = stubFetch();
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const { result } = renderHook(() => useRunEvents("run-1"));
+    await waitFor(() => {
+      expect(result.current.status).toBe("running");
+    });
+
+    stubFetch(null);
+    await act(async () => {
+      FakeEventSource.instances[0]?.failClosed();
+    });
+
+    await waitFor(() => {
+      expect(result.current.error).toContain("그런 run이 없습니다.");
+    });
+    expect(mock).toHaveBeenCalled();
+  });
+
+  /** 재연결 중(CONNECTING)에는 아무 말도 하지 않는다. 브라우저가 알아서 다시 붙는다. */
+  it("재연결 중인 끊김은 사람에게 알리지 않는다", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const { result } = renderHook(() => useRunEvents("run-1"));
+    await waitFor(() => {
+      expect(result.current.status).toBe("running");
+    });
+
+    const before = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.length;
+    await act(async () => {
+      FakeEventSource.instances[0]?.failReconnecting();
+    });
+
+    expect(result.current.error).toBeNull();
+    expect((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.length).toBe(before);
   });
 });

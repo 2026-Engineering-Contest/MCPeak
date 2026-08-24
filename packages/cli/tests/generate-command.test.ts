@@ -3184,7 +3184,9 @@ describe("generate 시험 실행 게이트", () => {
       expect(text).toContain("이 요청을 전송할까요?");
       // 거절했으므로 제안 문안이 나오지 않고 사람 입력 갈래로 간다.
       expect(text).not.toContain("가 서버 응답을 보고 제안한 값입니다");
-      expect(text).toContain("서버 응답에 쓸 만한 값이 없어 직접 받습니다");
+      // **근거 부재라고 말하면 안 된다.** 서버 응답은 있었고 보내지 않기로 한 것뿐이다.
+      expect(text).toContain("AI 전송을 거절했으므로 값을 직접 받습니다");
+      expect(text).not.toContain("서버 응답에 쓸 만한 값이 없어");
     });
 
     it("교정이 두 번 실패하면 저장된 입력값이 원래 합성값이다", async () => {

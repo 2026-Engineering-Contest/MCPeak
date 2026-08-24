@@ -121,7 +121,7 @@ describe("proposeRepair", () => {
       confirm: async () => true,
     });
 
-    expect(result).toBeUndefined();
+    expect(result).toEqual({ kind: "unavailable" });
     expect(called).toBe(0);
   });
 
@@ -159,7 +159,7 @@ describe("proposeRepair", () => {
       confirm: async () => true,
     });
 
-    expect(result).toEqual({ city: "서울" });
+    expect(result).toEqual({ kind: "proposed", input: { city: "서울" } });
   });
 
   it("dispatch 가 실패 상태를 주면 undefined 다", async () => {
@@ -174,7 +174,7 @@ describe("proposeRepair", () => {
       confirm: async () => true,
     });
 
-    expect(result).toBeUndefined();
+    expect(result).toEqual({ kind: "unavailable" });
   });
 
   /**
@@ -199,7 +199,8 @@ describe("proposeRepair", () => {
     });
 
     expect(called).toBe(0);
-    expect(result).toBeUndefined();
+    // 근거 부재(unavailable)와 구분돼야 한다. 화면 문안이 여기서 갈린다(#286).
+    expect(result).toEqual({ kind: "declined" });
   });
 
   /** 승인 화면이 보여줄 것이 실제 전송 내용과 같아야 한다. preview 를 그대로 넘긴다. */
@@ -258,7 +259,7 @@ describe("proposeRepair", () => {
       confirm: async () => true,
     });
 
-    expect(result).toBeUndefined();
+    expect(result).toEqual({ kind: "unavailable" });
   });
 });
 

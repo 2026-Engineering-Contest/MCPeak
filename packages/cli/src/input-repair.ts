@@ -1,6 +1,7 @@
 import type { ToolDef } from "@mcpeak/core";
 import type { JsonValue, TestSuiteSpec } from "@mcpeak/runner";
 import type { ReviewIO } from "./generate-command.js";
+import type { ProposalOutcome } from "./repair-proposal.js";
 import type { RepairAttempt, RepairTarget } from "./repair-target.js";
 
 /**
@@ -32,8 +33,8 @@ export interface RepairInputsOptions {
     caseId: string,
     input: Input,
   ) => Promise<{ readonly passed: boolean; readonly detail: string }>;
-  /** AI 제안. 없으면 사람 입력만 쓴다. */
-  readonly propose?: (target: RepairTarget) => Promise<Input | undefined>;
+  /** AI 제안. 없으면 사람 입력만 쓴다. 값이 없을 때 **왜 없는지**를 함께 돌려준다(#286). */
+  readonly propose?: (target: RepairTarget) => Promise<ProposalOutcome>;
   /**
    * 제안한 provider 표기(`codex(gpt-5.6-luna)`). 화면이 값의 출처를 정확히 말하는 데만 쓴다.
    *
@@ -67,6 +68,14 @@ const proposedLead = (by: string | undefined): string =>
     by === undefined ? "AI 가" : `${by} 가`
   } 서버 응답을 보고 제안한 값입니다.`;
 const MANUAL_LEAD = `${BODY}입력값이 거절된 것으로 보입니다. 서버 응답에 쓸 만한 값이 없어 직접 받습니다.`;
+/**
+ * 전송을 거절한 갈래. **`MANUAL_LEAD` 를 쓰면 안 된다** — 서버 응답은 있었고 보내지 않기로
+ * 한 것뿐인데 "쓸 만한 값이 없다" 는 거짓 사유가 된다(#286).
+ */
+/** `propose` 가 아예 없는 경우. 요청조차 하지 않았으니 근거 부재와 같다. */
+const UNAVAILABLE_OUTCOME: ProposalOutcome = { kind: "unavailable" };
+
+const DECLINED_LEAD = `${BODY}입력값이 거절된 것으로 보입니다. AI 전송을 거절했으므로 값을 직접 받습니다.`;
 const RERUN_LINE = `${BODY}▸ 다시 실행 중... 1건`;
 const PASSED_LINE = `${BODY}✓ 통과`;
 const EXHAUSTED_LINE = `${BODY}✗ 여전히 실패합니다. 입력값 문제가 아닐 수 있습니다.`;
@@ -242,10 +251,19 @@ export async function repairInputs(
     }
 
     // 1회차. 물어볼 필드가 하나도 없으면 제안을 요청하지도, 안내 줄을 찍지도 않는다.
-    const proposed = askable.length === 0 ? undefined : await options.propose?.(target);
+    const outcome =
+      askable.length === 0 ? undefined : ((await options.propose?.(target)) ?? UNAVAILABLE_OUTCOME);
+    const proposed = outcome?.kind === "proposed" ? outcome.input : undefined;
     if (askable.length > 0) {
+      // 값이 없는 두 갈래는 사람에게 할 말이 다르다. 거절은 근거 부재가 아니다.
       options.io.write(
-        proposed === undefined ? `${MANUAL_LEAD}\n` : `${proposedLead(options.proposedBy)}\n`,
+        `${
+          outcome?.kind === "proposed"
+            ? proposedLead(options.proposedBy)
+            : outcome?.kind === "declined"
+              ? DECLINED_LEAD
+              : MANUAL_LEAD
+        }\n`,
       );
     }
     const first = await askRound(options.io, target, {

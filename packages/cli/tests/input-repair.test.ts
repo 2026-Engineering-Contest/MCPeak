@@ -123,7 +123,7 @@ describe("repairInputs", () => {
       suite: emptySuite,
       targets: [target("c1", { city: "example" })],
       rerun,
-      propose: async () => ({ city: "서울" }),
+      propose: async () => ({ kind: "proposed", input: { city: "서울" } }),
       tools: weatherTools,
     });
 
@@ -139,7 +139,7 @@ describe("repairInputs", () => {
       suite: emptySuite,
       targets: [target("c1", { city: "example" })],
       rerun,
-      propose: async () => ({ city: "서울" }),
+      propose: async () => ({ kind: "proposed", input: { city: "서울" } }),
       tools: weatherTools,
     });
 
@@ -155,7 +155,7 @@ describe("repairInputs", () => {
       suite: emptySuite,
       targets: [target("c1", { city: "example" })],
       rerun,
-      propose: async () => undefined,
+      propose: async () => ({ kind: "unavailable" }),
       tools: weatherTools,
     });
 
@@ -194,7 +194,7 @@ describe("repairInputs", () => {
       suite: emptySuite,
       targets: [target("c1", { city: "example" })],
       rerun,
-      propose: async () => ({ city: "부산" }),
+      propose: async () => ({ kind: "proposed", input: { city: "부산" } }),
       tools: weatherTools,
     });
 
@@ -211,7 +211,7 @@ describe("repairInputs", () => {
       suite: emptySuite,
       targets: [target("c1", { city: "example" })],
       rerun,
-      propose: async () => ({ city: "서울" }),
+      propose: async () => ({ kind: "proposed", input: { city: "서울" } }),
       tools: weatherTools,
     });
 
@@ -246,7 +246,7 @@ describe("repairInputs", () => {
       suite: emptySuite,
       targets: [target("c1", { city: "example" })],
       rerun,
-      propose: async () => ({ city: "서울" }),
+      propose: async () => ({ kind: "proposed", input: { city: "서울" } }),
       tools: weatherTools,
     });
 
@@ -265,7 +265,7 @@ describe("repairInputs", () => {
       suite: emptySuite,
       targets: [target("c1", { city: "example" })],
       rerun,
-      propose: async () => ({ city: "서울" }),
+      propose: async () => ({ kind: "proposed", input: { city: "서울" } }),
       tools: weatherTools,
     });
 
@@ -414,7 +414,7 @@ describe("repairInputs", () => {
       suite: emptySuite,
       targets: [target("c1", { city: "example" })],
       rerun,
-      propose: async () => ({ city: "서울" }),
+      propose: async () => ({ kind: "proposed", input: { city: "서울" } }),
       proposedBy: "codex(gpt-5.6-luna)",
       tools: weatherTools,
     });
@@ -489,12 +489,56 @@ describe("repairInputs", () => {
       suite: emptySuite,
       targets: [target("c1", { city: "example" })],
       rerun,
-      propose: async () => ({ city: "서울" }),
+      propose: async () => ({ kind: "proposed", input: { city: "서울" } }),
       tools: weatherTools,
     });
 
     const text = io.transcript();
     expect(text).toContain("AI 가 서버 응답을 보고 제안한 값입니다");
     expect(text).not.toContain("서버 응답에서 값을 찾았습니다");
+  });
+
+  /**
+   * #286 리뷰. 전송을 거절한 것과 보낼 근거가 없는 것은 **사람에게 할 말이 다르다.**
+   * 거절한 사용자에게 "서버 응답에 쓸 만한 값이 없다" 고 하면 거짓 사유다 — 서버 응답은
+   * 있었고 보내지 않기로 한 것뿐이다.
+   */
+  it("전송을 거절한 갈래는 근거 부재라고 말하지 않는다", async () => {
+    const io = scriptedIO(["서울"]);
+    const { rerun } = rerunAlways(true);
+
+    await repairInputs({
+      io,
+      suite: emptySuite,
+      targets: [target("c1", { city: "example" })],
+      rerun,
+      propose: async () => ({ kind: "declined" }),
+      proposedBy: "codex(gpt-5.6-luna)",
+      tools: weatherTools,
+    });
+
+    const text = io.transcript();
+    expect(text).toContain("AI 전송을 거절했으므로 값을 직접 받습니다");
+    expect(text).not.toContain("서버 응답에 쓸 만한 값이 없어");
+    expect(text).not.toContain("제안한 값입니다");
+  });
+
+  /** 근거 부재 갈래는 기존 문안 그대로다. 두 갈래가 섞이면 안 된다. */
+  it("근거 부재 갈래는 거절 문안을 쓰지 않는다", async () => {
+    const io = scriptedIO(["서울"]);
+    const { rerun } = rerunAlways(true);
+
+    await repairInputs({
+      io,
+      suite: emptySuite,
+      targets: [target("c1", { city: "example" })],
+      rerun,
+      propose: async () => ({ kind: "unavailable" }),
+      tools: weatherTools,
+    });
+
+    const text = io.transcript();
+    expect(text).toContain("서버 응답에 쓸 만한 값이 없어 직접 받습니다");
+    expect(text).not.toContain("AI 전송을 거절했으므로");
   });
 });

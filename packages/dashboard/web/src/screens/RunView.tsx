@@ -40,8 +40,18 @@ export function RunStreamPanel({
   const [provider, setProvider] = useState<"claude" | "codex">("claude");
   const [model, setModel] = useState("");
 
-  /** 세 값이 다 차야 보낸다. 예전에는 prompt 세 번을 다 통과한 뒤에야 실패했다(#223). */
-  const repairReady = bundlePath.trim() !== "" && model.trim() !== "";
+  /**
+   * 세 값이 다 차야 보낸다. 예전에는 prompt 세 번을 다 통과한 뒤에야 실패했다(#223).
+   * 꺼진 이유는 버튼 옆에 말한다 — 판정만 하고 침묵하면 사용자가 폼 전체를 다시
+   * 의심한다(#354). GenerateWizard 의 `reasonForInvalid()` 와 같은 패턴이다.
+   */
+  const repairBlockReason =
+    bundlePath.trim() === ""
+      ? "repair 번들 경로를 입력하세요."
+      : model.trim() === ""
+        ? "model 을 입력하세요."
+        : null;
+  const repairReady = repairBlockReason === null;
 
   const doneEvent = events.find((event) => event.kind === "done");
   const exitCode = doneEvent?.kind === "done" ? doneEvent.exitCode : null;
@@ -173,9 +183,12 @@ export function RunStreamPanel({
               value={model}
               onChange={(event) => setModel(event.target.value)}
             />
+            {/* generate 의 모델 칸은 "(선택)" 인데 이 칸은 CLI 가 --model 을 요구한다.
+                같은 생김새의 칸이 화면마다 다르게 구는 것을 여기서 말해 준다(#354). */}
+            <p className="text-xs text-ink-muted">repair 는 모델 지정이 필수입니다.</p>
           </div>
 
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2">
             <button
               type="submit"
               className="rounded bg-accent px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
@@ -190,6 +203,9 @@ export function RunStreamPanel({
             >
               취소
             </button>
+            {repairBlockReason !== null && (
+              <span className="text-xs text-ink-muted">{repairBlockReason}</span>
+            )}
           </div>
         </form>
       )}

@@ -1387,6 +1387,12 @@ async function runInteractiveReview(
                         // 사전보완·authoring 과 같은 화면을 같은 자리에서 찍고 묻는다(#286).
                         // 전송 데이터가 그 둘과 달라 목록을 따로 준다 — 이 통로는 실패한
                         // 케이스의 **서버 응답 원문**을 요청 문안에 싣는다.
+                        //
+                        // `원문` 이라고 적는 근거: 이 호출은 `redaction` 을 넘기지 않는다.
+                        // `proposeRepair` 가 그 옵션을 받게 돼 있지만 여기서는 항상
+                        // `undefined` 라 값 치환이 걸리지 않는다(#183 소관).
+                        // **여기에 redaction 을 배선하는 사람은 이 목록도 함께 고쳐라** —
+                        // 승인 화면이 실제로 나가는 것보다 많이 말하면 그 자체가 결함이다.
                         confirm: async (preview) => {
                           showRequest(
                             io,

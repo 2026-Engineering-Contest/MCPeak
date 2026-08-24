@@ -832,6 +832,133 @@ describe("runCli", () => {
     expect(text).toContain("SUITE_READ_FAILED");
     expect(text).not.toMatch(/SECRET|absolute|Error:|stack/);
   });
+  /**
+   * #276. 고치기 전에는 네 자리가 `} catch {` 로 오류를 **바인딩조차 하지 않고** 정적 사전
+   * 문장만 내보냈다. "경로를 확인하세요" 라면서 그 경로가 화면에 없었다.
+   */
+  it("파일이 없으면 경로를 싣고 권한 문제와 구분해 말한다", async () => {
+    const d = deps({
+      readFile: async () => {
+        throw Object.assign(new Error("stat failed"), { code: "ENOENT" });
+      },
+    });
+    await runCli(["test", "specs/none.suite.json", "--command", "node"], d.value);
+    const text = d.writes.err.join("");
+    expect(text).toContain("SUITE_READ_FAILED");
+    expect(text).toContain("specs/none.suite.json");
+    expect(text).toContain("그 경로에 없습니다");
+    // 권한 얘기를 함께 하지 않는다. 어느 쪽인지 아는데 둘 다 확인하라고 하면 안 된다.
+    expect(text).not.toContain("권한");
+  });
+
+  it("읽기 권한이 없으면 경로를 찾았다는 사실까지 말한다", async () => {
+    const d = deps({
+      readFile: async () => {
+        throw Object.assign(new Error("denied"), { code: "EACCES" });
+      },
+    });
+    await runCli(["test", "locked.suite.json", "--command", "node"], d.value);
+    const text = d.writes.err.join("");
+    expect(text).toContain("locked.suite.json");
+    expect(text).toContain("읽을 권한이 없습니다");
+    expect(text).toContain("경로 자체는 찾았습니다");
+  });
+
+  it("모르는 errno 는 그 값을 그대로 싣는다", async () => {
+    const d = deps({
+      readFile: async () => {
+        throw Object.assign(new Error("weird"), { code: "EMFILE" });
+      },
+    });
+    await runCli(["test", "x.suite.json", "--command", "node"], d.value);
+    const text = d.writes.err.join("");
+    expect(text).toContain("x.suite.json");
+    expect(text).toContain("errno: EMFILE");
+  });
+
+  /**
+   * 이 갈래는 `extname(path) !== ".json"` 하나로만 온다. 그런데 안내가 "UTF-8로 저장하세요"
+   * 라고 해서, 이미 UTF-8 JSON 인 사용자는 따라 해도 안 풀렸다. **원인과 안내가 다른 것을
+   * 가리킨 자리다.** 인코딩은 다음 단계가 따로 검사한다.
+   */
+  it("확장자가 아니면 확장자 얘기만 하고 인코딩을 시키지 않는다", async () => {
+    const d = deps();
+    await runCli(["test", "spec.yaml", "--command", "node"], d.value);
+    const text = d.writes.err.join("");
+    expect(text).toContain("SUITE_FORMAT_UNSUPPORTED");
+    expect(text).toContain("spec.yaml");
+    expect(text).toContain(".yaml");
+    expect(text).not.toContain("UTF-8로 저장");
+  });
+
+  it("확장자가 아예 없으면 그렇게 말한다", async () => {
+    const d = deps();
+    await runCli(["test", "spec", "--command", "node"], d.value);
+    const text = d.writes.err.join("");
+    expect(text).toContain("확장자가 없습니다");
+    expect(text).toContain("spec");
+  });
+
+  /** 인코딩 안내는 그 오류가 나는 자리에만 있어야 한다. 두 자리가 같은 말을 하면 안 된다. */
+  it("인코딩 안내는 인코딩 오류 쪽에만 있다", async () => {
+    const format = deps();
+    await runCli(["test", "spec.yaml", "--command", "node"], format.value);
+    const encoding = deps({ readFile: async () => new Uint8Array([0xc3, 0x28]) });
+    await runCli(["test", "spec.json", "--command", "node"], encoding.value);
+    expect(format.writes.err.join("")).not.toContain("UTF-8");
+    expect(encoding.writes.err.join("")).toContain("UTF-8");
+  });
+
+  it("UTF-8 이 아니면 어느 파일인지 말한다", async () => {
+    const d = deps({ readFile: async () => new Uint8Array([0xc3, 0x28]) });
+    await runCli(["test", "bad-utf8.suite.json", "--command", "node"], d.value);
+    const text = d.writes.err.join("");
+    expect(text).toContain("SUITE_ENCODING_INVALID");
+    expect(text).toContain("bad-utf8.suite.json");
+  });
+
+  /**
+   * 파서 문장을 그대로 옮긴다. 위치 표기는 런타임마다 다르므로(`at position N` 을 주기도 하고
+   * 스니펫만 주기도 한다) **형식을 단언하지 않는다.** 파서가 준 것이 실렸는지만 본다.
+   */
+  it("JSON 이 깨지면 경로와 파서가 준 위치 정보를 함께 싣는다", async () => {
+    const broken = '{ "schemaVersion": 1, }';
+    let parserMessage = "";
+    try {
+      JSON.parse(broken);
+    } catch (error) {
+      parserMessage = (error as Error).message;
+    }
+    const d = deps({ readFile: async () => new TextEncoder().encode(broken) });
+    await runCli(["test", "broken.suite.json", "--command", "node"], d.value);
+    const text = d.writes.err.join("");
+    expect(text).toContain("SUITE_JSON_INVALID");
+    expect(text).toContain("broken.suite.json");
+    expect(parserMessage).not.toBe("");
+    expect(text).toContain(parserMessage);
+  });
+
+  /**
+   * **가리지 않는다는 것이 결정이다.** 사용자가 준 경로를 그대로 보여준다 — 절대 경로도
+   * 마찬가지다. 가리면 "어느 경로를 썼는지" 를 못 보게 되어 #276 이 고치려던 문제가 그대로
+   * 돌아온다. 같은 저장소의 세 자리(`mcpeak-mock` 목 정의 읽기, `repair` 번들 읽기,
+   * `--junit` 쓰기)가 이미 그렇게 한다. `CONTRIBUTING.md` §4-7 의 절대 경로 금지는 **커밋하는
+   * 문서**가 대상이고 런타임 화면은 그 범위가 아니다(ADR-0071 이 같은 판단을 기록했다).
+   *
+   * 새지 않아야 하는 것은 **Node 오류 객체의 message·스택**이고, 그쪽은 위 유출 방지
+   * 테스트가 지킨다.
+   */
+  it("사용자가 준 절대 경로를 가리지 않고 그대로 보여준다", async () => {
+    const absolute = "/srv/ci/workspace/specs/main.suite.json";
+    const d = deps({
+      readFile: async () => {
+        throw Object.assign(new Error("nope"), { code: "ENOENT" });
+      },
+    });
+    await runCli(["test", absolute, "--command", "node"], d.value);
+    expect(d.writes.err.join("")).toContain(absolute);
+  });
+
   it("validator가 반환한 valid suite reference를 startRunner에 그대로 전달한다", async () => {
     const validSuite: TestSuiteSpec = {
       schemaVersion: 1,

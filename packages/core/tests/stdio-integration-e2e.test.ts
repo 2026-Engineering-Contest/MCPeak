@@ -67,8 +67,8 @@ describe.sequential("stdio 실제 프로세스", () => {
       command: process.execPath,
       args: [fixture("handshake-never-completes.mjs")],
       env: {
-        OHMYMCP_PID_FILE: pid.path,
-        OHMYMCP_TARGET_MODULE: weatherServer,
+        MCPEAK_PID_FILE: pid.path,
+        MCPEAK_TARGET_MODULE: weatherServer,
       },
     });
     openConnections.add(connection);
@@ -111,7 +111,7 @@ describe.sequential("stdio 실제 프로세스", () => {
            * fixture 는 핸드셰이크를 영원히 완료하지 않으므로 값을 키워도 시나리오는 그대로다.
            */
           connectTimeoutMs: 1_000,
-          env: { OHMYMCP_PID_FILE: pid.path },
+          env: { MCPEAK_PID_FILE: pid.path },
         }),
       ).rejects.toMatchObject({ code: "HANDSHAKE_TIMEOUT" });
       await assertNoResidue(pid.path);
@@ -125,7 +125,7 @@ describe.sequential("stdio 실제 프로세스", () => {
     const connection = await connectStdio({
       command: process.execPath,
       args: [fixture("pending-call-tool.mjs")],
-      env: { OHMYMCP_PID_FILE: pid.path },
+      env: { MCPEAK_PID_FILE: pid.path },
     });
     openConnections.add(connection);
     const sdkClose = vi
@@ -165,7 +165,7 @@ describe.sequential("stdio 실제 프로세스", () => {
       const connection = await connectStdio({
         command: process.execPath,
         args: [fixture(script)],
-        env: { OHMYMCP_PID_FILE: pid.path },
+        env: { MCPEAK_PID_FILE: pid.path },
       });
       openConnections.add(connection);
       const pending =

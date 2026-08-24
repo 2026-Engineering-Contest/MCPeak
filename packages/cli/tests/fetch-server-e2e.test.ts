@@ -33,7 +33,7 @@ const hasUvx = ((): boolean => {
  * 로컬 기여자는 `uv` 없이도 나머지 테스트를 돌릴 수 있어야 하므로 기본은 skip 이다.
  * 반대로 CI 는 이 E2E 가 안 돈 실행을 통과로 세면 안 되므로, 그때 skip 을 실패로 올린다.
  */
-const requiresE2e = process.env.OHMYMCP_REQUIRE_E2E === "1";
+const requiresE2e = process.env.MCPEAK_REQUIRE_E2E === "1";
 
 // uvx 가 패키지를 내려받는 첫 회차는 네트워크에 달렸다. 캐시가 있으면 몇 초에 끝난다.
 const E2E_TIMEOUT_MS = 300_000;
@@ -48,14 +48,14 @@ const MISSING_UVX_REASON =
 if (!hasUvx && !requiresE2e) console.warn(`[fetch-server-e2e] ${MISSING_UVX_REASON}`);
 
 describe.sequential("mcp-server-fetch E2E (실서버)", () => {
-  // 경고 한 줄과 `1 skipped` 는 CI 요약에 안 남는다. OHMYMCP_REQUIRE_E2E=1 인 실행에서는
+  // 경고 한 줄과 `1 skipped` 는 CI 요약에 안 남는다. MCPEAK_REQUIRE_E2E=1 인 실행에서는
   // 침묵 대신 빨간 케이스 하나로 남긴다. 판정에 드러나야 판정이다.
   it.skipIf(hasUvx || !requiresE2e)("uvx 가 있어야 실서버 E2E 를 판정할 수 있다", () => {
     // expect.unreachable 은 문장을 `expected "..." not to be reached` 로 감싼다.
     // 읽는 사람이 필요한 것은 사유와 해결법이지 단언의 형식이 아니다.
     throw new Error(
       `${MISSING_UVX_REASON}\n` +
-        "이 실행은 OHMYMCP_REQUIRE_E2E=1 이라 건너뛰기를 실패로 판정합니다.\n" +
+        "이 실행은 MCPEAK_REQUIRE_E2E=1 이라 건너뛰기를 실패로 판정합니다.\n" +
         "E2E 없이 나머지만 돌리려면 이 변수를 지우세요.",
     );
   });

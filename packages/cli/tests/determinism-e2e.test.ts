@@ -101,10 +101,10 @@ function listWindowsCommandLines(): string {
         "$ErrorActionPreference = 'Stop'; " +
           "try { " +
           "Get-CimInstance Win32_Process | Select-Object -ExpandProperty CommandLine | " +
-          "Out-File -Encoding utf8 -LiteralPath $env:OHMYMCP_LIVING_SERVERS_OUT_FILE " +
+          "Out-File -Encoding utf8 -LiteralPath $env:MCPEAK_LIVING_SERVERS_OUT_FILE " +
           "} catch { Write-Error $_; exit 1 }",
       ],
-      { env: { ...process.env, OHMYMCP_LIVING_SERVERS_OUT_FILE: outFile } },
+      { env: { ...process.env, MCPEAK_LIVING_SERVERS_OUT_FILE: outFile } },
     );
     return readFileSync(outFile, "utf8");
   } finally {

@@ -7,7 +7,7 @@ const server = new Server(
   { name: "pending-call-tool", version: "1.0.0" },
   { capabilities: { tools: {} } },
 );
-if (process.env.OHMYMCP_PID_FILE) writeFileSync(process.env.OHMYMCP_PID_FILE, String(process.pid));
+if (process.env.MCPEAK_PID_FILE) writeFileSync(process.env.MCPEAK_PID_FILE, String(process.pid));
 server.setRequestHandler(ListToolsRequestSchema, () => ({
   tools: [{ name: "wait", inputSchema: { type: "object" } }],
 }));

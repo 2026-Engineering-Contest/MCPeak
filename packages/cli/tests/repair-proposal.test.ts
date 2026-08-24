@@ -118,9 +118,10 @@ describe("proposeRepair", () => {
       }),
       prepare: prepareAuthoringRequest,
       dispatch: dispatchAuthoringRequest,
+      confirm: async () => true,
     });
 
-    expect(result).toBeUndefined();
+    expect(result).toEqual({ kind: "unavailable" });
     expect(called).toBe(0);
   });
 
@@ -137,6 +138,7 @@ describe("proposeRepair", () => {
         return prepareAuthoringRequest(options);
       },
       dispatch: dispatchAuthoringRequest,
+      confirm: async () => true,
     });
 
     expect(instruction).toContain("(id: c1)");
@@ -154,9 +156,10 @@ describe("proposeRepair", () => {
       provider: fakeProvider(() => candidateResponse(repairedSuite("서울"))),
       prepare: prepareAuthoringRequest,
       dispatch: dispatchAuthoringRequest,
+      confirm: async () => true,
     });
 
-    expect(result).toEqual({ city: "서울" });
+    expect(result).toEqual({ kind: "proposed", input: { city: "서울" } });
   });
 
   it("dispatch 가 실패 상태를 주면 undefined 다", async () => {
@@ -168,9 +171,78 @@ describe("proposeRepair", () => {
       provider: fakeProvider(() => ({ status: "questions", questions: ["어느 도시인가요?"] })),
       prepare: prepareAuthoringRequest,
       dispatch: dispatchAuthoringRequest,
+      confirm: async () => true,
     });
 
-    expect(result).toBeUndefined();
+    expect(result).toEqual({ kind: "unavailable" });
+  });
+
+  /**
+   * #286 의 본체. 고치기 전에는 `approval: { approved: true }` 를 **스스로 찍고** 보냈다.
+   * 사용자가 같은 명령의 다른 AI 통로를 전부 거절한 실행에서도 명세 전량과 서버 응답 원문이
+   * 3.7KB 나갔다. 메시지 품질이 아니라 동의(consent) 문제다.
+   */
+  it("전송을 거절하면 provider 를 부르지 않는다", async () => {
+    const suite = baseSuite();
+    let called = 0;
+    const result = await proposeRepair({
+      target: targetOf(suite),
+      session: sessionOf(suite),
+      tools,
+      provider: fakeProvider(() => {
+        called += 1;
+        return candidateResponse(repairedSuite("서울"));
+      }),
+      prepare: prepareAuthoringRequest,
+      dispatch: dispatchAuthoringRequest,
+      confirm: async () => false,
+    });
+
+    expect(called).toBe(0);
+    // 근거 부재(unavailable)와 구분돼야 한다. 화면 문안이 여기서 갈린다(#286).
+    expect(result).toEqual({ kind: "declined" });
+  });
+
+  /** 승인 화면이 보여줄 것이 실제 전송 내용과 같아야 한다. preview 를 그대로 넘긴다. */
+  it("승인 화면에 실제로 보낼 요청의 preview 를 넘긴다", async () => {
+    const suite = baseSuite();
+    let seen: { byteLength: number; fingerprint: string } | undefined;
+    await proposeRepair({
+      target: targetOf(suite),
+      session: sessionOf(suite),
+      tools,
+      provider: fakeProvider(() => candidateResponse(repairedSuite("서울"))),
+      prepare: prepareAuthoringRequest,
+      dispatch: dispatchAuthoringRequest,
+      confirm: async (preview) => {
+        seen = { byteLength: preview.byteLength, fingerprint: preview.fingerprint };
+        return true;
+      },
+    });
+
+    expect(seen).toBeDefined();
+    expect(seen?.byteLength).toBeGreaterThan(0);
+    expect(seen?.fingerprint).not.toBe("");
+  });
+
+  /** 보내지 않을 요청은 묻지 않는다. 근거가 없는데 사람을 세우면 안 된다. */
+  it("보낼 근거가 없으면 묻지도 않는다", async () => {
+    const suite = baseSuite();
+    let asked = 0;
+    await proposeRepair({
+      target: targetOf(suite, ""),
+      session: sessionOf(suite),
+      tools,
+      provider: fakeProvider(() => candidateResponse(repairedSuite("서울"))),
+      prepare: prepareAuthoringRequest,
+      dispatch: dispatchAuthoringRequest,
+      confirm: async () => {
+        asked += 1;
+        return true;
+      },
+    });
+
+    expect(asked).toBe(0);
   });
 
   it("provider 가 던지면 undefined 다 (교정 실패가 시험 실행을 죽이지 않는다)", async () => {
@@ -184,9 +256,10 @@ describe("proposeRepair", () => {
       }),
       prepare: prepareAuthoringRequest,
       dispatch: dispatchAuthoringRequest,
+      confirm: async () => true,
     });
 
-    expect(result).toBeUndefined();
+    expect(result).toEqual({ kind: "unavailable" });
   });
 });
 

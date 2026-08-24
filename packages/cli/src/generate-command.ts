@@ -577,9 +577,17 @@ async function saveSuite(
 const defaultModel = (provider: "codex" | "claude") =>
   provider === "codex" ? "gpt-5.6-luna" : "haiku";
 
-function showRequest(io: ReviewIO, preview: AuthoringRequestPreview): void {
+/**
+ * 전송 승인 화면. **통로마다 보내는 것이 다르므로 목록을 받는다**(#286) — 입력값 교정은
+ * 실패한 케이스의 서버 응답 원문까지 싣는데, 기본 문구로 덮으면 화면이 사실보다 적게 말한다.
+ */
+function showRequest(
+  io: ReviewIO,
+  preview: AuthoringRequestPreview,
+  data = "사용자 요청, baseline suite, current candidate, 툴 이름·설명·inputSchema",
+): void {
   io.write(
-    `Provider: ${preview.providerId}\nModel: ${preview.model}\nPayload: ${preview.byteLength} bytes\nResult limit: ${preview.maxResultBytes} bytes\nTimeout: ${preview.providerTimeoutMs}ms\nFingerprint: ${preview.fingerprint}\n전송 데이터: 사용자 요청, baseline suite, current candidate, 툴 이름·설명·inputSchema\n`,
+    `Provider: ${preview.providerId}\nModel: ${preview.model}\nPayload: ${preview.byteLength} bytes\nResult limit: ${preview.maxResultBytes} bytes\nTimeout: ${preview.providerTimeoutMs}ms\nFingerprint: ${preview.fingerprint}\n전송 데이터: ${data}\n`,
   );
 }
 // 승인 화면은 스크롤 없이 읽혀야 한다. 케이스 하나의 diff가 이보다 커지면 사람이 화면으로
@@ -866,12 +874,26 @@ function writeDryRunNotice(
     readonly resetCmd?: string;
     /** 교정 단계가 켜져 있는가. 켜져 있으면 실제 호출 수가 케이스 수보다 많을 수 있다(§10). */
     readonly repair: boolean;
+    /**
+     * 교정 값 제안에 쓸 provider 표기. 없으면 사람 입력만 쓴다.
+     *
+     * 있으면 **명세와 서버 응답이 외부로 나간다.** 그 사실을 시험 실행 안내에서 미리
+     * 말한다 — 전에는 "값을 고쳐 다시 호출합니다" 뿐이라 서버 재호출로만 읽혔다(#286).
+     */
+    readonly repairProvider?: string;
   },
 ): void {
   io.write(`시험 실행: 케이스 ${notice.caseCount}개를 실제 서버에 보냅니다.\n`);
   io.write(`  대상: ${notice.target}\n`);
   if (notice.resetCmd !== undefined) io.write(`  초기화: ${notice.resetCmd}\n`);
-  if (notice.repair) io.write("  실패한 케이스는 값을 고쳐 최대 2회까지 다시 호출합니다.\n");
+  if (notice.repair) {
+    io.write("  실패한 케이스는 값을 고쳐 최대 2회까지 다시 호출합니다.\n");
+    if (notice.repairProvider !== undefined)
+      io.write(
+        `  값 제안에 ${notice.repairProvider} 를 씁니다 — 실패한 케이스의 명세와 서버 응답을 보냅니다.\n` +
+          "    전송 전에 매번 승인 화면을 보여주며, 거절하면 직접 입력합니다.\n",
+      );
+  }
   io.write(
     "\n이 실행은 서버 상태를 바꿀 수 있습니다. 입력 검증이 없는 서버라면 외부 API 호출도\n그대로 나갑니다.\n",
   );
@@ -1254,11 +1276,23 @@ async function runInteractiveReview(
           );
           if (!(await io.confirm("   계속할까요?"))) continue;
         } else {
+          // AI 제안은 `--provider` 가 있을 때만 쓴다. 별도 옵션을 두지 않는다(§7).
+          //
+          // **안내보다 먼저 만든다.** id 만 보고 안내하면 팩토리가 undefined 를 주는 경우에
+          // 전송이 없는데 "보냅니다" 라고 말하게 된다 — 안내가 거짓이 된다.
+          const repairProvider =
+            preferred === undefined
+              ? undefined
+              : deps.providers?.[preferred]?.(model ?? defaultModel(preferred));
           writeDryRunNotice(io, {
             caseCount,
             target: describeTarget(input.target),
             resetCmd: input.resetCmd,
             repair: input.repair,
+            repairProvider:
+              repairProvider === undefined
+                ? undefined
+                : `${repairProvider.id}(${repairProvider.model ?? ""})`,
           });
           if (!(await io.confirm("계속할까요?"))) continue;
           if (input.resetCmd !== undefined) {
@@ -1299,11 +1333,6 @@ async function runInteractiveReview(
             model: model ?? (preferred === undefined ? "" : defaultModel(preferred)),
           });
           // 9. 입력값 교정(§4). 대상이 없으면 아무것도 묻지 않는다.
-          // AI 제안은 `--provider` 가 있을 때만 쓴다. 별도 옵션을 두지 않는다(§7).
-          const repairProvider =
-            preferred === undefined
-              ? undefined
-              : deps.providers?.[preferred]?.(model ?? defaultModel(preferred));
           const targets = input.repair
             ? selectRepairTargets({
                 suite: dryRunSuite,
@@ -1319,6 +1348,11 @@ async function runInteractiveReview(
               suite: dryRunSuite,
               targets,
               tools,
+              // 값의 출처를 화면이 정확히 말하도록 provider 표기를 넘긴다(#286).
+              proposedBy:
+                repairProvider === undefined
+                  ? undefined
+                  : `${repairProvider.id}(${repairProvider.model ?? ""})`,
               // 케이스 하나만 담은 스위트로 부른다. 전량을 다시 돌리면 앞서 통과한 케이스가
               // 상태 변화로 뒤집힌다(설계 §9).
               rerun: async (caseId, value) => {
@@ -1350,6 +1384,23 @@ async function runInteractiveReview(
                         provider: repairProvider,
                         prepare,
                         dispatch,
+                        // 사전보완·authoring 과 같은 화면을 같은 자리에서 찍고 묻는다(#286).
+                        // 전송 데이터가 그 둘과 달라 목록을 따로 준다 — 이 통로는 실패한
+                        // 케이스의 **서버 응답 원문**을 요청 문안에 싣는다.
+                        //
+                        // `원문` 이라고 적는 근거: 이 호출은 `redaction` 을 넘기지 않는다.
+                        // `proposeRepair` 가 그 옵션을 받게 돼 있지만 여기서는 항상
+                        // `undefined` 라 값 치환이 걸리지 않는다(#183 소관).
+                        // **여기에 redaction 을 배선하는 사람은 이 목록도 함께 고쳐라** —
+                        // 승인 화면이 실제로 나가는 것보다 많이 말하면 그 자체가 결함이다.
+                        confirm: async (preview) => {
+                          showRequest(
+                            io,
+                            preview,
+                            "실패한 케이스의 명세와 서버 응답 원문, baseline suite, current candidate, 툴 이름·설명·inputSchema",
+                          );
+                          return await io.confirm("이 요청을 전송할까요?");
+                        },
                       }),
             });
             const repaired = new Map(

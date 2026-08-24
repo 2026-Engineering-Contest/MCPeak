@@ -1,4 +1,9 @@
-import type { AuthoringSessionView, McpToolContext, TestAuthoringProvider } from "@mcpeak/generate";
+import type {
+  AuthoringRequestPreview,
+  AuthoringSessionView,
+  McpToolContext,
+  TestAuthoringProvider,
+} from "@mcpeak/generate";
 import {
   canonicalJson,
   type JsonValue,
@@ -25,6 +30,14 @@ export interface ProposeRepairOptions {
   readonly prepare: typeof import("@mcpeak/generate").prepareAuthoringRequest;
   readonly dispatch: typeof import("@mcpeak/generate").dispatchAuthoringRequest;
   readonly redaction?: RunnerRedactionOptions;
+  /**
+   * 전송 승인. 화면을 찍고 사람에게 묻는 것은 호출 측 책임이고 여기서는 그 답만 받는다.
+   *
+   * **선택 인자가 아니다.** 기본값을 두면 안 넘긴 호출자가 조용히 자동 승인으로 돌아간다 —
+   * 이 이슈가 정확히 그 상태였다(#286). 같은 명령의 사전보완·authoring 통로는 전송 전에
+   * 반드시 승인 화면을 찍고 묻는다. 이 통로만 그 화면이 없었다.
+   */
+  readonly confirm: (preview: AuthoringRequestPreview) => Promise<boolean>;
 }
 
 /** 요청 문안에서 서버 응답 본문이 시작하는 자리. 치환 뒤 본문이 남았는지 여기서 확인한다. */
@@ -132,11 +145,25 @@ export function acceptProposal(options: {
  * 교정안을 provider 에게 요청한다. 실패는 전부 `undefined` 로 접는다. 교정은 선택이지
  * 전제가 아니라서, 여기서 던지면 교정 실패가 시험 실행을 통째로 죽인다.
  */
-export async function proposeRepair(
-  options: ProposeRepairOptions,
-): Promise<Readonly<Record<string, JsonValue>> | undefined> {
+/**
+ * 교정 제안의 결과. **값이 없을 때 왜 없는지가 화면 문안을 가른다**(#286).
+ *
+ * 사용자가 전송을 거절한 경우와 보낼 근거 자체가 없는 경우는 사람에게 할 말이 다르다.
+ * 둘을 `undefined` 하나로 접으면 거절한 사용자에게 "서버 응답에 쓸 만한 값이 없다" 는
+ * **거짓 사유**를 말하게 된다. 서버 응답은 있었고 보내지 않기로 한 것뿐이다.
+ */
+export type ProposalOutcome =
+  | { readonly kind: "proposed"; readonly input: Readonly<Record<string, JsonValue>> }
+  /** 사용자가 전송을 거절했다. 서버 응답은 있다. */
+  | { readonly kind: "declined" }
+  /** 보낼 근거가 없거나 provider 가 쓸 값을 주지 못했다. */
+  | { readonly kind: "unavailable" };
+
+const UNAVAILABLE = { kind: "unavailable" } as const;
+
+export async function proposeRepair(options: ProposeRepairOptions): Promise<ProposalOutcome> {
   // 서버 응답이 없으면 보낼 근거가 없다. 요청하지 않고 사람 입력으로 넘긴다(설계 §4.4).
-  if (options.target.serverMessage === "") return undefined;
+  if (options.target.serverMessage === "") return UNAVAILABLE;
 
   const before = options.session.approvedDraft.suite;
   try {
@@ -151,21 +178,26 @@ export async function proposeRepair(
       redaction: options.redaction,
     });
     // 치환이 본문을 지웠으면 보낸 뒤 판단하지 않는다. 지운 것을 물어봐야 답이 없다.
-    if (!hasServerMessage(preview.request.instruction)) return undefined;
+    if (!hasServerMessage(preview.request.instruction)) return UNAVAILABLE;
+
+    // 보내지 않을 요청은 묻지 않는다. 위 두 갈래를 지난 뒤에야 사람에게 물을 값이 생긴다.
+    if (!(await options.confirm(preview))) return { kind: "declined" };
 
     const result = await options.dispatch({
       provider: options.provider,
       preview,
+      // 위 confirm 을 통과한 것만 여기 온다. 이제 이 도장은 사람이 찍은 것이다.
       approval: { approved: true, fingerprint: preview.fingerprint },
     });
-    if (result.status !== "preview") return undefined;
+    if (result.status !== "preview") return UNAVAILABLE;
 
-    return acceptProposal({
+    const input = acceptProposal({
       target: options.target,
       before,
       after: result.preview.result.suite,
     });
+    return input === undefined ? UNAVAILABLE : { kind: "proposed", input };
   } catch {
-    return undefined;
+    return UNAVAILABLE;
   }
 }

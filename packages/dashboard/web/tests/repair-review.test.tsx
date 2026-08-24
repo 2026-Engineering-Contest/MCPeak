@@ -47,6 +47,11 @@ describe("RepairReview", () => {
 
   it("stdout의 diff 텍스트가 재구성 없이 그대로 렌더된다", () => {
     vi.stubGlobal("EventSource", FakeEventSource);
+    // 마운트 summary GET(#295)을 받아 줄 스텁. 없으면 상대경로 fetch 가 실제로 나간다.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(null, { status: 404 })),
+    );
     const { container } = render(<RepairReview runId="repair-1" />);
     act(() => {
       lastSource().emit({ kind: "stdout", html: "→ args.city 가 스키마와 다릅니다" });
@@ -70,6 +75,12 @@ describe("RepairReview", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
+    /** 마운트 summary GET(#295)을 빼고 answer POST 만 센다. */
+    const posts = (): readonly RequestInit[] =>
+      fetchMock.mock.calls
+        .map((call) => call[1] as RequestInit | undefined)
+        .filter((init): init is RequestInit => (init?.method ?? "GET") !== "GET");
+
     render(<RepairReview runId="repair-1" />);
     act(() => {
       lastSource().emit({
@@ -79,10 +90,14 @@ describe("RepairReview", () => {
     });
     fireEvent.click(screen.getByText("예"));
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(posts()).toHaveLength(1);
     });
-    expect(String(fetchMock.mock.calls[0]?.[0])).toBe("/api/runs/repair-1/answer");
-    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({
+    expect(
+      fetchMock.mock.calls
+        .filter((call) => ((call[1] as RequestInit | undefined)?.method ?? "GET") !== "GET")
+        .map((call) => String(call[0])),
+    ).toEqual(["/api/runs/repair-1/answer"]);
+    expect(JSON.parse(String(posts()[0]?.body))).toEqual({
       questionId: "q1",
       value: "y",
     });
@@ -95,9 +110,9 @@ describe("RepairReview", () => {
     });
     fireEvent.click(screen.getByText("아니오"));
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(posts()).toHaveLength(2);
     });
-    expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toEqual({
+    expect(JSON.parse(String(posts()[1]?.body))).toEqual({
       questionId: "q2",
       value: "n",
     });

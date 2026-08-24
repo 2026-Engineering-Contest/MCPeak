@@ -1,25 +1,40 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { FileEntry, RunSummary } from "../../src/api-types.js";
+import type { FileEntry, RunSummary, ServerMeta } from "../../src/api-types.js";
 import { Home } from "../src/screens/Home.js";
 
 const SUITES: readonly FileEntry[] = [{ path: "examples/weather/suite.json" }];
+const META: ServerMeta = { root: "/tmp/proj" };
 const RUNS: readonly RunSummary[] = [
   { runId: "run-7", flow: "generate", status: "done", exitCode: 0 },
 ];
 
-function stubFetch(): ReturnType<typeof vi.fn> {
+/**
+ * `/api/meta` 갈래가 **반드시** 있어야 한다. 없으면 마지막 catch-all 이 `[]` 를 주고
+ * `meta.root` 가 undefined 가 되어, 빈 목록 안내가 조용히 경로 없는 갈래로 샌다(#296).
+ * `meta` 인자로 그 실패를 일부러 만들 수 있다.
+ */
+function stubFetch(
+  options: { readonly suites?: readonly FileEntry[]; readonly meta?: ServerMeta | null } = {},
+): ReturnType<typeof vi.fn> {
+  const suites = options.suites ?? SUITES;
+  const meta = options.meta === undefined ? META : options.meta;
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (init?.method === "POST") {
       return new Response(JSON.stringify({ runId: "run-new" }), { status: 200 });
     }
     if (url === "/api/suites") {
-      return new Response(JSON.stringify(SUITES), { status: 200 });
+      return new Response(JSON.stringify(suites), { status: 200 });
     }
     if (url === "/api/runs") {
       return new Response(JSON.stringify(RUNS), { status: 200 });
+    }
+    if (url === "/api/meta") {
+      return meta === null
+        ? new Response(JSON.stringify({ error: "메타를 읽지 못했습니다." }), { status: 500 })
+        : new Response(JSON.stringify(meta), { status: 200 });
     }
     return new Response("[]", { status: 200 });
   });
@@ -202,5 +217,48 @@ describe("Home", () => {
     expect(row?.getAttribute("href")).toBe("#/runs/run-7");
     expect(row?.textContent).toContain("generate");
     expect(row?.textContent).toContain("완료 · exit 0");
+  });
+
+  /**
+   * 이 이슈의 본체다(#296). 고치기 전에는 "스위트가 없습니다." 한 줄이라, 도구가 어느
+   * 디렉터리를 뒤졌는지 사용자가 알 방법이 없었다.
+   */
+  it("스위트가 0건이면 어느 디렉터리를 뒤졌는지 말한다", async () => {
+    stubFetch({ suites: [] });
+    render(<Home />);
+    await waitFor(() => {
+      expect(screen.getByText(/스위트를 찾지 못했습니다/)).toBeTruthy();
+    });
+    expect(screen.getByText("/tmp/proj")).toBeTruthy();
+  });
+
+  it("스위트가 0건이면 고치는 방법 두 갈래를 함께 말한다", async () => {
+    stubFetch({ suites: [] });
+    render(<Home />);
+    await waitFor(() => {
+      expect(screen.getByText(/다시 띄우거나/)).toBeTruthy();
+    });
+    // cwd 말고 두 번째 원인 — 형식 불통과·제외 디렉터리
+    expect(screen.getByText(/node_modules/)).toBeTruthy();
+  });
+
+  /** 루트를 못 받아도 목록 화면 자체는 살아야 한다. 경로만 빠지고 나머지 안내는 나간다. */
+  it("메타를 못 받으면 경로 없이 나머지 안내만 낸다", async () => {
+    stubFetch({ suites: [], meta: null });
+    render(<Home />);
+    await waitFor(() => {
+      expect(screen.getByText(/스위트를 찾지 못했습니다/)).toBeTruthy();
+    });
+    expect(screen.queryByText("/tmp/proj")).toBeNull();
+    expect(screen.getByText(/다시 띄우거나/)).toBeTruthy();
+  });
+
+  it("스위트가 있으면 빈 목록 안내는 안 나온다", async () => {
+    stubFetch();
+    render(<Home />);
+    await waitFor(() => {
+      expect(screen.getByText("examples/weather/suite.json")).toBeTruthy();
+    });
+    expect(screen.queryByText(/스위트를 찾지 못했습니다/)).toBeNull();
   });
 });

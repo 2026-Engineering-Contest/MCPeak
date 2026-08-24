@@ -31,7 +31,7 @@ export function RunStreamPanel({
   runId,
   showRepairAction = true,
 }: RunStreamPanelProps): JSX.Element {
-  const { events, status, pendingQuestion } = useRunEvents(runId);
+  const { events, status, pendingQuestion, error: streamError } = useRunEvents(runId);
   const [answeredId, setAnsweredId] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -94,10 +94,19 @@ export function RunStreamPanel({
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3">
+        {/*
+          "대기" 는 상태가 아니라 **모른다는 뜻인데 아는 척한 문구**였다. `RunStatus` 에
+          그런 값은 없다(running/waiting-input/done/failed). 그래서 없는 run 과 도는 run 이
+          여기서 같은 글자가 됐다(#295). 모르는 것은 모른다고 쓴다.
+        */}
         {status !== null ? (
           <StatusBadge status={status} exitCode={exitCode} />
+        ) : streamError === null ? (
+          <span className="text-xs text-ink-muted">상태를 확인하는 중...</span>
         ) : (
-          <span className="text-xs text-ink-muted">대기</span>
+          <span className="text-xs" style={{ color: "var(--status-failed-fg)" }}>
+            상태를 확인할 수 없음
+          </span>
         )}
         {status === "failed" && showRepairAction && (
           <button
@@ -188,6 +197,16 @@ export function RunStreamPanel({
       {error !== null && (
         <p className="text-sm" style={{ color: "var(--status-failed-fg)" }}>
           {error}
+        </p>
+      )}
+
+      {/*
+        서버가 만든 문장을 그대로 옮긴다. 줄바꿈이 살아야 하므로 whitespace-pre-line 이다
+        — 안내 두 줄이 한 줄로 뭉개지면 "어떻게 고치는지" 가 사라진다.
+      */}
+      {streamError !== null && (
+        <p className="whitespace-pre-line text-sm" style={{ color: "var(--status-failed-fg)" }}>
+          {streamError}
         </p>
       )}
 

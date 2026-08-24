@@ -209,6 +209,26 @@ describe("routes.ts", () => {
     server = await startTestServer();
     const response = await fetch(`${server.baseUrl}/api/runs/no-such-run`);
     expect(response.status).toBe(404);
+    // 이 문장은 그대로 화면에 나간다(#295). 발원지에서 못박지 않으면 아무 데서도
+    // 고정되지 않는다 — 고치기 전에는 저장소 전체에 이 문자열 단언이 0건이었다.
+    expect(await response.json()).toEqual({ error: "그런 run이 없습니다." });
+  });
+
+  it("GET /api/meta 가 스위트 탐색 루트를 준다", async () => {
+    server = await startTestServer();
+    const response = await fetch(`${server.baseUrl}/api/meta`);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ root: server.root });
+  });
+
+  /**
+   * `/api/health` 는 스캐폴드 검증용으로 `{ ok: true }` 를 완전 일치로 잠가 둔 자리다
+   * (tests/scaffold.test.ts). `/api/meta` 를 더하면서 여기에 root 가 새지 않았는지 못박는다.
+   */
+  it("GET /api/health 는 root 를 싣지 않는다", async () => {
+    server = await startTestServer();
+    const response = await fetch(`${server.baseUrl}/api/health`);
+    expect(await response.json()).toEqual({ ok: true });
   });
 
   it("경로 탈출 요청은 400이다", async () => {

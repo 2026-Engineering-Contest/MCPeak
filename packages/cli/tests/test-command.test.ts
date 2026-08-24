@@ -1909,6 +1909,34 @@ describe("결정론성 확인", () => {
     expect(out).not.toContain("determinism 키를 보세요");
   });
 
+  /**
+   * 위 갈래의 고지는 "`--json` 에서는 determinism 키가 만들어지지 않아 이 안내가 stderr 로만
+   * 나갑니다" 라고 **사실을 주장한다.** 그 주장을 검증하지 않으면 문장이 거짓이 되는 날에
+   * 아무도 못 잡는다 — 고지가 stdout 으로 새면 JSON 이 깨지고, stderr 로 안 나가면 사용자가
+   * 키가 없는 이유를 알 방법이 없다.
+   */
+  it("--json 이면 고지가 stdout 을 오염시키지 않고 stderr 로만 나간다", async () => {
+    let call = 0;
+    const d = deps({ checkDeterminism: vi.fn(() => sameResult("deterministic")) });
+    d.value.finalize = vi.fn(async () => {
+      call += 1;
+      return call === 1 ? report() : report("aborted");
+    });
+    await runCli(["test", "suite.json", "--command", "node", "--determinism", "--json"], d.value);
+    const out = d.writes.out.join("");
+    const err = d.writes.err.join("");
+
+    // stdout 은 JSON 전용이다. 파싱이 되어야 하고 고지가 섞여 있으면 안 된다.
+    const parsed = JSON.parse(out) as Record<string, unknown>;
+    expect("determinism" in parsed).toBe(false);
+    expect(out).not.toContain("이 진단은 종료 코드에 반영되지 않습니다.");
+
+    // 키가 없는 이유와 종료 코드 고지는 stderr 로 간다.
+    expect(err).toContain("2회차 실행이 완주하지 못해 비교할 수 없습니다.");
+    expect(err).toContain("이 진단은 종료 코드에 반영되지 않습니다.");
+    expect(err).toContain("determinism 키가 만들어지지 않아");
+  });
+
   /** 찾은 것이 없는 갈래에는 붙이지 않는다. 고지가 노이즈가 되면 아무도 안 읽는다. */
   it("결과가 같은 갈래에는 종료 코드 고지를 붙이지 않는다", async () => {
     const d = deps({ checkDeterminism: vi.fn(() => sameResult("deterministic")) });

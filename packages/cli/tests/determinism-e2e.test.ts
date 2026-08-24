@@ -177,6 +177,9 @@ describe.sequential("결정론성 확인 E2E (실서버)", () => {
       // 비차단 진단이다. 1회차가 전부 통과했으므로 차이가 있어도 0 이다.
       expect(exitCode).toBe(0);
       expect(stdout).toContain("1/1 케이스에서 2회 실행 결과가 다릅니다");
+      // 종료 코드가 0 이라는 사실을 화면이 직접 말해야 한다(#292). 실제 프로세스를 띄운
+      // 출력에서 확인한다 — 단위 테스트는 렌더러만 보고 배선을 보지 않는다.
+      expect(stdout).toContain("이 진단은 종료 코드에 반영되지 않습니다.");
       expect(stdout).toContain("content[0].text");
       expect(stdout).toContain("시간 의존으로 보입니다");
       // 심은 비결정 필드가 실제로 양쪽 값에 보여야 한다. 경로만 맞고 값이 안 보이면 화면이

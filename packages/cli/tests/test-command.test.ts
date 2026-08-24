@@ -1882,6 +1882,68 @@ describe("결정론성 확인", () => {
     expect(out).toContain("get_weather / 정상 조회 (case-3)");
     expect(out).toContain("시간 의존으로 보입니다");
     expect(out).toContain("create_file / 새 파일 (case-9)");
+    // 종료 코드가 0 인 것을 화면이 말해야 한다(#292). 이 줄이 없으면 CI 는 초록인데
+    // 서버가 비결정이라는 사실을 아무도 모른다.
+    expect(out).toContain("이 진단은 종료 코드에 반영되지 않습니다.");
+    expect(out).toContain("--json 의 determinism 키를 보세요");
+  });
+
+  /**
+   * 비교를 못 한 갈래에서는 `--json` 의 `determinism` 키가 **만들어지지 않는다.**
+   * 그 키를 가리키면 없는 것을 가리키는 안내가 된다.
+   */
+  it("비교 실패 갈래의 고지는 없는 JSON 키를 가리키지 않는다", async () => {
+    const check = vi.fn(() => sameResult("deterministic"));
+    let call = 0;
+    const d = deps({ checkDeterminism: check });
+    d.value.finalize = vi.fn(async () => {
+      call += 1;
+      return call === 1 ? report() : report("aborted");
+    });
+    await runCli(["test", "suite.json", "--command", "node", "--determinism"], d.value);
+    expect(check).not.toHaveBeenCalled();
+    const out = d.writes.out.join("");
+    expect(out).toContain("2회차 실행이 완주하지 못해 비교할 수 없습니다.");
+    expect(out).toContain("이 진단은 종료 코드에 반영되지 않습니다.");
+    expect(out).toContain("determinism 키가 만들어지지 않아");
+    expect(out).not.toContain("determinism 키를 보세요");
+  });
+
+  /**
+   * 위 갈래의 고지는 "`--json` 에서는 determinism 키가 만들어지지 않아 이 안내가 stderr 로만
+   * 나갑니다" 라고 **사실을 주장한다.** 그 주장을 검증하지 않으면 문장이 거짓이 되는 날에
+   * 아무도 못 잡는다 — 고지가 stdout 으로 새면 JSON 이 깨지고, stderr 로 안 나가면 사용자가
+   * 키가 없는 이유를 알 방법이 없다.
+   */
+  it("--json 이면 고지가 stdout 을 오염시키지 않고 stderr 로만 나간다", async () => {
+    let call = 0;
+    const d = deps({ checkDeterminism: vi.fn(() => sameResult("deterministic")) });
+    d.value.finalize = vi.fn(async () => {
+      call += 1;
+      return call === 1 ? report() : report("aborted");
+    });
+    await runCli(["test", "suite.json", "--command", "node", "--determinism", "--json"], d.value);
+    const out = d.writes.out.join("");
+    const err = d.writes.err.join("");
+
+    // stdout 은 JSON 전용이다. 파싱이 되어야 하고 고지가 섞여 있으면 안 된다.
+    const parsed = JSON.parse(out) as Record<string, unknown>;
+    expect("determinism" in parsed).toBe(false);
+    expect(out).not.toContain("이 진단은 종료 코드에 반영되지 않습니다.");
+
+    // 키가 없는 이유와 종료 코드 고지는 stderr 로 간다.
+    expect(err).toContain("2회차 실행이 완주하지 못해 비교할 수 없습니다.");
+    expect(err).toContain("이 진단은 종료 코드에 반영되지 않습니다.");
+    expect(err).toContain("determinism 키가 만들어지지 않아");
+  });
+
+  /** 찾은 것이 없는 갈래에는 붙이지 않는다. 고지가 노이즈가 되면 아무도 안 읽는다. */
+  it("결과가 같은 갈래에는 종료 코드 고지를 붙이지 않는다", async () => {
+    const d = deps({ checkDeterminism: vi.fn(() => sameResult("deterministic")) });
+    await runCli(["test", "suite.json", "--command", "node", "--determinism"], d.value);
+    const out = d.writes.out.join("");
+    expect(out).toContain("모든 케이스에서 같습니다");
+    expect(out).not.toContain("이 진단은 종료 코드에 반영되지 않습니다.");
   });
 
   it("차이 0 과 복원 유무로 결론 문장이 갈린다", async () => {

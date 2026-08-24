@@ -1,4 +1,9 @@
-import type { AuthoringSessionView, McpToolContext, TestAuthoringProvider } from "@mcpeak/generate";
+import type {
+  AuthoringRequestPreview,
+  AuthoringSessionView,
+  McpToolContext,
+  TestAuthoringProvider,
+} from "@mcpeak/generate";
 import {
   canonicalJson,
   type JsonValue,
@@ -25,6 +30,14 @@ export interface ProposeRepairOptions {
   readonly prepare: typeof import("@mcpeak/generate").prepareAuthoringRequest;
   readonly dispatch: typeof import("@mcpeak/generate").dispatchAuthoringRequest;
   readonly redaction?: RunnerRedactionOptions;
+  /**
+   * 전송 승인. 화면을 찍고 사람에게 묻는 것은 호출 측 책임이고 여기서는 그 답만 받는다.
+   *
+   * **선택 인자가 아니다.** 기본값을 두면 안 넘긴 호출자가 조용히 자동 승인으로 돌아간다 —
+   * 이 이슈가 정확히 그 상태였다(#286). 같은 명령의 사전보완·authoring 통로는 전송 전에
+   * 반드시 승인 화면을 찍고 묻는다. 이 통로만 그 화면이 없었다.
+   */
+  readonly confirm: (preview: AuthoringRequestPreview) => Promise<boolean>;
 }
 
 /** 요청 문안에서 서버 응답 본문이 시작하는 자리. 치환 뒤 본문이 남았는지 여기서 확인한다. */
@@ -153,9 +166,13 @@ export async function proposeRepair(
     // 치환이 본문을 지웠으면 보낸 뒤 판단하지 않는다. 지운 것을 물어봐야 답이 없다.
     if (!hasServerMessage(preview.request.instruction)) return undefined;
 
+    // 보내지 않을 요청은 묻지 않는다. 위 두 갈래를 지난 뒤에야 사람에게 물을 값이 생긴다.
+    if (!(await options.confirm(preview))) return undefined;
+
     const result = await options.dispatch({
       provider: options.provider,
       preview,
+      // 위 confirm 을 통과한 것만 여기 온다. 이제 이 도장은 사람이 찍은 것이다.
       approval: { approved: true, fingerprint: preview.fingerprint },
     });
     if (result.status !== "preview") return undefined;

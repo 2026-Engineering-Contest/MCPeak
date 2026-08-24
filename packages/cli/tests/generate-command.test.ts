@@ -3130,14 +3130,41 @@ describe("generate 시험 실행 게이트", () => {
         providers: proposingProvider("부산"),
         // 1회차는 AI 제안에 엔터, 2회차는 사람이 다른 값, 마지막은 분류.
         inputs: ["", "대전", "s"],
-        confirms: [true, true],
+        // 셋째 true 는 입력값 교정의 **전송 승인**이다(#286). 전에는 묻지 않고 보냈다.
+        confirms: [true, true, true],
         respond: onlyAccepts("서울"),
       });
       await expect(runGenerateCommand(proposalArgv, d.value)).resolves.toBe(0);
-      expect(d.output()).toContain("서버 응답에서 값을 찾았습니다");
+      expect(d.output()).toContain("이 요청을 전송할까요?");
+      expect(d.output()).toContain("가 서버 응답을 보고 제안한 값입니다");
+      expect(d.output()).not.toContain("서버 응답에서 값을 찾았습니다");
       expect(d.output()).toContain("입력값을 두 번 고쳐 봤지만 결과가 같습니다.");
       expect(d.output()).toContain('city: "부산" → 오류');
       expect(d.output()).toContain('city: "대전" → 오류');
+    });
+
+    /**
+     * #286 의 끝단 확인. 사용자가 전송을 거절하면 provider 를 부르지 않고 사람 입력으로 간다.
+     * 고치기 전에는 이 화면이 아예 없어서 거절할 기회조차 없었다.
+     */
+    it("전송 승인을 거절하면 provider 를 부르지 않고 사람 입력으로 간다", async () => {
+      const provider = proposingProvider("부산");
+      const d = gateDeps({
+        choices: ["save"],
+        baseline: bodySchemaBaseline(),
+        providers: provider,
+        // 전송 거절 뒤 사람이 직접 값을 넣는다.
+        inputs: ["서울"],
+        // 계속할까요(true) → **이 요청을 전송할까요(false)** → 최종 저장(true)
+        confirms: [true, false, true],
+        respond: onlyAccepts("서울"),
+      });
+      await expect(runGenerateCommand(proposalArgv, d.value)).resolves.toBe(0);
+      const text = d.output();
+      expect(text).toContain("이 요청을 전송할까요?");
+      // 거절했으므로 제안 문안이 나오지 않고 사람 입력 갈래로 간다.
+      expect(text).not.toContain("가 서버 응답을 보고 제안한 값입니다");
+      expect(text).toContain("서버 응답에 쓸 만한 값이 없어 직접 받습니다");
     });
 
     it("교정이 두 번 실패하면 저장된 입력값이 원래 합성값이다", async () => {
@@ -3146,7 +3173,7 @@ describe("generate 시험 실행 게이트", () => {
         baseline: bodySchemaBaseline(),
         providers: proposingProvider("부산"),
         inputs: ["", "대전", "s"],
-        confirms: [true, true],
+        confirms: [true, true, true],
         respond: onlyAccepts("서울"),
       });
       await runGenerateCommand(proposalArgv, d.value);

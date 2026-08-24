@@ -34,6 +34,13 @@ export interface RepairInputsOptions {
   ) => Promise<{ readonly passed: boolean; readonly detail: string }>;
   /** AI 제안. 없으면 사람 입력만 쓴다. */
   readonly propose?: (target: RepairTarget) => Promise<Input | undefined>;
+  /**
+   * 제안한 provider 표기(`codex(gpt-5.6-luna)`). 화면이 값의 출처를 정확히 말하는 데만 쓴다.
+   *
+   * 이 값이 없던 동안 화면은 provider 가 만든 값을 "서버 응답에서 값을 찾았습니다" 라고
+   * **서버에 귀속**했다. 사용자는 AI 가 관여한 사실 자체를 알 수 없었다(#286).
+   */
+  readonly proposedBy?: string;
   /** 입력 스키마. 타입 검사에 쓴다. 툴 이름으로 찾는다. */
   readonly tools: readonly ToolDef[];
 }
@@ -50,7 +57,15 @@ const BODY = "      ";
  */
 const FAILURE_LINE = `${BODY}isError  정상 응답을 기대했지만 오류 응답을 받았습니다.`;
 
-const PROPOSED_LEAD = `${BODY}입력값이 거절된 것으로 보입니다. 서버 응답에서 값을 찾았습니다.`;
+/**
+ * 제안값의 출처를 말한다. `propose` 는 provider 가 있을 때만 배선되므로 여기 오는 값은
+ * **항상 provider 가 만든 것**이다 — 그런데 전에는 서버에 귀속했다(#286).
+ * 표기를 못 받은 경우에도 서버라고 말하지 않는다.
+ */
+const proposedLead = (by: string | undefined): string =>
+  `${BODY}입력값이 거절된 것으로 보입니다. ${
+    by === undefined ? "AI 가" : `${by} 가`
+  } 서버 응답을 보고 제안한 값입니다.`;
 const MANUAL_LEAD = `${BODY}입력값이 거절된 것으로 보입니다. 서버 응답에 쓸 만한 값이 없어 직접 받습니다.`;
 const RERUN_LINE = `${BODY}▸ 다시 실행 중... 1건`;
 const PASSED_LINE = `${BODY}✓ 통과`;
@@ -229,7 +244,9 @@ export async function repairInputs(
     // 1회차. 물어볼 필드가 하나도 없으면 제안을 요청하지도, 안내 줄을 찍지도 않는다.
     const proposed = askable.length === 0 ? undefined : await options.propose?.(target);
     if (askable.length > 0) {
-      options.io.write(proposed === undefined ? `${MANUAL_LEAD}\n` : `${PROPOSED_LEAD}\n`);
+      options.io.write(
+        proposed === undefined ? `${MANUAL_LEAD}\n` : `${proposedLead(options.proposedBy)}\n`,
+      );
     }
     const first = await askRound(options.io, target, {
       current: target.input,

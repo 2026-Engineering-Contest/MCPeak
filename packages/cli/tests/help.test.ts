@@ -70,4 +70,15 @@ describe("test External 세션 도움말", () => {
     );
     expect(help).not.toContain("외부 API 는 부르지 않습니다");
   });
+
+  /**
+   * `--determinism` 은 비차단 진단이라 차이를 찾아도 종료 코드가 0 이다. 그 사실이 화면에도
+   * 도움말에도 없어서 CI 초록을 통과로 읽는 자리가 있었다(#292). 같은 저장소가 이미
+   * 종료 코드를 도움말에 적는 관례를 갖고 있다.
+   */
+  it("--determinism 항목이 종료 코드를 말한다", () => {
+    expect(help).toContain("비차단 진단입니다");
+    expect(help).toContain("종료 코드");
+    expect(help).toContain("--json 의 determinism 키");
+  });
 });

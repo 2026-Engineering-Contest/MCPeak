@@ -565,6 +565,20 @@ type DeterminismOutcome =
       readonly diagnostics?: ProcessDiagnosticsInput;
     }
   | { readonly kind: "internal" };
+/**
+ * 종료 코드 고지. `--determinism` 은 **비차단 진단**이다 — 차이를 찾아도 종료 코드는 1회차
+ * 판정 그대로 0 이다(설계 문서 §서론 "비차단 진단. status·종료 코드·`RunnerReport` 불변",
+ * ADR-0018). 오탐이 CI 를 막으면 안 된다는 것이 그 설계의 이유다.
+ *
+ * **동작은 바꾸지 않는다.** 그 사실이 화면 어디에도 없어서, CI 는 초록인데 서버가 비결정이라는
+ * 것을 아무도 모르는 자리가 있었다(#292). 고치는 것은 고지뿐이다.
+ *
+ * 뒤에 붙는 "어디를 보라" 는 갈래마다 다르다. `--json` 의 `determinism` 키는 **비교까지 갔을
+ * 때만** 만들어지므로(위 §JSON 조립), 비교를 못 한 갈래에서 그 키를 가리키면 없는 것을
+ * 가리키는 안내가 된다.
+ */
+const EXIT_CODE_NOTICE = "→ 이 진단은 종료 코드에 반영되지 않습니다.";
+
 /** `(12/12)` 와 `(12/12, 제외 2: 실행되지 않은 케이스)`. 설계 문서 §8. */
 const determinismCounts = (result: DeterminismResult): string =>
   result.skipped === 0
@@ -586,7 +600,9 @@ function renderDeterminism(
       `${DETERMINISM_HEADING}\n` +
       `→ 2회차 실행이 완주하지 못해 비교할 수 없습니다. (사유: ${escapeTerminalText(outcome.reason)})\n` +
       "→ 1회차는 완주했으므로, 서버가 반복 실행 자체에 취약할 수 있습니다\n" +
-      "  (이전 실행이 남긴 상태·잠금·포트 점유 등).\n";
+      "  (이전 실행이 남긴 상태·잠금·포트 점유 등).\n" +
+      `${EXIT_CODE_NOTICE} --json 에서는 determinism 키가 만들어지지 않아\n` +
+      "  이 안내가 stderr 로만 나갑니다.\n";
     // 진단은 2회차 연결의 것이다. 단계 1 의 렌더러를 그대로 쓴다. 설계 문서 §7.
     if (
       options.stderrLines === 0 ||
@@ -616,7 +632,8 @@ function renderDeterminism(
   return (
     `${DETERMINISM_HEADING}\n` +
     `→ ${result.differences.length}/${result.compared} 케이스에서 2회 실행 결과가 다릅니다.${suffix}\n\n` +
-    `${blocks}\n`
+    `${blocks}\n` +
+    `${EXIT_CODE_NOTICE} CI 를 막으려면 --json 의 determinism 키를 보세요.\n`
   );
 }
 /**

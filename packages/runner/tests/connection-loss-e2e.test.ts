@@ -11,7 +11,7 @@ import type { TestSuiteSpec } from "../src/spec/types.js";
  * 가짜 client 로 하는 단위 테스트는 "코드가 `PROCESS_EXITED` 면 멈춘다" 까지만 증명한다.
  * **실제로 그 코드가 오는지**는 core 의 진단 갱신과 SDK 의 거절이 어떤 순서로 오느냐에
  * 달려 있고, 그것은 프로세스를 진짜 죽여 봐야 안다. 연결 상실 판정을 세 코드로 넓힌 근거가
- * 이 순서 문제다(ADR-0071).
+ * 이 순서 문제다(ADR-0073).
  */
 const dyingServer = fileURLToPath(new URL("./fixtures/dies-midway.mjs", import.meta.url));
 

@@ -659,7 +659,7 @@ export interface RunnerReport {
   stopReason?:
     | { type: "timeout"; caseId: string }
     | { type: "abortSignal"; caseId?: string }
-    // 서버 쪽 연결이 끝나 남은 케이스를 부를 대상이 없어진 경우 (ADR-0071 · #279).
+    // 서버 쪽 연결이 끝나 남은 케이스를 부를 대상이 없어진 경우 (ADR-0073 · #279).
     // cause 는 processExited · transportFailed · httpSessionLost.
     | ({ type: "connectionLost"; caseId: string } & ConnectionLoss);
   cases: TestCaseResult[];

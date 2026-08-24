@@ -353,6 +353,23 @@ function optionValue(argv: readonly string[], index: number, option: string): [s
   return [value, index + 1];
 }
 
+/**
+ * `--out` 에서 스위트 id·name 을 유도한다. `contract.suite.json` → `contract`(#242).
+ * 명시한 값이 있으면 그쪽이 이긴다. 뽑을 이름이 없으면 `undefined` 를 주고 호출 측이 요구한다.
+ *
+ * **파일명이 승인 지문에 들어간다.** `suiteFingerprint` 가 `approval` 만 빼고 전부 해시하므로
+ * (`packages/runner/src/fingerprint.ts`) 출력 파일명을 바꿔 다시 생성하면 지문이 달라져
+ * 재승인이 뜬다. 그 사실을 `--out` 도움말이 말한다. ADR-0073.
+ */
+const deriveSuiteName = (out: string): string | undefined => {
+  const base = basename(out);
+  const withoutJson = base.endsWith(".json") ? base.slice(0, -".json".length) : base;
+  const derived = withoutJson.endsWith(".suite")
+    ? withoutJson.slice(0, -".suite".length)
+    : withoutJson;
+  return derived === "" ? undefined : derived;
+};
+
 export function parseGenerateCommand(argv: readonly string[]): GenerateCommandInput {
   const values = new Map<string, string>();
   const args: string[] = [];
@@ -362,6 +379,29 @@ export function parseGenerateCommand(argv: readonly string[]): GenerateCommandIn
   for (let index = 0; index < argv.length; index++) {
     const item = argv[index];
     if (item === undefined) continue;
+    /**
+     * `--` 뒤는 전부 서버를 띄울 명령이다. npm · cargo · docker 가 쓰는 관례다(#242).
+     * 첫 토큰이 실행 파일, 나머지가 그 인자다. **뒤에 오는 것을 해석하지 않으므로**
+     * `--arg` 가 값 검사에 두던 특수분기가 이 경로에는 필요 없다.
+     */
+    if (item === "--") {
+      if (values.has("--command"))
+        throw new UsageError(
+          "`--command` 와 `--` 를 함께 쓸 수 없습니다.\n" +
+            "→ 둘 다 서버를 띄울 명령을 정하므로 대상이 둘이 됩니다.\n" +
+            "→ `--` 뒤에는 실행 파일과 인자를 그대로 적습니다.",
+        );
+      const rest = argv.slice(index + 1);
+      const executable = rest[0];
+      if (executable === undefined || executable === "")
+        throw new UsageError(
+          "`--` 뒤에 실행할 명령이 없습니다.\n" +
+            "→ `-- <executable> [args...]` 처럼 첫 토큰에 실행 파일을 적으세요.",
+        );
+      values.set("--command", executable);
+      args.push(...rest.slice(1));
+      break;
+    }
     const option = item.includes("=") ? item.slice(0, item.indexOf("=")) : item;
     if (!option.startsWith("--"))
       throw new UsageError(`추가 위치 인자 '${item}'는 허용되지 않습니다.`);
@@ -391,8 +431,18 @@ export function parseGenerateCommand(argv: readonly string[]): GenerateCommandIn
     if (values.has(option)) throw new UsageError(`\`${option}\`는 한 번만 사용할 수 있습니다.`);
     values.set(option, value);
   }
-  for (const option of ["--suite-id", "--name", "--out"] as const)
-    if (values.get(option) === undefined) throw new UsageError(`\`${option}\` 옵션이 필요합니다.`);
+  const out = values.get("--out");
+  if (out === undefined) throw new UsageError("`--out` 옵션이 필요합니다.");
+  const derived = deriveSuiteName(out);
+  for (const option of ["--suite-id", "--name"] as const) {
+    if (values.get(option) !== undefined) continue;
+    if (derived === undefined)
+      throw new UsageError(
+        `\`${option}\` 옵션이 필요합니다.\n` +
+          "→ `--out` 파일명에서 이름을 뽑을 수 없어 직접 지정해야 합니다.",
+      );
+    values.set(option, derived);
+  }
   // transport 확정. 규칙과 문장은 `test` 와 같아야 한다 — 같은 사람이 두 커맨드를 잇달아
   // 쓰는데 한쪽만 다르게 거절하면 그 차이를 기능으로 읽는다(#137).
   const command = values.get("--command");

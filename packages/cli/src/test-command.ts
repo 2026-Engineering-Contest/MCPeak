@@ -292,7 +292,35 @@ export function parseTestCommand(argv: readonly string[]): TestCommandInput {
   const headerEnv = createHeaderEnvCollector();
   for (let index = 1; index < argv.length; index += 1) {
     const token = argv[index] ?? "";
+    /**
+     * `--` 뒤는 전부 서버를 띄울 명령이다. npm · cargo · docker 가 쓰는 관례라 설명이
+     * 필요 없고, 무엇보다 **뒤에 오는 것을 우리가 해석하지 않는다** — `--arg --port` 처럼
+     * 옵션처럼 생긴 값에 특수분기를 두지 않아도 된다(#242).
+     *
+     * 첫 토큰이 실행 파일, 나머지가 그 인자다. `--command` 와 함께 쓸 수 없다 — 대상이
+     * 둘이 되면 어느 쪽을 띄울지 화면이 말할 수 없다.
+     */
+    if (token === "--") {
+      if (command !== undefined)
+        fail(
+          "`--command` 와 `--` 를 함께 쓸 수 없습니다.\n" +
+            "→ 둘 다 서버를 띄울 명령을 정하므로 대상이 둘이 됩니다.\n" +
+            "→ `--` 뒤에는 실행 파일과 인자를 그대로 적습니다.",
+        );
+      const rest = argv.slice(index + 1);
+      const executable = rest[0];
+      if (executable === undefined || executable === "")
+        fail(
+          "`--` 뒤에 실행할 명령이 없습니다.\n" +
+            "→ `-- <executable> [args...]` 처럼 첫 토큰에 실행 파일을 적으세요.",
+        );
+      command = executable;
+      args.push(...rest.slice(1));
+      index = argv.length;
+      continue;
+    }
     if (token === "--command" || token.startsWith("--command=")) {
+      // `--` 가 먼저 왔으면 argv 를 끝냈으므로 여기 올 수 없다. 순수 중복만 남는다.
       if (command !== undefined) fail("`--command`는 한 번만 사용할 수 있습니다.");
       let value: string;
       if (token === "--command") {

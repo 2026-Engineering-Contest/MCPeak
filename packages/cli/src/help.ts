@@ -17,13 +17,17 @@ export const REMOTE_TARGET_OPTIONS = `  --url <URL>           이미 떠 있는 
                           mcpeak … --header-env Authorization=MCP_TOKEN`;
 
 export const TEST_USAGE =
-  "사용법: mcpeak test <suite.json> (--command <executable> [--arg <value> ...] | --url <URL> [--header-env <헤더이름>=<환경변수이름> ...]) [--determinism] [--reset-cmd <command>] [--json] [--junit <path>] [--repair-bundle <path>] [--stderr-lines <N>] [--session <path> | --record-session <path>]";
+  "사용법: mcpeak test <suite.json> (-- <executable> [args...] | --command <executable> [--arg <value> ...] | --url <URL> [--header-env <헤더이름>=<환경변수이름> ...]) [--determinism] [--reset-cmd <command>] [--json] [--junit <path>] [--repair-bundle <path>] [--stderr-lines <N>] [--session <path> | --record-session <path>]";
 
 /**
  * 시험 실행 옵션 설명. `--determinism` 은 툴을 2회 호출하므로 부작용이 있는 서버에서 모르고
  * 쓰면 사고가 난다. 그 경고가 사용법 한 줄에는 들어가지 않는다.
  */
 const TEST_OPTIONS = `옵션:
+  -- <executable> [args...]
+                        \`--\` 뒤는 전부 서버를 띄울 명령입니다. 첫 토큰이 실행 파일,
+                        나머지가 그 인자입니다. \`--command\`/\`--arg\` 와 같은 일을 하며
+                        함께 쓸 수 없습니다
   --determinism         스위트를 2회 실행해 결과가 같은지 확인합니다. 툴을 2회
                         호출하므로 부작용이 있는 서버에서는 샌드박스에서 쓰세요.
                         --reset-cmd 와 함께 쓰면 결정론성 확인이 되고, 없으면
@@ -56,13 +60,23 @@ feature\` 가 stderr 에 한 줄 찍힙니다(실측: Node 22.18.0 에서 나오
 SQLite 파일이라 영향받지 않습니다.**`;
 
 export const GENERATE_USAGE =
-  "사용법: mcpeak generate --suite-id <id> --name <name> --out <suite.json> (--command <executable> [--arg <value> ...] | --url <URL> [--header-env <헤더이름>=<환경변수이름> ...]) [--baseline-only] [--provider <codex|claude>] [--model <model>] [--no-dry-run] [--reset-cmd <command>] [--no-repair] [--force]";
+  "사용법: mcpeak generate --out <suite.json> (-- <executable> [args...] | --command <executable> [--arg <value> ...] | --url <URL> [--header-env <헤더이름>=<환경변수이름> ...]) [--suite-id <id>] [--name <name>] [--baseline-only] [--provider <codex|claude>] [--model <model>] [--no-dry-run] [--reset-cmd <command>] [--no-repair] [--force]";
 
 /**
  * 시험 실행 옵션 설명. 사용법 한 줄로는 `--reset-cmd` 가 셸을 거치지 않는다는 제약을 알 수
  * 없다. 모르고 쓰면 사고가 나는 값이다.
  */
 const GENERATE_DRY_RUN_OPTIONS = `옵션:
+  -- <executable> [args...]
+                        \`--\` 뒤는 전부 서버를 띄울 명령입니다. 첫 토큰이 실행 파일,
+                        나머지가 그 인자입니다. \`--command\`/\`--arg\` 와 같은 일을 하며
+                        함께 쓸 수 없습니다
+  --suite-id <id>       생략하면 \`--out\` 파일명에서 뽑습니다 (contract.suite.json → contract)
+  --name <name>         생략하면 \`--suite-id\` 와 같은 방식으로 뽑습니다
+  --out <suite.json>    저장 경로입니다. **파일명이 승인 지문에 들어갑니다** — id·name 을
+                        생략해 파일명에서 뽑았다면, 파일명을 바꿔 다시 생성할 때 지문이
+                        달라져 재승인이 뜹니다. 고정하려면 --suite-id 와 --name 을
+                        직접 지정하세요
   --no-dry-run          승인 전 시험 실행을 건너뜁니다. 케이스가 실제 서버에서 확인되지
                         않은 채 저장됩니다
   --reset-cmd <command> 시험 실행 전에 이 명령을 한 번 실행합니다. 셸을 거치지 않으므로

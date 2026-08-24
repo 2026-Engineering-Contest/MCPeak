@@ -3253,6 +3253,81 @@ describe("generate 옵션 파싱", () => {
     expect(() => parseGenerateCommand([...base, "--force=yes"])).toThrow();
   });
 
+  /**
+   * #242. `--` 뒤는 전부 서버 명령이다. **해석하지 않는 것**이 핵심이라 옵션처럼 생긴 값이
+   * 와도 우리 옵션으로 읽히지 않는다.
+   */
+  it("-- 뒤의 첫 토큰이 실행 파일, 나머지가 인자다", () => {
+    const parsed = parseGenerateCommand([
+      "--out",
+      "c.suite.json",
+      "--",
+      "mcpeak-mock",
+      "w.mock.json",
+      "--port",
+      "0",
+    ]);
+    expect(parsed.target).toEqual({
+      transport: "stdio",
+      command: "mcpeak-mock",
+      args: ["w.mock.json", "--port", "0"],
+    });
+  });
+
+  it("-- 뒤의 옵션처럼 생긴 값을 우리 옵션으로 읽지 않는다", () => {
+    const parsed = parseGenerateCommand(["--out", "c.suite.json", "--", "node", "--baseline-only"]);
+    expect(parsed.baselineOnly).toBe(false);
+    expect(parsed.target).toEqual({
+      transport: "stdio",
+      command: "node",
+      args: ["--baseline-only"],
+    });
+  });
+
+  it("--command 와 -- 를 함께 쓰면 사용 오류다", () => {
+    expect(() =>
+      parseGenerateCommand(["--out", "c.suite.json", "--command", "node", "--", "other"]),
+    ).toThrow(/함께 쓸 수 없습니다/);
+  });
+
+  it("-- 뒤가 비면 사용 오류다", () => {
+    expect(() => parseGenerateCommand(["--out", "c.suite.json", "--"])).toThrow(
+      /실행할 명령이 없습니다/,
+    );
+  });
+
+  /** #242 제안 2. 필수 플래그 넷이 하나로 준다. */
+  it("--suite-id·--name 을 생략하면 --out 파일명에서 뽑는다", () => {
+    const parsed = parseGenerateCommand(["--out", "a/b/contract.suite.json", "--", "node"]);
+    expect(parsed.suiteId).toBe("contract");
+    expect(parsed.name).toBe("contract");
+  });
+
+  it(".suite 없이 .json 만 있어도 뽑는다", () => {
+    const parsed = parseGenerateCommand(["--out", "weather.json", "--", "node"]);
+    expect(parsed.suiteId).toBe("weather");
+  });
+
+  it("명시한 값이 유도값을 이긴다", () => {
+    const parsed = parseGenerateCommand([
+      "--out",
+      "contract.suite.json",
+      "--suite-id",
+      "custom",
+      "--",
+      "node",
+    ]);
+    expect(parsed.suiteId).toBe("custom");
+    expect(parsed.name).toBe("contract");
+  });
+
+  /** 뽑을 이름이 없으면 조용히 빈 id 를 만들지 않고 요구한다. */
+  it("파일명에서 이름을 뽑을 수 없으면 직접 지정하라고 한다", () => {
+    expect(() => parseGenerateCommand(["--out", ".suite.json", "--", "node"])).toThrow(
+      /직접 지정해야 합니다/,
+    );
+  });
+
   it("--force 를 주면 force 가 켜진다", () => {
     expect(parseGenerateCommand([...base, "--force"]).force).toBe(true);
   });

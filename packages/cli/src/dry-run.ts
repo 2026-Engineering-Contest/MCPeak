@@ -1,11 +1,12 @@
 import type { McpClient } from "@mcpeak/core";
-import type { RunnerReport, TestSuiteSpec } from "@mcpeak/runner";
+import type { ConnectionLostCause, RunnerReport, TestSuiteSpec } from "@mcpeak/runner";
 import {
   type RejectionBasis,
   RunnerPayloadLimitError,
   renderReport,
   runSuite,
 } from "@mcpeak/runner";
+import { escapeTerminalText } from "./repair-render.js";
 
 /**
  * 승인 직전에 후보 명세를 실제 서버에 한 번 돌린다. 화면에 아무것도 쓰지 않고 결과만 돌려준다.
@@ -37,7 +38,8 @@ export interface DryRunCaseOutcome {
 /**
  * 시험 실행이 끝까지 못 간 사유.
  *
- * - `connectionLost`: 호출이 오류로 돌아왔다. 그 지점부터 남은 케이스는 믿을 수 없다.
+ * - `connectionLost`: 연결이 끝나 남은 케이스를 부를 대상이 없어졌다(#279 · ADR-0073).
+ *   러너가 `stopReason` 으로 알려 준 경우와, `runSuite` 가 통째로 던진 경우가 여기 온다.
  * - `payloadLimit`: 케이스나 보고서가 상한을 넘겼다.
  * - `stopped`: 러너가 중간에 멈췄다(제한 시간 초과·중단 신호). 남은 케이스는 실행되지 않았다.
  */
@@ -97,38 +99,65 @@ const caseBlocks = (report: RunnerReport): readonly string[] => {
 };
 
 /**
- * 연결이 끊긴 케이스의 위치를 찾는다. `runSuite` 는 호출이 던져도 멈추지 않고 다음 케이스로
- * 가므로, 서버가 죽으면 남은 케이스가 전부 같은 오류로 채워진다. 첫 번째만 사실이고 나머지는
- * 그 결과다. 그래서 첫 지점에서 자른다.
+ * 연결 상실 사유별 문장. `runner` 의 `reporter.ts`·`junit.ts` 가 쓰는 어휘를 그대로 따른다.
+ * 같은 죽음을 `test` 에서 볼 때와 `generate` 에서 볼 때 다른 낱말로 부르면 두 번 배우게 된다.
  */
-const firstConnectionLoss = (
-  report: RunnerReport,
-): { readonly index: number; readonly message: string } | undefined => {
-  for (const [index, result] of report.cases.entries()) {
-    const diagnostic = result.operation.diagnostic;
-    if (result.operation.status === "failed" && diagnostic?.code === "OPERATION_FAILED") {
-      return { index, message: diagnostic.message };
-    }
-  }
-  return undefined;
+const CONNECTION_LOST_TEXT: Readonly<Record<ConnectionLostCause, string>> = {
+  processExited: "서버 프로세스가 종료됐습니다",
+  transportFailed: "서버와의 연결이 끊겼습니다",
+  httpSessionLost: "서버가 세션을 잃었습니다",
 };
 
 /**
- * 러너가 케이스를 다 돌기 전에 멈춘 경우를 찾는다. `stopReason` 이 그 사실을 말한다.
+ * 종료 코드·시그널 괄호. 둘 다 관측하지 못했으면 괄호를 만들지 않는다. `(없음)` 은 관측하지
+ * 못한 것을 관측했다고 말하는 것이다. reporter.ts 의 같은 이름 함수와 같은 규칙이다.
+ */
+const exitParens = (stop: { readonly exitCode?: number; readonly signal?: string }): string => {
+  const parts: string[] = [];
+  if (stop.exitCode !== undefined) parts.push(`종료 코드 ${stop.exitCode}`);
+  if (stop.signal !== undefined) parts.push(`시그널 ${escapeTerminalText(stop.signal)}`);
+  return parts.length === 0 ? "" : ` (${parts.join(", ")})`;
+};
+
+/**
+ * 러너가 케이스를 다 돌기 전에 멈춘 경우의 중단 사유. `stopReason` 이 그 사실을 말한다.
  *
  * 이것을 읽지 않으면 실행되지도 않은 `notRun` 케이스가 실패 목록에 섞여 분류 화면으로 간다.
  * 사용자가 그것을 `서버 결함` 으로 고르면 서버에 보낸 적도 없는 호출이 회귀 테스트가 된다.
+ *
+ * **연결이 끝났는지를 여기서 짐작하지 않는다.** 러너가 core 의 오류 코드로 판정해 넘겨준
+ * `connectionLost` 만 연결 상실이다(#279 · ADR-0073). 예전에는 이 파일이 진단 코드가
+ * `OPERATION_FAILED` 인 첫 케이스를 연결 끊김으로 읽었는데, 그 코드는 서버가 살아서 낸 평범한
+ * 툴 오류에도 붙는다. 그래서 툴 하나가 오류를 내면 멀쩡히 돌아간 뒤 케이스의 판정까지 버리고
+ * "연결이 끊겼습니다" 라고 말했다.
  */
-const stopDetail = (report: RunnerReport): string | undefined => {
+const abortedFromStop = (report: RunnerReport): DryRunResult["aborted"] => {
   const stop = report.stopReason;
   if (stop === undefined) return undefined;
-  const name = report.cases.find((result) => result.spec.id === stop.caseId)?.spec.name;
+  // 화면에 쓰는 것은 이름이다. 이름을 못 찾으면 식별자라도 말한다 — 자리를 비우면 사용자가
+  // 어느 케이스에서 멈췄는지 알 데가 없다.
+  const nameOf = (caseId: string): string =>
+    escapeTerminalText(
+      report.cases.find((result) => result.spec.id === caseId)?.spec.name ?? caseId,
+    );
   const suffix = "남은 케이스는 실행되지 않았습니다.";
+  if (stop.type === "connectionLost")
+    return {
+      reason: "connectionLost",
+      detail: `케이스 '${nameOf(stop.caseId)}' 에서 ${CONNECTION_LOST_TEXT[stop.cause]}${exitParens(stop)}. ${suffix}`,
+    };
   if (stop.type === "timeout")
-    return `케이스 '${name ?? stop.caseId}' 가 제한 시간 안에 끝나지 않았습니다. ${suffix}`;
-  return name === undefined
-    ? `실행이 중단됐습니다. ${suffix}`
-    : `케이스 '${name}' 에서 실행이 중단됐습니다. ${suffix}`;
+    return {
+      reason: "stopped",
+      detail: `케이스 '${nameOf(stop.caseId)}' 가 제한 시간 안에 끝나지 않았습니다. ${suffix}`,
+    };
+  return {
+    reason: "stopped",
+    detail:
+      stop.caseId === undefined
+        ? `실행이 중단됐습니다. ${suffix}`
+        : `케이스 '${nameOf(stop.caseId)}' 에서 실행이 중단됐습니다. ${suffix}`,
+  };
 };
 
 const toResult = (report: RunnerReport): DryRunResult => {
@@ -142,20 +171,16 @@ const toResult = (report: RunnerReport): DryRunResult => {
     // 값이 없으면 키를 만들지 않는다. runner 가 같은 규칙으로 넘겨준 것을 그대로 옮긴다.
     ...(result.rejectionBody === undefined ? {} : { rejectionBody: result.rejectionBody }),
   }));
-  const lost = firstConnectionLoss(report);
-  if (lost !== undefined)
-    return {
-      // 끊긴 케이스까지는 남긴다. 그 길이가 곧 "몇 번째에서 끊겼는가" 이고 호출 측이 화면에 쓴다.
-      outcomes: outcomes.slice(0, lost.index + 1),
-      aborted: { reason: "connectionLost", detail: lost.message },
-    };
-  const stopped = stopDetail(report);
-  if (stopped !== undefined)
+  const aborted = abortedFromStop(report);
+  if (aborted !== undefined)
     return {
       // 실행된 케이스까지만 남긴다. `notRun` 은 러너가 뒤에 채워 넣은 자리표시자이고 판정이
       // 아니다. 패딩은 언제나 뒤쪽에만 붙으므로 첫 `notRun` 앞에서 자르면 된다.
+      //
+      // 연결이 끊긴 케이스 자신은 남는다. 그 호출은 실제로 나갔고 실패는 사실이다. 그리고 그
+      // 길이가 곧 "몇 번째에서 끊겼는가" 이고 호출 측이 화면에 쓴다.
       outcomes: outcomes.filter((outcome) => outcome.status !== "notRun"),
-      aborted: { reason: "stopped", detail: stopped },
+      aborted,
     };
   return { outcomes };
 };

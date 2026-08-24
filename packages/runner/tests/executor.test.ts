@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   MAX_VALUE_STRING_CHARS,
   type RunnerEvent,
+  renderReport,
   runSuite,
   SuiteValidationError,
   type TestSuiteSpec,
@@ -1019,6 +1020,68 @@ describe("runSuite와 연결 상실", () => {
 
     expect(report.stopReason).toBeUndefined();
     expect(records).toHaveLength(3);
+  });
+
+  it("오류가 들고 있는 해결 안내를 그대로 쓴다", async () => {
+    // core 의 McpClientError 는 코드별 안내를 이미 갖고 있다(`errors.ts` 의 resolveHint).
+    // 러너가 자기 문장으로 덮으면 그 구체성이 버려지고 같은 상황의 문장이 두 곳으로 갈린다.
+    const error = Object.assign(coreError("PROCESS_EXITED", stdio(42, null)) as object, {
+      hint: "서버 stderr에 나온 오류를 수정한 뒤 다시 실행하세요.",
+    });
+
+    const report = await runSuite({ client: throwing([], error), suite: dying }).report;
+
+    expect(report.cases[0]?.operation.diagnostic?.hint).toBe(
+      "서버 stderr에 나온 오류를 수정한 뒤 다시 실행하세요.",
+    );
+  });
+
+  it("안내가 없는 오류는 기본 문장을 쓴다", async () => {
+    // 목이나 재생 client 는 안내를 안 붙인다. 그때도 이미 출력된 것을 확인하라고 하지 않는다.
+    const report = await runSuite({
+      client: throwing([], new Error("nope")),
+      suite: dying,
+    }).report;
+
+    expect(report.cases[0]?.operation.diagnostic?.hint).toBe(
+      "요청한 tool과 서버 기능 및 진단을 확인하세요.",
+    );
+  });
+
+  it("연결이 끊긴 케이스는 거절 근거 판정 대상이 아니다", async () => {
+    // 거절을 기대한 케이스가 연결 상실로 죽으면 읽을 응답 본문이 아예 없다. 그것을
+    // "확인하지 못했습니다" 로 세면 사용자를 없는 응답을 보러 승인 화면으로 보낸다(#279 곁다리).
+    const rejecting: TestSuiteSpec = {
+      ...dying,
+      cases: [call("add-missing-a", true), call("add-type-a", true)],
+    };
+
+    const report = await runSuite({
+      client: throwing([], coreError("PROCESS_EXITED", stdio(42, null))),
+      suite: rejecting,
+    }).report;
+
+    expect(report.cases[0]?.status).toBe("failed");
+    expect(report.cases.map((item) => item.rejectionBasis)).toEqual([
+      "notApplicable",
+      "notApplicable",
+    ]);
+    expect(report.summary.rejectionUnverified).toBe(0);
+    expect(renderReport(report)).not.toContain("거절 근거를 확인하지 못했습니다");
+  });
+
+  it("서버가 살아 있는 작업 실패의 거절 근거는 그대로 확인한다", async () => {
+    // 위 규칙이 넓어지면 안 된다. 서버가 살아서 낸 실패는 응답이 있을 수 있고, 그때 크래시가
+    // 초록으로 숨는 것이 #89 가 막으려던 것이다.
+    const rejecting: TestSuiteSpec = { ...dying, cases: [call("add-missing-a", true)] };
+
+    const report = await runSuite({
+      client: throwing([], coreError("OPERATION_FAILED")),
+      suite: rejecting,
+    }).report;
+
+    expect(report.cases[0]?.rejectionBasis).toBe("unverified");
+    expect(report.summary.rejectionUnverified).toBe(1);
   });
 
   it("타임아웃이 연결 상실보다 먼저다", async () => {

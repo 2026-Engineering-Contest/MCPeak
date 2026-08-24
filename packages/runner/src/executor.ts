@@ -146,6 +146,34 @@ const causeNotes = (error: unknown, redaction?: RunnerRedactionOptions): string[
   }
   return notes;
 };
+/**
+ * 오류가 이미 들고 있는 안내를 읽는다. 없으면 `undefined`.
+ *
+ * core 의 `McpClientError` 는 오류 코드별 안내를 갖고 있고(`errors.ts` 의 `resolveHint`),
+ * 그것이 여기서 만들 수 있는 어떤 문장보다 구체적이다 — 서버 stderr 가 비었을 때 종료 코드를
+ * 짚는 변형까지 거기 있다(#222). 러너가 자기 한 문장으로 덮으면 그 구체성이 버려지고, 같은
+ * 상황의 문장을 두 곳에서 관리하게 된다.
+ *
+ * `instanceof` 를 쓰지 않는 이유는 connection-loss.ts 와 같다 — 러너가 받는 client 는 core 가
+ * 만든 것일 수도, record 의 재생 client 나 목일 수도 있다. 값은 관찰한 문자열이므로 다른
+ * 서버 출력과 같은 상한·치환을 거친다.
+ */
+const carriedHint = (error: unknown, redaction?: RunnerRedactionOptions): string | undefined => {
+  if (typeof error !== "object" || error === null) return undefined;
+  const { hint } = error as { hint?: unknown };
+  if (typeof hint !== "string" || hint.trim() === "") return undefined;
+  return clampObservedText(hint, redaction);
+};
+
+/**
+ * 안내를 들고 있지 않은 오류의 기본 문장. core 가 `OPERATION_FAILED` 에 쓰는 것과 같은 문장이다.
+ *
+ * 예전에는 여기가 "MCP 서버 프로세스와 연결 상태를 확인하세요." 였다. 서버가 죽었을 때는 화면
+ * 아래 프로세스 진단 블록(종료 코드·stderr)이 이미 그것을 보여주므로 이미 출력된 것을 확인하라는
+ * 순환이었고(#222 · #279), 서버가 살아서 낸 툴 오류에는 애초에 맞지 않는 안내였다.
+ */
+const DEFAULT_OPERATION_HINT = "요청한 tool과 서버 기능 및 진단을 확인하세요.";
+
 const failed = (
   operation: TestCaseSpec["operation"],
   error: unknown,
@@ -159,7 +187,7 @@ const failed = (
         ? "MCP 툴 목록 조회 중 오류가 발생했습니다."
         : `툴 '${operation.tool}' 호출 중 오류가 발생했습니다.`,
     actual: sanitizeJsonValue(normalizeThrownValue(error), redaction),
-    hint: "MCP 서버 프로세스와 연결 상태를 확인하세요.",
+    hint: carriedHint(error, redaction) ?? DEFAULT_OPERATION_HINT,
     // 키는 값이 있을 때만 만든다. undefined 로 넣으면 기존 보고서의 JSON 바이트가 흔들린다.
     ...(notes.length > 0 ? { notes } : {}),
   };
@@ -402,11 +430,17 @@ export function runSuite(options: RunSuiteOptions): RunnerExecution {
       // 파싱된 본문에는 대조할 것이 없다(관찰 80건이 전부 text 한 블록이다).
       const bodyText =
         extraction?.ok === true && typeof extraction.body === "string" ? extraction.body : null;
-      const rejectionBasis = classifyRejectionBasis({
-        expectsRejection,
-        toolName: spec.operation.type === "callTool" ? spec.operation.tool : null,
-        bodyText,
-      });
+      // 연결이 끝나 실패한 케이스는 판정 대상이 아니다. 호출이 거절로 끝나 읽을 응답 본문이
+      // 아예 없는데 "확인하지 못했습니다" 라고 하면, 사용자를 없는 응답을 보러 승인 화면으로
+      // 보낸다. 안 돈 케이스(notRun)를 `notApplicable` 로 두는 것과 같은 이유다(#279).
+      const rejectionBasis: RejectionBasis =
+        loss === undefined
+          ? classifyRejectionBasis({
+              expectsRejection,
+              toolName: spec.operation.type === "callTool" ? spec.operation.tool : null,
+              bodyText,
+            })
+          : "notApplicable";
       // **표시용 본문은 대조용과 다른 목적이라 판정이 다르다.** JSON 오류 본문은 사람이 거절과
       // 크래시를 가늠하기에 오히려 좋은 재료다. 대조에서 뺐다고 표시에서까지 빼면 서버가 분명히
       // 보낸 본문이 승인 화면에 "(본문 없음)" 으로 찍혀 사용자에게 거짓을 말하게 된다.

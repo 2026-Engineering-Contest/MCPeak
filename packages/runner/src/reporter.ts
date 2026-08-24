@@ -1,4 +1,5 @@
 import type { AssertionResult } from "./assertions.js";
+import type { ConnectionLostCause } from "./connection-loss.js";
 import type { RunnerDiagnostic } from "./diagnostics.js";
 import type { RunnerReport, RunnerSummary, TestCaseResult } from "./executor.js";
 
@@ -61,17 +62,45 @@ const pad = (value: string, target: number): string =>
 const sgr = (code: string, text: string, color: boolean): string =>
   color ? `\u001b[${code}m${text}\u001b[0m` : text;
 
-// 계획서 §4-5의 코드와 같다. 인자 이름만 escape 에서 escapeText 로 바꿨다.
-// biome 의 noShadowRestrictedNames 가 전역 escape 를 가리는 이름을 거부하기 때문이다.
+/** 연결 상실 사유별 중단 문장의 가운데 토막. 사유가 곧 사람이 읽는 원인이다. */
+const CONNECTION_LOST_TEXT: Readonly<Record<ConnectionLostCause, string>> = {
+  processExited: "서버 프로세스가 종료되어",
+  transportFailed: "서버와의 연결이 끊겨",
+  httpSessionLost: "서버가 세션을 잃어",
+};
+
+/**
+ * 종료 코드·시그널 괄호. 둘 다 관측하지 못했으면 괄호를 만들지 않는다 — `(없음)` 은
+ * 관측하지 못한 것을 관측했다고 말하는 것이다.
+ */
+const connectionLostDetail = (
+  stopReason: { exitCode?: number; signal?: string },
+  escapeText: (value: string) => string,
+): string => {
+  const parts: string[] = [];
+  if (stopReason.exitCode !== undefined) parts.push(`종료 코드 ${stopReason.exitCode}`);
+  if (stopReason.signal !== undefined) parts.push(`시그널 ${escapeText(stopReason.signal)}`);
+  return parts.length === 0 ? "" : ` (${parts.join(", ")})`;
+};
+
+// 계획서 §4-5의 코드에서 출발했다. 인자 이름을 escape 에서 escapeText 로 바꾼 것은 biome 의
+// noShadowRestrictedNames 가 전역 escape 를 가리는 이름을 거부하기 때문이고, 삼항을 푼 것은
+// connectionLost 가 들어오면서 사유가 셋이 됐기 때문이다(#279).
+//
+// 연결 상실 줄은 케이스 이름을 말하지 않는다. 바로 위 케이스 목록에 `✗` 로 이미 있고,
+// 이 줄이 답해야 하는 것은 "왜 나머지가 안 돌았나" 다. 케이스 식별자는 보고서 JSON 에 남는다.
 const stopReasonLine = (
   stopReason: NonNullable<RunnerReport["stopReason"]>,
   escapeText: (value: string) => string,
-): string =>
-  stopReason.type === "timeout"
-    ? `중단: 케이스 '${escapeText(stopReason.caseId)}' 타임아웃으로 실행을 멈췄습니다.`
-    : stopReason.caseId === undefined
-      ? "중단: 외부 요청으로 실행을 멈췄습니다."
-      : `중단: 외부 요청으로 실행을 멈췄습니다. 마지막 케이스 '${escapeText(stopReason.caseId)}'`;
+): string => {
+  if (stopReason.type === "timeout")
+    return `중단: 케이스 '${escapeText(stopReason.caseId)}' 타임아웃으로 실행을 멈췄습니다.`;
+  if (stopReason.type === "connectionLost")
+    return `중단: ${CONNECTION_LOST_TEXT[stopReason.cause]} 실행을 멈췄습니다.${connectionLostDetail(stopReason, escapeText)}`;
+  return stopReason.caseId === undefined
+    ? "중단: 외부 요청으로 실행을 멈췄습니다."
+    : `중단: 외부 요청으로 실행을 멈췄습니다. 마지막 케이스 '${escapeText(stopReason.caseId)}'`;
+};
 
 /**
  * 그려야 하는 단언인지 판정한다. 설계 문서 §5.4와 구현 계획 §4-7.

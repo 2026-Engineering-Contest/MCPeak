@@ -501,6 +501,77 @@ describe("renderReport", () => {
     expect(renderReport(report)).not.toContain("중단:");
   });
 
+  it("서버 프로세스가 죽으면 종료 코드까지 한 줄로 말한다", () => {
+    const report = makeReport([testCase({ id: "add-success", name: "add", status: "failed" })], {
+      stopReason: {
+        type: "connectionLost",
+        caseId: "add-success",
+        cause: "processExited",
+        exitCode: 42,
+      },
+    });
+
+    expect(renderReport(report)).toContain(
+      "중단: 서버 프로세스가 종료되어 실행을 멈췄습니다. (종료 코드 42)",
+    );
+  });
+
+  it("시그널로 죽었으면 시그널을 말한다", () => {
+    const report = makeReport([testCase({ id: "add-success", name: "add", status: "failed" })], {
+      stopReason: {
+        type: "connectionLost",
+        caseId: "add-success",
+        cause: "processExited",
+        signal: "SIGKILL",
+      },
+    });
+
+    expect(renderReport(report)).toContain(
+      "중단: 서버 프로세스가 종료되어 실행을 멈췄습니다. (시그널 SIGKILL)",
+    );
+  });
+
+  it("종료 코드도 시그널도 관측 못 했으면 괄호를 만들지 않는다", () => {
+    // `(없음)` 은 관측하지 못한 것을 관측했다고 말하는 것이다.
+    const report = makeReport([testCase({ id: "add-success", name: "add", status: "failed" })], {
+      stopReason: { type: "connectionLost", caseId: "add-success", cause: "processExited" },
+    });
+
+    expect(lineWith(renderReport(report), "중단:")).toBe(
+      "중단: 서버 프로세스가 종료되어 실행을 멈췄습니다.",
+    );
+  });
+
+  it("전송 실패와 세션 상실은 프로세스 종료와 다른 문장을 쓴다", () => {
+    const of = (cause: "transportFailed" | "httpSessionLost"): string =>
+      lineWith(
+        renderReport(
+          makeReport([testCase({ id: "c1", name: "add", status: "failed" })], {
+            stopReason: { type: "connectionLost", caseId: "c1", cause },
+          }),
+        ),
+        "중단:",
+      );
+
+    expect(of("transportFailed")).toBe("중단: 서버와의 연결이 끊겨 실행을 멈췄습니다.");
+    expect(of("httpSessionLost")).toBe("중단: 서버가 세션을 잃어 실행을 멈췄습니다.");
+  });
+
+  it("중단 줄의 시그널도 이스케이프한다", () => {
+    const report = makeReport([testCase({ id: "c1", name: "add", status: "failed" })], {
+      stopReason: {
+        type: "connectionLost",
+        caseId: "c1",
+        cause: "processExited",
+        signal: `SIG${ESC}[2J`,
+      },
+    });
+
+    const output = renderReport(report);
+    expect(output).not.toContain(ESC);
+    expect(output).toContain(`SIG${ESCAPED_ESC}[2J`);
+  });
+
   it("요약에서 0인 항목을 생략한다", () => {
     const report = makeReport([
       testCase({ id: "c1", name: "이름1", status: "passed" }),

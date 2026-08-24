@@ -344,6 +344,25 @@ describe("renderJUnit", () => {
     expect(xml).toContain("c1");
   });
 
+  it("연결 상실은 외부 취소 신호라고 말하지 않는다", () => {
+    const report = buildReport([withStatus(callToolCase("c1", "미실행"), "notRun")], {
+      status: "failed",
+      stopReason: {
+        type: "connectionLost",
+        caseId: "add-success",
+        cause: "processExited",
+        exitCode: 42,
+      },
+    });
+
+    const xml = renderJUnit(report);
+
+    expect(xml).toContain(
+      "<system-out>실행이 중단되었습니다: 케이스 'add-success' 에서 서버 프로세스가 종료되었습니다. (종료 코드 42)</system-out>",
+    );
+    expect(xml).not.toContain("외부 취소 신호");
+  });
+
   it("진단이 없는 실패도 무엇을 하라는 문장을 남긴다", () => {
     const report = buildReport([
       {

@@ -1,3 +1,4 @@
+import type { ConnectionLostCause } from "./connection-loss.js";
 import type { RunnerDiagnostic } from "./diagnostics.js";
 import type { RunnerReport, TestCaseResult } from "./executor.js";
 
@@ -150,9 +151,35 @@ function summaryMessage(diagnostics: RunnerDiagnostic[]): string {
     : first.message;
 }
 
+/**
+ * 연결 상실 사유별 문장. 화면(`reporter.ts`)과 시제가 다르다 — 화면은 "멈췄습니다" 로 이어지는
+ * 한 문장이고 여기는 그 자체로 끝나는 문장이다.
+ */
+const CONNECTION_LOST_TEXT: Readonly<Record<ConnectionLostCause, string>> = {
+  processExited: "서버 프로세스가 종료되었습니다",
+  transportFailed: "서버와의 연결이 끊겼습니다",
+  httpSessionLost: "서버가 세션을 잃었습니다",
+};
+
+function connectionLostDetail(stopReason: { exitCode?: number; signal?: string }): string {
+  const parts: string[] = [];
+  if (stopReason.exitCode !== undefined) parts.push(`종료 코드 ${stopReason.exitCode}`);
+  if (stopReason.signal !== undefined) parts.push(`시그널 ${stopReason.signal}`);
+  return parts.length === 0 ? "" : ` (${parts.join(", ")})`;
+}
+
+/**
+ * 중단 사유 한 줄. 사유가 셋이므로 분기도 셋이다.
+ *
+ * 마지막 `return` 을 취소 전용으로 두고 새 사유를 그리로 흘리면 CI 로그가 서버 사망을
+ * "외부 취소 신호를 받았습니다" 라고 말한다. 사유를 늘릴 때 여기를 같이 늘려야 하는 이유다.
+ */
 function stopReasonText(stopReason: NonNullable<RunnerReport["stopReason"]>): string {
   if (stopReason.type === "timeout") {
     return `실행이 중단되었습니다: 케이스 '${stopReason.caseId}' 가 제한 시간을 넘겼습니다.`;
+  }
+  if (stopReason.type === "connectionLost") {
+    return `실행이 중단되었습니다: 케이스 '${stopReason.caseId}' 에서 ${CONNECTION_LOST_TEXT[stopReason.cause]}.${connectionLostDetail(stopReason)}`;
   }
   return stopReason.caseId === undefined
     ? "실행이 중단되었습니다: 외부 취소 신호(AbortSignal)를 받았습니다."

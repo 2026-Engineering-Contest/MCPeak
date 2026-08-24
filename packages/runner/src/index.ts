@@ -10,6 +10,11 @@ export {
 } from "./body.js";
 export { canonicalJson, deepFreeze, sha256 } from "./canonical.js";
 export {
+  type ConnectionLoss,
+  type ConnectionLostCause,
+  classifyConnectionLoss,
+} from "./connection-loss.js";
+export {
   type ContractAxesResult,
   type ContractAxis,
   type ContractAxisKind,

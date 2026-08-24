@@ -892,3 +892,184 @@ describe("runSuite와 bodyMatchesSchema", () => {
     );
   });
 });
+
+describe("runSuite와 연결 상실", () => {
+  /** core 의 McpClientError 모양만 흉내 낸다. instanceof 에 기대지 않는 것을 함께 증명한다. */
+  const coreError = (code: string, diagnostics?: unknown): unknown =>
+    Object.assign(new Error("MCP error -32000: Connection closed"), {
+      code,
+      phase: "process",
+      ...(diagnostics === undefined ? {} : { diagnostics }),
+    });
+
+  const stdio = (exitCode: number | null, signal: string | null) => ({
+    transport: "stdio",
+    stderr: "치명적: 내부 상태가 깨졌습니다 (일부러 낸 오류)",
+    stderrTruncated: false,
+    exitCode,
+    signal,
+  });
+
+  const call = (id: string, expected: boolean): TestSuiteSpec["cases"][number] => ({
+    id,
+    name: id,
+    operation: { type: "callTool", tool: "add", input: { a: 1, b: 2 } },
+    assertions: [{ type: "isError", expected }],
+  });
+
+  /** 이슈 #279 의 재현 형태를 줄인 것. 첫 tools/call 에서 서버가 죽는다. */
+  const dying: TestSuiteSpec = {
+    schemaVersion: 1,
+    id: "dies",
+    name: "중간에 죽는 서버",
+    defaultTimeoutMs: 2_000,
+    cases: [call("add-success", false), call("add-missing-a", true), call("add-type-a", true)],
+  };
+
+  /** 첫 호출부터 error 를 던지는 client. 부른 횟수를 records 로 센다. */
+  const throwing = (records: unknown[], error: unknown): McpClient => ({
+    listTools: async () => [{ name: "add", inputSchema: {} }],
+    callTool: async (name, args) => {
+      records.push({ name, args });
+      throw error;
+    },
+    close: async () => {
+      records.push({ type: "close" });
+    },
+  });
+
+  it("서버 프로세스가 죽으면 남은 케이스를 호출하지 않는다", async () => {
+    const records: unknown[] = [];
+    const client = throwing(records, coreError("PROCESS_EXITED", stdio(42, null)));
+
+    const report = await runSuite({ client, suite: dying }).report;
+
+    expect(report.stopReason).toEqual({
+      type: "connectionLost",
+      caseId: "add-success",
+      cause: "processExited",
+      exitCode: 42,
+    });
+    expect(records).toHaveLength(1);
+  });
+
+  it("죽은 케이스는 failed 로 남고 나머지는 not run 이다", async () => {
+    // 이슈 #279 가 요구하는 형태. 원인 1건이 실패 1건으로 보이고 나머지는 안 돈 것으로 갈린다.
+    const report = await runSuite({
+      client: throwing([], coreError("PROCESS_EXITED", stdio(42, null))),
+      suite: dying,
+    }).report;
+
+    expect(report.cases.map((item) => item.status)).toEqual(["failed", "notRun", "notRun"]);
+    expect(report.summary).toMatchObject({ total: 3, failed: 1, notRun: 2 });
+    // aborted 는 사용자가 요청한 취소의 뜻이다. 서버가 죽은 것은 실패다.
+    expect(report.status).toBe("failed");
+  });
+
+  it("시그널로 죽으면 종료 코드 대신 시그널을 싣는다", async () => {
+    const report = await runSuite({
+      client: throwing([], coreError("PROCESS_EXITED", stdio(null, "SIGKILL"))),
+      suite: dying,
+    }).report;
+
+    expect(report.stopReason).toEqual({
+      type: "connectionLost",
+      caseId: "add-success",
+      cause: "processExited",
+      signal: "SIGKILL",
+    });
+    expect(Object.keys(report.stopReason ?? {})).not.toContain("exitCode");
+  });
+
+  it("전송 실패와 세션 상실도 멈춘다", async () => {
+    const transport = await runSuite({
+      client: throwing([], coreError("TRANSPORT_FAILED")),
+      suite: dying,
+    }).report;
+    const session = await runSuite({
+      client: throwing([], coreError("HTTP_SESSION_LOST")),
+      suite: dying,
+    }).report;
+
+    expect(transport.stopReason).toMatchObject({ cause: "transportFailed" });
+    expect(session.stopReason).toMatchObject({ cause: "httpSessionLost" });
+    expect(transport.summary.notRun).toBe(2);
+    expect(session.summary.notRun).toBe(2);
+  });
+
+  it("서버가 살아 있는 작업 실패는 멈추지 않는다", async () => {
+    // 여기서 멈추면 툴 하나가 오류를 낼 때마다 나머지 케이스가 통째로 안 돌게 된다.
+    const records: unknown[] = [];
+    const client = throwing(records, coreError("OPERATION_FAILED"));
+
+    const report = await runSuite({ client, suite: dying }).report;
+
+    expect(report.stopReason).toBeUndefined();
+    expect(records).toHaveLength(3);
+    expect(report.summary).toMatchObject({ failed: 3, notRun: 0 });
+  });
+
+  it("코드가 없는 오류는 멈추지 않는다", async () => {
+    const records: unknown[] = [];
+
+    const report = await runSuite({
+      client: throwing(records, new Error("nope")),
+      suite: dying,
+    }).report;
+
+    expect(report.stopReason).toBeUndefined();
+    expect(records).toHaveLength(3);
+  });
+
+  it("타임아웃이 연결 상실보다 먼저다", async () => {
+    vi.useFakeTimers();
+    const client: McpClient = {
+      listTools: async () => [],
+      callTool: () =>
+        new Promise((_, reject) => {
+          setTimeout(() => reject(coreError("PROCESS_EXITED", stdio(42, null))), 5_000);
+        }),
+      close: async () => undefined,
+    };
+
+    const execution = runSuite({ client, suite: dying });
+    await vi.advanceTimersByTimeAsync(2_000);
+
+    await expect(execution.report).resolves.toMatchObject({
+      stopReason: { type: "timeout", caseId: "add-success" },
+    });
+  });
+
+  it("취소가 연결 상실보다 먼저다", async () => {
+    const controller = new AbortController();
+    const client: McpClient = {
+      listTools: async () => [],
+      callTool: () => {
+        controller.abort();
+        return Promise.reject(coreError("PROCESS_EXITED", stdio(42, null)));
+      },
+      close: async () => undefined,
+    };
+
+    const report = await runSuite({ client, suite: dying, signal: controller.signal }).report;
+
+    expect(report.stopReason).toEqual({ type: "abortSignal", caseId: "add-success" });
+    expect(report.status).toBe("aborted");
+  });
+
+  it("안 돈 케이스는 거절 근거 미확인에 실리지 않는다", async () => {
+    // 이슈 #279 의 곁다리. 거절을 기대한 2건이 not run 이 되면서 §5.1 경고에서 빠진다.
+    // 죽은 케이스가 성공을 기대했으므로 0 이다.
+    const report = await runSuite({
+      client: throwing([], coreError("PROCESS_EXITED", stdio(42, null))),
+      suite: dying,
+    }).report;
+
+    expect(report.summary.rejectionUnverified).toBe(0);
+    expect(report.cases.map((item) => item.rejectionBasis)).toEqual([
+      "notApplicable",
+      "notApplicable",
+      "notApplicable",
+    ]);
+  });
+});

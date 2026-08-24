@@ -7,6 +7,7 @@ import {
 } from "./assertions.js";
 import { type BodyExtraction, extractResponseBody } from "./body.js";
 import { expectedIsError } from "./case-expectation.js";
+import { type ConnectionLoss, classifyConnectionLoss } from "./connection-loss.js";
 import {
   clampObservedText,
   normalizeThrownValue,
@@ -74,7 +75,17 @@ export interface RunnerReport {
   schemaVersion: 1;
   suite: { id: string; name: string; defaultTimeoutMs?: number };
   status: "passed" | "failed" | "aborted";
-  stopReason?: { type: "timeout"; caseId: string } | { type: "abortSignal"; caseId?: string };
+  /**
+   * 케이스를 다 돌기 전에 멈춘 사유. 없으면 끝까지 돌았다는 뜻이다.
+   *
+   * `connectionLost` 는 서버 쪽 연결이 끝나 남은 케이스를 부를 대상이 없어진 경우다(#279).
+   * 이때도 `status` 는 `failed` 다 — `aborted` 는 사용자가 요청한 취소의 뜻이고, 종료 코드가
+   * 거기 걸려 있다. 서버가 죽은 것은 취소가 아니라 실패다.
+   */
+  stopReason?:
+    | { type: "timeout"; caseId: string }
+    | { type: "abortSignal"; caseId?: string }
+    | ({ type: "connectionLost"; caseId: string } & ConnectionLoss);
   cases: TestCaseResult[];
   summary: RunnerSummary;
 }
@@ -231,6 +242,15 @@ export function runSuite(options: RunSuiteOptions): RunnerExecution {
         signal?.removeEventListener("abort", abort);
         resolve(result);
       };
+      // 취소 여부를 보기 **전에** 붙인다. 이미 취소된 상태로 들어와 여기서 바로 반환하면
+      // 이미 떠 있는 요청의 거절을 아무도 받지 않아 unhandled rejection 이 된다. 취소는
+      // 곧 client 를 닫는다는 뜻이고, 닫으면 떠 있던 호출이 `Connection closed` 로 거절되므로
+      // 드문 경우가 아니다. `finish` 는 먼저 온 것만 채택하므로 붙이는 순서는 판정을 바꾸지
+      // 않는다 — then 의 콜백은 마이크로태스크라 아래 동기 호출보다 늦다.
+      void promise.then(
+        (value) => finish({ type: "fulfilled", value }),
+        (error) => finish({ type: "rejected", error }),
+      );
       if (signal?.aborted) {
         finish({ type: "cancelled" });
         return;
@@ -240,10 +260,6 @@ export function runSuite(options: RunSuiteOptions): RunnerExecution {
         timeoutMs,
       );
       signal?.addEventListener("abort", abort, { once: true });
-      void promise.then(
-        (value) => finish({ type: "fulfilled", value }),
-        (error) => finish({ type: "rejected", error }),
-      );
     });
   const drainResult = (): Promise<RunnerDrainResult> => {
     if (!pending) return Promise.resolve({ status: "settled" });
@@ -297,6 +313,8 @@ export function runSuite(options: RunSuiteOptions): RunnerExecution {
       emit({ type: "operationStarted", ...fields, operation: observed.operation, timeoutMs });
       let result: OperationValue | undefined;
       let operation: OperationResult;
+      /** 이 케이스의 실패가 연결이 끝난 것이었는지. 그렇다면 뒤는 부를 대상이 없다(#279). */
+      let loss: ConnectionLoss | undefined;
       const request: Promise<OperationValue> =
         spec.operation.type === "listTools"
           ? track(options.client.listTools()).then((tools) => ({ type: "listTools", tools }))
@@ -307,13 +325,14 @@ export function runSuite(options: RunSuiteOptions): RunnerExecution {
       if (outcome.type === "fulfilled") {
         result = outcome.value;
         operation = { status: "completed", timeoutMs };
-      } else if (outcome.type === "rejected")
+      } else if (outcome.type === "rejected") {
+        loss = classifyConnectionLoss(outcome.error);
         operation = {
           status: "failed",
           timeoutMs,
           diagnostic: failed(spec.operation, outcome.error, options.redaction),
         };
-      else if (outcome.type === "timedOut")
+      } else if (outcome.type === "timedOut")
         operation = {
           status: "timedOut",
           timeoutMs,
@@ -425,6 +444,12 @@ export function runSuite(options: RunSuiteOptions): RunnerExecution {
       }
       if (operation.status === "cancelled") {
         stop = { type: "abortSignal", caseId: spec.id };
+        break;
+      }
+      // 타임아웃·취소 다음이다. 그 둘은 우리가 정한 중단이고 이것은 서버 쪽 사정이라,
+      // 같은 케이스에서 겹치면 우리가 정한 쪽을 사유로 남긴다.
+      if (loss !== undefined) {
+        stop = { type: "connectionLost", caseId: spec.id, ...loss };
         break;
       }
     }

@@ -362,11 +362,11 @@ function optionValue(argv: readonly string[], index: number, option: string): [s
  * 재승인이 뜬다. 그 사실을 `--out` 도움말이 말한다. ADR-0073.
  */
 const deriveSuiteName = (out: string): string | undefined => {
-  const base = basename(out);
-  const withoutJson = base.endsWith(".json") ? base.slice(0, -".json".length) : base;
-  const derived = withoutJson.endsWith(".suite")
-    ? withoutJson.slice(0, -".suite".length)
-    : withoutJson;
+  // `--out` 검사가 `.json` 을 대소문자 비구분으로 받으므로(아래 outPath 검사) 여기도 같아야
+  // 한다. 한쪽만 구분하면 `contract.SUITE.JSON` 이 통과한 뒤 id 로 파일명 전체가 들어간다.
+  const strip = (value: string, suffix: string): string =>
+    value.toLowerCase().endsWith(suffix) ? value.slice(0, -suffix.length) : value;
+  const derived = strip(strip(basename(out), ".json"), ".suite");
   return derived === "" ? undefined : derived;
 };
 
@@ -390,6 +390,14 @@ export function parseGenerateCommand(argv: readonly string[]): GenerateCommandIn
           "`--command` 와 `--` 를 함께 쓸 수 없습니다.\n" +
             "→ 둘 다 서버를 띄울 명령을 정하므로 대상이 둘이 됩니다.\n" +
             "→ `--` 뒤에는 실행 파일과 인자를 그대로 적습니다.",
+        );
+      // `--arg` 는 `--command` 의 짝이다. `--` 와 섞으면 앞의 값이 통과 인자 **앞에**
+      // 조용히 끼어들어 사용자가 적지 않은 순서로 서버가 뜬다.
+      if (args.length > 0)
+        throw new UsageError(
+          "`--arg` 와 `--` 를 함께 쓸 수 없습니다.\n" +
+            "→ `--arg` 로 준 값이 `--` 뒤의 인자 앞에 끼어듭니다.\n" +
+            "→ `--` 를 쓰면 인자도 그 뒤에 모두 적습니다.",
         );
       const rest = argv.slice(index + 1);
       const executable = rest[0];

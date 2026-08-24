@@ -307,6 +307,14 @@ export function parseTestCommand(argv: readonly string[]): TestCommandInput {
             "→ 둘 다 서버를 띄울 명령을 정하므로 대상이 둘이 됩니다.\n" +
             "→ `--` 뒤에는 실행 파일과 인자를 그대로 적습니다.",
         );
+      // `--arg` 는 `--command` 의 짝이다. `--` 와 섞으면 앞의 값이 통과 인자 **앞에**
+      // 조용히 끼어들어 사용자가 적지 않은 순서로 서버가 뜬다.
+      if (args.length > 0)
+        fail(
+          "`--arg` 와 `--` 를 함께 쓸 수 없습니다.\n" +
+            "→ `--arg` 로 준 값이 `--` 뒤의 인자 앞에 끼어듭니다.\n" +
+            "→ `--` 를 쓰면 인자도 그 뒤에 모두 적습니다.",
+        );
       const rest = argv.slice(index + 1);
       const executable = rest[0];
       if (executable === undefined || executable === "")

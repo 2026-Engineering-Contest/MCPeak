@@ -3296,6 +3296,20 @@ describe("generate 옵션 파싱", () => {
     );
   });
 
+  /** `--arg` 로 준 값이 통과 인자 **앞에** 조용히 끼어들면 사용자가 적지 않은 순서가 된다. */
+  it("--arg 와 -- 를 함께 쓰면 사용 오류다", () => {
+    expect(() =>
+      parseGenerateCommand(["--out", "c.suite.json", "--arg", "x", "--", "node"]),
+    ).toThrow(/`--arg` 와 `--` 를 함께 쓸 수 없습니다/);
+  });
+
+  /** `--out` 검사가 `.json` 을 대소문자 비구분으로 받으므로 유도도 같아야 한다. */
+  it("대문자 확장자도 떼고 이름을 뽑는다", () => {
+    const parsed = parseGenerateCommand(["--out", "contract.SUITE.JSON", "--", "node"]);
+    expect(parsed.suiteId).toBe("contract");
+    expect(parsed.name).toBe("contract");
+  });
+
   /** #242 제안 2. 필수 플래그 넷이 하나로 준다. */
   it("--suite-id·--name 을 생략하면 --out 파일명에서 뽑는다", () => {
     const parsed = parseGenerateCommand(["--out", "a/b/contract.suite.json", "--", "node"]);

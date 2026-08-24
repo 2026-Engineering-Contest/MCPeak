@@ -207,6 +207,13 @@ describe("parseTestCommand", () => {
     expect(() => parseTestCommand(["suite.json", "--"])).toThrow(/실행할 명령이 없습니다/);
   });
 
+  /** `--arg` 로 준 값이 통과 인자 **앞에** 조용히 끼어들면 사용자가 적지 않은 순서가 된다. */
+  it("--arg 와 -- 를 함께 쓰면 사용 오류다", () => {
+    expect(() => parseTestCommand(["suite.json", "--arg", "x", "--", "node"])).toThrow(
+      /`--arg` 와 `--` 를 함께 쓸 수 없습니다/,
+    );
+  });
+
   it("--junit <path> 를 파싱한다", () => {
     expect(
       parseTestCommand(["suite.json", "--command", "node", "--junit", "reports/junit.xml"])

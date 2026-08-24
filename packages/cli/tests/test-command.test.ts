@@ -905,6 +905,27 @@ describe("runCli", () => {
     expect(text).toContain(parserMessage);
   });
 
+  /**
+   * **가리지 않는다는 것이 결정이다.** 사용자가 준 경로를 그대로 보여준다 — 절대 경로도
+   * 마찬가지다. 가리면 "어느 경로를 썼는지" 를 못 보게 되어 #276 이 고치려던 문제가 그대로
+   * 돌아온다. 같은 저장소의 세 자리(`mcpeak-mock` 목 정의 읽기, `repair` 번들 읽기,
+   * `--junit` 쓰기)가 이미 그렇게 한다. `CONTRIBUTING.md` §4-7 의 절대 경로 금지는 **커밋하는
+   * 문서**가 대상이고 런타임 화면은 그 범위가 아니다(ADR-0071 이 같은 판단을 기록했다).
+   *
+   * 새지 않아야 하는 것은 **Node 오류 객체의 message·스택**이고, 그쪽은 위 유출 방지
+   * 테스트가 지킨다.
+   */
+  it("사용자가 준 절대 경로를 가리지 않고 그대로 보여준다", async () => {
+    const absolute = "/srv/ci/workspace/specs/main.suite.json";
+    const d = deps({
+      readFile: async () => {
+        throw Object.assign(new Error("nope"), { code: "ENOENT" });
+      },
+    });
+    await runCli(["test", absolute, "--command", "node"], d.value);
+    expect(d.writes.err.join("")).toContain(absolute);
+  });
+
   it("validator가 반환한 valid suite reference를 startRunner에 그대로 전달한다", async () => {
     const validSuite: TestSuiteSpec = {
       schemaVersion: 1,

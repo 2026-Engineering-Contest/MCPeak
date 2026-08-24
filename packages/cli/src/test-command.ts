@@ -712,6 +712,27 @@ function suiteReadFailure(path: string, error: unknown): CliFailure {
   };
 }
 
+/**
+ * 확장자 검사 실패. **인코딩 얘기를 하지 않는다.**
+ *
+ * 이 갈래는 `extname(path) !== ".json"` 하나로만 온다. 그런데 안내가 "UTF-8로 저장한 .json
+ * 명세 파일을 사용하세요" 라고 해서, 이미 UTF-8 JSON 인 사용자는 따라 해도 안 풀렸다.
+ * 인코딩은 **바로 다음 단계가 따로 검사한다**(`SUITE_ENCODING_INVALID`). 그래서 이 안내는
+ * 인코딩을 아예 언급하지 않는다 — 한 번 꺼내면 그것부터 확인하러 가고, 여기서 할 일은
+ * 경로를 고치는 것 하나다.
+ */
+function suiteFormatFailure(path: string): CliFailure {
+  const ext = extname(path);
+  return {
+    code: "SUITE_FORMAT_UNSUPPORTED",
+    message:
+      ext === ""
+        ? `테스트 명세는 .json 파일이어야 합니다. 준 경로에 확장자가 없습니다: ${escapeTerminalText(path)}`
+        : `테스트 명세는 .json 파일이어야 합니다. 준 확장자: ${escapeTerminalText(ext)}\n  경로: ${escapeTerminalText(path)}`,
+    hint: "경로가 .json 으로 끝나는지 확인하세요. 이 단계는 파일을 열지 않고 확장자만 봅니다.",
+  };
+}
+
 function suiteEncodingFailure(path: string): CliFailure {
   return {
     code: "SUITE_ENCODING_INVALID",
@@ -876,10 +897,7 @@ async function runCliCore(
         });
   }
   if (extname(input.suitePath).toLowerCase() !== ".json")
-    return writeFailure(dependencies, {
-      code: "SUITE_FORMAT_UNSUPPORTED",
-      ...dictionary.SUITE_FORMAT_UNSUPPORTED,
-    });
+    return writeFailure(dependencies, suiteFormatFailure(input.suitePath));
   let bytes: Uint8Array;
   try {
     bytes = await dependencies.readFile(input.suitePath);

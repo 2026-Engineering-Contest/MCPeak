@@ -876,6 +876,39 @@ describe("runCli", () => {
     expect(text).toContain("errno: EMFILE");
   });
 
+  /**
+   * 이 갈래는 `extname(path) !== ".json"` 하나로만 온다. 그런데 안내가 "UTF-8로 저장하세요"
+   * 라고 해서, 이미 UTF-8 JSON 인 사용자는 따라 해도 안 풀렸다. **원인과 안내가 다른 것을
+   * 가리킨 자리다.** 인코딩은 다음 단계가 따로 검사한다.
+   */
+  it("확장자가 아니면 확장자 얘기만 하고 인코딩을 시키지 않는다", async () => {
+    const d = deps();
+    await runCli(["test", "spec.yaml", "--command", "node"], d.value);
+    const text = d.writes.err.join("");
+    expect(text).toContain("SUITE_FORMAT_UNSUPPORTED");
+    expect(text).toContain("spec.yaml");
+    expect(text).toContain(".yaml");
+    expect(text).not.toContain("UTF-8로 저장");
+  });
+
+  it("확장자가 아예 없으면 그렇게 말한다", async () => {
+    const d = deps();
+    await runCli(["test", "spec", "--command", "node"], d.value);
+    const text = d.writes.err.join("");
+    expect(text).toContain("확장자가 없습니다");
+    expect(text).toContain("spec");
+  });
+
+  /** 인코딩 안내는 그 오류가 나는 자리에만 있어야 한다. 두 자리가 같은 말을 하면 안 된다. */
+  it("인코딩 안내는 인코딩 오류 쪽에만 있다", async () => {
+    const format = deps();
+    await runCli(["test", "spec.yaml", "--command", "node"], format.value);
+    const encoding = deps({ readFile: async () => new Uint8Array([0xc3, 0x28]) });
+    await runCli(["test", "spec.json", "--command", "node"], encoding.value);
+    expect(format.writes.err.join("")).not.toContain("UTF-8");
+    expect(encoding.writes.err.join("")).toContain("UTF-8");
+  });
+
   it("UTF-8 이 아니면 어느 파일인지 말한다", async () => {
     const d = deps({ readFile: async () => new Uint8Array([0xc3, 0x28]) });
     await runCli(["test", "bad-utf8.suite.json", "--command", "node"], d.value);

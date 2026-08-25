@@ -168,6 +168,27 @@ const rejectionNoticeLines = (summary: RunnerSummary): readonly string[] =>
       ];
 
 /**
+ * 보고서 크기 근접 고지(#92). `payload` 키는 runner 가 상한의 80% 이상일 때만 만드므로, 여기는
+ * 있으면 찍고 없으면 침묵한다. 케이스 수 같은 대리 지표가 아니라 실제 바이트를 말한다.
+ *
+ * 상한을 넘으면 테스트 실패가 아니라 예외라, "실패할 수 있다" 가 아니라 "실패한다" 로 적는다.
+ * 상한을 올릴 수 없다는 사실도 함께 적는다. 그걸 모르면 사용자가 옵션부터 찾는다.
+ *
+ * 색은 넣지 않는다. 바로 위 고지들과 같은 규칙이다.
+ */
+const payloadNoticeLines = (payload: RunnerReport["payload"]): readonly string[] => {
+  if (payload === undefined) return [];
+  const kb = (bytes: number): string => `${Math.round(bytes / 1024)}KB`;
+  const percent = Math.floor((payload.reportBytes / payload.limitBytes) * 100);
+  return [
+    "",
+    `${GAP}${BULLET} 보고서 크기가 ${kb(payload.reportBytes)} 로 상한 ${kb(payload.limitBytes)} 의 ${percent}% 입니다.`,
+    `${INDENT}케이스나 응답이 더 커지면 test 실행이 보고서 상한 초과로 실패합니다. 상한은 올릴 수 없습니다.`,
+    `${INDENT}툴을 나눠 여러 명세 파일로 만들면 피할 수 있습니다.`,
+  ];
+};
+
+/**
  * RunnerReport를 사람이 읽는 문자열로 그린다. 순수 함수다.
  * process, stdout, isTTY, NO_COLOR, Date, 로케일을 읽지 않는다.
  * 반환값은 항상 개행 하나로 끝난다. 호출부가 개행을 덧붙이지 않는다.
@@ -238,6 +259,7 @@ export function renderReport(report: RunnerReport, options?: RenderReportOptions
   }
   lines.push(summaryLine(report.summary));
   lines.push(...rejectionNoticeLines(report.summary));
+  lines.push(...payloadNoticeLines(report.payload));
 
   return `${lines.join("\n")}\n`;
 }

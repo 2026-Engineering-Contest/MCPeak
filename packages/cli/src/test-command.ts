@@ -26,6 +26,7 @@ import {
   describeDeterminismDifference,
   describeSpecFinding,
   MAX_VALUE_STRING_CHARS,
+  RunnerPayloadLimitError,
   checkAssertionSubstance as runnerCheckAssertionSubstance,
   checkDeterminism as runnerCheckDeterminism,
   checkInputContract as runnerCheckInputContract,
@@ -113,6 +114,7 @@ export type CliErrorCode =
   | "MCP_CONNECTION_FAILED"
   | "RUNNER_EXECUTION_FAILED"
   | "RUNNER_FINALIZATION_FAILED"
+  | "RUNNER_PAYLOAD_LIMIT_EXCEEDED"
   | "JUNIT_WRITE_FAILED"
   | "REPAIR_BUNDLE_WRITE_FAILED"
   | "RESET_COMMAND_FAILED"
@@ -214,6 +216,11 @@ const dictionary: Record<
   RUNNER_FINALIZATION_FAILED: {
     message: "Runner 실행 또는 MCP 서버 종료에 실패했습니다.",
     hint: "서버 응답과 종료 상태를 확인하세요.",
+  },
+  /** 문장은 `payloadLimitFailure` 가 실제 크기로 만든다. 여기는 타입을 채우는 자리다. */
+  RUNNER_PAYLOAD_LIMIT_EXCEEDED: {
+    message: "보고서 또는 케이스가 runner 상한을 넘었습니다.",
+    hint: "케이스나 응답의 크기를 줄이세요.",
   },
   JUNIT_WRITE_FAILED: {
     message: "JUnit XML 파일을 쓰지 못했습니다.",
@@ -969,6 +976,30 @@ function coreError(error: unknown): CoreError | undefined {
   };
   return visit(error);
 }
+/**
+ * 보고서·케이스 상한 초과(#92). 서버 문제가 아니라 우리 상한이라 일반 종료 실패와 갈라야 한다.
+ * 같은 문장으로 접으면 사용자는 서버 응답과 종료 상태를 확인하러 가서 아무것도 못 찾는다.
+ *
+ * 케이스 초과에 "케이스 수를 줄이라" 고 하면 안 된다. 넘긴 것은 그 케이스 하나이고 나머지를
+ * 지워도 같은 오류가 그대로 난다. `dry-run.ts` 의 안내와 같은 구분이다.
+ */
+function payloadLimitFailure(error: RunnerPayloadLimitError): CliFailure {
+  const kb = (bytes: number): string => `${Math.round(bytes / 1024)}KB`;
+  if (error.scope === "report")
+    return {
+      code: "RUNNER_PAYLOAD_LIMIT_EXCEEDED",
+      message: `보고서가 ${kb(error.actualBytes)} 로 상한 ${kb(error.limitBytes)} 를 넘었습니다. 상한은 올릴 수 없습니다.`,
+      hint: "툴을 나눠 여러 명세 파일로 만드세요. 응답이 큰 툴은 케이스 수를 줄이세요.",
+    };
+  // caseId 는 명세 파일에서 온 사용자 입력이다. 제어 문자가 섞이면 줄이 깨지거나 스푸핑된다.
+  const which =
+    error.caseId === undefined ? "케이스" : `케이스 '${escapeTerminalText(error.caseId)}'`;
+  return {
+    code: "RUNNER_PAYLOAD_LIMIT_EXCEEDED",
+    message: `${which} 이 ${kb(error.actualBytes)} 로 상한 ${kb(error.limitBytes)} 를 넘었습니다. 상한은 올릴 수 없습니다.`,
+    hint: "그 케이스의 이름·입력·단언을 줄이세요. 다른 케이스를 지워도 같은 오류가 납니다.",
+  };
+}
 function writeFailure(dependencies: TestCommandDependencies, failure: CliFailure): number {
   dependencies.writeStderr(format(failure));
   return 1;
@@ -1260,11 +1291,13 @@ async function runCliCore(
   let finalReport: RunnerReport;
   try {
     finalReport = await dependencies.finalize({ execution, shutdown });
-  } catch {
-    const failed = writeFailure(dependencies, {
-      code: "RUNNER_FINALIZATION_FAILED",
-      ...dictionary.RUNNER_FINALIZATION_FAILED,
-    });
+  } catch (error) {
+    const failed = writeFailure(
+      dependencies,
+      error instanceof RunnerPayloadLimitError
+        ? payloadLimitFailure(error)
+        : { code: "RUNNER_FINALIZATION_FAILED", ...dictionary.RUNNER_FINALIZATION_FAILED },
+    );
     writeDiagnostics();
     return failed;
   }

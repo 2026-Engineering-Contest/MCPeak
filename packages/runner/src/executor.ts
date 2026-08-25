@@ -18,6 +18,7 @@ import { bindExecution, monotonicNowMs } from "./execution-binding.js";
 import { classifyRejectionBasis, type RejectionBasis } from "./rejection-basis.js";
 import {
   byteLength,
+  REPORT_PAYLOAD_NOTICE_RATIO,
   RunnerPayloadLimitError,
   type RunnerPayloadLimits,
   type RunnerRedactionOptions,
@@ -88,6 +89,15 @@ export interface RunnerReport {
     | ({ type: "connectionLost"; caseId: string } & ConnectionLoss);
   cases: TestCaseResult[];
   summary: RunnerSummary;
+  /**
+   * 보고서 크기가 상한(`maxReportBytes`)의 `REPORT_PAYLOAD_NOTICE_RATIO` 이상일 때만 만든다(#92).
+   * 없으면 여유가 충분하다는 뜻이다. 대부분의 실행에서 키가 없어야 `--json` 출력이 이전과
+   * 바이트 그대로다.
+   *
+   * `reportBytes` 는 **이 키를 넣기 전** 크기다. 자기 자신을 포함하면 순환이고, 상한 초과 판정도
+   * 같은 값으로 하므로 고지 때문에 상한을 넘는 일은 없다. 실제 직렬화 크기는 이 키만큼 더 크다.
+   */
+  payload?: { reportBytes: number; limitBytes: number };
 }
 type CaseFields = { caseId: string; caseIndex: number };
 export type RunnerEvent =
@@ -540,6 +550,9 @@ export function runSuite(options: RunSuiteOptions): RunnerExecution {
         limitBytes: limits.maxReportBytes,
         actualBytes: size,
       });
+    // 근접 고지. 초과 판정과 같은 `size` 를 쓴다. 키를 넣은 뒤 다시 재면 자기 자신을 센다.
+    if (size >= limits.maxReportBytes * REPORT_PAYLOAD_NOTICE_RATIO)
+      report.payload = { reportBytes: size, limitBytes: limits.maxReportBytes };
     emit({ type: "suiteCompleted", report });
     return report;
   })();

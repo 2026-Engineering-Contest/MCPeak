@@ -8,7 +8,7 @@ import type {
   TestCaseSpec,
   TestSuiteSpec,
 } from "@mcpeak/runner";
-import { suiteFingerprint } from "@mcpeak/runner";
+import { RunnerPayloadLimitError, suiteFingerprint } from "@mcpeak/runner";
 import { describe, expect, it, vi } from "vitest";
 import { TEST_USAGE_HINT } from "../src/help.js";
 import { ResetCommandError } from "../src/reset-hook.js";
@@ -1122,6 +1122,47 @@ describe("runCli", () => {
     expect(text).toContain("RUNNER_EXECUTION_FAILED");
     expect(text).not.toContain("서버 프로세스 진단");
     expect(calls).toBe(1);
+  });
+  /**
+   * 보고서 상한(1MB) 초과는 서버 문제가 아니라 우리 상한이다(#92). 이것을 일반 종료 실패로
+   * 접으면 사용자는 "서버 응답과 종료 상태를 확인" 하러 가서 아무것도 못 찾는다. 실제 크기와
+   * 상한, 상한을 올릴 수 없다는 사실, 조치를 그 자리에서 말한다.
+   */
+  it("보고서 상한 초과는 RUNNER_PAYLOAD_LIMIT_EXCEEDED 로 실제 크기와 상한을 말한다", async () => {
+    const d = deps({
+      finalize: async () => {
+        throw new RunnerPayloadLimitError({
+          scope: "report",
+          limitBytes: 1_048_576,
+          actualBytes: 1_200_000,
+        });
+      },
+    });
+    expect(await runCli(["test", "x.json", "--command", "node"], d.value)).toBe(1);
+    const text = d.writes.err.join("");
+    expect(text).toContain("오류 [RUNNER_PAYLOAD_LIMIT_EXCEEDED]");
+    expect(text).toContain("보고서가 1172KB 로 상한 1024KB 를 넘었습니다");
+    expect(text).toContain("상한은 올릴 수 없습니다");
+    expect(text).toContain("툴을 나눠 여러 명세 파일로 만드세요");
+    expect(text).not.toContain("RUNNER_FINALIZATION_FAILED");
+  });
+  it("케이스 상한 초과는 그 케이스를 짚고 케이스 수를 줄이라고 하지 않는다", async () => {
+    const d = deps({
+      finalize: async () => {
+        throw new RunnerPayloadLimitError({
+          scope: "case",
+          limitBytes: 65_536,
+          actualBytes: 70_000,
+          caseId: "big-one",
+        });
+      },
+    });
+    expect(await runCli(["test", "x.json", "--command", "node"], d.value)).toBe(1);
+    const text = d.writes.err.join("");
+    expect(text).toContain("오류 [RUNNER_PAYLOAD_LIMIT_EXCEEDED]");
+    expect(text).toContain("케이스 'big-one' 이 68KB 로 상한 64KB 를 넘었습니다");
+    expect(text).toContain("그 케이스의 이름·입력·단언을 줄이세요");
+    expect(text).not.toContain("툴을 나눠");
   });
   it("RUNNER_FINALIZATION_FAILED 경로에도 붙인다", async () => {
     const d = deps({

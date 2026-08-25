@@ -1872,12 +1872,18 @@ export function renderPreFillSummary(options: {
 /**
  * 케이스 수 고지. 임계 아래면 빈 문자열이다.
  * 생성을 막지 않는다. 이미 존재하는 상한을 사용자에게 보이게 하는 것이 목적이다.
+ *
+ * 임계는 케이스당 600바이트 **추정** 위에 있다(#92). 생성 시점에는 응답 크기를 모르니 개수로
+ * 볼 수밖에 없고, 그래서 문안이 추정임을 밝히고 실제 판정은 `test` 실행(runner 의 `payload`
+ * 고지)이 한다고 적는다. 추정을 확정처럼 적으면 응답이 작은 서버의 사용자가 경고를 무시하는
+ * 법을 배운다.
  */
 export function renderCaseCountNotice(caseCount: number): string {
   if (caseCount < CASE_COUNT_WARNING_THRESHOLD) return "";
   return (
     `→ 케이스 ${caseCount}개를 만들었습니다. runner 보고서 상한(1MB)에 가까워 test 실행이\n` +
-    "  RunnerPayloadLimitError 로 실패할 수 있습니다.\n" +
+    "  RunnerPayloadLimitError 로 실패할 수 있습니다. 케이스당 600바이트로 잡은 추정이라\n" +
+    "  실제 벽은 서버 응답 크기에 따라 다릅니다. test 실행이 실제 크기로 다시 알립니다.\n" +
     "→ 툴을 나눠 여러 명세 파일로 생성하면 피할 수 있습니다.\n"
   );
 }

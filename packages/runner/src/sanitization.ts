@@ -4,6 +4,12 @@ export const REDACTED = "[REDACTED]";
 export const DEFAULT_MAX_CASE_BYTES = 65_536;
 export const DEFAULT_MAX_REPORT_BYTES = 1_048_576;
 /**
+ * 보고서 크기가 상한의 이 비율 이상이면 `RunnerReport.payload` 를 만들어 알린다(#92).
+ * 상한은 올릴 수 없고 넘으면 예외로 죽으므로, 닿기 전에 사용자가 조치할 여유를 준다. 80% 는
+ * 케이스 하나가 더 붙어도 대개 안 넘는 여유이면서, 대부분의 실행에서는 조용한 값이다.
+ */
+export const REPORT_PAYLOAD_NOTICE_RATIO = 0.8;
+/**
  * 기본 민감 키 목록. 항목은 `normalizeSensitiveKey` 를 거친 형태(소문자, 구분자 없음)다.
  *
  * `record` 의 `shared/sensitive-keys.mjs` 와 같은 목록·같은 판정 규칙(ADR-0039·0045)을

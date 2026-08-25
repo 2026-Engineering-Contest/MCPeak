@@ -1,9 +1,7 @@
 import type { JSX } from "react";
 import { useEffect, useState } from "react";
 import type {
-  FileContent,
   FileEntry,
-  RunSummary,
   ServerCandidate,
   ServerMeta,
   StartRunRequest,
@@ -12,92 +10,105 @@ import type {
 import { apiGet, apiSend } from "../api.js";
 import type { SessionMode, TestOptions } from "../build-test-argv.js";
 import { buildTestArgv, DEFAULT_TEST_OPTIONS } from "../build-test-argv.js";
-import { ArgChips } from "../components/ArgChips.js";
-import { FlowChip } from "../components/FlowChip.js";
-import type { ServerChoice } from "../components/ServerPicker.js";
-import { ServerPicker, sameTarget } from "../components/ServerPicker.js";
-import { StatusBadge } from "../components/StatusBadge.js";
-import { DETERMINISM_SESSION_HINT, TestOptionsPanel } from "../components/TestOptionsPanel.js";
-import { Field, INPUT_CLASS } from "../generate/steps/fields.js";
+import { Stepper } from "../components/Stepper.js";
 import type { CommandMethod } from "../generate/steps/StepServer.js";
-import { StepServer, splitCommand } from "../generate/steps/StepServer.js";
+import { splitCommand } from "../generate/steps/StepServer.js";
+import { StepRunOptions } from "../home/steps/StepRunOptions.js";
+import type { RunServerChoice, RunServerPatch } from "../home/steps/StepRunServer.js";
+import { StepRunServer } from "../home/steps/StepRunServer.js";
+import { StepRunSuite } from "../home/steps/StepRunSuite.js";
 import type { LastRun } from "../last-run.js";
 import { readLastRun, saveLastRun } from "../last-run.js";
 import { readRecentCommands, saveRecentCommand } from "../recent-commands.js";
 import { effectiveRepairBundlePath } from "../repair-bundle-path.js";
-import type { SuiteSummary } from "../suite-summary.js";
-import { summarizeSuite } from "../suite-summary.js";
 
-/** External 세션 세그먼트. 라벨이 곧 사용자가 이 기능을 배우는 자리다. */
-const SESSION_LABELS: Record<SessionMode, string> = {
-  off: "사용 안 함",
-  record: "외부 호출 녹화",
-  replay: "녹화본 재생",
+const STEPS = ["테스트할 서버", "테스트할 스위트", "실행 옵션"] as const;
+
+/**
+ * 홈 실행 마법사의 상태(설계 §6). `command` 는 갈래별로 구하므로 직접 입력 갈래에서는
+ * 쓰이지 않는다 — Generate 마법사와 같은 모양이다.
+ */
+interface HomeState {
+  readonly choice: RunServerChoice;
+  /** 후보 갈래의 유효 명령. manual 이면 `method`·`target` 에서 구한다. */
+  readonly command: string;
+  readonly args: readonly string[];
+  readonly method: CommandMethod;
+  readonly target: string;
+  readonly suitePath: string | null;
+  readonly sessionMode: SessionMode;
+  readonly sessionPath: string;
+  readonly options: TestOptions;
+}
+
+const INITIAL_STATE: HomeState = {
+  choice: { kind: "manual" },
+  command: "",
+  args: [],
+  // generate 마법사와 같은 기본값("node"). custom 은 입력 전체를 실행 파일 하나로 본다.
+  method: "node",
+  target: "",
+  suitePath: null,
+  // 세션은 늘 꺼진 채로 시작한다. 녹화 경로를 재사용하면 CLI 가 덮어쓰기를 거절한다(#290).
+  sessionMode: "off",
+  // 경로는 비워 둔다. 재생은 이미 있는 파일을 짚는 것이라 추측한 기본값이 틀리면 방해가 된다.
+  sessionPath: "",
+  options: DEFAULT_TEST_OPTIONS,
 };
 
-const SESSION_HINTS: Record<SessionMode, string> = {
-  off: "서버가 부르는 외부 API 를 그대로 둡니다.",
-  record: "서버가 부른 외부 API 응답을 세션 파일에 남깁니다. 이번 실행은 실제로 호출합니다.",
-  replay: "세션 파일에 녹화된 응답으로 외부 호출을 대신합니다. 서버는 실제로 실행됩니다.",
-};
-
-const HTTP_SESSION_HINT =
-  "External 세션은 우리가 띄운 프로세스에만 붙습니다. 원격 서버에는 그 프로세스가 없습니다.";
-const HTTP_ARGS_HINT = "원격 서버에는 띄울 프로세스가 없어 인자를 넘기지 않습니다.";
-const HTTP_PICKER_HINT = "원격 서버에 붙습니다. 위 서버 명령은 쓰이지 않습니다.";
-const CANDIDATE_ARGS_HINT = "선택한 서버의 인자를 가져왔습니다. 고칠 수 있습니다.";
-
-/** 표시 전용. 서버에는 배열로 가므로 여기서 감싼 따옴표가 argv 에 들어가지는 않는다. */
-function quote(token: string): string {
-  return token.includes(" ") ? `"${token}"` : token;
+/** 갈래별 유효 명령·인자(설계 §6-6). */
+function effectiveTarget(state: HomeState): { command: string; args: readonly string[] } {
+  if (state.choice.kind !== "manual") {
+    return { command: state.command, args: state.args };
+  }
+  const split = splitCommand(state.method, state.target);
+  return { command: split.command, args: [...split.leadingArgs, ...state.args] };
 }
 
 /**
- * Home(UI 설계 §5-1, 홈 실행 폼 설계 §5). 2열 카드: 좌측 테스트 스위트(GET /api/suites),
- * 우측 최근 실행(GET /api/runs). 실행 클릭은 실행 폼을 열고
- * `POST /api/runs {flow:"test", argv}` 하고 `#/runs/:id`로 이동한다.
+ * 지난 실행이 지금 고른 서버와 다른가. 같으면 3단계에서 되돌릴 것이 없다.
+ * HTTP 대상은 명령을 argv 에 싣지 않으므로, 되돌려도 실행이 달라지지 않는다. 그때는 안 묻는다.
+ */
+function differsFromLastRun(state: HomeState, lastRun: LastRun | null): boolean {
+  if (lastRun === null || state.options.transport === "http") {
+    return false;
+  }
+  const current = effectiveTarget(state);
+  return (
+    current.command !== lastRun.command ||
+    current.args.length !== lastRun.args.length ||
+    current.args.some((arg, index) => arg !== lastRun.args[index])
+  );
+}
+
+/**
+ * Home(UI 설계 §5-1). Generate 와 같은 3단계 마법사다: 서버를 고르고, 그 서버의 스위트를
+ * 고르고, 옵션을 확인해 실행한다. 실행은 `POST /api/runs {flow:"test", argv}` 뒤
+ * `#/runs/:id` 로 이동한다.
  *
- * **서버를 고르기만 하면 되는 것이 이 폼의 요점이다.** 후보는 `GET /api/servers` 스캔과
- * 이 브라우저의 지난 실행값이고, 마지막 갈래가 직접 입력이다. 직접 입력은 generate 마법사와
- * 같은 `StepServer` 를 쓴다 — 한 칸에 명령 전체를 받아 공백으로 쪼개던 것이 공백 든 경로를
- * 가진 사용자의 실행을 통째로 막고 있었다(#223).
+ * **서버가 먼저인 것이 이 화면의 요점이다.** 스위트는 서버가 정한다 — generate 가 서버
+ * 스크립트 옆에 `.suite.json` 을 두므로, 서버를 고르면 그 스위트를 되짚을 수 있다
+ * (`matchSuites`). 스위트를 먼저 고르게 두면 사용자는 매번 어느 서버로 돌릴지 다시 정해야 했다.
  *
  * CLI 가 거절하는 조합은 폼에서 만들 수 없다. 그 판정은 `buildTestArgv` 한 곳이며, 실행 버튼
  * 비활성·미리보기 사유·제출이 모두 같은 함수를 부른다.
  */
 export function Home(): JSX.Element {
+  const [step, setStep] = useState(0);
+  const [state, setState] = useState<HomeState>(INITIAL_STATE);
   const [suites, setSuites] = useState<readonly FileEntry[] | null>(null);
   /**
    * 스위트·서버 후보 탐색 루트. 목록이 비었을 때 그 이유를 말하는 데만 쓴다. 못 받아도
-   * 화면은 살아야 하므로 실패는 삼키고 null 로 둔다 — 그 경우 경로 없이 나머지 안내만 나간다.
+   * 화면은 살아야 하므로 실패는 삼키고 null 로 둔다.
    */
   const [root, setRoot] = useState<string | null>(null);
-  const [runs, setRuns] = useState<readonly RunSummary[] | null>(null);
   const [candidates, setCandidates] = useState<readonly ServerCandidate[]>([]);
+  const [recentCommands] = useState<readonly string[]>(() => readRecentCommands());
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [promptFor, setPromptFor] = useState<string | null>(null);
-  /** 「명세 확인」이 열린 행. 실행 폼과 독립이다. 둘 다 열려 있을 수 있다. */
-  const [specFor, setSpecFor] = useState<string | null>(null);
-  const [spec, setSpec] = useState<
-    | { readonly kind: "loading" }
-    | { readonly kind: "ready"; readonly summary: SuiteSummary }
-    | { readonly kind: "error"; readonly reason: string }
-    | null
-  >(null);
-
-  const [choice, setChoice] = useState<ServerChoice>({ kind: "manual" });
+  /** 고른 스위트의 지난 실행값. 2단계에서 스위트를 고를 때 읽는다. */
   const [lastRun, setLastRun] = useState<LastRun | null>(null);
-  /** 후보·지난 실행 갈래의 명령과 인자. 직접 입력 갈래는 `method`·`target` 에서 구한다. */
-  const [command, setCommand] = useState("");
-  const [args, setArgs] = useState<readonly string[]>([]);
-  // generate 마법사와 같은 기본값("node"). custom 은 입력 전체를 실행 파일 하나로 본다.
-  const [method, setMethod] = useState<CommandMethod>("node");
-  const [target, setTarget] = useState("");
-  const [sessionMode, setSessionMode] = useState<SessionMode>("off");
-  // 경로는 비워 둔다. 재생은 이미 있는 파일을 짚는 것이라 추측한 기본값이 틀리면 방해가 되고,
-  // 녹화도 이미 있는 파일을 짚으면 CLI 가 덮어쓰지 않고 거절한다(#290).
-  const [sessionPath, setSessionPath] = useState("");
-  const [options, setOptions] = useState<TestOptions>(DEFAULT_TEST_OPTIONS);
+  /** 사용자가 3단계 옵션을 손댔는가. 지난 실행 옵션을 덮어쓸지 판정한다. */
+  const [optionsTouched, setOptionsTouched] = useState(false);
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
@@ -106,133 +117,111 @@ export function Home(): JSX.Element {
     apiGet<FileEntry[]>("/api/suites")
       .then(setSuites)
       .catch((err: unknown) => setLoadError(err instanceof Error ? err.message : String(err)));
-    apiGet<RunSummary[]>("/api/runs")
-      .then(setRuns)
-      .catch((err: unknown) => setLoadError(err instanceof Error ? err.message : String(err)));
     apiGet<ServerMeta>("/api/meta")
       .then((meta) => setRoot(meta.root))
       .catch(() => setRoot(null));
     // 후보를 못 읽어도 직접 입력 갈래가 살아 있으므로 화면 전체를 실패로 만들지 않는다.
     apiGet<ServerCandidate[]>("/api/servers")
-      .then(setCandidates)
+      .then((list) => {
+        setCandidates(list);
+        const first = list[0];
+        if (first === undefined) {
+          return;
+        }
+        // 초기 선택은 첫 후보다. 사용자가 이미 손댔으면 그대로 둔다 — 덮어쓰면 직접 입력
+        // 폼이 사라지고 실행 대상이 조용히 바뀐다(#366 리뷰).
+        setState((previous) =>
+          previous.choice.kind === "manual" && previous.target === "" && previous.command === ""
+            ? {
+                ...previous,
+                choice: { kind: "candidate", id: first.id },
+                command: first.command,
+                args: [...first.args],
+              }
+            : previous,
+        );
+      })
       .catch(() => setCandidates([]));
   }, []);
 
-  const httpTarget = options.transport === "http";
+  const target = effectiveTarget(state);
+  const http = state.options.transport === "http";
 
-  /**
-   * 「명세 확인」. 파일을 그때 읽는다. 목록을 만들 때 전부 읽어 두면 스위트가 수십 개인
-   * 프로젝트에서 첫 화면이 느려지고, 그 사이 파일이 바뀌면 낡은 것을 보여준다.
-   */
-  function openSpec(suitePath: string): void {
-    setSpecFor(suitePath);
-    setSpec({ kind: "loading" });
-    apiGet<FileContent>(`/api/suites/${encodeURIComponent(suitePath)}`)
-      .then((file) => {
-        const result = summarizeSuite(file.content);
-        setSpec(
-          result.ok
-            ? { kind: "ready", summary: result.summary }
-            : { kind: "error", reason: result.reason },
-        );
-      })
-      .catch((err: unknown) =>
-        setSpec({ kind: "error", reason: err instanceof Error ? err.message : String(err) }),
-      );
-  }
-
-  function closeSpec(): void {
-    setSpecFor(null);
-    setSpec(null);
-  }
-
-  function renderSpec(): JSX.Element | null {
-    if (spec === null) return null;
-    if (spec.kind === "loading") {
-      return <p className="text-xs text-ink-muted">명세를 읽는 중...</p>;
-    }
-    if (spec.kind === "error") {
-      return (
-        <p className="text-xs" style={{ color: "var(--status-failed-fg)" }}>
-          명세를 읽지 못했습니다: {spec.reason}
-        </p>
-      );
-    }
-    const { summary } = spec;
-    return (
-      <div className="rounded border border-line bg-canvas px-3 py-2">
-        <p className="text-xs font-medium text-ink">
-          {summary.name} (id {summary.id}) · 케이스 {summary.caseCount}건
-        </p>
-        <pre className="mt-1 overflow-x-auto whitespace-pre font-mono text-xs text-ink">
-          {summary.lines.join("\n")}
-        </pre>
-      </div>
-    );
-  }
-
-  /** 폼을 열 때의 초기 선택(설계 §6-6). 지난 실행 → 첫 후보 → 직접 입력 순이다. */
-  function openPrompt(suitePath: string): void {
-    const previous = readLastRun(suitePath);
-    const same = previous === null ? undefined : candidates.find((c) => sameTarget(c, previous));
-    // 지난 실행이 스캔 후보와 같으면 그 후보를 고른다. 같은 명령이 두 줄로 보이지 않게
-    // 목록에서도 지난 실행 항목을 만들지 않는다(설계 §5-2).
-    const picked = same ?? candidates[0];
-    const next: ServerChoice =
-      previous !== null && same === undefined
-        ? { kind: "last-run" }
-        : picked !== undefined
-          ? { kind: "candidate", id: picked.id }
-          : { kind: "manual" };
-
-    setPromptFor(suitePath);
-    setLastRun(previous);
-    setChoice(next);
-    if (next.kind === "last-run" && previous !== null) {
-      setCommand(previous.command);
-      setArgs([...previous.args]);
-    } else if (next.kind === "candidate" && picked !== undefined) {
-      setCommand(picked.command);
-      setArgs([...picked.args]);
-    } else {
-      setCommand("");
-      setArgs([]);
-    }
-    setMethod("node");
-    setTarget("");
-    // 세션은 늘 꺼진 채로 시작한다. 녹화 경로를 재사용하면 CLI 가 덮어쓰기를 거절한다(#290).
-    setSessionMode("off");
-    setSessionPath("");
-    setOptions(previous?.options ?? DEFAULT_TEST_OPTIONS);
-    setOptionsOpen(false);
-    setStartError(null);
-  }
-
-  function choose(next: ServerChoice): void {
-    setChoice(next);
-    if (next.kind === "candidate") {
-      const picked = candidates.find((c) => c.id === next.id);
-      if (picked !== undefined) {
-        setCommand(picked.command);
-        setArgs([...picked.args]);
+  function patchServer(partial: Partial<RunServerPatch>): void {
+    setState((previous) => {
+      const { transport, url, headerEnvs, ...rest } = partial;
+      let next: HomeState = { ...previous, ...rest };
+      if (transport !== undefined || url !== undefined || headerEnvs !== undefined) {
+        next = {
+          ...next,
+          options: {
+            ...next.options,
+            ...(transport === undefined ? {} : { transport }),
+            ...(url === undefined ? {} : { url }),
+            ...(headerEnvs === undefined ? {} : { headerEnvs }),
+          },
+        };
       }
-    } else if (next.kind === "last-run" && lastRun !== null) {
-      setCommand(lastRun.command);
-      setArgs([...lastRun.args]);
-    } else if (next.kind === "manual") {
-      // 직접 입력은 명령을 `method`·`target` 에서 구한다. 앞 후보의 인자를 남기면
-      // 새로 적은 스크립트에 남의 인자가 붙는다.
-      setArgs([]);
-    }
+      // HTTP 로 바꾸면 stderr 줄 수와 External 세션이 비활성이 되는데, 값이 남아 있으면
+      // `buildTestArgv` 가 거절하고 사용자는 비활성 컨트롤을 풀 수 없다. 전환하는 쪽이
+      // 치운다. 서버 인자는 §5-3 대로 남긴다(거절이 아니라 무시라 갇히지 않는다).
+      if (transport === "http") {
+        next = {
+          ...next,
+          sessionMode: "off",
+          options: { ...next.options, stderrLines: "" },
+        };
+      }
+      return next;
+    });
   }
 
-  /** 갈래별 유효 명령·인자(설계 §6-6). */
-  function effectiveTarget(): { command: string; args: readonly string[] } {
-    if (choice.kind !== "manual") {
-      return { command, args };
+  /** 스위트를 고르면 그 스위트의 지난 실행 옵션을 3단계 기본값으로 채운다(사용자가 안 만졌을 때만). */
+  function chooseSuite(suitePath: string): void {
+    const previous = readLastRun(suitePath);
+    setLastRun(previous);
+    setState((current) => {
+      const adopted = optionsTouched
+        ? current.options
+        : (previous?.options ?? DEFAULT_TEST_OPTIONS);
+      return {
+        ...current,
+        suitePath,
+        // 접속은 1단계 소관이다. 지난 실행 옵션을 통째로 덮으면 방금 고른 HTTP 대상이
+        // 조용히 stdio 로 돌아가고, 사용자는 2단계에서 무엇이 바뀌었는지 알 수 없다.
+        options: {
+          ...adopted,
+          transport: current.options.transport,
+          url: current.options.url,
+          headerEnvs: current.options.headerEnvs,
+        },
+      };
+    });
+  }
+
+  /** 3단계의 「지난 실행값 쓰기」. 서버 갈래를 지난 실행 명령으로 되돌린다. */
+  function useLastRun(): void {
+    if (lastRun === null) {
+      return;
     }
-    const split = splitCommand(method, target);
-    return { command: split.command, args: [...split.leadingArgs, ...args] };
+    setState((current) => ({
+      ...current,
+      choice: { kind: "manual" },
+      // 지난 실행은 실행 파일과 인자로 저장돼 있다. `custom` 이 그 모양 그대로다.
+      method: "custom",
+      target: lastRun.command,
+      command: lastRun.command,
+      args: [...lastRun.args],
+      // 접속은 1단계 소관이다. `chooseSuite` 와 같은 규칙으로 지킨다 — 통째로 덮으면
+      // HTTP 를 고른 사용자가 이 버튼 하나로 stdio 로 돌아가고 URL 이 argv 에서 빠진다.
+      options: {
+        ...lastRun.options,
+        transport: current.options.transport,
+        url: current.options.url,
+        headerEnvs: current.options.headerEnvs,
+      },
+    }));
+    setOptionsTouched(true);
   }
 
   /**
@@ -242,20 +231,19 @@ export function Home(): JSX.Element {
   function argvResult(
     suitePath: string,
   ): { readonly argv: readonly string[] } | { readonly error: string } {
-    const { command: cmd, args: serverArgs } = effectiveTarget();
     try {
       return {
         argv: buildTestArgv({
           suitePath,
-          command: cmd,
-          args: serverArgs,
-          sessionMode,
-          sessionPath: sessionPath.trim(),
+          command: target.command,
+          args: target.args,
+          sessionMode: state.sessionMode,
+          sessionPath: state.sessionPath.trim(),
           // 번들은 항상 켠다(ADR-0080). 비워 두면 대시보드 관리 경로다. 저장(`saveLastRun`)에는
           // 원래 `options` 를 넣는다. 관리 경로를 저장하면 다음에 "직접 적은 값" 으로 읽힌다.
           options: {
-            ...options,
-            repairBundlePath: effectiveRepairBundlePath(suitePath, options.repairBundlePath),
+            ...state.options,
+            repairBundlePath: effectiveRepairBundlePath(suitePath, state.options.repairBundlePath),
           },
         }),
       };
@@ -264,9 +252,34 @@ export function Home(): JSX.Element {
     }
   }
 
-  async function startRun(suitePath: string): Promise<void> {
-    const result = argvResult(suitePath);
-    if (!("argv" in result)) {
+  const result = state.suitePath === null ? null : argvResult(state.suitePath);
+
+  const stepValid =
+    step === 0
+      ? http
+        ? state.options.url.trim() !== ""
+        : target.command !== ""
+      : step === 1
+        ? state.suitePath !== null
+        : result !== null && "argv" in result;
+
+  function reasonForInvalid(): string | null {
+    if (stepValid) {
+      return null;
+    }
+    if (step === 0) {
+      return http ? "URL 을 입력하세요." : "서버를 고르거나 실행 명령을 입력하세요.";
+    }
+    if (step === 1) {
+      return "스위트를 고르세요.";
+    }
+    // 3단계의 사유는 미리보기 자리에 이미 전문으로 나와 있다. 여기서 또 적으면 두 벌이 된다.
+    return null;
+  }
+
+  async function startRun(): Promise<void> {
+    const suitePath = state.suitePath;
+    if (suitePath === null || result === null || !("argv" in result)) {
       return;
     }
     setStarting(true);
@@ -277,10 +290,13 @@ export function Home(): JSX.Element {
         argv: result.argv,
       } satisfies StartRunRequest);
       // 저장 실패는 무시한다. 실행은 이미 서버에서 시작됐다(Generate 마법사와 같은 이유).
-      const effective = effectiveTarget();
-      saveLastRun(suitePath, { command: effective.command, args: effective.args, options });
-      if (choice.kind === "manual" && target.trim() !== "") {
-        saveRecentCommand(target);
+      saveLastRun(suitePath, {
+        command: target.command,
+        args: target.args,
+        options: state.options,
+      });
+      if (state.choice.kind === "manual" && state.target.trim() !== "") {
+        saveRecentCommand(state.target);
       }
       window.location.hash = `#/runs/${encodeURIComponent(response.runId)}`;
     } catch (err) {
@@ -290,158 +306,16 @@ export function Home(): JSX.Element {
     }
   }
 
-  function renderForm(suitePath: string): JSX.Element {
-    const result = argvResult(suitePath);
-    const sessionLocked = httpTarget || options.determinism;
-
-    return (
-      <form
-        className="space-y-4 rounded-md border border-line bg-canvas p-4"
-        onSubmit={(event) => {
-          event.preventDefault();
-          void startRun(suitePath);
-        }}
-      >
-        <ServerPicker
-          candidates={candidates}
-          lastRun={lastRun}
-          choice={choice}
-          onChoose={choose}
-          disabled={httpTarget}
-          disabledHint={HTTP_PICKER_HINT}
-          root={root}
-        />
-
-        {choice.kind === "manual" ? (
-          <StepServer
-            idPrefix="home-run"
-            method={method}
-            target={target}
-            args={args}
-            disabled={httpTarget}
-            recentCommands={readRecentCommands()}
-            onMethodChange={setMethod}
-            onTargetChange={setTarget}
-            onArgsChange={setArgs}
-          />
-        ) : (
-          <ArgChips
-            idPrefix="home-run"
-            args={args}
-            disabled={httpTarget}
-            hint={httpTarget ? HTTP_ARGS_HINT : CANDIDATE_ARGS_HINT}
-            onChange={setArgs}
-          />
-        )}
-
-        <div>
-          <p className="mb-2 text-sm font-medium text-ink">External 세션</p>
-          <fieldset className="inline-flex overflow-hidden rounded-md border border-line">
-            {(Object.keys(SESSION_LABELS) as readonly SessionMode[]).map((mode) => (
-              <button
-                key={mode}
-                type="button"
-                aria-pressed={sessionMode === mode}
-                disabled={httpTarget || (mode !== "off" && options.determinism)}
-                className={`px-3 py-1.5 text-sm disabled:opacity-50 ${
-                  sessionMode === mode
-                    ? "bg-accent-soft font-semibold text-accent"
-                    : "text-ink-muted hover:bg-line-subtle"
-                }`}
-                onClick={() => setSessionMode(mode)}
-              >
-                {SESSION_LABELS[mode]}
-              </button>
-            ))}
-          </fieldset>
-          <p className="mt-2 text-xs text-ink-muted">
-            {httpTarget
-              ? HTTP_SESSION_HINT
-              : options.determinism
-                ? DETERMINISM_SESSION_HINT
-                : SESSION_HINTS[sessionMode]}
-          </p>
-        </div>
-
-        {sessionMode !== "off" && !sessionLocked && (
-          <Field
-            label="세션 파일 경로"
-            htmlFor="home-run-session-path"
-            hint={
-              sessionMode === "record"
-                ? "새 파일 경로를 적습니다. 이미 녹화가 있는 파일은 덮어쓰지 않고 거절합니다."
-                : "녹화해 둔 세션 파일을 짚습니다."
-            }
-          >
-            <input
-              id="home-run-session-path"
-              className={INPUT_CLASS}
-              value={sessionPath}
-              onChange={(event) => setSessionPath(event.target.value)}
-            />
-          </Field>
-        )}
-
-        <TestOptionsPanel
-          suitePath={suitePath}
-          options={options}
-          sessionMode={sessionMode}
-          open={optionsOpen}
-          onToggle={() => setOptionsOpen((previous) => !previous)}
-          onChange={(patch) => {
-            // HTTP 로 바꾸면 stderr 줄 수와 External 세션이 비활성이 되는데, 값이 남아 있으면
-            // `buildTestArgv` 가 거절하고 사용자는 비활성 컨트롤을 풀 수 없다. 전환하는 쪽이
-            // 치운다. 서버 인자는 §5-3 대로 남긴다(거절이 아니라 무시라 갇히지 않는다).
-            if (patch.transport === "http") {
-              setSessionMode("off");
-              setOptions((previous) => ({ ...previous, ...patch, stderrLines: "" }));
-              return;
-            }
-            setOptions((previous) => ({ ...previous, ...patch }));
-          }}
-        />
-
-        <div className="rounded-md border border-line bg-line-subtle px-3 py-2">
-          <p className="text-xs text-ink-muted">실행될 명령</p>
-          {"argv" in result ? (
-            <p className="break-all font-mono text-sm text-ink">
-              {["mcpeak", "test", ...result.argv.map(quote)].join(" ")}
-            </p>
-          ) : (
-            <p className="text-sm" style={{ color: "var(--status-failed-fg)" }}>
-              {result.error}
-            </p>
-          )}
-        </div>
-
-        <div className="flex gap-2">
-          <button
-            type="submit"
-            className="rounded bg-accent px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
-            disabled={starting || !("argv" in result)}
-          >
-            실행 시작
-          </button>
-          <button
-            type="button"
-            className="rounded border border-line px-3 py-1.5 text-xs text-ink-muted"
-            onClick={() => setPromptFor(null)}
-          >
-            취소
-          </button>
-        </div>
-      </form>
-    );
-  }
-
   return (
-    <section className="space-y-6">
+    <section className="mx-auto max-w-[800px] space-y-6">
       <div>
-        <h1 className="text-xl font-semibold text-ink">홈</h1>
+        <h1 className="text-xl font-semibold text-ink">테스트</h1>
         <p className="mt-1 text-sm text-ink-muted">
-          현재 프로젝트 아래에서 찾은 테스트 스위트로 바로 실행을 시작합니다.
+          서버를 고르고, 그 서버의 테스트 스위트를 골라 실행합니다.
         </p>
       </div>
+
+      <Stepper steps={STEPS} current={step} />
 
       {loadError !== null && (
         <p className="text-sm" style={{ color: "var(--status-failed-fg)" }}>
@@ -449,90 +323,99 @@ export function Home(): JSX.Element {
         </p>
       )}
 
-      <div className="grid grid-cols-2 gap-6">
-        <div className="rounded-lg border border-line bg-surface">
-          <h2 className="border-b border-line px-4 py-3 text-sm font-semibold text-ink">
-            테스트 스위트
-          </h2>
-          <ul className="divide-y divide-line-subtle">
-            {suites === null && (
-              <li className="px-4 py-3 text-sm text-ink-muted">불러오는 중...</li>
-            )}
-            {suites !== null && suites.length === 0 && (
-              <li className="space-y-1 px-4 py-3 text-sm text-ink-muted">
-                <p>
-                  이 디렉터리 아래에서 스위트를 찾지 못했습니다{root ? ": " : "."}
-                  {root ? <span className="font-mono text-xs text-ink">{root}</span> : null}
-                </p>
-                <p>
-                  → 스위트가 있는 디렉터리에서 mcpeak-dashboard 를 다시 띄우거나, 왼쪽 Generate 로
-                  새로 만드세요.
-                </p>
-                <p className="text-xs">
-                  목록에는 스위트 형식을 통과한 .json 만 담습니다. node_modules · .git · dist 아래는
-                  보지 않습니다.
-                </p>
-              </li>
-            )}
-            {suites?.map((suite) => (
-              <li key={suite.path} className="space-y-2 px-4 py-3">
-                <div className="flex items-center justify-between gap-3">
-                  <span className="font-mono text-xs text-ink">{suite.path}</span>
-                  <div className="flex shrink-0 items-center gap-2">
-                    <button
-                      type="button"
-                      aria-expanded={specFor === suite.path}
-                      className="rounded border border-line px-3 py-1 text-xs text-ink-muted"
-                      onClick={() => (specFor === suite.path ? closeSpec() : openSpec(suite.path))}
-                    >
-                      {specFor === suite.path ? "명세 닫기" : "명세 확인"}
-                    </button>
-                    <button
-                      type="button"
-                      aria-expanded={promptFor === suite.path}
-                      className="rounded bg-accent px-3 py-1 text-xs font-medium text-white"
-                      onClick={() =>
-                        promptFor === suite.path ? setPromptFor(null) : openPrompt(suite.path)
-                      }
-                    >
-                      {promptFor === suite.path ? "닫기" : "실행"}
-                    </button>
-                  </div>
-                </div>
-                {specFor === suite.path && renderSpec()}
-                {promptFor === suite.path && renderForm(suite.path)}
-              </li>
-            ))}
-          </ul>
-          {startError !== null && (
-            <p className="px-4 py-3 text-sm" style={{ color: "var(--status-failed-fg)" }}>
-              {startError}
-            </p>
-          )}
-        </div>
+      <div className="rounded-lg border border-line bg-surface p-6">
+        {step === 0 && (
+          <StepRunServer
+            choice={state.choice}
+            command={state.command}
+            args={state.args}
+            method={state.method}
+            target={state.target}
+            transport={state.options.transport}
+            url={state.options.url}
+            headerEnvs={state.options.headerEnvs}
+            candidates={candidates}
+            root={root}
+            recentCommands={recentCommands}
+            onChange={patchServer}
+          />
+        )}
+        {step === 1 && (
+          <StepRunSuite
+            suites={suites}
+            args={target.args}
+            root={root}
+            selected={state.suitePath}
+            onSelect={chooseSuite}
+          />
+        )}
+        {step === 2 && state.suitePath !== null && result !== null && (
+          <StepRunOptions
+            suitePath={state.suitePath}
+            args={state.args}
+            argsFrom={state.choice.kind === "manual" ? "manual" : "candidate"}
+            sessionMode={state.sessionMode}
+            sessionPath={state.sessionPath}
+            options={state.options}
+            optionsOpen={optionsOpen}
+            lastRun={lastRun}
+            lastRunDiffers={differsFromLastRun(state, lastRun)}
+            result={result}
+            onArgsChange={(args) => setState((previous) => ({ ...previous, args }))}
+            onSessionModeChange={(sessionMode) =>
+              setState((previous) => ({ ...previous, sessionMode }))
+            }
+            onSessionPathChange={(sessionPath) =>
+              setState((previous) => ({ ...previous, sessionPath }))
+            }
+            onOptionsChange={(patch) => {
+              setOptionsTouched(true);
+              setState((previous) => ({ ...previous, options: { ...previous.options, ...patch } }));
+            }}
+            onOptionsToggle={() => setOptionsOpen((previous) => !previous)}
+            onUseLastRun={useLastRun}
+          />
+        )}
+      </div>
 
-        <div className="rounded-lg border border-line bg-surface">
-          <h2 className="border-b border-line px-4 py-3 text-sm font-semibold text-ink">
-            최근 실행
-          </h2>
-          <ul className="divide-y divide-line-subtle">
-            {runs === null && <li className="px-4 py-3 text-sm text-ink-muted">불러오는 중...</li>}
-            {runs !== null && runs.length === 0 && (
-              <li className="px-4 py-3 text-sm text-ink-muted">아직 실행이 없습니다.</li>
-            )}
-            {runs?.map((run) => (
-              <li key={run.runId}>
-                <a
-                  className="flex items-center gap-3 px-4 py-3 text-ink hover:bg-line-subtle"
-                  href={`#/runs/${encodeURIComponent(run.runId)}`}
-                >
-                  <FlowChip flow={run.flow} />
-                  <span className="flex-1 font-mono text-xs">{run.runId}</span>
-                  <StatusBadge status={run.status} exitCode={run.exitCode} />
-                </a>
-              </li>
-            ))}
-          </ul>
+      {startError !== null && (
+        <p className="text-sm" style={{ color: "var(--status-failed-fg)" }}>
+          {startError}
+        </p>
+      )}
+
+      <div className="flex items-center justify-between">
+        <button
+          type="button"
+          className="rounded border border-line px-4 py-2 text-sm text-ink-muted hover:text-ink disabled:opacity-50"
+          disabled={step === 0}
+          onClick={() => setStep((previous) => Math.max(previous - 1, 0))}
+        >
+          이전
+        </button>
+        <div className="flex items-center gap-3">
+          {reasonForInvalid() !== null && (
+            <span className="text-xs text-ink-muted">{reasonForInvalid()}</span>
+          )}
+          {step < STEPS.length - 1 ? (
+            <button
+              type="button"
+              className="rounded bg-accent px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+              disabled={!stepValid}
+              onClick={() => setStep((previous) => Math.min(previous + 1, STEPS.length - 1))}
+            >
+              다음
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="rounded bg-accent px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+              disabled={starting || !stepValid}
+              onClick={() => void startRun()}
+            >
+              실행 시작
+            </button>
+          )}
         </div>
       </div>
     </section>

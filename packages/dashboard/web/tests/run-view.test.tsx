@@ -343,4 +343,61 @@ describe("RunView", () => {
     });
     expect(screen.queryByText("대기")).toBeNull();
   });
+
+  /** run 은 runId 로 구별되지 않는다. 어느 스위트를 어느 서버로 돌렸는지가 목록에 있어야 한다. */
+  it("목록 행이 스위트와 서버 명령을 함께 보여준다", async () => {
+    const runs = [
+      {
+        runId: "run-1",
+        flow: "test",
+        status: "done",
+        exitCode: 0,
+        argv: [
+          "examples/weather-server/server.suite.json",
+          "--command",
+          "node",
+          "--arg",
+          "examples/weather-server/server.mjs",
+        ],
+      },
+      {
+        runId: "run-2",
+        flow: "test",
+        status: "done",
+        exitCode: 0,
+        argv: ["b.suite.json", "--url", "https://example.test/mcp"],
+      },
+    ];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify(runs), { status: 200 })),
+    );
+    render(<RunView runId={null} />);
+
+    expect(await screen.findByText("examples/weather-server/server.suite.json")).toBeTruthy();
+    expect(screen.getByText("node examples/weather-server/server.mjs")).toBeTruthy();
+    expect(screen.getByText("https://example.test/mcp")).toBeTruthy();
+  });
+
+  it("대상을 모르면 그 칸을 비운다", async () => {
+    const runs = [{ runId: "run-1", flow: "repair", status: "running", exitCode: null, argv: [] }];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify(runs), { status: 200 })),
+    );
+    render(<RunView runId={null} />);
+
+    // 행 자체는 나온다. 없는 값을 "알 수 없음" 으로 지어내지 않는다.
+    expect(await screen.findByText("run-1")).toBeTruthy();
+    expect(screen.queryByTitle(/·/)).toBeNull();
+  });
+
+  it("상세 화면 머리에도 같은 대상 줄이 붙는다", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    stubFetch();
+    render(<RunView runId="run-1" />);
+
+    expect(await screen.findByText("suite.json")).toBeTruthy();
+    expect(screen.getByText("node")).toBeTruthy();
+  });
 });

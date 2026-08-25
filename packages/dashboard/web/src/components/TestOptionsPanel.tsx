@@ -3,7 +3,6 @@ import type { SessionMode, TestOptions } from "../build-test-argv.js";
 import { DEFAULT_TEST_OPTIONS } from "../build-test-argv.js";
 import { Field, INPUT_CLASS, Toggle } from "../generate/steps/fields.js";
 import { managedRepairBundlePath } from "../repair-bundle-path.js";
-import { TransportFields } from "./TransportFields.js";
 
 /** §5-4 와 같은 문장이다. 두 자리에서 같은 제약을 말하므로 한 곳에 둔다. */
 export const DETERMINISM_SESSION_HINT =
@@ -32,7 +31,8 @@ function GroupTitle(props: { children: string }): JSX.Element {
 
 /**
  * 테스트 옵션 접이식 섹션(설계 §5-5). `mcpeak test` 의 옵션(`--json` 제외)을 GUI 컨트롤로
- * 노출한다.
+ * 노출한다. 접속 방식(stdio/HTTP)만은 여기 없다 — 마법사 1단계에서 고른다. 명령이 비면
+ * 1단계를 통과할 수 없어, 접속이 3단계에 있으면 HTTP 사용자가 갇힌다.
  *
  * **비활성과 그 사유를 같이 보여주는 것이 이 패널의 요점이다.** CLI 가 거절하는 조합은
  * 폼에서 만들 수 없어야 하고(구현계획 §1 목표 3), 왜 못 만드는지는 컨트롤 옆에 있어야 한다.
@@ -67,17 +67,6 @@ export function TestOptionsPanel(props: {
 
       {props.open && (
         <div className="space-y-5 border-t border-line px-3 py-3">
-          <div className="space-y-2">
-            <GroupTitle>접속</GroupTitle>
-            <TransportFields
-              idPrefix="home-run"
-              transport={options.transport}
-              url={options.url}
-              headerEnvs={options.headerEnvs}
-              onChange={props.onChange}
-            />
-          </div>
-
           <div className="space-y-3">
             <GroupTitle>검사</GroupTitle>
             <Toggle

@@ -5,6 +5,9 @@ import { buildGenerateArgv } from "../src/generate/build-argv.js";
 
 /** 최소 필수 입력만 채운 폼. 각 테스트가 필요한 필드만 덮어쓴다. */
 const BASE: GenerateForm = {
+  transport: "stdio",
+  url: "",
+  headerEnvs: [],
   // command에는 실행 파일 하나만 온다(CLI --command 계약). 스크립트 경로는 args로 간다.
   command: "node",
   args: [],
@@ -95,5 +98,66 @@ describe("buildGenerateArgv", () => {
       resetCmd: "./reset.sh",
     };
     expect(buildGenerateArgv(form)).toEqual(buildGenerateArgv(form));
+  });
+  it("HTTP 면 --url 과 --header-env 가 --command/--arg 자리에 오고 args 는 실리지 않는다", () => {
+    const argv = buildGenerateArgv({
+      ...BASE,
+      transport: "http",
+      url: "http://localhost:3000/mcp",
+      headerEnvs: ["Authorization=MCP_TOKEN"],
+      args: ["x"],
+    });
+    expect(argv.slice(0, 10)).toEqual([
+      "--url",
+      "http://localhost:3000/mcp",
+      "--header-env",
+      "Authorization=MCP_TOKEN",
+      "--suite-id",
+      "weather",
+      "--name",
+      "날씨 서버",
+      "--out",
+      "examples/weather/suite.json",
+    ]);
+    expect(argv).not.toContain("--command");
+    expect(argv).not.toContain("--arg");
+  });
+
+  it("HTTP 에서 URL 앞뒤 공백은 잘린다", () => {
+    const argv = buildGenerateArgv({
+      ...BASE,
+      transport: "http",
+      url: "  http://localhost:3000/mcp  ",
+    });
+    expect(argv.slice(0, 2)).toEqual(["--url", "http://localhost:3000/mcp"]);
+  });
+
+  it('HTTP 에서 URL 이 공백이면 "URL 을 입력하세요." 로 throw 한다', () => {
+    expect(() => buildGenerateArgv({ ...BASE, transport: "http", url: "   " })).toThrowError(
+      "URL 을 입력하세요.",
+    );
+  });
+
+  it("HTTP 에서 헤더 환경변수 형식이 틀리면 그 항목을 담아 throw 한다", () => {
+    expect(() =>
+      buildGenerateArgv({
+        ...BASE,
+        transport: "http",
+        url: "http://localhost:3000/mcp",
+        headerEnvs: ["Authorization"],
+      }),
+    ).toThrowError("헤더 환경변수는 <헤더이름>=<환경변수이름> 형식이어야 합니다: 'Authorization'");
+  });
+
+  it('stdio 에서 command 가 비면 "서버를 고르거나 실행 명령을 입력하세요." 로 throw 한다', () => {
+    expect(() => buildGenerateArgv({ ...BASE, command: "" })).toThrowError(
+      "서버를 고르거나 실행 명령을 입력하세요.",
+    );
+  });
+
+  it("stdio 에서 headerEnvs 가 있어도 argv 에 실리지 않는다", () => {
+    const argv = buildGenerateArgv({ ...BASE, headerEnvs: ["Authorization=MCP_TOKEN"] });
+    expect(argv).not.toContain("--header-env");
+    expect(argv).toEqual(buildGenerateArgv(BASE));
   });
 });

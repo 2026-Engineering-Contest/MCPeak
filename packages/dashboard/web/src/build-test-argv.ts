@@ -4,6 +4,8 @@
  * (`src/server/wiring.ts`), 여기서 만든 것이 그대로 CLI 의 argv 가 된다.
  */
 
+import { isHeaderEnv } from "./header-env.js";
+
 /**
  * External 세션을 쓸지, 쓴다면 어느 방향인지.
  *
@@ -58,16 +60,6 @@ const SESSION_OPTION = {
   record: "--record-session",
   replay: "--session",
 } as const;
-
-/**
- * `<헤더이름>=<환경변수이름>` 인지 본다. CLI 의 `parseHeaderEnvOption` 과 같은 자리에서
- * 거절해야 폼이 만든 조합이 서버에서 처음 깨지는 일이 없다. 문자 종류까지는 보지 않는다 —
- * 그 판정은 CLI 가 헤더 토큰·환경변수 이름 패턴으로 더 정확히 한다.
- */
-function isHeaderEnv(entry: string): boolean {
-  const separator = entry.indexOf("=");
-  return separator > 0 && entry.slice(separator + 1) !== "";
-}
 
 /**
  * 위반 시 한국어 메시지로 throw. UI 는 이 함수를 실행 버튼 비활성 판정에도 재사용한다 —

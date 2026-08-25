@@ -908,6 +908,19 @@ describe("AI 대화형 검토", () => {
     ).resolves.toBe(0);
     expect(d.value.providers?.codex).toHaveBeenCalledWith("gpt-5.6-luna");
   });
+  it("모델 입력에서 뒤로가기를 요청하면 provider를 호출하지 않고 검토 메뉴로 돌아간다", async () => {
+    const d = reviewDeps(["codex", "cancel"], ["__mcpeak_review_back__"]);
+    await expect(runGenerateCommand(interactiveArgv, d.value)).resolves.toBe(0);
+    expect(d.provider.author).not.toHaveBeenCalled();
+    expect(d.io.choose).toHaveBeenCalledTimes(2);
+  });
+  it("AI 요청 입력에서 뒤로가기를 요청하면 전송 확인 없이 검토 메뉴로 돌아간다", async () => {
+    const d = reviewDeps(["codex", "cancel"], ["", "__mcpeak_review_back__"]);
+    await expect(runGenerateCommand(interactiveArgv, d.value)).resolves.toBe(0);
+    expect(d.provider.author).not.toHaveBeenCalled();
+    expect(d.io.confirm).not.toHaveBeenCalled();
+    expect(d.io.choose).toHaveBeenCalledTimes(2);
+  });
   it("provider unavailable이면 자동 fallback하지 않는다", async () => {
     const d = reviewDeps(["codex", "cancel"], ["request"]);
     d.value.providers = { codex: vi.fn(() => undefined), claude: vi.fn() };

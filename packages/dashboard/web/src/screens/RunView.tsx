@@ -13,6 +13,22 @@ import { useRunEvents } from "../run-stream.js";
 const REPAIR_INPUT_CLASS =
   "w-full rounded border border-line bg-surface px-3 py-1.5 font-mono text-sm text-ink";
 
+/** 검토 메뉴가 연 하위 입력만 뒤로가기를 제공한다. 일반 입력 질문의 의미는 바꾸지 않는다. */
+function canReturnToReviewMenu(question: {
+  readonly kind: string;
+  readonly message: string;
+}): boolean {
+  if (question.kind !== "input") return false;
+  const message = question.message.trim();
+  return (
+    message === "AI 요청:" ||
+    message === "피드백:" ||
+    message === "적용할 change ID를 쉼표로 입력하세요:" ||
+    message === "편집한 JSON 파일 경로:" ||
+    /^(codex|claude) model \(/.test(message)
+  );
+}
+
 interface RunStreamPanelProps {
   readonly runId: string;
   /**
@@ -98,6 +114,19 @@ export function RunStreamPanel({
       await apiSend("POST", `/api/runs/${encodeURIComponent(runId)}/answer`, {
         questionId,
         value,
+      });
+      setAnsweredId(questionId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function back(questionId: string): Promise<void> {
+    setError(null);
+    try {
+      await apiSend("POST", `/api/runs/${encodeURIComponent(runId)}/answer`, {
+        questionId,
+        action: "back",
       });
       setAnsweredId(questionId);
     } catch (err) {
@@ -274,6 +303,9 @@ export function RunStreamPanel({
               key={visibleQuestion.id}
               question={visibleQuestion}
               onAnswer={(value) => answer(visibleQuestion.id, value)}
+              onBack={
+                canReturnToReviewMenu(visibleQuestion) ? () => back(visibleQuestion.id) : undefined
+              }
             />
           ) : undefined
         }

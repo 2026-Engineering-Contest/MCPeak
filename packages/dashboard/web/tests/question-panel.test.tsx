@@ -56,6 +56,23 @@ describe("QuestionPanel", () => {
     expect(onAnswer).toHaveBeenCalledWith("  그대로 전달 ");
   });
 
+  it("뒤로갈 수 있는 입력 질문은 테마 안의 뒤로가기 버튼을 제공한다", () => {
+    const onAnswer = vi.fn(async () => {});
+    const onBack = vi.fn(async () => {});
+    render(
+      <QuestionPanel
+        question={{ id: "q1", kind: "input", message: "AI 요청: " }}
+        onAnswer={onAnswer}
+        onBack={onBack}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "검토 메뉴로 돌아가기" }));
+
+    expect(onBack).toHaveBeenCalledOnce();
+    expect(onAnswer).not.toHaveBeenCalled();
+  });
+
   it("응답이 진행 중이면 컨트롤이 비활성화되고 중복 전송되지 않는다", async () => {
     let resolveAnswer: (() => void) | undefined;
     const onAnswer = vi.fn(

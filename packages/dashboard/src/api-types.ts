@@ -41,11 +41,17 @@ export interface RunSummary {
 }
 
 /** POST /api/runs/:id/answer */
-export interface AnswerRequest {
-  readonly questionId: string;
-  /** input → 문자열, choose → 선택지 문자열 그대로, confirm → "y" | "n" */
-  readonly value: string;
-}
+export type AnswerRequest =
+  | {
+      readonly questionId: string;
+      /** input → 문자열, choose → 선택지 문자열 그대로, confirm → "y" | "n" */
+      readonly value: string;
+    }
+  | {
+      readonly questionId: string;
+      /** 검토 메뉴에서 연 하위 입력을 취소하고 상위 메뉴로 돌아간다. */
+      readonly action: "back";
+    };
 
 /**
  * GET /api/meta — 서버가 스위트를 찾는 기준 디렉터리(절대경로, 서버를 띄운 cwd).

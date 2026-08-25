@@ -122,6 +122,26 @@ describe("RunView", () => {
     });
   });
 
+  it("AI 입력에서 뒤로가기를 누르면 현재 질문을 검토 메뉴 복귀 요청으로 끝낸다", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const fetchMock = stubFetch();
+    render(<RunView runId="run-1" />);
+
+    act(() => {
+      lastSource().emit({
+        kind: "question",
+        question: { id: "q1", kind: "input", message: "AI 요청: " },
+      });
+    });
+    fireEvent.click(screen.getByRole("button", { name: "검토 메뉴로 돌아가기" }));
+
+    await waitFor(() => {
+      const [, init] = writeCalls(fetchMock)[0] ?? [];
+      expect(JSON.parse(String(init?.body))).toEqual({ questionId: "q1", action: "back" });
+    });
+    expect(screen.queryByText("AI 요청:")).toBeNull();
+  });
+
   it('status가 failed면 repair 폼을 열어 flow:"repair"를 POST한다', async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     const fetchMock = stubFetch();

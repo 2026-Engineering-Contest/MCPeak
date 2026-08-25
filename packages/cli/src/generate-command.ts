@@ -703,6 +703,57 @@ function diffBody(change: AuthoringDiffPreview["changes"][number]): string[] {
       return changedLeaves(change.before, change.after);
   }
 }
+/** `show` 의 입력 JSON 한 줄 상한. 넘으면 자른다. 전체는 저장 후 파일에서 본다. */
+const MAX_SHOW_INPUT_CHARS = 80;
+
+/**
+ * 검토 메뉴 `show`. 지금 승인된 명세를 케이스당 한 줄로 요약한다. 검토 메뉴는 diff(바뀐 값)만
+ * 보여 주므로 AI 가 만든 케이스가 무엇인지 저장 전에는 볼 곳이 없었다. 전문 JSON 은 케이스
+ * 8건이면 100줄이 넘어 로그를 덮는다. 한 줄 요약이 화면에 맞는다.
+ */
+function renderSuiteSummary(options: {
+  readonly suite: TestSuiteSpec;
+  readonly revision: number;
+  readonly outPath: string;
+  readonly pendingCandidate: boolean;
+}): string {
+  const { suite } = options;
+  const width = String(suite.cases.length).length;
+  const lines = suite.cases.map((testCase, index) => {
+    const number = String(index + 1).padStart(width, " ");
+    const operation =
+      testCase.operation.type === "listTools"
+        ? "listTools"
+        : `callTool ${testCase.operation.tool} ${truncate(
+            JSON.stringify(testCase.operation.input),
+            MAX_SHOW_INPUT_CHARS,
+          )}`;
+    const assertions = testCase.assertions
+      .map((assertion) =>
+        assertion.type === "toolExists"
+          ? `toolExists ${assertion.tool}`
+          : assertion.type === "isError"
+            ? `isError=${assertion.expected}`
+            : assertion.type,
+      )
+      .join(", ");
+    return `  ${number}. ${testCase.id}  ${operation}  → ${assertions}`;
+  });
+  const header = `현재 명세: ${suite.name} (id ${suite.id}) · 케이스 ${suite.cases.length}건 · revision ${options.revision}`;
+  const footer = `저장하면 이 내용이 ${options.outPath} 에 쓰입니다.`;
+  const pending = options.pendingCandidate
+    ? "  → 미반영 AI 후보가 있습니다. 위 목록에는 안 들어 있습니다. apply-all 또는 select 로 반영하세요."
+    : "";
+  // 이스케이프는 줄 단위로 건다. 통째로 걸면 줄바꿈까지 \u000a 로 바뀐다.
+  return `${[header, ...lines, footer, ...(pending === "" ? [] : [pending])]
+    .map(escapeTerminalText)
+    .join("\n")}\n`;
+}
+
+function truncate(text: string, max: number): string {
+  return text.length <= max ? text : `${text.slice(0, max - 1)}…`;
+}
+
 function showDiff(io: ReviewIO, preview: AuthoringDiffPreview): void {
   if (preview.changes.length === 0) {
     io.write(
@@ -1308,6 +1359,7 @@ async function runInteractiveReview(
   try {
     while (true) {
       const action = await io.choose("검토 메뉴", [
+        "show",
         "codex",
         "claude",
         "apply-all",
@@ -1318,6 +1370,22 @@ async function runInteractiveReview(
         "cancel",
       ]);
       if (action === "cancel") return 0;
+      if (action === "show") {
+        // 묻는 것 없이 찍는다. save 가 읽는 approvedDraft 와 같은 것이라, 여기 보이는 것이
+        // 저장될 것이다. 미반영 후보는 diff 로만 있으므로 그 존재만 알린다.
+        io.write(
+          renderSuiteSummary({
+            suite: session.approvedDraft.suite,
+            revision: session.approvedDraft.revision,
+            outPath: input.outPath,
+            // 반영한 뒤에도 candidate 변수는 남는다(revise 가 이어받는다). 아직 반영 안 된
+            // 변경이 실제로 있는지는 diff 로 본다.
+            pendingCandidate:
+              candidate !== undefined && makeDiff({ session, candidate }).changes.length > 0,
+          }),
+        );
+        continue;
+      }
       if (action === "save") {
         const dryRunSuite = session.approvedDraft.suite;
         const caseCount = dryRunSuite.cases.length;

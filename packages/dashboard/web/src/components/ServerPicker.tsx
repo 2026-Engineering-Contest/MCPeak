@@ -93,8 +93,14 @@ export function ServerPicker(props: {
   disabledHint?: string;
   /** 탐색 루트(`GET /api/meta`). 못 받았으면 null 이고 안내에서 경로만 빠진다. */
   root: string | null;
+  /**
+   * 라디오 그룹 이름(설계 §6-1). 홈과 Generate 는 같은 문서에 동시에 그려지지 않지만
+   * 테스트에서 겹칠 수 있어 부르는 쪽이 정할 수 있게 둔다.
+   */
+  radioName?: string;
 }): JSX.Element {
   const disabled = props.disabled ?? false;
+  const radioName = props.radioName ?? "home-run-server";
   // 지난 실행이 스캔 후보와 같으면 항목을 만들지 않는다. 같은 명령이 두 줄로 보이면
   // 사용자는 무엇이 다른지 찾느라 시간을 쓴다.
   const showLastRun =
@@ -128,7 +134,7 @@ export function ServerPicker(props: {
             <Card
               checked={props.choice.kind === "last-run"}
               disabled={disabled}
-              name="home-run-server"
+              name={radioName}
               title="지난 실행"
               subtitle={commandLine(props.lastRun.command, props.lastRun.args)}
               badge="이 브라우저"
@@ -140,7 +146,7 @@ export function ServerPicker(props: {
               key={candidate.id}
               checked={props.choice.kind === "candidate" && props.choice.id === candidate.id}
               disabled={disabled}
-              name="home-run-server"
+              name={radioName}
               title={candidate.name}
               subtitle={commandLine(candidate.command, candidate.args)}
               badge={SOURCE_LABELS[candidate.source]}
@@ -156,7 +162,7 @@ export function ServerPicker(props: {
           <Card
             checked={props.choice.kind === "manual"}
             disabled={disabled}
-            name="home-run-server"
+            name={radioName}
             title="직접 입력"
             subtitle="목록에 없는 서버를 실행 방법·스크립트·인자로 적습니다."
             badge="수동"

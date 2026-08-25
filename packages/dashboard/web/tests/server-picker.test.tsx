@@ -107,6 +107,26 @@ describe("서버 선택", () => {
     expect(screen.getByText(/다음부터 목록에 나타납니다/)).toBeTruthy();
   });
 
+  it("radioName 을 주면 모든 라디오의 name 이 그 값이다", () => {
+    renderPicker({ radioName: "generate-server" });
+
+    const radios = screen.getAllByRole("radio");
+    expect(radios.length).toBeGreaterThan(0);
+    for (const radio of radios) {
+      expect(radio.getAttribute("name")).toBe("generate-server");
+    }
+  });
+
+  it("radioName 을 안 주면 home-run-server 다", () => {
+    renderPicker();
+
+    const radios = screen.getAllByRole("radio");
+    expect(radios.length).toBeGreaterThan(0);
+    for (const radio of radios) {
+      expect(radio.getAttribute("name")).toBe("home-run-server");
+    }
+  });
+
   it("disabled 면 모든 라디오가 비활성이고 disabledHint 가 보인다", () => {
     renderPicker({
       disabled: true,

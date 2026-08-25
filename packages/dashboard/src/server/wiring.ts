@@ -179,6 +179,10 @@ async function executeGenerate(
     ...base,
     ...ioFields,
     connect: core.connectStdio,
+    // 원격(Streamable HTTP) 대상용 배선(설계 §6-5). 없으면 `--url` 이 서버에서
+    // `connectHttp 미배선` 으로 멈춘다. 위 test 배선과 같은 값이다.
+    connectHttp: core.connectHttp,
+    readEnv: (name) => process.env[name],
     createBaselineSuite: generate.createBaselineSuite,
     createAuthoringSession: generate.createAuthoringSession,
     finalizeAuthoringDraft: generate.finalizeAuthoringDraft,

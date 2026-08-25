@@ -9,7 +9,7 @@ import type {
 } from "../../../src/api-types.js";
 import { apiGet, apiSend } from "../api.js";
 import type { SessionMode } from "../build-test-argv.js";
-import { buildTestArgv } from "../build-test-argv.js";
+import { buildTestArgv, DEFAULT_TEST_OPTIONS } from "../build-test-argv.js";
 import { FlowChip } from "../components/FlowChip.js";
 import { StatusBadge } from "../components/StatusBadge.js";
 import { Field, INPUT_CLASS } from "../generate/steps/fields.js";
@@ -92,6 +92,7 @@ export function Home(): JSX.Element {
         args: [...leadingArgs, ...args],
         sessionMode,
         sessionPath: sessionPath.trim(),
+        options: DEFAULT_TEST_OPTIONS,
       });
     } catch {
       return null;

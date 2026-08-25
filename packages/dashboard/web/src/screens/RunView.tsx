@@ -8,6 +8,8 @@ import { QuestionPanel } from "../components/QuestionPanel.js";
 import { StatusBadge } from "../components/StatusBadge.js";
 import { repairBundlePathOf } from "../repair-bundle-path.js";
 import { useRunEvents } from "../run-stream.js";
+import type { RunTarget } from "../run-target.js";
+import { describeRun } from "../run-target.js";
 
 /** repair 폼 입력란 공통 클래스. 대시보드 테마를 그대로 따른다. */
 const REPAIR_INPUT_CLASS =
@@ -46,10 +48,13 @@ export function RunStreamPanel({
    * 치던 자리다. 모르면 버튼도 안내도 그리지 않는다(#295 와 같은 원칙. 아는 척하지 않는다).
    */
   const [argv, setArgv] = useState<readonly string[] | null>(null);
+  /** 이 run 의 대상(스위트·서버). 목록과 같은 문장을 상세 화면 머리에도 둔다. */
+  const [runTarget, setRunTarget] = useState<RunTarget | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     setArgv(null);
+    setRunTarget(null);
     // 같은 패널 인스턴스가 다른 run 으로 바뀔 수 있다. 앞 run 의 경로가 남으면 그것을 보내고,
     // 앞 run 에서 연 폼이 그대로 열려 있으면 다른 run 의 폼처럼 보인다.
     setBundlePath("");
@@ -58,6 +63,7 @@ export function RunStreamPanel({
       .then((summary) => {
         if (cancelled || !Array.isArray(summary.argv)) return;
         setArgv(summary.argv);
+        setRunTarget(describeRun(summary.flow, summary.argv));
         const found = repairBundlePathOf(summary.argv);
         if (found !== null) setBundlePath((previous) => (previous === "" ? found : previous));
       })
@@ -162,10 +168,12 @@ export function RunStreamPanel({
         )}
         {status === "failed" && showRepairAction && argv !== null && runBundlePath === null && (
           <span className="text-xs text-ink-muted">
-            이 실행은 repair 번들 없이 시작됐습니다. 홈에서 다시 실행하면 번들이 만들어집니다.
+            이 실행은 repair 번들 없이 시작됐습니다. Test 에서 다시 실행하면 번들이 만들어집니다.
           </span>
         )}
       </div>
+
+      {runTarget !== null && <RunTargetText target={runTarget} />}
 
       {status === "failed" && showRepairAction && runBundlePath !== null && repairOpen && (
         <form
@@ -282,6 +290,29 @@ export function RunStreamPanel({
   );
 }
 
+/**
+ * 이 run 이 무엇을 무엇으로 돌렸는지 한 줄. **어느 서버였는지가 목록에서 안 보이면 run 은
+ * 서로 구별되지 않는다** — runId 는 사람이 기억하는 이름이 아니다.
+ *
+ * 긴 명령은 말줄임하고 전문은 `title` 로 남긴다. 모르는 칸은 그냥 비운다(#295).
+ */
+function RunTargetText({ target }: { readonly target: RunTarget }): JSX.Element | null {
+  if (target.suite === null && target.server === null) {
+    return null;
+  }
+  const full = [target.suite, target.server].filter((part) => part !== null).join("  ·  ");
+  return (
+    <span className="flex min-w-0 flex-1 items-baseline gap-2" title={full}>
+      {target.suite !== null && (
+        <span className="max-w-[45%] truncate font-mono text-xs text-ink">{target.suite}</span>
+      )}
+      {target.server !== null && (
+        <span className="min-w-0 truncate font-mono text-xs text-ink-muted">{target.server}</span>
+      )}
+    </span>
+  );
+}
+
 interface RunViewProps {
   readonly runId: string | null;
 }
@@ -337,20 +368,24 @@ function RunList(): JSX.Element {
                 <td className="px-4 py-3 text-ink-muted">아직 실행이 없습니다.</td>
               </tr>
             )}
-            {runs?.map((run) => (
-              <tr key={run.runId}>
-                <td className="px-4 py-2">
-                  <a
-                    className="flex items-center gap-3 text-ink hover:text-accent"
-                    href={`#/runs/${encodeURIComponent(run.runId)}`}
-                  >
-                    <FlowChip flow={run.flow} />
-                    <span className="font-mono text-xs">{run.runId}</span>
-                    <StatusBadge status={run.status} exitCode={run.exitCode} />
-                  </a>
-                </td>
-              </tr>
-            ))}
+            {runs?.map((run) => {
+              const target = describeRun(run.flow, run.argv);
+              return (
+                <tr key={run.runId}>
+                  <td className="px-4 py-2">
+                    <a
+                      className="flex items-center gap-3 text-ink hover:text-accent"
+                      href={`#/runs/${encodeURIComponent(run.runId)}`}
+                    >
+                      <FlowChip flow={run.flow} />
+                      <span className="shrink-0 font-mono text-xs">{run.runId}</span>
+                      <RunTargetText target={target} />
+                      <StatusBadge status={run.status} exitCode={run.exitCode} />
+                    </a>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

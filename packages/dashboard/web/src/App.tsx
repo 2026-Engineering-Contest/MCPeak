@@ -65,7 +65,7 @@ function parseRoute(hash: string): Route {
 }
 
 const HEADER_TITLES: Record<NavId, string> = {
-  home: "Home",
+  home: "Test",
   runs: "Runs",
   generate: "Generate",
   repair: "Repair",

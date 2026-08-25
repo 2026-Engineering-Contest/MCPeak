@@ -29,7 +29,7 @@ const ICON_PROPS = {
 const NAV_ITEMS: readonly NavItem[] = [
   {
     id: "home",
-    label: "Home",
+    label: "Test",
     hash: "#/home",
     icon: (
       // biome-ignore lint/a11y/noSvgWithoutTitle: 장식용 아이콘, 라벨 텍스트가 인접

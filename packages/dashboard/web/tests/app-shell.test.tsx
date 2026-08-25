@@ -8,7 +8,7 @@ function fakeFetch(): typeof fetch {
   return vi.fn(async () => new Response("[]", { status: 200 })) as unknown as typeof fetch;
 }
 
-const NAV_LABELS = ["Home", "Runs", "Generate", "Repair"];
+const NAV_LABELS = ["Test", "Runs", "Generate", "Repair"];
 
 describe("app shell", () => {
   beforeEach(() => {
@@ -21,7 +21,7 @@ describe("app shell", () => {
     window.location.hash = "";
   });
 
-  it("사이드바 라벨이 순서대로 Home, Runs, Generate, Repair다", async () => {
+  it("사이드바 라벨이 순서대로 Test, Runs, Generate, Repair다", async () => {
     window.location.hash = "#/home";
     render(<App />);
     const nav = await screen.findByRole("navigation");
@@ -44,9 +44,9 @@ describe("app shell", () => {
     await waitFor(() => {
       expect(window.location.hash).toBe("#/home");
     });
-    expect(await screen.findByRole("heading", { name: "홈" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "테스트" })).toBeTruthy();
     const current = document.querySelectorAll('[aria-current="page"]');
     expect(current).toHaveLength(1);
-    expect(current[0]?.textContent?.trim()).toBe("Home");
+    expect(current[0]?.textContent?.trim()).toBe("Test");
   });
 });

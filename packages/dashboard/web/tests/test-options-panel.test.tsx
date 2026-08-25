@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SessionMode, TestOptions } from "../src/build-test-argv.js";
@@ -72,15 +72,20 @@ describe("테스트 옵션 패널", () => {
     expect(screen.getByText("2개 바꿈")).toBeTruthy();
   });
 
-  it("HTTP 를 고르면 URL·헤더 입력이 나타나고 stderr 줄 수가 비활성이다", () => {
+  /**
+   * 접속 방식은 이 패널에 없다. 마법사 1단계로 올라갔다(`StepRunServer`) — 명령이 비면
+   * 1단계를 통과할 수 없어, 접속이 3단계에 있으면 HTTP 사용자가 갇힌다.
+   */
+  it("접속 컨트롤은 이 패널에 없다", () => {
     render(<Harness />);
+
+    expect(screen.queryByRole("button", { name: "HTTP URL" })).toBeNull();
     expect(screen.queryByLabelText("URL")).toBeNull();
-    expect(screen.getByLabelText("서버 stderr 줄 수")).toHaveProperty("disabled", false);
+  });
 
-    fireEvent.click(screen.getByRole("button", { name: "HTTP URL" }));
+  it("HTTP 대상이면 stderr 줄 수가 비활성이고 그 사유가 옆에 있다", () => {
+    render(<Harness initial={{ transport: "http", url: "https://example.test/mcp" }} />);
 
-    expect(screen.getByLabelText("URL")).toBeTruthy();
-    expect(screen.getByLabelText("헤더 환경변수")).toBeTruthy();
     expect(screen.getByLabelText("서버 stderr 줄 수")).toHaveProperty("disabled", true);
     expect(screen.getByText("원격 서버에는 stderr 를 읽을 프로세스가 없습니다.")).toBeTruthy();
   });

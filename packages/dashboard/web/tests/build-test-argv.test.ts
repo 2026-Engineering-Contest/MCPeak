@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { TestForm } from "../src/build-test-argv.js";
-import { buildTestArgv } from "../src/build-test-argv.js";
+import type { TestForm, TestOptions } from "../src/build-test-argv.js";
+import { buildTestArgv, DEFAULT_TEST_OPTIONS } from "../src/build-test-argv.js";
 
 /**
  * 폼 → argv 계약을 전량 단언한다. 서버가 이 배열을 가공 없이 `runCli` 에 넘기므로
@@ -13,6 +13,7 @@ const form = (overrides: Partial<TestForm> = {}): TestForm => ({
   args: ["server.mjs"],
   sessionMode: "off",
   sessionPath: "",
+  options: DEFAULT_TEST_OPTIONS,
   ...overrides,
 });
 
@@ -105,5 +106,179 @@ describe("test 플로우 argv 조립", () => {
     const input = form({ sessionMode: "record", sessionPath: "tmp/s.db" });
 
     expect(buildTestArgv(input)).toEqual(buildTestArgv(input));
+  });
+});
+
+/** 옵션만 바꾼 폼. 기본값 위에 얹어 "이 케이스가 켠 것" 이 한눈에 보이게 한다. */
+const withOptions = (options: Partial<TestOptions>, overrides: Partial<TestForm> = {}): TestForm =>
+  form({ ...overrides, options: { ...DEFAULT_TEST_OPTIONS, ...options } });
+
+describe("test 옵션 argv 조립", () => {
+  /**
+   * 목표 4 의 증거다. 옵션 섹션을 통째로 더하면서 기본값 폼의 argv 가 한 토큰이라도 달라지면,
+   * 지금까지 돌던 실행이 조용히 다른 명령이 된다.
+   */
+  it("기본 옵션이면 기존 argv 와 완전히 같다", () => {
+    expect(buildTestArgv(form())).toEqual([
+      "suite.json",
+      "--command",
+      "node",
+      "--arg",
+      "server.mjs",
+    ]);
+  });
+
+  it("determinism 이 --determinism 한 토큰으로 세션 다음에 붙는다", () => {
+    // 세션과는 함께 쓸 수 없으므로(아래 거절 케이스), 세션 자리는 비어 있는 것이 정상이다.
+    expect(buildTestArgv(withOptions({ determinism: true }))).toEqual([
+      "suite.json",
+      "--command",
+      "node",
+      "--arg",
+      "server.mjs",
+      "--determinism",
+    ]);
+  });
+
+  it("stderrLines 가 --stderr-lines 값으로 붙고 비어 있으면 없다", () => {
+    expect(buildTestArgv(withOptions({ stderrLines: "0" }))).toEqual([
+      "suite.json",
+      "--command",
+      "node",
+      "--arg",
+      "server.mjs",
+      "--stderr-lines",
+      "0",
+    ]);
+    expect(buildTestArgv(withOptions({ stderrLines: "" }))).not.toContain("--stderr-lines");
+  });
+
+  it("junit·repair-bundle·reset-cmd 가 이 순서로 붙고 앞뒤 공백은 잘린다", () => {
+    const argv = buildTestArgv(
+      withOptions({
+        junitPath: "  out/j.xml  ",
+        repairBundlePath: " out/r.json ",
+        resetCmd: "  npm run reset  ",
+      }),
+    );
+
+    expect(argv).toEqual([
+      "suite.json",
+      "--command",
+      "node",
+      "--arg",
+      "server.mjs",
+      "--junit",
+      "out/j.xml",
+      "--repair-bundle",
+      "out/r.json",
+      "--reset-cmd",
+      "npm run reset",
+    ]);
+    // 공백만 있는 값은 미지정과 같다 — 빈 문자열을 CLI 에 넘기면 옵션 값 오류가 된다.
+    expect(buildTestArgv(withOptions({ junitPath: "   " }))).not.toContain("--junit");
+  });
+
+  it("http 면 --url 과 --header-env 반복이며 --command·--arg 가 없다", () => {
+    const argv = buildTestArgv(
+      withOptions({
+        transport: "http",
+        url: "https://example.test/mcp",
+        headerEnvs: ["Authorization=MCP_TOKEN", "X-Api-Key=MCP_KEY"],
+      }),
+    );
+
+    expect(argv).toEqual([
+      "suite.json",
+      "--url",
+      "https://example.test/mcp",
+      "--header-env",
+      "Authorization=MCP_TOKEN",
+      "--header-env",
+      "X-Api-Key=MCP_KEY",
+    ]);
+    expect(argv).not.toContain("--command");
+    expect(argv).not.toContain("--arg");
+  });
+
+  /**
+   * 접속을 http 로 바꿔도 서버 인자 값은 화면에서 지우지 않는다(설계 §5-3). 여기서 안 걸러내면
+   * CLI 의 "`--arg` 는 `--url` 과 함께 쓸 수 없습니다" 에 걸려 실행이 서버에서 처음 깨진다.
+   */
+  it("http 에서 args 가 있어도 argv 에 넣지 않는다", () => {
+    const argv = buildTestArgv(
+      withOptions(
+        { transport: "http", url: "https://example.test/mcp" },
+        { args: ["server.mjs", "--port", "3000"] },
+      ),
+    );
+
+    expect(argv).toEqual(["suite.json", "--url", "https://example.test/mcp"]);
+    expect(argv).not.toContain("server.mjs");
+  });
+
+  it('stdio 인데 command 가 비면 "서버를 고르거나 실행 명령을 입력하세요." 로 던진다', () => {
+    expect(() => buildTestArgv(form({ command: "" }))).toThrow(
+      "서버를 고르거나 실행 명령을 입력하세요.",
+    );
+  });
+
+  it('http 인데 url 이 비면 "URL 을 입력하세요." 로 던진다', () => {
+    expect(() => buildTestArgv(withOptions({ transport: "http", url: "   " }))).toThrow(
+      "URL 을 입력하세요.",
+    );
+  });
+
+  it("헤더 환경변수에 = 가 없으면 형식 문장으로 던진다", () => {
+    for (const entry of ["Authorization", "=MCP_TOKEN", "Authorization="]) {
+      expect(() =>
+        buildTestArgv(
+          withOptions({
+            transport: "http",
+            url: "https://example.test/mcp",
+            headerEnvs: [entry],
+          }),
+        ),
+      ).toThrow(`헤더 환경변수는 <헤더이름>=<환경변수이름> 형식이어야 합니다: '${entry}'`);
+    }
+  });
+
+  it('http 와 세션을 함께 켜면 "External 세션은 HTTP 대상과 함께 쓸 수 없습니다..." 로 던진다', () => {
+    for (const sessionMode of ["record", "replay"] as const) {
+      expect(() =>
+        buildTestArgv(
+          withOptions(
+            { transport: "http", url: "https://example.test/mcp" },
+            { sessionMode, sessionPath: "tmp/s.db" },
+          ),
+        ),
+      ).toThrow(
+        "External 세션은 HTTP 대상과 함께 쓸 수 없습니다. 접속을 stdio 로 바꾸거나 세션을 끄세요.",
+      );
+    }
+  });
+
+  it('http 와 stderrLines 를 함께 주면 "서버 stderr 줄 수는 HTTP 대상에 쓸 수 없습니다..." 로 던진다', () => {
+    expect(() =>
+      buildTestArgv(
+        withOptions({ transport: "http", url: "https://example.test/mcp", stderrLines: "40" }),
+      ),
+    ).toThrow("서버 stderr 줄 수는 HTTP 대상에 쓸 수 없습니다. 비워 두세요.");
+  });
+
+  it('determinism 과 세션을 함께 켜면 "결정론 검사는 External 세션과 함께 쓸 수 없습니다..." 로 던진다', () => {
+    for (const sessionMode of ["record", "replay"] as const) {
+      expect(() =>
+        buildTestArgv(withOptions({ determinism: true }, { sessionMode, sessionPath: "tmp/s.db" })),
+      ).toThrow("결정론 검사는 External 세션과 함께 쓸 수 없습니다. 둘 중 하나를 끄세요.");
+    }
+  });
+
+  it('stderrLines 가 정수가 아니면 "서버 stderr 줄 수는 0 이상의 정수여야 합니다." 로 던진다', () => {
+    for (const stderrLines of ["-1", "1.5", "스물", " 20"]) {
+      expect(() => buildTestArgv(withOptions({ stderrLines }))).toThrow(
+        "서버 stderr 줄 수는 0 이상의 정수여야 합니다.",
+      );
+    }
   });
 });

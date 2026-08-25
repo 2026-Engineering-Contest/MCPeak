@@ -209,4 +209,20 @@ describe("classifyRejectionBasis", () => {
     const crashes = fixture.탐침.filter((row) => row.expected === "unverified");
     expect(crashes).toHaveLength(4);
   });
+
+  // #280. 리포터가 `→` 글머리를 겹쳐 찍지 않게 고쳤다. 그 변경은 표시 계층에만 있고
+  // 이 판정이 보는 응답 본문에는 닿지 않아야 한다. 본문에서 `→` 를 지우는 방향으로
+  // 고치면 목 거절이 통째로 unverified 로 떨어지는데, 그러면 크래시가 숨는 쪽이 아니라
+  // 정상 거절이 경고를 다는 쪽으로 새서 화면이 늘 시끄러워진다.
+  it("목 거절 지문은 → 글머리를 그대로 요구한다", () => {
+    const body = [
+      "→ 툴 'get_weather' 의 'city' 은(는) string 이어야 합니다. 받은 값: 12345 (number)",
+      "→ 이 툴이 tools/list 로 선언한 inputSchema 가 그렇게 요구합니다.",
+      "→ 거절이 의도한 것이면 responses 에 이 인자를 넣어 응답을 지정하세요.",
+    ].join("\n");
+
+    expect(classify("get_weather", body)).toBe("verified");
+    // 글머리를 벗긴 본문은 지문이 아니다.
+    expect(classify("get_weather", body.replaceAll("→ ", ""))).toBe("unverified");
+  });
 });

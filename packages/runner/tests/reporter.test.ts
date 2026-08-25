@@ -246,6 +246,128 @@ describe("renderReport", () => {
     expect(arrowLines).toEqual(["    → 위반 하나", "    → 노트 하나"]);
   });
 
+  // #280. `→` 글머리는 이 저장소가 권장하는 실패 메시지 형식이라(`CLAUDE.md`,
+  // `examples/weather-server/server.mjs`) 우리 안내를 따른 서버가 전부 이 자리에 걸린다.
+  // 목 전용 결함이 아니다.
+  describe("서버가 이미 → 글머리를 쓴 줄", () => {
+    const withNotes = (notes: readonly string[]): RunnerReport =>
+      makeReport([
+        testCase({
+          id: "city-number",
+          name: "city 에 숫자를 넣는다",
+          status: "failed",
+          assertions: [
+            assertion("isError", "failed", {
+              code: "IS_ERROR_MISMATCH",
+              message: "정상 응답을 기대했지만 오류 응답을 받았습니다.",
+              hint: "툴 입력값과 서버의 오류 응답을 확인하세요.",
+              notes: [...notes],
+            }),
+          ],
+        }),
+      ]);
+
+    it("글머리를 겹쳐 붙이지 않는다", () => {
+      // 목이 실제로 내는 세 줄이다. 이슈 #280 의 재현 절차가 그대로 만든다.
+      const rendered = renderReport(
+        withNotes([
+          "→ 툴 'get_weather' 의 'city' 은(는) string 이어야 합니다. 받은 값: 12345 (number)",
+          "→ 이 툴이 tools/list 로 선언한 inputSchema 가 그렇게 요구합니다.",
+          "→ 거절이 의도한 것이면 responses 에 이 인자를 넣어 응답을 지정하세요.",
+        ]),
+      );
+
+      expect(rendered).not.toContain("→ →");
+      expect(rendered.split("\n").filter((line) => line.startsWith("    → "))).toEqual([
+        "    → 툴 'get_weather' 의 'city' 은(는) string 이어야 합니다. 받은 값: 12345 (number)",
+        "    → 이 툴이 tools/list 로 선언한 inputSchema 가 그렇게 요구합니다.",
+        "    → 거절이 의도한 것이면 responses 에 이 인자를 넣어 응답을 지정하세요.",
+      ]);
+    });
+
+    it("서버 원문을 손대지 않는다", () => {
+      // 화살표 뒤 공백은 서버의 표기다. 우리가 정규화하면 원문과 화면이 어긋난다.
+      const rendered = renderReport(withNotes(["→툴 A", "→  툴 B"]));
+
+      expect(rendered).toContain("    →툴 A");
+      expect(rendered).toContain("    →  툴 B");
+    });
+
+    it("선행 공백이 있으면 들여쓰기를 보존하며 겹치지 않는다", () => {
+      // 서버가 하위 항목을 들여쓴 것이므로 우리가 펴면 계층이 사라진다.
+      const rendered = renderReport(withNotes(["→ 상위", "  → 하위"]));
+
+      expect(rendered).not.toContain("→ →");
+      expect(rendered).toContain("    → 상위");
+      expect(rendered).toContain("      → 하위");
+    });
+
+    it("화살표가 둘 이상이면 그대로 둔다", () => {
+      // 서버가 두 개를 쓴 것은 서버 문장이다. 우리가 하나를 안 붙이는 데까지가 우리 몫이다.
+      const rendered = renderReport(withNotes(["→ → 서버가 두 개를 보냈다"]));
+
+      expect(countOf(rendered, "→")).toBe(2);
+      expect(rendered).toContain("    → → 서버가 두 개를 보냈다");
+    });
+
+    it("→ 가 줄 중간에 있으면 글머리를 붙인다", () => {
+      // 글머리 판정은 줄 시작에서만 한다. 문장 안의 화살표는 글머리가 아니다.
+      expect(renderReport(withNotes(["거절 → 사유"]))).toContain("    → 거절 → 사유");
+    });
+
+    it("→ 앞의 터미널 제어 문자는 이스케이프되고 글머리는 붙는다", () => {
+      // 이스케이프가 먼저, 판정이 나중이다. 이스케이프 결과가 → 로 시작하지 않으므로
+      // 우리 글머리가 붙는다. 이 순서를 뒤집으면 SGR 이 화면에 살아 나간다.
+      expect(renderReport(withNotes([`${ESC}[31m→ 빨강`]))).toContain(
+        `    → ${ESCAPED_ESC}[31m→ 빨강`,
+      );
+    });
+
+    it("violations 에도 같은 규칙이 걸린다", () => {
+      const report = makeReport([
+        testCase({
+          id: "weather",
+          name: "날씨를 조회한다",
+          status: "failed",
+          assertions: [
+            assertion(
+              "bodyMatchesSchema",
+              "failed",
+              diagnostic("진단 메시지", "진단 힌트", ["→ 위반"]),
+            ),
+          ],
+        }),
+      ]);
+
+      const rendered = renderReport(report);
+
+      expect(rendered).not.toContain("→ →");
+      expect(rendered).toContain("    → 위반");
+    });
+
+    it("케이스 레벨 진단의 notes 에도 같은 규칙이 걸린다", () => {
+      // 단언 줄과 다른 호출부다. 규칙이 한쪽에만 걸리면 화면이 자리마다 갈린다.
+      const report = makeReport([
+        testCase({
+          id: "weather",
+          name: "날씨를 조회한다",
+          status: "failed",
+          operationDiagnostic: {
+            code: "OPERATION_FAILED",
+            message: "MCP 작업 실행이 실패했습니다.",
+            hint: "진단 힌트",
+            notes: ["→ 서버가 준 이유"],
+          },
+        }),
+      ]);
+
+      const rendered = renderReport(report);
+
+      expect(rendered).not.toContain("→ →");
+      expect(rendered).toContain("    → 서버가 준 이유");
+    });
+  });
+
   it("통과한 단언은 그리지 않는다", () => {
     const report = makeReport([
       testCase({

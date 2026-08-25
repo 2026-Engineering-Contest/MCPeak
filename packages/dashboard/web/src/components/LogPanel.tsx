@@ -88,7 +88,7 @@ export function LogPanel(props: {
         })}
         {props.conversations?.some((conversation) => conversation.waiting) && (
           <p className="mt-3 font-sans text-sm text-ink-muted" role="status" aria-live="polite">
-            AI가 답변 중입니다...
+            질문 답변중...
           </p>
         )}
       </div>

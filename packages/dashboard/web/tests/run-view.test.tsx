@@ -122,7 +122,7 @@ describe("RunView", () => {
     });
   });
 
-  it("AI 질문과 응답을 구분하고 provider 응답을 기다리는 동안 진행 상태를 보인다", async () => {
+  it("후속 AI 질문은 스위트 생성 상태 없이 질문 답변 상태만 보인다", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     stubFetch();
     render(<RunView runId="run-1" />);
@@ -150,7 +150,8 @@ describe("RunView", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "예" }));
 
-    expect(await screen.findByText("AI가 답변 중입니다...")).toBeTruthy();
+    expect(await screen.findByText("질문 답변중...")).toBeTruthy();
+    expect(screen.queryByText("스위트 생성중...")).toBeNull();
 
     act(() => {
       lastSource().emit({ kind: "stdout", html: "<strong>실패 케이스를 추가했습니다.</strong>" });
@@ -158,7 +159,7 @@ describe("RunView", () => {
     expect(await screen.findByText("AI 응답")).toBeTruthy();
     // provider stdout은 별도 대화 카드에 복제하지 않고 터미널 흐름에 한 번만 그린다.
     expect(screen.getAllByText("실패 케이스를 추가했습니다.")).toHaveLength(1);
-    expect(screen.queryByText("AI가 답변 중입니다...")).toBeNull();
+    expect(screen.queryByText("질문 답변중...")).toBeNull();
   });
 
   it("전송 승인 뒤 검토 메뉴가 도착할 때까지 스위트 생성중 상태를 보인다", async () => {
@@ -229,7 +230,7 @@ describe("RunView", () => {
 
     // 경로는 치지 않는다. 이 run 의 argv 에서 채워져 있어야 한다(ADR-0080).
     expect(screen.getByLabelText("repair 번들 경로")).toHaveProperty("value", BUNDLE);
-    fireEvent.change(screen.getByLabelText("model"), { target: { value: "claude-sonnet-5" } });
+    fireEvent.change(screen.getByLabelText("model"), { target: { value: "sonnet" } });
     fireEvent.click(screen.getByRole("button", { name: "시작" }));
 
     await waitFor(() => {
@@ -239,7 +240,7 @@ describe("RunView", () => {
     expect(url).toBe("/api/runs");
     expect(JSON.parse(String(init?.body))).toEqual({
       flow: "repair",
-      argv: [BUNDLE, "--provider", "claude", "--model", "claude-sonnet-5"],
+      argv: [BUNDLE, "--provider", "claude", "--model", "sonnet"],
     });
   });
 
@@ -315,7 +316,7 @@ describe("RunView", () => {
     fireEvent.change(screen.getByLabelText("repair 번들 경로"), {
       target: { value: "other/bundle.json" },
     });
-    fireEvent.change(screen.getByLabelText("model"), { target: { value: "m" } });
+    fireEvent.change(screen.getByLabelText("model"), { target: { value: "sonnet" } });
     fireEvent.click(screen.getByRole("button", { name: "시작" }));
 
     await waitFor(() => {
@@ -339,6 +340,35 @@ describe("RunView", () => {
     expect(Array.from(select.options).map((option) => option.value)).toEqual(["claude", "codex"]);
   });
 
+  it("repair 모델은 provider별 generate 모델 목록에서 선택하고 provider를 바꾸면 초기화한다", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    stubFetch();
+    render(<RunView runId="run-1" />);
+    act(() => {
+      lastSource().emit({ kind: "done", exitCode: 1 });
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "repair 시작" }));
+
+    const model = screen.getByLabelText("model") as HTMLSelectElement;
+    expect(model.tagName).toBe("SELECT");
+    expect(Array.from(model.options).map((option) => [option.value, option.text])).toEqual([
+      ["", "모델을 선택하세요"],
+      ["sonnet", "Sonnet"],
+      ["haiku", "Haiku"],
+      ["opus", "Opus"],
+    ]);
+
+    fireEvent.change(model, { target: { value: "sonnet" } });
+    fireEvent.change(screen.getByLabelText("provider"), { target: { value: "codex" } });
+    expect(model.value).toBe("");
+    expect(Array.from(model.options).map((option) => [option.value, option.text])).toEqual([
+      ["", "모델을 선택하세요"],
+      ["gpt-5.6-sol", "Sol"],
+      ["gpt-5.6-terra", "Terra"],
+      ["gpt-5.6-luna", "Luna"],
+    ]);
+  });
+
   it("repair 폼은 값이 덜 찼으면 시작 버튼이 비활성이고, 취소하면 닫힌다", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     stubFetch();
@@ -352,7 +382,7 @@ describe("RunView", () => {
     expect(screen.getByRole("button", { name: "시작" })).toHaveProperty("disabled", true);
     fireEvent.change(screen.getByLabelText("repair 번들 경로"), { target: { value: "b.json" } });
     expect(screen.getByRole("button", { name: "시작" })).toHaveProperty("disabled", true);
-    fireEvent.change(screen.getByLabelText("model"), { target: { value: "m" } });
+    fireEvent.change(screen.getByLabelText("model"), { target: { value: "sonnet" } });
     expect(screen.getByRole("button", { name: "시작" })).toHaveProperty("disabled", false);
 
     fireEvent.click(screen.getByRole("button", { name: "취소" }));
@@ -370,14 +400,14 @@ describe("RunView", () => {
 
     // 버튼이 꺼진 이유가 침묵하면 사용자는 폼 전체를 다시 의심한다(#354).
     // 경로는 채워져 오므로(ADR-0080) 먼저 지워서 그 갈래를 밟는다.
-    expect(screen.getByText("model 을 입력하세요.")).toBeTruthy();
+    expect(screen.getByText("model 을 선택하세요.")).toBeTruthy();
     fireEvent.change(screen.getByLabelText("repair 번들 경로"), { target: { value: "" } });
     expect(screen.getByText("repair 번들 경로를 입력하세요.")).toBeTruthy();
     fireEvent.change(screen.getByLabelText("repair 번들 경로"), { target: { value: "b.json" } });
     expect(screen.queryByText("repair 번들 경로를 입력하세요.")).toBeNull();
-    expect(screen.getByText("model 을 입력하세요.")).toBeTruthy();
-    fireEvent.change(screen.getByLabelText("model"), { target: { value: "m" } });
-    expect(screen.queryByText("model 을 입력하세요.")).toBeNull();
+    expect(screen.getByText("model 을 선택하세요.")).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("model"), { target: { value: "sonnet" } });
+    expect(screen.queryByText("model 을 선택하세요.")).toBeNull();
   });
 
   it("repair 의 model 칸은 필수임을 표시한다 — generate 의 '모델 (선택)' 과 다르다", async () => {

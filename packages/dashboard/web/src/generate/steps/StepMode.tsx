@@ -1,21 +1,9 @@
 import type { JSX } from "react";
+import { MODEL_OPTIONS } from "../../provider-models.js";
 import type { GenerateForm } from "../build-argv.js";
 import { Field, INPUT_CLASS } from "./fields.js";
 
 type ModeFields = Pick<GenerateForm, "mode" | "provider" | "model">;
-
-const MODEL_OPTIONS = {
-  codex: [
-    ["gpt-5.6-sol", "Sol"],
-    ["gpt-5.6-terra", "Terra"],
-    ["gpt-5.6-luna", "Luna"],
-  ],
-  claude: [
-    ["sonnet", "Sonnet"],
-    ["haiku", "Haiku"],
-    ["opus", "Opus"],
-  ],
-} as const satisfies Record<ModeFields["provider"], readonly (readonly [string, string])[]>;
 
 /**
  * 3단계 — 생성 방식(설계 §5-3). AI/기본 골격 라디오 카드, AI 도구, 모델뿐이다.

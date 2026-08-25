@@ -1,14 +1,9 @@
 import type { JSX } from "react";
-import { useState } from "react";
-import type { SessionMode, TestOptions, Transport } from "../build-test-argv.js";
+import type { SessionMode, TestOptions } from "../build-test-argv.js";
 import { DEFAULT_TEST_OPTIONS } from "../build-test-argv.js";
 import { Field, INPUT_CLASS, Toggle } from "../generate/steps/fields.js";
 import { managedRepairBundlePath } from "../repair-bundle-path.js";
-
-const TRANSPORT_LABELS: Record<Transport, string> = {
-  stdio: "stdio (위 서버 명령)",
-  http: "HTTP URL",
-};
+import { TransportFields } from "./TransportFields.js";
 
 /** §5-4 와 같은 문장이다. 두 자리에서 같은 제약을 말하므로 한 곳에 둔다. */
 export const DETERMINISM_SESSION_HINT =
@@ -52,18 +47,9 @@ export function TestOptionsPanel(props: {
   onToggle: () => void;
   onChange: (patch: Partial<TestOptions>) => void;
 }): JSX.Element {
-  const [headerDraft, setHeaderDraft] = useState("");
   const options = props.options;
   const http = options.transport === "http";
   const changed = changedOptionCount(options);
-
-  function addHeaderEnv(): void {
-    if (headerDraft.trim() === "") {
-      return;
-    }
-    props.onChange({ headerEnvs: [...options.headerEnvs, headerDraft.trim()] });
-    setHeaderDraft("");
-  }
 
   return (
     <div className="rounded-md border border-line">
@@ -83,92 +69,13 @@ export function TestOptionsPanel(props: {
         <div className="space-y-5 border-t border-line px-3 py-3">
           <div className="space-y-2">
             <GroupTitle>접속</GroupTitle>
-            <fieldset className="inline-flex overflow-hidden rounded-md border border-line">
-              {(Object.keys(TRANSPORT_LABELS) as readonly Transport[]).map((transport) => (
-                <button
-                  key={transport}
-                  type="button"
-                  aria-pressed={options.transport === transport}
-                  className={`px-3 py-1.5 text-sm ${
-                    options.transport === transport
-                      ? "bg-accent-soft font-semibold text-accent"
-                      : "text-ink-muted hover:bg-line-subtle"
-                  }`}
-                  onClick={() => props.onChange({ transport })}
-                >
-                  {TRANSPORT_LABELS[transport]}
-                </button>
-              ))}
-            </fieldset>
-            {http && (
-              <div className="space-y-3 pt-1">
-                <Field label="URL" htmlFor="home-run-url">
-                  <input
-                    id="home-run-url"
-                    className={`${INPUT_CLASS} font-mono`}
-                    value={options.url}
-                    onChange={(event) => props.onChange({ url: event.target.value })}
-                  />
-                </Field>
-                <div className="space-y-2">
-                  <label
-                    className="block text-sm font-medium text-ink"
-                    htmlFor="home-run-header-env"
-                  >
-                    헤더 환경변수
-                  </label>
-                  {options.headerEnvs.length > 0 && (
-                    <ul className="flex flex-wrap gap-2">
-                      {options.headerEnvs.map((entry, index) => (
-                        <li
-                          // biome-ignore lint/suspicious/noArrayIndexKey: 같은 값 중복을 막지 않아 값만으로는 유일 키가 없고, 목록은 변경마다 통째로 재생성된다
-                          key={`${entry}-${index}`}
-                          className="inline-flex items-center gap-1.5 rounded bg-line-subtle px-2 py-0.5 font-mono text-xs text-ink"
-                        >
-                          {entry}
-                          <button
-                            type="button"
-                            aria-label={`헤더 환경변수 ${entry} 제거`}
-                            className="text-ink-muted hover:text-ink"
-                            onClick={() =>
-                              props.onChange({
-                                headerEnvs: options.headerEnvs.filter((_, i) => i !== index),
-                              })
-                            }
-                          >
-                            ×
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                  <div className="flex gap-2">
-                    <input
-                      id="home-run-header-env"
-                      className={`${INPUT_CLASS} font-mono`}
-                      value={headerDraft}
-                      onChange={(event) => setHeaderDraft(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") {
-                          event.preventDefault();
-                          addHeaderEnv();
-                        }
-                      }}
-                    />
-                    <button
-                      type="button"
-                      className="rounded border border-line px-3 py-1.5 text-sm text-ink-muted hover:text-ink"
-                      onClick={addHeaderEnv}
-                    >
-                      추가
-                    </button>
-                  </div>
-                  <p className="text-xs text-ink-muted">
-                    예: Authorization=MCP_TOKEN. 값이 아니라 환경변수 이름을 적습니다.
-                  </p>
-                </div>
-              </div>
-            )}
+            <TransportFields
+              idPrefix="home-run"
+              transport={options.transport}
+              url={options.url}
+              headerEnvs={options.headerEnvs}
+              onChange={props.onChange}
+            />
           </div>
 
           <div className="space-y-3">

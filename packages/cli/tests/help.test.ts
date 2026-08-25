@@ -81,4 +81,16 @@ describe("test External 세션 도움말", () => {
     expect(help).toContain("종료 코드");
     expect(help).toContain("--json 의 determinism 키");
   });
+
+  /**
+   * 차이 지점의 양쪽 값은 이름으로 판정해 가리는데, 서버가 결과를 JSON 문자열로 만들어 text
+   * 블록 하나에 싣는 형태에서는 비밀값이 문자열 안에 있어 그 판정이 닿지 않는다(#183,
+   * ADR-0082). 설계 문서가 "redaction 이 적용된다" 고만 적어 안심하고 CI 로그에 남기던
+   * 자리라, 그 한계를 화면에 적는다(ADR-0033 의 E3: 치환 대신 명시).
+   */
+  it("--determinism 항목이 표시값 마스킹의 한계를 말한다", () => {
+    expect(help).toContain("차이 지점의 양쪽 값을 화면에 싣습니다");
+    expect(help).toContain("text 블록");
+    expect(help).toContain("가려지지 않습니다");
+  });
 });

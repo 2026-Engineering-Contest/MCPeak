@@ -1,13 +1,15 @@
 import type { JSX } from "react";
 import type { GenerateForm } from "../build-argv.js";
-import { Field, INPUT_CLASS, Toggle } from "./fields.js";
+import { Field, INPUT_CLASS } from "./fields.js";
 
-type ModeFields = Pick<GenerateForm, "mode" | "provider" | "model" | "dryRun" | "repair">;
+type ModeFields = Pick<GenerateForm, "mode" | "provider" | "model">;
 
 /**
- * 3단계 — 생성 방식. AI/기본 골격 라디오 카드, AI 도구·모델, 시험 실행·자동 교정 토글.
- * 시험 실행과 자동 교정은 동시에 끌 수 없으므로 나중에 끄려는 쪽 토글을 비활성한다
- * (UI 설계 §5-3 폼 검증 선반영).
+ * 3단계 — 생성 방식(설계 §5-3). AI/기본 골격 라디오 카드, AI 도구, 모델뿐이다.
+ *
+ * **시험 실행·자동 교정 토글은 4단계로 갔다.** `--reset-cmd` 가 시험 실행에 종속인데 토글과
+ * 입력이 다른 단계에 있으면 비활성 사유를 볼 자리가 없다. 같은 화면에 두면 사유가 토글 옆에
+ * 붙는다.
  */
 export function StepMode(props: {
   form: ModeFields;
@@ -67,31 +69,6 @@ export function StepMode(props: {
           </Field>
         </>
       )}
-
-      <Toggle
-        id="generate-dry-run"
-        label="저장 전에 시험 실행으로 검증"
-        checked={form.dryRun}
-        disabled={!form.repair && form.dryRun}
-        hint={
-          !form.repair && form.dryRun
-            ? "자동 교정이 꺼져 있어 시험 실행을 끌 수 없습니다."
-            : "끄면 --no-dry-run이 들어갑니다."
-        }
-        onChange={(dryRun) => props.onChange({ dryRun })}
-      />
-      <Toggle
-        id="generate-repair"
-        label="실패한 입력값 자동 교정"
-        checked={form.repair}
-        disabled={!form.dryRun && form.repair}
-        hint={
-          !form.dryRun && form.repair
-            ? "시험 실행이 꺼져 있어 자동 교정을 끌 수 없습니다."
-            : "끄면 --no-repair가 들어갑니다."
-        }
-        onChange={(repair) => props.onChange({ repair })}
-      />
     </div>
   );
 }

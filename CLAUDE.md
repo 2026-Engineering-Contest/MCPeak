@@ -25,7 +25,6 @@ MCP 서버를 코드로 자동 테스트하는 오픈소스 프레임워크. 5�
 
 ## 작업 방식
 
-- 기능 구현 전에 **타입 시그니처와 테스트를 먼저** 제시하고 확인을 받아라.
 - 한 번에 한 패키지만 작업한다. 여러 패키지를 동시에 고치는 제안은 하지 마라.
 - 확신 없는 버전·API는 추측하지 말고 실제로 확인해라.
 - 작업 후 무엇을 바꿨고, 내가 임의로 판단한 부분이 무엇인지 보고해라.
@@ -44,6 +43,40 @@ fix(core): 서버 종료 시 좀비 프로세스 잔존 문제 해결
 
 `release` 는 npm 배포·릴리스 워크플로·버저닝, `adr` 는 여러 패키지에 걸친 설계 결정 기록.
 둘 다 소유 패키지가 없는 작업이라 패키지 scope 로는 집계되지 않는다.
+
+## PR 생성
+
+- PR 생성시 **먼저 템플릿이 있는지 확인하고** 템플릿이 있다면 반드시 그 템플릿을 지켜서 PR을 생성한다.
+
+## 리뷰 코멘트는 그 스레드 안에서 답한다
+
+`main` 보호 설정에 `required_conversation_resolution` 이 켜져 있다. **리뷰 스레드가 하나라도
+미해결이면 CI 가 전부 녹색이어도 머지가 막힌다.** 이때 `mergeStateStatus` 는 `BLOCKED` 로만
+나오고 이유를 말해 주지 않아서, 사람 승인이 없어서라고 오진하기 쉽다. 이 저장소는
+`required_pull_request_reviews` 를 안 쓰므로 승인은 처음부터 필요 없다.
+
+- 지적을 받아 고쳤으면 봇이 스레드를 자동으로 닫는다. 따로 할 일이 없다.
+- **지적을 안 받을 때가 문제다.** 사유를 PR 본문이나 새 코멘트에 적으면 스레드는 그대로 열려
+  있다. 반드시 **그 스레드 안에 답글**을 달고 스레드를 해제해야 한다.
+
+```sh
+# 미해결 스레드 찾기
+gh api graphql -f query='{repository(owner:"<owner>",name:"<repo>"){pullRequest(number:<N>){
+  reviewThreads(first:30){nodes{id isResolved path comments(first:1){nodes{databaseId}}}}}}}' \
+  --jq '.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved==false)'
+
+# 그 스레드 안에 답글 (databaseId 는 스레드 첫 코멘트의 것)
+gh api repos/<owner>/<repo>/pulls/<N>/comments/<databaseId>/replies -f body='...'
+
+# 해제 (id 는 PRRT_ 로 시작하는 threadId)
+gh api graphql -f query='mutation{resolveReviewThread(input:{threadId:"<id>"}){thread{isResolved}}}'
+```
+
+막힌 이유를 추측하지 말고 보호 설정을 먼저 읽어라.
+
+```sh
+gh api repos/<owner>/<repo>/branches/main/protection
+```
 
 ## 설계 결정은 기록한다
 

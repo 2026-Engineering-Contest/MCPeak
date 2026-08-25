@@ -21,6 +21,11 @@ export function QuestionPanel(props: {
   const { question, onAnswer, onBack } = props;
   const [inputValue, setInputValue] = useState("");
   const [busy, setBusy] = useState(false);
+  const isReviewMenu = question.kind === "choose" && question.message.trim() === "검토 메뉴";
+  const isAiPrompt =
+    question.kind === "input" &&
+    (question.message.trim() === "AI 요청:" || question.message.trim() === "피드백:");
+  const hasAccentBackground = isReviewMenu || isAiPrompt;
 
   async function submit(value: string): Promise<void> {
     if (busy) return;
@@ -43,10 +48,16 @@ export function QuestionPanel(props: {
   }
 
   return (
-    <div className="space-y-3 font-sans">
+    <div
+      className={`space-y-3 font-sans ${
+        hasAccentBackground ? "rounded-lg border border-accent-border bg-accent-soft p-4" : ""
+      }`}
+    >
       <p className="text-sm">
         <span className="mr-2 text-xs font-semibold text-accent">질문</span>
-        <span className="font-medium text-white">{question.message}</span>
+        <span className={`font-medium ${hasAccentBackground ? "text-ink" : "text-white"}`}>
+          {question.message}
+        </span>
       </p>
 
       {question.kind === "input" && (
@@ -59,7 +70,11 @@ export function QuestionPanel(props: {
             }}
           >
             <input
-              className="flex-1 rounded border border-line bg-transparent px-3 py-1.5 text-sm text-white disabled:opacity-50"
+              className={`flex-1 rounded border px-3 py-1.5 text-sm disabled:opacity-50 ${
+                isAiPrompt
+                  ? "border-accent-border bg-surface text-ink"
+                  : "border-line bg-transparent text-white"
+              }`}
               value={inputValue}
               disabled={busy}
               onChange={(event) => setInputValue(event.target.value)}
@@ -92,7 +107,11 @@ export function QuestionPanel(props: {
             <button
               key={choice}
               type="button"
-              className="rounded border border-line bg-transparent px-3 py-1.5 text-sm text-white hover:border-accent disabled:opacity-50"
+              className={`rounded border px-3 py-1.5 text-sm hover:border-accent disabled:opacity-50 ${
+                isReviewMenu
+                  ? "border-accent-border bg-surface text-ink"
+                  : "border-line bg-transparent text-white"
+              }`}
               disabled={busy}
               onClick={() => void submit(choice)}
             >

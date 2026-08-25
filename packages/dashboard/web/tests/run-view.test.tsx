@@ -161,6 +161,40 @@ describe("RunView", () => {
     expect(screen.queryByText("AI가 답변 중입니다...")).toBeNull();
   });
 
+  it("전송 승인 뒤 검토 메뉴가 도착할 때까지 스위트 생성중 상태를 보인다", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    stubFetch();
+    render(<RunView runId="run-1" />);
+
+    act(() => {
+      lastSource().emit({
+        kind: "question",
+        question: { id: "q1", kind: "confirm", message: "이 요청을 전송할까요?" },
+      });
+    });
+    fireEvent.click(screen.getByRole("button", { name: "예" }));
+
+    const loading = await screen.findByText("스위트 생성중...");
+    expect(loading.getAttribute("role")).toBe("status");
+
+    act(() => {
+      lastSource().emit({
+        kind: "question",
+        question: {
+          id: "q2",
+          kind: "choose",
+          message: "검토 메뉴",
+          choices: ["show", "save", "cancel"],
+        },
+      });
+    });
+
+    expect(await screen.findByText("검토 메뉴")).toBeTruthy();
+    await waitFor(() => {
+      expect(screen.queryByText("스위트 생성중...")).toBeNull();
+    });
+  });
+
   it("AI 입력에서 뒤로가기를 누르면 현재 질문을 검토 메뉴 복귀 요청으로 끝낸다", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     const fetchMock = stubFetch();

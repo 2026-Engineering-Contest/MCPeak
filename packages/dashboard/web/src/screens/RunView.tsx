@@ -73,6 +73,7 @@ export function RunStreamPanel({
 }: RunStreamPanelProps): JSX.Element {
   const { events, status, pendingQuestion, error: streamError } = useRunEvents(runId);
   const [answeredId, setAnsweredId] = useState<string | null>(null);
+  const [generatingAfterQuestionId, setGeneratingAfterQuestionId] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [repairOpen, setRepairOpen] = useState(false);
@@ -98,6 +99,7 @@ export function RunStreamPanel({
     setBundlePath("");
     setRepairOpen(false);
     setAnsweredId(null);
+    setGeneratingAfterQuestionId(null);
     setConversations([]);
     apiGet<RunSummary>(`/api/runs/${encodeURIComponent(runId)}`)
       .then((summary) => {
@@ -138,8 +140,21 @@ export function RunStreamPanel({
   const visibleQuestion =
     pendingQuestion !== null && pendingQuestion.id !== answeredId ? pendingQuestion : null;
 
+  const suiteGenerating = generatingAfterQuestionId !== null;
+
+  useEffect(() => {
+    if (generatingAfterQuestionId === null) return;
+    const nextQuestionArrived =
+      pendingQuestion !== null && pendingQuestion.id !== generatingAfterQuestionId;
+    if (nextQuestionArrived || status === "done" || status === "failed") {
+      setGeneratingAfterQuestionId(null);
+    }
+  }, [generatingAfterQuestionId, pendingQuestion, status]);
+
   async function answer(question: PendingQuestion, value: string): Promise<void> {
     setError(null);
+    const startsSuiteGeneration = isAiDispatchConfirmation(question) && value === "y";
+    if (startsSuiteGeneration) setGeneratingAfterQuestionId(question.id);
     if (isAiPrompt(question)) {
       const questionEventId =
         events.find((event) => event.kind === "question" && event.question.id === question.id)
@@ -167,6 +182,7 @@ export function RunStreamPanel({
       });
       setAnsweredId(question.id);
     } catch (err) {
+      if (startsSuiteGeneration) setGeneratingAfterQuestionId(null);
       if (isAiDispatchConfirmation(question)) {
         setConversations((previous) =>
           previous.map((conversation, index) =>
@@ -396,6 +412,10 @@ export function RunStreamPanel({
                 canReturnToReviewMenu(visibleQuestion) ? () => back(visibleQuestion.id) : undefined
               }
             />
+          ) : suiteGenerating ? (
+            <p className="font-sans text-sm text-white" role="status" aria-live="polite">
+              스위트 생성중...
+            </p>
           ) : undefined
         }
       />

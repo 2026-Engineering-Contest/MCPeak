@@ -1,4 +1,4 @@
-# ADR-0078: Claude provider는 `--safe-mode` 없이 공통 지원 인자로 실행한다
+# ADR-0079: Claude provider는 `--safe-mode` 없이 공통 지원 인자로 실행한다
 
 - 상태: 제안
 - 날짜: 2026-08-25

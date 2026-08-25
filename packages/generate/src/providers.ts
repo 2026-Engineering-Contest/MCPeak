@@ -315,7 +315,7 @@ function makeProvider(
       });
     }
     // Claude Code 2.1.148에는 --safe-mode가 없다(#285). 격리는 아래의 빈 도구·빈 MCP 설정과
-    // 비영속 세션, provider-process의 임시 cwd·환경변수 allowlist로 유지한다(ADR-0078).
+    // 비영속 세션, provider-process의 임시 cwd·환경변수 allowlist로 유지한다(ADR-0079).
     const claudeSpec: ArgSpec = [
       ["-p"],
       ["--model", model],

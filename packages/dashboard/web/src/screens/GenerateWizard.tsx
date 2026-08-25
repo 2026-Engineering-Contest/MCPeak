@@ -26,6 +26,9 @@ interface WizardState extends Omit<GenerateForm, "command"> {
 }
 
 const INITIAL_STATE: WizardState = {
+  transport: "stdio",
+  url: "",
+  headerEnvs: [],
   method: "node",
   target: "",
   args: [],

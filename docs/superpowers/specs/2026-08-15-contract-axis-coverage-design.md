@@ -715,6 +715,10 @@ if (size > limits.maxReportBytes) throw new RunnerPayloadLimitError({ ... });
 `runner` 의 `DEFAULT_MAX_REPORT_BYTES` 인데 그 값을 아는 것은 실행 경로를 조립하는 `cli` 라서다.
 `generate` 는 케이스를 몇 개 만들었는지만 알려주고 그 수가 위험한지는 판단하지 않는다.
 
+> 2026-08-25 (#92, ADR-0083): 위 임계는 케이스당 600바이트 추정 위에 있다. `test` 실행이
+> 보고서 실제 크기로 다시 판정해 상한의 80% 이상이면 `RunnerReport.payload` 로 알린다. 이 고지의
+> 문안은 추정임을 밝힌다.
+
 고지는 상한이 아니다. 이미 존재하는 상한을 사용자에게 보이게 하는 것이다. 지금은 벽에 부딪히면
 이유를 모르는 예외만 뜬다.
 

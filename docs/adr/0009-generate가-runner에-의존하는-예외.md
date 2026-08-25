@@ -21,7 +21,7 @@ cli → runner / generate / record / mock → core
 | 종류 | 심볼 |
 |---|---|
 | 타입 | `TestSuiteSpec`, `TestCaseSpec`, `SuiteValidationIssue`, `RunnerRedactionOptions`, `SpecFindingsResult`, `ContractAxis`, `ContractAxisKind`, `ContractDeclaredType`, `ContractRange` |
-| 함수 | `validateMcpSuite`, `canonicalJson`, `sha256`, `deepFreeze`, `checkInputContract`, `checkAssertionSubstance`, `deriveContractAxes`, `matchCoveredAxes` |
+| 함수 | `validateMcpSuite`, `canonicalJson`, `sha256`, `deepFreeze`, `checkInputContract`, `checkAssertionSubstance`, `deriveContractAxes`, `matchCoveredAxes`, `isSensitiveKey` |
 | 상수 | `MCP_SUITE_JSON_SCHEMA`, `DEFAULT_SENSITIVE_KEYS`, `REDACTED` |
 
 `checkInputContract` · `checkAssertionSubstance` · `SpecFindingsResult` 세 개는 2026-08-14 에
@@ -57,6 +57,11 @@ cli → runner / generate / record / mock → core
 우회를 쓰지 않는다(단계 4 의 `JsonValue` 가 그 길이었다). 범위는 항목이 여덟 개고 앞으로 늘
 수 있는데, 두 벌을 두면 `runner` 가 항목을 늘릴 때 `generate` 쪽이 조용히 어긋나 위반 값을 못
 만드는 축이 생긴다. 축을 도출하는 쪽과 그 축을 덮는 케이스를 만드는 쪽이 같은 타입을 봐야 한다.
+
+`isSensitiveKey` 는 2026-08-25 에 추가했다(#368). `generate` 는 원래 `DEFAULT_SENSITIVE_KEYS`
+목록만 가져다 자기 정확 일치로 판정했는데, ADR-0082 가 `runner` 의 판정을 접미 단어열 규칙으로
+바꾸면서 목록과 규칙이 한 쌍이 됐다. 목록만 가져오면 `sessionToken` 이 실패 메시지에서는
+가려지고 provider 로 나가는 요청에서는 원문이다. 판정 함수를 함께 가져와 한 벌로 유지한다.
 
 이 의존은 AI 보조 작성 기능 이전부터 있었고, PR #37이 `MCP_SUITE_JSON_SCHEMA`를 하나 더 참조하면서
 코드 리뷰에서 지적됐다.

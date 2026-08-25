@@ -32,6 +32,7 @@ const APPROVED_RUNNER_SYMBOLS = [
   "checkInputContract",
   "deepFreeze",
   "deriveContractAxes",
+  "isSensitiveKey",
   "matchCoveredAxes",
   "sha256",
   "validateMcpSuite",

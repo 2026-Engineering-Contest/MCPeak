@@ -1,5 +1,6 @@
 import {
   DEFAULT_SENSITIVE_KEYS,
+  isSensitiveKey,
   REDACTED,
   type RunnerRedactionOptions,
   type TestSuiteSpec,
@@ -44,7 +45,16 @@ export const TOOL_CONTRACT_PATHS: RedactionPathGuard = (path) => /^\[\d+\]\.name
 /**
  * 민감 키·값 치환의 단일 구현. suite input과 request payload가 같은 규칙을 쓰도록
  * 여기 한 곳에만 둔다. 두 벌로 두면 한쪽만 고쳐져 redaction이 조용히 어긋난다.
+ *
+ * 키 판정은 runner 의 `isSensitiveKey`(접미 단어열 일치, ADR-0082)를 그대로 쓴다. 목록만
+ * 가져다 정확 일치로 판정하면 `sessionToken` 이 실패 메시지에서는 가려지고 provider 로 나가는
+ * 요청에서는 원문이다(#368). 목록과 규칙은 한 쌍이라 따로 가져오지 않는다.
  */
+export function sensitiveKeySet(options?: RunnerRedactionOptions): ReadonlySet<string> {
+  const keys = new Set(DEFAULT_SENSITIVE_KEYS);
+  for (const key of options?.sensitiveKeys ?? []) keys.add(normalize(key));
+  return keys;
+}
 export function sanitizeRedactable(
   value: unknown,
   options?: RunnerRedactionOptions,
@@ -57,8 +67,7 @@ function sanitize(
   options?: RunnerRedactionOptions,
   contractPath?: RedactionPathGuard,
 ): unknown {
-  const keys = new Set(DEFAULT_SENSITIVE_KEYS);
-  for (const key of options?.sensitiveKeys ?? []) keys.add(normalize(key));
+  const keys = sensitiveKeySet(options);
   const sensitiveValues = new Set(options?.sensitiveValues ?? []);
   const visit = (current: unknown, path: string): unknown => {
     if (typeof current === "string")
@@ -70,7 +79,7 @@ function sanitize(
       Object.entries(current).map(([key, nested]) => [
         key,
         // 키 기반 치환은 경로와 무관하게 그대로 적용한다. 계약 식별자 키는 민감 키 목록에 없다.
-        keys.has(normalize(key)) ? REDACTED : visit(nested, path === "" ? key : `${path}.${key}`),
+        isSensitiveKey(keys, key) ? REDACTED : visit(nested, path === "" ? key : `${path}.${key}`),
       ]),
     );
   };

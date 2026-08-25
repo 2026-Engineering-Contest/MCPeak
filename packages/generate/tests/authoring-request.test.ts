@@ -536,6 +536,30 @@ describe("authoring request", () => {
     expect(result.preview.result.summary).toBe("ok");
     expect(JSON.stringify(result)).not.toContain(callerSecret);
   });
+  /**
+   * 자유 텍스트에는 구조가 없어 `이름: 값` 꼴을 찾아 이름을 판정한다. 그 판정도 runner 의
+   * 접미 단어열 규칙과 같아야 한다(#368). `sessionToken` 은 가리고 `tokenCount` 는 둔다.
+   */
+  it("provider warnings 의 `이름: 값` 에서 이름을 접미 단어열 규칙으로 판정한다", () => {
+    const preview = prepareAuthoringRequest(options());
+    const result = validateAuthoringProviderResult(
+      {
+        status: "candidate",
+        suite: suite(),
+        summary: "ok",
+        warnings: ["sessionToken: abc", "tokenCount: 5", "tokens=xyz", "X-Api-Key: k"],
+        questions: [],
+      },
+      preview,
+    );
+    if (result.status !== "preview") throw new Error("candidate preview가 필요합니다.");
+    expect(result.preview.result.warnings).toEqual([
+      "sessionToken: [REDACTED]",
+      "tokenCount: 5",
+      "tokens=[REDACTED]",
+      "X-Api-Key: [REDACTED]",
+    ]);
+  });
   it("provider warnings 개수를 상한으로 자른다", () => {
     const preview = prepareAuthoringRequest(options());
     const result = validateAuthoringProviderResult(

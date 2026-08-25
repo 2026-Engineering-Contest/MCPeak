@@ -7,7 +7,6 @@ import type {
   StartRunResponse,
 } from "../../../src/api-types.js";
 import { apiGet, apiSend } from "../api.js";
-import { AiConversationPanel } from "../components/AiConversationPanel.js";
 import { FlowChip } from "../components/FlowChip.js";
 import { LogPanel } from "../components/LogPanel.js";
 import { QuestionPanel } from "../components/QuestionPanel.js";
@@ -49,6 +48,7 @@ function isAiDispatchConfirmation(question: PendingQuestion): boolean {
 
 interface AiConversation {
   readonly question: string;
+  readonly questionEventId: number;
   readonly responseAfterEventId: number | null;
 }
 
@@ -79,7 +79,7 @@ export function RunStreamPanel({
   const [bundlePath, setBundlePath] = useState("");
   const [provider, setProvider] = useState<"claude" | "codex">("claude");
   const [model, setModel] = useState("");
-  const [conversation, setConversation] = useState<AiConversation | null>(null);
+  const [conversations, setConversations] = useState<readonly AiConversation[]>([]);
   /**
    * 이 run 의 argv. `null` 은 "아직 모른다" 다. 홈의 test 실행은 항상 `--repair-bundle` 을
    * 붙이므로(ADR-0080) 여기서 그 값을 읽어 repair 폼을 채운다. 사용자가 같은 경로를 두 번
@@ -98,7 +98,7 @@ export function RunStreamPanel({
     setBundlePath("");
     setRepairOpen(false);
     setAnsweredId(null);
-    setConversation(null);
+    setConversations([]);
     apiGet<RunSummary>(`/api/runs/${encodeURIComponent(runId)}`)
       .then((summary) => {
         if (cancelled || !Array.isArray(summary.argv)) return;
@@ -141,11 +141,23 @@ export function RunStreamPanel({
   async function answer(question: PendingQuestion, value: string): Promise<void> {
     setError(null);
     if (isAiPrompt(question)) {
-      setConversation({ question: value, responseAfterEventId: null });
+      const questionEventId =
+        events.find((event) => event.kind === "question" && event.question.id === question.id)
+          ?.id ??
+        events.at(-1)?.id ??
+        0;
+      setConversations((previous) => [
+        ...previous,
+        { question: value, questionEventId, responseAfterEventId: null },
+      ]);
     } else if (isAiDispatchConfirmation(question) && value === "y") {
       const latestEventId = events.at(-1)?.id ?? 0;
-      setConversation((previous) =>
-        previous === null ? null : { ...previous, responseAfterEventId: latestEventId },
+      setConversations((previous) =>
+        previous.map((conversation, index) =>
+          index === previous.length - 1
+            ? { ...conversation, responseAfterEventId: latestEventId }
+            : conversation,
+        ),
       );
     }
     try {
@@ -156,8 +168,12 @@ export function RunStreamPanel({
       setAnsweredId(question.id);
     } catch (err) {
       if (isAiDispatchConfirmation(question)) {
-        setConversation((previous) =>
-          previous === null ? null : { ...previous, responseAfterEventId: null },
+        setConversations((previous) =>
+          previous.map((conversation, index) =>
+            index === previous.length - 1
+              ? { ...conversation, responseAfterEventId: null }
+              : conversation,
+          ),
         );
       }
       setError(err instanceof Error ? err.message : String(err));
@@ -204,25 +220,32 @@ export function RunStreamPanel({
     }
   }
 
-  const responseStartId = conversation?.responseAfterEventId ?? null;
-  const responseBoundaryId =
-    responseStartId === null
-      ? null
-      : (events.find(
-          (event) =>
-            event.id > responseStartId && (event.kind === "question" || event.kind === "done"),
-        )?.id ?? null);
-  const responseEvents =
-    responseStartId === null
-      ? []
-      : events.filter(
-          (event) =>
-            event.id > responseStartId &&
-            (responseBoundaryId === null || event.id < responseBoundaryId) &&
-            (event.kind === "stdout" || event.kind === "stderr"),
-        );
-  const waitingForAi =
-    responseStartId !== null && responseEvents.length === 0 && responseBoundaryId === null;
+  const terminalConversations = conversations.map((conversation) => {
+    const responseStartId = conversation.responseAfterEventId;
+    const responseBoundaryId =
+      responseStartId === null
+        ? null
+        : (events.find(
+            (event) =>
+              event.id > responseStartId && (event.kind === "question" || event.kind === "done"),
+          )?.id ?? null);
+    const firstResponseEventId =
+      responseStartId === null
+        ? null
+        : (events.find(
+            (event) =>
+              event.id > responseStartId &&
+              (responseBoundaryId === null || event.id < responseBoundaryId) &&
+              (event.kind === "stdout" || event.kind === "stderr"),
+          )?.id ?? null);
+    return {
+      question: conversation.question,
+      questionEventId: conversation.questionEventId,
+      firstResponseEventId,
+      waiting:
+        responseStartId !== null && firstResponseEventId === null && responseBoundaryId === null,
+    };
+  });
 
   return (
     <div className="space-y-4">
@@ -361,30 +384,18 @@ export function RunStreamPanel({
           </span>
         }
         events={events}
+        conversations={terminalConversations}
         footer={
-          conversation !== null || visibleQuestion !== null ? (
-            <div className="space-y-3">
-              {conversation !== null && (
-                <AiConversationPanel
-                  question={conversation.question}
-                  responseEvents={responseEvents}
-                  waiting={waitingForAi}
-                />
-              )}
-              {visibleQuestion !== null && (
-                // key로 question.id를 줘서 새 질문마다 리마운트한다(입력값 초기화).
-                <QuestionPanel
-                  key={visibleQuestion.id}
-                  question={visibleQuestion}
-                  onAnswer={(value) => answer(visibleQuestion, value)}
-                  onBack={
-                    canReturnToReviewMenu(visibleQuestion)
-                      ? () => back(visibleQuestion.id)
-                      : undefined
-                  }
-                />
-              )}
-            </div>
+          visibleQuestion !== null ? (
+            // key로 question.id를 줘서 새 질문마다 리마운트한다(입력값 초기화).
+            <QuestionPanel
+              key={visibleQuestion.id}
+              question={visibleQuestion}
+              onAnswer={(value) => answer(visibleQuestion, value)}
+              onBack={
+                canReturnToReviewMenu(visibleQuestion) ? () => back(visibleQuestion.id) : undefined
+              }
+            />
           ) : undefined
         }
       />

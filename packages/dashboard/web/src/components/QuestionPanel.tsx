@@ -3,7 +3,7 @@ import { useState } from "react";
 import type { PendingQuestion } from "../../../src/api-types.js";
 
 /**
- * 대화형 승인 질문 하나(UI 설계 §4). "질문" 뱃지 + message + kind별 컨트롤.
+ * 대화형 승인 질문 하나(UI 설계 §4). 터미널 흐름 안의 "질문" 라벨 + message + kind별 컨트롤.
  * 표시 전용이다: 응답 전송·패널 숨김은 호출부가 onAnswer로 처리한다(구현계획 §4-5).
  * input→입력값, choose→선택지 그대로, confirm→"y"|"n".
  *
@@ -43,12 +43,10 @@ export function QuestionPanel(props: {
   }
 
   return (
-    <div className="space-y-3 rounded-lg border border-accent-border bg-accent-soft p-4">
+    <div className="space-y-3 font-sans">
       <p className="text-sm">
-        <span className="mr-2 inline-flex items-center rounded bg-accent px-1.5 py-0.5 text-xs font-semibold text-white">
-          질문
-        </span>
-        <span className="font-medium text-ink">{question.message}</span>
+        <span className="mr-2 text-xs font-semibold text-accent">질문</span>
+        <span className="font-medium text-white">{question.message}</span>
       </p>
 
       {question.kind === "input" && (
@@ -61,7 +59,7 @@ export function QuestionPanel(props: {
             }}
           >
             <input
-              className="flex-1 rounded border border-line bg-surface px-3 py-1.5 text-sm text-ink disabled:opacity-50"
+              className="flex-1 rounded border border-line bg-transparent px-3 py-1.5 text-sm text-white disabled:opacity-50"
               value={inputValue}
               disabled={busy}
               onChange={(event) => setInputValue(event.target.value)}
@@ -77,7 +75,7 @@ export function QuestionPanel(props: {
           {onBack !== undefined && (
             <button
               type="button"
-              className="inline-flex items-center gap-1 rounded border border-line bg-surface px-3 py-1.5 text-sm text-ink-muted hover:bg-line-subtle disabled:opacity-50"
+              className="inline-flex items-center gap-1 rounded border border-line bg-transparent px-3 py-1.5 text-sm text-ink-muted hover:border-accent disabled:opacity-50"
               disabled={busy}
               onClick={() => void goBack()}
             >
@@ -94,7 +92,7 @@ export function QuestionPanel(props: {
             <button
               key={choice}
               type="button"
-              className="rounded border border-line bg-surface px-3 py-1.5 text-sm text-ink hover:bg-line-subtle disabled:opacity-50"
+              className="rounded border border-line bg-transparent px-3 py-1.5 text-sm text-white hover:border-accent disabled:opacity-50"
               disabled={busy}
               onClick={() => void submit(choice)}
             >
@@ -116,7 +114,7 @@ export function QuestionPanel(props: {
           </button>
           <button
             type="button"
-            className="rounded border border-line bg-surface px-3 py-1.5 text-sm text-ink hover:bg-line-subtle disabled:opacity-50"
+            className="rounded border border-line bg-transparent px-3 py-1.5 text-sm text-white hover:border-accent disabled:opacity-50"
             disabled={busy}
             onClick={() => void submit("n")}
           >

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RunEventInput } from "../../src/api-types.js";
 import { RunView } from "../src/screens/RunView.js";
@@ -138,9 +138,9 @@ describe("RunView", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "제출" }));
 
-    const conversation = await screen.findByRole("region", { name: "AI 대화" });
-    expect(within(conversation).getByText("사용자 질문")).toBeTruthy();
-    expect(within(conversation).getByText("서울 날씨 실패 케이스를 추가해줘")).toBeTruthy();
+    expect(await screen.findByText("사용자 질문")).toBeTruthy();
+    expect(screen.getByText("서울 날씨 실패 케이스를 추가해줘")).toBeTruthy();
+    expect(screen.queryByRole("region", { name: "AI 대화" })).toBeNull();
 
     act(() => {
       lastSource().emit({
@@ -150,14 +150,15 @@ describe("RunView", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "예" }));
 
-    expect(await within(conversation).findByText("AI가 답변 중입니다...")).toBeTruthy();
+    expect(await screen.findByText("AI가 답변 중입니다...")).toBeTruthy();
 
     act(() => {
       lastSource().emit({ kind: "stdout", html: "<strong>실패 케이스를 추가했습니다.</strong>" });
     });
-    expect(await within(conversation).findByText("AI 응답")).toBeTruthy();
-    expect(within(conversation).getByText("실패 케이스를 추가했습니다.")).toBeTruthy();
-    expect(within(conversation).queryByText("AI가 답변 중입니다...")).toBeNull();
+    expect(await screen.findByText("AI 응답")).toBeTruthy();
+    // provider stdout은 별도 대화 카드에 복제하지 않고 터미널 흐름에 한 번만 그린다.
+    expect(screen.getAllByText("실패 케이스를 추가했습니다.")).toHaveLength(1);
+    expect(screen.queryByText("AI가 답변 중입니다...")).toBeNull();
   });
 
   it("AI 입력에서 뒤로가기를 누르면 현재 질문을 검토 메뉴 복귀 요청으로 끝낸다", async () => {

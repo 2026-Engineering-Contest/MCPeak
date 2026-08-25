@@ -217,6 +217,40 @@ describe("wiring.ts executeFlow", () => {
     expect(typeof deps.validateSuite).toBe("function");
   });
 
+  it("generate 배선에 connectHttp 와 readEnv 가 들어간다", async () => {
+    let capturedDeps: Record<string, unknown> | undefined;
+    const io = fakeIo();
+    const core = fakeCoreModule();
+
+    // 바깥에 같은 이름이 이미 있으면 지우지 말고 되돌린다. 테스트가 환경을 바꾼 채 끝나면 안 된다.
+    const original = process.env.MCPEAK_GEN_HDR;
+    process.env.MCPEAK_GEN_HDR = "토큰-값";
+    try {
+      await executeFlow({ flow: "generate", argv: ["generate", "--baseline-only"] }, io, {
+        runners: {
+          generate: async (_argv, deps) => {
+            capturedDeps = deps as unknown as Record<string, unknown>;
+            return 0;
+          },
+        },
+        loaders: {
+          loadCore: () => Promise.resolve(core),
+          loadRunner: () => Promise.resolve(fakeRunnerModule()),
+          loadGenerate: () => Promise.resolve(fakeGenerateModule()),
+        },
+      });
+
+      expect(capturedDeps?.connectHttp).toBe(core.connectHttp);
+      const readEnv = capturedDeps?.readEnv as (name: string) => string | undefined;
+      expect(readEnv("MCPEAK_GEN_HDR")).toBe("토큰-값");
+      expect(readEnv("MCPEAK_GEN_HDR_없음")).toBeUndefined();
+    } finally {
+      // 다른 테스트로 새면 결정론이 깨진다.
+      if (original === undefined) delete process.env.MCPEAK_GEN_HDR;
+      else process.env.MCPEAK_GEN_HDR = original;
+    }
+  });
+
   it("test 플로우 실행이 generate 모듈을 로드하지 않는다", async () => {
     const loadGenerateSpy = vi.fn(() => Promise.resolve(fakeGenerateModule()));
     const io = fakeIo();

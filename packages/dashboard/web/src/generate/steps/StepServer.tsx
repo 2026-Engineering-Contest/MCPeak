@@ -1,5 +1,5 @@
 import type { JSX } from "react";
-import { useState } from "react";
+import { ArgChips } from "../../components/ArgChips.js";
 import { Field, INPUT_CLASS } from "./fields.js";
 
 /** 1단계 실행 방법 세그먼트. command 문자열 조립 프리셋일 뿐이다(구현계획 §5 U3). */
@@ -45,8 +45,8 @@ export function splitCommand(method: CommandMethod, target: string): SplitComman
 }
 
 /**
- * 서버 실행 명령 입력. 서버 스크립트 후보 스캔 API가 없으므로 직접 입력 +
- * 최근 사용값(localStorage, datalist)만 지원한다. 서버 인자는 칩 목록으로 쌓는다.
+ * 서버 실행 명령 입력. 직접 입력 + 최근 사용값(localStorage, datalist)을 지원한다.
+ * 서버 인자는 `ArgChips` 로 쌓는다.
  *
  * **인자를 칩으로 받는 것이 이 컴포넌트의 요점이다.** 한 칸에 명령 전체를 받아 공백으로
  * 쪼개면 공백이 든 경로를 가진 사용자는 실행 자체를 못 한다(#223). 애초에 나눠 받으면
@@ -61,21 +61,15 @@ export function StepServer(props: {
   recentCommands: readonly string[];
   /** DOM id 접두사. 한 문서에 둘 이상 그려질 때 id 가 겹치지 않게 한다. */
   idPrefix?: string;
+  /** HTTP 대상처럼 이 값들이 argv 에 안 실릴 때. 값은 지우지 않는다(호출자 몫). */
+  disabled?: boolean;
   onMethodChange: (method: CommandMethod) => void;
   onTargetChange: (target: string) => void;
   onArgsChange: (args: readonly string[]) => void;
 }): JSX.Element {
-  const [argDraft, setArgDraft] = useState("");
   const { command, leadingArgs } = splitCommand(props.method, props.target);
   const prefix = props.idPrefix ?? "generate";
-
-  function addArg(): void {
-    if (argDraft.trim() === "") {
-      return;
-    }
-    props.onArgsChange([...props.args, argDraft]);
-    setArgDraft("");
-  }
+  const disabled = props.disabled ?? false;
 
   return (
     <div className="space-y-5">
@@ -87,7 +81,8 @@ export function StepServer(props: {
               key={method}
               type="button"
               aria-pressed={props.method === method}
-              className={`px-3 py-1.5 text-sm ${
+              disabled={disabled}
+              className={`px-3 py-1.5 text-sm disabled:opacity-50 ${
                 props.method === method
                   ? "bg-accent-soft font-semibold text-accent"
                   : "text-ink-muted hover:bg-line-subtle"
@@ -106,7 +101,7 @@ export function StepServer(props: {
         hint={
           props.method === "custom"
             ? "실행 파일 하나만 적습니다. 인자는 아래 «서버 인자»로 추가하세요."
-            : "직접 입력하거나 최근 사용값에서 고릅니다(프로젝트 스캔 API 없음)."
+            : "직접 입력하거나 최근 사용값에서 고릅니다."
         }
       >
         <input
@@ -114,6 +109,7 @@ export function StepServer(props: {
           className={`${INPUT_CLASS} font-mono`}
           list={`${prefix}-recent-commands`}
           value={props.target}
+          disabled={disabled}
           onChange={(event) => props.onTargetChange(event.target.value)}
         />
         <datalist id={`${prefix}-recent-commands`}>
@@ -123,54 +119,12 @@ export function StepServer(props: {
         </datalist>
       </Field>
 
-      <div className="space-y-2">
-        <label className="block text-sm font-medium text-ink" htmlFor={`${prefix}-arg-draft`}>
-          서버 인자
-        </label>
-        {props.args.length > 0 && (
-          <ul className="flex flex-wrap gap-2">
-            {props.args.map((arg, index) => (
-              <li
-                // biome-ignore lint/suspicious/noArrayIndexKey: 인자 칩은 같은 값 중복을 허용해 값만으로는 유일 키가 없고, 목록은 변경마다 통째로 재생성된다
-                key={`${arg}-${index}`}
-                className="inline-flex items-center gap-1.5 rounded bg-line-subtle px-2 py-0.5 font-mono text-xs text-ink"
-              >
-                {arg}
-                <button
-                  type="button"
-                  aria-label={`인자 ${arg} 제거`}
-                  className="text-ink-muted hover:text-ink"
-                  onClick={() => props.onArgsChange(props.args.filter((_, i) => i !== index))}
-                >
-                  ×
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-        <div className="flex gap-2">
-          <input
-            id={`${prefix}-arg-draft`}
-            className={`${INPUT_CLASS} font-mono`}
-            value={argDraft}
-            placeholder="인자 하나씩 추가"
-            onChange={(event) => setArgDraft(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                addArg();
-              }
-            }}
-          />
-          <button
-            type="button"
-            className="rounded border border-line px-3 py-1.5 text-sm text-ink-muted hover:text-ink"
-            onClick={addArg}
-          >
-            추가
-          </button>
-        </div>
-      </div>
+      <ArgChips
+        idPrefix={prefix}
+        args={props.args}
+        disabled={disabled}
+        onChange={props.onArgsChange}
+      />
 
       <div className="rounded-md border border-line bg-line-subtle px-3 py-2">
         <p className="text-xs text-ink-muted">실행될 명령</p>

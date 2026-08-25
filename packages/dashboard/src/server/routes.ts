@@ -8,7 +8,13 @@ import type {
   StartRunRequest,
   StartRunResponse,
 } from "../api-types.js";
-import { listSuites, readFileContent, writeFileContent } from "./files.js";
+import {
+  ensureRepairBundleDir,
+  listServerCandidates,
+  listSuites,
+  readFileContent,
+  writeFileContent,
+} from "./files.js";
 import { resolveProjectPath } from "./paths.js";
 import type { RunIo, RunRegistry } from "./run-registry.js";
 import { formatSseEvent, formatSseEvents, SSE_HEADERS } from "./sse.js";
@@ -58,6 +64,10 @@ export async function handleRequest(
     sendJson(response, 200, await listSuites(options.root));
     return;
   }
+  if (method === "GET" && pathname === "/api/servers") {
+    sendJson(response, 200, await listServerCandidates(options.root));
+    return;
+  }
   if (method === "GET" && pathname.startsWith("/api/suites/")) {
     await handleGetFile(response, options.root, decodeParam(pathname, "/api/suites/"));
     return;
@@ -67,7 +77,13 @@ export async function handleRequest(
     return;
   }
   if (method === "POST" && pathname === "/api/runs") {
-    await handleStartRun(request, response, options.registry, options.execute ?? executeFlow);
+    await handleStartRun(
+      request,
+      response,
+      options.root,
+      options.registry,
+      options.execute ?? executeFlow,
+    );
     return;
   }
   if (method === "GET" && pathname === "/api/runs") {
@@ -196,6 +212,7 @@ function isStartRunRequest(value: unknown): value is StartRunRequest {
 async function handleStartRun(
   request: IncomingMessage,
   response: ServerResponse,
+  root: string,
   registry: RunRegistry,
   execute: (request: StartRunRequest, io: RunIo) => Promise<number>,
 ): Promise<void> {
@@ -209,7 +226,20 @@ async function handleStartRun(
     return;
   }
   const startRequest = body;
-  const handle = registry.start(startRequest.flow, (io) => execute(startRequest, io));
+  // 홈의 test 실행은 항상 `--repair-bundle .mcpeak/repair/...` 를 붙인다(ADR-0080). CLI 는
+  // 그 부모 디렉터리를 만들지 않으므로 여기서 만든다. 못 만들면 run 을 시작하지 않는다.
+  if (startRequest.flow === "test") {
+    try {
+      await ensureRepairBundleDir(root);
+    } catch (error: unknown) {
+      const reason = error instanceof Error ? error.message : String(error);
+      sendJson(response, 500, { error: `.mcpeak/repair 디렉터리를 만들지 못했습니다: ${reason}` });
+      return;
+    }
+  }
+  const handle = registry.start(startRequest.flow, startRequest.argv, (io) =>
+    execute(startRequest, io),
+  );
   const result: StartRunResponse = { runId: handle.runId };
   sendJson(response, 200, result);
 }

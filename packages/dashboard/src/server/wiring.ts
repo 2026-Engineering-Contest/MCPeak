@@ -123,6 +123,11 @@ async function executeTest(
     readFile,
     validateSuite: runner.validateMcpSuite,
     connect: core.connectStdio,
+    // 원격(Streamable HTTP) 대상용 배선(설계 §6-5). `readEnv` 는 `--header-env` 가 가리키는
+    // 환경변수를 읽는 유일한 지점이며, `process` 를 읽는 것은 대시보드 서버 프로세스의
+    // 일이다(ADR-0013 의 주입 지점 그대로). cli `index.ts` 의 test 배선과 같은 값이다.
+    connectHttp: core.connectHttp,
+    readEnv: (name) => process.env[name],
     startRunner: runner.runSuite,
     finalize: runner.finalizeRunnerExecution,
     renderReport: runner.renderReport,

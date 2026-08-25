@@ -10,33 +10,9 @@ import { StepMode } from "../generate/steps/StepMode.js";
 import type { CommandMethod } from "../generate/steps/StepServer.js";
 import { StepServer, splitCommand } from "../generate/steps/StepServer.js";
 import { StepSuite } from "../generate/steps/StepSuite.js";
+import { readRecentCommands, saveRecentCommand } from "../recent-commands.js";
 
 const STEPS = ["테스트할 서버", "만들어질 스위트", "생성 방식", "초기화와 확인"] as const;
-
-const RECENT_KEY = "mcpeak-generate-recent-commands";
-
-function readRecentCommands(): readonly string[] {
-  try {
-    const raw = window.localStorage.getItem(RECENT_KEY);
-    const parsed: unknown = raw === null ? [] : JSON.parse(raw);
-    return Array.isArray(parsed)
-      ? parsed.filter((item): item is string => typeof item === "string")
-      : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveRecentCommand(target: string): void {
-  // 저장 용량 초과·스토리지 차단으로 setItem이 throw해도 무시한다. 실행은 이미
-  // 서버에서 시작됐으므로 여기서 던지면 #/runs/:id 전환만 막힌다(PR #199 리뷰 반영).
-  try {
-    const next = [target, ...readRecentCommands().filter((item) => item !== target)].slice(0, 8);
-    window.localStorage.setItem(RECENT_KEY, JSON.stringify(next));
-  } catch {
-    // 최근 사용값은 편의 기능이라 실패를 표시하지 않는다.
-  }
-}
 
 /** 스크립트 경로에서 저장 위치 기본값을 만든다(확장자를 .suite.json으로). */
 function suggestOutPath(target: string): string {

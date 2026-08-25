@@ -45,4 +45,43 @@ describe("LogPanel", () => {
     expect(span).not.toBeNull();
     expect(span?.textContent).toBe("x");
   });
+
+  it("AI 대화를 별도 카드로 복제하지 않고 이벤트 위치에 이어서 렌더한다", () => {
+    const events: readonly RunEvent[] = [
+      { id: 1, kind: "stdout", html: "요청 전 출력" },
+      {
+        id: 2,
+        kind: "question",
+        question: { id: "q1", kind: "input", message: "AI 요청:" },
+      },
+      {
+        id: 3,
+        kind: "question",
+        question: { id: "q2", kind: "confirm", message: "이 요청을 전송할까요?" },
+      },
+      { id: 4, kind: "stdout", html: "provider 응답" },
+      { id: 5, kind: "stdout", html: "후속 CLI 출력" },
+    ];
+    const { container } = render(
+      <LogPanel
+        title="터미널 출력"
+        events={events}
+        conversations={[
+          {
+            question: "서울로 바꿔줘",
+            questionEventId: 2,
+            firstResponseEventId: 4,
+            waiting: false,
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getAllByText("provider 응답")).toHaveLength(1);
+    const text = container.textContent ?? "";
+    expect(text.indexOf("요청 전 출력")).toBeLessThan(text.indexOf("사용자 질문"));
+    expect(text.indexOf("사용자 질문")).toBeLessThan(text.indexOf("AI 응답"));
+    expect(text.indexOf("AI 응답")).toBeLessThan(text.indexOf("provider 응답"));
+    expect(text.indexOf("provider 응답")).toBeLessThan(text.indexOf("후속 CLI 출력"));
+  });
 });

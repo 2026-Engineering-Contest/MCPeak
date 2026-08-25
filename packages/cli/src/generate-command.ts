@@ -635,6 +635,9 @@ async function saveSuite(
 const defaultModel = (provider: "codex" | "claude") =>
   provider === "codex" ? "gpt-5.6-luna" : "haiku";
 
+/** 대시보드의 검토 하위 입력에서 상위 메뉴로 돌아갈 때 쓰는 내부 제어값. */
+export const REVIEW_BACK_VALUE = "__mcpeak_review_back__";
+
 /**
  * 전송 승인 화면. **통로마다 보내는 것이 다르므로 목록을 받는다**(#286) — 입력값 교정은
  * 실패한 케이스의 서버 응답 원문까지 싣는데, 기본 문구로 덮으면 화면이 사실보다 적게 말한다.
@@ -1639,10 +1642,13 @@ async function runInteractiveReview(
         }
         const diff = makeDiff({ session, candidate });
         showDiff(io, diff);
+        const selectedInput =
+          action === "select" ? await io.input("적용할 change ID를 쉼표로 입력하세요: ") : null;
+        if (selectedInput === REVIEW_BACK_VALUE) continue;
         const selected =
-          action === "apply-all"
+          selectedInput === null
             ? diff.changes.map((change) => change.id)
-            : (await io.input("적용할 change ID를 쉼표로 입력하세요: "))
+            : selectedInput
                 .split(",")
                 .map((id) => id.trim())
                 .filter(Boolean);
@@ -1660,6 +1666,7 @@ async function runInteractiveReview(
       }
       if (action === "edit") {
         const path = await io.input("편집한 JSON 파일 경로: ");
+        if (path === REVIEW_BACK_VALUE) continue;
         try {
           const parsed = JSON.parse(
             new TextDecoder("utf-8", { fatal: true }).decode(await deps.readFile(path)),
@@ -1679,11 +1686,18 @@ async function runInteractiveReview(
         io.write("지원하지 않는 메뉴입니다.\n");
         continue;
       }
+      const previousPreferred = preferred;
+      const previousModel = model;
       if (action !== "revise" && providerId !== preferred)
         model = input.provider === providerId ? input.model : undefined;
       preferred = providerId;
       const selectedModel =
         model ?? (await io.input(`${providerId} model (${defaultModel(providerId)}): `));
+      if (selectedModel === REVIEW_BACK_VALUE) {
+        preferred = previousPreferred;
+        model = previousModel;
+        continue;
+      }
       model = selectedModel || defaultModel(providerId);
       const provider = deps.providers?.[providerId]?.(model);
       if (!provider) {
@@ -1691,6 +1705,7 @@ async function runInteractiveReview(
         continue;
       }
       const instruction = await io.input(action === "revise" ? "피드백: " : "AI 요청: ");
+      if (instruction === REVIEW_BACK_VALUE) continue;
       const preview = prepare({
         mode: action === "revise" ? "revise" : "initial",
         instruction,

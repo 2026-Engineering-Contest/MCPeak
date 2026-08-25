@@ -328,11 +328,16 @@ async function handleAnswer(
     sendJson(response, 400, { error: "본문이 올바른 JSON이 아닙니다." });
     return;
   }
-  if (typeof body.questionId !== "string" || typeof body.value !== "string") {
-    sendJson(response, 400, { error: "questionId·value가 필요합니다." });
+  if (typeof body.questionId !== "string") {
+    sendJson(response, 400, { error: "questionId가 필요합니다." });
     return;
   }
-  const answered = handle.reviewIO.answer(body.questionId, body.value);
+  const answered =
+    "action" in body && body.action === "back"
+      ? handle.reviewIO.back(body.questionId)
+      : "value" in body && typeof body.value === "string"
+        ? handle.reviewIO.answer(body.questionId, body.value)
+        : false;
   if (!answered) {
     sendJson(response, 409, {
       error: "대기 중인 질문이 없거나 questionId가 일치하지 않습니다.",

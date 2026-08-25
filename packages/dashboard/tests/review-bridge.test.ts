@@ -64,6 +64,14 @@ describe("WebReviewIO", () => {
     expect(io.answer("q1", "x")).toBe(false);
   });
 
+  it("back은 현재 입력을 검토 메뉴 복귀 제어값으로 끝낸다", async () => {
+    const { io } = make();
+    const answered = io.input("AI 요청: ");
+    expect(io.back("q1")).toBe(true);
+    await expect(answered).resolves.toBe("__mcpeak_review_back__");
+    expect(io.pendingQuestion).toBeNull();
+  });
+
   it("pending 중복 질문은 throw한다", async () => {
     const { io } = make();
     const answered = io.input("첫 질문");

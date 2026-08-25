@@ -8,6 +8,7 @@ export {
   type GenerateCommandInput,
   nodeGenerateDependencies,
   nodeReviewIO,
+  REVIEW_BACK_VALUE,
   type ReviewIO,
   runGenerateCommand,
 } from "./generate-command.js";

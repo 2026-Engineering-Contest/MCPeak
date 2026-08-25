@@ -1,4 +1,4 @@
-import type { ReviewIO } from "@mcpeak/cli/commands";
+import { REVIEW_BACK_VALUE, type ReviewIO } from "@mcpeak/cli/commands";
 import type { PendingQuestion, RunEventInput } from "../api-types.js";
 import { ansiToHtml } from "./ansi.js";
 
@@ -49,6 +49,11 @@ export class WebReviewIO implements ReviewIO {
     this.pending = null; // resolve 전에 비운다. resolve가 동기 후속 질문을 던질 수 있다.
     resolve(value);
     return true;
+  }
+
+  /** 현재 입력을 제어값으로 끝내 CLI 검토 루프가 상위 메뉴를 다시 묻게 한다. */
+  back(questionId: string): boolean {
+    return this.answer(questionId, REVIEW_BACK_VALUE);
   }
 
   get pendingQuestion(): PendingQuestion | null {

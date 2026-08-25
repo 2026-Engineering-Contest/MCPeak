@@ -16,8 +16,9 @@ import type { PendingQuestion } from "../../../src/api-types.js";
 export function QuestionPanel(props: {
   question: PendingQuestion;
   onAnswer: (value: string) => Promise<void>;
+  onBack?: () => Promise<void>;
 }): JSX.Element {
-  const { question, onAnswer } = props;
+  const { question, onAnswer, onBack } = props;
   const [inputValue, setInputValue] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -26,6 +27,16 @@ export function QuestionPanel(props: {
     setBusy(true);
     try {
       await onAnswer(value);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function goBack(): Promise<void> {
+    if (busy || onBack === undefined) return;
+    setBusy(true);
+    try {
+      await onBack();
     } finally {
       setBusy(false);
     }
@@ -41,27 +52,40 @@ export function QuestionPanel(props: {
       </p>
 
       {question.kind === "input" && (
-        <form
-          className="flex gap-2"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void submit(inputValue);
-          }}
-        >
-          <input
-            className="flex-1 rounded border border-line bg-surface px-3 py-1.5 text-sm text-ink disabled:opacity-50"
-            value={inputValue}
-            disabled={busy}
-            onChange={(event) => setInputValue(event.target.value)}
-          />
-          <button
-            type="submit"
-            className="rounded bg-accent px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
-            disabled={busy}
+        <div className="space-y-2">
+          <form
+            className="flex gap-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void submit(inputValue);
+            }}
           >
-            제출
-          </button>
-        </form>
+            <input
+              className="flex-1 rounded border border-line bg-surface px-3 py-1.5 text-sm text-ink disabled:opacity-50"
+              value={inputValue}
+              disabled={busy}
+              onChange={(event) => setInputValue(event.target.value)}
+            />
+            <button
+              type="submit"
+              className="rounded bg-accent px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+              disabled={busy}
+            >
+              제출
+            </button>
+          </form>
+          {onBack !== undefined && (
+            <button
+              type="button"
+              className="inline-flex items-center gap-1 rounded border border-line bg-surface px-3 py-1.5 text-sm text-ink-muted hover:bg-line-subtle disabled:opacity-50"
+              disabled={busy}
+              onClick={() => void goBack()}
+            >
+              <span aria-hidden="true">←</span>
+              검토 메뉴로 돌아가기
+            </button>
+          )}
+        </div>
       )}
 
       {question.kind === "choose" && (

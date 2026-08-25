@@ -1,0 +1,321 @@
+<meta charset="utf-8">
+<title>서버 선택 실행 폼</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+:root {
+  --canvas: #f7f7f8; --surface: #ffffff; --line: #e8e8ec; --line-subtle: #f0f0f3;
+  --ink: #18181b; --ink-muted: #71717a;
+  --accent: #6d28d9; --accent-soft: #faf8ff; --accent-border: #ddd6fe;
+  --done-fg: #16a34a; --done-bg: #f0fdf4; --failed-fg: #dc2626; --failed-bg: #fef2f2;
+  --waiting-fg: #d97706; --waiting-bg: #fffbeb; --running-fg: #2563eb; --running-bg: #eff6ff;
+  --note-bg: #fdf6e3; --note-fg: #8a5a00;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --canvas: #131318; --surface: #1b1b21; --line: #2a2a33; --line-subtle: #232329;
+  --ink: #e4e4e7; --ink-muted: #8b8b96;
+  --accent: #8b5cf6; --accent-soft: #241a35; --accent-border: #4c3575;
+  --done-fg: #4ade80; --done-bg: #122618; --failed-fg: #f87171; --failed-bg: #2b1518;
+  --waiting-fg: #fbbf24; --waiting-bg: #2c2410; --running-fg: #60a5fa; --running-bg: #172036;
+  --note-bg: #2c2410; --note-fg: #fbbf24;
+}}
+:root[data-theme="dark"] {
+  --canvas: #131318; --surface: #1b1b21; --line: #2a2a33; --line-subtle: #232329;
+  --ink: #e4e4e7; --ink-muted: #8b8b96;
+  --accent: #8b5cf6; --accent-soft: #241a35; --accent-border: #4c3575;
+  --done-fg: #4ade80; --done-bg: #122618; --failed-fg: #f87171; --failed-bg: #2b1518;
+  --waiting-fg: #fbbf24; --waiting-bg: #2c2410; --running-fg: #60a5fa; --running-bg: #172036;
+  --note-bg: #2c2410; --note-fg: #fbbf24;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--canvas); color: var(--ink);
+  font: 14px/1.5 -apple-system, "Pretendard", "Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif; }
+.mono { font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace; }
+.wrap { max-width: 1100px; margin: 0 auto; padding: 32px 24px 64px; display: grid; gap: 40px; }
+.intro h1 { font-size: 20px; margin: 0 0 6px; }
+.intro p { margin: 0; color: var(--ink-muted); max-width: 64ch; }
+.board { display: grid; gap: 10px; }
+.board > .cap { display: flex; align-items: baseline; gap: 10px; }
+.board > .cap .n { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); font-weight: 600; }
+.board > .cap h2 { margin: 0; font-size: 15px; }
+.board > .cap p { margin: 0; color: var(--ink-muted); font-size: 13px; }
+.frame { border: 1px solid var(--line); border-radius: 10px; background: var(--canvas); overflow-x: auto; }
+.app { display: grid; grid-template-columns: 200px 1fr; min-width: 860px; }
+.side { border-right: 1px solid var(--line); padding: 16px 12px; background: var(--canvas); }
+.brand { display: flex; gap: 10px; align-items: center; margin-bottom: 18px; }
+.brand .logo { width: 30px; height: 30px; border-radius: 8px; background: var(--accent); color: #fff; display: grid; place-items: center; font-weight: 700; font-size: 13px; }
+.brand b { display: block; font-size: 14px; }
+.brand small { color: var(--ink-muted); font-size: 11px; }
+.nav a { display: block; padding: 7px 12px; border-radius: 8px; color: var(--ink); text-decoration: none; font-size: 13px; }
+.nav a.on { background: var(--line-subtle); }
+.main { padding: 20px 24px 28px; }
+.main h1 { font-size: 18px; margin: 0 0 4px; }
+.main .sub { color: var(--ink-muted); font-size: 13px; margin: 0 0 18px; }
+.cols { display: grid; grid-template-columns: 1.4fr 1fr; gap: 20px; align-items: start; }
+.card { border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+.card > h3 { margin: 0; padding: 10px 16px; border-bottom: 1px solid var(--line); font-size: 13px; display: flex; justify-content: space-between; }
+.card > h3 span { font-weight: 400; color: var(--ink-muted); font-size: 12px; }
+.suite { padding: 10px 16px; border-bottom: 1px solid var(--line-subtle); display: grid; gap: 10px; }
+.suite:last-child { border-bottom: 0; }
+.suite .row { display: flex; justify-content: space-between; align-items: center; }
+.suite .row .path { font-size: 13px; }
+.suite .row .meta { color: var(--ink-muted); font-size: 12px; }
+.btn { border: 1px solid var(--line); background: var(--surface); color: var(--ink-muted); border-radius: 6px; padding: 4px 12px; font-size: 12px; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 500; }
+.btn.outline { border-color: var(--accent-border); color: var(--accent); background: var(--surface); }
+.btn.ghost { background: transparent; }
+.form { border: 1px solid var(--line); border-radius: 8px; background: var(--canvas); padding: 14px; display: grid; gap: 16px; }
+.lbl { font-size: 13px; font-weight: 500; margin: 0 0 6px; display: flex; justify-content: space-between; align-items: baseline; }
+.lbl small { font-weight: 400; color: var(--ink-muted); font-size: 11px; }
+.hint { color: var(--ink-muted); font-size: 12px; margin: 6px 0 0; }
+.opts { display: grid; gap: 6px; }
+.opt { display: grid; grid-template-columns: 18px 1fr auto; gap: 10px; align-items: start; padding: 9px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.opt.on { border-color: var(--accent-border); background: var(--accent-soft); }
+.opt .r { width: 14px; height: 14px; margin-top: 3px; border-radius: 50%; border: 1.5px solid var(--ink-muted); }
+.opt.on .r { border: 4px solid var(--accent); }
+.opt .name { font-size: 13px; font-weight: 500; }
+.opt .cmd { font-size: 12px; color: var(--ink-muted); margin-top: 2px; }
+.opt .src { font-size: 11px; color: var(--ink-muted); border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; white-space: nowrap; }
+.opt.on .src { border-color: var(--accent-border); color: var(--accent); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.chip { font-size: 12px; background: var(--line-subtle); border-radius: 5px; padding: 2px 8px; display: inline-flex; gap: 6px; align-items: center; }
+.chip i { font-style: normal; color: var(--ink-muted); }
+.input { border: 1px solid var(--line); background: var(--surface); border-radius: 6px; padding: 6px 10px; font-size: 13px; color: var(--ink-muted); }
+.input.wide { flex: 1; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.seg span { padding: 6px 12px; font-size: 13px; color: var(--ink-muted); }
+.seg span.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.preview { border: 1px solid var(--line); background: var(--line-subtle); border-radius: 6px; padding: 8px 12px; }
+.preview .k { font-size: 11px; color: var(--ink-muted); }
+.preview .v { font-size: 13px; }
+.note { background: var(--note-bg); color: var(--note-fg); border-radius: 6px; padding: 7px 12px; font-size: 12px; }
+.actions { display: flex; gap: 8px; }
+.runs .r2 { display: flex; gap: 10px; align-items: center; padding: 10px 16px; border-bottom: 1px solid var(--line-subtle); font-size: 12px; }
+.runs .r2:last-child { border-bottom: 0; }
+.flow { background: var(--line-subtle); border-radius: 4px; padding: 1px 7px; font-size: 11px; }
+.pill { margin-left: auto; white-space: nowrap; border-radius: 999px; padding: 2px 9px; font-size: 11px; font-weight: 600; }
+.pill.f { background: var(--failed-bg); color: var(--failed-fg); }
+.pill.d { background: var(--done-bg); color: var(--done-fg); }
+.pill.w { background: var(--waiting-bg); color: var(--waiting-fg); }
+.callouts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.callout { border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; background: var(--surface); font-size: 13px; }
+.callout b { display: block; margin-bottom: 4px; color: var(--accent); font-size: 12px; letter-spacing: .04em; }
+.callout p { margin: 0; color: var(--ink-muted); font-size: 12px; }
+.dim { opacity: .55; }
+@media (max-width: 720px) { .callouts { grid-template-columns: 1fr; } }
+.adv { border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.adv > .head { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; font-size: 13px; font-weight: 500; }
+.adv > .head .sum { font-weight: 400; color: var(--ink-muted); font-size: 12px; }
+.adv > .head .car { color: var(--ink-muted); margin-right: 6px; }
+.adv .body { border-top: 1px solid var(--line); padding: 12px; display: grid; gap: 14px; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px; }
+.opt-row { display: grid; gap: 4px; }
+.opt-row .t { font-size: 13px; display: flex; gap: 8px; align-items: center; }
+.opt-row .t code { font-size: 11px; color: var(--ink-muted); font-family: "JetBrains Mono", ui-monospace, monospace; }
+.opt-row .d { font-size: 12px; color: var(--ink-muted); }
+.cb { width: 14px; height: 14px; border: 1.5px solid var(--ink-muted); border-radius: 3px; display: inline-block; }
+.cb.on { background: var(--accent); border-color: var(--accent); position: relative; }
+.cb.on::after { content: ""; position: absolute; left: 4px; top: 1px; width: 4px; height: 8px; border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg); }
+.num { width: 72px; text-align: right; }
+.gh { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-muted); margin: 0 0 6px; }
+</style>
+
+<div class="wrap">
+  <div class="intro">
+    <h1>홈 실행 폼, 서버와 옵션을 고르게 한다</h1>
+    <p>현재는 스위트마다 실행 방법·스크립트·인자를 손으로 적고, <span class="mono">mcpeak test</span> 의 나머지 옵션은 대시보드에서 아예 못 쓴다. 아래는 두 층을 나눈 안이다. 위층 «서버» 는 프로젝트에서 찾은 후보와 지난 실행값을 고르고, 아래층 «테스트 옵션» 은 CLI 옵션을 체크박스·숫자·경로 폼으로 고른다. 색·간격·구성요소는 지금 대시보드 토큰 그대로다.</p>
+  </div>
+
+  <div class="callouts">
+    <div class="callout"><b>선택지 출처 A</b>프로젝트 설정 파일<p><span class="mono">.mcp.json</span> · <span class="mono">claude_desktop_config.json</span> 의 <span class="mono">mcpServers</span>. 명령과 인자가 같이 있어 고르면 인자까지 채워진다.</p></div>
+    <div class="callout"><b>선택지 출처 B</b>스캔한 스크립트<p><span class="mono">package.json</span> 의 <span class="mono">bin</span>/<span class="mono">main</span>, <span class="mono">**/server.{js,mjs,py}</span>. 명령만 있고 인자는 비어 온다.</p></div>
+    <div class="callout"><b>선택지 출처 C</b>이 브라우저의 지난 실행<p>스위트별 마지막 실행값을 localStorage 에 둔다. 같은 스위트를 다시 열면 그 값이 먼저 선택돼 있다.</p></div>
+  </div>
+
+  <!-- 1. 후보 있음 -->
+  <section class="board">
+    <div class="cap"><span class="n">화면 1</span><h2>실행 클릭, 후보가 있을 때</h2><p>첫 후보가 자동 선택. 인자는 칩으로 보이고 그 자리에서 빼거나 더한다.</p></div>
+    <div class="frame"><div class="app">
+      <aside class="side">
+        <div class="brand"><div class="logo">&gt;_</div><div><b>OhMyMCP</b><small>MCP Test Dashboard</small></div></div>
+        <nav class="nav"><a class="on">홈</a><a>실행</a><a>Generate</a><a>카세트</a><a>Repair</a></nav>
+      </aside>
+      <div class="main">
+        <h1>홈</h1>
+        <p class="sub">현재 프로젝트 아래에서 찾은 테스트 스위트로 바로 실행을 시작합니다.</p>
+        <div class="cols">
+          <div class="card">
+            <h3>테스트 스위트 <span>2개 발견</span></h3>
+            <div class="suite">
+              <div class="row"><div><div class="path mono">generated/weather.baseline.json</div><div class="meta">테스트 3개 · get_weather, add</div></div><button class="btn outline">실행</button></div>
+              <div class="form">
+                <div>
+                  <p class="lbl">서버 <small>프로젝트에서 3개 찾음</small></p>
+                  <div class="opts">
+                    <div class="opt on"><div class="r"></div><div><div class="name">weather</div><div class="cmd mono">node examples/weather-server/server.mjs --port 3000</div></div><span class="src">.mcp.json</span></div>
+                    <div class="opt"><div class="r"></div><div><div class="name">examples/weather-server</div><div class="cmd mono">node examples/weather-server/server.mjs</div></div><span class="src">package.json</span></div>
+                    <div class="opt"><div class="r"></div><div><div class="name">지난 실행 (8월 24일)</div><div class="cmd mono">node examples/weather-server/server.mjs --port 3100</div></div><span class="src">이 브라우저</span></div>
+                    <div class="opt"><div class="r"></div><div><div class="name">직접 입력</div><div class="cmd">목록에 없는 서버를 실행 방법·스크립트·인자로 적습니다.</div></div><span class="src">수동</span></div>
+                  </div>
+                </div>
+                <div>
+                  <p class="lbl">서버 인자 <small>선택한 서버의 인자를 가져왔습니다. 고칠 수 있습니다.</small></p>
+                  <div class="chips"><span class="chip mono">--port <i>×</i></span><span class="chip mono">3000 <i>×</i></span><span class="input mono wide">인자 하나씩 추가</span><button class="btn">추가</button></div>
+                </div>
+                <div>
+                  <p class="lbl">External 세션</p>
+                  <div class="seg"><span class="on">사용 안 함</span><span>외부 호출 녹화</span><span>녹화본 재생</span></div>
+                  <p class="hint">서버가 부르는 외부 API 를 그대로 둡니다.</p>
+                </div>
+                <div class="adv">
+                  <div class="head"><span><span class="car">▸</span>테스트 옵션</span><span class="sum">기본값 · 바꾼 것 없음</span></div>
+                </div>
+                <div class="preview"><div class="k">실행될 명령</div><div class="v mono">mcpeak test generated/weather.baseline.json --command node --arg examples/weather-server/server.mjs --arg --port --arg 3000</div></div>
+                <div class="actions"><button class="btn primary">실행 시작</button><button class="btn ghost">취소</button></div>
+              </div>
+            </div>
+            <div class="suite dim"><div class="row"><div><div class="path mono">examples/todo-server/suite.json</div><div class="meta">테스트 5개 · add_todo, list_todos</div></div><button class="btn outline">실행</button></div></div>
+          </div>
+          <div class="card runs">
+            <h3>최근 실행 <span>전체 보기</span></h3>
+            <div class="r2"><span class="flow">test</span><span class="mono">generated/weather.baseline.json</span><span class="pill f">실패 · exit 1</span></div>
+            <div class="r2"><span class="flow">generate</span><span class="mono">examples/weather-server</span><span class="pill w">입력 대기</span></div>
+            <div class="r2"><span class="flow">test</span><span class="mono">examples/todo-server/suite.json</span><span class="pill d">완료 · exit 0</span></div>
+          </div>
+        </div>
+      </div>
+    </div></div>
+  </section>
+
+  <!-- 2. 직접 입력 -->
+  <section class="board">
+    <div class="cap"><span class="n">화면 2</span><h2>직접 입력을 고르면</h2><p>지금 있는 StepServer 가 그 아래로 펼쳐진다. 기존 폼은 없애지 않고 한 갈래로 내려간다.</p></div>
+    <div class="frame"><div class="app">
+      <aside class="side dim">
+        <div class="brand"><div class="logo">&gt;_</div><div><b>OhMyMCP</b><small>MCP Test Dashboard</small></div></div>
+        <nav class="nav"><a class="on">홈</a><a>실행</a><a>Generate</a><a>카세트</a><a>Repair</a></nav>
+      </aside>
+      <div class="main">
+        <div class="card" style="max-width:620px">
+          <div class="suite">
+            <div class="row"><div><div class="path mono">generated/weather.baseline.json</div><div class="meta">테스트 3개 · get_weather, add</div></div><button class="btn outline">실행</button></div>
+            <div class="form">
+              <div>
+                <p class="lbl">서버 <small>프로젝트에서 3개 찾음</small></p>
+                <div class="opts">
+                  <div class="opt"><div class="r"></div><div><div class="name">weather</div><div class="cmd mono">node examples/weather-server/server.mjs --port 3000</div></div><span class="src">.mcp.json</span></div>
+                  <div class="opt on"><div class="r"></div><div><div class="name">직접 입력</div><div class="cmd">목록에 없는 서버를 실행 방법·스크립트·인자로 적습니다.</div></div><span class="src">수동</span></div>
+                </div>
+              </div>
+              <div>
+                <p class="lbl">실행 방법</p>
+                <div class="seg"><span class="on">Node 스크립트</span><span>npx 패키지</span><span>Python</span><span>직접 입력</span></div>
+              </div>
+              <div>
+                <p class="lbl">서버 스크립트</p>
+                <div class="input mono" style="color:var(--ink)">examples/weather-server/server.mjs</div>
+                <p class="hint">최근 사용값이 자동완성으로 뜹니다.</p>
+              </div>
+              <div>
+                <p class="lbl">서버 인자</p>
+                <div class="chips"><span class="input mono wide">인자 하나씩 추가</span><button class="btn">추가</button></div>
+              </div>
+              <div class="preview"><div class="k">실행될 명령</div><div class="v mono">node examples/weather-server/server.mjs</div></div>
+              <div class="actions"><button class="btn primary">실행 시작</button><button class="btn ghost">취소</button></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div></div>
+  </section>
+
+  <!-- 3. 후보 없음 -->
+  <section class="board">
+    <div class="cap"><span class="n">화면 3</span><h2>후보를 하나도 못 찾았을 때</h2><p>빈 목록이 이유와 해결 방법을 말한다. 직접 입력이 바로 펼쳐져 있어 막히지 않는다.</p></div>
+    <div class="frame"><div class="app">
+      <aside class="side dim">
+        <div class="brand"><div class="logo">&gt;_</div><div><b>OhMyMCP</b><small>MCP Test Dashboard</small></div></div>
+        <nav class="nav"><a class="on">홈</a><a>실행</a><a>Generate</a><a>카세트</a><a>Repair</a></nav>
+      </aside>
+      <div class="main">
+        <div class="card" style="max-width:620px">
+          <div class="suite">
+            <div class="row"><div><div class="path mono">suites/smoke.json</div><div class="meta">테스트 2개 · 스모크</div></div><button class="btn outline">실행</button></div>
+            <div class="form">
+              <div>
+                <p class="lbl">서버 <small>프로젝트에서 0개 찾음</small></p>
+                <div class="note">~/Study/Project/OhMyMCP 아래에서 <span class="mono">.mcp.json</span> 이나 <span class="mono">package.json</span> 의 <span class="mono">bin</span> 을 찾지 못했습니다. 아래에 직접 적거나, 루트에 <span class="mono">.mcp.json</span> 을 두면 다음부터 목록에 나타납니다.</div>
+              </div>
+              <div>
+                <p class="lbl">실행 방법</p>
+                <div class="seg"><span class="on">Node 스크립트</span><span>npx 패키지</span><span>Python</span><span>직접 입력</span></div>
+              </div>
+              <div>
+                <p class="lbl">서버 스크립트</p>
+                <div class="input mono">예: examples/weather-server/server.mjs</div>
+              </div>
+              <div>
+                <p class="lbl">서버 인자</p>
+                <div class="chips"><span class="input mono wide">인자 하나씩 추가</span><button class="btn">추가</button></div>
+              </div>
+              <div class="preview"><div class="k">실행될 명령</div><div class="v mono">—</div></div>
+              <div class="actions"><button class="btn primary" style="opacity:.5">실행 시작</button><button class="btn ghost">취소</button></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div></div>
+  </section>
+  <!-- 4. 테스트 옵션 펼침 -->
+  <section class="board">
+    <div class="cap"><span class="n">화면 4</span><h2>테스트 옵션을 펼치면</h2><p>CLI <span class="mono">mcpeak test</span> 옵션 전부. 목록은 우리 코드에 고정돼 있어 스키마 파일이 필요 없다. 바꾼 것만 argv 에 붙고, 미리보기가 그 결과를 보여준다.</p></div>
+    <div class="frame"><div class="app">
+      <aside class="side dim">
+        <div class="brand"><div class="logo">&gt;_</div><div><b>OhMyMCP</b><small>MCP Test Dashboard</small></div></div>
+        <nav class="nav"><a class="on">홈</a><a>실행</a><a>Generate</a><a>카세트</a><a>Repair</a></nav>
+      </aside>
+      <div class="main">
+        <div class="card" style="max-width:640px">
+          <div class="suite">
+            <div class="row"><div><div class="path mono">generated/weather.baseline.json</div><div class="meta">테스트 3개 · get_weather, add</div></div><button class="btn outline">실행</button></div>
+            <div class="form">
+              <div>
+                <p class="lbl">서버 <small>weather 선택됨 · .mcp.json</small></p>
+                <div class="opts"><div class="opt on"><div class="r"></div><div><div class="name">weather</div><div class="cmd mono">node examples/weather-server/server.mjs --port 3000</div></div><span class="src">.mcp.json</span></div></div>
+                <p class="hint">다른 후보 2개와 직접 입력은 접혀 있음(화면 1 참고).</p>
+              </div>
+              <div class="adv">
+                <div class="head"><span><span class="car">▾</span>테스트 옵션</span><span class="sum">3개 바꿈</span></div>
+                <div class="body">
+                  <div>
+                    <p class="gh">접속</p>
+                    <div class="seg"><span class="on">stdio (위 서버 명령)</span><span>HTTP URL</span></div>
+                    <p class="hint">HTTP 를 고르면 서버 명령 대신 URL 과 헤더 환경변수(<span class="mono">--url</span>, <span class="mono">--header-env</span>) 입력이 나타난다.</p>
+                  </div>
+                  <div>
+                    <p class="gh">검사</p>
+                    <div class="grid2">
+                      <div class="opt-row"><div class="t"><span class="cb on"></span>결정론 검사 <code>--determinism</code></div><div class="d">스위트를 2회 실행해 결과를 대조합니다.</div></div>
+                      <div class="opt-row"><div class="t"><span class="input num mono">40</span>서버 stderr 줄 수 <code>--stderr-lines</code></div><div class="d">실패 시 함께 보여줄 서버 로그 줄 수. 기본 20.</div></div>
+                    </div>
+                  </div>
+                  <div>
+                    <p class="gh">결과 파일</p>
+                    <div class="grid2">
+                      <div class="opt-row"><div class="t">JUnit 리포트 <code>--junit</code></div><div class="input mono" style="color:var(--ink)">reports/weather.xml</div><div class="d">비우면 만들지 않습니다. 디렉터리는 있어야 합니다.</div></div>
+                      <div class="opt-row"><div class="t">Repair 번들 <code>--repair-bundle</code></div><div class="input mono">예: repair/weather</div><div class="d">실패를 Repair 화면에서 고칠 수 있게 묶어 둡니다.</div></div>
+                    </div>
+                  </div>
+                  <div class="opt-row dim">
+                    <div class="t">초기화 명령 <code>--reset-cmd</code></div><div class="input mono">Repair 번들을 지정하면 열립니다</div><div class="d">시험 실행마다 서버 상태를 되돌리는 명령. 번들 없이는 뜻이 없어 잠겨 있습니다.</div>
+                  </div>
+                </div>
+              </div>
+              <div class="preview"><div class="k">실행될 명령</div><div class="v mono">mcpeak test generated/weather.baseline.json --command node --arg examples/weather-server/server.mjs --arg --port --arg 3000 --determinism --stderr-lines 40 --junit reports/weather.xml</div></div>
+              <div class="actions"><button class="btn primary">실행 시작</button><button class="btn ghost">취소</button></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div></div>
+  </section>
+</div>

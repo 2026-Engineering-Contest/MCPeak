@@ -1,6 +1,6 @@
 {
   "name": "@mcpeak-examples/live-weather-server",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "private": true,
   "type": "module",
   "description": "External 세션 데모용 예제 MCP 서버 (stdio) — 실제 공개 API 를 fetch 로 부른다",

@@ -1,6 +1,6 @@
 {
   "name": "@mcpeak/dashboard",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": false,
   "type": "module",
   "description": "MCPeak 대시보드 (로컬 웹 UI · CLI 플로우 구동)",

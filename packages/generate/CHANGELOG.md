@@ -1,5 +1,99 @@
 # @ohmymcp-hsu/generate
 
+## 0.7.0
+
+### Minor Changes
+
+- 7186519: AI 사전보완이 codex 에서 **한 번도 성공하지 않던** 문제를 고칩니다([#284](https://github.com/2026-Engineering-Contest/MCPeak/issues/284), [ADR-0064](https://github.com/2026-Engineering-Contest/MCPeak/blob/main/docs/adr/0064-사전보완-제안-값을-json-문자열로-받는다.md)).
+
+  원인은 provider 도 인증도 아니고 우리가 만들어 보내는 출력 스키마였습니다. 제안 값을 빈 스키마
+  `value: {}` 로 두었는데, codex 는 모든 property 에 `type` 키를 요구해 요청을 통째로 거절합니다.
+
+  ```
+  "code": "invalid_json_schema",
+  "message": "... In context=('properties', 'proposals', 'items', 'properties', 'value'),
+    schema must have a 'type' key."
+  ```
+
+  화면에는 이 사실이 한 글자도 오지 않고 `providerFailed` 만 남아, 사용자는 baseline 값으로 넘어가는
+  이유를 알 수 없었습니다.
+
+  제안 값을 `valueJson` 문자열로 받고 로컬에서 파싱합니다. 임의 JSON 을 두 CLI 공통 스키마 범위로
+  표현할 수 없다는 것은 ADR-0007 이 `suiteJson` 에서 이미 부딪혀 기록한 벽이고, 같은 답을 적용했습니다.
+  타입을 전부 나열하는 길(`{"type":[...,"object",...]}`)은 strict mode 의 `additionalProperties` 요구에
+  다시 걸리므로 택하지 않았습니다.
+
+  **검증 강도는 그대로입니다.** 제안 값의 최종 판정은 원래도 스키마가 아니라 `checkInputContract` 였고,
+  요청에 없는 케이스·없는 필드·근거 있는 값을 덮어쓰는 제안·서버 선언을 어기는 값은 지금과 똑같이
+  사유와 함께 버려집니다.
+
+  **breaking**: 공개 타입 `PreFillOutputSchema` 의 `properties.proposals.items.properties` 에서 `value` 가
+  `valueJson: { type: "string" }` 으로 바뀝니다. `PreFillProposal`(`{ caseId, field, value }`)은 그대로라
+  결과를 읽는 쪽은 영향이 없습니다.
+
+- d70bf49: provider CLI 가 우리가 넘긴 옵션을 몰라 죽었을 때 **화면이 원인을 말합니다**([#285](https://github.com/2026-Engineering-Contest/MCPeak/issues/285), [ADR-0065](https://github.com/2026-Engineering-Contest/MCPeak/blob/main/docs/adr/0065-옵션-이름은-stderr-가-아니라-우리-args-에서-고른다.md)).
+
+  설치된 CLI 버전에 우리가 넘긴 옵션이 없으면 요청이 API 에 닿기도 전에 죽습니다. 이 실패는 HTTP 상태
+  코드를 남기지 않아 분류가 비었고, 화면은 `default` 갈래로 떨어져 **로그인과 모델을 확인하라고**
+  안내했습니다. 둘 다 원인이 아니므로 안내를 그대로 따라도 풀리지 않았습니다.
+
+  전:
+
+  ```
+  오류 [GENERATE_PROVIDER_EXIT]: claude가 종료했습니다. 종료 코드: 1, 모델: sonnet
+  해결: `claude /status` 명령으로 로그인 상태를 확인하고, 모델 이름이 맞는지 확인하세요.
+  ```
+
+  후:
+
+  ```
+  오류 [GENERATE_PROVIDER_OPTION]: 설치된 claude가 우리가 넘긴 옵션을 모릅니다. 옵션: --safe-mode
+    → 로그인도 모델도 원인이 아닙니다. CLI가 뜨기도 전에 옵션 해석에서 멈췄습니다.
+  해결: `claude --version` 으로 버전을 확인하고 최신 버전으로 올리세요.
+  ```
+
+  `repair` 도 같은 사실을 말하며(`REPAIR_PROVIDER_OPTION`), 파일이 하나도 바뀌지 않았다는 약속은
+  그대로 유지합니다.
+
+  **stderr 를 화면에 찍지는 않습니다.** 거기에는 우리가 보낸 프롬프트가 echo 되고 그 안에 신뢰할 수
+  없는 툴 설명이 있습니다. 옵션 이름은 stderr 에서 읽는 대신 **우리가 넘긴 args 목록에서 고릅니다**
+  — 우리 것이 아니면 아무것도 말하지 않습니다.
+
+  **breaking**: `AuthoringProviderFailureReason` 에 `unknownOption` 이 추가되고, `classifyFailure` 의
+  반환형이 enum 에서 `ProviderFailureClassification` 객체로 바뀝니다. 사유만으로는 어느 옵션인지 말할
+  수 없기 때문입니다. `PublicProviderFailure` 에는 `option` 필드가 생깁니다.
+
+### Patch Changes
+
+- 626d067: Claude Code 2.1.148에도 authoring과 repair 요청이 도달하도록 지원되지 않는 `--safe-mode` 인자를 제거합니다.
+- 54d7dc6: provider 로 나가는 요청과 승인 화면의 민감 키 판정을 runner 와 같은 규칙으로 맞췄습니다(#368).
+
+  `generate` 는 runner 의 민감 키 **목록**만 가져다 자기 정확 일치로 판정했습니다.
+  [ADR-0082](https://github.com/2026-Engineering-Contest/MCPeak/blob/main/docs/adr/0082-runner-의-민감-키-판정을-record-와-같은-접미-단어열-규칙으로-맞춘다.md)
+  로 runner 가 접미 단어열 규칙으로 바뀌면서 목록과 규칙이 한 쌍이 됐는데, 목록만 가져오면
+  `sessionToken` 이 실패 메시지에서는 가려지고 provider 요청에서는 원문이었습니다. 이제 runner 의
+  `isSensitiveKey` 를 그대로 씁니다. `sessionToken`·`X-Api-Key`·`privateKey`·복수형이 새로
+  가려지고 `tokenCount`·`cacheKey` 는 그대로 보입니다.
+
+  provider 가 돌려준 summary·warnings·questions 같은 자유 텍스트도 `이름: 값` 꼴에서 이름을 같은
+  규칙으로 판정합니다. 이전에는 목록 항목을 부분 문자열로 찾아 `sessionToken:` 은 걸리고
+  `tokens=` 는 안 걸렸습니다.
+
+  ADR-0009 의 승인 심볼 목록에 `isSensitiveKey` 를 더했습니다.
+
+- Updated dependencies [690203f]
+- Updated dependencies [647a175]
+- Updated dependencies [cc116fa]
+- Updated dependencies [21977b4]
+- Updated dependencies [2c5ca1b]
+- Updated dependencies [ffdd83d]
+- Updated dependencies [ff33aa7]
+- Updated dependencies [aa00084]
+- Updated dependencies [8579092]
+- Updated dependencies [7bc5a71]
+- Updated dependencies [c84eb8b]
+  - @mcpeak/runner@0.10.0
+
 ## 0.6.0
 
 ### Minor Changes

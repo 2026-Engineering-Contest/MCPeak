@@ -1,6 +1,6 @@
 {
   "name": "@mcpeak/record",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": false,
   "type": "module",
   "description": "MCP 서버의 외부 HTTP 호출 녹화 · 재생 (External 세션)",

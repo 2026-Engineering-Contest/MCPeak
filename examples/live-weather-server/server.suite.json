@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "id": "live-weather",
+  "name": "실제 공개 API 를 부르는 서버",
+  "defaultTimeoutMs": 15000,
+  "cases": [
+    {
+      "id": "forecast-busan",
+      "name": "get_forecast 가 부산의 현재 날씨를 외부 API 에서 가져온다",
+      "operation": { "type": "callTool", "tool": "get_forecast", "input": { "city": "부산" } },
+      "assertions": [{ "type": "isError", "expected": false }]
+    },
+    {
+      "id": "forecast-unknown-city",
+      "name": "get_forecast 가 없는 지역을 이유와 함께 거절한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "get_forecast",
+        "input": { "city": "이런도시는없음zzz" }
+      },
+      "assertions": [{ "type": "isError", "expected": true }]
+    },
+    {
+      "id": "forecast-missing-city",
+      "name": "get_forecast 가 필수 필드 'city' 누락을 거절한다",
+      "operation": { "type": "callTool", "tool": "get_forecast", "input": {} },
+      "assertions": [{ "type": "isError", "expected": true }]
+    },
+    {
+      "id": "convert-usd-krw",
+      "name": "convert_currency 가 USD 를 KRW 로 환산한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "convert_currency",
+        "input": { "amount": 100, "from": "USD", "to": "KRW" }
+      },
+      "assertions": [{ "type": "isError", "expected": false }]
+    },
+    {
+      "id": "convert-unknown-currency",
+      "name": "convert_currency 가 모르는 통화 코드를 거절한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "convert_currency",
+        "input": { "amount": 1, "from": "USD", "to": "ZZZ" }
+      },
+      "assertions": [{ "type": "isError", "expected": true }]
+    },
+    {
+      "id": "convert-negative-amount",
+      "name": "convert_currency 가 음수 금액을 거절한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "convert_currency",
+        "input": { "amount": -1, "from": "USD", "to": "KRW" }
+      },
+      "assertions": [{ "type": "isError", "expected": true }]
+    }
+  ]
+}

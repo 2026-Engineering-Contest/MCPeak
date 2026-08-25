@@ -1,6 +1,7 @@
 import type { JSX } from "react";
 import { useEffect, useState } from "react";
 import type {
+  FileContent,
   FileEntry,
   RunSummary,
   ServerCandidate,
@@ -24,6 +25,8 @@ import type { LastRun } from "../last-run.js";
 import { readLastRun, saveLastRun } from "../last-run.js";
 import { readRecentCommands, saveRecentCommand } from "../recent-commands.js";
 import { effectiveRepairBundlePath } from "../repair-bundle-path.js";
+import type { SuiteSummary } from "../suite-summary.js";
+import { summarizeSuite } from "../suite-summary.js";
 
 /** External 세션 세그먼트. 라벨이 곧 사용자가 이 기능을 배우는 자리다. */
 const SESSION_LABELS: Record<SessionMode, string> = {
@@ -73,6 +76,14 @@ export function Home(): JSX.Element {
   const [candidates, setCandidates] = useState<readonly ServerCandidate[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [promptFor, setPromptFor] = useState<string | null>(null);
+  /** 「명세 확인」이 열린 행. 실행 폼과 독립이다. 둘 다 열려 있을 수 있다. */
+  const [specFor, setSpecFor] = useState<string | null>(null);
+  const [spec, setSpec] = useState<
+    | { readonly kind: "loading" }
+    | { readonly kind: "ready"; readonly summary: SuiteSummary }
+    | { readonly kind: "error"; readonly reason: string }
+    | null
+  >(null);
 
   const [choice, setChoice] = useState<ServerChoice>({ kind: "manual" });
   const [lastRun, setLastRun] = useState<LastRun | null>(null);
@@ -108,6 +119,57 @@ export function Home(): JSX.Element {
   }, []);
 
   const httpTarget = options.transport === "http";
+
+  /**
+   * 「명세 확인」. 파일을 그때 읽는다. 목록을 만들 때 전부 읽어 두면 스위트가 수십 개인
+   * 프로젝트에서 첫 화면이 느려지고, 그 사이 파일이 바뀌면 낡은 것을 보여준다.
+   */
+  function openSpec(suitePath: string): void {
+    setSpecFor(suitePath);
+    setSpec({ kind: "loading" });
+    apiGet<FileContent>(`/api/suites/${encodeURIComponent(suitePath)}`)
+      .then((file) => {
+        const result = summarizeSuite(file.content);
+        setSpec(
+          result.ok
+            ? { kind: "ready", summary: result.summary }
+            : { kind: "error", reason: result.reason },
+        );
+      })
+      .catch((err: unknown) =>
+        setSpec({ kind: "error", reason: err instanceof Error ? err.message : String(err) }),
+      );
+  }
+
+  function closeSpec(): void {
+    setSpecFor(null);
+    setSpec(null);
+  }
+
+  function renderSpec(): JSX.Element | null {
+    if (spec === null) return null;
+    if (spec.kind === "loading") {
+      return <p className="text-xs text-ink-muted">명세를 읽는 중...</p>;
+    }
+    if (spec.kind === "error") {
+      return (
+        <p className="text-xs" style={{ color: "var(--status-failed-fg)" }}>
+          명세를 읽지 못했습니다: {spec.reason}
+        </p>
+      );
+    }
+    const { summary } = spec;
+    return (
+      <div className="rounded border border-line bg-canvas px-3 py-2">
+        <p className="text-xs font-medium text-ink">
+          {summary.name} (id {summary.id}) · 케이스 {summary.caseCount}건
+        </p>
+        <pre className="mt-1 overflow-x-auto whitespace-pre font-mono text-xs text-ink">
+          {summary.lines.join("\n")}
+        </pre>
+      </div>
+    );
+  }
 
   /** 폼을 열 때의 초기 선택(설계 §6-6). 지난 실행 → 첫 후보 → 직접 입력 순이다. */
   function openPrompt(suitePath: string): void {
@@ -416,17 +478,28 @@ export function Home(): JSX.Element {
               <li key={suite.path} className="space-y-2 px-4 py-3">
                 <div className="flex items-center justify-between gap-3">
                   <span className="font-mono text-xs text-ink">{suite.path}</span>
-                  <button
-                    type="button"
-                    aria-expanded={promptFor === suite.path}
-                    className="rounded bg-accent px-3 py-1 text-xs font-medium text-white"
-                    onClick={() =>
-                      promptFor === suite.path ? setPromptFor(null) : openPrompt(suite.path)
-                    }
-                  >
-                    {promptFor === suite.path ? "닫기" : "실행"}
-                  </button>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <button
+                      type="button"
+                      aria-expanded={specFor === suite.path}
+                      className="rounded border border-line px-3 py-1 text-xs text-ink-muted"
+                      onClick={() => (specFor === suite.path ? closeSpec() : openSpec(suite.path))}
+                    >
+                      {specFor === suite.path ? "명세 닫기" : "명세 확인"}
+                    </button>
+                    <button
+                      type="button"
+                      aria-expanded={promptFor === suite.path}
+                      className="rounded bg-accent px-3 py-1 text-xs font-medium text-white"
+                      onClick={() =>
+                        promptFor === suite.path ? setPromptFor(null) : openPrompt(suite.path)
+                      }
+                    >
+                      {promptFor === suite.path ? "닫기" : "실행"}
+                    </button>
+                  </div>
                 </div>
+                {specFor === suite.path && renderSpec()}
                 {promptFor === suite.path && renderForm(suite.path)}
               </li>
             ))}

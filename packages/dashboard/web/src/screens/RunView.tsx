@@ -1,7 +1,13 @@
 import type { JSX } from "react";
 import { useEffect, useState } from "react";
-import type { RunSummary, StartRunRequest, StartRunResponse } from "../../../src/api-types.js";
+import type {
+  PendingQuestion,
+  RunSummary,
+  StartRunRequest,
+  StartRunResponse,
+} from "../../../src/api-types.js";
 import { apiGet, apiSend } from "../api.js";
+import { AiConversationPanel } from "../components/AiConversationPanel.js";
 import { FlowChip } from "../components/FlowChip.js";
 import { LogPanel } from "../components/LogPanel.js";
 import { QuestionPanel } from "../components/QuestionPanel.js";
@@ -27,6 +33,21 @@ function canReturnToReviewMenu(question: {
     message === "편집한 JSON 파일 경로:" ||
     /^(codex|claude) model \(/.test(message)
   );
+}
+
+function isAiPrompt(question: PendingQuestion): boolean {
+  if (question.kind !== "input") return false;
+  const message = question.message.trim();
+  return message === "AI 요청:" || message === "피드백:";
+}
+
+function isAiDispatchConfirmation(question: PendingQuestion): boolean {
+  return question.kind === "confirm" && question.message.trim() === "이 요청을 전송할까요?";
+}
+
+interface AiConversation {
+  readonly question: string;
+  readonly responseAfterEventId: number | null;
 }
 
 interface RunStreamPanelProps {
@@ -56,6 +77,7 @@ export function RunStreamPanel({
   const [bundlePath, setBundlePath] = useState("");
   const [provider, setProvider] = useState<"claude" | "codex">("claude");
   const [model, setModel] = useState("");
+  const [conversation, setConversation] = useState<AiConversation | null>(null);
   /**
    * 이 run 의 argv. `null` 은 "아직 모른다" 다. 홈의 test 실행은 항상 `--repair-bundle` 을
    * 붙이므로(ADR-0080) 여기서 그 값을 읽어 repair 폼을 채운다. 사용자가 같은 경로를 두 번
@@ -70,6 +92,8 @@ export function RunStreamPanel({
     // 앞 run 에서 연 폼이 그대로 열려 있으면 다른 run 의 폼처럼 보인다.
     setBundlePath("");
     setRepairOpen(false);
+    setAnsweredId(null);
+    setConversation(null);
     apiGet<RunSummary>(`/api/runs/${encodeURIComponent(runId)}`)
       .then((summary) => {
         if (cancelled || !Array.isArray(summary.argv)) return;
@@ -108,15 +132,28 @@ export function RunStreamPanel({
   const visibleQuestion =
     pendingQuestion !== null && pendingQuestion.id !== answeredId ? pendingQuestion : null;
 
-  async function answer(questionId: string, value: string): Promise<void> {
+  async function answer(question: PendingQuestion, value: string): Promise<void> {
     setError(null);
+    if (isAiPrompt(question)) {
+      setConversation({ question: value, responseAfterEventId: null });
+    } else if (isAiDispatchConfirmation(question) && value === "y") {
+      const latestEventId = events.at(-1)?.id ?? 0;
+      setConversation((previous) =>
+        previous === null ? null : { ...previous, responseAfterEventId: latestEventId },
+      );
+    }
     try {
       await apiSend("POST", `/api/runs/${encodeURIComponent(runId)}/answer`, {
-        questionId,
+        questionId: question.id,
         value,
       });
-      setAnsweredId(questionId);
+      setAnsweredId(question.id);
     } catch (err) {
+      if (isAiDispatchConfirmation(question)) {
+        setConversation((previous) =>
+          previous === null ? null : { ...previous, responseAfterEventId: null },
+        );
+      }
       setError(err instanceof Error ? err.message : String(err));
     }
   }
@@ -160,6 +197,26 @@ export function RunStreamPanel({
       setStarting(false);
     }
   }
+
+  const responseStartId = conversation?.responseAfterEventId ?? null;
+  const responseBoundaryId =
+    responseStartId === null
+      ? null
+      : (events.find(
+          (event) =>
+            event.id > responseStartId && (event.kind === "question" || event.kind === "done"),
+        )?.id ?? null);
+  const responseEvents =
+    responseStartId === null
+      ? []
+      : events.filter(
+          (event) =>
+            event.id > responseStartId &&
+            (responseBoundaryId === null || event.id < responseBoundaryId) &&
+            (event.kind === "stdout" || event.kind === "stderr"),
+        );
+  const waitingForAi =
+    responseStartId !== null && responseEvents.length === 0 && responseBoundaryId === null;
 
   return (
     <div className="space-y-4">
@@ -297,16 +354,29 @@ export function RunStreamPanel({
         }
         events={events}
         footer={
-          visibleQuestion !== null ? (
-            // key로 question.id를 줘서 새 질문마다 리마운트한다(입력값 초기화).
-            <QuestionPanel
-              key={visibleQuestion.id}
-              question={visibleQuestion}
-              onAnswer={(value) => answer(visibleQuestion.id, value)}
-              onBack={
-                canReturnToReviewMenu(visibleQuestion) ? () => back(visibleQuestion.id) : undefined
-              }
-            />
+          conversation !== null || visibleQuestion !== null ? (
+            <div className="space-y-3">
+              {conversation !== null && (
+                <AiConversationPanel
+                  question={conversation.question}
+                  responseEvents={responseEvents}
+                  waiting={waitingForAi}
+                />
+              )}
+              {visibleQuestion !== null && (
+                // key로 question.id를 줘서 새 질문마다 리마운트한다(입력값 초기화).
+                <QuestionPanel
+                  key={visibleQuestion.id}
+                  question={visibleQuestion}
+                  onAnswer={(value) => answer(visibleQuestion, value)}
+                  onBack={
+                    canReturnToReviewMenu(visibleQuestion)
+                      ? () => back(visibleQuestion.id)
+                      : undefined
+                  }
+                />
+              )}
+            </div>
           ) : undefined
         }
       />

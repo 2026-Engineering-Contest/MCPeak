@@ -1,5 +1,5 @@
 import type { JSX } from "react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { FileContent, FileEntry } from "../../../../src/api-types.js";
 import { apiGet } from "../../api.js";
 import type { SuiteSummary } from "../../suite-summary.js";
@@ -93,6 +93,8 @@ export function StepRunSuite(props: {
   const [specFor, setSpecFor] = useState<string | null>(null);
   const [spec, setSpec] = useState<SpecState | null>(null);
   const [othersOpen, setOthersOpen] = useState(false);
+  /** 마지막으로 연 명세의 경로. 늦게 온 응답을 버리는 기준이다. */
+  const latestSpecRequest = useRef<string | null>(null);
 
   const { matched, others } = matchSuites(props.args, props.suites ?? []);
   // 매칭이 0건이면 접힌 목록만 남아 화면이 비어 보인다. 그때는 처음부터 펴 둔다.
@@ -105,22 +107,34 @@ export function StepRunSuite(props: {
   function openSpec(suitePath: string): void {
     setSpecFor(suitePath);
     setSpec({ kind: "loading" });
+    /**
+     * 응답이 돌아왔을 때 **아직 그 행이 열려 있는지** 본다. A 를 누르고 곧바로 B 를 누르면
+     * A 의 응답이 늦게 도착해 B 행 자리에 A 의 명세가 그려진다. 늦은 응답은 버린다.
+     */
+    latestSpecRequest.current = suitePath;
+    const settle = (next: SpecState): void => {
+      if (latestSpecRequest.current === suitePath) {
+        setSpec(next);
+      }
+    };
     apiGet<FileContent>(`/api/suites/${encodeURIComponent(suitePath)}`)
       .then((file) => {
         const result = summarizeSuite(file.content);
-        setSpec(
+        settle(
           result.ok
             ? { kind: "ready", summary: result.summary }
             : { kind: "error", reason: result.reason },
         );
       })
       .catch((err: unknown) =>
-        setSpec({ kind: "error", reason: err instanceof Error ? err.message : String(err) }),
+        settle({ kind: "error", reason: err instanceof Error ? err.message : String(err) }),
       );
   }
 
   function toggleSpec(suitePath: string): void {
     if (specFor === suitePath) {
+      // 닫은 뒤에 도착하는 응답도 버린다. 안 그러면 닫아 둔 행이 저절로 다시 열린다.
+      latestSpecRequest.current = null;
       setSpecFor(null);
       setSpec(null);
       return;

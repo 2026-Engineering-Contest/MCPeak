@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { buildTestArgv, DEFAULT_TEST_OPTIONS } from "../src/build-test-argv.js";
+import { buildGenerateArgv } from "../src/generate/build-argv.js";
 import { describeRun } from "../src/run-target.js";
 
 describe("describeRun", () => {
@@ -73,5 +75,73 @@ describe("describeRun", () => {
 
   it("값이 빠진 옵션은 없는 것으로 본다", () => {
     expect(describeRun("test", ["s.json", "--command"])).toEqual({ server: null, suite: "s.json" });
+  });
+});
+
+/**
+ * `describeRun` 은 CLI 인자 규칙을 새로 판정하지 않는다. **대시보드가 방금 만들어 보낸 argv 를
+ * 되읽을 뿐이다.** 그 사실을 표로 두는 것이 이 블록이다 — 조립 쪽(`buildTestArgv`·
+ * `buildGenerateArgv`)이 바뀌면 여기서 먼저 깨진다.
+ */
+describe("describeRun 은 대시보드가 만든 argv 를 되읽는다", () => {
+  it("buildTestArgv 가 만든 argv 를 그대로 되읽는다", () => {
+    const argv = buildTestArgv({
+      suitePath: "examples/weather-server/server.suite.json",
+      command: "node",
+      args: ["examples/weather-server/server.mjs", "--port", "3000"],
+      sessionMode: "off",
+      sessionPath: "",
+      options: DEFAULT_TEST_OPTIONS,
+    });
+
+    expect(describeRun("test", argv)).toEqual({
+      server: "node examples/weather-server/server.mjs --port 3000",
+      suite: "examples/weather-server/server.suite.json",
+    });
+  });
+
+  it("HTTP 로 만든 argv 도 그대로 되읽는다", () => {
+    const argv = buildTestArgv({
+      suitePath: "s.suite.json",
+      command: "",
+      args: [],
+      sessionMode: "off",
+      sessionPath: "",
+      options: {
+        ...DEFAULT_TEST_OPTIONS,
+        transport: "http",
+        url: "https://example.test/mcp",
+      },
+    });
+
+    expect(describeRun("test", argv)).toEqual({
+      server: "https://example.test/mcp",
+      suite: "s.suite.json",
+    });
+  });
+
+  it("buildGenerateArgv 가 만든 argv 는 --out 이 스위트다", () => {
+    const argv = buildGenerateArgv({
+      transport: "stdio",
+      url: "",
+      headerEnvs: [],
+      command: "node",
+      args: ["examples/weather-server/server.mjs"],
+      suiteId: "weather",
+      suiteName: "Weather",
+      outPath: "examples/weather-server/server.suite.json",
+      force: false,
+      mode: "baseline",
+      provider: "claude",
+      model: "",
+      dryRun: true,
+      repair: true,
+      resetCmd: "",
+    });
+
+    expect(describeRun("generate", argv)).toEqual({
+      server: "node examples/weather-server/server.mjs",
+      suite: "examples/weather-server/server.suite.json",
+    });
   });
 });

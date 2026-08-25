@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FileEntry, ServerCandidate, ServerMeta } from "../../src/api-types.js";
 import { DEFAULT_TEST_OPTIONS } from "../src/build-test-argv.js";
@@ -648,5 +648,103 @@ describe("Home 실행 마법사", () => {
       expect(window.location.hash).toBe("#/runs/run-new");
     });
     expect(postedArgv(fetchMock)).toContain("out/j.xml");
+  });
+
+  /**
+   * 응답 순서가 뒤집혀도 열린 행의 명세만 그린다. A 를 누르고 곧바로 B 를 누르면 A 의 응답이
+   * 늦게 도착하는데, 그것을 B 행 자리에 그리면 사용자는 다른 스위트를 보고 실행을 결정한다.
+   */
+  it("늦게 온 명세 응답은 버린다", async () => {
+    const specOf = (id: string): string =>
+      JSON.stringify({
+        schemaVersion: 1,
+        id,
+        name: id,
+        cases: [
+          {
+            id: `${id}-case`,
+            name: id,
+            operation: { type: "callTool", tool: "t", input: {} },
+            assertions: [{ type: "isError", expected: false }],
+          },
+        ],
+      });
+    const resolvers: Array<() => void> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url === "/api/suites") {
+          return new Response(JSON.stringify(SUITES), { status: 200 });
+        }
+        if (url === "/api/servers") {
+          return new Response(JSON.stringify(CANDIDATES), { status: 200 });
+        }
+        if (url === "/api/meta") {
+          return new Response(JSON.stringify(META), { status: 200 });
+        }
+        if (url.startsWith("/api/suites/")) {
+          const path = decodeURIComponent(url.slice("/api/suites/".length));
+          // 두 요청 모두 잡아 두었다가 눌린 순서의 역순으로 푼다.
+          return await new Promise<Response>((resolve) => {
+            resolvers.push(() =>
+              resolve(
+                new Response(JSON.stringify({ path, content: specOf(path), mtimeMs: 1 }), {
+                  status: 200,
+                }),
+              ),
+            );
+          });
+        }
+        return new Response("[]", { status: 200 });
+      }),
+    );
+    render(<Home />);
+    await screen.findByRole("radio", { name: /^weather/ });
+    next();
+    const buttons = await screen.findAllByRole("button", { name: "명세 확인" });
+    fireEvent.click(buttons[0] as HTMLElement);
+    fireEvent.click(screen.getAllByRole("button", { name: "명세 확인" })[0] as HTMLElement);
+
+    await waitFor(() => {
+      expect(resolvers).toHaveLength(2);
+    });
+    // 늦게 누른 쪽(SUITE_SHOW)을 먼저, 먼저 누른 쪽(SUITE)을 나중에 푼다.
+    await act(async () => {
+      resolvers[1]?.();
+      resolvers[0]?.();
+    });
+
+    expect(await screen.findByText(`${SUITE_SHOW} (id ${SUITE_SHOW}) · 케이스 1건`)).toBeTruthy();
+    expect(screen.queryByText(`${SUITE} (id ${SUITE}) · 케이스 1건`)).toBeNull();
+  });
+
+  /** `chooseSuite` 와 같은 규칙이다. 접속은 1단계 소관이라 3단계 버튼이 덮으면 안 된다. */
+  it("지난 실행값 쓰기가 1단계에서 고른 HTTP 접속을 덮지 않는다", async () => {
+    window.localStorage.setItem(
+      "mcpeak-home-last-run",
+      JSON.stringify({
+        [SUITE]: { command: "python", args: ["old.py"], options: DEFAULT_TEST_OPTIONS },
+      }),
+    );
+    const fetchMock = stubFetch();
+    render(<Home />);
+    await screen.findByRole("radio", { name: /^weather/ });
+    fireEvent.click(screen.getByRole("button", { name: "HTTP URL" }));
+    fireEvent.change(screen.getByLabelText("URL"), {
+      target: { value: "https://example.test/mcp" },
+    });
+    next();
+    fireEvent.click(await screen.findByRole("radio", { name: SUITE }));
+    next();
+
+    // HTTP 는 명령을 argv 에 싣지 않으므로 되돌릴 것이 없다. 그래서 알림도 안 뜬다.
+    expect(screen.queryByRole("button", { name: "지난 실행값 쓰기" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "실행 시작" }));
+
+    await waitFor(() => {
+      expect(window.location.hash).toBe("#/runs/run-new");
+    });
+    expect(postedArgv(fetchMock).slice(0, 3)).toEqual([SUITE, "--url", "https://example.test/mcp"]);
   });
 });

@@ -65,9 +65,12 @@ function effectiveTarget(state: HomeState): { command: string; args: readonly st
   return { command: split.command, args: [...split.leadingArgs, ...state.args] };
 }
 
-/** 지난 실행이 지금 고른 서버와 다른가. 같으면 3단계에서 되돌릴 것이 없다. */
+/**
+ * 지난 실행이 지금 고른 서버와 다른가. 같으면 3단계에서 되돌릴 것이 없다.
+ * HTTP 대상은 명령을 argv 에 싣지 않으므로, 되돌려도 실행이 달라지지 않는다. 그때는 안 묻는다.
+ */
 function differsFromLastRun(state: HomeState, lastRun: LastRun | null): boolean {
-  if (lastRun === null) {
+  if (lastRun === null || state.options.transport === "http") {
     return false;
   }
   const current = effectiveTarget(state);
@@ -209,7 +212,14 @@ export function Home(): JSX.Element {
       target: lastRun.command,
       command: lastRun.command,
       args: [...lastRun.args],
-      options: lastRun.options,
+      // 접속은 1단계 소관이다. `chooseSuite` 와 같은 규칙으로 지킨다 — 통째로 덮으면
+      // HTTP 를 고른 사용자가 이 버튼 하나로 stdio 로 돌아가고 URL 이 argv 에서 빠진다.
+      options: {
+        ...lastRun.options,
+        transport: current.options.transport,
+        url: current.options.url,
+        headerEnvs: current.options.headerEnvs,
+      },
     }));
     setOptionsTouched(true);
   }

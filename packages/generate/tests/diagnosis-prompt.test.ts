@@ -154,7 +154,6 @@ describe("diagnosisPrompt", () => {
     expect(invocation.command).toBe("claude");
     expect(invocation.args).toEqual([
       "-p",
-      "--safe-mode",
       "--model",
       "m",
       "--tools",

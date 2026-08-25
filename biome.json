@@ -39,6 +39,15 @@
       "formatter": {
         "enabled": false
       }
+    },
+    {
+      "includes": ["docs/mockups/**"],
+      "linter": {
+        "enabled": false
+      },
+      "formatter": {
+        "enabled": false
+      }
     }
   ]
 }

@@ -96,7 +96,7 @@ export function TransportFields(props: {
                 ))}
               </ul>
             )}
-            <div className="flex gap-2">
+            <div className="flex items-center gap-2">
               <input
                 id={`${props.idPrefix}-header-env`}
                 className={`${INPUT_CLASS} font-mono`}
@@ -111,7 +111,7 @@ export function TransportFields(props: {
               />
               <button
                 type="button"
-                className="rounded border border-line px-3 py-1.5 text-sm text-ink-muted hover:text-ink"
+                className="shrink-0 whitespace-nowrap rounded border border-line px-3 py-1.5 text-sm text-ink-muted hover:text-ink"
                 onClick={addHeaderEnv}
               >
                 추가

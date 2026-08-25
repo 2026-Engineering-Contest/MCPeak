@@ -66,7 +66,7 @@ export function ArgChips(props: {
           ))}
         </ul>
       )}
-      <div className="flex gap-2">
+      <div className="flex items-center gap-2">
         <input
           id={`${props.idPrefix}-arg-draft`}
           className={`${INPUT_CLASS} font-mono`}
@@ -84,7 +84,7 @@ export function ArgChips(props: {
         <button
           type="button"
           disabled={disabled}
-          className="rounded border border-line px-3 py-1.5 text-sm text-ink-muted hover:text-ink disabled:opacity-50"
+          className="shrink-0 whitespace-nowrap rounded border border-line px-3 py-1.5 text-sm text-ink-muted hover:text-ink disabled:opacity-50"
           onClick={addArg}
         >
           추가

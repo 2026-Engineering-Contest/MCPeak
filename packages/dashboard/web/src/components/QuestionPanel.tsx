@@ -25,7 +25,9 @@ export function QuestionPanel(props: {
   const isAiPrompt =
     question.kind === "input" &&
     (question.message.trim() === "AI 요청:" || question.message.trim() === "피드백:");
-  const hasAccentBackground = isReviewMenu || isAiPrompt;
+  const isAiDispatchConfirmation =
+    question.kind === "confirm" && question.message.trim() === "이 요청을 전송할까요?";
+  const hasAccentBackground = isReviewMenu || isAiPrompt || isAiDispatchConfirmation;
 
   async function submit(value: string): Promise<void> {
     if (busy) return;
@@ -133,7 +135,11 @@ export function QuestionPanel(props: {
           </button>
           <button
             type="button"
-            className="rounded border border-line bg-transparent px-3 py-1.5 text-sm text-white hover:border-accent disabled:opacity-50"
+            className={`rounded border px-3 py-1.5 text-sm hover:border-accent disabled:opacity-50 ${
+              hasAccentBackground
+                ? "border-accent-border bg-surface text-ink"
+                : "border-line bg-transparent text-white"
+            }`}
             disabled={busy}
             onClick={() => void submit("n")}
           >

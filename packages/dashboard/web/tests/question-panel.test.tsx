@@ -25,7 +25,7 @@ describe("QuestionPanel", () => {
     expect(onAnswer).toHaveBeenCalledWith("b");
   });
 
-  it("검토 메뉴와 AI 입력은 연보라 배경과 그에 맞는 글자색을 쓴다", () => {
+  it("검토 메뉴, AI 입력, AI 전송 확인은 연보라 배경과 그에 맞는 글자색을 쓴다", () => {
     const onAnswer = vi.fn(async () => {});
     const { container, rerender } = render(
       <QuestionPanel
@@ -62,6 +62,18 @@ describe("QuestionPanel", () => {
     expect(container.firstElementChild?.classList.contains("bg-accent-soft")).toBe(true);
     expect(screen.getByText("AI 요청:").classList.contains("text-ink")).toBe(true);
     expect(screen.getByRole("textbox").classList.contains("bg-surface")).toBe(true);
+
+    rerender(
+      <QuestionPanel
+        question={{ id: "q4", kind: "confirm", message: "이 요청을 전송할까요?" }}
+        onAnswer={onAnswer}
+      />,
+    );
+    expect(container.firstElementChild?.classList.contains("bg-accent-soft")).toBe(true);
+    expect(screen.getByText("이 요청을 전송할까요?").classList.contains("text-ink")).toBe(true);
+    expect(screen.getByRole("button", { name: "아니오" }).classList.contains("bg-surface")).toBe(
+      true,
+    );
   });
 
   it('confirm 예가 "y", 아니오가 "n"으로 간다', async () => {

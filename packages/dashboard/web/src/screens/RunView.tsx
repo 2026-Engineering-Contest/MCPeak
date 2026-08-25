@@ -11,6 +11,7 @@ import { FlowChip } from "../components/FlowChip.js";
 import { LogPanel } from "../components/LogPanel.js";
 import { QuestionPanel } from "../components/QuestionPanel.js";
 import { StatusBadge } from "../components/StatusBadge.js";
+import { type AiProvider, MODEL_OPTIONS } from "../provider-models.js";
 import { repairBundlePathOf } from "../repair-bundle-path.js";
 import { useRunEvents } from "../run-stream.js";
 import type { RunTarget } from "../run-target.js";
@@ -78,7 +79,7 @@ export function RunStreamPanel({
   const [error, setError] = useState<string | null>(null);
   const [repairOpen, setRepairOpen] = useState(false);
   const [bundlePath, setBundlePath] = useState("");
-  const [provider, setProvider] = useState<"claude" | "codex">("claude");
+  const [provider, setProvider] = useState<AiProvider>("claude");
   const [model, setModel] = useState("");
   const [conversations, setConversations] = useState<readonly AiConversation[]>([]);
   /**
@@ -128,7 +129,7 @@ export function RunStreamPanel({
     bundlePath.trim() === ""
       ? "repair 번들 경로를 입력하세요."
       : model.trim() === ""
-        ? "model 을 입력하세요."
+        ? "model 을 선택하세요."
         : null;
   const repairReady = repairBlockReason === null;
 
@@ -153,7 +154,10 @@ export function RunStreamPanel({
 
   async function answer(question: PendingQuestion, value: string): Promise<void> {
     setError(null);
-    const startsSuiteGeneration = isAiDispatchConfirmation(question) && value === "y";
+    // generate 직후의 첫 전송 승인만 스위트 생성 시작이다. 검토 메뉴에서 AI 요청을
+    // 입력한 뒤 도착하는 같은 문구의 승인은 후속 질문 전송이므로 답변 대기 상태만 쓴다.
+    const startsSuiteGeneration =
+      isAiDispatchConfirmation(question) && value === "y" && conversations.length === 0;
     if (startsSuiteGeneration) setGeneratingAfterQuestionId(question.id);
     if (isAiPrompt(question)) {
       const questionEventId =
@@ -332,7 +336,10 @@ export function RunStreamPanel({
               id="repair-provider"
               className={REPAIR_INPUT_CLASS}
               value={provider}
-              onChange={(event) => setProvider(event.target.value === "codex" ? "codex" : "claude")}
+              onChange={(event) => {
+                setProvider(event.target.value === "codex" ? "codex" : "claude");
+                setModel("");
+              }}
             >
               <option value="claude">claude</option>
               <option value="codex">codex</option>
@@ -343,12 +350,19 @@ export function RunStreamPanel({
             <label className="block text-sm font-medium text-ink" htmlFor="repair-model">
               model
             </label>
-            <input
+            <select
               id="repair-model"
               className={REPAIR_INPUT_CLASS}
               value={model}
               onChange={(event) => setModel(event.target.value)}
-            />
+            >
+              <option value="">모델을 선택하세요</option>
+              {MODEL_OPTIONS[provider].map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
             {/* generate 의 모델 칸은 "(선택)" 인데 이 칸은 CLI 가 --model 을 요구한다.
                 같은 생김새의 칸이 화면마다 다르게 구는 것을 여기서 말해 준다(#354). */}
             <p className="text-xs text-ink-muted">repair 는 모델 지정이 필수입니다.</p>

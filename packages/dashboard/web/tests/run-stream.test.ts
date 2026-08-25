@@ -45,7 +45,13 @@ class FakeEventSource {
   }
 }
 
-const RUNNING: RunSummary = { runId: "run-1", flow: "test", status: "running", exitCode: null };
+const RUNNING: RunSummary = {
+  runId: "run-1",
+  flow: "test",
+  status: "running",
+  exitCode: null,
+  argv: [],
+};
 
 /**
  * 훅이 마운트마다 `GET /api/runs/:id` 를 한 번 부른다. 스텁이 없으면 상대경로 fetch 가

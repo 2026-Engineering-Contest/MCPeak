@@ -36,6 +36,8 @@ export interface RunSummary {
   readonly flow: StartRunRequest["flow"];
   readonly status: RunStatus;
   readonly exitCode: number | null;
+  /** 시작 요청의 argv 그대로. 실행 뷰가 --repair-bundle 값을 여기서 읽는다(ADR-0080). */
+  readonly argv: readonly string[];
 }
 
 /** POST /api/runs/:id/answer */

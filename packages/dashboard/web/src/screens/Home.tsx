@@ -23,6 +23,7 @@ import { StepServer, splitCommand } from "../generate/steps/StepServer.js";
 import type { LastRun } from "../last-run.js";
 import { readLastRun, saveLastRun } from "../last-run.js";
 import { readRecentCommands, saveRecentCommand } from "../recent-commands.js";
+import { effectiveRepairBundlePath } from "../repair-bundle-path.js";
 
 /** External 세션 세그먼트. 라벨이 곧 사용자가 이 기능을 배우는 자리다. */
 const SESSION_LABELS: Record<SessionMode, string> = {
@@ -188,7 +189,12 @@ export function Home(): JSX.Element {
           args: serverArgs,
           sessionMode,
           sessionPath: sessionPath.trim(),
-          options,
+          // 번들은 항상 켠다(ADR-0080). 비워 두면 대시보드 관리 경로다. 저장(`saveLastRun`)에는
+          // 원래 `options` 를 넣는다. 관리 경로를 저장하면 다음에 "직접 적은 값" 으로 읽힌다.
+          options: {
+            ...options,
+            repairBundlePath: effectiveRepairBundlePath(suitePath, options.repairBundlePath),
+          },
         }),
       };
     } catch (err) {
@@ -314,6 +320,7 @@ export function Home(): JSX.Element {
         )}
 
         <TestOptionsPanel
+          suitePath={suitePath}
           options={options}
           sessionMode={sessionMode}
           open={optionsOpen}

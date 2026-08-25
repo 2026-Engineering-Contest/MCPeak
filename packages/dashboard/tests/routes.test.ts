@@ -150,6 +150,63 @@ describe("routes.ts", () => {
     ]);
   });
 
+  it("test 실행을 시작하면 root 아래 .mcpeak/repair 와 .mcpeak/.gitignore 가 생긴다", async () => {
+    server = await startTestServer(async () => 0);
+
+    const postResponse = await fetch(`${server.baseUrl}/api/runs`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ flow: "test", argv: ["x"] }),
+    });
+    expect(postResponse.status).toBe(200);
+
+    expect((await stat(join(server.root, ".mcpeak", "repair"))).isDirectory()).toBe(true);
+    expect(await readFile(join(server.root, ".mcpeak", ".gitignore"), "utf8")).toBe("*\n");
+  });
+
+  it("generate 실행은 .mcpeak 을 만들지 않는다", async () => {
+    server = await startTestServer(async () => 0);
+
+    await fetch(`${server.baseUrl}/api/runs`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ flow: "generate", argv: ["x"] }),
+    });
+
+    await expect(stat(join(server.root, ".mcpeak"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it(".mcpeak/.gitignore 가 이미 있으면 내용을 덮어쓰지 않는다", async () => {
+    server = await startTestServer(async () => 0);
+    await mkdir(join(server.root, ".mcpeak"), { recursive: true });
+    await writeFile(join(server.root, ".mcpeak", ".gitignore"), "# 사용자가 고친 것\n", "utf8");
+
+    await fetch(`${server.baseUrl}/api/runs`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ flow: "test", argv: ["x"] }),
+    });
+
+    expect(await readFile(join(server.root, ".mcpeak", ".gitignore"), "utf8")).toBe(
+      "# 사용자가 고친 것\n",
+    );
+  });
+
+  it("GET /api/runs 의 항목에 argv 가 있다", async () => {
+    server = await startTestServer(async () => 0);
+    const argv = ["suite.json", "--command", "node", "--repair-bundle", ".mcpeak/repair/s.json"];
+
+    await fetch(`${server.baseUrl}/api/runs`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ flow: "test", argv }),
+    });
+    await tick();
+
+    const list = (await (await fetch(`${server.baseUrl}/api/runs`)).json()) as { argv: unknown }[];
+    expect(list.map((run) => run.argv)).toEqual([argv]);
+  });
+
   it("question 이벤트 후 answer가 플로우를 재개한다", async () => {
     server = await startTestServer(async (_request, io) => {
       const confirmed = await io.reviewIO.confirm("계속할까요?");

@@ -37,8 +37,8 @@ export class RunRegistry {
    * 즉시 `RunHandle`을 돌려주고 `execute`는 await하지 않은 채 굴린다.
    * HTTP 핸들러가 runId를 바로 응답해야 하므로 완료를 기다릴 수 없다.
    */
-  start(flow: Flow, execute: (io: RunIo) => Promise<number>): RunHandle {
-    const record = new RunRecord(flow);
+  start(flow: Flow, argv: readonly string[], execute: (io: RunIo) => Promise<number>): RunHandle {
+    const record = new RunRecord(flow, argv);
     this.runs.set(record.runId, record);
     record.begin(execute);
     return record;
@@ -60,7 +60,10 @@ class RunRecord implements RunHandle {
   private readonly listeners = new Set<(event: RunEvent) => void>();
   private finished: { readonly status: RunStatus; readonly exitCode: number } | null = null;
 
-  constructor(private readonly flow: Flow) {
+  constructor(
+    private readonly flow: Flow,
+    private readonly argv: readonly string[],
+  ) {
     this.reviewIO = new WebReviewIO((event) => {
       this.emit(event);
     });
@@ -76,6 +79,7 @@ class RunRecord implements RunHandle {
       flow: this.flow,
       status: this.status,
       exitCode: this.finished?.exitCode ?? null,
+      argv: this.argv,
     };
   }
 

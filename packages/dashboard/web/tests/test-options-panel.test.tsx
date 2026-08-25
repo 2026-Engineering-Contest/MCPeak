@@ -24,6 +24,7 @@ function Harness(props: {
   const [open, setOpen] = useState(props.open ?? true);
   return (
     <TestOptionsPanel
+      suitePath="s.json"
       options={options}
       sessionMode={props.sessionMode ?? "off"}
       open={open}
@@ -39,6 +40,7 @@ describe("테스트 옵션 패널", () => {
   it('접힌 상태에서 요약이 "기본값 · 바꾼 것 없음" 이다', () => {
     render(
       <TestOptionsPanel
+        suitePath="s.json"
         options={DEFAULT_TEST_OPTIONS}
         sessionMode="off"
         open={false}
@@ -58,6 +60,7 @@ describe("테스트 옵션 패널", () => {
   it('determinism 과 junit 을 바꾸면 요약이 "2개 바꿈" 이다', () => {
     render(
       <TestOptionsPanel
+        suitePath="s.json"
         options={{ ...DEFAULT_TEST_OPTIONS, determinism: true, junitPath: "out/j.xml" }}
         sessionMode="off"
         open={false}

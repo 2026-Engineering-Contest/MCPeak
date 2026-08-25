@@ -6,6 +6,7 @@ import { FlowChip } from "../components/FlowChip.js";
 import { LogPanel } from "../components/LogPanel.js";
 import { QuestionPanel } from "../components/QuestionPanel.js";
 import { StatusBadge } from "../components/StatusBadge.js";
+import { repairBundlePathOf } from "../repair-bundle-path.js";
 import { useRunEvents } from "../run-stream.js";
 
 /** repair 폼 입력란 공통 클래스. 대시보드 테마를 그대로 따른다. */
@@ -39,6 +40,32 @@ export function RunStreamPanel({
   const [bundlePath, setBundlePath] = useState("");
   const [provider, setProvider] = useState<"claude" | "codex">("claude");
   const [model, setModel] = useState("");
+  /**
+   * 이 run 의 argv. `null` 은 "아직 모른다" 다. 홈의 test 실행은 항상 `--repair-bundle` 을
+   * 붙이므로(ADR-0080) 여기서 그 값을 읽어 repair 폼을 채운다. 사용자가 같은 경로를 두 번
+   * 치던 자리다. 모르면 버튼도 안내도 그리지 않는다(#295 와 같은 원칙. 아는 척하지 않는다).
+   */
+  const [argv, setArgv] = useState<readonly string[] | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setArgv(null);
+    apiGet<RunSummary>(`/api/runs/${encodeURIComponent(runId)}`)
+      .then((summary) => {
+        if (cancelled || !Array.isArray(summary.argv)) return;
+        setArgv(summary.argv);
+        const found = repairBundlePathOf(summary.argv);
+        if (found !== null) setBundlePath((previous) => (previous === "" ? found : previous));
+      })
+      .catch(() => {
+        // 스트림 쪽이 이미 "없는 run" 문장을 낸다. 여기서 또 말하지 않는다.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [runId]);
+
+  const runBundlePath = argv === null ? null : repairBundlePathOf(argv);
 
   /**
    * 세 값이 다 차야 보낸다. 예전에는 prompt 세 번을 다 통과한 뒤에야 실패했다(#223).
@@ -118,7 +145,7 @@ export function RunStreamPanel({
             상태를 확인할 수 없음
           </span>
         )}
-        {status === "failed" && showRepairAction && (
+        {status === "failed" && showRepairAction && runBundlePath !== null && (
           <button
             type="button"
             aria-expanded={repairOpen}
@@ -129,9 +156,14 @@ export function RunStreamPanel({
             repair 시작
           </button>
         )}
+        {status === "failed" && showRepairAction && argv !== null && runBundlePath === null && (
+          <span className="text-xs text-ink-muted">
+            이 실행은 repair 번들 없이 시작됐습니다. 홈에서 다시 실행하면 번들이 만들어집니다.
+          </span>
+        )}
       </div>
 
-      {status === "failed" && showRepairAction && repairOpen && (
+      {status === "failed" && showRepairAction && runBundlePath !== null && repairOpen && (
         <form
           className="space-y-4 rounded-lg border border-line bg-surface p-4"
           onSubmit={(event) => {
@@ -151,10 +183,7 @@ export function RunStreamPanel({
               onChange={(event) => setBundlePath(event.target.value)}
             />
             <p className="text-xs text-ink-muted">
-              <code className="font-mono">
-                mcpeak test &lt;suite.json&gt; --repair-bundle &lt;path&gt;
-              </code>{" "}
-              로 실행했을 때 그 경로에 번들이 생깁니다. 여기에 그 경로를 적으세요.
+              이 실행이 만든 번들입니다. 다른 번들을 쓰려면 경로를 바꾸세요.
             </p>
           </div>
 

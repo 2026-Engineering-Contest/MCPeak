@@ -1,4 +1,4 @@
-import { readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { validateMcpSuite } from "@mcpeak/runner";
 import type { FileContent, FileEntry, PutFileResponse, ServerCandidate } from "../api-types.js";
@@ -168,6 +168,27 @@ export async function listServerCandidates(root: string): Promise<ServerCandidat
     );
   }
   return results.sort((a, b) => a.path.localeCompare(b.path) || a.name.localeCompare(b.name));
+}
+
+/** 프론트의 REPAIR_BUNDLE_DIR 와 같은 값. 두 곳에 있는 이유는 web 이 src 를 import 하지 않기 때문이다. */
+export const REPAIR_BUNDLE_DIR = ".mcpeak/repair";
+
+/**
+ * `<root>/.mcpeak/repair/` 를 만들고 `<root>/.mcpeak/.gitignore` 가 없으면 `*\n` 을 쓴다.
+ * 멱등이다. 실패는 던진다(호출부가 실행을 시작하지 않고 500 으로 옮긴다).
+ *
+ * 루트 `.gitignore` 를 고치지 않는 이유는 대시보드가 어느 저장소에서 떠도 사용자 저장소의
+ * 파일을 건드리지 않기 위해서다. 자기 디렉터리 안에 자기 규칙을 둔다(ADR-0080). `*` 는 이
+ * `.gitignore` 자신도 무시하므로 `.mcpeak/` 아래가 통째로 추적되지 않는다.
+ */
+export async function ensureRepairBundleDir(root: string): Promise<void> {
+  await mkdir(join(root, REPAIR_BUNDLE_DIR), { recursive: true });
+  try {
+    // `wx`: 없을 때만 만든다. 이미 있으면 사용자가 고쳤을 수 있으므로 내용을 보지 않고 둔다.
+    await writeFile(join(root, ".mcpeak", ".gitignore"), "*\n", { flag: "wx" });
+  } catch (error: unknown) {
+    if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) throw error;
+  }
 }
 
 /** 파일을 읽어 `FileContent`로 준다. 파일이 없으면 던진다(호출부가 404로 옮긴다). */

@@ -3,12 +3,16 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FileEntry, RunSummary, ServerCandidate, ServerMeta } from "../../src/api-types.js";
 import { DEFAULT_TEST_OPTIONS } from "../src/build-test-argv.js";
+import { managedRepairBundlePath } from "../src/repair-bundle-path.js";
 import { Home } from "../src/screens/Home.js";
 
 const SUITES: readonly FileEntry[] = [{ path: "examples/weather/suite.json" }];
+/** 홈의 test 실행은 항상 이 두 토큰으로 끝난다(ADR-0080). 미리보기에도 같은 문자열이 붙는다. */
+const BUNDLE_ARGV = ["--repair-bundle", managedRepairBundlePath("examples/weather/suite.json")];
+const BUNDLE_PREVIEW = ` --repair-bundle ${managedRepairBundlePath("examples/weather/suite.json")}`;
 const META: ServerMeta = { root: "/tmp/proj" };
 const RUNS: readonly RunSummary[] = [
-  { runId: "run-7", flow: "generate", status: "done", exitCode: 0 },
+  { runId: "run-7", flow: "generate", status: "done", exitCode: 0, argv: ["x"] },
 ];
 const WEATHER: ServerCandidate = {
   id: "mcp-config:.mcp.json:weather",
@@ -109,7 +113,14 @@ describe("Home", () => {
     // --command는 실행 파일 하나만, 나머지 토큰은 각각 --arg다(CLI parseTestCommand 계약).
     expect(JSON.parse(String(post?.[1]?.body))).toEqual({
       flow: "test",
-      argv: ["examples/weather/suite.json", "--command", "node", "--arg", "server.js"],
+      argv: [
+        "examples/weather/suite.json",
+        "--command",
+        "node",
+        "--arg",
+        "server.js",
+        ...BUNDLE_ARGV,
+      ],
     });
   });
 
@@ -130,7 +141,14 @@ describe("Home", () => {
     const post = fetchMock.mock.calls.find(([, init]) => init?.method === "POST");
     expect(JSON.parse(String(post?.[1]?.body))).toEqual({
       flow: "test",
-      argv: ["examples/weather/suite.json", "--command", "node", "--arg", "my server.js"],
+      argv: [
+        "examples/weather/suite.json",
+        "--command",
+        "node",
+        "--arg",
+        "my server.js",
+        ...BUNDLE_ARGV,
+      ],
     });
   });
 
@@ -162,6 +180,7 @@ describe("Home", () => {
         "--port",
         "--arg",
         "3000",
+        ...BUNDLE_ARGV,
       ],
     });
   });
@@ -207,6 +226,7 @@ describe("Home", () => {
       "server.js",
       "--record-session",
       "tmp/s.db",
+      ...BUNDLE_ARGV,
     ]);
   });
 
@@ -325,7 +345,7 @@ describe("Home", () => {
 
     expect(screen.getByRole("radio", { name: /^weather/ })).toHaveProperty("checked", true);
     expect(preview()).toBe(
-      "mcpeak test examples/weather/suite.json --command node --arg examples/weather-server/server.mjs --arg --port --arg 3000",
+      `mcpeak test examples/weather/suite.json --command node --arg examples/weather-server/server.mjs --arg --port --arg 3000${BUNDLE_PREVIEW}`,
     );
   });
 
@@ -339,12 +359,14 @@ describe("Home", () => {
       name: "인자 examples/weather-server/server.mjs 제거",
     });
     expect(preview()).toBe(
-      "mcpeak test examples/weather/suite.json --command node --arg examples/weather-server/server.mjs",
+      `mcpeak test examples/weather/suite.json --command node --arg examples/weather-server/server.mjs${BUNDLE_PREVIEW}`,
     );
 
     fireEvent.click(chip);
 
-    expect(preview()).toBe("mcpeak test examples/weather/suite.json --command node");
+    expect(preview()).toBe(
+      `mcpeak test examples/weather/suite.json --command node${BUNDLE_PREVIEW}`,
+    );
   });
 
   it("직접 입력을 고르면 StepServer 가 펼쳐지고 서버 스크립트 라벨이 보인다", async () => {
@@ -368,6 +390,55 @@ describe("Home", () => {
     expect(screen.getByText(/다음부터 목록에 나타납니다/)).toBeTruthy();
     expect(screen.queryAllByRole("radio")).toHaveLength(0);
     expect(screen.getByLabelText("서버 스크립트")).toBeTruthy();
+  });
+
+  it("기본값이면 POST argv 에 --repair-bundle 관리 경로가 붙고 옵션 요약은 바꾼 것 없음이다", async () => {
+    const fetchMock = stubFetch({ servers: CANDIDATES });
+    render(<Home />);
+    fireEvent.click(await screen.findByRole("button", { name: "실행" }));
+    expect(screen.getByText("기본값 · 바꾼 것 없음")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "실행 시작" }));
+
+    await waitFor(() => {
+      expect(window.location.hash).toBe("#/runs/run-new");
+    });
+    const argv = postedArgv(fetchMock);
+    expect(argv.slice(-2)).toEqual(BUNDLE_ARGV);
+    expect(argv.filter((token) => token === "--repair-bundle")).toHaveLength(1);
+  });
+
+  it("Repair 번들을 직접 적으면 그 경로가 나가고 관리 경로는 나가지 않는다", async () => {
+    const fetchMock = stubFetch({ servers: CANDIDATES });
+    render(<Home />);
+    fireEvent.click(await screen.findByRole("button", { name: "실행" }));
+    fireEvent.click(screen.getByRole("button", { name: /테스트 옵션/ }));
+    fireEvent.change(screen.getByLabelText("Repair 번들"), { target: { value: "out/b.json" } });
+    expect(screen.getByText("1개 바꿈")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "실행 시작" }));
+
+    await waitFor(() => {
+      expect(window.location.hash).toBe("#/runs/run-new");
+    });
+    const argv = postedArgv(fetchMock);
+    expect(argv.slice(-2)).toEqual(["--repair-bundle", "out/b.json"]);
+    expect(argv).not.toContain(BUNDLE_ARGV[1]);
+  });
+
+  it("지난 실행값에는 관리 경로가 아니라 사용자 값이 저장된다", async () => {
+    stubFetch({ servers: CANDIDATES });
+    render(<Home />);
+    fireEvent.click(await screen.findByRole("button", { name: "실행" }));
+    fireEvent.click(screen.getByRole("button", { name: "실행 시작" }));
+
+    await waitFor(() => {
+      expect(window.location.hash).toBe("#/runs/run-new");
+    });
+    const saved = JSON.parse(window.localStorage.getItem("mcpeak-home-last-run") ?? "{}");
+    expect(saved["examples/weather/suite.json"].options.repairBundlePath).toBe("");
+    // 다시 열어도 "바꾼 것 없음" 이다. 관리 경로가 저장됐다면 "1개 바꿈" 이 된다.
+    fireEvent.click(screen.getByRole("button", { name: "닫기" }));
+    fireEvent.click(screen.getByRole("button", { name: "실행" }));
+    expect(screen.getByText("기본값 · 바꾼 것 없음")).toBeTruthy();
   });
 
   it("옵션에서 결정론 검사를 켜면 POST argv 에 --determinism 이 들어간다", async () => {
@@ -423,7 +494,7 @@ describe("Home", () => {
 
     expect(screen.getByRole("radio", { name: /지난 실행/ })).toHaveProperty("checked", true);
     expect(preview()).toBe(
-      "mcpeak test examples/weather/suite.json --command node --arg server.js",
+      `mcpeak test examples/weather/suite.json --command node --arg server.js${BUNDLE_PREVIEW}`,
     );
   });
 

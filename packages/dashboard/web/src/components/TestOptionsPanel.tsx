@@ -3,6 +3,7 @@ import { useState } from "react";
 import type { SessionMode, TestOptions, Transport } from "../build-test-argv.js";
 import { DEFAULT_TEST_OPTIONS } from "../build-test-argv.js";
 import { Field, INPUT_CLASS, Toggle } from "../generate/steps/fields.js";
+import { managedRepairBundlePath } from "../repair-bundle-path.js";
 
 const TRANSPORT_LABELS: Record<Transport, string> = {
   stdio: "stdio (위 서버 명령)",
@@ -42,6 +43,8 @@ function GroupTitle(props: { children: string }): JSX.Element {
  * 폼에서 만들 수 없어야 하고(구현계획 §1 목표 3), 왜 못 만드는지는 컨트롤 옆에 있어야 한다.
  */
 export function TestOptionsPanel(props: {
+  /** 관리 번들 경로를 placeholder 로 보여주는 데 쓴다(ADR-0080). */
+  suitePath: string;
   options: TestOptions;
   /** External 세션 상태. 결정론 검사의 비활성 판정에 쓴다. */
   sessionMode: SessionMode;
@@ -233,11 +236,12 @@ export function TestOptionsPanel(props: {
             <Field
               label="Repair 번들"
               htmlFor="home-run-repair-bundle"
-              hint="실패를 Repair 화면에서 고칠 수 있게 묶어 둡니다."
+              hint="비우면 대시보드가 관리하는 경로에 만듭니다. 직접 적으면 그 경로에 만들고 디렉터리는 있어야 합니다."
             >
               <input
                 id="home-run-repair-bundle"
                 className={`${INPUT_CLASS} font-mono`}
+                placeholder={managedRepairBundlePath(props.suitePath)}
                 value={options.repairBundlePath}
                 onChange={(event) => props.onChange({ repairBundlePath: event.target.value })}
               />

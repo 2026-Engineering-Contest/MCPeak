@@ -1,8 +1,9 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  ensureRepairBundleDir,
   listServerCandidates,
   listSuites,
   readFileContent,
@@ -406,5 +407,25 @@ describe("listServerCandidates", () => {
       "package-bin:package.json:root-pkg",
       "mcp-config:sub/.mcp.json:weather",
     ]);
+  });
+});
+
+describe("ensureRepairBundleDir", () => {
+  let root: string;
+
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), "mcpeak-dashboard-repair-dir-"));
+  });
+
+  afterEach(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it("ensureRepairBundleDir 는 두 번 불러도 같은 결과다", async () => {
+    await ensureRepairBundleDir(root);
+    await ensureRepairBundleDir(root);
+
+    expect((await stat(join(root, ".mcpeak", "repair"))).isDirectory()).toBe(true);
+    expect(await readFile(join(root, ".mcpeak", ".gitignore"), "utf8")).toBe("*\n");
   });
 });

@@ -21,7 +21,7 @@ describe("RunRegistry", () => {
   it("start 직후 running이고 완료 후 done이다", async () => {
     const registry = new RunRegistry();
     const gate = deferred<number>();
-    const handle = registry.start("test", () => gate.promise);
+    const handle = registry.start("test", [], () => gate.promise);
 
     expect(handle.summary.status).toBe("running");
     expect(handle.summary.exitCode).toBeNull();
@@ -38,7 +38,7 @@ describe("RunRegistry", () => {
 
   it("exitCode 0이 아니면 failed다", async () => {
     const registry = new RunRegistry();
-    const handle = registry.start("test", () => Promise.resolve(3));
+    const handle = registry.start("test", [], () => Promise.resolve(3));
     await tick();
     expect(handle.summary.status).toBe("failed");
     expect(handle.summary.exitCode).toBe(3);
@@ -47,7 +47,7 @@ describe("RunRegistry", () => {
 
   it("execute가 던지면 stderr 이벤트 후 done(1)이다", async () => {
     const registry = new RunRegistry();
-    const handle = registry.start("generate", () => Promise.reject(new Error("터졌다")));
+    const handle = registry.start("generate", [], () => Promise.reject(new Error("터졌다")));
     await tick();
     expect(handle.events).toEqual([
       { kind: "stderr", html: "터졌다\n", id: 1 },
@@ -61,7 +61,7 @@ describe("RunRegistry", () => {
     const registry = new RunRegistry();
     const gate = deferred<number>();
     let io!: RunIo;
-    const handle = registry.start("repair", (injected) => {
+    const handle = registry.start("repair", [], (injected) => {
       io = injected;
       return gate.promise;
     });
@@ -92,7 +92,7 @@ describe("RunRegistry", () => {
     const registry = new RunRegistry();
     const gate = deferred<number>();
     let io!: RunIo;
-    const handle = registry.start("test", (injected) => {
+    const handle = registry.start("test", [], (injected) => {
       io = injected;
       return gate.promise;
     });
@@ -111,5 +111,14 @@ describe("RunRegistry", () => {
 
     gate.resolve(0);
     await tick();
+  });
+
+  it("summary 에 시작 요청의 argv 가 그대로 실린다", async () => {
+    const registry = new RunRegistry();
+    const argv = ["suite.json", "--command", "node", "--repair-bundle", ".mcpeak/repair/x.json"];
+    const handle = registry.start("test", argv, () => Promise.resolve(0));
+    await tick();
+    expect(handle.summary.argv).toEqual(argv);
+    expect(registry.list()[0]?.argv).toEqual(argv);
   });
 });

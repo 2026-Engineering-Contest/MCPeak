@@ -43,11 +43,15 @@ function lastSource(): FakeEventSource {
  * 그 요청이 `{runId:"repair-1"}` 로 파싱돼 `status: undefined` 인 RunSummary 가 되고,
  * StatusBadge 가 정의되지 않은 상태로 렌더된다.
  */
-function stubFetch(): ReturnType<typeof vi.fn> {
+const BUNDLE = ".mcpeak/repair/x.repair-bundle.json";
+/** 홈이 만든 test run 의 argv. 끝의 `--repair-bundle` 을 실행 뷰가 되읽는다(ADR-0080). */
+const ARGV_WITH_BUNDLE = ["suite.json", "--command", "node", "--repair-bundle", BUNDLE];
+
+function stubFetch(argv: readonly string[] = ARGV_WITH_BUNDLE): ReturnType<typeof vi.fn> {
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     if ((init?.method ?? "GET") === "GET" && /^\/api\/runs\/[^/]+$/.test(String(input))) {
       return new Response(
-        JSON.stringify({ runId: "run-1", flow: "test", status: "running", exitCode: null }),
+        JSON.stringify({ runId: "run-1", flow: "test", status: "running", exitCode: null, argv }),
         { status: 200 },
       );
     }
@@ -128,11 +132,10 @@ describe("RunView", () => {
     act(() => {
       lastSource().emit({ kind: "done", exitCode: 1 });
     });
-    fireEvent.click(screen.getByRole("button", { name: "repair 시작" }));
+    fireEvent.click(await screen.findByRole("button", { name: "repair 시작" }));
 
-    fireEvent.change(screen.getByLabelText("repair 번들 경로"), {
-      target: { value: "bundle.json" },
-    });
+    // 경로는 치지 않는다. 이 run 의 argv 에서 채워져 있어야 한다(ADR-0080).
+    expect(screen.getByLabelText("repair 번들 경로")).toHaveProperty("value", BUNDLE);
     fireEvent.change(screen.getByLabelText("model"), { target: { value: "claude-sonnet-5" } });
     fireEvent.click(screen.getByRole("button", { name: "시작" }));
 
@@ -143,32 +146,67 @@ describe("RunView", () => {
     expect(url).toBe("/api/runs");
     expect(JSON.parse(String(init?.body))).toEqual({
       flow: "repair",
-      argv: ["bundle.json", "--provider", "claude", "--model", "claude-sonnet-5"],
+      argv: [BUNDLE, "--provider", "claude", "--model", "claude-sonnet-5"],
     });
   });
 
-  it("repair 폼의 provider 는 자유 입력이 아니라 codex·claude 둘뿐이다", () => {
+  it("argv 에 --repair-bundle 이 없으면 repair 버튼 대신 안내 문장이 나온다", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    stubFetch(["suite.json", "--command", "node"]);
+
+    render(<RunView runId="run-1" />);
+    act(() => {
+      lastSource().emit({ kind: "done", exitCode: 1 });
+    });
+
+    await screen.findByText(/이 실행은 repair 번들 없이 시작됐습니다/);
+    expect(screen.queryByRole("button", { name: "repair 시작" })).toBeNull();
+  });
+
+  it("채워진 번들 경로를 고치면 고친 값이 POST 된다", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const fetchMock = stubFetch();
+
+    render(<RunView runId="run-1" />);
+    act(() => {
+      lastSource().emit({ kind: "done", exitCode: 1 });
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "repair 시작" }));
+    fireEvent.change(screen.getByLabelText("repair 번들 경로"), {
+      target: { value: "other/bundle.json" },
+    });
+    fireEvent.change(screen.getByLabelText("model"), { target: { value: "m" } });
+    fireEvent.click(screen.getByRole("button", { name: "시작" }));
+
+    await waitFor(() => {
+      expect(window.location.hash).toBe("#/repair/repair-1");
+    });
+    const [, init] = writeCalls(fetchMock)[0] ?? [];
+    expect(JSON.parse(String(init?.body)).argv[0]).toBe("other/bundle.json");
+  });
+
+  it("repair 폼의 provider 는 자유 입력이 아니라 codex·claude 둘뿐이다", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     stubFetch();
     render(<RunView runId="run-1" />);
     act(() => {
       lastSource().emit({ kind: "done", exitCode: 1 });
     });
-    fireEvent.click(screen.getByRole("button", { name: "repair 시작" }));
+    fireEvent.click(await screen.findByRole("button", { name: "repair 시작" }));
 
     const select = screen.getByLabelText("provider") as HTMLSelectElement;
     expect(select.tagName).toBe("SELECT");
     expect(Array.from(select.options).map((option) => option.value)).toEqual(["claude", "codex"]);
   });
 
-  it("repair 폼은 값이 덜 찼으면 시작 버튼이 비활성이고, 취소하면 닫힌다", () => {
+  it("repair 폼은 값이 덜 찼으면 시작 버튼이 비활성이고, 취소하면 닫힌다", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     stubFetch();
     render(<RunView runId="run-1" />);
     act(() => {
       lastSource().emit({ kind: "done", exitCode: 1 });
     });
-    fireEvent.click(screen.getByRole("button", { name: "repair 시작" }));
+    fireEvent.click(await screen.findByRole("button", { name: "repair 시작" }));
 
     // 예전에는 prompt 세 번을 다 통과한 뒤에야 실패를 알았다.
     expect(screen.getByRole("button", { name: "시작" })).toHaveProperty("disabled", true);
@@ -181,16 +219,19 @@ describe("RunView", () => {
     expect(screen.queryByLabelText("repair 번들 경로")).toBeNull();
   });
 
-  it("repair 폼은 시작 버튼이 꺼진 이유를 버튼 옆에 말한다", () => {
+  it("repair 폼은 시작 버튼이 꺼진 이유를 버튼 옆에 말한다", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     stubFetch();
     render(<RunView runId="run-1" />);
     act(() => {
       lastSource().emit({ kind: "done", exitCode: 1 });
     });
-    fireEvent.click(screen.getByRole("button", { name: "repair 시작" }));
+    fireEvent.click(await screen.findByRole("button", { name: "repair 시작" }));
 
     // 버튼이 꺼진 이유가 침묵하면 사용자는 폼 전체를 다시 의심한다(#354).
+    // 경로는 채워져 오므로(ADR-0080) 먼저 지워서 그 갈래를 밟는다.
+    expect(screen.getByText("model 을 입력하세요.")).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("repair 번들 경로"), { target: { value: "" } });
     expect(screen.getByText("repair 번들 경로를 입력하세요.")).toBeTruthy();
     fireEvent.change(screen.getByLabelText("repair 번들 경로"), { target: { value: "b.json" } });
     expect(screen.queryByText("repair 번들 경로를 입력하세요.")).toBeNull();
@@ -199,14 +240,14 @@ describe("RunView", () => {
     expect(screen.queryByText("model 을 입력하세요.")).toBeNull();
   });
 
-  it("repair 의 model 칸은 필수임을 표시한다 — generate 의 '모델 (선택)' 과 다르다", () => {
+  it("repair 의 model 칸은 필수임을 표시한다 — generate 의 '모델 (선택)' 과 다르다", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     stubFetch();
     render(<RunView runId="run-1" />);
     act(() => {
       lastSource().emit({ kind: "done", exitCode: 1 });
     });
-    fireEvent.click(screen.getByRole("button", { name: "repair 시작" }));
+    fireEvent.click(await screen.findByRole("button", { name: "repair 시작" }));
 
     expect(screen.getByText("repair 는 모델 지정이 필수입니다.")).toBeTruthy();
   });

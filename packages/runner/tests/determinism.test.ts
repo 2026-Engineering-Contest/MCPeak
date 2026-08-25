@@ -371,3 +371,111 @@ describe("describeDeterminismDifference", () => {
     expect(text).toContain("시간 의존으로 보입니다");
   });
 });
+
+describe("checkDeterminism 의 표시값 redaction", () => {
+  it("민감 키 자리의 값이 다르면 양쪽 표시값을 가린다", () => {
+    const result = checkDeterminism({
+      first: [
+        observation({ response: { content: [], isError: false, raw: { sessionToken: "s-1" } } }),
+      ],
+      second: [
+        observation({ response: { content: [], isError: false, raw: { sessionToken: "s-2" } } }),
+      ],
+      stateRestored: true,
+      redaction: {},
+    });
+    expect(result.differences[0]).toMatchObject({
+      path: "raw.sessionToken",
+      firstValue: "[REDACTED]",
+      secondValue: "[REDACTED]",
+    });
+  });
+
+  it("민감 키를 가려도 비결정 판정 자체는 그대로 낸다", () => {
+    const result = checkDeterminism({
+      first: [
+        observation({ response: { content: [], isError: false, raw: { sessionToken: "s-1" } } }),
+      ],
+      second: [
+        observation({ response: { content: [], isError: false, raw: { sessionToken: "s-2" } } }),
+      ],
+      stateRestored: true,
+      redaction: {},
+    });
+    expect(result.conclusion).toBe("nondeterministic");
+    expect(result.differences).toHaveLength(1);
+  });
+
+  it("조상이 민감 키면 그 아래 값도 가린다", () => {
+    const result = checkDeterminism({
+      first: [
+        observation({ response: { content: [], isError: false, raw: { token: { value: "a" } } } }),
+      ],
+      second: [
+        observation({ response: { content: [], isError: false, raw: { token: { value: "b" } } } }),
+      ],
+      stateRestored: true,
+      redaction: {},
+    });
+    expect(result.differences[0]).toMatchObject({
+      path: "raw.token.value",
+      firstValue: "[REDACTED]",
+      secondValue: "[REDACTED]",
+    });
+  });
+
+  it("배열 인덱스를 거친 경로도 조상 키로 가린다", () => {
+    const result = checkDeterminism({
+      first: [observation({ response: { content: [], isError: false, raw: { token: ["a"] } } })],
+      second: [observation({ response: { content: [], isError: false, raw: { token: ["b"] } } })],
+      stateRestored: true,
+      redaction: {},
+    });
+    expect(result.differences[0]).toMatchObject({
+      path: "raw.token[0]",
+      firstValue: "[REDACTED]",
+      secondValue: "[REDACTED]",
+    });
+  });
+
+  it("sensitiveKeys 로 넘긴 이름도 가린다", () => {
+    const result = checkDeterminism({
+      first: [observation({ response: { content: [], isError: false, raw: { tenantId: "t-1" } } })],
+      second: [
+        observation({ response: { content: [], isError: false, raw: { tenantId: "t-2" } } }),
+      ],
+      stateRestored: true,
+      redaction: { sensitiveKeys: ["tenantId"] },
+    });
+    expect(result.differences[0]).toMatchObject({ firstValue: "[REDACTED]" });
+  });
+
+  it("한쪽만 응답이 있으면 그 응답 안의 민감 키를 구조적으로 가린다", () => {
+    const result = checkDeterminism({
+      first: [
+        observation({ response: { content: [], isError: false, raw: { sessionToken: "s-1" } } }),
+      ],
+      second: [observation({ response: undefined })],
+      stateRestored: true,
+      redaction: {},
+    });
+    const difference = result.differences[0];
+    expect(difference?.firstValue).toContain("[REDACTED]");
+    expect(difference?.firstValue).not.toContain("s-1");
+    expect(difference?.secondValue).toBe("(응답 없음)");
+  });
+
+  it("민감하지 않은 자리는 값을 그대로 보여준다", () => {
+    const result = checkDeterminism({
+      first: [observation({ response: withText("a") })],
+      second: [observation({ response: withText("b") })],
+      stateRestored: true,
+      redaction: {},
+    });
+    expect(result.differences[0]).toMatchObject({
+      path: "content[0].text",
+      firstValue: '"a"',
+      secondValue: '"b"',
+    });
+  });
+});

@@ -1,12 +1,13 @@
 import type { McpClient } from "@mcpeak/core";
 import { describe, expect, it } from "vitest";
+import { redactByPath } from "../src/diagnostics.js";
 import {
   type RunnerEvent,
   type RunnerPayloadLimitError,
   runSuite,
   type TestSuiteSpec,
 } from "../src/index.js";
-import { sanitizeCase } from "../src/sanitization.js";
+import { REDACTED, sanitizeCase, sanitizeJsonValue } from "../src/sanitization.js";
 
 const secretInput = {
   Authorization: "Bearer top-secret",
@@ -165,5 +166,55 @@ describe("sanitization", () => {
       expect(calls).toEqual([]);
       expect(observed).toEqual([]);
     }
+  });
+});
+
+describe("민감 키 판정 (ADR-0039·0045 접미 단어열 규칙)", () => {
+  const mask = (key: string) =>
+    (sanitizeJsonValue({ [key]: "v" }) as Record<string, unknown>)[key] === REDACTED;
+
+  it("접미 단어열이 목록과 정확히 일치하면 가린다", () => {
+    expect(mask("sessionToken")).toBe(true);
+    expect(mask("accessToken")).toBe(true);
+    expect(mask("X-Api-Key")).toBe(true);
+    expect(mask("user_password")).toBe(true);
+    expect(mask("Set-Cookie")).toBe(true);
+  });
+
+  it("머리 명사가 다르면 통과시킨다. 과잉 마스킹은 그 필드를 테스트가 영영 못 보게 만든다", () => {
+    expect(mask("tokenCount")).toBe(false);
+    expect(mask("passwordPolicy")).toBe(false);
+    expect(mask("secretariat")).toBe(false);
+  });
+
+  it("복수형을 흡수하되 머리 명사는 건드리지 않는다", () => {
+    expect(mask("tokens")).toBe(true);
+    expect(mask("apiKeys")).toBe(true);
+    expect(mask("tokenCounts")).toBe(false);
+  });
+
+  it("`key` 단독은 민감이 아니고 합성어만 걸린다", () => {
+    expect(mask("key")).toBe(false);
+    expect(mask("cacheKey")).toBe(false);
+    expect(mask("privateKey")).toBe(true);
+    expect(mask("secretKey")).toBe(true);
+  });
+
+  it("꼬리 숫자를 떼고 본다", () => {
+    expect(mask("apiKey0")).toBe(true);
+    expect(mask("cookieCount2")).toBe(false);
+  });
+
+  it("sensitiveKeys 로 넘긴 이름도 같은 규칙으로 판정한다", () => {
+    const value = sanitizeJsonValue(
+      { tenantId: "t", tenantIdCount: 3, legacyTenantId: "l" },
+      { sensitiveKeys: ["tenantId"] },
+    ) as Record<string, unknown>;
+    expect(value).toEqual({ tenantId: REDACTED, tenantIdCount: 3, legacyTenantId: REDACTED });
+  });
+
+  it("조상 키 판정(redactByPath)도 같은 규칙을 쓴다", () => {
+    expect(redactByPath("sk", ["sessionToken", "value"])).toBe(REDACTED);
+    expect(redactByPath("n", ["tokenCount"])).toBe("n");
   });
 });

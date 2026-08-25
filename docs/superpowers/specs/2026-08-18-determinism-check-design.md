@@ -81,7 +81,11 @@ export interface CheckDeterminismOptions {
   readonly second: readonly DeterminismCaseObservation[];
   /** `--reset-cmd` 가 지정돼 각 회차 전에 복원이 실행됐는가. 결론 강도(§8)를 가른다. */
   readonly stateRestored: boolean;
-  /** 표시 값에 적용할 redaction. `clampObservedText` 에 그대로 넘긴다. */
+  /**
+   * 표시 값에 적용할 redaction. 차이 지점까지의 조상 키와 값의 직속 키로 판정해 **구조화된
+   * 값을 먼저 가리고** 그 뒤에 문자열화한다(ADR-0082). text 블록 문자열 안의 비밀값은 키가
+   * 없어 닿지 않는다.
+   */
   readonly redaction?: RunnerRedactionOptions;
 }
 
@@ -232,7 +236,9 @@ mcpeak test <suite.json> --command <executable> [--arg <value> ...]
 
 ## 6. 표시 값과 휴리스틱 힌트
 
-차이의 양쪽 값은 `clampObservedText`(기존 상한·redaction)를 거친 문자열로 싣는다. 원인
+차이의 양쪽 값은 `redactByPath`(조상 키·직속 키 마스킹)를 **먼저** 거친 뒤 `canonicalJson`
+으로 문자열화하고 `clampObservedText`(기존 상한)로 자른 문자열로 싣는다. 마스킹이 문자열화보다
+뒤에 오면 키 정보가 사라져 아무것도 못 가린다(#183, ADR-0082). 원인
 추정은 결정론적 휴리스틱 셋이다. **양쪽 값이 모두** 패턴에 맞을 때만 힌트를 단다.
 
 | 힌트 | 조건 | 문장 |

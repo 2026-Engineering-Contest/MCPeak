@@ -587,6 +587,51 @@ const FINDING_GROUP_ORDER: readonly FindingGroup[] = [
   "rejectionIntent",
   "skipped",
 ];
+
+/**
+ * 서버 응답 본문이 이미 타입 위반을 설명했는지 보수적으로 판정한다(#350).
+ *
+ * 응답 문장을 자연어로 해석하려 들면 "city 문자열을 숫자로 바꾸세요" 같은 다른 사실까지
+ * 같은 말로 오인할 수 있다. 그래서 TYPE_MISMATCH 에서 구조적으로 아는 세 표식, 즉 필드명과
+ * 기대 타입, 실제 타입(또는 실제 입력값)이 한 줄에 모두 있을 때만 참고 finding 을 접는다.
+ * 하나라도 없으면 서버가 충분히 설명했다고 단정하지 않고 기존 참고를 남긴다.
+ *
+ * 다른 finding 은 같은 사실인지 판별할 표식이 부족하다. 예를 들어 REQUIRED_MISSING 은 필드명
+ * 하나만 같아도 되므로 여기서 함께 억제하면 조용한 서버에서 유일한 단서를 잃을 수 있다.
+ */
+const responseRepeatsTypeMismatch = (finding: SpecFinding, item: TestCaseResult): boolean => {
+  if (finding.code !== "TYPE_MISMATCH") return false;
+  const expected = finding.expected;
+  const actualType = finding.actual;
+  if (typeof expected !== "string" || typeof actualType !== "string") return false;
+  if (item.spec.operation.type !== "callTool" || !finding.path.startsWith("input.")) return false;
+
+  const field = finding.path.slice("input.".length);
+  if (field === "") return false;
+  const notes = [
+    ...(item.operation.diagnostic?.notes ?? []),
+    ...item.assertions.flatMap((assertion) => assertion.diagnostic?.notes ?? []),
+  ];
+  const actualValue = item.spec.operation.input[field];
+  const actualValueText =
+    actualValue === undefined
+      ? undefined
+      : typeof actualValue === "string"
+        ? actualValue
+        : JSON.stringify(actualValue);
+  const has = (note: string, value: string): boolean => {
+    if (value === "") return false;
+    const escaped = value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(`(?<![\\p{L}\\p{N}_])${escaped}(?![\\p{L}\\p{N}_])`, "iu").test(note);
+  };
+
+  return notes.some(
+    (note) =>
+      has(note, field) &&
+      has(note, expected) &&
+      (has(note, actualType) || (actualValueText !== undefined && has(note, actualValueText))),
+  );
+};
 /** 결정론성 결과 블록의 머리글. 설계 문서 §8. */
 const DETERMINISM_HEADING = "결정론성 확인";
 /**
@@ -1466,7 +1511,11 @@ async function runCliCore(
               ? allFindings.filter((finding) => FINDING_GROUP[finding.code] === "skipped")
               : allFindings;
           for (const group of FINDING_GROUP_ORDER) {
-            const grouped = list.filter((finding) => FINDING_GROUP[finding.code] === group);
+            const grouped = list.filter(
+              (finding) =>
+                FINDING_GROUP[finding.code] === group &&
+                !(group === "inputContract" && responseRepeatsTypeMismatch(finding, item)),
+            );
             if (grouped.length === 0) continue;
             // caseId 는 남이 쓴 명세에서 온다. 다른 표시 항목과 같은 이스케이프를 쓴다.
             dependencies.writeStdout(

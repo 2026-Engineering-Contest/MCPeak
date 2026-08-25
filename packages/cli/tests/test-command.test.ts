@@ -1,6 +1,7 @@
 import type { McpStdioConnection, ToolDef } from "@mcpeak/core";
 import type {
   DeterminismResult,
+  JsonValue,
   RunnerExecution,
   RunnerReport,
   TestCaseResult,
@@ -1345,7 +1346,7 @@ describe("입력 계약 참고 문장", () => {
   ];
   const callCase = (
     id: string,
-    input: Record<string, string>,
+    input: Record<string, JsonValue>,
     minLength: number,
   ): TestCaseSpec => ({
     id,
@@ -1382,14 +1383,32 @@ describe("입력 계약 참고 문장", () => {
   const reportWith = (
     value: TestSuiteSpec,
     statuses: Record<string, TestCaseResult["status"]>,
+    serverNotes: Readonly<Record<string, readonly string[]>> = {},
   ): RunnerReport => {
-    const cases: TestCaseResult[] = value.cases.map((spec) => ({
-      spec,
-      status: statuses[spec.id] ?? "passed",
-      operation: { status: "completed" },
-      assertions: [],
-      rejectionBasis: "notApplicable",
-    }));
+    const cases: TestCaseResult[] = value.cases.map((spec) => {
+      const notes = serverNotes[spec.id];
+      return {
+        spec,
+        status: statuses[spec.id] ?? "passed",
+        operation: { status: "completed" },
+        assertions:
+          notes === undefined
+            ? []
+            : [
+                {
+                  spec: spec.assertions[0] as NonNullable<(typeof spec.assertions)[number]>,
+                  status: "failed",
+                  diagnostic: {
+                    code: "IS_ERROR_MISMATCH",
+                    message: "정상 응답을 기대했지만 오류 응답을 받았습니다.",
+                    hint: "툴 입력값과 서버의 오류 응답을 확인하세요.",
+                    notes: [...notes],
+                  },
+                },
+              ],
+        rejectionBasis: "notApplicable",
+      };
+    });
     const failed = cases.filter((item) => item.status !== "passed").length;
     return {
       schemaVersion: 1,
@@ -1413,8 +1432,9 @@ describe("입력 계약 참고 문장", () => {
     tools?: readonly ToolDef[];
     listTools?: () => Promise<ToolDef[]>;
     json?: boolean;
+    serverNotes?: Readonly<Record<string, readonly string[]>>;
   }) => {
-    const finalReport = reportWith(options.suite, options.statuses);
+    const finalReport = reportWith(options.suite, options.statuses, options.serverNotes);
     const d = deps({
       validateSuite: vi.fn(() => ({ valid: true as const, value: options.suite })),
       finalize: async () => finalReport,
@@ -1440,6 +1460,65 @@ describe("입력 계약 참고 문장", () => {
     );
     expect(out.stdout).not.toContain("busan-weather 의 입력이");
     expect(out.exitCode).toBe(1);
+  });
+  it("서버 응답이 같은 타입 위반을 이미 설명하면 그 finding 만 다시 쓰지 않는다 (#350)", async () => {
+    const typeMismatchSuite = suiteOf(callCase("city-number", { city: 12345 }, 1));
+    const out = await runTest({
+      suite: typeMismatchSuite,
+      tools: weatherTools,
+      statuses: { "city-number": "failed" },
+      serverNotes: {
+        "city-number": [
+          "툴 'get_weather' 의 'city' 은(는) string 이어야 합니다. 받은 값: 12345 (number)",
+          "이 툴이 tools/list 로 선언한 inputSchema 가 그렇게 요구합니다.",
+        ],
+      },
+    });
+    expect(out.stdout).not.toContain("참고: city-number 의 입력이 서버 선언과 다릅니다");
+    expect(out.stdout).not.toContain("input.city 의 타입이 다릅니다");
+  });
+  it("서버 응답과 겹쳐도 --json 의 구조화 finding 은 보존한다 (#350)", async () => {
+    const typeMismatchSuite = suiteOf(callCase("city-number", { city: 12345 }, 1));
+    const out = await runTest({
+      json: true,
+      suite: typeMismatchSuite,
+      tools: weatherTools,
+      statuses: { "city-number": "failed" },
+      serverNotes: { "city-number": ["city 는 string 이어야 하지만 number 를 받았습니다."] },
+    });
+    expect(JSON.parse(out.stdout).spec.findings).toEqual([
+      {
+        code: "TYPE_MISMATCH",
+        severity: "blocking",
+        caseId: "city-number",
+        path: "input.city",
+      },
+    ]);
+  });
+  it("서버 응답이 타입 위반을 충분히 설명하지 않으면 기존 finding 을 남긴다 (#350)", async () => {
+    const typeMismatchSuite = suiteOf(callCase("city-number", { city: 12345 }, 1));
+    const out = await runTest({
+      suite: typeMismatchSuite,
+      tools: weatherTools,
+      statuses: { "city-number": "failed" },
+      serverNotes: { "city-number": ["city 값을 처리할 수 없습니다."] },
+    });
+    expect(out.stdout).toContain("참고: city-number 의 입력이 서버 선언과 다릅니다");
+    expect(out.stdout).toContain(
+      "input.city 의 타입이 다릅니다. 서버 선언: 'string', 명세: 'number'",
+    );
+  });
+  it("한 타입 finding 만 서버 응답과 겹치면 나머지 입력 finding 은 남긴다 (#350)", async () => {
+    const mixedSuite = suiteOf(callCase("mixed", { city: 12345, extra: "x" }, 1));
+    const out = await runTest({
+      suite: mixedSuite,
+      tools: weatherTools,
+      statuses: { mixed: "failed" },
+      serverNotes: { mixed: ["city 는 string 이어야 하지만 number 를 받았습니다."] },
+    });
+    expect(out.stdout).toContain("참고: mixed 의 입력이 서버 선언과 다릅니다");
+    expect(out.stdout).not.toContain("input.city 의 타입이 다릅니다");
+    expect(out.stdout).toContain("'extra' 는 서버가 선언하지 않은 필드입니다");
   });
   it("전부 통과면 참고 문장이 없다", async () => {
     const out = await runTest({

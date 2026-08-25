@@ -8,11 +8,14 @@
 
 | 예제 | 트랜스포트 | 설명 |
 |---|---|---|
-| [`weather-server`](./weather-server) | stdio | 고정 데이터로 결정론적으로 응답한다. 실패 경로 포함 |
+| [`weather-server`](./weather-server) | stdio | 고정 데이터로 결정론적으로 응답한다. 실패 경로 포함. CI 도그푸딩 대상 |
+| [`live-weather-server`](./live-weather-server) | stdio | 실제 공개 API(Open-Meteo·Frankfurter)를 `fetch` 로 부른다. External 세션 녹화·재생 데모용. CI 에는 넣지 않는다 |
 
 ## 예제 서버가 지켜야 할 것
 
-새 예제를 추가할 때 아래 세 가지를 지킨다. 그러지 않으면 CI 에서 쓸 수 없다.
+새 예제를 추가할 때 아래 세 가지를 지킨다. 그러지 않으면 CI 에서 쓸 수 없다. 예외는
+`live-weather-server` 하나다. 외부 호출을 녹화·재생하는 기능을 보여주려면 실제로 밖에 나가는
+서버가 필요해서 1번을 일부러 어기고, 대신 CI 도그푸딩에서 뺀다.
 
 1. **결정론적일 것.** 외부 API 호출·랜덤값·타임스탬프 금지. 같은 입력에 항상 같은 응답.
 2. **키가 필요 없을 것.** 클론해서 바로 돌아가야 한다.

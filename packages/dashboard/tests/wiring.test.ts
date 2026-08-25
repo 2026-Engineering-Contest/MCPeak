@@ -133,6 +133,8 @@ describe("wiring.ts executeFlow", () => {
     let capturedDeps: Record<string, unknown> | undefined;
     const io = fakeIo();
 
+    // 바깥에 같은 이름이 이미 있으면 지우지 말고 되돌린다. 테스트가 환경을 바꾼 채 끝나면 안 된다.
+    const original = process.env.MCPEAK_TEST_HDR;
     process.env.MCPEAK_TEST_HDR = "토큰-값";
     try {
       await executeFlow({ flow: "test", argv: ["test", "suite.json"] }, io, {
@@ -153,7 +155,8 @@ describe("wiring.ts executeFlow", () => {
       expect(readEnv("MCPEAK_TEST_HDR_없음")).toBeUndefined();
     } finally {
       // 다른 테스트로 새면 결정론이 깨진다.
-      delete process.env.MCPEAK_TEST_HDR;
+      if (original === undefined) delete process.env.MCPEAK_TEST_HDR;
+      else process.env.MCPEAK_TEST_HDR = original;
     }
   });
 

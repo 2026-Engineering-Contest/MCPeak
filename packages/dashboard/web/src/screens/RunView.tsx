@@ -50,6 +50,10 @@ export function RunStreamPanel({
   useEffect(() => {
     let cancelled = false;
     setArgv(null);
+    // 같은 패널 인스턴스가 다른 run 으로 바뀔 수 있다. 앞 run 의 경로가 남으면 그것을 보내고,
+    // 앞 run 에서 연 폼이 그대로 열려 있으면 다른 run 의 폼처럼 보인다.
+    setBundlePath("");
+    setRepairOpen(false);
     apiGet<RunSummary>(`/api/runs/${encodeURIComponent(runId)}`)
       .then((summary) => {
         if (cancelled || !Array.isArray(summary.argv)) return;

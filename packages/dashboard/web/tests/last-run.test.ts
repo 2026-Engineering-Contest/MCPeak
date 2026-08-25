@@ -69,6 +69,25 @@ describe("지난 실행값", () => {
    * jsdom 기본 저장소로는 이 경로를 밟을 수 없다. 저장소가 막힌 브라우저를 흉내내지 않으면
    * "예외를 삼킨다" 는 주장이 검증되지 않은 채 녹색이 된다.
    */
+  it("options 의 형이 어긋난 키는 그 키만 기본값으로 바꾼다", () => {
+    // 옵션 패널은 headerEnvs.length 를 읽는다. null 이 그대로 복원되면 폼을 여는 순간 죽는다.
+    window.localStorage.setItem(
+      KEY,
+      JSON.stringify({
+        "s.json": {
+          command: "node",
+          args: [],
+          options: { transport: "grpc", url: "http://x", headerEnvs: null, determinism: "yes" },
+        },
+      }),
+    );
+
+    expect(readLastRun("s.json")?.options).toEqual({
+      ...DEFAULT_TEST_OPTIONS,
+      url: "http://x",
+    });
+  });
+
   it("localStorage 가 throw 해도 저장·읽기가 던지지 않는다", () => {
     vi.stubGlobal("localStorage", {
       getItem: () => {

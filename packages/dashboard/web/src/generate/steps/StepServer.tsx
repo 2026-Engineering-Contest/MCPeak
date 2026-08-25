@@ -61,12 +61,15 @@ export function StepServer(props: {
   recentCommands: readonly string[];
   /** DOM id 접두사. 한 문서에 둘 이상 그려질 때 id 가 겹치지 않게 한다. */
   idPrefix?: string;
+  /** HTTP 대상처럼 이 값들이 argv 에 안 실릴 때. 값은 지우지 않는다(호출자 몫). */
+  disabled?: boolean;
   onMethodChange: (method: CommandMethod) => void;
   onTargetChange: (target: string) => void;
   onArgsChange: (args: readonly string[]) => void;
 }): JSX.Element {
   const { command, leadingArgs } = splitCommand(props.method, props.target);
   const prefix = props.idPrefix ?? "generate";
+  const disabled = props.disabled ?? false;
 
   return (
     <div className="space-y-5">
@@ -78,7 +81,8 @@ export function StepServer(props: {
               key={method}
               type="button"
               aria-pressed={props.method === method}
-              className={`px-3 py-1.5 text-sm ${
+              disabled={disabled}
+              className={`px-3 py-1.5 text-sm disabled:opacity-50 ${
                 props.method === method
                   ? "bg-accent-soft font-semibold text-accent"
                   : "text-ink-muted hover:bg-line-subtle"
@@ -105,6 +109,7 @@ export function StepServer(props: {
           className={`${INPUT_CLASS} font-mono`}
           list={`${prefix}-recent-commands`}
           value={props.target}
+          disabled={disabled}
           onChange={(event) => props.onTargetChange(event.target.value)}
         />
         <datalist id={`${prefix}-recent-commands`}>
@@ -114,7 +119,12 @@ export function StepServer(props: {
         </datalist>
       </Field>
 
-      <ArgChips idPrefix={prefix} args={props.args} onChange={props.onArgsChange} />
+      <ArgChips
+        idPrefix={prefix}
+        args={props.args}
+        disabled={disabled}
+        onChange={props.onArgsChange}
+      />
 
       <div className="rounded-md border border-line bg-line-subtle px-3 py-2">
         <p className="text-xs text-ink-muted">실행될 명령</p>

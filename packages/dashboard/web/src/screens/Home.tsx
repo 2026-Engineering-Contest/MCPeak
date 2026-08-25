@@ -256,6 +256,7 @@ export function Home(): JSX.Element {
             method={method}
             target={target}
             args={args}
+            disabled={httpTarget}
             recentCommands={readRecentCommands()}
             onMethodChange={setMethod}
             onTargetChange={setTarget}
@@ -325,7 +326,17 @@ export function Home(): JSX.Element {
           sessionMode={sessionMode}
           open={optionsOpen}
           onToggle={() => setOptionsOpen((previous) => !previous)}
-          onChange={(patch) => setOptions((previous) => ({ ...previous, ...patch }))}
+          onChange={(patch) => {
+            // HTTP 로 바꾸면 stderr 줄 수와 External 세션이 비활성이 되는데, 값이 남아 있으면
+            // `buildTestArgv` 가 거절하고 사용자는 비활성 컨트롤을 풀 수 없다. 전환하는 쪽이
+            // 치운다. 서버 인자는 §5-3 대로 남긴다(거절이 아니라 무시라 갇히지 않는다).
+            if (patch.transport === "http") {
+              setSessionMode("off");
+              setOptions((previous) => ({ ...previous, ...patch, stderrLines: "" }));
+              return;
+            }
+            setOptions((previous) => ({ ...previous, ...patch }));
+          }}
         />
 
         <div className="rounded-md border border-line bg-line-subtle px-3 py-2">

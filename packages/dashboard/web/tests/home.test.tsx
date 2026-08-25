@@ -455,6 +455,42 @@ describe("Home", () => {
     expect(postedArgv(fetchMock)).toContain("--determinism");
   });
 
+  it("HTTP 로 바꾸면 stderr 줄 수가 비워지고 세션이 꺼져 시작 버튼이 살아 있다", async () => {
+    // 둘 다 HTTP 에서 비활성이라 값이 남으면 사용자가 풀 수 없다. 거절 문장만 보이고 막힌다.
+    const fetchMock = stubFetch({ servers: CANDIDATES });
+    render(<Home />);
+    fireEvent.click(await screen.findByRole("button", { name: "실행" }));
+    fireEvent.click(screen.getByRole("button", { name: "외부 호출 녹화" }));
+    fireEvent.change(screen.getByLabelText("세션 파일 경로"), { target: { value: "tmp/s.db" } });
+    fireEvent.click(screen.getByRole("button", { name: /테스트 옵션/ }));
+    fireEvent.change(screen.getByLabelText("서버 stderr 줄 수"), { target: { value: "5" } });
+    fireEvent.click(screen.getByRole("button", { name: "HTTP URL" }));
+    fireEvent.change(screen.getByLabelText("URL"), {
+      target: { value: "https://example.test/mcp" },
+    });
+
+    expect(screen.getByRole("button", { name: "실행 시작" })).toHaveProperty("disabled", false);
+    fireEvent.click(screen.getByRole("button", { name: "실행 시작" }));
+
+    await waitFor(() => {
+      expect(window.location.hash).toBe("#/runs/run-new");
+    });
+    const argv = postedArgv(fetchMock);
+    expect(argv).not.toContain("--stderr-lines");
+    expect(argv).not.toContain("--record-session");
+  });
+
+  it("HTTP 를 고르면 직접 입력의 서버 스크립트와 실행 방법도 비활성이다", async () => {
+    stubFetch({ servers: [] });
+    render(<Home />);
+    fireEvent.click(await screen.findByRole("button", { name: "실행" }));
+    fireEvent.click(screen.getByRole("button", { name: /테스트 옵션/ }));
+    fireEvent.click(screen.getByRole("button", { name: "HTTP URL" }));
+
+    expect(screen.getByLabelText("서버 스크립트")).toHaveProperty("disabled", true);
+    expect(screen.getByRole("button", { name: "Node 스크립트" })).toHaveProperty("disabled", true);
+  });
+
   it("HTTP 를 고르면 POST argv 가 --url 로 시작하고 --command 가 없다", async () => {
     const fetchMock = stubFetch({ servers: CANDIDATES });
     render(<Home />);

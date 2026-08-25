@@ -33,7 +33,30 @@ function readAll(): Record<string, unknown> {
   }
 }
 
-/** 형이 어긋나면 `null`. `options` 는 기본값 위에 얹어 빠진 키를 메운다. */
+/**
+ * 저장된 `options` 를 키마다 형을 보고 옮긴다. 어긋난 키는 그 키만 기본값이다. 통째로 단언하면
+ * `headerEnvs: null` 같은 값이 그대로 복원돼 옵션 패널이 `.length` 에서 죽는다.
+ */
+function sanitizeOptions(raw: Record<string, unknown>): TestOptions {
+  const fallback = DEFAULT_TEST_OPTIONS;
+  const text = (value: unknown, orElse: string): string =>
+    typeof value === "string" ? value : orElse;
+  return {
+    transport:
+      raw.transport === "http" || raw.transport === "stdio" ? raw.transport : fallback.transport,
+    url: text(raw.url, fallback.url),
+    headerEnvs: Array.isArray(raw.headerEnvs)
+      ? raw.headerEnvs.filter((item): item is string => typeof item === "string")
+      : fallback.headerEnvs,
+    determinism: typeof raw.determinism === "boolean" ? raw.determinism : fallback.determinism,
+    stderrLines: text(raw.stderrLines, fallback.stderrLines),
+    junitPath: text(raw.junitPath, fallback.junitPath),
+    repairBundlePath: text(raw.repairBundlePath, fallback.repairBundlePath),
+    resetCmd: text(raw.resetCmd, fallback.resetCmd),
+  };
+}
+
+/** 형이 어긋나면 `null`. `options` 는 키마다 검증해 빠지거나 어긋난 키를 기본값으로 메운다. */
 export function readLastRun(suitePath: string): LastRun | null {
   const entry = readAll()[suitePath];
   if (typeof entry !== "object" || entry === null) {
@@ -52,7 +75,7 @@ export function readLastRun(suitePath: string): LastRun | null {
   return {
     command,
     args: args.filter((item): item is string => typeof item === "string"),
-    options: { ...DEFAULT_TEST_OPTIONS, ...(options as Partial<TestOptions>) },
+    options: sanitizeOptions(options as Record<string, unknown>),
   };
 }
 

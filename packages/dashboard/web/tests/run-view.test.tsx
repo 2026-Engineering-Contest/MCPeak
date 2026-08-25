@@ -163,6 +163,53 @@ describe("RunView", () => {
     expect(screen.queryByRole("button", { name: "repair 시작" })).toBeNull();
   });
 
+  it("run 이 바뀌면 앞 run 의 번들 경로가 남지 않는다", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    // run 마다 다른 번들. 같은 패널 인스턴스가 A 에서 B 로 바뀔 때 A 의 경로를 보내면 안 된다.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const match = /^\/api\/runs\/([^/]+)$/.exec(String(input));
+        if ((init?.method ?? "GET") === "GET" && match !== null) {
+          const argv = ["s.json", "--repair-bundle", `.mcpeak/repair/${match[1]}.json`];
+          return new Response(
+            JSON.stringify({
+              runId: match[1],
+              flow: "test",
+              status: "running",
+              exitCode: null,
+              argv,
+            }),
+            { status: 200 },
+          );
+        }
+        return new Response(JSON.stringify({ runId: "repair-1" }), { status: 200 });
+      }),
+    );
+
+    const { rerender } = render(<RunView runId="run-a" />);
+    act(() => {
+      lastSource().emit({ kind: "done", exitCode: 1 });
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "repair 시작" }));
+    expect(screen.getByLabelText("repair 번들 경로")).toHaveProperty(
+      "value",
+      ".mcpeak/repair/run-a.json",
+    );
+
+    rerender(<RunView runId="run-b" />);
+    act(() => {
+      lastSource().emit({ kind: "done", exitCode: 1 });
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "repair 시작" }));
+    await waitFor(() => {
+      expect(screen.getByLabelText("repair 번들 경로")).toHaveProperty(
+        "value",
+        ".mcpeak/repair/run-b.json",
+      );
+    });
+  });
+
   it("채워진 번들 경로를 고치면 고친 값이 POST 된다", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     const fetchMock = stubFetch();

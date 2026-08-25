@@ -921,6 +921,36 @@ describe("AI 대화형 검토", () => {
     expect(d.io.confirm).toHaveBeenCalledTimes(2);
     expect(d.io.write).toHaveBeenCalledWith(expect.stringContaining("Fingerprint:"));
   });
+  it("show 는 입력 없이 현재 명세를 케이스당 한 줄로 찍고 메뉴로 돌아온다", async () => {
+    const d = reviewDeps(["show", "cancel"]);
+    await runGenerateCommand(interactiveArgv, d.value);
+    expect(d.io.input).not.toHaveBeenCalled();
+    const shown = d.io.write.mock.calls.map(([text]) => String(text)).join("");
+    expect(shown).toContain("현재 명세: Weather (id weather)");
+    expect(shown).toContain(`케이스 ${d.baseline.suite.cases.length}건`);
+    for (const testCase of d.baseline.suite.cases) expect(shown).toContain(testCase.id);
+    expect(shown).toContain("weather");
+    expect(shown).toContain("저장하면 이 내용이 /tmp/out.json 에 쓰입니다.");
+    // 줄바꿈이 실제 개행이어야 한다. 이스케이프를 통째로 걸면 \u000a 로 찍힌다.
+    expect(shown).toMatch(/\(id weather\)[^\n]*\n {2}1\. /);
+    expect(shown).not.toContain("\\u000a");
+    expect(d.io.choose).toHaveBeenCalledTimes(2);
+  });
+  it("show 는 반영한 변경이 들어간 명세를 보여주고 미반영 후보가 있으면 알린다", async () => {
+    const d = reviewDeps(
+      ["codex", "show", "apply-all", "show", "cancel"],
+      ["", "request"],
+      [true, true, true],
+    );
+    await runGenerateCommand(interactiveArgv, d.value);
+    const writes = d.io.write.mock.calls.map(([text]) => String(text));
+    const shows = writes.filter((text) => text.startsWith("현재 명세:"));
+    expect(shows).toHaveLength(2);
+    expect(shows[0]).toContain("현재 명세: Weather (id weather)");
+    expect(shows[0]).toContain("미반영 AI 후보가 있습니다");
+    expect(shows[1]).toContain("현재 명세: AI Weather (id weather)");
+    expect(shows[1]).not.toContain("미반영 AI 후보가 있습니다");
+  });
   it("candidate diff를 전체 적용해 revision을 증가시킨다", async () => {
     const d = reviewDeps(["codex", "apply-all", "cancel"], ["", "request"], [true, true]);
     await runGenerateCommand(interactiveArgv, d.value);

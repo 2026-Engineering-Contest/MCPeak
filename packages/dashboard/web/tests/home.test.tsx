@@ -46,6 +46,8 @@ function stubFetch(
     readonly suites?: readonly FileEntry[];
     readonly meta?: ServerMeta | null;
     readonly servers?: readonly ServerCandidate[];
+    /** `/api/suites/<path>` 가 돌려줄 파일 내용. 없는 경로는 404. */
+    readonly suiteContents?: Readonly<Record<string, string>>;
   } = {},
 ): ReturnType<typeof vi.fn> {
   const suites = options.suites ?? SUITES;
@@ -58,6 +60,13 @@ function stubFetch(
     }
     if (url === "/api/suites") {
       return new Response(JSON.stringify(suites), { status: 200 });
+    }
+    if (url.startsWith("/api/suites/")) {
+      const path = decodeURIComponent(url.slice("/api/suites/".length));
+      const content = options.suiteContents?.[path];
+      return content === undefined
+        ? new Response(JSON.stringify({ error: "파일을 찾을 수 없습니다." }), { status: 404 })
+        : new Response(JSON.stringify({ path, content, mtimeMs: 1 }), { status: 200 });
     }
     if (url === "/api/runs") {
       return new Response(JSON.stringify(RUNS), { status: 200 });
@@ -87,6 +96,53 @@ describe("Home", () => {
   afterEach(() => {
     cleanup();
     vi.unstubAllGlobals();
+  });
+
+  it("명세 확인를 누르면 파일을 읽어 케이스당 한 줄로 보여주고, 다시 누르면 닫힌다", async () => {
+    const content = JSON.stringify({
+      schemaVersion: 1,
+      id: "weather",
+      name: "Weather 예제",
+      cases: [
+        {
+          id: "get-weather-success",
+          name: "성공",
+          operation: { type: "callTool", tool: "get_weather", input: { city: "서울" } },
+          assertions: [{ type: "isError", expected: false }],
+        },
+      ],
+    });
+    const fetchMock = stubFetch({ suiteContents: { "examples/weather/suite.json": content } });
+    render(<Home />);
+    const button = await screen.findByRole("button", { name: "명세 확인" });
+    fireEvent.click(button);
+    expect(await screen.findByText("Weather 예제 (id weather) · 케이스 1건")).toBeTruthy();
+    const pre = screen.getByText(
+      (_content, element) =>
+        element?.tagName === "PRE" && (element.textContent ?? "").includes("get-weather-success"),
+    );
+    expect(pre.textContent).toBe(
+      '  1. get-weather-success  callTool get_weather {"city":"서울"}  → isError=false',
+    );
+    // 실행 폼은 안 열렸다. 두 버튼은 서로 독립이다.
+    expect(screen.queryByRole("button", { name: "실행 시작" })).toBeNull();
+    expect(
+      fetchMock.mock.calls.some(
+        ([input]) => String(input) === "/api/suites/examples%2Fweather%2Fsuite.json",
+      ),
+    ).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "명세 닫기" }));
+    expect(screen.queryByText("Weather 예제 (id weather) · 케이스 1건")).toBeNull();
+  });
+
+  it("명세 확인가 파일을 못 읽으면 그 이유를 행 안에 적는다", async () => {
+    stubFetch();
+    render(<Home />);
+    fireEvent.click(await screen.findByRole("button", { name: "명세 확인" }));
+    expect(
+      await screen.findByText("명세를 읽지 못했습니다: 파일을 찾을 수 없습니다."),
+    ).toBeTruthy();
   });
 
   it("suites 목록이 경로 mono로 렌더된다", async () => {

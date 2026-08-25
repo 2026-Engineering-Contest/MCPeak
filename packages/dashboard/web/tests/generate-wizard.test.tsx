@@ -402,6 +402,47 @@ describe("GenerateWizard", () => {
     expect(screen.getByLabelText("실패한 입력값 자동 교정")).toBeTruthy();
   });
 
+  it("AI 도구에 따라 선택 가능한 모델을 바꾸고 이전 모델을 초기화한다", async () => {
+    await renderWizard();
+    fillStepServer("server.js");
+    fillStepSuite();
+
+    const provider = screen.getByLabelText("AI 도구");
+    const model = screen.getByLabelText("모델 (선택)");
+    expect(screen.getByRole("option", { name: "Sonnet" })).toHaveProperty("value", "sonnet");
+    expect(screen.getByRole("option", { name: "Haiku" })).toHaveProperty("value", "haiku");
+    expect(screen.getByRole("option", { name: "Opus" })).toHaveProperty("value", "opus");
+    expect(screen.queryByRole("option", { name: "Sol" })).toBeNull();
+
+    fireEvent.change(model, { target: { value: "sonnet" } });
+    fireEvent.change(provider, { target: { value: "codex" } });
+
+    expect(model).toHaveProperty("value", "");
+    expect(screen.getByRole("option", { name: "Sol" })).toHaveProperty("value", "gpt-5.6-sol");
+    expect(screen.getByRole("option", { name: "Terra" })).toHaveProperty("value", "gpt-5.6-terra");
+    expect(screen.getByRole("option", { name: "Luna" })).toHaveProperty("value", "gpt-5.6-luna");
+    expect(screen.queryByRole("option", { name: "Sonnet" })).toBeNull();
+  });
+
+  it("선택한 모델을 generate CLI 인자로 전달한다", async () => {
+    const fetchMock = await renderWizard();
+    fillStepServer("server.js");
+    fillStepSuite();
+    fireEvent.change(screen.getByLabelText("AI 도구"), { target: { value: "codex" } });
+    fireEvent.change(screen.getByLabelText("모델 (선택)"), {
+      target: { value: "gpt-5.6-terra" },
+    });
+    clickNext();
+    fireEvent.click(screen.getByRole("button", { name: "생성 시작" }));
+
+    await waitFor(() => {
+      expect(window.location.hash).toBe("#/runs/run-new");
+    });
+    expect(postedArgv(fetchMock)).toEqual(
+      expect.arrayContaining(["--provider", "codex", "--model", "gpt-5.6-terra"]),
+    );
+  });
+
   it("4단계에서 시험 실행을 끄면 초기화 입력이 비활성이고 값이 비워진다", async () => {
     await renderWizard();
     fillStepServer("server.js");

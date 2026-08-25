@@ -4,6 +4,19 @@ import { Field, INPUT_CLASS } from "./fields.js";
 
 type ModeFields = Pick<GenerateForm, "mode" | "provider" | "model">;
 
+const MODEL_OPTIONS = {
+  codex: [
+    ["gpt-5.6-sol", "Sol"],
+    ["gpt-5.6-terra", "Terra"],
+    ["gpt-5.6-luna", "Luna"],
+  ],
+  claude: [
+    ["sonnet", "Sonnet"],
+    ["haiku", "Haiku"],
+    ["opus", "Opus"],
+  ],
+} as const satisfies Record<ModeFields["provider"], readonly (readonly [string, string])[]>;
+
 /**
  * 3단계 — 생성 방식(설계 §5-3). AI/기본 골격 라디오 카드, AI 도구, 모델뿐이다.
  *
@@ -52,7 +65,10 @@ export function StepMode(props: {
               className={INPUT_CLASS}
               value={form.provider}
               onChange={(event) =>
-                props.onChange({ provider: event.target.value as ModeFields["provider"] })
+                props.onChange({
+                  provider: event.target.value as ModeFields["provider"],
+                  model: "",
+                })
               }
             >
               <option value="claude">claude</option>
@@ -60,12 +76,19 @@ export function StepMode(props: {
             </select>
           </Field>
           <Field label="모델 (선택)" htmlFor="generate-model" hint="비우면 도구 기본값을 씁니다.">
-            <input
+            <select
               id="generate-model"
               className={`${INPUT_CLASS} font-mono`}
               value={form.model}
               onChange={(event) => props.onChange({ model: event.target.value })}
-            />
+            >
+              <option value="">도구 기본값</option>
+              {MODEL_OPTIONS[form.provider].map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
           </Field>
         </>
       )}

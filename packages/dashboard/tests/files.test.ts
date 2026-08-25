@@ -200,7 +200,11 @@ describe("listServerCandidates", () => {
     await mkdir(packageDirectory, { recursive: true });
     await writeFile(
       join(packageDirectory, "package.json"),
-      JSON.stringify({ name: "example-weather-server", bin: "./server.mjs" }),
+      JSON.stringify({
+        name: "example-weather-server",
+        dependencies: { "@modelcontextprotocol/sdk": "1.0.0" },
+        bin: "./server.mjs",
+      }),
       "utf8",
     );
 
@@ -223,6 +227,7 @@ describe("listServerCandidates", () => {
       join(root, "package.json"),
       JSON.stringify({
         name: "tools",
+        dependencies: { "@modelcontextprotocol/sdk": "1.0.0" },
         bin: { "mcpeak-mock": "./dist/stdio.mjs", mcpeak: "./bin/cli.mjs" },
       }),
       "utf8",
@@ -241,6 +246,7 @@ describe("listServerCandidates", () => {
       join(root, "package.json"),
       JSON.stringify({
         name: "entries",
+        dependencies: { "@modelcontextprotocol/sdk": "1.0.0" },
         bin: { a: "./a.js", b: "./b.mjs", c: "./c.cjs" },
       }),
       "utf8",
@@ -257,7 +263,11 @@ describe("listServerCandidates", () => {
   it("bin 이 확장자 없는 실행 파일이면 command 가 그 경로이고 args 가 비어 있다", async () => {
     await writeFile(
       join(root, "package.json"),
-      JSON.stringify({ name: "shell-entry", bin: { "shell-server": "./bin/shell-server" } }),
+      JSON.stringify({
+        name: "shell-entry",
+        dependencies: { "@modelcontextprotocol/sdk": "1.0.0" },
+        bin: { "shell-server": "./bin/shell-server" },
+      }),
       "utf8",
     );
 
@@ -285,6 +295,36 @@ describe("listServerCandidates", () => {
     await expect(listServerCandidates(root)).resolves.toEqual([]);
   });
 
+  it("MCP SDK 를 직접 의존하지 않는 package.json 의 bin 은 후보가 아니다", async () => {
+    // 이 저장소의 cli·dashboard 가 정확히 이 모양이다. bin 은 있지만 @mcpeak/* 만 의존한다.
+    await writeFile(
+      join(root, "package.json"),
+      JSON.stringify({
+        name: "tool-not-server",
+        dependencies: { "@mcpeak/core": "workspace:*" },
+        bin: { mcpeak: "./dist/cli.mjs" },
+      }),
+      "utf8",
+    );
+
+    await expect(listServerCandidates(root)).resolves.toEqual([]);
+  });
+
+  it("MCP SDK 가 peerDependencies 에만 있어도 후보가 된다", async () => {
+    await writeFile(
+      join(root, "package.json"),
+      JSON.stringify({
+        name: "peer-server",
+        peerDependencies: { "@modelcontextprotocol/sdk": ">=1" },
+        bin: "./server.mjs",
+      }),
+      "utf8",
+    );
+
+    const candidates = await listServerCandidates(root);
+    expect(candidates.map((candidate) => candidate.name)).toEqual(["peer-server"]);
+  });
+
   it("node_modules·.git·dist 아래는 보지 않는다", async () => {
     const config = JSON.stringify({ mcpServers: { hidden: { command: "node" } } });
     for (const directory of ["node_modules", ".git", "dist"]) {
@@ -305,7 +345,11 @@ describe("listServerCandidates", () => {
     await writeFile(join(root, ".mcp.json"), "{ not json", "utf8");
     await writeFile(
       join(root, "package.json"),
-      JSON.stringify({ name: "ok", bin: "./cli.mjs" }),
+      JSON.stringify({
+        name: "ok",
+        dependencies: { "@modelcontextprotocol/sdk": "1.0.0" },
+        bin: "./cli.mjs",
+      }),
       "utf8",
     );
 
@@ -349,7 +393,11 @@ describe("listServerCandidates", () => {
     );
     await writeFile(
       join(root, "package.json"),
-      JSON.stringify({ name: "root-pkg", bin: "./cli.mjs" }),
+      JSON.stringify({
+        name: "root-pkg",
+        dependencies: { "@modelcontextprotocol/sdk": "1.0.0" },
+        bin: "./cli.mjs",
+      }),
       "utf8",
     );
 

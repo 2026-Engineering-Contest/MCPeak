@@ -91,9 +91,25 @@ function mcpConfigCandidates(parsed: unknown, path: string): ServerCandidate[] {
   return results;
 }
 
+const MCP_SDK_PACKAGE = "@modelcontextprotocol/sdk";
+
+/**
+ * MCP SDK 를 직접 의존하는 패키지인지 본다. `bin` 은 "실행 진입점" 이지 "MCP 서버" 라는 뜻이
+ * 아니라, 이 저장소만 해도 CLI 와 대시보드의 `bin` 이 함께 잡힌다. 그것을 서버로 고르면 CLI 가
+ * CLI 에 붙으려 하고, 대시보드는 포트를 잡은 채 응답 없이 걸린다. 서버인지는 띄워 봐야 알지만
+ * 그것은 금지이므로(ADR-0079), 이미 읽은 파일 한 장에서 가장 잘 갈리는 신호를 쓴다.
+ */
+function dependsOnMcpSdk(pkg: Record<string, unknown>): boolean {
+  return ["dependencies", "peerDependencies"].some((field) => {
+    const dependencies = asRecord(pkg[field]);
+    return dependencies !== null && MCP_SDK_PACKAGE in dependencies;
+  });
+}
+
 /**
  * `package.json` 의 `bin` 을 후보로 옮긴다. 확장자가 `.js`·`.mjs`·`.cjs` 면 `node` 로 띄우고,
  * 그 밖은 파일 자체를 실행 파일로 본다. 무엇으로 띄울지는 파일을 실행하지 않고 정한다(ADR-0079).
+ * MCP SDK 를 직접 의존하지 않는 패키지는 후보로 올리지 않는다(`dependsOnMcpSdk`).
  */
 function packageBinCandidates(
   parsed: unknown,
@@ -102,7 +118,7 @@ function packageBinCandidates(
   absolute: string,
 ): ServerCandidate[] {
   const pkg = asRecord(parsed);
-  if (pkg === null || pkg.bin === undefined) return [];
+  if (pkg === null || pkg.bin === undefined || !dependsOnMcpSdk(pkg)) return [];
   const packageName = isNonEmptyString(pkg.name) ? pkg.name : basename(dirname(absolute));
   const entries: [string, unknown][] =
     typeof pkg.bin === "string"

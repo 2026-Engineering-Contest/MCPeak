@@ -62,6 +62,7 @@ export {
   DEFAULT_MAX_CASE_BYTES,
   DEFAULT_MAX_REPORT_BYTES,
   DEFAULT_SENSITIVE_KEYS,
+  isSensitiveKey,
   REDACTED,
   RunnerPayloadLimitError,
   type RunnerPayloadLimits,

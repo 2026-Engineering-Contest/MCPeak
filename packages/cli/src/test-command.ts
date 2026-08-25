@@ -598,6 +598,7 @@ const FINDING_GROUP_ORDER: readonly FindingGroup[] = [
  *
  * 다른 finding 은 같은 사실인지 판별할 표식이 부족하다. 예를 들어 REQUIRED_MISSING 은 필드명
  * 하나만 같아도 되므로 여기서 함께 억제하면 조용한 서버에서 유일한 단서를 잃을 수 있다.
+ * 이 보수적 억제 범위와 검토한 대안은 ADR-0077에 기록한다.
  */
 const responseRepeatsTypeMismatch = (finding: SpecFinding, item: TestCaseResult): boolean => {
   if (finding.code !== "TYPE_MISMATCH") return false;
@@ -621,8 +622,23 @@ const responseRepeatsTypeMismatch = (finding: SpecFinding, item: TestCaseResult)
         : JSON.stringify(actualValue);
   const has = (note: string, value: string): boolean => {
     if (value === "") return false;
-    const escaped = value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    return new RegExp(`(?<![\\p{L}\\p{N}_])${escaped}(?![\\p{L}\\p{N}_])`, "iu").test(note);
+    const normalizedNote = note.toLocaleLowerCase("en-US");
+    const normalizedValue = value.toLocaleLowerCase("en-US");
+    const wordCharacter = /[\p{L}\p{N}_]/u;
+    let start = 0;
+    while (start <= normalizedNote.length - normalizedValue.length) {
+      const index = normalizedNote.indexOf(normalizedValue, start);
+      if (index === -1) return false;
+      const before = Array.from(normalizedNote.slice(0, index)).at(-1);
+      const after = Array.from(normalizedNote.slice(index + normalizedValue.length))[0];
+      if (
+        (before === undefined || !wordCharacter.test(before)) &&
+        (after === undefined || !wordCharacter.test(after))
+      )
+        return true;
+      start = index + normalizedValue.length;
+    }
+    return false;
   };
 
   return notes.some(

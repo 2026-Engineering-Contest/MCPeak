@@ -1508,6 +1508,26 @@ describe("입력 계약 참고 문장", () => {
       "input.city 의 타입이 다릅니다. 서버 선언: 'string', 명세: 'number'",
     );
   });
+  it("필드명이 다른 단어 안에 포함됐을 뿐이면 같은 타입 위반으로 보지 않는다 (#350)", async () => {
+    const idTools: ToolDef[] = [
+      {
+        name: "get_weather",
+        inputSchema: {
+          type: "object",
+          properties: { id: { type: "string" } },
+          required: ["id"],
+        },
+      },
+    ];
+    const out = await runTest({
+      suite: suiteOf(callCase("id-number", { id: 12345 }, 1)),
+      tools: idTools,
+      statuses: { "id-number": "failed" },
+      serverNotes: { "id-number": ["invalid 값은 string 이어야 하지만 number 를 받았습니다."] },
+    });
+    expect(out.stdout).toContain("참고: id-number 의 입력이 서버 선언과 다릅니다");
+    expect(out.stdout).toContain("input.id 의 타입이 다릅니다");
+  });
   it("한 타입 finding 만 서버 응답과 겹치면 나머지 입력 finding 은 남긴다 (#350)", async () => {
     const mixedSuite = suiteOf(callCase("mixed", { city: 12345, extra: "x" }, 1));
     const out = await runTest({

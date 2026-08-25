@@ -25,6 +25,7 @@ import type {
 import {
   describeDeterminismDifference,
   describeSpecFinding,
+  MAX_VALUE_STRING_CHARS,
   checkAssertionSubstance as runnerCheckAssertionSubstance,
   checkDeterminism as runnerCheckDeterminism,
   checkInputContract as runnerCheckInputContract,
@@ -587,6 +588,93 @@ const FINDING_GROUP_ORDER: readonly FindingGroup[] = [
   "rejectionIntent",
   "skipped",
 ];
+
+const WORD_CHARACTER = /[\p{L}\p{N}_]/u;
+const SAME_UNICODE_CASE_FOLDED_CHARACTER = /^(.)\1$/iu;
+
+/** 두 유니코드 코드 포인트가 정규식의 `/iu` 대소문자 규칙에서 같은지 판정한다. */
+const sameUnicodeCaseFoldedCharacter = (left: string, right: string): boolean =>
+  SAME_UNICODE_CASE_FOLDED_CHARACTER.test(left + right);
+
+/** limit 를 넘기기 전에 순회를 멈춰 신뢰하지 않는 진단 문자열의 메모리 사용을 제한한다. */
+const codePointsWithinLimit = (value: string, limit: number): string[] | undefined => {
+  const points: string[] = [];
+  for (const point of value) {
+    if (points.length === limit) return undefined;
+    points.push(point);
+  }
+  return points;
+};
+
+/**
+ * 진단 문장에서 독립된 marker 를 찾는다. runner 가 보장하는 진단 문자열 길이를 넘으면
+ * 임의로 자른 경계에서 오탐하지 않도록 중복이 아니라고 보수적으로 판정한다.
+ */
+const containsWholeDiagnosticMarker = (note: string, marker: string): boolean => {
+  if (marker === "") return false;
+  const notePoints = codePointsWithinLimit(note, MAX_VALUE_STRING_CHARS);
+  if (notePoints === undefined) return false;
+  const markerPoints = codePointsWithinLimit(marker, notePoints.length);
+  if (markerPoints === undefined) return false;
+
+  for (let start = 0; start <= notePoints.length - markerPoints.length; start += 1) {
+    const matches = markerPoints.every((point, offset) =>
+      sameUnicodeCaseFoldedCharacter(notePoints[start + offset] ?? "", point),
+    );
+    if (!matches) continue;
+
+    const before = notePoints[start - 1];
+    const after = notePoints[start + markerPoints.length];
+    if (
+      (before === undefined || !WORD_CHARACTER.test(before)) &&
+      (after === undefined || !WORD_CHARACTER.test(after))
+    )
+      return true;
+  }
+  return false;
+};
+
+/**
+ * 서버 응답 본문이 이미 타입 위반을 설명했는지 보수적으로 판정한다(#350).
+ *
+ * 응답 문장을 자연어로 해석하려 들면 "city 문자열을 숫자로 바꾸세요" 같은 다른 사실까지
+ * 같은 말로 오인할 수 있다. 그래서 TYPE_MISMATCH 에서 구조적으로 아는 세 표식, 즉 필드명과
+ * 기대 타입, 실제 타입(또는 실제 입력값)이 한 줄에 모두 있을 때만 참고 finding 을 접는다.
+ * 하나라도 없으면 서버가 충분히 설명했다고 단정하지 않고 기존 참고를 남긴다.
+ *
+ * 다른 finding 은 같은 사실인지 판별할 표식이 부족하다. 예를 들어 REQUIRED_MISSING 은 필드명
+ * 하나만 같아도 되므로 여기서 함께 억제하면 조용한 서버에서 유일한 단서를 잃을 수 있다.
+ * 이 보수적 억제 범위와 검토한 대안은 ADR-0077에 기록한다.
+ */
+const responseRepeatsTypeMismatch = (finding: SpecFinding, item: TestCaseResult): boolean => {
+  if (finding.code !== "TYPE_MISMATCH") return false;
+  const expected = finding.expected;
+  const actualType = finding.actual;
+  if (typeof expected !== "string" || typeof actualType !== "string") return false;
+  if (item.spec.operation.type !== "callTool" || !finding.path.startsWith("input.")) return false;
+
+  const field = finding.path.slice("input.".length);
+  if (field === "") return false;
+  const notes = [
+    ...(item.operation.diagnostic?.notes ?? []),
+    ...item.assertions.flatMap((assertion) => assertion.diagnostic?.notes ?? []),
+  ];
+  const actualValue = item.spec.operation.input[field];
+  const actualValueText =
+    actualValue === undefined
+      ? undefined
+      : typeof actualValue === "string"
+        ? actualValue
+        : JSON.stringify(actualValue);
+
+  return notes.some(
+    (note) =>
+      containsWholeDiagnosticMarker(note, field) &&
+      containsWholeDiagnosticMarker(note, expected) &&
+      (containsWholeDiagnosticMarker(note, actualType) ||
+        (actualValueText !== undefined && containsWholeDiagnosticMarker(note, actualValueText))),
+  );
+};
 /** 결정론성 결과 블록의 머리글. 설계 문서 §8. */
 const DETERMINISM_HEADING = "결정론성 확인";
 /**
@@ -1466,7 +1554,11 @@ async function runCliCore(
               ? allFindings.filter((finding) => FINDING_GROUP[finding.code] === "skipped")
               : allFindings;
           for (const group of FINDING_GROUP_ORDER) {
-            const grouped = list.filter((finding) => FINDING_GROUP[finding.code] === group);
+            const grouped = list.filter(
+              (finding) =>
+                FINDING_GROUP[finding.code] === group &&
+                !(group === "inputContract" && responseRepeatsTypeMismatch(finding, item)),
+            );
             if (grouped.length === 0) continue;
             // caseId 는 남이 쓴 명세에서 온다. 다른 표시 항목과 같은 이스케이프를 쓴다.
             dependencies.writeStdout(

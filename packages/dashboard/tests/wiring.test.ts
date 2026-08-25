@@ -21,7 +21,10 @@ function fakeIo(): RunIo {
 }
 
 function fakeCoreModule(): typeof import("@mcpeak/core") {
-  return { connectStdio: vi.fn() } as unknown as typeof import("@mcpeak/core");
+  return {
+    connectStdio: vi.fn(),
+    connectHttp: vi.fn(),
+  } as unknown as typeof import("@mcpeak/core");
 }
 
 function fakeRunnerModule(): typeof import("@mcpeak/runner") {
@@ -75,6 +78,14 @@ const TEST_COMMAND_REQUIRED_KEYS = [
   "writeStderr",
 ].sort();
 
+/**
+ * 원격(Streamable HTTP) 대상용 선택 키. `TestCommandDependencies` 에서는 선택이지만
+ * 정상 경로는 cli `index.ts` 와 같이 둘 다 배선한다(설계 §6-5).
+ */
+const TEST_COMMAND_HTTP_KEYS = ["connectHttp", "readEnv"];
+
+const TEST_COMMAND_WIRED_KEYS = [...TEST_COMMAND_REQUIRED_KEYS, ...TEST_COMMAND_HTTP_KEYS].sort();
+
 describe("wiring.ts executeFlow", () => {
   it("test 플로우가 cli와 같은 의존성 항목을 조립한다", async () => {
     let capturedDeps: Record<string, unknown> | undefined;
@@ -94,7 +105,78 @@ describe("wiring.ts executeFlow", () => {
     });
 
     expect(capturedDeps).toBeDefined();
+    expect(Object.keys(capturedDeps ?? {}).sort()).toEqual(TEST_COMMAND_WIRED_KEYS);
+  });
+
+  it("test 플로우 의존성에 connectHttp 가 core.connectHttp 로 들어간다", async () => {
+    let capturedDeps: Record<string, unknown> | undefined;
+    const io = fakeIo();
+    const core = fakeCoreModule();
+
+    await executeFlow({ flow: "test", argv: ["test", "suite.json"] }, io, {
+      runners: {
+        test: async (_argv, deps) => {
+          capturedDeps = deps as unknown as Record<string, unknown>;
+          return 0;
+        },
+      },
+      loaders: {
+        loadCore: () => Promise.resolve(core),
+        loadRunner: () => Promise.resolve(fakeRunnerModule()),
+      },
+    });
+
+    expect(capturedDeps?.connectHttp).toBe(core.connectHttp);
+  });
+
+  it("readEnv 가 process.env 의 값을 돌려준다", async () => {
+    let capturedDeps: Record<string, unknown> | undefined;
+    const io = fakeIo();
+
+    process.env.MCPEAK_TEST_HDR = "토큰-값";
+    try {
+      await executeFlow({ flow: "test", argv: ["test", "suite.json"] }, io, {
+        runners: {
+          test: async (_argv, deps) => {
+            capturedDeps = deps as unknown as Record<string, unknown>;
+            return 0;
+          },
+        },
+        loaders: {
+          loadCore: () => Promise.resolve(fakeCoreModule()),
+          loadRunner: () => Promise.resolve(fakeRunnerModule()),
+        },
+      });
+
+      const readEnv = capturedDeps?.readEnv as (name: string) => string | undefined;
+      expect(readEnv("MCPEAK_TEST_HDR")).toBe("토큰-값");
+      expect(readEnv("MCPEAK_TEST_HDR_없음")).toBeUndefined();
+    } finally {
+      // 다른 테스트로 새면 결정론이 깨진다.
+      delete process.env.MCPEAK_TEST_HDR;
+    }
+  });
+
+  it("런타임 의존성 로드 실패 경로에는 connectHttp·readEnv 가 없다", async () => {
+    let capturedDeps: Record<string, unknown> | undefined;
+    const io = fakeIo();
+
+    await executeFlow({ flow: "test", argv: ["test", "suite.json"] }, io, {
+      runners: {
+        test: async (_argv, deps) => {
+          capturedDeps = deps as unknown as Record<string, unknown>;
+          return 0;
+        },
+      },
+      loaders: {
+        loadCore: () => Promise.reject(new Error("core 를 로드할 수 없습니다.")),
+        loadRunner: () => Promise.resolve(fakeRunnerModule()),
+      },
+    });
+
     expect(Object.keys(capturedDeps ?? {}).sort()).toEqual(TEST_COMMAND_REQUIRED_KEYS);
+    expect(capturedDeps).not.toHaveProperty("connectHttp");
+    expect(capturedDeps).not.toHaveProperty("readEnv");
   });
 
   it("IO 3필드만 교체되고 나머지는 실함수다", async () => {

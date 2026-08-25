@@ -221,6 +221,36 @@ describe("routes.ts", () => {
     expect(await response.json()).toEqual({ root: server.root });
   });
 
+  it("GET /api/servers 가 200 과 후보 배열을 준다", async () => {
+    server = await startTestServer();
+    await writeFile(
+      join(server.root, ".mcp.json"),
+      JSON.stringify({ mcpServers: { weather: { command: "node", args: ["server.mjs"] } } }),
+      "utf8",
+    );
+
+    const response = await fetch(`${server.baseUrl}/api/servers`);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual([
+      {
+        id: "mcp-config:.mcp.json:weather",
+        name: "weather",
+        command: "node",
+        args: ["server.mjs"],
+        source: "mcp-config",
+        path: ".mcp.json",
+        hasEnv: false,
+      },
+    ]);
+  });
+
+  it("후보가 없으면 빈 배열이다", async () => {
+    server = await startTestServer();
+    const response = await fetch(`${server.baseUrl}/api/servers`);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual([]);
+  });
+
   /**
    * `/api/health` 는 스캐폴드 검증용으로 `{ ok: true }` 를 완전 일치로 잠가 둔 자리다
    * (tests/scaffold.test.ts). `/api/meta` 를 더하면서 여기에 root 가 새지 않았는지 못박는다.

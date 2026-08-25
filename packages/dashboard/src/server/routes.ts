@@ -8,7 +8,7 @@ import type {
   StartRunRequest,
   StartRunResponse,
 } from "../api-types.js";
-import { listSuites, readFileContent, writeFileContent } from "./files.js";
+import { listServerCandidates, listSuites, readFileContent, writeFileContent } from "./files.js";
 import { resolveProjectPath } from "./paths.js";
 import type { RunIo, RunRegistry } from "./run-registry.js";
 import { formatSseEvent, formatSseEvents, SSE_HEADERS } from "./sse.js";
@@ -56,6 +56,10 @@ export async function handleRequest(
   }
   if (method === "GET" && pathname === "/api/suites") {
     sendJson(response, 200, await listSuites(options.root));
+    return;
+  }
+  if (method === "GET" && pathname === "/api/servers") {
+    sendJson(response, 200, await listServerCandidates(options.root));
     return;
   }
   if (method === "GET" && pathname.startsWith("/api/suites/")) {

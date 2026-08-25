@@ -54,6 +54,21 @@ export interface ServerMeta {
   readonly root: string;
 }
 
+/** GET /api/servers — 서버 후보 한 건. 파일을 읽어 만들며 서버를 실행하지 않는다(ADR-0079). */
+export interface ServerCandidate {
+  /** 같은 스캔이면 같은 값. `${source}:${path}:${name}`. */
+  readonly id: string;
+  /** `.mcp.json` 의 mcpServers 키 또는 package.json 의 bin 키. */
+  readonly name: string;
+  readonly command: string;
+  readonly args: readonly string[];
+  readonly source: "mcp-config" | "package-bin";
+  /** 후보를 읽은 파일의 루트 기준 상대경로(`/` 구분). */
+  readonly path: string;
+  /** `.mcp.json` 항목에 env 가 있었는지. 대시보드는 넘기지 못하므로 화면이 알린다. */
+  readonly hasEnv: boolean;
+}
+
 /** 파일 리소스 공통. path는 프로젝트 루트 기준 상대경로다. */
 export interface FileEntry {
   readonly path: string;

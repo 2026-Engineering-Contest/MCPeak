@@ -1,8 +1,9 @@
 import type { AssertionResult } from "./assertions.js";
 import { canonicalJson } from "./canonical.js";
-import { clampObservedText } from "./diagnostics.js";
+import { clampObservedText, redactByPath } from "./diagnostics.js";
 import type { TestCaseResult } from "./executor.js";
-import type { RunnerRedactionOptions } from "./sanitization.js";
+import { REDACTED, type RunnerRedactionOptions } from "./sanitization.js";
+import type { JsonValue } from "./spec/types.js";
 
 /** 한 회차에서 케이스 하나를 관찰한 것. CLI 래퍼(설계 §5)가 만든다. */
 export interface DeterminismCaseObservation {
@@ -24,7 +25,18 @@ export interface CheckDeterminismOptions {
   readonly second: readonly DeterminismCaseObservation[];
   /** `--reset-cmd` 가 지정돼 각 회차 전에 복원이 실행됐는가. 결론 강도(§8)를 가른다. */
   readonly stateRestored: boolean;
-  /** 표시 값에 적용할 redaction. `clampObservedText` 에 그대로 넘긴다. */
+  /**
+   * 표시 값에 적용할 redaction. 비교는 원본으로 하고 **표시만** 가린다(§6).
+   *
+   * 가리는 근거는 두 가지다. 차이 지점까지 내려온 **조상 키**(`redactByPath`)와, 값이 객체·배열일
+   * 때의 **직속 키**(`sanitizeJsonValue`)다.
+   *
+   * **가리지 못하는 자리가 있다.** 서버가 결과를 JSON 으로 직렬화해 text 블록 문자열 하나로 싣는
+   * 형태(`content[0].text`)가 그렇다. 이때 비밀값은 그 문자열 **안**에 있고 경로상의 키는
+   * `text` 뿐이라 키 기반 판정이 닿지 않는다. 남는 방어는 `sensitiveValues` 의 정확 일치뿐인데,
+   * 서버가 실행마다 새로 발급하는 값은 미리 알 수 없다. 이 한계는 ADR-0033 의 E3(치환 대신
+   * 명시)을 따라 `--determinism` 안내 문구에도 적혀 있어야 한다.
+   */
   readonly redaction?: RunnerRedactionOptions;
 }
 
@@ -81,6 +93,14 @@ const kindOf = (value: MaybeMissing): ValueKind => {
 
 interface DiffHit {
   readonly path: string;
+  /**
+   * 루트에서 이 자리까지 내려오며 지난 **객체 키**만 순서대로 모은 것. 배열 인덱스는 넣지 않는다
+   * (`diagnostics.ts` 의 `pathKeys` 와 같은 규칙). 표시값 마스킹이 이것을 본다.
+   *
+   * `path` 를 다시 파싱하지 않고 순회 중에 모으는 이유는, 경로 문자열 형식이 진단마다 다르기
+   * 때문이다. 여기는 `content[0].text` 처럼 루트 키에 점이 없고 `pathKeys` 는 `$.a.b` 를 받는다.
+   */
+  readonly keys: readonly string[];
   readonly first: MaybeMissing;
   readonly second: MaybeMissing;
 }
@@ -95,17 +115,18 @@ const findFirstDifference = (firstRoot: unknown, secondRoot: unknown): DiffHit |
     readonly first: MaybeMissing;
     readonly second: MaybeMissing;
     readonly path: string;
+    readonly keys: readonly string[];
   };
-  const frames: Frame[] = [{ first: firstRoot, second: secondRoot, path: "" }];
+  const frames: Frame[] = [{ first: firstRoot, second: secondRoot, path: "", keys: [] }];
   while (frames.length > 0) {
     const frame = frames.pop();
     if (frame === undefined) break;
-    const { first, second, path } = frame;
+    const { first, second, path, keys: ancestorKeys } = frame;
     const firstKind = kindOf(first);
-    if (firstKind !== kindOf(second)) return { path, first, second };
+    if (firstKind !== kindOf(second)) return { path, keys: ancestorKeys, first, second };
     if (firstKind === "missing" || firstKind === "null") continue;
     if (firstKind === "boolean" || firstKind === "number" || firstKind === "string") {
-      if (!Object.is(first, second)) return { path, first, second };
+      if (!Object.is(first, second)) return { path, keys: ancestorKeys, first, second };
       continue;
     }
     // LIFO 스택이므로 뒤 자식부터 push 해야 앞 자식을 먼저 방문한다.
@@ -118,6 +139,7 @@ const findFirstDifference = (firstRoot: unknown, secondRoot: unknown): DiffHit |
           first: index < left.length ? left[index] : MISSING,
           second: index < right.length ? right[index] : MISSING,
           path: `${path}[${index}]`,
+          keys: ancestorKeys,
         });
       }
       continue;
@@ -132,15 +154,33 @@ const findFirstDifference = (firstRoot: unknown, secondRoot: unknown): DiffHit |
         first: Object.hasOwn(left, key) ? left[key] : MISSING,
         second: Object.hasOwn(right, key) ? right[key] : MISSING,
         path: path === "" ? key : `${path}.${key}`,
+        keys: [...ancestorKeys, key],
       });
     }
   }
   return null;
 };
 
-/** 표시용 문자열. 비교는 원본으로 하고 표시만 자른다(설계 §6). */
-const formatValue = (value: MaybeMissing, redaction?: RunnerRedactionOptions): string =>
-  value === MISSING ? "(없음)" : clampObservedText(canonicalJson(value), redaction);
+/**
+ * 표시용 문자열. 비교는 원본으로 하고 표시만 가리고 자른다(설계 §6).
+ *
+ * **마스킹이 `canonicalJson` 보다 먼저다.** 순서를 뒤집으면 값이 문자열 한 덩어리가 되면서 키
+ * 정보가 사라져, 키로 판정하는 `sanitizeJsonValue` 가 아무것도 못 집는다. `sensitiveValues` 도
+ * 마찬가지다. `canonicalJson("s-1")` 은 따옴표가 붙은 `"s-1"` 이라 원래 값과 더는 같지 않다.
+ *
+ * 가려진 값은 따옴표 없이 `[REDACTED]` 로 적는다. 이것은 서버가 돌려준 값이 아니라 자리를
+ * 가렸다는 표지이고, 따옴표를 붙이면 값이 실제로 그 문자열이었던 것처럼 읽힌다.
+ */
+const formatValue = (
+  value: MaybeMissing,
+  keys: readonly string[],
+  redaction?: RunnerRedactionOptions,
+): string => {
+  if (value === MISSING) return "(없음)";
+  const safe = redactByPath(value as JsonValue, keys, redaction);
+  if (safe === REDACTED) return REDACTED;
+  return clampObservedText(canonicalJson(safe), redaction);
+};
 
 /** 마스크가 본문과 겹칠 때 덧붙이는 문자. 비문자라 서버 본문에 나올 일이 거의 없다. */
 const MASK_FILLER = "\uFFFF";
@@ -272,8 +312,8 @@ export function checkDeterminism(options: CheckDeterminismOptions): DeterminismR
       differences.push({
         ...identity,
         kind: "response",
-        firstValue: leftHas ? formatValue(left.response, redaction) : "(응답 없음)",
-        secondValue: rightHas ? formatValue(right.response, redaction) : "(응답 없음)",
+        firstValue: leftHas ? formatValue(left.response, [], redaction) : "(응답 없음)",
+        secondValue: rightHas ? formatValue(right.response, [], redaction) : "(응답 없음)",
       });
       continue;
     }
@@ -289,8 +329,8 @@ export function checkDeterminism(options: CheckDeterminismOptions): DeterminismR
       ...identity,
       kind: "response",
       path: hit.path === "" ? "(루트)" : hit.path,
-      firstValue: formatValue(hit.first, redaction),
-      secondValue: formatValue(hit.second, redaction),
+      firstValue: formatValue(hit.first, hit.keys, redaction),
+      secondValue: formatValue(hit.second, hit.keys, redaction),
       ...(hint !== undefined ? { hint } : {}),
     });
   }

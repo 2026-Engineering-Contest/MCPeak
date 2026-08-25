@@ -1,6 +1,7 @@
 import type { BodyExtraction, BodyExtractionFailure } from "./body.js";
 import {
   DEFAULT_SENSITIVE_KEYS,
+  isSensitiveKey,
   normalizeSensitiveKey,
   REDACTED,
   type RunnerRedactionOptions,
@@ -250,15 +251,18 @@ const pathKeys = (path: string): string[] =>
  * 값의 조상 키 중 하나라도 민감 키면 값을 통째로 가린다.
  * sanitizeJsonValue는 객체의 직속 키만 보므로 {"token":{"value":"sk-abc"}}의
  * $.token.value 위반에서는 값을 가리지 못한다. 배열 인덱스를 거친 경로도 마찬가지다.
+ *
+ * `determinism.ts` 도 이 함수를 쓴다. 마스킹 정책을 두 벌로 두면 같은 응답이 단언 진단에서는
+ * 가려지고 `--determinism` 비교에서는 그대로 찍힌다.
  */
-const redactByPath = (
+export const redactByPath = (
   value: JsonValue,
   keys: readonly string[],
   options?: RunnerRedactionOptions,
 ): JsonValue => {
   const sensitive = new Set(DEFAULT_SENSITIVE_KEYS);
   for (const key of options?.sensitiveKeys ?? []) sensitive.add(normalizeSensitiveKey(key));
-  if (keys.some((key) => sensitive.has(normalizeSensitiveKey(key)))) return REDACTED;
+  if (keys.some((key) => isSensitiveKey(sensitive, key))) return REDACTED;
   return sanitizeJsonValue(value, options);
 };
 

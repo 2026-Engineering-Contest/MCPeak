@@ -1,6 +1,6 @@
 {
   "name": "@mcpeak/cli",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "private": false,
   "type": "module",
   "description": "MCPeak 프레임워크의 CLI 진입점 (얇게 유지)",

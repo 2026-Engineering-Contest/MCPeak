@@ -1,5 +1,167 @@
 # @ohmymcp-hsu/runner
 
+## 0.10.0
+
+### Minor Changes
+
+- 647a175: `test`가 서버의 `inputSchema`를 해석하지 못해 입력 계약 검사를 건너뛴 경우, 테스트 케이스가
+  통과했더라도 그 사실을 알립니다(#288). `SCHEMA_NOT_ANALYZABLE` finding에는 해석 실패 사유가
+  추가되며, 사람용 출력은 사유와 함께 스키마를 고치는 방법을 안내합니다.
+
+  README의 목 서버 예시도 `properties`와 `required`가 있는 검사 가능한 입력 스키마로 고쳤습니다.
+
+- ff33aa7: 보고서 크기가 상한(1MB)의 80% 이상이면 실제 바이트로 알립니다(#92).
+
+  상한은 올릴 수 없고 넘으면 테스트 실패가 아니라 예외로 죽습니다. 지금까지는 `generate` 가
+  케이스 1500개에서 고지했는데, 그 임계는 케이스당 600바이트라는 관측 추정 위에 있었습니다.
+  응답이 큰 서버는 1500 미만에서 벽에 닿고, 작은 서버는 3000개에서도 안전한데 경고를 봅니다.
+
+  `test` 실행 시점에는 보고서를 만들면서 크기를 압니다. 그 값으로 판정합니다.
+
+  ```
+    → 보고서 크기가 850KB 로 상한 1024KB 의 82% 입니다.
+      케이스나 응답이 더 커지면 test 실행이 보고서 상한 초과로 실패합니다. 상한은 올릴 수 없습니다.
+      툴을 나눠 여러 명세 파일로 만들면 피할 수 있습니다.
+  ```
+
+  `RunnerReport.payload` 키가 80% 이상일 때만 생깁니다. 대부분의 실행에서 키가 없어 `--json` 출력은
+  이전과 바이트 그대로입니다. `reportBytes` 는 이 키를 넣기 전 크기이고, 상한 초과 판정도 같은
+  값으로 하므로 고지 때문에 상한을 넘는 일은 없습니다. 임계는 `REPORT_PAYLOAD_NOTICE_RATIO` 로
+  내보냅니다.
+
+- aa00084: `--determinism` 비교 표시값과 모든 단언 진단에서 `sessionToken` · `X-Api-Key` · `privateKey` 같은
+  합성 키가 실제로 가려집니다(#183).
+
+  두 가지가 겹쳐 있었습니다. 결정론성 비교의 표시값은 값을 **문자열로 만든 뒤** 마스킹해서 키
+  정보가 이미 사라진 상태였고, runner 의 민감 키 판정은 정규화한 키의 **정확 일치**라
+  `sessiontoken` 이 목록에 없으면 통과였습니다. 같은 저장소의 `record` 는 ADR-0039·0045 로 접미
+  단어열 일치를 쓰므로, 같은 응답이 카세트에서는 가려지고 실패 메시지에는 원문으로 찍혔습니다.
+
+  ```
+    get_session / 세션 조회 (session)
+    → 다른 지점: raw.sessionToken
+       1회차: [REDACTED]
+       2회차: [REDACTED]
+  ```
+
+  runner 의 판정을 record 와 같은 규칙으로 맞췄습니다
+  ([ADR-0082](https://github.com/2026-Engineering-Contest/MCPeak/blob/main/docs/adr/0082-runner-의-민감-키-판정을-record-와-같은-접미-단어열-규칙으로-맞춘다.md)).
+  키를 단어로 쪼개 **뒤에서부터** 이어붙인 조합이 목록과 일치하면 가립니다. `accessToken` 은
+  토큰의 일종이라 가리고, `tokenCount` 는 개수의 일종이라 그대로 둡니다. 복수형(`tokens`)도
+  가립니다. 목록에 `privatekey` · `secretkey` · `signingkey` · `sessionkey` · `credential` 을
+  더했습니다.
+
+  결정론성 비교는 차이 지점까지의 **조상 키**도 봅니다. `token: { value }` 의 `value` 가 달라도
+  가립니다.
+
+  **가리지 못하는 자리가 남습니다.** 서버가 결과를 JSON 문자열로 만들어 text 블록 하나에 싣는
+  형태에서는 비밀값이 문자열 안에 있어 키 판정이 닿지 않습니다. `sensitiveValues` 정확 일치만
+  남습니다.
+
+  공개 API 는 그대로입니다. `DEFAULT_SENSITIVE_KEYS` 항목이 늘고 `isSensitiveKey` 가 새로
+  export 됩니다.
+
+- 7bc5a71: 서버와의 연결이 끝나면 **남은 케이스를 부르지 않고 멈춥니다**([ADR-0073](https://github.com/2026-Engineering-Contest/MCPeak/blob/main/docs/adr/0073-연결이-끝나면-남은-케이스를-부르지-않는다.md), [#279](https://github.com/2026-Engineering-Contest/MCPeak/issues/279)).
+
+  지금까지는 서버 프로세스가 죽어도 남은 케이스를 계속 호출했습니다. 원인은 하나인데 화면에는 실패 5건으로 부풀고, 뒤따르는 4건은 `Not connected` 복사본이었습니다. 이제 타임아웃과 같은 형태로 멈추고, 실행하지 않은 케이스는 `not run` 으로 갈립니다.
+
+  ```
+  중단: 서버 프로세스가 종료되어 실행을 멈췄습니다. (종료 코드 42)
+
+  1 failed, 4 not run  (5 total)
+  ```
+
+  프로세스 종료(`PROCESS_EXITED`) · 전송 실패(`TRANSPORT_FAILED`) · HTTP 세션 상실(`HTTP_SESSION_LOST`) 셋 다 해당합니다. 서버가 살아서 오류를 돌려준 실패(`OPERATION_FAILED`)는 그대로 다음 케이스를 이어갑니다.
+
+  `RunnerReport["stopReason"]` 에 `{ type: "connectionLost", caseId, cause, exitCode?, signal? }` 변종이 생겼습니다. `stopReason.type` 을 분기하는 코드는 이 사유를 함께 다뤄야 합니다.
+
+### Patch Changes
+
+- 690203f: 호출 실패의 `해결:` 안내가 **오류를 낸 층이 붙여 온 안내**를 씁니다([ADR-0075](https://github.com/2026-Engineering-Contest/MCPeak/blob/main/docs/adr/0075-실패-안내는-오류를-낸-층이-갖는다.md), [#279](https://github.com/2026-Engineering-Contest/MCPeak/issues/279)).
+
+  지금까지는 호출이 실패하면 무엇이 원인이든 `MCP 서버 프로세스와 연결 상태를 확인하세요.` 한 문장이 붙었습니다. 서버가 죽었을 때는 화면 아래 프로세스 진단 블록이 종료 코드·stderr 를 이미 보여주므로 **이미 출력된 것을 확인하라는 순환**이었고, 서버가 살아서 낸 툴 오류에는 애초에 맞지 않는 안내였습니다.
+
+  ```text
+  ✗ add-success    add-success
+      툴 'add' 호출 중 오류가 발생했습니다.
+      → 원인: MCP error -32000: Connection closed
+      해결: 서버 stderr에 나온 오류를 수정한 뒤 다시 실행하세요.
+  ```
+
+  오류 코드별 안내는 `@mcpeak/core` 가 이미 갖고 있습니다(stderr 가 비었으면 종료 코드를 짚는 문장까지). 러너는 그 문장을 옮기되, 다른 서버 출력과 같은 **치환·길이 상한**을 적용합니다. 안내를 안 들고 오는 client(문자열이 아니거나 비어 있는 경우 포함)에는 `core` 와 같은 기본 문장이 붙습니다.
+
+  함께, **연결이 끊겨 실패한 케이스는 거절 근거 미확인 경고에서 빠집니다.** 그 케이스는 읽을 응답 본문이 아예 없는데 "승인 화면에서 응답을 확인하세요" 라고 안내하고 있었습니다. 서버가 살아서 낸 실패의 거절 근거는 그대로 셉니다.
+
+- cc116fa: 결정론성 진단의 원인 추정 문장 셋이 실서버에서 모두 나옵니다(#293).
+
+  실서버는 결과를 JSON 으로 만들어 text 블록에 문자열로 감싸 보내는 것이 기본인데, 그 형태에서
+  `randomId` 와 `numericDrift` 가 **한 번도 걸리지 않았습니다.** UUID 판정에 `^…$` 앵커가 있어
+  text 블록 전체가 UUID 하나일 때만 걸렸고, 숫자 판정은 `typeof === "number"` 분기에만 있어
+  언제나 string 인 text content 로는 도달할 수 없었습니다. 차이 지점은 정확히 짚으면서 "무엇
+  때문으로 보인다" 는 줄만 통째로 빠졌습니다.
+
+  ```
+    issue_token / issue_token가 오류 없이 응답한다 (issue-token-success)
+    → 다른 지점: content[0].text
+       1회차: "{\"user\":\"example\",\"token\":\"2a6c24ca-cb6f-4aca-9fb7-dededf59cd5c\"}"
+       2회차: "{\"user\":\"example\",\"token\":\"ca35b2b8-11fa-410d-82cd-433cf40d78f0\"}"
+    → 실행마다 새로 발급되는 식별자로 보입니다. 이 값은 단언 기준이 될 수 없습니다.
+  ```
+
+  판정을 "패턴이 있다" 에서 **"뽑은 자리 값이 실제로 달라졌다"** 로 바꿨습니다
+  ([ADR-0067](https://github.com/2026-Engineering-Contest/MCPeak/blob/main/docs/adr/0067-결정론성-힌트는-패턴-존재가-아니라-값-변화로-판정한다.md)).
+  앵커만 떼면 숫자를 품은 모든 JSON 이 "측정값 변동" 이 되기 때문입니다. 같은 변경으로 **시간은
+  그대로인데 옆자리가 변한 응답에 "시간 의존으로 보입니다" 가 붙던 오귀속도 사라집니다.**
+
+  패턴 밖 차이가 섞여 있으면 힌트를 달지 않습니다. 짚어준 값을 고쳐도 여전히 다른 경우라, 원인을
+  단정하면 사용자를 엉뚱한 곳으로 보냅니다.
+
+  공개 API 는 그대로입니다.
+
+- 21977b4: 서버 오류 본문이 `→` 로 시작할 때 화면에 `→ →` 로 겹쳐 찍히던 것을 고칩니다([#280](https://github.com/2026-Engineering-Contest/MCPeak/issues/280)).
+
+  리포터가 위반·`notes` 줄에 조건 없이 `→ ` 글머리를 붙여서, 서버가 이미 그 글머리를 쓴 줄은 화살표가 두 개가 됐습니다.
+
+  ```
+  전: → → 툴 'get_weather' 의 'city' 은(는) string 이어야 합니다. 받은 값: 12345 (number)
+  후: → 툴 'get_weather' 의 'city' 은(는) string 이어야 합니다. 받은 값: 12345 (number)
+  ```
+
+  **목 전용 결함이 아닙니다.** `→` 글머리는 `CLAUDE.md` 「실패 메시지가 곧 제품이다」 절이 권장하는 형식이고 `examples/weather-server` 도 그렇게 쓰므로, 우리 안내를 따라 실패 메시지를 쓴 사용자 서버가 전부 이 자리에 걸렸습니다.
+
+  고친 곳은 표시 계층뿐입니다. `notes` 원문은 그대로 나갑니다 — 거절 근거 확인(ADR-0060)이 목 응답의 `→` 글머리를 완전 일치로 요구하고, `--json` 의 `notes` 와 `mcpeak generate` 의 교정 요청 문안이 같은 값을 씁니다. 서버가 들여쓴 하위 항목의 공백과 서버가 직접 쓴 두 번째 화살표도 보존합니다.
+
+- 2c5ca1b: `isSensitiveKey` 를 공개 API 로 내보냅니다. `generate` 가 민감 키 판정을 같은 구현으로 하기
+  위해서입니다(#368, ADR-0082).
+- ffdd83d: MCPeak 목이 `inputSchema` 위반을 거절한 응답을 고정 접미어로 확인해, 정상 통과 뒤에
+  `거절 근거를 확인하지 못했습니다` 경고가 항상 나오던 문제를 수정합니다.
+- 8579092: 명세 검증 문장이 **코드마다 달라집니다** ([ADR-0078](https://github.com/2026-Engineering-Contest/MCPeak/blob/main/docs/adr/0078-명세-검증-문안은-코드별-표가-갖고-호출-지점이-문맥을-얹는다.md), [#352](https://github.com/2026-Engineering-Contest/MCPeak/issues/352)).
+
+  지금까지는 `validateSuite` 가 어떤 결함이든 같은 문장 하나를 붙였습니다. 필드가 **없는** 것과 값이 **틀린** 것과 단언이 operation 과 **안 맞는** 것이 화면에서 구분되지 않아, 코드 이름을 읽고 사용자가 스스로 해석해야 했습니다.
+
+  ```
+  - [MISSING_REQUIRED_FIELD] schemaVersion: 명세 필드 'schemaVersion'가 유효하지 않습니다.
+    해결: 명세 계약에 맞게 필드와 값을 확인하세요.
+  - [INCOMPATIBLE_ASSERTION] cases[0].assertions[0]: 명세 필드 'cases[0].assertions[0]'가 유효하지 않습니다.
+    해결: 명세 계약에 맞게 필드와 값을 확인하세요.
+  ```
+
+  이제 13개 코드가 저마다 다른 문장을 내고, 넣어야 할 값과 대조 대상을 싣습니다.
+
+  ```
+  - [MISSING_REQUIRED_FIELD] schemaVersion: 'schemaVersion' 필드가 없습니다. 받는 값: 1.
+    해결: 'schemaVersion' 필드를 명세에 추가하세요.
+  - [INCOMPATIBLE_ASSERTION] cases[0].assertions[0]: 'listTools' operation 은 'isError' 단언을 받지 않습니다. 허용: toolExists
+    해결: 단언 type 을 허용 목록의 것으로 바꾸거나 operation 을 확인하세요.
+  ```
+
+  모르는 필드는 그 자리가 받는 필드 목록을, 타임아웃은 받는 범위를, JSON 으로 옮길 수 없는 값은 원인(유한하지 않은 수 · 옮길 수 없는 타입 · 순환 참조)을 각각 구분해 말합니다. 긴 값과 승인 지문은 화면에 싣지 않고 형식만 말합니다.
+
+  `SuiteValidationIssue` 의 구조와 `SuiteValidationIssueCode` 목록은 그대로입니다. `message` · `hint` 문자열의 내용만 달라지므로 CLI 렌더링은 바뀌지 않습니다.
+
+- c84eb8b: runner: `toolExists` 실패 메시지에 서버가 실제로 선언한 툴 목록을 표시합니다. 선언된 툴이
+  없으면 `(없음)`으로 명시하며, 툴 이름 뒤의 잘못된 조사를 `을(를)` 병기로 바로잡습니다 (#277).
+
 ## 0.9.0
 
 ### Minor Changes

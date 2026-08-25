@@ -1,5 +1,199 @@
 # @ohmymcp-hsu/record
 
+## 0.4.0
+
+### Minor Changes
+
+- b99847f: **Breaking**: External 세션이 URL 경로를 더 이상 저장하지 않습니다(ADR-0053). 저장하는 표준
+  URL 필드 넷(요청 `display.url`, 저장 outcome의 `url`, `location`·`content-location` 헤더)에서
+  pathname 을 `<redacted>` 로 지웁니다. `location`·`content-location` 이 상대 참조(RFC 9110)여도
+  거부하지 않고 응답 URL 기준으로 절대 URL 로 해석한 뒤 같은 규칙을 적용합니다.
+
+  matchKey 계산에는 영향이 없습니다 — 정확한 pathname(매칭 재료)은 여전히 매칭에 쓰이고, 다만
+  자식 프로세스 밖으로 나가지 않습니다. `/hooks/AAA` 와 `/hooks/BBB` 는 여전히 다른 matchKey 를
+  냅니다. 그래서 이 개정 **이전에 만든 세션 파일도 Replay 는 계속 됩니다** — 다만 경로가 원문으로
+  남아 있으므로, README의 정리 절차(삭제 → 자격증명 재발급 → 재녹화)를 따르세요.
+
+  응답의 `redirect: "manual"` 로 받은 301·302·303·307·308 도 `Response.redirected` 값과 무관하게
+  거부합니다 — 그 응답의 `Location` 이 경로가 든 절대 URL 이라, 지우려던 경로가 응답 쪽으로
+  되돌아오는 구멍이었습니다.
+
+  `NormalizedExternalRequest` 의 `match` 필드가 없어지고 `schemaVersion` 은
+  `interactionSchemaVersion` 으로 개명됩니다. 둘 다 `@mcpeak/record/external` 의 공개 표면에는
+  없는 내부 타입이라 소비자(`cli`)에는 영향이 없습니다.
+
+  **진단이 약해지는 자리가 하나 있습니다.** replay miss·incomplete 메시지의 URL 이
+  `GET https://api.example.com/<redacted>` 까지만 말합니다. **경로로 자원을 가르는 API 는 miss 줄이
+  서로 같아집니다** — `/weather/seoul` 과 `/weather/busan` 이 둘 다 `https://api.example.com/<redacted>`
+  로 보입니다. 함께 표시되는 matchKey 로 구분해야 합니다. query 로 가르는 API(`?city=seoul`)는
+  query 가 남으므로 영향이 없습니다.
+
+  함께 고친 것들:
+
+  - **Coordinator 가 URL 오류를 500 으로 뭉개고 세션을 열어 두던 문제.** `runtime.mjs` 는 자식에서도
+    돌아 `.ts` 를 import 할 수 없어 오류를 직접 만들어 썼는데, 그 값이 `ExternalRecordReplayError`
+    의 인스턴스가 아니라서 부모의 분기를 빠져나갔습니다. 자격증명이 든 URL 처럼 재검사 도중 나는
+    오류가 분류된 4xx 대신 `COORDINATOR_INTERNAL` 500 으로 나가고, ADR-0052 가 요구한 "불변식이
+    깨지면 세션을 즉시 실패로 닫는다" 도 건너뛰었습니다. 오류 클래스를 `errors.mjs` 로 내려 부모와
+    자식이 같은 인스턴스를 보게 했습니다.
+  - **`throw` 결과에 재구성이 없어 재검사가 항등식이던 문제.** `redactStoredOutcome` 이 response 가
+    아닌 값을 입력 그대로 돌려주어 바이트 비교가 같은 참조끼리의 비교가 됐고, 자식이 실어 보낸
+    낯선 필드가 검증 없이 저장됐습니다. 이제 두 갈래 다 알려진 필드만 옮겨 담습니다.
+  - **낯선 필드의 진단이 뒤바뀌던 문제.** 스키마에 없는 필드가 원인인데도 "민감 값 마스킹을
+    놓쳤다" 는 문장이 나가, 사용자가 민감 키 목록 version 을 뒤지게 했습니다. 요청의 중첩
+    `display` 와 저장 결과(`response`·`throw`) 모두 `unknown-field` 로 분류합니다.
+  - **재검사의 예외를 전부 위반으로 단정하던 문제.** 우리 쪽 실패까지 "자식과 부모의 build 가
+    다르다" 로 나갔습니다. 이제 의도적으로 거절한 오류만 위반으로 분류하고 나머지는 그대로 올립니다.
+  - **전송 표현 헤더를 저장하던 문제.** `content-encoding`·`transfer-encoding`·`content-length` 는
+    원래 전송 형태를 가리키는데 저장하는 body 는 이미 압축이 풀린 최종 바이트라, 재생 때 평문 body
+    에 "gzip 이다" 라는 헤더가 붙어 나갔습니다.
+
+- 3e39e33: 녹화한 세션 body 에 남은 URL 문자열을 세어 종료 요약에 싣습니다([ADR-0062](https://github.com/2026-Engineering-Contest/MCPeak/blob/main/docs/adr/0062-세션-본문의-url-은-지우지-않고-알린다.md), [#311](https://github.com/2026-Engineering-Contest/MCPeak/issues/311)).
+
+  마스킹은 이름으로 판정하는데(`token`·`apiKey`) URL 경로 세그먼트에는 판정에 쓸 이름이 없습니다.
+  그래서 Slack·Discord webhook 처럼 **경로 자체가 자격증명**인 endpoint 가 자기 URL 을 body 로
+  되돌려주면 그 값이 세션 파일에 원문으로 남았고, 대응은 README 의 "커밋 전에 내용을 확인해라"
+  한 줄뿐이었습니다. 세션은 SQLite 라 눈으로 훑을 수도 없습니다.
+
+  이제 녹화 요약이 두 갈래로 셉니다.
+
+  - **되돌아온 경로** — body 의 URL 이 그 요청의 경로를 그대로 담고 있습니다. 자식이 정확한
+    경로를 쥐고 판정하므로 추측이 없습니다.
+  - **그 밖의 URL 문자열** — 되돌아온 경로는 아니지만 URL 로 해석되는 값입니다.
+
+  **지우지는 않습니다.** 저장한 body 가 곧 재생에서 서버가 받는 값이라, 경로를 지우면 `next` 를
+  따라가는 서버가 없는 경로로 요청해 재생이 깨집니다 — body 에 URL 이 있는 서버, 즉 지켜야 할
+  바로 그 서버가 깨집니다. ADR-0062 가 그 대가를 재고 "지우지 않고 알린다" 를 골랐습니다.
+
+  **원문 URL 은 세션 파일에 그대로 남습니다** — 지우지 않는 것이 이 결정입니다. 값이 나가지 않는
+  곳은 **Coordinator wire 와 종료 요약** 둘입니다. 자식이 부모로 보내는 것은 SHA-256 지문뿐이라,
+  세는 쪽은 URL 을 볼 수 없으면서도 세션 전체에서 중복을 제거합니다. 진단이 새 유출 경로가 되지
+  않게 하는 형식적 보장이고, Coordinator 는 지문 형태(64자 hex)를 벗어난 값이 오면 세션을 실패로
+  닫습니다. URL 이 512개를 넘으면 지문 일부를 버리고 "최소 N건" 으로 알립니다 — 전부 실으면
+  Coordinator payload 상한을 넘겨 녹화가 통째로 실패하기 때문입니다.
+
+  세션 저장 형식은 바뀌지 않았습니다 — 탐지 결과는 저장하지 않고 종료 요약에만 실립니다. 기존
+  세션 파일과 그것을 읽는 소비자는 영향받지 않습니다.
+
+  사용자에게 보이는 알림 문구는 `@mcpeak/cli` 후속 변경에서 붙습니다.
+
+- 63e50fe: record: 세션 파일을 읽기 전용으로 열어 스냅샷을 주는 `loadSession(path)` 을 `@mcpeak/record/external` 에 추가
+
+  세션 파일이 아니면 던지지 않고 `null` 을 준다. 프로젝트를 훑으며 "이게 세션인가" 를 묻는 판별기라(legacy 의 `loadCassette` 와 같은 자리), 아닌 파일이 정상 입력이기 때문이다. `readOnly: true` 로 열어 없는 경로에 빈 DB 를 만들지 않는다.
+
+- 0703898: 재생 중 **어댑터 범위 밖으로 나간 호출을 세어 알립니다**([ADR-0068](https://github.com/2026-Engineering-Contest/MCPeak/blob/main/docs/adr/0068-재생-중-범위-밖-호출을-가로채지-않고-센다.md)).
+
+  서버가 `globalThis.fetch` 와 `node:http`(axios·got 포함)를 섞어 쓰면 어댑터는 앞쪽만 봅니다.
+  그러면 재생이 절반만 되고 나머지는 실제 네트워크로 나가는데, **기존 경고 네 갈래가 전부 그
+  상황을 비켜갑니다** — `interactionCount > 0`, `consumedCount > 0`, `unusedCount === 0` 이라
+  어느 조건에도 안 걸립니다. 화면에는 초록과 "N건을 재생했습니다" 만 남았습니다.
+
+  ```
+  경고: 범위 밖 호출 1건이 실제 네트워크로 나갔습니다.
+  → 이 실행은 재현 가능하지 않습니다. 그 호출의 응답은 녹화본이 아니라 오늘의 것입니다.
+  → 서버가 `node:http`·axios 등으로 부른 호출입니다. 재생하려면 `fetch` 로 바꾸거나,
+    그 외부 의존을 `mcpeak mock` 으로 대신하세요.
+  ```
+
+  **가로채지 않고 세기만 합니다.** `diagnostics_channel` 을 쓰므로 서버 동작은 한 바이트도
+  달라지지 않습니다 — ADR-0057 이 그은 어댑터 범위를 넓히지 않습니다.
+
+  **0 건임을 확인한 실행에서는 조건절 단서가 사라집니다.** 못 센 경우(서버가 강제 종료된 경우)는
+  0 으로 다루지 않고 기존 조건절을 유지합니다 — 부재와 0 은 다른 사실입니다.
+
+- 3d79cd7: `createSqliteSessionStore` 에 `readOnly` 옵션을 더했습니다. 켜면 세션 DB 를 읽기 전용으로 열고
+  스키마 DDL·`meta` INSERT 를 돌리지 않습니다 — **주어진 파일을 만들지도 고치지도 않습니다.**
+
+  재생(`--session`)은 읽기인데 저장소가 모드와 무관하게 DDL 을 실행하고 있었고, 그 결과가 둘이었습니다([#291](https://github.com/2026-Engineering-Contest/MCPeak/issues/291)).
+
+  - 읽기 전용(chmod 444) 세션은 `attempt to write a readonly database` 로 한 건도 재생되지 않았습니다. 저장소에 커밋한 세션·CI 아티팩트 캐시·읽기 전용 마운트에서 재생을 쓸 수 없다는 뜻입니다.
+  - 0바이트 파일을 넘기면 **실패한 실행이 그 파일을 36,864바이트짜리 빈 세션 DB 로 덮어썼습니다.**
+
+  `readOnly` 로 연 저장소는 세션이 아닌 파일을 거부하고, 그 이유를 원인별로 갈라 말합니다 —
+  세션이 없는 파일과 store version 이 다른 파일은 사용자가 할 일이 다릅니다. 녹화 계열 호출
+  (`createSession`·`reserve`·`complete`·`finish`)은 SQLite 원문 대신 우리 문장으로 거부합니다.
+
+  기본값은 `false` 이고 녹화 경로의 동작은 그대로입니다.
+
+- 95f4299: 재생이 **원본을 언제 녹화했는지** 함께 알립니다([ADR-0069](https://github.com/2026-Engineering-Contest/MCPeak/blob/main/docs/adr/0069-녹화의-낡음은-시각을-보이되-판정하지-않는다.md)).
+
+  ```
+  → 녹화된 외부 호출 1건을 재생했습니다: tmp/weather.db (2026-08-23 13:41:40 UTC 녹화)
+  ```
+
+  녹화본은 낡습니다. 석 달 전 세션도 원본 API 가 바뀐 뒤 그대로 재생되고 테스트는 초록으로
+  통과합니다. 그 초록이 무엇에 대한 초록인지 알려면 **언제 찍은 녹화인지** 를 알아야 하는데,
+  `recorded_at` 은 저장돼 있으면서 어디에도 나오지 않았습니다.
+
+  **나이("12일 전")나 임계값 경고는 내지 않습니다.** 그러려면 지금 시각을 읽어야 하고, 그러면 같은
+  세션의 같은 재생이 날마다 다른 출력을 냅니다 — 결정론이 이 도구의 핵심 가치입니다. 시각은 저장된
+  값이라 언제 읽어도 같습니다. 낡았는지는 사람이 판단합니다.
+
+  `toLocaleString` 을 쓰지 않고 ISO 를 잘라 `UTC` 로 표기합니다. 로캘·타임존에 따라 같은 세션이
+  기계마다 다른 문자열을 내지 않게 하려는 것입니다.
+
+  **이 도구는 외부 API 드리프트를 감지하지 않습니다.** 시각을 보여주는 것은 "언제 찍었는지" 이지
+  "그 사이 바뀌었는지" 가 아닙니다. 실제 재검증은 후속 과제입니다.
+
+- 8dc503e: **Breaking**: `@mcpeak/record` 에서 Tool 카세트 구현을 제거했습니다. 이 패키지는 이제 External
+  세션 전용입니다([ADR-0059](https://github.com/2026-Engineering-Contest/MCPeak/blob/main/docs/adr/0059-tool-카세트를-제거한다.md)).
+  `verify`·`replay`·`generate --cassette` 로 사용자 표면을 걷어낸 데 이은 마지막 조각입니다.
+
+  사라진 export:
+
+  - `cassetteClient` · `loadCassette` · `saveCassette` · `diffCassettes` · `droppedInteractionsMessage`
+  - `verifyCassette` · `matchKey` · `redact` · `stableStringify` · `CASSETTE_VERSION` · `REDACTED`
+  - 관련 타입 전부(`Cassette` · `CassetteInteraction` · `CassetteMode` · `CassetteClientOptions` ·
+    `CassetteDropReport` · `CassetteMismatch` · `CassetteVerifyResult`)
+
+  패키지 루트(`@mcpeak/record`)는 이제 `@mcpeak/record/external` 과 **같은 API** 를 냅니다 —
+  `startExternalCoordinator` · `createSqliteSessionStore` · `loadSession` ·
+  `ExternalRecordReplayError`. 서브패스로 부르던 코드는 그대로 동작합니다.
+
+  갈아탈 곳은 목적에 따라 갈립니다.
+
+  - 서버의 외부 HTTP 호출을 막고 싶다면 External 세션을 쓰세요 —
+    `mcpeak test <suite.json> --command <executable> --record-session <path>` 로 녹화하고
+    `--session <path>` 로 재생합니다. 서버는 실제로 뜨고 그 서버가 밖에 부르는 호출만 막힙니다.
+  - 서버 자체를 실행하지 않고 결정론적인 응답으로 테스트하려면 `@mcpeak/mock` 을 쓰세요.
+
+  `@mcpeak/core` 런타임 의존도 함께 제거했습니다. External 세션은 `McpClient` 를 감싸지 않아
+  core 타입을 쓰지 않습니다.
+
+### Patch Changes
+
+- 51a7193: External 세션의 `link`(RFC 8288)·`refresh` 응답 헤더에도 URL 경로 제거를 적용합니다
+  (ADR-0053 개정, #301). `location`·`content-location` 을 막은 뒤 남아 있던 잔여 유출 경로입니다.
+
+  값 전체가 아니라 **URL 부분만** 지웁니다. `link` 는 각 `<URI>` 를 응답 URL 기준으로 해석한 뒤
+  `https://host/<redacted>?…` 로 바꿉니다. 파라미터는 `rel` 이 등록 값(`next`·`prev`·`first`·`last`·
+  `self` 등)일 때만 원문으로 남깁니다 — pagination 진단(`rel="next"`)은 그대로 보입니다. 그 밖의
+  `rel` 값과 다른 파라미터(`title`·`type`·`anchor`·확장 파라미터)는 이름도 값도 문법상 임의
+  문자열이라 토큰을 가려낼 수 없으므로 이름째 `param=[redacted]` 로 씁니다. `refresh` 는 지연 초를 남기고 `url=` 의 URL 만 지웁니다.
+  문법대로 해석되지 않는 값은 통째로 `[redacted]` 입니다.
+
+  ```
+  Link: </services/T00/B00/XXXXSECRET?cursor=2>; rel="next"
+    → <https://hooks.example.com/<redacted>?cursor=2>; rel="next"
+  Refresh: 0; url=/hooks/REFRESHSECRET
+    → 0; url=https://hooks.example.com/<redacted>
+  ```
+
+  matchKey 와 Replay 매칭에는 영향이 없습니다. 이 변경 전에 녹화한 세션 파일에는 두 헤더의
+  경로가 원문으로 남아 있으므로 README 의 정리 절차를 따르세요.
+
+- 3f7692d: record: 재생 원본 판정을 둘로 가릅니다. 세션이 아예 없으면 `SESSION_NOT_FOUND`, 있는데 녹화가
+  완료되지 않았으면 `REPLAY_SOURCE_INVALID` 입니다. 사용자에게 보이는 문장에서 내부 세션 id
+  (`"default"`)를 뺐습니다 — 사용자가 준 적 없는 이름이라 무엇을 가리키는지 알 수 없었습니다.
+
+  cli: `test --session` 이 세션을 열지 못했을 때 원인마다 다른 문장을 보여주고, **사용자가 준
+  경로**를 함께 싣습니다. 그리고 없는 경로로 재생을 시도해도 **그 자리에 빈 세션 파일을 만들지
+  않습니다** — `node:sqlite` 가 경로를 생성해 버려서, 오타 한 번에 빈 DB 가 남고 두 번째 실행부터는
+  "파일이 없다" 는 진단이 거짓이 됐습니다.
+
+  이전에는 없는 파일·빈 세션·실패한 녹화가 모두 같은 두 문장으로 끝났고, 재생인데 쓰기 권한을
+  확인하라고 안내했습니다(#260).
+
 ## 0.3.0
 
 ### Minor Changes

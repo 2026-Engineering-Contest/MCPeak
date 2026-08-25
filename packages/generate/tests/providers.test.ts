@@ -156,7 +156,7 @@ describe("provider adapters", () => {
       { name: "authoring-output-schema.json", contents: expect.any(String) },
     ]);
   });
-  it("Claude를 safe mode와 빈 도구·MCP·session으로 호출한다", async () => {
+  it("Claude를 구버전 호환 인자와 빈 도구·MCP·session으로 호출한다 (#285)", async () => {
     const r = runner({
       ok: true,
       value: { ...claudeEnvelope({ status: "questions", questions: ["q"] }), noisy: "discard" },
@@ -167,7 +167,6 @@ describe("provider adapters", () => {
       command: "claude",
       args: [
         "-p",
-        "--safe-mode",
         "--model",
         "m",
         "--tools",
@@ -650,11 +649,9 @@ describe("provider adapters", () => {
     expect(failure).toMatchObject({ code: "nonZeroExit", reason: "unknownModel" });
   });
   it("claude 가 우리 옵션을 모르면 unknownOption 으로 분류하고 이름을 싣는다", async () => {
-    // #285: 2.1.148 은 --safe-mode 를 몰라 CLI 가 뜨기도 전에 죽는데, 근거가 하나도 안 남아
-    // 화면이 로그인·모델을 확인하라고 했다.
-    expect(await claudeClassification("", "error: unknown option '--safe-mode'")).toEqual({
+    expect(await claudeClassification("", "error: unknown option '--strict-mcp-config'")).toEqual({
       reason: "unknownOption",
-      option: "--safe-mode",
+      option: "--strict-mcp-config",
     });
   });
   it("codex 도 같은 규칙으로 분류한다", async () => {
@@ -692,7 +689,7 @@ describe("provider adapters", () => {
     expect(
       await claudeClassification(
         JSON.stringify(CLAUDE_UNKNOWN_MODEL_STDOUT),
-        "error: unknown option '--safe-mode'",
+        "error: unknown option '--strict-mcp-config'",
       ),
     ).toMatchObject({ reason: "unknownOption" });
   });
@@ -702,13 +699,13 @@ describe("provider adapters", () => {
       code: "nonZeroExit",
       exitCode: 1,
       reason: "unknownOption",
-      option: "--safe-mode",
+      option: "--strict-mcp-config",
     });
     const error = await createClaudeAuthoringProvider({ run: r.run, model: "m" })
       .author(preview().request, { timeoutMs: 1 })
       .then(() => undefined)
       .catch((thrown: unknown) => thrown);
-    expect(error).toMatchObject({ reason: "unknownOption", option: "--safe-mode" });
+    expect(error).toMatchObject({ reason: "unknownOption", option: "--strict-mcp-config" });
   });
 
   // 아래 둘은 진단 통로(T4)를 더해도 authoring 경로가 그대로인지 보는 확인용이다.

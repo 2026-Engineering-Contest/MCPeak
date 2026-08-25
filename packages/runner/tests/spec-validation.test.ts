@@ -730,3 +730,228 @@ describe("validateMcpSuite / approval.cases", () => {
     });
   });
 });
+
+/**
+ * 이슈 #352 — 검증 문장이 코드와 무관하게 같던 것을 코드별 문안으로 가른 뒤의 계약.
+ *
+ * 옛 `issue()` 는 모든 코드에 `명세 필드 'X'가 유효하지 않습니다.` 하나를 붙였다. 필드가 *없는*
+ * 것과 값이 *틀린* 것과 단언이 operation 과 *안 맞는* 것이 화면에서 구분되지 않았다.
+ */
+const OLD_FIXED_HINT = "명세 계약에 맞게 필드와 값을 확인하세요.";
+
+/** 코드마다 한 번씩은 나오도록 고른 표본. 13개 코드를 모두 덮는다. */
+const SAMPLES: readonly unknown[] = [
+  // MISSING_REQUIRED_FIELD · INCOMPATIBLE_ASSERTION — 이슈 본문의 재현 명세 그대로다.
+  {
+    id: "noschema",
+    name: "버전없음",
+    cases: [
+      {
+        id: "c1",
+        name: "t",
+        operation: { type: "listTools" },
+        assertions: [{ type: "isError", expected: false }],
+      },
+    ],
+  },
+  // UNSUPPORTED_SCHEMA_VERSION · UNKNOWN_FIELD · INVALID_VALUE · INVALID_TYPE ·
+  // INVALID_TIMEOUT · DUPLICATE_CASE_ID · EMPTY_ASSERTIONS
+  {
+    schemaVersion: 2,
+    id: "",
+    name: 42,
+    extra: true,
+    defaultTimeoutMs: 0,
+    cases: [
+      {
+        id: "dup",
+        name: "a",
+        operation: { type: "callTool", tool: "t", input: {} },
+        assertions: [{ type: "isError", expected: false }],
+      },
+      { id: "dup", name: "b", timeoutMs: -1, operation: { type: "listTools" }, assertions: [] },
+    ],
+  },
+  // EMPTY_CASES
+  { schemaVersion: 1, id: "s", name: "s", cases: [] },
+  // INVALID_JSON_VALUE
+  callToolSuite([
+    { type: "isError", expected: false },
+    { type: "isError", expected: false },
+  ]),
+  {
+    schemaVersion: 1,
+    id: "s",
+    name: "s",
+    cases: [
+      {
+        id: "c",
+        name: "c",
+        operation: { type: "callTool", tool: "t", input: { bad: Number.NaN } },
+        assertions: [{ type: "isError", expected: false }],
+      },
+    ],
+  },
+  // UNSUPPORTED_SCHEMA_KEYWORD · SCHEMA_KEYWORD_REQUIRES_TYPE
+  bodySuite({ wat: 1, minLength: 1 }),
+];
+
+/** 코드별로 처음 나온 문안. 표본 전체를 훑어 모은다. */
+const firstTextByCode = () => {
+  const texts = new Map<string, { message: string; hint: string }>();
+  for (const sample of SAMPLES) {
+    const result = validateMcpSuite(sample);
+    if (result.valid) continue;
+    for (const entry of result.issues)
+      if (!texts.has(entry.code))
+        texts.set(entry.code, { message: entry.message, hint: entry.hint });
+  }
+  return texts;
+};
+
+describe("명세 검증 문안 (이슈 #352)", () => {
+  it("없는 필드와 안 맞는 단언이 서로 다른 문장으로 나오고, 넣어야 할 값과 대조 대상을 싣는다", () => {
+    const issues = issuesOf(SAMPLES[0]);
+    const missing = issues.find((entry) => entry.code === "MISSING_REQUIRED_FIELD");
+    const incompatible = issues.find((entry) => entry.code === "INCOMPATIBLE_ASSERTION");
+
+    // schemaVersion 은 받는 값이 1 하나뿐이라 그대로 말할 수 있다.
+    expect(missing?.message).toBe("'schemaVersion' 필드가 없습니다. 받는 값: 1.");
+    // 대조의 양쪽 — operation 종류와 그 종류가 허용하는 단언 — 이 둘 다 실린다.
+    expect(incompatible?.message).toBe(
+      "'listTools' operation 은 'isError' 단언을 받지 않습니다. 허용: toolExists",
+    );
+    expect(missing?.message).not.toBe(incompatible?.message);
+    expect(missing?.hint).not.toBe(incompatible?.hint);
+  });
+
+  it("13개 코드가 저마다 다른 문장을 낸다", () => {
+    const texts = firstTextByCode();
+    // 표본이 코드를 다 덮지 못하면 이 테스트가 통과해도 의미가 없다. 덮는지부터 고정한다.
+    expect(texts.size).toBe(13);
+    expect(new Set([...texts.values()].map((text) => text.message)).size).toBe(13);
+  });
+
+  it("옛 고정 문안이 어디에도 남아 있지 않다", () => {
+    for (const [code, text] of firstTextByCode()) {
+      expect(text.message, code).not.toMatch(/명세 필드 '.*'가 유효하지 않습니다\./);
+      expect(text.hint, code).not.toBe(OLD_FIXED_HINT);
+    }
+  });
+
+  it("모르는 필드는 그 자리가 받는 필드 목록을 함께 낸다", () => {
+    const unknown = issuesOf({ ...validSuite, wheather: true }).find(
+      (entry) => entry.code === "UNKNOWN_FIELD",
+    );
+    expect(unknown?.path).toBe("wheather");
+    expect(unknown?.hint).toBe(
+      "오타가 아니면 지우세요. 이 자리가 받는 필드: approval, cases, defaultTimeoutMs, id, name, schemaVersion",
+    );
+  });
+
+  it("단언 type 이 문자열이 아니면 무엇을 받는지로 말을 바꾼다", () => {
+    const issues = issuesOf(callToolSuite([{ expected: false }]));
+    expect(issues.find((entry) => entry.code === "INCOMPATIBLE_ASSERTION")?.message).toBe(
+      "단언에 type 이 없거나 문자열이 아닙니다. 'callTool' operation 이 받는 단언: isError, bodyMatchesSchema",
+    );
+  });
+
+  it("모르는 operation 종류에서는 대조할 오른쪽이 없다고 말한다", () => {
+    // operation.type 이 목록 밖이면 허용 단언 목록 자체가 없다. 없는 목록을 지어내지 않는다.
+    const issues = issuesOf({
+      schemaVersion: 1,
+      id: "s",
+      name: "s",
+      cases: [
+        {
+          id: "c",
+          name: "c",
+          operation: { type: "nope" },
+          assertions: [{ type: "isError", expected: false }],
+        },
+      ],
+    });
+    const incompatible = issues.find((entry) => entry.code === "INCOMPATIBLE_ASSERTION");
+    expect(incompatible?.message).toBe(
+      "'nope' operation 은 아는 종류가 아니라 단언을 대조할 수 없습니다.",
+    );
+    expect(incompatible?.hint).toBe("operation.type 을 listTools 또는 callTool 로 바꾸세요.");
+  });
+
+  it("타임아웃은 받는 범위를 낸다", () => {
+    const timeout = issuesOf({ ...validSuite, defaultTimeoutMs: 0 }).find(
+      (entry) => entry.code === "INVALID_TIMEOUT",
+    );
+    expect(timeout?.message).toBe("'defaultTimeoutMs' 필드가 타임아웃 값이 아닙니다. 받은 값: 0.");
+    expect(timeout?.hint).toBe("1 이상 2147483647 이하의 정수 밀리초를 넣으세요.");
+  });
+
+  it("긴 값과 지문은 화면에 싣지 않는다", () => {
+    // 33자 이상 문자열은 타입 이름으로 줄인다. 한 줄이 값 하나에 먹히면 안 된다.
+    const long = issuesOf({ ...validSuite, id: `  ${" ".repeat(40)}` }).find(
+      (entry) => entry.code === "INVALID_VALUE",
+    );
+    expect(long?.message).toBe("'id' 필드의 값이 계약을 벗어납니다. 받은 값: string.");
+
+    // 지문은 64자다. 형식만 말하고 값은 싣지 않는다.
+    const fingerprint = issuesOf(approvalSuite({ fingerprint: "A".repeat(64) })).find(
+      (entry) => entry.path === "approval.fingerprint",
+    );
+    expect(fingerprint?.message).toBe("'approval.fingerprint' 필드의 값이 계약을 벗어납니다.");
+    expect(fingerprint?.hint).toBe(
+      "'approval.fingerprint' 필드가 받는 값: sha256 hex 64자 (소문자)",
+    );
+  });
+
+  it("JSON 이 담지 못하는 값은 원인마다 다른 문장으로 나온다", () => {
+    const suite = (input: unknown) => ({
+      schemaVersion: 1,
+      id: "s",
+      name: "s",
+      cases: [
+        {
+          id: "c",
+          name: "c",
+          operation: { type: "callTool", tool: "t", input },
+          assertions: [{ type: "isError", expected: false }],
+        },
+      ],
+    });
+    const messageOf = (input: unknown) =>
+      issuesOf(suite(input)).find((entry) => entry.code === "INVALID_JSON_VALUE")?.message;
+
+    expect(messageOf({ n: Number.NaN })).toBe(
+      "'cases[0].operation.input.n' 자리에 JSON 이 담지 못하는 수가 있습니다. 받은 값: NaN.",
+    );
+    expect(messageOf({ fn: () => 1 })).toBe(
+      "'cases[0].operation.input.fn' 자리에 JSON 으로 옮길 수 없는 값이 있습니다. 받은 값: function.",
+    );
+    expect(messageOf(7)).toBe(
+      "'cases[0].operation.input' 자리가 받는 값은 JSON 객체 하나입니다. 받은 값: number.",
+    );
+
+    const cyclic: Record<string, unknown> = {};
+    cyclic.self = cyclic;
+    expect(messageOf(cyclic)).toBe(
+      "'cases[0].operation.input.self' 자리에서 값이 자기 자신을 참조해 순환합니다.",
+    );
+  });
+
+  it("issueWith 로 이미 전용 문안을 쓰던 자리는 글자 그대로 남는다", () => {
+    const issues = issuesOf(bodySuite({ wat: 1, minLength: 1 }));
+    expect(issues.find((entry) => entry.code === "UNSUPPORTED_SCHEMA_KEYWORD")?.message).toBe(
+      "지원하지 않는 스키마 키워드입니다.",
+    );
+    expect(issues.find((entry) => entry.code === "SCHEMA_KEYWORD_REQUIRES_TYPE")?.message).toBe(
+      "'minLength'은 type이 string일 때만 쓸 수 있습니다.",
+    );
+  });
+
+  it("같은 입력에 같은 문안이 나온다", () => {
+    for (const sample of SAMPLES) {
+      const first = validateMcpSuite(sample);
+      const second = validateMcpSuite(sample);
+      expect(first).toEqual(second);
+    }
+  });
+});

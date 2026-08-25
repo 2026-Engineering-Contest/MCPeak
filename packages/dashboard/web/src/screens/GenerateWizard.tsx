@@ -1,5 +1,5 @@
 import type { JSX } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type {
   ServerCandidate,
   ServerMeta,
@@ -151,6 +151,12 @@ export function GenerateWizard(): JSX.Element {
   const [recentCommands] = useState<readonly string[]>(() => readRecentCommands());
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * 사용자가 1단계를 한 번이라도 만졌는가. 후보 조회가 늦게 끝나면 첫 후보를 자동 선택하는데,
+   * 그 사이 사용자가 직접 입력을 시작했으면 덮어쓰지 않는다. 덮어쓰면 직접 입력 폼이 사라지고
+   * 실행 대상·제안값이 조용히 바뀐다(#366 리뷰).
+   */
+  const touched = useRef(false);
 
   useEffect(() => {
     apiGet<ServerMeta>("/api/meta")
@@ -165,6 +171,10 @@ export function GenerateWizard(): JSX.Element {
           return;
         }
         // 초기 선택은 첫 후보다(설계 §5-1). 저장 위치·스위트 제안도 이때 함께 찬다.
+        // 단, 사용자가 이미 손댔으면 그대로 둔다.
+        if (touched.current) {
+          return;
+        }
         setState((previous) =>
           applyPatch(
             previous,
@@ -185,6 +195,7 @@ export function GenerateWizard(): JSX.Element {
   const http = state.transport === "http";
 
   function patch(partial: Partial<WizardState>): void {
+    touched.current = true;
     setState((previous) => applyPatch(previous, partial, candidates));
   }
 

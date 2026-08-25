@@ -314,6 +314,35 @@ describe("GenerateWizard", () => {
     );
   });
 
+  it("후보 조회가 늦게 끝나도 이미 시작한 직접 입력을 덮어쓰지 않는다", async () => {
+    // `/api/servers` 만 늦춘다. 사용자가 그 사이 직접 입력을 시작하는 상황이다.
+    let resolveServers: (value: Response) => void = () => {};
+    const servers = new Promise<Response>((resolve) => {
+      resolveServers = resolve;
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url === "/api/servers") return servers;
+        if (url === "/api/meta") return new Response(JSON.stringify(META), { status: 200 });
+        return new Response("[]", { status: 200 });
+      }),
+    );
+    render(<GenerateWizard />);
+    await screen.findByText("/repo");
+
+    fireEvent.change(screen.getByLabelText("서버 스크립트"), { target: { value: "server.js" } });
+
+    resolveServers(new Response(JSON.stringify([WEATHER]), { status: 200 }));
+    await screen.findByText("프로젝트에서 1개 찾음");
+
+    // 직접 입력 갈래와 그 값이 그대로다. 첫 후보가 자동 선택되지 않았다.
+    expect(screen.getByLabelText("서버 스크립트")).toHaveProperty("value", "server.js");
+    expect(screen.getByRole("radio", { name: /직접 입력/ })).toHaveProperty("checked", true);
+    expect(screen.getByRole("radio", { name: /weather/ })).toHaveProperty("checked", false);
+  });
+
   it("후보 0 이면 안내 상자와 직접 입력이 펼쳐진 채 시작한다", async () => {
     await renderWizard();
 

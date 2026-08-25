@@ -1,7 +1,7 @@
 import {
   checkAssertionSubstance,
   checkInputContract,
-  DEFAULT_SENSITIVE_KEYS,
+  isSensitiveKey,
   REDACTED,
   type RunnerRedactionOptions,
   type TestSuiteSpec,
@@ -24,6 +24,7 @@ import {
   redactAuthoringSuite,
   SUITE_CONTRACT_PATHS,
   sanitizeRedactable,
+  sensitiveKeySet,
   TOOL_CONTRACT_PATHS,
 } from "./redaction.js";
 
@@ -192,18 +193,25 @@ const redacted = (
   options?: RunnerRedactionOptions,
   contractPath?: RedactionPathGuard,
 ): unknown => sanitizeRedactable(value, options, contractPath);
-function escapeRegex(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
+/**
+ * 자유 텍스트의 `이름: 값` · `이름=값` 꼴. 이름은 식별자 문자(구분자 `-`·`_` 포함), 값은 공백·
+ * 쉼표·세미콜론 전까지다. 값의 경계는 이전 구현과 같다.
+ */
+const NAMED_VALUE = /([A-Za-z][A-Za-z0-9_-]*)(\s*[=:]\s*)([^\s,;]+)/g;
+/**
+ * 자유 텍스트(provider 의 summary·warnings·questions)를 가린다. 구조가 없어 `이름: 값` 꼴을
+ * 찾아 이름을 판정한다. 판정은 구조화된 값과 같은 runner 의 `isSensitiveKey` 다. 이전에는
+ * 목록 항목을 부분 문자열로 찾아 `sessionToken:` 은 걸리고 `tokens=` 는 안 걸리는 식으로
+ * 구조화된 값과 규칙이 달랐다(#368).
+ */
 function redactText(value: string, options?: RunnerRedactionOptions): string {
   let result = value;
   for (const sensitiveValue of options?.sensitiveValues ?? [])
     if (sensitiveValue.length > 0) result = result.split(sensitiveValue).join(REDACTED);
-  for (const key of [...DEFAULT_SENSITIVE_KEYS, ...(options?.sensitiveKeys ?? [])]) {
-    const expression = new RegExp(`(${escapeRegex(key)}\\s*[=:]\\s*)[^\\s,;]+`, "gi");
-    result = result.replace(expression, `$1${REDACTED}`);
-  }
-  return result;
+  const keys = sensitiveKeySet(options);
+  return result.replace(NAMED_VALUE, (matched, name: string, separator: string) =>
+    isSensitiveKey(keys, name) ? `${name}${separator}${REDACTED}` : matched,
+  );
 }
 /**
  * provider 오류를 화면에 내보낼 수 있는 닫힌 형태로 접는다.

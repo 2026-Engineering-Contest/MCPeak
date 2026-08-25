@@ -1528,6 +1528,59 @@ describe("입력 계약 참고 문장", () => {
     expect(out.stdout).toContain("참고: id-number 의 입력이 서버 선언과 다릅니다");
     expect(out.stdout).toContain("input.id 의 타입이 다릅니다");
   });
+  it("유니코드 정규식에서 다른 글자는 대소문자 변형으로 오인하지 않는다 (#356)", async () => {
+    const iTools: ToolDef[] = [
+      {
+        name: "get_weather",
+        inputSchema: {
+          type: "object",
+          properties: { i: { type: "string" } },
+          required: ["i"],
+        },
+      },
+    ];
+    const out = await runTest({
+      suite: suiteOf(callCase("unicode-i", { i: 12345 }, 1)),
+      tools: iTools,
+      statuses: { "unicode-i": "failed" },
+      serverNotes: { "unicode-i": ["İ 는 string 이어야 하지만 number 를 받았습니다."] },
+    });
+    expect(out.stdout).toContain("참고: unicode-i 의 입력이 서버 선언과 다릅니다");
+    expect(out.stdout).toContain("input.i 의 타입이 다릅니다");
+  });
+  it("서로 겹친 marker 후보도 다음 코드 포인트부터 다시 검사한다 (#356)", async () => {
+    const overlappingTools: ToolDef[] = [
+      {
+        name: "get_weather",
+        inputSchema: {
+          type: "object",
+          properties: { "a-a-": { type: "string" } },
+          required: ["a-a-"],
+        },
+      },
+    ];
+    const out = await runTest({
+      suite: suiteOf(callCase("overlap", { "a-a-": 12345 }, 1)),
+      tools: overlappingTools,
+      statuses: { overlap: "failed" },
+      serverNotes: { overlap: ["a-a-a- 는 string 이어야 하지만 number 를 받았습니다."] },
+    });
+    expect(out.stdout).not.toContain("참고: overlap 의 입력이 서버 선언과 다릅니다");
+    expect(out.stdout).not.toContain("input.a-a- 의 타입이 다릅니다");
+  });
+  it("길이 제한을 넘는 진단 문장은 중복 근거로 사용하지 않는다 (#356)", async () => {
+    const typeMismatchSuite = suiteOf(callCase("long-note", { city: 12345 }, 1));
+    const out = await runTest({
+      suite: typeMismatchSuite,
+      tools: weatherTools,
+      statuses: { "long-note": "failed" },
+      serverNotes: {
+        "long-note": [`${"x".repeat(201)} city 는 string 이어야 하지만 number 를 받았습니다.`],
+      },
+    });
+    expect(out.stdout).toContain("참고: long-note 의 입력이 서버 선언과 다릅니다");
+    expect(out.stdout).toContain("input.city 의 타입이 다릅니다");
+  });
   it("한 타입 finding 만 서버 응답과 겹치면 나머지 입력 finding 은 남긴다 (#350)", async () => {
     const mixedSuite = suiteOf(callCase("mixed", { city: 12345, extra: "x" }, 1));
     const out = await runTest({

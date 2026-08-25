@@ -25,6 +25,7 @@ import type {
 import {
   describeDeterminismDifference,
   describeSpecFinding,
+  MAX_VALUE_STRING_CHARS,
   checkAssertionSubstance as runnerCheckAssertionSubstance,
   checkDeterminism as runnerCheckDeterminism,
   checkInputContract as runnerCheckInputContract,
@@ -588,6 +589,51 @@ const FINDING_GROUP_ORDER: readonly FindingGroup[] = [
   "skipped",
 ];
 
+const WORD_CHARACTER = /[\p{L}\p{N}_]/u;
+const SAME_UNICODE_CASE_FOLDED_CHARACTER = /^(.)\1$/iu;
+
+/** 두 유니코드 코드 포인트가 정규식의 `/iu` 대소문자 규칙에서 같은지 판정한다. */
+const sameUnicodeCaseFoldedCharacter = (left: string, right: string): boolean =>
+  SAME_UNICODE_CASE_FOLDED_CHARACTER.test(left + right);
+
+/** limit 를 넘기기 전에 순회를 멈춰 신뢰하지 않는 진단 문자열의 메모리 사용을 제한한다. */
+const codePointsWithinLimit = (value: string, limit: number): string[] | undefined => {
+  const points: string[] = [];
+  for (const point of value) {
+    if (points.length === limit) return undefined;
+    points.push(point);
+  }
+  return points;
+};
+
+/**
+ * 진단 문장에서 독립된 marker 를 찾는다. runner 가 보장하는 진단 문자열 길이를 넘으면
+ * 임의로 자른 경계에서 오탐하지 않도록 중복이 아니라고 보수적으로 판정한다.
+ */
+const containsWholeDiagnosticMarker = (note: string, marker: string): boolean => {
+  if (marker === "") return false;
+  const notePoints = codePointsWithinLimit(note, MAX_VALUE_STRING_CHARS);
+  if (notePoints === undefined) return false;
+  const markerPoints = codePointsWithinLimit(marker, notePoints.length);
+  if (markerPoints === undefined) return false;
+
+  for (let start = 0; start <= notePoints.length - markerPoints.length; start += 1) {
+    const matches = markerPoints.every((point, offset) =>
+      sameUnicodeCaseFoldedCharacter(notePoints[start + offset] ?? "", point),
+    );
+    if (!matches) continue;
+
+    const before = notePoints[start - 1];
+    const after = notePoints[start + markerPoints.length];
+    if (
+      (before === undefined || !WORD_CHARACTER.test(before)) &&
+      (after === undefined || !WORD_CHARACTER.test(after))
+    )
+      return true;
+  }
+  return false;
+};
+
 /**
  * 서버 응답 본문이 이미 타입 위반을 설명했는지 보수적으로 판정한다(#350).
  *
@@ -620,32 +666,13 @@ const responseRepeatsTypeMismatch = (finding: SpecFinding, item: TestCaseResult)
       : typeof actualValue === "string"
         ? actualValue
         : JSON.stringify(actualValue);
-  const has = (note: string, value: string): boolean => {
-    if (value === "") return false;
-    const normalizedNote = note.toLocaleLowerCase("en-US");
-    const normalizedValue = value.toLocaleLowerCase("en-US");
-    const wordCharacter = /[\p{L}\p{N}_]/u;
-    let start = 0;
-    while (start <= normalizedNote.length - normalizedValue.length) {
-      const index = normalizedNote.indexOf(normalizedValue, start);
-      if (index === -1) return false;
-      const before = Array.from(normalizedNote.slice(0, index)).at(-1);
-      const after = Array.from(normalizedNote.slice(index + normalizedValue.length))[0];
-      if (
-        (before === undefined || !wordCharacter.test(before)) &&
-        (after === undefined || !wordCharacter.test(after))
-      )
-        return true;
-      start = index + normalizedValue.length;
-    }
-    return false;
-  };
 
   return notes.some(
     (note) =>
-      has(note, field) &&
-      has(note, expected) &&
-      (has(note, actualType) || (actualValueText !== undefined && has(note, actualValueText))),
+      containsWholeDiagnosticMarker(note, field) &&
+      containsWholeDiagnosticMarker(note, expected) &&
+      (containsWholeDiagnosticMarker(note, actualType) ||
+        (actualValueText !== undefined && containsWholeDiagnosticMarker(note, actualValueText))),
   );
 };
 /** 결정론성 결과 블록의 머리글. 설계 문서 §8. */

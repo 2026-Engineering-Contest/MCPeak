@@ -426,22 +426,21 @@ describe("Home 실행 마법사", () => {
     expect(argv).toContain("tmp/s.db");
   });
 
-  it("재생을 고르면 --session 으로 간다 — 두 옵션이 함께 실리지 않는다", async () => {
-    const fetchMock = stubFetch();
+  /**
+   * 재생은 이 화면에서 고르지 않는다. 출발점이 스위트가 아니라 녹화본이라 Replay 탭이
+   * 목록에서 시작하고, 거기서는 서버·스위트가 세션의 출처로 채워진다(ADR-0085). 여기 남겨
+   * 두면 같은 일을 하는 자리가 둘이 되고 그중 하나는 경로를 손으로 적어야 하는 쪽이다.
+   *
+   * `--session` 을 싣는 계약 자체는 `build-test-argv.test.ts` 가 본다 — Replay 탭이 쓴다.
+   */
+  it("실행 옵션에 재생 선택지가 없다", async () => {
+    stubFetch();
     render(<Home />);
     await goToOptions();
-    // 녹화를 먼저 골랐다가 재생으로 바꾼다. 세그먼트라 앞 선택이 남으면 안 된다.
-    fireEvent.click(screen.getByRole("button", { name: "외부 호출 녹화" }));
-    fireEvent.click(screen.getByRole("button", { name: "녹화본 재생" }));
-    fireEvent.change(screen.getByLabelText("세션 파일 경로"), { target: { value: "tmp/s.db" } });
-    fireEvent.click(screen.getByRole("button", { name: "실행 시작" }));
 
-    await waitFor(() => {
-      expect(window.location.hash).toBe("#/runs/run-new");
-    });
-    const argv = postedArgv(fetchMock);
-    expect(argv).toContain("--session");
-    expect(argv).not.toContain("--record-session");
+    expect(screen.getByRole("button", { name: "사용 안 함" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "외부 호출 녹화" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "녹화본 재생" })).toBeNull();
   });
 
   it("조립 실패 사유가 미리보기 자리에 나오고 실행 버튼이 비활성이다", async () => {

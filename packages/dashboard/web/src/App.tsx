@@ -6,6 +6,7 @@ import { ThemeToggle } from "./components/ThemeToggle.js";
 import { GenerateWizard } from "./screens/GenerateWizard.js";
 import { Home } from "./screens/Home.js";
 import { RepairReview } from "./screens/RepairReview.js";
+import { ReplayView } from "./screens/ReplayView.js";
 import { RunView } from "./screens/RunView.js";
 
 /**
@@ -23,6 +24,7 @@ type Route =
   | { readonly screen: "home" }
   | { readonly screen: "runs"; readonly runId: string | null }
   | { readonly screen: "generate" }
+  | { readonly screen: "replay" }
   | { readonly screen: "repair"; readonly runId: string | null }
   | { readonly screen: "redirect" };
 
@@ -54,6 +56,9 @@ function parseRoute(hash: string): Route {
   if (first === "generate") {
     return { screen: "generate" };
   }
+  if (first === "replay") {
+    return { screen: "replay" };
+  }
   if (first === "repair") {
     return {
       screen: "repair",
@@ -68,6 +73,7 @@ const HEADER_TITLES: Record<NavId, string> = {
   home: "Test",
   runs: "Runs",
   generate: "Generate",
+  replay: "Replay",
   repair: "Repair",
 };
 
@@ -125,6 +131,8 @@ function Screen({
       return <RunView runId={route.runId} />;
     case "generate":
       return <GenerateWizard />;
+    case "replay":
+      return <ReplayView />;
     case "repair":
       return <RepairReview runId={route.runId} />;
   }

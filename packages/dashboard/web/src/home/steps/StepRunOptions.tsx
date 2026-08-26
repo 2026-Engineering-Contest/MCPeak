@@ -5,17 +5,26 @@ import { DETERMINISM_SESSION_HINT, TestOptionsPanel } from "../../components/Tes
 import { Field, INPUT_CLASS } from "../../generate/steps/fields.js";
 import type { LastRun } from "../../last-run.js";
 
-/** External 세션 세그먼트. 라벨이 곧 사용자가 이 기능을 배우는 자리다. */
-const SESSION_LABELS: Record<SessionMode, string> = {
+/**
+ * External 세션 세그먼트. 라벨이 곧 사용자가 이 기능을 배우는 자리다.
+ *
+ * **재생은 여기서 고르지 않는다.** 재생의 출발점은 스위트가 아니라 녹화본이라 Replay 탭이
+ * 목록에서 골라 시작한다 — 거기서는 서버·스위트가 세션에 저장된 출처로 채워지므로(ADR-0085)
+ * 사용자가 다시 지목할 것이 없다. 이 화면에 남겨 두면 같은 일을 하는 자리가 둘이 되고,
+ * 그중 하나는 사용자가 세션 파일 경로를 손으로 적어야 하는 나쁜 쪽이다.
+ *
+ * `SessionMode` 의 `replay` 자체는 남는다 — `buildTestArgv` 는 Replay 탭도 쓴다.
+ */
+const TEST_SESSION_MODES = ["off", "record"] as const satisfies readonly SessionMode[];
+
+const SESSION_LABELS: Record<(typeof TEST_SESSION_MODES)[number], string> = {
   off: "사용 안 함",
   record: "외부 호출 녹화",
-  replay: "녹화본 재생",
 };
 
-const SESSION_HINTS: Record<SessionMode, string> = {
+const SESSION_HINTS: Record<(typeof TEST_SESSION_MODES)[number], string> = {
   off: "서버가 부르는 외부 API 를 그대로 둡니다.",
   record: "서버가 부른 외부 API 응답을 세션 파일에 남깁니다. 이번 실행은 실제로 호출합니다.",
-  replay: "세션 파일에 녹화된 응답으로 외부 호출을 대신합니다. 서버는 실제로 실행됩니다.",
 };
 
 const HTTP_SESSION_HINT =
@@ -98,7 +107,7 @@ export function StepRunOptions(props: {
       <div>
         <p className="mb-2 text-sm font-medium text-ink">External 세션</p>
         <fieldset className="inline-flex overflow-hidden rounded-md border border-line">
-          {(Object.keys(SESSION_LABELS) as readonly SessionMode[]).map((mode) => (
+          {TEST_SESSION_MODES.map((mode) => (
             <button
               key={mode}
               type="button"
@@ -120,7 +129,9 @@ export function StepRunOptions(props: {
             ? HTTP_SESSION_HINT
             : props.options.determinism
               ? DETERMINISM_SESSION_HINT
-              : SESSION_HINTS[props.sessionMode]}
+              : // `replay` 는 이 화면에서 고를 수 없다. 그래도 형이 허용하므로 `off` 로 떨어뜨린다.
+                (SESSION_HINTS[props.sessionMode as (typeof TEST_SESSION_MODES)[number]] ??
+                SESSION_HINTS.off)}
         </p>
       </div>
 
@@ -128,11 +139,8 @@ export function StepRunOptions(props: {
         <Field
           label="세션 파일 경로"
           htmlFor="home-run-session-path"
-          hint={
-            props.sessionMode === "record"
-              ? "새 파일 경로를 적습니다. 이미 녹화가 있는 파일은 덮어쓰지 않고 거절합니다."
-              : "녹화해 둔 세션 파일을 짚습니다."
-          }
+          // 이 화면에서 세션을 켜는 길은 녹화뿐이라 갈래가 하나다(재생은 Replay 탭).
+          hint="새 파일 경로를 적습니다. 이미 녹화가 있는 파일은 덮어쓰지 않고 거절합니다."
         >
           <input
             id="home-run-session-path"

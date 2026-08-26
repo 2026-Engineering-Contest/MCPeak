@@ -1,5 +1,20 @@
 # ohmymcp
 
+## 0.12.0
+
+### Minor Changes
+
+- 72fc934: `--record-session` 녹화가 스위트 경로·서버 명령·인자를 세션 파일에 함께 남깁니다(ADR-0085).
+  재생 쪽 CLI 표면은 바뀌지 않으며, 이 정보는 대시보드 Replay 가 원클릭 재생의 재료로 읽습니다.
+- b05cb58: 대시보드의 generate 검토 하위 입력에 `검토 메뉴로 돌아가기` 버튼을 추가합니다. 모델, AI 요청,
+  피드백, change 선택, JSON 편집 입력을 잘못 열어도 실행을 취소하지 않고 상위 검토 메뉴로 돌아갈
+  수 있습니다.
+
+### Patch Changes
+
+- Updated dependencies [b0a63f1]
+  - @mcpeak/record@0.5.0
+
 ## 0.11.0
 
 ### Minor Changes

@@ -1,5 +1,15 @@
 # @ohmymcp-hsu/record
 
+## 0.5.0
+
+### Minor Changes
+
+- b0a63f1: 세션이 자기를 재생할 명령을 담습니다(ADR-0085). 녹화 시작 시 서버 명령·인자·스위트 경로를
+  `SessionOrigin` 으로 받아 세션 파일에 함께 저장하고, `read()`·`loadSession` 스냅샷에
+  `origin` 으로 싣습니다. 저장 포맷은 store version 2 로 오르지만 v1 세션도 그대로 읽히며
+  (출처만 없음), v1 파일은 실제로 새 세션을 만드는 순간에만 현재 버전으로 올립니다 — 여는
+  것만으로는 사용자 파일을 바꾸지 않습니다.
+
 ## 0.4.0
 
 ### Minor Changes

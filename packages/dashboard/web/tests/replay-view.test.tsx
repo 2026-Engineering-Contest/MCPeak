@@ -211,11 +211,11 @@ describe("Replay 화면", () => {
   });
 
   /** 「명세 확인」(스위트 목록)과 같은 라벨 토글이다 — 열림 여부를 아이콘이 아니라 문구가 말한다. */
-  it("경로 고치기 버튼이 패널을 열고 닫는다", async () => {
+  it("수정 버튼이 패널을 열고 닫는다", async () => {
     mockApi([session()]);
 
     render(<ReplayView />);
-    fireEvent.click(await screen.findByRole("button", { name: "경로 고치기" }));
+    fireEvent.click(await screen.findByRole("button", { name: "수정" }));
     expect(screen.getByLabelText("스위트 경로")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "닫기" }));

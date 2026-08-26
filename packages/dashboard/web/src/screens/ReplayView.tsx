@@ -287,7 +287,7 @@ function SessionRow(props: {
           className="shrink-0 rounded border border-line px-3 py-1 text-xs text-ink-muted"
           onClick={props.onToggle}
         >
-          {props.expanded ? "닫기" : "경로 고치기"}
+          {props.expanded ? "닫기" : "수정"}
         </button>
 
         <button

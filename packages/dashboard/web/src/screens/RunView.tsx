@@ -486,8 +486,17 @@ export function RunView({ runId }: RunViewProps): JSX.Element {
     바깥 높이가 정해져 있어야 한다. 목록 상태(`RunList`)는 그대로 흐르게 둔다 — 실행이
     많아지면 길어지는 것이 맞다.
   */
+  /*
+    `min-h-[400px]` 은 **아주 낮은 창을 위한 바닥**이다. 이 화면은 뷰포트를 채우도록 `h-full`
+    인데, 창이 그보다 낮으면 로그 패널이 헤더+질문 패널보다도 작아진다. 패널은
+    `overflow-hidden` 이라 그렇게 넘친 것은 스크롤되지 않고 **잘려서 꺼내 볼 수 없다.**
+    바닥을 두면 그때는 이 화면이 `main` 보다 커져 바깥이 스크롤된다 — 좁지만 잃는 것은 없다.
+
+    400 은 위 세 줄(제목·상태·대상)과 패널 헤더에 질문 패널이 가장 클 때를 더한 값이다.
+    보통 크기의 창에서는 `h-full` 이 이보다 크므로 이 값이 쓰이지 않는다.
+  */
   return (
-    <section className="flex h-full min-h-0 flex-col gap-4">
+    <section className="flex h-full min-h-[400px] flex-col gap-4">
       <div className="flex shrink-0 items-center gap-3">
         <a className="text-sm text-accent hover:underline" href="#/runs">
           ← Runs

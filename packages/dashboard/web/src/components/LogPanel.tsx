@@ -108,10 +108,14 @@ export function LogPanel(props: {
       <div
         ref={bodyRef}
         /*
-          `min-h-[6rem]` 은 바닥이다. 질문 패널이나 repair 폼이 아주 길면 본문이 0 까지
-          줄어 로그가 사라질 수 있는데, 그때는 차라리 바깥이 스크롤되는 편이 낫다.
+          **바닥값을 두지 않는다.** 이 패널은 `overflow-hidden` 이라 넘친 것이 스크롤되지 않고
+          잘리는데, 본문에 최소 높이를 주면 창이 낮을 때 헤더+본문+푸터가 패널을 넘겨 질문
+          패널 아래가 잘렸다 — 잘린 것은 꺼내 볼 방법이 없다.
+
+          줄어드는 몫은 전부 본문이 받는다(헤더·푸터는 `shrink-0`). 본문은 어차피 자기 안에서
+          스크롤하므로 좁아질 뿐 내용을 잃지 않고, 답해야 하는 질문 패널은 온전히 남는다.
         */
-        className="scrollbar-terminal min-h-[6rem] flex-1 overflow-auto whitespace-pre-wrap p-4 font-mono"
+        className="scrollbar-terminal flex-1 overflow-auto whitespace-pre-wrap p-4 font-mono"
         style={{ color: "var(--terminal-fg)", fontSize: 13, lineHeight: 1.85 }}
         onScroll={(event) => {
           const body = event.currentTarget;

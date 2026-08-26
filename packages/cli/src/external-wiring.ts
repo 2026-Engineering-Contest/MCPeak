@@ -1,5 +1,9 @@
 import { existsSync } from "node:fs";
-import type { ExternalCoordinatorHandle, SessionSummary } from "@mcpeak/record/external";
+import type {
+  ExternalCoordinatorHandle,
+  SessionOrigin,
+  SessionSummary,
+} from "@mcpeak/record/external";
 
 /**
  * `@mcpeak/record/external` 은 **세션 옵션을 실제로 쓸 때만** 불러온다.
@@ -31,6 +35,11 @@ export interface ExternalWiringOptions {
   readonly mode: ExternalMode;
   /** 세션 파일 경로. 파일 하나가 세션 하나다. */
   readonly sessionPath: string;
+  /**
+   * 녹화를 시작한 실행의 서버 명령·스위트(ADR-0085). 녹화에서만 의미가 있고, 세션 파일에
+   * 함께 저장돼 재생이 세션 파일 하나로 시작할 수 있게 한다. 재생에서는 무시된다.
+   */
+  readonly origin?: SessionOrigin;
   /**
    * 호출자가 이미 쓰고 있는 `NODE_OPTIONS`. Coordinator 가 Bootstrap 주입을 여기에
    * **덧붙인다.** 덮어쓰면 사용자가 걸어 둔 다른 `--import` 나 힙 설정이 조용히 사라진다.
@@ -88,6 +97,7 @@ export async function startExternalWiring(options: ExternalWiringOptions): Promi
             mode: "record",
             sessionId: SESSION_ID,
             store,
+            ...(options.origin === undefined ? {} : { origin: options.origin }),
             ...(options.existingNodeOptions === undefined
               ? {}
               : { existingNodeOptions: options.existingNodeOptions }),

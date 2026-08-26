@@ -5,7 +5,7 @@ import type { McpHttpConnection, McpStdioConnection } from "@mcpeak/core";
  * ADR-0056 이 좁혀 둔 실험 경고가 모든 실행에 다시 붙는다. `import type` 은 컴파일에서
  * 지워지므로 `external-wiring.ts` 의 동적 로딩이 그대로 유지된다.
  */
-import type { ReplayMissDetail, SessionSummary } from "@mcpeak/record/external";
+import type { ReplayMissDetail, SessionOrigin, SessionSummary } from "@mcpeak/record/external";
 import type {
   CheckDeterminismOptions,
   DeterminismResult,
@@ -2061,6 +2061,7 @@ export async function runCli(
     wiring = await startExternalWiring({
       mode: mode.mode,
       sessionPath: mode.path,
+      ...(mode.origin === undefined ? {} : { origin: mode.origin }),
       existingNodeOptions: process.env.NODE_OPTIONS,
     });
   } catch (error) {
@@ -2121,9 +2122,13 @@ export async function runCli(
  * 파싱 오류는 여기서 삼킨다. 배선은 파싱보다 먼저 서지만 **오류 보고는 기존 경로의 몫**이다.
  * 여기서 던지면 `--session` 이 붙었다는 이유만으로 오류 문구가 달라진다.
  */
-function externalModeOf(
-  argv: readonly string[],
-): { readonly mode: ExternalMode; readonly path: string } | undefined {
+function externalModeOf(argv: readonly string[]):
+  | {
+      readonly mode: ExternalMode;
+      readonly path: string;
+      readonly origin?: SessionOrigin;
+    }
+  | undefined {
   if (argv[0] !== "test") return undefined;
   let input: TestCommandInput;
   try {
@@ -2131,8 +2136,23 @@ function externalModeOf(
   } catch {
     return undefined;
   }
-  if (input.recordSessionPath !== undefined)
-    return { mode: "record", path: input.recordSessionPath };
+  if (input.recordSessionPath !== undefined) {
+    // 녹화 출처(ADR-0085). 세션 옵션은 stdio 에서만 유효하므로(파서가 `--url` 병용을 거절)
+    // 여기서 http 갈래를 만날 일은 없지만, 타입이 그것을 모르므로 좁혀서 담는다.
+    const origin: SessionOrigin | undefined =
+      input.target.transport === "stdio"
+        ? {
+            command: input.target.command,
+            args: input.target.args,
+            suitePath: input.suitePath,
+          }
+        : undefined;
+    return {
+      mode: "record",
+      path: input.recordSessionPath,
+      ...(origin === undefined ? {} : { origin }),
+    };
+  }
   if (input.sessionPath !== undefined) return { mode: "replay", path: input.sessionPath };
   return undefined;
 }

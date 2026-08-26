@@ -21,13 +21,6 @@ export function QuestionPanel(props: {
   const { question, onAnswer, onBack } = props;
   const [inputValue, setInputValue] = useState("");
   const [busy, setBusy] = useState(false);
-  const isReviewMenu = question.kind === "choose" && question.message.trim() === "검토 메뉴";
-  const isAiPrompt =
-    question.kind === "input" &&
-    (question.message.trim() === "AI 요청:" || question.message.trim() === "피드백:");
-  const isAiDispatchConfirmation =
-    question.kind === "confirm" && question.message.trim() === "이 요청을 전송할까요?";
-  const hasAccentBackground = isReviewMenu || isAiPrompt || isAiDispatchConfirmation;
 
   async function submit(value: string): Promise<void> {
     if (busy) return;
@@ -50,16 +43,10 @@ export function QuestionPanel(props: {
   }
 
   return (
-    <div
-      className={`space-y-3 font-sans ${
-        hasAccentBackground ? "rounded-lg border border-accent-border bg-accent-soft p-4" : ""
-      }`}
-    >
+    <div className="space-y-3 rounded-lg border border-accent-border bg-accent-soft p-4 font-sans">
       <p className="text-sm">
         <span className="mr-2 text-xs font-semibold text-accent">질문</span>
-        <span className={`font-medium ${hasAccentBackground ? "text-ink" : "text-white"}`}>
-          {question.message}
-        </span>
+        <span className="font-medium text-ink">{question.message}</span>
       </p>
 
       {question.kind === "input" && (
@@ -72,11 +59,7 @@ export function QuestionPanel(props: {
             }}
           >
             <input
-              className={`flex-1 rounded border px-3 py-1.5 text-sm disabled:opacity-50 ${
-                isAiPrompt
-                  ? "border-accent-border bg-surface text-ink"
-                  : "border-line bg-transparent text-white"
-              }`}
+              className="flex-1 rounded border border-accent-border bg-surface px-3 py-1.5 text-sm text-ink disabled:opacity-50"
               value={inputValue}
               disabled={busy}
               onChange={(event) => setInputValue(event.target.value)}
@@ -92,7 +75,7 @@ export function QuestionPanel(props: {
           {onBack !== undefined && (
             <button
               type="button"
-              className="inline-flex items-center gap-1 rounded border border-line bg-transparent px-3 py-1.5 text-sm text-ink-muted hover:border-accent disabled:opacity-50"
+              className="inline-flex items-center gap-1 rounded border border-accent-border bg-surface px-3 py-1.5 text-sm text-ink-muted hover:border-accent disabled:opacity-50"
               disabled={busy}
               onClick={() => void goBack()}
             >
@@ -109,11 +92,7 @@ export function QuestionPanel(props: {
             <button
               key={choice}
               type="button"
-              className={`rounded border px-3 py-1.5 text-sm hover:border-accent disabled:opacity-50 ${
-                isReviewMenu
-                  ? "border-accent-border bg-surface text-ink"
-                  : "border-line bg-transparent text-white"
-              }`}
+              className="rounded border border-accent-border bg-surface px-3 py-1.5 text-sm text-ink hover:border-accent disabled:opacity-50"
               disabled={busy}
               onClick={() => void submit(choice)}
             >
@@ -135,11 +114,7 @@ export function QuestionPanel(props: {
           </button>
           <button
             type="button"
-            className={`rounded border px-3 py-1.5 text-sm hover:border-accent disabled:opacity-50 ${
-              hasAccentBackground
-                ? "border-accent-border bg-surface text-ink"
-                : "border-line bg-transparent text-white"
-            }`}
+            className="rounded border border-accent-border bg-surface px-3 py-1.5 text-sm text-ink hover:border-accent disabled:opacity-50"
             disabled={busy}
             onClick={() => void submit("n")}
           >

@@ -25,14 +25,14 @@ describe("QuestionPanel", () => {
     expect(onAnswer).toHaveBeenCalledWith("b");
   });
 
-  it("검토 메뉴, AI 입력, AI 전송 확인은 연보라 배경과 그에 맞는 글자색을 쓴다", () => {
+  it("모든 질문 종류는 연보라 배경과 그에 맞는 글자색을 쓴다", () => {
     const onAnswer = vi.fn(async () => {});
     const { container, rerender } = render(
       <QuestionPanel
         question={{
           id: "q1",
           kind: "choose",
-          message: "검토 메뉴",
+          message: "다른 선택",
           choices: ["show", "save"],
         }}
         onAnswer={onAnswer}
@@ -40,37 +40,29 @@ describe("QuestionPanel", () => {
     );
 
     expect(container.firstElementChild?.classList.contains("bg-accent-soft")).toBe(true);
-    expect(screen.getByText("검토 메뉴").classList.contains("text-ink")).toBe(true);
+    expect(screen.getByText("다른 선택").classList.contains("text-ink")).toBe(true);
     expect(screen.getByRole("button", { name: "show" }).classList.contains("bg-surface")).toBe(
       true,
     );
 
     rerender(
       <QuestionPanel
-        question={{ id: "q2", kind: "choose", message: "다른 선택", choices: ["a"] }}
-        onAnswer={onAnswer}
-      />,
-    );
-    expect(container.firstElementChild?.classList.contains("bg-accent-soft")).toBe(false);
-
-    rerender(
-      <QuestionPanel
-        question={{ id: "q3", kind: "input", message: "AI 요청: " }}
+        question={{ id: "q2", kind: "input", message: "편집한 JSON 파일 경로:" }}
         onAnswer={onAnswer}
       />,
     );
     expect(container.firstElementChild?.classList.contains("bg-accent-soft")).toBe(true);
-    expect(screen.getByText("AI 요청:").classList.contains("text-ink")).toBe(true);
+    expect(screen.getByText("편집한 JSON 파일 경로:").classList.contains("text-ink")).toBe(true);
     expect(screen.getByRole("textbox").classList.contains("bg-surface")).toBe(true);
 
     rerender(
       <QuestionPanel
-        question={{ id: "q4", kind: "confirm", message: "이 요청을 전송할까요?" }}
+        question={{ id: "q3", kind: "confirm", message: "계속할까요?" }}
         onAnswer={onAnswer}
       />,
     );
     expect(container.firstElementChild?.classList.contains("bg-accent-soft")).toBe(true);
-    expect(screen.getByText("이 요청을 전송할까요?").classList.contains("text-ink")).toBe(true);
+    expect(screen.getByText("계속할까요?").classList.contains("text-ink")).toBe(true);
     expect(screen.getByRole("button", { name: "아니오" }).classList.contains("bg-surface")).toBe(
       true,
     );

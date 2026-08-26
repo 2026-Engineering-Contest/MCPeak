@@ -592,3 +592,36 @@ describe("mcpeak test 의 External 세션 — 녹화 시각 (ADR-0069)", () => {
     expect(second.stderr).toBe(first.stderr);
   }, 30_000);
 });
+
+/**
+ * ADR-0085. 재생에 필요한 재료(스위트·서버 명령)는 녹화하는 순간 CLI 가 알고 있다가
+ * 버려졌다. 세션에 함께 남는지를 **파일로만** 본다 — 별개 실행(대시보드 목록)이 읽는
+ * 것이 바로 이 파일이다.
+ */
+describe("mcpeak test 의 External 세션 — 녹화 출처 (ADR-0085)", () => {
+  it("녹화하면 세션 파일이 스위트·서버 명령·인자를 담는다", async () => {
+    const origin = await startOrigin();
+    const sessionPath = await newSessionPath();
+
+    const exitCode = await runTest(["--record-session", sessionPath], origin.url("/weather"));
+    expect(exitCode).toBe(0);
+
+    const { loadSession } = await import("@mcpeak/record/external");
+    expect(loadSession(sessionPath)?.origin).toEqual({
+      command: process.execPath,
+      args: [server, origin.url("/weather")],
+      suitePath: suite,
+    });
+  }, 30_000);
+
+  it("재생은 세션 파일의 출처를 바꾸지 않는다", async () => {
+    const origin = await startOrigin();
+    const sessionPath = await newSessionPath();
+
+    await runTest(["--record-session", sessionPath], origin.url("/weather"));
+    await runTest(["--session", sessionPath], origin.url("/weather"));
+
+    const { loadSession } = await import("@mcpeak/record/external");
+    expect(loadSession(sessionPath)?.origin?.suitePath).toBe(suite);
+  }, 30_000);
+});

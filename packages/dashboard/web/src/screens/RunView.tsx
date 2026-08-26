@@ -268,8 +268,9 @@ export function RunStreamPanel({
   });
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-3">
+    // 로그만 남는 높이를 먹는다. 나머지는 제 높이를 지킨다(`shrink-0`).
+    <div className="flex min-h-0 flex-1 flex-col gap-4">
+      <div className="flex shrink-0 items-center gap-3">
         {/*
           "대기" 는 상태가 아니라 **모른다는 뜻인데 아는 척한 문구**였다. `RunStatus` 에
           그런 값은 없다(running/waiting-input/done/failed). 그래서 없는 run 과 도는 run 이
@@ -302,11 +303,21 @@ export function RunStreamPanel({
         )}
       </div>
 
-      {runTarget !== null && <RunTargetText target={runTarget} />}
+      {/*
+        `RunTargetText` 는 목록의 **가로** 행에서 쓰려고 `flex-1` 을 달고 있다. 여기는 세로
+        흐름이라 그대로 두면 로그가 먹어야 할 높이를 이 한 줄이 가져간다 — 실제로 본문이
+        최소 높이까지 눌렸다. 감싸서 제 높이만 쓰게 한다.
+      */}
+      {runTarget !== null && (
+        <div className="flex shrink-0">
+          <RunTargetText target={runTarget} />
+        </div>
+      )}
 
       {status === "failed" && showRepairAction && runBundlePath !== null && repairOpen && (
         <form
-          className="space-y-4 rounded-lg border border-line bg-surface p-4"
+          // 폼이 길어져도 로그를 밀어내지 않는다. 넘치면 폼 안에서 스크롤한다.
+          className="max-h-[45%] shrink-0 space-y-4 overflow-auto rounded-lg border border-line bg-surface p-4"
           onSubmit={(event) => {
             event.preventDefault();
             void startRepair();
@@ -470,9 +481,14 @@ export function RunView({ runId }: RunViewProps): JSX.Element {
     return <RunList />;
   }
 
+  /*
+    **이 화면만 뷰포트를 채운다.** 로그는 자기 안에서 넘치고 질문 패널은 늘 보이게 하려면
+    바깥 높이가 정해져 있어야 한다. 목록 상태(`RunList`)는 그대로 흐르게 둔다 — 실행이
+    많아지면 길어지는 것이 맞다.
+  */
   return (
-    <section className="space-y-4">
-      <div className="flex items-center gap-3">
+    <section className="flex h-full min-h-0 flex-col gap-4">
+      <div className="flex shrink-0 items-center gap-3">
         <a className="text-sm text-accent hover:underline" href="#/runs">
           ← Runs
         </a>

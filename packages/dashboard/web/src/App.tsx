@@ -104,14 +104,24 @@ export function App(): JSX.Element {
   }
 
   return (
-    <div className="flex min-h-screen bg-canvas text-ink">
+    /*
+      **문서가 아니라 `main` 이 스크롤한다.** 높이를 뷰포트에 묶어 두면 화면이 자기 높이를
+      알 수 있고, 실행 화면처럼 "로그는 안에서 넘치되 질문 패널은 늘 보여야 하는" 배치가
+      가능해진다. 그러지 않으면 로그가 길어질수록 아래 컨트롤이 화면 밖으로 밀려, 사용자가
+      상호작용할 때마다 페이지를 다시 내려야 한다.
+
+      내용이 긴 다른 화면들은 그대로다 — 스크롤 주체가 문서에서 `main` 으로 바뀔 뿐이라
+      사용자에게는 같아 보인다.
+    */
+    <div className="flex h-screen bg-canvas text-ink">
       <Sidebar active={route.screen} />
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-16 shrink-0 items-center justify-between border-b border-line bg-surface px-6">
           <p className="text-sm font-semibold text-ink">{HEADER_TITLES[route.screen]}</p>
           <ThemeToggle />
         </header>
-        <main className="min-w-0 flex-1 p-8">
+        {/* `min-h-0` 이 없으면 flex 자식이 내용 높이 아래로 줄지 못해 `flex-1` 이 무력해진다. */}
+        <main className="min-h-0 min-w-0 flex-1 overflow-auto p-8">
           <Screen route={route} />
         </main>
       </div>

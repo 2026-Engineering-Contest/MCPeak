@@ -62,6 +62,12 @@ export function LogPanel(props: {
   const pinnedToBottom = useRef(true);
   const eventCount = props.events.length;
   const waiting = props.conversations?.some((conversation) => conversation.waiting) === true;
+  /**
+   * 질문 패널의 등장·퇴장도 본문을 밀어 올린다. **새 줄이 없어도 바닥이 움직이므로** 이것도
+   * 따라갈 조건이다 — 안 넣으면 실행 화면을 열자마자 질문이 뜨는 순간 본문이 그만큼 떠 있고,
+   * 사용자는 첫 화면부터 한 번 내려야 한다.
+   */
+  const hasFooter = props.footer !== undefined;
 
   /**
    * `useEffect` 가 아니라 `useLayoutEffect` 다. 그려진 뒤에 옮기면 사용자가 옛 위치를 한 프레임
@@ -73,11 +79,12 @@ export function LogPanel(props: {
       return;
     }
     body.scrollTop = body.scrollHeight;
-  }, [eventCount, waiting]);
+  }, [eventCount, waiting, hasFooter]);
 
   return (
     <section
-      className="overflow-hidden rounded-lg"
+      // 남는 높이를 채운다. 높이가 정해져야 본문이 "안에서 넘치고" 푸터(질문 패널)가 늘 보인다.
+      className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg"
       style={{
         background: "var(--terminal-bg)",
         border: "1px solid var(--terminal-border)",
@@ -85,7 +92,7 @@ export function LogPanel(props: {
       }}
     >
       <header
-        className="flex items-center justify-between px-4 py-2"
+        className="flex shrink-0 items-center justify-between px-4 py-2"
         style={{ background: "var(--terminal-header-bg)" }}
       >
         <span className="text-xs font-medium" style={{ color: "var(--terminal-muted)" }}>
@@ -95,7 +102,11 @@ export function LogPanel(props: {
       </header>
       <div
         ref={bodyRef}
-        className="max-h-[60vh] overflow-auto whitespace-pre-wrap p-4 font-mono"
+        /*
+          `min-h-[6rem]` 은 바닥이다. 질문 패널이나 repair 폼이 아주 길면 본문이 0 까지
+          줄어 로그가 사라질 수 있는데, 그때는 차라리 바깥이 스크롤되는 편이 낫다.
+        */
+        className="min-h-[6rem] flex-1 overflow-auto whitespace-pre-wrap p-4 font-mono"
         style={{ color: "var(--terminal-fg)", fontSize: 13, lineHeight: 1.85 }}
         onScroll={(event) => {
           const body = event.currentTarget;
@@ -133,7 +144,8 @@ export function LogPanel(props: {
         )}
       </div>
       {props.footer !== undefined && (
-        <div className="px-4 pb-4 font-mono" style={{ color: "var(--terminal-fg)" }}>
+        // 질문 패널 자리. **줄어들지 않는다** — 이것이 안 보이면 사용자는 답할 수 없다.
+        <div className="shrink-0 px-4 pb-4 font-mono" style={{ color: "var(--terminal-fg)" }}>
           {props.footer}
         </div>
       )}

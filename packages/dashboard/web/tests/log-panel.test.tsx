@@ -136,6 +136,18 @@ describe("LogPanel", () => {
       expect(body.scrollTop).toBe(200);
     });
 
+    /** 새 줄이 없어도 질문 패널이 뜨면 본문이 그만큼 줄어 바닥이 움직인다. */
+    it("질문 패널이 나타나면 줄어든 만큼 따라간다", () => {
+      const { container, rerender } = render(<LogPanel title="터미널 출력" events={[line(1)]} />);
+      const body = container.querySelector<HTMLElement>(".overflow-auto");
+      if (body === null) throw new Error("본문을 찾지 못했습니다.");
+
+      stubLayout(body, { scrollHeight: 1000, clientHeight: 400 });
+      rerender(<LogPanel title="터미널 출력" events={[line(1)]} footer={<p>질문</p>} />);
+
+      expect(body.scrollTop).toBe(1000);
+    });
+
     it("바닥 근처(반올림 오차)면 여전히 따라간다", () => {
       const { container, rerender } = render(<LogPanel title="터미널 출력" events={[line(1)]} />);
       const body = container.querySelector<HTMLElement>(".overflow-auto");

@@ -10,6 +10,7 @@ import type {
   RecordSessionSummary,
   ReplayMissDetail,
   ReplaySessionSummary,
+  SessionOrigin,
   SessionStore,
   StoredInteraction,
 } from "./session-store.js";
@@ -49,8 +50,10 @@ export type ExternalEngine = RecordEngine | ReplayEngine;
 export function createRecordEngine(options: {
   readonly sessionId: string;
   readonly store: SessionStore;
+  /** 녹화를 시작한 실행의 서버 명령·스위트(ADR-0085). 넘기면 세션과 함께 저장된다. */
+  readonly origin?: SessionOrigin;
 }): RecordEngine {
-  options.store.createSession(options.sessionId);
+  options.store.createSession(options.sessionId, options.origin);
   // ADR-0062. 지문만 쌓는다 — 세션 전체에서 중복을 제거해야 "서로 다른 URL 의 개수" 가 되고,
   // 그 집계는 interaction 하나만 보는 Store 가 할 수 없다. 저장소에는 쓰지 않는다.
   const echoed = new Set<string>();

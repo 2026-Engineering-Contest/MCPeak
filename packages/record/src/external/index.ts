@@ -33,6 +33,8 @@ export type {
   BodyUrlCounts,
   InteractionStatus,
   ReplayMissDetail,
+  /** ADR-0085. 녹화를 시작한 실행의 서버 명령·스위트. 재생의 원클릭 재료다. */
+  SessionOrigin,
   SessionSnapshot,
   SessionStatus,
   SessionSummary,

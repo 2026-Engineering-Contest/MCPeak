@@ -28,7 +28,7 @@ import {
   SUPPORTED_HTTP_METHODS,
   stableStringify,
 } from "./runtime.mjs";
-import type { SessionStore, SessionSummary } from "./session-store.js";
+import type { SessionOrigin, SessionStore, SessionSummary } from "./session-store.js";
 
 const ENV_MODE = "MCPEAK_EXTERNAL_MODE";
 const ENV_URL = "MCPEAK_EXTERNAL_COORDINATOR_URL";
@@ -44,6 +44,8 @@ export type StartExternalCoordinatorOptions =
       readonly mode: "record";
       readonly sessionId: string;
       readonly store: SessionStore;
+      /** 녹화를 시작한 실행의 서버 명령·스위트(ADR-0085). 세션과 함께 저장된다. */
+      readonly origin?: SessionOrigin;
       readonly requestTimeoutMs?: number;
       readonly existingNodeOptions?: string;
     }
@@ -534,7 +536,11 @@ export async function startExternalCoordinator(
     externalError("REQUEST_INVALID", "Coordinator timeout은 1~60000ms 정수여야 합니다.");
   const engine: ExternalEngine =
     options.mode === "record"
-      ? createRecordEngine({ sessionId: options.sessionId, store: options.store })
+      ? createRecordEngine({
+          sessionId: options.sessionId,
+          store: options.store,
+          ...(options.origin === undefined ? {} : { origin: options.origin }),
+        })
       : createReplayEngine({ sourceSessionId: options.sourceSessionId, store: options.store });
   const token = randomBytes(32).toString("base64url");
 

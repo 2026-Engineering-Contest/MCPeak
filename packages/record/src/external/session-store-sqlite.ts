@@ -4,6 +4,7 @@ import type { NormalizedExternalRequest, StoredExternalOutcome } from "./protoco
 import type {
   InteractionReservation,
   RecordSessionSummary,
+  SessionOrigin,
   SessionSnapshot,
   SessionStatus,
   SessionStore,
@@ -25,8 +26,20 @@ import * as message from "./store-messages.js";
  * (단계 C-2)에서 정한다.
  */
 
-/** 물리 스키마 버전. 칼럼이나 인덱스가 바뀌면 올리고 마이그레이션을 붙인다. */
-export const SQLITE_STORE_VERSION = 1;
+/**
+ * 물리 스키마 버전. 칼럼이나 인덱스가 바뀌면 올리고 마이그레이션을 붙인다.
+ *
+ * v2: `sessions` 에 녹화 출처 칼럼(command·args_json·suite_path)을 더한다(ADR-0085).
+ */
+export const SQLITE_STORE_VERSION = 2;
+
+/**
+ * 읽을 수 있는 버전들. **쓰기는 항상 현재 버전이지만 읽기는 v1 세션도 그대로 받는다** —
+ * 버전을 올렸다고 기존 녹화가 전부 "우리 세션이 아니다" 가 되면, 사용자는 아무 잘못 없이
+ * 재녹화를 강요당한다. 재녹화는 실제 네트워크를 다시 부르는 일이고, 외부 API 가 그 사이
+ * 바뀌었다면 같은 녹화를 다시 뜰 수도 없다. v1 세션은 출처(origin)만 없이 읽힌다.
+ */
+const READABLE_STORE_VERSIONS = new Set(["1", String(SQLITE_STORE_VERSION)]);
 
 /**
  * `interaction` 은 protocol 별 세부를 **불투명 JSON 칼럼**으로 담는다(ADR-0052).
@@ -43,7 +56,12 @@ CREATE TABLE IF NOT EXISTS meta (
 
 CREATE TABLE IF NOT EXISTS sessions (
   session_id TEXT PRIMARY KEY,
-  status     TEXT NOT NULL CHECK (status IN ('running', 'completed', 'failed'))
+  status     TEXT NOT NULL CHECK (status IN ('running', 'completed', 'failed')),
+  -- 녹화 출처(ADR-0085). NULL 이면 출처 없이 녹화된 세션이다(v1 파일 포함).
+  -- NOT NULL 을 걸지 않는 것은 v1 파일을 ALTER 로 올릴 때 기존 행이 채울 값이 없어서다.
+  command    TEXT,
+  args_json  TEXT,
+  suite_path TEXT
 );
 
 CREATE TABLE IF NOT EXISTS interactions (
@@ -129,7 +147,32 @@ const probeSessionFile = (db: DatabaseSync): ReadOnlyProbe => {
     return "not-a-session";
   }
   if (version === undefined) return "not-a-session";
-  return version.value === String(SQLITE_STORE_VERSION) ? "ok" : "version-mismatch";
+  return READABLE_STORE_VERSIONS.has(version.value) ? "ok" : "version-mismatch";
+};
+
+/** 스냅샷용 출처 행 → `SessionOrigin`. 셋 중 하나라도 온전하지 않으면 없다고 말한다. */
+interface OriginRow {
+  readonly command: string | null;
+  readonly args_json: string | null;
+  readonly suite_path: string | null;
+}
+
+const toOrigin = (row: OriginRow | undefined): SessionOrigin | undefined => {
+  if (row === undefined || row.command === null || row.suite_path === null) return undefined;
+  if (row.command === "" || row.suite_path === "") return undefined;
+  let args: unknown;
+  try {
+    args = JSON.parse(row.args_json ?? "[]");
+  } catch {
+    // 깨진 값으로 절반짜리 출처를 만들지 않는다. 출처가 틀리면 재생은 엉뚱한 서버를 띄운다.
+    return undefined;
+  }
+  if (!Array.isArray(args) || !args.every((item) => typeof item === "string")) return undefined;
+  return Object.freeze({
+    command: row.command,
+    args: Object.freeze(args),
+    suitePath: row.suite_path,
+  });
 };
 
 const openReadOnly = (path: string): DatabaseSync => {
@@ -214,8 +257,25 @@ export function createSqliteSessionStore(options: SqliteSessionStoreOptions = {}
     }
   };
 
+  /**
+   * 이 파일에 저장된 store version. 새 파일은 현재 버전이고, v1 파일을 쓰기 모드로 열면
+   * "1" 로 남는다 — **여는 것만으로는 파일을 올리지 않는다.** 녹화를 거절하는 경로(#290,
+   * `SESSION_ALREADY_EXISTS`)가 사용자 파일을 바꾸면 안 되기 때문이다. 올리는 것은 실제로
+   * 세션을 만드는 순간(`createSession`)이다.
+   */
+  let fileVersion =
+    (
+      prepared(() => db.prepare("SELECT value FROM meta WHERE key = 'store_version'").get()) as
+        | { value: string }
+        | undefined
+    )?.value ?? String(SQLITE_STORE_VERSION);
+
+  /**
+   * `insertSession` 은 `statements` 에 없다. v1 파일에서는 v2 칼럼을 실은 INSERT 가 **prepare
+   * 단계에서** 실패해, 읽기만 하려던 재생까지 여기 걸려 죽는다. 세션 생성은 파일당 한 번이라
+   * 그때 준비해도 비용이 없다.
+   */
   const statements = prepared(() => ({
-    insertSession: db.prepare("INSERT INTO sessions (session_id, status) VALUES (?, 'running')"),
     findSession: db.prepare("SELECT status FROM sessions WHERE session_id = ?"),
     setStatus: db.prepare("UPDATE sessions SET status = ? WHERE session_id = ?"),
     countAll: db.prepare("SELECT COUNT(*) AS n FROM interactions WHERE session_id = ?"),
@@ -272,13 +332,36 @@ export function createSqliteSessionStore(options: SqliteSessionStoreOptions = {}
     });
   };
 
+  /** v1 파일을 현재 버전으로 올린다. 기존 행의 새 칼럼은 NULL(출처 없음)로 남는다. */
+  const migrateToCurrentVersion = (): void => {
+    db.exec(
+      `ALTER TABLE sessions ADD COLUMN command TEXT;
+       ALTER TABLE sessions ADD COLUMN args_json TEXT;
+       ALTER TABLE sessions ADD COLUMN suite_path TEXT;`,
+    );
+    db.prepare("UPDATE meta SET value = ? WHERE key = 'store_version'").run(
+      String(SQLITE_STORE_VERSION),
+    );
+    fileVersion = String(SQLITE_STORE_VERSION);
+  };
+
   return {
-    createSession(sessionId) {
+    createSession(sessionId, origin) {
       if (readOnly) rejectWrite("세션 생성");
       if (sessionId.length === 0) externalError("REQUEST_INVALID", "sessionId가 비어 있습니다.");
       if (sessionStatus(sessionId) !== undefined)
         externalError("SESSION_ALREADY_EXISTS", message.sessionAlreadyExists(sessionId));
-      statements.insertSession.run(sessionId);
+      // 거절 검사를 다 통과한 뒤에야 올린다 — 여기부터는 어차피 이 파일에 녹화를 쓴다.
+      if (fileVersion !== String(SQLITE_STORE_VERSION)) migrateToCurrentVersion();
+      db.prepare(
+        `INSERT INTO sessions (session_id, status, command, args_json, suite_path)
+         VALUES (?, 'running', ?, ?, ?)`,
+      ).run(
+        sessionId,
+        origin?.command ?? null,
+        origin === undefined ? null : JSON.stringify(origin.args),
+        origin?.suitePath ?? null,
+      );
     },
 
     reserve({ sessionId, request }) {
@@ -358,10 +441,20 @@ export function createSqliteSessionStore(options: SqliteSessionStoreOptions = {}
       const status = sessionStatus(sessionId);
       if (status === undefined) return undefined;
       const rows = statements.listAll.all(sessionId) as unknown as InteractionRow[];
+      // v1 파일에는 출처 칼럼이 없다. 조회 자체를 버전으로 갈라야 `no such column` 이 안 난다.
+      const origin =
+        fileVersion === String(SQLITE_STORE_VERSION)
+          ? toOrigin(
+              db
+                .prepare("SELECT command, args_json, suite_path FROM sessions WHERE session_id = ?")
+                .get(sessionId) as OriginRow | undefined,
+            )
+          : undefined;
       return Object.freeze<SessionSnapshot>({
         sessionId,
         status,
         interactions: Object.freeze(rows.map(toInteraction)),
+        ...(origin === undefined ? {} : { origin }),
       });
     },
 
@@ -398,17 +491,32 @@ export function loadSession(path: string): SessionSnapshot | null {
   }
   try {
     // 열 이름이 같아도 다른 version 의 파일은 우리 세션이 아니다. 열 때 심은 `meta.store_version`
-    // 이 같은 값일 때만 읽는다 — meta 가 없거나 값이 다르면 "읽을 수 있는 세션" 이 아니다.
+    // 이 **읽을 수 있는 버전**일 때만 읽는다 — meta 가 없거나 모르는 값이면 "읽을 수 있는
+    // 세션" 이 아니다. v1 은 출처만 없이 읽힌다(ADR-0085).
     const version = db.prepare("SELECT value FROM meta WHERE key = 'store_version'").get() as
       | { value: string }
       | undefined;
-    if (version?.value !== String(SQLITE_STORE_VERSION)) return null;
+    if (version === undefined || !READABLE_STORE_VERSIONS.has(version.value)) return null;
+    const hasOriginColumns = version.value === String(SQLITE_STORE_VERSION);
     // 세션 파일 하나에 세션 하나다(CLI 의 `SESSION_ID`). 그래도 `ORDER BY` 를 붙이는 것은
     // 여러 건이 들어 있는 파일에서 **어느 것을 고를지가 실행마다 달라지지 않게** 하려는 것이다.
+    // 출처 칼럼은 v2 에만 있으므로 SELECT 자체를 버전으로 가른다.
     const session = db
-      .prepare("SELECT session_id, status FROM sessions ORDER BY session_id LIMIT 1")
-      .get() as { session_id: string; status: SessionStatus } | undefined;
+      .prepare(
+        hasOriginColumns
+          ? `SELECT session_id, status, command, args_json, suite_path
+               FROM sessions ORDER BY session_id LIMIT 1`
+          : "SELECT session_id, status FROM sessions ORDER BY session_id LIMIT 1",
+      )
+      .get() as ({ session_id: string; status: SessionStatus } & Partial<OriginRow>) | undefined;
     if (session === undefined) return null;
+    const origin = hasOriginColumns
+      ? toOrigin({
+          command: session.command ?? null,
+          args_json: session.args_json ?? null,
+          suite_path: session.suite_path ?? null,
+        })
+      : undefined;
     const rows = db
       .prepare(
         `SELECT interaction_id, ordinal, occurrence, recorded_at, status, request_json, outcome_json
@@ -421,6 +529,7 @@ export function loadSession(path: string): SessionSnapshot | null {
       sessionId: session.session_id,
       status: session.status,
       interactions: Object.freeze(rows.map(toInteraction)),
+      ...(origin === undefined ? {} : { origin }),
     });
   } catch {
     // SQLite 는 맞지만 우리 스키마가 아니거나 본문이 깨졌다.

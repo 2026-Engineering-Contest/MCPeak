@@ -5,6 +5,21 @@ import * as message from "./store-messages.js";
 export type SessionStatus = "running" | "completed" | "failed";
 export type InteractionStatus = "incomplete" | "complete";
 
+/**
+ * 녹화를 시작한 실행의 재료(ADR-0085). 재생은 서버를 실제로 띄우고 스위트를 실제로 돌리는데,
+ * 그 둘이 세션 밖에 있었다 — 재생하려는 사용자가 매번 서버와 스위트를 다시 지목해야 했던
+ * 것이 이 타입이 생긴 이유다. 녹화 시점에 함께 저장해 두면 재생은 세션 파일 하나로 시작할
+ * 수 있다.
+ */
+export interface SessionOrigin {
+  /** 실행 파일 하나. CLI `--command` 에 그대로 실린다. */
+  readonly command: string;
+  /** CLI `--arg` 로 하나씩 실릴 값들. 순서가 의미를 가지므로 배열 그대로 담는다. */
+  readonly args: readonly string[];
+  /** 녹화를 시작한 실행이 돌린 스위트 경로. */
+  readonly suitePath: string;
+}
+
 export interface ReserveInteractionInput {
   readonly sessionId: string;
   readonly request: NormalizedExternalRequest;
@@ -40,6 +55,12 @@ export interface SessionSnapshot {
   readonly sessionId: string;
   readonly status: SessionStatus;
   readonly interactions: readonly StoredInteraction[];
+  /**
+   * 녹화를 시작한 실행의 서버 명령·스위트(ADR-0085). **없을 수 있다** — store version 1 에
+   * 녹화된 세션에는 이 정보가 저장된 적이 없다. 추측해 채우지 않는다(`outOfScope` 의
+   * "undefined 는 0 이 아니라 못 셌음" 과 같은 정책).
+   */
+  readonly origin?: SessionOrigin;
 }
 
 /**
@@ -124,7 +145,11 @@ export interface ReplaySessionSummary {
 export type SessionSummary = RecordSessionSummary | ReplaySessionSummary;
 
 export interface SessionStore {
-  createSession(sessionId: string): void;
+  /**
+   * `origin` 은 선택이다(ADR-0085). 넘기면 세션과 함께 저장돼 `read()`·`loadSession` 의
+   * 스냅샷에 실린다. 안 넘기면 스냅샷의 `origin` 도 없다 — 빈 객체로 채우지 않는다.
+   */
+  createSession(sessionId: string, origin?: SessionOrigin): void;
   reserve(input: ReserveInteractionInput): InteractionReservation;
   complete(input: CompleteInteractionInput): void;
   lookup(input: LookupInteractionInput): StoredInteraction | undefined;
@@ -154,6 +179,7 @@ interface MutableSession {
   sessionId: string;
   status: SessionStatus;
   interactions: MutableInteraction[];
+  origin?: SessionOrigin;
 }
 
 /**
@@ -203,6 +229,7 @@ const sessionSnapshot = (value: MutableSession): SessionSnapshot =>
     sessionId: value.sessionId,
     status: value.status,
     interactions: Object.freeze(value.interactions.map(interactionSnapshot)),
+    ...(value.origin === undefined ? {} : { origin: value.origin }),
   });
 
 export function createMemorySessionStore(): SessionStore {
@@ -216,11 +243,17 @@ export function createMemorySessionStore(): SessionStore {
   };
 
   return {
-    createSession(sessionId) {
+    createSession(sessionId, origin) {
       if (sessionId.length === 0) externalError("REQUEST_INVALID", "sessionId가 비어 있습니다.");
       if (sessions.has(sessionId))
         externalError("SESSION_ALREADY_EXISTS", message.sessionAlreadyExists(sessionId));
-      sessions.set(sessionId, { sessionId, status: "running", interactions: [] });
+      sessions.set(sessionId, {
+        sessionId,
+        status: "running",
+        interactions: [],
+        // `request` 와 같은 이유로 복사해 얼린다 — 호출자가 배열을 재사용해도 저장본이 안 바뀐다.
+        ...(origin === undefined ? {} : { origin: storedCopy(origin) }),
+      });
     },
 
     reserve({ sessionId, request }) {

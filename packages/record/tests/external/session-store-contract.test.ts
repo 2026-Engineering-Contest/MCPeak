@@ -70,6 +70,38 @@ describe.each(STORES)("SessionStore 계약 — $name", ({ create }) => {
       store.createSession("s1");
       expect(codeOf(() => store.createSession("s1"))).toBe("SESSION_ALREADY_EXISTS");
     });
+
+    /** ADR-0085. 재생이 세션 파일 하나로 시작하려면 출처가 세션과 함께 저장돼야 한다. */
+    it("출처를 넘기면 스냅샷에 그대로 실린다 — 인자 순서까지", () => {
+      const store = create();
+      store.createSession("s1", {
+        command: "node",
+        args: ["server.mjs", "--port", "3000"],
+        suitePath: "examples/weather.suite.json",
+      });
+
+      expect(store.read("s1")?.origin).toEqual({
+        command: "node",
+        args: ["server.mjs", "--port", "3000"],
+        suitePath: "examples/weather.suite.json",
+      });
+    });
+
+    it("출처 없이 만든 세션의 스냅샷에는 origin 이 없다 — 빈 객체로 채우지 않는다", () => {
+      const store = create();
+      store.createSession("s1");
+
+      expect(store.read("s1")?.origin).toBeUndefined();
+    });
+
+    it("넘긴 인자 배열을 나중에 고쳐도 저장본은 안 바뀐다", () => {
+      const store = create();
+      const args = ["server.mjs"];
+      store.createSession("s1", { command: "node", args, suitePath: "a.suite.json" });
+      args.push("--변조");
+
+      expect(store.read("s1")?.origin?.args).toEqual(["server.mjs"]);
+    });
   });
 
   describe("reserve", () => {

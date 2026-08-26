@@ -72,7 +72,12 @@ export function LogPanel(props: {
   /**
    * `useEffect` 가 아니라 `useLayoutEffect` 다. 그려진 뒤에 옮기면 사용자가 옛 위치를 한 프레임
    * 보고 나서 튀는 것을 본다. 페인트 전에 옮기면 처음부터 바닥에 있던 것처럼 보인다.
+   *
+   * deps 의 세 값은 콜백 안에서 읽지 않고 "언제 다시 내려야 하는지" 를 알리는 트리거로만
+   * 쓴다 — 실제로 옮기는 값은 그때그때의 `body.scrollHeight` 다. 자동 수정으로 지우면 새
+   * 줄이 와도 재실행되지 않아 이 파일 전체가 고치려던 문제로 되돌아간다.
    */
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 위 설명대로 트리거 용도라 의도적이다.
   useLayoutEffect(() => {
     const body = bodyRef.current;
     if (body === null || !pinnedToBottom.current) {
@@ -106,7 +111,7 @@ export function LogPanel(props: {
           `min-h-[6rem]` 은 바닥이다. 질문 패널이나 repair 폼이 아주 길면 본문이 0 까지
           줄어 로그가 사라질 수 있는데, 그때는 차라리 바깥이 스크롤되는 편이 낫다.
         */
-        className="min-h-[6rem] flex-1 overflow-auto whitespace-pre-wrap p-4 font-mono"
+        className="scrollbar-terminal min-h-[6rem] flex-1 overflow-auto whitespace-pre-wrap p-4 font-mono"
         style={{ color: "var(--terminal-fg)", fontSize: 13, lineHeight: 1.85 }}
         onScroll={(event) => {
           const body = event.currentTarget;

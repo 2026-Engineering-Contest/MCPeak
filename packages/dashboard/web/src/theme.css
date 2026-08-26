@@ -117,3 +117,43 @@ body {
 .ansi-95 { color: #f0abfc; }
 .ansi-96 { color: #67e8f9; }
 .ansi-97 { color: #fafafa; }
+
+/*
+ * 터미널 본문의 스크롤 막대. 브라우저 기본 막대는 항상 다크인 터미널 영역(UI 설계 §3) 안에서
+ * 밝게 떠, 재현하려는 터미널 화면에 없는 것이 끼어 보인다. 터미널 팔레트에 맞춰 어둡게 깐다.
+ *
+ * **감추지 않고 어둡게만 하는 이유**는 "위에 더 있다" 는 단서가 막대뿐이기 때문이다. 없애면
+ * 지난 출력을 볼 수 있다는 사실을 처음 쓰는 사람이 알 방법이 없다.
+ *
+ * ansi 색과 같은 이유로 **테마 분기를 하지 않는다** — 터미널은 라이트 테마에서도 다크다.
+ * 그래서 여기 색은 토큰이 아니라 고정값이다.
+ */
+.scrollbar-terminal {
+  scrollbar-width: thin; /* Firefox */
+  scrollbar-color: #3a3a45 transparent;
+}
+
+.scrollbar-terminal::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.scrollbar-terminal::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/*
+ * 투명 테두리 + `content-box` 클립으로 막대 둘레에 여백을 준다. 벽에 딱 붙은 막대보다
+ * 터미널 안에 얹힌 것처럼 보인다.
+ */
+.scrollbar-terminal::-webkit-scrollbar-thumb {
+  background: #3a3a45;
+  background-clip: content-box;
+  border: 2px solid transparent;
+  border-radius: 999px;
+}
+
+.scrollbar-terminal::-webkit-scrollbar-thumb:hover {
+  background: #4a4a57;
+  background-clip: content-box;
+}

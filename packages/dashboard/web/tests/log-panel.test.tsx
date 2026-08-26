@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import type { RunEvent } from "../../src/api-types.js";
 import { LogPanel } from "../src/components/LogPanel.js";
@@ -83,5 +83,71 @@ describe("LogPanel", () => {
     expect(text.indexOf("사용자 질문")).toBeLessThan(text.indexOf("AI 응답"));
     expect(text.indexOf("AI 응답")).toBeLessThan(text.indexOf("provider 응답"));
     expect(text.indexOf("provider 응답")).toBeLessThan(text.indexOf("후속 CLI 출력"));
+  });
+
+  /**
+   * 본문은 높이가 묶인 자체 스크롤 영역이라, 새 출력을 따라가지 않으면 답변할 때마다 그
+   * 출력이 화면 밖 아래에 쌓인다 — 검토 메뉴를 한 번 고를 때마다 사용자가 다시 내려야 했다.
+   *
+   * jsdom 은 레이아웃이 없어 `scrollHeight`·`clientHeight` 가 늘 0 이다. 그래서 그 셋을
+   * 직접 정의해 "넘치는 본문" 을 흉내내고, 컴포넌트가 `scrollTop` 에 무엇을 쓰는지 본다.
+   */
+  describe("새 출력 따라가기", () => {
+    /** 본문 div 에 레이아웃 값을 심는다. `scrollTop` 은 쓰기가 기록되도록 진짜 속성으로 둔다. */
+    function stubLayout(
+      body: HTMLElement,
+      sizes: { readonly scrollHeight: number; readonly clientHeight: number },
+    ): void {
+      Object.defineProperty(body, "scrollHeight", {
+        value: sizes.scrollHeight,
+        configurable: true,
+      });
+      Object.defineProperty(body, "clientHeight", {
+        value: sizes.clientHeight,
+        configurable: true,
+      });
+    }
+
+    const line = (id: number): RunEvent => ({ id, kind: "stdout", html: `줄 ${id}` });
+
+    it("바닥에 있던 사용자는 새 출력이 와도 바닥에 남는다", () => {
+      const { container, rerender } = render(<LogPanel title="터미널 출력" events={[line(1)]} />);
+      const body = container.querySelector<HTMLElement>(".overflow-auto");
+      if (body === null) throw new Error("본문을 찾지 못했습니다.");
+
+      stubLayout(body, { scrollHeight: 1000, clientHeight: 400 });
+      rerender(<LogPanel title="터미널 출력" events={[line(1), line(2)]} />);
+
+      expect(body.scrollTop).toBe(1000);
+    });
+
+    /** 지난 출력을 확인하려고 올린 사람을 새 줄이 올 때마다 바닥으로 던지면 더 나쁘다. */
+    it("위로 올려 읽는 중이면 끌어내리지 않는다", () => {
+      const { container, rerender } = render(<LogPanel title="터미널 출력" events={[line(1)]} />);
+      const body = container.querySelector<HTMLElement>(".overflow-auto");
+      if (body === null) throw new Error("본문을 찾지 못했습니다.");
+
+      stubLayout(body, { scrollHeight: 1000, clientHeight: 400 });
+      // 사용자가 중간까지 올린다 — 바닥까지 400px 남았으므로 "붙어 있음" 이 아니다.
+      body.scrollTop = 200;
+      fireEvent.scroll(body);
+      rerender(<LogPanel title="터미널 출력" events={[line(1), line(2)]} />);
+
+      expect(body.scrollTop).toBe(200);
+    });
+
+    it("바닥 근처(반올림 오차)면 여전히 따라간다", () => {
+      const { container, rerender } = render(<LogPanel title="터미널 출력" events={[line(1)]} />);
+      const body = container.querySelector<HTMLElement>(".overflow-auto");
+      if (body === null) throw new Error("본문을 찾지 못했습니다.");
+
+      stubLayout(body, { scrollHeight: 1000, clientHeight: 400 });
+      // 바닥은 600. 590 이면 10px 떠 있지만 사용자에게는 바닥이다.
+      body.scrollTop = 590;
+      fireEvent.scroll(body);
+      rerender(<LogPanel title="터미널 출력" events={[line(1), line(2)]} />);
+
+      expect(body.scrollTop).toBe(1000);
+    });
   });
 });

@@ -11,6 +11,7 @@ import type {
 import {
   ensureRepairBundleDir,
   listServerCandidates,
+  listSessions,
   listSuites,
   readFileContent,
   writeFileContent,
@@ -66,6 +67,10 @@ export async function handleRequest(
   }
   if (method === "GET" && pathname === "/api/servers") {
     sendJson(response, 200, await listServerCandidates(options.root));
+    return;
+  }
+  if (method === "GET" && pathname === "/api/sessions") {
+    sendJson(response, 200, await listSessions(options.root));
     return;
   }
   if (method === "GET" && pathname.startsWith("/api/suites/")) {

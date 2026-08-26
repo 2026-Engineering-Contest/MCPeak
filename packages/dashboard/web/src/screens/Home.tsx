@@ -21,6 +21,7 @@ import type { LastRun } from "../last-run.js";
 import { readLastRun, saveLastRun } from "../last-run.js";
 import { readRecentCommands, saveRecentCommand } from "../recent-commands.js";
 import { effectiveRepairBundlePath } from "../repair-bundle-path.js";
+import { saveSessionOrigin } from "../session-origin.js";
 
 const STEPS = ["테스트할 서버", "테스트할 스위트", "실행 옵션"] as const;
 
@@ -297,6 +298,16 @@ export function Home(): JSX.Element {
       });
       if (state.choice.kind === "manual" && state.target.trim() !== "") {
         saveRecentCommand(state.target);
+      }
+      // 녹화 실행이면 이 세션 파일이 무엇에서 나왔는지 남긴다. 재생하려면 서버와 스위트가
+      // 필요한데 세션 파일은 그 둘을 담지 않아, 지금 적어 두지 않으면 Replay 는 사용자에게
+      // 다시 물어야 한다. 여기가 그 값을 아는 유일한 시점이다.
+      if (state.sessionMode === "record") {
+        saveSessionOrigin(state.sessionPath.trim(), {
+          command: target.command,
+          args: target.args,
+          suitePath,
+        });
       }
       window.location.hash = `#/runs/${encodeURIComponent(response.runId)}`;
     } catch (err) {

@@ -387,13 +387,13 @@ describe("additionalProperties (#389)", () => {
     const firstCase = result.suite.cases[0];
     if (firstCase?.operation.type !== "callTool") throw new Error("callTool case가 필요합니다.");
     expect(firstCase.operation.input).toEqual({ x: "example" });
-    // 정상 1, 필수 누락 1, 타입 위반 1.
-    expect(result.suite.cases.length).toBe(3);
+    // 정상 1, 필수 누락 1, 타입 위반 1, 선언 밖 필드 1.
+    expect(result.suite.cases.length).toBe(4);
   });
 });
 
 describe("anyOf (#389)", () => {
-  it("anyOf 필드 툴은 정상·필수 누락 케이스만 만든다", () => {
+  it("nullable anyOf 필드 툴은 타입 위반 케이스도 만든다 (#426)", () => {
     const result = createBaselineSuite(
       [
         {
@@ -408,8 +408,16 @@ describe("anyOf (#389)", () => {
       { suiteId: "s", suiteName: "s" },
     );
 
-    // runner 는 조합 필드의 TYPE 축을 만들지 않는다. 그 사실을 여기서 문서화한다.
-    expect(result.suite.cases.map((item) => item.id)).toEqual(["t-success", "t-missing-v"]);
+    // runner 가 nullable 조합 필드를 값 갈래로 해석해 TYPE 축이 생긴다(ADR-0015 개정).
+    expect(result.suite.cases.map((item) => item.id)).toEqual([
+      "t-success",
+      "t-missing-v",
+      "t-type-v",
+    ]);
+    // 위반값이 값 갈래 string 의 것이다. generate 와 runner 가 같은 갈래를 골랐다는 증거다.
+    const typeCase = result.suite.cases.find((item) => item.id === "t-type-v");
+    if (typeCase?.operation.type !== "callTool") throw new Error("callTool case가 필요합니다.");
+    expect(typeCase.operation.input).toEqual({ v: 0 });
   });
 
   it("루트 anyOf 툴은 정상 케이스 1개이고 커버리지는 해석 불가다", () => {

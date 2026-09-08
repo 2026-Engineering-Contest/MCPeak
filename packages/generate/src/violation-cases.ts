@@ -45,6 +45,33 @@ export interface GeneratedCase {
 const INVALID_ENUM_VALUE = "__mcpeak_invalid_enum__";
 
 /**
+ * 선언 밖 필드 케이스에 쓰는 예약 키. 이름 규칙은 INVALID_ENUM_VALUE 와 같고, 서버가 이 이름을
+ * properties 에 선언했으면 접미사를 붙여 피한다.
+ */
+const UNDECLARED_FIELD_KEY = "__mcpeak_undeclared__";
+
+/**
+ * 선언 밖 키 하나를 얹은 입력. 값은 가장 평범한 문자열이다.
+ *
+ * 값을 이상하게 넣으면 서버가 "선언 밖 키" 가 아니라 "이상한 값" 때문에 거절할 수 있고, 그러면
+ * 이 케이스가 통과해도 무엇을 검증한 것인지 알 수 없다. 거절 사유를 키 하나로 좁히려면 값이
+ * 눈에 띄지 않아야 한다.
+ */
+function undeclaredFieldInput(
+  tool: ToolDef,
+  happyInput: JsonObject,
+): { readonly key: string; readonly input: JsonObject } {
+  const properties = plainObject(tool.inputSchema)
+    ? (tool.inputSchema.properties as Record<string, unknown> | undefined)
+    : undefined;
+  const declared = plainObject(properties) ? properties : {};
+  let key = UNDECLARED_FIELD_KEY;
+  for (let suffix = 2; Object.hasOwn(declared, key) || Object.hasOwn(happyInput, key); suffix++)
+    key = `${UNDECLARED_FIELD_KEY}_${suffix}`;
+  return { key, input: { ...happyInput, [key]: "example" } };
+}
+
+/**
  * 선언 type 을 어기는 값. 표로 고정한다. 값이 흔들리면 지문이 흔들린다.
  *
  * integer 만 1.5 다. "example" 을 넣으면 `typeof value === "number"` 검사만 있는 서버도
@@ -186,6 +213,15 @@ export function buildViolationCases(options: {
   const cases: GeneratedCase[] = [];
   for (const axis of axes) {
     const field = axis.field;
+    // UNDECLARED_FIELD 는 대상 필드가 없다(선언 밖 키가 여럿이어도 축은 하나다). HAPPY_PATH 를
+    // 거르는 아래 분기보다 먼저 잡아야 한다.
+    if (axis.kind === "UNDECLARED_FIELD") {
+      const { key, input } = undeclaredFieldInput(tool, happyInput);
+      const id = `${baseName}-undeclared`;
+      usedIds.add(id);
+      cases.push(violation(id, `${tool.name}가 선언되지 않은 필드 '${key}' 를 거절한다`, input));
+      continue;
+    }
     if (field === null) continue; // HAPPY_PATH 는 render.ts 가 만든다
     if (axis.kind === "REQUIRED_OMITTED") {
       // 정상 입력에 그 키가 없으면 뺄 것이 없다. 그대로 만들면 정상 케이스와 입력이 같은데

@@ -391,3 +391,44 @@ describe("additionalProperties (#389)", () => {
     expect(result.suite.cases.length).toBe(3);
   });
 });
+
+describe("anyOf (#389)", () => {
+  it("anyOf 필드 툴은 정상·필수 누락 케이스만 만든다", () => {
+    const result = createBaselineSuite(
+      [
+        {
+          name: "t",
+          inputSchema: {
+            type: "object",
+            required: ["v"],
+            properties: { v: { anyOf: [{ type: "string" }, { type: "null" }] } },
+          },
+        },
+      ],
+      { suiteId: "s", suiteName: "s" },
+    );
+
+    // runner 는 조합 필드의 TYPE 축을 만들지 않는다. 그 사실을 여기서 문서화한다.
+    expect(result.suite.cases.map((item) => item.id)).toEqual(["t-success", "t-missing-v"]);
+  });
+
+  it("루트 anyOf 툴은 정상 케이스 1개이고 커버리지는 해석 불가다", () => {
+    const result = createBaselineSuite(
+      [
+        {
+          name: "t",
+          inputSchema: {
+            type: "object",
+            properties: { a: { type: "string" }, b: { type: "string" } },
+            anyOf: [{ required: ["a"] }, { required: ["b"] }],
+          },
+        },
+      ],
+      { suiteId: "s", suiteName: "s" },
+    );
+
+    expect(result.suite.cases.length).toBe(1);
+    expect(result.coverage.tools[0]?.analyzable).toBe(false);
+    expect(result.coverage.tools[0]?.unanalyzableReason).toBe("anyOf");
+  });
+});

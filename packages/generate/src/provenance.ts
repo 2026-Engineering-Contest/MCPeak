@@ -9,7 +9,8 @@
 import type { ToolDef } from "@mcpeak/core";
 import { compositionKey, expandComposition } from "./composition.js";
 import { isKnownFormat } from "./constraints.js";
-import { type JsonSchema, plainObject, type SchemaType } from "./schema.js";
+import { type JsonSchema, plainObject, type SchemaType, validateSchema } from "./schema.js";
+import { synthesizeValue } from "./synthesize.js";
 
 /** 합성한 값의 근거. */
 export type ValueProvenance = "declared" | "placeholder" | "unknownFormat";
@@ -144,20 +145,35 @@ function tallyComposition(
   root: JsonSchema,
   ancestors: Set<object>,
 ): void {
-  let expanded: readonly { schema: JsonSchema; target: object | null }[];
+  let expanded: readonly { schema: JsonSchema; path: string; target: object | null }[];
   try {
     expanded = expandComposition(schema, root, path);
   } catch {
     tally.placeholder += 1;
     return;
   }
-  const first = expanded[0];
-  if (first === undefined || (first.target !== null && ancestors.has(first.target))) {
-    tally.placeholder += 1;
+  if (compositionKey(schema) === "$ref") {
+    const first = expanded[0];
+    if (first === undefined || (first.target !== null && ancestors.has(first.target))) {
+      tally.placeholder += 1;
+      return;
+    }
+    tallyField(first.schema, path, tally, root, new Set(ancestors).add(first.target as object));
     return;
   }
-  const next = first.target === null ? ancestors : new Set(ancestors).add(first.target);
-  tallyField(first.schema, path, tally, root, next);
+
+  // 합성이 고를 갈래를 같은 방법으로 찾는다. 검증·합성이 성공하는 첫 갈래가 그것이다.
+  for (const branch of expanded) {
+    try {
+      validateSchema(branch.schema, branch.path, new Set(), root);
+      synthesizeValue(branch.schema, branch.path, root);
+    } catch {
+      continue;
+    }
+    tallyField(branch.schema, path, tally, root, ancestors);
+    return;
+  }
+  tally.placeholder += 1;
 }
 
 /**

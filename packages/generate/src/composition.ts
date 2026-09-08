@@ -7,7 +7,7 @@
  */
 
 import { canonicalJson } from "./canonical.js";
-import { fail, type JsonSchema, plainObject } from "./schema.js";
+import { fail, GenerateTestsError, type JsonSchema, plainObject } from "./schema.js";
 
 /** 한 겹 푼 결과 하나. `target` 은 `$ref` 로 해석한 대상 객체이고 순환 판정의 키다. */
 export interface ExpandedSchema {
@@ -208,11 +208,62 @@ export function expandComposition(
   path: string,
 ): readonly ExpandedSchema[] {
   const key = compositionKey(schema);
-  // anyOf · oneOf 는 T4 가 더한다. 그때까지 두 키는 미지원 키워드로 먼저 걸린다.
-  if (key !== "$ref") return [];
+  if (key === null) return [];
 
   const outer: Record<string, unknown> = { ...schema };
-  delete outer.$ref;
-  const target = resolveLocalRef(schema.$ref, root, path);
-  return [{ schema: mergeSchemas(outer, target, `${path}.$ref`), path, target }];
+  delete outer[key];
+  if (key === "$ref") {
+    const target = resolveLocalRef(schema.$ref, root, path);
+    return [{ schema: mergeSchemas(outer, target, `${path}.$ref`), path, target }];
+  }
+  return expandBranches(outer, branchesOf(schema, key, path), key, path);
+}
+
+/** 갈래 배열의 형식 검사. 비어 있거나 원소가 스키마 객체가 아니면 문안 10 이다. */
+function branchesOf(schema: JsonSchema, key: "anyOf" | "oneOf", path: string): JsonSchema[] {
+  const branches = schema[key];
+  if (!Array.isArray(branches) || branches.length === 0)
+    return failBranchShape(`${path}.${key}`, key);
+  for (let index = 0; index < branches.length; index++) {
+    if (!plainObject(branches[index])) failBranchShape(`${path}.${key}[${index}]`, key);
+  }
+  return branches as JsonSchema[];
+}
+
+function failBranchShape(path: string, key: string): never {
+  return fail(
+    "UNSUPPORTED_SCHEMA",
+    path,
+    `'${key}' 는 비어 있지 않은 스키마 객체 배열이어야 합니다: ${path}`,
+    "갈래를 한 개 이상 스키마 객체로 선언하세요.",
+  );
+}
+
+/**
+ * 갈래마다 바깥과 병합한다. 병합 충돌은 그 갈래를 목록에서 뺄 뿐 던지지 않는다. 다른 갈래로
+ * 값을 만들 수 있으면 그 툴은 살아야 하기 때문이다. 전부 빠지면 첫 충돌을 그대로 던진다.
+ */
+function expandBranches(
+  outer: Record<string, unknown>,
+  branches: readonly JsonSchema[],
+  key: "anyOf" | "oneOf",
+  path: string,
+): readonly ExpandedSchema[] {
+  const expanded: ExpandedSchema[] = [];
+  let firstConflict: GenerateTestsError | null = null;
+  for (let index = 0; index < branches.length; index++) {
+    const branchPath = `${path}.${key}[${index}]`;
+    try {
+      expanded.push({
+        schema: mergeSchemas(outer, branches[index] as JsonSchema, branchPath),
+        path: branchPath,
+        target: null,
+      });
+    } catch (error) {
+      if (!(error instanceof GenerateTestsError)) throw error;
+      firstConflict ??= error;
+    }
+  }
+  if (expanded.length === 0 && firstConflict !== null) throw firstConflict;
+  return expanded;
 }

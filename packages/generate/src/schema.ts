@@ -76,6 +76,8 @@ const SUPPORTED_SCHEMA_KEYS = new Set([
   "$ref",
   "$defs",
   "definitions",
+  "anyOf",
+  "oneOf",
 ]);
 
 export const plainObject = (value: unknown): value is Record<string, unknown> =>
@@ -232,19 +234,57 @@ function validateComposition(
   active: Set<object>,
   root: JsonSchema,
 ): void {
-  for (const expanded of expandComposition(schema, root, path)) {
-    if (expanded.target === null) {
-      validateSchema(expanded.schema, expanded.path, active, root);
-      continue;
+  const key = compositionKey(schema);
+  const expanded = expandComposition(schema, root, path);
+  if (key === "$ref") {
+    for (const one of expanded) {
+      if (one.target !== null && active.has(one.target)) continue;
+      if (one.target === null) {
+        validateSchema(one.schema, one.path, active, root);
+        continue;
+      }
+      active.add(one.target);
+      try {
+        validateSchema(one.schema, one.path, active, root);
+      } finally {
+        active.delete(one.target);
+      }
     }
-    if (active.has(expanded.target)) continue;
-    active.add(expanded.target);
+    return;
+  }
+
+  // 갈래 하나라도 통과하면 그 툴은 살아 있다. 우리가 못 읽는 갈래가 섞여 있을 뿐이다.
+  let firstError: GenerateTestsError | null = null;
+  for (const branch of expanded) {
     try {
-      validateSchema(expanded.schema, expanded.path, active, root);
-    } finally {
-      active.delete(expanded.target);
+      validateSchema(branch.schema, branch.path, active, root);
+      return;
+    } catch (error) {
+      // 깨진 선언(INVALID_SCHEMA_CONSTRAINT)은 갈래 단위로 삼키지 않는다. 삼키면 그 툴이
+      // 조용히 다른 갈래로 넘어가고 사용자는 자기 선언이 모순이라는 사실을 영영 못 본다.
+      if (!(error instanceof GenerateTestsError) || error.code !== "UNSUPPORTED_SCHEMA")
+        throw error;
+      firstError ??= error;
     }
   }
+  failAllBranches(schema, key as "anyOf" | "oneOf", path, firstError);
+}
+
+/** 문안 7. 갈래 수는 **선언된** 개수다. 병합에서 빠진 갈래도 사용자에게는 갈래다. */
+export function failAllBranches(
+  schema: JsonSchema,
+  key: "anyOf" | "oneOf",
+  path: string,
+  firstError: GenerateTestsError | null,
+): never {
+  const declared = Array.isArray(schema[key]) ? (schema[key] as unknown[]).length : 0;
+  const cause = firstError?.message ?? "만들 수 있는 값이 없습니다.";
+  return fail(
+    "UNSUPPORTED_SCHEMA",
+    `${path}.${key}`,
+    `'${key}' 의 갈래 ${declared}개를 모두 생성할 수 없습니다: ${path}.${key}. 첫 원인: ${cause}`,
+    firstError?.hint ?? "갈래 중 하나는 지원하는 키워드만 쓰도록 선언하세요.",
+  );
 }
 
 function validateAnnotations(schema: JsonSchema, path: string): void {

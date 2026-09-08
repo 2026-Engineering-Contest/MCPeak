@@ -6,7 +6,16 @@ import {
   isKnownFormat,
 } from "./constraints.js";
 import { compilePattern, synthesizePatternString, tryCompilePattern } from "./pattern.js";
-import { fail, type JsonSchema, type JsonValue, plainObject, type SchemaType } from "./schema.js";
+import {
+  fail,
+  failAllBranches,
+  GenerateTestsError,
+  type JsonSchema,
+  type JsonValue,
+  plainObject,
+  type SchemaType,
+  validateSchema,
+} from "./schema.js";
 
 /** 제약이 없을 때 문자열에 넣는 값. 종전과 같다. */
 const PLACEHOLDER_STRING = "example";
@@ -190,12 +199,17 @@ function valueMatchesConstraints(value: JsonValue, schema: JsonSchema, type: Sch
 
 function valueMatchesSchema(value: JsonValue, schema: JsonSchema, root: JsonSchema): boolean {
   // 후보 검사도 조합을 한 겹 푼다. $ref 만 든 스키마에는 type 이 없어 그냥 보면 전부 불일치다.
-  if (compositionKey(schema) !== null) {
+  const key = compositionKey(schema);
+  if (key !== null) {
     const expanded = expandCompositionOrNull(schema, root);
     if (expanded === null) return false;
-    const first = expanded[0];
-    // 값은 유한하므로 재귀는 끝난다. 참조가 순환해도 값을 따라 내려가다 바닥에 닿는다.
-    return first === undefined || valueMatchesSchema(value, first.schema, root);
+    if (key === "$ref") {
+      const first = expanded[0];
+      // 값은 유한하므로 재귀는 끝난다. 참조가 순환해도 값을 따라 내려가다 바닥에 닿는다.
+      return first === undefined || valueMatchesSchema(value, first.schema, root);
+    }
+    const matched = countMatchingBranches(value, expanded, root);
+    return key === "oneOf" ? matched === 1 : matched > 0;
   }
   const type = schema.type as SchemaType;
   const typeMatches =
@@ -333,16 +347,11 @@ function synthesizeComposition(
   root: JsonSchema,
   active: Set<object>,
 ): JsonValue {
+  const key = compositionKey(schema) as "$ref" | "anyOf" | "oneOf";
   const expanded = expandComposition(schema, root, path);
-  const first = expanded[0] as ExpandedSchema | undefined;
-  if (first === undefined) {
-    return fail(
-      "UNSUPPORTED_SCHEMA",
-      path,
-      `조합 키워드를 풀지 못했습니다: ${path}`,
-      "$ref, anyOf, oneOf 중 지원하는 형태로 선언하세요.",
-    );
-  }
+  if (key !== "$ref") return synthesizeBranches(schema, key, expanded, path, root, active);
+
+  const first = expanded[0] as ExpandedSchema;
   if (first.target === null) return synthesizeValue(first.schema, first.path, root, active);
   if (active.has(first.target)) {
     return fail(
@@ -365,4 +374,57 @@ function expandCompositionOrNull(
   } catch {
     return null;
   }
+}
+
+/**
+ * 갈래를 선언 순서대로 시도해 첫 성공값을 쓴다.
+ *
+ * 갈래마다 `validateSchema` 를 먼저 돌린다. 합성기는 미지원 키워드를 보지 않으므로 그것 없이는
+ * 우리가 못 읽는 갈래로도 값이 나온다(설계 §5.4 "실패 조건은 검증과 같다"). `oneOf` 는 만든
+ * 값이 **정확히 한 갈래만** 만족하는지 세고 아니면 다음 갈래로 간다.
+ */
+function synthesizeBranches(
+  schema: JsonSchema,
+  key: "anyOf" | "oneOf",
+  expanded: readonly ExpandedSchema[],
+  path: string,
+  root: JsonSchema,
+  active: Set<object>,
+): JsonValue {
+  let firstError: GenerateTestsError | null = null;
+  let exclusivityFailed = false;
+  for (const branch of expanded) {
+    try {
+      validateSchema(branch.schema, branch.path, new Set(), root);
+      const candidate = synthesizeValue(branch.schema, branch.path, root, active);
+      if (key === "oneOf" && countMatchingBranches(candidate, expanded, root) !== 1) {
+        exclusivityFailed = true;
+        continue;
+      }
+      return candidate;
+    } catch (error) {
+      // 깨진 선언은 갈래 단위로 삼키지 않는다. 검증 쪽과 같은 규칙이다.
+      if (!(error instanceof GenerateTestsError) || error.code !== "UNSUPPORTED_SCHEMA")
+        throw error;
+      firstError ??= error;
+    }
+  }
+  if (key === "oneOf" && exclusivityFailed) {
+    return fail(
+      "UNSUPPORTED_SCHEMA",
+      `${path}.oneOf`,
+      `'oneOf' 의 어느 갈래로 만든 값도 정확히 한 갈래만 만족하지 않습니다: ${path}.oneOf`,
+      "갈래를 서로 배타적으로 선언하거나 anyOf 로 바꾸세요.",
+    );
+  }
+  return failAllBranches(schema, key, path, firstError);
+}
+
+/** 값이 만족하는 갈래 수. `oneOf` 의 배타 판정과 후보 검사가 같은 계산을 쓴다. */
+function countMatchingBranches(
+  value: JsonValue,
+  expanded: readonly ExpandedSchema[],
+  root: JsonSchema,
+): number {
+  return expanded.filter((branch) => valueMatchesSchema(value, branch.schema, root)).length;
 }

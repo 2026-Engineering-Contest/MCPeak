@@ -983,3 +983,72 @@ describe("$ref (#389)", () => {
     expect(result.skippedTools.map((item) => item.index)).toEqual([2]);
   });
 });
+
+describe("anyOf / oneOf (#389)", () => {
+  const toolWithField = (v: Record<string, unknown>) => ({
+    type: "object",
+    required: ["v"],
+    properties: { v },
+  });
+
+  it("anyOf 툴을 거절하지 않는다", () => {
+    expect(() =>
+      validateSchema(
+        toolWithField({ anyOf: [{ type: "string" }, { type: "null" }] }),
+        "t.inputSchema",
+      ),
+    ).not.toThrow();
+  });
+
+  it("빈 anyOf 는 UNSUPPORTED_SCHEMA 다", () => {
+    expect(() => validateSchema(toolWithField({ anyOf: [] }), "t.inputSchema")).toThrow(
+      expect.objectContaining({
+        code: "UNSUPPORTED_SCHEMA",
+        path: "t.inputSchema.properties.v.anyOf",
+        message: expect.stringContaining("비어 있지 않은 스키마 객체 배열"),
+      }),
+    );
+  });
+
+  it("갈래가 객체가 아니면 UNSUPPORTED_SCHEMA 다", () => {
+    expect(() =>
+      validateSchema(toolWithField({ anyOf: [{ type: "string" }, "null"] }), "t.inputSchema"),
+    ).toThrow(
+      expect.objectContaining({
+        code: "UNSUPPORTED_SCHEMA",
+        path: "t.inputSchema.properties.v.anyOf[1]",
+      }),
+    );
+  });
+
+  it("한 갈래만 지원돼도 툴을 거절하지 않는다", () => {
+    expect(() =>
+      validateSchema(
+        toolWithField({ anyOf: [{ type: "string", not: {} }, { type: "number" }] }),
+        "t.inputSchema",
+      ),
+    ).not.toThrow();
+  });
+
+  it("전 갈래 미지원 툴은 그 툴만 건너뛴다", () => {
+    const result = createBaselineSuite(
+      [
+        { name: "ok", inputSchema: toolWithField({ type: "string" }) },
+        {
+          name: "all-unsupported",
+          inputSchema: toolWithField({
+            anyOf: [
+              { type: "string", not: {} },
+              { type: "string", allOf: [] },
+            ],
+          }),
+        },
+      ],
+      { suiteId: "s", suiteName: "s" },
+    );
+
+    expect(result.skippedTools[0]).toMatchObject({
+      path: "tools[1].inputSchema.properties.v.anyOf",
+    });
+  });
+});

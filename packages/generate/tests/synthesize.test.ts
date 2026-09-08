@@ -323,3 +323,128 @@ describe("$ref 합성", () => {
     );
   });
 });
+
+describe("anyOf / oneOf 합성", () => {
+  it("nullable 은 첫 갈래 string 이다", () => {
+    expect(value({ anyOf: [{ type: "string" }, { type: "null" }] })).toBe("example");
+  });
+
+  it("null 이 첫 갈래면 null 이다", () => {
+    expect(value({ anyOf: [{ type: "null" }, { type: "string" }] })).toBe(null);
+  });
+
+  it("enum nullable 은 enum[0] 이다", () => {
+    expect(value({ anyOf: [{ type: "string", enum: ["x", "y"] }, { type: "null" }] })).toBe("x");
+  });
+
+  it("union 은 첫 갈래다", () => {
+    expect(value({ anyOf: [{ type: "string" }, { type: "number" }] })).toBe("example");
+  });
+
+  it("첫 갈래가 미지원이면 다음 갈래다", () => {
+    expect(value({ anyOf: [{ type: "string", not: {} }, { type: "number" }] })).toBe(0);
+  });
+
+  it("갈래에 type 이 없으면 바깥 type 을 물려받는다", () => {
+    expect(
+      value({
+        type: "object",
+        properties: { a: { type: "string" }, b: { type: "string" }, c: { type: "string" } },
+        anyOf: [{ required: ["a"] }, { required: ["b", "c"] }],
+      }),
+    ).toEqual({ a: "example" });
+  });
+
+  it("바깥 required 와 갈래 required 는 합쳐진다", () => {
+    expect(
+      value({
+        type: "object",
+        required: ["a"],
+        properties: { a: { type: "string" }, b: { type: "string" } },
+        anyOf: [{ required: ["b"] }],
+      }),
+    ).toEqual({ a: "example", b: "example" });
+  });
+
+  it("default 가 어느 갈래든 만족하면 default 다", () => {
+    expect(value({ anyOf: [{ type: "string" }, { type: "null" }], default: null })).toBe(null);
+  });
+
+  it("default 가 어느 갈래도 안 맞으면 후보 불만족이다", () => {
+    expect(() => value({ anyOf: [{ type: "string" }, { type: "null" }], default: 3 })).toThrow(
+      expect.objectContaining({ code: "UNSUPPORTED_SCHEMA" }),
+    );
+  });
+
+  it("oneOf 는 정확히 한 갈래만 만족하는 값을 고른다", () => {
+    // 두 갈래 모두 0 을 만들고 0 은 number 이자 integer 라 어느 쪽도 배타적이지 않다.
+    expect(() => value({ oneOf: [{ type: "number" }, { type: "integer" }] })).toThrow(
+      expect.objectContaining({
+        code: "UNSUPPORTED_SCHEMA",
+        message: expect.stringMatching(/^'oneOf' 의 어느 갈래로 만든 값도/),
+      }),
+    );
+  });
+
+  it("discriminatedUnion 은 첫 객체 갈래다", () => {
+    expect(
+      value({
+        oneOf: [
+          {
+            type: "object",
+            properties: { k: { type: "string", const: "a" }, a: { type: "string" } },
+            required: ["k", "a"],
+          },
+          {
+            type: "object",
+            properties: { k: { type: "string", const: "b" }, b: { type: "number" } },
+            required: ["k", "b"],
+          },
+        ],
+      }),
+    ).toEqual({ k: "a", a: "example" });
+  });
+
+  it("전 갈래 미지원이면 첫 갈래 원인이다", () => {
+    const schema = {
+      anyOf: [
+        { type: "string", not: {} },
+        { type: "string", allOf: [] },
+      ],
+    };
+    expect(() => value(schema)).toThrow(
+      expect.objectContaining({
+        code: "UNSUPPORTED_SCHEMA",
+        path: "p.anyOf",
+        message: expect.stringMatching(/^'anyOf' 의 갈래 2개를 모두/),
+      }),
+    );
+    expect(() => value(schema)).toThrow(
+      expect.objectContaining({ message: expect.stringMatching(/첫 원인:.*'not'/) }),
+    );
+  });
+
+  it("갈래의 모순 제약은 전체 중단이다", () => {
+    expect(() =>
+      value({ anyOf: [{ type: "integer", minimum: 5, maximum: 1 }, { type: "string" }] }),
+    ).toThrow(expect.objectContaining({ code: "INVALID_SCHEMA_CONSTRAINT" }));
+  });
+
+  it("$ref 와 anyOf 가 함께 있으면 $ref 를 먼저 푼다", () => {
+    expect(
+      value({
+        $ref: "#/$defs/Base",
+        anyOf: [{ required: ["x"] }],
+        $defs: { Base: { type: "object", properties: { x: { type: "string" } } } },
+      }),
+    ).toEqual({ x: "example" });
+  });
+
+  it("갈래 안의 anyOf 도 푼다", () => {
+    expect(
+      value({
+        anyOf: [{ anyOf: [{ type: "string" }, { type: "number" }] }, { type: "boolean" }],
+      }),
+    ).toBe("example");
+  });
+});

@@ -385,3 +385,49 @@ describe("$ref 가 든 배열의 위반 값", () => {
     ]);
   });
 });
+
+describe("선언 밖 필드 케이스 (#427)", () => {
+  const strict = (properties: Record<string, unknown>) => ({
+    type: "object",
+    required: ["x"],
+    properties,
+    additionalProperties: false,
+  });
+
+  it("additionalProperties: false 면 선언 밖 키 케이스가 마지막에 하나 생긴다", () => {
+    const cases = buildViolationCases({
+      tool: tool("t", strict({ x: { type: "string" } })),
+      happyInput: { x: "example" },
+      baseName: "t",
+    });
+
+    const last = cases[cases.length - 1];
+    expect(last?.id).toBe("t-undeclared");
+    expect(last?.name).toBe("t가 선언되지 않은 필드 '__mcpeak_undeclared__' 를 거절한다");
+    expect(last?.operation.input).toEqual({ x: "example", __mcpeak_undeclared__: "example" });
+    expect(last?.assertions).toEqual([{ type: "isError", expected: true }]);
+  });
+
+  it("additionalProperties 가 없으면 그 케이스가 없다", () => {
+    const cases = buildViolationCases({
+      tool: tool("t", { type: "object", required: ["x"], properties: { x: { type: "string" } } }),
+      happyInput: { x: "example" },
+      baseName: "t",
+    });
+    expect(cases.some((item) => item.id === "t-undeclared")).toBe(false);
+  });
+
+  it("예약 키가 properties 에 이미 있으면 접미사를 붙인다", () => {
+    const cases = buildViolationCases({
+      tool: tool("t", strict({ x: { type: "string" }, __mcpeak_undeclared__: { type: "string" } })),
+      happyInput: { x: "example" },
+      baseName: "t",
+    });
+
+    const last = cases[cases.length - 1];
+    expect(last?.operation.input).toEqual({
+      x: "example",
+      __mcpeak_undeclared___2: "example",
+    });
+  });
+});

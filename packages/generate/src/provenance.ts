@@ -32,13 +32,15 @@ const byCodeUnit = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0
 /**
  * 값의 근거가 되는 범위 제약이 선언됐는지. **그 type 에 적용되는 키워드만 본다.**
  *
+ * `pattern` 은 여기 없다. 규칙은 지키지만(`^[a-z]+$` → `"a"`) 도메인 값으로 약해서, declared 로
+ * 세면 AI 사전보완이 덮지 못한 채로 지나간다(#428, ADR-0086 개정). 길이 제약만 있는 문자열도
+ * 같은 의심을 받을 수 있으나 실측 없이 바꾸지 않는다.
+ *
  * `{ type: "integer", minLength: 3 }` 의 `minLength` 는 정수 값에 적용되지 않는다. 근거로 세면
  * 합성값은 제약이 안 걸린 `0` 인데 `needsAssist` 가 false 가 되어 AI 사전보완 대상에서 빠진다.
  * 개수 제약(`minItems` 등)은 배열 자신이 아니라 원소 값을 봐야 하므로 여기 오지 않는다.
  */
 const hasApplicableRangeKeyword = (schema: JsonSchema, type: SchemaType): boolean => {
-  // pattern 은 문자열에만 적용된다. 선언된 규칙을 따르는 값이라 범위 제약과 같은 근거다.
-  if (type === "string" && typeof schema.pattern === "string") return true;
   const keys =
     type === "number" || type === "integer"
       ? ["minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum"]

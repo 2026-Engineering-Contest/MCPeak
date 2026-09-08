@@ -170,8 +170,27 @@ describe("순환 스키마", () => {
 });
 
 describe("pattern 의 값 출처", () => {
-  it("pattern 이 있는 문자열은 declared 다", () => {
+  it("pattern 만 있는 문자열은 placeholder 다 (#428)", () => {
+    // '^[a-z]+$' 가 만드는 "a" 는 규칙은 지키지만 도메인 값으로 약하다. declared 로 세면
+    // AI 사전보완이 덮지 못한 채 지나간다(ADR-0086 개정).
     const result = analyzeToolProvenance(tool({ type: "string", pattern: "^a$" }));
+    expect(result.placeholder).toBe(1);
+    expect(result.declared).toBe(0);
+  });
+
+  it("format 값이 pattern 을 통과하면 여전히 declared 다", () => {
+    const result = analyzeToolProvenance(
+      tool({ type: "string", format: "uuid", pattern: "^[0-9a-f-]{36}$" }),
+    );
+    expect(result.declared).toBe(1);
+    expect(result.placeholder).toBe(0);
+  });
+
+  it("pattern 과 minLength 가 함께 있으면 declared 다", () => {
+    // 길이 제약이 근거다. 현재 동작을 고정하는 케이스이지 새 결정이 아니다.
+    const result = analyzeToolProvenance(
+      tool({ type: "string", pattern: "^[a-z]+$", minLength: 3 }),
+    );
     expect(result.declared).toBe(1);
     expect(result.placeholder).toBe(0);
   });

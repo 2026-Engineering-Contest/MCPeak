@@ -42,8 +42,17 @@ function isPlainObject(value: object): boolean {
   return proto === Object.prototype || proto === null;
 }
 
-/** 문장에 넣을 짧은 표기. */
-function describeValue(value: unknown): string {
+/**
+ * 문장에 넣을 짧은 표기.
+ *
+ * `index.ts` 의 `assertSerializable` 도 쓴다. 두 검사는 규칙이 다르지만(키를 만드는 것과
+ * 실어 보내는 것) 값을 사람에게 보여주는 방식까지 갈리면 사용자가 같은 값을 두 이름으로
+ * 읽게 된다.
+ */
+export function describeValue(value: unknown): string {
+  // 인자 경로는 여기에 닿지 않는다 — `walk` 가 undefined 를 위반이 아닌 것으로 먼저 되돌린다.
+  // `assertSerializable` 은 닿는다. 그쪽에서는 undefined 가 곧 거절 사유다.
+  if (value === undefined) return "undefined";
   if (typeof value === "number") return String(value); // NaN · Infinity
   if (typeof value === "function") return "function";
   if (typeof value === "symbol") return "symbol";

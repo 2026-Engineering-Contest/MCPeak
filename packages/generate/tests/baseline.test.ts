@@ -362,3 +362,29 @@ describe("createBaselineSuite", () => {
     );
   });
 });
+
+describe("additionalProperties (#389)", () => {
+  it("이슈 #389 재현 예가 케이스를 만든다", () => {
+    const result = createBaselineSuite(
+      [
+        {
+          name: "t",
+          inputSchema: {
+            type: "object",
+            properties: { x: { type: "string" } },
+            required: ["x"],
+            additionalProperties: false,
+          },
+        },
+      ],
+      { suiteId: "t", suiteName: "t" },
+    );
+
+    expect(result.skippedTools).toEqual([]);
+    const firstCase = result.suite.cases[0];
+    if (firstCase?.operation.type !== "callTool") throw new Error("callTool case가 필요합니다.");
+    expect(firstCase.operation.input).toEqual({ x: "example" });
+    // 정상 1, 필수 누락 1, 타입 위반 1.
+    expect(result.suite.cases.length).toBe(3);
+  });
+});

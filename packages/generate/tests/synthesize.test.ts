@@ -153,3 +153,29 @@ describe("중첩", () => {
     expect(JSON.stringify(value(schema))).toBe(JSON.stringify(value(schema)));
   });
 });
+
+describe("additionalProperties: false 후보 검사", () => {
+  const strict = {
+    type: "object",
+    properties: { a: { type: "string" } },
+    required: ["a"],
+    additionalProperties: false,
+  };
+
+  it("default 에 선언 밖 키가 있으면 후보 불만족으로 UNSUPPORTED_SCHEMA 다", () => {
+    expect(() => value({ ...strict, default: { a: "x", b: 1 } })).toThrow(
+      expect.objectContaining({ code: "UNSUPPORTED_SCHEMA" }),
+    );
+  });
+
+  it("default 가 선언 안이면 그대로 쓴다", () => {
+    expect(value({ ...strict, default: { a: "x" } })).toEqual({ a: "x" });
+  });
+
+  it("additionalProperties 가 true 면 선언 밖 키를 허용한다", () => {
+    expect(value({ ...strict, additionalProperties: true, default: { a: "x", b: 1 } })).toEqual({
+      a: "x",
+      b: 1,
+    });
+  });
+});

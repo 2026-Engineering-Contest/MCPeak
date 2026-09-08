@@ -64,6 +64,9 @@ const SUPPORTED_SCHEMA_KEYS = new Set([
   "minLength",
   "maxLength",
   "format",
+  // 값이 boolean 이거나 스키마 객체면 받는다. 우리는 선언 밖 프로퍼티를 만들지 않으므로 객체
+  // 형태의 값 안쪽 키워드는 합성값을 바꾸지 않는다(설계 §5.1). 후보 검사에만 쓴다.
+  "additionalProperties",
 ]);
 
 export const plainObject = (value: unknown): value is Record<string, unknown> =>
@@ -245,6 +248,20 @@ function validateObjectKeywords(
   path: string,
   active: Set<object>,
 ): void {
+  // object 가 아닌 type 에 붙어 있어도 거절하지 않는다. 뜻이 없을 뿐 합성값이 달라지지 않아
+  // annotation 과 같은 범주다. 값 형식만 본다(설계 §5.1).
+  if ("additionalProperties" in schema) {
+    const additional = schema.additionalProperties;
+    if (typeof additional !== "boolean" && !plainObject(additional)) {
+      fail(
+        "UNSUPPORTED_SCHEMA",
+        `${path}.additionalProperties`,
+        `'additionalProperties' 는 boolean 또는 스키마 객체여야 합니다: ${path}.additionalProperties`,
+        "false, true 또는 JSON Schema 객체를 지정하세요.",
+      );
+    }
+  }
+
   if (type !== "object") {
     if ("properties" in schema || "required" in schema) {
       const keyword = "properties" in schema ? "properties" : "required";

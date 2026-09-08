@@ -805,3 +805,43 @@ describe("$schema 키워드 (#135)", () => {
     });
   });
 });
+
+describe("additionalProperties (#389)", () => {
+  it("additionalProperties: false 가 있는 루트 객체를 거절하지 않는다", () => {
+    expect(() =>
+      validateSchema(
+        {
+          type: "object",
+          properties: { x: { type: "string" } },
+          required: ["x"],
+          additionalProperties: false,
+        },
+        "t.inputSchema",
+      ),
+    ).not.toThrow();
+  });
+
+  it("additionalProperties 가 스키마 객체여도 거절하지 않는다", () => {
+    expect(() =>
+      validateSchema(
+        { type: "object", properties: {}, additionalProperties: { type: "number" } },
+        "t.inputSchema",
+      ),
+    ).not.toThrow();
+  });
+
+  it("additionalProperties 가 문자열이면 UNSUPPORTED_SCHEMA 이고 경로가 그 키다", () => {
+    expect(() =>
+      validateSchema(
+        { type: "object", properties: {}, additionalProperties: "false" },
+        "t.inputSchema",
+      ),
+    ).toThrow(
+      expect.objectContaining({
+        code: "UNSUPPORTED_SCHEMA",
+        path: "t.inputSchema.additionalProperties",
+        message: expect.stringMatching(/^'additionalProperties' 는 boolean 또는/),
+      }),
+    );
+  });
+});

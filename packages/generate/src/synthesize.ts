@@ -189,6 +189,14 @@ function valueMatchesSchema(value: JsonValue, schema: JsonSchema): boolean {
     >;
     const required = ("required" in schema ? schema.required : []) as string[];
     if (required.some((key) => !Object.hasOwn(value, key))) return false;
+    // additionalProperties: false 는 선언 밖 키를 금지한다. const · default · examples[0] 후보가
+    // 그런 키를 들고 오면 불일치다(설계 §5.1).
+    if (
+      schema.additionalProperties === false &&
+      Object.keys(value).some((key) => !Object.hasOwn(properties, key))
+    ) {
+      return false;
+    }
     return Object.keys(value).every(
       (key) =>
         !Object.hasOwn(properties, key) ||

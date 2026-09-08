@@ -68,6 +68,9 @@ const SUPPORTED_SCHEMA_KEYS = new Set([
   // 값이 boolean 이거나 스키마 객체면 받는다. 우리는 선언 밖 프로퍼티를 만들지 않으므로 객체
   // 형태의 값 안쪽 키워드는 합성값을 바꾸지 않는다(설계 §5.1). 후보 검사에만 쓴다.
   "additionalProperties",
+  // 키의 제약이다. 값의 스키마인 additionalProperties 와 짝이라 붙여 둔다. 우리는 선언된 키만
+  // 만들므로 합성값에 영향이 없고, 후보값의 선언 밖 키 이름을 검사할 때만 쓴다(ADR-0087).
+  "propertyNames",
   // 값 검증은 assertConstraints 가, 값 합성은 pattern.ts 가 한다(설계 §5.2).
   "pattern",
   // 조합·참조 키워드. 해석은 composition.ts 가 한다(설계 §5.3).
@@ -346,6 +349,17 @@ function validateObjectKeywords(
         "false, true 또는 JSON Schema 객체를 지정하세요.",
       );
     }
+  }
+  // propertyNames 도 값 형식만 본다. 안쪽은 validateSchema 로 검증하지 않는다. 우리가 그 키를
+  // 만들지 않아 합성값에 영향이 없고, 검증하면 쓰지도 않는 선언의 모순 제약이
+  // INVALID_SCHEMA_CONSTRAINT 로 전체 생성을 중단시킨다(ADR-0087, ADR-0086 과 같은 근거).
+  if ("propertyNames" in schema && !plainObject(schema.propertyNames)) {
+    fail(
+      "UNSUPPORTED_SCHEMA",
+      `${path}.propertyNames`,
+      `'propertyNames' 는 스키마 객체여야 합니다: ${path}.propertyNames`,
+      "키 이름에 적용할 JSON Schema 객체를 지정하세요.",
+    );
   }
 
   if (type !== "object") {

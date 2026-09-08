@@ -1052,3 +1052,62 @@ describe("anyOf / oneOf (#389)", () => {
     });
   });
 });
+
+describe("propertyNames (#425)", () => {
+  const mapField = {
+    type: "object",
+    propertyNames: { type: "string" },
+    additionalProperties: { type: "number" },
+  };
+
+  it("propertyNames 가 있는 툴을 거절하지 않는다", () => {
+    expect(() =>
+      validateSchema(
+        { type: "object", required: ["m"], properties: { m: mapField } },
+        "t.inputSchema",
+      ),
+    ).not.toThrow();
+  });
+
+  it("propertyNames 가 스키마 객체가 아니면 UNSUPPORTED_SCHEMA 이고 경로가 그 키다", () => {
+    expect(() =>
+      validateSchema({ type: "object", properties: {}, propertyNames: "string" }, "t.inputSchema"),
+    ).toThrow(
+      expect.objectContaining({
+        code: "UNSUPPORTED_SCHEMA",
+        path: "t.inputSchema.propertyNames",
+        message: expect.stringMatching(/^'propertyNames' 는 스키마 객체여야 합니다/),
+      }),
+    );
+  });
+
+  it("object 아닌 type 에 붙어 있어도 거절하지 않는다", () => {
+    expect(() =>
+      validateSchema(
+        {
+          type: "object",
+          required: ["s"],
+          properties: { s: { type: "string", propertyNames: { type: "string" } } },
+        },
+        "t.inputSchema",
+      ),
+    ).not.toThrow();
+  });
+
+  it("중첩 안쪽에 있어도 거절하지 않는다", () => {
+    // firecrawl 이 이 형태다. scrapeOptions.jsonOptions.schema 안쪽에 들어 있어 툴 하나가
+    // 통째로 날아갔다(이슈 #425 실측).
+    expect(() =>
+      validateSchema(
+        {
+          type: "object",
+          required: ["a"],
+          properties: {
+            a: { type: "object", required: ["b"], properties: { b: mapField } },
+          },
+        },
+        "t.inputSchema",
+      ),
+    ).not.toThrow();
+  });
+});

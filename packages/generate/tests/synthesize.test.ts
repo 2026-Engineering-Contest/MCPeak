@@ -491,3 +491,47 @@ describe("additionalProperties 가 스키마 객체일 때 후보 검사", () =>
     expect(value({ ...schema, default: { a: "x", b: 1 } })).toEqual({ a: "x", b: 1 });
   });
 });
+
+describe("propertyNames 합성과 후보 검사", () => {
+  const map = {
+    type: "object",
+    propertyNames: { type: "string", pattern: "^[a-z]+$" },
+    additionalProperties: { type: "number" },
+  };
+
+  it("임의 키 맵은 빈 객체다", () => {
+    // 필수 키가 없다. 키 이름을 우리가 지어내지 않으므로 만들 것이 없는 것이 맞다(ADR-0087).
+    expect(value(map)).toEqual({});
+  });
+
+  it("required 가 있으면 그 키만 만든다", () => {
+    expect(
+      value({ ...map, required: ["known"], properties: { known: { type: "number" } } }),
+    ).toEqual({ known: 0 });
+  });
+
+  it("default 의 선언 밖 키 이름이 propertyNames 를 어기면 후보 불만족이다", () => {
+    expect(() => value({ ...map, default: { BAD: 1 } })).toThrow(
+      expect.objectContaining({ code: "UNSUPPORTED_SCHEMA" }),
+    );
+  });
+
+  it("default 의 선언 밖 키 이름이 propertyNames 를 만족하면 그 default 를 쓴다", () => {
+    expect(value({ ...map, default: { ok: 1 } })).toEqual({ ok: 1 });
+  });
+
+  it("키는 propertyNames 로 값은 additionalProperties 로 본다", () => {
+    // 키 이름은 통과하고 값이 숫자가 아니라 떨어지는 경우.
+    expect(() => value({ ...map, default: { ok: "문자열" } })).toThrow(
+      expect.objectContaining({ code: "UNSUPPORTED_SCHEMA" }),
+    );
+  });
+
+  it("선언된 키에는 propertyNames 를 적용하지 않는다", () => {
+    // 'BAD' 는 propertyNames 의 pattern 을 어기지만 properties 에 선언돼 있다. 우리가 거절하면
+    // 사용자가 자기 properties 를 못 쓴다(ADR-0087).
+    expect(value({ ...map, required: ["BAD"], properties: { BAD: { type: "number" } } })).toEqual({
+      BAD: 0,
+    });
+  });
+});

@@ -265,17 +265,27 @@ function valueMatchesSchema(
     ) {
       return false;
     }
-    // 선언 밖 키는 additionalProperties 가 스키마 객체면 그 스키마로 본다. 우리는 그런 키를
-    // 만들지 않으므로 합성은 그대로고, 후보값(default · examples[0] · const)만 여기서 걸린다.
+    // 선언 밖 키는 이름과 값을 따로 본다. 이름은 propertyNames, 값은 additionalProperties 다.
+    // 우리는 그런 키를 만들지 않으므로 합성은 그대로고, 후보값(default · examples[0] · const)만
+    // 여기서 걸린다. 선언된 키에는 propertyNames 를 적용하지 않는다(ADR-0087).
     const additional = plainObject(schema.additionalProperties)
       ? (schema.additionalProperties as JsonSchema)
       : null;
-    return Object.keys(value).every((key) =>
-      Object.hasOwn(properties, key)
-        ? valueMatchesSchema(value[key] as JsonValue, properties[key] as JsonSchema, root, active)
-        : additional === null ||
-          valueMatchesSchema(value[key] as JsonValue, additional, root, active),
-    );
+    const names = plainObject(schema.propertyNames) ? (schema.propertyNames as JsonSchema) : null;
+    return Object.keys(value).every((key) => {
+      if (Object.hasOwn(properties, key)) {
+        return valueMatchesSchema(
+          value[key] as JsonValue,
+          properties[key] as JsonSchema,
+          root,
+          active,
+        );
+      }
+      if (names !== null && !valueMatchesSchema(key, names, root, active)) return false;
+      return (
+        additional === null || valueMatchesSchema(value[key] as JsonValue, additional, root, active)
+      );
+    });
   }
   if (type === "array" && Array.isArray(value)) {
     return value.every((item) =>

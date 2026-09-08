@@ -63,6 +63,9 @@ describe(zod.source, () => {
       rec: { root: { v: "example" } },
       plain: { x: "example" },
       strictroot: { x: "example" },
+      // 임의 키 맵은 빈 객체다. 필수 키가 없어 만들 것이 없다(ADR-0087). 이 값이 박혀 있어야
+      // 나중에 "임의 키를 하나 만들어 넣자" 로 바꿀 때 여기서 걸린다.
+      record: { rec: {} },
       more: {
         s: "aaa",
         nn: 0,

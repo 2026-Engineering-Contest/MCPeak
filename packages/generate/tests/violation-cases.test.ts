@@ -362,3 +362,26 @@ describe("RANGE_VIOLATION 위반 케이스", () => {
     );
   });
 });
+
+describe("$ref 가 든 배열의 위반 값", () => {
+  it("items 가 $ref 인 배열의 범위 위반 값을 만든다", () => {
+    const declaration = tool("t", {
+      type: "object",
+      required: ["v"],
+      properties: { v: { type: "array", items: { $ref: "#/$defs/Inner" }, maxItems: 1 } },
+      $defs: {
+        Inner: { type: "object", required: ["name"], properties: { name: { type: "string" } } },
+      },
+    });
+    const cases = buildViolationCases({
+      tool: declaration,
+      happyInput: { v: [{ name: "example" }] },
+      baseName: "t",
+    }).filter((item) => item.id.includes("-range-"));
+
+    expect((cases[0]?.operation.input as JsonObject | undefined)?.v).toEqual([
+      { name: "example" },
+      { name: "example" },
+    ]);
+  });
+});

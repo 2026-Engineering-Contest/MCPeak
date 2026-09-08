@@ -127,3 +127,10 @@ G1-dashboard-generate-transport-fields-wiring	dd8701c	2026-08-25
 G0-dashboard-generate-front-contracts	7944ae9	2026-08-25
 G2-dashboard-generate-wizard-server-picker	47d5772	2026-08-25
 G3-dashboard-generate-gate-visual-check	6c64f46	2026-08-25
+T0-generate-schema-keywords-adr	05d2258	2026-09-08
+T1-generate-additional-properties	bf60be3	2026-09-08
+T2-generate-pattern	739d750	2026-09-08
+T3-generate-ref-defs	05b3333	2026-09-08
+T4-generate-anyof-oneof	72a5ad6	2026-09-08
+T5-generate-sdk-schema-regression	22009a6	2026-09-08
+T6-generate-schema-keywords-gate	189613c	2026-09-08

@@ -48,6 +48,12 @@
       "formatter": {
         "enabled": false
       }
+    },
+    {
+      "includes": ["packages/generate/tests/fixtures/sdk-schemas/**"],
+      "formatter": {
+        "enabled": false
+      }
     }
   ]
 }

@@ -168,3 +168,78 @@ describe("순환 스키마", () => {
     expect(analyzeToolProvenance(t).declared).toBe(2);
   });
 });
+
+describe("pattern 의 값 출처", () => {
+  it("pattern 이 있는 문자열은 declared 다", () => {
+    const result = analyzeToolProvenance(tool({ type: "string", pattern: "^a$" }));
+    expect(result.declared).toBe(1);
+    expect(result.placeholder).toBe(0);
+  });
+
+  it("integer 에 붙은 pattern 은 근거가 아니다", () => {
+    const result = analyzeToolProvenance(tool({ type: "integer", pattern: "^a$" }));
+    expect(result.placeholder).toBe(1);
+    expect(result.declared).toBe(0);
+  });
+});
+
+describe("$ref 의 값 출처", () => {
+  it("$ref 는 대상의 출처를 센다", () => {
+    const result = analyzeToolProvenance({
+      name: "t",
+      inputSchema: {
+        type: "object",
+        required: ["who"],
+        properties: { who: { $ref: "#/$defs/Inner" } },
+        $defs: {
+          Inner: { type: "object", required: ["name"], properties: { name: { type: "string" } } },
+        },
+      },
+    });
+    expect(result.placeholder).toBe(1);
+    expect(result.declared).toBe(0);
+  });
+
+  it("$ref 해석 실패는 placeholder 1 이다", () => {
+    const result = analyzeToolProvenance({
+      name: "t",
+      inputSchema: {
+        type: "object",
+        required: ["who"],
+        properties: { who: { $ref: "#/$defs/없음" } },
+      },
+    });
+    expect(result.placeholder).toBe(1);
+  });
+});
+
+describe("anyOf 의 값 출처", () => {
+  it("anyOf 는 고른 갈래의 출처다", () => {
+    const result = analyzeToolProvenance(
+      tool({ anyOf: [{ type: "string", format: "uri" }, { type: "null" }] }),
+    );
+    expect(result.declared).toBe(1);
+    expect(result.placeholder).toBe(0);
+  });
+
+  it("첫 갈래 미지원이면 다음 갈래 출처다", () => {
+    const result = analyzeToolProvenance(
+      tool({ anyOf: [{ type: "string", not: {} }, { type: "boolean" }] }),
+    );
+    expect(result.declared).toBe(1);
+    expect(result.placeholder).toBe(0);
+  });
+
+  it("전 갈래 실패는 placeholder 1 이다", () => {
+    const result = analyzeToolProvenance(
+      tool({
+        anyOf: [
+          { type: "string", not: {} },
+          { type: "number", allOf: [] },
+        ],
+      }),
+    );
+    expect(result.placeholder).toBe(1);
+    expect(result.declared).toBe(0);
+  });
+});

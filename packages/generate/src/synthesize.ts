@@ -1,10 +1,21 @@
+import { compositionKey, type ExpandedSchema, expandComposition } from "./composition.js";
 import {
   FORMAT_VALUES,
   integerLowerBound,
   integerUpperBound,
   isKnownFormat,
 } from "./constraints.js";
-import { fail, type JsonSchema, type JsonValue, plainObject, type SchemaType } from "./schema.js";
+import { compilePattern, synthesizePatternString, tryCompilePattern } from "./pattern.js";
+import {
+  fail,
+  failAllBranches,
+  GenerateTestsError,
+  type JsonSchema,
+  type JsonValue,
+  plainObject,
+  type SchemaType,
+  validateSchema,
+} from "./schema.js";
 
 /** 제약이 없을 때 문자열에 넣는 값. 종전과 같다. */
 const PLACEHOLDER_STRING = "example";
@@ -87,6 +98,27 @@ function boundedString(schema: JsonSchema): string {
   return value;
 }
 
+/**
+ * 문자열 합성. 설계 §5.2 의 순서다. 후보(`const` 등)는 호출부가 이미 처리했다.
+ *
+ * 표에 있는 `format` 값은 `pattern` 이 함께 있으면 **그 값이 pattern 을 통과할 때만** 쓴다.
+ * zod 가 붙이는 `uuid`·`date-time`·`email` 의 pattern 은 여기서 끝난다. 통과하지 못하면
+ * 부분집합 생성기로 내려간다. format 값을 잘라 쓰지 않는 이유는 종전과 같다(형식이 깨진다).
+ */
+function synthesizeString(schema: JsonSchema, path: string): string {
+  const formatValue = knownFormatValue(schema);
+  const pattern = schema.pattern;
+  if (typeof pattern !== "string") return formatValue ?? boundedString(schema);
+
+  const regex = compilePattern(pattern, path);
+  if (formatValue !== null && regex.test(formatValue)) return formatValue;
+  return synthesizePatternString(
+    pattern,
+    { minLength: numberAt(schema, "minLength"), maxLength: numberAt(schema, "maxLength") },
+    path,
+  );
+}
+
 /** 원소 개수. `max(minItems, 1)` 을 쓰되 상한을 넘지 않는다. `maxItems: 0` 이면 빈 배열이다. */
 function itemCount(schema: JsonSchema): number {
   const minItems = numberAt(schema, "minItems");
@@ -140,6 +172,13 @@ function valueMatchesConstraints(value: JsonValue, schema: JsonSchema, type: Sch
     return true;
   }
   if (typeof value === "string" && type === "string") {
+    // 알려진 format 이 있어도 pattern 은 본다. 건너뛰는 것은 길이뿐이다(설계 §5.2).
+    const pattern = schema.pattern;
+    if (typeof pattern === "string") {
+      const regex = tryCompilePattern(pattern);
+      // 컴파일 실패는 assertConstraints 가 이미 INVALID_SCHEMA_CONSTRAINT 로 걸렀다.
+      if (regex !== null && !regex.test(value)) return false;
+    }
     if (knownFormatValue(schema) !== null) return true;
     const minLength = numberAt(schema, "minLength");
     const maxLength = numberAt(schema, "maxLength");
@@ -158,7 +197,36 @@ function valueMatchesConstraints(value: JsonValue, schema: JsonSchema, type: Sch
   return true;
 }
 
-function valueMatchesSchema(value: JsonValue, schema: JsonSchema): boolean {
+/**
+ * 후보값이 스키마를 만족하는지. `active` 에는 해석 중인 `$ref` 대상 객체가 담긴다.
+ *
+ * 값만 따라 내려가는 것으로는 부족하다. `{ $defs: { A: { $ref: "#/$defs/A" } } }` 처럼 값을
+ * 소비하지 않고 도는 참조가 있으면 같은 값으로 무한히 재귀한다. 그러면 스택이 터지고, 그
+ * `RangeError` 를 위쪽 catch 가 삼켜 "안 맞음" 으로 돌아오므로 **결과가 우연히 맞는다.**
+ * 재방문을 여기서 false 로 끊어야 판정의 근거가 스택 한계가 아니게 된다. 합성 쪽이 같은
+ * 자리에서 문안 6 으로 거절하는 것과 갈리는 점은, 후보 검사는 던지지 않는다는 것뿐이다.
+ */
+function valueMatchesSchema(
+  value: JsonValue,
+  schema: JsonSchema,
+  root: JsonSchema,
+  active: Set<object> = new Set(),
+): boolean {
+  // 후보 검사도 조합을 한 겹 푼다. $ref 만 든 스키마에는 type 이 없어 그냥 보면 전부 불일치다.
+  const key = compositionKey(schema);
+  if (key !== null) {
+    const expanded = expandCompositionOrNull(schema, root);
+    if (expanded === null) return false;
+    if (key === "$ref") {
+      const first = expanded[0];
+      if (first === undefined) return true;
+      if (first.target !== null && active.has(first.target)) return false;
+      const next = first.target === null ? active : new Set(active).add(first.target);
+      return valueMatchesSchema(value, first.schema, root, next);
+    }
+    const matched = countMatchingBranches(value, expanded, root, active);
+    return key === "oneOf" ? matched === 1 : matched > 0;
+  }
   const type = schema.type as SchemaType;
   const typeMatches =
     type === "null"
@@ -189,20 +257,48 @@ function valueMatchesSchema(value: JsonValue, schema: JsonSchema): boolean {
     >;
     const required = ("required" in schema ? schema.required : []) as string[];
     if (required.some((key) => !Object.hasOwn(value, key))) return false;
-    return Object.keys(value).every(
-      (key) =>
-        !Object.hasOwn(properties, key) ||
-        valueMatchesSchema(value[key] as JsonValue, properties[key] as JsonSchema),
+    // additionalProperties: false 는 선언 밖 키를 금지한다. const · default · examples[0] 후보가
+    // 그런 키를 들고 오면 불일치다(설계 §5.1).
+    if (
+      schema.additionalProperties === false &&
+      Object.keys(value).some((key) => !Object.hasOwn(properties, key))
+    ) {
+      return false;
+    }
+    // 선언 밖 키는 additionalProperties 가 스키마 객체면 그 스키마로 본다. 우리는 그런 키를
+    // 만들지 않으므로 합성은 그대로고, 후보값(default · examples[0] · const)만 여기서 걸린다.
+    const additional = plainObject(schema.additionalProperties)
+      ? (schema.additionalProperties as JsonSchema)
+      : null;
+    return Object.keys(value).every((key) =>
+      Object.hasOwn(properties, key)
+        ? valueMatchesSchema(value[key] as JsonValue, properties[key] as JsonSchema, root, active)
+        : additional === null ||
+          valueMatchesSchema(value[key] as JsonValue, additional, root, active),
     );
   }
   if (type === "array" && Array.isArray(value)) {
-    return value.every((item) => valueMatchesSchema(item, schema.items as JsonSchema));
+    return value.every((item) =>
+      valueMatchesSchema(item, schema.items as JsonSchema, root, active),
+    );
   }
   return true;
 }
 
-/** 검증된 JSON Schema에서 결정론적인 입력값 하나를 합성한다. */
-export function synthesizeValue(schema: JsonSchema, path: string): JsonValue {
+/**
+ * 검증된 JSON Schema에서 결정론적인 입력값 하나를 합성한다.
+ *
+ * `root` 는 `$ref` 를 푸는 기준이고 기본값이 자기 자신이라 기존 호출부가 그대로 컴파일된다.
+ * `active` 에는 해석한 `$ref` 대상 객체만 담는다.
+ */
+export function synthesizeValue(
+  schema: JsonSchema,
+  path: string,
+  root: JsonSchema = schema,
+  active: Set<object> = new Set(),
+): JsonValue {
+  if (compositionKey(schema) !== null) return synthesizeComposition(schema, path, root, active);
+
   let value: JsonValue;
   if ("const" in schema) value = schema.const as JsonValue;
   else if ("default" in schema) value = schema.default as JsonValue;
@@ -212,8 +308,7 @@ export function synthesizeValue(schema: JsonSchema, path: string): JsonValue {
   else {
     switch (schema.type as SchemaType) {
       case "string":
-        // format 이 있으면 그 값을 그대로 쓴다. 자르면 형식이 깨져 길이와 형식 둘 다 못 지킨다.
-        value = knownFormatValue(schema) ?? boundedString(schema);
+        value = synthesizeString(schema, path);
         break;
       case "number":
       case "integer":
@@ -228,7 +323,7 @@ export function synthesizeValue(schema: JsonSchema, path: string): JsonValue {
       case "array":
         // 원소는 전부 같은 값이다. 인덱스마다 다른 값을 넣으면 지문이 원소 개수에 따라 흔들린다.
         value = Array.from({ length: itemCount(schema) }, () =>
-          synthesizeValue(schema.items as JsonSchema, `${path}.items`),
+          synthesizeValue(schema.items as JsonSchema, `${path}.items`, root, active),
         );
         break;
       case "object": {
@@ -240,7 +335,12 @@ export function synthesizeValue(schema: JsonSchema, path: string): JsonValue {
         value = Object.fromEntries(
           required.map((key) => [
             key,
-            synthesizeValue(properties[key] as JsonSchema, `${path}.properties.${key}`),
+            synthesizeValue(
+              properties[key] as JsonSchema,
+              `${path}.properties.${key}`,
+              root,
+              active,
+            ),
           ]),
         );
         break;
@@ -248,7 +348,7 @@ export function synthesizeValue(schema: JsonSchema, path: string): JsonValue {
     }
   }
 
-  if (!valueMatchesSchema(value, schema)) {
+  if (!valueMatchesSchema(value, schema, root)) {
     fail(
       "UNSUPPORTED_SCHEMA",
       path,
@@ -257,4 +357,105 @@ export function synthesizeValue(schema: JsonSchema, path: string): JsonValue {
     );
   }
   return value;
+}
+
+/**
+ * 조합 키를 한 겹 풀고 유효 스키마로 합성한다.
+ *
+ * 이미 활성인 `$ref` 대상에 다시 닿으면 거절한다. 합성은 필수 경로만 따라가므로 여기 도달한
+ * 순환은 유한한 값이 없는 순환이다. 검증 쪽이 같은 자리를 조용히 건너뛰는 것과 갈린다(§5.3).
+ */
+function synthesizeComposition(
+  schema: JsonSchema,
+  path: string,
+  root: JsonSchema,
+  active: Set<object>,
+): JsonValue {
+  const key = compositionKey(schema) as "$ref" | "anyOf" | "oneOf";
+  const expanded = expandComposition(schema, root, path);
+  if (key !== "$ref") return synthesizeBranches(schema, key, expanded, path, root, active);
+
+  const first = expanded[0] as ExpandedSchema;
+  if (first.target === null) return synthesizeValue(first.schema, first.path, root, active);
+  if (active.has(first.target)) {
+    return fail(
+      "UNSUPPORTED_SCHEMA",
+      path,
+      `필수 경로에 순환 참조가 있어 유한한 입력값을 만들 수 없습니다: ${path}.$ref = ${JSON.stringify(schema.$ref)}`,
+      "순환하는 필드를 required 에서 빼거나 default 로 끝나는 값을 선언하세요.",
+    );
+  }
+  return synthesizeValue(first.schema, first.path, root, new Set(active).add(first.target));
+}
+
+/**
+ * 후보 검사용. 해석에 실패하면 그 값은 이 스키마를 만족한다고 볼 수 없다.
+ *
+ * 삼키는 것은 `GenerateTestsError` 뿐이다. 그 밖의 오류까지 삼키면 우리 결함이 "안 맞음" 으로
+ * 위장돼 결과가 우연히 맞는 상태가 조용히 유지된다.
+ */
+function expandCompositionOrNull(
+  schema: JsonSchema,
+  root: JsonSchema,
+): readonly ExpandedSchema[] | null {
+  try {
+    return expandComposition(schema, root, "");
+  } catch (error) {
+    if (error instanceof GenerateTestsError) return null;
+    throw error;
+  }
+}
+
+/**
+ * 갈래를 선언 순서대로 시도해 첫 성공값을 쓴다.
+ *
+ * 갈래마다 `validateSchema` 를 먼저 돌린다. 합성기는 미지원 키워드를 보지 않으므로 그것 없이는
+ * 우리가 못 읽는 갈래로도 값이 나온다(설계 §5.4 "실패 조건은 검증과 같다"). `oneOf` 는 만든
+ * 값이 **정확히 한 갈래만** 만족하는지 세고 아니면 다음 갈래로 간다.
+ */
+function synthesizeBranches(
+  schema: JsonSchema,
+  key: "anyOf" | "oneOf",
+  expanded: readonly ExpandedSchema[],
+  path: string,
+  root: JsonSchema,
+  active: Set<object>,
+): JsonValue {
+  let firstError: GenerateTestsError | null = null;
+  let exclusivityFailed = false;
+  for (const branch of expanded) {
+    try {
+      validateSchema(branch.schema, branch.path, new Set(), root);
+      const candidate = synthesizeValue(branch.schema, branch.path, root, active);
+      if (key === "oneOf" && countMatchingBranches(candidate, expanded, root, active) !== 1) {
+        exclusivityFailed = true;
+        continue;
+      }
+      return candidate;
+    } catch (error) {
+      // 깨진 선언은 갈래 단위로 삼키지 않는다. 검증 쪽과 같은 규칙이다.
+      if (!(error instanceof GenerateTestsError) || error.code !== "UNSUPPORTED_SCHEMA")
+        throw error;
+      firstError ??= error;
+    }
+  }
+  if (key === "oneOf" && exclusivityFailed) {
+    return fail(
+      "UNSUPPORTED_SCHEMA",
+      `${path}.oneOf`,
+      `'oneOf' 의 어느 갈래로 만든 값도 정확히 한 갈래만 만족하지 않습니다: ${path}.oneOf`,
+      "갈래를 서로 배타적으로 선언하거나 anyOf 로 바꾸세요.",
+    );
+  }
+  return failAllBranches(schema, key, path, firstError);
+}
+
+/** 값이 만족하는 갈래 수. `oneOf` 의 배타 판정과 후보 검사가 같은 계산을 쓴다. */
+function countMatchingBranches(
+  value: JsonValue,
+  expanded: readonly ExpandedSchema[],
+  root: JsonSchema,
+  active: Set<object>,
+): number {
+  return expanded.filter((branch) => valueMatchesSchema(value, branch.schema, root, active)).length;
 }

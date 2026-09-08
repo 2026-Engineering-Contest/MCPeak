@@ -7,8 +7,10 @@
  */
 
 import type { ToolDef } from "@mcpeak/core";
+import { compositionKey, expandComposition } from "./composition.js";
 import { isKnownFormat } from "./constraints.js";
-import { type JsonSchema, plainObject, type SchemaType } from "./schema.js";
+import { type JsonSchema, plainObject, type SchemaType, validateSchema } from "./schema.js";
+import { synthesizeValue } from "./synthesize.js";
 
 /** 합성한 값의 근거. */
 export type ValueProvenance = "declared" | "placeholder" | "unknownFormat";
@@ -35,6 +37,8 @@ const byCodeUnit = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0
  * 개수 제약(`minItems` 등)은 배열 자신이 아니라 원소 값을 봐야 하므로 여기 오지 않는다.
  */
 const hasApplicableRangeKeyword = (schema: JsonSchema, type: SchemaType): boolean => {
+  // pattern 은 문자열에만 적용된다. 선언된 규칙을 따르는 값이라 범위 제약과 같은 근거다.
+  if (type === "string" && typeof schema.pattern === "string") return true;
   const keys =
     type === "number" || type === "integer"
       ? ["minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum"]
@@ -72,6 +76,7 @@ function tallyField(
   schema: unknown,
   path: string,
   tally: Tally,
+  root: JsonSchema,
   seen: Set<object> = new Set(),
 ): void {
   if (!plainObject(schema)) {
@@ -84,6 +89,12 @@ function tallyField(
   }
   // 형제끼리 같은 스키마 객체를 공유하는 것은 순환이 아니다. 조상만 담은 사본을 내려보낸다.
   const ancestors = new Set(seen).add(schema);
+  // $ref 는 병합한 유효 스키마의 출처를 그대로 센다. 해석 실패도 순환도 placeholder 1 이다.
+  // 이 함수는 던지지 않아야 하므로(검증을 거치지 않은 inputSchema 도 받는다) 전부 삼킨다.
+  if (compositionKey(schema) !== null) {
+    tallyComposition(schema, path, tally, root, ancestors);
+    return;
+  }
   if (hasCandidate(schema)) {
     tally.declared += 1;
     return;
@@ -101,11 +112,11 @@ function tallyField(
       return;
     }
     for (const key of required)
-      tallyField(properties[key], path === "" ? key : `${path}.${key}`, tally, ancestors);
+      tallyField(properties[key], path === "" ? key : `${path}.${key}`, tally, root, ancestors);
     return;
   }
   if (type === "array") {
-    tallyField(schema.items, path, tally, ancestors);
+    tallyField(schema.items, path, tally, root, ancestors);
     return;
   }
   // format 은 문자열에만 적용된다. 다른 type 에 붙은 format 은 값의 근거가 아니다.
@@ -127,13 +138,51 @@ function tallyField(
   tally.placeholder += 1;
 }
 
+function tallyComposition(
+  schema: JsonSchema,
+  path: string,
+  tally: Tally,
+  root: JsonSchema,
+  ancestors: Set<object>,
+): void {
+  let expanded: readonly { schema: JsonSchema; path: string; target: object | null }[];
+  try {
+    expanded = expandComposition(schema, root, path);
+  } catch {
+    tally.placeholder += 1;
+    return;
+  }
+  if (compositionKey(schema) === "$ref") {
+    const first = expanded[0];
+    if (first === undefined || (first.target !== null && ancestors.has(first.target))) {
+      tally.placeholder += 1;
+      return;
+    }
+    tallyField(first.schema, path, tally, root, new Set(ancestors).add(first.target as object));
+    return;
+  }
+
+  // 합성이 고를 갈래를 같은 방법으로 찾는다. 검증·합성이 성공하는 첫 갈래가 그것이다.
+  for (const branch of expanded) {
+    try {
+      validateSchema(branch.schema, branch.path, new Set(), root);
+      synthesizeValue(branch.schema, branch.path, root);
+    } catch {
+      continue;
+    }
+    tallyField(branch.schema, path, tally, root, ancestors);
+    return;
+  }
+  tally.placeholder += 1;
+}
+
 /**
  * 툴 하나의 값 출처를 집계한다. 서버를 호출하지 않고 결정론적이다.
  * 같은 선언이면 같은 대상 목록이 나온다(설계서 §4.1).
  */
 export function analyzeToolProvenance(tool: ToolDef): ToolProvenance {
   const tally: Tally = { declared: 0, placeholder: 0, unknownFormatFields: [] };
-  tallyField(tool.inputSchema, "", tally);
+  tallyField(tool.inputSchema, "", tally, tool.inputSchema as JsonSchema);
   const unknownFormatFields = [...tally.unknownFormatFields].sort(byCodeUnit);
   return {
     tool: tool.name,

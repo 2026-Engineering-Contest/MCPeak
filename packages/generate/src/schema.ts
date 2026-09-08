@@ -1,3 +1,4 @@
+import { compositionKey, expandComposition } from "./composition.js";
 import { assertConstraints } from "./constraints.js";
 
 export type JsonValue = null | boolean | number | string | JsonValue[] | JsonObject;
@@ -64,6 +65,19 @@ const SUPPORTED_SCHEMA_KEYS = new Set([
   "minLength",
   "maxLength",
   "format",
+  // 값이 boolean 이거나 스키마 객체면 받는다. 우리는 선언 밖 프로퍼티를 만들지 않으므로 객체
+  // 형태의 값 안쪽 키워드는 합성값을 바꾸지 않는다(설계 §5.1). 후보 검사에만 쓴다.
+  "additionalProperties",
+  // 값 검증은 assertConstraints 가, 값 합성은 pattern.ts 가 한다(설계 §5.2).
+  "pattern",
+  // 조합·참조 키워드. 해석은 composition.ts 가 한다(설계 §5.3).
+  // $defs · definitions 안의 스키마는 **참조될 때만** 검증한다. 참조되지 않는 정의에 미지원
+  // 키워드가 있어도 합성값과 무관하다.
+  "$ref",
+  "$defs",
+  "definitions",
+  "anyOf",
+  "oneOf",
 ]);
 
 export const plainObject = (value: unknown): value is Record<string, unknown> =>
@@ -154,6 +168,7 @@ export function validateSchema(
   schema: unknown,
   path: string,
   active: Set<object> = new Set(),
+  root: JsonSchema = schema as JsonSchema,
 ): asserts schema is JsonSchema {
   if (!plainObject(schema)) {
     fail(
@@ -182,8 +197,14 @@ export function validateSchema(
         "UNSUPPORTED_SCHEMA",
         `${path}.${unsupported}`,
         `지원하지 않는 JSON Schema 키워드 '${unsupported}'가 있습니다.`,
-        `첫 버전은 ${[...SUPPORTED_SCHEMA_KEYS].join(", ")}를 지원합니다.`,
+        `지원하는 키워드: ${[...SUPPORTED_SCHEMA_KEYS].join(", ")}. 그 밖의 키워드가 있는 툴은 건너뛰고 나머지 툴을 생성합니다.`,
       );
+    }
+
+    // 조합 키는 미지원 키워드 검사 뒤, type 검사 앞이다. $ref 만 든 스키마에는 type 이 없다.
+    if (compositionKey(schema) !== null) {
+      validateComposition(schema, path, active, root);
+      return;
     }
 
     const type = schemaType(schema, path);
@@ -192,11 +213,78 @@ export function validateSchema(
     // "후보가 제약을 만족하지 않는다" 로 잘못 보고된다.
     assertConstraints(schema, path);
     validateCandidates(schema, path);
-    validateObjectKeywords(schema, type, path, active);
-    validateArrayKeywords(schema, type, path, active);
+    validateObjectKeywords(schema, type, path, active, root);
+    validateArrayKeywords(schema, type, path, active, root);
   } finally {
     active.delete(schema);
   }
+}
+
+/**
+ * 조합 키를 한 겹 풀고 유효 스키마를 검증한다.
+ *
+ * 활성 집합에는 `$ref` 로 해석한 **대상 객체**를 넣는다. 병합 결과는 매번 새 객체라 동일성으로
+ * 잡을 수 없다. 이미 활성인 대상은 조용히 건너뛴다. 그 대상은 스택 위에서 검증 중이고, 여기
+ * 도달하는 순환은 선택 필드에 든 재귀(zod 의 `kids`)라 툴이 살아남아야 한다. 합성 쪽은 필수
+ * 경로만 따라가므로 같은 자리에서 거절한다(설계 §5.3).
+ */
+function validateComposition(
+  schema: JsonSchema,
+  path: string,
+  active: Set<object>,
+  root: JsonSchema,
+): void {
+  const key = compositionKey(schema);
+  const expanded = expandComposition(schema, root, path);
+  if (key === "$ref") {
+    for (const one of expanded) {
+      if (one.target !== null && active.has(one.target)) continue;
+      if (one.target === null) {
+        validateSchema(one.schema, one.path, active, root);
+        continue;
+      }
+      active.add(one.target);
+      try {
+        validateSchema(one.schema, one.path, active, root);
+      } finally {
+        active.delete(one.target);
+      }
+    }
+    return;
+  }
+
+  // 갈래 하나라도 통과하면 그 툴은 살아 있다. 우리가 못 읽는 갈래가 섞여 있을 뿐이다.
+  let firstError: GenerateTestsError | null = null;
+  for (const branch of expanded) {
+    try {
+      validateSchema(branch.schema, branch.path, active, root);
+      return;
+    } catch (error) {
+      // 깨진 선언(INVALID_SCHEMA_CONSTRAINT)은 갈래 단위로 삼키지 않는다. 삼키면 그 툴이
+      // 조용히 다른 갈래로 넘어가고 사용자는 자기 선언이 모순이라는 사실을 영영 못 본다.
+      if (!(error instanceof GenerateTestsError) || error.code !== "UNSUPPORTED_SCHEMA")
+        throw error;
+      firstError ??= error;
+    }
+  }
+  failAllBranches(schema, key as "anyOf" | "oneOf", path, firstError);
+}
+
+/** 문안 7. 갈래 수는 **선언된** 개수다. 병합에서 빠진 갈래도 사용자에게는 갈래다. */
+export function failAllBranches(
+  schema: JsonSchema,
+  key: "anyOf" | "oneOf",
+  path: string,
+  firstError: GenerateTestsError | null,
+): never {
+  const declared = Array.isArray(schema[key]) ? (schema[key] as unknown[]).length : 0;
+  const cause = firstError?.message ?? "만들 수 있는 값이 없습니다.";
+  return fail(
+    "UNSUPPORTED_SCHEMA",
+    `${path}.${key}`,
+    `'${key}' 의 갈래 ${declared}개를 모두 생성할 수 없습니다: ${path}.${key}. 첫 원인: ${cause}`,
+    firstError?.hint ?? "갈래 중 하나는 지원하는 키워드만 쓰도록 선언하세요.",
+  );
 }
 
 function validateAnnotations(schema: JsonSchema, path: string): void {
@@ -244,7 +332,22 @@ function validateObjectKeywords(
   type: SchemaType,
   path: string,
   active: Set<object>,
+  root: JsonSchema,
 ): void {
+  // object 가 아닌 type 에 붙어 있어도 거절하지 않는다. 뜻이 없을 뿐 합성값이 달라지지 않아
+  // annotation 과 같은 범주다. 값 형식만 본다(설계 §5.1).
+  if ("additionalProperties" in schema) {
+    const additional = schema.additionalProperties;
+    if (typeof additional !== "boolean" && !plainObject(additional)) {
+      fail(
+        "UNSUPPORTED_SCHEMA",
+        `${path}.additionalProperties`,
+        `'additionalProperties' 는 boolean 또는 스키마 객체여야 합니다: ${path}.additionalProperties`,
+        "false, true 또는 JSON Schema 객체를 지정하세요.",
+      );
+    }
+  }
+
   if (type !== "object") {
     if ("properties" in schema || "required" in schema) {
       const keyword = "properties" in schema ? "properties" : "required";
@@ -276,7 +379,7 @@ function validateObjectKeywords(
     );
   }
   for (const key of Object.keys(properties).sort()) {
-    validateSchema(properties[key], `${path}.properties.${key}`, active);
+    validateSchema(properties[key], `${path}.properties.${key}`, active, root);
   }
 
   const required = "required" in schema ? schema.required : [];
@@ -308,6 +411,7 @@ function validateArrayKeywords(
   type: SchemaType,
   path: string,
   active: Set<object>,
+  root: JsonSchema,
 ): void {
   if (type === "array") {
     if (!("items" in schema)) {
@@ -318,7 +422,7 @@ function validateArrayKeywords(
         "생성할 배열 원소의 스키마를 items에 지정하세요.",
       );
     }
-    validateSchema(schema.items, `${path}.items`, active);
+    validateSchema(schema.items, `${path}.items`, active, root);
   } else if ("items" in schema) {
     fail(
       "UNSUPPORTED_SCHEMA",

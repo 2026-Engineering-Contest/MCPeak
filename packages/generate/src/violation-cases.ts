@@ -90,11 +90,16 @@ const stringOfLength = (length: number): string =>
   "example".padEnd(Math.max(length, 0), "x").slice(0, Math.max(length, 0));
 
 /** 원소 count 개의 배열. 원소는 items 스키마에서 합성하며 전부 같은 값이다(결정론성). */
-function arrayOfLength(itemsSchema: unknown, count: number, path: string): JsonValue {
+function arrayOfLength(
+  itemsSchema: unknown,
+  count: number,
+  path: string,
+  root: JsonSchema,
+): JsonValue {
   if (count <= 0) return [];
   if (!plainObject(itemsSchema)) return Array.from({ length: count }, () => "example");
   return Array.from({ length: count }, () =>
-    synthesizeValue(itemsSchema as JsonSchema, `${path}.items`),
+    synthesizeValue(itemsSchema as JsonSchema, `${path}.items`, root),
   );
 }
 
@@ -112,6 +117,7 @@ function rangeViolationValue(
   range: ContractRange,
   fieldSchema: unknown,
   path: string,
+  root: JsonSchema,
 ): JsonValue | undefined {
   // integer 는 경계가 소수일 수 있다. minimum: 1.2 에 -1 을 하면 0.2 가 나와 자기 type 을 어긴다.
   // 그러면 그 케이스는 TYPE_VIOLATION 축을 덮고 RANGE_VIOLATION 축은 영원히 미검증으로 남는다.
@@ -129,6 +135,7 @@ function rangeViolationValue(
       plainObject(fieldSchema) ? fieldSchema.items : null,
       range.minItems - 1,
       path,
+      root,
     );
   if (range.minLength !== null && range.minLength >= 1) return stringOfLength(range.minLength - 1);
   if (range.maximum !== null) return range.maximum + 1;
@@ -138,6 +145,7 @@ function rangeViolationValue(
       plainObject(fieldSchema) ? fieldSchema.items : null,
       range.maxItems + 1,
       path,
+      root,
     );
   if (range.maxLength !== null) return stringOfLength(range.maxLength + 1);
   return undefined;
@@ -225,6 +233,8 @@ export function buildViolationCases(options: {
         axis.declaredRange,
         plainObject(properties) ? properties[field] : null,
         `properties.${field}`,
+        // $ref 가 든 원소를 만들려면 루트가 필요하다. items 스키마만으로는 참조를 못 푼다.
+        plainObject(tool.inputSchema) ? (tool.inputSchema as JsonSchema) : {},
       );
       if (value === undefined) continue;
       cases.push(

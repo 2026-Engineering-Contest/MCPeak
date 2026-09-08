@@ -67,9 +67,9 @@ describe("createBaselineSuite", () => {
       name: "count_things",
       inputSchema: {
         type: "object",
-        // maximum 은 이제 지원한다. 부분 생성 자체는 살아 있어야 하므로 여전히 지원하지
-        // 않는 키워드(pattern)로 바꿔 유지한다.
-        properties: { count: { type: "string", pattern: "^a$" } },
+        // maximum 도 pattern 도 이제 지원한다. 부분 생성 자체는 살아 있어야 하므로 여전히
+        // 지원하지 않는 키워드(not)로 바꿔 유지한다.
+        properties: { count: { type: "string", not: { type: "null" } } },
         required: ["count"],
       },
     };
@@ -88,8 +88,8 @@ describe("createBaselineSuite", () => {
         {
           index: 1,
           name: "count_things",
-          path: "tools[1].inputSchema.properties.count.pattern",
-          message: "지원하지 않는 JSON Schema 키워드 'pattern'가 있습니다.",
+          path: "tools[1].inputSchema.properties.count.not",
+          message: "지원하지 않는 JSON Schema 키워드 'not'가 있습니다.",
         },
       ]);
     });
@@ -191,7 +191,7 @@ describe("createBaselineSuite", () => {
       name: "count_things",
       inputSchema: {
         type: "object",
-        properties: { count: { type: "string", pattern: "^a$" } },
+        properties: { count: { type: "string", not: { type: "null" } } },
         required: ["count"],
       },
     };
@@ -317,8 +317,11 @@ describe("createBaselineSuite", () => {
         tools[0] as ToolDef,
         {
           name: "invalid",
-          // minLength 는 이제 지원한다. 여전히 막히는 키워드로 바꿔 유지한다.
-          inputSchema: { type: "object", properties: { q: { type: "string", pattern: "^a$" } } },
+          // pattern 은 이제 지원한다. 여전히 막히는 키워드로 바꿔 유지한다.
+          inputSchema: {
+            type: "object",
+            properties: { q: { type: "string", not: { type: "null" } } },
+          },
         },
       ],
       { suiteId: "weather", suiteName: "날씨" },
@@ -332,8 +335,8 @@ describe("createBaselineSuite", () => {
       {
         index: 1,
         name: "invalid",
-        path: "tools[1].inputSchema.properties.q.pattern",
-        message: "지원하지 않는 JSON Schema 키워드 'pattern'가 있습니다.",
+        path: "tools[1].inputSchema.properties.q.not",
+        message: "지원하지 않는 JSON Schema 키워드 'not'가 있습니다.",
       },
     ]);
   });
@@ -360,5 +363,72 @@ describe("createBaselineSuite", () => {
           suiteName: "날씨",
         }).suiteFingerprint,
     );
+  });
+});
+
+describe("additionalProperties (#389)", () => {
+  it("이슈 #389 재현 예가 케이스를 만든다", () => {
+    const result = createBaselineSuite(
+      [
+        {
+          name: "t",
+          inputSchema: {
+            type: "object",
+            properties: { x: { type: "string" } },
+            required: ["x"],
+            additionalProperties: false,
+          },
+        },
+      ],
+      { suiteId: "t", suiteName: "t" },
+    );
+
+    expect(result.skippedTools).toEqual([]);
+    const firstCase = result.suite.cases[0];
+    if (firstCase?.operation.type !== "callTool") throw new Error("callTool case가 필요합니다.");
+    expect(firstCase.operation.input).toEqual({ x: "example" });
+    // 정상 1, 필수 누락 1, 타입 위반 1.
+    expect(result.suite.cases.length).toBe(3);
+  });
+});
+
+describe("anyOf (#389)", () => {
+  it("anyOf 필드 툴은 정상·필수 누락 케이스만 만든다", () => {
+    const result = createBaselineSuite(
+      [
+        {
+          name: "t",
+          inputSchema: {
+            type: "object",
+            required: ["v"],
+            properties: { v: { anyOf: [{ type: "string" }, { type: "null" }] } },
+          },
+        },
+      ],
+      { suiteId: "s", suiteName: "s" },
+    );
+
+    // runner 는 조합 필드의 TYPE 축을 만들지 않는다. 그 사실을 여기서 문서화한다.
+    expect(result.suite.cases.map((item) => item.id)).toEqual(["t-success", "t-missing-v"]);
+  });
+
+  it("루트 anyOf 툴은 정상 케이스 1개이고 커버리지는 해석 불가다", () => {
+    const result = createBaselineSuite(
+      [
+        {
+          name: "t",
+          inputSchema: {
+            type: "object",
+            properties: { a: { type: "string" }, b: { type: "string" } },
+            anyOf: [{ required: ["a"] }, { required: ["b"] }],
+          },
+        },
+      ],
+      { suiteId: "s", suiteName: "s" },
+    );
+
+    expect(result.suite.cases.length).toBe(1);
+    expect(result.coverage.tools[0]?.analyzable).toBe(false);
+    expect(result.coverage.tools[0]?.unanalyzableReason).toBe("anyOf");
   });
 });

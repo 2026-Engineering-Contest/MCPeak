@@ -237,8 +237,8 @@ describe("generateTests", () => {
           name: "unsupported",
           inputSchema: {
             type: "object",
-            // minLength 는 이제 지원한다. 여전히 막히는 키워드로 바꿔 유지한다.
-            properties: { query: { type: "string", pattern: "^a$" } },
+            // pattern 은 이제 지원한다. 여전히 막히는 키워드로 바꿔 유지한다.
+            properties: { query: { type: "string", not: { type: "null" } } },
             required: ["query"],
           },
         },
@@ -249,7 +249,7 @@ describe("generateTests", () => {
     await expect(generation).rejects.toBeInstanceOf(GenerateTestsError);
     await expect(generation).rejects.toMatchObject({
       code: "UNSUPPORTED_SCHEMA",
-      path: "tools[1].inputSchema.properties.query.pattern",
+      path: "tools[1].inputSchema.properties.query.not",
       hint: expect.stringContaining("description, title"),
     });
     await expect(readdir(outDir)).rejects.toMatchObject({ code: "ENOENT" });
@@ -675,28 +675,24 @@ describe("$schema 키워드 (#135)", () => {
     await expect(readFile(path as string, "utf8")).resolves.toContain(expected);
   });
 
-  it("pattern 은 종전대로 거절한다", async () => {
+  it("pattern 을 거절하지 않는다", async () => {
     const outDir = await temporaryOutDir();
 
-    await expect(
-      generateTests(
-        [
-          {
-            name: "still-rejected",
-            inputSchema: {
-              type: "object",
-              required: ["q"],
-              properties: { q: { type: "string", pattern: "^a$" } },
-            },
+    const [path] = await generateTests(
+      [
+        {
+          name: "now-supported-pattern",
+          inputSchema: {
+            type: "object",
+            required: ["q"],
+            properties: { q: { type: "string", pattern: "^a$" } },
           },
-        ],
-        { outDir },
-      ),
-    ).rejects.toMatchObject({
-      code: "UNSUPPORTED_SCHEMA",
-      path: "tools[0].inputSchema.properties.q.pattern",
-    });
-    await expect(readdir(outDir)).rejects.toMatchObject({ code: "ENOENT" });
+        },
+      ],
+      { outDir },
+    );
+
+    await expect(readFile(path as string, "utf8")).resolves.toContain('"q": "a"');
   });
 
   describe("제약 키워드 허용", () => {
@@ -789,8 +785,8 @@ describe("$schema 키워드 (#135)", () => {
             name: "unsupported",
             inputSchema: {
               type: "object",
-              // minLength 는 이제 지원한다. 여전히 막히는 키워드로 바꿔 유지한다.
-              properties: { query: { type: "string", pattern: "^a$" } },
+              // pattern 은 이제 지원한다. 여전히 막히는 키워드로 바꿔 유지한다.
+              properties: { query: { type: "string", not: { type: "null" } } },
               required: ["query"],
             },
           },
@@ -802,6 +798,257 @@ describe("$schema 키워드 (#135)", () => {
       // hint 는 SUPPORTED_SCHEMA_KEYS 의 삽입 순서로 만들어진다. $schema 를 사이에 끼우면
       // "description, title" 이 끊겨 기존 단언(위 describe)이 깨진다.
       hint: expect.stringContaining("description, title, $schema"),
+    });
+  });
+});
+
+describe("additionalProperties (#389)", () => {
+  it("additionalProperties: false 가 있는 루트 객체를 거절하지 않는다", () => {
+    expect(() =>
+      validateSchema(
+        {
+          type: "object",
+          properties: { x: { type: "string" } },
+          required: ["x"],
+          additionalProperties: false,
+        },
+        "t.inputSchema",
+      ),
+    ).not.toThrow();
+  });
+
+  it("additionalProperties 가 스키마 객체여도 거절하지 않는다", () => {
+    expect(() =>
+      validateSchema(
+        { type: "object", properties: {}, additionalProperties: { type: "number" } },
+        "t.inputSchema",
+      ),
+    ).not.toThrow();
+  });
+
+  it("additionalProperties 가 문자열이면 UNSUPPORTED_SCHEMA 이고 경로가 그 키다", () => {
+    expect(() =>
+      validateSchema(
+        { type: "object", properties: {}, additionalProperties: "false" },
+        "t.inputSchema",
+      ),
+    ).toThrow(
+      expect.objectContaining({
+        code: "UNSUPPORTED_SCHEMA",
+        path: "t.inputSchema.additionalProperties",
+        message: expect.stringMatching(/^'additionalProperties' 는 boolean 또는/),
+      }),
+    );
+  });
+});
+
+describe("pattern (#389)", () => {
+  it("전방탐색 pattern 은 그 툴만 건너뛴다", () => {
+    const result = createBaselineSuite(
+      [
+        {
+          name: "ok",
+          inputSchema: {
+            type: "object",
+            required: ["q"],
+            properties: { q: { type: "string" } },
+          },
+        },
+        {
+          name: "lookahead",
+          inputSchema: {
+            type: "object",
+            required: ["q"],
+            properties: { q: { type: "string", pattern: "(?!x)a" } },
+          },
+        },
+      ],
+      { suiteId: "s", suiteName: "s" },
+    );
+
+    expect(result.skippedTools.length).toBe(1);
+    expect(result.skippedTools[0]).toMatchObject({
+      path: "tools[1].inputSchema.properties.q.pattern",
+      message: expect.stringContaining("오프셋 0"),
+    });
+  });
+
+  it("컴파일 안 되는 pattern 은 전체가 멈춘다", () => {
+    expect(() =>
+      createBaselineSuite(
+        [
+          {
+            name: "broken",
+            inputSchema: {
+              type: "object",
+              required: ["q"],
+              properties: { q: { type: "string", pattern: "[" } },
+            },
+          },
+        ],
+        { suiteId: "s", suiteName: "s" },
+      ),
+    ).toThrow(expect.objectContaining({ code: "INVALID_SCHEMA_CONSTRAINT" }));
+  });
+});
+
+describe("$ref (#389)", () => {
+  const inner = { type: "object", required: ["name"], properties: { name: { type: "string" } } };
+
+  /** 설계 §1.2 의 zod `rec` 스키마. required 에 무엇을 넣느냐로 순환의 갈래가 갈린다. */
+  const recursive = (required: readonly string[], extra: Record<string, unknown> = {}) => ({
+    type: "object",
+    properties: { root: { $ref: "#/definitions/__schema0" } },
+    required: ["root"],
+    definitions: {
+      __schema0: {
+        type: "object",
+        properties: {
+          v: { type: "string" },
+          kids: { type: "array", items: { $ref: "#/definitions/__schema0" }, ...extra },
+        },
+        required,
+      },
+    },
+  });
+
+  it("$ref 툴을 거절하지 않는다", () => {
+    expect(() =>
+      validateSchema(
+        {
+          type: "object",
+          required: ["who"],
+          properties: { who: { $ref: "#/$defs/Inner" } },
+          $defs: { Inner: inner },
+        },
+        "t.inputSchema",
+      ),
+    ).not.toThrow();
+  });
+
+  it("참조되지 않는 $defs 의 미지원 키워드는 무시한다", () => {
+    expect(() =>
+      validateSchema(
+        {
+          type: "object",
+          required: ["x"],
+          properties: { x: { type: "string" } },
+          $defs: { Unused: { type: "string", not: {} } },
+        },
+        "t.inputSchema",
+      ),
+    ).not.toThrow();
+  });
+
+  it("원격 $ref 는 그 툴만 건너뛴다", () => {
+    const result = createBaselineSuite(
+      [
+        {
+          name: "ok",
+          inputSchema: { type: "object", required: ["x"], properties: { x: { type: "string" } } },
+        },
+        {
+          name: "remote",
+          inputSchema: {
+            type: "object",
+            required: ["x"],
+            properties: { x: { $ref: "https://example.com/schema.json#/Inner" } },
+          },
+        },
+      ],
+      { suiteId: "s", suiteName: "s" },
+    );
+
+    expect(result.skippedTools[0]).toMatchObject({
+      path: "tools[1].inputSchema.properties.x.$ref",
+    });
+  });
+
+  it("선택 필드 재귀 툴이 살아남고 필수 필드 재귀 툴은 건너뛴다", () => {
+    const result = createBaselineSuite(
+      [
+        {
+          name: "plain",
+          inputSchema: { type: "object", required: ["x"], properties: { x: { type: "string" } } },
+        },
+        { name: "optional-recursion", inputSchema: recursive(["v"]) },
+        {
+          name: "required-recursion",
+          inputSchema: recursive(["v", "kids"], { minItems: 1 }),
+        },
+      ],
+      { suiteId: "s", suiteName: "s" },
+    );
+
+    expect(result.skippedTools.map((item) => item.index)).toEqual([2]);
+  });
+});
+
+describe("anyOf / oneOf (#389)", () => {
+  const toolWithField = (v: Record<string, unknown>) => ({
+    type: "object",
+    required: ["v"],
+    properties: { v },
+  });
+
+  it("anyOf 툴을 거절하지 않는다", () => {
+    expect(() =>
+      validateSchema(
+        toolWithField({ anyOf: [{ type: "string" }, { type: "null" }] }),
+        "t.inputSchema",
+      ),
+    ).not.toThrow();
+  });
+
+  it("빈 anyOf 는 UNSUPPORTED_SCHEMA 다", () => {
+    expect(() => validateSchema(toolWithField({ anyOf: [] }), "t.inputSchema")).toThrow(
+      expect.objectContaining({
+        code: "UNSUPPORTED_SCHEMA",
+        path: "t.inputSchema.properties.v.anyOf",
+        message: expect.stringContaining("비어 있지 않은 스키마 객체 배열"),
+      }),
+    );
+  });
+
+  it("갈래가 객체가 아니면 UNSUPPORTED_SCHEMA 다", () => {
+    expect(() =>
+      validateSchema(toolWithField({ anyOf: [{ type: "string" }, "null"] }), "t.inputSchema"),
+    ).toThrow(
+      expect.objectContaining({
+        code: "UNSUPPORTED_SCHEMA",
+        path: "t.inputSchema.properties.v.anyOf[1]",
+      }),
+    );
+  });
+
+  it("한 갈래만 지원돼도 툴을 거절하지 않는다", () => {
+    expect(() =>
+      validateSchema(
+        toolWithField({ anyOf: [{ type: "string", not: {} }, { type: "number" }] }),
+        "t.inputSchema",
+      ),
+    ).not.toThrow();
+  });
+
+  it("전 갈래 미지원 툴은 그 툴만 건너뛴다", () => {
+    const result = createBaselineSuite(
+      [
+        { name: "ok", inputSchema: toolWithField({ type: "string" }) },
+        {
+          name: "all-unsupported",
+          inputSchema: toolWithField({
+            anyOf: [
+              { type: "string", not: {} },
+              { type: "string", allOf: [] },
+            ],
+          }),
+        },
+      ],
+      { suiteId: "s", suiteName: "s" },
+    );
+
+    expect(result.skippedTools[0]).toMatchObject({
+      path: "tools[1].inputSchema.properties.v.anyOf",
     });
   });
 });

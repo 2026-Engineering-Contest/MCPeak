@@ -340,9 +340,12 @@ Python 의 `Optional[str]` 이 전부 여기 걸린다. #426 으로 등록했다
 #### 재현 방법
 
 ```sh
+# 저장소 루트에서. 출력 디렉터리를 먼저 만든다(gitignore 대상이라 커밋되지 않는다).
+mkdir -p .survey-out
+
 # 서버마다 (자격 증명 불필요한 것만)
 node packages/cli/dist/cli.mjs generate --suite-id s --name s \
-  --out /tmp/out/<name>.json --command npx --arg -y --arg <패키지> --baseline-only
+  --out .survey-out/<name>.json --command npx --arg -y --arg <패키지> --baseline-only
 ```
 
 출력 파일 경로가 서버마다 달라야 한다. `generate` 는 기존 출력을 덮어쓰지 않으므로 같은 경로를

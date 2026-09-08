@@ -1756,6 +1756,7 @@ const AXIS_LABEL: Readonly<Record<ContractAxisKind, string>> = {
   TYPE_VIOLATION: "타입 위반 거절",
   ENUM_VIOLATION: "선언되지 않은 값 거절",
   RANGE_VIOLATION: "선언된 범위 밖 값 거절",
+  UNDECLARED_FIELD: "선언되지 않은 필드 거절",
 };
 
 /**

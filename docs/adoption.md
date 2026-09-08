@@ -3,7 +3,7 @@
 `CONTRIBUTING.md` §10 이 요구하는 누적 기록이다. **적용 저장소 수**와 **발견·수정한 결함 수**를
 쌓는다. 심사 자료이자 개인 성과 근거이므로, 추정이나 계획이 아니라 **일어난 일만** 적는다.
 
-- 최종 갱신: 2026-08-17
+- 최종 갱신: 2026-09-08 (§1.6 · §5 추가·갱신. 그 밖의 절은 2026-08-18 기준)
 - 담당: **@endl24** (도그푸딩만. **npm 배포·버저닝은 여전히 미정**이므로 #71 은 열려 있다.
   `CONTRIBUTING.md` §2.1 의 표도 아직 "미정" 이라 갱신이 필요하다)
 
@@ -12,6 +12,7 @@
 | 항목 | §10 목표 | 현재 |
 |---|---|---|
 | 적용한 **외부** 공개 MCP 서버 | 3~5개 | **6개 완료** (§1.4). 전부 `main` 기준 |
+| 생성 커버리지 (외부 서버 20개 · 툴 227개) | — | **215 / 227 (95%)**. `mcpeak generate` 까지만 잰 값이다 (§1.6). 위 칸과 세는 단위가 다르다 |
 | 외부 저장소에 보낸 PR | 가능하면 | **0건** (후보 1건 — §1.5) |
 | 적용한 자체 서버 | — | 1개 (`examples/weather-server`) |
 | 우리 도구가 발견한 결함 | — | **7건** (§2.1 · §2.2 #135 · §2.3 #136 · §2.5 의 넷) |
@@ -59,6 +60,7 @@ CI(`.github/workflows/ci.yml`)가 매 실행 두 경로로 돈다.
 | 실제 서버의 특성 | 지금 어떻게 될 것으로 보나 | 근거 |
 |---|---|---|
 | 스키마에 `$ref` · `anyOf` 포함 | **그 툴만 거절된다.** `mcp-server-git` 이 `anyOf` 로 3툴을 잃었고 남은 9툴로 적용됐다. PR #145 전에는 서버 전체가 막혔다 | 2026-08-17 **실측** (§1.4.3) |
+| 〃 (2026-09-08 갱신) | **거절되지 않는다.** PR #423 이 `additionalProperties`·`pattern`·로컬 `$ref`·`anyOf`/`oneOf` 를 지원해 `mcp-server-git` 은 12툴 전부가 생성된다. 다만 **표본을 20개로 넓히자 이 행의 상정 자체가 틀렸던 것이 드러났다.** 서드파티 서버 6개는 "그 툴만" 이 아니라 **첫 툴의 루트에서 막혀 서버 전체가 0툴**이었다 | 2026-09-08 **실측** (§1.6) |
 | Streamable HTTP 전송 | **붙는다.** `test` · `generate` 가 `--url` 로 원격 서버에 붙는다. 인증 헤더는 `--header-env` 로 환경변수에서 읽는다. 아직 **실측이 아니다** — 검증한 것은 우리 HTTP 목(`@mcpeak/mock`)까지다 | #16 · ADR-0020 · ADR-0070 · 2026-08-23 **CLI 배선** (#137) |
 | stdout 에 로그를 섞어 뱉음 | 여전히 **겪어 본 적 없음.** 고유 서버 8개 전부 로그를 stderr 로만 보냈다(`server-everything` 의 `Starting default (STDIO) server...` 도 stderr) | 2026-08-17 **실측** (§1.4) — 재현 못 함 |
 | 툴 20~50개 | **해당 서버를 못 만났다.** 최대가 14개(`server-filesystem`)다. 다만 이제 `generate` 가 통과하므로 실행 시간은 측정 가능해졌다 — 14툴 54케이스가 수 초 안에 끝났다 | 2026-08-17 **실측** (§1.4) — 구간 밖 |
@@ -226,7 +228,133 @@ Python `mcp` 2.x 가 `McpError` 를 `MCPError` 로 개명했는데 서버가 구
 §10 의 "외부 저장소에 보낸 PR" 후보이지만 **아직 보내지 않았다.** 한 줄 수정이라 비용은 낮고,
 동결 전에 보낼지는 결정하지 않았다. 보내면 이 칸을 갱신한다.
 
+
+### 1.6 공개 MCP 서버 20개 생성 커버리지 — 2026-09-08, PR #423 전후 대조
+
+§1.4 의 표본 여섯은 전부 `@modelcontextprotocol/*` 공식 서버와 Python SDK 서버였다. 그쪽은
+저수준 `Server` API 로 스키마를 손으로 적어 zod 를 타지 않는다. **그래서 서드파티 서버에서
+무슨 일이 나는지 이 문서는 알지 못했다.** #389(PR #423)을 재려고 표본을 넓히면서 그 공백이
+드러났다.
+
+**측정 조건.** 2026-09-08, 자격 증명 없이 `tools/list` 까지 가는 서버만 센다. 후보 27개 중
+7개(`brave-search` · `google-maps` · `slack` · `gitlab` · `sentry` · `everart` · `redis`)는
+환경변수나 외부 서비스가 없어 기동 단계에서 죽었다. 우리 도구가 관여하기 전이라 표본에서 뺀다.
+남은 **20개 서버 · 툴 227개**다. 각 서버에 `mcpeak generate --baseline-only` 를 돌려 생성된
+툴 수와 건너뛴 툴 수를 셌다. `main`(71b59cb 이전, `d8dfde0`)과 PR #423 브랜치를 같은 서버
+버전으로 각각 돌려 대조했다.
+
+| | `main` | PR #423 |
+|---|---|---|
+| 생성된 툴 | **118 / 227 (52%)** | **215 / 227 (95%)** |
+| 툴 0개인 서버 | **6 / 20** | **0 / 20** |
+| 건너뛴 툴 0개인 서버 | 14 / 20 | 16 / 20 |
+
+`main` 에서 툴 0개이던 여섯은 **첫 툴의 루트에서 막혀 서버 전체가 거절된 것**이다. #135
+(`$schema`)와 같은 유형이고 원인만 다르다.
+
+| 서버 | `main` 의 첫 원인 |
+|---|---|
+| `@notionhq/notion-mcp-server` | `tools[0].inputSchema.$defs` |
+| `@wonderwhy-er/desktop-commander` | `tools[0].inputSchema.additionalProperties` |
+| `@playwright/mcp` | `tools[0].inputSchema.additionalProperties` |
+| `firecrawl-mcp` | `tools[0].inputSchema.additionalProperties` |
+| `exa-mcp-server` | `tools[0].inputSchema.additionalProperties` |
+| `@modelcontextprotocol/server-sequential-thinking` | `tools[0].inputSchema.properties.isRevision.anyOf` |
+
+**zod 의 `z.object()` 가 `additionalProperties` 를 기본으로 붙이는 것이 공통 원인이다.**
+서드파티 MCP 서버는 거의 전부 zod 기반이라 이 한 키워드에 다 걸렸다.
+
+#### 서버별 전후
+
+| 서버 | 버전 | 툴 | `main` | PR #423 |
+|---|---|---|---|---|
+| `@antv/mcp-server-chart` | 0.9.10 | 27 | 26 생성 + 1 건너뜀 | 26 생성 + **1 건너뜀**(`propertyNames`) |
+| `@wonderwhy-er/desktop-commander` | 0.2.48 | 26 | **0 (전체 거절)** | 25 생성 + **1 건너뜀**(배열 `type`) |
+| `@notionhq/notion-mcp-server` | 2.5.1 | 24 | **0 (전체 거절)** | **24 생성** |
+| `@playwright/mcp` | 0.0.80 | 24 | **0 (전체 거절)** | 23 생성 + **1 건너뜀**(`propertyNames`) |
+| `mcp-server-kubernetes` | 4.1.6 | 23 | 21 생성 + 2 건너뜀 | **23 생성** |
+| `firecrawl-mcp` | 3.24.0 | 25 | **0 (전체 거절)** | 16 생성 + **9 건너뜀**(`propertyNames`) |
+| `@modelcontextprotocol/server-filesystem` | 2026.8.31 | 14 | 14 생성 | 14 생성 |
+| `@modelcontextprotocol/server-everything` | 2026.8.31 | 13 | 13 생성 | 13 생성 |
+| `mcp-server-git` | 2026.8.18 | 12 | 9 생성 + 3 건너뜀 | **12 생성** |
+| `@modelcontextprotocol/server-memory` | 2026.8.31 | 9 | 9 생성 | 9 생성 |
+| `@modelcontextprotocol/server-puppeteer` | 2025.5.12 | 7 | 7 생성 | 7 생성 |
+| `mcp-server-sqlite` | 2025.4.25 (`mcp<2` 고정) | 6 | 6 생성 | 6 생성 |
+| `tavily-mcp` | 0.2.22 | 5 | 5 생성 | 5 생성 |
+| `duckduckgo-mcp-server` | 0.7.0 | 3 | 2 생성 + 1 건너뜀 | **3 생성** |
+| `mcp-server-time` | 2026.8.18 | 2 | 2 생성 | 2 생성 |
+| `@upstash/context7-mcp` | 4.0.5 | 2 | 2 생성 | 2 생성 |
+| `exa-mcp-server` | 3.4.1 | 2 | **0 (전체 거절)** | **2 생성** |
+| `@modelcontextprotocol/server-sequential-thinking` | 2026.8.31 | 1 | **0 (전체 거절)** | **1 생성** |
+| `@modelcontextprotocol/server-postgres` | 0.6.2 | 1 | 1 생성 | 1 생성 |
+| `mcp-server-fetch` | 2026.8.18 | 1 | 1 생성 | 1 생성 |
+
+`server-everything` · `server-filesystem` 은 §1.4 에 "2 툴 · 1 툴 건너뜀" 으로 적혀 있는데
+**`main` 에서도 이미 0건**이다. 그 두 줄은 이번 변경이 아니라 그 사이의 다른 작업이나 서버
+버전 변화로 이미 해소돼 있었다. 이 문서가 그만큼 낡아 있었다는 사실을 지우지 않고 남긴다.
+
+#### 남은 12툴
+
+| 사유 | 툴 | 서버 |
+|---|---|---|
+| `propertyNames`(`z.record`) | **11** | `firecrawl` 9 · `playwright` 1 · `chart` 1 |
+| 배열 형태 `type`(`["string","array"]`) | 1 | `desktop-commander` |
+| `allOf` · 튜플 `items` · 원격 `$ref` | **0** | 표본에 없음 |
+
+**남은 미지원의 92% 가 `propertyNames` 하나다.** 착수 전 예측에서는 우선순위가 낮았는데,
+표본을 6개에서 20개로 넓히자 순위가 뒤집혔다. `firecrawl` 은 이것 하나로 자기 툴의 36% 를
+잃는다. #425 로 등록했다.
+
+#### 이 절이 말하지 않는 것
+
+**"생성됐다" 는 "통과했다" 가 아니다.** 이 절은 `mcpeak generate` 까지만 잰 것이고 §1.4 처럼
+`mcpeak test` 판정까지 간 것이 아니다. **따라서 여기 20개를 「적용한 외부 공개 MCP 서버」로
+세지 않는다.** 그 칸은 §1.4 의 여섯 그대로다.
+
+실행 판정을 한 건 재 보면 차이가 보인다. `mcp-server-git` 12툴 54케이스를 손 안 댄 baseline
+으로 돌리면 **42/54** 다. 실패 12건은 전부 정상 케이스이고 원인은 스키마가 아니라 값이다.
+
+```
+✗ git-log-success   git_log가 오류 없이 응답한다
+    isError  정상 응답을 기대했지만 오류 응답을 받았습니다.
+    → Repository path 'example' is outside the allowed repository '/…/gitrepo'
+```
+
+`repo_path` 자리에 `"example"` 이 들어갔다. §1.4 의 `mcp-server-time` · `server-filesystem` 에서
+본 것과 같은 계열이고, #390(픽스처 계약)이 맡을 자리다. **스키마 커버리지와 실행 통과율은 다른
+축이며, 이번 변경은 앞의 것만 올렸다.**
+
+위반 케이스는 새로 생긴 3툴에서도 전부 통과했다(`git-log-missing-repo-path` 등). 필수 누락·타입
+축은 값 문제 없이 바로 쓸 수 있다는 뜻이다.
+
+한편 `anyOf` 필드는 툴이 살아나도 축이 얕다. `runner` 가 그 필드의 해석을 포기하기 때문이다
+(ADR-0015).
+
+```
+git_branch  5/5  → 해석 못 한 필드 2개: contains, not_contains
+git_log     4/4  → 해석 못 한 필드 2개: end_timestamp, start_timestamp
+```
+
+Python 의 `Optional[str]` 이 전부 여기 걸린다. #426 으로 등록했다.
+
+#### 재현 방법
+
+```sh
+# 서버마다 (자격 증명 불필요한 것만)
+node packages/cli/dist/cli.mjs generate --suite-id s --name s \
+  --out /tmp/out/<name>.json --command npx --arg -y --arg <패키지> --baseline-only
+```
+
+출력 파일 경로가 서버마다 달라야 한다. `generate` 는 기존 출력을 덮어쓰지 않으므로 같은 경로를
+재사용하면 두 번째 서버부터 `GENERATE_OUTPUT_EXISTS` 로 떨어지고, 그것을 "툴 0개" 로 읽으면
+전후 대조가 통째로 거짓이 된다. 이 조사에서 실제로 한 번 밟았다.
+
+`mcp-server-sqlite` 는 `uvx --with "mcp<2"` 로 핀을 걸어야 한다. 핀 없이 돌리면 서버가
+`AttributeError: 'Server' object has no attribute 'list_resources'` 로 죽는다. 우리 도구와
+무관한 서버 쪽 문제다.
+
 ---
+
 
 ## 2. 우리 도구가 발견한 결함
 
@@ -400,6 +528,31 @@ CI 파서와 맞는가)을 실측해 닫았다.
 ---
 
 ## 5. 다음에 할 것
+
+**2026-09-08 갱신.** 아래 1~5 는 2026-08-17 시점의 목록이고 대부분 처리됐다(#135 · #136 은
+머지, 비-TS-SDK 서버는 §1.4 에서 Python 셋으로 해소). §1.6 의 조사로 새로 생긴 항목은 이것이다.
+
+1. **`propertyNames`(`z.record`) 지원 (#425).** 남은 미지원 12툴 중 11툴이다. `firecrawl` 은
+   이것 하나로 자기 툴의 36% 를 잃는다. 지금 이 목록에서 가장 근거가 강한 항목이다.
+2. **도메인 값 픽스처 계약 (#390).** 생성은 되는데 `"example"` 이 서버에 안 맞아 정상 케이스가
+   떨어진다. `mcp-server-git` 42/54 의 실패 12건이 전부 이것이다. **생성 커버리지가 95% 가 된
+   지금, 다음 병목은 여기다.**
+3. **`runner` 의 `anyOf` 필드 해석 (#426).** 툴은 살아나도 `TYPE`·`ENUM`·`RANGE` 축이 없다.
+   Python 의 `Optional[str]` 이 전부 걸려서 Python 서버 전반의 검증 밀도가 낮다.
+4. **`UNDECLARED_FIELD` 위반 축 (#427).** `additionalProperties: false` 를 읽지만 시험하지
+   않는다.
+5. **§1.6 의 20개를 `mcpeak test` 판정까지 끌고 갈지 정한다.** 지금은 `generate` 까지만 잰
+   값이라 「적용한 외부 공개 MCP 서버」 칸에 세지 않았다. 세려면 서버마다 실행 환경(경로 ·
+   자격 · 상태 복원)을 갖춰야 하고, 그 비용이 이 칸의 목표(3~5개)에 비해 큰지 판단이 필요하다.
+
+**§1.6 이 남긴 교훈 하나.** 표본 여섯이 전부 같은 계열(공식 서버 · 저수준 `Server` API)이어서
+서드파티 zod 서버에서 서버 전체가 막히는 것을 이 문서가 몰랐다. **표본 수보다 표본의 다양성이
+먼저다.** §1.3 이 "표본이 서로 독립이 아니다" 로 지적한 것과 같은 함정을 SDK 축이 아니라
+서버 작성 방식 축에서 다시 밟았다.
+
+---
+
+### 5.1 2026-08-17 시점의 목록 (기록 보존)
 
 1~4 는 2026-08-17 에 처리했다 (담당 지정 · 서버 2개 적용 시도 · 이슈 4건 등록 · 이 파일 갱신).
 아래가 그 결과로 남은 것이다.

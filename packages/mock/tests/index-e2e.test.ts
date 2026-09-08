@@ -745,4 +745,140 @@ describe("isError 응답 주입 (#180)", () => {
     }
     expect(seen.size).toBe(1);
   });
+  /**
+   * 응답은 `JSON.stringify` 로 실어 보낸다(#415). 실을 수 없는 값을 주면 지금까지는 목이
+   * 아무 말도 하지 않았고, 사용자는 클라이언트 zod 덤프나 Node TypeError 원문을 받았다 —
+   * 무엇이 왜 다른지도, 어디를 고치는지도 없는 문장이다.
+   *
+   * `args` 와 규칙이 다르다는 것이 이 묶음의 핵심이다. `args` 는 키를 만들어야 해서 Date 와
+   * NaN 을 거부하지만, `result` 는 실어 보내기만 하므로 둘 다 정상이다. 마지막 케이스가
+   * 그 과잉 거절을 막는다.
+   *
+   * `toThrow("문장")` 은 chai 가 부분 일치로 보고, undefined · 순환 참조는 수정 전에도
+   * 무언가를 던진다. 부분 일치로 걸면 아무것도 검증하지 못하므로 전문 일치를 건다.
+   */
+  it("on() 이 JSON 으로 실을 수 없는 응답을 거절한다", async () => {
+    const server = await start();
+
+    expect(() => server.on("add", { a: 1, b: 2 }, undefined)).toThrow(
+      new Error(
+        [
+          "→ mock.on('add', ...) 의 응답을 JSON 으로 실을 수 없습니다: 값이 사라집니다",
+          "→ 발견: undefined",
+          "→ 목은 result 를 JSON 문자열로 만들어 보냅니다. undefined · 함수 · 심볼은 문자열이 되지 않습니다. 값이 없다는 뜻이면 null 을 쓰세요.",
+        ].join("\n"),
+      ),
+    );
+
+    expect(() => server.on("add", { a: 2, b: 2 }, () => 1)).toThrow(
+      new Error(
+        [
+          "→ mock.on('add', ...) 의 응답을 JSON 으로 실을 수 없습니다: 값이 사라집니다",
+          "→ 발견: function",
+          "→ 목은 result 를 JSON 문자열로 만들어 보냅니다. undefined · 함수 · 심볼은 문자열이 되지 않습니다. 값이 없다는 뜻이면 null 을 쓰세요.",
+        ].join("\n"),
+      ),
+    );
+  });
+
+  it("on() 이 직렬화가 던지는 응답을 거절한다 — 순환 참조와 BigInt", async () => {
+    const server = await start();
+
+    const circular: Record<string, unknown> = { sum: 3 };
+    circular.self = circular;
+    expect(() => server.on("add", { a: 1, b: 2 }, circular)).toThrow(
+      new Error(
+        [
+          "→ mock.on('add', ...) 의 응답을 JSON 으로 실을 수 없습니다: 직렬화가 실패했습니다",
+          "→ 원인: Converting circular structure to JSON",
+          "→ 순환 참조나 BigInt 가 흔한 원인입니다. 참조를 끊거나 수를 문자열로 바꿔 넘기세요.",
+        ].join("\n"),
+      ),
+    );
+
+    expect(() => server.on("add", { a: 2, b: 2 }, { sum: 3n })).toThrow(
+      new Error(
+        [
+          "→ mock.on('add', ...) 의 응답을 JSON 으로 실을 수 없습니다: 직렬화가 실패했습니다",
+          "→ 원인: Do not know how to serialize a BigInt",
+          "→ 순환 참조나 BigInt 가 흔한 원인입니다. 참조를 끊거나 수를 문자열로 바꿔 넘기세요.",
+        ].join("\n"),
+      ),
+    );
+  });
+
+  /**
+   * ANY 분기는 early return 이라, 검사를 `assertKeyable` 옆에 두면 이 경로만 조용히
+   * 빠져나간다. 분기 순서 회귀다.
+   */
+  it("ANY 주입도 실을 수 없는 응답을 거절한다", async () => {
+    const server = await start();
+
+    expect(() => server.on("add", ANY, undefined)).toThrow(
+      new Error(
+        [
+          "→ mock.on('add', ...) 의 응답을 JSON 으로 실을 수 없습니다: 값이 사라집니다",
+          "→ 발견: undefined",
+          "→ 목은 result 를 JSON 문자열로 만들어 보냅니다. undefined · 함수 · 심볼은 문자열이 되지 않습니다. 값이 없다는 뜻이면 null 을 쓰세요.",
+        ].join("\n"),
+      ),
+    );
+  });
+
+  /**
+   * 정의 파일 경로도 같은 규칙이다. `assertMockDefinition` 은 `"result" in res` 만 보므로
+   * JS 로 부르면 `result: undefined` 가 통과한다.
+   */
+  it("createMockServer 옵션의 responses 도 실을 수 없는 응답을 거절한다", async () => {
+    await expect(
+      createMockServer({
+        tools,
+        responses: [{ tool: "add", args: { a: 1, b: 2 }, result: undefined }],
+      }),
+    ).rejects.toThrow(
+      new Error(
+        [
+          "→ createMockServer 옵션의 responses[0] 의 응답을 JSON 으로 실을 수 없습니다: 값이 사라집니다",
+          "→ 발견: undefined",
+          "→ 목은 result 를 JSON 문자열로 만들어 보냅니다. undefined · 함수 · 심볼은 문자열이 되지 않습니다. 값이 없다는 뜻이면 null 을 쓰세요.",
+        ].join("\n"),
+      ),
+    );
+  });
+
+  /**
+   * 과잉 거절 회귀. `args` 가 거부하는 Date · NaN 은 `result` 에서는 정상이다 — 각각 ISO
+   * 문자열과 null 로 직렬화된다. 중첩된 undefined 필드는 stringify 가 통째로 생략한다.
+   * `findKeyViolation` 을 재사용했다면 이 케이스가 전부 깨진다.
+   */
+  it("result 는 Date · NaN · 중첩 undefined 를 그대로 받는다", async () => {
+    const server = await start();
+    expect(() =>
+      server.on("add", { a: 1, b: 2 }, { at: new Date(0), ratio: Number.NaN, note: undefined }),
+    ).not.toThrow();
+
+    const client = await connect(server);
+    const r = await client.callTool({ name: "add", arguments: { a: 1, b: 2 } });
+    expect(JSON.parse(text(r))).toEqual({ at: "1970-01-01T00:00:00.000Z", ratio: null });
+  });
+
+  /**
+   * 고정 포트가 물려 있으면 지금까지 Node 원문(`listen EADDRINUSE: ...`)이 그대로 나갔다.
+   * 왜 포트를 지정했는지, 생략하면 자동으로 받는다는 것, 앞 서버의 close() 를 빠뜨렸을 수
+   * 있다는 것 중 아무것도 없는 문장이다.
+   */
+  it("이미 물린 포트로 띄우면 고치는 법이 붙은 문장으로 거절한다", async () => {
+    const first = await start();
+    const port = Number(new URL(first.url).port);
+
+    await expect(createMockServer({ tools, port })).rejects.toThrow(
+      new Error(
+        [
+          `→ 목 서버를 띄우지 못했습니다: 포트 ${port} 이 이미 사용 중입니다 (127.0.0.1).`,
+          "→ port 를 생략하면 빈 포트를 자동으로 받습니다. 고정 포트는 병렬 실행 시 충돌합니다.",
+          "→ 앞서 띄운 목의 close() 를 빠뜨리지 않았는지도 확인하세요.",
+        ].join("\n"),
+      ),
+    );
+  });
 });

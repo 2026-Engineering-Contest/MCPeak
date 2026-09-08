@@ -10,7 +10,7 @@ import {
   type SchemaViolation,
   unanalyzableReason,
 } from "./input-validation.js";
-import { assertKeyable, KeyDepthError, MAX_KEY_DEPTH } from "./key-violation.js";
+import { assertKeyable, describeValue, KeyDepthError, MAX_KEY_DEPTH } from "./key-violation.js";
 
 /**
  * 인자를 가리지 않고 매칭한다. `mock.on(tool, ANY, result)`.
@@ -116,6 +116,44 @@ function createRegistry(): Registry {
   return { exact: new Map(), any: new Map() };
 }
 
+/**
+ * 실어 보낼 수 없는 응답을 주입 시점에 거절한다.
+ *
+ * **`args` 의 `assertKeyable` 과 규칙이 다르다.** `args` 는 찾는 데 쓰므로 `stableKey` 로 키를
+ * 만들어야 하고, 그래서 `Date` · `NaN` · 깊은 중첩을 거부한다. `result` 는 실어 보내기만 하므로
+ * 그 셋이 전부 정상이다 — `Date` 는 ISO 문자열로, `NaN` 은 null 로 직렬화된다.
+ * `findKeyViolation` 을 재사용하면 정상 사용을 막는다.
+ *
+ * `JSON.stringify` 는 두 가지로 실패하고, 사용자가 고치는 방법이 서로 다르다. 값이 사라지는
+ * 쪽은 null 로 바꾸는 것이고, 던지는 쪽은 참조를 끊거나 수를 문자열로 바꾸는 것이다.
+ */
+function assertSerializable(result: unknown, source: string): void {
+  const head = `→ ${source} 의 응답을 JSON 으로 실을 수 없습니다`;
+  let json: string | undefined;
+  try {
+    json = JSON.stringify(result);
+  } catch (error) {
+    // 첫 줄만 싣는다. 순환 참조 TypeError 는 뒤에 객체 경로 덤프가 여러 줄 붙어서, 그대로
+    // 실으면 같은 입력에 같은 문장이 나오지 않는다.
+    const reason = (error as Error).message.split("\n")[0];
+    throw new Error(
+      [
+        `${head}: 직렬화가 실패했습니다`,
+        `→ 원인: ${reason}`,
+        "→ 순환 참조나 BigInt 가 흔한 원인입니다. 참조를 끊거나 수를 문자열로 바꿔 넘기세요.",
+      ].join("\n"),
+    );
+  }
+  if (json !== undefined) return;
+  throw new Error(
+    [
+      `${head}: 값이 사라집니다`,
+      `→ 발견: ${describeValue(result)}`,
+      "→ 목은 result 를 JSON 문자열로 만들어 보냅니다. undefined · 함수 · 심볼은 문자열이 되지 않습니다. 값이 없다는 뜻이면 null 을 쓰세요.",
+    ].join("\n"),
+  );
+}
+
 function put(
   registry: Registry,
   tool: string,
@@ -124,6 +162,10 @@ function put(
   source: string,
   isError = false,
 ): void {
+  // ANY 분기보다 앞이다. 뒤에 두면 `mock.on(tool, ANY, ...)` 이 early return 으로 검사를
+  // 건너뛴다. `assertKeyable` 이 분기 뒤에 있는 것은 ANY 가 Symbol.for 라 notJson 에 걸리기
+  // 때문이고, result 검사에는 그 이유가 없다.
+  assertSerializable(result, source);
   const stored: StoredResponse = { result, isError, source };
   // ANY 는 Symbol.for(...) 라서 assertKeyable 의 notJson 에 걸린다.
   // 검사를 이 분기보다 앞에 두면 정상 기능이 죽는다.
@@ -518,8 +560,26 @@ export async function createMockServer(options: MockOptions): Promise<MockServer
   });
 
   await new Promise<void>((resolve, reject) => {
-    http.once("error", reject);
-    http.listen(port, host, resolve);
+    // 성공하면 리스너를 뗀다. 남겨 두면 이후 런타임의 error 가 이미 settled 된 promise 의
+    // reject 로 흘러 어디에도 나타나지 않는다 — rejectDuplicate 가 없앤 그 실패 양식이다.
+    const onError = (error: NodeJS.ErrnoException): void => {
+      reject(
+        error.code === "EADDRINUSE"
+          ? new Error(
+              [
+                `→ 목 서버를 띄우지 못했습니다: 포트 ${port} 이 이미 사용 중입니다 (${host}).`,
+                "→ port 를 생략하면 빈 포트를 자동으로 받습니다. 고정 포트는 병렬 실행 시 충돌합니다.",
+                "→ 앞서 띄운 목의 close() 를 빠뜨리지 않았는지도 확인하세요.",
+              ].join("\n"),
+            )
+          : error,
+      );
+    };
+    http.once("error", onError);
+    http.listen(port, host, () => {
+      http.off("error", onError);
+      resolve();
+    });
   });
 
   const addr = http.address();

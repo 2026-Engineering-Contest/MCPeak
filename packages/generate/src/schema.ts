@@ -67,6 +67,8 @@ const SUPPORTED_SCHEMA_KEYS = new Set([
   // 값이 boolean 이거나 스키마 객체면 받는다. 우리는 선언 밖 프로퍼티를 만들지 않으므로 객체
   // 형태의 값 안쪽 키워드는 합성값을 바꾸지 않는다(설계 §5.1). 후보 검사에만 쓴다.
   "additionalProperties",
+  // 값 검증은 assertConstraints 가, 값 합성은 pattern.ts 가 한다(설계 §5.2).
+  "pattern",
 ]);
 
 export const plainObject = (value: unknown): value is Record<string, unknown> =>

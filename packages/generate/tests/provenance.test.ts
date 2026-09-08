@@ -168,3 +168,17 @@ describe("순환 스키마", () => {
     expect(analyzeToolProvenance(t).declared).toBe(2);
   });
 });
+
+describe("pattern 의 값 출처", () => {
+  it("pattern 이 있는 문자열은 declared 다", () => {
+    const result = analyzeToolProvenance(tool({ type: "string", pattern: "^a$" }));
+    expect(result.declared).toBe(1);
+    expect(result.placeholder).toBe(0);
+  });
+
+  it("integer 에 붙은 pattern 은 근거가 아니다", () => {
+    const result = analyzeToolProvenance(tool({ type: "integer", pattern: "^a$" }));
+    expect(result.placeholder).toBe(1);
+    expect(result.declared).toBe(0);
+  });
+});

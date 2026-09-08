@@ -67,9 +67,9 @@ describe("createBaselineSuite", () => {
       name: "count_things",
       inputSchema: {
         type: "object",
-        // maximum 은 이제 지원한다. 부분 생성 자체는 살아 있어야 하므로 여전히 지원하지
-        // 않는 키워드(pattern)로 바꿔 유지한다.
-        properties: { count: { type: "string", pattern: "^a$" } },
+        // maximum 도 pattern 도 이제 지원한다. 부분 생성 자체는 살아 있어야 하므로 여전히
+        // 지원하지 않는 키워드(not)로 바꿔 유지한다.
+        properties: { count: { type: "string", not: { type: "null" } } },
         required: ["count"],
       },
     };
@@ -88,8 +88,8 @@ describe("createBaselineSuite", () => {
         {
           index: 1,
           name: "count_things",
-          path: "tools[1].inputSchema.properties.count.pattern",
-          message: "지원하지 않는 JSON Schema 키워드 'pattern'가 있습니다.",
+          path: "tools[1].inputSchema.properties.count.not",
+          message: "지원하지 않는 JSON Schema 키워드 'not'가 있습니다.",
         },
       ]);
     });
@@ -191,7 +191,7 @@ describe("createBaselineSuite", () => {
       name: "count_things",
       inputSchema: {
         type: "object",
-        properties: { count: { type: "string", pattern: "^a$" } },
+        properties: { count: { type: "string", not: { type: "null" } } },
         required: ["count"],
       },
     };
@@ -317,8 +317,11 @@ describe("createBaselineSuite", () => {
         tools[0] as ToolDef,
         {
           name: "invalid",
-          // minLength 는 이제 지원한다. 여전히 막히는 키워드로 바꿔 유지한다.
-          inputSchema: { type: "object", properties: { q: { type: "string", pattern: "^a$" } } },
+          // pattern 은 이제 지원한다. 여전히 막히는 키워드로 바꿔 유지한다.
+          inputSchema: {
+            type: "object",
+            properties: { q: { type: "string", not: { type: "null" } } },
+          },
         },
       ],
       { suiteId: "weather", suiteName: "날씨" },
@@ -332,8 +335,8 @@ describe("createBaselineSuite", () => {
       {
         index: 1,
         name: "invalid",
-        path: "tools[1].inputSchema.properties.q.pattern",
-        message: "지원하지 않는 JSON Schema 키워드 'pattern'가 있습니다.",
+        path: "tools[1].inputSchema.properties.q.not",
+        message: "지원하지 않는 JSON Schema 키워드 'not'가 있습니다.",
       },
     ]);
   });

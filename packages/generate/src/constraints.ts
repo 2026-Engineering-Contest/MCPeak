@@ -5,6 +5,7 @@
  * 모순 판정을 더하면 한 파일이 두 가지 판단을 갖는다.
  */
 
+import { compilePattern } from "./pattern.js";
 import { fail, type JsonSchema, type SchemaType } from "./schema.js";
 
 /**
@@ -80,6 +81,8 @@ export function assertConstraints(schema: JsonSchema, path: string): void {
       );
     }
   }
+  // 컴파일되지 않는 pattern 은 "우리가 아직 지원하지 않는다" 가 아니라 선언이 깨진 것이다.
+  if ("pattern" in schema) compilePattern(schema.pattern, path);
   if ("format" in schema && typeof schema.format !== "string") {
     invalid(
       `${path}.format`,

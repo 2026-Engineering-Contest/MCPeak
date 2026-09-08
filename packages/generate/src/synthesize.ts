@@ -4,6 +4,7 @@ import {
   integerUpperBound,
   isKnownFormat,
 } from "./constraints.js";
+import { compilePattern, synthesizePatternString, tryCompilePattern } from "./pattern.js";
 import { fail, type JsonSchema, type JsonValue, plainObject, type SchemaType } from "./schema.js";
 
 /** 제약이 없을 때 문자열에 넣는 값. 종전과 같다. */
@@ -87,6 +88,27 @@ function boundedString(schema: JsonSchema): string {
   return value;
 }
 
+/**
+ * 문자열 합성. 설계 §5.2 의 순서다. 후보(`const` 등)는 호출부가 이미 처리했다.
+ *
+ * 표에 있는 `format` 값은 `pattern` 이 함께 있으면 **그 값이 pattern 을 통과할 때만** 쓴다.
+ * zod 가 붙이는 `uuid`·`date-time`·`email` 의 pattern 은 여기서 끝난다. 통과하지 못하면
+ * 부분집합 생성기로 내려간다. format 값을 잘라 쓰지 않는 이유는 종전과 같다(형식이 깨진다).
+ */
+function synthesizeString(schema: JsonSchema, path: string): string {
+  const formatValue = knownFormatValue(schema);
+  const pattern = schema.pattern;
+  if (typeof pattern !== "string") return formatValue ?? boundedString(schema);
+
+  const regex = compilePattern(pattern, path);
+  if (formatValue !== null && regex.test(formatValue)) return formatValue;
+  return synthesizePatternString(
+    pattern,
+    { minLength: numberAt(schema, "minLength"), maxLength: numberAt(schema, "maxLength") },
+    path,
+  );
+}
+
 /** 원소 개수. `max(minItems, 1)` 을 쓰되 상한을 넘지 않는다. `maxItems: 0` 이면 빈 배열이다. */
 function itemCount(schema: JsonSchema): number {
   const minItems = numberAt(schema, "minItems");
@@ -140,6 +162,13 @@ function valueMatchesConstraints(value: JsonValue, schema: JsonSchema, type: Sch
     return true;
   }
   if (typeof value === "string" && type === "string") {
+    // 알려진 format 이 있어도 pattern 은 본다. 건너뛰는 것은 길이뿐이다(설계 §5.2).
+    const pattern = schema.pattern;
+    if (typeof pattern === "string") {
+      const regex = tryCompilePattern(pattern);
+      // 컴파일 실패는 assertConstraints 가 이미 INVALID_SCHEMA_CONSTRAINT 로 걸렀다.
+      if (regex !== null && !regex.test(value)) return false;
+    }
     if (knownFormatValue(schema) !== null) return true;
     const minLength = numberAt(schema, "minLength");
     const maxLength = numberAt(schema, "maxLength");
@@ -220,8 +249,7 @@ export function synthesizeValue(schema: JsonSchema, path: string): JsonValue {
   else {
     switch (schema.type as SchemaType) {
       case "string":
-        // format 이 있으면 그 값을 그대로 쓴다. 자르면 형식이 깨져 길이와 형식 둘 다 못 지킨다.
-        value = knownFormatValue(schema) ?? boundedString(schema);
+        value = synthesizeString(schema, path);
         break;
       case "number":
       case "integer":

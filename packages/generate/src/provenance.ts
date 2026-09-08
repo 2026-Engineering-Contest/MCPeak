@@ -35,6 +35,8 @@ const byCodeUnit = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0
  * 개수 제약(`minItems` 등)은 배열 자신이 아니라 원소 값을 봐야 하므로 여기 오지 않는다.
  */
 const hasApplicableRangeKeyword = (schema: JsonSchema, type: SchemaType): boolean => {
+  // pattern 은 문자열에만 적용된다. 선언된 규칙을 따르는 값이라 범위 제약과 같은 근거다.
+  if (type === "string" && typeof schema.pattern === "string") return true;
   const keys =
     type === "number" || type === "integer"
       ? ["minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum"]

@@ -237,8 +237,8 @@ describe("generateTests", () => {
           name: "unsupported",
           inputSchema: {
             type: "object",
-            // minLength 는 이제 지원한다. 여전히 막히는 키워드로 바꿔 유지한다.
-            properties: { query: { type: "string", pattern: "^a$" } },
+            // pattern 은 이제 지원한다. 여전히 막히는 키워드로 바꿔 유지한다.
+            properties: { query: { type: "string", not: { type: "null" } } },
             required: ["query"],
           },
         },
@@ -249,7 +249,7 @@ describe("generateTests", () => {
     await expect(generation).rejects.toBeInstanceOf(GenerateTestsError);
     await expect(generation).rejects.toMatchObject({
       code: "UNSUPPORTED_SCHEMA",
-      path: "tools[1].inputSchema.properties.query.pattern",
+      path: "tools[1].inputSchema.properties.query.not",
       hint: expect.stringContaining("description, title"),
     });
     await expect(readdir(outDir)).rejects.toMatchObject({ code: "ENOENT" });
@@ -675,28 +675,24 @@ describe("$schema 키워드 (#135)", () => {
     await expect(readFile(path as string, "utf8")).resolves.toContain(expected);
   });
 
-  it("pattern 은 종전대로 거절한다", async () => {
+  it("pattern 을 거절하지 않는다", async () => {
     const outDir = await temporaryOutDir();
 
-    await expect(
-      generateTests(
-        [
-          {
-            name: "still-rejected",
-            inputSchema: {
-              type: "object",
-              required: ["q"],
-              properties: { q: { type: "string", pattern: "^a$" } },
-            },
+    const [path] = await generateTests(
+      [
+        {
+          name: "now-supported-pattern",
+          inputSchema: {
+            type: "object",
+            required: ["q"],
+            properties: { q: { type: "string", pattern: "^a$" } },
           },
-        ],
-        { outDir },
-      ),
-    ).rejects.toMatchObject({
-      code: "UNSUPPORTED_SCHEMA",
-      path: "tools[0].inputSchema.properties.q.pattern",
-    });
-    await expect(readdir(outDir)).rejects.toMatchObject({ code: "ENOENT" });
+        },
+      ],
+      { outDir },
+    );
+
+    await expect(readFile(path as string, "utf8")).resolves.toContain('"q": "a"');
   });
 
   describe("제약 키워드 허용", () => {
@@ -789,8 +785,8 @@ describe("$schema 키워드 (#135)", () => {
             name: "unsupported",
             inputSchema: {
               type: "object",
-              // minLength 는 이제 지원한다. 여전히 막히는 키워드로 바꿔 유지한다.
-              properties: { query: { type: "string", pattern: "^a$" } },
+              // pattern 은 이제 지원한다. 여전히 막히는 키워드로 바꿔 유지한다.
+              properties: { query: { type: "string", not: { type: "null" } } },
               required: ["query"],
             },
           },
@@ -843,5 +839,55 @@ describe("additionalProperties (#389)", () => {
         message: expect.stringMatching(/^'additionalProperties' 는 boolean 또는/),
       }),
     );
+  });
+});
+
+describe("pattern (#389)", () => {
+  it("전방탐색 pattern 은 그 툴만 건너뛴다", () => {
+    const result = createBaselineSuite(
+      [
+        {
+          name: "ok",
+          inputSchema: {
+            type: "object",
+            required: ["q"],
+            properties: { q: { type: "string" } },
+          },
+        },
+        {
+          name: "lookahead",
+          inputSchema: {
+            type: "object",
+            required: ["q"],
+            properties: { q: { type: "string", pattern: "(?!x)a" } },
+          },
+        },
+      ],
+      { suiteId: "s", suiteName: "s" },
+    );
+
+    expect(result.skippedTools.length).toBe(1);
+    expect(result.skippedTools[0]).toMatchObject({
+      path: "tools[1].inputSchema.properties.q.pattern",
+      message: expect.stringContaining("오프셋 0"),
+    });
+  });
+
+  it("컴파일 안 되는 pattern 은 전체가 멈춘다", () => {
+    expect(() =>
+      createBaselineSuite(
+        [
+          {
+            name: "broken",
+            inputSchema: {
+              type: "object",
+              required: ["q"],
+              properties: { q: { type: "string", pattern: "[" } },
+            },
+          },
+        ],
+        { suiteId: "s", suiteName: "s" },
+      ),
+    ).toThrow(expect.objectContaining({ code: "INVALID_SCHEMA_CONSTRAINT" }));
   });
 });

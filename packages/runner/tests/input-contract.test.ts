@@ -960,3 +960,18 @@ describe("analyzeInputSchema 가 필드의 range 를 담는다", () => {
     expect(analysis.schema?.fields.get("count")?.range).toBeNull();
   });
 });
+
+describe("nullable 필드 (#426)", () => {
+  const nullable = objectSchema({
+    properties: { note: { anyOf: [{ type: "string", minLength: 3 }, { type: "null" }] } },
+  });
+
+  it("nullable 필드에 null 을 보내면 finding 이 없다", () => {
+    expect(check(nullable, { note: null }).findings).toEqual([]);
+  });
+
+  it("nullable 필드에 타입 위반값을 보내면 TYPE_MISMATCH 다", () => {
+    const findings = check(nullable, { note: 0 }).findings;
+    expect(findings.map((item) => item.code)).toEqual(["TYPE_MISMATCH"]);
+  });
+});

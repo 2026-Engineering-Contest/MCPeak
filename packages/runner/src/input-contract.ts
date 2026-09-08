@@ -3,7 +3,7 @@ import { expectedIsError } from "./case-expectation.js";
 import type { ContractRange } from "./contract-range.js";
 import { rangeYieldsViolation, violatesRange } from "./contract-range.js";
 import type { InputSchemaAnalysis } from "./input-schema.js";
-import { analyzeInputSchema, judgeField } from "./input-schema.js";
+import { analyzeInputSchema, judgeField, nullSatisfiesField } from "./input-schema.js";
 import { byCodeUnit } from "./ordering.js";
 import { plainObject, typeName } from "./schema-match.js";
 import type { JsonValue, TestSuiteSpec } from "./spec/types.js";
@@ -276,7 +276,13 @@ export function checkInputContract(options: InputContractOptions): SpecFindingsR
                     : undefined,
                 ),
               );
-            } else if (rangeYieldsViolation(field.range) && violatesRange(field.range, value)) {
+            } else if (
+              rangeYieldsViolation(field.range) &&
+              // nullable 필드의 null 은 선언을 지킨 값이다. judgeField 를 거치지 않는 경로라
+              // 여기서 따로 걸러야 한다(#426).
+              !nullSatisfiesField(field, value) &&
+              violatesRange(field.range, value)
+            ) {
               // 타입·enum 을 이미 어긴 값에는 범위를 보지 않는다. judgeField 의 단락 순서와 같다.
               // 문장은 describeSpecFinding 이 만든다. expected 에는 가공하지 않은 범위만 싣는다.
               caseFindings.push({

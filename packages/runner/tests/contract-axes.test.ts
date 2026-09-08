@@ -561,3 +561,187 @@ describe("enum 과 범위가 함께 선언된 필드", () => {
     ]);
   });
 });
+
+describe("nullable anyOf 필드 (#426)", () => {
+  const nullableTool = (v: Record<string, unknown>) =>
+    tool("get_weather", { type: "object", properties: { note: v } });
+  const axesOf = (v: Record<string, unknown>) => deriveContractAxes(nullableTool(v));
+  const kindsFor = (v: Record<string, unknown>, field: string) =>
+    axesOf(v)
+      .axes.filter((axis) => axis.field === field)
+      .map((axis) => axis.kind);
+
+  it("anyOf [string, null] 필드는 TYPE_VIOLATION 축을 얻는다", () => {
+    const result = axesOf({ anyOf: [{ type: "string" }, { type: "null" }] });
+    expect(result.unanalyzedFields).toEqual([]);
+    expect(result.axes.filter((axis) => axis.field === "note")).toEqual([
+      {
+        kind: "TYPE_VIOLATION",
+        tool: "get_weather",
+        field: "note",
+        declaredType: "string",
+        declaredEnum: null,
+        declaredRange: null,
+      },
+    ]);
+  });
+
+  it("oneOf [null, integer] 도 같다", () => {
+    const result = axesOf({ oneOf: [{ type: "null" }, { type: "integer" }] });
+    expect(result.unanalyzedFields).toEqual([]);
+    expect(result.axes.filter((axis) => axis.field === "note")).toEqual([
+      {
+        kind: "TYPE_VIOLATION",
+        tool: "get_weather",
+        field: "note",
+        declaredType: "integer",
+        declaredEnum: null,
+        declaredRange: null,
+      },
+    ]);
+  });
+
+  it("값 갈래의 enum 과 범위도 읽는다", () => {
+    expect(
+      kindsFor({ anyOf: [{ type: "string", enum: ["x", "y"] }, { type: "null" }] }, "note"),
+    ).toEqual(["TYPE_VIOLATION", "ENUM_VIOLATION"]);
+    expect(
+      kindsFor({ anyOf: [{ type: "integer", minimum: 1 }, { type: "null" }] }, "note"),
+    ).toEqual(["TYPE_VIOLATION", "RANGE_VIOLATION"]);
+  });
+
+  it("값 갈래가 둘이면 종전대로 포기한다", () => {
+    expect(axesOf({ anyOf: [{ type: "string" }, { type: "number" }] }).unanalyzedFields).toEqual([
+      "note",
+    ]);
+  });
+
+  it("값 갈래가 둘이고 null 도 있으면 포기한다", () => {
+    expect(
+      axesOf({ anyOf: [{ type: "string" }, { type: "number" }, { type: "null" }] })
+        .unanalyzedFields,
+    ).toEqual(["note"]);
+  });
+
+  it("null 갈래가 없으면 포기한다", () => {
+    expect(axesOf({ anyOf: [{ type: "string" }] }).unanalyzedFields).toEqual(["note"]);
+    expect(axesOf({ anyOf: [{ type: "string", minLength: 1 }] }).unanalyzedFields).toEqual([
+      "note",
+    ]);
+  });
+
+  it("값 갈래에 차단 키워드가 있으면 포기한다", () => {
+    expect(
+      axesOf({ anyOf: [{ type: "string", not: {} }, { type: "null" }] }).unanalyzedFields,
+    ).toEqual(["note"]);
+  });
+
+  it("anyOf 와 oneOf 가 함께 있으면 포기한다", () => {
+    expect(
+      axesOf({
+        anyOf: [{ type: "string" }, { type: "null" }],
+        oneOf: [{ type: "string" }, { type: "null" }],
+      }).unanalyzedFields,
+    ).toEqual(["note"]);
+  });
+
+  it("루트 anyOf 는 여전히 해석 불가다", () => {
+    const result = deriveContractAxes(
+      tool("get_weather", { anyOf: [{ type: "object", properties: {} }] }),
+    );
+    expect(result.analyzable).toBe(false);
+    expect(result.unanalyzableReason).toBe("anyOf");
+  });
+
+  it("matchCoveredAxes: null 입력은 nullable 필드의 어떤 축도 어기지 않는다", () => {
+    const covered = matchCoveredAxes({
+      testCase: callCase("null-ok", { note: null }, false),
+      tool: nullableTool({ anyOf: [{ type: "string", minLength: 3 }, { type: "null" }] }),
+    });
+    expect(covered.map((axis) => axis.kind)).toEqual(["HAPPY_PATH"]);
+  });
+
+  it("matchCoveredAxes: nullable 필드의 타입 위반값은 TYPE_VIOLATION 을 덮는다", () => {
+    const covered = matchCoveredAxes({
+      testCase: callCase("type-bad", { note: 0 }, true),
+      tool: nullableTool({ anyOf: [{ type: "string" }, { type: "null" }] }),
+    });
+    expect(covered.map((axis) => axis.kind)).toEqual(["TYPE_VIOLATION"]);
+  });
+});
+
+describe("UNDECLARED_FIELD 축 (#427)", () => {
+  const strict = tool("get_weather", {
+    type: "object",
+    properties: { city: { type: "string" } },
+    required: ["city"],
+    additionalProperties: false,
+  });
+  const withAdditional = (additionalProperties?: unknown) =>
+    tool("get_weather", {
+      type: "object",
+      properties: { city: { type: "string" } },
+      required: ["city"],
+      ...(additionalProperties === undefined ? {} : { additionalProperties }),
+    });
+
+  it("additionalProperties: false 면 UNDECLARED_FIELD 축이 마지막에 하나 있다", () => {
+    const axes = deriveContractAxes(strict).axes;
+    expect(axes.map((axis) => axis.kind)).toEqual([
+      "HAPPY_PATH",
+      "REQUIRED_OMITTED",
+      "TYPE_VIOLATION",
+      "UNDECLARED_FIELD",
+    ]);
+    expect(axes[axes.length - 1]).toEqual({
+      kind: "UNDECLARED_FIELD",
+      tool: "get_weather",
+      field: null,
+      declaredType: null,
+      declaredEnum: null,
+      declaredRange: null,
+    });
+  });
+
+  it.each([
+    ["없으면", undefined],
+    ["true 면", true],
+    ["스키마 객체면", { type: "number" }],
+  ])("additionalProperties 가 %s 축이 없다", (_label, additionalProperties) => {
+    const axes = deriveContractAxes(withAdditional(additionalProperties)).axes;
+    expect(axes.some((axis) => axis.kind === "UNDECLARED_FIELD")).toBe(false);
+  });
+
+  it("matchCoveredAxes: 선언 밖 키를 넣은 거절 기대 케이스가 UNDECLARED_FIELD 를 덮는다", () => {
+    const covered = matchCoveredAxes({
+      testCase: callCase("extra", { city: "서울", extra: 1 }, true),
+      tool: strict,
+    });
+    expect(covered.map((axis) => axis.kind)).toEqual(["UNDECLARED_FIELD"]);
+  });
+
+  it("matchCoveredAxes: 선언 밖 키가 둘이어도 축은 하나다", () => {
+    const covered = matchCoveredAxes({
+      testCase: callCase("extra2", { city: "서울", a: 1, b: 2 }, true),
+      tool: strict,
+    });
+    expect(covered.map((axis) => axis.kind)).toEqual(["UNDECLARED_FIELD"]);
+  });
+
+  it("matchCoveredAxes: 선언 밖 키가 있는 정상 기대 케이스는 아무 축도 덮지 않는다", () => {
+    expect(
+      matchCoveredAxes({
+        testCase: callCase("ok", { city: "서울", extra: 1 }, false),
+        tool: strict,
+      }),
+    ).toEqual([]);
+  });
+
+  it("matchCoveredAxes: additionalProperties 가 없으면 선언 밖 키가 있어도 HAPPY_PATH 를 덮는다", () => {
+    const covered = matchCoveredAxes({
+      testCase: callCase("ok", { city: "서울", extra: 1 }, false),
+      tool: withAdditional(),
+    });
+    expect(covered.map((axis) => axis.kind)).toEqual(["HAPPY_PATH"]);
+  });
+});

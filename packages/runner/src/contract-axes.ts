@@ -3,7 +3,7 @@ import { expectedIsError } from "./case-expectation.js";
 import type { ContractRange } from "./contract-range.js";
 import { rangeYieldsViolation, violatesRange } from "./contract-range.js";
 import type { DeclaredType, NormalizedInputSchema } from "./input-schema.js";
-import { analyzeInputSchema, judgeField } from "./input-schema.js";
+import { analyzeInputSchema, judgeField, nullSatisfiesField } from "./input-schema.js";
 import { byCodeUnit } from "./ordering.js";
 import { plainObject } from "./schema-match.js";
 import type { JsonValue, TestCaseSpec } from "./spec/types.js";
@@ -17,14 +17,15 @@ export type ContractAxisKind =
   | "REQUIRED_OMITTED" // 필수 필드를 뺀 입력을 거절한다
   | "TYPE_VIOLATION" // 선언 type 을 어긴 값을 거절한다
   | "ENUM_VIOLATION" // 선언 enum 밖 값을 거절한다
-  | "RANGE_VIOLATION"; // 선언된 범위 밖 값을 거절한다
+  | "RANGE_VIOLATION" // 선언된 범위 밖 값을 거절한다
+  | "UNDECLARED_FIELD"; // 선언에 없는 필드를 넣은 입력을 거절한다
 
 /** 축 한 개. 같은 툴 안에서 (kind, field) 쌍은 유일하다. */
 export interface ContractAxis {
   readonly kind: ContractAxisKind;
   /** 서버가 선언한 툴 이름. 원문 그대로다. */
   readonly tool: string;
-  /** 대상 필드. HAPPY_PATH 는 null 이다. */
+  /** 대상 필드. HAPPY_PATH 와 UNDECLARED_FIELD 는 null 이다. */
   readonly field: string | null;
   /** 필드에 선언된 type. TYPE_VIOLATION 에서만 값이 있고 그 밖에는 null 이다. */
   readonly declaredType: ContractDeclaredType | null;
@@ -44,7 +45,10 @@ export interface ContractAxis {
 export type ContractDeclaredType = DeclaredType;
 
 export interface ContractAxesResult {
-  /** §4.4 순서로 정렬돼 있다. analyzable 이 false 면 빈 배열이다. */
+  /**
+   * §4.4 순서로 정렬돼 있다. analyzable 이 false 면 빈 배열이다.
+   * 순서는 HAPPY_PATH · REQUIRED_OMITTED · TYPE · ENUM · RANGE · UNDECLARED_FIELD 다.
+   */
   readonly axes: readonly ContractAxis[];
   /**
    * 스키마를 해석했는지. false 면 축을 하나도 세지 않는다.
@@ -121,6 +125,10 @@ export function deriveContractAxes(
   for (const [name, field] of analysis.schema.fields)
     if (field.enumValues === null && rangeYieldsViolation(field.range))
       axes.push(axis("RANGE_VIOLATION", name, null, null, field.range));
+  // additionalProperties 가 정확히 false 일 때만이다. JSON Schema 의 기본값이 "허용" 이라
+  // 없거나 true 이거나 스키마 객체면 거절을 기대할 근거가 없다(#427). field 는 null 이다.
+  // 선언 밖 키가 여럿이어도 축은 하나라 필드로 나눌 수 없고, 나눌 이유도 없다.
+  if (analysis.schema.rejectsUndeclared) axes.push(axis("UNDECLARED_FIELD", null, null, null));
 
   return {
     axes,
@@ -174,11 +182,19 @@ function violatedAxes(
     // 하나가 축 둘을 덮게 되어 우리 생성기가 케이스를 따로 만드는 것과 어긋난다.
     else if (
       rangeYieldsViolation(field.range) &&
+      // nullable 필드의 null 은 선언을 지킨 값이다. 범위 판정은 judgeField 를 거치지 않으므로
+      // 여기서 따로 걸러야 한다(#426).
+      !nullSatisfiesField(field, input[name] as JsonValue) &&
       violatesRange(field.range, input[name] as JsonValue)
     )
       rangeAxes.push(contractAxis(tool, "RANGE_VIOLATION", name, null, null, field.range));
   }
-  return [...axes, ...typeAxes, ...enumAxes, ...rangeAxes];
+  // 선언 밖 키가 여럿이어도 축은 하나다. field 가 null 이라 구분할 수 없고 구분할 이유도 없다.
+  const undeclaredAxes: ContractAxis[] =
+    schema.rejectsUndeclared && Object.keys(input).some((key) => !schema.fields.has(key))
+      ? [contractAxis(tool, "UNDECLARED_FIELD", null, null, null)]
+      : [];
+  return [...axes, ...typeAxes, ...enumAxes, ...rangeAxes, ...undeclaredAxes];
 }
 
 /**

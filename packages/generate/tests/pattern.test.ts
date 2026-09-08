@@ -68,6 +68,19 @@ describe("길이 불가", () => {
     );
   });
 
+  it("늘려도 결과가 안 자라는 수량자만 남으면 건너뛴다", () => {
+    // `(ab*){0}` 은 통째로 버려져 `b*` 를 아무리 늘려도 값이 "c" 그대로다. 여기서 멈추지
+    // 않으면 상한 없는 수량자에서 영원히 돌아 오류가 아니라 hang 이 된다.
+    expect(() =>
+      synthesizePatternString("^(ab*){0}c$", { minLength: 3, maxLength: null }, "p"),
+    ).toThrow(
+      expect.objectContaining({
+        code: "UNSUPPORTED_SCHEMA",
+        message: expect.stringContaining("minLength 3"),
+      }),
+    );
+  });
+
   it("채운 값이 상한을 넘으면 건너뛴다", () => {
     // 최소 "ab"(2자) 는 minLength 에 모자라고 한 번 늘리면 "abab"(4자) 로 상한을 넘는다.
     expect(() => synthesizePatternString("^(ab)+$", { minLength: 3, maxLength: 3 }, "p")).toThrow(

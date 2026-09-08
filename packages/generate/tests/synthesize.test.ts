@@ -448,3 +448,46 @@ describe("anyOf / oneOf 합성", () => {
     ).toBe("example");
   });
 });
+
+describe("순환 $ref 의 후보 검사", () => {
+  /** 값을 소비하지 않고 자기를 가리키는 정의. 재방문 가드가 없으면 스택이 터진다. */
+  const selfRef = { $defs: { A: { $ref: "#/$defs/A" } } };
+
+  it("oneOf 의 순환 갈래는 만족하지 않는 것으로 센다", () => {
+    // 순환 갈래가 true 로 세어지면 만족 갈래가 2개가 되어 배타 판정이 깨지고 문안 8 로 던진다.
+    // 즉 이 단언은 가드가 실제로 false 를 돌려주는지를 가른다.
+    expect(
+      value({
+        type: "object",
+        required: ["v"],
+        properties: { v: { oneOf: [{ type: "string" }, { $ref: "#/$defs/A" }] } },
+        ...selfRef,
+      }),
+    ).toEqual({ v: "example" });
+  });
+
+  it("갈래가 순환뿐이면 hang 없이 UNSUPPORTED_SCHEMA 다", () => {
+    expect(() => value({ anyOf: [{ $ref: "#/$defs/A" }], ...selfRef })).toThrow(
+      expect.objectContaining({ code: "UNSUPPORTED_SCHEMA" }),
+    );
+  });
+});
+
+describe("additionalProperties 가 스키마 객체일 때 후보 검사", () => {
+  const schema = {
+    type: "object",
+    properties: { a: { type: "string" } },
+    required: ["a"],
+    additionalProperties: { type: "number" },
+  };
+
+  it("선언 밖 키가 그 스키마를 어기면 후보 불만족이다", () => {
+    expect(() => value({ ...schema, default: { a: "x", b: "문자열" } })).toThrow(
+      expect.objectContaining({ code: "UNSUPPORTED_SCHEMA" }),
+    );
+  });
+
+  it("선언 밖 키가 그 스키마를 만족하면 default 를 그대로 쓴다", () => {
+    expect(value({ ...schema, default: { a: "x", b: 1 } })).toEqual({ a: "x", b: 1 });
+  });
+});

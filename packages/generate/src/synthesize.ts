@@ -197,7 +197,21 @@ function valueMatchesConstraints(value: JsonValue, schema: JsonSchema, type: Sch
   return true;
 }
 
-function valueMatchesSchema(value: JsonValue, schema: JsonSchema, root: JsonSchema): boolean {
+/**
+ * 후보값이 스키마를 만족하는지. `active` 에는 해석 중인 `$ref` 대상 객체가 담긴다.
+ *
+ * 값만 따라 내려가는 것으로는 부족하다. `{ $defs: { A: { $ref: "#/$defs/A" } } }` 처럼 값을
+ * 소비하지 않고 도는 참조가 있으면 같은 값으로 무한히 재귀한다. 그러면 스택이 터지고, 그
+ * `RangeError` 를 위쪽 catch 가 삼켜 "안 맞음" 으로 돌아오므로 **결과가 우연히 맞는다.**
+ * 재방문을 여기서 false 로 끊어야 판정의 근거가 스택 한계가 아니게 된다. 합성 쪽이 같은
+ * 자리에서 문안 6 으로 거절하는 것과 갈리는 점은, 후보 검사는 던지지 않는다는 것뿐이다.
+ */
+function valueMatchesSchema(
+  value: JsonValue,
+  schema: JsonSchema,
+  root: JsonSchema,
+  active: Set<object> = new Set(),
+): boolean {
   // 후보 검사도 조합을 한 겹 푼다. $ref 만 든 스키마에는 type 이 없어 그냥 보면 전부 불일치다.
   const key = compositionKey(schema);
   if (key !== null) {
@@ -205,10 +219,12 @@ function valueMatchesSchema(value: JsonValue, schema: JsonSchema, root: JsonSche
     if (expanded === null) return false;
     if (key === "$ref") {
       const first = expanded[0];
-      // 값은 유한하므로 재귀는 끝난다. 참조가 순환해도 값을 따라 내려가다 바닥에 닿는다.
-      return first === undefined || valueMatchesSchema(value, first.schema, root);
+      if (first === undefined) return true;
+      if (first.target !== null && active.has(first.target)) return false;
+      const next = first.target === null ? active : new Set(active).add(first.target);
+      return valueMatchesSchema(value, first.schema, root, next);
     }
-    const matched = countMatchingBranches(value, expanded, root);
+    const matched = countMatchingBranches(value, expanded, root, active);
     return key === "oneOf" ? matched === 1 : matched > 0;
   }
   const type = schema.type as SchemaType;
@@ -249,14 +265,22 @@ function valueMatchesSchema(value: JsonValue, schema: JsonSchema, root: JsonSche
     ) {
       return false;
     }
-    return Object.keys(value).every(
-      (key) =>
-        !Object.hasOwn(properties, key) ||
-        valueMatchesSchema(value[key] as JsonValue, properties[key] as JsonSchema, root),
+    // 선언 밖 키는 additionalProperties 가 스키마 객체면 그 스키마로 본다. 우리는 그런 키를
+    // 만들지 않으므로 합성은 그대로고, 후보값(default · examples[0] · const)만 여기서 걸린다.
+    const additional = plainObject(schema.additionalProperties)
+      ? (schema.additionalProperties as JsonSchema)
+      : null;
+    return Object.keys(value).every((key) =>
+      Object.hasOwn(properties, key)
+        ? valueMatchesSchema(value[key] as JsonValue, properties[key] as JsonSchema, root, active)
+        : additional === null ||
+          valueMatchesSchema(value[key] as JsonValue, additional, root, active),
     );
   }
   if (type === "array" && Array.isArray(value)) {
-    return value.every((item) => valueMatchesSchema(item, schema.items as JsonSchema, root));
+    return value.every((item) =>
+      valueMatchesSchema(item, schema.items as JsonSchema, root, active),
+    );
   }
   return true;
 }
@@ -364,15 +388,21 @@ function synthesizeComposition(
   return synthesizeValue(first.schema, first.path, root, new Set(active).add(first.target));
 }
 
-/** 후보 검사용. 해석에 실패하면 그 값은 이 스키마를 만족한다고 볼 수 없다. */
+/**
+ * 후보 검사용. 해석에 실패하면 그 값은 이 스키마를 만족한다고 볼 수 없다.
+ *
+ * 삼키는 것은 `GenerateTestsError` 뿐이다. 그 밖의 오류까지 삼키면 우리 결함이 "안 맞음" 으로
+ * 위장돼 결과가 우연히 맞는 상태가 조용히 유지된다.
+ */
 function expandCompositionOrNull(
   schema: JsonSchema,
   root: JsonSchema,
 ): readonly ExpandedSchema[] | null {
   try {
     return expandComposition(schema, root, "");
-  } catch {
-    return null;
+  } catch (error) {
+    if (error instanceof GenerateTestsError) return null;
+    throw error;
   }
 }
 
@@ -397,7 +427,7 @@ function synthesizeBranches(
     try {
       validateSchema(branch.schema, branch.path, new Set(), root);
       const candidate = synthesizeValue(branch.schema, branch.path, root, active);
-      if (key === "oneOf" && countMatchingBranches(candidate, expanded, root) !== 1) {
+      if (key === "oneOf" && countMatchingBranches(candidate, expanded, root, active) !== 1) {
         exclusivityFailed = true;
         continue;
       }
@@ -425,6 +455,7 @@ function countMatchingBranches(
   value: JsonValue,
   expanded: readonly ExpandedSchema[],
   root: JsonSchema,
+  active: Set<object>,
 ): number {
-  return expanded.filter((branch) => valueMatchesSchema(value, branch.schema, root)).length;
+  return expanded.filter((branch) => valueMatchesSchema(value, branch.schema, root, active)).length;
 }

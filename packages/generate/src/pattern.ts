@@ -170,8 +170,17 @@ export function synthesizePatternString(
         length(value) < minLength &&
         (repeat.max === null || (counts.get(repeat) as number) < repeat.max)
       ) {
+        const before = length(value);
         counts.set(repeat, (counts.get(repeat) as number) + 1);
         value = generate(root, counts);
+        // 늘렸는데 결과가 안 자라면 이 수량자는 만들어지는 문자열에 닿지 않는다. 바깥이
+        // `{0}` 이라 통째로 버려지는 `^(ab*){0}c$` 가 그렇다. 되돌리고 다음 수량자로 넘어간다.
+        // 이 검사가 없으면 상한 없는 수량자에서 종료 조건이 둘 다 안 걸려 영원히 돈다.
+        if (length(value) <= before) {
+          counts.set(repeat, (counts.get(repeat) as number) - 1);
+          value = generate(root, counts);
+          break;
+        }
       }
       if (length(value) >= minLength) break;
     }

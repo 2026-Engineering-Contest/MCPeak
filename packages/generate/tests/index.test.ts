@@ -891,3 +891,95 @@ describe("pattern (#389)", () => {
     ).toThrow(expect.objectContaining({ code: "INVALID_SCHEMA_CONSTRAINT" }));
   });
 });
+
+describe("$ref (#389)", () => {
+  const inner = { type: "object", required: ["name"], properties: { name: { type: "string" } } };
+
+  /** 설계 §1.2 의 zod `rec` 스키마. required 에 무엇을 넣느냐로 순환의 갈래가 갈린다. */
+  const recursive = (required: readonly string[], extra: Record<string, unknown> = {}) => ({
+    type: "object",
+    properties: { root: { $ref: "#/definitions/__schema0" } },
+    required: ["root"],
+    definitions: {
+      __schema0: {
+        type: "object",
+        properties: {
+          v: { type: "string" },
+          kids: { type: "array", items: { $ref: "#/definitions/__schema0" }, ...extra },
+        },
+        required,
+      },
+    },
+  });
+
+  it("$ref 툴을 거절하지 않는다", () => {
+    expect(() =>
+      validateSchema(
+        {
+          type: "object",
+          required: ["who"],
+          properties: { who: { $ref: "#/$defs/Inner" } },
+          $defs: { Inner: inner },
+        },
+        "t.inputSchema",
+      ),
+    ).not.toThrow();
+  });
+
+  it("참조되지 않는 $defs 의 미지원 키워드는 무시한다", () => {
+    expect(() =>
+      validateSchema(
+        {
+          type: "object",
+          required: ["x"],
+          properties: { x: { type: "string" } },
+          $defs: { Unused: { type: "string", not: {} } },
+        },
+        "t.inputSchema",
+      ),
+    ).not.toThrow();
+  });
+
+  it("원격 $ref 는 그 툴만 건너뛴다", () => {
+    const result = createBaselineSuite(
+      [
+        {
+          name: "ok",
+          inputSchema: { type: "object", required: ["x"], properties: { x: { type: "string" } } },
+        },
+        {
+          name: "remote",
+          inputSchema: {
+            type: "object",
+            required: ["x"],
+            properties: { x: { $ref: "https://example.com/schema.json#/Inner" } },
+          },
+        },
+      ],
+      { suiteId: "s", suiteName: "s" },
+    );
+
+    expect(result.skippedTools[0]).toMatchObject({
+      path: "tools[1].inputSchema.properties.x.$ref",
+    });
+  });
+
+  it("선택 필드 재귀 툴이 살아남고 필수 필드 재귀 툴은 건너뛴다", () => {
+    const result = createBaselineSuite(
+      [
+        {
+          name: "plain",
+          inputSchema: { type: "object", required: ["x"], properties: { x: { type: "string" } } },
+        },
+        { name: "optional-recursion", inputSchema: recursive(["v"]) },
+        {
+          name: "required-recursion",
+          inputSchema: recursive(["v", "kids"], { minItems: 1 }),
+        },
+      ],
+      { suiteId: "s", suiteName: "s" },
+    );
+
+    expect(result.skippedTools.map((item) => item.index)).toEqual([2]);
+  });
+});

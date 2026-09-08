@@ -1,3 +1,4 @@
+import { compositionKey, type ExpandedSchema, expandComposition } from "./composition.js";
 import {
   FORMAT_VALUES,
   integerLowerBound,
@@ -187,7 +188,15 @@ function valueMatchesConstraints(value: JsonValue, schema: JsonSchema, type: Sch
   return true;
 }
 
-function valueMatchesSchema(value: JsonValue, schema: JsonSchema): boolean {
+function valueMatchesSchema(value: JsonValue, schema: JsonSchema, root: JsonSchema): boolean {
+  // 후보 검사도 조합을 한 겹 푼다. $ref 만 든 스키마에는 type 이 없어 그냥 보면 전부 불일치다.
+  if (compositionKey(schema) !== null) {
+    const expanded = expandCompositionOrNull(schema, root);
+    if (expanded === null) return false;
+    const first = expanded[0];
+    // 값은 유한하므로 재귀는 끝난다. 참조가 순환해도 값을 따라 내려가다 바닥에 닿는다.
+    return first === undefined || valueMatchesSchema(value, first.schema, root);
+  }
   const type = schema.type as SchemaType;
   const typeMatches =
     type === "null"
@@ -229,17 +238,29 @@ function valueMatchesSchema(value: JsonValue, schema: JsonSchema): boolean {
     return Object.keys(value).every(
       (key) =>
         !Object.hasOwn(properties, key) ||
-        valueMatchesSchema(value[key] as JsonValue, properties[key] as JsonSchema),
+        valueMatchesSchema(value[key] as JsonValue, properties[key] as JsonSchema, root),
     );
   }
   if (type === "array" && Array.isArray(value)) {
-    return value.every((item) => valueMatchesSchema(item, schema.items as JsonSchema));
+    return value.every((item) => valueMatchesSchema(item, schema.items as JsonSchema, root));
   }
   return true;
 }
 
-/** 검증된 JSON Schema에서 결정론적인 입력값 하나를 합성한다. */
-export function synthesizeValue(schema: JsonSchema, path: string): JsonValue {
+/**
+ * 검증된 JSON Schema에서 결정론적인 입력값 하나를 합성한다.
+ *
+ * `root` 는 `$ref` 를 푸는 기준이고 기본값이 자기 자신이라 기존 호출부가 그대로 컴파일된다.
+ * `active` 에는 해석한 `$ref` 대상 객체만 담는다.
+ */
+export function synthesizeValue(
+  schema: JsonSchema,
+  path: string,
+  root: JsonSchema = schema,
+  active: Set<object> = new Set(),
+): JsonValue {
+  if (compositionKey(schema) !== null) return synthesizeComposition(schema, path, root, active);
+
   let value: JsonValue;
   if ("const" in schema) value = schema.const as JsonValue;
   else if ("default" in schema) value = schema.default as JsonValue;
@@ -264,7 +285,7 @@ export function synthesizeValue(schema: JsonSchema, path: string): JsonValue {
       case "array":
         // 원소는 전부 같은 값이다. 인덱스마다 다른 값을 넣으면 지문이 원소 개수에 따라 흔들린다.
         value = Array.from({ length: itemCount(schema) }, () =>
-          synthesizeValue(schema.items as JsonSchema, `${path}.items`),
+          synthesizeValue(schema.items as JsonSchema, `${path}.items`, root, active),
         );
         break;
       case "object": {
@@ -276,7 +297,12 @@ export function synthesizeValue(schema: JsonSchema, path: string): JsonValue {
         value = Object.fromEntries(
           required.map((key) => [
             key,
-            synthesizeValue(properties[key] as JsonSchema, `${path}.properties.${key}`),
+            synthesizeValue(
+              properties[key] as JsonSchema,
+              `${path}.properties.${key}`,
+              root,
+              active,
+            ),
           ]),
         );
         break;
@@ -284,7 +310,7 @@ export function synthesizeValue(schema: JsonSchema, path: string): JsonValue {
     }
   }
 
-  if (!valueMatchesSchema(value, schema)) {
+  if (!valueMatchesSchema(value, schema, root)) {
     fail(
       "UNSUPPORTED_SCHEMA",
       path,
@@ -293,4 +319,50 @@ export function synthesizeValue(schema: JsonSchema, path: string): JsonValue {
     );
   }
   return value;
+}
+
+/**
+ * 조합 키를 한 겹 풀고 유효 스키마로 합성한다.
+ *
+ * 이미 활성인 `$ref` 대상에 다시 닿으면 거절한다. 합성은 필수 경로만 따라가므로 여기 도달한
+ * 순환은 유한한 값이 없는 순환이다. 검증 쪽이 같은 자리를 조용히 건너뛰는 것과 갈린다(§5.3).
+ */
+function synthesizeComposition(
+  schema: JsonSchema,
+  path: string,
+  root: JsonSchema,
+  active: Set<object>,
+): JsonValue {
+  const expanded = expandComposition(schema, root, path);
+  const first = expanded[0] as ExpandedSchema | undefined;
+  if (first === undefined) {
+    return fail(
+      "UNSUPPORTED_SCHEMA",
+      path,
+      `조합 키워드를 풀지 못했습니다: ${path}`,
+      "$ref, anyOf, oneOf 중 지원하는 형태로 선언하세요.",
+    );
+  }
+  if (first.target === null) return synthesizeValue(first.schema, first.path, root, active);
+  if (active.has(first.target)) {
+    return fail(
+      "UNSUPPORTED_SCHEMA",
+      path,
+      `필수 경로에 순환 참조가 있어 유한한 입력값을 만들 수 없습니다: ${path}.$ref = ${JSON.stringify(schema.$ref)}`,
+      "순환하는 필드를 required 에서 빼거나 default 로 끝나는 값을 선언하세요.",
+    );
+  }
+  return synthesizeValue(first.schema, first.path, root, new Set(active).add(first.target));
+}
+
+/** 후보 검사용. 해석에 실패하면 그 값은 이 스키마를 만족한다고 볼 수 없다. */
+function expandCompositionOrNull(
+  schema: JsonSchema,
+  root: JsonSchema,
+): readonly ExpandedSchema[] | null {
+  try {
+    return expandComposition(schema, root, "");
+  } catch {
+    return null;
+  }
 }

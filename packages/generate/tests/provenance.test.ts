@@ -182,3 +182,33 @@ describe("pattern 의 값 출처", () => {
     expect(result.declared).toBe(0);
   });
 });
+
+describe("$ref 의 값 출처", () => {
+  it("$ref 는 대상의 출처를 센다", () => {
+    const result = analyzeToolProvenance({
+      name: "t",
+      inputSchema: {
+        type: "object",
+        required: ["who"],
+        properties: { who: { $ref: "#/$defs/Inner" } },
+        $defs: {
+          Inner: { type: "object", required: ["name"], properties: { name: { type: "string" } } },
+        },
+      },
+    });
+    expect(result.placeholder).toBe(1);
+    expect(result.declared).toBe(0);
+  });
+
+  it("$ref 해석 실패는 placeholder 1 이다", () => {
+    const result = analyzeToolProvenance({
+      name: "t",
+      inputSchema: {
+        type: "object",
+        required: ["who"],
+        properties: { who: { $ref: "#/$defs/없음" } },
+      },
+    });
+    expect(result.placeholder).toBe(1);
+  });
+});

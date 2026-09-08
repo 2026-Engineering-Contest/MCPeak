@@ -1,3 +1,4 @@
+import { compositionKey, expandComposition } from "./composition.js";
 import { assertConstraints } from "./constraints.js";
 
 export type JsonValue = null | boolean | number | string | JsonValue[] | JsonObject;
@@ -69,6 +70,12 @@ const SUPPORTED_SCHEMA_KEYS = new Set([
   "additionalProperties",
   // 값 검증은 assertConstraints 가, 값 합성은 pattern.ts 가 한다(설계 §5.2).
   "pattern",
+  // 조합·참조 키워드. 해석은 composition.ts 가 한다(설계 §5.3).
+  // $defs · definitions 안의 스키마는 **참조될 때만** 검증한다. 참조되지 않는 정의에 미지원
+  // 키워드가 있어도 합성값과 무관하다.
+  "$ref",
+  "$defs",
+  "definitions",
 ]);
 
 export const plainObject = (value: unknown): value is Record<string, unknown> =>
@@ -159,6 +166,7 @@ export function validateSchema(
   schema: unknown,
   path: string,
   active: Set<object> = new Set(),
+  root: JsonSchema = schema as JsonSchema,
 ): asserts schema is JsonSchema {
   if (!plainObject(schema)) {
     fail(
@@ -191,16 +199,51 @@ export function validateSchema(
       );
     }
 
+    // 조합 키는 미지원 키워드 검사 뒤, type 검사 앞이다. $ref 만 든 스키마에는 type 이 없다.
+    if (compositionKey(schema) !== null) {
+      validateComposition(schema, path, active, root);
+      return;
+    }
+
     const type = schemaType(schema, path);
     validateAnnotations(schema, path);
     // 미지원 키워드 검사보다 뒤, 후보 검사보다 앞이다. 깨진 제약을 들고 값을 고르면
     // "후보가 제약을 만족하지 않는다" 로 잘못 보고된다.
     assertConstraints(schema, path);
     validateCandidates(schema, path);
-    validateObjectKeywords(schema, type, path, active);
-    validateArrayKeywords(schema, type, path, active);
+    validateObjectKeywords(schema, type, path, active, root);
+    validateArrayKeywords(schema, type, path, active, root);
   } finally {
     active.delete(schema);
+  }
+}
+
+/**
+ * 조합 키를 한 겹 풀고 유효 스키마를 검증한다.
+ *
+ * 활성 집합에는 `$ref` 로 해석한 **대상 객체**를 넣는다. 병합 결과는 매번 새 객체라 동일성으로
+ * 잡을 수 없다. 이미 활성인 대상은 조용히 건너뛴다. 그 대상은 스택 위에서 검증 중이고, 여기
+ * 도달하는 순환은 선택 필드에 든 재귀(zod 의 `kids`)라 툴이 살아남아야 한다. 합성 쪽은 필수
+ * 경로만 따라가므로 같은 자리에서 거절한다(설계 §5.3).
+ */
+function validateComposition(
+  schema: JsonSchema,
+  path: string,
+  active: Set<object>,
+  root: JsonSchema,
+): void {
+  for (const expanded of expandComposition(schema, root, path)) {
+    if (expanded.target === null) {
+      validateSchema(expanded.schema, expanded.path, active, root);
+      continue;
+    }
+    if (active.has(expanded.target)) continue;
+    active.add(expanded.target);
+    try {
+      validateSchema(expanded.schema, expanded.path, active, root);
+    } finally {
+      active.delete(expanded.target);
+    }
   }
 }
 
@@ -249,6 +292,7 @@ function validateObjectKeywords(
   type: SchemaType,
   path: string,
   active: Set<object>,
+  root: JsonSchema,
 ): void {
   // object 가 아닌 type 에 붙어 있어도 거절하지 않는다. 뜻이 없을 뿐 합성값이 달라지지 않아
   // annotation 과 같은 범주다. 값 형식만 본다(설계 §5.1).
@@ -295,7 +339,7 @@ function validateObjectKeywords(
     );
   }
   for (const key of Object.keys(properties).sort()) {
-    validateSchema(properties[key], `${path}.properties.${key}`, active);
+    validateSchema(properties[key], `${path}.properties.${key}`, active, root);
   }
 
   const required = "required" in schema ? schema.required : [];
@@ -327,6 +371,7 @@ function validateArrayKeywords(
   type: SchemaType,
   path: string,
   active: Set<object>,
+  root: JsonSchema,
 ): void {
   if (type === "array") {
     if (!("items" in schema)) {
@@ -337,7 +382,7 @@ function validateArrayKeywords(
         "생성할 배열 원소의 스키마를 items에 지정하세요.",
       );
     }
-    validateSchema(schema.items, `${path}.items`, active);
+    validateSchema(schema.items, `${path}.items`, active, root);
   } else if ("items" in schema) {
     fail(
       "UNSUPPORTED_SCHEMA",

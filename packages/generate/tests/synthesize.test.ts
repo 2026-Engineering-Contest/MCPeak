@@ -229,3 +229,97 @@ describe("pattern 단계 순서", () => {
     expect(value({ type: "string", format, pattern })).toBe(FORMAT_VALUES.get(format));
   });
 });
+
+describe("$ref 합성", () => {
+  const inner = {
+    type: "object",
+    required: ["name"],
+    properties: { name: { type: "string" } },
+  };
+
+  /** 설계 §1.2 의 zod `rec` 스키마. `kids` 는 선택이라 필수 경로가 순환하지 않는다. */
+  const recursive = (required: readonly string[], extra: Record<string, unknown> = {}) => ({
+    type: "object",
+    properties: { root: { $ref: "#/definitions/__schema0" } },
+    required: ["root"],
+    definitions: {
+      __schema0: {
+        type: "object",
+        properties: {
+          v: { type: "string" },
+          kids: { type: "array", items: { $ref: "#/definitions/__schema0" }, ...extra },
+        },
+        required,
+      },
+    },
+  });
+
+  it("pydantic 형태 $defs 참조를 합성한다", () => {
+    expect(
+      value({
+        type: "object",
+        required: ["who"],
+        properties: { who: { $ref: "#/$defs/Inner" } },
+        $defs: { Inner: inner },
+      }),
+    ).toEqual({ who: { name: "example" } });
+  });
+
+  it("zod 형태 definitions 참조를 합성한다", () => {
+    expect(
+      value({
+        type: "object",
+        required: ["who"],
+        properties: { who: { $ref: "#/definitions/__schema0" } },
+        definitions: { __schema0: inner },
+      }),
+    ).toEqual({ who: { name: "example" } });
+  });
+
+  it("$ref 옆 default 는 후보로 쓴다", () => {
+    expect(
+      value({ $ref: "#/$defs/Inner", default: { name: "d" }, $defs: { Inner: inner } }),
+    ).toEqual({ name: "d" });
+  });
+
+  it("배열 items 의 $ref 를 합성한다", () => {
+    expect(
+      value({
+        type: "array",
+        items: { $ref: "#/$defs/Inner" },
+        minItems: 2,
+        $defs: { Inner: inner },
+      }),
+    ).toEqual([{ name: "example" }, { name: "example" }]);
+  });
+
+  it("선택 필드의 재귀는 통과한다", () => {
+    expect(value(recursive(["v"]))).toEqual({ root: { v: "example" } });
+  });
+
+  it("필수 경로의 재귀는 UNSUPPORTED_SCHEMA 다", () => {
+    expect(() => value(recursive(["v", "kids"], { minItems: 1 }))).toThrow(
+      expect.objectContaining({
+        code: "UNSUPPORTED_SCHEMA",
+        path: "p.properties.root.properties.kids.items",
+        message: expect.stringMatching(/^필수 경로에 순환 참조/),
+      }),
+    );
+    expect(() => value(recursive(["v", "kids"], { minItems: 1 }))).toThrow(
+      expect.objectContaining({
+        message: expect.stringContaining('"#/definitions/__schema0"'),
+      }),
+    );
+  });
+
+  it("루트 자신 참조(#)는 필수 경로에서 거절된다", () => {
+    expect(() =>
+      value({ type: "object", required: ["self"], properties: { self: { $ref: "#" } } }),
+    ).toThrow(
+      expect.objectContaining({
+        code: "UNSUPPORTED_SCHEMA",
+        message: expect.stringMatching(/^필수 경로에 순환 참조/),
+      }),
+    );
+  });
+});

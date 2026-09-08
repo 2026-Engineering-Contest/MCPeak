@@ -197,7 +197,7 @@ export function validateSchema(
         "UNSUPPORTED_SCHEMA",
         `${path}.${unsupported}`,
         `지원하지 않는 JSON Schema 키워드 '${unsupported}'가 있습니다.`,
-        `첫 버전은 ${[...SUPPORTED_SCHEMA_KEYS].join(", ")}를 지원합니다.`,
+        `지원하는 키워드: ${[...SUPPORTED_SCHEMA_KEYS].join(", ")}. 그 밖의 키워드가 있는 툴은 건너뛰고 나머지 툴을 생성합니다.`,
       );
     }
 

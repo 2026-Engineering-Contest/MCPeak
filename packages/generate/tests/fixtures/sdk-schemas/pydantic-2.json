@@ -1,0 +1,7 @@
+{
+  "source": "pydantic v2 BaseModel.model_json_schema(), extra=forbid, 2026-09-08",
+  "supported": [
+    { "name": "args", "inputSchema": { "$defs": { "Inner": { "properties": { "name": { "title": "Name", "type": "string" }, "age": { "anyOf": [ { "type": "integer" }, { "type": "null" } ], "default": null, "title": "Age" } }, "required": [ "name" ], "title": "Inner", "type": "object" } }, "additionalProperties": false, "properties": { "id": { "pattern": "^[a-z]+$", "title": "Id", "type": "string" }, "note": { "anyOf": [ { "type": "string" }, { "type": "null" } ], "default": null, "title": "Note" }, "kind": { "enum": [ "a", "b" ], "title": "Kind", "type": "string" }, "who": { "$ref": "#/$defs/Inner" }, "items": { "items": { "$ref": "#/$defs/Inner" }, "title": "Items", "type": "array" }, "n": { "maximum": 10, "minimum": 1, "title": "N", "type": "integer" } }, "required": [ "id", "kind", "who", "items", "n" ], "title": "Args", "type": "object" } }
+  ],
+  "unsupported": []
+}

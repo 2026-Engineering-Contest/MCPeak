@@ -63,9 +63,12 @@ await generateTests(tools, {
 합니다. 생성 파일은 서버 연결 방법이나 `McpClient`를 포함하지 않고 Runner의 선언형
 `generatedSuite`만 export합니다.
 
-첫 버전은 단일 `type`, `required`, `properties`, `items`, `enum`, `const`, `default`, `examples`를
-지원합니다. `$ref`나 조합 스키마처럼 지원하지 않는 키워드가 있거나 후보값이 제약을 만족하지
-않으면 파일을 쓰기 전에 `GenerateTestsError`를 발생시킵니다.
+지원하는 키워드는 `type`(단일), `required`, `properties`, `items`(단일 스키마), `enum`, `const`,
+`default`, `examples`, 범위·길이·개수 제약, 표에 있는 `format`, `pattern`(ECMA-262 부분집합),
+`additionalProperties`, 로컬 `$ref`(`$defs`·`definitions`), `anyOf`, `oneOf` 입니다.
+`allOf`·`not`·`if`·`patternProperties`·배열 형태 `type`·튜플 `items`·원격 `$ref` 는 아직
+지원하지 않으며, 그런 키워드가 있는 툴은 건너뛰고 나머지 툴을 생성합니다. 후보값이 제약을
+만족하지 않거나 제약이 서로 모순이면 파일을 쓰기 전에 `GenerateTestsError` 를 발생시킵니다.
 
 ## AI 보조 검토와 승인
 

@@ -101,6 +101,7 @@ mcpeak generate --out weather.suite.json -- node ./server.js
 
 기본은 실제 서버에 한 번 돌려보고(시험 실행) 사람이 승인하는 흐름입니다.
 `--baseline-only` 를 붙이면 AI 없이 결정론적으로만 만듭니다.
+`--no-dry-run` 은 시험 실행과 함께 AI 사전보완도 끕니다. 서버의 도구를 한 번도 부르지 않습니다.
 
 ## CLI
 

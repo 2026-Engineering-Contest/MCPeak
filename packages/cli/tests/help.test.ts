@@ -32,6 +32,7 @@ describe("generate 도움말", () => {
 
   it("시험 실행 옵션의 설명이 도움말에 있다", () => {
     expect(help).toContain("--no-dry-run          승인 전 시험 실행을 건너뜁니다.");
+    expect(help).toContain("않은 채 저장되고, 실행이 필요한 AI 사전보완도 건너뜁니다");
     expect(help).toContain("--reset-cmd <command> 시험 실행 전에 이 명령을 한 번 실행합니다.");
   });
 

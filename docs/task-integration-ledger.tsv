@@ -139,3 +139,6 @@ T1-zod-notes-example-server	6f7e9b4	2026-09-09
 T2-zod-notes-e2e-mutant-changeset	8366032	2026-09-09
 T3-zod-notes-docs	52da2d0	2026-09-09
 T4-zod-notes-gate-merge	6da819f	2026-09-09
+T1-pre-fill-no-dry-run-cli	56d9a5e	2026-09-09
+T2-pre-fill-no-dry-run-docs	e2fd278	2026-09-09
+W3-pre-fill-no-dry-run-live	f9e3dd9	2026-09-09

@@ -56,6 +56,10 @@ export async function main(argv: readonly string[]): Promise<void> {
     );
   }
 
+  // `serveStdio` 도 같은 검사를 한다. 중복이 아니라 **문장을 지키려고** 여기서 먼저 부른다 —
+  // 여기서 안 잡으면 맨 아래 `.catch` 로 흘러 "→ 목 서버를 띄우지 못했습니다." 가 앞에 붙는다.
+  // 서버를 못 띄운 것이 아니라 정의 파일 형식이 틀린 것이라 첫 줄이 거짓이 되고, 메시지가 이미
+  // `→` 로 시작하므로 `→ →` 로 겹치기까지 한다(실측).
   try {
     assertMockDefinition(parsed, path);
   } catch (error) {

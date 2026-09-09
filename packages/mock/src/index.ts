@@ -69,9 +69,10 @@ export interface MockServer {
    *
    * `args` 로 매칭 키를 만들 수 없으면 던진다 — 순환 참조, 희소 배열, `NaN`/`Infinity`,
    * JSON 으로 표현할 수 없는 값(예: `Date`, 함수, `Map`), 상한을 넘는 중첩 깊이가 그렇다.
+   * `result` 는 규칙이 다르다. 실어 보내기만 하므로 `Date` 와 `NaN` 이 정상이고, JSON 으로
+   * 만들 수 없는 것(`undefined` · 함수 · 심볼 · 순환 참조 · `BigInt`)만 던진다.
    */
-  on(tool: string, args: unknown, result: unknown): void;
-  on(tool: string, args: unknown, result: unknown, options: { isError?: boolean }): void;
+  on(tool: string, args: unknown, result: unknown, options?: { isError?: boolean }): void;
   close(): Promise<void>;
 }
 

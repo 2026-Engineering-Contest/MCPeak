@@ -328,11 +328,14 @@ describe("사전보완 채택", () => {
     );
     expect(preFill).not.toHaveBeenCalled();
     expect(sessionSpy.mock.calls[0]?.[1]?.preFilledCaseIds).toEqual([]);
+    // 전송 거절이 실제 호출을 막는 지점이다(설계 §3.3).
+    expect(events).toEqual([]);
   });
 
   it("provider 가 죽어도 툴을 건너뛰지 않고 baseline 으로 진행한다", async () => {
     const stdout: string[] = [];
-    const connection = fakeConnection([]);
+    const events: string[] = [];
+    const connection = fakeConnection(events);
     const sessionSpy = vi.fn(createAuthoringSession);
     const code = await runGenerateCommand(
       argv("/tmp/mcpeak-pre-fill-7.json", ["--provider", "codex", "--model", "m"]),
@@ -356,5 +359,142 @@ describe("사전보완 채택", () => {
     const passed = sessionSpy.mock.calls[0]?.[0];
     expect(passed?.suite.cases.some((item) => item.id === "needs-help-success")).toBe(true);
     expect(stdout.join("")).toContain("baseline 값으로 진행합니다");
+    // 제안이 없으면 실행할 후보도 없다. 서버를 부르지 않는다.
+    expect(events).toEqual([]);
+  });
+});
+
+describe("--no-dry-run 과 사전보완", () => {
+  it("--no-dry-run 이면 사전보완을 건너뛰고 도구를 한 번도 호출하지 않는다", async () => {
+    const events: string[] = [];
+    const connection = fakeConnection(events);
+    const stdout: string[] = [];
+    const io = reviewIO(true, stdout);
+    // 검토 메뉴에서 취소한다(reviewIO 의 choose 기본값). 이슈의 재현 절차 그대로다.
+    const preFill = vi.fn(async () => ({
+      proposals: [{ caseId: "needs-help-success", field: "timezone", valueJson: '"Asia/Seoul"' }],
+    }));
+    const sessionSpy = vi.fn(createAuthoringSession);
+
+    const code = await runGenerateCommand(
+      argv("/tmp/mcpeak-pre-fill-8.json", ["--no-dry-run", "--provider", "codex", "--model", "m"]),
+      deps({
+        tools: [needsHelp],
+        connection,
+        stdout,
+        io,
+        sessionSpy: sessionSpy as never,
+        provider: { id: "codex", model: "m", preFill },
+      }),
+    );
+
+    expect(code).toBe(0);
+    // 이슈 #397 의 핵심 단언. 시험 실행을 끈 경로에서 callTool 은 0회다. listTools 는
+    // 이 경로에서도 부른다. 툴 선언 없이는 baseline 을 만들 수 없다.
+    expect(events).toEqual([]);
+    expect(connection.client.callTool).not.toHaveBeenCalled();
+    // provider 도 부르지 않는다. 채택을 정할 실행이 없으면 제안을 받을 이유가 없다.
+    expect(preFill).not.toHaveBeenCalled();
+
+    const text = stdout.join("");
+    expect(text).toContain("시험 실행이 꺼져 있어(--no-dry-run) AI 사전보완을 건너뜁니다.");
+    expect(text).toContain("AI 사전보완이 필요하면 --no-dry-run 없이 실행하세요.");
+    // 전송 확인 화면까지 가지 않는다.
+    expect(text).not.toContain("AI 사전보완 요청");
+
+    // baseline 케이스를 잃지 않고, 출처도 baseline 그대로다.
+    const [passed, sessionOptions] = sessionSpy.mock.calls[0] ?? [];
+    expect(passed?.suite.cases.some((item) => item.id === "needs-help-success")).toBe(true);
+    expect(sessionOptions?.preFilledCaseIds).toEqual([]);
+  });
+
+  it("--no-dry-run 에서 채울 빈틈이 없으면 건너뜀 고지를 찍지 않는다", async () => {
+    const events: string[] = [];
+    const connection = fakeConnection(events);
+    connection.client.listTools = vi.fn(async () => [allDeclared]) as never;
+    const stdout: string[] = [];
+    const preFill = vi.fn(async () => ({ proposals: [] }));
+
+    const code = await runGenerateCommand(
+      argv("/tmp/mcpeak-pre-fill-9.json", ["--no-dry-run", "--provider", "codex", "--model", "m"]),
+      deps({
+        tools: [allDeclared],
+        connection,
+        stdout,
+        io: reviewIO(true, stdout),
+        provider: { id: "codex", model: "m", preFill },
+      }),
+    );
+
+    expect(code).toBe(0);
+    expect(events).toEqual([]);
+    expect(preFill).not.toHaveBeenCalled();
+    // 원래 돌지 않을 회차를 "건너뛴다" 고 하면 거짓이다.
+    expect(stdout.join("")).not.toContain("AI 사전보완을 건너뜁니다");
+  });
+
+  it("--no-dry-run --baseline-only 는 저장까지 도구를 호출하지 않는다", async () => {
+    const events: string[] = [];
+    const connection = fakeConnection(events);
+    const preFill = vi.fn(async () => ({ proposals: [] }));
+
+    const code = await runGenerateCommand(
+      argv("/tmp/mcpeak-pre-fill-10.json", [
+        "--no-dry-run",
+        "--baseline-only",
+        "--provider",
+        "codex",
+      ]),
+      deps({
+        tools: [needsHelp],
+        connection,
+        provider: { id: "codex", model: "m", preFill },
+      }),
+    );
+
+    expect(code).toBe(0);
+    expect(events).toEqual([]);
+    expect(preFill).not.toHaveBeenCalled();
+  });
+
+  it("전송 확인 화면이 실제 서버 실행을 확인 전에 고지한다", async () => {
+    const events: string[] = [];
+    const connection = fakeConnection(events);
+    const stdout: string[] = [];
+    const io = reviewIO(true, stdout);
+    /** confirm 이 불린 순간까지의 화면. 확인 뒤에 찍히면 승인 근거가 못 된다. */
+    let seenAtConfirm = "";
+    io.confirm = vi.fn(async () => {
+      if (seenAtConfirm === "") seenAtConfirm = stdout.join("");
+      return true;
+    });
+
+    await runGenerateCommand(
+      argv("/tmp/mcpeak-pre-fill-11.json", ["--provider", "codex", "--model", "m"]),
+      deps({
+        tools: [needsHelp],
+        connection,
+        stdout,
+        io,
+        provider: {
+          id: "codex",
+          model: "m",
+          preFill: vi.fn(async () => ({
+            proposals: [
+              { caseId: "needs-help-success", field: "timezone", valueJson: '"Asia/Seoul"' },
+            ],
+          })),
+        },
+      }),
+    );
+
+    // 케이스 수는 같은 화면의 `대상:` 줄과 같은 값이라 숫자를 고정하지 않는다. 실제 실행 수가
+    // 아니라 상한이라고 말하는지가 요점이다(설계 §3.3).
+    expect(seenAtConfirm).toMatch(
+      /채택 판정: 제안이 돌아온 케이스마다 baseline 값과 제안 값으로 실제 서버를 각각 한 번씩\n {2}부릅니다\. 위 케이스 \d+개가 그 상한입니다\. 상태를 바꾸는 툴이면 그 부작용이 남습니다\./,
+    );
+    // 고지가 실행 앞에 있었다는 뜻이다. 확인 시점에는 결과 요약이 아직 없다.
+    expect(seenAtConfirm).not.toContain("AI 사전보완: 툴");
+    expect(events.length).toBeGreaterThan(0);
   });
 });

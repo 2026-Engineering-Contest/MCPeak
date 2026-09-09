@@ -1885,6 +1885,9 @@ export function renderSkippedTools(skipped: readonly SkippedTool[]): string {
  * authoring 화면의 어법을 따르되 **전송 데이터 목록은 사실대로** 적는다. 여기서 나가는 것은
  * suite 전량이 아니라 툴 선언과 baseline 이 넣은 값뿐이다. authoring 문안을 그대로 태우면
  * 사용자가 승인하는 내용과 실제로 나가는 내용이 달라진다.
+ *
+ * 실제 서버 호출이 이 확인 뒤에 일어난다는 사실도 여기서 말한다. 저장 메뉴의 "계속할까요?" 만
+ * 보고 온 사용자가 그 앞의 호출을 모른 채 승인하면 안 된다(#397).
  */
 function showPreFillRequest(io: ReviewIO, preview: PreFillRequestPreview): void {
   const { request } = preview;
@@ -1896,7 +1899,9 @@ function showPreFillRequest(io: ReviewIO, preview: PreFillRequestPreview): void 
       `Timeout: ${preview.providerTimeoutMs}ms\nFingerprint: ${preview.fingerprint}\n` +
       `대상: 툴 ${request.tools.length}개, 케이스 ${request.cases.length}개, 채울 필드 ${fields}개\n` +
       "전송 데이터: 툴 이름·설명·inputSchema, baseline 이 넣은 값, 그 값의 출처\n" +
-      "받는 것: 값 제안뿐입니다. 케이스를 더하거나 구조를 바꾸지 않습니다.\n",
+      "받는 것: 값 제안뿐입니다. 케이스를 더하거나 구조를 바꾸지 않습니다.\n" +
+      "채택 판정: 제안이 돌아온 케이스마다 baseline 값과 제안 값으로 실제 서버를 각각 한 번씩\n" +
+      `  부릅니다. 위 케이스 ${request.cases.length}개가 그 상한입니다. 상태를 바꾸는 툴이면 그 부작용이 남습니다.\n`,
   );
   // 조용히 자르지 않는다. 무엇이 빠졌는지 모르면 사용자가 결과를 잘못 읽는다(계획서 §4.5).
   if (request.omitted.tools > 0)
@@ -2030,6 +2035,9 @@ interface PreFillOutcome {
  * **provider 가 죽어도 툴을 건너뛰지 않는다.** provider 실패는 사용자 서버의 문제가 아니라
  * 우리 쪽 사정이고, 그것 때문에 케이스를 잃는 손해가 더 크다. baseline 값으로 진행하고
  * 그 사실을 화면에 적는다.
+ *
+ * **`--no-dry-run` 이면 돌지 않는다.** 채택을 정하는 것이 실제 서버 실행인데 그 경로에는 실행이
+ * 없다. 이 분기가 빠져 있어 시험 실행을 끄고도 툴이 두 번 호출됐다(#397).
  */
 async function runPreFill(
   input: GenerateCommandInput,
@@ -2053,6 +2061,18 @@ async function runPreFill(
   // 전 필드가 근거 있는 값이면 부르지 않는다. 판정은 결정론적이다(설계서 §4.1).
   const request = prepare({ tools, provenance: baseline.provenance, baseline: baseline.suite });
   if (request === null) return skip;
+
+  // 채택은 실제 실행이 정한다(설계서 §4.4). 시험 실행을 끈 경로에는 그 실행이 없으므로 제안을
+  // 받을 이유도 없다. 실행 없이 채택하는 모드는 만들지 않는다(#397, ADR-0089). 대상 판정 뒤에
+  // 두는 이유는 채울 빈틈이 없는 서버에서 "건너뜁니다" 가 거짓이 되기 때문이다.
+  if (!input.dryRun) {
+    io.write(
+      "▸ 시험 실행이 꺼져 있어(--no-dry-run) AI 사전보완을 건너뜁니다. 제안 값의 채택은 실제 서버\n" +
+        "  실행이 정하는데 그 실행이 없습니다. baseline 값으로 진행합니다.\n" +
+        "  AI 사전보완이 필요하면 --no-dry-run 없이 실행하세요.\n",
+    );
+    return skip;
+  }
 
   let view: PreFillRequestPreview;
   try {

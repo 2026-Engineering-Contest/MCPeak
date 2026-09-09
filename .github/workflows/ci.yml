@@ -19,6 +19,17 @@ jobs:
     # 영영 안 와 머지가 막힌다. 잡 수준 `if` 로 건너뛰면 잡이 skipped 로 보고되고, GitHub 은
     # 필수 체크에서 skipped 를 통과로 친다. 그래서 보호 설정을 건드리지 않는다.
     #
+    # **매트릭스 잡은 그 예외다.** 잡 수준 `if` 가 거짓이면 매트릭스가 전개되지 않아
+    # `verify (22.18.0)` · `verify (24)` 가 아니라 `verify` 하나가 skipped 로 보고된다.
+    # 필수 체크가 요구하는 이름이 영영 오지 않아 위에서 피하려던 "Expected" 교착이 그대로
+    # 재현된다. 그래서 verify 는 잡을 항상 띄우고 스텝마다 건너뛴다. 매트릭스가 없는
+    # e2e · build 는 이름이 그대로라 잡 수준 `if` 로 둔다.
+    #
+    # 실측: PR #438 이 `.md` 두 개만 바꿔 code=false 가 되자 `verify` 하나만 skipped 로
+    # 보고됐고 mergeStateStatus 가 BLOCKED 로 굳었다. 직전 문서 PR #437 이 통과한 것은
+    # 함께 담긴 `docs/task-integration-ledger.tsv` 가 `.md` 가 아니라 code=true 였기
+    # 때문이다. 순수 `.md` PR 이 그때까지 없어서 드러나지 않았다.
+    #
     # "코드가 아닌 것" 의 정의는 좁게 잡는다.
     # - docs/adr/** 는 코드다. packages/generate/tests/dependency-boundary.test.ts 가
     #   docs/adr/0009-*.md 를 읽어 승인 심볼 목록을 단언한다. ADR 을 고치면 테스트가 바뀐다.
@@ -62,39 +73,59 @@ jobs:
   verify:
     # 린트 · 타입체크 · 테스트는 지원 대상 런타임 전부에서 돌린다.
     # 이 잡이 "사용자 환경에서 동작한다"를 보증한다 (CONTRIBUTING §6).
+    #
+    # **잡 수준 `if` 를 쓰지 않는다.** 그러면 매트릭스가 전개되지 않아 필수 체크
+    # `verify (22.18.0)` · `verify (24)` 가 보고되지 않고 문서 PR 이 영영 막힌다
+    # (changes 잡 주석 참조). 잡은 항상 띄우고 스텝마다 건너뛴다. 문서 PR 에서 이 잡은
+    # 러너 부팅만 하고 몇 초 만에 success 로 끝나므로 #409 가 노린 시간 절약은 남는다.
     needs: changes
-    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
+    env:
+      # 스텝 `if` 는 needs 컨텍스트를 직접 못 읽는다. 잡 env 로 한 번 꺼내 쓴다.
+      CODE: ${{ needs.changes.outputs.code }}
     strategy:
       fail-fast: false
       matrix:
         # 선언한 최소 버전 자체를 검사해야 최신 22.x에서만 우연히 통과하는 일을 막는다.
         node: ["22.18.0", "24"]
     steps:
-      - uses: actions/checkout@v4
+      - if: env.CODE == 'true'
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: Setup pnpm
+        if: env.CODE == 'true'
         uses: pnpm/action-setup@v4
 
       - name: Setup Node ${{ matrix.node }}
+        if: env.CODE == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
           cache: pnpm
 
       - name: Install
+        if: env.CODE == 'true'
         run: pnpm install --frozen-lockfile
 
       - name: Lint & format check
+        if: env.CODE == 'true'
         run: pnpm biome ci .
 
       - name: Typecheck
+        if: env.CODE == 'true'
         run: pnpm typecheck
 
       - name: Test
+        if: env.CODE == 'true'
         run: pnpm test
+
+      # 문서 PR 에서 이 잡이 왜 아무것도 안 했는지 로그에 남긴다. 빈 잡이 초록으로 끝나면
+      # 검사한 파일 수가 0 인 초록과 구분이 안 된다(CLAUDE.local.md 의 거짓 신호 표).
+      - name: Skipped (docs-only change)
+        if: env.CODE != 'true'
+        run: echo "문서만 바뀌어 lint · typecheck · test 를 건너뛰었습니다. 이 잡은 필수 체크 이름을 보고하려고 떴습니다."
 
   e2e:
     # 실서버(`mcp-server-fetch`)를 띄우는 E2E 다. verify 와 나눈 이유가 두 가지다.

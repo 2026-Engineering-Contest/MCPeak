@@ -1,0 +1,182 @@
+{
+  "schemaVersion": 1,
+  "id": "weather123",
+  "name": "테스트",
+  "approval": {
+    "fingerprint": "992133b77bf8fe75234d5397b5810c0eaac0e5813b01750dde01a6b7723501c6",
+    "cases": [
+      {
+        "id": "get-weather-success",
+        "status": "passed"
+      },
+      {
+        "id": "get-weather-missing-city",
+        "status": "passed"
+      },
+      {
+        "id": "get-weather-type-city",
+        "status": "passed"
+      },
+      {
+        "id": "add-success",
+        "status": "passed"
+      },
+      {
+        "id": "add-missing-a",
+        "status": "passed"
+      },
+      {
+        "id": "add-missing-b",
+        "status": "passed"
+      },
+      {
+        "id": "add-type-a",
+        "status": "passed"
+      },
+      {
+        "id": "add-type-b",
+        "status": "passed"
+      }
+    ]
+  },
+  "defaultTimeoutMs": 10000,
+  "cases": [
+    {
+      "id": "get-weather-success",
+      "name": "get_weather가 오류 없이 응답한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "get_weather",
+        "input": {
+          "city": "서울"
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": false
+        }
+      ]
+    },
+    {
+      "id": "get-weather-missing-city",
+      "name": "get_weather가 필수 필드 'city' 누락을 거절한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "get_weather",
+        "input": {}
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": true
+        }
+      ]
+    },
+    {
+      "id": "get-weather-type-city",
+      "name": "get_weather가 'city' 타입 위반을 거절한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "get_weather",
+        "input": {
+          "city": 0
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": true
+        }
+      ]
+    },
+    {
+      "id": "add-success",
+      "name": "add가 오류 없이 응답한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "add",
+        "input": {
+          "a": 0,
+          "b": 0
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": false
+        }
+      ]
+    },
+    {
+      "id": "add-missing-a",
+      "name": "add가 필수 필드 'a' 누락을 거절한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "add",
+        "input": {
+          "b": 0
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": true
+        }
+      ]
+    },
+    {
+      "id": "add-missing-b",
+      "name": "add가 필수 필드 'b' 누락을 거절한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "add",
+        "input": {
+          "a": 0
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": true
+        }
+      ]
+    },
+    {
+      "id": "add-type-a",
+      "name": "add가 'a' 타입 위반을 거절한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "add",
+        "input": {
+          "a": "example",
+          "b": 0
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": true
+        }
+      ]
+    },
+    {
+      "id": "add-type-b",
+      "name": "add가 'b' 타입 위반을 거절한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "add",
+        "input": {
+          "a": 0,
+          "b": "example"
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": true
+        }
+      ]
+    }
+  ]
+}

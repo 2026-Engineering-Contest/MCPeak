@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "id": "mock-weather",
+  "name": "목 서버 · 통과 예제",
+  "defaultTimeoutMs": 10000,
+  "cases": [
+    {
+      "id": "tools-are-listed",
+      "name": "정의 파일에 선언한 툴을 그대로 노출한다",
+      "operation": { "type": "listTools" },
+      "assertions": [
+        { "type": "toolExists", "tool": "get_weather" },
+        { "type": "toolExists", "tool": "add" }
+      ]
+    },
+    {
+      "id": "get-weather-seoul",
+      "name": "get_weather가 서울 응답을 그대로 돌려준다",
+      "operation": { "type": "callTool", "tool": "get_weather", "input": { "city": "서울" } },
+      "assertions": [
+        { "type": "isError", "expected": false },
+        {
+          "type": "bodyMatchesSchema",
+          "schema": {
+            "type": "object",
+            "required": ["city", "temp", "condition"],
+            "properties": {
+              "city": { "type": "string", "const": "서울" },
+              "temp": { "type": "number", "const": 21 },
+              "condition": { "type": "string", "const": "맑음" }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "get-weather-any-city",
+      "name": "args 를 생략한 응답이 나머지 도시를 받는다",
+      "operation": { "type": "callTool", "tool": "get_weather", "input": { "city": "부산" } },
+      "assertions": [{ "type": "isError", "expected": false }]
+    },
+    {
+      "id": "add-exact-args",
+      "name": "add가 인자를 지정한 응답을 돌려준다",
+      "operation": { "type": "callTool", "tool": "add", "input": { "a": 1, "b": 2 } },
+      "assertions": [
+        { "type": "isError", "expected": false },
+        {
+          "type": "bodyMatchesSchema",
+          "schema": {
+            "type": "object",
+            "required": ["sum"],
+            "properties": { "sum": { "type": "number", "const": 3 } }
+          }
+        }
+      ]
+    }
+  ]
+}

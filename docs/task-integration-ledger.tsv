@@ -134,3 +134,8 @@ T3-generate-ref-defs	05b3333	2026-09-08
 T4-generate-anyof-oneof	72a5ad6	2026-09-08
 T5-generate-sdk-schema-regression	22009a6	2026-09-08
 T6-generate-schema-keywords-gate	189613c	2026-09-08
+T0-zod-notes-adr-0088	8f04686	2026-09-09
+T1-zod-notes-example-server	6f7e9b4	2026-09-09
+T2-zod-notes-e2e-mutant-changeset	8366032	2026-09-09
+T3-zod-notes-docs	52da2d0	2026-09-09
+T4-zod-notes-gate-merge	6da819f	2026-09-09

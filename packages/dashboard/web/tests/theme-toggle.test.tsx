@@ -2,6 +2,7 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ThemeToggle } from "../src/components/ThemeToggle.js";
+import type { ThemeMode } from "../src/theme.js";
 
 /** localStorage와 같은 인터페이스의 인메모리 저장소. */
 function stubStorage(initial: Record<string, string> = {}) {
@@ -77,11 +78,26 @@ describe("ThemeToggle", () => {
     expect(storage.getItem("mcpeak-theme")).toBe("dark");
   });
 
-  it("라벨은 현재 상태고, 누르면 무엇이 되는지는 aria-label 이 말한다", () => {
+  it("접근 가능한 이름이 보이는 라벨로 시작하고 동작을 덧붙인다", () => {
     stubStorage({ "mcpeak-theme": "dark" });
     stubMatchMedia(false);
     render(<ThemeToggle />);
-    expect(screen.getByRole("button").getAttribute("aria-label")).toBe("라이트 모드로 바꾸기");
+    const button = screen.getByRole("button");
+    expect(button.getAttribute("aria-label")).toBe("테마: 다크 — 라이트 모드로 바꾸기");
+  });
+
+  it.each<[ThemeMode, string]>([
+    ["dark", "테마: 다크"],
+    ["light", "테마: 라이트"],
+  ])("%s: 접근 가능한 이름이 보이는 텍스트를 포함한다 (WCAG 2.5.3)", (stored, visible) => {
+    // aria-label 은 보이는 텍스트를 덮어쓴다. 겹치는 단어가 없으면 음성 입력 사용자가 화면에
+    // 보이는 문구로 버튼을 부를 수 없다. 동작만 넣던 시절 이 규칙이 깨져 있었다 (PR #442 리뷰).
+    stubStorage({ "mcpeak-theme": stored });
+    stubMatchMedia(false);
+    render(<ThemeToggle />);
+    const button = screen.getByRole("button");
+    expect(button.textContent).toBe(visible);
+    expect(button.getAttribute("aria-label")).toContain(visible);
   });
 
   it("고른 적이 없으면 OS 가 바뀔 때 라벨이 따라간다", () => {

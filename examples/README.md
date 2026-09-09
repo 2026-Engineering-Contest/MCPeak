@@ -10,6 +10,9 @@
 |---|---|---|
 | [`weather-server`](./weather-server) | stdio | 고정 데이터로 결정론적으로 응답한다. 실패 경로 포함. CI 도그푸딩 대상 |
 | [`live-weather-server`](./live-weather-server) | stdio | 실제 공개 API(Open-Meteo·Frankfurter)를 `fetch` 로 부른다. External 세션 녹화·재생 데모용. CI 에는 넣지 않는다 |
+| [`zod-notes-server`](./zod-notes-server) | stdio | `McpServer` + zod. SDK 가 JSON Schema 를 만드는 경로를 밟는다. 변이 서버 포함. CI 도그푸딩 대상 |
+
+E2E 는 `packages/cli/tests/*-e2e.test.ts` 에 있고 CI `verify` 잡의 `pnpm test` 가 돌린다. 실서버 스펙은 파일명을 `*-e2e.test.ts` 로 지어야 직렬 갈래로 간다(#119).
 
 ## 예제 서버가 지켜야 할 것
 
@@ -20,7 +23,3 @@
 1. **결정론적일 것.** 외부 API 호출·랜덤값·타임스탬프 금지. 같은 입력에 항상 같은 응답.
 2. **키가 필요 없을 것.** 클론해서 바로 돌아가야 한다.
 3. **실패 경로가 있을 것.** 항상 성공하는 서버로는 실패 메시지 품질을 검증할 수 없다.
-
-## 현재 상태
-
-E2E 는 아직 CI 에 붙지 않았다. `core.connect()` 가 구현되지 않아 우리 러너가 예제 서버에 붙을 수 없다 (#16). `core` 가 올라오면 추가한다.

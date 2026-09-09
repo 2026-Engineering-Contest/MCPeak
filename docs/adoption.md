@@ -699,3 +699,14 @@ mcpeak test c.json --command pyenv/bin/mcp-server-calculator --json
 **여전히 안 한 것.** Go·JVM 구현 서버는 관찰도 대조도 하지 못했다. 전부 `unverified` 로
 떨어진다. 화이트리스트가 낡는 것도 그대로 남는 위험이라, `@modelcontextprotocol/sdk` 버전을
 올릴 때 `packages/runner/tests/rejection-basis.test.ts` 의 픽스처 테스트를 함께 봐야 한다.
+
+## 2026-09-09 `--no-dry-run` 의 사전보완 건너뛰기 (#397, ADR-0089)
+
+`uvx mcp-server-time` 에 빌드 산출물을 직접 돌려 확인했다. `--no-dry-run --provider codex` 는
+`▸ 시험 실행이 꺼져 있어(--no-dry-run) AI 사전보완을 건너뜁니다.` 를 찍고 바로 검토 메뉴로
+갔다. `AI 사전보완 요청` 화면도 provider 호출도 없었다. 같은 명령에서 `--no-dry-run` 만 빼면
+`채택 판정: ... 위 케이스 2개가 그 상한입니다.` 두 줄이 `이 요청을 전송할까요? [y/N]` 앞에
+나왔다. 둘 다 거절로 빠져나왔고 파일은 저장되지 않았다.
+
+대화형 확인이라 pty 가 필요하다. TTY 없이 돌리면 `GENERATE_INTERACTIVE_REQUIRED` 로 떨어지므로
+`script -q /dev/null` 로 감싸 관측했다.

@@ -29,6 +29,7 @@ const bundle = (overrides: Record<string, unknown> = {}) => ({
     suiteId: "weather",
     suiteName: "날씨 서버 계약",
     approval: "matched",
+    runHistory: "present",
     fingerprint: "a".repeat(64),
   },
   failures: [FAILURE],
@@ -63,11 +64,27 @@ describe("readRepairBundle", () => {
       expect(readRepairBundle(text(value))).toEqual({ status: "invalid", reason: "notObject" });
   });
 
-  it("bundleVersion 이 2 면 versionMismatch 다", () => {
-    expect(readRepairBundle(text(bundle({ bundleVersion: 2 })))).toEqual({
+  it("bundleVersion 이 1 이면 versionMismatch 다", () => {
+    expect(readRepairBundle(text(bundle({ bundleVersion: 1 })))).toEqual({
       status: "invalid",
       reason: "versionMismatch",
     });
+  });
+
+  it("spec.runHistory 가 없으면 missingField 다", () => {
+    const target = bundle();
+    const { runHistory: _dropped, ...spec } = target.spec;
+    expect(readRepairBundle(text({ ...target, spec }))).toEqual({
+      status: "invalid",
+      reason: "missingField",
+    });
+  });
+
+  it("spec.runHistory 가 목록 밖 값이면 missingField 다", () => {
+    const target = bundle();
+    expect(
+      readRepairBundle(text({ ...target, spec: { ...target.spec, runHistory: "unknown" } })),
+    ).toEqual({ status: "invalid", reason: "missingField" });
   });
 
   it("bundleVersion 이 없으면 versionMismatch 다", () => {

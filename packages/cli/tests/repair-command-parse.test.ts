@@ -100,7 +100,7 @@ describe("runRepairCommand", () => {
   });
 
   it("번들이 형식에 안 맞으면 사유 문장과 함께 1 이다", async () => {
-    const d = deps({ readFile: async () => JSON.stringify({ bundleVersion: 2 }) });
+    const d = deps({ readFile: async () => JSON.stringify({ bundleVersion: 3 }) });
     expect(await runRepairCommand(BASE, d.value)).toBe(1);
     expect(d.writes.err.join("")).toContain("최신 `mcpeak test --repair-bundle` 로 다시 만드세요");
   });
@@ -111,9 +111,15 @@ describe("runRepairCommand", () => {
    */
   it("진단 통로가 없으면 안내와 함께 1 이다", async () => {
     const bundle = {
-      bundleVersion: 1,
+      bundleVersion: 2,
       generatedBy: "mcpeak 0.7.0",
-      spec: { suiteId: "weather", suiteName: "날씨", approval: "matched", fingerprint: "a" },
+      spec: {
+        suiteId: "weather",
+        suiteName: "날씨",
+        approval: "matched",
+        runHistory: "present",
+        fingerprint: "a",
+      },
       failures: [{ caseId: "c1", caseName: "케이스", status: "failed", diagnostics: [] }],
     };
     const d = deps({ readFile: async () => JSON.stringify(bundle) });

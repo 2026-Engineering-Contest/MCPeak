@@ -39,6 +39,19 @@ export function caseApprovalStatuses(
   return new Map((suite.approval?.cases ?? []).map((entry) => [entry.id, entry.status]));
 }
 
+/**
+ * 승인 시점에 실제 서버 실행 기록이 남았는가. `approval.cases` 의 존재가 기준이다.
+ *
+ * `generate` 는 시험 실행을 마치고 사람이 분류를 끝냈을 때만 이 키를 쓴다(`renderSuite` 의
+ * 주석과 `reviewDryRun`). 그래서 `--baseline-only`·`--no-dry-run` 으로 저장한 명세는 지문이
+ * 있어도 이 키가 없다. 지문 일치와 실행 기록은 별개다(#385).
+ *
+ * 빈 배열은 저장되지 않지만 손으로 쓴 파일에는 있을 수 있으므로 길이로 본다.
+ */
+export function specRunHistory(suite: TestSuiteSpec): "present" | "absent" {
+  return (suite.approval?.cases?.length ?? 0) > 0 ? "present" : "absent";
+}
+
 /** 케이스 하나의 승인 시점 판정. 없으면 undefined 다. */
 export function caseApprovalStatus(
   suite: TestSuiteSpec,

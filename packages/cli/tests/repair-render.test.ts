@@ -8,12 +8,13 @@ const ARGV = ["bundle.json", "--provider", "codex", "--model", "gpt-5-codex"];
 
 const bundle = (overrides: Partial<RepairBundle> = {}): RepairBundle =>
   ({
-    bundleVersion: 1,
+    bundleVersion: 2,
     generatedBy: "mcpeak 0.7.0",
     spec: {
       suiteId: "weather",
       suiteName: "날씨 서버 계약",
       approval: "matched",
+      runHistory: "present",
       fingerprint: "a".repeat(64),
     },
     failures: [
@@ -85,7 +86,7 @@ function diagnosis(options: {
     const includeStderr = input.includeStderr !== false;
     return {
       request: {
-        specApproved: input.specApproved,
+        specTrust: input.specTrust,
         suite: input.suite,
         failures,
         ...(includeStderr && options.stderr !== undefined
@@ -249,6 +250,67 @@ describe("repair 화면", () => {
     expect(screens[0]).not.toContain("⚠");
     expect(screens[1]).toContain("승인 상태가 아닙니다 (지문 불일치)");
     expect(screens[2]).toContain("승인 지문이 없습니다");
+  });
+
+  it("전송 확인 화면이 지문 상태와 실행 기록을 함께 적는다", async () => {
+    // 확인 화면은 `--yes` 가 없을 때만 나온다. 비대화형이면 stdout 으로 찍고 멈춘다.
+    const present = deps({ diagnosis: diagnosis({ result: diagnosisResult([cause()]) }) });
+    await runRepairCommand(ARGV, present.value);
+    expect(present.writes.out.join("")).toContain("명세 상태  승인 지문 일치 · 실행 기록 있음");
+    const absent = deps({
+      bundle: bundle({ spec: { ...bundle().spec, runHistory: "absent" } }),
+      diagnosis: diagnosis({ result: diagnosisResult([cause()]) }),
+    });
+    await runRepairCommand(ARGV, absent.value);
+    expect(absent.writes.out.join("")).toContain("명세 상태  승인 지문 일치 · 실행 기록 없음");
+  });
+
+  it("지문이 맞고 실행 기록이 없으면 경고 블록이 붙는다", async () => {
+    const context = deps({
+      bundle: bundle({ spec: { ...bundle().spec, runHistory: "absent" } }),
+      diagnosis: diagnosis({ result: diagnosisResult([cause()]) }),
+    });
+    expect(await runRepairCommand([...ARGV, "--yes"], context.value)).toBe(0);
+    const screen = context.writes.out.join("");
+    expect(screen).toContain("⚠ 이 명세는 승인 지문이 일치하지만 실제 서버 실행 기록이 없습니다.");
+    expect(screen).toContain(
+      "  --baseline-only 나 --no-dry-run 으로 저장하면 케이스가 한 번도 실행되지 않은 채 승인됩니다.",
+    );
+    expect(screen).toContain(
+      "  입력값이 생성 시점의 자리값일 수 있어, 아래 제안은 명세 쪽 원인도 함께 받았습니다.",
+    );
+  });
+
+  it("실행 기록이 없으면 spec 항목에 분류 라벨이 붙는다", async () => {
+    const context = deps({
+      bundle: bundle({ spec: { ...bundle().spec, runHistory: "absent" } }),
+      diagnosis: diagnosis({ result: diagnosisResult([cause({ target: "spec" })]) }),
+    });
+    await runRepairCommand([...ARGV, "--yes"], context.value);
+    expect(context.writes.out.join("")).toContain("분류       명세 쪽 원인으로 봄");
+  });
+
+  it("네 경로의 화면이 서로 다르고 오라클 경로에만 경고가 없다", async () => {
+    const paths = [
+      { approval: "matched", runHistory: "present" },
+      { approval: "matched", runHistory: "absent" },
+      { approval: "mismatched", runHistory: "present" },
+      { approval: "absent", runHistory: "absent" },
+    ] as const;
+    const screens: string[] = [];
+    for (const path of paths) {
+      const context = deps({
+        bundle: bundle({ spec: { ...bundle().spec, ...path } }),
+        diagnosis: diagnosis({ result: diagnosisResult([cause()]) }),
+      });
+      expect(await runRepairCommand([...ARGV, "--yes"], context.value)).toBe(0);
+      screens.push(context.writes.out.join(""));
+    }
+    expect(new Set(screens).size).toBe(4);
+    expect(screens[0]).not.toContain("⚠");
+    expect(screens[1]).toContain("실제 서버 실행 기록이 없습니다");
+    expect(screens[2]).toContain("승인 상태가 아닙니다 (지문 불일치)");
+    expect(screens[3]).toContain("승인 지문이 없습니다");
   });
 
   it("unsure 에서 shortfall 이 찍히고, 빈 문자열이면 그 줄만 빠진다", async () => {

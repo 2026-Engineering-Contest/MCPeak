@@ -135,7 +135,8 @@ describe("repair E2E", () => {
     expect(testWrites.err.join("")).not.toContain("MCP_CONNECTION_FAILED");
     expect(testExitCode).toBe(1);
     const bundle = await readBundle();
-    expect(bundle.bundleVersion).toBe(1);
+    expect(bundle.bundleVersion).toBe(2);
+    expect(bundle.spec.runHistory).toBe("absent");
     expect(bundle.spec.suiteId).toBe("broken-weather");
   });
 

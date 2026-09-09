@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -51,6 +52,62 @@ const entry = fileURLToPath(new URL("./fixtures/stdio-entry.mjs", import.meta.ur
  */
 const tsResolve = new URL("./fixtures/register-ts-resolve.mjs", import.meta.url).href;
 const opened: McpClient[] = [];
+
+/**
+ * **배포되는 진입점 그 자체**(`src/stdio.ts`)를 자식 프로세스로 띄우고 나온 것을 돌려준다.
+ *
+ * `connectMock` 이 쓰는 `stdio-entry.mjs` 는 파일 읽기와 파싱을 스스로 해서 `serveStdio` 를
+ * 직접 부른다. 즉 `main()` 을 통째로 건너뛴다 — 사용자가 가장 자주 밟는 오류 경로(경로 오타,
+ * 깨진 JSON, --help)가 그 배선으로는 도달 불가다.
+ *
+ * `main()` 을 import 해서 부를 수는 없다. `stdio.ts` 는 맨 아래에서 스스로를 실행하므로
+ * import 하는 순간 vitest 의 argv 로 돌아 프로세스를 죽인다. 실행 파일에 self-execute
+ * 가드를 넣는 방법도 있지만, 이 패키지는 cjs 도 함께 빌드해서(같은 이유로 top-level await 도
+ * 안 쓴다) 배포 산출물의 구조를 테스트 때문에 바꾸는 셈이 된다. 그래서 진짜로 실행한다.
+ */
+function runEntry(
+  args: readonly string[],
+): Promise<{ code: number | null; stdout: string; stderr: string }> {
+  const child = spawn(
+    process.execPath,
+    [
+      "--experimental-strip-types",
+      "--no-warnings",
+      "--import",
+      tsResolve,
+      fileURLToPath(new URL("../src/stdio.ts", import.meta.url)),
+      ...args,
+    ],
+    { stdio: ["ignore", "pipe", "pipe"] },
+  );
+  let stdout = "";
+  let stderr = "";
+  child.stdout.setEncoding("utf8").on("data", (chunk: string) => {
+    stdout += chunk;
+  });
+  child.stderr.setEncoding("utf8").on("data", (chunk: string) => {
+    stderr += chunk;
+  });
+  return new Promise((resolve, reject) => {
+    child.once("error", reject);
+    child.once("close", (code) => resolve({ code, stdout, stderr }));
+  });
+}
+
+/** `main()` 이 인자 없이·--help 로 찍는 사용법. 전문을 고정한다. */
+const USAGE = [
+  "사용법: mcpeak-mock <definition.json>",
+  '  definition.json 형식: { "tools": [...], "responses": [{ "tool": ..., "result": ... }] }',
+  "  responses 의 args 를 생략하면 인자를 가리지 않습니다.",
+].join("\n");
+
+/** 정의 파일을 임시 디렉터리에 쓰고 경로를 돌려준다. 내용은 문자열 그대로 — 깨진 JSON 용. */
+function writeRaw(contents: string): string {
+  const dir = mkdtempSync(join(tmpdir(), "mcpeak-mock-"));
+  const path = join(dir, "definition.json");
+  writeFileSync(path, contents, "utf8");
+  return path;
+}
 
 /** stdio 목을 띄우고 core.connect() 로 붙는다. */
 async function connectMock(
@@ -273,5 +330,71 @@ describe("assertMockDefinition — 정의 파일 검증", () => {
     expect(body).toContain("주입된 응답이 없습니다");
     expect(body).not.toMatch(/정의 파일 의/);
     expect(body).toContain("mock.on(");
+  });
+});
+
+/**
+ * 배포 진입점의 오류 경로(#416).
+ *
+ * 정상 경로는 `packages/cli/tests/dist-cli-e2e.mjs` 가 빌드 산출물로 덮는다. 오류 경로는
+ * 어디에서도 실행되지 않아, 사용자가 가장 자주 보는 네 문장이 무검증으로 남아 있었다.
+ *
+ * **우리가 쓴 줄만 전문 일치를 건다.** Node 가 만든 줄(`ENOENT: ...`,
+ * `Unexpected end of JSON input`)은 버전에 따라 문구가 움직이므로 조각만 확인한다. 전문으로
+ * 걸면 Node 를 올릴 때 애먼 자리에서 빨간불이 난다.
+ *
+ * 네 케이스 모두 **stdout 이 비어 있는지**를 함께 본다. `src/stdio.ts` 머리말이 "stdout 에
+ * 아무것도 쓰지 않는다 — 그 채널로 JSON-RPC 를 주고받는다" 를 계약으로 적어 두었는데 지금까지
+ * 아무도 검사하지 않았다. 여기에 console.log 가 하나 섞이면 붙어 있는 클라이언트가 깨진다.
+ */
+describe("@mcpeak/mock stdio 진입점 오류 경로", () => {
+  it("경로를 안 주면 무엇이 필요한지와 사용법을 함께 낸다", async () => {
+    const { code, stdout, stderr } = await runEntry([]);
+
+    expect(stderr).toBe(`→ 목 정의 파일 경로가 필요합니다.\n${USAGE}\n`);
+    expect(code).toBe(1);
+    expect(stdout).toBe("");
+  });
+
+  /**
+   * 종료 코드가 0 이어야 한다. 1 이면 스크립트에서 `mcpeak-mock --help` 가 실패로 잡힌다 —
+   * 도움말을 물어본 것은 오류가 아니다.
+   */
+  it("--help 와 -h 는 사용법만 내고 0 으로 끝난다", async () => {
+    for (const flag of ["--help", "-h"]) {
+      const { code, stdout, stderr } = await runEntry([flag]);
+
+      expect(stderr).toBe(`${USAGE}\n`);
+      expect(code).toBe(0);
+      expect(stdout).toBe("");
+    }
+  });
+
+  it("읽을 수 없는 경로는 그 경로와 원인을 함께 낸다", async () => {
+    const missing = join(mkdtempSync(join(tmpdir(), "mcpeak-mock-")), "없는파일.json");
+    const { code, stdout, stderr } = await runEntry([missing]);
+
+    const [first, second] = stderr.split("\n");
+    expect(first).toBe(`→ 목 정의 파일을 읽을 수 없습니다: ${missing}`);
+    // 둘째 줄은 Node 가 만든 문장이라 조각만 본다. 어느 경로가 없는지는 사용자가 봐야 한다.
+    expect(second).toContain("ENOENT");
+    expect(second).toContain(missing);
+    expect(code).toBe(1);
+    expect(stdout).toBe("");
+  });
+
+  /**
+   * "파일이 깨졌다" 와 "형식이 틀렸다" 를 갈라 적는다. 뭉치면 사용자가 콤마를 찾아야 할지
+   * 스키마를 봐야 할지 모른다 — 형식 위반은 `assertMockDefinition` 이 따로 말한다.
+   */
+  it("올바르지 않은 JSON 은 파싱 실패임을 밝힌다", async () => {
+    const path = writeRaw('{ "tools": [');
+    const { code, stdout, stderr } = await runEntry([path]);
+
+    const [first, second] = stderr.split("\n");
+    expect(first).toBe(`→ 목 정의 파일이 올바른 JSON 이 아닙니다: ${path}`);
+    expect(second).toMatch(/^→ /);
+    expect(code).toBe(1);
+    expect(stdout).toBe("");
   });
 });

@@ -1,0 +1,19 @@
+{
+  "name": "@mcpeak-examples/zod-notes-server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "도그푸딩용 예제 MCP 서버 (stdio). McpServer + zod 로 SDK 가 JSON Schema 를 만드는 경로를 밟는다",
+  "license": "MIT",
+  "bin": {
+    "example-zod-notes-server": "./server.mjs",
+    "example-zod-notes-server-mutant": "./server.mutant.mjs"
+  },
+  "scripts": {
+    "start": "node ./server.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "catalog:",
+    "zod": "4.4.3"
+  }
+}

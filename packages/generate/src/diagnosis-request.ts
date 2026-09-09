@@ -15,8 +15,10 @@ import {
   type DiagnosisProcessDiagnostics,
   type DiagnosisRequest,
   type DiagnosisResult,
+  type DiagnosisSpecTrust,
   MAX_CAUSE_CHARS,
   type ServerDiagnosisProvider,
+  specIsOracle,
 } from "./diagnosis-schema.js";
 import { sanitizeRedactable, TOOL_CONTRACT_PATHS } from "./redaction.js";
 import type { JsonValue } from "./schema.js";
@@ -132,7 +134,7 @@ function toFailure(failure: DiagnosisFailure, options?: RunnerRedactionOptions):
 }
 
 export function prepareDiagnosisRequest(options: {
-  specApproved: boolean;
+  specTrust: DiagnosisSpecTrust;
   suite: { id: string; name: string };
   failures: readonly DiagnosisFailure[];
   processDiagnostics?: DiagnosisProcessDiagnostics;
@@ -175,7 +177,7 @@ export function prepareDiagnosisRequest(options: {
   }
 
   const request = frozen({
-    specApproved: options.specApproved,
+    specTrust: options.specTrust,
     suite: { id: options.suite.id, name: options.suite.name },
     failures: kept.map((failure) => toFailure(failure, options.redaction)),
     // includeStderr 가 거짓이면 키 자체를 만들지 않는다. 빈 문자열로 넣으면 프롬프트에
@@ -277,9 +279,10 @@ export function validateDiagnosisResult(
 
   // 3. 요청에 담아 보낸 실패 목록에 없는 caseId 는 버린다. AI 가 케이스를 지어낸 것이다.
   const known = new Set(preview.request.failures.map((failure) => failure.caseId));
-  // 4. specApproved 가 true 면 target: "spec" 항목을 버린다. 명세는 옳다는 전제로 물었고
-  //    그 전제를 뒤집는 답은 요청 범위 밖이다. false 면 통과시킨다.
-  const specApproved = preview.request.specApproved;
+  // 4. 명세가 오라클이면 target: "spec" 항목을 버린다. 명세는 옳다는 전제로 물었고 그 전제를
+  //    뒤집는 답은 요청 범위 밖이다. 오라클 판정은 지문 일치와 실행 기록이 모두 있을 때만
+  //    참이다(#385). 실행 기록이 없는 명세는 그 전제로 묻지 않았으므로 통과시킨다.
+  const oracle = specIsOracle(preview.request.specTrust);
   const discarded = { unknownCase: 0, specTarget: 0, unsureCauses: 0 };
   const kept = causes.filter((cause) => {
     // 한 후보가 두 조건을 모두 어기면 요청 범위 검사를 먼저 적용해 한 사유에만 센다.
@@ -287,7 +290,7 @@ export function validateDiagnosisResult(
       discarded.unknownCase += 1;
       return false;
     }
-    if (specApproved && cause.target === "spec") {
+    if (oracle && cause.target === "spec") {
       discarded.specTarget += 1;
       return false;
     }

@@ -9,6 +9,9 @@ import {
 } from "../src/diagnosis-request.js";
 import type { DiagnosisFailure } from "../src/diagnosis-schema.js";
 
+const ORACLE = { fingerprint: "matched", runHistory: "present" } as const;
+const UNRUN = { fingerprint: "matched", runHistory: "absent" } as const;
+
 const TOOLS: readonly McpToolContext[] = [
   {
     name: "get_weather",
@@ -29,7 +32,7 @@ function failure(index: number, extra: Partial<DiagnosisFailure> = {}): Diagnosi
 
 function prepare(options: Partial<Parameters<typeof prepareDiagnosisRequest>[0]> = {}) {
   return prepareDiagnosisRequest({
-    specApproved: true,
+    specTrust: ORACLE,
     suite: { id: "suite-1", name: "weather" },
     failures: [failure(1)],
     tools: TOOLS,
@@ -145,9 +148,15 @@ describe("prepareDiagnosisRequest", () => {
     expect(() => prepare({ failures: [huge] })).toThrow(RangeError);
   });
 
-  it("specApproved 값이 request 에 그대로 실린다", () => {
-    expect(prepare({ specApproved: true }).request.specApproved).toBe(true);
-    expect(prepare({ specApproved: false }).request.specApproved).toBe(false);
+  it("specTrust 값이 request 에 그대로 실린다", () => {
+    expect(prepare({ specTrust: ORACLE }).request.specTrust).toEqual(ORACLE);
+    expect(prepare({ specTrust: UNRUN }).request.specTrust).toEqual(UNRUN);
+  });
+
+  it("specTrust 가 다르면 요청 지문도 다르다", () => {
+    expect(prepare({ specTrust: ORACLE }).fingerprint).not.toBe(
+      prepare({ specTrust: UNRUN }).fingerprint,
+    );
   });
 
   it("fingerprint 가 sha256(canonicalJson(request)) 와 같다", () => {

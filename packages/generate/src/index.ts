@@ -87,6 +87,7 @@ export type {
   DiagnosisProcessDiagnostics,
   DiagnosisRequest,
   DiagnosisResult,
+  DiagnosisSpecTrust,
   ServerDiagnosisProvider,
 } from "./diagnosis-schema.js";
 export {
@@ -94,6 +95,7 @@ export {
   DIAGNOSIS_PROVIDER_SCHEMA,
   diagnosisCaseIds,
   MAX_CAUSE_CHARS,
+  specIsOracle,
 } from "./diagnosis-schema.js";
 export type {
   PreFillCase,

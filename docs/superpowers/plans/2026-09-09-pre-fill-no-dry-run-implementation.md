@@ -27,7 +27,9 @@
   금지.
 - **자기 태스크의 Files 목록 밖 파일을 수정하지 않는다.** 이 계획은 `packages/cli` 와 문서만
   건드린다. `packages/generate` 의 `preparePreFillRequest` 등 다른 패키지는 읽기만 한다.
-- **커밋·푸시는 사람이 한다.** 서브에이전트는 git 명령을 실행하지 않는다.
+- **커밋·푸시는 사람이 한다.** 서브에이전트는 git 명령을 실행하지 않는다. worktree 를 만들고
+  들어가는 것은 서브에이전트가 아니라 **프롬프트를 받은 오케스트레이터 세션**의 일이다(§7 의
+  1단계). 그 경계를 각 프롬프트가 단계별로 다시 적는다.
 - **유닛테스트는 인메모리와 `fixtures/` 만 쓴다.** 실제 서버 프로세스는 W3 에서만 띄운다.
 - 산문에 대시(—)를 쓰지 않는다. 커밋 메시지는 한국어, Conventional Commits, scope 필수.
 
@@ -54,6 +56,7 @@
 - 수정: `packages/cli/src/help.ts` (`--no-dry-run` 설명, 약 88-89행)
 - 수정: `packages/cli/tests/pre-fill-command.test.ts`
 - 수정: `packages/cli/tests/help.test.ts`
+- 생성: `docs/reports/task-t1-pre-fill-no-dry-run.md` (이 태스크의 보고서)
 
 **인터페이스**
 - 소비: `GenerateCommandInput.dryRun: boolean`(이미 있다), `PreFillRequestPreview.request.cases`.
@@ -67,7 +70,7 @@
 
 ```ts
 describe("--no-dry-run 과 사전보완", () => {
-  it("--no-dry-run 이면 사전보완을 건너뛰고 서버를 한 번도 부르지 않는다", async () => {
+  it("--no-dry-run 이면 사전보완을 건너뛰고 도구를 한 번도 호출하지 않는다", async () => {
     const events: string[] = [];
     const connection = fakeConnection(events);
     const stdout: string[] = [];
@@ -91,7 +94,8 @@ describe("--no-dry-run 과 사전보완", () => {
     );
 
     expect(code).toBe(0);
-    // 이슈 #397 의 핵심 단언. 시험 실행을 끈 경로에서 툴 호출은 0회다.
+    // 이슈 #397 의 핵심 단언. 시험 실행을 끈 경로에서 callTool 은 0회다. listTools 는
+    // 이 경로에서도 부른다. 툴 선언 없이는 baseline 을 만들 수 없다.
     expect(events).toEqual([]);
     expect(connection.client.callTool).not.toHaveBeenCalled();
     // provider 도 부르지 않는다. 채택을 정할 실행이 없으면 제안을 받을 이유가 없다.
@@ -134,7 +138,7 @@ describe("--no-dry-run 과 사전보완", () => {
     expect(stdout.join("")).not.toContain("AI 사전보완을 건너뜁니다");
   });
 
-  it("--no-dry-run --baseline-only 는 저장까지 서버를 부르지 않는다", async () => {
+  it("--no-dry-run --baseline-only 는 저장까지 도구를 호출하지 않는다", async () => {
     const events: string[] = [];
     const connection = fakeConnection(events);
     const preFill = vi.fn(async () => ({ proposals: [] }));
@@ -184,9 +188,10 @@ describe("--no-dry-run 과 사전보완", () => {
       }),
     );
 
-    // 케이스 수는 같은 화면의 `대상:` 줄과 같은 값이라 숫자를 고정하지 않는다.
+    // 케이스 수는 같은 화면의 `대상:` 줄과 같은 값이라 숫자를 고정하지 않는다. 실제 실행 수가
+    // 아니라 상한이라고 말하는지가 요점이다(설계 §3.3).
     expect(seenAtConfirm).toMatch(
-      /채택 판정: 제안을 받으면 대상 케이스 \d+개를 baseline 값과 제안 값으로 실제 서버에 각각 한 번씩\n {2}실행합니다\. 상태를 바꾸는 툴이면 그 부작용이 남습니다\./,
+      /채택 판정: 제안이 돌아온 케이스마다 baseline 값과 제안 값으로 실제 서버를 각각 한 번씩\n {2}부릅니다\. 위 케이스 \d+개가 그 상한입니다\. 상태를 바꾸는 툴이면 그 부작용이 남습니다\./,
     );
     // 고지가 실행 앞에 있었다는 뜻이다. 확인 시점에는 결과 요약이 아직 없다.
     expect(seenAtConfirm).not.toContain("AI 사전보완: 툴");
@@ -255,12 +260,13 @@ Expected: 새 테스트 4개와 도움말 단언이 실패한다. 첫 테스트�
 - [ ] **Step 4: 전송 확인 화면에 실행 고지 줄을 더한다**
 
 `showPreFillRequest` 의 `io.write` 문자열에서 `"받는 것: 값 제안뿐입니다. ..."` 줄 다음에
-한 줄을 더한다.
+두 줄을 더한다. `request.cases.length` 는 **상한**이지 실제 실행 수가 아니다. 확정 수처럼 적지
+마라(설계 §3.3).
 
 ```ts
       "받는 것: 값 제안뿐입니다. 케이스를 더하거나 구조를 바꾸지 않습니다.\n" +
-      `채택 판정: 제안을 받으면 대상 케이스 ${request.cases.length}개를 baseline 값과 제안 값으로 실제 서버에 각각 한 번씩\n` +
-      "  실행합니다. 상태를 바꾸는 툴이면 그 부작용이 남습니다.\n",
+      "채택 판정: 제안이 돌아온 케이스마다 baseline 값과 제안 값으로 실제 서버를 각각 한 번씩\n" +
+      `  부릅니다. 위 케이스 ${request.cases.length}개가 그 상한입니다. 상태를 바꾸는 툴이면 그 부작용이 남습니다.\n`,
 ```
 
 함수 doc 주석에 한 문장을 더한다: `실제 서버 호출이 이 확인 뒤에 일어난다는 사실도 여기서
@@ -299,6 +305,7 @@ Expected: 전부 통과. typecheck 출력에 `Cached: 0 cached`.
 - 생성: `docs/adr/0089-시험-실행이-꺼지면-사전보완도-건너뛴다.md`
 - 수정: `docs/adr/README.md` (색인 표 마지막 줄 뒤)
 - 생성: `.changeset/cli-pre-fill-no-dry-run.md`
+- 생성: `docs/reports/task-t2-pre-fill-no-dry-run-docs.md` (이 태스크의 보고서)
 
 **인터페이스**
 - 소비: T1 의 화면 문안(설계 §3.1 · §3.3). 이 태스크는 코드를 만지지 않는다.
@@ -358,8 +365,9 @@ Expected: `0088-...`. 그보다 큰 번호가 이미 있으면 그 값 + 1 을 �
 ## 결과
 
 - `--no-dry-run` 에서 provider 는 검토 메뉴의 `revise` 에만 쓰인다. 사전보완은 돌지 않는다.
-- 시험 실행이 켜진 경로에서는 전송 확인 화면이 "제안을 받으면 대상 케이스를 실제 서버에 실행한다"
-  를 적는다. 실제 호출을 허락하는 지점이 그 확인임을 사용자가 안다.
+- 시험 실행이 켜진 경로에서는 전송 확인 화면이 "제안이 돌아온 케이스마다 실제 서버를 부른다"
+  를 적고, 요청 케이스 수를 그 상한으로 밝힌다. 실제 호출을 허락하는 지점이 그 확인임을 사용자가
+  안다.
 - 사전보완의 실행 시점을 저장 시점의 시험 실행으로 옮겨 검토 메뉴 취소까지 호출 0회로 만드는
   재구성은 #399(같은 초기 상태에서 사전보완과 재검증)와 함께 다룬다.
 ```
@@ -456,7 +464,8 @@ git status --short       # 깨끗한지 확인
 ### W1 · T1 (권장: 표준 모델, 추론 수준 중간, 구현 에이전트)
 
 ```
-[1단계: 작업 공간 만들기] 다른 무엇보다 먼저 이것부터 해라.
+[1단계: 작업 공간 만들기] 이 단계는 이 프롬프트를 받은 너, 즉 오케스트레이터 세션이 직접
+한다. 서브에이전트를 스폰하기 전이다. 다른 무엇보다 먼저 이것부터 해라.
   git worktree add .claude/worktrees/mcpeak-397 -b fix/pre-fill-no-dry-run <기점SHA>
 를 실행한 뒤 그 경로로 세션을 옮겨라(EnterWorktree 에 path 로 넘긴다). 이어서 pnpm install 을
 돌리고, 다른 패키지의 산출물을 읽도록 pnpm build 도 한 번 돌려라.
@@ -468,7 +477,10 @@ git status --short       # 깨끗한지 확인
   - git status --short 가 비어 있는지
   - pnpm vitest --version 이 실행되는지
 
-[2단계: 실행] 너는 Task T1 의 구현자다.
+[2단계: 실행] 여기서부터가 서브에이전트에게 줄 지시다. 1단계를 끝낸 뒤 아래를 그대로
+구현 서브에이전트에게 넘겨라. 아래에서 "너" 는 그 서브에이전트다.
+
+너는 Task T1 의 구현자다.
 계획서의 Task T1 을 스텝 순서대로 수행해라. Step 1 의 테스트를 먼저 쓰고 Step 2 에서 실패를
 눈으로 확인한 뒤에만 구현으로 넘어가라. 설계 문서 §3.1 · §3.3 · §4 가 문안의 사양이고 한 글자도
 바꾸지 마라.
@@ -477,11 +489,13 @@ git status --short       # 깨끗한지 확인
   - 수정 packages/cli/src/help.ts
   - 수정 packages/cli/tests/pre-fill-command.test.ts
   - 수정 packages/cli/tests/help.test.ts
+  - 생성 docs/reports/task-t1-pre-fill-no-dry-run.md (아래에서 쓰라고 한 보고서다)
 그 밖의 파일은 수정 금지다. 특히 core/src/types.ts, packages/generate, packages/runner, 루트
 빌드 설정은 공유 계약이다. 필요해 보이면 수정하지 말고 보고해라. 기존 테스트의 케이스 이름과
 단언을 지우지 마라. 단언은 더하기만 한다.
-git 명령을 실행하지 마라. 커밋·푸시·머지는 사람이 한다. 백그라운드 실행과 하위 에이전트 스폰도
-금지다. 다른 작업자의 변경을 되돌리지 마라.
+git 명령을 실행하지 마라. worktree 는 오케스트레이터가 1단계에서 이미 만들어 두었다.
+커밋·푸시·머지는 사람이 한다. 백그라운드 실행과 하위 에이전트 스폰도 금지다. 다른 작업자의
+변경을 되돌리지 마라.
 검증 명령:
   pnpm vitest run --root . packages/cli/tests/pre-fill-command.test.ts packages/cli/tests/help.test.ts packages/cli/tests/pre-fill-screen.test.ts
   pnpm --filter @mcpeak/cli test
@@ -500,7 +514,8 @@ T1 을 리뷰해 통과시킨 뒤 같은 worktree 에서 스폰한다. T1 의 �
 읽는다.
 
 ```
-[1단계: 작업 공간 확인] 이미 만들어진 worktree 를 쓴다. 새로 만들지 마라.
+[1단계: 작업 공간 확인] 이 단계는 오케스트레이터 세션이 한다. 이미 만들어진 worktree 를
+쓴다. 새로 만들지 마라.
   .claude/worktrees/mcpeak-397 로 세션을 옮겨라(EnterWorktree 에 path 로 넘긴다).
 진입 후 아래를 확인하고, 하나라도 어긋나면 중단하고 BLOCKED 로 보고해라:
   - pwd 가 .claude/worktrees/mcpeak-397 로 끝나는지
@@ -511,7 +526,9 @@ T1 을 리뷰해 통과시킨 뒤 같은 worktree 에서 스폰한다. T1 의 �
   - packages/cli/src/generate-command.ts 에 "AI 사전보완을 건너뜁니다" 문자열이 있는지
     (T1 이 반영된 상태여야 한다)
 
-[2단계: 실행] 너는 Task T2 의 구현자다.
+[2단계: 실행] 여기서부터가 서브에이전트에게 줄 지시다. 아래에서 "너" 는 그 서브에이전트다.
+
+너는 Task T2 의 구현자다.
 계획서의 Task T2 를 스텝 순서대로 수행해라. Step 1 에서 ADR 번호를 실제로 확인하고, 0089 가
 아니면 파일명·색인·changeset 본문·T1 이 넣은 주석의 ADR 번호를 그 값으로 맞춘 뒤 보고서에
 적어라. 그 경우에만 packages/cli/src/generate-command.ts 의 주석 한 줄을 고칠 수 있다.
@@ -521,9 +538,11 @@ T1 을 리뷰해 통과시킨 뒤 같은 worktree 에서 스폰한다. T1 의 �
   - 수정 docs/adr/README.md
   - 생성 .changeset/cli-pre-fill-no-dry-run.md
   - (번호가 바뀐 경우에만) packages/cli/src/generate-command.ts 의 ADR 번호 주석
+  - 생성 docs/reports/task-t2-pre-fill-no-dry-run-docs.md (아래에서 쓰라고 한 보고서다)
 그 밖의 파일은 수정 금지다. 산문에 대시(—)를 쓰지 마라.
-git 명령을 실행하지 마라. 커밋·푸시·머지는 사람이 한다. 백그라운드 실행과 하위 에이전트 스폰도
-금지다. 다른 작업자의 변경을 되돌리지 마라.
+git 명령을 실행하지 마라. worktree 는 오케스트레이터가 1단계에서 이미 만들어 두었다.
+커밋·푸시·머지는 사람이 한다. 백그라운드 실행과 하위 에이전트 스폰도 금지다. 다른 작업자의
+변경을 되돌리지 마라.
 검증 명령:
   pnpm changeset status --since=main
   pnpm biome ci .
@@ -545,11 +564,13 @@ git 명령을 실행하지 마라. 커밋·푸시·머지는 사람이 한다. �
    ```
    기대: 화면에 `▸ 시험 실행이 꺼져 있어(--no-dry-run) AI 사전보완을 건너뜁니다.` 가 나오고
    `AI 사전보완 요청` 화면과 provider 호출이 없다. 검토 메뉴에서 `cancel` 로 나온다.
-   같은 명령을 `--no-dry-run` 없이 돌리면 전송 확인 화면에 `채택 판정: 제안을 받으면 대상 케이스
-   N개를 ...` 줄이 `이 요청을 전송할까요?` 앞에 나온다. 여기서 `n` 으로 거절한다.
+   같은 명령을 `--no-dry-run` 없이 돌리면 전송 확인 화면에 `채택 판정: 제안이 돌아온 케이스마다
+   ... 위 케이스 N개가 그 상한입니다` 줄이 `이 요청을 전송할까요?` 앞에 나온다. 여기서 `n` 으로
+   거절한다.
    `codex` 가 없으면 2 는 건너뛰고 그 사실을 보고에 적는다. 유닛테스트가 같은 경로를 주입
    client 로 검증하므로 게이트를 막지는 않는다.
-3. 결과를 `docs/adoption.md` 에 한 줄로 누적 기록한다.
+3. 결과를 `docs/adoption.md` 에 한 줄로 누적 기록한다. 이 파일은 오케스트레이터가 직접 쓴다.
+   T1 · T2 의 허용 Files 에 없는 것은 그 때문이다.
 
 ## 8. 자체 검토
 
@@ -561,3 +582,9 @@ git 명령을 실행하지 마라. 커밋·푸시·머지는 사람이 한다. �
   맞추도록 허용 Files 에 조건부로 넣었다.
 - 병렬 태스크가 없다. 파일 겹침 없음.
 - 실환경 검증은 W3 직렬이고 공개 서버는 상태 없는 `mcp-server-time` 만 쓴다.
+- 리뷰 반영 4건. (1) 전송 확인의 케이스 수는 실제 실행 수가 아니라 상한이다. `applyPreFill` 이
+  제안이 돌아온 `callTool` 케이스만 실행하므로 문안을 그렇게 고쳤다. (2) `--no-dry-run` 은
+  `callTool` 0회이지 서버 접촉 0회가 아니다. `listTools` 는 부른다. 테스트 이름과 배경 서술을
+  맞췄다. (3) worktree 생성 주체를 오케스트레이터로 명시하고, 서브에이전트의 git 금지와 단계를
+  갈랐다. (4) 각 태스크의 보고서 경로를 허용 Files 에 넣고, `docs/adoption.md` 는 오케스트레이터
+  산출물로 표시했다.

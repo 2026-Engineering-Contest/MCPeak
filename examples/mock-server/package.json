@@ -1,0 +1,18 @@
+{
+  "name": "@mcpeak-examples/mock-server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "도그푸딩용 예제 목 MCP 서버 — weather.mock.json 을 그대로 서빙한다",
+  "license": "MIT",
+  "bin": {
+    "example-mock-server": "./server.mjs"
+  },
+  "scripts": {
+    "start": "node ./server.mjs"
+  },
+  "dependencies": {
+    "@mcpeak/mock": "workspace:*",
+    "@modelcontextprotocol/sdk": "catalog:"
+  }
+}

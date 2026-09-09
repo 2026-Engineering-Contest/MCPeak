@@ -45,6 +45,15 @@ importers:
         specifier: 'catalog:'
         version: 1.30.0(zod@4.4.3)
 
+  examples/mock-server:
+    dependencies:
+      '@mcpeak/mock':
+        specifier: workspace:*
+        version: link:../../packages/mock
+      '@modelcontextprotocol/sdk':
+        specifier: 'catalog:'
+        version: 1.30.0(zod@4.4.3)
+
   examples/weather-server:
     dependencies:
       '@modelcontextprotocol/sdk':

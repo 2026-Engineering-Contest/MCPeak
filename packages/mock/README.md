@@ -330,13 +330,21 @@ mock.on("get_meeting", { id: "m-99" }, { error: "→ 'm-99' 회의록이 없습�
 → 툴 'get_weather' 을(를) 인자 {"city":"제주"} 로 호출했지만 주입된 응답이 없습니다.
 → 이 툴에 주입된 인자: {"city":"서울"}
 → mock.on(툴이름, 인자, 응답) 의 인자가 호출과 일치하는지 확인하세요.
-→ 인자를 가리지 않으려면 mock.on(툴이름, ANY, 응답) — 정의 파일에서는 args 생략.
+→ 인자를 가리지 않으려면 mock.on(툴이름, ANY, 응답) 을 쓰세요.
+```
+
+**뒤 두 줄은 진입점에 따라 다르다.** 정의 파일로 띄웠다면 없는 `mock.on` 대신 그 파일을
+가리킨다 — 고칠 자리가 다르기 때문이다.
+
+```
+→ weather.mock.json 의 responses 에서 이 툴의 args 가 호출과 일치하는지 확인하세요.
+→ 인자를 가리지 않으려면 그 항목에서 args 를 생략하세요.
 ```
 
 **정의 파일이 잘못됐을 때**
 
 ```
-→ weather.mock.json 가 올바르지 않습니다: responses[0] 의 툴 '없는툴' 이 tools 에 없습니다. 있는 툴: get_weather, add
+→ 올바르지 않은 목 정의입니다 — weather.mock.json: responses[0] 의 툴 '없는툴' 이 tools 에 없습니다. 있는 툴: get_weather, add
 → 형식: { "tools": [ { "name": ..., "inputSchema": ... } ], "responses": [ { "tool": ..., "result": ... } ] }
 ```
 

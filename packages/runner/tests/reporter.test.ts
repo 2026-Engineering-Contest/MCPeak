@@ -151,8 +151,60 @@ describe("renderReport", () => {
         "",
         "1 failed  (1 total)",
         "",
+        "실패한 케이스",
+        "  ✗ weather  → 진단 메시지",
+        "",
       ].join("\n"),
     );
+  });
+
+  it("실패한 케이스만 원래 순서대로 모아 첫 진단을 다시 그린다", () => {
+    const report = makeReport([
+      testCase({ id: "passed", name: "통과", status: "passed" }),
+      testCase({
+        id: "short",
+        name: "단언 실패",
+        status: "failed",
+        assertions: [
+          assertion("isError", "failed", diagnostic("첫 단언 진단", "첫 힌트")),
+          assertion("bodyMatchesSchema", "failed", diagnostic("둘째 단언 진단", "둘째 힌트")),
+        ],
+      }),
+      testCase({
+        id: "long-failure-id",
+        name: "호출 실패",
+        status: "failed",
+        operationDiagnostic: diagnostic("호출 진단", "호출 힌트"),
+      }),
+      testCase({
+        id: "timeout",
+        name: "시간 초과",
+        status: "timedOut",
+        operationDiagnostic: diagnostic("타임아웃 진단", "타임아웃 힌트"),
+      }),
+    ]);
+
+    const output = renderReport(report);
+    expect(output.slice(output.indexOf("실패한 케이스"))).toBe(
+      [
+        "실패한 케이스",
+        "  ✗ short            → 첫 단언 진단",
+        "  ✗ long-failure-id  → 호출 진단",
+        "",
+      ].join("\n"),
+    );
+    expect(output.indexOf("2 failed  (4 total)")).toBeLessThan(output.indexOf("실패한 케이스"));
+    expect(output.slice(output.indexOf("실패한 케이스"))).not.toContain("passed");
+    expect(output.slice(output.indexOf("실패한 케이스"))).not.toContain("timeout");
+    expect(output.slice(output.indexOf("실패한 케이스"))).not.toContain("둘째 단언 진단");
+  });
+
+  it("진단이 없는 실패도 케이스 id를 빠뜨리지 않는다", () => {
+    const report = makeReport([
+      testCase({ id: "no-diagnostic", name: "진단 없음", status: "failed" }),
+    ]);
+
+    expect(renderReport(report)).toContain("실패한 케이스\n  ✗ no-diagnostic\n");
   });
 
   it("위반 목록을 화살표 줄로 그린다", () => {
@@ -305,8 +357,9 @@ describe("renderReport", () => {
     it("화살표가 둘 이상이면 그대로 둔다", () => {
       // 서버가 두 개를 쓴 것은 서버 문장이다. 우리가 하나를 안 붙이는 데까지가 우리 몫이다.
       const rendered = renderReport(withNotes(["→ → 서버가 두 개를 보냈다"]));
+      const caseList = rendered.slice(0, rendered.indexOf("실패한 케이스"));
 
-      expect(countOf(rendered, "→")).toBe(2);
+      expect(countOf(caseList, "→")).toBe(2);
       expect(rendered).toContain("    → → 서버가 두 개를 보냈다");
     });
 
@@ -509,9 +562,10 @@ describe("renderReport", () => {
     ]);
 
     const output = renderReport(report);
-    for (const glyph of ["✓", "✗", "⧖", "⊘", "·"]) {
+    for (const glyph of ["✓", "⧖", "⊘", "·"]) {
       expect(countOf(output, glyph)).toBe(1);
     }
+    expect(countOf(output, "✗")).toBe(2);
   });
 
   it("caseId 열을 가장 긴 것에 맞춘다", () => {

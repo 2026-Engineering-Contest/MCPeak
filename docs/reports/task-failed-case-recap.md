@@ -134,3 +134,109 @@ Checked 396 files in 96ms. No fixes applied.
   그대로 받는다. 한글 id 가 섞이면 열이 눈에 어긋난다. 새로 생긴 문제가 아니라 기존 규칙을
   따른 결과다.
 - 커밋하지 않았다. 문서·ADR·changeset(T2)도 손대지 않았다.
+
+---
+
+# Task T2 보고: 설계 문서 · ADR · changeset
+
+- 기점: `00da84b` (T1 통합 SHA `9b8aac7` 포함)
+- 계획서: 같은 계획서 Task T2 (Step 1~8)
+- 상태: READY_FOR_REVIEW
+
+## 변경 파일
+
+`packages/` 아래는 하나도 없다.
+
+```
+ M docs/adr/README.md
+ M docs/superpowers/specs/2026-08-13-cli-report-rendering-design.md
+?? .changeset/runner-failed-case-recap.md
+?? docs/adr/0092-실패-요약-절은-요약-줄-앞에-두고-가장-구체적인-진단-줄을-옮긴다.md
+```
+
+이 보고서 파일(`docs/reports/task-failed-case-recap.md`)도 함께 고쳤다.
+
+### `docs/superpowers/specs/2026-08-13-cli-report-rendering-design.md`
+
+- §5.1 전체 구조 그림에 `{실패 요약 절}` 줄을 중단 줄과 요약 줄 사이에 넣었다.
+- §5.7 을 **실패 요약 절**로 신설했다. 기존 §5.7 색상은 §5.8 로 밀었다.
+- §5.8 색상 표에 절의 `✗`·`⧖` 가 케이스 줄과 같은 SGR 을 쓰고 머리글·`caseId`·`→`·진단 글에는
+  색이 없다는 행 두 개를 더했다. 새 SGR 코드를 만들지 않는 이유(`dashboard` 의 `ansiToHtml`)를
+  본문에 한 문장으로 적었다.
+
+새 §5.7 이 담은 것은 행의 형태, 실리는 상태 표 다섯 줄과 그 이유, 진단 글 선택 규칙 3순위,
+`MAX_RECAP_TEXT_CHARS` 100 과 근거, `caseId` 열을 절 안에서만 맞춘다는 것, 0건이면 한 줄도 내지
+않는다는 것, 순서와 이스케이프·자르기·색상의 적용 순서다.
+
+출력 예시는 계획서를 베끼지 않고 머지된 실제 출력을 실었다. 근거는
+`packages/runner/tests/reporter.test.ts` 의 `describe("실패한 케이스 절")` 안
+`요약 줄 바로 앞에 절을 낸다` 테스트의 exact 단언이며, 그 테스트가 통과하므로 문서에 적은
+문자열이 곧 렌더러가 내는 문자열이다.
+
+### `docs/adr/0092-…md` (신규)
+
+다섯 항목(배경 / 선택지 / 결정 / 이유 / 결과)이다. 선택지 절에 절 위치 A·B·C 표와 행 문안
+R1·R2 표를 실었다. 머리말 형식은 `docs/adr/0091-…md` 를 따랐다.
+
+### `docs/adr/README.md`
+
+색인에 0092 줄을 0091 다음에 같은 형식으로 더했다.
+
+### `.changeset/runner-failed-case-recap.md` (신규)
+
+`@mcpeak/runner` `minor` 다. 본문은 계획서 Step 5 의 문안 그대로다.
+
+## 실행한 검증 명령과 출력
+
+```
+git status --short
+ M docs/adr/README.md
+ M docs/superpowers/specs/2026-08-13-cli-report-rendering-design.md
+?? .changeset/runner-failed-case-recap.md
+?? docs/adr/0092-….md
+```
+
+`packages/` 아래가 하나도 없다.
+
+```
+pnpm test
+ Test Files  149 passed (149)
+      Tests  3126 passed | 2 skipped (3128)
+
+pnpm lint
+Checked 396 files in 84ms. No fixes applied.
+```
+
+절 번호 확인. `grep -n "^### 5\." docs/superpowers/specs/2026-08-13-cli-report-rendering-design.md`
+
+```
+165:### 5.1 전체 구조
+185:### 5.2 케이스 줄
+210:### 5.3 케이스 레벨 진단
+221:### 5.4 단언 줄
+244:### 5.5 중단 줄
+256:### 5.6 요약 줄
+277:### 5.7 실패 요약 절
+368:### 5.8 색상
+```
+
+## 계획서에서 벗어난 부분
+
+**changeset 을 `pnpm changeset` 대화형으로 만들지 않고 파일로 직접 썼다.** `changeset add` 는
+패키지와 bump 를 비대화형 인자로 받지 않아 이 환경에서 돌릴 수 없다. 결과 파일의 형식은 같고,
+`pnpm changeset status` 가 `@mcpeak/runner` 를 minor 목록에 넣어 파싱을 확인했다.
+
+## 남은 위험
+
+- **`pnpm changeset status --since=origin/main` 은 지금 로컬에서 떨어진다.** 새 changeset 이
+  untracked 라 `--since` 의 git 비교에 잡히지 않기 때문이다. 커밋하면 해소된다. 커밋은 사람
+  몫이므로 여기서 하지 않았다. 통합 전에 이 명령을 다시 확인하는 쪽이 안전하다.
+- **허용 Files 밖에 어긋난 참조가 하나 있다.** 고치지 않았다.
+  `docs/superpowers/specs/2026-09-10-failed-case-recap-design.md:274` 의 `### 4.6 색상 (렌더링
+  설계 §5.7 확장)` 은 이제 §5.8 을 가리켜야 한다. 같은 문서 107줄의 완료 조건 C14 도 "새 §5.7"
+  이라고 적혀 있는데 그것은 이번에 신설한 §5.7 이 맞아 어긋나지 않는다.
+- `packages/` 아래 `§5.7` 참조는 전부 다른 설계 문서(`2026-08-14-input-contract-check-design.md`)
+  를 가리킨다. `packages/runner/src/assertion-substance.ts:26` 이 그것이다. 이번 절 번호 이동과
+  무관하므로 고칠 것이 없다.
+- ADR 의 상태는 `제안` 이다. 승인 절차는 사람 몫이다.
+- 커밋하지 않았다.

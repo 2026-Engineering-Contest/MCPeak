@@ -32,13 +32,26 @@ export const suite = defineMcpSuite({
         tool: "get_weather",
         input: { city: "서울" },
       },
-      assertions: [{ type: "isError", expected: false }],
+      assertions: [
+        { type: "isError", expected: false },
+        {
+          type: "structuredContentMatchesSchema",
+          schema: {
+            type: "object",
+            required: ["temperature"],
+            properties: { temperature: { type: "number" } },
+          },
+        },
+      ],
     },
   ],
 });
 ```
 
-`listTools`에는 `toolExists`만, `callTool`에는 `isError`만 쓸 수 있습니다. 명세와 실행 결과는 명세 순서대로 처리되며, `RunnerReport`와 `RunnerEvent`는 `JSON.stringify`할 수 있습니다.
+`listTools`에는 `toolExists`를, `callTool`에는 `isError`, `bodyMatchesSchema`,
+`structuredContentMatchesSchema`를 쓸 수 있습니다. 마지막 단언은 기존 text 본문 추출 규칙을
+바꾸지 않고 `ToolResult.raw.structuredContent`만 저장된 계약과 대조합니다. 명세와 실행 결과는
+명세 순서대로 처리되며, `RunnerReport`와 `RunnerEvent`는 `JSON.stringify`할 수 있습니다.
 
 ## 실행과 종료 수명주기
 

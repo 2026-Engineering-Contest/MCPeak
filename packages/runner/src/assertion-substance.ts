@@ -21,7 +21,7 @@ interface Frame {
 /**
  * 통과가 보장된 단언을 찾는다. 명세만 보고 판정하며 서버도 tools도 필요하지 않다.
  *
- * `bodyMatchesSchema` 단언만 대상이다. `isError`와 `toolExists`는 검사하지 않고,
+ * 두 스키마 단언만 대상이다. `isError`와 `toolExists`는 검사하지 않고,
  * 단언 0개는 `validateMcpSuite`가 `EMPTY_ASSERTIONS`로 이미 잡으므로 여기서 다시 잡지 않는다.
  * 설계 문서 §5.7 · §9.
  */
@@ -78,7 +78,11 @@ export function checkAssertionSubstance(suite: TestSuiteSpec): SpecFindingsResul
     // 케이스 종류에 따라 단언 배열의 타입이 갈리므로 한 번 넓혀서 받는다.
     const assertions: AssertionSpec[] = testCase.assertions;
     assertions.forEach((assertion, assertionIndex) => {
-      if (assertion.type !== "bodyMatchesSchema") return;
+      if (
+        assertion.type !== "bodyMatchesSchema" &&
+        assertion.type !== "structuredContentMatchesSchema"
+      )
+        return;
       walk(assertion.schema, `assertions[${assertionIndex}].schema`);
     });
 

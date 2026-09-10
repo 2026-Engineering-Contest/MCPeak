@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  type CallToolCaseSpec,
   defineMcpSuite,
   MCP_SUITE_JSON_SCHEMA,
   type ReadonlyJsonObject,
@@ -33,6 +34,17 @@ const validSuite = {
 describe("MCP suite validation", () => {
   it("유효한 listTools와 callTool 명세를 검증한다", () => {
     expect(validateMcpSuite(validSuite)).toEqual({ valid: true, value: validSuite });
+  });
+
+  it("callTool의 structuredContent 출력 계약 단언을 검증한다", () => {
+    const value = structuredClone(validSuite) as unknown as TestSuiteSpec;
+    const call = value.cases[1];
+    if (call?.operation.type !== "callTool") throw new Error("fixture");
+    (call as CallToolCaseSpec).assertions.push({
+      type: "structuredContentMatchesSchema",
+      schema: { type: "object", required: ["sum"], properties: { sum: { type: "number" } } },
+    });
+    expect(validateMcpSuite(value)).toEqual({ valid: true, value });
   });
 
   it("명세의 구조 오류를 결정된 순서로 모두 반환한다", () => {
@@ -852,7 +864,7 @@ describe("명세 검증 문안 (이슈 #352)", () => {
   it("단언 type 이 문자열이 아니면 무엇을 받는지로 말을 바꾼다", () => {
     const issues = issuesOf(callToolSuite([{ expected: false }]));
     expect(issues.find((entry) => entry.code === "INCOMPATIBLE_ASSERTION")?.message).toBe(
-      "단언에 type 이 없거나 문자열이 아닙니다. 'callTool' operation 이 받는 단언: isError, bodyMatchesSchema",
+      "단언에 type 이 없거나 문자열이 아닙니다. 'callTool' operation 이 받는 단언: isError, bodyMatchesSchema, structuredContentMatchesSchema",
     );
   });
 

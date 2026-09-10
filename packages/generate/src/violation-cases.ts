@@ -4,6 +4,7 @@ import {
   type ContractDeclaredType,
   type ContractRange,
   deriveContractAxes,
+  type ResponseSchema,
 } from "@mcpeak/runner";
 import { integerLowerBound, integerUpperBound } from "./constraints.js";
 import { fieldSlug } from "./filename.js";
@@ -33,8 +34,11 @@ export interface GeneratedCase {
    * true 를 넣는 실수를 컴파일러가 못 잡는다.
    */
   readonly assertions: [
-    | { readonly type: "isError"; readonly expected: true }
-    | { readonly type: "isError"; readonly expected: false },
+    (
+      | { readonly type: "isError"; readonly expected: true }
+      | { readonly type: "isError"; readonly expected: false }
+    ),
+    ...{ readonly type: "structuredContentMatchesSchema"; readonly schema: ResponseSchema }[],
   ];
 }
 

@@ -1,4 +1,5 @@
 import type { ToolDef } from "@mcpeak/core";
+import { convertOutputSchema } from "./output-schema.js";
 import { fail, type JsonObject, plainObject, validateSchema } from "./schema.js";
 import { synthesizeValue } from "./synthesize.js";
 import { buildViolationCases, type GeneratedCase } from "./violation-cases.js";
@@ -11,7 +12,19 @@ type GeneratedSuiteSpec = {
   cases: GeneratedCase[];
 };
 
-function buildSuite(tool: ToolDef, index: number, baseName: string): GeneratedSuiteSpec {
+export interface OutputContractSkip {
+  readonly index: number;
+  readonly name: string;
+  readonly path: string;
+  readonly message: string;
+}
+
+interface BuiltSuite {
+  readonly suite: GeneratedSuiteSpec;
+  readonly outputContractSkip?: OutputContractSkip;
+}
+
+function buildSuite(tool: ToolDef, index: number, baseName: string): BuiltSuite {
   const toolPath = `tools[${index}]`;
   if (!plainObject(tool)) {
     fail(
@@ -50,32 +63,57 @@ function buildSuite(tool: ToolDef, index: number, baseName: string): GeneratedSu
     );
   }
 
+  const outputContract =
+    tool.outputSchema === undefined
+      ? undefined
+      : convertOutputSchema(tool.outputSchema, `${toolPath}.outputSchema`);
+  const outputContractSkip =
+    outputContract !== undefined && !outputContract.supported
+      ? {
+          index,
+          name: tool.name,
+          path: outputContract.path,
+          message: outputContract.message,
+        }
+      : undefined;
+
   return {
-    schemaVersion: 1,
-    id: `${baseName}-generated`,
-    name: `${tool.name} 생성 테스트`,
-    defaultTimeoutMs: 10_000,
-    cases: [
-      {
-        id: `${baseName}-success`,
-        name: `${tool.name}가 오류 없이 응답한다`,
-        operation: { type: "callTool", tool: tool.name, input: input as JsonObject },
-        assertions: [{ type: "isError", expected: false }],
-      },
-      // 위반 케이스는 정상 입력을 한 군데만 고친 것이다. 정상 입력을 따로 합성하지 않는다.
-      // 두 벌이면 "정상 케이스는 통과하는데 위반 케이스는 다른 이유로 실패" 하는 상황을
-      // 디버깅할 수 없다.
-      ...buildViolationCases({ tool, happyInput: input as JsonObject, baseName }),
-    ],
+    suite: {
+      schemaVersion: 1,
+      id: `${baseName}-generated`,
+      name: `${tool.name} 생성 테스트`,
+      defaultTimeoutMs: 10_000,
+      cases: [
+        {
+          id: `${baseName}-success`,
+          name: `${tool.name}가 오류 없이 응답한다`,
+          operation: { type: "callTool", tool: tool.name, input: input as JsonObject },
+          assertions: [
+            { type: "isError", expected: false },
+            ...(outputContract?.supported
+              ? [{ type: "structuredContentMatchesSchema" as const, schema: outputContract.schema }]
+              : []),
+          ],
+        },
+        // 위반 케이스는 정상 입력을 한 군데만 고친 것이다. 정상 입력을 따로 합성하지 않는다.
+        // 두 벌이면 "정상 케이스는 통과하는데 위반 케이스는 다른 이유로 실패" 하는 상황을
+        // 디버깅할 수 없다.
+        ...buildViolationCases({ tool, happyInput: input as JsonObject, baseName }),
+      ],
+    },
+    ...(outputContractSkip === undefined ? {} : { outputContractSkip }),
   };
 }
 
-function renderSuite(suite: GeneratedSuiteSpec): string {
+function renderSuite(suite: GeneratedSuiteSpec, outputContractSkip?: OutputContractSkip): string {
   return [
     'import { defineMcpSuite } from "@mcpeak/runner";',
     "",
     "// 이 파일은 @mcpeak/generate가 생성했습니다. 직접 수정하지 마세요.",
     "// 실제 client는 별도 실행 진입점에서 주입하고, 사람이 작성하는 테스트는 별도 파일에 두세요.",
+    ...(outputContractSkip === undefined
+      ? []
+      : [`// 출력 계약 미검증: ${outputContractSkip.path}`, `// ${outputContractSkip.message}`]),
     `export const generatedSuite = defineMcpSuite(${JSON.stringify(suite, null, 2)});`,
     "",
   ].join("\n");
@@ -83,7 +121,8 @@ function renderSuite(suite: GeneratedSuiteSpec): string {
 
 /** 도구 하나를 검증하고 Runner 선언형 suite 소스로 렌더링한다. */
 export function renderTool(tool: ToolDef, index: number, baseName: string): string {
-  return renderSuite(buildSuite(tool, index, baseName));
+  const built = buildSuite(tool, index, baseName);
+  return renderSuite(built.suite, built.outputContractSkip);
 }
 
 /**
@@ -95,6 +134,12 @@ export function buildGeneratedCases(
   tool: ToolDef,
   index: number,
   baseName: string,
-): GeneratedCase[] {
-  return buildSuite(tool, index, baseName).cases;
+): { readonly cases: GeneratedCase[]; readonly outputContractSkip?: OutputContractSkip } {
+  const built = buildSuite(tool, index, baseName);
+  return {
+    cases: built.suite.cases,
+    ...(built.outputContractSkip === undefined
+      ? {}
+      : { outputContractSkip: built.outputContractSkip }),
+  };
 }

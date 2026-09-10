@@ -24,7 +24,9 @@ export type RunnerDiagnosticCode =
   | "CASE_TIMEOUT"
   | "RUN_ABORTED"
   | "BODY_SCHEMA_MISMATCH"
-  | "BODY_EXTRACTION_FAILED";
+  | "BODY_EXTRACTION_FAILED"
+  | "STRUCTURED_CONTENT_SCHEMA_MISMATCH"
+  | "STRUCTURED_CONTENT_EXTRACTION_FAILED";
 
 /** 진단에 담는 문자열 값의 최대 코드 포인트 수. 넘으면 자르고 원본 길이를 따로 남긴다. */
 export const MAX_VALUE_STRING_CHARS = 200;
@@ -452,6 +454,54 @@ export function bodySchemaMismatchDiagnostic(
       : "스키마 변경이 의도된 것이라면 테스트를 업데이트하세요.",
     violations: result.violations.map((violation) => toViolationDiagnostic(violation, options)),
     totalViolations: result.totalViolations,
+  };
+}
+
+export function structuredContentSchemaMismatchDiagnostic(
+  result: SchemaMatchResult,
+  expected: JsonValue,
+  actual: JsonValue,
+  options?: RunnerRedactionOptions,
+): RunnerDiagnostic {
+  const truncated = result.totalViolations > result.violations.length;
+  return {
+    code: "STRUCTURED_CONTENT_SCHEMA_MISMATCH",
+    message: truncated
+      ? `구조화된 응답이 저장된 출력 계약과 다릅니다. 위반 ${result.totalViolations}건 중 ${result.violations.length}건을 표시합니다.`
+      : `구조화된 응답이 저장된 출력 계약과 다릅니다. 위반 ${result.totalViolations}건.`,
+    expected: sanitizeJsonValue(expected, options),
+    actual: sanitizeJsonValue(actual, options),
+    hint: truncated
+      ? "표시된 위반을 고친 뒤 나머지를 다시 확인하세요."
+      : "서버의 outputSchema 또는 structuredContent 변경이 의도된 것인지 확인하세요.",
+    violations: result.violations.map((violation) => toViolationDiagnostic(violation, options)),
+    totalViolations: result.totalViolations,
+  };
+}
+
+export function structuredContentExtractionFailedDiagnostic(failure: {
+  code: "RAW_NOT_OBJECT" | "MISSING" | "INVALID_JSON";
+  actual: string;
+}): RunnerDiagnostic {
+  if (failure.code === "RAW_NOT_OBJECT")
+    return {
+      code: "STRUCTURED_CONTENT_EXTRACTION_FAILED",
+      message: `구조화된 응답을 읽을 수 없습니다. raw 응답이 객체가 아닙니다. 실제 타입: ${failure.actual}`,
+      actual: failure.actual,
+      hint: "MCP 클라이언트 어댑터가 원본 callTool 응답을 raw에 보존하는지 확인하세요.",
+    };
+  if (failure.code === "MISSING")
+    return {
+      code: "STRUCTURED_CONTENT_EXTRACTION_FAILED",
+      message: "저장된 출력 계약을 검사할 structuredContent가 응답에 없습니다.",
+      actual: failure.actual,
+      hint: "서버가 outputSchema를 선언했다면 정상 응답에 structuredContent도 반환해야 합니다.",
+    };
+  return {
+    code: "STRUCTURED_CONTENT_EXTRACTION_FAILED",
+    message: `structuredContent가 JSON 값이 아닙니다. 실제 타입: ${failure.actual}`,
+    actual: failure.actual,
+    hint: "서버가 순환 참조나 JSON으로 표현할 수 없는 값을 반환하지 않는지 확인하세요.",
   };
 }
 

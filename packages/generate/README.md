@@ -26,7 +26,9 @@ console.log(baseline.suiteFingerprint);
 
 입력값은 `const` → `default` → `examples[0]` → `enum[0]` → 타입별 고정값 순서로 선택합니다.
 객체에서는 필수 프로퍼티만 포함하고 배열에서는 `items`로 원소 한 개를 생성합니다. baseline의
-happy-path는 도구 응답의 `isError`가 `false`인지 확인합니다.
+happy-path는 도구 응답의 `isError`가 `false`인지 확인합니다. 도구가 `outputSchema`를 선언하면
+의미를 보존할 수 있는 부분집합을 `structuredContentMatchesSchema` 단언으로 함께 저장합니다.
+따라서 서버가 나중에 선언과 응답을 함께 바꿔도 저장 당시 출력 계약으로 다시 검사합니다.
 
 `generateTests()`는 기존 TypeScript 파일 생성 API로 계속 제공됩니다. 생성 파일 이름과 입력값
 선택 규칙은 아래 설명을 따릅니다.
@@ -119,5 +121,9 @@ suite를 사용할 수 있습니다.
 
 ## 자동 생성 범위
 
-스키마만으로 알 수 없는 비정상 입력, 구체적인 응답 본문, 비즈니스 규칙 검증은 생성하지 않습니다.
-생성 결과를 초안으로 검토한 뒤 필요한 assertion과 케이스를 별도 파일에 추가하세요.
+스키마만으로 알 수 없는 비정상 입력, 구체적인 업무 결과값과 비즈니스 규칙 검증은 생성하지
+않습니다. `outputSchema`의 타입·필드 구조는 검사하지만 `sum: 999`처럼 타입만 맞는 계산 오답은
+판정하지 않습니다. `patternProperties`, 조합 스키마 등 Runner 부분집합으로 의미를 보존할 수 없는
+출력 계약은 조용히 키워드를 버리지 않습니다. 정상 `isError` 검사는 유지하고 결과의
+`outputContractSkips`와 CLI 경고에 미검증 경로·원인을 남깁니다. 생성 결과를 초안으로 검토한 뒤
+필요한 assertion과 케이스를 별도 파일에 추가하세요.

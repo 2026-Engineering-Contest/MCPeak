@@ -36,6 +36,80 @@ function fixtureTools(): ToolDef[] {
 }
 
 describe("createBaselineSuite", () => {
+  it("outputSchema를 정상 케이스의 구조화 출력 계약으로 보존한다", () => {
+    const result = createBaselineSuite(
+      [
+        {
+          name: "sum",
+          inputSchema: { type: "object" },
+          outputSchema: {
+            $schema: "https://json-schema.org/draft/2020-12/schema",
+            type: "object",
+            required: ["sum"],
+            properties: { sum: { type: "number", description: "합계" } },
+            additionalProperties: false,
+          },
+        },
+      ],
+      { suiteId: "sum", suiteName: "Sum" },
+    );
+    expect(result.suite.cases[0]?.assertions).toEqual([
+      { type: "isError", expected: false },
+      {
+        type: "structuredContentMatchesSchema",
+        schema: {
+          type: "object",
+          required: ["sum"],
+          properties: { sum: { type: "number" } },
+          additionalProperties: false,
+        },
+      },
+    ]);
+    expect(result.outputContractSkips).toEqual([]);
+  });
+
+  it("patternProperties를 버려 계약을 약화하지 않고 출력 미검증 사유를 남긴다", () => {
+    const result = createBaselineSuite(
+      [
+        {
+          name: "labels",
+          inputSchema: { type: "object" },
+          outputSchema: {
+            type: "object",
+            patternProperties: { "^x-": { type: "string" } },
+            additionalProperties: false,
+          },
+        },
+      ],
+      { suiteId: "labels", suiteName: "Labels" },
+    );
+    expect(result.suite.cases[0]?.assertions).toEqual([{ type: "isError", expected: false }]);
+    expect(result.outputContractSkips).toEqual([
+      {
+        index: 0,
+        name: "labels",
+        path: "tools[0].outputSchema.patternProperties",
+        message: "출력 계약 키워드 'patternProperties'는 의미를 보존해 변환할 수 없습니다.",
+      },
+    ]);
+  });
+
+  it("Runner가 같은 의미로 표현할 수 없는 무타입 properties도 출력 미검증으로 남긴다", () => {
+    const result = createBaselineSuite(
+      [
+        {
+          name: "sum",
+          inputSchema: { type: "object" },
+          outputSchema: { properties: { sum: { type: "number" } } },
+        },
+      ],
+      { suiteId: "sum", suiteName: "Sum" },
+    );
+    expect(result.outputContractSkips[0]).toMatchObject({
+      path: "tools[0].outputSchema.properties",
+      message: expect.stringContaining("type이 object"),
+    });
+  });
   it("fixtures 두 툴로 만든 baseline 은 케이스 8개다", () => {
     const result = createBaselineSuite(fixtureTools(), {
       suiteId: "weather",
@@ -54,7 +128,7 @@ describe("createBaselineSuite", () => {
   });
 
   it("정책 버전이 v2 다", () => {
-    expect(BASELINE_POLICY_VERSION).toBe("schema-baseline-v2");
+    expect(BASELINE_POLICY_VERSION).toBe("schema-baseline-v3");
   });
 
   /**

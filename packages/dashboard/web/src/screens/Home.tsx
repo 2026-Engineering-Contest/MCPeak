@@ -10,6 +10,8 @@ import type {
 import { apiGet, apiSend } from "../api.js";
 import type { SessionMode, TestOptions } from "../build-test-argv.js";
 import { buildTestArgv, DEFAULT_TEST_OPTIONS } from "../build-test-argv.js";
+import { Button } from "../components/Button.js";
+import { Card } from "../components/Card.js";
 import { Stepper } from "../components/Stepper.js";
 import type { CommandMethod } from "../generate/steps/StepServer.js";
 import { splitCommand } from "../generate/steps/StepServer.js";
@@ -334,7 +336,7 @@ export function Home(): JSX.Element {
         </p>
       )}
 
-      <div className="rounded-lg border border-line bg-surface p-6">
+      <Card className="p-6">
         {step === 0 && (
           <StepRunServer
             choice={state.choice}
@@ -387,7 +389,7 @@ export function Home(): JSX.Element {
             onUseLastRun={useLastRun}
           />
         )}
-      </div>
+      </Card>
 
       {startError !== null && (
         <p className="text-sm" style={{ color: "var(--status-failed-fg)" }}>
@@ -396,36 +398,32 @@ export function Home(): JSX.Element {
       )}
 
       <div className="flex items-center justify-between">
-        <button
-          type="button"
-          className="rounded border border-line px-4 py-2 text-sm text-ink-muted hover:text-ink disabled:opacity-50"
+        <Button
           disabled={step === 0}
           onClick={() => setStep((previous) => Math.max(previous - 1, 0))}
         >
           이전
-        </button>
+        </Button>
         <div className="flex items-center gap-3">
           {reasonForInvalid() !== null && (
             <span className="text-xs text-ink-muted">{reasonForInvalid()}</span>
           )}
           {step < STEPS.length - 1 ? (
-            <button
-              type="button"
-              className="rounded bg-accent px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+            <Button
+              variant="primary"
               disabled={!stepValid}
               onClick={() => setStep((previous) => Math.min(previous + 1, STEPS.length - 1))}
             >
               다음
-            </button>
+            </Button>
           ) : (
-            <button
-              type="button"
-              className="rounded bg-accent px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+            <Button
+              variant="primary"
               disabled={starting || !stepValid}
               onClick={() => void startRun()}
             >
               실행 시작
-            </button>
+            </Button>
           )}
         </div>
       </div>

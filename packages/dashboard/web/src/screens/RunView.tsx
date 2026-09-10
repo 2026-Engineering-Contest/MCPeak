@@ -7,6 +7,8 @@ import type {
   StartRunResponse,
 } from "../../../src/api-types.js";
 import { apiGet, apiSend } from "../api.js";
+import { Button } from "../components/Button.js";
+import { Card } from "../components/Card.js";
 import { FlowChip } from "../components/FlowChip.js";
 import { LogPanel } from "../components/LogPanel.js";
 import { QuestionPanel } from "../components/QuestionPanel.js";
@@ -287,15 +289,15 @@ export function RunStreamPanel({
           </span>
         )}
         {status === "failed" && showRepairAction && runBundlePath !== null && (
-          <button
-            type="button"
+          <Button
+            variant="primary"
+            size="sm"
             aria-expanded={repairOpen}
-            className="rounded bg-accent px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
             disabled={starting}
             onClick={() => setRepairOpen((open) => !open)}
           >
             repair 시작
-          </button>
+          </Button>
         )}
         {status === "failed" && showRepairAction && argv !== null && runBundlePath === null && (
           <span className="text-xs text-ink-muted">
@@ -318,7 +320,11 @@ export function RunStreamPanel({
       {status === "failed" && showRepairAction && runBundlePath !== null && repairOpen && (
         <form
           // 폼이 길어져도 로그를 밀어내지 않는다. 넘치면 폼 안에서 스크롤한다.
-          className="max-h-[45%] shrink-0 space-y-4 overflow-auto rounded-lg border border-line bg-surface p-4"
+          //
+          // **여기만 `Card` 를 못 쓴다.** `Card` 는 `div` 를 내는데 이 자리는 `form` 이어야
+          // 한다. 생김새는 `Card` 와 같아야 하므로 클래스를 손으로 맞춰 둔다 — `Card` 에
+          // 다형(`as`) 을 들이는 것이 나은지는 프리미티브가 더 쌓인 뒤에 정한다.
+          className="max-h-[45%] shrink-0 space-y-4 overflow-auto rounded-lg border border-line bg-surface p-4 shadow-card"
           onSubmit={(event) => {
             event.preventDefault();
             void startRepair();
@@ -381,20 +387,13 @@ export function RunStreamPanel({
           </div>
 
           <div className="flex items-center gap-2">
-            <button
-              type="submit"
-              className="rounded bg-accent px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
-              disabled={starting || !repairReady}
-            >
+            {/* 폼 안이라 `type="submit"` 을 명시한다 — Button 의 기본값은 "button" 이다. */}
+            <Button type="submit" variant="primary" size="sm" disabled={starting || !repairReady}>
               시작
-            </button>
-            <button
-              type="button"
-              className="rounded border border-line px-3 py-1.5 text-sm text-ink-muted"
-              onClick={() => setRepairOpen(false)}
-            >
+            </Button>
+            <Button size="sm" onClick={() => setRepairOpen(false)}>
               취소
-            </button>
+            </Button>
             {repairBlockReason !== null && (
               <span className="text-xs text-ink-muted">{repairBlockReason}</span>
             )}
@@ -528,7 +527,7 @@ function RunList(): JSX.Element {
           {error}
         </p>
       )}
-      <div className="overflow-hidden rounded-lg border border-line bg-surface">
+      <Card className="overflow-hidden">
         <table className="w-full text-left text-sm">
           <tbody className="divide-y divide-line-subtle">
             {runs === null && (
@@ -561,7 +560,7 @@ function RunList(): JSX.Element {
             })}
           </tbody>
         </table>
-      </div>
+      </Card>
     </section>
   );
 }

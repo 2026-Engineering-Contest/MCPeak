@@ -1,6 +1,7 @@
 import type { JSX } from "react";
 import type { SessionMode, TestOptions } from "../../build-test-argv.js";
 import { ArgChips } from "../../components/ArgChips.js";
+import { Button } from "../../components/Button.js";
 import { DETERMINISM_SESSION_HINT, TestOptionsPanel } from "../../components/TestOptionsPanel.js";
 import { Field, INPUT_CLASS } from "../../generate/steps/fields.js";
 import type { LastRun } from "../../last-run.js";
@@ -80,13 +81,9 @@ export function StepRunOptions(props: {
             </span>{" "}
             로 실행했습니다.
           </p>
-          <button
-            type="button"
-            className="shrink-0 rounded border border-line px-3 py-1 text-xs text-ink-muted"
-            onClick={props.onUseLastRun}
-          >
+          <Button size="xs" className="shrink-0" onClick={props.onUseLastRun}>
             지난 실행값 쓰기
-          </button>
+          </Button>
         </div>
       )}
 

@@ -1,6 +1,7 @@
 import type { JSX } from "react";
 import { useState } from "react";
 import { INPUT_CLASS } from "../generate/steps/fields.js";
+import { Button } from "./Button.js";
 
 /**
  * 서버 인자 칩 목록 + 하나씩 추가 입력.
@@ -81,14 +82,14 @@ export function ArgChips(props: {
             }
           }}
         />
-        <button
-          type="button"
+        <Button
+          size="sm"
+          className="shrink-0 whitespace-nowrap"
           disabled={disabled}
-          className="shrink-0 whitespace-nowrap rounded border border-line px-3 py-1.5 text-sm text-ink-muted hover:text-ink disabled:opacity-50"
           onClick={addArg}
         >
           추가
-        </button>
+        </Button>
       </div>
     </div>
   );

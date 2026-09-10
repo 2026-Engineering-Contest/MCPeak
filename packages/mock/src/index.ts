@@ -400,7 +400,9 @@ export function assertMockDefinition(
   const fail = (why: string): never => {
     throw new Error(
       [
-        `→ ${source} 가 올바르지 않습니다: ${why}`,
+        // 값을 대시 뒤로 뺀다. `source` 는 `serveStdio` 가 넘기는 파일 경로라 받침이 갈리는데,
+        // 조사를 어느 쪽으로 고정해도 한쪽이 틀린다 — `key-violation.ts` 가 명문화한 규칙이다.
+        `→ 올바르지 않은 목 정의입니다 — ${source}: ${why}`,
         '→ 형식: { "tools": [ { "name": ..., "inputSchema": ... } ], "responses": [ { "tool": ..., "result": ... } ] }',
       ].join("\n"),
     );

@@ -745,6 +745,13 @@ describe("isError 응답 주입 (#180)", () => {
     }
     expect(seen.size).toBe(1);
   });
+});
+
+/**
+ * 주입 시점에 거절하는 문장들. `isError` 주입과 무관해서 따로 둔다 — 실패한 테스트 이름만
+ * 보고 어느 계약이 깨졌는지 알 수 있어야 한다.
+ */
+describe("@mcpeak/mock — 주입 거절 문안", () => {
   /**
    * 응답은 `JSON.stringify` 로 실어 보낸다(#415). 실을 수 없는 값을 주면 지금까지는 목이
    * 아무 말도 하지 않았고, 사용자는 클라이언트 zod 덤프나 Node TypeError 원문을 받았다 —
@@ -877,6 +884,26 @@ describe("isError 응답 주입 (#180)", () => {
           `→ 목 서버를 띄우지 못했습니다: 포트 ${port} 이 이미 사용 중입니다 (127.0.0.1).`,
           "→ port 를 생략하면 빈 포트를 자동으로 받습니다. 고정 포트는 병렬 실행 시 충돌합니다.",
           "→ 앞서 띄운 목의 close() 를 빠뜨리지 않았는지도 확인하세요.",
+        ].join("\n"),
+      ),
+    );
+  });
+  /**
+   * `assertMockDefinition` 의 문장은 어느 테스트도 고정하지 않고 있었다 — 바꿔도 아무것도
+   * 빨개지지 않는 상태였다(#417).
+   *
+   * 값 뒤에 조사를 붙이지 않는다. `source` 는 `serveStdio` 가 넘기는 파일 경로라 받침이
+   * 갈리고, 어느 쪽으로 고정해도 한쪽이 틀린다 — `key-violation.ts` 가 명문화한 규칙인데
+   * 이 자리만 예외였다. 값을 대시 뒤로 뺀다.
+   */
+  it("올바르지 않은 정의는 값 뒤에 조사를 붙이지 않고 거절한다", async () => {
+    await expect(
+      createMockServer({ tools, responses: [{ tool: "없는툴", result: { ok: true } }] }),
+    ).rejects.toThrow(
+      new Error(
+        [
+          "→ 올바르지 않은 목 정의입니다 — createMockServer 옵션: responses[0] 의 툴 '없는툴' 이 tools 에 없습니다. 있는 툴: get_weather, add",
+          '→ 형식: { "tools": [ { "name": ..., "inputSchema": ... } ], "responses": [ { "tool": ..., "result": ... } ] }',
         ].join("\n"),
       ),
     );

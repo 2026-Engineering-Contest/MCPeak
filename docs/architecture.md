@@ -42,11 +42,18 @@ flowchart LR
 의존 방향은 단방향이다. 역참조·순환 금지.
 
 ```
+dashboard → cli → generate → runner → core
+dashboard → core / runner / generate / record
 cli → generate → runner → core
 cli → runner → core
 cli → mock → core
 cli → record            (core 에 의존하지 않는다 — ADR-0059)
 ```
+
+화살표는 인접 계층만 의존한다는 뜻이 아니다. 상위 패키지는 필요한 하위 계층을 직접 불러 조립할
+수 있다. 허용 경계는 "항상 아래로만 향하며 역참조와 순환이 없다"이고, 각 `package.json`의 내부
+의존이 그 경계를 벗어나지 않는지는 dashboard의 dependency-boundary 테스트가 검사한다
+([ADR-0091](./adr/0091-패키지는-하위-계층을-직접-의존할-수-있다.md)).
 
 ### `generate → runner`의 현재 상태
 

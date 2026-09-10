@@ -218,9 +218,11 @@ Go 등)도 범위 밖입니다 — 주입이 Node 의 `--import` 훅이라 애�
 | [`@mcpeak/mock`](./packages/mock) | 목 MCP 서버(Streamable HTTP · stdio) · 응답 주입 |
 | [`@mcpeak/dashboard`](./packages/dashboard) | 로컬 웹 UI. `mcpeak-dashboard` 로 띄웁니다 ([ADR-0046](./docs/adr/0046-대시보드를-로컬-웹서버로-만든다.md), 제안) |
 
-의존 방향은 단방향입니다: `cli` → `runner`/`generate`/`record`/`mock` → `core`.
-`dashboard` 는 `cli` 가 공개하는 `@mcpeak/cli/commands` 를 불러 같은 커맨드 함수를 씁니다 —
-판정 로직을 두 벌 만들지 않기 위해서입니다.
+의존 방향은 단방향입니다: `dashboard` → `cli` → `runner`/`generate`/`record`/`mock` → `core`.
+화살표는 인접 계층만 거치라는 뜻이 아니라 **오른쪽에 있는 하위 계층으로만 의존할 수 있다**는
+뜻입니다. 그래서 `dashboard` 는 CLI 커맨드에 주입할 `core`·`runner`·`generate`·`record`를
+직접 불러 조립할 수 있습니다. 사용자 흐름과 판정은 `@mcpeak/cli/commands`의 커맨드 함수를
+재사용해 두 벌로 만들지 않습니다 ([ADR-0091](./docs/adr/0091-패키지는-하위-계층을-직접-의존할-수-있다.md)).
 
 ## 설계 결정
 

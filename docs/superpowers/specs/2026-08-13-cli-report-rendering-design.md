@@ -336,8 +336,8 @@ passed / failed / timed out / cancelled / not run
 판단이다.
 
 **진단 글은 고르기만 하고 새로 만들지 않는다.** 케이스 블록이 이미 찍은 줄 하나를 옮겨 온다.
-출처 진단은 `operation.diagnostic` 이 있으면 그것이고, 없으면 그려지는 첫 단언의 `diagnostic`
-이다. 그 진단에서 아래 순서로 처음 값이 있는 것을 쓴다.
+출처 진단은 `operation.diagnostic` 이 있으면 그것이고, 없으면 **실패한(`failed`) 첫 단언**의
+`diagnostic` 이다. `skipped` 단언은 건너뛴다. 그 진단에서 아래 순서로 처음 값이 있는 것을 쓴다.
 
 1. `violations[0].message`
 2. `notes[0]`
@@ -346,8 +346,8 @@ passed / failed / timed out / cancelled / not run
 `message` 를 먼저 보지 않는 이유가 이 순서의 핵심이다. `IS_ERROR_MISMATCH` 의 `message` 는
 기대와 실제의 참거짓만 말하는 고정 문안이라, 실패 여러 건이 전부 같은 문장으로 채워진다. 서버가
 준 이유(`notes`)와 우리가 낸 위반(`violations`)이 케이스를 구분한다. 위반을 notes 보다 먼저
-보는 것은 ADR-0027 의 순서와 같다. 출처가 `skipped` 단언이어도 요약 행은 `(건너뜀) ` 접두를
-붙이지 않는다. 건너뜀 여부는 케이스 블록에서 읽는다.
+보는 것은 ADR-0027 의 순서와 같다. `skipped` 단언을 출처에서 빼는 것은 그 진단이 "무엇을 못
+검사했나" 이지 "왜 실패했나" 가 아니기 때문이다. 건너뜀 여부는 케이스 블록에서 읽는다.
 
 글머리 `→` 는 §5.3 · §5.4 의 규칙을 그대로 쓴다. 글이 이미 `→` 로 시작하면 붙이지 않는다(#280).
 

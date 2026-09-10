@@ -234,10 +234,17 @@ const clampRecapText = (escaped: string): string =>
  * 경우가 많아(`IS_ERROR_MISMATCH`) 실패 여러 건이 전부 같은 문장이 된다. 서버가 준 이유와
  * 우리가 낸 위반이 케이스를 구분하므로 그쪽을 먼저 본다(ADR-0027 의 순서와 같다).
  *
+ * 단언 중에서는 **실패한 단언**을 고른다. `skipped` 단언의 진단은 "무엇을 못 검사했나" 이지
+ * "왜 실패했나" 가 아니다. 실패 케이스는 케이스 레벨 진단이 있거나 실패한 단언이 반드시 있으므로
+ * (`executor.ts` 의 status 판정) 이렇게 좁혀도 잃는 것이 없다. PR #453 에서 가져온 규칙이다.
+ *
  * 반환값은 이스케이프하지 않은 원문이다. 이스케이프는 호출부가 한다.
  */
 const recapText = (result: TestCaseResult): string | undefined => {
-  const source = result.operation.diagnostic ?? result.assertions.find(isDrawn)?.diagnostic;
+  const source =
+    result.operation.diagnostic ??
+    result.assertions.find((assertion) => assertion.status === "failed" && isDrawn(assertion))
+      ?.diagnostic;
   if (source === undefined) return undefined;
   return source.violations?.[0]?.message ?? source.notes?.[0] ?? source.message;
 };

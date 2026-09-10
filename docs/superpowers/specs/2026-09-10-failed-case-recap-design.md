@@ -236,16 +236,17 @@ R2 의 대가는 `위반 3건` 같은 총량 정보가 요약 행에서 빠지�
 1. **출처 진단을 고른다.**
    1. `result.operation.diagnostic` 이 있으면 그것. (케이스 레벨 진단이 있으면 단언까지 가지
       못한 실패이고, 케이스 블록도 이것을 먼저 찍는다. `reporter.ts:222`)
-   2. 없으면 `result.assertions` 에서 `isDrawn` 이 참인 **첫 단언**의 `diagnostic`.
-      `isDrawn` 은 케이스 블록이 그리는 단언을 고르는 기존 술어다(`reporter.ts:135`).
+   2. 없으면 `result.assertions` 에서 **`status` 가 `failed` 이고 진단이 있는 첫 단언**의
+      `diagnostic`. `skipped` 단언은 건너뛴다. 실패 케이스는 케이스 레벨 진단이 있거나 실패한
+      단언이 반드시 있으므로(`executor.ts:482` 의 status 판정) 이렇게 좁혀도 잃는 것이 없다.
+      PR #453 이 먼저 택한 규칙이고 그쪽이 더 정확해 가져왔다.
 2. **그 진단에서 줄 하나를 고른다.**
    1. `violations[0].message`
    2. 없으면 `notes[0]`
    3. 없으면 `message`
 
-`skipped` 단언도 `isDrawn` 이 참이므로 출처가 될 수 있다. 그 경우 케이스 블록은 `(건너뜀) `
-접두를 붙이지만 **요약 행은 붙이지 않는다.** 접두는 그 단언이 실행되지 않았다는 뜻이고, 요약
-행이 답하는 것은 "이 케이스를 왜 봐야 하는가" 다. 건너뜀 여부는 블록에서 읽는다.
+`skipped` 단언은 출처가 되지 않는다. 그 진단은 "무엇을 못 검사했나" 이지 "왜 실패했나" 가
+아니고, 요약 행이 답하는 것은 후자다. 건너뜀 여부는 케이스 블록에서 읽는다.
 
 ### 4.4 진단 글의 길이 상한
 
@@ -359,7 +360,10 @@ const clampRecapText = (escaped: string): string =>
  * 반환값은 이스케이프하지 않은 원문이다. 이스케이프는 호출부가 한다.
  */
 const recapText = (result: TestCaseResult): string | undefined => {
-  const source = result.operation.diagnostic ?? result.assertions.find(isDrawn)?.diagnostic;
+  const source =
+    result.operation.diagnostic ??
+    result.assertions.find((assertion) => assertion.status === "failed" && isDrawn(assertion))
+      ?.diagnostic;
   if (source === undefined) return undefined;
   return source.violations?.[0]?.message ?? source.notes?.[0] ?? source.message;
 };

@@ -311,7 +311,6 @@ describe("renderReport", () => {
     it("화살표가 둘 이상이면 그대로 둔다", () => {
       // 서버가 두 개를 쓴 것은 서버 문장이다. 우리가 하나를 안 붙이는 데까지가 우리 몫이다.
       const rendered = renderReport(withNotes(["→ → 서버가 두 개를 보냈다"]));
-
       // 절도 같은 줄을 한 번 더 싣는다(#446). 이 단언이 보는 것은 케이스 블록이다.
       const blockLines = rendered.split("\n").filter((line) => line.startsWith(INDENT_FOR_TEST));
       expect(countOf(blockLines.join("\n"), "→")).toBe(2);
@@ -1108,6 +1107,53 @@ describe("renderReport", () => {
       ]);
 
       expect(lineWith(renderReport(report), "  ✗ op")).toBe("  ✗ op  → 케이스 레벨 문장");
+    });
+
+    it("건너뛴 단언이 앞에 있어도 실패한 단언의 진단을 싣는다", () => {
+      // "무엇을 못 검사했나" 가 아니라 "왜 실패했나" 가 절의 질문이다. PR #453 에서 가져온 규칙이다.
+      const report = makeReport([
+        testCase({
+          id: "skip-then-fail",
+          name: "이름",
+          status: "failed",
+          assertions: [
+            assertion("toolExists", "skipped", diagnostic("검사하지 못했다", "힌트")),
+            assertion("isError", "failed", diagnostic("여기서 실패했다", "힌트")),
+          ],
+        }),
+      ]);
+
+      expect(lineWith(renderReport(report), "  ✗ skip-then-fail")).toBe(
+        "  ✗ skip-then-fail  → 여기서 실패했다",
+      );
+    });
+
+    it("절의 순서는 케이스 목록의 순서다", () => {
+      // 위 목록에서 본 순서와 같아야 눈이 대응시킬 수 있다. 다시 정렬하지 않는다.
+      const report = makeReport([
+        failing("zeta", diagnostic("셋째", "힌트")),
+        testCase({ id: "ok", name: "통과", status: "passed" }),
+        failing("alpha", diagnostic("첫째", "힌트")),
+        testCase({
+          id: "mid",
+          name: "타임아웃",
+          status: "timedOut",
+          operationDiagnostic: diagnostic("둘째", "힌트"),
+        }),
+      ]);
+
+      const output = renderReport(report);
+      expect(output.slice(output.indexOf("실패한 케이스"))).toBe(
+        [
+          "실패한 케이스",
+          "  ✗ zeta   → 셋째",
+          "  ✗ alpha  → 첫째",
+          "  ⧖ mid    → 둘째",
+          "",
+          "1 passed, 2 failed, 1 timed out  (4 total)",
+          "",
+        ].join("\n"),
+      );
     });
 
     it("타임아웃 케이스도 절에 넣고 ⧖ 로 찍는다", () => {

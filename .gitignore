@@ -20,5 +20,7 @@ coverage/
 # Local Claude configuration
 /CLAUDE.local.md
 /.claude/worktrees/
+/.claude/launch.json
+
 # adoption.md §1.6 의 공개 서버 조사 재현 출력. 서버마다 파일이 하나씩 생긴다.
 /.survey-out/

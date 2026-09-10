@@ -265,11 +265,12 @@ const failedRecapLines = (report: RunnerReport, color: boolean): readonly string
     RECAP_HEADING,
     ...members.map((result) => {
       const mark = sgr(MARKS[result.status].sgr, MARKS[result.status].glyph, color);
-      const id = pad(escapeTerminalText(result.spec.id), idColumn);
+      const escapedId = escapeTerminalText(result.spec.id);
       const text = recapText(result);
+      // 글이 없으면 열을 채우지 않는다. 뒤에 올 것이 없는데 패딩을 넣으면 줄 끝에 공백만 남는다.
       return text === undefined
-        ? `${RECAP_INDENT}${mark} ${id}`
-        : `${RECAP_INDENT}${mark} ${id}${GAP}${bulletBody(clampRecapText(escapeTerminalText(text)))}`;
+        ? `${RECAP_INDENT}${mark} ${escapedId}`
+        : `${RECAP_INDENT}${mark} ${pad(escapedId, idColumn)}${GAP}${bulletBody(clampRecapText(escapeTerminalText(text)))}`;
     }),
     "",
   ];

@@ -1229,6 +1229,19 @@ describe("renderReport", () => {
       expect(row).toBe(`  ${ESC}[31m✗${ESC}[0m colored  → 메시지`);
     });
 
+    it("진단이 없는 실패 케이스는 기호와 id 만 내고 줄 끝에 공백을 남기지 않는다", () => {
+      // 계약상 오지 않는다. `isDrawn` 이 같은 자리에서 같은 방어를 하고, 그때 케이스 블록도
+      // 아무 줄을 안 낸다. 화면이 말하지 않은 것을 절이 지어내지 않는다(ADR-0092).
+      const report = makeReport([
+        testCase({ id: "no-diag", name: "진단 없음", status: "failed" }),
+        failing("has-diag", diagnostic("메시지", "힌트")),
+      ]);
+
+      const row = lineWith(renderReport(report), "  ✗ no-diag");
+      expect(row).toBe("  ✗ no-diag");
+      expect(row).not.toMatch(/\s$/);
+    });
+
     it("중단 줄이 있으면 절은 중단 줄 뒤, 요약 줄 앞이다", () => {
       const report = makeReport(
         [

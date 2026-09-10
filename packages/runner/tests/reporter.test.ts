@@ -15,6 +15,9 @@ import { renderReport } from "../src/index.js";
 const ESC = "\u001b";
 const ESCAPED_ESC = "\\u001b";
 
+/** `renderReport` 가 케이스 본문 줄에 쓰는 들여쓰기. reporter.ts 의 INDENT 와 같은 값이다. */
+const INDENT_FOR_TEST = "    ";
+
 type AssertionType = AssertionResult["spec"]["type"];
 
 const assertionSpec = (type: AssertionType): AssertionResult["spec"] =>
@@ -148,6 +151,9 @@ describe("renderReport", () => {
         "✗ weather  날씨를 조회한다",
         "    isError  진단 메시지",
         "    해결: 진단 힌트",
+        "",
+        "실패한 케이스",
+        "  ✗ weather  → 진단 메시지",
         "",
         "1 failed  (1 total)",
         "",
@@ -306,7 +312,9 @@ describe("renderReport", () => {
       // 서버가 두 개를 쓴 것은 서버 문장이다. 우리가 하나를 안 붙이는 데까지가 우리 몫이다.
       const rendered = renderReport(withNotes(["→ → 서버가 두 개를 보냈다"]));
 
-      expect(countOf(rendered, "→")).toBe(2);
+      // 절도 같은 줄을 한 번 더 싣는다(#446). 이 단언이 보는 것은 케이스 블록이다.
+      const blockLines = rendered.split("\n").filter((line) => line.startsWith(INDENT_FOR_TEST));
+      expect(countOf(blockLines.join("\n"), "→")).toBe(2);
       expect(rendered).toContain("    → → 서버가 두 개를 보냈다");
     });
 
@@ -448,6 +456,9 @@ describe("renderReport", () => {
         "    타임아웃 진단",
         "    해결: 타임아웃 힌트",
         "",
+        "실패한 케이스",
+        "  ⧖ slow-call  → 타임아웃 진단",
+        "",
         "1 timed out  (1 total)",
         "",
       ].join("\n"),
@@ -509,8 +520,12 @@ describe("renderReport", () => {
     ]);
 
     const output = renderReport(report);
-    for (const glyph of ["✓", "✗", "⧖", "⊘", "·"]) {
+    // 절에 다시 실리는 것은 실패와 타임아웃뿐이다(설계 문서 §3.2).
+    for (const glyph of ["✓", "⊘", "·"]) {
       expect(countOf(output, glyph)).toBe(1);
+    }
+    for (const glyph of ["✗", "⧖"]) {
+      expect(countOf(output, glyph)).toBe(2);
     }
   });
 
@@ -985,6 +1000,252 @@ describe("renderReport", () => {
 
     it("한 건이어도 같은 문장을 쓴다", () => {
       expect(renderReport(makeReport(unverifiedCases(1)))).toContain("거절을 기대한 케이스 1건은");
+    });
+  });
+
+  /**
+   * 실패한 케이스만 모은 절 (#446 · 설계 문서 §4). 요약 줄 바로 앞에 놓이고, 케이스 블록이
+   * 이미 찍은 진단 줄 하나를 옮겨 온다. 새 문안을 만들지 않는다.
+   */
+  describe("실패한 케이스 절", () => {
+    const failing = (
+      id: string,
+      diagnosticValue: RunnerDiagnostic,
+      status: TestCaseResult["status"] = "failed",
+    ): TestCaseResult =>
+      testCase({
+        id,
+        name: `${id} 이름`,
+        status,
+        assertions: [assertion("isError", "failed", diagnosticValue)],
+      });
+
+    it("실패도 타임아웃도 없으면 절을 내지 않는다", () => {
+      const report = makeReport([
+        testCase({ id: "a", name: "첫 번째", status: "passed" }),
+        testCase({ id: "b", name: "두 번째", status: "passed" }),
+      ]);
+
+      expect(renderReport(report)).not.toContain("실패한 케이스");
+    });
+
+    it("요약 줄 바로 앞에 절을 낸다", () => {
+      const report = makeReport([
+        testCase({ id: "ok", name: "통과", status: "passed" }),
+        failing("city-number", {
+          code: "IS_ERROR_MISMATCH",
+          message: "정상 응답을 기대했지만 오류 응답을 받았습니다.",
+          hint: "툴 입력값과 서버의 오류 응답을 확인하세요.",
+          notes: ["Repository path 'example' is outside the allowed repository"],
+        }),
+      ]);
+
+      expect(renderReport(report)).toBe(
+        [
+          "날씨 스위트  (2 cases)",
+          "",
+          "✓ ok           통과",
+          "✗ city-number  city-number 이름",
+          "    isError  정상 응답을 기대했지만 오류 응답을 받았습니다.",
+          "    → Repository path 'example' is outside the allowed repository",
+          "    해결: 툴 입력값과 서버의 오류 응답을 확인하세요.",
+          "",
+          "실패한 케이스",
+          "  ✗ city-number  → Repository path 'example' is outside the allowed repository",
+          "",
+          "1 passed, 1 failed  (2 total)",
+          "",
+        ].join("\n"),
+      );
+    });
+
+    it("위반이 있으면 위반 첫 줄을 싣는다", () => {
+      const report = makeReport([
+        failing(
+          "schema",
+          diagnostic("응답이 기대 스키마와 다릅니다. 위반 2건.", "힌트", [
+            "$.temp: 필수 필드가 없습니다. 발견된 필드: 'temperature'",
+            "$.unit: 스키마에 없는 필드입니다.",
+          ]),
+        ),
+      ]);
+
+      expect(lineWith(renderReport(report), "  ✗ schema")).toBe(
+        "  ✗ schema  → $.temp: 필수 필드가 없습니다. 발견된 필드: 'temperature'",
+      );
+    });
+
+    it("위반이 없고 notes 가 있으면 notes 첫 줄을 싣는다", () => {
+      const report = makeReport([
+        failing("iserror", {
+          code: "IS_ERROR_MISMATCH",
+          message: "정상 응답을 기대했지만 오류 응답을 받았습니다.",
+          hint: "힌트",
+          notes: ["ENOENT: no such file or directory", "두 번째 줄"],
+        }),
+      ]);
+
+      expect(lineWith(renderReport(report), "  ✗ iserror")).toBe(
+        "  ✗ iserror  → ENOENT: no such file or directory",
+      );
+    });
+
+    it("위반도 notes 도 없으면 진단 message 를 싣는다", () => {
+      const report = makeReport([failing("plain", diagnostic("메시지만 있다", "힌트"))]);
+
+      expect(lineWith(renderReport(report), "  ✗ plain")).toBe("  ✗ plain  → 메시지만 있다");
+    });
+
+    it("케이스 레벨 진단이 단언 진단보다 앞선다", () => {
+      const report = makeReport([
+        testCase({
+          id: "op",
+          name: "이름",
+          status: "failed",
+          operationDiagnostic: diagnostic("케이스 레벨 문장", "힌트"),
+          assertions: [assertion("isError", "failed", diagnostic("단언 문장", "힌트"))],
+        }),
+      ]);
+
+      expect(lineWith(renderReport(report), "  ✗ op")).toBe("  ✗ op  → 케이스 레벨 문장");
+    });
+
+    it("타임아웃 케이스도 절에 넣고 ⧖ 로 찍는다", () => {
+      const report = makeReport([
+        testCase({
+          id: "slow",
+          name: "느린 호출",
+          status: "timedOut",
+          operationDiagnostic: diagnostic("제한 시간 안에 완료되지 않았습니다.", "힌트"),
+        }),
+      ]);
+
+      expect(lineWith(renderReport(report), "  ⧖ slow")).toBe(
+        "  ⧖ slow  → 제한 시간 안에 완료되지 않았습니다.",
+      );
+    });
+
+    it("취소와 미실행은 절에 넣지 않는다", () => {
+      const report = makeReport([
+        failing("real-failure", diagnostic("메시지", "힌트")),
+        testCase({
+          id: "aborted",
+          name: "취소",
+          status: "cancelled",
+          operationDiagnostic: diagnostic("외부 요청으로 취소되었습니다.", "힌트"),
+        }),
+        testCase({ id: "skipped-case", name: "미실행", status: "notRun" }),
+      ]);
+
+      const lines = renderReport(report).split("\n");
+      const recap = lines
+        .slice(lines.indexOf("실패한 케이스") + 1)
+        .filter((line) => line.startsWith("  "));
+
+      expect(recap).toEqual(["  ✗ real-failure  → 메시지"]);
+    });
+
+    it("절의 행 수가 failed 와 timedOut 의 합이다", () => {
+      const report = makeReport([
+        testCase({ id: "p", name: "통과", status: "passed" }),
+        failing("f1", diagnostic("메시지1", "힌트")),
+        failing("f2", diagnostic("메시지2", "힌트")),
+        testCase({
+          id: "t1",
+          name: "타임아웃",
+          status: "timedOut",
+          operationDiagnostic: diagnostic("메시지3", "힌트"),
+        }),
+      ]);
+
+      const lines = renderReport(report).split("\n");
+      const start = lines.indexOf("실패한 케이스");
+      const rows = lines
+        .slice(start + 1)
+        .filter((line) => line.startsWith("  ✗") || line.startsWith("  ⧖"));
+
+      expect(rows).toHaveLength(report.summary.failed + report.summary.timedOut);
+    });
+
+    it("id 열은 절에 실린 케이스끼리만 맞춘다", () => {
+      const report = makeReport([
+        testCase({ id: "a-very-long-passing-id", name: "통과", status: "passed" }),
+        failing("f1", diagnostic("메시지1", "힌트")),
+        failing("longer-id", diagnostic("메시지2", "힌트")),
+      ]);
+
+      const rendered = renderReport(report);
+      expect(lineWith(rendered, "  ✗ f1")).toBe("  ✗ f1         → 메시지1");
+      expect(lineWith(rendered, "  ✗ longer-id")).toBe("  ✗ longer-id  → 메시지2");
+    });
+
+    it("절의 id 와 글도 제어 문자를 이스케이프한다", () => {
+      const report = makeReport([failing(`c1${ESC}[2J`, diagnostic(`메시지${ESC}[2J`, "힌트"))]);
+
+      const rendered = renderReport(report);
+      const row = lineWith(rendered, "  ✗ c1");
+      expect(row).toContain(`c1${ESCAPED_ESC}[2J`);
+      expect(row).toContain(`메시지${ESCAPED_ESC}[2J`);
+      expect(row).not.toContain(`${ESC}[2J`);
+    });
+
+    it("서버 줄이 이미 → 로 시작하면 절에서도 겹치지 않는다", () => {
+      const report = makeReport([
+        failing("arrowed", {
+          code: "IS_ERROR_MISMATCH",
+          message: "메시지",
+          hint: "힌트",
+          notes: ["→ 서버가 붙인 글머리"],
+        }),
+      ]);
+
+      const rendered = renderReport(report);
+      expect(rendered).not.toContain("→ →");
+      expect(lineWith(rendered, "  ✗ arrowed")).toBe("  ✗ arrowed  → 서버가 붙인 글머리");
+    });
+
+    it("100자를 넘는 글은 99자에서 자르고 … 를 붙인다", () => {
+      const long = "가".repeat(150);
+      const report = makeReport([failing("long", diagnostic(long, "힌트"))]);
+
+      const row = lineWith(renderReport(report), "  ✗ long");
+      const text = row.slice("  ✗ long  → ".length);
+      expect(Array.from(text)).toHaveLength(100);
+      expect(text.endsWith("…")).toBe(true);
+      expect(text.startsWith("가".repeat(99))).toBe(true);
+    });
+
+    it("100자 이하인 글은 자르지 않는다", () => {
+      const exact = "나".repeat(100);
+      const report = makeReport([failing("exact", diagnostic(exact, "힌트"))]);
+
+      expect(lineWith(renderReport(report), "  ✗ exact")).toBe(`  ✗ exact  → ${exact}`);
+    });
+
+    it("절은 기호에만 색을 넣는다", () => {
+      const report = makeReport([failing("colored", diagnostic("메시지", "힌트"))]);
+
+      const row = lineWith(renderReport(report, { color: true }), "colored  →");
+      expect(row).toBe(`  ${ESC}[31m✗${ESC}[0m colored  → 메시지`);
+    });
+
+    it("중단 줄이 있으면 절은 중단 줄 뒤, 요약 줄 앞이다", () => {
+      const report = makeReport(
+        [
+          failing("f1", diagnostic("메시지", "힌트")),
+          testCase({ id: "n1", name: "미실행", status: "notRun" }),
+        ],
+        { stopReason: { type: "timeout", caseId: "f1" } },
+      );
+
+      const lines = renderReport(report).split("\n");
+      const stopIndex = lines.findIndex((line) => line.startsWith("중단:"));
+      const recapIndex = lines.indexOf("실패한 케이스");
+      const summaryIndex = lines.findIndex((line) => line.includes("total)"));
+
+      expect(stopIndex).toBeGreaterThanOrEqual(0);
+      expect(recapIndex).toBeGreaterThan(stopIndex);
+      expect(summaryIndex).toBe(recapIndex + 3);
     });
   });
 });

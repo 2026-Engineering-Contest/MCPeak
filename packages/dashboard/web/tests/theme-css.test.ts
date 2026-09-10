@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 /**
- * `theme.css` 의 계약을 고정한다 (ADR-0092).
+ * `theme.css` 의 계약을 고정한다 (ADR-0093).
  *
  * **왜 CSS 를 텍스트로 읽어 검사하는가.** 이 파일이 지키려는 규칙들 — 테마 값을 한 곳에서만
  * 선언한다, 터미널 팔레트는 테마로 갈리지 않는다 — 은 지금까지 주석으로만 적혀 있었다.

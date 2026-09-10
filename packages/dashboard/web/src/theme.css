@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 /*
- * 시각 계약의 단일 지점이다 (ADR-0092).
+ * 시각 계약의 단일 지점이다 (ADR-0093).
  *
  * **테마가 갈리는 값은 `light-dark()` 한 줄로만 적는다.** 예전에는 라이트 기본값을 여기
  * 두고 다크 값을 두 블록(`[data-theme="dark"]` 과 `prefers-color-scheme` 위임)에 똑같이
@@ -146,7 +146,7 @@
 
   /*
    * 움직임. 이 PR 은 토큰만 놓고 어디에도 걸지 않는다 — 실제로 쓰는 것은 공용
-   * 프리미티브(ADR-0092 의 PR 2)다. 아래 `prefers-reduced-motion` 차단막을 **먼저**
+   * 프리미티브(ADR-0093 의 PR 2)다. 아래 `prefers-reduced-motion` 차단막을 **먼저**
    * 두는 이유가 그것이다. 트랜지션을 넣는 PR 에서 같이 넣기로 하면 잊는다.
    */
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);

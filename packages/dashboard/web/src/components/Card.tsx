@@ -1,7 +1,7 @@
 import type { HTMLAttributes, JSX } from "react";
 
 /**
- * 화면 위에 얹힌 면 하나 (ADR-0092 PR 2).
+ * 화면 위에 얹힌 면 하나 (ADR-0093 PR 2).
  *
  * 예전에는 `rounded-lg border border-line bg-surface` 를 5곳이 각자 적었고, 그림자가
  * 저장소 전체에 0개라 **카드와 페이지 배경이 같은 평면에 있었다** — 무엇이 조작 대상인지

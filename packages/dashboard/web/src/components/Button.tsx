@@ -1,7 +1,7 @@
 import type { ButtonHTMLAttributes, JSX } from "react";
 
 /**
- * 버튼 하나 (ADR-0092 PR 2).
+ * 버튼 하나 (ADR-0093 PR 2).
  *
  * 예전에는 화면마다 유틸리티를 직접 적었다. 프라이머리만 10곳에 크기 3종이 있었고,
  * **hover 상태가 한 곳도 없었으며**, `focus-visible` 은 저장소 전체에 0개였다 —

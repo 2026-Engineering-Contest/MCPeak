@@ -145,6 +145,42 @@ const summaryLine = (summary: RunnerSummary): string => {
   return `${items.join(", ")}${GAP}(${summary.total} total)`;
 };
 
+/** 실패 케이스를 대표하는 첫 진단. 케이스 목록에서 이미 그린 문장을 그대로 다시 쓴다. */
+const firstFailureDiagnostic = (result: TestCaseResult): RunnerDiagnostic | undefined => {
+  if (result.operation.diagnostic !== undefined) return result.operation.diagnostic;
+  return result.assertions.find(
+    (assertion) => assertion.status === "failed" && assertion.diagnostic !== undefined,
+  )?.diagnostic;
+};
+
+/**
+ * 긴 케이스 목록 뒤에서 실패만 다시 찾을 수 있게 모은다(#446).
+ * failed 만 대상이다. timedOut·cancelled·notRun 은 판정이 다르므로 섞지 않는다.
+ * 진단이 없더라도 케이스 id는 빠뜨리지 않는다. 없는 진단 문안을 새로 지어내지 않는다.
+ */
+const failedCaseLines = (cases: readonly TestCaseResult[], color: boolean): readonly string[] => {
+  const failed = cases.filter((result) => result.status === "failed");
+  if (failed.length === 0) return [];
+
+  const idColumn = failed.reduce(
+    (max, result) => Math.max(max, width(escapeTerminalText(result.spec.id))),
+    0,
+  );
+  const mark = sgr(MARKS.failed.sgr, MARKS.failed.glyph, color);
+
+  return [
+    "",
+    "실패한 케이스",
+    ...failed.map((result) => {
+      const id = escapeTerminalText(result.spec.id);
+      const diagnostic = firstFailureDiagnostic(result);
+      return diagnostic === undefined
+        ? `${GAP}${mark} ${id}`
+        : `${GAP}${mark} ${pad(id, idColumn)}${GAP}${BULLET} ${escapeTerminalText(diagnostic.message)}`;
+    }),
+  ];
+};
+
 /**
  * 거절 근거를 확인하지 못한 케이스가 있다는 고지. 설계 문서 §5.1 이 문안을 전량 고정한다.
  *
@@ -258,6 +294,7 @@ export function renderReport(report: RunnerReport, options?: RenderReportOptions
     lines.push("");
   }
   lines.push(summaryLine(report.summary));
+  lines.push(...failedCaseLines(report.cases, color));
   lines.push(...rejectionNoticeLines(report.summary));
   lines.push(...payloadNoticeLines(report.payload));
 

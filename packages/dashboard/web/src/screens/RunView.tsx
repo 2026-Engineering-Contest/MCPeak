@@ -11,6 +11,7 @@ import { FlowChip } from "../components/FlowChip.js";
 import { LogPanel } from "../components/LogPanel.js";
 import { QuestionPanel } from "../components/QuestionPanel.js";
 import { StatusBadge } from "../components/StatusBadge.js";
+import { countOutputLines } from "../output-lines.js";
 import { type AiProvider, MODEL_OPTIONS } from "../provider-models.js";
 import { repairBundlePathOf } from "../repair-bundle-path.js";
 import { useRunEvents } from "../run-stream.js";
@@ -421,7 +422,7 @@ export function RunStreamPanel({
         title="터미널 출력"
         meta={
           <span className="font-mono text-xs" style={{ color: "var(--terminal-muted)" }}>
-            {events.filter((event) => event.kind === "stdout" || event.kind === "stderr").length}줄
+            {countOutputLines(events)}줄
           </span>
         }
         events={events}

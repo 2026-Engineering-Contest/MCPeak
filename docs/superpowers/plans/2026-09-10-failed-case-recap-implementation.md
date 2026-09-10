@@ -133,7 +133,7 @@ describe 를 연다.
 
 - [ ] **Step 2: 돌려서 통과하는지 본다**
 
-Run: `pnpm --filter @mcpeak/runner test -- reporter --run`
+Run: `pnpm --filter @mcpeak/runner exec vitest run --root ../.. packages/runner/tests/reporter.test.ts`
 Expected: PASS. 아직 절이 없으므로 이 하나는 원래 통과한다. 러너가 새 describe 를 실제로
 수집했는지 출력에서 테스트 이름을 눈으로 확인한다(수집 0개가 초록으로 보이는 거짓 신호).
 
@@ -175,7 +175,7 @@ Expected: PASS. 아직 절이 없으므로 이 하나는 원래 통과한다. �
 
 - [ ] **Step 4: 돌려서 실패하는지 본다**
 
-Run: `pnpm --filter @mcpeak/runner test -- reporter --run`
+Run: `pnpm --filter @mcpeak/runner exec vitest run --root ../.. packages/runner/tests/reporter.test.ts`
 Expected: FAIL. 기대 문자열에 있는 `실패한 케이스` 두 줄이 실제 출력에 없다.
 
 - [ ] **Step 5: 최소 구현을 넣는다**
@@ -311,7 +311,7 @@ const failedRecapLines = (report: RunnerReport, color: boolean): readonly string
 
 - [ ] **Step 6: 돌려서 새 테스트가 통과하는지 본다**
 
-Run: `pnpm --filter @mcpeak/runner test -- reporter --run`
+Run: `pnpm --filter @mcpeak/runner exec vitest run --root ../.. packages/runner/tests/reporter.test.ts`
 Expected: 새 테스트 2건 PASS. **기존 테스트 4건은 여기서 빨강이 된다.** 다음 스텝이 그것이다.
 
 - [ ] **Step 7: 절이 생겨서 깨지는 기존 단언 4건을 갱신한다**
@@ -369,7 +369,7 @@ const INDENT_FOR_TEST = "    ";
 
 - [ ] **Step 8: 파일 전체를 돌려 초록인지 본다**
 
-Run: `pnpm --filter @mcpeak/runner test -- reporter --run`
+Run: `pnpm --filter @mcpeak/runner exec vitest run --root ../.. packages/runner/tests/reporter.test.ts`
 Expected: 전부 PASS. 실패가 남으면 기대값이 아니라 구현을 의심한다.
 
 - [ ] **Step 9: 선택 규칙 4갈래를 고정하는 테스트를 쓴다**
@@ -574,12 +574,12 @@ Expected: 전부 PASS. 실패가 남으면 기대값이 아니라 구현을 의�
 
 - [ ] **Step 12: 파일 전체를 돌린다**
 
-Run: `pnpm --filter @mcpeak/runner test -- reporter --run`
+Run: `pnpm --filter @mcpeak/runner exec vitest run --root ../.. packages/runner/tests/reporter.test.ts`
 Expected: 전부 PASS. 출력에서 수집된 테스트 수가 늘었는지 확인한다.
 
 - [ ] **Step 13: 패키지 전체 회귀를 본다**
 
-Run: `pnpm --filter @mcpeak/runner test --run`
+Run: `pnpm --filter @mcpeak/runner exec vitest run --root ../.. packages/runner`
 Expected: 전부 PASS. 특히 `junit.test.ts`(C10)와 `report-payload-notice.test.ts`(§6.1)가
 **수정 없이** 통과해야 한다. 이 둘이 빨강이면 구현이 요약 줄 뒤에 절을 넣은 것이다.
 
@@ -763,7 +763,7 @@ PR 을 열기 전에 완료 조건 C1~C15 전부를 다시 훑는다. 하나라�
   - pnpm install 을 돌린 뒤 pnpm build 가 성공하는지
     (새 worktree 는 node_modules 를 상속하지 않는다. 이걸 건너뛰면 테스트가 실패하는 게
      아니라 자식 프로세스가 시작조차 못 해 타임아웃처럼 보인다)
-  - pnpm --filter @mcpeak/runner test -- reporter --run 이 실제로 실행되고 테스트를
+  - pnpm --filter @mcpeak/runner exec vitest run --root ../.. packages/runner/tests/reporter.test.ts 이 실제로 실행되고 테스트를
     수집하는지 (수집 0개가 초록으로 보이는 거짓 신호를 여기서 배제한다)
 
 [2단계: 실행]
@@ -809,8 +809,8 @@ T2 의 허용 Files 는 이것들뿐이다:
   - 산문에 대시(—)를 쓰지 마라. 주석과 문서는 한국어로 쓴다
 
 테스트 명령:
-  표적    pnpm --filter @mcpeak/runner test -- reporter --run
-  패키지  pnpm --filter @mcpeak/runner test --run
+  표적    pnpm --filter @mcpeak/runner exec vitest run --root ../.. packages/runner/tests/reporter.test.ts
+  패키지  pnpm --filter @mcpeak/runner exec vitest run --root ../.. packages/runner
   전체    pnpm build --force && pnpm test && pnpm typecheck --force && pnpm lint
 
 turbo 캐시가 이전 녹색을 재생한다. 전체 판정에서는 --force 로 돌리고 출력에서

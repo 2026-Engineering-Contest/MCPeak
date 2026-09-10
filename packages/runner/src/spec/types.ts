@@ -84,8 +84,16 @@ export interface BodyMatchesSchemaAssertionSpec {
   type: "bodyMatchesSchema";
   schema: ResponseSchema;
 }
+/** MCP 응답의 raw.structuredContent를 저장된 출력 계약과 대조한다. */
+export interface StructuredContentMatchesSchemaAssertionSpec {
+  type: "structuredContentMatchesSchema";
+  schema: ResponseSchema;
+}
 export type ToolListAssertionSpec = ToolExistsAssertionSpec;
-export type ToolResultAssertionSpec = IsErrorAssertionSpec | BodyMatchesSchemaAssertionSpec;
+export type ToolResultAssertionSpec =
+  | IsErrorAssertionSpec
+  | BodyMatchesSchemaAssertionSpec
+  | StructuredContentMatchesSchemaAssertionSpec;
 export type AssertionSpec = ToolListAssertionSpec | ToolResultAssertionSpec;
 export type SuiteValidationIssueCode =
   | "MISSING_REQUIRED_FIELD"

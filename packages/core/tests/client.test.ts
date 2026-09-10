@@ -40,6 +40,23 @@ describe("McpClient SDK adapter", () => {
     expect(sdk.listTools).toHaveBeenNthCalledWith(2, { cursor: "next" });
   });
 
+  it("tools/list의 outputSchema를 손실 없이 보존한다", async () => {
+    const outputSchema = {
+      type: "object",
+      required: ["sum"],
+      properties: { sum: { type: "number" } },
+    };
+    const { client } = adapter({
+      listTools: vi.fn().mockResolvedValue({
+        tools: [{ name: "sum", inputSchema: { type: "object" }, outputSchema }],
+      }),
+    });
+
+    await expect(client.listTools()).resolves.toEqual([
+      { name: "sum", inputSchema: { type: "object" }, outputSchema },
+    ]);
+  });
+
   it("빈 문자열을 포함한 반복 cursor는 추가 요청 없이 거절한다", async () => {
     const { sdk, client } = adapter({
       listTools: vi.fn().mockResolvedValue({ tools: [], nextCursor: "" }),

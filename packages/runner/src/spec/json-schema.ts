@@ -115,6 +115,15 @@ export const MCP_SUITE_JSON_SCHEMA: ReadonlyJsonObject = freeze<ReadonlyJsonObje
         schema: { $ref: "#/$defs/responseSchema" },
       },
     },
+    structuredContentMatchesSchemaAssertion: {
+      type: "object",
+      additionalProperties: false,
+      required: ["type", "schema"],
+      properties: {
+        type: { const: "structuredContentMatchesSchema" },
+        schema: { $ref: "#/$defs/responseSchema" },
+      },
+    },
     listToolsCase: {
       type: "object",
       additionalProperties: false,
@@ -157,6 +166,7 @@ export const MCP_SUITE_JSON_SCHEMA: ReadonlyJsonObject = freeze<ReadonlyJsonObje
             oneOf: [
               { $ref: "#/$defs/isErrorAssertion" },
               { $ref: "#/$defs/bodyMatchesSchemaAssertion" },
+              { $ref: "#/$defs/structuredContentMatchesSchemaAssertion" },
             ],
           },
         },

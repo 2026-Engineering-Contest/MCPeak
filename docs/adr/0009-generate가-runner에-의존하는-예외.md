@@ -20,7 +20,7 @@ cli → runner / generate / record / mock → core
 
 | 종류 | 심볼 |
 |---|---|
-| 타입 | `TestSuiteSpec`, `TestCaseSpec`, `SuiteValidationIssue`, `RunnerRedactionOptions`, `SpecFindingsResult`, `ContractAxis`, `ContractAxisKind`, `ContractDeclaredType`, `ContractRange` |
+| 타입 | `TestSuiteSpec`, `TestCaseSpec`, `SuiteValidationIssue`, `RunnerRedactionOptions`, `ResponseSchema`, `SpecFindingsResult`, `ContractAxis`, `ContractAxisKind`, `ContractDeclaredType`, `ContractRange` |
 | 함수 | `validateMcpSuite`, `canonicalJson`, `sha256`, `deepFreeze`, `checkInputContract`, `checkAssertionSubstance`, `deriveContractAxes`, `matchCoveredAxes`, `isSensitiveKey` |
 | 상수 | `MCP_SUITE_JSON_SCHEMA`, `DEFAULT_SENSITIVE_KEYS`, `REDACTED` |
 
@@ -124,6 +124,12 @@ C안은 A안을 막지 않는다. 참조 목록을 검사로 고정하면 의존
   `core/src/types.ts`의 책임 범위가 바뀌므로 오너 전원 승인이 필요하다.
 
 ### 목록 확장 이력
+
+- **`ResponseSchema` 추가.** 승인일 2026-09-10(Asia/Seoul), 승인한 사람
+  @sunghoon0303(파트 ① 오너), 이슈 #406. `outputSchema`를 Runner가 재실행하는 명시적
+  `structuredContentMatchesSchema` 단언으로 변환할 때 실행기와 생성기가 같은 지원 부분집합 타입을
+  써야 한다. generate에 같은 타입을 복제하면 Runner의 지원 키워드가 바뀔 때 저장 계약이 조용히
+  약해지므로 기존 예외의 목적과 같은 근거로 목록을 늘린다.
 
 - **`ContractRange` 추가.** 승인일 2026-08-17(Asia/Seoul), 승인한 사람 @seodduu(파트 ① 오너),
   PR #149. 위 '배경' 절의 마지막 문단이 사유다. 최초 승인과 같은 근거로 파트 ① 오너가

@@ -3,6 +3,7 @@ import {
   type AssertionResult,
   assertBodyMatchesSchema,
   assertIsError,
+  assertStructuredContentMatchesSchema,
   assertToolExists,
 } from "./assertions.js";
 import { type BodyExtraction, extractResponseBody } from "./body.js";
@@ -35,7 +36,10 @@ import {
   type ToolExistsAssertionSpec,
   validateMcpSuite,
 } from "./spec/index.js";
-import type { BodyMatchesSchemaAssertionSpec } from "./spec/types.js";
+import type {
+  BodyMatchesSchemaAssertionSpec,
+  StructuredContentMatchesSchemaAssertionSpec,
+} from "./spec/types.js";
 
 export interface OperationResult {
   status: "completed" | "failed" | "timedOut" | "cancelled" | "notRun";
@@ -420,9 +424,17 @@ export function runSuite(options: RunSuiteOptions): RunnerExecution {
                 ? assertIsError(result.result, assertion as IsErrorAssertionSpec, readBody, {
                     redaction: options.redaction,
                   })
-                : assertBodyMatchesSchema(readBody(), assertion as BodyMatchesSchemaAssertionSpec, {
-                    redaction: options.redaction,
-                  });
+                : assertion.type === "bodyMatchesSchema"
+                  ? assertBodyMatchesSchema(
+                      readBody(),
+                      assertion as BodyMatchesSchemaAssertionSpec,
+                      { redaction: options.redaction },
+                    )
+                  : assertStructuredContentMatchesSchema(
+                      result.result,
+                      assertion as StructuredContentMatchesSchemaAssertionSpec,
+                      { redaction: options.redaction },
+                    );
         emit({ type: "assertionCompleted", ...fields, assertionIndex, result: outcome });
         return outcome;
       });

@@ -4,14 +4,14 @@ import { deepFreeze, sha256 } from "./canonical.js";
 import { type CoverageResult, computeCoverage } from "./coverage.js";
 import { safeBaseName } from "./filename.js";
 import { analyzeToolProvenance, type ToolProvenance } from "./provenance.js";
-import { buildGeneratedCases } from "./render.js";
+import { buildGeneratedCases, type OutputContractSkip } from "./render.js";
 import { GenerateTestsError } from "./schema.js";
 
 /**
  * 위반 케이스를 기본 생성하기 시작해 v2로 올린다(ADR-0022). 이 값이 baselineFingerprint
  * 계산에 들어가므로 정책이 바뀐 사실이 지문에 남는다.
  */
-export const BASELINE_POLICY_VERSION = "schema-baseline-v2" as const;
+export const BASELINE_POLICY_VERSION = "schema-baseline-v3" as const;
 export const DEFAULT_BASELINE_TIMEOUT_MS = 10_000;
 
 export interface BaselineSuiteOptions {
@@ -44,6 +44,8 @@ export interface BaselineGenerationResult {
    * 바이트와 지문은 이 필드 도입 전과 같다(#88 의 재승인 문제를 만들지 않는다).
    */
   readonly skippedTools: readonly SkippedTool[];
+  /** 입력 케이스는 만들었지만 출력 계약은 안전하게 변환하지 못한 툴. */
+  readonly outputContractSkips: readonly OutputContractSkip[];
   /**
    * 툴별 값 출처. **명세 파일에는 들어가지 않는다.** 들어가면 승인 지문의 계산 대상이 되고,
    * 우리 판정 규칙이 바뀔 때마다 사용자 명세의 지문이 흔들려 "명세가 바뀌었다" 경고가 일상이
@@ -95,6 +97,7 @@ export function createBaselineSuite(
   const usedNames = new Set<string>();
   const skippedTools: SkippedTool[] = [];
   const generatedTools: ToolDef[] = [];
+  const outputContractSkips: OutputContractSkip[] = [];
   const cases = tools.flatMap((tool, index) => {
     const initialName = safeBaseName(typeof tool?.name === "string" ? tool.name : "", index);
     let baseName = initialName;
@@ -104,7 +107,9 @@ export function createBaselineSuite(
     try {
       const built = buildGeneratedCases(tool, index, baseName);
       generatedTools.push(tool);
-      return built;
+      if (built.outputContractSkip !== undefined)
+        outputContractSkips.push(built.outputContractSkip);
+      return built.cases;
     } catch (error) {
       // 미지원 키워드만 툴 단위로 격리한다(도그푸딩 실측: 툴 하나가 서버 전체를 막았다).
       // 다른 코드는 입력 자체의 결함이라 종전대로 전체를 멈춘다.
@@ -150,6 +155,7 @@ export function createBaselineSuite(
     // 건너뜀은 skippedTools 가 따로 고지한다.
     coverage: computeCoverage({ suite, tools: generatedTools }),
     skippedTools,
+    outputContractSkips,
     provenance: generatedTools.map((tool) => analyzeToolProvenance(tool)),
   };
   return deepFreeze(result);

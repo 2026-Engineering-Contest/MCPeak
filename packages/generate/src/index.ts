@@ -95,6 +95,7 @@ export {
   diagnosisCaseIds,
   MAX_CAUSE_CHARS,
 } from "./diagnosis-schema.js";
+export { convertOutputSchema, type OutputSchemaConversion } from "./output-schema.js";
 export type {
   PreFillCase,
   PreFillDiscard,
@@ -151,6 +152,7 @@ export {
   rejectionDiagnosisPrompt,
   validateRejectionDiagnosisResults,
 } from "./rejection-diagnosis.js";
+export type { OutputContractSkip } from "./render.js";
 export type { GenerateTestsErrorCode } from "./schema.js";
 export { GenerateTestsError } from "./schema.js";
 export { buildViolationCases, type GeneratedCase } from "./violation-cases.js";

@@ -18,7 +18,10 @@ const valid = {
 const invalid = { ...valid, cases: [{ ...valid.cases[0], assertions: [] }] };
 
 /** bodyMatchesSchema 단언 하나만 담은 callTool 스위트를 만든다. */
-const bodyFixture = (schema: unknown) => ({
+const bodyFixture = (
+  schema: unknown,
+  type: "bodyMatchesSchema" | "structuredContentMatchesSchema" = "bodyMatchesSchema",
+) => ({
   schemaVersion: 1,
   id: "suite",
   name: "Suite",
@@ -27,7 +30,7 @@ const bodyFixture = (schema: unknown) => ({
       id: "case",
       name: "Case",
       operation: { type: "callTool", tool: "weather", input: { city: "서울" } },
-      assertions: [{ type: "bodyMatchesSchema", schema }],
+      assertions: [{ type, schema }],
     },
   ],
 });
@@ -46,6 +49,18 @@ describe("MCP_SUITE_JSON_SCHEMA", () => {
         validateMcpSuite(fixture).valid,
       );
     }
+  });
+  it("공개 JSON Schema도 structuredContent 출력 계약 단언을 허용한다", () => {
+    const fixture = bodyFixture(
+      {
+        type: "object",
+        required: ["sum"],
+        properties: { sum: { type: "number" } },
+      },
+      "structuredContentMatchesSchema",
+    );
+    expect(evaluateSchema(MCP_SUITE_JSON_SCHEMA, fixture).valid).toBe(true);
+    expect(validateMcpSuite(fixture).valid).toBe(true);
   });
   it("계약 키와 중첩 객체를 재귀적으로 동결한다", () => {
     expect(MCP_SUITE_JSON_SCHEMA.$schema).toBe("https://json-schema.org/draft/2020-12/schema");

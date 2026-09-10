@@ -9,6 +9,7 @@ import type {
   AuthoringSessionView,
   BaselineGenerationResult,
   CoverageResult,
+  OutputContractSkip,
   PreFillDiscard,
   PreFillProvider,
   PreFillRequestPreview,
@@ -1332,6 +1333,7 @@ async function runInteractiveReview(
   deps: GenerateCommandDependencies,
   connection: CliConnection,
   skippedTools: readonly SkippedTool[] = [],
+  outputContractSkips: readonly OutputContractSkip[] = [],
 ): Promise<number> {
   const io = deps.reviewIO;
   const prepare = deps.prepareAuthoringRequest;
@@ -1623,6 +1625,7 @@ async function runInteractiveReview(
               }),
             finalSuite,
             skippedTools,
+            outputContractSkips,
           );
           return 0;
         } catch (error) {
@@ -1932,6 +1935,20 @@ export function renderUnknownFormatSkips(skips: readonly UnknownFormatSkip[]): s
   return `${lines.join("\n")}\n`;
 }
 
+/** 입력 케이스는 남겼지만 저장된 출력 계약을 만들지 못한 범위를 명시한다. */
+export function renderOutputContractSkips(skips: readonly OutputContractSkip[]): string {
+  if (skips.length === 0) return "";
+  return `${skips
+    .map(
+      (skip) =>
+        `경고: 툴 '${skip.name}'의 출력 계약을 자동 검증하지 않습니다.\n` +
+        `      위치: ${skip.path}\n` +
+        `      이유: ${skip.message}\n` +
+        "      정상 호출의 isError 검사는 유지되지만 structuredContent 계약은 미검증입니다.",
+    )
+    .join("\n")}\n`;
+}
+
 /**
  * AI 사전보완 결과 요약. 대상이 없으면 빈 문자열이다.
  *
@@ -1983,6 +2000,7 @@ function writeCoverageReport(
   coverage: CoverageResult | undefined,
   suite: TestSuiteSpec,
   skippedTools: readonly SkippedTool[],
+  outputContractSkips: readonly OutputContractSkip[],
 ): void {
   if (coverage !== undefined) {
     const text = renderCoverage(coverage);
@@ -1990,6 +2008,8 @@ function writeCoverageReport(
   }
   const skippedText = renderSkippedTools(skippedTools);
   if (skippedText !== "") deps.writeStdout(skippedText);
+  const outputContractText = renderOutputContractSkips(outputContractSkips);
+  if (outputContractText !== "") deps.writeStdout(outputContractText);
   const notice = renderCaseCountNotice(suite.cases.length);
   if (notice !== "") deps.writeStdout(notice);
 }
@@ -2009,9 +2029,10 @@ function reportCoverageSafely(
   coverage: () => CoverageResult | undefined,
   suite: TestSuiteSpec,
   skippedTools: readonly SkippedTool[] = [],
+  outputContractSkips: readonly OutputContractSkip[] = [],
 ): void {
   try {
-    writeCoverageReport(deps, coverage(), suite, skippedTools);
+    writeCoverageReport(deps, coverage(), suite, skippedTools, outputContractSkips);
   } catch {
     deps.writeStderr(
       "경고 [GENERATE_COVERAGE_UNAVAILABLE]: 명세는 저장했지만 커버리지를 계산하지 못했습니다.\n" +
@@ -2169,6 +2190,7 @@ export async function runGenerateCommand(
         readonly session: AuthoringSessionView;
         readonly tools: readonly ToolDef[];
         readonly skippedTools: readonly SkippedTool[];
+        readonly outputContractSkips: readonly OutputContractSkip[];
       }
     | undefined;
   try {
@@ -2218,7 +2240,13 @@ export async function runGenerateCommand(
     if (!input.baselineOnly) {
       // 아래 finally 가 닫는 것으로 소유권을 옮긴다. catch 의 forceClose 와 겹치지 않게 한다.
       connection = undefined;
-      review = { active, session, tools, skippedTools: baseline.skippedTools };
+      review = {
+        active,
+        session,
+        tools,
+        skippedTools: baseline.skippedTools,
+        outputContractSkips: baseline.outputContractSkips,
+      };
     } else {
       const final = deps.finalizeAuthoringDraft({
         session,
@@ -2230,7 +2258,13 @@ export async function runGenerateCommand(
       deps.writeStdout(`baseline suite를 저장했습니다: ${input.outPath}\n`);
       // baseline 경로는 저장한 suite 가 baseline 그대로이므로 다시 계산하지 않는다.
       // 저장 뒤이므로 렌더링 실패를 GENERATE_FAILED 로 보고하지 않는다.
-      reportCoverageSafely(deps, () => baseline.coverage, finalSuite, baseline.skippedTools);
+      reportCoverageSafely(
+        deps,
+        () => baseline.coverage,
+        finalSuite,
+        baseline.skippedTools,
+        baseline.outputContractSkips,
+      );
       return 0;
     }
   } catch (error) {
@@ -2286,6 +2320,7 @@ export async function runGenerateCommand(
       deps,
       review.active,
       review.skippedTools,
+      review.outputContractSkips,
     );
   } finally {
     await review.active.close().catch(() => undefined);

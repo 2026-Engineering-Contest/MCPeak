@@ -37,9 +37,25 @@ import {
   parseGenerateCommand,
   renderCaseCountNotice,
   renderCoverage,
+  renderOutputContractSkips,
   renderSkippedTools,
   runGenerateCommand,
 } from "../src/generate-command.js";
+
+describe("출력 계약 미검증 고지", () => {
+  it("툴·경로·원인과 유지되는 검사 범위를 표시한다", () => {
+    expect(
+      renderOutputContractSkips([
+        {
+          index: 0,
+          name: "labels",
+          path: "tools[0].outputSchema.patternProperties",
+          message: "의미를 보존해 변환할 수 없습니다.",
+        },
+      ]),
+    ).toContain("structuredContent 계약은 미검증");
+  });
+});
 
 const tools: ToolDef[] = [{ name: "weather", inputSchema: { type: "object" } }];
 const suite: TestSuiteSpec = {
@@ -121,10 +137,11 @@ function deps(overrides: Partial<GenerateCommandDependencies> = {}) {
         suite,
         baselineFingerprint: "baseline",
         suiteFingerprint: "suite",
-        policyVersion: "schema-baseline-v2" as const,
+        policyVersion: "schema-baseline-v3" as const,
         // 이 스텁의 suite 는 케이스가 0개다. 커버리지도 그에 맞춰 비운다.
         coverage: { tools: [], verified: 0, total: 0 },
         skippedTools: [],
+        outputContractSkips: [],
         // 툴이 0개이므로 값 출처도 비어 있다. AI 사전보완 대상 판정의 재료다.
         provenance: [],
       };

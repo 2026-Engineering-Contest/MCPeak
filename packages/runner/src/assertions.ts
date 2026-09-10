@@ -6,6 +6,8 @@ import {
   isErrorMismatchDiagnostic,
   operationResultUnavailableDiagnostic,
   type RunnerDiagnostic,
+  structuredContentExtractionFailedDiagnostic,
+  structuredContentSchemaMismatchDiagnostic,
   toolNotFoundDiagnostic,
 } from "./diagnostics.js";
 import { byCodeUnit } from "./ordering.js";
@@ -15,13 +17,43 @@ import type {
   AssertionSpec,
   BodyMatchesSchemaAssertionSpec,
   IsErrorAssertionSpec,
+  StructuredContentMatchesSchemaAssertionSpec,
   ToolExistsAssertionSpec,
 } from "./spec/types.js";
+import { extractStructuredContent } from "./structured-content.js";
 
 export interface AssertionResult {
   spec: AssertionSpec;
   status: "passed" | "failed" | "skipped" | "notRun";
   diagnostic?: RunnerDiagnostic;
+}
+
+export function assertStructuredContentMatchesSchema(
+  result: ToolResult | undefined,
+  spec: StructuredContentMatchesSchemaAssertionSpec,
+  options?: { redaction?: RunnerRedactionOptions },
+): AssertionResult {
+  if (result === undefined)
+    return { spec, status: "skipped", diagnostic: operationResultUnavailableDiagnostic() };
+  const extraction = extractStructuredContent(result);
+  if (!extraction.ok)
+    return {
+      spec,
+      status: "failed",
+      diagnostic: structuredContentExtractionFailedDiagnostic(extraction.failure),
+    };
+  const matched = matchResponseSchema(spec.schema, extraction.value);
+  if (matched.totalViolations === 0) return { spec, status: "passed" };
+  return {
+    spec,
+    status: "failed",
+    diagnostic: structuredContentSchemaMismatchDiagnostic(
+      matched,
+      spec.schema as unknown as import("./spec/types.js").JsonValue,
+      extraction.value,
+      options?.redaction,
+    ),
+  };
 }
 
 export function assertToolExists(

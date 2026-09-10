@@ -1,7 +1,11 @@
 import type { McpClient, ToolResult } from "@mcpeak/core";
 
 export { checkAssertionSubstance } from "./assertion-substance.js";
-export { type AssertionResult, assertBodyMatchesSchema } from "./assertions.js";
+export {
+  type AssertionResult,
+  assertBodyMatchesSchema,
+  assertStructuredContentMatchesSchema,
+} from "./assertions.js";
 export {
   type BodyExtraction,
   type BodyExtractionFailure,
@@ -41,6 +45,8 @@ export {
   type RunnerDiagnostic,
   type RunnerDiagnosticCode,
   type SchemaViolationDiagnostic,
+  structuredContentExtractionFailedDiagnostic,
+  structuredContentSchemaMismatchDiagnostic,
 } from "./diagnostics.js";
 export {
   type OperationResult,
@@ -97,6 +103,7 @@ export type {
   ReadonlyJsonObject,
   ReadonlyJsonValue,
   ResponseSchema,
+  StructuredContentMatchesSchemaAssertionSpec,
   SuiteApproval,
   SuiteCaseApproval,
   SuiteValidationIssue,
@@ -118,6 +125,11 @@ export {
   type SpecFindingCode,
   type SpecFindingsResult,
 } from "./spec-findings.js";
+export {
+  extractStructuredContent,
+  type StructuredContentExtraction,
+  type StructuredContentExtractionFailure,
+} from "./structured-content.js";
 
 /** `createMcpTest` 에 넘기는 설정. */
 export interface McpTestConfig {

@@ -6,7 +6,12 @@ const MAX_JSON_DEPTH = 100;
 
 type SdkClient = {
   listTools(params?: { cursor?: string }): Promise<{
-    tools: readonly { name: string; description?: string; inputSchema: unknown }[];
+    tools: readonly {
+      name: string;
+      description?: string;
+      inputSchema: unknown;
+      outputSchema?: unknown;
+    }[];
     nextCursor?: string;
   }>;
   callTool(params: { name: string; arguments: Record<string, unknown> }): Promise<unknown>;
@@ -167,6 +172,7 @@ export function createMcpClientAdapter(
             name: tool.name,
             ...(tool.description === undefined ? {} : { description: tool.description }),
             inputSchema: tool.inputSchema,
+            ...(tool.outputSchema === undefined ? {} : { outputSchema: tool.outputSchema }),
           });
         }
         cursor = page.nextCursor;

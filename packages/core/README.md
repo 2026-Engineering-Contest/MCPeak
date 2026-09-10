@@ -116,7 +116,9 @@ Core는 Runner를 import하지 않는다. Runner는 `McpClient`를 주입받고,
 
 ## 범위와 안정성
 
-`src/types.ts`의 `McpClient`, `ToolDef`, `ToolResult`는 패키지 간 동결 계약이다. Core는
-`@modelcontextprotocol/sdk` 1.x를 사용하며 SDK 버전을 올리지 않는다.
+`src/types.ts`의 `McpClient`, `ToolDef`, `ToolResult`는 패키지 간 동결 계약이다. #406에서 합의한
+선택적 `ToolDef.outputSchema`만 `tools/list`의 출력 계약을 손실 없이 전달하며, `McpClient`와
+`ToolResult`의 기존 형태는 바꾸지 않는다. Core는 `@modelcontextprotocol/sdk` 1.x를 사용하며 SDK
+버전을 올리지 않는다.
 
 오너: `@seodduu` `@endl24` `@sunghoon0303` (MCP 서버 테스트 파트)

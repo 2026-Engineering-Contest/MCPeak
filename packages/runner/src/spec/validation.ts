@@ -215,10 +215,15 @@ const SUPPORTED_KEYWORD_LIST = RESPONSE_SCHEMA_KEYWORDS.join(", ");
  */
 const ALLOWED_ASSERTIONS = new Map<string, readonly string[]>([
   ["listTools", ["toolExists"]],
-  ["callTool", ["isError", "bodyMatchesSchema"]],
+  ["callTool", ["isError", "bodyMatchesSchema", "structuredContentMatchesSchema"]],
 ]);
 
-const KNOWN_ASSERTIONS = ["toolExists", "isError", "bodyMatchesSchema"] as const;
+const KNOWN_ASSERTIONS = [
+  "toolExists",
+  "isError",
+  "bodyMatchesSchema",
+  "structuredContentMatchesSchema",
+] as const;
 
 const nonNegativeInt = (v: unknown): boolean =>
   typeof v === "number" && Number.isSafeInteger(v) && v >= 0;

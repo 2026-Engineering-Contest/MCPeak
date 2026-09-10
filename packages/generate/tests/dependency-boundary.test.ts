@@ -22,6 +22,7 @@ const APPROVED_RUNNER_SYMBOLS = [
   "DEFAULT_SENSITIVE_KEYS",
   "MCP_SUITE_JSON_SCHEMA",
   "REDACTED",
+  "ResponseSchema",
   "RunnerRedactionOptions",
   "SpecFindingsResult",
   "SuiteValidationIssue",

@@ -142,3 +142,7 @@ T4-zod-notes-gate-merge	6da819f	2026-09-09
 T1-pre-fill-no-dry-run-cli	56d9a5e	2026-09-09
 T2-pre-fill-no-dry-run-docs	e2fd278	2026-09-09
 W3-pre-fill-no-dry-run-live	f9e3dd9	2026-09-09
+T1-repair-spec-oracle-generate	36fdf4d	2026-09-09
+T2-repair-spec-oracle-cli	7a1a4f0	2026-09-09
+T3-repair-spec-oracle-docs	5dc9d56	2026-09-09
+W4-repair-spec-oracle-live	d17193e	2026-09-09

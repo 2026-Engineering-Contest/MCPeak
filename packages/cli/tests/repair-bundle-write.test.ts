@@ -87,6 +87,21 @@ describe("buildRepairBundle", () => {
     expect(bundle?.spec).toMatchObject({ suiteId: "weather", suiteName: "날씨 서버 계약" });
   });
 
+  it("approval.cases 가 없으면 번들의 runHistory 가 absent 다", () => {
+    const target = suite({ fingerprint: "a".repeat(64) });
+    expect(build([caseResult()], target)?.spec.runHistory).toBe("absent");
+  });
+
+  it("approval.cases 가 있으면 번들의 runHistory 가 present 다", () => {
+    const target = suite({
+      fingerprint: "a".repeat(64),
+      cases: [{ id: "get-weather-unknown-city", status: "serverDefect" }],
+    });
+    const bundle = build([caseResult()], target);
+    expect(bundle?.spec.runHistory).toBe("present");
+    expect(bundle?.failures[0]?.approvedAs).toBe("serverDefect");
+  });
+
   it("통과만 있으면 buildRepairBundle 이 undefined 를 돌려준다", () => {
     const passed = caseResult({ status: "passed", assertions: [] });
     expect(build([passed])).toBeUndefined();

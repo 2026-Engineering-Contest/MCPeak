@@ -710,3 +710,17 @@ mcpeak test c.json --command pyenv/bin/mcp-server-calculator --json
 
 대화형 확인이라 pty 가 필요하다. TTY 없이 돌리면 `GENERATE_INTERACTIVE_REQUIRED` 로 떨어지므로
 `script -q /dev/null` 로 감싸 관측했다.
+
+## 2026-09-09 `repair` 의 미실행 승인 명세 판정 (#385, ADR-0090)
+
+저장소의 `examples/weather-server` 에 빌드 산출물을 직접 돌려 확인했다.
+`generate --baseline-only` 가 저장한 명세는 `approval` 에 `fingerprint` 만 있고 `cases` 가
+없었다. 그 명세로 만든 번들은 `bundleVersion: 2`, `spec.approval: "matched"`,
+`spec.runHistory: "absent"` 였다. `repair` 를 `--yes` 없이 비대화형으로 불렀더니 전송 확인
+화면이 `명세 상태  승인 지문 일치 · 실행 기록 없음` 을 찍고 `REPAIR_CONFIRM_REQUIRED` 로
+멈췄다. provider 호출은 0회다.
+
+이슈의 3번 절차(고정 응답 주입으로 명세 쪽 원인 후보가 살아남는지 확인)는 유닛테스트가
+대신한다. `packages/cli/tests/repair-render.test.ts` 의
+`실행 기록이 없으면 spec 항목에 분류 라벨이 붙는다` 가 같은 입력을 주입으로 판정한다. 실제
+유료 provider 는 부르지 않았다.

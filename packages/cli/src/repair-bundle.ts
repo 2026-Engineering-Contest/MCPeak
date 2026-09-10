@@ -7,14 +7,17 @@ import type {
 } from "@mcpeak/runner";
 import packageMetadata from "../package.json";
 import { hasDiagnosticContent, type ProcessDiagnosticsInput } from "./process-diagnostics.js";
-import { caseApprovalStatuses, type SpecApprovalState } from "./spec-approval.js";
+import { caseApprovalStatuses, type SpecApprovalState, specRunHistory } from "./spec-approval.js";
 
 /**
  * 번들 형식 버전. 형식이 바뀌면 `repair` 가 "이 번들은 버전 N 입니다. 최신 test 로 다시
  * 만드세요" 라고 말할 수 있다. 없으면 낡은 번들에서 키가 빠졌을 때 조용히 반쪽으로 돈다.
  * 설계서 §4.2.
+ *
+ * 2 는 `spec.runHistory` 를 더하며 올렸다(#385). 선택 필드로 두면 낡은 번들이 오라클 판정만
+ * 조용히 달라진 채 통과한다.
  */
-export const REPAIR_BUNDLE_VERSION = 1;
+export const REPAIR_BUNDLE_VERSION = 2;
 
 /** 번들에 적는 CLI 식별자. `mcpeak --version` 이 찍는 것과 같은 출처를 쓴다. */
 export const REPAIR_BUNDLE_GENERATED_BY = `mcpeak ${packageMetadata.version}`;
@@ -45,6 +48,7 @@ export interface RepairBundle {
     readonly suiteId: string;
     readonly suiteName: string;
     readonly approval: SpecApprovalState;
+    readonly runHistory: "present" | "absent";
     readonly fingerprint: string;
     readonly approvedFingerprint?: string;
   };
@@ -136,12 +140,14 @@ export function buildRepairBundle(options: {
     suiteId: string;
     suiteName: string;
     approval: SpecApprovalState;
+    runHistory: "present" | "absent";
     fingerprint: string;
     approvedFingerprint?: string;
   } = {
     suiteId: options.report.suite.id,
     suiteName: options.report.suite.name,
     approval: options.specApproval.state,
+    runHistory: specRunHistory(options.suite),
     fingerprint: options.specApproval.fingerprint,
   };
   if (options.specApproval.approvedFingerprint !== undefined)
@@ -205,7 +211,7 @@ export function describeRepairBundleInvalid(reason: RepairBundleInvalidReason): 
     case "versionMismatch":
       return `번들 형식 버전이 이 CLI 가 아는 ${REPAIR_BUNDLE_VERSION} 이 아닙니다. 최신 \`mcpeak test --repair-bundle\` 로 다시 만드세요.`;
     case "missingField":
-      return "번들에 필요한 항목이 없거나 값이 형식과 다릅니다. `spec` 의 `suiteId`·`suiteName`·`approval`, 각 실패의 `caseId`·`caseName`·`status`·`diagnostics`, 각 진단의 `code`·`message` 가 있어야 합니다. `mcpeak test --repair-bundle` 로 다시 만드세요.";
+      return "번들에 필요한 항목이 없거나 값이 형식과 다릅니다. `spec` 의 `suiteId`·`suiteName`·`approval`·`runHistory`, 각 실패의 `caseId`·`caseName`·`status`·`diagnostics`, 각 진단의 `code`·`message` 가 있어야 합니다. `mcpeak test --repair-bundle` 로 다시 만드세요.";
     case "emptyFailures":
       return "번들에 실패한 케이스가 없습니다. 진단할 근거가 없으므로 provider 를 부르지 않습니다. 실패가 있는 실행에서 번들을 다시 만드세요.";
   }
@@ -222,6 +228,7 @@ const plainObject = (value: unknown): value is Record<string, unknown> =>
  */
 /** 화면과 진단 요청이 실제로 읽는 값들이다. 여기 없는 값은 검사하지 않는다. */
 const APPROVAL_STATES = ["matched", "mismatched", "absent"] as const;
+const RUN_HISTORIES = ["present", "absent"] as const;
 const FAILURE_STATUSES = ["failed", "timedOut", "cancelled", "notRun"] as const;
 const APPROVED_AS = ["passed", "serverDefect"] as const;
 
@@ -258,6 +265,7 @@ function specShapeValid(spec: unknown): boolean {
   if (typeof spec.suiteId !== "string") return false;
   if (typeof spec.suiteName !== "string") return false;
   if (!isOneOf(spec.approval, APPROVAL_STATES)) return false;
+  if (!isOneOf(spec.runHistory, RUN_HISTORIES)) return false;
   if (typeof spec.fingerprint !== "string") return false;
   return true;
 }

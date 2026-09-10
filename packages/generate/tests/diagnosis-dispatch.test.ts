@@ -16,9 +16,11 @@ const TOOLS: readonly McpToolContext[] = [
   },
 ];
 
+const ORACLE = { fingerprint: "matched", runHistory: "present" } as const;
+
 function preview(): DiagnosisRequestPreview {
   return prepareDiagnosisRequest({
-    specApproved: true,
+    specTrust: ORACLE,
     suite: { id: "suite-1", name: "weather" },
     failures: [
       {
@@ -181,7 +183,7 @@ describe("dispatchDiagnosisRequest", () => {
 
   it("응답이 maxResultBytes 를 넘으면 resultLimitExceeded 다", async () => {
     const target = prepareDiagnosisRequest({
-      specApproved: true,
+      specTrust: ORACLE,
       suite: { id: "suite-1", name: "weather" },
       failures: [
         {

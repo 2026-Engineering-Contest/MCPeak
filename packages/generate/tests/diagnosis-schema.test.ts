@@ -6,7 +6,13 @@ import {
   type DiagnosisRequest,
   diagnosisCaseIds,
   MAX_CAUSE_CHARS,
+  specIsOracle,
 } from "../src/diagnosis-schema.js";
+
+const ORACLE = { fingerprint: "matched", runHistory: "present" } as const;
+const UNRUN = { fingerprint: "matched", runHistory: "absent" } as const;
+const MISMATCHED = { fingerprint: "mismatched", runHistory: "present" } as const;
+const NO_APPROVAL = { fingerprint: "absent", runHistory: "absent" } as const;
 
 /** 스키마 전체를 깊이 우선으로 순회한다. 객체와 배열 원소를 모두 방문한다. */
 function walk(value: unknown, visit: (node: Record<string, unknown>) => void): void {
@@ -58,7 +64,7 @@ const failure = (caseId: string): DiagnosisFailure => ({
 });
 
 const request = (caseIds: readonly string[]): DiagnosisRequest => ({
-  specApproved: true,
+  specTrust: ORACLE,
   suite: { id: "weather", name: "날씨" },
   failures: caseIds.map((id) => failure(id)),
   tools: [],
@@ -133,5 +139,14 @@ describe("buildDiagnosisProviderSchema", () => {
     expect(diagnosisCaseIds(target)).toEqual(
       caseIdSchema(buildDiagnosisProviderSchema(target)).enum,
     );
+  });
+});
+
+describe("specIsOracle", () => {
+  it("지문 일치와 실행 기록이 모두 있어야 참이다", () => {
+    expect(specIsOracle(ORACLE)).toBe(true);
+    expect(specIsOracle(UNRUN)).toBe(false);
+    expect(specIsOracle(MISMATCHED)).toBe(false);
+    expect(specIsOracle(NO_APPROVAL)).toBe(false);
   });
 });

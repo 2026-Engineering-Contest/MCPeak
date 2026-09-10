@@ -25,9 +25,29 @@ export interface DiagnosisProcessDiagnostics {
   readonly signal: string | null;
 }
 
+/**
+ * 명세가 오라클 자격을 가지는지 판정하는 두 축. 지문 대조와 실행 기록은 별개다(#385).
+ * 지문이 맞아도 `--baseline-only`·`--no-dry-run` 으로 저장한 명세에는 실행 기록이 없고,
+ * 그런 명세의 입력값은 생성 시점 자리값 그대로일 수 있다.
+ */
+export interface DiagnosisSpecTrust {
+  /** 저장된 승인 지문과 현재 명세로 계산한 지문의 대조 결과. */
+  readonly fingerprint: "matched" | "mismatched" | "absent";
+  /** 승인 시점의 실제 서버 실행 기록(`approval.cases`)이 남아 있는가. */
+  readonly runHistory: "present" | "absent";
+}
+
+/**
+ * 명세를 오라클로 놓아도 되는가. 프롬프트 선택과 `target: "spec"` 폐기가 이 하나를 본다.
+ * 두 곳이 각자 조건을 쓰면 한쪽만 고쳐졌을 때 화면과 프롬프트가 어긋난다.
+ */
+export function specIsOracle(trust: DiagnosisSpecTrust): boolean {
+  return trust.fingerprint === "matched" && trust.runHistory === "present";
+}
+
 export interface DiagnosisRequest {
-  /** 명세가 오라클 자격을 가지는가. 프롬프트 역할 문장이 이 값으로 갈린다. 설계서 §5.4. */
-  readonly specApproved: boolean;
+  /** 명세가 오라클 자격을 가지는가. 프롬프트 갈래와 결과 검증이 이 값으로 갈린다. 설계서 §3.1. */
+  readonly specTrust: DiagnosisSpecTrust;
   readonly suite: { readonly id: string; readonly name: string };
   readonly failures: readonly DiagnosisFailure[];
   readonly processDiagnostics?: DiagnosisProcessDiagnostics;

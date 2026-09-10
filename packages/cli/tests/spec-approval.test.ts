@@ -7,6 +7,7 @@ import {
   renderSpecApproval,
   type SpecApprovalResult,
   shouldShowSpecApproval,
+  specRunHistory,
 } from "../src/spec-approval.js";
 
 const suite: TestSuiteSpec = { schemaVersion: 1, id: "suite", name: "Suite", cases: [] };
@@ -142,5 +143,28 @@ describe("renderSpecApproval", () => {
     // 지문은 우리가 만든 hex 라 제어 문자가 섞일 수 없고, 색도 입히지 않는다. 설계 문서 §7.2.
     for (const text of [matched, absent, mismatchedPassed, mismatchedFailed])
       expect(text.includes("\u001b")).toBe(false);
+  });
+});
+
+describe("specRunHistory", () => {
+  it("approval 이 없으면 absent 다", () => {
+    expect(specRunHistory(suite)).toBe("absent");
+  });
+
+  it("approval.cases 가 없으면 absent 다", () => {
+    expect(specRunHistory(approved(fingerprint))).toBe("absent");
+  });
+
+  it("approval.cases 가 빈 배열이면 absent 다", () => {
+    expect(specRunHistory({ ...suite, approval: { fingerprint, cases: [] } })).toBe("absent");
+  });
+
+  it("approval.cases 가 하나라도 있으면 present 다", () => {
+    expect(
+      specRunHistory({
+        ...suite,
+        approval: { fingerprint, cases: [{ id: "case-1", status: "serverDefect" }] },
+      }),
+    ).toBe("present");
   });
 });

@@ -1,8 +1,17 @@
 import { describe, expect, it } from "vitest";
 import type { McpToolContext } from "../src/authoring-request.js";
 import { prepareDiagnosisRequest, validateDiagnosisResult } from "../src/diagnosis-request.js";
-import type { DiagnosisCause, DiagnosisFailure } from "../src/diagnosis-schema.js";
+import type {
+  DiagnosisCause,
+  DiagnosisFailure,
+  DiagnosisSpecTrust,
+} from "../src/diagnosis-schema.js";
 import { MAX_CAUSE_CHARS } from "../src/diagnosis-schema.js";
+
+const ORACLE = { fingerprint: "matched", runHistory: "present" } as const;
+const UNRUN = { fingerprint: "matched", runHistory: "absent" } as const;
+const MISMATCHED = { fingerprint: "mismatched", runHistory: "present" } as const;
+const NO_APPROVAL = { fingerprint: "absent", runHistory: "absent" } as const;
 
 const TOOLS: readonly McpToolContext[] = [
   {
@@ -31,9 +40,9 @@ function cause(overrides: Partial<DiagnosisCause> = {}): DiagnosisCause {
   };
 }
 
-function preview(options: { specApproved?: boolean; caseIds?: readonly string[] } = {}) {
+function preview(options: { trust?: DiagnosisSpecTrust; caseIds?: readonly string[] } = {}) {
   return prepareDiagnosisRequest({
-    specApproved: options.specApproved ?? true,
+    specTrust: options.trust ?? ORACLE,
     suite: { id: "suite-1", name: "weather" },
     failures: (options.caseIds ?? ["case-1"]).map((id) => failure(id)),
     tools: TOOLS,
@@ -114,25 +123,51 @@ describe("validateDiagnosisResult", () => {
     });
   });
 
-  it('specApproved 가 true 면 target: "spec" 항목이 버려진다', () => {
+  it('오라클 명세에서는 target: "spec" 항목이 버려진다', () => {
     const validation = validateDiagnosisResult(
       diagnosis([cause({ target: "spec" })]),
-      preview({ specApproved: true }),
+      preview({ trust: ORACLE }),
+    );
+    expect(validation).toEqual({
+      status: "ok",
+      result: { status: "unsure", shortfall: "", discarded: discarded({ specTarget: 1 }) },
+    });
+  });
+
+  it('실행 기록이 없으면 target: "spec" 항목이 통과한다', () => {
+    const validation = validateDiagnosisResult(
+      diagnosis([cause({ target: "spec" })]),
+      preview({ trust: UNRUN }),
     );
     expect(validation).toEqual({
       status: "ok",
       result: {
-        status: "unsure",
-        shortfall: "",
-        discarded: discarded({ specTarget: 1 }),
+        status: "diagnosis",
+        causes: [cause({ target: "spec" })],
+        discarded: discarded(),
       },
     });
   });
 
-  it('specApproved 가 false 면 target: "spec" 항목이 통과한다', () => {
+  it('지문이 불일치하면 target: "spec" 항목이 통과한다', () => {
     const validation = validateDiagnosisResult(
       diagnosis([cause({ target: "spec" })]),
-      preview({ specApproved: false }),
+      preview({ trust: MISMATCHED }),
+    );
+    expect(validation).toEqual({
+      status: "ok",
+      result: {
+        status: "diagnosis",
+        causes: [cause({ target: "spec" })],
+        discarded: discarded(),
+      },
+    });
+  });
+
+  it('승인 지문이 없으면 target: "spec" 항목이 통과한다', () => {
+    const validation = validateDiagnosisResult(
+      diagnosis([cause({ target: "spec" })]),
+      preview({ trust: NO_APPROVAL }),
     );
     expect(validation).toEqual({
       status: "ok",
@@ -152,7 +187,7 @@ describe("validateDiagnosisResult", () => {
         cause({ caseId: "지어낸-명세-케이스", target: "spec" }),
         cause({ target: "spec" }),
       ]),
-      preview({ specApproved: true }),
+      preview({ trust: ORACLE }),
     );
     expect(validation).toEqual({
       status: "ok",

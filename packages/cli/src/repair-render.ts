@@ -60,12 +60,30 @@ const APPROVAL_LABEL: Readonly<Record<RepairBundle["spec"]["approval"], string>>
   absent: "승인 지문 없음",
 };
 
+const RUN_HISTORY_LABEL: Readonly<Record<RepairBundle["spec"]["runHistory"], string>> = {
+  present: "실행 기록 있음",
+  absent: "실행 기록 없음",
+};
+
+/**
+ * 명세를 오라클로 볼 수 있는가. `generate` 의 `specIsOracle` 과 같은 뜻이지만 여기서 다시
+ * 판정한다. 화면 렌더러는 진단 통로를 로드하지 않는다(설계서 §4.5).
+ */
+const isOracle = (bundle: RepairBundle): boolean =>
+  bundle.spec.approval === "matched" && bundle.spec.runHistory === "present";
+
 /**
  * 지문이 승인 상태가 아닐 때 결과 맨 위에 붙는 블록. 결과가 `unsure` 여도 붙는다. 설계서 §6.5.
  * `matched` 면 빈 문자열이다.
  */
-export function renderApprovalNotice(approval: RepairBundle["spec"]["approval"]): string {
-  if (approval === "matched") return "";
+export function renderApprovalNotice(
+  approval: RepairBundle["spec"]["approval"],
+  runHistory: RepairBundle["spec"]["runHistory"],
+): string {
+  if (approval === "matched")
+    return runHistory === "present"
+      ? ""
+      : "⚠ 이 명세는 승인 지문이 일치하지만 실제 서버 실행 기록이 없습니다.\n  --baseline-only 나 --no-dry-run 으로 저장하면 케이스가 한 번도 실행되지 않은 채 승인됩니다.\n  입력값이 생성 시점의 자리값일 수 있어, 아래 제안은 명세 쪽 원인도 함께 받았습니다.\n\n";
   if (approval === "mismatched")
     return "⚠ 이 명세는 승인 상태가 아닙니다 (지문 불일치).\n  실패 원인이 서버가 아니라 명세일 수 있습니다. 아래 제안은 그 전제로 받았습니다.\n\n";
   return "⚠ 이 명세는 승인 지문이 없습니다.\n  실제 서버로 검증된 적이 없는 명세일 수 있습니다. 아래 제안은 그 전제로 받았습니다.\n\n";
@@ -87,6 +105,7 @@ export interface RepairConfirmView {
   readonly omittedFailures: number;
   readonly maxCases: number;
   readonly approval: RepairBundle["spec"]["approval"];
+  readonly runHistory: RepairBundle["spec"]["runHistory"];
   readonly includeStderr: boolean;
   /** 전송하는 stderr. `--no-stderr` 이거나 번들에 없으면 undefined 다. */
   readonly stderr?: string;
@@ -115,7 +134,7 @@ export function renderRepairConfirm(view: RepairConfirmView): string {
     // model 은 사용자가 CLI 로 준 문자열이다. AI 출력과 같은 이유로 제어 문자를 이스케이프한다.
     `  provider   ${view.providerId} (${escapeTerminalText(view.model)})\n`,
     `  대상       ${scope}\n`,
-    `  명세 상태  ${APPROVAL_LABEL[view.approval]}\n`,
+    `  명세 상태  ${APPROVAL_LABEL[view.approval]} · ${RUN_HISTORY_LABEL[view.runHistory]}\n`,
     `  stderr     ${stderrLine}\n`,
     `  전송 크기  ${kilobytes(view.requestBytes)}\n`,
     "\n",
@@ -218,7 +237,7 @@ export function renderRepairResult(options: {
   const parts: string[] = [
     `── 서버 수정 방향 (${options.providerId} / ${escapeTerminalText(options.model)}) ──\n`,
     "\n",
-    renderApprovalNotice(options.bundle.spec.approval),
+    renderApprovalNotice(options.bundle.spec.approval, options.bundle.spec.runHistory),
   ];
   if (options.result.status === "unsure") {
     /**
@@ -263,8 +282,8 @@ export function renderRepairResult(options: {
           parts.push(`  확인할 곳  ${escapeTerminalText(cause.location)}\n`);
         if (cause.evidence !== "")
           parts.push(`  근거       ${escapeTerminalText(cause.evidence)}\n`);
-        // 승인 상태가 아닐 때만 spec 항목이 통과한다(§5.6-4). 그 사실을 화면이 말한다.
-        if (cause.target === "spec" && options.bundle.spec.approval !== "matched")
+        // 오라클이 아닐 때만 spec 항목이 통과한다(§5.6-4, #385). 그 사실을 화면이 말한다.
+        if (cause.target === "spec" && !isOracle(options.bundle))
           parts.push("  분류       명세 쪽 원인으로 봄\n");
       }
     }

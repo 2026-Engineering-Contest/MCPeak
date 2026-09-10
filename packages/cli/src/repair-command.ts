@@ -161,7 +161,7 @@ export async function runRepairCommand(
   }
   const provider = deps.diagnosis.providers[input.providerId](input.model);
   const preview = deps.diagnosis.prepare({
-    specApproved: bundle.spec.approval === "matched",
+    specTrust: { fingerprint: bundle.spec.approval, runHistory: bundle.spec.runHistory },
     suite: { id: bundle.spec.suiteId, name: bundle.spec.suiteName },
     failures: bundle.failures.map((failure) => ({
       caseId: failure.caseId,
@@ -187,6 +187,7 @@ export async function runRepairCommand(
     omittedFailures: preview.omitted.failures,
     maxCases: input.maxCases,
     approval: bundle.spec.approval,
+    runHistory: bundle.spec.runHistory,
     includeStderr: input.includeStderr,
     ...(preview.request.processDiagnostics === undefined
       ? {}

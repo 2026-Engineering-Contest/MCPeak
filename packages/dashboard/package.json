@@ -48,7 +48,6 @@
   "dependencies": {
     "@mcpeak/core": "workspace:*",
     "@mcpeak/generate": "workspace:*",
-    "@mcpeak/mock": "workspace:*",
     "@mcpeak/record": "workspace:*",
     "@mcpeak/runner": "workspace:*",
     "@mcpeak/cli": "workspace:*"

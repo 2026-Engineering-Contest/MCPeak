@@ -51,11 +51,19 @@ const escapeTerminalText = (value: string): string =>
   }).join("");
 
 /**
- * 위반·notes 의 글머리 줄 하나를 만든다.
- *
- * **줄이 이미 `→` 로 시작하면 우리 글머리를 붙이지 않는다.** 붙이면 `→ → ...` 가 된다(#280).
- * `→` 글머리는 이 저장소가 권장하는 실패 메시지 형식이라(`CLAUDE.md`,
+ * 글머리를 붙인 본문. **줄이 이미 `→` 로 시작하면 우리 글머리를 붙이지 않는다.** 붙이면
+ * `→ → ...` 가 된다(#280). `→` 글머리는 이 저장소가 권장하는 실패 메시지 형식이라(`CLAUDE.md`,
  * `examples/weather-server/server.mjs`) 우리 안내를 따른 서버가 전부 이 자리에 걸린다.
+ *
+ * 들여쓰기는 호출부가 정한다. 케이스 블록은 4칸, 실패 요약 절은 2칸이다.
+ *
+ * 인자는 **이미 이스케이프된 글**이다. 이스케이프가 먼저, 판정이 나중이다(설계 문서 §6).
+ */
+const bulletBody = (escaped: string): string =>
+  escaped.trimStart().startsWith(BULLET) ? escaped : `${BULLET} ${escaped}`;
+
+/**
+ * 위반·notes 의 글머리 줄 하나를 만든다.
  *
  * **서버 문장 자체는 고치지 않는다.** 여기서 하는 일은 우리 글머리를 안 붙이는 것뿐이고,
  * `note` 원문은 그대로 나간다. 원문에 의존하는 곳이 셋이다 — `rejection-basis` 의 목 거절
@@ -67,12 +75,7 @@ const escapeTerminalText = (value: string): string =>
  *
  * 이스케이프가 먼저, 판정이 나중이다. `hintLine` 과 같은 순서다(설계 문서 §6).
  */
-const bulletLine = (text: string): string => {
-  const escaped = escapeTerminalText(text);
-  return escaped.trimStart().startsWith(BULLET)
-    ? `${INDENT}${escaped}`
-    : `${INDENT}${BULLET} ${escaped}`;
-};
+const bulletLine = (text: string): string => `${INDENT}${bulletBody(escapeTerminalText(text))}`;
 
 /**
  * 코드 포인트 수. 표시 폭이 아니다. 설계 문서 §5.2의 알려진 한계를 그대로 받는다.
@@ -188,6 +191,98 @@ const payloadNoticeLines = (payload: RunnerReport["payload"]): readonly string[]
   ];
 };
 
+/** 실패 요약 절의 행 들여쓰기. 케이스 줄(0칸)과 진단 블록(4칸) 사이의 중간 층위다. 설계 문서 §4.2. */
+const RECAP_INDENT = "  ";
+
+/** 실패 요약 절의 머리글. 설계 문서 §3.2. */
+const RECAP_HEADING = "실패한 케이스";
+
+/**
+ * 실패 요약 절에 싣는 케이스 상태. `cancelled` 는 사용자가 멈춘 사실이라 중단 줄이 이미
+ * 말하고, `notRun` 은 옮길 진단이 없다(`executor.ts` 가 `operation` 에 진단을 안 넣는다).
+ * 설계 문서 §3.2.
+ *
+ * 유니온을 손으로 복제하지 않는다. 복제해 두면 상태가 늘어도 여기는 모르고, vitest 는
+ * 초록인데 typecheck 만 빨강인 상태가 만들어진다.
+ */
+const RECAP_STATUSES: ReadonlySet<TestCaseResult["status"]> = new Set(["failed", "timedOut"]);
+
+/**
+ * 요약 행 한 줄에 싣는 진단 글의 상한(코드 포인트). 넘으면 99자에서 자르고 `…` 를 붙인다.
+ *
+ * 100 은 리허설 실측에서 나온 가장 긴 실패 첫 줄(`Repository path 'example' is outside the
+ * allowed repository '<절대경로>'`, 약 95자)이 잘리지 않는 값이다. 진단 값 자체는
+ * `MAX_VALUE_STRING_CHARS`(200)로 한 번 잘려 오므로 여기 상한은 그 절반이다.
+ *
+ * **자르기가 정보를 잃지 않는다.** 원본은 같은 화면 위 케이스 블록에 온전히 있다. 이 행은
+ * 가리키는 자리이지 판정 근거가 아니다(#447 과 다른 점이다). 설계 문서 §4.4.
+ */
+const MAX_RECAP_TEXT_CHARS = 100;
+
+/** 코드 포인트 기준으로 자른다. slice 는 서로게이트 페어를 쪼갠다. */
+const clampRecapText = (escaped: string): string =>
+  width(escaped) <= MAX_RECAP_TEXT_CHARS
+    ? escaped
+    : `${Array.from(escaped)
+        .slice(0, MAX_RECAP_TEXT_CHARS - 1)
+        .join("")}…`;
+
+/**
+ * 케이스 블록이 그 케이스에 대해 찍은 줄 중 가장 구체적인 하나를 고른다. 설계 문서 §4.3.
+ *
+ * **새 문안을 만들지 않는다.** 고르기만 한다. `message` 는 판정의 참거짓만 말하는 고정 문안인
+ * 경우가 많아(`IS_ERROR_MISMATCH`) 실패 여러 건이 전부 같은 문장이 된다. 서버가 준 이유와
+ * 우리가 낸 위반이 케이스를 구분하므로 그쪽을 먼저 본다(ADR-0027 의 순서와 같다).
+ *
+ * 단언 중에서는 **실패한 단언**을 고른다. `skipped` 단언의 진단은 "무엇을 못 검사했나" 이지
+ * "왜 실패했나" 가 아니다. 실패 케이스는 케이스 레벨 진단이 있거나 실패한 단언이 반드시 있으므로
+ * (`executor.ts` 의 status 판정) 이렇게 좁혀도 잃는 것이 없다. PR #453 에서 가져온 규칙이다.
+ *
+ * 반환값은 이스케이프하지 않은 원문이다. 이스케이프는 호출부가 한다.
+ */
+const recapText = (result: TestCaseResult): string | undefined => {
+  const source =
+    result.operation.diagnostic ??
+    result.assertions.find((assertion) => assertion.status === "failed" && isDrawn(assertion))
+      ?.diagnostic;
+  if (source === undefined) return undefined;
+  return source.violations?.[0]?.message ?? source.notes?.[0] ?? source.message;
+};
+
+/**
+ * 실패한 케이스만 모은 절(#446). 설계 문서 §4.
+ *
+ * **0건이면 아무 줄도 안 낸다.** 거절 고지·크기 고지와 같은 규칙이고, 그래야 전부 통과한
+ * 실행의 출력이 이 변경 전과 바이트 그대로다.
+ *
+ * **요약 줄 앞이다.** 뒤에 두면 거절 근거 미확인 고지가 실패 목록의 각주로 읽힌다. 그 고지는
+ * 통과한 케이스에 대한 말이다(ADR-0092).
+ *
+ * 반환 배열은 머리글, 행들, 빈 줄 하나로 끝난다. 그 빈 줄이 요약 줄과의 간격이다.
+ */
+const failedRecapLines = (report: RunnerReport, color: boolean): readonly string[] => {
+  const members = report.cases.filter((result) => RECAP_STATUSES.has(result.status));
+  if (members.length === 0) return [];
+  // 이스케이프한 뒤의 폭으로 열을 맞춘다. 절에 실린 케이스끼리만 맞춘다(설계 문서 §4.2).
+  const idColumn = members.reduce(
+    (max, result) => Math.max(max, width(escapeTerminalText(result.spec.id))),
+    0,
+  );
+  return [
+    RECAP_HEADING,
+    ...members.map((result) => {
+      const mark = sgr(MARKS[result.status].sgr, MARKS[result.status].glyph, color);
+      const escapedId = escapeTerminalText(result.spec.id);
+      const text = recapText(result);
+      // 글이 없으면 열을 채우지 않는다. 뒤에 올 것이 없는데 패딩을 넣으면 줄 끝에 공백만 남는다.
+      return text === undefined
+        ? `${RECAP_INDENT}${mark} ${escapedId}`
+        : `${RECAP_INDENT}${mark} ${pad(escapedId, idColumn)}${GAP}${bulletBody(clampRecapText(escapeTerminalText(text)))}`;
+    }),
+    "",
+  ];
+};
+
 /**
  * RunnerReport를 사람이 읽는 문자열로 그린다. 순수 함수다.
  * process, stdout, isTTY, NO_COLOR, Date, 로케일을 읽지 않는다.
@@ -257,6 +352,7 @@ export function renderReport(report: RunnerReport, options?: RenderReportOptions
     lines.push(stopReasonLine(report.stopReason, escapeTerminalText));
     lines.push("");
   }
+  lines.push(...failedRecapLines(report, color));
   lines.push(summaryLine(report.summary));
   lines.push(...rejectionNoticeLines(report.summary));
   lines.push(...payloadNoticeLines(report.payload));

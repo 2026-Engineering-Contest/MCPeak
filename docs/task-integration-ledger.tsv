@@ -155,3 +155,6 @@ T1-T2-npx-launcher-record	6fc7d32	2026-09-12
 T4-npx-launcher-adr	b1ad013	2026-09-12
 T3-npx-launcher-notice-cli	a00a566	2026-09-12
 T2-secrets-env-record	b6208a4	2026-09-12
+T1-secrets-env-cli	4ad59b0	2026-09-12
+T3-secrets-env-dashboard	1ef4709	2026-09-12
+TA-secrets-env-adr	2be170d	2026-09-12

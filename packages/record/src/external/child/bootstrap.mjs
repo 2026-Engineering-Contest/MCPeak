@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { installFetchAdapter } from "./fetch-adapter.mjs";
 import { installOutOfScopeObserver } from "./out-of-scope-observer.mjs";
 
@@ -20,9 +21,26 @@ const values = Object.fromEntries(
   Object.entries(ENV_KEYS).map(([name, key]) => [name, process.env[key]]),
 );
 const observerPath = process.env[ENV_OBSERVER_PATH];
-for (const key of Object.values(ENV_KEYS)) delete process.env[key];
-// 손자 프로세스에 새지 않게 같이 지운다. 남으면 서버가 띄운 자식이 같은 파일에 덮어쓴다.
+
+/**
+ * **관측 경로만 지금 지운다.** 관측 사이드카는 파일 하나를 덮어쓰므로 여럿이 쓰면 마지막에
+ * 끝난 프로세스의 숫자만 남는다. 이 경로의 런처 환경 정확도는 이번 변경의 범위가 아니라
+ * (설계 §3), 지금 동작을 그대로 둔다.
+ */
 delete process.env[ENV_OBSERVER_PATH];
+
+/**
+ * **설정은 지금 지우지 않는다.** 지우면 중간에 낀 Node 런처(`npx`)가 설정을 삼켜 진짜 서버가
+ * 빈손으로 뜬다. `NODE_OPTIONS` 는 손자까지 살아서 가므로 서버도 이 파일을 로드하지만,
+ * 설정이 없으면 `configured` 가 false 라 조용히 아무것도 하지 않는다. 그것이 녹화 0건의
+ * 원인이다(실측 문서 §2, ADR-0095).
+ *
+ * 대신 어댑터가 **실제로 가로챈 첫 호출**에서 소비한다. 그 시점 뒤에 태어난 자식은 빈손이고,
+ * 그 전에 태어난 형제는 Coordinator 의 단일 기록자 판정이 막는다.
+ */
+const consumeConfiguration = () => {
+  for (const key of Object.values(ENV_KEYS)) delete process.env[key];
+};
 
 const configured = Object.values(values).some((value) => value !== undefined);
 if (configured) {
@@ -47,6 +65,9 @@ if (configured) {
       token: values.token,
       schemaVersion: 1,
       timeoutMs,
+      // 프로세스마다 하나. 세션에 저장되지 않고 와이어에만 산다(설계 §4.2).
+      writerId: randomUUID(),
+      onFirstCall: consumeConfiguration,
     });
     // 재생에서만 센다. 녹화는 범위 밖 호출이 실제로 나가는 것이 정상이고(그래서 안 남는다는
     // 사실만 알리면 된다), 재생에서야 "나가면 안 되는데 나갔다" 가 된다.

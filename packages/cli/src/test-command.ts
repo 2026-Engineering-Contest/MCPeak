@@ -1986,13 +1986,27 @@ function formatUtc(recordedAt: string, date: string, time: string): string {
 }
 
 export function externalSessionNotice(summary: SessionSummary): string | undefined {
+  // 없으면 0이다(record 패키지 설계 §4.3). Coordinator 가 직접 센 값이라 "못 셌음" 갈래가 없다.
+  const others = summary.otherProcessCalls ?? 0;
   if (summary.mode === "record") {
-    if (summary.interactionCount > 0) return undefined;
-    return (
-      "\n알림: 이 실행에서 외부 호출이 하나도 녹화되지 않았습니다.\n" +
-      "→ 서버가 외부 API를 호출했다면 지원 범위를 벗어났는지 확인하세요.\n" +
-      EXTERNAL_SCOPE_NOTE
-    );
+    if (summary.interactionCount === 0 && others > 0)
+      return (
+        "\n알림: 이 실행에서 외부 호출이 하나도 녹화되지 않았습니다.\n" +
+        `→ 다른 프로세스가 먼저 이 세션의 기록을 시작해, 이 실행의 호출 ${others}건을 녹화하지 않았습니다.\n` +
+        "→ 서버가 외부 API를 자식 프로세스에서 부르면 먼저 시작한 쪽만 녹화됩니다.\n"
+      );
+    if (summary.interactionCount === 0)
+      return (
+        "\n알림: 이 실행에서 외부 호출이 하나도 녹화되지 않았습니다.\n" +
+        "→ 서버가 외부 API를 호출했다면 지원 범위를 벗어났는지 확인하세요.\n" +
+        EXTERNAL_SCOPE_NOTE
+      );
+    if (others > 0)
+      return (
+        `\n알림: 이 실행의 외부 호출 ${others}건이 다른 프로세스에서 나와 녹화되지 않았습니다.\n` +
+        "→ 녹화본은 이 서버가 한 일의 일부만 담고 있습니다. 재생은 나머지를 막지 못합니다.\n"
+      );
+    return undefined;
   }
   if (summary.interactionCount === 0)
     return (

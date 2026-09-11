@@ -18,7 +18,8 @@ export type ExternalErrorCode =
   | "UNSUPPORTED_HTTP_RESPONSE"
   | "HTTP_BODY_TOO_LARGE"
   | "COORDINATOR_UNAVAILABLE"
-  | "COORDINATOR_TIMEOUT";
+  | "COORDINATOR_TIMEOUT"
+  | "WRITER_CONFLICT";
 
 export class ExternalRecordReplayError extends Error {
   override readonly name: "ExternalRecordReplayError";

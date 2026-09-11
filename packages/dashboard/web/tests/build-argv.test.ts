@@ -11,6 +11,7 @@ const BASE: GenerateForm = {
   // command에는 실행 파일 하나만 온다(CLI --command 계약). 스크립트 경로는 args로 간다.
   command: "node",
   args: [],
+  envNames: [],
   suiteId: "weather",
   suiteName: "날씨 서버",
   outPath: "examples/weather/suite.json",
@@ -22,6 +23,39 @@ const BASE: GenerateForm = {
   repair: true,
   resetCmd: "",
 };
+
+describe("buildGenerateArgv envNames", () => {
+  it("--arg 뒤, 스위트 옵션 앞에 --env 가 순서대로 들어간다", () => {
+    expect(buildGenerateArgv({ ...BASE, args: ["server.mjs"], envNames: ["A", "B"] })).toEqual([
+      "--command",
+      "node",
+      "--arg",
+      "server.mjs",
+      "--env",
+      "A",
+      "--env",
+      "B",
+      "--suite-id",
+      "weather",
+      "--name",
+      "날씨 서버",
+      "--out",
+      "examples/weather/suite.json",
+      "--provider",
+      "claude",
+    ]);
+  });
+
+  it("http 갈래에는 --env 를 싣지 않는다", () => {
+    const argv = buildGenerateArgv({
+      ...BASE,
+      transport: "http",
+      url: "https://example.test/mcp",
+      envNames: ["A"],
+    });
+    expect(argv).not.toContain("--env");
+  });
+});
 
 describe("buildGenerateArgv", () => {
   it("최소 필수 입력의 argv가 §4-4 순서와 정확히 일치한다", () => {

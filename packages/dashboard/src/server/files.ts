@@ -91,7 +91,8 @@ function mcpConfigCandidates(parsed: unknown, path: string): ServerCandidate[] {
       args,
       source: "mcp-config",
       path,
-      hasEnv: env !== null && Object.keys(env).length > 0,
+      // 키 이름만 싣는다. 값은 이 프로세스 밖으로 나가지 않는다(설계 §4.3).
+      envNames: env === null ? [] : Object.keys(env),
     });
   }
   return results;
@@ -144,7 +145,8 @@ function packageBinCandidates(
       args: runsOnNode ? [relativeTarget] : [],
       source: "package-bin",
       path,
-      hasEnv: false,
+      // `package.json` 의 `bin` 에는 env 를 적는 자리가 없다.
+      envNames: [],
     });
   }
   return results;
@@ -174,6 +176,55 @@ export async function listServerCandidates(root: string): Promise<ServerCandidat
     );
   }
   return results.sort((a, b) => a.path.localeCompare(b.path) || a.name.localeCompare(b.name));
+}
+
+/** `.mcp.json` 값 안의 `${VAR}`. 기본값 문법(`${VAR:-x}`)은 이 패턴에 안 맞아 원문으로 남는다. */
+const ENV_REFERENCE_PATTERN = /\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g;
+
+/**
+ * 후보 id 의 `.mcp.json` env 를 값까지 읽어 `${VAR}` 를 확장한다. **목록 API 에는 쓰지
+ * 않는다.** 값이 브라우저로 가면 안 된다.
+ *
+ * 확장할 변수가 없으면 그 키를 **빼고** 돌려준다. 빈 문자열로 채우면 CLI 가 "비어 있다" 대신
+ * 빈 값을 서버에 넘긴다. 그러면 실패가 서버 쪽 오류로 보이고 사용자는 원인을 못 짚는다.
+ *
+ * 후보를 못 찾으면 `undefined` 다. 호출부가 그것을 400 으로 옮긴다.
+ */
+export async function resolveCandidateEnv(
+  root: string,
+  serverId: string,
+  processEnv: Readonly<Record<string, string | undefined>>,
+): Promise<Readonly<Record<string, string>> | undefined> {
+  const candidates = await listServerCandidates(root);
+  const candidate = candidates.find((entry) => entry.id === serverId);
+  if (candidate === undefined) return undefined;
+  if (candidate.source !== "mcp-config" || candidate.envNames.length === 0) return {};
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(await readFile(join(root, ...candidate.path.split("/")), "utf8"));
+  } catch {
+    // 목록을 만든 뒤 파일이 바뀌었을 수 있다. 후보는 있으나 값이 없는 상태로 본다.
+    return {};
+  }
+  const entry = asRecord(asRecord(asRecord(parsed)?.mcpServers)?.[candidate.name]);
+  const env = asRecord(entry?.env);
+  if (env === null) return {};
+  const resolved: Record<string, string> = {};
+  for (const [key, raw] of Object.entries(env)) {
+    if (typeof raw !== "string") continue;
+    let missing = false;
+    const value = raw.replace(ENV_REFERENCE_PATTERN, (_match, name: string) => {
+      const found = processEnv[name];
+      if (found === undefined) {
+        missing = true;
+        return "";
+      }
+      return found;
+    });
+    if (missing) continue;
+    resolved[key] = value;
+  }
+  return resolved;
 }
 
 /**

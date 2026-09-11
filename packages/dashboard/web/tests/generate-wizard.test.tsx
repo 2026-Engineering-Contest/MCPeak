@@ -13,7 +13,7 @@ const WEATHER: ServerCandidate = {
   args: ["examples/weather-server/server.mjs"],
   source: "mcp-config",
   path: ".mcp.json",
-  hasEnv: false,
+  envNames: ["API_KEY"],
 };
 
 const ECHO: ServerCandidate = {
@@ -23,7 +23,7 @@ const ECHO: ServerCandidate = {
   args: ["examples/echo-server/server.mjs"],
   source: "package-bin",
   path: "examples/echo-server/package.json",
-  hasEnv: false,
+  envNames: [],
 };
 
 /**
@@ -81,6 +81,14 @@ function fillStepSuite(): void {
 
 function clickNext(): void {
   fireEvent.click(screen.getByRole("button", { name: "다음" }));
+}
+
+/** POST 본문 전체. serverId 를 보는 케이스가 있다. */
+function postedBody(fetchMock: ReturnType<typeof vi.fn>): Record<string, unknown> {
+  const call = fetchMock.mock.calls.find(
+    (entry) => (entry[1] as RequestInit | undefined)?.method === "POST",
+  ) as [string, RequestInit];
+  return JSON.parse(String(call[1].body)) as Record<string, unknown>;
 }
 
 /** POST 된 argv. 첫 POST 호출 하나만 본다. */
@@ -242,11 +250,13 @@ describe("GenerateWizard", () => {
     await waitFor(() => {
       expect(window.location.hash).toBe("#/runs/run-new");
     });
-    expect(postedArgv(fetchMock).slice(0, 10)).toEqual([
+    expect(postedArgv(fetchMock).slice(0, 12)).toEqual([
       "--command",
       "node",
       "--arg",
       "examples/weather-server/server.mjs",
+      "--env",
+      "API_KEY",
       "--suite-id",
       "server",
       "--name",
@@ -254,6 +264,33 @@ describe("GenerateWizard", () => {
       "--out",
       "examples/weather-server/server.suite.json",
     ]);
+  });
+
+  it("후보 갈래 실행 본문에 serverId 가 실린다", async () => {
+    const fetchMock = await renderWizard([WEATHER]);
+    clickNext();
+    clickNext();
+    clickNext();
+    fireEvent.click(screen.getByRole("button", { name: "생성 시작" }));
+
+    await waitFor(() => {
+      expect(window.location.hash).toBe("#/runs/run-new");
+    });
+    expect(postedBody(fetchMock).serverId).toBe(WEATHER.id);
+  });
+
+  it("직접 입력 갈래는 serverId 도 --env 도 싣지 않는다", async () => {
+    const fetchMock = await renderWizard();
+    fillStepServer("server.js");
+    fillStepSuite();
+    clickNext();
+    fireEvent.click(screen.getByRole("button", { name: "생성 시작" }));
+
+    await waitFor(() => {
+      expect(window.location.hash).toBe("#/runs/run-new");
+    });
+    expect(postedBody(fetchMock).serverId).toBeUndefined();
+    expect(postedArgv(fetchMock)).not.toContain("--env");
   });
 
   it("후보 선택 시 2단계 저장 위치·스위트 ID·이름이 제안돼 있고 힌트가 붙는다", async () => {

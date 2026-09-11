@@ -1,7 +1,12 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SessionOrigin } from "../src/session-origin.js";
-import { readSessionOrigin, saveSessionOrigin } from "../src/session-origin.js";
+import {
+  REDACTED_ARG,
+  readSessionOrigin,
+  redactedArgCount,
+  saveSessionOrigin,
+} from "../src/session-origin.js";
 
 /**
  * 녹화본이 어느 실행에서 나왔는지를 기억한다. **세션 파일 안에 있어야 할 정보를 브라우저가
@@ -160,5 +165,23 @@ describe("녹화본의 출처", () => {
 
     expect(() => saveSessionOrigin("tmp/weather.db", origin())).not.toThrow();
     expect(readSessionOrigin("tmp/weather.db")).toBeNull();
+  });
+});
+
+describe("가려진 인자 세기", () => {
+  it("토큰 자체가 자리표시면 센다", () => {
+    expect(redactedArgCount(["a", REDACTED_ARG, "b"])).toBe(1);
+  });
+
+  it("`--키=[redacted]` 모양도 센다", () => {
+    expect(redactedArgCount(["a", "[redacted]", "--k=[redacted]"])).toBe(2);
+  });
+
+  it("가려진 것이 없으면 0 이다", () => {
+    expect(redactedArgCount(["--project-ref", "nyyf"])).toBe(0);
+  });
+
+  it("자리표시 문자열은 record 의 REDACTED_ARG 와 같다", () => {
+    expect(REDACTED_ARG).toBe("[redacted]");
   });
 });

@@ -54,6 +54,8 @@ const INITIAL_STATE: WizardState = {
   method: "node",
   target: "",
   args: [],
+  // 후보 갈래에서만 찬다. 값은 브라우저에 오지 않는다(설계 §4.3).
+  envNames: [],
   transport: "stdio",
   url: "",
   headerEnvs: [],
@@ -114,6 +116,9 @@ function applyPatch(
       choice.kind === "candidate"
         ? candidates.find((candidate) => candidate.id === choice.id)
         : undefined;
+    // 후보의 env 이름을 폼에 싣는다. 직접 입력 갈래로 옮기면 비운다. 남기면 새로 적은
+    // 명령에 앞 후보의 env 이름이 붙어 CLI 가 그 이름을 찾다 멈춘다.
+    next = { ...next, envNames: picked === undefined ? [] : [...picked.envNames] };
     const suggestion = suggestOutPathFor({
       transport: next.transport,
       args: effectiveCommand(next).args,
@@ -234,6 +239,9 @@ export function GenerateWizard(): JSX.Element {
       const response = await apiSend<StartRunResponse>("POST", "/api/runs", {
         flow: "generate",
         argv: [...argv],
+        // 후보 갈래면 id 를 함께 보낸다. 서버가 그 후보의 `.mcp.json` env 를 값으로 바꿔
+        // 이 run 의 `readEnv` 에 싣는다. 값은 브라우저를 지나지 않는다(설계 §4.3).
+        ...(state.choice.kind === "candidate" ? { serverId: state.choice.id } : {}),
       } satisfies StartRunRequest);
       // 후보 갈래의 명령은 프로젝트 선언에서 온 것이라 "최근 사용값"이 아니다.
       if (state.choice.kind === "manual") {

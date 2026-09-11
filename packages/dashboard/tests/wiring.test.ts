@@ -134,8 +134,8 @@ describe("wiring.ts executeFlow", () => {
     const io = fakeIo();
 
     // 바깥에 같은 이름이 이미 있으면 지우지 말고 되돌린다. 테스트가 환경을 바꾼 채 끝나면 안 된다.
-    const original = process.env.MCPEAK_TEST_HDR;
-    process.env.MCPEAK_TEST_HDR = "토큰-값";
+    const original = process.env.DASH_ENV_TEST_HDR;
+    process.env.DASH_ENV_TEST_HDR = "토큰-값";
     try {
       await executeFlow({ flow: "test", argv: ["test", "suite.json"] }, io, {
         runners: {
@@ -151,12 +151,12 @@ describe("wiring.ts executeFlow", () => {
       });
 
       const readEnv = capturedDeps?.readEnv as (name: string) => string | undefined;
-      expect(readEnv("MCPEAK_TEST_HDR")).toBe("토큰-값");
-      expect(readEnv("MCPEAK_TEST_HDR_없음")).toBeUndefined();
+      expect(readEnv("DASH_ENV_TEST_HDR")).toBe("토큰-값");
+      expect(readEnv("DASH_ENV_TEST_HDR_없음")).toBeUndefined();
     } finally {
       // 다른 테스트로 새면 결정론이 깨진다.
-      if (original === undefined) delete process.env.MCPEAK_TEST_HDR;
-      else process.env.MCPEAK_TEST_HDR = original;
+      if (original === undefined) delete process.env.DASH_ENV_TEST_HDR;
+      else process.env.DASH_ENV_TEST_HDR = original;
     }
   });
 
@@ -307,5 +307,85 @@ describe("wiring.ts executeFlow", () => {
     });
 
     expect(capturedArgv).toEqual(["test", "suite.json", "--json"]);
+  });
+});
+
+describe("wiring.ts 후보 env 로 만든 readEnv", () => {
+  /** `process.env` 를 건드리는 테스트는 원복한다(설계 §7.5). */
+  function withProcessEnv(name: string, value: string | undefined): () => void {
+    const before = process.env[name];
+    if (value === undefined) delete process.env[name];
+    else process.env[name] = value;
+    return () => {
+      if (before === undefined) delete process.env[name];
+      else process.env[name] = before;
+    };
+  }
+
+  async function captureReadEnv(
+    flow: "test" | "generate",
+    candidateEnv: Readonly<Record<string, string>> | undefined,
+  ): Promise<(name: string) => string | undefined> {
+    let captured: ((name: string) => string | undefined) | undefined;
+    const capture = (deps: unknown): number => {
+      captured = (deps as { readEnv: (name: string) => string | undefined }).readEnv;
+      return 0;
+    };
+    const argv = flow === "test" ? ["test", "suite.json"] : ["generate", "--baseline-only"];
+    await executeFlow({ flow, argv }, fakeIo(), {
+      ...(candidateEnv === undefined ? {} : { candidateEnv }),
+      runners: {
+        test: (_argv, deps) => Promise.resolve(capture(deps)),
+        generate: (_argv, deps) => Promise.resolve(capture(deps)),
+      },
+      loaders: {
+        loadCore: () => Promise.resolve(fakeCoreModule()),
+        loadRunner: () => Promise.resolve(fakeRunnerModule()),
+        loadGenerate: () => Promise.resolve(fakeGenerateModule()),
+      },
+    });
+    if (captured === undefined) throw new Error("readEnv 가 배선되지 않았습니다.");
+    return captured;
+  }
+
+  it("test 플로우: 후보 env 가 process.env 를 이긴다", async () => {
+    const restore = withProcessEnv("DASH_ENV_TEST_A", "from-process");
+    try {
+      const readEnv = await captureReadEnv("test", { DASH_ENV_TEST_A: "from-file" });
+      expect(readEnv("DASH_ENV_TEST_A")).toBe("from-file");
+    } finally {
+      restore();
+    }
+  });
+
+  it("test 플로우: 후보 env 에 없는 이름은 process.env 를 본다", async () => {
+    const restore = withProcessEnv("DASH_ENV_TEST_B", "from-process");
+    try {
+      const readEnv = await captureReadEnv("test", { DASH_ENV_TEST_A: "from-file" });
+      expect(readEnv("DASH_ENV_TEST_B")).toBe("from-process");
+    } finally {
+      restore();
+    }
+  });
+
+  it("후보 env 가 없으면 process.env 만 본다", async () => {
+    const restore = withProcessEnv("DASH_ENV_TEST_C", "from-process");
+    try {
+      const readEnv = await captureReadEnv("test", undefined);
+      expect(readEnv("DASH_ENV_TEST_C")).toBe("from-process");
+      expect(readEnv("DASH_ENV_TEST_NOT_SET")).toBeUndefined();
+    } finally {
+      restore();
+    }
+  });
+
+  it("generate 플로우도 같은 규칙이다", async () => {
+    const restore = withProcessEnv("DASH_ENV_TEST_D", "from-process");
+    try {
+      const readEnv = await captureReadEnv("generate", { DASH_ENV_TEST_D: "from-file" });
+      expect(readEnv("DASH_ENV_TEST_D")).toBe("from-file");
+    } finally {
+      restore();
+    }
   });
 });

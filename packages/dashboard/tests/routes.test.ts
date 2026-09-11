@@ -9,6 +9,7 @@ import { startDashboardServer } from "../src/index.js";
 import { handleRequest } from "../src/server/routes.js";
 import type { RunIo } from "../src/server/run-registry.js";
 import { RunRegistry } from "../src/server/run-registry.js";
+import type { ExecuteFlowOverrides } from "../src/server/wiring.js";
 
 /** 마이크로태스크·타이머 큐를 한 바퀴 비운다. 백그라운드 execute가 끝날 틈을 준다. */
 function tick(): Promise<void> {
@@ -25,7 +26,11 @@ interface TestServer {
 }
 
 async function startTestServer(
-  execute?: (request: StartRunRequest, io: RunIo) => Promise<number>,
+  execute?: (
+    request: StartRunRequest,
+    io: RunIo,
+    options?: ExecuteFlowOverrides,
+  ) => Promise<number>,
 ): Promise<TestServer> {
   const root = await mkdtemp(join(tmpdir(), "mcpeak-dashboard-routes-"));
   const registry = new RunRegistry();
@@ -296,9 +301,78 @@ describe("routes.ts", () => {
         args: ["server.mjs"],
         source: "mcp-config",
         path: ".mcp.json",
-        hasEnv: false,
+        envNames: [],
       },
     ]);
+  });
+
+  it("serverId 가 문자열이 아니면 400 이다", async () => {
+    server = await startTestServer();
+    const response = await fetch(`${server.baseUrl}/api/runs`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ flow: "test", argv: ["suite.json"], serverId: 3 }),
+    });
+    expect(response.status).toBe(400);
+  });
+
+  it("없는 serverId 면 400 이고 본문 error 가 그 id 를 말한다", async () => {
+    server = await startTestServer();
+    const response = await fetch(`${server.baseUrl}/api/runs`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ flow: "test", argv: ["suite.json"], serverId: "mcp-config:x:없음" }),
+    });
+    expect(response.status).toBe(400);
+    expect((await response.json()) as { error: string }).toEqual({
+      error: "서버 후보를 찾을 수 없습니다: mcp-config:x:없음",
+    });
+  });
+
+  it("있는 serverId 면 execute 가 그 후보의 env 를 받는다", async () => {
+    const seen: (Record<string, string> | undefined)[] = [];
+    server = await startTestServer((_request, _io, options) => {
+      seen.push(options?.candidateEnv as Record<string, string> | undefined);
+      return Promise.resolve(0);
+    });
+    await writeFile(
+      join(server.root, ".mcp.json"),
+      JSON.stringify({
+        mcpServers: {
+          weather: { command: "node", args: ["server.mjs"], env: { API_KEY: "from-file" } },
+        },
+      }),
+      "utf8",
+    );
+
+    const response = await fetch(`${server.baseUrl}/api/runs`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        flow: "test",
+        argv: ["suite.json", "--env", "API_KEY"],
+        serverId: "mcp-config:.mcp.json:weather",
+      }),
+    });
+    expect(response.status).toBe(200);
+    await tick();
+    expect(seen).toEqual([{ API_KEY: "from-file" }]);
+  });
+
+  it("serverId 가 없으면 execute 는 후보 env 를 받지 않는다", async () => {
+    const seen: (Record<string, string> | undefined)[] = [];
+    server = await startTestServer((_request, _io, options) => {
+      seen.push(options?.candidateEnv as Record<string, string> | undefined);
+      return Promise.resolve(0);
+    });
+
+    await fetch(`${server.baseUrl}/api/runs`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ flow: "test", argv: ["suite.json"] }),
+    });
+    await tick();
+    expect(seen).toEqual([undefined]);
   });
 
   it("후보가 없으면 빈 배열이다", async () => {

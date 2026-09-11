@@ -20,7 +20,7 @@ afterEach(async () => {
   await Promise.allSettled(handles.splice(0).map((handle) => handle.finish("failed")));
 });
 
-describe("관측 보고 디렉터리 환경변수 계약 (ADR-0096)", () => {
+describe("관측 보고 디렉터리 환경변수 계약 (ADR-0100)", () => {
   it("부모가 그 이름으로 존재하는 디렉터리를 넘긴다", async () => {
     const store = createMemorySessionStore();
     store.createSession("default");

@@ -5,7 +5,7 @@ import { startExternalCoordinator } from "../../src/external/coordinator.js";
 import { createMemorySessionStore } from "../../src/external/session-store.js";
 
 /**
- * ADR-0096 의 집계 규칙을 고정한다.
+ * ADR-0100 의 집계 규칙을 고정한다.
  *
  * 보고는 이제 프로세스마다 한 파일이다. 중간에 낀 Node 런처(`npx`)도 같은 디렉터리를 물려받아
  * 자기 `node:http` 트래픽을 보고하는데 그것은 서버가 한 일이 아니다. 그래서 **기록자의 보고가
@@ -59,7 +59,7 @@ const outOfScopeOf = async (handle: Awaited<ReturnType<typeof startExternalCoord
 const report = (outOfScope: number, claimed?: boolean) =>
   JSON.stringify(claimed === undefined ? { outOfScope } : { outOfScope, claimed });
 
-describe("범위 밖 관측 집계 (ADR-0096)", () => {
+describe("범위 밖 관측 집계 (ADR-0100)", () => {
   it("보고가 하나도 없으면 못 셌음이다", async () => {
     const { handle } = await startReplay();
 

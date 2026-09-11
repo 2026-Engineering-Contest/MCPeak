@@ -204,7 +204,7 @@ describe("첫 호출이 설정을 소비한다 (ADR-0095)", () => {
  *
  * `launcherPing` 을 주면 런처가 자식을 띄우기 전에 그 URL 로 `node:http` 요청을 한 번 낸다 —
  * `npx` 의 레지스트리 트래픽을 흉내 낸 것이다. 그 호출은 서버가 한 일이 아니므로 기록자의
- * 보고만 세는 규칙이 걸러야 한다(ADR-0096).
+ * 보고만 세는 규칙이 걸러야 한다(ADR-0100).
  */
 const replayOnce = async (options: {
   readonly store: SessionStore;
@@ -247,13 +247,13 @@ const recordedSource = async (store: SessionStore, sessionId: string, originUrl:
 };
 
 /**
- * ADR-0096. 관측이 세는 것을 **이 세션의 기록자가 낸 호출**로 좁힌다.
+ * ADR-0100. 관측이 세는 것을 **이 세션의 기록자가 낸 호출**로 좁힌다.
  *
  * 고치기 전에는 관측 사이드카가 체인의 첫 Node 프로세스 하나에만 설치됐고, `npx` 를 쓰면 그것이
  * 런처였다. 그래서 서버가 낸 범위 밖 호출은 아예 못 세고 런처 자신의 레지스트리 트래픽만 세어,
  * 재현 가능한 재생에 "재현 가능하지 않습니다" 가 붙었다.
  */
-describe("범위 밖 관측은 기록자의 것만 센다 (ADR-0096)", () => {
+describe("범위 밖 관측은 기록자의 것만 센다 (ADR-0100)", () => {
   it("런처 자신의 호출은 세지 않는다", async () => {
     const origin = await startOrigin();
     const store = createMemorySessionStore();

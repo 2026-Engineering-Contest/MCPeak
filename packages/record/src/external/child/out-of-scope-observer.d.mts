@@ -6,12 +6,12 @@ export interface OutOfScopeObserverOptions {
   readonly coordinatorHostHeader: string;
   /**
    * 자식 종료 시 `{"outOfScope": N, "claimed": B}` 를 동기로 쓸 **디렉터리**. 파일 이름은
-   * 프로세스마다 다르다 — 중간에 낀 Node 런처와 같은 경로를 덮어쓰지 않기 위해서다(ADR-0096).
+   * 프로세스마다 다르다 — 중간에 낀 Node 런처와 같은 경로를 덮어쓰지 않기 위해서다(ADR-0100).
    */
   readonly reportDir: string;
   /**
    * 이 프로세스가 이 세션의 기록자였는지. 종료 시점에 읽는다. 부모는 기록자의 보고가 있으면
-   * 그것만 세고, 하나도 없으면 전부 센다(ADR-0096).
+   * 그것만 세고, 하나도 없으면 전부 센다(ADR-0100).
    */
   isClaimed(): boolean;
 }

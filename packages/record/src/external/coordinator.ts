@@ -746,7 +746,7 @@ interface ObserverSidecar {
  * `out-of-scope-observer.mjs` 에 적었다 — 마지막 호출이 종료와 경합하면, 잃는 것이 하필 이
  * 기능이 잡으려는 모양이다.
  *
- * **파일 하나가 아니라 디렉터리다.** 체인의 Node 프로세스마다 자기 파일을 쓴다(ADR-0096).
+ * **파일 하나가 아니라 디렉터리다.** 체인의 Node 프로세스마다 자기 파일을 쓴다(ADR-0100).
  */
 function createObserverSidecar(): ObserverSidecar {
   const dir = mkdtempSync(join(tmpdir(), "mcpeak-external-observer-"));
@@ -762,7 +762,7 @@ function createObserverSidecar(): ObserverSidecar {
       try {
         // **기록자의 보고가 있으면 그것만 센다.** 중간에 낀 Node 런처(`npx`)도 이 디렉터리를
         // 물려받아 자기 `node:http` 트래픽을 보고하는데, 그것은 서버가 한 일이 아니다.
-        // 런처는 Coordinator 를 한 번도 부르지 않으므로 언제나 `claimed: false` 다(ADR-0096).
+        // 런처는 Coordinator 를 한 번도 부르지 않으므로 언제나 `claimed: false` 다(ADR-0100).
         //
         // **기록자가 없으면 전부 센다.** 서버가 `node:http` 만 쓰면 어댑터를 한 번도 지나지
         // 않아 아무도 임자가 되지 않는데, 그 경우가 바로 이 기능이 만들어진 이유다

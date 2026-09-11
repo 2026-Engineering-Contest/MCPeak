@@ -40,7 +40,7 @@ const startServer = async (): Promise<{ readonly host: string }> => {
   return { host: `127.0.0.1:${port}` };
 };
 
-/** 보고를 받을 **디렉터리**. 파일 이름은 관측기가 프로세스마다 다르게 짓는다(ADR-0096). */
+/** 보고를 받을 **디렉터리**. 파일 이름은 관측기가 프로세스마다 다르게 짓는다(ADR-0100). */
 const reportDir = async (): Promise<string> => {
   const directory = await mkdtemp(join(tmpdir(), "mcpeak-observer-test-"));
   directories.push(directory);

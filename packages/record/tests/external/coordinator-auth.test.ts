@@ -2,6 +2,20 @@ import { afterEach, describe, expect, it } from "vitest";
 import { startExternalCoordinator } from "../../src/external/coordinator.js";
 import { MAX_COORDINATOR_PAYLOAD_BYTES } from "../../src/external/protocol.js";
 import { createMemorySessionStore } from "../../src/external/session-store.js";
+import { WRITER_HEADER } from "../../src/shared/writer.mjs";
+
+/**
+ * 인증을 지난 요청에는 기록자 식별자가 **필수**다(ADR-0095). Coordinator 는 첫 식별자를 그
+ * 세션의 기록자로 고정하고 헤더가 없는 요청은 `REQUEST_INVALID` 로 거절하므로, 아래에서
+ * 실제로 `/begin`·`/complete`·`/lookup` 까지 가는 요청은 전부 이 값을 싣는다.
+ *
+ * **값을 고정하는 것이 요점이다.** 이 파일이 보는 것은 기록자 판정이 아니라 그 뒤의 검사들이라,
+ * 여기서 실행마다 다른 값을 만들면 재는 것과 무관한 흔들림만 들어온다.
+ *
+ * 인증 실패(401 · 403) 케이스는 **헤더 없이 그대로 둔다.** 그 둘이 판정 순서의 회귀 방어다 —
+ * 기록자 판정이 인증보다 앞으로 가면 401 · 403 이 400 으로 바뀌어 깨져야 한다.
+ */
+const WRITER = "coordinator-auth-writer";
 
 const handles: Array<Awaited<ReturnType<typeof startExternalCoordinator>>> = [];
 
@@ -46,6 +60,7 @@ describe("external coordinator authentication", () => {
     const headers = {
       authorization: `Bearer ${token}`,
       "content-type": "application/json",
+      [WRITER_HEADER]: WRITER,
     };
 
     const unknown = await fetch(`${handle.url}/begin`, {
@@ -93,6 +108,7 @@ describe("Store 직전 재검사 (ADR-0052)", () => {
       headers: {
         authorization: `Bearer ${handle.childEnvironment.MCPEAK_EXTERNAL_COORDINATOR_TOKEN}`,
         "content-type": "application/json",
+        [WRITER_HEADER]: WRITER,
       },
       body: JSON.stringify({ schemaVersion: 1, request }),
     });
@@ -216,6 +232,7 @@ describe("Store 직전 재검사 (ADR-0052)", () => {
       headers: {
         authorization: `Bearer ${handle.childEnvironment.MCPEAK_EXTERNAL_COORDINATOR_TOKEN}`,
         "content-type": "application/json",
+        [WRITER_HEADER]: WRITER,
       },
       body: JSON.stringify({ schemaVersion: 1, request: leaky }),
     });
@@ -328,6 +345,7 @@ describe("불변식 위반 뒤 세션 상태 (ADR-0052)", () => {
     const auth = {
       authorization: `Bearer ${handle.childEnvironment.MCPEAK_EXTERNAL_COORDINATOR_TOKEN}`,
       "content-type": "application/json",
+      [WRITER_HEADER]: WRITER,
     };
 
     const began = await fetch(`${handle.url}/begin`, {
@@ -403,6 +421,7 @@ describe("불변식 위반 뒤 세션 상태 (ADR-0052)", () => {
     const auth = {
       authorization: `Bearer ${handle.childEnvironment.MCPEAK_EXTERNAL_COORDINATOR_TOKEN}`,
       "content-type": "application/json",
+      [WRITER_HEADER]: WRITER,
     };
 
     const began = await fetch(`${handle.url}/begin`, {
@@ -456,6 +475,7 @@ describe("불변식 위반 뒤 세션 상태 (ADR-0052)", () => {
     const auth = {
       authorization: `Bearer ${handle.childEnvironment.MCPEAK_EXTERNAL_COORDINATOR_TOKEN}`,
       "content-type": "application/json",
+      [WRITER_HEADER]: WRITER,
     };
 
     const began = await fetch(`${handle.url}/begin`, {
@@ -503,6 +523,7 @@ describe("불변식 위반 뒤 세션 상태 (ADR-0052)", () => {
     const auth = {
       authorization: `Bearer ${handle.childEnvironment.MCPEAK_EXTERNAL_COORDINATOR_TOKEN}`,
       "content-type": "application/json",
+      [WRITER_HEADER]: WRITER,
     };
 
     const began = await fetch(`${handle.url}/begin`, {
@@ -544,6 +565,7 @@ describe("불변식 위반 뒤 세션 상태 (ADR-0052)", () => {
     const auth = {
       authorization: `Bearer ${handle.childEnvironment.MCPEAK_EXTERNAL_COORDINATOR_TOKEN}`,
       "content-type": "application/json",
+      [WRITER_HEADER]: WRITER,
     };
 
     const began = await fetch(`${handle.url}/begin`, {
@@ -585,6 +607,7 @@ describe("불변식 위반 뒤 세션 상태 (ADR-0052)", () => {
     const auth = {
       authorization: `Bearer ${handle.childEnvironment.MCPEAK_EXTERNAL_COORDINATOR_TOKEN}`,
       "content-type": "application/json",
+      [WRITER_HEADER]: WRITER,
     };
 
     const began = await fetch(`${handle.url}/begin`, {
@@ -624,6 +647,7 @@ describe("불변식 위반 뒤 세션 상태 (ADR-0052)", () => {
     const auth = {
       authorization: `Bearer ${handle.childEnvironment.MCPEAK_EXTERNAL_COORDINATOR_TOKEN}`,
       "content-type": "application/json",
+      [WRITER_HEADER]: WRITER,
     };
 
     const began = await fetch(`${handle.url}/begin`, {
@@ -677,6 +701,7 @@ describe("body URL 지문 검증 (ADR-0062)", () => {
     const auth = {
       authorization: `Bearer ${handle.childEnvironment.MCPEAK_EXTERNAL_COORDINATOR_TOKEN}`,
       "content-type": "application/json",
+      [WRITER_HEADER]: WRITER,
     };
     const began = await fetch(`${handle.url}/begin`, {
       method: "POST",

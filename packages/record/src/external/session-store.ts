@@ -93,6 +93,15 @@ export interface RecordSessionSummary {
    * 나온 요약에는 항상 있다.
    */
   readonly bodyUrls?: BodyUrlCounts;
+  /**
+   * 이 세션의 기록자가 아닌 프로세스가 보내 거절당한 호출 수. 녹화(재생)되지 않은 호출이다.
+   *
+   * **`undefined` 는 0 과 같은 뜻이다.** `outOfScope` 와 다르다. 저 값은 자식의 보고에
+   * 달려 있어 부재가 "못 셌음" 이지만, 이 값은 Coordinator 가 자기 거절을 직접 센 것이라
+   * 언제나 안다. 선택 필드인 것은 Store 가 이 값을 모르기 때문이며 `bodyUrls` 와 같은
+   * 갈래다. Coordinator 가 `finish()` 에서 얹는다(ADR-0095).
+   */
+  readonly otherProcessCalls?: number;
 }
 
 /**
@@ -140,6 +149,15 @@ export interface ReplaySessionSummary {
    * 자식의 보고를 읽어 요약에 얹는다.
    */
   readonly outOfScope?: number;
+  /**
+   * 이 세션의 기록자가 아닌 프로세스가 보내 거절당한 호출 수. 녹화(재생)되지 않은 호출이다.
+   *
+   * **`undefined` 는 0 과 같은 뜻이다.** `outOfScope` 와 다르다. 저 값은 자식의 보고에
+   * 달려 있어 부재가 "못 셌음" 이지만, 이 값은 Coordinator 가 자기 거절을 직접 센 것이라
+   * 언제나 안다. 선택 필드인 것은 Store 가 이 값을 모르기 때문이며 `bodyUrls` 와 같은
+   * 갈래다. Coordinator 가 `finish()` 에서 얹는다(ADR-0095).
+   */
+  readonly otherProcessCalls?: number;
 }
 
 export type SessionSummary = RecordSessionSummary | ReplaySessionSummary;

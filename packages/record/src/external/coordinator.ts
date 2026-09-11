@@ -4,6 +4,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { WRITER_HEADER } from "../shared/writer.mjs";
 import { createRecordEngine, createReplayEngine, type ExternalEngine } from "./engine.js";
 import { ExternalRecordReplayError, externalError } from "./errors.js";
 import {
@@ -510,7 +511,15 @@ const bodyUrlFingerprints = (value: unknown): BodyUrlFingerprints => {
 const errorStatus = (error: ExternalRecordReplayError): number => {
   if (error.code === "PAYLOAD_TOO_LARGE") return 413;
   if (error.code === "REPLAY_MISS") return 404;
-  if (error.code === "CONCURRENT_MATCH" || error.code === "INCOMPLETE_SESSION") return 409;
+  // `WRITER_CONFLICT` 는 **지금 이 함수를 지나지 않는다.** 기록자 판정은 `errorResponse` 로
+  // 409 를 직접 내보내기 때문이다(ADR-0052 분기를 피해야 해서 그렇게 한다). 그래도 여기 적는
+  // 것은, 빼두면 이 함수가 같은 코드에 400 이라고 답해 두 자리가 서로 다른 말을 하기 때문이다.
+  if (
+    error.code === "CONCURRENT_MATCH" ||
+    error.code === "INCOMPLETE_SESSION" ||
+    error.code === "WRITER_CONFLICT"
+  )
+    return 409;
   if (error.code === "REPLAY_SOURCE_INVALID" || error.code === "SESSION_NOT_FOUND") return 422;
   return 400;
 };
@@ -544,6 +553,16 @@ export async function startExternalCoordinator(
       : createReplayEngine({ sourceSessionId: options.sourceSessionId, store: options.store });
   const token = randomBytes(32).toString("base64url");
 
+  /**
+   * 이 세션에 쓰는 프로세스는 하나다. **첫 요청을 보낸 프로세스가 임자다**(ADR-0095).
+   *
+   * 예전에는 이 보증을 자식이 환경변수를 지우는 것으로 얻었다. 그 방법은 체인의 첫 Node
+   * 프로세스를 임자로 만드는데, `npx` 를 쓰면 그것이 서버가 아니라 런처다. 이제 보증은 여기
+   * 부모에 있다 — 자식이 강제 종료되거나 환경을 만져도 깨지지 않는다.
+   */
+  let writerId: string | undefined;
+  let otherProcessCalls = 0;
+
   const server = createServer(async (request, response) => {
     try {
       if (request.method !== "POST") {
@@ -557,6 +576,24 @@ export async function startExternalCoordinator(
       }
       if (!tokenMatches(token, actualToken)) {
         errorResponse(response, 403, "AUTH_FORBIDDEN", "Coordinator 인증에 실패했습니다.");
+        return;
+      }
+      const sentWriter = request.headers[WRITER_HEADER];
+      if (typeof sentWriter !== "string" || sentWriter === "") {
+        errorResponse(response, 400, "REQUEST_INVALID", "기록자 식별자가 없습니다.");
+        return;
+      }
+      writerId ??= sentWriter;
+      if (writerId !== sentWriter) {
+        otherProcessCalls += 1;
+        errorResponse(
+          response,
+          409,
+          "WRITER_CONFLICT",
+          engine.mode === "record"
+            ? "이 세션은 다른 프로세스가 기록 중입니다. 이 호출은 녹화하지 않습니다."
+            : "이 세션을 재생 중인 프로세스가 아닙니다. 실제 네트워크는 호출하지 않았습니다.",
+        );
         return;
       }
       const body = protocolRequest(await readJsonBody(request));
@@ -672,11 +709,14 @@ export async function startExternalCoordinator(
       finishPromise ??= (async () => {
         await closeServer(server);
         const summary = engine.finish(status);
-        if (observer === undefined) return summary;
+        // **0 도 싣는다.** 부모가 자기 거절을 직접 센 값이라 못 셀 일이 없다. `outOfScope` 의
+        // `undefined`(못 셌음)와 뜻이 다르다(설계 §4.3).
+        const withWriter = { ...summary, otherProcessCalls };
+        if (observer === undefined) return withWriter;
         // 자식은 이미 끝났다(호출자가 실행을 마친 뒤 부른다). 그러므로 파일이 있으면 그 수가
         // 전부이고, 없으면 훅이 못 뛴 것이다 — **없음을 0 으로 바꾸지 않는다.**
         const observed = observer.read();
-        return observed === undefined ? summary : { ...summary, outOfScope: observed };
+        return observed === undefined ? withWriter : { ...withWriter, outOfScope: observed };
       })();
       return finishPromise;
     },

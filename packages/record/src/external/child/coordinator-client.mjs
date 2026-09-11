@@ -1,5 +1,6 @@
 import { request as httpRequest } from "node:http";
 import { MAX_COORDINATOR_PAYLOAD_BYTES } from "../../shared/limits.mjs";
+import { WRITER_HEADER } from "../../shared/writer.mjs";
 import { ExternalRecordReplayError } from "../errors.mjs";
 
 /**
@@ -28,6 +29,7 @@ export function createCoordinatorClient(options) {
             authorization: `Bearer ${options.token}`,
             "content-type": "application/json",
             "content-length": body.byteLength,
+            [WRITER_HEADER]: options.writerId,
           },
         },
         (response) => {

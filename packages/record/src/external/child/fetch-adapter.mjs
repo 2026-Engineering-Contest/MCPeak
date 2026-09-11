@@ -41,10 +41,25 @@ export function installFetchAdapter(options) {
   if (typeof originalFetch !== "function") throw new Error("global fetch is unavailable");
   const client = createCoordinatorClient(options);
 
+  /**
+   * 설정 소비는 정확히 한 번이고, 첫 호출의 **동기 구간**에서 일어난다. `await` 뒤로 미루면
+   * 그 사이에 서버가 띄운 자식이 설정을 물려받아 같은 세션에 끼어든다.
+   */
+  let consumed = false;
+  const consumeOnce = () => {
+    if (consumed) return;
+    consumed = true;
+    options.onFirstCall();
+  };
+
   globalThis.fetch = async (input, init) => {
     const request = new Request(input, init);
+    consumeOnce();
     const normalized = await normalizeHttpRequest(request);
     if (options.mode === "replay") {
+      // 기록자가 아니면 여기서 `WRITER_CONFLICT` 로 던진다. **원래 fetch 로 넘기지 않는다** —
+      // 재생의 계약은 실제 네트워크를 부르지 않는 것이고, 그 계약은 프로세스마다 달라지지
+      // 않는다(설계 §4.2).
       const hit = await client.lookup(normalized);
       return restoreHttpOutcome(hit.outcome);
     }
@@ -60,7 +75,20 @@ export function installFetchAdapter(options) {
       requestPathname,
     );
 
-    const reservation = await client.begin(normalized);
+    let reservation;
+    try {
+      reservation = await client.begin(normalized);
+    } catch (error) {
+      // **기록자 경합만 삼킨다.** 다른 오류는 그대로 올린다 — Coordinator 가 죽었거나
+      // payload 가 상한을 넘은 것은 사용자가 알아야 하는 실패다.
+      //
+      // 이 호출은 녹화되지 않는다. 지금도 녹화되지 않았다(설정이 이 프로세스까지 오지 않았다).
+      // 달라지는 것은 부모가 거절을 세어 화면에 적을 수 있다는 것뿐이다. 던져서 서버를 죽이는
+      // 것은 진단을 위해 멀쩡한 실행을 깨는 것이라 하지 않는다.
+      if (error?.code !== "WRITER_CONFLICT") throw error;
+      return originalFetch.call(globalThis, request);
+    }
+
     let response;
     try {
       response = await originalFetch.call(globalThis, request);

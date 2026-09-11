@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { createInterface } from "node:readline";
 
 const originUrl = process.env.MCPEAK_TEST_ORIGIN_URL;
@@ -42,7 +43,28 @@ lines.on("line", async (line) => {
               required: ["city"],
             },
           },
+          {
+            name: "spawn_and_dump",
+            inputSchema: { type: "object", properties: {} },
+          },
         ],
+      },
+    });
+    return;
+  }
+  if (message.method === "tools/call" && message.params?.name === "spawn_and_dump") {
+    // 자식을 띄워 **자식의 눈으로** 설정을 본다. 부모의 `process.env` 를 그대로 읽으면 소비
+    // 여부까지만 보이고, 이 시점에 태어난 자식이 설정을 물려받는지는 드러나지 않는다.
+    const dumped = spawnSync(process.execPath, [
+      "-p",
+      "JSON.stringify({mode: process.env.MCPEAK_EXTERNAL_MODE ?? null})",
+    ]);
+    send({
+      jsonrpc: "2.0",
+      id: message.id,
+      result: {
+        content: [{ type: "text", text: dumped.stdout.toString("utf8") }],
+        isError: false,
       },
     });
     return;

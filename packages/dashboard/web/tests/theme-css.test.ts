@@ -111,23 +111,46 @@ const FIXED_TERMINAL_TOKENS = [
   "--terminal-muted",
 ] as const;
 
-/** `선택자 { ... }` 안에서 그 토큰의 선언 값을 꺼낸다. 없으면 null. */
+/**
+ * `선택자 { ... }` 안에서 그 토큰의 선언 값을 **전부** 꺼낸다.
+ *
+ * 하나만 꺼내면 안 된다. 같은 블록에 같은 토큰이 두 번 있으면 브라우저는 **뒤의 것**을
+ * 쓰는데, 앞의 것만 보고 통과시키면 화면을 바꾼 선언이 검사를 비껴간다(#455 리뷰).
+ *
+ * 이름 앞뒤에 다른 글자가 붙은 것은 세지 않는다 — `--line` 을 찾다가 `--line-subtle` 을
+ * 같은 토큰으로 세면 안 된다. 뒤는 `\s*:` 가, 앞은 lookbehind 가 막는다.
+ */
+function declarations(body: string, token: string): readonly string[] {
+  return [...body.matchAll(new RegExp(`(?<![\\w-])${token}\\s*:\\s*([^;]+);`, "g"))].map((match) =>
+    (match[1] ?? "").trim(),
+  );
+}
+
+/** 브라우저가 실제로 쓰는 값, 곧 마지막 선언. 없으면 null. */
 function declaration(body: string, token: string): string | null {
-  const match = new RegExp(`${token}\\s*:\\s*([^;]+);`).exec(body);
-  return match?.[1]?.trim() ?? null;
+  return declarations(body, token).at(-1) ?? null;
+}
+
+/** 토큰이 `:root` 에 정확히 한 번 있지 않을 때 무엇이 어긋났는지 말한다. */
+function countMessage(token: string, found: readonly string[]): string {
+  return found.length === 0
+    ? `${token} 선언이 :root 에 없습니다`
+    : `${token} 선언이 :root 에 ${found.length}개 있습니다 (${found.join(" · ")}) — 브라우저는 마지막 것을 씁니다. 하나만 남기세요.`;
 }
 
 describe("테마 토큰 선언", () => {
   it.each(THEMED_TOKENS)("%s 는 light-dark() 로 한 번만 적는다", (token) => {
-    const value = declaration(bodyOf(":root"), token);
-    expect(value, `${token} 선언이 :root 에 없습니다`).not.toBeNull();
-    expect(value).toMatch(/^light-dark\(/);
+    const found = declarations(bodyOf(":root"), token);
+    expect(found, countMessage(token, found)).toHaveLength(1);
+    expect(found[0]).toMatch(/^light-dark\(/);
   });
 
   it.each(FIXED_TERMINAL_TOKENS)("%s 는 테마로 갈리지 않는다", (token) => {
-    const value = declaration(bodyOf(":root"), token);
-    expect(value, `${token} 선언이 :root 에 없습니다`).not.toBeNull();
-    expect(value).not.toContain("light-dark(");
+    // 고정 팔레트도 같은 구멍이 있다. 고정값 뒤에 `light-dark()` 선언이 한 줄 더 붙으면
+    // 터미널이 테마를 타는데, 첫 선언만 보면 통과한다.
+    const found = declarations(bodyOf(":root"), token);
+    expect(found, countMessage(token, found)).toHaveLength(1);
+    expect(found[0]).not.toContain("light-dark(");
   });
 
   it("--terminal-inset 은 모양을 고정하고 색만 토큰으로 가른다", () => {
@@ -192,12 +215,35 @@ describe("터미널 팔레트는 테마를 타지 않는다", () => {
   });
 });
 
+/**
+ * 움직임 차단막이 모든 요소에 걸어야 하는 값. 0 이 아니라 0.01ms 인 이유는 theme.css 주석에
+ * 있다 — `transitionend` 를 기다리는 코드가 영영 멈추지 않게 하려는 것이다.
+ */
+const REDUCED_MOTION = {
+  "animation-duration": "0.01ms !important",
+  "animation-iteration-count": "1 !important",
+  "transition-duration": "0.01ms !important",
+  "scroll-behavior": "auto !important",
+} as const;
+
+const REDUCED_MOTION_SELECTOR = "@media (prefers-reduced-motion: reduce)";
+
 describe("움직임", () => {
-  it("prefers-reduced-motion 차단막이 있다", () => {
+  it("prefers-reduced-motion: reduce 차단막이 있다", () => {
     // 트랜지션을 처음 넣는 PR 에서 같이 넣기로 하면 잊는다. 차단막을 먼저 둔다.
-    const guard = BLOCKS.find((block) => block.selector.includes("prefers-reduced-motion"));
-    expect(guard, "prefers-reduced-motion 블록이 없습니다").toBeDefined();
-    expect(guard?.body).toContain("transition-duration");
-    expect(guard?.body).toContain("animation-duration");
+    //
+    // **조건을 정확히 본다.** `prefers-reduced-motion` 이 들어갔는지만 보면 `no-preference`
+    // 도 통과한다 — 움직임을 줄여 달라고 하지 않은 사람에게서 움직임을 빼는, 정반대 규칙이
+    // 초록으로 나간다(#455 리뷰).
+    expect(
+      BLOCKS.some((block) => block.selector === REDUCED_MOTION_SELECTOR),
+      `${REDUCED_MOTION_SELECTOR} 블록이 없습니다`,
+    ).toBe(true);
+  });
+
+  it.each(Object.entries(REDUCED_MOTION))("차단막의 %s 는 %s 다", (property, expected) => {
+    // 값도 본다. `!important` 가 빠지면 유틸리티가 박아 넣은 duration 을 못 이기고,
+    // duration 이 길어지면 차단막이 아니라 느린 애니메이션이 된다.
+    expect(declaration(bodyOf(REDUCED_MOTION_SELECTOR), property)).toBe(expected);
   });
 });

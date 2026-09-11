@@ -1,4 +1,5 @@
 import { externalError } from "./errors.js";
+import { redactOrigin } from "./origin-redaction.js";
 import type {
   BodyUrlFingerprints,
   NormalizedExternalRequest,
@@ -53,7 +54,12 @@ export function createRecordEngine(options: {
   /** 녹화를 시작한 실행의 서버 명령·스위트(ADR-0085). 넘기면 세션과 함께 저장된다. */
   readonly origin?: SessionOrigin;
 }): RecordEngine {
-  options.store.createSession(options.sessionId, options.origin);
+  // **저장 직전에 가린다**(설계 §4.4). Store 두 구현이 공유하는 유일한 진입이 엔진이라 여기가
+  // 한 자리다. Store 는 받은 값을 그대로 저장하는 계약을 그대로 유지한다.
+  options.store.createSession(
+    options.sessionId,
+    options.origin === undefined ? undefined : redactOrigin(options.origin),
+  );
   // ADR-0062. 지문만 쌓는다 — 세션 전체에서 중복을 제거해야 "서로 다른 URL 의 개수" 가 되고,
   // 그 집계는 interaction 하나만 보는 Store 가 할 수 없다. 저장소에는 쓰지 않는다.
   const echoed = new Set<string>();

@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { get } from "node:http";
 import { createInterface } from "node:readline";
 
 const originUrl = process.env.MCPEAK_TEST_ORIGIN_URL;
@@ -47,8 +48,28 @@ lines.on("line", async (line) => {
             name: "spawn_and_dump",
             inputSchema: { type: "object", properties: {} },
           },
+          {
+            name: "http_ping",
+            inputSchema: { type: "object", properties: {} },
+          },
         ],
       },
+    });
+    return;
+  }
+  if (message.method === "tools/call" && message.params?.name === "http_ping") {
+    // **`node:http` 로 부른다.** 어댑터는 `globalThis.fetch` 까지만 보므로(ADR-0057) 이 호출은
+    // 가로채이지 않고 실제 네트워크로 나간다 — 관측이 세야 하는 바로 그 모양이다.
+    const status = await new Promise((resolve) => {
+      get(originUrl, (response) => {
+        response.resume();
+        response.on("end", () => resolve(response.statusCode ?? 0));
+      }).on("error", () => resolve(0));
+    });
+    send({
+      jsonrpc: "2.0",
+      id: message.id,
+      result: { content: [{ type: "text", text: JSON.stringify({ status }) }], isError: false },
     });
     return;
   }

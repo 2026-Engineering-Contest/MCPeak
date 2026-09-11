@@ -259,6 +259,8 @@ describe("useRunEvents", () => {
     expect(result.current.error).toContain("그런 run이 없습니다.");
     expect(result.current.error).toContain("메모리에만");
     expect(result.current.status).toBeNull();
+    // 화면이 빈 터미널을 거두는 근거다(#459). 404 만 이 값을 세운다.
+    expect(result.current.missing).toBe(true);
   });
 
   /**
@@ -348,6 +350,8 @@ describe("useRunEvents", () => {
     expect(result.current.error).toContain("내부 오류가 발생했습니다.");
     expect(result.current.error).not.toContain("메모리에만");
     expect(result.current.error).toContain("run 이 없다는 뜻은 아닙니다");
+    // 살아 있을 수 있는 run 이다. 화면은 터미널을 계속 그려야 하므로 없다고 표시하지 않는다.
+    expect(result.current.missing).toBe(false);
   });
 
   /** 이벤트가 흐른다는 것이 곧 run 이 있다는 증거다. 앞선 조회 실패 안내는 걷어야 한다. */
@@ -365,5 +369,50 @@ describe("useRunEvents", () => {
 
     expect(result.current.error).toBeNull();
     expect(result.current.status).toBe("running");
+  });
+
+  it("이벤트가 먼저 흐른 뒤 늦게 온 404 는 없다고 표시하지 않는다", async () => {
+    let answer404: (() => void) | undefined;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        () =>
+          new Promise<Response>((resolve) => {
+            answer404 = () =>
+              resolve(
+                new Response(JSON.stringify({ error: "그런 run이 없습니다." }), { status: 404 }),
+              );
+          }),
+      ),
+    );
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const { result } = renderHook(() => useRunEvents("run-1"));
+
+    act(() => {
+      FakeEventSource.instances[0]?.emit({ kind: "stdout", html: "살아 있다", id: 1 });
+    });
+    await act(async () => {
+      answer404?.();
+    });
+
+    await waitFor(() => {
+      expect(result.current.error).not.toBeNull();
+    });
+    expect(result.current.missing).toBe(false);
+  });
+
+  it("없다고 확인된 run 이라도 이벤트가 오면 없다는 표시를 거둔다", async () => {
+    stubFetch(null);
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const { result } = renderHook(() => useRunEvents("run-1"));
+    await waitFor(() => {
+      expect(result.current.missing).toBe(true);
+    });
+
+    act(() => {
+      FakeEventSource.instances[0]?.emit({ kind: "stdout", html: "살아 있다", id: 1 });
+    });
+
+    expect(result.current.missing).toBe(false);
   });
 });

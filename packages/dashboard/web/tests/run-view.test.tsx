@@ -524,3 +524,253 @@ describe("RunView", () => {
     expect(screen.getByText("node")).toBeTruthy();
   });
 });
+
+/**
+ * #459 — 실행 화면의 리듬. 제목 위계·집계 칸·터미널 카드·빈 상태.
+ *
+ * 집계 칸이 지키는 약속은 하나다: **요약 줄이 오기 전에는 숫자를 그리지 않는다.**
+ * `mcpeak test` 는 끝에 한 번 출력하므로 그 전의 숫자는 전부 지어낸 것이다.
+ */
+describe("RunView — 실행 화면 (#459)", () => {
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+    FakeEventSource.instances = [];
+    window.location.hash = "";
+    Reflect.deleteProperty(navigator, "clipboard");
+  });
+
+  /** jsdom 에는 `navigator.clipboard` 가 없다. 쓰기만 기록하는 가짜를 단다. */
+  function stubClipboard(): ReturnType<typeof vi.fn> {
+    const writeText = vi.fn(async () => {});
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    return writeText;
+  }
+
+  function tile(label: string): string | null | undefined {
+    return screen.getByText(label).closest("div")?.querySelector("dd")?.textContent;
+  }
+
+  it("제목은 run 의 flow 로 정하고 page 제목 크기를 쓴다", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    stubFetch();
+    render(<RunView runId="run-1" />);
+
+    const heading = await screen.findByRole("heading", { level: 1, name: "테스트 실행" });
+    expect(heading.classList.contains("text-display")).toBe(true);
+    expect(screen.getByText("run-1")).toBeTruthy();
+    expect(screen.getByRole("link", { name: /Runs 목록/ }).getAttribute("href")).toBe("#/runs");
+  });
+
+  /**
+   * 진행률은 그리지 않는다(#459 피드백). 실행 중에는 몇 건째인지 알 수 없어 막대가 새로 알려
+   * 주는 것이 없었다. 남은 것은 세 칸뿐이고, 모르는 동안은 `—` 다.
+   */
+  it("실행 중에는 진행 막대 없이 세 칸만 비어 있다", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    stubFetch();
+    render(<RunView runId="run-1" />);
+    act(() => {
+      lastSource().emit({ kind: "stdout", html: "▸ 시험 실행 중...\n" });
+    });
+
+    expect(screen.queryByRole("progressbar")).toBeNull();
+    expect(tile("통과")).toBe("—");
+    expect(tile("실패")).toBe("—");
+    expect(tile("미실행")).toBe("—");
+  });
+
+  /** 한 줄을 따로 쓰면 그만큼 터미널이 준다. 실행 화면의 주인공은 터미널이다(#459 피드백). */
+  it("세 칸은 따로 한 줄을 쓰지 않고 화면 머리 안에 선다", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    stubFetch();
+    render(<RunView runId="run-1" />);
+
+    const heading = await screen.findByRole("heading", { level: 1, name: "테스트 실행" });
+    expect(screen.getByText("통과").closest("header")).toBe(heading.closest("header"));
+  });
+
+  it("요약 줄이 오면 세 칸을 채운다", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    stubFetch();
+    render(<RunView runId="run-1" />);
+    act(() => {
+      lastSource().emit({
+        kind: "stdout",
+        html: 'S  (4 cases)\n\n<span class="ansi-32">✓</span> a\n\n2 passed, 1 failed, 1 not run  (4 total)\n',
+      });
+      lastSource().emit({ kind: "done", exitCode: 1 });
+    });
+
+    expect(tile("통과")).toBe("2");
+    expect(tile("실패")).toBe("1");
+    expect(tile("미실행")).toBe("1");
+  });
+
+  it("요약 줄 없이 끝난 run 은 숫자를 지어내지 않는다", () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    stubFetch();
+    render(<RunView runId="run-1" />);
+    act(() => {
+      lastSource().emit({ kind: "stdout", html: "스위트를 저장했습니다.\n" });
+      lastSource().emit({ kind: "done", exitCode: 0 });
+    });
+
+    expect(tile("통과")).toBe("—");
+    expect(tile("실패")).toBe("—");
+  });
+
+  /** 생성 흐름은 요약 줄을 내지 않는다. 영영 채워지지 않을 칸을 그려 기다리게 하지 않는다. */
+  it("생성 run 은 집계 칸을 그리지 않는다", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              runId: "gen-1",
+              flow: "generate",
+              status: "running",
+              exitCode: null,
+              argv: ["--command", "node"],
+            }),
+            { status: 200 },
+          ),
+      ),
+    );
+    render(<RunView runId="gen-1" />);
+
+    await screen.findByRole("heading", { level: 1, name: "생성 실행" });
+    expect(screen.queryByText("통과")).toBeNull();
+    expect(screen.getByRole("heading", { name: "터미널 출력" })).toBeTruthy();
+  });
+
+  it("입력 대기면 상태 아래에 할 일을 말하고 질문은 터미널 카드 밖에 선다", () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    stubFetch();
+    render(<RunView runId="run-1" />);
+    act(() => {
+      lastSource().emit({ kind: "stdout", html: "출력\n" });
+      lastSource().emit({
+        kind: "question",
+        question: { id: "q1", kind: "confirm", message: "저장할까요?" },
+      });
+    });
+
+    expect(screen.getByText("아래 질문에 답하면 이어서 진행합니다.")).toBeTruthy();
+    const terminal = screen.getByRole("heading", { name: "터미널 출력" }).closest("section");
+    expect(terminal?.textContent).toContain("출력");
+    // 다크 터미널 안 바닥에 끼어 있으면 로그와 같은 무게로 읽힌다.
+    expect(terminal?.textContent).not.toContain("저장할까요?");
+    expect(screen.getByText("저장할까요?")).toBeTruthy();
+  });
+
+  it("없다고 확인된 run 은 빈 터미널 대신 다음 행동 링크를 준다", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ error: "그런 run이 없습니다." }), { status: 404 }),
+      ),
+    );
+    render(<RunView runId="does-not-exist" />);
+
+    await screen.findByText("그런 run이 없습니다.");
+    expect(screen.queryByRole("heading", { name: "터미널 출력" })).toBeNull();
+    expect(screen.queryByText("통과")).toBeNull();
+    expect(screen.getByRole("link", { name: /Runs 목록으로/ }).getAttribute("href")).toBe("#/runs");
+    expect(screen.getByRole("link", { name: "새 테스트 실행" }).getAttribute("href")).toBe(
+      "#/home",
+    );
+  });
+
+  /** 조회만 실패한 run 은 살아 있을 수 있다. 터미널을 거두면 오는 출력을 볼 자리가 없다. */
+  it("404 가 아닌 조회 실패에는 터미널을 계속 그린다", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ error: "내부 오류가 발생했습니다." }), { status: 500 }),
+      ),
+    );
+    render(<RunView runId="run-1" />);
+
+    await screen.findByText(/내부 오류가 발생했습니다/);
+    expect(screen.getByRole("heading", { name: "터미널 출력" })).toBeTruthy();
+  });
+
+  it("복사는 색 태그를 벗긴 평문을 클립보드에 넣고, 새 출력이 오면 라벨을 되돌린다", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    stubFetch();
+    const writeText = stubClipboard();
+    render(<RunView runId="run-1" />);
+    act(() => {
+      lastSource().emit({ kind: "stdout", html: '<span class="ansi-31">✗</span> a &lt;b&gt;\n' });
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "복사" }));
+    await screen.findByRole("button", { name: "복사됨" });
+    expect(writeText).toHaveBeenCalledWith("✗ a <b>\n");
+
+    act(() => {
+      lastSource().emit({ kind: "stdout", html: "다음 줄\n" });
+    });
+    expect(screen.getByRole("button", { name: "복사" })).toBeTruthy();
+  });
+
+  it("클립보드를 못 쓰면 이유와 대안을 말한다", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    stubFetch();
+    render(<RunView runId="run-1" />);
+    act(() => {
+      lastSource().emit({ kind: "stdout", html: "출력\n" });
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "복사" }));
+    expect(await screen.findByText(/터미널 출력을\(를\) 클립보드에 넣지 못했습니다/)).toBeTruthy();
+    expect(screen.getByText(/직접 선택해 복사하세요/)).toBeTruthy();
+  });
+
+  it("Run ID 를 복사할 수 있다", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    stubFetch();
+    const writeText = stubClipboard();
+    render(<RunView runId="run-1" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Run ID 복사" }));
+    await screen.findByRole("button", { name: "Run ID 복사됨" });
+    expect(writeText).toHaveBeenCalledWith("run-1");
+  });
+
+  it("지우기는 화면에서만 가린다 — 요약 칸은 그대로 남는다", () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    stubFetch();
+    render(<RunView runId="run-1" />);
+    act(() => {
+      lastSource().emit({ kind: "stdout", html: "첫 출력\n1 passed  (1 total)\n" });
+      lastSource().emit({ kind: "done", exitCode: 0 });
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "지우기" }));
+
+    expect(screen.queryByText(/첫 출력/)).toBeNull();
+    expect(screen.getByText("0줄")).toBeTruthy();
+    expect(tile("통과")).toBe("1");
+  });
+
+  it("Runs 목록이 비면 Test 로 가는 링크를 준다", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("[]", { status: 200 })),
+    );
+    render(<RunView runId={null} />);
+
+    expect(await screen.findByText("아직 실행이 없습니다.")).toBeTruthy();
+    expect(screen.getByRole("link", { name: /Test 로 가서 실행하기/ }).getAttribute("href")).toBe(
+      "#/home",
+    );
+  });
+});

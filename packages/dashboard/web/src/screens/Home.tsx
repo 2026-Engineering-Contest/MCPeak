@@ -12,6 +12,7 @@ import type { SessionMode, TestOptions } from "../build-test-argv.js";
 import { buildTestArgv, DEFAULT_TEST_OPTIONS } from "../build-test-argv.js";
 import { Button } from "../components/Button.js";
 import { Card } from "../components/Card.js";
+import { PageHeader } from "../components/PageHeader.js";
 import { Stepper } from "../components/Stepper.js";
 import type { CommandMethod } from "../generate/steps/StepServer.js";
 import { splitCommand } from "../generate/steps/StepServer.js";
@@ -321,12 +322,10 @@ export function Home(): JSX.Element {
 
   return (
     <section className="mx-auto max-w-[800px] space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold text-ink">테스트</h1>
-        <p className="mt-1 text-sm text-ink-muted">
-          서버를 고르고, 그 서버의 테스트 스위트를 골라 실행합니다.
-        </p>
-      </div>
+      <PageHeader
+        title="테스트"
+        description="서버를 고르고, 그 서버의 테스트 스위트를 골라 실행합니다."
+      />
 
       <Stepper steps={STEPS} current={step} />
 

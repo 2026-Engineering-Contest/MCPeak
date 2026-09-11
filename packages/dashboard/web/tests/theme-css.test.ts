@@ -99,16 +99,23 @@ const THEMED_TOKENS = [
   "--terminal-border",
   "--terminal-inset-color",
   "--shadow-color",
-  "--logo-from",
-  "--logo-to",
 ] as const;
 
-/** 터미널 재현 영역의 고정 팔레트(UI 설계 §3). 라이트 테마에서도 터미널은 다크다. */
+/**
+ * 테마를 타지 않는 고정 팔레트.
+ *
+ * - 터미널 재현 영역(UI 설계 §3). 라이트 테마에서도 터미널은 다크다.
+ * - 로고(#459). 로고는 자기 다크 사각형(`--terminal-bg`) 위에 그려지므로 선 · 체크 색이 테마를
+ *   따라가면 라이트에서만 어두운 보라가 검은 바탕에 묻힌다. 예전 로고는 흰 바탕 위라 테마를 탔다.
+ */
 const FIXED_TERMINAL_TOKENS = [
   "--terminal-bg",
   "--terminal-header-bg",
   "--terminal-fg",
   "--terminal-muted",
+  "--logo-from",
+  "--logo-to",
+  "--logo-check",
 ] as const;
 
 /**

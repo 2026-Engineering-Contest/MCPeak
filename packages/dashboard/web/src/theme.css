@@ -57,13 +57,6 @@
   --terminal-border: light-dark(#26262f, #34343f);
 
   /*
-   * 사이드바 로고. 예전에는 Sidebar.tsx 안에 하드코딩된 그라디언트였다 — 토큰 밖에 남은
-   * 마지막 색이었다. 라이트에서는 흰 배경 위라 진하게, 다크에서는 어두운 면 위라 밝게 간다.
-   */
-  --logo-from: light-dark(#8b5cf6, #a78bfa);
-  --logo-to: light-dark(#6d28d9, #7c3aed);
-
-  /*
    * elevation. **모양은 한 벌이고 색만 테마로 갈린다.** 다크에서 라이트와 같은 검은
    * 그림자를 쓰면 배경에 묻혀 아무것도 안 보이므로 더 짙고 넓게 깐다.
    */
@@ -81,6 +74,15 @@
   --terminal-header-bg: #16161c;
   --terminal-fg: #d4d4d8;
   --terminal-muted: #8b8b96;
+
+  /*
+   * 로고(`Logo.tsx`). 예전 로고는 흰 사이드바 위의 그라디언트 사각형이라 테마를 탔다. 지금
+   * 로고(#459)는 자기 다크 사각형(`--terminal-bg`) 위에 그려지므로 **바탕이 늘 어둡다** — 그래서
+   * 선과 체크 색도 고정이다. 테마를 따라가면 라이트에서만 진한 보라가 검은 바탕에 묻힌다.
+   */
+  --logo-from: #a78bfa;
+  --logo-to: #7c3aed;
+  --logo-check: #4ade80;
 }
 
 /*
@@ -185,6 +187,7 @@
   }
   /* biome-ignore-end lint/complexity/noImportantStyles: 위 참조 */
 }
+
 
 /* ANSI 색. 서버 ansiToHtml이 붙이는 클래스에 web이 색을 입힌다(기반 계획 T4 주석과 동일).
    터미널 고정 팔레트의 일부이므로 테마 분기 금지. */

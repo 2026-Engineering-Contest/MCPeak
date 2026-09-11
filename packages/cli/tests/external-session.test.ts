@@ -139,19 +139,22 @@ describe("배선 판정이 파서와 같은 규칙을 쓴다", () => {
  * 느린데, 순수 함수라 여기서 한 줄로 고정된다.
  */
 
-const record = (interactionCount: number): SessionSummary => ({
+const record = (interactionCount: number, otherProcessCalls?: number): SessionSummary => ({
   mode: "record",
   sessionId: "default",
   status: "completed",
   interactionCount,
   consumedCount: 0,
   unusedCount: 0,
+  // 인자를 안 주면 필드 자체가 없어야 한다. `undefined` 를 실어 두면 "없음" 갈래를 못 본다.
+  ...(otherProcessCalls === undefined ? {} : { otherProcessCalls }),
 });
 
 const replay = (
   interactionCount: number,
   consumedCount: number,
   unusedCount: number,
+  otherProcessCalls?: number,
 ): SessionSummary => ({
   mode: "replay",
   sourceSessionId: "default",
@@ -160,9 +163,25 @@ const replay = (
   consumedCount,
   unusedCount,
   misses: [],
+  ...(otherProcessCalls === undefined ? {} : { otherProcessCalls }),
 });
 
 const SCOPE_NOTE = "globalThis.fetch";
+
+/**
+ * 기록자 경합 갈래가 들어와도 **이 문장은 그대로다**. 문자열을 여기 통째로 적어 두는 이유가
+ * 그것이다. `toContain` 만으로는 앞뒤에 무엇이 붙어도 통과하므로, 한 글자도 달라지지 않았음을
+ * 보려면 전체를 비교해야 한다.
+ */
+const RECORD_ZERO_NOTICE =
+  "\n알림: 이 실행에서 외부 호출이 하나도 녹화되지 않았습니다.\n" +
+  "→ 서버가 외부 API를 호출했다면 지원 범위를 벗어났는지 확인하세요.\n" +
+  "→ MCPeak은 서버가 `globalThis.fetch`로 부른 것만 잡습니다.\n";
+
+const REPLAY_ZERO_NOTICE =
+  "\n알림: 이 세션에는 녹화된 외부 호출이 0건입니다. 재생할 것이 없었습니다.\n" +
+  "→ 녹화 실행이 외부 호출을 하나도 잡지 못했다는 뜻입니다. 이 세션은 아무 호출도 막지 못합니다.\n" +
+  "→ MCPeak은 서버가 `globalThis.fetch`로 부른 것만 잡습니다.\n";
 
 describe("External 세션 종료 경고", () => {
   it("녹화가 0건이면 지원 범위를 확인하라고 말한다", () => {
@@ -170,10 +189,39 @@ describe("External 세션 종료 경고", () => {
 
     expect(notice).toContain("외부 호출이 하나도 녹화되지 않았습니다");
     expect(notice).toContain(SCOPE_NOTE);
+    // 경합 갈래가 생긴 뒤에도 이 갈래의 문장은 그대로다.
+    expect(notice).toBe(RECORD_ZERO_NOTICE);
+  });
+
+  it("녹화가 0건이고 경합이 0건이면 없을 때와 같은 문장이다", () => {
+    // `otherProcessCalls` 는 없는 것과 0 이 같은 뜻이다. `outOfScope` 와 다른 지점이다.
+    expect(externalSessionNotice(record(0, 0))).toBe(RECORD_ZERO_NOTICE);
+  });
+
+  it("녹화가 0건이고 다른 프로세스가 먼저 기록했으면 그 경합을 원인으로 말한다", () => {
+    const notice = externalSessionNotice(record(0, 2));
+
+    expect(notice).toContain("다른 프로세스가 먼저");
+    expect(notice).toContain("2건");
+    // 경합은 범위 문제가 아니다. 범위 안내를 붙이면 틀린 원인을 가리킨다.
+    expect(notice).not.toContain(SCOPE_NOTE);
   });
 
   it("녹화가 1건이라도 있으면 아무 말도 하지 않는다", () => {
     expect(externalSessionNotice(record(1))).toBeUndefined();
+  });
+
+  it("녹화가 있고 경합이 없으면 아무 말도 하지 않는다", () => {
+    expect(externalSessionNotice(record(3, 0))).toBeUndefined();
+    expect(externalSessionNotice(record(3))).toBeUndefined();
+  });
+
+  it("녹화가 있어도 다른 프로세스로 샌 호출이 있으면 부분 녹화라고 말한다", () => {
+    // 이 갈래가 없으면 일부만 담긴 녹화본이 초록으로 보인다.
+    const notice = externalSessionNotice(record(3, 1));
+
+    expect(notice).toContain("외부 호출 1건이 다른 프로세스에서");
+    expect(notice).not.toContain(SCOPE_NOTE);
   });
 
   it("재생 원본이 비었으면 녹화 쪽을 보라고 말한다", () => {
@@ -182,6 +230,11 @@ describe("External 세션 종료 경고", () => {
     // 원본이 빈 것은 재생의 문제가 아니라 그 앞 단계의 문제다. 문구가 그쪽을 가리켜야 한다.
     expect(notice).toContain("녹화된 외부 호출이 0건입니다");
     expect(notice).not.toContain("하나도 재생되지 않았습니다");
+  });
+
+  it("재생은 otherProcessCalls 를 보지 않는다", () => {
+    // 회귀 방어. 경합 갈래는 녹화 전용이라 재생 문장이 이 값에 흔들리면 안 된다.
+    expect(externalSessionNotice(replay(0, 0, 0, 2))).toBe(REPLAY_ZERO_NOTICE);
   });
 
   it("원본은 찼는데 하나도 못 썼으면 재생이 안 됐다고 말한다 — 미사용 경고는 겹치지 않는다", () => {

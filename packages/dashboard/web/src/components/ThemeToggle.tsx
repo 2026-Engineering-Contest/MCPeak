@@ -2,6 +2,7 @@ import type { JSX } from "react";
 import { useEffect, useState } from "react";
 import type { ThemeMode } from "../theme.js";
 import { applyMode, getStoredMode, resolveMode, systemMode, themeStorage } from "../theme.js";
+import { Button } from "./Button.js";
 
 const LABELS: Record<ThemeMode, string> = {
   light: "테마: 라이트",
@@ -60,13 +61,8 @@ export function ThemeToggle(): JSX.Element {
   };
 
   return (
-    <button
-      type="button"
-      onClick={toggle}
-      aria-label={accessibleName(mode)}
-      className="rounded-md border border-line px-3 py-1.5 text-sm font-medium text-ink-muted hover:bg-line-subtle hover:text-ink"
-    >
+    <Button size="sm" onClick={toggle} aria-label={accessibleName(mode)}>
       {LABELS[mode]}
-    </button>
+    </Button>
   );
 }

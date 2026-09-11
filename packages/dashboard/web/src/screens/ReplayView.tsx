@@ -4,6 +4,8 @@ import type { SessionEntry, StartRunRequest, StartRunResponse } from "../../../s
 import { apiGet, apiSend } from "../api.js";
 import { buildTestArgv, DEFAULT_TEST_OPTIONS } from "../build-test-argv.js";
 import { ArgChips } from "../components/ArgChips.js";
+import { Button } from "../components/Button.js";
+import { Card } from "../components/Card.js";
 import { Field, INPUT_CLASS } from "../generate/steps/fields.js";
 import { effectiveRepairBundlePath } from "../repair-bundle-path.js";
 import type { SessionOrigin } from "../session-origin.js";
@@ -210,7 +212,7 @@ export function ReplayView(): JSX.Element {
       )}
 
       {/* Runs 목록과 같은 모양이다 — 둘 다 "고르면 실행으로 가는 목록" 이라 다르게 생길 이유가 없다. */}
-      <div className="overflow-hidden rounded-lg border border-line bg-surface">
+      <Card className="overflow-hidden">
         <ul className="divide-y divide-line-subtle text-sm">
           {sessions === null && <li className="px-4 py-3 text-ink-muted">불러오는 중...</li>}
           {sessions !== null && sessions.length === 0 && (
@@ -235,7 +237,7 @@ export function ReplayView(): JSX.Element {
             />
           ))}
         </ul>
-      </div>
+      </Card>
     </section>
   );
 }
@@ -281,24 +283,25 @@ function SessionRow(props: {
         <SessionStatusBadge status={session.status} />
 
         {/* 「명세 확인」(2단계 스위트 목록)과 같은 자리·같은 모양의 보조 버튼이다. */}
-        <button
-          type="button"
+        <Button
+          size="xs"
+          className="shrink-0"
           aria-expanded={props.expanded}
-          className="shrink-0 rounded border border-line px-3 py-1 text-xs text-ink-muted"
           onClick={props.onToggle}
         >
           {props.expanded ? "닫기" : "수정"}
-        </button>
+        </Button>
 
-        <button
-          type="button"
-          className="shrink-0 rounded bg-accent px-3 py-1 text-xs font-medium text-white disabled:opacity-50"
+        <Button
+          variant="primary"
+          size="xs"
+          className="shrink-0"
           disabled={reason !== null || props.starting}
           // 출처를 모르면 실행할 수 없다. 그때 버튼은 실패하는 대신 입력을 연다.
           onClick={() => (runnable ? props.onReplay() : props.onOpen())}
         >
           재생
-        </button>
+        </Button>
       </div>
 
       {reason !== null && (
@@ -364,14 +367,14 @@ function SessionRow(props: {
             녹화에 없는 외부 호출은 실패합니다. 실제 네트워크는 호출하지 않습니다.
           </p>
 
-          <button
-            type="button"
-            className="rounded bg-accent px-3 py-1 text-xs font-medium text-white disabled:opacity-50"
+          <Button
+            variant="primary"
+            size="xs"
             disabled={!runnable || props.starting}
             onClick={props.onReplay}
           >
             이 값으로 재생
-          </button>
+          </Button>
         </div>
       )}
     </li>

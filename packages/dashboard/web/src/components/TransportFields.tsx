@@ -2,6 +2,7 @@ import type { JSX } from "react";
 import { useState } from "react";
 import type { Transport } from "../build-test-argv.js";
 import { Field, INPUT_CLASS } from "../generate/steps/fields.js";
+import { Button } from "./Button.js";
 
 const TRANSPORT_LABELS: Record<Transport, string> = {
   stdio: "stdio (위 서버 명령)",
@@ -109,13 +110,9 @@ export function TransportFields(props: {
                   }
                 }}
               />
-              <button
-                type="button"
-                className="shrink-0 whitespace-nowrap rounded border border-line px-3 py-1.5 text-sm text-ink-muted hover:text-ink"
-                onClick={addHeaderEnv}
-              >
+              <Button size="sm" className="shrink-0 whitespace-nowrap" onClick={addHeaderEnv}>
                 추가
-              </button>
+              </Button>
             </div>
             <p className="text-xs text-ink-muted">
               예: Authorization=MCP_TOKEN. 값이 아니라 환경변수 이름을 적습니다.

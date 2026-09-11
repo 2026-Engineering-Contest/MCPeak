@@ -2,6 +2,7 @@ import type { JSX } from "react";
 import { useRef, useState } from "react";
 import type { FileContent, FileEntry } from "../../../../src/api-types.js";
 import { apiGet } from "../../api.js";
+import { Button } from "../../components/Button.js";
 import type { SuiteSummary } from "../../suite-summary.js";
 import { summarizeSuite } from "../../suite-summary.js";
 import { matchSuites } from "../match-suites.js";
@@ -58,14 +59,14 @@ function SuiteRow(props: {
           />
           <span className="min-w-0 break-all font-mono text-xs text-ink">{props.suite.path}</span>
         </label>
-        <button
-          type="button"
+        <Button
+          size="xs"
+          className="shrink-0"
           aria-expanded={props.spec !== null}
-          className="shrink-0 rounded border border-line px-3 py-1 text-xs text-ink-muted"
           onClick={props.onToggleSpec}
         >
           {props.spec !== null ? "명세 닫기" : "명세 확인"}
-        </button>
+        </Button>
       </div>
       {props.spec !== null && <SpecView state={props.spec} />}
     </li>

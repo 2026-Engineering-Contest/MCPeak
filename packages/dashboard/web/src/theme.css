@@ -33,6 +33,19 @@
   --accent: light-dark(#6d28d9, #8b5cf6);
   --accent-soft: light-dark(#faf8ff, #241a35);
   --accent-border: light-dark(#ddd6fe, #4c3575);
+
+  /*
+   * 눌리는 상태. 라이트는 accent 보다 어둡게, 다크는 밝게 간다 — 어두운 면 위에서 더
+   * 어두워지면 "눌렀다" 가 아니라 "꺼졌다" 로 보인다.
+   */
+  --accent-hover: light-dark(#5b21b6, #a78bfa);
+  --accent-active: light-dark(#4c1d95, #c4b5fd);
+
+  /*
+   * 포커스 링. `outline-offset` 으로 요소 **바깥**에 그리므로 accent 를 채운 버튼 위에서도
+   * 링이 배경과 맞닿아 대비가 산다. 키보드로 쓰는 도구라 이 색은 장식이 아니다.
+   */
+  --focus-ring: light-dark(#6d28d9, #a78bfa);
   --status-running-fg: light-dark(#2563eb, #60a5fa);
   --status-running-bg: light-dark(#eff6ff, #172036);
   --status-waiting-fg: light-dark(#d97706, #fbbf24);
@@ -97,6 +110,9 @@
   --color-accent: var(--accent);
   --color-accent-soft: var(--accent-soft);
   --color-accent-border: var(--accent-border);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-active: var(--accent-active);
+  --color-focus-ring: var(--focus-ring);
   --color-terminal: var(--terminal-bg);
   --color-terminal-header: var(--terminal-header-bg);
   --color-terminal-fg: var(--terminal-fg);

@@ -1,6 +1,7 @@
 import type { JSX } from "react";
 import { useState } from "react";
 import type { PendingQuestion } from "../../../src/api-types.js";
+import { Button } from "./Button.js";
 
 /**
  * 대화형 승인 질문 하나(UI 설계 §4). 터미널 흐름 안의 "질문" 라벨 + message + kind별 컨트롤.
@@ -64,13 +65,10 @@ export function QuestionPanel(props: {
               disabled={busy}
               onChange={(event) => setInputValue(event.target.value)}
             />
-            <button
-              type="submit"
-              className="rounded bg-accent px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
-              disabled={busy}
-            >
+            {/* 폼 안이라 `type="submit"` 을 명시한다 — Button 의 기본값은 "button" 이다. */}
+            <Button type="submit" variant="primary" size="sm" disabled={busy}>
               제출
-            </button>
+            </Button>
           </form>
           {onBack !== undefined && (
             <button
@@ -104,14 +102,9 @@ export function QuestionPanel(props: {
 
       {question.kind === "confirm" && (
         <div className="flex gap-2">
-          <button
-            type="button"
-            className="rounded bg-accent px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
-            disabled={busy}
-            onClick={() => void submit("y")}
-          >
+          <Button variant="primary" size="sm" disabled={busy} onClick={() => void submit("y")}>
             예
-          </button>
+          </Button>
           <button
             type="button"
             className="rounded border border-accent-border bg-surface px-3 py-1.5 text-sm text-ink hover:border-accent disabled:opacity-50"

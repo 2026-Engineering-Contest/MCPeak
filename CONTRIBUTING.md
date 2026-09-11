@@ -433,7 +433,9 @@ CI에서 자동 검사한다. 로컬에서는 커밋 훅으로 린트·포맷만
 /packages/mock/       @storyrago
 
 /packages/cli/        @seodduu @endl24 @sunghoon0303 @ddxng5 @storyrago
+/packages/dashboard/  @seodduu @endl24 @sunghoon0303 @ddxng5 @storyrago
 /fixtures/            @seodduu @endl24 @sunghoon0303 @ddxng5 @storyrago
+/examples/            @seodduu @endl24 @sunghoon0303 @ddxng5 @storyrago
 
 /docs/adr/            @seodduu @endl24 @sunghoon0303
 /CONTRIBUTING.md      @seodduu @endl24 @sunghoon0303 @ddxng5 @storyrago

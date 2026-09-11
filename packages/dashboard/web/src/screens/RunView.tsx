@@ -1,7 +1,8 @@
 import type { JSX } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type {
   PendingQuestion,
+  RunStatus,
   RunSummary,
   StartRunRequest,
   StartRunResponse,
@@ -9,20 +10,51 @@ import type {
 import { apiGet, apiSend } from "../api.js";
 import { Button } from "../components/Button.js";
 import { Card } from "../components/Card.js";
+import { EmptyState } from "../components/EmptyState.js";
 import { FlowChip } from "../components/FlowChip.js";
 import { LogPanel } from "../components/LogPanel.js";
+import { PageHeader } from "../components/PageHeader.js";
 import { QuestionPanel } from "../components/QuestionPanel.js";
+import { RunCounts } from "../components/RunCounts.js";
 import { StatusBadge } from "../components/StatusBadge.js";
-import { countOutputLines } from "../output-lines.js";
+import { countOutputLines, outputText } from "../output-lines.js";
 import { type AiProvider, MODEL_OPTIONS } from "../provider-models.js";
 import { repairBundlePathOf } from "../repair-bundle-path.js";
 import { useRunEvents } from "../run-stream.js";
+import { parseRunTally } from "../run-tally.js";
 import type { RunTarget } from "../run-target.js";
 import { describeRun } from "../run-target.js";
 
 /** repair 폼 입력란 공통 클래스. 대시보드 테마를 그대로 따른다. */
 const REPAIR_INPUT_CLASS =
   "w-full rounded border border-line bg-surface px-3 py-1.5 font-mono text-sm text-ink";
+
+/** 제목을 따로 받지 않은 실행 화면의 제목. flow 를 모르는 동안은 "실행" 이다. */
+const FLOW_TITLES: Record<RunSummary["flow"], string> = {
+  test: "테스트 실행",
+  generate: "생성 실행",
+  repair: "수리 실행",
+};
+
+/**
+ * 상태 뱃지 아래 한 줄. 뱃지는 **무엇인지**만 말하므로 사람이 지금 할 일을 따로 적는다.
+ * 입력 대기일 때가 가장 중요하다 — 화면 어딘가에 답할 자리가 있다는 것을 모르면 run 이 멈춘
+ * 것처럼 보인다.
+ */
+const STATUS_NOTES: Record<RunStatus, string> = {
+  running: "CLI 가 실행 중입니다. 끝나면 요약이 나옵니다.",
+  "waiting-input": "아래 질문에 답하면 이어서 진행합니다.",
+  done: "실행이 끝났습니다.",
+  failed: "실패로 끝났습니다. 원인은 터미널 출력에 있습니다.",
+};
+
+/** 터미널 카드 머리의 수신 표시. 서버는 스트림을 닫지 않으므로 끝은 status 로만 안다. */
+const STREAM_LABELS: Record<RunStatus, { readonly label: string; readonly color: string }> = {
+  running: { label: "수신 중", color: "var(--status-done-fg)" },
+  "waiting-input": { label: "입력 대기", color: "var(--status-waiting-fg)" },
+  done: { label: "끝남", color: "var(--ink-muted)" },
+  failed: { label: "끝남", color: "var(--ink-muted)" },
+};
 
 /** 검토 메뉴가 연 하위 입력만 뒤로가기를 제공한다. 일반 입력 질문의 의미는 바꾸지 않는다. */
 function canReturnToReviewMenu(question: {
@@ -50,6 +82,28 @@ function isAiDispatchConfirmation(question: PendingQuestion): boolean {
   return question.kind === "confirm" && question.message.trim() === "이 요청을 전송할까요?";
 }
 
+/**
+ * 클립보드에 쓴다. **보안 컨텍스트가 아니면 `navigator.clipboard` 가 아예 없다** — 대시보드를
+ * `localhost` 가 아닌 주소로 열었을 때다. 그때 `undefined.writeText` 로 죽게 두면 사람에게 남는
+ * 문장이 "Cannot read properties of undefined" 가 된다.
+ */
+async function writeClipboard(text: string): Promise<void> {
+  if (navigator.clipboard === undefined) {
+    throw new Error(
+      "이 주소에서는 브라우저가 클립보드 API 를 주지 않습니다(보안 컨텍스트가 아님).",
+    );
+  }
+  await navigator.clipboard.writeText(text);
+}
+
+function clipboardFailure(what: string, err: unknown): string {
+  const reason = err instanceof Error ? err.message : String(err);
+  return (
+    `${what}을(를) 클립보드에 넣지 못했습니다: ${reason}\n` +
+    "→ 브라우저가 클립보드 접근을 막았을 수 있습니다. 해당 영역을 직접 선택해 복사하세요."
+  );
+}
+
 interface AiConversation {
   readonly question: string;
   readonly questionEventId: number;
@@ -63,19 +117,31 @@ interface RunStreamPanelProps {
    * 화면이므로 여기서 또 새 수리를 시작하는 버튼을 두지 않는다.
    */
   readonly showRepairAction?: boolean;
+  /** 화면 제목. 없으면 run 의 flow 로 정한다(`FLOW_TITLES`). */
+  readonly title?: string;
+  readonly description?: string;
+  /** 제목 위 되돌아가기 링크. */
+  readonly back?: { readonly href: string; readonly label: string };
 }
 
 /**
- * `RunView`·`GenerateWizard`·`RepairReview`가 공유하는 스트림 패널(UI 설계 §5-2).
+ * `RunView`·`RepairReview`가 공유하는 실행 화면(UI 설계 §5-2, #459).
  * stdout/stderr를 도착 순서 그대로 LogPanel에 렌더한다(재작성·재정렬 없음).
  * `pendingQuestion`은 LogPanel footer의 QuestionPanel로 보여주고, 응답은
  * `POST /api/runs/:id/answer`로 보낸다.
+ *
+ * **화면 머리까지 여기서 그린다.** 상태는 이 컴포넌트가 구독하는 스트림에서만 나오는데, 사진
+ * 시안(#459)은 그것을 제목 줄 오른쪽에 둔다. 머리를 부르는 쪽에 두면 같은 스트림을 두 번
+ * 구독하게 된다.
  */
 export function RunStreamPanel({
   runId,
   showRepairAction = true,
+  title,
+  description,
+  back,
 }: RunStreamPanelProps): JSX.Element {
-  const { events, status, pendingQuestion, error: streamError } = useRunEvents(runId);
+  const { events, status, pendingQuestion, error: streamError, missing } = useRunEvents(runId);
   const [answeredId, setAnsweredId] = useState<string | null>(null);
   const [generatingAfterQuestionId, setGeneratingAfterQuestionId] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
@@ -93,11 +159,25 @@ export function RunStreamPanel({
   const [argv, setArgv] = useState<readonly string[] | null>(null);
   /** 이 run 의 대상(스위트·서버). 목록과 같은 문장을 상세 화면 머리에도 둔다. */
   const [runTarget, setRunTarget] = useState<RunTarget | null>(null);
+  /** 제목을 정할 flow. 모르는 동안은 null 이고 제목은 "실행" 이다. */
+  const [flow, setFlow] = useState<RunSummary["flow"] | null>(null);
+  /**
+   * "지우기" 가 가린 마지막 이벤트 id. **화면에서만 가린다** — 이벤트는 그대로 남아 요약 줄을
+   * 읽는 데 쓰이고, 새로고침하면 SSE 가 처음부터 다시 보내 전부 돌아온다.
+   */
+  const [clearedThroughId, setClearedThroughId] = useState(0);
+  /**
+   * 출력을 복사한 시점의 이벤트 수. 같으면 "복사됨" 이라고 말한다. **타이머로 되돌리지 않는다**
+   * — 새 출력이 오면 복사해 둔 것이 낡으므로, 그때 라벨이 "복사" 로 돌아가는 것이 맞다.
+   */
+  const [copiedAtCount, setCopiedAtCount] = useState<number | null>(null);
+  const [runIdCopied, setRunIdCopied] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     setArgv(null);
     setRunTarget(null);
+    setFlow(null);
     // 같은 패널 인스턴스가 다른 run 으로 바뀔 수 있다. 앞 run 의 경로가 남으면 그것을 보내고,
     // 앞 run 에서 연 폼이 그대로 열려 있으면 다른 run 의 폼처럼 보인다.
     setBundlePath("");
@@ -105,10 +185,14 @@ export function RunStreamPanel({
     setAnsweredId(null);
     setGeneratingAfterQuestionId(null);
     setConversations([]);
+    setClearedThroughId(0);
+    setCopiedAtCount(null);
+    setRunIdCopied(false);
     apiGet<RunSummary>(`/api/runs/${encodeURIComponent(runId)}`)
       .then((summary) => {
         if (cancelled || !Array.isArray(summary.argv)) return;
         setArgv(summary.argv);
+        setFlow(summary.flow);
         setRunTarget(describeRun(summary.flow, summary.argv));
         const found = repairBundlePathOf(summary.argv);
         if (found !== null) setBundlePath((previous) => (previous === "" ? found : previous));
@@ -138,6 +222,14 @@ export function RunStreamPanel({
 
   const doneEvent = events.find((event) => event.kind === "done");
   const exitCode = doneEvent?.kind === "done" ? doneEvent.exitCode : null;
+
+  /** 요약 줄은 "지우기" 와 무관하게 전체 출력에서 읽는다 — 가린 것이지 없어진 것이 아니다. */
+  const tally = useMemo(() => parseRunTally(outputText(events)), [events]);
+  const visibleEvents = useMemo(
+    () => events.filter((event) => event.id > clearedThroughId),
+    [events, clearedThroughId],
+  );
+  const visibleLineCount = countOutputLines(visibleEvents);
 
   // run-stream은 pendingQuestion을 다음 question/done까지 유지하므로,
   // "답변 후 패널 숨김"은 마지막으로 응답한 question.id를 여기서 기억해 처리한다.
@@ -203,7 +295,7 @@ export function RunStreamPanel({
     }
   }
 
-  async function back(questionId: string): Promise<void> {
+  async function returnToReviewMenu(questionId: string): Promise<void> {
     setError(null);
     try {
       await apiSend("POST", `/api/runs/${encodeURIComponent(runId)}/answer`, {
@@ -243,6 +335,26 @@ export function RunStreamPanel({
     }
   }
 
+  async function copyOutput(): Promise<void> {
+    setError(null);
+    try {
+      await writeClipboard(outputText(visibleEvents));
+      setCopiedAtCount(events.length);
+    } catch (err) {
+      setError(clipboardFailure("터미널 출력", err));
+    }
+  }
+
+  async function copyRunId(): Promise<void> {
+    setError(null);
+    try {
+      await writeClipboard(runId);
+      setRunIdCopied(true);
+    } catch (err) {
+      setError(clipboardFailure("Run ID", err));
+    }
+  }
+
   const terminalConversations = conversations.map((conversation) => {
     const responseStartId = conversation.responseAfterEventId;
     const responseBoundaryId =
@@ -270,54 +382,79 @@ export function RunStreamPanel({
     };
   });
 
-  return (
-    // 로그만 남는 높이를 먹는다. 나머지는 제 높이를 지킨다(`shrink-0`).
-    <div className="flex min-h-0 flex-1 flex-col gap-4">
-      <div className="flex shrink-0 items-center gap-3">
-        {/*
-          "대기" 는 상태가 아니라 **모른다는 뜻인데 아는 척한 문구**였다. `RunStatus` 에
-          그런 값은 없다(running/waiting-input/done/failed). 그래서 없는 run 과 도는 run 이
-          여기서 같은 글자가 됐다(#295). 모르는 것은 모른다고 쓴다.
-        */}
-        {status !== null ? (
-          <StatusBadge status={status} exitCode={exitCode} />
-        ) : streamError === null ? (
-          <span className="text-xs text-ink-muted">상태를 확인하는 중...</span>
-        ) : (
-          <span className="text-xs" style={{ color: "var(--status-failed-fg)" }}>
-            상태를 확인할 수 없음
-          </span>
-        )}
-        {status === "failed" && showRepairAction && runBundlePath !== null && (
-          <Button
-            variant="primary"
-            size="sm"
-            aria-expanded={repairOpen}
-            disabled={starting}
-            onClick={() => setRepairOpen((open) => !open)}
-          >
-            repair 시작
-          </Button>
-        )}
-        {status === "failed" && showRepairAction && argv !== null && runBundlePath === null && (
-          <span className="text-xs text-ink-muted">
-            이 실행은 repair 번들 없이 시작됐습니다. Test 에서 다시 실행하면 번들이 만들어집니다.
-          </span>
-        )}
-      </div>
+  const showRepairButton = status === "failed" && showRepairAction && runBundlePath !== null;
+  const stream = status === null ? null : STREAM_LABELS[status];
 
-      {/*
-        `RunTargetText` 는 목록의 **가로** 행에서 쓰려고 `flex-1` 을 달고 있다. 여기는 세로
-        흐름이라 그대로 두면 로그가 먹어야 할 높이를 이 한 줄이 가져간다 — 실제로 본문이
-        최소 높이까지 눌렸다. 감싸서 제 높이만 쓰게 한다.
-      */}
-      {runTarget !== null && (
-        <div className="flex shrink-0">
-          <RunTargetText target={runTarget} />
-        </div>
+  return (
+    /*
+      **이 화면만 뷰포트를 채운다.** 로그는 자기 안에서 넘치고 질문 패널은 늘 보이게 하려면
+      바깥 높이가 정해져 있어야 한다. 목록 상태(`RunList`)는 그대로 흐르게 둔다 — 실행이
+      많아지면 길어지는 것이 맞다.
+
+      **바닥 높이는 터미널 카드가 갖는다**(`LogPanel` 의 `min-h-[440px]`). 예전에는 이 상자가
+      `min-h-[600px]` 을 갖고 터미널은 남는 높이만 받아서, 보통 창에서도 터미널이 몇 줄짜리로
+      눌렸다(#459 피드백: 더 커야 한다). 이제 창이 낮으면 터미널이 줄어드는 대신 이 화면이 `main`
+      보다 길어지고 바깥이 스크롤한다 — 터미널은 읽을 수 있는 크기를 지킨다.
+    */
+    <section className="flex h-full flex-col gap-4">
+      <PageHeader
+        back={back}
+        title={title ?? (flow === null ? "실행" : FLOW_TITLES[flow])}
+        description={description}
+        meta={<RunMeta target={runTarget} runId={runId} copied={runIdCopied} onCopy={copyRunId} />}
+        aside={
+          <>
+            {/*
+              "대기" 는 상태가 아니라 **모른다는 뜻인데 아는 척한 문구**였다. `RunStatus` 에
+              그런 값은 없다(running/waiting-input/done/failed). 그래서 없는 run 과 도는 run 이
+              여기서 같은 글자가 됐다(#295). 모르는 것은 모른다고 쓴다.
+            */}
+            {/* 폭을 좁게 둔다. 문구가 두 줄로 감기는 대신 왼쪽 스위트 경로가 덜 잘린다. */}
+            <div className="flex max-w-[200px] flex-col items-end gap-1 text-right">
+              {status !== null ? (
+                <>
+                  <StatusBadge status={status} exitCode={exitCode} />
+                  <p className="text-caption text-ink-muted">{STATUS_NOTES[status]}</p>
+                </>
+              ) : streamError === null ? (
+                <span className="text-caption text-ink-muted">상태를 확인하는 중...</span>
+              ) : (
+                <span className="text-caption" style={{ color: "var(--status-failed-fg)" }}>
+                  상태를 확인할 수 없음
+                </span>
+              )}
+            </div>
+            {/*
+              집계 칸은 **머리에 얹는다** — 한 줄을 따로 쓰면 그만큼 터미널이 준다(#459 피드백:
+              터미널이 주인공이다). 생성 · 수리 흐름은 요약 줄을 내지 않으므로 영영 채워지지 않을
+              칸을 그리지 않는다. 다만 요약 줄이 실제로 왔다면 흐름과 무관하게 그것이 사실이다.
+              없다고 확인된 run 에도 그리지 않는다 — 셀 것이 없다.
+            */}
+            {!missing && (tally !== null || (flow !== "generate" && flow !== "repair")) && (
+              <RunCounts tally={tally} />
+            )}
+            {showRepairButton && (
+              <Button
+                variant="primary"
+                size="sm"
+                aria-expanded={repairOpen}
+                disabled={starting}
+                onClick={() => setRepairOpen((open) => !open)}
+              >
+                repair 시작
+              </Button>
+            )}
+          </>
+        }
+      />
+
+      {status === "failed" && showRepairAction && argv !== null && runBundlePath === null && (
+        <p className="shrink-0 text-caption text-ink-muted">
+          이 실행은 repair 번들 없이 시작됐습니다. Test 에서 다시 실행하면 번들이 만들어집니다.
+        </p>
       )}
 
-      {status === "failed" && showRepairAction && runBundlePath !== null && repairOpen && (
+      {showRepairButton && repairOpen && (
         <form
           // 폼이 길어져도 로그를 밀어내지 않는다. 넘치면 폼 안에서 스크롤한다.
           //
@@ -402,49 +539,183 @@ export function RunStreamPanel({
       )}
 
       {error !== null && (
-        <p className="text-sm" style={{ color: "var(--status-failed-fg)" }}>
+        <p
+          className="shrink-0 whitespace-pre-line text-sm"
+          style={{ color: "var(--status-failed-fg)" }}
+        >
           {error}
         </p>
       )}
 
-      {/*
-        서버가 만든 문장을 그대로 옮긴다. 줄바꿈이 살아야 하므로 whitespace-pre-line 이다
-        — 안내 두 줄이 한 줄로 뭉개지면 "어떻게 고치는지" 가 사라진다.
-      */}
-      {streamError !== null && (
-        <p className="whitespace-pre-line text-sm" style={{ color: "var(--status-failed-fg)" }}>
-          {streamError}
-        </p>
-      )}
-
-      <LogPanel
-        title="터미널 출력"
-        meta={
-          <span className="font-mono text-xs" style={{ color: "var(--terminal-muted)" }}>
-            {countOutputLines(events)}줄
-          </span>
-        }
-        events={events}
-        conversations={terminalConversations}
-        footer={
-          visibleQuestion !== null ? (
-            // key로 question.id를 줘서 새 질문마다 리마운트한다(입력값 초기화).
-            <QuestionPanel
-              key={visibleQuestion.id}
-              question={visibleQuestion}
-              onAnswer={(value) => answer(visibleQuestion, value)}
-              onBack={
-                canReturnToReviewMenu(visibleQuestion) ? () => back(visibleQuestion.id) : undefined
-              }
-            />
-          ) : suiteGenerating ? (
-            <p className="font-sans text-sm text-white" role="status" aria-live="polite">
-              스위트 생성중...
+      {missing && streamError !== null ? (
+        /*
+          **없다고 확인된 run 에는 빈 터미널을 그리지 않는다**(#459). 예전에는 빨간 문장 아래로
+          화면을 채우는 빈 터미널 상자가 그대로 그려져, 무언가 올 것처럼 보였다. 서버 문장은
+          그대로 옮기고(첫 줄), 그 뒤 안내가 말한 두 행동을 링크로 준다.
+        */
+        <Card className="shrink-0">
+          <EmptyState
+            message={streamError.split("\n")[0] ?? streamError}
+            hint={streamError.split("\n").slice(1).join("\n")}
+            action={{ href: "#/runs", label: "Runs 목록으로" }}
+            secondaryAction={{ href: "#/home", label: "새 테스트 실행" }}
+          />
+        </Card>
+      ) : (
+        <>
+          {/*
+            서버가 만든 문장을 그대로 옮긴다. 줄바꿈이 살아야 하므로 whitespace-pre-line 이다
+            — 안내 두 줄이 한 줄로 뭉개지면 "어떻게 고치는지" 가 사라진다.
+          */}
+          {streamError !== null && (
+            <p
+              className="shrink-0 whitespace-pre-line text-sm"
+              style={{ color: "var(--status-failed-fg)" }}
+            >
+              {streamError}
             </p>
-          ) : undefined
-        }
-      />
+          )}
+
+          <LogPanel
+            title="터미널 출력"
+            meta={
+              <>
+                {stream !== null && (
+                  <span className="inline-flex items-center gap-1.5 text-caption text-ink-muted">
+                    <span
+                      aria-hidden="true"
+                      className="h-2 w-2 rounded-full"
+                      style={{ background: stream.color }}
+                    />
+                    {stream.label}
+                  </span>
+                )}
+                <span className="font-mono text-caption text-ink-muted">{visibleLineCount}줄</span>
+              </>
+            }
+            actions={
+              <>
+                <Button
+                  size="sm"
+                  disabled={visibleLineCount === 0}
+                  title="화면에서만 지웁니다. 새로고침하면 다시 나옵니다."
+                  onClick={() => setClearedThroughId(events.at(-1)?.id ?? 0)}
+                >
+                  지우기
+                </Button>
+                <Button
+                  size="sm"
+                  disabled={visibleLineCount === 0}
+                  onClick={() => void copyOutput()}
+                >
+                  {copiedAtCount === events.length ? "복사됨" : "복사"}
+                </Button>
+              </>
+            }
+            events={visibleEvents}
+            conversations={terminalConversations}
+            footer={
+              visibleQuestion !== null ? (
+                // key로 question.id를 줘서 새 질문마다 리마운트한다(입력값 초기화).
+                <QuestionPanel
+                  key={visibleQuestion.id}
+                  question={visibleQuestion}
+                  onAnswer={(value) => answer(visibleQuestion, value)}
+                  onBack={
+                    canReturnToReviewMenu(visibleQuestion)
+                      ? () => returnToReviewMenu(visibleQuestion.id)
+                      : undefined
+                  }
+                />
+              ) : suiteGenerating ? (
+                <p
+                  className="rounded-lg border border-accent-border bg-accent-soft p-4 text-sm text-ink shadow-card"
+                  role="status"
+                  aria-live="polite"
+                >
+                  스위트 생성중...
+                </p>
+              ) : undefined
+            }
+          />
+        </>
+      )}
+    </section>
+  );
+}
+
+/**
+ * 제목 아래 메타: 스위트 한 줄, 그 아래 서버와 Run ID 한 줄.
+ *
+ * 목록의 `RunTargetText` 를 쓰지 않는다. 그것은 **가로 한 행**에 스위트와 서버를 나란히 두려고
+ * 스위트를 45% 로 자르는데, 머리에서는 오른쪽에 상태가 서므로 남는 폭이 좁아 경로가 앞 몇
+ * 글자만 남았다. 여기서는 스위트가 한 줄을 다 쓴다.
+ */
+function RunMeta({
+  target,
+  runId,
+  copied,
+  onCopy,
+}: {
+  readonly target: RunTarget | null;
+  readonly runId: string;
+  readonly copied: boolean;
+  readonly onCopy: () => Promise<void>;
+}): JSX.Element {
+  return (
+    <div className="flex min-w-0 flex-col gap-1 pt-1">
+      {target !== null && target.suite !== null && (
+        <span className="flex min-w-0 items-center gap-2" title={target.suite}>
+          <FileIcon />
+          <span className="truncate font-mono text-body text-ink">{target.suite}</span>
+        </span>
+      )}
+      <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-caption text-ink-muted">
+        {/* "서버" 와 명령도 한 덩어리다. 따로 두면 좁을 때 낱말 · 명령 · 구분점이 한 줄씩 끊긴다. */}
+        {target !== null && target.server !== null && (
+          <span className="inline-flex min-w-0 max-w-full items-center gap-2">
+            <span className="shrink-0">서버</span>
+            <code className="min-w-0 truncate font-mono text-ink" title={target.server}>
+              {target.server}
+            </code>
+            <span aria-hidden="true">·</span>
+          </span>
+        )}
+        {/* 줄이 넘칠 때 "Run ID" 와 값이 갈라지지 않게 한 덩어리로 묶는다. */}
+        <span className="inline-flex items-center gap-2 whitespace-nowrap">
+          Run ID
+          <code className="font-mono text-ink">{runId}</code>
+          <Button
+            variant="ghost"
+            size="xs"
+            aria-label={copied ? "Run ID 복사됨" : "Run ID 복사"}
+            onClick={() => void onCopy()}
+          >
+            {copied ? "복사됨" : "복사"}
+          </Button>
+        </span>
+      </span>
     </div>
+  );
+}
+
+function FileIcon(): JSX.Element {
+  return (
+    <svg
+      aria-hidden="true"
+      className="shrink-0 text-ink-muted"
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" />
+      <polyline points="14 3 14 9 20 9" />
+    </svg>
   );
 }
 
@@ -480,32 +751,7 @@ export function RunView({ runId }: RunViewProps): JSX.Element {
   if (runId === null) {
     return <RunList />;
   }
-
-  /*
-    **이 화면만 뷰포트를 채운다.** 로그는 자기 안에서 넘치고 질문 패널은 늘 보이게 하려면
-    바깥 높이가 정해져 있어야 한다. 목록 상태(`RunList`)는 그대로 흐르게 둔다 — 실행이
-    많아지면 길어지는 것이 맞다.
-  */
-  /*
-    `min-h-[400px]` 은 **아주 낮은 창을 위한 바닥**이다. 이 화면은 뷰포트를 채우도록 `h-full`
-    인데, 창이 그보다 낮으면 로그 패널이 헤더+질문 패널보다도 작아진다. 패널은
-    `overflow-hidden` 이라 그렇게 넘친 것은 스크롤되지 않고 **잘려서 꺼내 볼 수 없다.**
-    바닥을 두면 그때는 이 화면이 `main` 보다 커져 바깥이 스크롤된다 — 좁지만 잃는 것은 없다.
-
-    400 은 위 세 줄(제목·상태·대상)과 패널 헤더에 질문 패널이 가장 클 때를 더한 값이다.
-    보통 크기의 창에서는 `h-full` 이 이보다 크므로 이 값이 쓰이지 않는다.
-  */
-  return (
-    <section className="flex h-full min-h-[400px] flex-col gap-4">
-      <div className="flex shrink-0 items-center gap-3">
-        <a className="text-sm text-accent hover:underline" href="#/runs">
-          ← Runs
-        </a>
-        <h1 className="font-mono text-lg font-semibold text-ink">{runId}</h1>
-      </div>
-      <RunStreamPanel runId={runId} />
-    </section>
-  );
+  return <RunStreamPanel runId={runId} back={{ href: "#/runs", label: "Runs 목록" }} />;
 }
 
 /** `#/runs` 목록 상태: 실행 이력 전체를 최근 실행 표와 같은 형태로 보여준다. */
@@ -520,15 +766,23 @@ function RunList(): JSX.Element {
   }, []);
 
   return (
-    <section className="space-y-4">
-      <h1 className="text-xl font-semibold text-ink">실행</h1>
+    <section className="space-y-6">
+      <PageHeader
+        title="실행"
+        description="이 대시보드에서 시작한 실행입니다. 대시보드를 다시 띄우면 목록이 비워집니다."
+      />
       {error !== null && (
         <p className="text-sm" style={{ color: "var(--status-failed-fg)" }}>
           {error}
         </p>
       )}
       <Card className="overflow-hidden">
-        <table className="w-full text-left text-sm">
+        {/*
+          `table-fixed` 가 없으면 표가 내용 폭을 따라 카드보다 넓어진다. 행 안의 말줄임
+          (`truncate`)은 폭이 묶여야 작동하므로, 경로가 길면 줄여지지 않고 끝의 상태 뱃지가
+          카드 밖으로 밀려 잘렸다.
+        */}
+        <table className="w-full table-fixed text-left text-sm">
           <tbody className="divide-y divide-line-subtle">
             {runs === null && (
               <tr>
@@ -537,7 +791,13 @@ function RunList(): JSX.Element {
             )}
             {runs !== null && runs.length === 0 && (
               <tr>
-                <td className="px-4 py-3 text-ink-muted">아직 실행이 없습니다.</td>
+                <td>
+                  <EmptyState
+                    message="아직 실행이 없습니다."
+                    hint="Test 에서 서버와 스위트를 골라 실행하면 여기에 쌓입니다."
+                    action={{ href: "#/home", label: "Test 로 가서 실행하기" }}
+                  />
+                </td>
               </tr>
             )}
             {runs?.map((run) => {

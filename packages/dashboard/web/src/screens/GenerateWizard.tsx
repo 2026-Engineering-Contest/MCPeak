@@ -9,6 +9,7 @@ import type {
 import { apiGet, apiSend } from "../api.js";
 import { Button } from "../components/Button.js";
 import { Card } from "../components/Card.js";
+import { PageHeader } from "../components/PageHeader.js";
 import { Stepper } from "../components/Stepper.js";
 import type { GenerateForm } from "../generate/build-argv.js";
 import { buildGenerateArgv } from "../generate/build-argv.js";
@@ -249,7 +250,10 @@ export function GenerateWizard(): JSX.Element {
 
   return (
     <section className="mx-auto max-w-[800px] space-y-6">
-      <h1 className="text-xl font-semibold text-ink">생성</h1>
+      <PageHeader
+        title="생성"
+        description="서버 도구의 입력 스키마로 스위트 초안을 만들고, 검토한 뒤 저장합니다."
+      />
       <Stepper steps={STEPS} current={step} />
 
       <Card className="p-6">

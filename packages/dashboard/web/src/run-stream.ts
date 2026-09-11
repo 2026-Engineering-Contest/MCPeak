@@ -12,6 +12,12 @@ export interface RunEventsState {
    * 화면이 좌우되면 안 된다.
    */
   readonly error: string | null;
+  /**
+   * 서버가 404 로 **없다고 확인한** run 인가. `error` 만으로는 가를 수 없다 — 조회만 실패한
+   * 경우(5xx 등)에도 `error` 가 서지만 그때 run 은 살아 있을 수 있고, 화면은 터미널을 계속
+   * 그려야 한다. 없다고 확인된 run 에서만 빈 터미널을 거둔다(#459).
+   */
+  readonly missing: boolean;
 }
 
 const INITIAL_STATE: RunEventsState = {
@@ -19,6 +25,7 @@ const INITIAL_STATE: RunEventsState = {
   status: null,
   pendingQuestion: null,
   error: null,
+  missing: false,
 };
 
 /**
@@ -98,7 +105,13 @@ export function useRunEvents(runId: string | null): RunEventsState {
         // 5xx·네트워크 오류까지 run-없음 안내로 묶여 살아 있는 run 에 거짓을 말한다.
         const missing = caught instanceof ApiRequestError && caught.status === 404;
         const hint = missing ? MISSING_RUN_HINT : STATUS_UNKNOWN_HINT;
-        setState((previous) => ({ ...previous, error: `${reason}\n${hint}` }));
+        // 이벤트가 이미 흘렀다면 run 은 있다. 늦게 온 404 로 터미널을 거두지 않는다 — 도착
+        // 순서에 화면이 좌우되면 안 된다.
+        setState((previous) => ({
+          ...previous,
+          error: `${reason}\n${hint}`,
+          missing: missing && previous.events.length === 0,
+        }));
       }
     };
 
@@ -114,7 +127,8 @@ export function useRunEvents(runId: string | null): RunEventsState {
         const events = [...previous.events, event];
         // 이벤트가 흐른다는 것이 곧 이 run 이 있다는 증거다. 앞선 조회 실패로 세운 안내가
         // 남아 있으면 살아 있는 run 화면에 "확인할 수 없음" 이 붙어 있게 된다.
-        const base = previous.error === null ? previous : { ...previous, error: null };
+        const base =
+          previous.error === null ? previous : { ...previous, error: null, missing: false };
 
         if (event.kind === "question") {
           return { ...base, events, status: "waiting-input", pendingQuestion: event.question };

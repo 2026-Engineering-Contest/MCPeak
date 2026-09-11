@@ -6,6 +6,8 @@ import { buildTestArgv, DEFAULT_TEST_OPTIONS } from "../build-test-argv.js";
 import { ArgChips } from "../components/ArgChips.js";
 import { Button } from "../components/Button.js";
 import { Card } from "../components/Card.js";
+import { EmptyState } from "../components/EmptyState.js";
+import { PageHeader } from "../components/PageHeader.js";
 import { Field, INPUT_CLASS } from "../generate/steps/fields.js";
 import { effectiveRepairBundlePath } from "../repair-bundle-path.js";
 import type { SessionOrigin } from "../session-origin.js";
@@ -202,12 +204,10 @@ export function ReplayView(): JSX.Element {
 
   return (
     <section className="mx-auto max-w-[800px] space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold text-ink">녹화본 재생</h1>
-        <p className="mt-1 text-sm text-ink-muted">
-          녹화해 둔 외부 응답으로, 실제 호출 없이 같은 테스트를 다시 실행합니다.
-        </p>
-      </div>
+      <PageHeader
+        title="녹화본 재생"
+        description="녹화해 둔 외부 응답으로, 실제 호출 없이 같은 테스트를 다시 실행합니다."
+      />
 
       {loadError !== null && (
         <p className="text-sm" style={{ color: "var(--status-failed-fg)" }}>
@@ -224,10 +224,17 @@ export function ReplayView(): JSX.Element {
       <Card className="overflow-hidden">
         <ul className="divide-y divide-line-subtle text-sm">
           {sessions === null && <li className="px-4 py-3 text-ink-muted">불러오는 중...</li>}
+          {/*
+            빈 상태는 **다음 행동을 클릭으로 준다**(#459). 예전에는 컨트롤 이름까지 정확히 적어
+            놓고 링크는 주지 않았다 — 사용자가 사이드바에서 그 이름을 다시 찾아야 했다.
+          */}
           {sessions !== null && sessions.length === 0 && (
-            <li className="px-4 py-3 text-ink-muted">
-              → Test 에서 External 세션을 &quot;외부 호출 녹화&quot;로 실행하면 녹화본이 여기에
-              나타납니다.
+            <li>
+              <EmptyState
+                message="아직 녹화본이 없습니다."
+                hint='Test 에서 External 세션을 "외부 호출 녹화"로 실행하면 녹화본이 여기에 나타납니다.'
+                action={{ href: "#/home", label: "Test 로 가서 녹화하기" }}
+              />
             </li>
           )}
           {sessions?.map((session) => (

@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "id": "external-fetch-failing",
+  "name": "외부 호출은 나가지만 단언이 실패하는 스위트",
+  "defaultTimeoutMs": 10000,
+  "cases": [
+    {
+      "id": "seoul-weather-fails",
+      "name": "서울 날씨를 가져오지만 오류를 기대해 실패한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "fetch_weather",
+        "input": { "city": "seoul" }
+      },
+      "assertions": [{ "type": "isError", "expected": true }]
+    }
+  ]
+}

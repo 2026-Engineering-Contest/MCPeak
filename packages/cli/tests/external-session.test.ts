@@ -456,6 +456,19 @@ describe("External 세션 열기 실패 문장", () => {
     for (const failure of [empty, broken]) expect(failure.message).toContain(PATH);
   });
 
+  /**
+   * ADR-0094. 미완료 세션의 원인은 둘뿐이다. 녹화가 도중에 끊겼거나, 지원하지 않는 응답을
+   * 만나 호출을 끝내지 못했거나. 테스트가 실패해서가 아니다. 안내가 그 둘만 말해야 사용자가
+   * 명세를 고치러 가지 않는다.
+   */
+  it("미완료 세션의 안내는 실제 원인 둘만 말한다", () => {
+    const broken = externalOpenFailure("replay", PATH, coded("REPLAY_SOURCE_INVALID", "x"));
+
+    expect(broken.hint).toContain("비-JSON");
+    expect(broken.hint).toContain("다시 녹화하세요");
+    expect(broken.hint).not.toContain("녹화 실행이 실패했을 수 있습니다");
+  });
+
   it("분류하지 못한 실패는 원인을 버리지 않고 모드에 맞는 안내를 준다", () => {
     const replay = externalOpenFailure("replay", PATH, new Error("file is not a database"));
     const record = externalOpenFailure("record", PATH, new Error("unable to open database file"));
@@ -566,6 +579,24 @@ describe("External 세션 닫기 실패 문장", () => {
     expect(failure.hint).toBe(detail);
   });
 
+  /**
+   * ADR-0094 뒤로 이 갈래는 실패한 실행에서도 돈다. 예전에는 실패한 실행이 미완료 검사를
+   * 건너뛰어 끊긴 호출이 묻혔다. 그래서 문장이 무엇이 남았는지를 바로 말해야 하고, 여러 줄
+   * 원문은 구조가 살아 있어야 한다.
+   */
+  it("INCOMPLETE_SESSION 은 무엇이 남았는지를 말하고 원문 개행을 살린다", () => {
+    const failure = externalCloseFailure(coded("INCOMPLETE_SESSION", "원문\n둘째 줄"));
+
+    expect(failure.message).toBe("녹화를 완료하지 못했습니다. 끝나지 않은 외부 호출이 남았습니다.");
+    expect(failure.hint).toBe("원문\n둘째 줄");
+  });
+
+  it("그 밖의 원인은 기존 문장을 그대로 쓴다", () => {
+    const failure = externalCloseFailure(new Error("그 밖"));
+
+    expect(failure.message).toBe("External 세션을 닫지 못했습니다.");
+  });
+
   it("그 밖의 원인은 이스케이프해서 화면을 깨뜨릴 값을 막는다", () => {
     const failure = externalCloseFailure(
       coded("SESSION_NOT_RUNNING", `boom${String.fromCharCode(27)}[31m`),
@@ -660,27 +691,39 @@ describe("결과 문장의 조건절 (ADR-0068)", () => {
 });
 
 /**
- * 실패한 실행의 녹화는 재생 원본으로 **거부된다**(`EXTERNAL_SESSION_FAILED` —
+ * 완료되지 않은 채 닫힌 녹화는 재생 원본으로 **거부된다**(`EXTERNAL_SESSION_FAILED`,
  * "녹화가 완료되지 않은 세션입니다"). 그런데도 "녹화했습니다" 라고 하면 사용자는 못 쓰는
  * 파일을 가진 채 가졌다고 믿는다. ADR-0066 이 없애려던 종류의 거짓말이 이 함수 안에서 다시
  * 생기는 자리라, 상태를 갈라 고정한다.
+ *
+ * ADR-0094 뒤로 이 갈래에 닿는 경로는 둘뿐이다. 마스킹 불변식 위반으로 Coordinator 가 세션을
+ * 먼저 닫았거나, 미완료 interaction 이 남아 저장소가 완료를 뒤집었거나. 테스트가 실패한 것은
+ * 더는 이유가 아니므로, 문장이 그것을 원인으로 지목하지 않는지까지 고정한다.
  */
-describe("실패한 실행의 결과 문장 (ADR-0066)", () => {
+describe("완료되지 않은 녹화의 결과 문장 (ADR-0094)", () => {
   const PATH3 = "tmp/weather.db";
   const failedRecord = (interactionCount: number): SessionSummary =>
     ({ ...record(interactionCount), status: "failed" }) as SessionSummary;
 
-  it("실패한 녹화는 완료했다고 말하지 않는다", () => {
+  it("완료되지 않은 녹화는 완료했다고 말하지 않는다", () => {
     const line = externalSessionOutcome(failedRecord(3), PATH3);
 
-    expect(line).toContain("녹화를 완료하지 않았습니다");
+    expect(line).toContain("녹화가 완료되지 않은 채 닫혔습니다");
     expect(line).toContain("재생 원본으로 쓸 수 없습니다");
     expect(line).toContain("다시 녹화하세요");
     // 이 문장이 남아 있으면 고친 의미가 없다.
     expect(line).not.toContain("3건을 녹화했습니다");
   });
 
-  it("잡은 개수는 그대로 말한다 — 0건과 3건은 다른 상황이다", () => {
+  it("테스트 판정을 원인으로 지목하지 않는다", () => {
+    const line = externalSessionOutcome(failedRecord(3), PATH3);
+
+    expect(line).toContain("테스트 판정과는 무관합니다");
+    // 옛 문장이다. 이것이 남아 있으면 사용자가 엉뚱한 곳을 고친다.
+    expect(line).not.toContain("이 실행이 실패해");
+  });
+
+  it("잡은 개수는 그대로 말한다", () => {
     expect(externalSessionOutcome(failedRecord(3), PATH3)).toContain("3건을 잡았지만");
   });
 
@@ -698,7 +741,7 @@ describe("실패한 실행의 결과 문장 (ADR-0066)", () => {
     expect(line).toContain("3건을 재생했습니다");
   });
 
-  it("실패해도 경고와의 배타성은 유지된다", () => {
+  it("완료되지 않아도 경고와의 배타성은 유지된다", () => {
     for (const summary of [failedRecord(0), failedRecord(3)]) {
       const spoke = [externalSessionOutcome(summary, PATH3), externalSessionNotice(summary)].filter(
         (value) => value !== undefined,

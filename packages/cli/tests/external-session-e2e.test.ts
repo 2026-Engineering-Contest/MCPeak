@@ -33,6 +33,8 @@ const mixedServer = join(here, "fixtures/external-mixed-server.mjs");
 const suite = join(here, "fixtures/external-fetch.suite.json");
 const threeSuite = join(here, "fixtures/external-fetch-three.suite.json");
 const twoSuite = join(here, "fixtures/external-fetch-two.suite.json");
+/** 외부 호출은 정상으로 나가고 **단언만 실패하는** 스위트. 두 축을 갈라 보기 위한 것이다. */
+const failingSuite = join(here, "fixtures/external-fetch-failing.suite.json");
 
 const directories: string[] = [];
 const servers: Server[] = [];
@@ -624,4 +626,45 @@ describe("mcpeak test 의 External 세션 — 녹화 출처 (ADR-0085)", () => {
     const { loadSession } = await import("@mcpeak/record/external");
     expect(loadSession(sessionPath)?.origin?.suitePath).toBe(suite);
   }, 30_000);
+});
+
+/**
+ * `docs/2026-09-11-공개서버-직접조작-데모-실측-문제.md` §1 이 기록한 닫힌 고리를 그대로
+ * 재현한다. 호출 3건을 DB 에 온전히 담고도 세션이 `failed` 라, 화면은 "다시 녹화하세요" 라고
+ * 말하고, 다시 녹화해도 같은 케이스가 또 실패해 결과가 같았다. 승인 게이트에서 서버 결함으로
+ * 분류한 케이스는 의도적으로 계속 실패하는 회귀 테스트이므로, 그런 명세를 가진 서버의
+ * 녹화본은 영영 만들 수 없었다.
+ *
+ * 판정이 실패하는 것과 재생이 성립하는 것은 다른 축이다(ADR-0094). 이 테스트가 그 둘을
+ * 한 실행 안에서 갈라 놓는다.
+ */
+describe("mcpeak test 의 External 세션: 실패한 실행의 녹화본(ADR-0094)", () => {
+  it("케이스가 실패한 실행의 녹화본도 재생 원본으로 쓸 수 있다", async () => {
+    const origin = await startOrigin();
+    const sessionPath = await newSessionPath();
+
+    const recorded = await captureStderr(() =>
+      runWith(server, failingSuite, ["--record-session", sessionPath], origin.url("/weather")),
+    );
+
+    // 판정은 실패한다. 그것이 이 시나리오의 전제다.
+    expect(recorded.exitCode).not.toBe(0);
+    expect(origin.calls()).toBe(1);
+    // 실측 문서 §1 이 기록한 문장이 더는 나오지 않는다.
+    expect(recorded.stderr).not.toContain("녹화를 완료하지");
+    expect(recorded.stderr).not.toContain("재생 원본으로 쓸 수 없습니다");
+    // 무엇을 했는지는 그대로 말한다(ADR-0066).
+    expect(recorded.stderr).toContain("외부 호출 1건을 녹화했습니다");
+
+    const replayed = await captureStderr(() =>
+      runWith(server, failingSuite, ["--session", sessionPath], origin.url("/weather")),
+    );
+
+    // 판정은 여전히 실패한다. 재생이 성립하는 것과는 다른 축이다.
+    expect(replayed.exitCode).not.toBe(0);
+    // 이것이 이 수정의 핵심 증거다. 재생됐다면 origin 카운터가 움직이지 않는다.
+    expect(origin.calls()).toBe(1);
+    expect(replayed.stderr).not.toContain("녹화가 완료되지 않은 세션입니다");
+    expect(replayed.stderr).toContain("녹화된 외부 호출 1건을 재생했습니다");
+  }, 60_000);
 });

@@ -72,12 +72,21 @@ function SessionStatusBadge(props: { status: SessionEntry["status"] }): JSX.Elem
 
 /**
  * 재생할 수 없는 녹화본의 사유. record 가 거절할 때의 문장과 같은 뜻이어야 한다
- * (`REPLAY_SOURCE_INVALID`) — 화면과 터미널이 다른 말을 하면 사용자가 둘을 잇지 못한다.
+ * (`REPLAY_SOURCE_INVALID`). 화면과 터미널이 다른 말을 하면 사용자가 둘을 잇지 못한다.
+ *
+ * 터미널 쪽 정본은 CLI 의 `REPLAY_SOURCE_INVALID` 안내다. 그 문장은 "녹화가 도중에 끊겼거나,
+ * 지원하지 않는 응답(비-JSON·redirect)을 만나 호출을 끝내지 못한 세션입니다" 라고 말한다.
+ * 원인은 끊긴 녹화이지 테스트 판정이 아니다(ADR-0094).
+ *
+ * **원인 둘을 다 말한다.** 이 화면은 `status` 만 받고 어느 쪽인지 구분할 정보가 없다. 한쪽만
+ * 적으면 다른 쪽 세션에서 틀린 원인을 단정하게 되고, 사용자는 멀쩡한 녹화 실행을 의심하며
+ * 서버가 돌려준 응답 형식을 보지 않는다.
  */
 const STATUS_REASON: Record<SessionEntry["status"], string | null> = {
   completed: null,
   running: "녹화가 끝나지 않은 세션입니다. 다시 녹화하세요.",
-  failed: "녹화 실행이 실패한 세션입니다. 다시 녹화하세요.",
+  failed:
+    "녹화가 도중에 끊겼거나 지원하지 않는 응답 때문에 완료되지 않은 세션입니다. 다시 녹화하세요.",
 };
 
 /**

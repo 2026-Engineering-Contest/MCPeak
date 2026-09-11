@@ -54,6 +54,27 @@ describe("generate 도움말", () => {
   });
 });
 
+/**
+ * `--env` 가 값이 아니라 이름을 받는 이유가 도움말에 없으면 사용자는 `--arg KEY=값` 래퍼로
+ * 우회하고, 그것이 우리가 막으려던 노출이다(설계 §4.1).
+ */
+describe("--env 도움말", () => {
+  it.each([
+    ["test", TEST_USAGE],
+    ["generate", GENERATE_USAGE],
+  ] as const)("%s 사용법 줄에 --env <NAME> 이 나온다", (_command, usage) => {
+    expect(usage).toContain("[--env <NAME> ...]");
+  });
+
+  it.each(["test", "generate"] as const)("%s 옵션 설명에 --env 와 이유가 있다", (command) => {
+    const help = commandHelp(command);
+    expect(help).toContain("--env <NAME>");
+    expect(help).toContain("`ps` 목록과 셸 히스토리");
+    expect(help).toContain("read -rs");
+    expect(help).toContain("MCPEAK_");
+  });
+});
+
 describe("test External 세션 도움말", () => {
   const help = commandHelp("test");
 

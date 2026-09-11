@@ -209,7 +209,7 @@ describe("parseGenerateCommand", () => {
       suiteId: "weather",
       name: "Weather",
       outPath: "out.json",
-      target: { transport: "stdio", command: "node", args: ["one", "two"] },
+      target: { transport: "stdio", command: "node", args: ["one", "two"], envNames: [] },
       baselineOnly: true,
       provider: undefined,
       model: undefined,
@@ -3386,6 +3386,7 @@ describe("generate 옵션 파싱", () => {
       transport: "stdio",
       command: "mcpeak-mock",
       args: ["w.mock.json", "--port", "0"],
+      envNames: [],
     });
   });
 
@@ -3396,6 +3397,7 @@ describe("generate 옵션 파싱", () => {
       transport: "stdio",
       command: "node",
       args: ["--baseline-only"],
+      envNames: [],
     });
   });
 
@@ -3892,6 +3894,58 @@ describe("parseGenerateCommand — 원격(--url) 대상", () => {
     expect(
       messageOf(["--url", "https://x/v1", "--header-env", "Authorization=Bearer abc"]),
     ).toContain("`ps` 목록과 셸 히스토리");
+  });
+
+  /** `test` 와 같은 규칙·같은 문장이다(설계 §4.1). */
+  describe("--env", () => {
+    it("--env A --env B 를 순서대로 target.envNames 에 모은다", () => {
+      expect(
+        parseGenerateCommand([...base, "--command", "node", "--env", "A", "--env", "B"]).target,
+      ).toEqual({ transport: "stdio", command: "node", args: [], envNames: ["A", "B"] });
+    });
+
+    it("--env=A 형식도 받는다", () => {
+      expect(
+        parseGenerateCommand([...base, "--command", "node", "--env=A", "--env", "B"]).target,
+      ).toMatchObject({ envNames: ["A", "B"] });
+    });
+
+    it("--env A --env A 는 거절한다", () => {
+      expect(messageOf(["--command", "node", "--env", "A", "--env", "A"])).toBe(
+        "`--env A` 이 두 번 있습니다. 한 번만 쓰세요.",
+      );
+    });
+
+    it.each(["A=b", "Bearer x", ""])(
+      "--env '%s' 는 이름만 받는다는 이유와 read -rs 예시를 담아 거절한다",
+      (raw) => {
+        const message = messageOf(["--command", "node", "--env", raw]);
+        if (raw === "") {
+          expect(message).toBe("`--env` 옵션 값이 필요합니다.");
+          return;
+        }
+        expect(message).toContain("환경변수 **이름**만 받습니다");
+        expect(message).toContain("read -rs");
+      },
+    );
+
+    it("--env NODE_OPTIONS 는 자기 문장으로 거절한다", () => {
+      expect(messageOf(["--command", "node", "--env", "NODE_OPTIONS"])).toContain(
+        "`--env NODE_OPTIONS` 는 받지 않습니다",
+      );
+    });
+
+    it("--env MCPEAK_X 는 자기 문장으로 거절한다", () => {
+      expect(messageOf(["--command", "node", "--env", "MCPEAK_X"])).toContain(
+        "`--env MCPEAK_X` 는 받지 않습니다",
+      );
+    });
+
+    it("--env 는 --url 과 함께 쓸 수 없다", () => {
+      expect(messageOf(["--env", "A", "--url", "https://x/v1"])).toContain(
+        "`--env` 는 `--url` 과 함께 쓸 수 없습니다.",
+      );
+    });
   });
 
   it("URL 이 아닌 값을 거절한다", () => {

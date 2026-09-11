@@ -35,8 +35,10 @@ import {
   type CliConnection,
   type ConnectTarget,
   ConnectTargetError,
+  createEnvForwardCollector,
   createHeaderEnvCollector,
   openConnection,
+  parseEnvForwardOption,
   parseHeaderEnvOption,
   parseUrlOption,
 } from "./connect-target.js";
@@ -298,6 +300,7 @@ export function parseTestCommand(argv: readonly string[]): TestCommandInput {
   let recordSessionPath: string | undefined;
   const args: string[] = [];
   const headerEnv = createHeaderEnvCollector();
+  const envForward = createEnvForwardCollector();
   for (let index = 1; index < argv.length; index += 1) {
     const token = argv[index] ?? "";
     /**
@@ -367,6 +370,15 @@ export function parseTestCommand(argv: readonly string[]): TestCommandInput {
       if (!parsed.ok) fail(parsed.message);
       else {
         const rejected = headerEnv.add(parsed.value.header, parsed.value.envName);
+        if (rejected !== undefined) fail(rejected);
+      }
+    } else if (token === "--env" || token.startsWith("--env=")) {
+      const read = readOptionValue(argv, token, "--env", index);
+      index = read.index;
+      const parsed = parseEnvForwardOption(read.value);
+      if (!parsed.ok) fail(parsed.message);
+      else {
+        const rejected = envForward.add(parsed.value);
         if (rejected !== undefined) fail(rejected);
       }
     } else if (token === "--arg" || token.startsWith("--arg=")) {
@@ -501,6 +513,11 @@ export function parseTestCommand(argv: readonly string[]): TestCommandInput {
       "`--arg` 는 `--url` 과 함께 쓸 수 없습니다.\n" +
         "→ `--arg` 는 우리가 띄우는 프로세스에 넘길 인자입니다. 원격 서버에는 띄울 프로세스가 없습니다.",
     );
+  if (url !== undefined && envForward.snapshot().length > 0)
+    fail(
+      "`--env` 는 `--url` 과 함께 쓸 수 없습니다.\n" +
+        "→ `--env` 는 우리가 띄우는 프로세스의 환경에 넣을 변수입니다. 원격 서버에는 띄울 프로세스가 없습니다.",
+    );
   if (command !== undefined && !headerEnv.isEmpty())
     fail(
       "`--header-env` 는 `--url` 과 함께만 쓸 수 있습니다.\n" +
@@ -544,6 +561,7 @@ export function parseTestCommand(argv: readonly string[]): TestCommandInput {
             // 이미 걷어냈으므로, 여기 오면 `command` 는 반드시 있다.
             command: command as string,
             args: Object.freeze(args),
+            envNames: envForward.snapshot(),
           })
         : Object.freeze({
             transport: "http" as const,

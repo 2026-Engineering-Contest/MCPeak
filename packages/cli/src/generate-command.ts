@@ -38,9 +38,11 @@ import {
   type CliConnection,
   type ConnectTarget,
   ConnectTargetError,
+  createEnvForwardCollector,
   createHeaderEnvCollector,
   describeTarget,
   openConnection,
+  parseEnvForwardOption,
   parseHeaderEnvOption,
   parseUrlOption,
 } from "./connect-target.js";
@@ -324,6 +326,7 @@ const optionNames = new Set([
   "--out",
   "--command",
   "--arg",
+  "--env",
   "--url",
   "--header-env",
   "--baseline-only",
@@ -377,6 +380,7 @@ export function parseGenerateCommand(argv: readonly string[]): GenerateCommandIn
   const flags = new Set<string>();
   // `--arg` 와 같이 되풀이할 수 있는 옵션이라 `values` 맵에 넣지 않는다(#137).
   const headerEnv = createHeaderEnvCollector();
+  const envForward = createEnvForwardCollector();
   for (let index = 0; index < argv.length; index++) {
     const item = argv[index];
     if (item === undefined) continue;
@@ -437,6 +441,13 @@ export function parseGenerateCommand(argv: readonly string[]): GenerateCommandIn
       if (rejected !== undefined) throw new UsageError(rejected);
       continue;
     }
+    if (option === "--env") {
+      const parsed = parseEnvForwardOption(value);
+      if (!parsed.ok) throw new UsageError(parsed.message);
+      const rejected = envForward.add(parsed.value);
+      if (rejected !== undefined) throw new UsageError(rejected);
+      continue;
+    }
     if (values.has(option)) throw new UsageError(`\`${option}\`는 한 번만 사용할 수 있습니다.`);
     values.set(option, value);
   }
@@ -468,6 +479,11 @@ export function parseGenerateCommand(argv: readonly string[]): GenerateCommandIn
     throw new UsageError(
       "`--arg` 는 `--url` 과 함께 쓸 수 없습니다.\n" +
         "→ `--arg` 는 우리가 띄우는 프로세스에 넘길 인자입니다. 원격 서버에는 띄울 프로세스가 없습니다.",
+    );
+  if (rawUrl !== undefined && envForward.snapshot().length > 0)
+    throw new UsageError(
+      "`--env` 는 `--url` 과 함께 쓸 수 없습니다.\n" +
+        "→ `--env` 는 우리가 띄우는 프로세스의 환경에 넣을 변수입니다. 원격 서버에는 띄울 프로세스가 없습니다.",
     );
   if (command !== undefined && !headerEnv.isEmpty())
     throw new UsageError(
@@ -512,6 +528,7 @@ export function parseGenerateCommand(argv: readonly string[]): GenerateCommandIn
             // 위 두 검사가 "둘 다" 와 "둘 다 아님" 을 걷어냈으므로 여기 오면 반드시 있다.
             command: command as string,
             args: Object.freeze(args),
+            envNames: envForward.snapshot(),
           })
         : Object.freeze({
             transport: "http" as const,

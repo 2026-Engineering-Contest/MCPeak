@@ -1,5 +1,7 @@
+import { randomUUID } from "node:crypto";
 import { subscribe, unsubscribe } from "node:diagnostics_channel";
 import { writeFileSync } from "node:fs";
+import { join } from "node:path";
 
 /**
  * 재생 중 **어댑터 범위 밖으로 나간 HTTP 호출을 센다. 가로채지 않는다.**
@@ -36,10 +38,17 @@ export function observerChannelName() {
 }
 
 /**
- * @param {{ coordinatorHostHeader: string, reportPath: string }} options
+ * @param {{ coordinatorHostHeader: string, reportDir: string, isClaimed: () => boolean }} options
  *   `coordinatorHostHeader` 는 `host:port` 형식이다. **이 필터가 없으면 안 된다** —
  *   어댑터 자신의 Coordinator 클라이언트가 `node:http` 를 쓰므로, 재생할 때마다 우리 왕복이
  *   "범위 밖 호출" 로 잡혀 매 실행이 거짓 경고를 낸다.
+ *
+ *   `reportDir` 는 **디렉터리**다. 프로세스마다 다른 파일을 쓴다. 예전에는 파일 하나였는데,
+ *   중간에 Node 런처(`npx`)가 끼면 여럿이 같은 경로를 덮어써서 마지막에 끝난 프로세스의
+ *   숫자만 남았다(ADR-0096).
+ *
+ *   `isClaimed` 는 **이 프로세스가 이 세션의 기록자였는가**를 묻는다. 종료 시점에 읽는다.
+ *   설치 시점에는 아직 아무도 기록자가 아니다.
  */
 export function installOutOfScopeObserver(options) {
   let count = 0;
@@ -62,6 +71,10 @@ export function installOutOfScopeObserver(options) {
 
   subscribe(CHANNEL, onRequest);
 
+  // 파일명에 난수를 섞는다. pid 만 쓰면 한 실행 안에서 먼저 끝난 프로세스의 번호가 재사용될 때
+  // 덮어쓴다. 이 이름은 세션에 저장되지 않으므로 난수여도 결정론성과 무관하다.
+  const reportPath = join(options.reportDir, `${process.pid}-${randomUUID()}.json`);
+
   /**
    * 종료 시점에 **동기로** 쓴다. 비동기 비콘은 마지막 호출이 종료와 경합해 개수를 잃는다 —
    * 그리고 잃는 자리가 하필 "마지막 in-scope 호출 뒤에 나간 범위 밖 호출", 즉 이 기능이
@@ -72,7 +85,10 @@ export function installOutOfScopeObserver(options) {
    */
   const flush = () => {
     try {
-      writeFileSync(options.reportPath, JSON.stringify({ outOfScope: count }));
+      writeFileSync(
+        reportPath,
+        JSON.stringify({ outOfScope: count, claimed: options.isClaimed() }),
+      );
     } catch {
       // 쓰기에 실패해도 서버 종료를 막지 않는다. 부모는 "못 셌음" 으로 읽는다.
     }

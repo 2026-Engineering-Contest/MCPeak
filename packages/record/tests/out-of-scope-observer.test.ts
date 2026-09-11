@@ -1,5 +1,5 @@
 import { channel, hasSubscribers } from "node:diagnostics_channel";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { createServer, get, type Server } from "node:http";
 import { tmpdir } from "node:os";
@@ -40,10 +40,11 @@ const startServer = async (): Promise<{ readonly host: string }> => {
   return { host: `127.0.0.1:${port}` };
 };
 
-const reportPath = async (): Promise<string> => {
+/** 보고를 받을 **디렉터리**. 파일 이름은 관측기가 프로세스마다 다르게 짓는다(ADR-0096). */
+const reportDir = async (): Promise<string> => {
   const directory = await mkdtemp(join(tmpdir(), "mcpeak-observer-test-"));
   directories.push(directory);
-  return join(directory, "out-of-scope.json");
+  return directory;
 };
 
 const httpGet = (host: string, path: string): Promise<void> =>
@@ -91,7 +92,8 @@ describe("범위 밖 호출 관측", () => {
     const { host } = await startServer();
     const observer = installOutOfScopeObserver({
       coordinatorHostHeader: "127.0.0.1:1",
-      reportPath: await reportPath(),
+      reportDir: await reportDir(),
+      isClaimed: () => false,
     });
 
     try {
@@ -113,7 +115,8 @@ describe("범위 밖 호출 관측", () => {
     const { host } = await startServer();
     const observer = installOutOfScopeObserver({
       coordinatorHostHeader: host,
-      reportPath: await reportPath(),
+      reportDir: await reportDir(),
+      isClaimed: () => false,
     });
 
     try {
@@ -130,7 +133,8 @@ describe("범위 밖 호출 관측", () => {
     const { host } = await startServer();
     const observer = installOutOfScopeObserver({
       coordinatorHostHeader: "127.0.0.1:1",
-      reportPath: await reportPath(),
+      reportDir: await reportDir(),
+      isClaimed: () => false,
     });
 
     try {
@@ -147,7 +151,8 @@ describe("범위 밖 호출 관측", () => {
     const { host } = await startServer();
     const observer = installOutOfScopeObserver({
       coordinatorHostHeader: "127.0.0.1:1",
-      reportPath: await reportPath(),
+      reportDir: await reportDir(),
+      isClaimed: () => false,
     });
     observer.uninstall();
 
@@ -160,12 +165,14 @@ describe("범위 밖 호출 관측", () => {
    * 종료 훅을 직접 뛰울 수 없으므로 `process.emit("exit")` 로 대신한다. 훅이 붙어 있고
    * 그것이 개수를 파일로 남긴다는 사실만 본다 — 실제 자식 종료 경로는 e2e 가 본다.
    */
-  it("종료 시 개수를 파일에 남긴다", async () => {
+  it("종료 시 개수와 기록자 여부를 파일에 남긴다", async () => {
     const { host } = await startServer();
-    const path = await reportPath();
+    const directory = await reportDir();
     const observer = installOutOfScopeObserver({
       coordinatorHostHeader: "127.0.0.1:1",
-      reportPath: path,
+      reportDir: directory,
+      // 이 프로세스가 이 세션의 기록자였다고 답한다. 부모가 런처의 보고와 가르는 기준이다.
+      isClaimed: () => true,
     });
 
     try {
@@ -175,7 +182,13 @@ describe("범위 밖 호출 관측", () => {
       observer.uninstall();
     }
 
-    expect(JSON.parse(readFileSync(path, "utf8"))).toEqual({ outOfScope: 1 });
+    // 파일 이름은 `pid-uuid.json` 이라 실행마다 다르다. 디렉터리에 하나만 있다는 것까지 본다.
+    const written = readdirSync(directory);
+    expect(written).toHaveLength(1);
+    expect(JSON.parse(readFileSync(join(directory, written[0] ?? ""), "utf8"))).toEqual({
+      outOfScope: 1,
+      claimed: true,
+    });
   });
 });
 
@@ -185,7 +198,7 @@ describe("범위 밖 호출 관측", () => {
  * 남는다. 못 만들면 관측만 포기하고 실행은 그대로 굴러가야 한다.
  */
 describe("사이드카를 못 만들어도 재생을 막지 않는다", () => {
-  const OBSERVER_ENV = "MCPEAK_EXTERNAL_OBSERVER_PATH";
+  const OBSERVER_ENV = "MCPEAK_EXTERNAL_OBSERVER_DIR";
 
   /** 완료된 빈 재생 원본. Coordinator 를 열려면 원본 세션이 있어야 한다. */
   const replaySource = async () => {
@@ -201,7 +214,7 @@ describe("사이드카를 못 만들어도 재생을 막지 않는다", () => {
    * 설치되지 않는 어떤 이유로든 통과해 버린다. 정상 tmpdir 에서 env 키가 실제로 붙는다는
    * 것을 먼저 고정한다.
    */
-  it("정상 tmpdir 에서는 자식에게 보고 경로를 넘긴다", async () => {
+  it("정상 tmpdir 에서는 자식에게 보고 디렉터리를 넘긴다", async () => {
     const { startExternalCoordinator } = await import("../src/external/coordinator.js");
     const store = await replaySource();
     try {
@@ -240,7 +253,7 @@ describe("사이드카를 못 만들어도 재생을 막지 않는다", () => {
         store,
       });
 
-      // 관측은 없다 — 자식에게 보고 경로를 넘기지 않는다.
+      // 관측은 없다 — 자식에게 보고 디렉터리를 넘기지 않는다.
       expect(handle.childEnvironment[OBSERVER_ENV]).toBeUndefined();
 
       const summary = await handle.finish("completed");

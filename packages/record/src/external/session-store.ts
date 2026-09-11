@@ -14,7 +14,12 @@ export type InteractionStatus = "incomplete" | "complete";
 export interface SessionOrigin {
   /** 실행 파일 하나. CLI `--command` 에 그대로 실린다. */
   readonly command: string;
-  /** CLI `--arg` 로 하나씩 실릴 값들. 순서가 의미를 가지므로 배열 그대로 담는다. */
+  /**
+   * CLI `--arg` 로 하나씩 실릴 값들. 순서가 의미를 가지므로 배열 그대로 담는다.
+   *
+   * 비밀 모양의 값은 엔진이 `[redacted]` 로 바꿔 넘긴다(ADR-0097). Store 는 받은 값을 그대로
+   * 저장한다.
+   */
   readonly args: readonly string[];
   /** 녹화를 시작한 실행이 돌린 스위트 경로. */
   readonly suitePath: string;

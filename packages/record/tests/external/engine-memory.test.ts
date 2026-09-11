@@ -233,4 +233,49 @@ describe("재생 요약의 녹화 시각", () => {
     // 없는 것을 빈 문자열이나 지금 시각으로 채우지 않는다.
     expect(summary).not.toHaveProperty("recordedAt");
   });
+
+  /**
+   * 설계 §4.4. 마스킹은 Store 가 아니라 엔진이 한다. Store 두 구현이 공유하는 유일한 진입이
+   * 엔진이라 여기가 한 자리다. Store 는 "받은 값을 그대로 저장한다" 는 계약을 유지한다.
+   */
+  it("출처의 비밀 모양 인자를 저장 전에 가린다", () => {
+    const store = createMemorySessionStore();
+    createRecordEngine({
+      sessionId: "with-origin",
+      store,
+      origin: {
+        command: "npx",
+        args: ["-y", "@scope/server", "--access-token", "sbp_0123456789abcdef0123"],
+        suitePath: "examples/weather.suite.json",
+      },
+    });
+
+    expect(store.read("with-origin")?.origin).toEqual({
+      command: "npx",
+      args: ["-y", "@scope/server", "--access-token", "[redacted]"],
+      suitePath: "examples/weather.suite.json",
+    });
+  });
+
+  it("가릴 것이 없는 출처는 그대로 실린다", () => {
+    const store = createMemorySessionStore();
+    createRecordEngine({
+      sessionId: "plain-origin",
+      store,
+      origin: {
+        command: "node",
+        args: ["server.mjs", "--port", "3000"],
+        suitePath: "a.suite.json",
+      },
+    });
+
+    expect(store.read("plain-origin")?.origin?.args).toEqual(["server.mjs", "--port", "3000"]);
+  });
+
+  it("출처 없이 만든 세션에는 origin 이 없다 — 마스킹이 빈 객체를 만들지 않는다", () => {
+    const store = createMemorySessionStore();
+    createRecordEngine({ sessionId: "no-origin", store });
+
+    expect(store.read("no-origin")?.origin).toBeUndefined();
+  });
 });

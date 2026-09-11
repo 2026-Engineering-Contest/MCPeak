@@ -4,6 +4,7 @@ import {
   type DeterminismCaseObservation,
   describeDeterminismDifference,
 } from "../src/determinism.js";
+import { MAX_VALUE_STRING_CHARS } from "../src/diagnostics.js";
 
 /** 관찰 픽스처. response 는 키 자체를 생략할 수 있어야 하므로 spread 로 만든다. */
 const observation = (
@@ -77,6 +78,41 @@ describe("checkDeterminism", () => {
       firstValue: '"a"',
       secondValue: '"b"',
     });
+  });
+
+  it("긴 공통 앞부분 뒤의 차이가 양쪽 표시값에 보인다", () => {
+    const common = "공".repeat(MAX_VALUE_STRING_CHARS + 40);
+    const result = checkDeterminism({
+      first: [observation({ response: withText(`${common}1회차-tail`) })],
+      second: [observation({ response: withText(`${common}2회차-tail`) })],
+      stateRestored: true,
+    });
+
+    const difference = result.differences[0];
+    expect(difference).toMatchObject({ kind: "response", path: "content[0].text" });
+    expect(difference?.firstValue).toContain("1회차-tail");
+    expect(difference?.secondValue).toContain("2회차-tail");
+    expect(difference?.firstValue).toContain("앞 ");
+    expect(difference?.secondValue).toContain("앞 ");
+    expect(difference?.firstValue).not.toBe(difference?.secondValue);
+  });
+
+  it("차이 중심 창은 화면과 JSON이 함께 쓰는 differences 값에 저장된다", () => {
+    const common = "a".repeat(MAX_VALUE_STRING_CHARS + 20);
+    const result = checkDeterminism({
+      first: [observation({ response: withText(`${common}LEFT`) })],
+      second: [observation({ response: withText(`${common}RIGHT`) })],
+      stateRestored: true,
+    });
+    const difference = result.differences[0];
+    if (difference === undefined) throw new Error("차이 결과가 필요합니다.");
+
+    const screen = describeDeterminismDifference(difference, { stateRestored: true });
+    const machine = JSON.parse(JSON.stringify(result)) as typeof result;
+    expect(screen).toContain(difference.firstValue);
+    expect(screen).toContain(difference.secondValue);
+    expect(machine.differences[0]?.firstValue).toBe(difference.firstValue);
+    expect(machine.differences[0]?.secondValue).toBe(difference.secondValue);
   });
 
   it("배열 순서만 달라도 차이다", () => {

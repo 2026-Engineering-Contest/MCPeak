@@ -1,6 +1,6 @@
 import type { AssertionResult } from "./assertions.js";
 import { canonicalJson } from "./canonical.js";
-import { clampObservedText, redactByPath } from "./diagnostics.js";
+import { clampObservedText, MAX_VALUE_STRING_CHARS, redactByPath } from "./diagnostics.js";
 import type { TestCaseResult } from "./executor.js";
 import { REDACTED, type RunnerRedactionOptions } from "./sanitization.js";
 import type { JsonValue } from "./spec/types.js";
@@ -56,7 +56,7 @@ export interface DeterminismDifference {
    * 들어가지 않는다. 파싱하면 공백·키 순서 차이가 흡수돼 바이트 비결정을 놓친다.
    */
   readonly path?: string;
-  /** 표시용 값. clampObservedText 를 거친 문자열이다(§6 비교·표시 분리). */
+  /** 표시용 값. 차이가 보이는 구간을 MAX_VALUE_STRING_CHARS 안에 담는다(§6 비교·표시 분리). */
   readonly firstValue: string;
   readonly secondValue: string;
   readonly hint?: DeterminismHint;
@@ -180,6 +180,56 @@ const formatValue = (
   const safe = redactByPath(value as JsonValue, keys, redaction);
   if (safe === REDACTED) return REDACTED;
   return clampObservedText(canonicalJson(safe), redaction);
+};
+
+/** 마스킹까지 끝낸 값을 자르지 않은 표시 문자열로 만든다. 두 값의 공통 창을 잡을 때 쓴다. */
+const formatFullValue = (
+  value: MaybeMissing,
+  keys: readonly string[],
+  redaction?: RunnerRedactionOptions,
+): string => {
+  if (value === MISSING) return "(없음)";
+  const safe = redactByPath(value as JsonValue, keys, redaction);
+  if (safe === REDACTED) return REDACTED;
+  return canonicalJson(safe);
+};
+
+/** 코드 포인트 기준 첫 차이 위치. 서로게이트 페어를 분리하지 않는다. */
+const firstDifferentPoint = (first: readonly string[], second: readonly string[]): number => {
+  const shared = Math.min(first.length, second.length);
+  for (let index = 0; index < shared; index += 1) if (first[index] !== second[index]) return index;
+  return shared;
+};
+
+/** 같은 시작점의 창을 적용해 양쪽에서 같은 주변 문맥을 보여준다. */
+const windowValue = (points: readonly string[], start: number): string => {
+  const end = Math.min(points.length, start + MAX_VALUE_STRING_CHARS);
+  const kept = points.slice(start, end).join("");
+  const prefix = start === 0 ? "" : `…(앞 ${start}자 생략)`;
+  if (end < points.length) return `${prefix}${kept}…(총 ${points.length}자)`;
+  return start === 0 ? kept : `${prefix}${kept}(총 ${points.length}자)`;
+};
+
+/**
+ * 서로 다른 두 표시값을 한 쌍으로 자른다. 각 값을 앞에서 독립적으로 자르면 공통 앞부분이 긴
+ * 응답에서 실제 차이가 창 밖으로 밀려난다(#447). 첫 차이의 앞뒤 문맥이 함께 남도록 양쪽에 같은
+ * 창을 적용한다. 마스킹 뒤에 창을 잡아 생략 위치나 창 선택으로 민감값을 드러내지 않는다.
+ */
+const formatDifferingValues = (
+  first: MaybeMissing,
+  second: MaybeMissing,
+  keys: readonly string[],
+  redaction?: RunnerRedactionOptions,
+): readonly [string, string] => {
+  const left = Array.from(formatFullValue(first, keys, redaction));
+  const right = Array.from(formatFullValue(second, keys, redaction));
+  if (left.length <= MAX_VALUE_STRING_CHARS && right.length <= MAX_VALUE_STRING_CHARS)
+    return [left.join(""), right.join("")];
+
+  const difference = firstDifferentPoint(left, right);
+  const contextBefore = Math.floor(MAX_VALUE_STRING_CHARS / 2);
+  const start = Math.max(0, difference - contextBefore);
+  return [windowValue(left, start), windowValue(right, start)];
 };
 
 /** 마스크가 본문과 겹칠 때 덧붙이는 문자. 비문자라 서버 본문에 나올 일이 거의 없다. */
@@ -325,12 +375,18 @@ export function checkDeterminism(options: CheckDeterminismOptions): DeterminismR
         "정규화 결과가 다른데 차이 지점을 찾지 못했습니다. determinism.ts 의 결함입니다.",
       );
     const hint = detectHint(hit.first, hit.second);
+    const [firstValue, secondValue] = formatDifferingValues(
+      hit.first,
+      hit.second,
+      hit.keys,
+      redaction,
+    );
     differences.push({
       ...identity,
       kind: "response",
       path: hit.path === "" ? "(루트)" : hit.path,
-      firstValue: formatValue(hit.first, hit.keys, redaction),
-      secondValue: formatValue(hit.second, hit.keys, redaction),
+      firstValue,
+      secondValue,
       ...(hint !== undefined ? { hint } : {}),
     });
   }

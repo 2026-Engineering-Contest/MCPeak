@@ -49,6 +49,11 @@ export interface TestForm {
   /** 실행 파일 하나만. 스크립트 경로는 `args` 선두로 간다(`splitCommand` 계약). */
   readonly command: string;
   readonly args: readonly string[];
+  /**
+   * 자식에게 넘길 환경변수의 **이름**. `.mcp.json` 후보에서만 찬다. 값은 이 폼에도 argv 에도
+   * 오지 않는다. 서버가 그 run 의 `readEnv` 로 값을 읽는다(설계 §4.3).
+   */
+  readonly envNames: readonly string[];
   readonly sessionMode: SessionMode;
   /** 빈 문자열 = 미지정. `sessionMode` 가 `off` 면 쓰이지 않는다. */
   readonly sessionPath: string;
@@ -113,6 +118,11 @@ export function buildTestArgv(form: TestForm): readonly string[] {
     argv.push("--command", form.command);
     for (const arg of form.args) {
       argv.push("--arg", arg);
+    }
+    // `--env` 는 서버 인자 뒤, 세션 옵션 앞이다. http 갈래에는 싣지 않는다(`args` 와 같은
+    // 이유로 CLI 가 `--url` 과의 병용을 거절한다).
+    for (const name of form.envNames) {
+      argv.push("--env", name);
     }
   }
   // 세션 옵션은 서버 인자 바로 뒤다. `--arg` 는 하이픈으로 시작하는 값을 의도적으로 받으므로

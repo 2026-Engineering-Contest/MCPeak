@@ -24,6 +24,20 @@ export interface SessionOrigin {
   readonly suitePath: string;
 }
 
+/**
+ * record 의 `REDACTED_ARG` 와 같은 문자열. 웹은 `@mcpeak/record` 를 import 하지 않아 다시
+ * 적는다(`api-types.ts` 의 `status` 와 같은 이유). 녹화 출처의 인자 중 비밀 모양인 것이
+ * 저장 직전에 이 값으로 바뀐다(설계 §4.4).
+ */
+export const REDACTED_ARG = "[redacted]";
+
+/**
+ * 출처 인자 중 가려진 것의 수. 토큰 자체가 자리표시인 경우(`--access-token [redacted]`)와
+ * `=` 뒤만 가려진 경우(`--access-token=[redacted]`)를 함께 센다.
+ */
+export const redactedArgCount = (args: readonly string[]): number =>
+  args.filter((arg) => arg === REDACTED_ARG || arg.endsWith(`=${REDACTED_ARG}`)).length;
+
 /** `Record<sessionPath, SessionOrigin>` 를 담는다. */
 const KEY = "mcpeak-session-origin";
 
@@ -94,7 +108,13 @@ export function readSessionOrigin(sessionPath: string): SessionOrigin | null {
   };
 }
 
-/** 녹화 실행을 시작한 직후에 부른다. 같은 세션 경로의 값은 덮어쓴다. */
+/**
+ * 같은 세션 경로의 값은 덮어쓴다.
+ *
+ * **화면은 더 이상 이것을 부르지 않는다**(설계 §4.6). 모든 새 녹화는 v2 세션이라 출처가 파일에
+ * 있고, 브라우저에 다시 적으면 설계 §4.4 가 가린 값이 가려지지 않은 채 같은 기계의 다른 자리에
+ * 남는다. 읽기 폴백(`readSessionOrigin`)은 v1 세션을 위해 남아 있다.
+ */
 export function saveSessionOrigin(sessionPath: string, origin: SessionOrigin): void {
   try {
     window.localStorage.setItem(

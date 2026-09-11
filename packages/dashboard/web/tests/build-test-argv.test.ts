@@ -11,6 +11,7 @@ const form = (overrides: Partial<TestForm> = {}): TestForm => ({
   suitePath: "suite.json",
   command: "node",
   args: ["server.mjs"],
+  envNames: [],
   sessionMode: "off",
   sessionPath: "",
   options: DEFAULT_TEST_OPTIONS,
@@ -30,6 +31,35 @@ describe("test 플로우 argv 조립", () => {
       "--arg",
       "server.mjs",
     ]);
+  });
+
+  it("envNames 는 --arg 뒤, 세션 옵션 앞에 순서대로 들어간다", () => {
+    expect(
+      buildTestArgv(form({ envNames: ["A", "B"], sessionMode: "record", sessionPath: "tmp/s.db" })),
+    ).toEqual([
+      "suite.json",
+      "--command",
+      "node",
+      "--arg",
+      "server.mjs",
+      "--env",
+      "A",
+      "--env",
+      "B",
+      "--record-session",
+      "tmp/s.db",
+    ]);
+  });
+
+  it("http 갈래에는 --env 를 싣지 않는다", () => {
+    const argv = buildTestArgv(
+      form({
+        envNames: ["A"],
+        options: { ...DEFAULT_TEST_OPTIONS, transport: "http", url: "https://example.test/mcp" },
+      }),
+    );
+    expect(argv).not.toContain("--env");
+    expect(argv).toEqual(["suite.json", "--url", "https://example.test/mcp"]);
   });
 
   it("인자가 여러 개면 순서대로 --arg 로 편다", () => {

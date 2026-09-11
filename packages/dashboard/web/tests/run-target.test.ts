@@ -89,6 +89,7 @@ describe("describeRun 은 대시보드가 만든 argv 를 되읽는다", () => {
       suitePath: "examples/weather-server/server.suite.json",
       command: "node",
       args: ["examples/weather-server/server.mjs", "--port", "3000"],
+      envNames: [],
       sessionMode: "off",
       sessionPath: "",
       options: DEFAULT_TEST_OPTIONS,
@@ -105,6 +106,7 @@ describe("describeRun 은 대시보드가 만든 argv 를 되읽는다", () => {
       suitePath: "s.suite.json",
       command: "",
       args: [],
+      envNames: [],
       sessionMode: "off",
       sessionPath: "",
       options: {
@@ -127,6 +129,7 @@ describe("describeRun 은 대시보드가 만든 argv 를 되읽는다", () => {
       headerEnvs: [],
       command: "node",
       args: ["examples/weather-server/server.mjs"],
+      envNames: [],
       suiteId: "weather",
       suiteName: "Weather",
       outPath: "examples/weather-server/server.suite.json",

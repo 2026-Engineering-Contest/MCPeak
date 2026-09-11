@@ -219,7 +219,11 @@ describe("Replay 화면", () => {
 
     render(<ReplayView />);
 
-    expect(await screen.findByText(/녹화가 도중에 끊긴 세션입니다/)).toBeTruthy();
+    expect(
+      await screen.findByText(
+        /녹화가 도중에 끊겼거나 지원하지 않는 응답 때문에 완료되지 않은 세션입니다/,
+      ),
+    ).toBeTruthy();
   });
 
   /** 「명세 확인」(스위트 목록)과 같은 라벨 토글이다 — 열림 여부를 아이콘이 아니라 문구가 말한다. */

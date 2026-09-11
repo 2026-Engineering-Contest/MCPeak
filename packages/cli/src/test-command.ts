@@ -1764,7 +1764,9 @@ export function externalOpenFailure(mode: ExternalMode, path: string, error: unk
     return {
       code: "EXTERNAL_SESSION_FAILED",
       message: `녹화가 완료되지 않은 세션입니다: ${shownPath}`,
-      hint: "녹화 실행이 실패했을 수 있습니다. `--record-session` 으로 다시 녹화하세요.",
+      hint:
+        "녹화가 도중에 끊겼거나, 지원하지 않는 응답(비-JSON·redirect)을 만나 호출을 끝내지 " +
+        "못한 세션입니다. `--record-session` 으로 다시 녹화하세요.",
     };
   // record 가 이 코드에 붙이는 원문(detail)은 두 줄짜리 안내다(ADR-0061). fallback 으로
   // 떨어져 그 원문을 그대로 이스케이프하면 안의 개행이 이스케이프 시퀀스로 찍혀, record
@@ -1809,10 +1811,19 @@ export function externalOpenFailure(mode: ExternalMode, path: string, error: unk
 export function externalCloseFailure(error: unknown): CliFailure {
   const code = (error as { code?: unknown })?.code;
   const detail = error instanceof Error ? error.message : String(error);
+  // ADR-0094 뒤로 이 갈래는 실패한 실행에서도 돈다. 예전에는 실패한 실행이 `finish("failed")`
+  // 로 미완료 검사를 건너뛰어 끊긴 호출이 조용히 묻혔다. 이제 그 실행에도 진단이 붙으므로,
+  // 여기서 "테스트가 실패해서" 로 읽힐 여지를 남기지 않고 무엇이 남았는지를 바로 말한다.
+  if (code === "INCOMPLETE_SESSION")
+    return {
+      code: "EXTERNAL_SESSION_FAILED",
+      message: "녹화를 완료하지 못했습니다. 끝나지 않은 외부 호출이 남았습니다.",
+      hint: detail,
+    };
   return {
     code: "EXTERNAL_SESSION_FAILED",
     message: "External 세션을 닫지 못했습니다.",
-    hint: code === "INCOMPLETE_SESSION" ? detail : escapeTerminalText(detail),
+    hint: escapeTerminalText(detail),
   };
 }
 
@@ -1891,14 +1902,17 @@ export function externalSessionOutcome(
   const shownPath = escapeTerminalText(sessionPath);
   if (summary.mode === "record") {
     if (summary.interactionCount === 0) return undefined;
-    // 실행이 실패하면 세션도 `failed` 로 닫힌다(`runCli`). 그 세션은 재생 원본으로 **거부된다**
-    // ("녹화가 완료되지 않은 세션입니다"). 그런데도 "녹화했습니다" 라고 하면, 사용자는 못 쓰는
-    // 파일을 가진 채 가졌다고 믿는다 — 이 함수가 없애려던 바로 그 종류의 거짓말이다.
+    // `runCli` 은 정상 반환 경로에서 언제나 `finish("completed")` 을 부른다(ADR-0094). 그래도
+    // 이 갈래는 남는다. 마스킹 불변식 위반은 Coordinator 가 세션을 먼저 닫고, 미완료
+    // interaction 은 저장소가 완료를 `failed` 로 뒤집기 때문이다. 그 세션은 재생 원본으로
+    // **거부된다**. 그런데도 "녹화했습니다" 라고 하면 사용자는 못 쓰는 파일을 가진 채 가졌다고
+    // 믿는다. 다만 원인은 테스트 판정이 아니라 녹화 자체의 중단이므로, 그렇게 말한다.
     if (summary.status !== "completed") {
       return (
-        `\n→ 이 실행이 실패해 녹화를 완료하지 않았습니다: ${shownPath}\n` +
+        `\n→ 녹화가 완료되지 않은 채 닫혔습니다: ${shownPath}\n` +
         `  외부 호출 ${summary.interactionCount}건을 잡았지만 재생 원본으로 쓸 수 없습니다.\n` +
-        "→ 실패 원인을 고친 뒤 다시 녹화하세요.\n"
+        "→ 테스트 판정과는 무관합니다. 녹화 자체가 도중에 중단됐습니다.\n" +
+        "→ 위에 나온 원인을 고친 뒤 다시 녹화하세요.\n"
       );
     }
     return (
@@ -2077,9 +2091,13 @@ export async function runCli(
   }
 
   try {
-    // 실행이 실패했으면 세션도 실패다. 실패한 실행의 녹화를 완료로 닫으면 다음 Replay 가
-    // 반쪽짜리 세션을 정상 원본으로 읽는다.
-    const summary = await wiring.finish(exitCode === 0 ? "completed" : "failed");
+    // 녹화의 완료 여부는 **어댑터와 Coordinator 가 끝까지 정상 동작했는가**로만 정한다
+    // (ADR-0094). 테스트 판정은 녹화본의 완전성과 무관하다. 녹화본이 담는 것은 서버가 외부에
+    // 무엇을 묻고 무엇을 받았는가이고, 그 값은 케이스가 실패해도 똑같이 참이다. 판정에 묶어
+    // 두면 의도적으로 실패하는 회귀 케이스를 가진 명세는 재생 원본을 영영 만들 수 없다.
+    // 반쪽짜리 녹화는 여기서 거르지 않아도 된다. 미완료 interaction 이 남아 있으면 저장소가
+    // 이 완료 시도를 `failed` 로 뒤집고 `INCOMPLETE_SESSION` 진단을 던진다.
+    const summary = await wiring.finish("completed");
     // 실행이 실패했을 때도 낸다. `exitCode === 0` 으로 좁히면 "외부 호출이 실패해서 0건" 이라는
     // 진짜 사고를 놓친다 — 실패 메시지 위에 한 줄 붙는 비용보다 그쪽이 크다(ADR-0057).
     // 무엇을 했는지가 먼저다(ADR-0066). 아래 진단·알림은 전부 "그런데 무엇이 이상한가" 라서,

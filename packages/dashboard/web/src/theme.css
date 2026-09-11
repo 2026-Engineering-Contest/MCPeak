@@ -1,69 +1,92 @@
 @import "tailwindcss";
 
-/* 라이트 기본값. 다크는 아래 두 블록에서 같은 값으로 덮는다.
-   [주의] 다크 값 블록이 두 곳(수동 선택, OS 위임)에 있다. 반드시 함께 고쳐라. */
+/*
+ * 시각 계약의 단일 지점이다 (ADR-0093).
+ *
+ * **테마가 갈리는 값은 `light-dark()` 한 줄로만 적는다.** 예전에는 라이트 기본값을 여기
+ * 두고 다크 값을 두 블록(`[data-theme="dark"]` 과 `prefers-color-scheme` 위임)에 똑같이
+ * 복제했다. 한쪽만 고치면 나머지 한쪽이 조용히 어긋나는 구조였고, 파일 머리 주석이
+ * "반드시 함께 고쳐라" 로 그것을 사람에게 떠넘기고 있었다. 이제 선언은 한 벌뿐이다.
+ *
+ * **어느 쪽을 쓸지는 `color-scheme` 이 정한다.** `light-dark()` 는 자기가 놓인 요소의
+ * `color-scheme` 을 보고 두 값 중 하나를 고른다. 그래서 theme.ts 가 세우는 전제가
+ * 그대로 살아 있다:
+ *
+ *   - `data-theme` 없음(=아직 안 고름) → `light dark` → OS 를 따라간다
+ *   - `data-theme="light"` / `"dark"`   → 그 값으로 고정 → 명시 선택이 OS 를 이긴다
+ *
+ * `color-scheme` 은 네이티브 컨트롤(라디오·체크박스·기본 스크롤 막대)의 명암도 함께
+ * 맞춘다. 예전에는 이 선언이 없어 다크 화면 위에서 라디오만 밝게 떴다.
+ *
+ * **`light-dark()` 는 색만 받는다.** 그림자처럼 색이 아닌 값은 여기서 가르지 못하므로,
+ * 모양은 고정해 두고 **색만** 토큰으로 가른다 — `--terminal-inset` 이 그 예다.
+ */
 :root {
-  --canvas: #f7f7f8;
-  --surface: #ffffff;
-  --line: #e8e8ec;
-  --line-subtle: #f0f0f3;
-  --ink: #18181b;
-  --ink-muted: #71717a;
-  --accent: #6d28d9;
-  --accent-soft: #faf8ff;
-  --accent-border: #ddd6fe;
-  --status-running-fg: #2563eb;  --status-running-bg: #eff6ff;
-  --status-waiting-fg: #d97706;  --status-waiting-bg: #fffbeb;
-  --status-done-fg: #16a34a;     --status-done-bg: #f0fdf4;
-  --status-failed-fg: #dc2626;   --status-failed-bg: #fef2f2;
-  --terminal-border: #26262f;
-  --terminal-inset: none;
+  color-scheme: light dark;
 
-  /* 테마 무관 고정(터미널 재현 영역). UI 설계 §3. */
+  --canvas: light-dark(#f7f7f8, #131318);
+  --surface: light-dark(#ffffff, #1b1b21);
+  --line: light-dark(#e8e8ec, #2a2a33);
+  --line-subtle: light-dark(#f0f0f3, #232329);
+  --ink: light-dark(#18181b, #e4e4e7);
+  --ink-muted: light-dark(#71717a, #8b8b96);
+  --accent: light-dark(#6d28d9, #8b5cf6);
+  --accent-soft: light-dark(#faf8ff, #241a35);
+  --accent-border: light-dark(#ddd6fe, #4c3575);
+  --status-running-fg: light-dark(#2563eb, #60a5fa);
+  --status-running-bg: light-dark(#eff6ff, #172036);
+  --status-waiting-fg: light-dark(#d97706, #fbbf24);
+  --status-waiting-bg: light-dark(#fffbeb, #2c2410);
+  --status-done-fg: light-dark(#16a34a, #4ade80);
+  --status-done-bg: light-dark(#f0fdf4, #122618);
+  --status-failed-fg: light-dark(#dc2626, #f87171);
+  --status-failed-bg: light-dark(#fef2f2, #2b1518);
+  --terminal-border: light-dark(#26262f, #34343f);
+
+  /*
+   * 사이드바 로고. 예전에는 Sidebar.tsx 안에 하드코딩된 그라디언트였다 — 토큰 밖에 남은
+   * 마지막 색이었다. 라이트에서는 흰 배경 위라 진하게, 다크에서는 어두운 면 위라 밝게 간다.
+   */
+  --logo-from: light-dark(#8b5cf6, #a78bfa);
+  --logo-to: light-dark(#6d28d9, #7c3aed);
+
+  /*
+   * elevation. **모양은 한 벌이고 색만 테마로 갈린다.** 다크에서 라이트와 같은 검은
+   * 그림자를 쓰면 배경에 묻혀 아무것도 안 보이므로 더 짙고 넓게 깐다.
+   */
+  --shadow-color: light-dark(rgb(24 24 27 / 0.08), rgb(0 0 0 / 0.5));
+
+  /*
+   * 터미널 상단의 1px 하이라이트. 라이트에서는 투명색이라 그려지지 않는다 —
+   * `none` 으로 분기하는 대신 색을 투명하게 두면 이 값도 선언이 한 벌로 끝난다.
+   */
+  --terminal-inset-color: light-dark(transparent, rgb(255 255 255 / 0.04));
+  --terminal-inset: inset 0 1px 0 var(--terminal-inset-color);
+
+  /* 테마 무관 고정(터미널 재현 영역). UI 설계 §3 — 여기는 `light-dark()` 를 쓰지 않는다. */
   --terminal-bg: #0d0d12;
   --terminal-header-bg: #16161c;
   --terminal-fg: #d4d4d8;
   --terminal-muted: #8b8b96;
 }
 
+/*
+ * 명시 선택. 값을 다시 적지 않고 `color-scheme` 만 고정한다 — 위 `light-dark()` 들이
+ * 알아서 반대편을 고른다. **두 방향 다 있어야 한다.** 한쪽만 두면 OS 가 그쪽일 때
+ * 토글이 아무 일도 하지 않는 것처럼 보인다.
+ */
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
 :root[data-theme="dark"] {
-  --canvas: #131318;
-  --surface: #1b1b21;
-  --line: #2a2a33;
-  --line-subtle: #232329;
-  --ink: #e4e4e7;
-  --ink-muted: #8b8b96;
-  --accent: #8b5cf6;
-  --accent-soft: #241a35;
-  --accent-border: #4c3575;
-  --status-running-fg: #60a5fa;  --status-running-bg: #172036;
-  --status-waiting-fg: #fbbf24;  --status-waiting-bg: #2c2410;
-  --status-done-fg: #4ade80;     --status-done-bg: #122618;
-  --status-failed-fg: #f87171;   --status-failed-bg: #2b1518;
-  --terminal-border: #34343f;
-  --terminal-inset: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  color-scheme: dark;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --canvas: #131318;
-    --surface: #1b1b21;
-    --line: #2a2a33;
-    --line-subtle: #232329;
-    --ink: #e4e4e7;
-    --ink-muted: #8b8b96;
-    --accent: #8b5cf6;
-    --accent-soft: #241a35;
-    --accent-border: #4c3575;
-    --status-running-fg: #60a5fa;  --status-running-bg: #172036;
-    --status-waiting-fg: #fbbf24;  --status-waiting-bg: #2c2410;
-    --status-done-fg: #4ade80;     --status-done-bg: #122618;
-    --status-failed-fg: #f87171;   --status-failed-bg: #2b1518;
-    --terminal-border: #34343f;
-    --terminal-inset: inset 0 1px 0 rgba(255, 255, 255, 0.04);
-  }
-}
-
+/*
+ * 색 별칭. `var()` 를 감싸므로 `inline` 이어야 한다 — 그래야 유틸리티가 변수를 한 번 더
+ * 거치지 않고 이 값을 직접 참조하고, 테마가 바뀌면 그 자리에서 따라간다.
+ */
 @theme inline {
   --color-canvas: var(--canvas);
   --color-surface: var(--surface);
@@ -81,6 +104,70 @@
   --color-terminal-border: var(--terminal-border);
   --font-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/*
+ * 크기·모양·움직임. 색과 달리 테마로 갈리지 않으므로 `inline` 이 아니다 — 변수로 그대로
+ * 나가야 손으로 쓰는 CSS 나 `style` 속성에서도 `var(--radius-md)` 처럼 쓸 수 있다.
+ *
+ * **`static` 인 이유**는 Tailwind 4 가 기본적으로 *쓰인* 토큰만 내보내기 때문이다. 그냥
+ * `@theme` 으로 두면 아직 아무 컴포넌트도 쓰지 않는 `--text-body` · `--shadow-card` 가
+ * CSS 에 아예 안 실리고, `var(--text-body)` 는 조용히 빈 값이 된다. 실측으로 확인했다:
+ * `rounded-lg` 를 쓰는 `--radius-lg` 만 나오고 나머지는 빈 문자열이었다.
+ * 토큰 층을 먼저 놓고 다음 PR 에서 쓰는 순서라, 여기서는 전부 내보내야 한다.
+ */
+@theme static {
+  /*
+   * 타입 스케일. 예전 화면은 사실상 `text-sm`(14px)·`text-xs`(12px) 두 단이라 제목과
+   * 본문과 각주가 같은 무게로 보였다. Tailwind 의 `xs`~`8xl` 은 건드리지 않고 **역할
+   * 이름**을 옆에 붙인다 — 화면이 고를 것은 "몇 px" 이 아니라 "무엇인가" 다.
+   */
+  --text-caption: 0.75rem;
+  --text-caption--line-height: 1.4;
+  --text-body: 0.875rem;
+  --text-body--line-height: 1.55;
+  --text-title: 1.0625rem;
+  --text-title--line-height: 1.4;
+  --text-display: 1.375rem;
+  --text-display--line-height: 1.3;
+
+  /*
+   * 모서리. **Tailwind 기본값(4/6/8px)을 덮어쓴다.** 이름을 새로 만들지 않은 것은
+   * 의도다 — 지금 `rounded-md` 15곳·`rounded-lg` 10곳이 이미 쓰이고 있어서, 이름을
+   * 나누면 같은 뜻의 반경이 두 벌로 남는다. 값만 올려 25곳을 한 번에 통일한다.
+   * 그래서 **이 PR 은 화면 렌더를 바꾼다** (버튼·카드 모서리가 조금 더 둥글어진다).
+   */
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+
+  --shadow-card: 0 1px 2px var(--shadow-color), 0 1px 3px var(--shadow-color);
+  --shadow-pop: 0 4px 12px var(--shadow-color);
+
+  /*
+   * 움직임. 이 PR 은 토큰만 놓고 어디에도 걸지 않는다 — 실제로 쓰는 것은 공용
+   * 프리미티브(ADR-0093 의 PR 2)다. 아래 `prefers-reduced-motion` 차단막을 **먼저**
+   * 두는 이유가 그것이다. 트랜지션을 넣는 PR 에서 같이 넣기로 하면 잊는다.
+   */
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+}
+
+/*
+ * 움직임을 줄여 달라고 한 사람에게는 주지 않는다. 개별 컴포넌트가 각자 기억하게 두면
+ * 반드시 빠지는 곳이 생기므로 여기서 한 번에 막는다. 0 이 아니라 0.01ms 인 것은
+ * `transitionend` 를 기다리는 코드가 영영 멈추지 않게 하기 위해서다.
+ */
+@media (prefers-reduced-motion: reduce) {
+  /* biome-ignore-start lint/complexity/noImportantStyles: 사용자 설정을 화면이 이기면 안 된다. 이 차단막은 유틸리티가 인라인으로 박아 넣은 duration 까지 덮어야 하므로 !important 말고는 수단이 없다. */
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  /* biome-ignore-end lint/complexity/noImportantStyles: 위 참조 */
 }
 
 /* ANSI 색. 서버 ansiToHtml이 붙이는 클래스에 web이 색을 입힌다(기반 계획 T4 주석과 동일).

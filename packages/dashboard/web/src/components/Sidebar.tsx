@@ -94,7 +94,8 @@ export function Sidebar({ active }: { readonly active: NavId }): JSX.Element {
       <div className="flex items-center gap-3 px-5 py-5">
         <div
           className="flex h-9 w-9 items-center justify-center rounded-lg text-white"
-          style={{ background: "linear-gradient(135deg, #8b5cf6, #6d28d9)" }}
+          // 색은 theme.css 가 갖는다(ADR-0093). 여기 하드코딩된 두 색이 토큰 밖에 남은 마지막 색이었다.
+          style={{ background: "linear-gradient(135deg, var(--logo-from), var(--logo-to))" }}
           aria-hidden
         >
           {/* biome-ignore lint/a11y/noSvgWithoutTitle: 장식용 아이콘, 라벨 텍스트가 인접 */}

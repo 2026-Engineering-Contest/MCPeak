@@ -210,6 +210,18 @@ describe("Replay 화면", () => {
     expect(screen.getByText(/녹화가 끝나지 않은 세션입니다/)).toBeTruthy();
   });
 
+  /**
+   * `failed` 는 녹화가 도중에 끊겼다는 뜻이지 테스트가 실패했다는 뜻이 아니다(ADR-0094).
+   * 사유 문구가 테스트 판정을 원인으로 지목하면 사용자가 엉뚱한 곳을 고친다.
+   */
+  it("도중에 끊긴 녹화본은 재생할 수 없고 사유를 말한다", async () => {
+    mockApi([session({ status: "failed" })]);
+
+    render(<ReplayView />);
+
+    expect(await screen.findByText(/녹화가 도중에 끊긴 세션입니다/)).toBeTruthy();
+  });
+
   /** 「명세 확인」(스위트 목록)과 같은 라벨 토글이다 — 열림 여부를 아이콘이 아니라 문구가 말한다. */
   it("수정 버튼이 패널을 열고 닫는다", async () => {
     mockApi([session()]);

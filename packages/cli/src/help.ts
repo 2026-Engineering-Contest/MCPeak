@@ -16,8 +16,24 @@ export const REMOTE_TARGET_OPTIONS = `  --url <URL>           이미 떠 있는 
                           read -rs MCP_TOKEN; export MCP_TOKEN
                           mcpeak … --header-env Authorization=MCP_TOKEN`;
 
+/**
+ * stdio 대상의 환경변수 전달 옵션. `test` 와 `generate` 가 같은 문장을 쓴다.
+ *
+ * `--env` 가 이름만 받는 이유를 여기서 말한다. 이유를 모르면 사용자는 `--arg KEY=값` 이나
+ * `--command env` 래퍼로 우회하고, 그것이 이 옵션이 막으려던 노출이다. `--header-env` 와 같은
+ * 근거다.
+ */
+export const ENV_FORWARD_OPTION = `  --env <NAME>          부모 환경변수 NAME 을 서버 프로세스에 넘깁니다. 반복할 수 있습니다.
+                        SDK 는 HOME·PATH 등 고정 목록만 자식에게 주므로, API 키처럼 서버가
+                        환경에서 읽는 값은 이 옵션으로 이름을 지정해야 갑니다. 값을 직접
+                        받지 않는 이유는 명령줄에 쓴 토큰이 \`ps\` 목록과 셸 히스토리, 녹화
+                        출처에 그대로 남기 때문입니다. \`NODE_OPTIONS\` 와 \`MCPEAK_\` 로
+                        시작하는 이름은 녹화·재생 배선이 쓰므로 받지 않습니다:
+                          read -rs SUPABASE_ACCESS_TOKEN; export SUPABASE_ACCESS_TOKEN
+                          mcpeak … --command npx --arg -y --arg <서버> --env SUPABASE_ACCESS_TOKEN`;
+
 export const TEST_USAGE =
-  "사용법: mcpeak test <suite.json> (-- <executable> [args...] | --command <executable> [--arg <value> ...] | --url <URL> [--header-env <헤더이름>=<환경변수이름> ...]) [--determinism] [--reset-cmd <command>] [--json] [--junit <path>] [--repair-bundle <path>] [--stderr-lines <N>] [--session <path> | --record-session <path>]";
+  "사용법: mcpeak test <suite.json> (-- <executable> [args...] | --command <executable> [--arg <value> ...] [--env <NAME> ...] | --url <URL> [--header-env <헤더이름>=<환경변수이름> ...]) [--determinism] [--reset-cmd <command>] [--json] [--junit <path>] [--repair-bundle <path>] [--stderr-lines <N>] [--session <path> | --record-session <path>]";
 
 /**
  * 시험 실행 옵션 설명. `--determinism` 은 툴을 2회 호출하므로 부작용이 있는 서버에서 모르고
@@ -42,6 +58,7 @@ const TEST_OPTIONS = `옵션:
                         출력을 CI 로그에 남기기 전에 확인하세요
   --reset-cmd <command> 각 시험 실행 전에 이 명령을 한 번 실행합니다. 셸을 거치지
                         않으므로 파이프나 && 는 쓸 수 없습니다
+${ENV_FORWARD_OPTION}
 ${REMOTE_TARGET_OPTIONS}
   --record-session <path>
                         서버가 \`globalThis.fetch\` 로 밖에 부른 HTTP 호출만 녹화합니다.
@@ -68,7 +85,7 @@ feature\` 가 stderr 에 한 줄 찍힙니다(실측: Node 22.18.0 에서 나오
 SQLite 파일이라 영향받지 않습니다.**`;
 
 export const GENERATE_USAGE =
-  "사용법: mcpeak generate --out <suite.json> (-- <executable> [args...] | --command <executable> [--arg <value> ...] | --url <URL> [--header-env <헤더이름>=<환경변수이름> ...]) [--suite-id <id>] [--name <name>] [--baseline-only] [--provider <codex|claude>] [--model <model>] [--no-dry-run] [--reset-cmd <command>] [--no-repair] [--force]";
+  "사용법: mcpeak generate --out <suite.json> (-- <executable> [args...] | --command <executable> [--arg <value> ...] [--env <NAME> ...] | --url <URL> [--header-env <헤더이름>=<환경변수이름> ...]) [--suite-id <id>] [--name <name>] [--baseline-only] [--provider <codex|claude>] [--model <model>] [--no-dry-run] [--reset-cmd <command>] [--no-repair] [--force]";
 
 /**
  * 시험 실행 옵션 설명. 사용법 한 줄로는 `--reset-cmd` 가 셸을 거치지 않는다는 제약을 알 수
@@ -93,6 +110,7 @@ const GENERATE_DRY_RUN_OPTIONS = `옵션:
                         실패가 곧바로 분류 화면으로 갑니다
   --force               \`--out\` 경로에 파일이 있으면 지우고 새로 씁니다. 기본은 저장을
                         멈추는 것입니다
+${ENV_FORWARD_OPTION}
 ${REMOTE_TARGET_OPTIONS}`;
 
 export const REPAIR_USAGE =

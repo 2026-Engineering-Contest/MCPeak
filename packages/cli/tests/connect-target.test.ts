@@ -3,8 +3,10 @@ import { describe, expect, it, vi } from "vitest";
 import {
   type ConnectTarget,
   ConnectTargetError,
+  createEnvForwardCollector,
   describeTarget,
   openConnection,
+  parseEnvForwardOption,
   parseHeaderEnvOption,
   parseUrlOption,
   type TargetResult,
@@ -16,7 +18,13 @@ const stdioTarget: ConnectTarget = {
   transport: "stdio",
   command: "node",
   args: ["server.mjs"],
+  envNames: [],
 };
+
+const stdioTargetWith = (envNames: readonly string[]): ConnectTarget => ({
+  ...stdioTarget,
+  envNames,
+});
 
 const httpTarget = (headerEnv: Record<string, string> = {}): ConnectTarget => ({
   transport: "http",
@@ -112,6 +120,76 @@ describe("parseHeaderEnvOption", () => {
   });
 });
 
+/**
+ * `--env <NAME>` 은 **이름만** 받는다. 값을 명령줄에 쓰면 `ps` 목록과 셸 히스토리, 녹화 출처에
+ * 그대로 남는다. 거절 문장은 형식만 말하지 않고 그 이유와 올바른 예시를 준다(설계 §4.2).
+ */
+describe("parseEnvForwardOption", () => {
+  it("환경변수 이름을 받는다", () => {
+    expect(parseEnvForwardOption("SUPABASE_ACCESS_TOKEN")).toEqual({
+      ok: true,
+      value: "SUPABASE_ACCESS_TOKEN",
+    });
+    expect(parseEnvForwardOption("_x1")).toEqual({ ok: true, value: "_x1" });
+  });
+
+  it("빈 값은 값이 필요하다고 말한다", () => {
+    expect(parseEnvForwardOption("")).toEqual({
+      ok: false,
+      message: "`--env` 옵션 값이 필요합니다.",
+    });
+    expect(parseEnvForwardOption("   ")).toMatchObject({ ok: false });
+  });
+
+  it.each(["A=b", "Bearer x", "1ABC", "A-B"])(
+    "'%s' 는 이름만 받는다는 이유와 read -rs 예시를 담아 거절한다",
+    (raw) => {
+      const result = parseEnvForwardOption(raw);
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.message).toContain("환경변수 **이름**만 받습니다");
+      expect(result.message).toContain("`ps` 목록과 셸 히스토리");
+      expect(result.message).toContain("read -rs");
+      expect(result.message).toContain("--env SUPABASE_ACCESS_TOKEN");
+      // 예시가 `VAR='값' cmd` 꼴이면 히스토리에 토큰째로 남는다(ADR-0070).
+      expect(result.message).not.toMatch(/[A-Z_]+='[^']/);
+    },
+  );
+
+  it("NODE_OPTIONS 는 배선이 이미 이어 붙인다고 말하며 거절한다", () => {
+    const result = parseEnvForwardOption("NODE_OPTIONS");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.message).toContain("`--env NODE_OPTIONS` 는 받지 않습니다");
+    expect(result.message).toContain("이미 이어 붙입니다");
+  });
+
+  it("MCPEAK_ 접두 이름은 배선을 덮는다고 말하며 거절한다", () => {
+    const result = parseEnvForwardOption("MCPEAK_X");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.message).toContain("`--env MCPEAK_X` 는 받지 않습니다");
+    expect(result.message).toContain("녹화가 조용히 꺼집니다");
+  });
+});
+
+describe("createEnvForwardCollector", () => {
+  it("순서를 보존한다", () => {
+    const collector = createEnvForwardCollector();
+    expect(collector.add("B")).toBeUndefined();
+    expect(collector.add("A")).toBeUndefined();
+    expect(collector.snapshot()).toEqual(["B", "A"]);
+    expect(Object.isFrozen(collector.snapshot())).toBe(true);
+  });
+
+  it("같은 이름을 두 번 받으면 거절한다", () => {
+    const collector = createEnvForwardCollector();
+    collector.add("A");
+    expect(collector.add("A")).toBe("`--env A` 이 두 번 있습니다. 한 번만 쓰세요.");
+    expect(collector.snapshot()).toEqual(["A"]);
+  });
+});
+
 describe("describeTarget", () => {
   it("stdio 는 명령줄로, http 는 URL 로 말한다", () => {
     expect(describeTarget(stdioTarget)).toBe("node server.mjs");
@@ -140,6 +218,66 @@ describe("openConnection", () => {
       args: ["server.mjs"],
       env: { BOOTSTRAP: "1" },
     });
+  });
+
+  it("--env 이름을 readEnv 로 읽어 자식 env 에 얹는다", async () => {
+    const connectStdio = vi.fn(async () => stdioConnection());
+    const readEnv = vi.fn((name: string) => (name === "A" ? "1" : undefined));
+
+    await openConnection(stdioTargetWith(["A"]), { connectStdio, readEnv });
+
+    expect(readEnv).toHaveBeenCalledWith("A");
+    expect(connectStdio).toHaveBeenCalledWith({
+      command: "node",
+      args: ["server.mjs"],
+      env: { A: "1" },
+    });
+  });
+
+  /**
+   * 설계 §4.1 의 순서: SDK 기본 < `--env` < External 배선. 배선 변수가 사용자 값에 덮이면
+   * 녹화가 조용히 꺼진다.
+   */
+  it("External 배선의 env 가 --env 값을 이긴다", async () => {
+    const connectStdio = vi.fn(async () => stdioConnection());
+
+    await openConnection(
+      stdioTargetWith(["A", "B"]),
+      { connectStdio, readEnv: (name) => (name === "A" ? "user" : "b") },
+      { env: { A: "wiring", BOOTSTRAP: "1" } },
+    );
+
+    expect(connectStdio).toHaveBeenCalledWith({
+      command: "node",
+      args: ["server.mjs"],
+      env: { A: "wiring", B: "b", BOOTSTRAP: "1" },
+    });
+  });
+
+  it.each([undefined, ""])(
+    "--env 환경변수가 %j 이면 이름만 말하고 연결하지 않는다",
+    async (value) => {
+      const connectStdio = vi.fn(async () => stdioConnection());
+
+      const error = await openConnection(stdioTargetWith(["A"]), {
+        connectStdio,
+        readEnv: () => value,
+      }).catch((cause: unknown) => cause);
+
+      expect(error).toBeInstanceOf(ConnectTargetError);
+      expect((error as Error).message).toContain("환경변수 `A` 가 비어 있습니다");
+      expect((error as Error).message).toContain("read -rs A; export A");
+      expect(connectStdio).not.toHaveBeenCalled();
+    },
+  );
+
+  it("readEnv 주입이 없으면 --env 를 쓸 수 없다고 말한다", async () => {
+    const error = await openConnection(stdioTargetWith(["A"]), {
+      connectStdio: vi.fn(async () => stdioConnection()),
+    }).catch((cause: unknown) => cause);
+
+    expect(error).toBeInstanceOf(ConnectTargetError);
+    expect((error as Error).message).toContain("이 진입점은 `--env` 를 지원하지 않습니다");
   });
 
   it("http 대상은 connectHttp 만 부른다", async () => {
@@ -257,6 +395,10 @@ describe("오류 문장의 사용자 입력 이스케이프", () => {
     const message = messageOf(parseUrlOption(`${ESC}[2Jmcp.example.com`));
     expect(message).not.toContain(ESC);
     expect(message).toContain("\\u001b[2Jmcp.example.com");
+  });
+
+  it("--env 값도 이스케이프한다", () => {
+    expect(messageOf(parseEnvForwardOption(`${ESC}[31mBearer x`))).not.toContain(ESC);
   });
 
   it("--header-env 의 헤더 이름과 환경변수 이름도 이스케이프한다", () => {

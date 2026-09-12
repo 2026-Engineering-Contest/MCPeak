@@ -1,8 +1,8 @@
 import type { JSX } from "react";
 import type { SessionMode, TestOptions } from "../build-test-argv.js";
 import { DEFAULT_TEST_OPTIONS } from "../build-test-argv.js";
-import { Field, INPUT_CLASS, Toggle } from "../generate/steps/fields.js";
 import { managedRepairBundlePath } from "../repair-bundle-path.js";
+import { Field, INPUT_CLASS, Toggle } from "./Field.js";
 
 /** §5-4 와 같은 문장이다. 두 자리에서 같은 제약을 말하므로 한 곳에 둔다. */
 export const DETERMINISM_SESSION_HINT =

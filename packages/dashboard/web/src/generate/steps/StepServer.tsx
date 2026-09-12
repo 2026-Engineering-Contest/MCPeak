@@ -1,6 +1,6 @@
 import type { JSX } from "react";
 import { ArgChips } from "../../components/ArgChips.js";
-import { Field, INPUT_CLASS } from "./fields.js";
+import { Field, INPUT_CLASS } from "../../components/Field.js";
 
 /** 1단계 실행 방법 세그먼트. command 문자열 조립 프리셋일 뿐이다(구현계획 §5 U3). */
 export type CommandMethod = "node" | "npx" | "python" | "custom";

@@ -1,7 +1,7 @@
 import type { JSX } from "react";
+import { Field, INPUT_CLASS } from "../../components/Field.js";
 import { MODEL_OPTIONS } from "../../provider-models.js";
 import type { GenerateForm } from "../build-argv.js";
-import { Field, INPUT_CLASS } from "./fields.js";
 
 type ModeFields = Pick<GenerateForm, "mode" | "provider" | "model">;
 

@@ -1,6 +1,6 @@
 {
   "name": "@mcpeak-examples/mock-server",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "private": true,
   "type": "module",
   "description": "도그푸딩용 예제 목 MCP 서버 — weather.mock.json 을 그대로 서빙한다",

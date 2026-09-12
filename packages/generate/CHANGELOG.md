@@ -1,5 +1,36 @@
 # @ohmymcp-hsu/generate
 
+## 0.8.0
+
+### Minor Changes
+
+- 41dabd8: propertyNames 를 지원해 임의 키 맵 툴을 살린다 (#425)
+- 22009a6: additionalProperties·pattern·로컬 $ref·anyOf/oneOf 스키마를 지원한다 (#389)
+- ca9d392: `additionalProperties: false` 툴에 선언 밖 필드를 넣은 거절 케이스를 만든다 (#427)
+  nullable `anyOf` 필드에 타입 위반 케이스가 생긴다. runner 의 해석 확장(#426)을 그대로 따른다
+  `pattern` 만 있는 문자열의 출처를 `placeholder` 로 내려 AI 사전보완이 덮을 수 있게 한다 (#428). `BASELINE_POLICY_VERSION` 은 올리지 않는다. 영향받는 툴이 전부 미배포 변경(#389)으로 처음 생성되는 것들이라 배포된 baseline 이 바뀌지 않는다.
+- da8dcba: `tools/list`의 `outputSchema`를 생성 명세에 보존하고 정상 케이스의
+  `structuredContent`를 저장 당시 출력 계약으로 재검증합니다(#406). 서버가 선언과 응답 타입을
+  함께 바꿔도 기존 명세가 계약 변경을 탐지하며, 기대 계약·실제 값·위반 필드 경로를 별도 진단으로
+  표시합니다. 의미를 보존할 수 없는 출력 스키마는 단언을 만들지 않고 CLI에서 미검증 범위와 원인을
+  알립니다.
+- 5dc9d56: `repair` 가 시험 실행 없이 저장된 승인 명세를 정답으로 놓지 않습니다. 승인 지문 일치와 실제 서버
+  실행 기록을 별도로 봅니다. 실행 기록이 없으면(`--baseline-only`·`--no-dry-run` 으로 저장한 명세)
+  서버와 명세 양쪽 원인을 받고, 화면이 그 사실을 알립니다. 진단 프롬프트는 승인 시점 케이스 판정을
+  정확히 설명하며, `serverDefect` 케이스를 통과 이력이 있는 것으로 말하지 않습니다.
+
+  repair 번들 형식이 버전 2 가 됩니다. 이전 번들은 거절되므로 `mcpeak test --repair-bundle` 로 다시
+  만드세요.
+
+### Patch Changes
+
+- Updated dependencies [da8dcba]
+- Updated dependencies [e168fb1]
+- Updated dependencies [6fe6c3d]
+- Updated dependencies [1820384]
+  - @mcpeak/core@0.5.0
+  - @mcpeak/runner@0.11.0
+
 ## 0.7.0
 
 ### Minor Changes

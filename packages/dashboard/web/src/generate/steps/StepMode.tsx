@@ -1,5 +1,6 @@
 import type { JSX } from "react";
 import { Field, INPUT_CLASS } from "../../components/Field.js";
+import { FOCUS_RING } from "../../components/focus-ring.js";
 import { MODEL_OPTIONS } from "../../provider-models.js";
 import type { GenerateForm } from "../build-argv.js";
 
@@ -32,7 +33,7 @@ export function StepMode(props: {
             type="button"
             role="radio"
             aria-checked={form.mode === mode}
-            className={`rounded-lg border p-3 text-left ${
+            className={`rounded-lg border p-3 text-left ${FOCUS_RING} ${
               form.mode === mode
                 ? "border-accent-border bg-accent-soft"
                 : "border-line hover:bg-line-subtle"

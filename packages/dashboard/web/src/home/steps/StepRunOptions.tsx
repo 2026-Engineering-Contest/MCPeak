@@ -3,6 +3,7 @@ import type { SessionMode, TestOptions } from "../../build-test-argv.js";
 import { ArgChips } from "../../components/ArgChips.js";
 import { Button } from "../../components/Button.js";
 import { Field, INPUT_CLASS } from "../../components/Field.js";
+import { SegmentedControl } from "../../components/SegmentedControl.js";
 import { DETERMINISM_SESSION_HINT, TestOptionsPanel } from "../../components/TestOptionsPanel.js";
 import type { LastRun } from "../../last-run.js";
 
@@ -103,24 +104,15 @@ export function StepRunOptions(props: {
 
       <div>
         <h2 className="mb-2 text-title font-semibold text-ink">External 세션</h2>
-        <fieldset className="inline-flex overflow-hidden rounded-md border border-line">
-          {TEST_SESSION_MODES.map((mode) => (
-            <button
-              key={mode}
-              type="button"
-              aria-pressed={props.sessionMode === mode}
-              disabled={http || (mode !== "off" && props.options.determinism)}
-              className={`px-3 py-1.5 text-sm disabled:opacity-50 ${
-                props.sessionMode === mode
-                  ? "bg-accent-soft font-semibold text-accent"
-                  : "text-ink-muted hover:bg-line-subtle"
-              }`}
-              onClick={() => props.onSessionModeChange(mode)}
-            >
-              {SESSION_LABELS[mode]}
-            </button>
-          ))}
-        </fieldset>
+        <SegmentedControl
+          options={TEST_SESSION_MODES.map((mode) => ({
+            value: mode,
+            label: SESSION_LABELS[mode],
+            disabled: http || (mode !== "off" && props.options.determinism),
+          }))}
+          value={props.sessionMode as (typeof TEST_SESSION_MODES)[number]}
+          onChange={props.onSessionModeChange}
+        />
         <p className="mt-2 text-xs text-ink-muted">
           {http
             ? HTTP_SESSION_HINT

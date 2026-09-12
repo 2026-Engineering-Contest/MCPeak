@@ -13,6 +13,7 @@ import { Card } from "../components/Card.js";
 import { EmptyState } from "../components/EmptyState.js";
 import { Field, INPUT_CLASS } from "../components/Field.js";
 import { FlowChip } from "../components/FlowChip.js";
+import { FOCUS_RING } from "../components/focus-ring.js";
 import { LogPanel } from "../components/LogPanel.js";
 import { PageHeader } from "../components/PageHeader.js";
 import { QuestionPanel } from "../components/QuestionPanel.js";
@@ -794,7 +795,7 @@ function RunList(): JSX.Element {
                 <tr key={run.runId}>
                   <td className="px-4 py-2">
                     <a
-                      className="flex items-center gap-3 text-ink hover:text-accent"
+                      className={`flex items-center gap-3 text-ink hover:text-accent ${FOCUS_RING}`}
                       href={`#/runs/${encodeURIComponent(run.runId)}`}
                     >
                       <FlowChip flow={run.flow} />

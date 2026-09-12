@@ -3,6 +3,8 @@ import { useState } from "react";
 import type { Transport } from "../build-test-argv.js";
 import { Button } from "./Button.js";
 import { Field, INPUT_CLASS } from "./Field.js";
+import { FOCUS_RING } from "./focus-ring.js";
+import { SegmentedControl } from "./SegmentedControl.js";
 
 const TRANSPORT_LABELS: Record<Transport, string> = {
   stdio: "stdio (위 서버 명령)",
@@ -38,23 +40,14 @@ export function TransportFields(props: {
 
   return (
     <>
-      <fieldset className="inline-flex overflow-hidden rounded-md border border-line">
-        {(Object.keys(TRANSPORT_LABELS) as readonly Transport[]).map((transport) => (
-          <button
-            key={transport}
-            type="button"
-            aria-pressed={props.transport === transport}
-            className={`px-3 py-1.5 text-sm ${
-              props.transport === transport
-                ? "bg-accent-soft font-semibold text-accent"
-                : "text-ink-muted hover:bg-line-subtle"
-            }`}
-            onClick={() => props.onChange({ transport })}
-          >
-            {TRANSPORT_LABELS[transport]}
-          </button>
-        ))}
-      </fieldset>
+      <SegmentedControl
+        options={(Object.keys(TRANSPORT_LABELS) as readonly Transport[]).map((transport) => ({
+          value: transport,
+          label: TRANSPORT_LABELS[transport],
+        }))}
+        value={props.transport}
+        onChange={(transport) => props.onChange({ transport })}
+      />
       {http && (
         <div className="space-y-3 pt-1">
           <Field label="URL" htmlFor={`${props.idPrefix}-url`}>
@@ -84,7 +77,7 @@ export function TransportFields(props: {
                     <button
                       type="button"
                       aria-label={`헤더 환경변수 ${entry} 제거`}
-                      className="text-ink-muted hover:text-ink"
+                      className={`text-ink-muted hover:text-ink ${FOCUS_RING}`}
                       onClick={() =>
                         props.onChange({
                           headerEnvs: props.headerEnvs.filter((_, i) => i !== index),

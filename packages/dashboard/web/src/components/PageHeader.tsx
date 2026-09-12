@@ -1,4 +1,5 @@
 import type { JSX, ReactNode } from "react";
+import { FOCUS_RING } from "./focus-ring.js";
 
 /**
  * 화면 머리 하나 (#459).
@@ -33,7 +34,7 @@ export function PageHeader({
           링크 높이에 맞춰 떠서, 오른쪽 위 테마 토글과 붙어 보였다. */}
       {back !== undefined && (
         <a
-          className="inline-flex items-center gap-1 rounded-sm text-caption font-medium text-accent hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
+          className={`inline-flex items-center gap-1 rounded-sm text-caption font-medium text-accent hover:underline ${FOCUS_RING}`}
           href={back.href}
         >
           <span aria-hidden="true">←</span>

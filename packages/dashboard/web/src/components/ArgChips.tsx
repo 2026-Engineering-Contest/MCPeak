@@ -2,6 +2,7 @@ import type { JSX } from "react";
 import { useState } from "react";
 import { Button } from "./Button.js";
 import { INPUT_CLASS } from "./Field.js";
+import { FOCUS_RING } from "./focus-ring.js";
 
 /**
  * 서버 인자 칩 목록 + 하나씩 추가 입력.
@@ -58,7 +59,7 @@ export function ArgChips(props: {
                 type="button"
                 aria-label={`인자 ${arg} 제거`}
                 disabled={disabled}
-                className="text-ink-muted hover:text-ink disabled:opacity-50"
+                className={`text-ink-muted hover:text-ink disabled:opacity-50 ${FOCUS_RING}`}
                 onClick={() => props.onChange(props.args.filter((_, i) => i !== index))}
               >
                 ×

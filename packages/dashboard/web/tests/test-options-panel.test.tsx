@@ -100,4 +100,15 @@ describe("테스트 옵션 패널", () => {
       ),
     ).toBeTruthy();
   });
+
+  /**
+   * 접이식 머리글은 제목이 버튼을 감싼다(WAI-ARIA 아코디언 관례). 버튼의 접근 가능한 이름과
+   * `aria-expanded` 는 그대로라, 이 패널을 여닫는 기존 케이스들이 함께 산다.
+   */
+  it("머리글은 h2 이고 접고 펴는 버튼이 그 안에 있다", () => {
+    render(<Harness open={false} />);
+
+    const heading = screen.getByRole("heading", { level: 2, name: /테스트 옵션/ });
+    expect(heading.querySelector("button")?.getAttribute("aria-expanded")).toBe("false");
+  });
 });

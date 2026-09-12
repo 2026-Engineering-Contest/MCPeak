@@ -58,7 +58,7 @@ export function StepRunServer(props: {
   return (
     <div className="space-y-5">
       <div className="space-y-2">
-        <p className="text-sm font-medium text-ink">접속</p>
+        <h2 className="text-title font-semibold text-ink">접속</h2>
         <TransportFields
           idPrefix="home-run"
           transport={props.transport}

@@ -21,7 +21,7 @@ const WEATHER: ServerCandidate = {
   args: ["examples/weather-server/server.mjs", "--port", "3000"],
   source: "mcp-config",
   path: ".mcp.json",
-  hasEnv: false,
+  envNames: ["API_KEY"],
 };
 const CANDIDATES: readonly ServerCandidate[] = [
   WEATHER,
@@ -32,7 +32,7 @@ const CANDIDATES: readonly ServerCandidate[] = [
     args: ["examples/weather-server/server.mjs"],
     source: "package-bin",
     path: "examples/weather-server/package.json",
-    hasEnv: true,
+    envNames: [],
   },
 ];
 
@@ -81,6 +81,12 @@ function stubFetch(
   vi.stubGlobal("fetch", fetchMock);
   return fetchMock;
 }
+
+/** POST 본문 전체. serverId 를 보는 케이스가 있다. */
+const postedBody = (fetchMock: ReturnType<typeof vi.fn>): Record<string, unknown> =>
+  JSON.parse(
+    String(fetchMock.mock.calls.find(([, init]) => init?.method === "POST")?.[1]?.body),
+  ) as Record<string, unknown>;
 
 /** POST 한 argv. 여러 케이스가 같은 자리를 본다. */
 const postedArgv = (fetchMock: ReturnType<typeof vi.fn>): readonly string[] =>
@@ -279,7 +285,7 @@ describe("Home 실행 마법사", () => {
     await goToOptions();
 
     expect(preview()).toBe(
-      `mcpeak test ${SUITE} --command node --arg examples/weather-server/server.mjs --arg --port --arg 3000${BUNDLE_PREVIEW}`,
+      `mcpeak test ${SUITE} --command node --arg examples/weather-server/server.mjs --arg --port --arg 3000 --env API_KEY${BUNDLE_PREVIEW}`,
     );
   });
 
@@ -307,8 +313,11 @@ describe("Home 실행 마법사", () => {
         "--port",
         "--arg",
         "3000",
+        "--env",
+        "API_KEY",
         ...BUNDLE_ARGV,
       ],
+      serverId: WEATHER.id,
     });
   });
 
@@ -358,6 +367,8 @@ describe("Home 실행 마법사", () => {
       "node",
       "--arg",
       "examples/weather-server/server.mjs",
+      "--env",
+      "API_KEY",
       ...BUNDLE_ARGV,
     ]);
   });
@@ -424,6 +435,35 @@ describe("Home 실행 마법사", () => {
     const argv = postedArgv(fetchMock);
     expect(argv).toContain("--record-session");
     expect(argv).toContain("tmp/s.db");
+  });
+
+  it("후보 갈래 실행은 argv 에 --env 를, 본문에 serverId 를 싣는다", async () => {
+    const fetchMock = stubFetch();
+    render(<Home />);
+    await goToOptions();
+    fireEvent.click(screen.getByRole("button", { name: "실행 시작" }));
+
+    await waitFor(() => {
+      expect(window.location.hash).toBe("#/runs/run-new");
+    });
+    const argv = postedArgv(fetchMock);
+    expect(argv).toContain("--env");
+    expect(argv[argv.indexOf("--env") + 1]).toBe("API_KEY");
+    expect(postedBody(fetchMock).serverId).toBe(WEATHER.id);
+  });
+
+  it("녹화로 실행해도 브라우저에 출처를 새로 적지 않는다", async () => {
+    stubFetch();
+    render(<Home />);
+    await goToOptions();
+    fireEvent.click(screen.getByRole("button", { name: "외부 호출 녹화" }));
+    fireEvent.change(screen.getByLabelText("세션 파일 경로"), { target: { value: "tmp/s.db" } });
+    fireEvent.click(screen.getByRole("button", { name: "실행 시작" }));
+
+    await waitFor(() => {
+      expect(window.location.hash).toBe("#/runs/run-new");
+    });
+    expect(window.localStorage.getItem("mcpeak-session-origin")).toBeNull();
   });
 
   /**

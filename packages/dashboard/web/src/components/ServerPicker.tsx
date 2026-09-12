@@ -163,9 +163,9 @@ export function ServerPicker(props: {
               badge={SOURCE_LABELS[candidate.source]}
               path={candidate.path}
               note={
-                candidate.hasEnv
-                  ? "env 는 대시보드가 넘기지 못합니다. 셸에서 미리 내보내세요."
-                  : undefined
+                candidate.envNames.length === 0
+                  ? undefined
+                  : `env ${candidate.envNames.length}개를 자식에게 넘깁니다: ${candidate.envNames.join(", ")}`
               }
               onChoose={() => props.onChoose({ kind: "candidate", id: candidate.id })}
             />

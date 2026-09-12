@@ -35,6 +35,11 @@ export interface FlowModuleLoaders {
 export interface ExecuteFlowOverrides {
   readonly runners?: Partial<FlowRunners>;
   readonly loaders?: Partial<FlowModuleLoaders>;
+  /**
+   * 이 run 이 고른 서버 후보의 `.mcp.json` env(값까지 해석된 것). `routes.ts` 가
+   * `resolveCandidateEnv` 로 만들어 넘긴다. 없으면 `process.env` 만 본다.
+   */
+  readonly candidateEnv?: Readonly<Record<string, string>>;
 }
 
 const defaultRunners: FlowRunners = {
@@ -78,11 +83,12 @@ export function executeFlow(
 ): Promise<number> {
   const runners: FlowRunners = { ...defaultRunners, ...overrides.runners };
   const loaders: FlowModuleLoaders = { ...defaultLoaders, ...overrides.loaders };
+  const readEnv = createReadEnv(overrides.candidateEnv);
   switch (request.flow) {
     case "test":
-      return executeTest(request.argv, io, runners, loaders);
+      return executeTest(request.argv, io, runners, loaders, readEnv);
     case "generate":
-      return executeGenerate(request.argv, io, runners, loaders);
+      return executeGenerate(request.argv, io, runners, loaders, readEnv);
     case "repair":
       return executeRepair(request.argv, io, runners, loaders);
     default: {
@@ -92,11 +98,25 @@ export function executeFlow(
   }
 }
 
+/**
+ * 이 run 의 `readEnv`. 후보 env 가 `process.env` 를 이긴다.
+ *
+ * **`.mcp.json` 의 값이 지나는 자리는 이것 하나다.** 후보 env 는 `routes.ts` 가 서버
+ * 프로세스 안에서 읽어 만든 것이고, 브라우저에도 argv 에도 세션 파일에도 실리지 않는다
+ * (설계 §4.3). `process` 를 읽는 것은 대시보드 서버 프로세스의 일이다(ADR-0013 의 주입 지점).
+ */
+function createReadEnv(
+  candidateEnv: Readonly<Record<string, string>> | undefined,
+): (name: string) => string | undefined {
+  return (name) => candidateEnv?.[name] ?? process.env[name];
+}
+
 async function executeTest(
   argv: readonly string[],
   io: RunIo,
   runners: FlowRunners,
   loaders: FlowModuleLoaders,
+  readEnv: (name: string) => string | undefined,
 ): Promise<number> {
   const commandArgv = withTestSubcommand(argv);
   const ioFields = { writeStdout: io.writeStdout, writeStderr: io.writeStderr };
@@ -123,11 +143,10 @@ async function executeTest(
     readFile,
     validateSuite: runner.validateMcpSuite,
     connect: core.connectStdio,
-    // 원격(Streamable HTTP) 대상용 배선(설계 §6-5). `readEnv` 는 `--header-env` 가 가리키는
-    // 환경변수를 읽는 유일한 지점이며, `process` 를 읽는 것은 대시보드 서버 프로세스의
-    // 일이다(ADR-0013 의 주입 지점 그대로). cli `index.ts` 의 test 배선과 같은 값이다.
+    // 원격(Streamable HTTP) 대상용 배선(설계 §6-5). `readEnv` 는 `--header-env` 와 `--env` 가
+    // 가리키는 환경변수를 읽는 유일한 지점이다(`createReadEnv`).
     connectHttp: core.connectHttp,
-    readEnv: (name) => process.env[name],
+    readEnv,
     startRunner: runner.runSuite,
     finalize: runner.finalizeRunnerExecution,
     renderReport: runner.renderReport,
@@ -146,6 +165,7 @@ async function executeGenerate(
   io: RunIo,
   runners: FlowRunners,
   loaders: FlowModuleLoaders,
+  readEnv: (name: string) => string | undefined,
 ): Promise<number> {
   const base = nodeGenerateDependencies();
   const ioFields = {
@@ -182,7 +202,7 @@ async function executeGenerate(
     // 원격(Streamable HTTP) 대상용 배선(설계 §6-5). 없으면 `--url` 이 서버에서
     // `connectHttp 미배선` 으로 멈춘다. 위 test 배선과 같은 값이다.
     connectHttp: core.connectHttp,
-    readEnv: (name) => process.env[name],
+    readEnv,
     createBaselineSuite: generate.createBaselineSuite,
     createAuthoringSession: generate.createAuthoringSession,
     finalizeAuthoringDraft: generate.finalizeAuthoringDraft,

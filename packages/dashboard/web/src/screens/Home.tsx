@@ -24,7 +24,6 @@ import type { LastRun } from "../last-run.js";
 import { readLastRun, saveLastRun } from "../last-run.js";
 import { readRecentCommands, saveRecentCommand } from "../recent-commands.js";
 import { effectiveRepairBundlePath } from "../repair-bundle-path.js";
-import { saveSessionOrigin } from "../session-origin.js";
 
 const STEPS = ["테스트할 서버", "테스트할 스위트", "실행 옵션"] as const;
 
@@ -37,6 +36,11 @@ interface HomeState {
   /** 후보 갈래의 유효 명령. manual 이면 `method`·`target` 에서 구한다. */
   readonly command: string;
   readonly args: readonly string[];
+  /**
+   * 후보 갈래에서 자식에게 넘길 환경변수 **이름**. 직접 입력 갈래는 항상 빈 배열이다.
+   * 값은 브라우저에 오지 않는다(설계 §4.3).
+   */
+  readonly envNames: readonly string[];
   readonly method: CommandMethod;
   readonly target: string;
   readonly suitePath: string | null;
@@ -49,6 +53,7 @@ const INITIAL_STATE: HomeState = {
   choice: { kind: "manual" },
   command: "",
   args: [],
+  envNames: [],
   // generate 마법사와 같은 기본값("node"). custom 은 입력 전체를 실행 파일 하나로 본다.
   method: "node",
   target: "",
@@ -141,6 +146,7 @@ export function Home(): JSX.Element {
                 choice: { kind: "candidate", id: first.id },
                 command: first.command,
                 args: [...first.args],
+                envNames: [...first.envNames],
               }
             : previous,
         );
@@ -155,6 +161,16 @@ export function Home(): JSX.Element {
     setState((previous) => {
       const { transport, url, headerEnvs, ...rest } = partial;
       let next: HomeState = { ...previous, ...rest };
+      // 갈래가 바뀌면 env 이름도 그 갈래의 것으로 갈아 끼운다. 남기면 새로 고른 서버에 앞
+      // 후보의 이름이 붙어, CLI 가 그 이름의 환경변수를 찾다 멈춘다.
+      const chosen = partial.choice;
+      if (chosen !== undefined) {
+        const picked =
+          chosen.kind === "candidate"
+            ? candidates.find((candidate) => candidate.id === chosen.id)
+            : undefined;
+        next = { ...next, envNames: picked === undefined ? [] : [...picked.envNames] };
+      }
       if (transport !== undefined || url !== undefined || headerEnvs !== undefined) {
         next = {
           ...next,
@@ -211,6 +227,9 @@ export function Home(): JSX.Element {
     setState((current) => ({
       ...current,
       choice: { kind: "manual" },
+      // 지난 실행에는 env 이름이 없다(`last-run` 이 담지 않는다). 후보의 이름을 남기면
+      // 되돌린 명령에 남의 env 가 붙는다.
+      envNames: [],
       // 지난 실행은 실행 파일과 인자로 저장돼 있다. `custom` 이 그 모양 그대로다.
       method: "custom",
       target: lastRun.command,
@@ -241,6 +260,7 @@ export function Home(): JSX.Element {
           suitePath,
           command: target.command,
           args: target.args,
+          envNames: state.envNames,
           sessionMode: state.sessionMode,
           sessionPath: state.sessionPath.trim(),
           // 번들은 항상 켠다(ADR-0080). 비워 두면 대시보드 관리 경로다. 저장(`saveLastRun`)에는
@@ -292,6 +312,9 @@ export function Home(): JSX.Element {
       const response = await apiSend<StartRunResponse>("POST", "/api/runs", {
         flow: "test",
         argv: result.argv,
+        // 후보 갈래면 id 를 함께 보낸다. 서버가 그 후보의 `.mcp.json` env 를 값으로 바꿔
+        // 이 run 의 `readEnv` 에 싣는다. 값은 브라우저를 지나지 않는다(설계 §4.3).
+        ...(state.choice.kind === "candidate" ? { serverId: state.choice.id } : {}),
       } satisfies StartRunRequest);
       // 저장 실패는 무시한다. 실행은 이미 서버에서 시작됐다(Generate 마법사와 같은 이유).
       saveLastRun(suitePath, {
@@ -302,16 +325,8 @@ export function Home(): JSX.Element {
       if (state.choice.kind === "manual" && state.target.trim() !== "") {
         saveRecentCommand(state.target);
       }
-      // 녹화 실행이면 이 세션 파일이 무엇에서 나왔는지 남긴다. 재생하려면 서버와 스위트가
-      // 필요한데 세션 파일은 그 둘을 담지 않아, 지금 적어 두지 않으면 Replay 는 사용자에게
-      // 다시 물어야 한다. 여기가 그 값을 아는 유일한 시점이다.
-      if (state.sessionMode === "record") {
-        saveSessionOrigin(state.sessionPath.trim(), {
-          command: target.command,
-          args: target.args,
-          suitePath,
-        });
-      }
+      // 녹화 출처는 세션 파일에 저장된다(ADR-0085). 브라우저에 다시 적지 않는다. 적으면
+      // 저장 직전에 가려진 값이 가려지지 않은 채 여기에 남기 때문이다(설계 §4.6).
       window.location.hash = `#/runs/${encodeURIComponent(response.runId)}`;
     } catch (err) {
       setStartError(err instanceof Error ? err.message : String(err));

@@ -261,3 +261,61 @@ describe("Replay 화면", () => {
     expect(screen.queryByText(/UTC 녹화/)).toBeNull();
   });
 });
+
+describe("가려진 출처", () => {
+  const redactedSession = (): SessionEntry =>
+    session({
+      origin: {
+        command: "npx",
+        args: ["-y", "@supabase/mcp-server-supabase", "--access-token", "[redacted]"],
+        suitePath: "supabase.suite.json",
+      },
+    });
+
+  it("가려진 인자가 있으면 재생을 시작하지 않고 사유를 말한다", async () => {
+    mockApi([redactedSession()]);
+
+    render(<ReplayView />);
+    fireEvent.click(await screen.findByRole("button", { name: "재생" }));
+
+    expect(started).toHaveLength(0);
+    const reason = screen.getByText(/가려졌습니다/);
+    expect(reason.textContent).toContain("인자 1개가 가려졌습니다");
+    expect(reason.textContent).toContain(".mcp.json");
+  });
+
+  it("가려진 세션의 행은 처음부터 펼쳐져 있다", async () => {
+    mockApi([redactedSession()]);
+
+    render(<ReplayView />);
+
+    expect(await screen.findByLabelText("서버 명령")).toBeTruthy();
+    expect(screen.getByLabelText("스위트 경로")).toBeTruthy();
+  });
+
+  it("「이 값으로 재생」 버튼은 가려진 동안 비활성이다", async () => {
+    mockApi([redactedSession()]);
+
+    render(<ReplayView />);
+
+    expect(await screen.findByRole("button", { name: "이 값으로 재생" })).toHaveProperty(
+      "disabled",
+      true,
+    );
+  });
+
+  it("가려진 인자를 고치면 재생이 살아난다", async () => {
+    mockApi([redactedSession()]);
+
+    render(<ReplayView />);
+    fireEvent.click(await screen.findByRole("button", { name: "인자 [redacted] 제거" }));
+    fireEvent.change(screen.getByLabelText("서버 인자"), { target: { value: "sbp_실제값" } });
+    fireEvent.click(screen.getByRole("button", { name: "추가" }));
+
+    const replay = screen.getByRole("button", { name: "이 값으로 재생" });
+    expect(replay).toHaveProperty("disabled", false);
+    fireEvent.click(replay);
+    await waitFor(() => expect(started).toHaveLength(1));
+    expect(started[0]?.argv).not.toContain("[redacted]");
+  });
+});

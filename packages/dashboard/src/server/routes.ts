@@ -14,12 +14,14 @@ import {
   listSessions,
   listSuites,
   readFileContent,
+  resolveCandidateEnv,
   writeFileContent,
 } from "./files.js";
 import { resolveProjectPath } from "./paths.js";
 import type { RunIo, RunRegistry } from "./run-registry.js";
 import { formatSseEvent, formatSseEvents, SSE_HEADERS } from "./sse.js";
 import { serveStatic } from "./static.js";
+import type { ExecuteFlowOverrides } from "./wiring.js";
 import { executeFlow } from "./wiring.js";
 
 export interface RouterOptions {
@@ -30,7 +32,11 @@ export interface RouterOptions {
    * flow 실행기. 기본값은 `wiring.ts`의 실제 `executeFlow`다. 테스트가 실제 커맨드
    * 함수(서버 연결·프로세스 기동)를 돌리지 않고 fake로 바꿔치기할 수 있도록 연다.
    */
-  readonly execute?: (request: StartRunRequest, io: RunIo) => Promise<number>;
+  readonly execute?: (
+    request: StartRunRequest,
+    io: RunIo,
+    options?: ExecuteFlowOverrides,
+  ) => Promise<number>;
 }
 
 const RUN_FLOWS = new Set<StartRunRequest["flow"]>(["test", "generate", "repair"]);
@@ -211,7 +217,9 @@ function isStartRunRequest(value: unknown): value is StartRunRequest {
     return false;
   }
   if (!Array.isArray(record.argv)) return false;
-  return record.argv.every((item) => typeof item === "string");
+  if (!record.argv.every((item) => typeof item === "string")) return false;
+  // 있으면 문자열이어야 한다. 없는 것은 정상이다(직접 입력 갈래).
+  return record.serverId === undefined || typeof record.serverId === "string";
 }
 
 async function handleStartRun(
@@ -219,7 +227,7 @@ async function handleStartRun(
   response: ServerResponse,
   root: string,
   registry: RunRegistry,
-  execute: (request: StartRunRequest, io: RunIo) => Promise<number>,
+  execute: (request: StartRunRequest, io: RunIo, options?: ExecuteFlowOverrides) => Promise<number>,
 ): Promise<void> {
   const body = await readJsonBody<unknown>(request);
   if (body === undefined) {
@@ -231,6 +239,18 @@ async function handleStartRun(
     return;
   }
   const startRequest = body;
+  // 후보를 골랐으면 그 후보의 `.mcp.json` env 를 **여기서** 값으로 바꾼다. 값은 이 프로세스
+  // 안에서만 살고 argv 에도 응답에도 실리지 않는다(설계 §4.3).
+  let candidateEnv: Readonly<Record<string, string>> | undefined;
+  if (startRequest.serverId !== undefined) {
+    candidateEnv = await resolveCandidateEnv(root, startRequest.serverId, process.env);
+    if (candidateEnv === undefined) {
+      sendJson(response, 400, {
+        error: `서버 후보를 찾을 수 없습니다: ${startRequest.serverId}`,
+      });
+      return;
+    }
+  }
   // 홈의 test 실행은 항상 `--repair-bundle .mcpeak/repair/...` 를 붙인다(ADR-0080). CLI 는
   // 그 부모 디렉터리를 만들지 않으므로 여기서 만든다. 못 만들면 run 을 시작하지 않는다.
   if (startRequest.flow === "test") {
@@ -243,7 +263,7 @@ async function handleStartRun(
     }
   }
   const handle = registry.start(startRequest.flow, startRequest.argv, (io) =>
-    execute(startRequest, io),
+    execute(startRequest, io, candidateEnv === undefined ? undefined : { candidateEnv }),
   );
   const result: StartRunResponse = { runId: handle.runId };
   sendJson(response, 200, result);

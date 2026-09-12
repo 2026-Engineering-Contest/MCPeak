@@ -14,6 +14,11 @@ export interface GenerateForm {
   readonly headerEnvs: readonly string[];
   readonly command: string; // 실행 파일 하나만("node" 등). CLI --command 계약이 실행 파일 단독이라 스크립트 경로는 args 선두로 간다.
   readonly args: readonly string[];
+  /**
+   * 자식에게 넘길 환경변수의 **이름**. `.mcp.json` 후보에서만 찬다. 값은 이 폼에도 argv 에도
+   * 오지 않는다(설계 §4.3).
+   */
+  readonly envNames: readonly string[];
   readonly suiteId: string;
   readonly suiteName: string;
   readonly outPath: string;
@@ -74,6 +79,10 @@ export function buildGenerateArgv(form: GenerateForm): readonly string[] {
     argv.push("--command", form.command);
     for (const arg of form.args) {
       argv.push("--arg", arg);
+    }
+    // `--env` 는 서버 인자 뒤, 스위트 옵션 앞이다. http 갈래에는 싣지 않는다.
+    for (const name of form.envNames) {
+      argv.push("--env", name);
     }
   }
   argv.push("--suite-id", form.suiteId);

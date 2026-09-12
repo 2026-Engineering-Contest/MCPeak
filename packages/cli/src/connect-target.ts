@@ -18,6 +18,11 @@ export type ConnectTarget =
       readonly transport: "stdio";
       readonly command: string;
       readonly args: readonly string[];
+      /**
+       * 자식에게 넘길 부모 환경변수의 **이름**. 값은 여기에도 argv 에도 없다(`--header-env` 와
+       * 같은 이유). `openConnection` 이 `readEnv` 로 읽어 `env` 에 얹는다.
+       */
+      readonly envNames: readonly string[];
     }
   | {
       readonly transport: "http";
@@ -120,6 +125,12 @@ function echoValue(value: string): string {
  */
 const SECRET_INPUT_HINT =
   "값은 셸 히스토리에 남지 않게 넣으세요. 예: `read -rs MCP_TOKEN; export MCP_TOKEN`";
+
+/**
+ * 같은 `read -rs` 예시를 명령줄 모양 그대로 둔 것. `--env` 안내가 올바른 호출 예시 바로 위에
+ * 적는다. `MCP_TOKEN` 자리는 `replaceAll` 로 실제 이름으로 바꿔 쓴다.
+ */
+const SECRET_ENV_EXAMPLE = "     read -rs MCP_TOKEN; export MCP_TOKEN";
 
 /**
  * `--url` 값을 검증한다.
@@ -232,6 +243,60 @@ export function createHeaderEnvCollector(): HeaderEnvCollector {
   };
 }
 
+/**
+ * `--env <NAME>` 값 하나를 검사한다. **이름만** 받는다. 값을 여기 넣으면 `ps` 와 셸
+ * 히스토리와 녹화 출처에 그대로 남는다. 그것이 이 옵션이 이름만 받는 이유고, 거절 문장이
+ * 그 이유를 말해야 한다.
+ *
+ * `NODE_OPTIONS` 와 `MCPEAK_*` 는 External 배선이 자식 환경에 직접 쓰는 이름이다. 배선이
+ * 사용자 값 **뒤에** 얹히므로 덮이지는 않지만, 받아 놓고 조용히 덮어쓰면 "막은 척" 이 된다.
+ */
+export function parseEnvForwardOption(raw: string): TargetResult<string> {
+  const name = raw.trim();
+  if (name === "") return err("`--env` 옵션 값이 필요합니다.");
+  if (!ENV_NAME_PATTERN.test(name))
+    return err(
+      `\`--env\` 는 환경변수 **이름**만 받습니다: '${echoValue(raw)}'\n` +
+        "→ 값을 명령줄에 쓰면 `ps` 목록과 셸 히스토리, 녹화 출처에 그대로 남기 때문입니다.\n" +
+        "→ 값은 환경변수에 넣고 이름만 넘기세요:\n" +
+        `${SECRET_ENV_EXAMPLE.replaceAll("MCP_TOKEN", "SUPABASE_ACCESS_TOKEN")}\n` +
+        "     mcpeak test suite.json --command npx --arg -y --arg <서버> --env SUPABASE_ACCESS_TOKEN",
+    );
+  if (name === "NODE_OPTIONS")
+    return err(
+      "`--env NODE_OPTIONS` 는 받지 않습니다.\n" +
+        "→ 부모의 `NODE_OPTIONS` 는 녹화·재생 배선이 자식에게 이미 이어 붙입니다.",
+    );
+  if (name.startsWith("MCPEAK_"))
+    return err(
+      `\`--env ${name}\` 는 받지 않습니다.\n` +
+        "→ `MCPEAK_` 로 시작하는 이름은 녹화·재생 배선이 자식 환경에 직접 씁니다. 사용자 값이 그것을 덮으면 녹화가 조용히 꺼집니다.",
+    );
+  return ok(name);
+}
+
+/**
+ * `--env` 를 모으는 누산기. `test` 와 `generate` 가 같은 것을 쓴다. 순서를 보존하고 중복을
+ * 거절한다. 같은 이름을 두 번 쓴 것이 오타인지 의도인지 우리가 고를 문제가 아니다.
+ */
+export interface EnvForwardCollector {
+  /** 거절 사유를 돌려준다. `undefined` 면 받았다. */
+  add(name: string): string | undefined;
+  snapshot(): readonly string[];
+}
+
+export function createEnvForwardCollector(): EnvForwardCollector {
+  const names: string[] = [];
+  return {
+    add(name) {
+      if (names.includes(name)) return `\`--env ${name}\` 이 두 번 있습니다. 한 번만 쓰세요.`;
+      names.push(name);
+      return undefined;
+    },
+    snapshot: () => Object.freeze([...names]),
+  };
+}
+
 /** 대상을 사람이 읽는 한 조각으로 만든다. 오류 문장이 무엇에 붙으려 했는지 말할 때 쓴다. */
 export function describeTarget(target: ConnectTarget): string {
   return target.transport === "stdio" ? [target.command, ...target.args].join(" ") : target.url;
@@ -246,6 +311,10 @@ export class ConnectTargetError extends Error {}
  *
  * `env` 는 stdio 전용이다. External 배선이 만든 자식 환경 변수라 띄울 프로세스가 있어야
  * 뜻이 있고, 파서가 `--url` 과 External 세션 옵션의 동시 사용을 이미 막는다.
+ *
+ * 자식 환경은 세 겹이고 순서가 계약이다(설계 §4.1):
+ * SDK 기본 허용 목록 < `--env` 로 넘긴 것 < External 배선(`options.env`).
+ * 배선이 마지막이다. 배선 변수가 사용자 값에 덮이면 녹화가 조용히 꺼진다.
  */
 export async function openConnection(
   target: ConnectTarget,
@@ -253,10 +322,12 @@ export async function openConnection(
   options?: { readonly env?: Readonly<Record<string, string>> },
 ): Promise<CliConnection> {
   if (target.transport === "stdio") {
+    const forwarded = resolveForwardedEnv(target.envNames, dependencies.readEnv);
+    const env = { ...forwarded, ...options?.env };
     const connection = await dependencies.connectStdio({
       command: target.command,
       args: target.args,
-      ...(options?.env === undefined ? {} : { env: options.env }),
+      ...(Object.keys(env).length === 0 ? {} : { env }),
     });
     return connection;
   }
@@ -325,4 +396,32 @@ function resolveHeaders(
     headers[header] = value;
   }
   return ok(headers);
+}
+
+/**
+ * `--env` 이름을 값으로 바꾼다. **비어 있으면 이름만 말한다.** 값이 비었다는 사실을 알리려다
+ * 값을 화면에 찍으면 이 옵션이 존재하는 이유가 없어진다(ADR-0070 §3).
+ */
+function resolveForwardedEnv(
+  names: readonly string[],
+  readEnv: ConnectDependencies["readEnv"],
+): Record<string, string> {
+  if (names.length === 0) return {};
+  if (readEnv === undefined)
+    throw new ConnectTargetError(
+      "이 진입점은 `--env` 를 지원하지 않습니다.\n" +
+        "→ 환경변수를 읽는 주입점(readEnv)이 배선되지 않았습니다.",
+    );
+  const env: Record<string, string> = {};
+  for (const name of names) {
+    const value = readEnv(name);
+    if (value === undefined || value === "")
+      throw new ConnectTargetError(
+        `환경변수 \`${name}\` 가 비어 있습니다.\n` +
+          "→ 값을 넣고 다시 실행하세요:\n" +
+          `${SECRET_ENV_EXAMPLE.replaceAll("MCP_TOKEN", name)}`,
+      );
+    env[name] = value;
+  }
+  return env;
 }

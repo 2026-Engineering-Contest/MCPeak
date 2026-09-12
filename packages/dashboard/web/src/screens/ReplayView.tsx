@@ -11,7 +11,7 @@ import { PageHeader } from "../components/PageHeader.js";
 import { Field, INPUT_CLASS } from "../generate/steps/fields.js";
 import { effectiveRepairBundlePath } from "../repair-bundle-path.js";
 import type { SessionOrigin } from "../session-origin.js";
-import { readSessionOrigin } from "../session-origin.js";
+import { REDACTED_ARG, readSessionOrigin, redactedArgCount } from "../session-origin.js";
 
 /**
  * Replay — 녹화해 둔 외부 응답으로 테스트를 다시 실행한다.
@@ -119,7 +119,17 @@ export function ReplayView(): JSX.Element {
 
   useEffect(() => {
     apiGet<SessionEntry[]>("/api/sessions")
-      .then(setSessions)
+      .then((list) => {
+        setSessions(list);
+        // 가려진 출처는 원클릭이 안 된다. 사용자가 「수정」 버튼을 찾아 헤매지 않도록 그 행을
+        // 처음부터 펼쳐 둔다(설계 §4.5). 한 번에 하나만 열리므로 첫 번째 것을 연다.
+        const firstRedacted = list.find(
+          (entry) => entry.origin !== undefined && redactedArgCount(entry.origin.args) > 0,
+        );
+        if (firstRedacted !== undefined) {
+          setExpanded(firstRedacted.path);
+        }
+      })
       .catch((err: unknown) => setLoadError(err instanceof Error ? err.message : String(err)));
   }, []);
 
@@ -160,12 +170,26 @@ export function ReplayView(): JSX.Element {
     if (draft.suitePath.trim() === "") {
       return { error: "스위트 경로를 입력하세요." };
     }
+    // 가려진 인자를 그대로 넘기면 서버는 "잘못된 토큰" 으로 실패하고, 사용자는 그 실패가
+    // 우리 마스킹 때문인지 서버 때문인지 알 수 없다. 막는 쪽이 낫다(설계 §4.5).
+    const redacted = redactedArgCount(draft.args);
+    if (redacted > 0) {
+      return {
+        error:
+          `녹화 때 인자 ${redacted}개가 가려졌습니다(${REDACTED_ARG}). 그 자리를 다시 채우거나, ` +
+          "서버가 환경변수를 받으면 그 값을 .mcp.json 의 env 로 옮기세요. " +
+          "env 는 argv 에 실리지 않아 가려지지 않습니다.",
+      };
+    }
     try {
       return {
         argv: buildTestArgv({
           suitePath: draft.suitePath.trim(),
           command: draft.command.trim(),
           args: draft.args,
+          // 재생은 후보를 고르는 화면이 아니라 env 이름을 실을 자리가 없다. 가려진 비밀을
+          // env 로 옮기는 것은 Test 화면에서 후보를 골라 다시 녹화하는 일이다.
+          envNames: [],
           sessionMode: "replay",
           sessionPath: session.path,
           options: {

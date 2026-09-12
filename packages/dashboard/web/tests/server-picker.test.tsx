@@ -20,7 +20,7 @@ const WEATHER: ServerCandidate = {
   args: ["examples/weather-server/server.mjs", "--port", "3000"],
   source: "mcp-config",
   path: ".mcp.json",
-  hasEnv: false,
+  envNames: [],
 };
 const CANDIDATES: readonly ServerCandidate[] = [
   WEATHER,
@@ -31,7 +31,7 @@ const CANDIDATES: readonly ServerCandidate[] = [
     args: ["secret.mjs"],
     source: "mcp-config",
     path: ".mcp.json",
-    hasEnv: true,
+    envNames: ["API_KEY"],
   },
 ];
 
@@ -69,12 +69,13 @@ describe("서버 선택", () => {
     expect(screen.getByText("프로젝트에서 2개 찾음")).toBeTruthy();
   });
 
-  it("hasEnv 후보에 env 안내 문장이 붙는다", () => {
+  it("envNames 가 있는 후보는 어떤 이름을 넘기는지 말한다", () => {
     renderPicker();
 
+    expect(screen.getByText("env 1개를 자식에게 넘깁니다: API_KEY")).toBeTruthy();
     expect(
-      screen.getByText("env 는 대시보드가 넘기지 못합니다. 셸에서 미리 내보내세요."),
-    ).toBeTruthy();
+      screen.queryByText("env 는 대시보드가 넘기지 못합니다. 셸에서 미리 내보내세요."),
+    ).toBeNull();
   });
 
   it('지난 실행이 있으면 첫 항목이고 배지가 "이 브라우저" 다', () => {

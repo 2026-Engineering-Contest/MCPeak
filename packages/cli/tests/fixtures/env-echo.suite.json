@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "id": "env-echo",
+  "name": "--env 로 넘긴 환경변수만 자식에게 간다",
+  "defaultTimeoutMs": 10000,
+  "cases": [
+    {
+      "id": "forwarded-present",
+      "name": "--env 로 넘긴 이름은 자식 환경에 있다",
+      "operation": {
+        "type": "callTool",
+        "tool": "read_env",
+        "input": { "name": "TEST_FORWARDED_VALUE" }
+      },
+      "assertions": [
+        { "type": "isError", "expected": false },
+        {
+          "type": "bodyMatchesSchema",
+          "schema": {
+            "type": "object",
+            "required": ["present", "length"],
+            "properties": {
+              "present": { "type": "boolean", "const": true },
+              "length": { "type": "number", "const": 7 }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "not-forwarded-absent",
+      "name": "--env 로 넘기지 않은 이름은 부모에 있어도 자식 환경에 없다",
+      "operation": {
+        "type": "callTool",
+        "tool": "read_env",
+        "input": { "name": "TEST_NOT_FORWARDED" }
+      },
+      "assertions": [
+        { "type": "isError", "expected": false },
+        {
+          "type": "bodyMatchesSchema",
+          "schema": {
+            "type": "object",
+            "required": ["present"],
+            "properties": { "present": { "type": "boolean", "const": false } }
+          }
+        }
+      ]
+    }
+  ]
+}

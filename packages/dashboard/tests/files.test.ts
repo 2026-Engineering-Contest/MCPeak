@@ -7,6 +7,7 @@ import {
   listServerCandidates,
   listSuites,
   readFileContent,
+  resolveCandidateEnv,
   writeFileContent,
 } from "../src/server/files.js";
 
@@ -135,7 +136,7 @@ describe("listServerCandidates", () => {
         args: ["server.mjs", "--port", "0"],
         source: "mcp-config",
         path: ".mcp.json",
-        hasEnv: false,
+        envNames: [],
       },
     ]);
   });
@@ -175,7 +176,7 @@ describe("listServerCandidates", () => {
     expect(candidates.map((candidate) => candidate.name)).toEqual(["local"]);
   });
 
-  it("env 가 비어 있지 않으면 hasEnv 가 true 다", async () => {
+  it("env 의 키 이름만 envNames 로 실린다", async () => {
     await writeFile(
       join(root, ".mcp.json"),
       JSON.stringify({
@@ -189,10 +190,10 @@ describe("listServerCandidates", () => {
     );
 
     const candidates = await listServerCandidates(root);
-    expect(candidates.map((candidate) => [candidate.name, candidate.hasEnv])).toEqual([
-      ["empty-env", false],
-      ["no-env", false],
-      ["with-env", true],
+    expect(candidates.map((candidate) => [candidate.name, candidate.envNames])).toEqual([
+      ["empty-env", []],
+      ["no-env", []],
+      ["with-env", ["API_KEY"]],
     ]);
   });
 
@@ -218,7 +219,7 @@ describe("listServerCandidates", () => {
         args: ["examples/weather-server/server.mjs"],
         source: "package-bin",
         path: "examples/weather-server/package.json",
-        hasEnv: false,
+        envNames: [],
       },
     ]);
   });
@@ -281,7 +282,7 @@ describe("listServerCandidates", () => {
         args: [],
         source: "package-bin",
         path: "package.json",
-        hasEnv: false,
+        envNames: [],
       },
     ]);
   });
@@ -407,6 +408,116 @@ describe("listServerCandidates", () => {
       "package-bin:package.json:root-pkg",
       "mcp-config:sub/.mcp.json:weather",
     ]);
+  });
+});
+
+describe("resolveCandidateEnv", () => {
+  /**
+   * `.mcp.json` 값 안의 변수 참조. 평문 문자열로 적으면 린터가 템플릿 리터럴 오타로 본다
+   * (`noTemplateCurlyInString`). 이 파일에서 `${...}` 는 의도한 원문이다.
+   */
+  const ref = (inner: string): string => `\${${inner}}`;
+
+  async function writeConfig(): Promise<void> {
+    await writeFile(
+      join(root, ".mcp.json"),
+      JSON.stringify({
+        mcpServers: {
+          weather: {
+            command: "node",
+            args: ["server.mjs"],
+            env: { A: "lit", B: ref("HOME_X"), C: ref("MISSING") },
+          },
+        },
+      }),
+      "utf8",
+    );
+  }
+
+  it("리터럴은 그대로, 변수 참조는 확장하고, 확장할 값이 없는 키는 뺀다", async () => {
+    await writeConfig();
+
+    await expect(
+      resolveCandidateEnv(root, "mcp-config:.mcp.json:weather", { HOME_X: "h" }),
+    ).resolves.toEqual({ A: "lit", B: "h" });
+  });
+
+  it("모르는 id 는 undefined 다", async () => {
+    await writeConfig();
+
+    await expect(
+      resolveCandidateEnv(root, "mcp-config:.mcp.json:없는것", { HOME_X: "h" }),
+    ).resolves.toBeUndefined();
+  });
+
+  it("env 가 없는 후보는 빈 객체다", async () => {
+    await writeFile(
+      join(root, ".mcp.json"),
+      JSON.stringify({ mcpServers: { weather: { command: "node", args: ["server.mjs"] } } }),
+      "utf8",
+    );
+
+    await expect(resolveCandidateEnv(root, "mcp-config:.mcp.json:weather", {})).resolves.toEqual(
+      {},
+    );
+  });
+
+  it("한 값에 변수 참조가 여럿이면 모두 확장한다", async () => {
+    await writeFile(
+      join(root, ".mcp.json"),
+      JSON.stringify({
+        mcpServers: {
+          weather: {
+            command: "node",
+            args: [],
+            env: {
+              URL: `${ref("SCHEME")}://${ref("HOST")}/mcp`,
+              PART: `x-${ref("SCHEME")}`,
+            },
+          },
+        },
+      }),
+      "utf8",
+    );
+
+    await expect(
+      resolveCandidateEnv(root, "mcp-config:.mcp.json:weather", {
+        SCHEME: "https",
+        HOST: "example.test",
+      }),
+    ).resolves.toEqual({ URL: "https://example.test/mcp", PART: "x-https" });
+  });
+
+  it("기본값 문법은 해석하지 않고 원문 그대로 남긴다", async () => {
+    await writeFile(
+      join(root, ".mcp.json"),
+      JSON.stringify({
+        mcpServers: {
+          weather: { command: "node", args: [], env: { A: ref("MISSING:-fallback") } },
+        },
+      }),
+      "utf8",
+    );
+
+    await expect(resolveCandidateEnv(root, "mcp-config:.mcp.json:weather", {})).resolves.toEqual({
+      A: ref("MISSING:-fallback"),
+    });
+  });
+
+  it("package-bin 후보는 env 를 가질 수 없어 빈 객체다", async () => {
+    await writeFile(
+      join(root, "package.json"),
+      JSON.stringify({
+        name: "tools",
+        dependencies: { "@modelcontextprotocol/sdk": "1.0.0" },
+        bin: { "shell-server": "./bin/shell-server" },
+      }),
+      "utf8",
+    );
+
+    await expect(
+      resolveCandidateEnv(root, "package-bin:package.json:shell-server", {}),
+    ).resolves.toEqual({});
   });
 });
 

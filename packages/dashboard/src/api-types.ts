@@ -19,11 +19,23 @@ export type PendingQuestion =
     }
   | { readonly id: string; readonly kind: "confirm"; readonly message: string };
 
+/**
+ * 실행 시작 요청의 공통 필드.
+ *
+ * `serverId` 는 고른 서버 후보의 id 다. 있으면 서버가 그 후보의 `.mcp.json` env 를 이 run 의
+ * `readEnv` 에 먼저 묻게 한다. 없으면 `process.env` 만 본다. **값은 여기 실리지 않는다.**
+ * 브라우저가 보내는 것은 이름(argv 의 `--env <NAME>`)과 후보 id 뿐이다(설계 §4.3).
+ */
+interface StartRunFields {
+  readonly argv: readonly string[];
+  readonly serverId?: string;
+}
+
 /** POST /api/runs — 어떤 플로우든 실행 시작은 이 하나로 받는다. */
 export type StartRunRequest =
-  | { readonly flow: "test"; readonly argv: readonly string[] }
-  | { readonly flow: "generate"; readonly argv: readonly string[] }
-  | { readonly flow: "repair"; readonly argv: readonly string[] };
+  | ({ readonly flow: "test" } & StartRunFields)
+  | ({ readonly flow: "generate" } & StartRunFields)
+  | ({ readonly flow: "repair" } & StartRunFields);
 
 export interface StartRunResponse {
   readonly runId: string;
@@ -73,8 +85,12 @@ export interface ServerCandidate {
   readonly source: "mcp-config" | "package-bin";
   /** 후보를 읽은 파일의 루트 기준 상대경로(`/` 구분). */
   readonly path: string;
-  /** `.mcp.json` 항목에 env 가 있었는지. 대시보드는 넘기지 못하므로 화면이 알린다. */
-  readonly hasEnv: boolean;
+  /**
+   * `.mcp.json` 항목 `env` 의 **키 이름**. 값은 싣지 않는다. 웹은 이 이름마다 `--env <NAME>`
+   * 을 argv 에 넣고, 서버가 그 run 의 `readEnv` 를 후보의 env 로 해석한다(설계 §4.3).
+   * `package-bin` 후보는 항상 빈 배열이다.
+   */
+  readonly envNames: readonly string[];
 }
 
 /**

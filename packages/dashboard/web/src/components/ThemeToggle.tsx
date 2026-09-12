@@ -2,6 +2,7 @@ import type { JSX } from "react";
 import { useEffect, useState } from "react";
 import type { ThemeMode } from "../theme.js";
 import { applyMode, getStoredMode, resolveMode, systemMode, themeStorage } from "../theme.js";
+import { FOCUS_RING } from "./focus-ring.js";
 
 const OPTIONS: ReadonlyArray<readonly [ThemeMode, string]> = [
   ["light", "Light"],
@@ -67,7 +68,7 @@ export function ThemeToggle(): JSX.Element {
               type="button"
               aria-pressed={pressed}
               onClick={() => choose(value)}
-              className={`rounded-sm px-4 py-1 text-sm font-medium transition-colors duration-150 ease-standard focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring ${
+              className={`rounded-sm px-4 py-1 text-sm font-medium transition-colors duration-150 ease-standard ${FOCUS_RING} ${
                 pressed ? "bg-surface text-accent shadow-card" : "text-ink-muted hover:text-ink"
               }`}
             >

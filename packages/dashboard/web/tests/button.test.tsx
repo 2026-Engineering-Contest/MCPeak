@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { ButtonSize, ButtonVariant } from "../src/components/Button.js";
 import { Button } from "../src/components/Button.js";
 
-const VARIANTS: readonly ButtonVariant[] = ["primary", "secondary", "ghost"];
+const VARIANTS: readonly ButtonVariant[] = ["primary", "secondary", "ghost", "on-accent"];
 const SIZES: readonly ButtonSize[] = ["xs", "sm", "md"];
 
 function classesOf(name: string): string {
@@ -27,7 +27,7 @@ describe("Button", () => {
 
   it("type 기본값이 button 이다", () => {
     // HTML 기본값은 submit 이다. 폼 안에 놓인 버튼이 기본값을 물려받으면 누를 때마다
-    // 폼이 제출된다 — 예전에는 34곳이 각자 type="button" 을 손으로 적어 막고 있었다.
+    // 폼이 제출된다 — 예전에는 30곳이 각자 type 을 손으로 적어 막고 있었다.
     render(<Button>확인</Button>);
     expect(screen.getByRole("button", { name: "확인" }).getAttribute("type")).toBe("button");
   });
@@ -37,7 +37,7 @@ describe("Button", () => {
     expect(screen.getByRole("button", { name: "제출" }).getAttribute("type")).toBe("submit");
   });
 
-  it("variant 셋이 서로 다른 클래스를 낸다", () => {
+  it("variant 넷이 서로 다른 클래스를 낸다", () => {
     render(
       <div>
         {VARIANTS.map((variant) => (
@@ -79,7 +79,7 @@ describe("Button", () => {
     expect(classes).toContain("bg-accent");
   });
 
-  it("세 variant 모두 focus-visible 스타일을 갖는다", () => {
+  it("네 variant 모두 focus-visible 스타일을 갖는다", () => {
     // 키보드로 쓰는 도구다. 저장소 전체에 focus-visible 이 0개이던 것이 이 PR 이
     // 고치려는 것이므로, variant 를 더할 때 빠뜨리지 않게 여기서 막는다.
     render(
@@ -109,8 +109,9 @@ describe("Button", () => {
   });
 
   it("aria-label 이 접근 가능한 이름을 정한다", () => {
-    // ThemeToggle 이 이 방식을 쓴다. 111곳의 테스트가 버튼을 이름으로 찾으므로
-    // 이 통로가 막히면 그 테스트들이 한꺼번에 버튼을 못 찾는다.
+    // 칩 제거 버튼이 이 방식을 쓴다 — 보이는 글자가 "×" 뿐이라 무엇을 지우는지가
+    // aria-label 에만 있다. 111곳의 테스트가 버튼을 이름으로 찾으므로 이 통로가 막히면
+    // 그 테스트들이 한꺼번에 버튼을 못 찾는다.
     render(<Button aria-label="테마: 다크 — 라이트 모드로 바꾸기">테마: 다크</Button>);
     expect(screen.getByRole("button", { name: "테마: 다크 — 라이트 모드로 바꾸기" })).toBeTruthy();
   });

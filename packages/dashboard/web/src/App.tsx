@@ -1,6 +1,5 @@
 import type { JSX } from "react";
 import { useEffect, useState } from "react";
-import type { NavId } from "./components/Sidebar.js";
 import { Sidebar } from "./components/Sidebar.js";
 import { ThemeToggle } from "./components/ThemeToggle.js";
 import { GenerateWizard } from "./screens/GenerateWizard.js";
@@ -8,6 +7,7 @@ import { Home } from "./screens/Home.js";
 import { RepairReview } from "./screens/RepairReview.js";
 import { ReplayView } from "./screens/ReplayView.js";
 import { RunView } from "./screens/RunView.js";
+import { SettingsView } from "./screens/SettingsView.js";
 
 /**
  * 해시 라우팅(구현계획 §4-3). 라우터 의존성 없이 `location.hash`만 본다.
@@ -18,6 +18,7 @@ import { RunView } from "./screens/RunView.js";
  * | `#/runs`, `#/runs/:id` | RunView (`#/runs`는 목록 상태) |
  * | `#/generate` | GenerateWizard |
  * | `#/repair/:id` | RepairReview |
+ * | `#/settings` | SettingsView (준비 중) |
  *
  */
 type Route =
@@ -26,6 +27,7 @@ type Route =
   | { readonly screen: "generate" }
   | { readonly screen: "replay" }
   | { readonly screen: "repair"; readonly runId: string | null }
+  | { readonly screen: "settings" }
   | { readonly screen: "redirect" };
 
 /** 잘못된 인코딩(%zz 등)이 화면을 깨뜨리지 않게 한다. origin f9198e0 계승. */
@@ -65,17 +67,12 @@ function parseRoute(hash: string): Route {
       runId: rest[0] !== undefined ? decodeRouteValue(rest[0]) : null,
     };
   }
+  if (first === "settings") {
+    return { screen: "settings" };
+  }
   // 빈 해시·알 수 없는 해시는 #/home으로 보낸다(§4-3 기본 리다이렉트).
   return { screen: "redirect" };
 }
-
-const HEADER_TITLES: Record<NavId, string> = {
-  home: "Test",
-  runs: "Runs",
-  generate: "Generate",
-  replay: "Replay",
-  repair: "Repair",
-};
 
 export function App(): JSX.Element {
   const [hash, setHash] = useState<string>(() => window.location.hash);
@@ -115,16 +112,22 @@ export function App(): JSX.Element {
     */
     <div className="flex h-screen bg-canvas text-ink">
       <Sidebar active={route.screen} />
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-16 shrink-0 items-center justify-between border-b border-line bg-surface px-6">
-          <p className="text-sm font-semibold text-ink">{HEADER_TITLES[route.screen]}</p>
+      {/*
+        **헤더 스트립이 없다**(#459). 예전에는 64px 스트립이 `Test` 한 단어를 담고 본문 h1 이
+        `테스트` 를 또 말했다. 제목은 화면의 `PageHeader` 한 곳에만 둔다. 테마 토글만 남아
+        본문 오른쪽 위 한 줄을 쓴다.
+
+        `min-h-0` 이 없으면 flex 자식이 내용 높이 아래로 줄지 못해 `flex-1` 이 무력해진다.
+      */}
+      <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-auto px-8 pt-4 pb-8">
+        <div className="flex h-8 shrink-0 items-center justify-end">
           <ThemeToggle />
-        </header>
-        {/* `min-h-0` 이 없으면 flex 자식이 내용 높이 아래로 줄지 못해 `flex-1` 이 무력해진다. */}
-        <main className="min-h-0 min-w-0 flex-1 overflow-auto p-8">
+        </div>
+        {/* 실행 화면이 `h-full` 로 남은 높이를 채운다. 그 기준이 되는 상자다. */}
+        <div className="min-h-0 flex-1">
           <Screen route={route} />
-        </main>
-      </div>
+        </div>
+      </main>
     </div>
   );
 }
@@ -145,5 +148,7 @@ function Screen({
       return <ReplayView />;
     case "repair":
       return <RepairReview runId={route.runId} />;
+    case "settings":
+      return <SettingsView />;
   }
 }

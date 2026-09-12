@@ -117,4 +117,25 @@ describe("RepairReview", () => {
       value: "n",
     });
   });
+
+  it("수리 검토 제목을 쓰고 run 식별자는 제목이 아니라 메타 줄에 둔다", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(null, { status: 204 })),
+    );
+    render(<RepairReview runId="repair-1" />);
+
+    expect(screen.getByRole("heading", { level: 1, name: "수리 검토" })).toBeTruthy();
+    expect(screen.getByText("repair-1")).toBeTruthy();
+  });
+
+  it("볼 수리가 없으면 실행 목록으로 가는 링크를 준다", () => {
+    render(<RepairReview runId={null} />);
+
+    expect(screen.getByText("검토할 수리가 없습니다.")).toBeTruthy();
+    expect(screen.getByRole("link", { name: /실패한 실행 고르기/ }).getAttribute("href")).toBe(
+      "#/runs",
+    );
+  });
 });

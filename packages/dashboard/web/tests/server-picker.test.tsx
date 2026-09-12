@@ -141,4 +141,14 @@ describe("서버 선택", () => {
     }
     expect(screen.getByText("원격 서버에 붙습니다. 위 서버 명령은 쓰이지 않습니다.")).toBeTruthy();
   });
+
+  /** 카드 안에서 목록을 묶는 머리글이라 제목이다. 찾은 개수는 제목이 아니라 곁의 메타다. */
+  it("'서버' 는 h2 이고 찾은 개수는 제목 밖에 있다", () => {
+    renderPicker();
+
+    expect(screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent)).toEqual([
+      "서버",
+    ]);
+    expect(screen.getByText("프로젝트에서 2개 찾음").closest("h2")).toBeNull();
+  });
 });

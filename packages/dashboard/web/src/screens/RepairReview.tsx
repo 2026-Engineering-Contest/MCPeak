@@ -1,4 +1,7 @@
 import type { JSX } from "react";
+import { Card } from "../components/Card.js";
+import { EmptyState } from "../components/EmptyState.js";
+import { PageHeader } from "../components/PageHeader.js";
 import { RunStreamPanel } from "./RunView.js";
 
 /**
@@ -15,24 +18,25 @@ interface RepairReviewProps {
 export function RepairReview({ runId }: RepairReviewProps): JSX.Element {
   if (runId === null) {
     return (
-      <section className="space-y-3">
-        <h1 className="text-xl font-semibold text-ink">수리 검토</h1>
-        <p className="text-ink-muted">
-          실행 화면에서 실패한 스위트의 수리를 시작하면 이 화면으로 이동합니다.
-        </p>
+      <section className="mx-auto max-w-[800px] space-y-6">
+        <PageHeader title="수리 검토" />
+        <Card>
+          <EmptyState
+            message="검토할 수리가 없습니다."
+            hint="실행 화면에서 실패한 스위트의 수리를 시작하면 이 화면으로 이동합니다."
+            action={{ href: "#/runs", label: "실패한 실행 고르기" }}
+          />
+        </Card>
       </section>
     );
   }
 
   return (
-    <section className="space-y-4">
-      <h1 className="text-xl font-semibold text-ink">
-        수리 검토 · <span className="font-mono">{runId}</span>
-      </h1>
-      <p className="text-sm text-ink-muted">
-        아래 로그는 CLI가 출력하는 것과 동일한 문장입니다. 승인·거부는 질문이 뜨면 답합니다.
-      </p>
-      <RunStreamPanel runId={runId} showRepairAction={false} />
-    </section>
+    <RunStreamPanel
+      runId={runId}
+      title="수리 검토"
+      description="아래 로그는 CLI가 출력하는 것과 동일한 문장입니다. 승인·거부는 질문이 뜨면 답합니다."
+      showRepairAction={false}
+    />
   );
 }

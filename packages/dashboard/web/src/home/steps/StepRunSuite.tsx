@@ -180,7 +180,7 @@ export function StepRunSuite(props: {
   return (
     <div className="space-y-4">
       <div className="space-y-2">
-        <p className="text-sm font-medium text-ink">이 서버의 스위트 ({matched.length})</p>
+        <h2 className="text-title font-semibold text-ink">이 서버의 스위트 ({matched.length})</h2>
         {matched.length === 0 ? (
           <p className="text-xs text-ink-muted">
             고른 서버의 스크립트 이름과 맞는 스위트가 없습니다. 아래 목록에서 고르세요.

@@ -44,9 +44,16 @@ function Card(props: {
 }): JSX.Element {
   return (
     <li>
+      {/*
+        **이름이 주인공이다**(#459). 예전에는 이름·배지·경로·명령줄이 같은 크기·같은 무게로
+        붙어 있어 목록을 훑어도 무엇이 무엇인지 걸리지 않았다. 이름만 한 단 굵고 크게 두고,
+        출처(배지·경로)와 명령은 한 단 약하게 내린다. 명령은 비교용이라 지우지 않는다.
+      */}
       <label
-        className={`flex cursor-pointer gap-3 rounded-md border px-3 py-2 ${
-          props.checked ? "border-accent bg-accent-soft" : "border-line bg-surface"
+        className={`flex cursor-pointer gap-3 rounded-md border px-3 py-2.5 transition-colors duration-150 ease-standard ${
+          props.checked
+            ? "border-accent bg-accent-soft"
+            : "border-line bg-surface hover:bg-line-subtle"
         }`}
       >
         <input
@@ -57,17 +64,21 @@ function Card(props: {
           disabled={props.disabled}
           onChange={props.onChoose}
         />
-        <span className="min-w-0 flex-1 space-y-1">
+        <span className="min-w-0 flex-1 space-y-0.5">
           <span className="flex items-baseline justify-between gap-3">
-            <span className="text-sm font-medium text-ink">{props.title}</span>
-            <span className="shrink-0 text-xs text-ink-muted">
-              <span className="rounded bg-line-subtle px-1.5 py-0.5">{props.badge}</span>
+            <span className="text-body font-semibold text-ink">{props.title}</span>
+            <span className="shrink-0 text-caption text-ink-muted">
+              <span className="rounded-sm border border-line px-1.5 py-px">{props.badge}</span>
               {props.path !== undefined && <span className="ml-1.5 font-mono">{props.path}</span>}
             </span>
           </span>
-          <span className="block break-all font-mono text-xs text-ink-muted">{props.subtitle}</span>
+          <span className="block break-all font-mono text-caption text-ink-muted">
+            {props.subtitle}
+          </span>
           {props.note !== undefined && (
-            <span className="block text-xs text-ink-muted">{props.note}</span>
+            <span className="block text-caption" style={{ color: "var(--status-waiting-fg)" }}>
+              {props.note}
+            </span>
           )}
         </span>
       </label>
@@ -111,8 +122,8 @@ export function ServerPicker(props: {
   return (
     <div className="space-y-2">
       <div className="flex items-baseline justify-between gap-3">
-        <p className="text-sm font-medium text-ink">서버</p>
-        <p className="text-xs text-ink-muted">프로젝트에서 {props.candidates.length}개 찾음</p>
+        <h2 className="text-title font-semibold text-ink">서버</h2>
+        <p className="text-caption text-ink-muted">프로젝트에서 {props.candidates.length}개 찾음</p>
       </div>
 
       {empty ? (

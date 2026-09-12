@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { PendingQuestion, RunEvent } from "../../src/api-types.js";
-import { countOutputLines } from "../src/output-lines.js";
+import { countOutputLines, outputText } from "../src/output-lines.js";
 
 let nextId = 1;
 
@@ -74,5 +74,25 @@ describe("countOutputLines", () => {
     // 이벤트가 1개이고, 이벤트를 세면 화면에 13줄이 보여도 "1줄" 이 된다.
     const output = ["테스트  (8 cases)", "", "✓ get-weather-success", "", "8 passed"].join("\n");
     expect(countOutputLines([stdout(`${output}\n`)])).toBe(5);
+  });
+});
+
+describe("outputText", () => {
+  it("색 span 을 벗기고 CLI 가 찍은 글자만 남긴다", () => {
+    expect(
+      outputText([stdout('<span class="ansi-32"><span class="ansi-1">✓</span></span> ok\n')]),
+    ).toBe("✓ ok\n");
+  });
+
+  it("서버가 이스케이프한 세 문자를 되돌린다", () => {
+    expect(outputText([stdout("a &lt;b&gt; &amp; c")])).toBe("a <b> & c");
+  });
+
+  it("`&amp;lt;` 는 `&lt;` 로 한 번만 풀린다 — 원문이 그 글자였다", () => {
+    expect(outputText([stdout("&amp;lt;")])).toBe("&lt;");
+  });
+
+  it("stdout 과 stderr 을 도착 순서대로 잇고 question·done 은 뺀다", () => {
+    expect(outputText([stdout("a\n"), question("계속?"), stderr("b\n"), done(1)])).toBe("a\nb\n");
   });
 });

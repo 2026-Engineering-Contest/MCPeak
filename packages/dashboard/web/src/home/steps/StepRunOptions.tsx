@@ -102,7 +102,7 @@ export function StepRunOptions(props: {
       />
 
       <div>
-        <p className="mb-2 text-sm font-medium text-ink">External 세션</p>
+        <h2 className="mb-2 text-title font-semibold text-ink">External 세션</h2>
         <fieldset className="inline-flex overflow-hidden rounded-md border border-line">
           {TEST_SESSION_MODES.map((mode) => (
             <button

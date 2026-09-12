@@ -245,6 +245,10 @@ describe("Replay 화면", () => {
     render(<ReplayView />);
 
     expect(await screen.findByText(/외부 호출 녹화/)).toBeTruthy();
+    // 컨트롤 이름만 적고 클릭은 주지 않던 자리다(#459).
+    expect(screen.getByRole("link", { name: /Test 로 가서 녹화하기/ }).getAttribute("href")).toBe(
+      "#/home",
+    );
   });
 
   it("상호작용이 없는 세션은 시각을 적지 않는다", async () => {

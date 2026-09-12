@@ -44,10 +44,32 @@ export function QuestionPanel(props: {
   }
 
   return (
-    <div className="space-y-3 rounded-lg border border-accent-border bg-accent-soft p-4 font-sans">
-      <p className="text-sm">
-        <span className="mr-2 text-xs font-semibold text-accent">질문</span>
-        <span className="font-medium text-ink">{question.message}</span>
+    // 터미널 카드 **아래** 따로 서는 카드다(#459). 예전에는 다크 터미널 안 바닥에 끼어 있어
+    // 로그와 같은 무게로 읽혔다. 답해야 하는 자리이므로 accent 면과 그림자로 떼어 둔다.
+    <div className="space-y-3 rounded-lg border border-accent-border bg-accent-soft p-4 font-sans shadow-card">
+      <p className="flex items-start gap-3">
+        <span
+          aria-hidden="true"
+          className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-surface text-accent"
+        >
+          {/* biome-ignore lint/a11y/noSvgWithoutTitle: 장식용 아이콘, 라벨 텍스트가 인접 */}
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M12 3v4M12 17v4M3 12h4M17 12h4M6.3 6.3l2.5 2.5M15.2 15.2l2.5 2.5M6.3 17.7l2.5-2.5M15.2 8.8l2.5-2.5" />
+          </svg>
+        </span>
+        <span className="min-w-0">
+          <span className="block text-caption font-semibold text-accent">질문</span>
+          <span className="block text-title font-medium text-ink">{question.message}</span>
+        </span>
       </p>
 
       {question.kind === "input" && (

@@ -11,6 +11,7 @@ import { apiGet, apiSend } from "../api.js";
 import { Button } from "../components/Button.js";
 import { Card } from "../components/Card.js";
 import { EmptyState } from "../components/EmptyState.js";
+import { Field, INPUT_CLASS } from "../components/Field.js";
 import { FlowChip } from "../components/FlowChip.js";
 import { LogPanel } from "../components/LogPanel.js";
 import { PageHeader } from "../components/PageHeader.js";
@@ -24,10 +25,6 @@ import { useRunEvents } from "../run-stream.js";
 import { parseRunTally } from "../run-tally.js";
 import type { RunTarget } from "../run-target.js";
 import { describeRun } from "../run-target.js";
-
-/** repair 폼 입력란 공통 클래스. 대시보드 테마를 그대로 따른다. */
-const REPAIR_INPUT_CLASS =
-  "w-full rounded border border-line bg-surface px-3 py-1.5 font-mono text-sm text-ink";
 
 /** 제목을 따로 받지 않은 실행 화면의 제목. flow 를 모르는 동안은 "실행" 이다. */
 const FLOW_TITLES: Record<RunSummary["flow"], string> = {
@@ -467,29 +464,24 @@ export function RunStreamPanel({
             void startRepair();
           }}
         >
-          <div className="space-y-1">
-            <label className="block text-sm font-medium text-ink" htmlFor="repair-bundle">
-              repair 번들 경로
-            </label>
+          <Field
+            label="repair 번들 경로"
+            htmlFor="repair-bundle"
+            hint="이 실행이 만든 번들입니다. 다른 번들을 쓰려면 경로를 바꾸세요."
+          >
             <input
               id="repair-bundle"
-              className={REPAIR_INPUT_CLASS}
+              className={`${INPUT_CLASS} font-mono`}
               value={bundlePath}
               placeholder="예: .mcpeak/repair-bundle.json"
               onChange={(event) => setBundlePath(event.target.value)}
             />
-            <p className="text-xs text-ink-muted">
-              이 실행이 만든 번들입니다. 다른 번들을 쓰려면 경로를 바꾸세요.
-            </p>
-          </div>
+          </Field>
 
-          <div className="space-y-1">
-            <label className="block text-sm font-medium text-ink" htmlFor="repair-provider">
-              provider
-            </label>
+          <Field label="provider" htmlFor="repair-provider">
             <select
               id="repair-provider"
-              className={REPAIR_INPUT_CLASS}
+              className={`${INPUT_CLASS} font-mono`}
               value={provider}
               onChange={(event) => {
                 setProvider(event.target.value === "codex" ? "codex" : "claude");
@@ -499,15 +491,14 @@ export function RunStreamPanel({
               <option value="claude">claude</option>
               <option value="codex">codex</option>
             </select>
-          </div>
+          </Field>
 
-          <div className="space-y-1">
-            <label className="block text-sm font-medium text-ink" htmlFor="repair-model">
-              model
-            </label>
+          {/* generate 의 모델 칸은 "(선택)" 인데 이 칸은 CLI 가 --model 을 요구한다.
+              같은 생김새의 칸이 화면마다 다르게 구는 것을 여기서 말해 준다(#354). */}
+          <Field label="model" htmlFor="repair-model" hint="repair 는 모델 지정이 필수입니다.">
             <select
               id="repair-model"
-              className={REPAIR_INPUT_CLASS}
+              className={`${INPUT_CLASS} font-mono`}
               value={model}
               onChange={(event) => setModel(event.target.value)}
             >
@@ -518,10 +509,7 @@ export function RunStreamPanel({
                 </option>
               ))}
             </select>
-            {/* generate 의 모델 칸은 "(선택)" 인데 이 칸은 CLI 가 --model 을 요구한다.
-                같은 생김새의 칸이 화면마다 다르게 구는 것을 여기서 말해 준다(#354). */}
-            <p className="text-xs text-ink-muted">repair 는 모델 지정이 필수입니다.</p>
-          </div>
+          </Field>
 
           <div className="flex items-center gap-2">
             {/* 폼 안이라 `type="submit"` 을 명시한다 — Button 의 기본값은 "button" 이다. */}

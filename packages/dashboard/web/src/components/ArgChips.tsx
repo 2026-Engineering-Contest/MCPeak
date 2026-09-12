@@ -1,7 +1,7 @@
 import type { JSX } from "react";
 import { useState } from "react";
-import { INPUT_CLASS } from "../generate/steps/fields.js";
 import { Button } from "./Button.js";
+import { INPUT_CLASS } from "./Field.js";
 
 /**
  * 서버 인자 칩 목록 + 하나씩 추가 입력.

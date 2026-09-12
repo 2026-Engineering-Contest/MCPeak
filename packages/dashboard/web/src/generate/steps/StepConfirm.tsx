@@ -1,7 +1,7 @@
 import type { JSX } from "react";
+import { Field, INPUT_CLASS, Toggle } from "../../components/Field.js";
 import type { GenerateForm } from "../build-argv.js";
 import { buildGenerateArgv } from "../build-argv.js";
-import { Field, INPUT_CLASS, Toggle } from "./fields.js";
 
 type ConfirmFields = Pick<GenerateForm, "dryRun" | "repair" | "resetCmd">;
 

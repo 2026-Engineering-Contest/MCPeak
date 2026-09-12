@@ -507,4 +507,17 @@ describe("GenerateWizard", () => {
       "examples/echo-server/server.mjs",
     ]);
   });
+
+  /** 홈 1단계와 같은 컴포넌트를 쓰므로 제목 위계도 같아야 한다. */
+  it("제목 위계: h1 은 '생성' 하나이고 1단계 묶음 제목은 접속 · 서버 h2 다", async () => {
+    await renderWizard([WEATHER]);
+
+    expect(screen.getAllByRole("heading", { level: 1 }).map((h) => h.textContent)).toEqual([
+      "생성",
+    ]);
+    expect(screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent)).toEqual([
+      "접속",
+      "서버",
+    ]);
+  });
 });

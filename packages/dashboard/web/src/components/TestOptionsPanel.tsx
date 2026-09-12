@@ -53,17 +53,24 @@ export function TestOptionsPanel(props: {
 
   return (
     <div className="rounded-md border border-line">
-      <button
-        type="button"
-        aria-expanded={props.open}
-        className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left"
-        onClick={props.onToggle}
-      >
-        <span className="text-sm font-medium text-ink">{props.open ? "▾" : "▸"} 테스트 옵션</span>
-        <span className="text-xs text-ink-muted">
-          {changed === 0 ? "기본값 · 바꾼 것 없음" : `${changed}개 바꿈`}
-        </span>
-      </button>
+      {/*
+        접이식 머리글은 제목이 버튼을 감싼다(WAI-ARIA 아코디언 관례). 크기와 굵기는 h2 에서 버튼으로
+        상속된다 — preflight 가 button 에 `font: inherit` 을 주기 때문이다. 그래서 요약은 `font-normal`
+        로 굵기를 되돌린다. 빼면 "기본값 · 바꾼 것 없음" 까지 제목처럼 굵어진다.
+      */}
+      <h2 className="text-title font-semibold text-ink">
+        <button
+          type="button"
+          aria-expanded={props.open}
+          className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left"
+          onClick={props.onToggle}
+        >
+          <span>{props.open ? "▾" : "▸"} 테스트 옵션</span>
+          <span className="text-caption font-normal text-ink-muted">
+            {changed === 0 ? "기본값 · 바꾼 것 없음" : `${changed}개 바꿈`}
+          </span>
+        </button>
+      </h2>
 
       {props.open && (
         <div className="space-y-5 border-t border-line px-3 py-3">

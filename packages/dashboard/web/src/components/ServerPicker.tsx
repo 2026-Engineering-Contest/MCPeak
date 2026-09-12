@@ -122,8 +122,8 @@ export function ServerPicker(props: {
   return (
     <div className="space-y-2">
       <div className="flex items-baseline justify-between gap-3">
-        <p className="text-sm font-medium text-ink">서버</p>
-        <p className="text-xs text-ink-muted">프로젝트에서 {props.candidates.length}개 찾음</p>
+        <h2 className="text-title font-semibold text-ink">서버</h2>
+        <p className="text-caption text-ink-muted">프로젝트에서 {props.candidates.length}개 찾음</p>
       </div>
 
       {empty ? (

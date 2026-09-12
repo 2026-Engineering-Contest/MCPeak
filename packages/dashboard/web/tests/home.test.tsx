@@ -746,4 +746,39 @@ describe("Home 실행 마법사", () => {
     });
     expect(postedArgv(fetchMock).slice(0, 3)).toEqual([SUITE, "--url", "https://example.test/mcp"]);
   });
+
+  /**
+   * 화면 제목은 `PageHeader` 의 h1 하나이고(#459), 카드 안에서 목록이나 여러 컨트롤을 묶는
+   * 머리글은 그 아래 단인 h2 다. 클래스가 아니라 헤딩 역할과 레벨로 잡는다.
+   */
+  it("제목 위계: h1 은 '테스트' 하나이고 1단계 묶음 제목은 접속 · 서버 h2 다", async () => {
+    stubFetch();
+    render(<Home />);
+    await screen.findByRole("radio", { name: /^weather/ });
+
+    expect(screen.getAllByRole("heading", { level: 1 }).map((h) => h.textContent)).toEqual([
+      "테스트",
+    ]);
+    expect(screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent)).toEqual([
+      "접속",
+      "서버",
+    ]);
+  });
+
+  it("2 · 3단계의 묶음 제목도 h2 다", async () => {
+    stubFetch();
+    render(<Home />);
+    await screen.findByRole("radio", { name: /^weather/ });
+    next();
+
+    expect(
+      await screen.findByRole("heading", { level: 2, name: "이 서버의 스위트 (2)" }),
+    ).toBeTruthy();
+
+    fireEvent.click(await screen.findByRole("radio", { name: SUITE }));
+    next();
+
+    expect(screen.getByRole("heading", { level: 2, name: "External 세션" })).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 2, name: /테스트 옵션/ })).toBeTruthy();
+  });
 });

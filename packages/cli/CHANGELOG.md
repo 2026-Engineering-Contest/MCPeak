@@ -1,5 +1,64 @@
 # ohmymcp
 
+## 0.12.0
+
+### Minor Changes
+
+- a1b3af5: `mcpeak test` 와 `mcpeak generate` 에 `--env <NAME>` 옵션을 더합니다. 부모 환경변수를 이름으로
+  지정하면 그 값을 `--command` 로 띄우는 서버 프로세스의 환경에 얹어 주므로, API 키가 필요한
+  서버를 `--arg` 나 `env` 래퍼 없이 붙일 수 있습니다. 값이 아니라 이름만 받는 이유는 명령줄에
+  쓴 토큰이 `ps` 목록과 셸 히스토리, 녹화 세션의 실행 출처에 그대로 남기 때문입니다.
+- 72fc934: `--record-session` 녹화가 스위트 경로·서버 명령·인자를 세션 파일에 함께 남깁니다(ADR-0085).
+  재생 쪽 CLI 표면은 바뀌지 않으며, 이 정보는 대시보드 Replay 가 원클릭 재생의 재료로 읽습니다.
+- b05cb58: 대시보드의 generate 검토 하위 입력에 `검토 메뉴로 돌아가기` 버튼을 추가합니다. 모델, AI 요청,
+  피드백, change 선택, JSON 편집 입력을 잘못 열어도 실행을 취소하지 않고 상위 검토 메뉴로 돌아갈
+  수 있습니다.
+- da8dcba: `tools/list`의 `outputSchema`를 생성 명세에 보존하고 정상 케이스의
+  `structuredContent`를 저장 당시 출력 계약으로 재검증합니다(#406). 서버가 선언과 응답 타입을
+  함께 바꿔도 기존 명세가 계약 변경을 탐지하며, 기대 계약·실제 값·위반 필드 경로를 별도 진단으로
+  표시합니다. 의미를 보존할 수 없는 출력 스키마는 단언을 만들지 않고 CLI에서 미검증 범위와 원인을
+  알립니다.
+- 5dc9d56: `repair` 가 시험 실행 없이 저장된 승인 명세를 정답으로 놓지 않습니다. 승인 지문 일치와 실제 서버
+  실행 기록을 별도로 봅니다. 실행 기록이 없으면(`--baseline-only`·`--no-dry-run` 으로 저장한 명세)
+  서버와 명세 양쪽 원인을 받고, 화면이 그 사실을 알립니다. 진단 프롬프트는 승인 시점 케이스 판정을
+  정확히 설명하며, `serverDefect` 케이스를 통과 이력이 있는 것으로 말하지 않습니다.
+
+  repair 번들 형식이 버전 2 가 됩니다. 이전 번들은 거절되므로 `mcpeak test --repair-bundle` 로 다시
+  만드세요.
+
+### Patch Changes
+
+- e2fd278: `generate --no-dry-run` 에서 AI 사전보완이 실제 도구를 호출하던 문제를 고칩니다(#397). 시험 실행을
+  끄면 사전보완도 건너뛰어 `callTool` 이 0회가 되고, 시험 실행이 켜진 경로의 전송 확인 화면은
+  제안을 받은 뒤 대상 케이스를 실제 서버에 실행한다는 사실을 적습니다.
+- a4937b2: 녹화 0건 알림이 기록자 경합을 원인으로 지목한다.
+
+  다른 프로세스가 먼저 세션의 기록을 시작해 이번 실행의 호출이 하나도 녹화되지 않은 경우,
+  지원 범위를 확인하라는 안내 대신 경합 사실과 녹화하지 못한 호출 수를 말한다. 녹화가 일부만
+  된 경우에도 몇 건이 다른 프로세스로 나가 빠졌는지 알린다.
+
+- 1e81d8a: 녹화 세션의 완료 여부를 테스트 판정이 아니라 어댑터 동작으로 정한다.
+- 1820384: 입력 스키마의 nullable `anyOf`/`oneOf` 필드를 값 갈래로 해석해 타입·enum·범위 축을 만든다 (#426)
+  `additionalProperties: false` 툴에 선언 밖 필드 거절을 검증하는 `UNDECLARED_FIELD` 축을 더한다 (#427)
+- Updated dependencies [41dabd8]
+- Updated dependencies [22009a6]
+- Updated dependencies [ca9d392]
+- Updated dependencies [cf00f83]
+- Updated dependencies [9076ec8]
+- Updated dependencies [38a3c04]
+- Updated dependencies [da8dcba]
+- Updated dependencies [6cc18f3]
+- Updated dependencies [b0a63f1]
+- Updated dependencies [5dc9d56]
+- Updated dependencies [e168fb1]
+- Updated dependencies [6fe6c3d]
+- Updated dependencies [1820384]
+  - @mcpeak/generate@0.8.0
+  - @mcpeak/mock@0.4.2
+  - @mcpeak/record@0.5.0
+  - @mcpeak/core@0.5.0
+  - @mcpeak/runner@0.11.0
+
 ## 0.11.0
 
 ### Minor Changes

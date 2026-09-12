@@ -1,5 +1,28 @@
 # @ohmymcp-hsu/runner
 
+## 0.11.0
+
+### Minor Changes
+
+- da8dcba: `tools/list`의 `outputSchema`를 생성 명세에 보존하고 정상 케이스의
+  `structuredContent`를 저장 당시 출력 계약으로 재검증합니다(#406). 서버가 선언과 응답 타입을
+  함께 바꿔도 기존 명세가 계약 변경을 탐지하며, 기대 계약·실제 값·위반 필드 경로를 별도 진단으로
+  표시합니다. 의미를 보존할 수 없는 출력 스키마는 단언을 만들지 않고 CLI에서 미검증 범위와 원인을
+  알립니다.
+- 6fe6c3d: 시험 실행 보고서의 요약 줄 앞에 실패·타임아웃 케이스만 모은 절이 나옵니다. 케이스가 수십 개인 서버에서
+  실패를 스크롤로 찾지 않아도 됩니다. 각 행은 케이스 id 와 그 케이스에 대해 화면이 이미 찍은
+  진단 줄 하나를 담고, 새 문안을 만들지 않습니다. 실패와 타임아웃이 0건이면 절 자체가 나오지
+  않으므로 전부 통과한 실행의 출력은 이전과 같습니다.
+- 1820384: 입력 스키마의 nullable `anyOf`/`oneOf` 필드를 값 갈래로 해석해 타입·enum·범위 축을 만든다 (#426)
+  `additionalProperties: false` 툴에 선언 밖 필드 거절을 검증하는 `UNDECLARED_FIELD` 축을 더한다 (#427)
+
+### Patch Changes
+
+- e168fb1: 결정론성 비교에서 긴 문자열의 공통 앞부분을 줄이고 실제로 갈라지는 지점 주변을 표시합니다(#447).
+  터미널 화면과 `--json`의 `determinism.differences`가 같은 차이 중심 값을 사용합니다.
+- Updated dependencies [da8dcba]
+  - @mcpeak/core@0.5.0
+
 ## 0.10.0
 
 ### Minor Changes

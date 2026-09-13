@@ -198,7 +198,11 @@ function valueMatchesConstraints(value: JsonValue, schema: JsonSchema, type: Sch
 }
 
 /**
- * 후보값이 스키마를 만족하는지. `active` 에는 해석 중인 `$ref` 대상 객체가 담긴다.
+ * 후보값이 스키마를 만족하는지.
+ *
+ * `fixtures` 경로(#390)가 픽스처 값을 같은 규칙으로 검증하려고 내보낸다. 두 벌을 만들면
+ * 합성값은 통과하고 픽스처 값은 거절되는(또는 그 반대의) 자리가 생긴다.
+ * `active` 에는 해석 중인 `$ref` 대상 객체가 담긴다.
  *
  * 값만 따라 내려가는 것으로는 부족하다. `{ $defs: { A: { $ref: "#/$defs/A" } } }` 처럼 값을
  * 소비하지 않고 도는 참조가 있으면 같은 값으로 무한히 재귀한다. 그러면 스택이 터지고, 그
@@ -206,7 +210,7 @@ function valueMatchesConstraints(value: JsonValue, schema: JsonSchema, type: Sch
  * 재방문을 여기서 false 로 끊어야 판정의 근거가 스택 한계가 아니게 된다. 합성 쪽이 같은
  * 자리에서 문안 6 으로 거절하는 것과 갈리는 점은, 후보 검사는 던지지 않는다는 것뿐이다.
  */
-function valueMatchesSchema(
+export function valueMatchesSchema(
   value: JsonValue,
   schema: JsonSchema,
   root: JsonSchema,

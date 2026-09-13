@@ -1,5 +1,110 @@
 # ohmymcp
 
+## 0.12.0
+
+### Minor Changes
+
+- eaa917e: generate 승인 화면에서 AI 에 가는 것은 이제 실패한 케이스뿐입니다. 통과한 거절 케이스의
+  근거 미확인 목록과 AI 진단 전송 확인이 기본 화면에서 빠지고, 몇 건을 확인하지 않았는지
+  알리는 한 줄만 남습니다.
+
+  예전처럼 목록과 AI 진단을 보려면 `mcpeak generate` 에 `--diagnose-rejections` 를 주세요.
+  `--no-dry-run` 과 함께 쓰면 확인할 거절이 없으므로 사용 오류로 알립니다.
+
+  AI 사전보완 요약은 baseline 값도 제안 값도 실패한 케이스를 `보류` 로 따로 셉니다. 그동안
+  그 케이스들이 `미채택 (baseline 값이 이미 통과)` 로 잘못 적혔습니다.
+
+- a1b3af5: `mcpeak test` 와 `mcpeak generate` 에 `--env <NAME>` 옵션을 더합니다. 부모 환경변수를 이름으로
+  지정하면 그 값을 `--command` 로 띄우는 서버 프로세스의 환경에 얹어 주므로, API 키가 필요한
+  서버를 `--arg` 나 `env` 래퍼 없이 붙일 수 있습니다. 값이 아니라 이름만 받는 이유는 명령줄에
+  쓴 토큰이 `ps` 목록과 셸 히스토리, 녹화 세션의 실행 출처에 그대로 남기 때문입니다.
+- 72fc934: `--record-session` 녹화가 스위트 경로·서버 명령·인자를 세션 파일에 함께 남깁니다(ADR-0085).
+  재생 쪽 CLI 표면은 바뀌지 않으며, 이 정보는 대시보드 Replay 가 원클릭 재생의 재료로 읽습니다.
+- b05cb58: 대시보드의 generate 검토 하위 입력에 `검토 메뉴로 돌아가기` 버튼을 추가합니다. 모델, AI 요청,
+  피드백, change 선택, JSON 편집 입력을 잘못 열어도 실행을 취소하지 않고 상위 검토 메뉴로 돌아갈
+  수 있습니다.
+- 625b9d6: 최종 명세를 초기 상태에서 전량 재실행해 검증하고 범위를 화면에 적는다
+- adfb2b4: 픽스처 파일을 읽고 자리값 때문에 실패한 케이스를 구분해 알린다
+- b3c8997: 교정한 값을 픽스처 파일에 저장한다
+- da8dcba: `tools/list`의 `outputSchema`를 생성 명세에 보존하고 정상 케이스의
+  `structuredContent`를 저장 당시 출력 계약으로 재검증합니다(#406). 서버가 선언과 응답 타입을
+  함께 바꿔도 기존 명세가 계약 변경을 탐지하며, 기대 계약·실제 값·위반 필드 경로를 별도 진단으로
+  표시합니다. 의미를 보존할 수 없는 출력 스키마는 단언을 만들지 않고 CLI에서 미검증 범위와 원인을
+  알립니다.
+- c51a4e8: repair 번들에 도구 계약·단언·대상·stderr 범위를 싣는다
+- 5dc9d56: `repair` 가 시험 실행 없이 저장된 승인 명세를 정답으로 놓지 않습니다. 승인 지문 일치와 실제 서버
+  실행 기록을 별도로 봅니다. 실행 기록이 없으면(`--baseline-only`·`--no-dry-run` 으로 저장한 명세)
+  서버와 명세 양쪽 원인을 받고, 화면이 그 사실을 알립니다. 진단 프롬프트는 승인 시점 케이스 판정을
+  정확히 설명하며, `serverDefect` 케이스를 통과 이력이 있는 것으로 말하지 않습니다.
+
+  repair 번들 형식이 버전 2 가 됩니다. 이전 번들은 거절되므로 `mcpeak test --repair-bundle` 로 다시
+  만드세요.
+
+- c1f9db9: 사전보완 후보를 같은 초기 상태에서 비교하고, 비교할 수 없으면 채택하지 않는다
+
+### Patch Changes
+
+- e2fd278: `generate --no-dry-run` 에서 AI 사전보완이 실제 도구를 호출하던 문제를 고칩니다(#397). 시험 실행을
+  끄면 사전보완도 건너뛰어 `callTool` 이 0회가 되고, 시험 실행이 켜진 경로의 전송 확인 화면은
+  제안을 받은 뒤 대상 케이스를 실제 서버에 실행한다는 사실을 적습니다.
+- 7f51354: generate 의 AI 사전보완 요약이 보류 케이스마다 제안 값과 서버 응답을 보류 줄 아래에
+  찍습니다. 그동안 `보류 N` 은 무엇을 보류했는지 말하지 않았습니다.
+
+  명세에 없는 케이스, callTool 이 아닌 케이스, 입력이 객체가 아닌 케이스에 붙은 제안은
+  어느 줄에도 세어지지 않고 조용히 버려졌습니다. 이제 `제외 1 (사유: caseId.field)` 로
+  한 줄씩 적습니다.
+
+- 052f0c7: generate 의 입력값 교정이 못 고칠 케이스를 거르고, 화면이 그 케이스의 실제 진단을 말한다.
+
+  - 호출 자체가 끝나지 못한 케이스(예: 서버 응답이 outputSchema 와 안 맞아 SDK 가 던지는 경우)는 교정 대상에서 빠진다. 전에는 대상에 올라, 어떤 입력값을 넣어도 못 고치는 케이스를 사용자에게 세 번 묻고 세 번 실패시키면서 "입력값이 거절된 것으로 보입니다" 라고 틀린 원인을 가르쳤다. 판정은 렌더된 문자열이 아니라 `operation.status` 로 한다.
+  - 그런 실패는 교정 목록보다 먼저 `교정 대상이 아닌 실패 N건 (호출 자체가 실패했습니다. 입력값 문제가 아닙니다)` 로 서버 사유와 함께 고지된다. `--no-repair` 면 이 고지도 안 나온다.
+  - 교정 머리줄이 `[1/4]` 형식이 되고, 둘째 줄이 고정 문장이 아니라 그 케이스의 실제 실패 줄이다. 서버가 낸 위반 줄을 화살표 줄로 함께 적는다.
+  - 필드 질문이 제안 유무와 무관하게 한 형식이 된다. `get_weather.city (필드 1/1, string, 현재 "example", 엔터 = 제안 값 "서울"): ` 처럼 툴 이름과 진행도를 함께 적는다.
+
+- a4937b2: 녹화 0건 알림이 기록자 경합을 원인으로 지목한다.
+
+  다른 프로세스가 먼저 세션의 기록을 시작해 이번 실행의 호출이 하나도 녹화되지 않은 경우,
+  지원 범위를 확인하라는 안내 대신 경합 사실과 녹화하지 못한 호출 수를 말한다. 녹화가 일부만
+  된 경우에도 몇 건이 다른 프로세스로 나가 빠졌는지 알린다.
+
+- 1c36862: 커버리지 화면이 범위 축의 상한·하한을 구분해 찍는다
+- 1e81d8a: 녹화 세션의 완료 여부를 테스트 판정이 아니라 어댑터 동작으로 정한다.
+- 1820384: 입력 스키마의 nullable `anyOf`/`oneOf` 필드를 값 갈래로 해석해 타입·enum·범위 축을 만든다 (#426)
+  `additionalProperties: false` 툴에 선언 밖 필드 거절을 검증하는 `UNDECLARED_FIELD` 축을 더한다 (#427)
+- 3b3a48e: 미해석 필드에 사유를 함께 찍는다
+- c39c6d5: 읽을 수 없는 경로의 미해석 사유를 화면에 찍는다
+- 269d56e: 밟지 않은 정상 분기를 커버리지 화면에 적는다
+- Updated dependencies [2b9751e]
+- Updated dependencies [41dabd8]
+- Updated dependencies [22009a6]
+- Updated dependencies [ca9d392]
+- Updated dependencies [cf00f83]
+- Updated dependencies [9076ec8]
+- Updated dependencies [c594310]
+- Updated dependencies [81c2828]
+- Updated dependencies [38a3c04]
+- Updated dependencies [008e6b8]
+- Updated dependencies [c39c6d5]
+- Updated dependencies [da8dcba]
+- Updated dependencies [e6a8c84]
+- Updated dependencies [a4d62e5]
+- Updated dependencies [6cc18f3]
+- Updated dependencies [b0a63f1]
+- Updated dependencies [5dc9d56]
+- Updated dependencies [e168fb1]
+- Updated dependencies [6fe6c3d]
+- Updated dependencies [1820384]
+- Updated dependencies [2fd15f0]
+- Updated dependencies [f51eab0]
+- Updated dependencies [45f8b05]
+- Updated dependencies [269d56e]
+- Updated dependencies [c6b86a0]
+  - @mcpeak/generate@0.8.0
+  - @mcpeak/mock@0.4.2
+  - @mcpeak/runner@0.11.0
+  - @mcpeak/record@0.5.0
+  - @mcpeak/core@0.5.0
+
 ## 0.11.0
 
 ### Minor Changes

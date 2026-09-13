@@ -2389,6 +2389,15 @@ describe("generate 시험 실행 게이트", () => {
   interface GateOptions {
     readonly choices: string[];
     readonly inputs?: string[];
+    /**
+     * `io.confirm` 이 순서대로 돌려줄 답. **인덱스가 곧 질문이다.** save 경로의 순서는
+     * `[시험 실행 계속, 최종 전량 재검증, 저장]` 이다(#399 이 가운데 하나를 더했다).
+     * 분류 질문이 끼는 경로는 그만큼 앞으로 밀린다.
+     *
+     * 순서가 바뀌면 이 배열은 조용히 다른 질문에 답하고 테스트는 그대로 녹색이 된다. 그것을
+     * 막으려고 `재검증만 거절하면 저장은 된다` 가 세 번째 자리를 `false` 로 고정한다.
+     * 그 테스트가 빨강이면 순서가 바뀐 것이다.
+     */
     readonly confirms?: boolean[];
     /** 인메모리 서버. 기본은 항상 정상 응답이라 위반 케이스가 실패한다. */
     readonly respond?: (name: string, args: unknown, call: number) => ToolResult;
@@ -2521,6 +2530,33 @@ describe("generate 시험 실행 게이트", () => {
     };
   }
 
+  /**
+   * fixture B. **단독으로는 통과하지만 순서대로 돌리면 실패하는 서버**(이슈 #399).
+   *
+   * `call` 은 그 툴의 **누적 호출 횟수**다(gateDeps 가 세어 넘긴다). `boundary` 번째 호출부터
+   * 실패한다. 초기화가 없으면 카운터가 안 돌아가므로, 전량 실행의 뒤쪽 케이스가 앞 케이스의
+   * 호출 때문에 실패한다.
+   *
+   * 합집합만 쓰면 이 실패를 못 잡는다. 개별 재실행은 늘 첫 호출이라 통과하기 때문이다.
+   * 그것이 이 태스크의 존재 이유다.
+   */
+  const failsAfter =
+    (boundary: number) =>
+    (_name: string, _args: unknown, call: number): ToolResult =>
+      call < boundary
+        ? {
+            content: [{ type: "text", text: JSON.stringify({ temp: 20 }) }],
+            isError: false,
+            raw: { temp: 20 },
+          }
+        : {
+            content: [
+              { type: "text", text: JSON.stringify({ error: "상태가 이미 바뀌었습니다." }) },
+            ],
+            isError: true,
+            raw: { error: true },
+          };
+
   /** 이 툴 선언으로 baseline 이 만드는 케이스. 숫자를 테스트에 박지 않는다. */
   const baselineCases = createBaselineSuite(gateTools, {
     suiteId: "weather",
@@ -2532,6 +2568,139 @@ describe("generate 시험 실행 게이트", () => {
       (assertion) => assertion.type === "isError" && assertion.expected === true,
     ),
   ).length;
+
+  describe("최종 전량 재검증 (#399)", () => {
+    /** 분류 답. 위반 케이스는 전부 serverDefect 로 넘겨 저장까지 간다. */
+    const classify = () => Array.from({ length: failingCases }, () => "s");
+
+    it("합집합만 쓰면 못 잡는 실패를 잡는다", async () => {
+      // **이 테스트가 이 태스크의 존재 이유다.**
+      //
+      // 정상 케이스는 첫 호출에서 통과한다. 그 뒤 호출부터 서버가 실패를 낸다. 전량을
+      // 순서대로 돌리면 뒤쪽 케이스가 앞 케이스의 호출 때문에 실패한다. 합집합(원래 실행 +
+      // 개별 통과)만 보면 이 실패가 안 보인다.
+      const d = gateDeps({
+        choices: ["save", "cancel"],
+        inputs: classify(),
+        confirms: [true, true, true],
+        respond: failsAfter(1),
+      });
+      await runGenerateCommand(gateArgv, d.value);
+      expect(d.savedSuite()).toBeUndefined();
+      expect(d.output()).toContain("최종 전량 실행에서");
+      expect(d.output()).toContain("순서대로 돌리면 실패합니다");
+    });
+
+    it("재검증 전에 초기화를 부르고 케이스 사이에는 안 부른다", async () => {
+      // 스위트 경계에서만이다. 스위트 안의 케이스 순서는 의미가 있어서(앞 케이스가 만든 것을
+      // 뒤 케이스가 읽는 명세를 사람이 쓸 수 있다) 매 케이스마다 초기화하면 우리가 검증한
+      // 것이 사용자가 나중에 실행할 것과 달라진다.
+      const resets: (string | undefined)[] = [];
+      const d = gateDeps({
+        choices: ["save"],
+        inputs: classify(),
+        confirms: [true, true, true],
+      });
+      d.value.attemptReset = async (resetCmd) => {
+        resets.push(resetCmd);
+        return { grade: "commandOnly" as const };
+      };
+      await runGenerateCommand(gateArgv, d.value);
+      // 사전보완은 이 경로에 없다(provider 미지정). 최종 재검증 하나뿐이다.
+      expect(resets).toHaveLength(1);
+      // 케이스마다 불렀으면 케이스 수만큼이다. 그 수가 1 보다 큰 것을 함께 못 박아, 이 단언이
+      // 우연히 같은 값이 되어 통과하는 일을 막는다.
+      expect(baselineCases.length).toBeGreaterThan(1);
+      expect(resets).not.toHaveLength(baselineCases.length);
+      // resetCmd 를 안 준 실행이므로 그대로 undefined 가 넘어간다.
+      expect(resets[0]).toBeUndefined();
+    });
+
+    it("질문은 runDryRun 전에 한다", async () => {
+      // 거절하면 재검증 실행이 아예 없다. 부른 뒤에 묻는 자리가 하나라도 있으면 #397 의
+      // 경계가 무너진다. 시험 실행 전량만 돌고 재검증분은 안 돈다.
+      const d = gateDeps({
+        choices: ["save"],
+        inputs: classify(),
+        confirms: [true, false, true],
+      });
+      await runGenerateCommand(gateArgv, d.value);
+      expect(d.calls).toHaveLength(baselineCases.length);
+    });
+
+    it("재검증만 거절하면 저장은 된다", async () => {
+      // **세 번째 자리가 재검증이라는 것을 단언으로 고정한다.** 질문 순서가 바뀌면 이 테스트가
+      // 빨강이 된다. 그리고 사용자가 부작용을 알고 거절한 것을 우리가 저장 실패로 바꾸지 않는다.
+      const d = gateDeps({
+        choices: ["save"],
+        inputs: classify(),
+        confirms: [true, false, true],
+      });
+      await expect(runGenerateCommand(gateArgv, d.value)).resolves.toBe(0);
+      expect(d.savedSuite()).toBeDefined();
+      expect(d.output()).toContain("최종 전량 재검증을 하지 않았습니다");
+      expect(d.output()).toContain("`mcpeak test` 로 전체를 한 번 실행해 확인하세요");
+    });
+
+    it("확인 화면이 등급과 케이스 수를 적는다", async () => {
+      const d = gateDeps({
+        choices: ["save"],
+        inputs: classify(),
+        confirms: [true, true, true],
+      });
+      await runGenerateCommand(gateArgv, d.value);
+      const output = d.output();
+      expect(output).toContain("최종 명세를 처음부터 다시 실행해 검증합니다.");
+      expect(output).toContain(`실행할 케이스: ${baselineCases.length}건 (실제 서버 호출입니다)`);
+      // 초기화 수단이 없으면 그 사실도 적는다. 확인이 얼마나 강한지 말한다.
+      expect(output).toContain("초기 상태: 초기화 수단이 없습니다.");
+    });
+
+    it("--no-dry-run 이면 재검증도 초기화도 없다", async () => {
+      const resets: unknown[] = [];
+      const d = gateDeps({ choices: ["save"], confirms: [true, true] });
+      d.value.attemptReset = async () => {
+        resets.push(1);
+        return { grade: "commandOnly" as const };
+      };
+      await expect(runGenerateCommand([...gateArgv, "--no-dry-run"], d.value)).resolves.toBe(0);
+      expect(resets).toHaveLength(0);
+      expect(d.calls).toHaveLength(0);
+      expect(d.output()).not.toContain("최종 명세를 처음부터 다시 실행해 검증합니다.");
+    });
+  });
+
+  describe("검증 범위 화면 (#399)", () => {
+    const classify = () => Array.from({ length: failingCases }, () => "s");
+
+    it("전량 재검증을 했으면 그렇게 찍는다", async () => {
+      const d = gateDeps({ choices: ["save"], inputs: classify(), confirms: [true, true, true] });
+      await runGenerateCommand(gateArgv, d.value);
+      expect(d.output()).toContain(
+        `  검증 범위: ${baselineCases.length}건을 최종 전량 실행에서 확인했습니다.`,
+      );
+    });
+
+    it("안 했으면 개별 확인 건수와 안내를 찍는다", async () => {
+      const d = gateDeps({ choices: ["save"], inputs: classify(), confirms: [true, false, true] });
+      await runGenerateCommand(gateArgv, d.value);
+      expect(d.output()).toContain(
+        `  검증 범위: ${baselineCases.length}건은 개별 실행에서만 확인했습니다. 전량 재검증을 하지 않았습니다.`,
+      );
+    });
+
+    it("저장된 명세 파일에 새 키가 하나도 안 생긴다", async () => {
+      // **이 테스트가 §1 의 존재 이유다.** runner 의 spec/validation.ts 가 approval.cases[] 를
+      // ["id","status"] 로, approval 자신을 ["fingerprint","cases"] 로 막는다. 검증 범위를
+      // 명세에 실으면 우리가 저장한 파일을 우리 검증기가 거절한다. 화면에만 남긴다.
+      const d = gateDeps({ choices: ["save"], inputs: classify(), confirms: [true, true, true] });
+      await runGenerateCommand(gateArgv, d.value);
+      const saved = d.savedSuite();
+      expect(saved).toBeDefined();
+      expect(validateMcpSuite(saved).valid).toBe(true);
+      expect(JSON.stringify(saved)).not.toContain("verification");
+    });
+  });
 
   /**
    * 거절 근거 미확인 목록 (#89 · 설계 문서 §5.2). 문안이 곧 제품이라 글자 그대로 못 박는다.
@@ -2990,7 +3159,7 @@ describe("generate 시험 실행 게이트", () => {
     const d = gateDeps({
       choices: ["save"],
       inputs: Array.from({ length: failingCases }, () => "s"),
-      confirms: [true, true],
+      confirms: [true, true, true],
     });
     await expect(runGenerateCommand(gateArgv, d.value)).resolves.toBe(0);
     const cases = d.savedSuite()?.approval.cases ?? [];
@@ -3029,7 +3198,7 @@ describe("generate 시험 실행 게이트", () => {
     const d = gateDeps({
       choices: ["save"],
       inputs: Array.from({ length: failingCases }, () => "s"),
-      confirms: [true, true],
+      confirms: [true, true, true],
     });
     await runGenerateCommand(gateArgv, d.value);
     const cases = d.savedSuite()?.approval.cases ?? [];
@@ -3138,7 +3307,7 @@ describe("generate 시험 실행 게이트", () => {
     const d = gateDeps({
       choices: ["save"],
       inputs: Array.from({ length: failingCases }, () => "s"),
-      confirms: [true, true],
+      confirms: [true, true, true],
     });
     await runGenerateCommand(gateArgv, d.value);
     const saved = d.savedSuite();
@@ -3154,7 +3323,7 @@ describe("generate 시험 실행 게이트", () => {
     const d = gateDeps({
       choices: ["save"],
       inputs: Array.from({ length: failingCases }, () => "s"),
-      confirms: [true, true],
+      confirms: [true, true, true],
     });
     await expect(runGenerateCommand(gateArgv, d.value)).resolves.toBe(0);
     expect(d.value.link).toHaveBeenCalledOnce();
@@ -3302,7 +3471,7 @@ describe("generate 시험 실행 게이트", () => {
       const d = gateDeps({
         choices: ["save"],
         inputs: ["서울"],
-        confirms: [true, true],
+        confirms: [true, true, true],
         respond: onlyAccepts("서울"),
       });
       await runGenerateCommand(gateArgv, d.value);
@@ -3315,7 +3484,7 @@ describe("generate 시험 실행 게이트", () => {
       const d = gateDeps({
         choices: ["save"],
         inputs: ["서울"],
-        confirms: [true, true],
+        confirms: [true, true, true],
         respond: onlyAccepts("서울"),
       });
       await runGenerateCommand(gateArgv, d.value);
@@ -3356,7 +3525,7 @@ describe("generate 시험 실행 게이트", () => {
       const d = gateDeps({
         choices: ["save"],
         inputs: ["s"],
-        confirms: [true, true],
+        confirms: [true, true, true],
         respond: onlyAccepts("서울"),
       });
       await expect(runGenerateCommand([...gateArgv, "--no-repair"], d.value)).resolves.toBe(0);
@@ -3478,12 +3647,16 @@ describe("generate 시험 실행 게이트", () => {
       const d = gateDeps({
         choices: ["save"],
         inputs: ["서울"],
-        confirms: [true, true],
+        confirms: [true, true, true],
         respond: onlyAccepts("서울"),
       });
       await runGenerateCommand(gateArgv, d.value);
-      // 시험 실행 전량 + 재실행 1건. 스위트를 통째로 다시 돌리면 이 값이 두 배가 된다.
-      expect(d.calls).toHaveLength(baselineCases.length + 1);
+      // 시험 실행 전량 + 교정 재실행 1건 + 최종 전량 재검증(#399).
+      //
+      // 이 테스트가 지키는 것은 **교정 재실행이 케이스 하나짜리 스위트**라는 것이다. 그것이
+      // 전량이 되면 이 값이 baselineCases.length 만큼 더 늘어난다. 최종 재검증은 스위트
+      // 경계에서 한 번 도는 것이 사양이라 전량으로 세는 것이 맞다.
+      expect(d.calls).toHaveLength(baselineCases.length + 1 + baselineCases.length);
     });
 
     it("provenance 가 user 인 케이스는 교정 대상이 아니다", async () => {
@@ -3590,7 +3763,7 @@ describe("generate 시험 실행 게이트", () => {
         baseline: bodySchemaBaseline(),
         providers: proposingProvider("부산"),
         inputs: ["", "대전", "s"],
-        confirms: [true, true, true],
+        confirms: [true, true, true, true],
         respond: onlyAccepts("서울"),
       });
       await runGenerateCommand(proposalArgv, d.value);
@@ -3625,7 +3798,7 @@ describe("generate 시험 실행 게이트", () => {
       const d = gateDeps({
         choices: ["save"],
         inputs: ["서울"],
-        confirms: [true, true],
+        confirms: [true, true, true],
         respond: onlyAccepts("서울"),
       });
       await runGenerateCommand(gateArgv, d.value);

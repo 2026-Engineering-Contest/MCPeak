@@ -46,12 +46,15 @@ describe("buildViolationCases", () => {
         name: "get_weather가 필수 필드 'city' 누락을 거절한다",
         operation: { type: "callTool", tool: "get_weather", input: {} },
         assertions: [{ type: "isError", expected: true }],
+        // 위반 케이스는 사전보완이 애초에 안 고르므로 고정할 필드가 없다(#401).
+        pinnedFields: [],
       },
       {
         id: "get-weather-type-city",
         name: "get_weather가 'city' 타입 위반을 거절한다",
         operation: { type: "callTool", tool: "get_weather", input: { city: 0 } },
         assertions: [{ type: "isError", expected: true }],
+        pinnedFields: [],
       },
     ]);
   });
@@ -118,6 +121,7 @@ describe("buildViolationCases", () => {
         name: "t가 'n' 타입 위반을 거절한다",
         operation: { type: "callTool", tool: "t", input: { n: 1.5 } },
         assertions: [{ type: "isError", expected: true }],
+        pinnedFields: [],
       },
     ]);
   });

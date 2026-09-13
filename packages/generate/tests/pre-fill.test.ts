@@ -93,6 +93,8 @@ const requestFor = (tools: readonly ToolDef[]) => {
     tools,
     provenance: result.provenance,
     baseline: result.suite,
+    // 실제 배선과 같게 넘긴다. 고정 필드는 assistFields 에서 빠진다(#401 설계서 §5.5).
+    pinnedFieldsByCase: result.pinnedFieldsByCase,
   });
 };
 
@@ -108,14 +110,20 @@ describe("preparePreFillRequest", () => {
 
   it("정상 경로 케이스만 싣는다", () => {
     const request = requestFor([needsHelp]);
-    // 상한 경계 정상 케이스가 생겨 툴당 정상 경로 케이스가 둘이다(#387). count 가
-    // minimum·maximum 을 함께 선언해 bound-upper 케이스가 따라온다. 위반 케이스는 여전히 없다.
-    expect(request?.cases).toHaveLength(2);
+    // 파생 정상 케이스가 늘어 툴당 정상 경로 케이스가 셋이다. count 의 상한 경계(#387)와
+    // unit 의 enum 분기(#401)다. 순서는 스위트 순서, 즉 기준 → 상한 경계 → 분기다.
+    // 위반 케이스는 여전히 없다.
+    expect(request?.cases).toHaveLength(3);
     expect(request?.cases.map((item) => item.caseId)).toEqual([
       "needs-help-success",
       "needs-help-bound-upper-count",
+      "needs-help-branch-enum-unit-2",
     ]);
-    expect(request?.cases.map((item) => item.tool)).toEqual(["needs-help", "needs-help"]);
+    expect(request?.cases.map((item) => item.tool)).toEqual([
+      "needs-help",
+      "needs-help",
+      "needs-help",
+    ]);
   });
 
   it("근거 없는 필드만 assistFields 에 담는다", () => {
@@ -242,10 +250,10 @@ describe("validatePreFillResult", () => {
   it("여러 제안의 순서가 요청 케이스 순서를 따른다", () => {
     const two = requestFor([needsHelp, { ...needsHelp, name: "needs-help-2" }]);
     if (two === null) throw new Error("요청이 만들어져야 한다");
-    const ids = two.cases.map((item) => item.caseId);
-    // 툴당 정상 경로 케이스가 둘이 되어(#387 의 상한 경계 정상 케이스) ids 는 넷이다.
-    // 확인하려는 것은 툴 순서이므로 툴마다 첫 케이스 하나씩, 즉 ids[0] 과 ids[2] 를 집는다.
-    const [first, second] = [ids[0], ids[2]];
+    // 확인하려는 것은 툴 순서다. 툴당 케이스 수는 파생 케이스가 늘 때마다 바뀌므로 개수에
+    // 기대지 않고 툴마다 첫 케이스를 집는다.
+    const firstCaseOf = (tool: string) => two.cases.find((item) => item.tool === tool)?.caseId;
+    const [first, second] = [firstCaseOf("needs-help"), firstCaseOf("needs-help-2")];
     if (first === undefined || second === undefined) throw new Error("툴이 둘이어야 한다");
     const result = validatePreFillResult(
       { proposals: [wire(second, "timezone", "UTC"), wire(first, "timezone", "Asia/Seoul")] },

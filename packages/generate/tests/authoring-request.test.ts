@@ -95,9 +95,14 @@ const cleanProviderSuite = () =>
  * 2026-08-15 에 값이 한 번 갈렸다. baseline 정책이 v2 로 올라 툴당 케이스가 정상 1개에서
  * 정상 1개 + 위반 N개로 늘었기 때문이다(ADR-0022). suite 내용이 바뀌었으니 지문이 바뀌는 것이
  * 정상이다. 위 계약이 깨진 것이 아니다. 값은 손으로 계산하지 않고 실제 실행 결과를 넣었다.
+ *
+ * 2026-09-13 에 또 갈렸다. 정상 입력의 분기를 케이스로 만들기 시작해 baseline 케이스 수가
+ * 늘었다(#401). 여기 쓰는 weather 툴의 city 가 선택 필드라 '있음' 케이스가 붙는다. 이번에도
+ * 위 계약이 깨진 것이 아니다. 내부 필드가 payload 에 실려서 바뀐 것이 아님은 바로 위의
+ * "provider 요청에 pinnedFields 가 실리지 않는다" 가 따로 지킨다.
  */
 const KNOWN_PROVIDER_FINGERPRINT =
-  "54c9288ac9c17b57efc18c5bb2c1819052d79ecfdc0980895d5a4f81e54ec7d3";
+  "a5b2ff155d3622d615ce5cfff4fc0f09d988190946aabb35cef2a0e114bb2751";
 
 describe("authoring request", () => {
   it("initial 요청은 baseline을 candidate로 고정한다", () => {
@@ -839,6 +844,34 @@ describe("authoring request", () => {
     });
     if (result.status !== "preview") throw new Error(`preview 가 아니다: ${result.status}`);
     expect(result.preview.specFindings.inputContract.findings).toEqual([]);
+  });
+
+  it("provider 요청에 pinnedFields 가 실리지 않는다", () => {
+    // pinnedFields 는 우리 생성 단계 안에서만 사는 필드다(#401). provider 로 나가면 내부 사정이
+    // AI 에게 새는 것이고, toSuiteCase 가 닿지 않는 경계가 있다는 뜻이다.
+    //
+    // 아래 KNOWN_PROVIDER_FINGERPRINT 가 바뀌었을 때 "케이스가 늘어서" 인지 "내부 필드가 실려서"
+    // 인지 가르는 것이 이 단언이다. 지문 상수는 케이스가 늘 때마다 또 바뀌지만 이쪽은 계속 유효하다.
+    const pinnedTools: ToolDef[] = [
+      {
+        name: "convert",
+        inputSchema: {
+          type: "object",
+          required: ["unit"],
+          properties: { unit: { type: "string", enum: ["celsius", "fahrenheit", "kelvin"] } },
+        },
+      },
+    ];
+    const generated = createBaselineSuite(pinnedTools, { suiteId: "c", suiteName: "c" });
+    // 전제를 먼저 고정한다. 이 선언이 고정 필드를 하나도 안 만들면 아래 단언이 아무것도 안 지킨다.
+    expect(Object.keys(generated.pinnedFieldsByCase).length).toBeGreaterThan(0);
+    const preview = prepareAuthoringRequest({
+      ...options(),
+      baseline: generated.suite,
+      candidate: generated.suite,
+      tools: pinnedTools,
+    });
+    expect(JSON.stringify(preview.request)).not.toContain("pinnedFields");
   });
 
   it("specFindings 는 provider candidate 의 fingerprint 를 바꾸지 않는다", async () => {

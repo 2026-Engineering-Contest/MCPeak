@@ -64,6 +64,14 @@ export interface PreFillCase {
    * 이 목록 밖 필드를 가리킨 제안은 버린다(설계서 §4.3).
    */
   readonly assistFields: readonly string[];
+  /**
+   * 이 케이스를 이 케이스이게 하는 필드(설계서 §5.5). `assistFields` 에서 이미 빠져 있고,
+   * 그래도 자발적으로 온 제안은 전용 사유와 함께 버린다.
+   *
+   * 선택적이다. 이 함수들은 public export 라 손으로 만든 요청이 들어올 수 있고, 그때는
+   * 고정 필드 정보가 없다. 없다고 제안을 전부 버리면 사전보완이 죽는다.
+   */
+  readonly pinnedFields?: readonly string[];
 }
 
 /**
@@ -208,6 +216,14 @@ export function preparePreFillRequest(options: {
   readonly provenance: readonly ToolProvenance[];
   readonly baseline: TestSuiteSpec;
   readonly redaction?: RunnerRedactionOptions;
+  /**
+   * `createBaselineSuite` 의 `pinnedFieldsByCase`. 그 필드는 AI 에게 묻지 않는다(설계서 §5.5).
+   *
+   * `TestSuiteSpec` 에는 이 정보가 없다. runner 공개 타입이라 키를 더할 수 없어서 케이스 밖
+   * 맵으로 받는다. 안 넘어오면 종전대로 전부 묻는다. 손으로 쓴 명세에는 이 정보가 없고,
+   * 없다고 전부 막으면 사전보완이 죽는다.
+   */
+  readonly pinnedFieldsByCase?: Readonly<Record<string, readonly string[]>>;
 }): PreFillRequest | null {
   const assisted = new Set(
     options.provenance.filter((item) => item.needsAssist).map((item) => item.tool),
@@ -227,8 +243,15 @@ export function preparePreFillRequest(options: {
     if (tool === undefined) continue;
     const input = testCase.operation.input;
     if (!plainObject(input)) continue;
+    // 고정 필드는 아예 묻지 않는다. 버리는 것보다 안 묻는 것이 싸고, provider 가 "고쳐 달라는
+    // 자리" 를 정확히 본다. 프로토타입을 타지 않게 hasOwn 으로 읽는다.
+    const pinnedMap = options.pinnedFieldsByCase;
+    const pinnedFields =
+      pinnedMap !== undefined && Object.hasOwn(pinnedMap, testCase.id)
+        ? (pinnedMap[testCase.id] ?? [])
+        : [];
     const assistFields = Object.keys(input)
-      .filter((field) => fieldNeedsAssist(tool.inputSchema, field))
+      .filter((field) => fieldNeedsAssist(tool.inputSchema, field) && !pinnedFields.includes(field))
       .sort(byCodeUnit);
     // 채울 곳이 없는 케이스는 싣지 않는다. 실으면 provider 가 고칠 것이 없는 케이스를 받는다.
     if (assistFields.length === 0) continue;
@@ -237,6 +260,7 @@ export function preparePreFillRequest(options: {
       tool: tool.name,
       input: input as Readonly<Record<string, JsonValue>>,
       assistFields,
+      pinnedFields,
     });
     usedTools.add(tool.name);
   }
@@ -452,6 +476,13 @@ const DISCARD_REASON = {
   declaredField: "근거 있는 값을 덮어쓰려 해서 버렸습니다",
   violatesSchema: "제안 값이 서버 선언을 어깁니다",
   shape: "제안의 모양이 요청 스키마와 다릅니다",
+  /**
+   * 고정 필드 제안. 이 경로는 거의 안 탄다. 고정 필드는 `assistFields` 에서 이미 빠져 있어
+   * provider 가 자발적으로 제안할 때만 온다. 그래도 남긴다. 조용히 버리면 사용자는 왜 그
+   * 필드가 안 채워졌는지 알 수 없고, 케이스가 계속 실패하는 이유를 엉뚱한 데서 찾는다.
+   */
+  pinnedField: (field: string, value: JsonValue): string =>
+    `이 케이스는 '${field}' 을 ${JSON.stringify(value)} 로 고정해 분기를 검증합니다. 값을 바꾸면 검증이 사라집니다.`,
 } as const;
 
 /**
@@ -543,6 +574,16 @@ export function validatePreFillResult(raw: unknown, request: PreFillRequest): Pr
     }
     if (!Object.hasOwn(target.input, field)) {
       discarded.push({ caseId, field, reason: DISCARD_REASON.unknownField });
+      continue;
+    }
+    // 고정 필드 검사가 assistFields 검사보다 먼저다. 고정 필드는 assistFields 에서 빠져 있어
+    // 순서를 바꾸면 "근거 있는 값" 이라는 엉뚱한 사유가 나간다.
+    if (target.pinnedFields?.includes(field) === true) {
+      discarded.push({
+        caseId,
+        field,
+        reason: DISCARD_REASON.pinnedField(field, target.input[field] ?? null),
+      });
       continue;
     }
     if (!target.assistFields.includes(field)) {

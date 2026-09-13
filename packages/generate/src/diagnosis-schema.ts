@@ -19,6 +19,16 @@ export interface DiagnosisFailure {
 }
 
 export interface DiagnosisProcessDiagnostics {
+  /**
+   * 이 stderr 가 무엇의 것인지. 지금은 항상 "suite" 다. 프로세스 전체의 꼬리이지 특정
+   * 케이스의 것이 아니다.
+   *
+   * 값이 하나뿐인 유니온으로 둔다. 나중에 케이스별 수집이 생기면 "case" 가 늘고, 그때 낡은
+   * 번들은 형식 버전으로 걸린다. 이 키가 없으면 AI 는 범위를 모른 채 읽는다(이슈 #393).
+   *
+   * **필수 필드다.** 선택으로 두면 안 실은 요청이 조용히 범위 없이 나간다.
+   */
+  readonly scope: "suite";
   readonly stderr: string;
   readonly stderrTruncated: boolean;
   readonly exitCode: number | null;

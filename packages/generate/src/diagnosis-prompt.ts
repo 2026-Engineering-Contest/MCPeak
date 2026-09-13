@@ -29,6 +29,14 @@ const NO_APPROVAL_INSTRUCTION =
 const CASE_HISTORY_RULE =
   '승인 시점 케이스 판정(approvedAs) 읽는 법:\npassed 는 승인 시점에 실제 서버에서 통과한 케이스다.\nserverDefect 는 승인 시점에도 실패했고 사람이 "명세가 맞고 서버가 틀렸다" 고 판정한 케이스다. 한 번도 통과한 적이 없다.\n표시가 없는 케이스는 승인 시점에 실행되지 않았다.';
 
+/**
+ * stderr 읽는 법. `scope` 는 요청에 실려 있는데 뜻이 프롬프트 어디에도 없으면 AI 가 프로세스
+ * 전체의 꼬리를 개별 케이스의 원인으로 읽는다. `CASE_HISTORY_RULE` 이 만들어진 이유(#385)와
+ * 같은 계열이다(이슈 #393).
+ */
+const STDERR_SCOPE_RULE =
+  "stderr 읽는 법:\nstderr 는 서버 프로세스 전체에서 모은 꼬리다. 특정 케이스가 낸 것이 아니다.\n어느 케이스의 원인이라고 단정하지 않는다. 케이스와 stderr 를 잇는 근거가 따로 없으면 그 연결을 원인 후보로 내지 않는다.\n여러 케이스가 실패했는데 stderr 에 오류가 하나면, 그 하나가 모든 실패의 원인이라고 보지 않는다.";
+
 function instructionOf(trust: DiagnosisSpecTrust): string {
   // 지문이 맞을 때만 실행 기록을 본다. 지문이 다르면 그 기록이 어느 명세의 것인지 알 수 없다.
   if (trust.fingerprint === "mismatched") return MISMATCHED_INSTRUCTION;
@@ -52,12 +60,19 @@ const CASE_ID_RULE =
  *
  * `TestSuiteSpec` JSON Schema 는 넣지 않는다. suite 를 만들 일이 없기 때문이다(설계서 §5.4).
  * 배치는 authoring 의 `prompt()` 와 같다. 역할 문장이 맨 앞, 요청이 중간, untrusted 경고가
- * 맨 뒤다. 같은 요청이면 항상 같은 문자열이 나온다.
+ * 맨 뒤다. 규칙끼리는 모아 둔다. 같은 요청이면 항상 같은 문자열이 나온다.
+ *
+ * stderr 읽는 법은 `processDiagnostics` 가 있을 때만 넣는다. 없는 요청에 적으면 없는 것을
+ * 말하는 셈이고, 프롬프트가 길어진 만큼 다른 규칙의 비중이 줄어든다.
  *
  * 스키마는 요청별로 만든다. `caseId` 의 허용 값이 요청마다 다르기 때문이다.
  */
 export function diagnosisPrompt(request: DiagnosisRequest): string {
   const instruction = instructionOf(request.specTrust);
   const caseIds = diagnosisCaseIds(request);
-  return `${instruction}\n\n${CASE_HISTORY_RULE}\n\n허용 caseId 목록:\n${JSON.stringify(caseIds)}\n${CASE_ID_RULE}\n\n진단 결과 JSON Schema:\n${JSON.stringify(buildDiagnosisProviderSchema(request))}\n\n${JSON.stringify(request)}\n${UNTRUSTED_WARNING}`;
+  const rules =
+    request.processDiagnostics === undefined
+      ? CASE_HISTORY_RULE
+      : `${CASE_HISTORY_RULE}\n\n${STDERR_SCOPE_RULE}`;
+  return `${instruction}\n\n${rules}\n\n허용 caseId 목록:\n${JSON.stringify(caseIds)}\n${CASE_ID_RULE}\n\n진단 결과 JSON Schema:\n${JSON.stringify(buildDiagnosisProviderSchema(request))}\n\n${JSON.stringify(request)}\n${UNTRUSTED_WARNING}`;
 }

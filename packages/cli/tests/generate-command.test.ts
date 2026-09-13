@@ -2426,6 +2426,11 @@ describe("generate 시험 실행 게이트", () => {
     readonly applyAuthoringChanges?: typeof applyAuthoringChanges;
     /** `edit` 메뉴가 읽을 로컬 JSON. 경로 `candidate.json` 으로만 읽힌다. */
     readonly localCandidate?: TestSuiteSpec;
+    /**
+     * 픽스처 파일(#390). 주면 그 경로에만 `exists` 가 true 를 주고 `readFile` 이 이 내용을
+     * 돌려준다. 실제 파일 시스템을 타지 않는다.
+     */
+    readonly fixtures?: { readonly path?: string; readonly text: string };
   }
 
   function gateDeps(options: GateOptions) {
@@ -2434,6 +2439,7 @@ describe("generate 시험 실행 게이트", () => {
     const confirms = [...(options.confirms ?? [])];
     const screen: string[] = [];
     const stderr: string[] = [];
+    const stdout: string[] = [];
     const calls: string[] = [];
     let closes = 0;
     let saved = "";
@@ -2483,7 +2489,12 @@ describe("generate 시험 실행 게이트", () => {
       finalizeAuthoringDraft,
       getAuthoringExecutionSuite,
       validateSuite: validateMcpSuite,
-      exists: vi.fn(async () => false),
+      // 출력 경로는 늘 비어 있고, 픽스처 경로만 준 경우에 존재한다.
+      exists: vi.fn(
+        async (path: string) =>
+          options.fixtures !== undefined &&
+          path === (options.fixtures.path ?? "mcpeak.fixtures.json"),
+      ),
       openTemp: vi.fn(async () => ({
         writeFile: vi.fn(async (data: string) => {
           saved = data;
@@ -2491,16 +2502,23 @@ describe("generate 시험 실행 게이트", () => {
         sync: vi.fn(async () => undefined),
         close: vi.fn(async () => undefined),
       })),
-      readFile: vi.fn(async (path: string) =>
-        new TextEncoder().encode(
+      readFile: vi.fn(async (path: string) => {
+        if (
+          options.fixtures !== undefined &&
+          path === (options.fixtures.path ?? "mcpeak.fixtures.json")
+        )
+          return new TextEncoder().encode(options.fixtures.text);
+        return new TextEncoder().encode(
           path === "candidate.json" && options.localCandidate !== undefined
             ? JSON.stringify(options.localCandidate)
             : saved,
-        ),
-      ),
+        );
+      }),
       link: vi.fn(async () => undefined),
       unlink: vi.fn(async () => undefined),
-      writeStdout: vi.fn(),
+      writeStdout: vi.fn((text: string) => {
+        stdout.push(text);
+      }),
       writeStderr: vi.fn((text: string) => {
         stderr.push(text);
       }),
@@ -2523,6 +2541,7 @@ describe("generate 시험 실행 게이트", () => {
       stderr,
       calls,
       closeCount: () => closes,
+      stdout: () => stdout.join(""),
       savedSuite: () =>
         saved === ""
           ? undefined
@@ -2571,6 +2590,184 @@ describe("generate 시험 실행 게이트", () => {
       (assertion) => assertion.type === "isError" && assertion.expected === true,
     ),
   ).length;
+
+  /** 정상 응답만 주는 서버에서 통과하는 케이스(정상 케이스)의 수. */
+  const happyCases = baselineCases.length - failingCases;
+  /** 정상 케이스를 실패시키는 서버. 자리값 안내(#390)를 보는 테스트가 쓴다. */
+  const alwaysError = (): ToolResult => ({
+    content: [{ type: "text", text: "Unknown city: example" }],
+    isError: true,
+    raw: { error: true },
+  });
+  /** 실패 개수만큼 `serverDefect` 로 답한다. 분류 화면이 케이스마다 한 번 묻는다. */
+  const classifyAll = (count: number) => Array.from({ length: count }, () => "s");
+
+  describe("--fixtures", () => {
+    const fixtureText = JSON.stringify({
+      schemaVersion: 1,
+      tools: { weather: { city: "Seoul" } },
+    });
+
+    it("기본 경로에 파일이 있으면 읽고 한 줄 찍는다", async () => {
+      const d = gateDeps({
+        choices: ["save"],
+        confirms: [true, true],
+        fixtures: { text: fixtureText },
+      });
+      await runGenerateCommand([...gateArgv, "--no-dry-run"], d.value);
+      expect(d.stdout()).toContain("▸ 픽스처: mcpeak.fixtures.json (도구 1개, 필드 1개)");
+    });
+
+    it("기본 경로에 없으면 조용히 진행한다", async () => {
+      const d = gateDeps({ choices: ["save"], confirms: [true, true] });
+      await expect(runGenerateCommand([...gateArgv, "--no-dry-run"], d.value)).resolves.toBe(0);
+      expect(d.stdout()).not.toContain("픽스처");
+      expect(d.stderr.join("")).toBe("");
+    });
+
+    it("명시했는데 없으면 오류로 끝낸다", async () => {
+      const d = gateDeps({ choices: ["cancel"] });
+      await expect(
+        runGenerateCommand([...gateArgv, "--fixtures", "없는.json"], d.value),
+      ).resolves.toBe(1);
+      expect(d.stderr.join("")).toContain("오류 [GENERATE_FIXTURE_NOT_FOUND]");
+      expect(d.stderr.join("")).toContain("없는.json");
+      // 서버에 붙기 전에 끝낸다. 오타 하나로 서버를 띄울 이유가 없다.
+      expect(d.value.connect).not.toHaveBeenCalled();
+    });
+
+    it("깨진 파일이면 T1 의 사유를 찍고 오류로 끝낸다", async () => {
+      const d = gateDeps({
+        choices: ["cancel"],
+        fixtures: { text: JSON.stringify({ schemaVersion: 2 }) },
+      });
+      await expect(runGenerateCommand(gateArgv, d.value)).resolves.toBe(1);
+      // 사유 문장은 generate 의 readFixtureFile 이 만든 것을 그대로 쓴다.
+      expect(d.stderr.join("")).toContain("픽스처 schemaVersion 이 1 이 아닙니다: 2");
+    });
+
+    it("픽스처 값이 생성 입력에 들어간다", async () => {
+      const d = gateDeps({
+        choices: ["save"],
+        confirms: [true, true],
+        fixtures: { text: fixtureText },
+      });
+      await runGenerateCommand([...gateArgv, "--no-dry-run"], d.value);
+      const saved = d.savedSuite();
+      const inputs = (saved?.cases ?? [])
+        .map((item) => item.operation)
+        .filter((operation) => operation.type === "callTool")
+        .map((operation) => operation.input.city);
+      expect(inputs).toContain("Seoul");
+    });
+  });
+
+  describe("실패 진단이 출처를 말한다", () => {
+    /** 정상 케이스가 전부 실패하는 실행. 분류까지 답을 채워 화면을 끝까지 받는다. */
+    const failingRun = (fixtures?: { path?: string; text: string }, tools?: ToolDef[]) => {
+      const count =
+        tools === undefined
+          ? happyCases
+          : createBaselineSuite(tools, { suiteId: "weather", suiteName: "Weather" }).suite.cases
+              .length -
+            createBaselineSuite(tools, {
+              suiteId: "weather",
+              suiteName: "Weather",
+            }).suite.cases.filter((item) =>
+              (item.assertions as readonly { type: string; expected?: unknown }[]).some(
+                (assertion) => assertion.type === "isError" && assertion.expected === true,
+              ),
+            ).length;
+      return gateDeps({
+        choices: ["save", "cancel"],
+        inputs: classifyAll(count),
+        confirms: [true, true, true],
+        respond: alwaysError,
+        ...(fixtures === undefined ? {} : { fixtures }),
+        ...(tools === undefined ? {} : { tools }),
+      });
+    };
+
+    it("schemaHint 값이 든 실패에 안내를 붙인다", async () => {
+      const d = failingRun();
+      await runGenerateCommand([...gateArgv, "--no-repair"], d.value);
+      const output = d.output();
+      expect(output).toContain("ℹ 이 케이스의 'city' 값");
+      expect(output).toContain("스키마의 type 만 보고 만든 자리값입니다.");
+      expect(output).toContain("실재하는 자원을 가리키지 않으므로 서버 결함이 아닐 수 있습니다.");
+      expect(output).toContain("해결: mcpeak.fixtures.json 에 weather.city 값을 지정하세요.");
+    });
+
+    it("userFixture 값이 든 실패에는 안 붙인다", async () => {
+      const d = failingRun({
+        text: JSON.stringify({ schemaVersion: 1, tools: { weather: { city: "Seoul" } } }),
+      });
+      await runGenerateCommand([...gateArgv, "--no-repair"], d.value);
+      // 실패는 났다. 안내만 없다.
+      expect(d.output()).toContain("✗ 실패");
+      expect(d.output()).not.toContain("자리값입니다");
+    });
+
+    it("schemaDeclared 값이 든 실패에는 안 붙인다", async () => {
+      const declared: ToolDef[] = [
+        {
+          name: "weather",
+          inputSchema: {
+            type: "object",
+            properties: { city: { type: "string", default: "Seoul" } },
+            required: ["city"],
+          },
+        },
+      ];
+      const d = failingRun(undefined, declared);
+      await runGenerateCommand([...gateArgv, "--no-repair"], d.value);
+      expect(d.output()).toContain("✗ 실패");
+      expect(d.output()).not.toContain("자리값입니다");
+    });
+
+    it("notes 가 있으면 함께 찍는다", async () => {
+      // 값은 안 주고 메모만 준다. 값을 주면 출처가 userFixture 가 되어 안내 자체가 안 나온다.
+      const d = failingRun({
+        text: JSON.stringify({
+          schemaVersion: 1,
+          notes: { weather: { city: "setup.sh 가 만든 도시만 있습니다." } },
+        }),
+      });
+      await runGenerateCommand([...gateArgv, "--no-repair"], d.value);
+      expect(d.output()).toContain("메모: setup.sh 가 만든 도시만 있습니다.");
+    });
+
+    it("schemaHint 필드가 여럿이면 전부 나열한다", async () => {
+      const two: ToolDef[] = [
+        {
+          name: "weather",
+          inputSchema: {
+            type: "object",
+            properties: { city: { type: "string" }, country: { type: "string" } },
+            required: ["city", "country"],
+          },
+        },
+      ];
+      const d = failingRun(undefined, two);
+      await runGenerateCommand([...gateArgv, "--no-repair"], d.value);
+      const output = d.output();
+      expect(output).toContain("ℹ 이 케이스의 'city' 값");
+      expect(output).toContain("ℹ 이 케이스의 'country' 값");
+    });
+
+    it("통과한 케이스에는 안 붙인다", async () => {
+      // 정상 응답만 주는 서버다. 실패하는 것은 거절 기대 케이스뿐이고, 그 케이스의 값은
+      // 우리가 일부러 어긴 것이라 자리값 안내의 대상이 아니다.
+      const d = gateDeps({
+        choices: ["save", "cancel"],
+        inputs: classifyAll(failingCases),
+        confirms: [true, true, true],
+      });
+      await runGenerateCommand([...gateArgv, "--no-repair"], d.value);
+      expect(d.output()).toContain("✗ 실패");
+      expect(d.output()).not.toContain("자리값입니다");
+    });
+  });
 
   describe("최종 전량 재검증 (#399)", () => {
     /** 분류 답. 위반 케이스는 전부 serverDefect 로 넘겨 저장까지 간다. */

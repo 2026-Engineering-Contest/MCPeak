@@ -85,7 +85,7 @@ feature\` 가 stderr 에 한 줄 찍힙니다(실측: Node 22.18.0 에서 나오
 SQLite 파일이라 영향받지 않습니다.**`;
 
 export const GENERATE_USAGE =
-  "사용법: mcpeak generate --out <suite.json> (-- <executable> [args...] | --command <executable> [--arg <value> ...] [--env <NAME> ...] | --url <URL> [--header-env <헤더이름>=<환경변수이름> ...]) [--suite-id <id>] [--name <name>] [--baseline-only] [--provider <codex|claude>] [--model <model>] [--no-dry-run] [--reset-cmd <command>] [--no-repair] [--diagnose-rejections] [--force]";
+  "사용법: mcpeak generate --out <suite.json> (-- <executable> [args...] | --command <executable> [--arg <value> ...] [--env <NAME> ...] | --url <URL> [--header-env <헤더이름>=<환경변수이름> ...]) [--suite-id <id>] [--name <name>] [--baseline-only] [--provider <codex|claude>] [--model <model>] [--no-dry-run] [--reset-cmd <command>] [--fixtures <path>] [--no-repair] [--diagnose-rejections] [--force]";
 
 /**
  * 시험 실행 옵션 설명. 사용법 한 줄로는 `--reset-cmd` 가 셸을 거치지 않는다는 제약을 알 수
@@ -106,6 +106,12 @@ const GENERATE_DRY_RUN_OPTIONS = `옵션:
                         않은 채 저장되고, 실행이 필요한 AI 사전보완도 건너뜁니다
   --reset-cmd <command> 시험 실행 전에 이 명령을 한 번 실행합니다. 셸을 거치지 않으므로
                         파이프나 && 는 쓸 수 없습니다
+  --fixtures <path>     실재하는 자원을 가리키는 값을 도구·필드별로 적은 JSON 파일입니다.
+                        생략하면 \`mcpeak.fixtures.json\` 을 찾고, 없으면 그냥 진행합니다.
+                        픽스처 파일에 토큰·비밀번호·API 키를 적지 마세요. 이 파일의 값은
+                        생성된 명세에 그대로 들어갑니다. 인증이 필요한 서버는 서버 기동
+                        환경변수로 자격을 넘기고, 픽스처에는 그 자격으로 접근 가능한
+                        자원 식별자만 적으세요
   --no-repair           시험 실행이 실패해도 입력값을 고쳐 다시 시도하지 않습니다.
                         실패가 곧바로 분류 화면으로 갑니다
   --diagnose-rejections

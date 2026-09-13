@@ -47,6 +47,31 @@ describe("generate 도움말", () => {
     expect(help).toContain("--reset-cmd <command> 시험 실행 전에 이 명령을 한 번 실행합니다.");
   });
 
+  it("--fixtures 가 사용법 줄에 나온다", () => {
+    expect(GENERATE_USAGE).toContain("[--fixtures <path>]");
+  });
+
+  it("--fixtures 설명과 기본 경로가 도움말에 있다", () => {
+    expect(help).toContain(
+      "--fixtures <path>     실재하는 자원을 가리키는 값을 도구·필드별로 적은 JSON 파일입니다.",
+    );
+    // 기본 경로를 안 적으면 사용자가 옵션 없이는 아무 파일도 안 읽는 줄 안다.
+    expect(help).toContain("`mcpeak.fixtures.json` 을 찾고, 없으면 그냥 진행합니다");
+  });
+
+  /**
+   * 픽스처 값은 생성된 명세에 리터럴로 들어가고 그 명세는 커밋된다(설계 §3). 경고가 도움말에
+   * 없으면 사용자는 토큰을 적는다. `.gitignore` 를 권하지 않는 것도 함께 못 박는다. 픽스처는
+   * 팀이 공유해야 재현되기 때문이다.
+   */
+  it("--fixtures 설명이 비밀값을 적지 말라고 말한다", () => {
+    expect(help).toContain("토큰·비밀번호·API 키를 적지 마세요");
+    expect(help).toContain("생성된 명세에 그대로");
+    expect(help).toContain("환경변수로 자격을 넘기고");
+    expect(help).toContain("자원 식별자만 적으세요");
+    expect(help).not.toContain(".gitignore");
+  });
+
   it("제거된 Tool 카세트 옵션은 도움말에 없다", () => {
     expect(help).not.toContain("--cassette");
     expect(help).not.toContain("--record");

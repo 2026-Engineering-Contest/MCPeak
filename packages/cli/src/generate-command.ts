@@ -9,6 +9,8 @@ import type {
   AuthoringSessionView,
   BaselineGenerationResult,
   CoverageResult,
+  FieldOrigin,
+  FixtureFile,
   OutputContractSkip,
   PreFillDiscard,
   PreFillProvider,
@@ -23,6 +25,7 @@ import type {
   ToolCoverage,
   ValidBranchSkip,
 } from "@mcpeak/generate";
+import { readFixtureFile } from "@mcpeak/generate";
 import type {
   CallToolCaseSpec,
   ContractAxisKind,
@@ -103,6 +106,13 @@ export interface GenerateCommandInput {
    * 끄면 미확인 목록도 AI 진단도 나가지 않고 한 줄 고지만 남는다(ADR-0098 · 설계 §4.2).
    */
   readonly diagnoseRejections: boolean;
+  /**
+   * `--fixtures` 로 명시한 픽스처 파일 경로. 없으면 기본 경로(`mcpeak.fixtures.json`)를 본다.
+   *
+   * "명시했는가" 를 여기서 구분해 두는 이유는 없는 파일의 처리가 다르기 때문이다. 기본
+   * 경로는 없는 것이 정상이라 조용히 지나가고, 사용자가 적은 경로가 없는 것은 오타다(#390).
+   */
+  readonly fixturesPath?: string;
 }
 export interface GenerateCommandDependencies {
   connect(options: { command: string; args: readonly string[] }): Promise<McpStdioConnection>;
@@ -127,7 +137,7 @@ export interface GenerateCommandDependencies {
   attemptReset?(resetCmd: string | undefined): Promise<{ readonly grade: ResetGrade }>;
   createBaselineSuite(
     tools: readonly ToolDef[],
-    options: { suiteId: string; suiteName: string },
+    options: { suiteId: string; suiteName: string; fixtures?: FixtureFile },
   ): BaselineGenerationResult;
   createAuthoringSession(
     baseline: BaselineGenerationResult,
@@ -357,6 +367,7 @@ const optionNames = new Set([
   "--model",
   "--no-dry-run",
   "--reset-cmd",
+  "--fixtures",
   "--no-repair",
   "--diagnose-rejections",
   "--force",
@@ -554,6 +565,9 @@ export function parseGenerateCommand(argv: readonly string[]): GenerateCommandIn
     throw new UsageError("`--no-dry-run`과 `--reset-cmd`는 함께 사용할 수 없습니다.");
   if (resetCmd !== undefined && resetCmd.trim() === "")
     throw new UsageError("`--reset-cmd` 옵션 값이 필요합니다.");
+  const fixturesPath = values.get("--fixtures");
+  if (fixturesPath !== undefined && fixturesPath.trim() === "")
+    throw new UsageError("`--fixtures` 옵션 값이 필요합니다.");
   return Object.freeze({
     suiteId: values.get("--suite-id") as string,
     name: values.get("--name") as string,
@@ -580,6 +594,7 @@ export function parseGenerateCommand(argv: readonly string[]): GenerateCommandIn
     resetCmd,
     repair,
     diagnoseRejections,
+    fixturesPath,
   });
 }
 
@@ -1067,8 +1082,134 @@ function writeDryRunNotice(
   );
 }
 
+/** `--fixtures` 를 안 주면 보는 경로. 없으면 조용히 지나간다(설계 §2.3). */
+const DEFAULT_FIXTURES_PATH = "mcpeak.fixtures.json";
+
+/**
+ * 자리값 안내(설계 §2.2)에 필요한 재료. 픽스처를 안 읽었어도 만든다. **안내의 조건은
+ * 픽스처의 유무가 아니라 값의 출처다.** 픽스처가 없을 때야말로 지어낸 값이 많다.
+ */
+interface FixtureDiagnostics {
+  /** 해결 문장에 적을 경로. 파일이 없어도 "여기에 적으세요" 로 쓴다. */
+  readonly path: string;
+  readonly fieldOrigins: readonly FieldOrigin[];
+  readonly notes?: FixtureFile["notes"];
+}
+
+/**
+ * 픽스처 파일을 읽는다. 읽을 수 없으면 사유를 stderr 에 적고 `null` 을 돌려준다(호출자가
+ * 종료 코드 1 로 끝낸다).
+ *
+ * 파일 접근은 `deps.exists` · `deps.readFile` 주입점만 쓴다. `node:fs` 를 직접 부르면
+ * 유닛테스트가 실제 파일 시스템을 타게 되고, 그것이 ADR-0013 이 막은 것이다.
+ */
+async function loadFixtures(
+  input: GenerateCommandInput,
+  deps: GenerateCommandDependencies,
+): Promise<{ readonly file?: FixtureFile } | null> {
+  const explicit = input.fixturesPath !== undefined;
+  const path = input.fixturesPath ?? DEFAULT_FIXTURES_PATH;
+  let found: boolean;
+  try {
+    found = await deps.exists(path);
+  } catch (error) {
+    // 기본 경로는 사용자가 요구한 적이 없다. 확인에 실패했다고 명령을 끊으면 픽스처를 쓰지도
+    // 않는 실행이 남의 사정으로 죽는다. 명시한 경로는 사용자의 요구라 삼키지 않는다.
+    if (!explicit) return {};
+    const code = (error as { code?: unknown } | null)?.code;
+    deps.writeStderr(
+      `오류 [GENERATE_FIXTURE_UNREADABLE]: 픽스처 파일을 확인하지 못했습니다. 경로: ${path}${typeof code === "string" ? ` (${code})` : ""}\n해결: 그 경로와 상위 디렉터리의 권한을 확인하세요.\n`,
+    );
+    return null;
+  }
+  if (!found) {
+    if (!explicit) return {};
+    deps.writeStderr(
+      `오류 [GENERATE_FIXTURE_NOT_FOUND]: 픽스처 파일이 없습니다. 경로: ${path}\n해결: 경로를 확인하거나 \`--fixtures\` 를 빼고 실행하세요.\n`,
+    );
+    return null;
+  }
+  let text: string;
+  try {
+    text = new TextDecoder("utf-8", { fatal: true }).decode(await deps.readFile(path));
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    deps.writeStderr(
+      `오류 [GENERATE_FIXTURE_UNREADABLE]: 픽스처 파일을 읽지 못했습니다. 경로: ${path} (${escapeTerminalText(reason)})\n해결: 파일이 UTF-8 텍스트인지, 읽기 권한이 있는지 확인하세요.\n`,
+    );
+    return null;
+  }
+  const read = readFixtureFile(text);
+  if (read.status === "invalid") {
+    // 사유 문장은 generate 가 만든다. 여기서 다시 쓰지 않는다. 두 벌이 되면 갈린다.
+    deps.writeStderr(
+      `오류 [GENERATE_FIXTURE_INVALID]: ${escapeTerminalText(read.reason)} 경로: ${path}\n해결: 픽스처 파일을 고친 뒤 다시 실행하세요.\n`,
+    );
+    return null;
+  }
+  const tools = Object.values(read.file.tools ?? {});
+  const fields = tools.reduce((total, item) => total + Object.keys(item).length, 0);
+  // 읽었다는 사실을 안 적으면 사용자는 자기 값이 들어갔는지 화면에서 알 수 없다.
+  deps.writeStdout(
+    `▸ 픽스처: ${escapeTerminalText(path)} (도구 ${tools.length}개, 필드 ${fields}개)\n`,
+  );
+  return { file: read.file };
+}
+
+/**
+ * 실패한 케이스에 붙이는 자리값 안내(설계 §2.2).
+ *
+ * **필드 이름으로 추측하지 않는다.** 판정 근거는 "그 값을 우리가 지어냈는가" 하나이고,
+ * 그것은 `fieldOrigins` 가 말해 주는 사실이다. 이름 표를 만들면 `q` 나 `target` 인 식별자를
+ * 놓치고 이름이 `name` 인 순수 문자열에 잘못 붙는다.
+ *
+ * `userFixture` · `schemaDeclared` 에는 안 붙인다. 사용자가 실재를 보증했거나 서버가 준
+ * 값이라 서버 쪽을 먼저 봐야 한다.
+ */
+function placeholderGuidance(
+  caseId: string,
+  suite: TestSuiteSpec,
+  fixtures: FixtureDiagnostics | undefined,
+): string {
+  if (fixtures === undefined) return "";
+  const spec = suite.cases.find((item) => item.id === caseId);
+  if (spec === undefined || spec.operation.type !== "callTool") return "";
+  // 거절을 기대한 케이스는 대상이 아니다. 그 케이스의 값은 우리가 **일부러** 어긴 것이라
+  // "자리값이라 실패했을 수 있다" 가 사실이 아니고, 그 실패는 서버가 안 거절했다는 뜻이다.
+  // `fieldOrigins` 도 정상 케이스의 필드만 센다(#390 T1).
+  if (
+    spec.assertions.some((assertion) => assertion.type === "isError" && assertion.expected === true)
+  )
+    return "";
+  const { tool, input } = spec.operation;
+  let text = "";
+  // 한 툴의 같은 필드가 정상 케이스마다 한 건씩 들어오므로 중복을 지운다. 안 지우면 같은
+  // 문장이 한 케이스에 여러 번 찍힌다.
+  const seen = new Set<string>();
+  for (const origin of fixtures.fieldOrigins) {
+    if (origin.tool !== tool || origin.origin !== "schemaHint") continue;
+    if (!Object.hasOwn(input, origin.field) || seen.has(origin.field)) continue;
+    seen.add(origin.field);
+    const field = escapeTerminalText(origin.field);
+    const value = escapeTerminalText(JSON.stringify(input[origin.field]) ?? "undefined");
+    text +=
+      `    ℹ 이 케이스의 '${field}' 값 ${value} 은 스키마의 type 만 보고 만든 자리값입니다.\n` +
+      "      실재하는 자원을 가리키지 않으므로 서버 결함이 아닐 수 있습니다.\n" +
+      `      해결: ${escapeTerminalText(fixtures.path)} 에 ${escapeTerminalText(tool)}.${field} 값을 지정하세요.\n`;
+    // 메모는 그 필드가 실패했을 때만 나온다(설계 §2.3). 값에는 영향을 주지 않는다.
+    const note = fixtures.notes?.[tool]?.[origin.field];
+    if (note !== undefined) text += `      메모: ${escapeTerminalText(note)}\n`;
+  }
+  return text;
+}
+
 /** 시험 실행 결과(§8.2). 0건인 종류는 찍지 않는다. */
-function writeDryRunResult(io: ReviewIO, result: DryRunResult): void {
+function writeDryRunResult(
+  io: ReviewIO,
+  result: DryRunResult,
+  suite?: TestSuiteSpec,
+  fixtures?: FixtureDiagnostics,
+): void {
   const failures = result.outcomes.filter((outcome) => outcome.status !== "passed");
   const passed = result.outcomes.length - failures.length;
   io.write("\n");
@@ -1078,6 +1219,8 @@ function writeDryRunResult(io: ReviewIO, result: DryRunResult): void {
     io.write("\n");
     io.write(failureHeading(index, outcome.caseName));
     io.write(detailBlock(outcome.detail));
+    // 실패한 케이스에만 붙인다. 통과한 케이스에 붙이면 화면이 멀쩡한 값을 의심하게 만든다.
+    if (suite !== undefined) io.write(placeholderGuidance(outcome.caseId, suite, fixtures));
   }
   // 결과 목록과 그 뒤에 이어지는 분류 질문 사이를 띄운다. 붙으면 같은 케이스가 두 번 찍힌
   // 것처럼 보인다.
@@ -1437,6 +1580,7 @@ async function runInteractiveReview(
   skippedTools: readonly SkippedTool[] = [],
   outputContractSkips: readonly OutputContractSkip[] = [],
   validBranchSkips: readonly ValidBranchSkip[] = [],
+  fixtures?: FixtureDiagnostics,
 ): Promise<number> {
   const io = deps.reviewIO;
   const prepare = deps.prepareAuthoringRequest;
@@ -1547,7 +1691,7 @@ async function runInteractiveReview(
             writeDryRunAborted(io, result, caseCount, diagnostics());
             continue;
           }
-          writeDryRunResult(io, result);
+          writeDryRunResult(io, result, dryRunSuite, fixtures);
           // 통과한 거절 케이스만 대상이다. runner 가 거절 없는 케이스를 notApplicable 로 내지만
           // (설계 §4.1), 한 패키지만 먼저 들어가도 화면이 틀리지 않게 여기서 한 번 더 거른다.
           // 실패한 케이스는 이미 위 결과 블록에 빨간색으로 있다. 두 번 읽힐 이유가 없다.
@@ -2508,6 +2652,12 @@ export async function runGenerateCommand(
     );
     return 1;
   }
+  // 픽스처는 서버에 붙기 전에 읽는다. 경로 오타나 깨진 파일 때문에 끝날 실행이면 서버를
+  // 띄우기 전에 끝내는 것이 맞다. `--out` 선검사와 같은 판단이다.
+  const fixturesRead = await loadFixtures(input, deps);
+  if (fixturesRead === null) return 1;
+  const fixtureFile = fixturesRead.file;
+  const fixturePath = input.fixturesPath ?? DEFAULT_FIXTURES_PATH;
   let connection: CliConnection | undefined;
   /**
    * 대화형 검토는 아래 try 밖에서 돌린다. 검토가 던지는 오류를 여기 catch 가 삼키면
@@ -2521,6 +2671,7 @@ export async function runGenerateCommand(
         readonly skippedTools: readonly SkippedTool[];
         readonly outputContractSkips: readonly OutputContractSkip[];
         readonly validBranchSkips: readonly ValidBranchSkip[];
+        readonly fixtures: FixtureDiagnostics;
       }
     | undefined;
   try {
@@ -2541,6 +2692,7 @@ export async function runGenerateCommand(
     const baseline = deps.createBaselineSuite(tools, {
       suiteId: input.suiteId,
       suiteName: input.name,
+      ...(fixtureFile === undefined ? {} : { fixtures: fixtureFile }),
     });
     // 사전보완은 검토 세션을 만들기 전에 한 번 돈다. baseline 의 빈틈을 메우는 층이고
     // 사용자의 요구를 받는 authoring 층과 목적이 다르다(설계서 §4.2).
@@ -2577,6 +2729,11 @@ export async function runGenerateCommand(
         skippedTools: baseline.skippedTools,
         outputContractSkips: baseline.outputContractSkips,
         validBranchSkips: baseline.validBranchSkips,
+        fixtures: {
+          path: fixturePath,
+          fieldOrigins: baseline.fieldOrigins,
+          ...(fixtureFile?.notes === undefined ? {} : { notes: fixtureFile.notes }),
+        },
       };
     } else {
       const final = deps.finalizeAuthoringDraft({
@@ -2654,6 +2811,7 @@ export async function runGenerateCommand(
       review.skippedTools,
       review.outputContractSkips,
       review.validBranchSkips,
+      review.fixtures,
     );
   } finally {
     await review.active.close().catch(() => undefined);

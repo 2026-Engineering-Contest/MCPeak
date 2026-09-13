@@ -29,6 +29,7 @@ const APPROVED_RUNNER_SYMBOLS = [
   "SuiteValidationIssue",
   "TestCaseSpec",
   "TestSuiteSpec",
+  "UnanalyzedField",
   "canonicalJson",
   "checkAssertionSubstance",
   "checkInputContract",

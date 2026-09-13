@@ -5,6 +5,7 @@ import {
   deriveContractAxes,
   matchCoveredAxes,
   type TestSuiteSpec,
+  type UnanalyzedField,
 } from "@mcpeak/runner";
 
 /**
@@ -47,7 +48,11 @@ export interface ToolCoverage {
   readonly verified: number;
   /** axes.length. analyzable 이 false 면 0 이다. */
   readonly total: number;
-  readonly unanalyzedFields: readonly string[];
+  /**
+   * 축을 못 만든 경로와 그 사유. `runner` 의 것을 그대로 싣는다. 정렬하지 않는다. 그쪽이
+   * 이미 path 코드 단위 오름차순으로 낸다(#388).
+   */
+  readonly unanalyzedFields: readonly UnanalyzedField[];
 }
 
 export interface CoverageResult {

@@ -669,3 +669,188 @@ describe("생성 결과가 결정론적이다", () => {
     expect(canonicalJson(build())).toBe(canonicalJson(build()));
   });
 });
+
+describe("중첩 객체 위반 케이스", () => {
+  const userTool = tool("get_user", {
+    type: "object",
+    required: ["user"],
+    properties: {
+      user: { type: "object", properties: { name: { type: "string" } }, required: ["name"] },
+    },
+  });
+  const happyInput: JsonObject = { user: { name: "example" } };
+  const cases = () => buildViolationCases({ tool: userTool, happyInput, baseName: "t" });
+  const caseById = (id: string) => cases().find((item) => item.id === id);
+
+  it("{ user: {} } 를 만든다", () => {
+    const found = caseById("t-missing-user-name");
+    expect(found?.operation.input).toEqual({ user: {} });
+  });
+
+  it("{ user: { name: 0 } } 를 만든다", () => {
+    const found = caseById("t-type-user-name");
+    // user 는 여전히 객체다. 한 축만 다르다.
+    expect(found?.operation.input).toEqual({ user: { name: 0 } });
+  });
+
+  it("부모 케이스와 자식 케이스가 둘 다 있다", () => {
+    expect(cases().map((item) => item.operation.input)).toEqual([
+      {},
+      { user: {} },
+      { user: "example" },
+      { user: { name: 0 } },
+    ]);
+  });
+
+  it("이름에 경로 원문이 들어간다", () => {
+    // 슬러그가 아니다. 사용자가 자기 스키마에서 찾아야 하는 것은 경로다.
+    expect(caseById("t-missing-user-name")?.name).toBe(
+      "get_user가 필수 필드 'user.name' 누락을 거절한다",
+    );
+    expect(caseById("t-type-user-name")?.name).toBe("get_user가 'user.name' 타입 위반을 거절한다");
+  });
+
+  it("네 케이스가 서로 다른 축을 덮는다", () => {
+    // 한 케이스가 축 둘을 덮으면 커버리지가 부풀어 오른다.
+    const covered = cases().map((item) =>
+      matchCoveredAxes({ testCase: item as unknown as TestCaseSpec, tool: userTool }).map(
+        (axis) => `${axis.kind}:${axis.field}`,
+      ),
+    );
+    expect(covered).toEqual([
+      ["REQUIRED_OMITTED:user"],
+      ["REQUIRED_OMITTED:user.name"],
+      ["TYPE_VIOLATION:user"],
+      ["TYPE_VIOLATION:user.name"],
+    ]);
+  });
+});
+
+describe("배열 원소 위반 케이스", () => {
+  const tagsTool = tool("add_tags", {
+    type: "object",
+    required: ["tags"],
+    properties: { tags: { type: "array", items: { type: "string", minLength: 3 } } },
+  });
+  const cases = (happyInput: JsonObject) =>
+    buildViolationCases({ tool: tagsTool, happyInput, baseName: "t" });
+  const tagsOf = (happyInput: JsonObject, id: string) =>
+    (cases(happyInput).find((item) => item.id === id)?.operation.input as JsonObject | undefined)
+      ?.tags;
+
+  // fieldSlug 가 `[]` 를 `item` 으로 읽는다. 안 그러면 `tags` 와 `tags[]` 가 같은 슬러그라
+  // 배열 자신의 위반과 원소의 위반이 `-2` 접미사로만 갈려 id 로 구분할 수 없다(#388).
+  const ELEMENT_TYPE_ID = "t-type-tags-item";
+
+  it("배열 자신과 원소가 id 로 구분된다", () => {
+    const built = cases({ tags: ["example"] });
+    expect(built.map((item) => item.id)).toEqual([
+      "t-missing-tags",
+      "t-type-tags",
+      ELEMENT_TYPE_ID,
+      "t-range-lower-tags-item",
+    ]);
+    // 배열 자신은 배열이 아닌 값으로, 원소는 배열 안에서 어긴다. 나란히 본다.
+    const byId = (id: string) => built.find((item) => item.id === id);
+    expect(byId("t-type-tags")?.operation.input).toEqual({ tags: "example" });
+    expect(byId("t-type-tags")?.name).toBe("add_tags가 'tags' 타입 위반을 거절한다");
+    expect(byId(ELEMENT_TYPE_ID)?.operation.input).toEqual({ tags: [0] });
+    expect(byId(ELEMENT_TYPE_ID)?.name).toBe("add_tags가 'tags[]' 타입 위반을 거절한다");
+  });
+
+  it("첫 원소만 바꾼다", () => {
+    // 전부 바꾸면 "서버가 첫 원소만 검사한다" 는 결함을 못 잡는다.
+    expect(tagsOf({ tags: ["example", "example"] }, ELEMENT_TYPE_ID)).toEqual([0, "example"]);
+  });
+
+  it("원소 타입 위반을 만든다", () => {
+    expect(tagsOf({ tags: ["example"] }, ELEMENT_TYPE_ID)).toEqual([0]);
+  });
+
+  it("원소 길이 하한 위반을 만든다", () => {
+    const tags = tagsOf({ tags: ["example"] }, "t-range-lower-tags-item") as string[] | undefined;
+    expect(tags).toHaveLength(1);
+    expect(tags?.[0]).toHaveLength(2);
+  });
+
+  it("배열이 비어 있으면 원소 케이스를 안 만든다", () => {
+    // 바꿀 원소가 없다. maxItems: 0 인 필드가 여기 해당한다.
+    const emptyTool = tool("add_tags", {
+      type: "object",
+      required: ["tags"],
+      properties: {
+        tags: { type: "array", maxItems: 0, items: { type: "string", minLength: 3 } },
+      },
+    });
+    const built = buildViolationCases({
+      tool: emptyTool,
+      happyInput: { tags: [] },
+      baseName: "t",
+    });
+    // 원소 경로의 케이스가 하나도 없다. 배열 자신의 축만 남는다.
+    expect(built.map((item) => item.operation.input)).toEqual([
+      {},
+      { tags: "example" },
+      { tags: ["example"] },
+    ]);
+    expect(built.map((item) => item.name)).not.toContain(
+      "add_tags가 'tags[]' 타입 위반을 거절한다",
+    );
+  });
+});
+
+describe("깊이 3 위반 케이스", () => {
+  it("user.address.city 케이스를 만든다", () => {
+    const deepTool = tool("get_user", {
+      type: "object",
+      required: ["user"],
+      properties: {
+        user: {
+          type: "object",
+          required: ["address"],
+          properties: {
+            address: {
+              type: "object",
+              required: ["city"],
+              properties: { city: { type: "string" } },
+            },
+          },
+        },
+      },
+    });
+    const cases = buildViolationCases({
+      tool: deepTool,
+      happyInput: { user: { address: { city: "example" } } },
+      baseName: "t",
+    });
+    const found = cases.find((item) => item.id === "t-type-user-address-city");
+    expect(found?.operation.input).toEqual({ user: { address: { city: 0 } } });
+    expect(found?.name).toBe("get_user가 'user.address.city' 타입 위반을 거절한다");
+    expect(
+      cases.find((item) => item.id === "t-missing-user-address-city")?.operation.input,
+    ).toEqual({ user: { address: {} } });
+  });
+});
+
+describe("중첩 경로 결정론성", () => {
+  const properties = {
+    user: { type: "object", properties: { name: { type: "string" } }, required: ["name"] },
+    tags: { type: "array", items: { type: "string", minLength: 3 } },
+  };
+  const happyInput: JsonObject = { user: { name: "example" }, tags: ["example"] };
+  const build = (props: Record<string, unknown>) =>
+    buildViolationCases({
+      tool: tool("t", { type: "object", required: ["user"], properties: props }),
+      happyInput,
+      baseName: "t",
+    });
+
+  it("같은 도구로 두 번 만들면 canonicalJson 이 같다", () => {
+    expect(canonicalJson(build(properties))).toBe(canonicalJson(build(properties)));
+  });
+
+  it("properties 선언 순서를 뒤집어도 케이스 배열이 같다", () => {
+    const reversed = Object.fromEntries(Object.entries(properties).reverse());
+    expect(canonicalJson(build(reversed))).toBe(canonicalJson(build(properties)));
+  });
+});

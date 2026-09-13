@@ -1,5 +1,24 @@
 # @ohmymcp-hsu/mock
 
+## 0.4.2
+
+### Patch Changes
+
+- cf00f83: mock: 올바르지 않은 목 정의를 거절하는 문장에서 값 뒤의 조사를 없앤다. `→ weather.mock.json 가
+올바르지 않습니다` 처럼 받침에 따라 틀리던 것을 `→ 올바르지 않은 목 정의입니다 —
+weather.mock.json: …` 으로 바꿔 값을 대시 뒤로 뺐다(#417). `key-violation.ts` 가 명문화한
+  규칙인데 이 자리만 예외였다. README 의 실패 문장 인용도 실제 출력과 맞췄다 — 미스 진단문은
+  진입점에 따라 두 갈래인데 README 가 한 줄로 뭉쳐 어느 실행에서도 나오지 않는 문장을 보여주고
+  있었다.
+- 9076ec8: mock: 실을 수 없는 응답과 포트 충돌을 설계된 문장으로 거절한다. `result` 를 `JSON.stringify`
+  로 만들 수 없으면(undefined · 함수 · 심볼 · 순환 참조 · BigInt) 지금까지는 목이 아무 말도
+  하지 않아 사용자가 클라이언트 zod 덤프나 Node TypeError 원문을 받았다(#415). 이제 주입
+  시점에 거절하고, 값이 사라지는 갈래와 직렬화가 던지는 갈래를 갈라 고치는 법을 적는다.
+  고정 포트가 이미 물려 있을 때 나가던 `listen EADDRINUSE: ...` 도 같은 형식의 문장으로
+  바꾸고, listen 성공 후 남아 있던 error 리스너를 뗀다.
+- Updated dependencies [da8dcba]
+  - @mcpeak/core@0.5.0
+
 ## 0.4.1
 
 ### Patch Changes

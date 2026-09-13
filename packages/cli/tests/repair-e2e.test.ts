@@ -135,7 +135,8 @@ describe("repair E2E", () => {
     expect(testWrites.err.join("")).not.toContain("MCP_CONNECTION_FAILED");
     expect(testExitCode).toBe(1);
     const bundle = await readBundle();
-    expect(bundle.bundleVersion).toBe(2);
+    // 형식 버전을 숫자로 본다. 상수로 바꾸면 "지금 버전이 3 이다" 를 아무것도 안 지킨다.
+    expect(bundle.bundleVersion).toBe(3);
     expect(bundle.spec.runHistory).toBe("absent");
     expect(bundle.spec.suiteId).toBe("broken-weather");
   });
@@ -150,6 +151,19 @@ describe("repair E2E", () => {
     expect(diagnostic).toBeDefined();
     // ADR-0027 이 넣은 서버 응답 본문. 결함이 만든 빈 성공 응답이 여기 그대로 있다.
     expect(diagnostic?.notes?.join("\n")).toContain("toString");
+    // 단언은 값 없이 종류와 판정만 싣는다(#393).
+    expect(failure?.assertions).toEqual([{ type: "isError", status: "failed" }]);
+  });
+
+  it("번들에 실패가 부른 도구의 계약이 실린다", async () => {
+    // repair 는 서버를 안 띄운다. 여기서 안 실으면 진단이 대조할 계약이 없다(#393).
+    const bundle = await readBundle();
+    expect(bundle.tools.map((tool) => tool.name)).toContain("get_weather");
+    const tool = bundle.tools.find((item) => item.name === "get_weather");
+    expect(tool?.inputSchema).toBeTypeOf("object");
+    expect(bundle.target).toEqual({ transport: "stdio" });
+    // 실행 명령은 번들 어디에도 없다. 이 줄이 마스킹 규칙을 두 벌로 만들지 않은 근거다.
+    expect(JSON.stringify(bundle)).not.toContain("node");
   });
 
   it("repair --yes 가 종료 코드 0 으로 끝나고 원인 후보를 찍는다", async () => {

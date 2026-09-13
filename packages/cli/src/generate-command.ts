@@ -1516,13 +1516,29 @@ async function runInteractiveReview(
             );
           }
           // 9. 입력값 교정(§4). 대상이 없으면 아무것도 묻지 않는다.
-          const targets = input.repair
+          // `--no-repair` 는 이 단계를 통째로 끈다. 고지도 안 찍는다.
+          const selection = input.repair
             ? selectRepairTargets({
                 suite: dryRunSuite,
                 outcomes: result.outcomes,
                 origins: originsOf(session),
               })
-            : [];
+            : { targets: [], thrown: [] };
+          // 못 고칠 실패를 교정 목록보다 먼저 말한다(설계 §4.2). 교정 대상이 0건이어도
+          // 찍는다. 못 고치는 실패가 있다는 사실은 대상 유무와 무관하다.
+          if (selection.thrown.length > 0) {
+            io.write(
+              `  교정 대상이 아닌 실패 ${selection.thrown.length}건 (호출 자체가 실패했습니다. 입력값 문제가 아닙니다)\n`,
+            );
+            for (const item of selection.thrown) {
+              io.write(`    ${item.caseName}\n`);
+              const body = item.serverMessage.split("\n").filter((line) => line !== "");
+              if (body.length === 0) io.write(`      ${item.failureLine}\n`);
+              else for (const line of body) io.write(`      → ${line}\n`);
+            }
+            io.write("\n");
+          }
+          const targets = selection.targets;
           let attempts: ReadonlyMap<string, readonly RepairAttempt[]> | undefined;
           let effective = result;
           if (targets.length > 0) {

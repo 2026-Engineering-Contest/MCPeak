@@ -16,6 +16,25 @@ export interface RepairTarget {
   readonly input: Readonly<Record<string, JsonValue>>;
   /** 서버가 돌려준 오류 본문. 제안과 화면의 근거다. 없으면 빈 문자열이다. */
   readonly serverMessage: string;
+  /** 그 케이스의 실제 실패 첫 줄. `DryRunCaseOutcome.failureLine` 을 그대로 옮긴다. */
+  readonly failureLine: string;
+}
+
+/**
+ * 호출 자체가 끝나지 못한 케이스. 입력값을 고쳐도 결과가 안 바뀌므로 교정 대상이 아니다.
+ * 화면에는 §4.2 고지로 따로 나온다(설계 §3.3).
+ */
+export interface ThrownCase {
+  readonly caseId: string;
+  readonly caseName: string;
+  readonly failureLine: string;
+  readonly serverMessage: string;
+}
+
+/** 한 번 순회해 가른 결과. 두 배열 모두 `outcomes` 순서다. */
+export interface RepairSelection {
+  readonly targets: readonly RepairTarget[];
+  readonly thrown: readonly ThrownCase[];
 }
 
 /** 한 케이스에 대해 시도한 값의 이력. 분류 화면(§8.7)이 쓴다. */
@@ -44,6 +63,9 @@ const VIOLATION_MARK = "→ ";
 /** 실패 사유 판정에 쓰는 단언 타입. 이 줄이 있어야 "정상 응답을 기대했는데 오류" 다. */
 const IS_ERROR = "isError";
 
+/** `renderReport` 가 건너뛴 단언 줄에 붙이는 표시. 건너뛴 단언은 실패가 아니다. */
+const SKIPPED_MARK = "(건너뜀) ";
+
 /** 케이스 본문 줄에서 들여쓰기를 벗긴다. 들여쓰기가 없는 줄은 본문이 아니다. */
 const bodyLines = (detail: string): readonly string[] =>
   detail
@@ -53,10 +75,14 @@ const bodyLines = (detail: string): readonly string[] =>
 
 /**
  * 실패 사유가 `isError` 단언인가. 단언 줄은 타입 이름으로 시작하고, 진단 문장과 해결 줄은
- * 그렇지 않다. 통과한 단언은 애초에 그려지지 않으므로 존재 자체가 실패의 근거다.
+ * 그렇지 않다.
+ *
+ * **`(건너뜀) ` 이 붙은 줄은 실패가 아니다.** 호출이 끝나지 못하면 단언이 전부 건너뛰기로
+ * 그려지는데, 그것을 실패로 읽어 못 고칠 케이스를 교정 대상에 올리던 것이 이번 결함이다.
+ * 앞단에서 `operationFailed` 로 이미 가르지만 여기서도 방어적으로 뺀다.
  */
 const failedByIsError = (detail: string): boolean =>
-  bodyLines(detail).some((line) => line.startsWith(IS_ERROR));
+  bodyLines(detail).some((line) => line.startsWith(IS_ERROR) && !line.includes(SKIPPED_MARK));
 
 /**
  * 서버가 돌려준 오류 본문을 뽑는다. 문장을 새로 만들지 않고 위반 줄을 그대로 옮긴다.
@@ -76,42 +102,58 @@ const serverMessageOf = (detail: string): string =>
 const expectsError = (spec: TestCaseSpec): boolean =>
   spec.assertions.some((assertion) => assertion.type === "isError" && assertion.expected === true);
 
-const toTarget = (
+/**
+ * 교정 갈래와 고지 갈래가 **공유하는** 앞단 조건. 둘로 나눠 쓰면 조건이 갈리는 날 어느
+ * 케이스가 양쪽에 다 들어가거나 어디에도 안 들어간다.
+ */
+const eligible = (
   spec: TestCaseSpec,
   outcome: DryRunCaseOutcome,
   origins: SelectRepairTargetsOptions["origins"],
-): RepairTarget | undefined => {
-  if (outcome.status === "passed") return undefined;
-  if (spec.operation.type !== "callTool") return undefined;
-  if (Object.keys(spec.operation.input).length === 0) return undefined;
+): boolean => {
+  if (outcome.status === "passed") return false;
+  if (spec.operation.type !== "callTool") return false;
+  if (Object.keys(spec.operation.input).length === 0) return false;
   // origins 에 없는 caseId 는 schemaBaseline 으로 본다. 호출 측이 provenance 를 못 구한
   // 경우이고, 그때 교정을 막으면 기능이 통째로 안 도는 쪽이 더 나쁘다.
-  if (origins.get(outcome.caseId) === "user") return undefined;
-  if (expectsError(spec)) return undefined;
-  if (!failedByIsError(outcome.detail)) return undefined;
-
-  return {
-    caseId: outcome.caseId,
-    caseName: outcome.caseName,
-    tool: spec.operation.tool,
-    input: spec.operation.input,
-    serverMessage: serverMessageOf(outcome.detail),
-  };
+  if (origins.get(outcome.caseId) === "user") return false;
+  if (expectsError(spec)) return false;
+  return true;
 };
 
 /**
- * 교정 대상을 고른다. 반환 배열은 `outcomes` 순서다. 정렬하지 않는다.
- * 순서를 바꾸면 화면 번호가 앞선 결과 화면과 어긋난다.
+ * 교정 대상과 못 고칠 실패를 한 번 순회해 가른다. 두 배열 모두 `outcomes` 순서다.
+ * 정렬하지 않는다. 순서를 바꾸면 화면 번호가 앞선 결과 화면과 어긋난다.
  */
-export function selectRepairTargets(options: SelectRepairTargetsOptions): readonly RepairTarget[] {
+export function selectRepairTargets(options: SelectRepairTargetsOptions): RepairSelection {
   const specs = new Map(options.suite.cases.map((spec) => [spec.id, spec]));
   const targets: RepairTarget[] = [];
+  const thrown: ThrownCase[] = [];
   for (const outcome of options.outcomes) {
     const spec = specs.get(outcome.caseId);
     // 명세에 없는 caseId 는 판별할 근거가 없다. 입력도 단언도 모르는 채로 고칠 수 없다.
     if (spec === undefined) continue;
-    const target = toTarget(spec, outcome, options.origins);
-    if (target !== undefined) targets.push(target);
+    if (!eligible(spec, outcome, options.origins)) continue;
+    // 호출이 끝나지 못한 케이스는 입력값을 무엇으로 바꿔도 같은 자리에서 죽는다(설계 §3.3).
+    if (outcome.operationFailed) {
+      thrown.push({
+        caseId: outcome.caseId,
+        caseName: outcome.caseName,
+        failureLine: outcome.failureLine,
+        serverMessage: serverMessageOf(outcome.detail),
+      });
+      continue;
+    }
+    if (!failedByIsError(outcome.detail)) continue;
+    if (spec.operation.type !== "callTool") continue;
+    targets.push({
+      caseId: outcome.caseId,
+      caseName: outcome.caseName,
+      tool: spec.operation.tool,
+      input: spec.operation.input,
+      serverMessage: serverMessageOf(outcome.detail),
+      failureLine: outcome.failureLine,
+    });
   }
-  return targets;
+  return { targets, thrown };
 }

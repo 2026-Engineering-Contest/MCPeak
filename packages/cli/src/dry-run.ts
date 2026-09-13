@@ -33,6 +33,17 @@ export interface DryRunCaseOutcome {
    * 호출이 오류로 끝난 케이스는 읽을 본문이 아예 없다(설계 §4.2).
    */
   readonly rejectionBody?: string;
+  /**
+   * 호출 자체가 끝나지 못했는가. `result.operation.status !== "completed"` 다.
+   * 참이면 단언은 전부 `skipped` 이고 입력값을 고쳐도 결과가 안 바뀐다(설계 §3.3).
+   */
+  readonly operationFailed: boolean;
+  /**
+   * 실패 사유 첫 줄. 들여쓰기를 벗긴 본문이다.
+   * `operationFailed` 면 작업 진단의 `message`, 아니면 실패한 단언의 렌더 줄이다.
+   * 통과했거나 근거가 없으면 빈 문자열이다.
+   */
+  readonly failureLine: string;
 }
 
 /**
@@ -96,6 +107,34 @@ const caseBlocks = (report: RunnerReport): readonly string[] => {
     else blocks.push([]);
   }
   return report.cases.map((_, index) => (blocks[index] ?? []).join("\n"));
+};
+
+/** `renderReport` 가 건너뛴 단언 줄에 붙이는 표시. reporter.ts 와 같은 값이다. */
+const SKIPPED_MARK = "(건너뜀) ";
+
+/** 케이스 본문 줄에서 들여쓰기를 벗긴다. 들여쓰기가 없는 줄은 본문이 아니다. */
+const bodyLines = (block: string): readonly string[] =>
+  block
+    .split("\n")
+    .filter((line) => line.startsWith(INDENT))
+    .map((line) => line.slice(INDENT.length));
+
+/**
+ * 실패 사유 첫 줄을 고른다. **문장을 새로 만들지 않고 렌더된 블록에서 고르기만 한다.**
+ *
+ * 판정은 구조화된 값으로 한다. `operation.status` 와 `assertions[].status` 가 이미 사실을
+ * 담고 있는데 렌더 문자열을 다시 파싱하면, 문안이 바뀌는 날 조용히 어긋난다. `(건너뜀) ` 줄을
+ * 실패한 단언으로 읽던 것이 정확히 그 방식의 결과다(설계 §3.3).
+ */
+const failureLineOf = (result: RunnerReport["cases"][number], block: string): string => {
+  const body = bodyLines(block);
+  // 호출이 끝나지 못했으면 첫 본문 줄이 곧 작업 진단의 message 다.
+  if (result.operation.status !== "completed") return body[0] ?? "";
+  const failed = result.assertions.find((assertion) => assertion.status === "failed");
+  if (failed === undefined) return "";
+  return (
+    body.find((line) => line.startsWith(failed.spec.type) && !line.includes(SKIPPED_MARK)) ?? ""
+  );
 };
 
 /**
@@ -168,6 +207,8 @@ const toResult = (report: RunnerReport): DryRunResult => {
     status: result.status,
     detail: blocks[index] ?? "",
     rejectionBasis: result.rejectionBasis,
+    operationFailed: result.operation.status !== "completed",
+    failureLine: failureLineOf(result, blocks[index] ?? ""),
     // 값이 없으면 키를 만들지 않는다. runner 가 같은 규칙으로 넘겨준 것을 그대로 옮긴다.
     ...(result.rejectionBody === undefined ? {} : { rejectionBody: result.rejectionBody }),
   }));

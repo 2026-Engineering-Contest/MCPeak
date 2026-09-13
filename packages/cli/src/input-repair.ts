@@ -7,7 +7,8 @@ import type { RepairAttempt, RepairTarget } from "./repair-target.js";
 /**
  * 교정 대상 케이스의 입력값을 사람에게 받아 고치고 다시 실행한다.
  * 단계 구조는 설계 문서 §4.1, 사람 입력은 §4.5, 값 재사용은 §4.6, 되돌리기는 §4.7 이다.
- * 화면 문안은 §8.6, §8.6.1, §8.6.2, §8.6.3 이 전량 고정한다. 문장을 새로 만들지 않는다.
+ * 화면 문안은 2026-09-13 설계 §4.3 · §4.4 · §4.5 와 §8.6.2 · §8.6.3 이 전량 고정한다.
+ * 문장을 새로 만들지 않는다.
  *
  * 서버를 직접 부르지 않는다. 재실행과 AI 제안은 호출 측이 넘긴 함수다.
  */
@@ -48,15 +49,8 @@ export interface RepairInputsOptions {
 
 /** 케이스 머리글 들여쓰기. 분류 화면(§8.3)과 같은 값이라 번호가 이어 읽힌다. */
 const HEAD = "  ";
-/** 본문 들여쓰기. 설계 문서 §8.6 의 모든 본문 줄이 이 폭이다. */
+/** 본문 들여쓰기. 교정 화면의 모든 본문 줄이 이 폭이다. */
 const BODY = "      ";
-
-/**
- * 교정 대상의 실패 사유는 항상 이 한 줄이다. 대상 판별이 `isError` 단언의 `expected` 가
- * true 가 아닌 실패만 통과시키므로(§4.2), 진단 문장이 이것 말고 나올 수 없다.
- * `RepairTarget` 이 `detail` 을 나르지 않아 여기서 다시 적는다.
- */
-const FAILURE_LINE = `${BODY}isError  정상 응답을 기대했지만 오류 응답을 받았습니다.`;
 
 /**
  * 제안값의 출처를 말한다. `propose` 는 provider 가 있을 때만 배선되므로 여기 오는 값은
@@ -131,36 +125,40 @@ const parseAnswer = (answer: string): JsonValue => {
   }
 };
 
-/** §8.6 의 기본값 표시. 문자열은 따옴표 없이 그대로 보여준다. */
-const renderDefault = (value: JsonValue): string =>
-  typeof value === "string" ? value : JSON.stringify(value);
-
-/** §8.6.1 의 현재값 표시. 값의 경계가 보여야 해서 JSON 으로 적는다. */
-const renderCurrent = (value: JsonValue): string => JSON.stringify(value) ?? "null";
-
 /** `(tool, 필드명)` 캐시 키. 필드 이름에 점이 있어도 툴 이름과 섞이지 않게 앞을 길이로 가른다. */
 const cacheKey = (tool: string, field: string): string => `${tool.length}:${tool}.${field}`;
 
 /**
  * 한 필드를 사람에게 받는다. 선언 타입과 안 맞으면 같은 질문을 다시 한다(§4.5).
- * `proposed` 가 있으면 §8.6 형식, 없으면 §8.6.1 형식이다.
+ *
+ * 형식은 제안 유무와 **무관하게 하나다**(2026-09-13 설계 §4.5). 갈래가 둘이면 같은 화면이
+ * 회차마다 다른 모양이 되고, 사용자가 무엇을 누르면 무엇이 들어가는지를 두 번 배운다.
  */
 const askField = async (
   io: ReviewIO,
   options: {
+    readonly tool: string;
     readonly field: string;
+    /** 이번 회차에 실제로 묻는 필드 중 몇 번째인가. 1부터. 캐시로 건너뛴 필드는 안 센다. */
+    readonly index: number;
+    /** 이번 회차에 묻는 필드 수. */
+    readonly total: number;
     readonly current: JsonValue;
     readonly proposed: JsonValue | undefined;
     readonly declared: string | undefined;
   },
 ): Promise<JsonValue> => {
   const fallback = options.proposed ?? options.current;
+  const parts = [`필드 ${options.index}/${options.total}`];
   // 선언 타입을 모르는 필드는 괄호에서 타입만 뺀다. 없는 타입을 지어내지 않는다.
-  const declared = options.declared === undefined ? "" : `${options.declared}, `;
-  const question =
+  if (options.declared !== undefined) parts.push(options.declared);
+  if (options.current !== undefined) parts.push(`현재 ${JSON.stringify(options.current)}`);
+  parts.push(
     options.proposed === undefined
-      ? `${BODY}${options.field} (${declared}현재 ${renderCurrent(options.current)}): `
-      : `${BODY}${options.field}: [${renderDefault(options.proposed)}]`;
+      ? "엔터 = 현재 값 유지"
+      : `엔터 = 제안 값 ${JSON.stringify(options.proposed)}`,
+  );
+  const question = `${BODY}${options.tool}.${options.field} (${parts.join(", ")}): `;
   for (;;) {
     const answer = await io.input(question);
     // 엔터는 기본값을 고른 것이다. 기본값은 이미 선언을 만족한다고 보고 검사하지 않는다.
@@ -196,12 +194,22 @@ const askRound = async (
   const next: Record<string, JsonValue> = {};
   const asked: string[] = [];
   let unchanged = true;
+  // 진행도는 **이번 회차에 실제로 묻는** 필드만 센다. 캐시로 건너뛴 필드를 세면 사용자가
+  // 보지도 못한 번호가 화면에서 사라진 것처럼 보인다(설계 §4.5).
+  const total = Object.keys(options.current).filter(
+    (field) => options.reuse?.get(field) === undefined,
+  ).length;
+  let index = 0;
   for (const [field, value] of Object.entries(options.current)) {
     const cached = options.reuse?.get(field);
+    if (cached === undefined) index += 1;
     const answered =
       cached === undefined
         ? await askField(io, {
+            tool: target.tool,
             field,
+            index,
+            total,
             current: value,
             proposed: options.proposed?.[field],
             declared: declaredTypeOf(options.tools, target.tool, field),
@@ -227,8 +235,12 @@ export async function repairInputs(
   const announced = new Set<string>();
 
   for (const [index, target] of options.targets.entries()) {
-    options.io.write(`${HEAD}[${index + 1}] ${target.caseName}\n`);
-    options.io.write(`${FAILURE_LINE}\n`);
+    options.io.write(`${HEAD}[${index + 1}/${options.targets.length}] ${target.caseName}\n`);
+    // 실패 줄은 고정 문장이 아니라 그 케이스의 실제 진단이다(설계 §4.3).
+    options.io.write(`${BODY}${target.failureLine}\n`);
+    for (const line of target.serverMessage.split("\n").filter((line) => line !== "")) {
+      options.io.write(`${BODY}→ ${line}\n`);
+    }
     options.io.write("\n");
 
     const attempts: RepairAttempt[] = [];

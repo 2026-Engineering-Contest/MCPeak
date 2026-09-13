@@ -91,6 +91,32 @@ const select = async (
   return selectRepairTargets({ suite, outcomes: result.outcomes, origins });
 };
 
+/**
+ * 이 툴을 부르면 호출 자체가 던진다. SDK 가 스키마 불일치에 내는 오류를 흉내 낸다.
+ * 서버가 준 사유는 `cause` 에 온다. 러너가 화면의 `→ 원인:` 줄을 거기서 만든다.
+ */
+const throwingClient = (tool: string, message: string): McpClient => ({
+  async listTools() {
+    return tools;
+  },
+  async callTool(name) {
+    if (name === tool) throw new Error("툴 호출에 실패했습니다.", { cause: new Error(message) });
+    return okResult(name);
+  },
+  async close() {},
+});
+
+/** 호출이 던지는 갈래의 `select`. 응답표로는 만들 수 없는 상황이라 클라이언트를 바꾼다. */
+const selectThrown = async (
+  cases: readonly TestCaseSpec[],
+  message: string,
+  origins: ReadonlyMap<string, "schemaBaseline" | "ai" | "user"> = new Map(),
+) => {
+  const suite = suiteOf(cases);
+  const result = await runDryRun({ client: throwingClient("get_weather", message), suite });
+  return selectRepairTargets({ suite, outcomes: result.outcomes, origins });
+};
+
 /** 오류 응답을 돌려주는 툴 하나짜리 응답표. */
 const rejects = (tool: string, text: string): Readonly<Record<string, ToolResult>> => ({
   [tool]: errorResult(text),
@@ -98,7 +124,7 @@ const rejects = (tool: string, text: string): Readonly<Record<string, ToolResult
 
 describe("selectRepairTargets", () => {
   it("통과한 케이스는 대상이 아니다", async () => {
-    const targets = await select([callCase("c1", "get_weather", { city: "서울" })]);
+    const { targets } = await select([callCase("c1", "get_weather", { city: "서울" })]);
 
     expect(targets).toEqual([]);
 
@@ -114,17 +140,20 @@ describe("selectRepairTargets", () => {
       status: "passed" as const,
     }));
 
-    expect(selectRepairTargets({ suite, outcomes: relabelled, origins: new Map() })).toEqual([]);
+    expect(selectRepairTargets({ suite, outcomes: relabelled, origins: new Map() })).toEqual({
+      targets: [],
+      thrown: [],
+    });
   });
 
   it("listTools 케이스는 대상이 아니다", async () => {
-    const targets = await select([listToolsCase("c1", "없는_툴")]);
+    const { targets } = await select([listToolsCase("c1", "없는_툴")]);
 
     expect(targets).toEqual([]);
   });
 
   it("입력이 빈 객체면 대상이 아니다", async () => {
-    const targets = await select(
+    const { targets } = await select(
       [callCase("c1", "get_weather", {})],
       new Map(),
       rejects("get_weather", "city 가 필요합니다."),
@@ -134,7 +163,7 @@ describe("selectRepairTargets", () => {
   });
 
   it("origin 이 user 면 대상이 아니다", async () => {
-    const targets = await select(
+    const { targets } = await select(
       [callCase("c1", "get_weather", { city: "서울" })],
       new Map([["c1", "user"]]),
       rejects("get_weather", "city 가 필요합니다."),
@@ -144,7 +173,7 @@ describe("selectRepairTargets", () => {
   });
 
   it("origins 에 없는 caseId 는 schemaBaseline 으로 보고 대상이 된다", async () => {
-    const targets = await select(
+    const { targets } = await select(
       [callCase("c1", "get_weather", { city: "서울" })],
       new Map(),
       rejects("get_weather", "city 가 필요합니다."),
@@ -155,7 +184,7 @@ describe("selectRepairTargets", () => {
 
   it("isError expected true 인 위반 케이스는 대상이 아니다", async () => {
     // 오류를 기대했는데 정상 응답이 왔다. 실패했고 isError 줄도 있지만 교정 대상은 아니다.
-    const targets = await select([
+    const { targets } = await select([
       callCase("c1", "get_weather", { city: "서울" }, [{ type: "isError", expected: true }]),
     ]);
 
@@ -163,7 +192,7 @@ describe("selectRepairTargets", () => {
   });
 
   it("본문 스키마 불일치로만 실패한 케이스는 대상이 아니다", async () => {
-    const targets = await select([
+    const { targets } = await select([
       callCase("c1", "get_weather", { city: "서울" }, [
         {
           type: "bodyMatchesSchema",
@@ -176,7 +205,7 @@ describe("selectRepairTargets", () => {
   });
 
   it("isError 로 실패한 baseline 케이스는 대상이다", async () => {
-    const targets = await select(
+    const { targets } = await select(
       [callCase("c1", "get_weather", { city: "서울" })],
       new Map([["c1", "schemaBaseline"]]),
       rejects("get_weather", "city 가 필요합니다."),
@@ -190,7 +219,7 @@ describe("selectRepairTargets", () => {
   });
 
   it("input 의 키 순서가 명세 순서와 같다", async () => {
-    const targets = await select(
+    const { targets } = await select(
       [callCase("c1", "get_weather", { city: "서울", unit: "c", days: 3 })],
       new Map(),
       rejects("get_weather", "city 가 필요합니다."),
@@ -200,7 +229,7 @@ describe("selectRepairTargets", () => {
   });
 
   it("serverMessage 에 서버 오류 본문이 들어간다", async () => {
-    const targets = await select(
+    const { targets } = await select(
       [
         callCase("c1", "get_weather", { city: "서울" }, [
           { type: "isError", expected: false },
@@ -225,7 +254,7 @@ describe("selectRepairTargets", () => {
     // 위의 `serverMessage 에 서버 오류 본문이 들어간다` 는 본문 단언이 붙은 케이스를 본다.
     // 여기는 단언이 isError 하나뿐인 베이스라인 케이스다. 생성기가 만드는 정상 케이스가
     // 이 모양이고, 진단이 본문을 싣기 시작하면서 열린 경로다(ADR-0027).
-    const targets = await select(
+    const { targets } = await select(
       [callCase("c1", "get_weather", { city: "example" })],
       new Map(),
       rejects("get_weather", "알 수 없는 도시: example"),
@@ -235,7 +264,7 @@ describe("selectRepairTargets", () => {
   });
 
   it("서버 오류 본문이 없으면 serverMessage 가 빈 문자열이다", async () => {
-    const targets = await select([callCase("c1", "get_weather", { city: "서울" })], new Map(), {
+    const { targets } = await select([callCase("c1", "get_weather", { city: "서울" })], new Map(), {
       get_weather: unreadableErrorResult(),
     });
 
@@ -243,8 +272,87 @@ describe("selectRepairTargets", () => {
     expect(targets[0]?.serverMessage).toBe("");
   });
 
+  it("호출이 던진 케이스는 targets 가 아니라 thrown 이다", async () => {
+    // 입력값을 무엇으로 바꿔도 같은 자리에서 죽는다. 사람에게 물어 볼 것이 없다.
+    const result = await selectThrown(
+      [callCase("c1", "get_weather", { city: "서울" })],
+      "MCP error -32602: Structured content does not match the tool's output schema",
+    );
+
+    expect(result.targets).toEqual([]);
+    expect(result.thrown).toHaveLength(1);
+    expect(result.thrown[0]?.caseId).toBe("c1");
+    expect(result.thrown[0]?.serverMessage).toContain("원인: MCP error -32602");
+  });
+
+  it("건너뛴 isError 줄을 실패로 읽지 않는다", async () => {
+    const result = await selectThrown(
+      [callCase("c1", "get_weather", { city: "서울" })],
+      "MCP error -32602: 스키마 불일치",
+    );
+
+    // 렌더 블록에는 `(건너뜀) ` 이 붙은 isError 줄이 실제로 들어 있다. 그것을 실패로 읽어
+    // 못 고칠 케이스를 교정 대상에 올리던 것이 이번 결함이다.
+    expect(result.targets).toEqual([]);
+  });
+
+  it("thrown 도 위반 케이스와 user origin 을 거른다", async () => {
+    const violation = await selectThrown(
+      [callCase("c1", "get_weather", { city: "서울" }, [{ type: "isError", expected: true }])],
+      "MCP error -32602: 스키마 불일치",
+    );
+    expect(violation.thrown).toEqual([]);
+
+    const byUser = await selectThrown(
+      [callCase("c1", "get_weather", { city: "서울" })],
+      "MCP error -32602: 스키마 불일치",
+      new Map([["c1", "user"]]),
+    );
+    expect(byUser.thrown).toEqual([]);
+  });
+
+  it("targets 와 thrown 은 outcomes 순서다", async () => {
+    const suite = suiteOf([
+      callCase("c1", "get_weather", { city: "서울" }),
+      callCase("c2", "reject_all", { city: "부산" }),
+      callCase("c3", "get_weather", { city: "대구" }),
+      callCase("c4", "reject_all", { city: "인천" }),
+    ]);
+    const client: McpClient = {
+      async listTools() {
+        return tools;
+      },
+      async callTool(name) {
+        if (name === "get_weather")
+          throw new Error("툴 호출에 실패했습니다.", {
+            cause: new Error("MCP error -32602: 스키마 불일치"),
+          });
+        return errorResult("city 가 필요합니다.");
+      },
+      async close() {},
+    };
+    const result = selectRepairTargets({
+      suite,
+      outcomes: (await runDryRun({ client, suite })).outcomes,
+      origins: new Map(),
+    });
+
+    expect(result.targets.map((target) => target.caseId)).toEqual(["c2", "c4"]);
+    expect(result.thrown.map((item) => item.caseId)).toEqual(["c1", "c3"]);
+  });
+
+  it("targets 가 failureLine 을 싣는다", async () => {
+    const { targets } = await select(
+      [callCase("c1", "get_weather", { city: "서울" })],
+      new Map(),
+      rejects("get_weather", "city 가 필요합니다."),
+    );
+
+    expect(targets[0]?.failureLine).toBe("isError  정상 응답을 기대했지만 오류 응답을 받았습니다.");
+  });
+
   it("반환 순서가 outcomes 순서와 같다", async () => {
-    const targets = await select(
+    const { targets } = await select(
       [
         callCase("c1", "get_weather", { city: "서울" }),
         callCase("c2", "reject_all", { city: "부산" }),

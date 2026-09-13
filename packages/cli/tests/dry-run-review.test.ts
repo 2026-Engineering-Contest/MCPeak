@@ -49,6 +49,8 @@ const outcome = (
   status,
   detail,
   rejectionBasis: "notApplicable",
+  operationFailed: false,
+  failureLine: "",
 });
 
 const resultOf = (outcomes: readonly DryRunCaseOutcome[]): DryRunResult => ({ outcomes });

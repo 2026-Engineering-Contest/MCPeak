@@ -59,16 +59,21 @@ const emptySuite: TestSuiteSpec = {
   cases: [],
 };
 
+/** 대상 판별을 통과한 케이스의 기본 실패 줄. `selectRepairTargets` 가 싣는 값과 같다. */
+const DEFAULT_FAILURE_LINE = "isError  정상 응답을 기대했지만 오류 응답을 받았습니다.";
+
 const target = (
   caseId: string,
   input: Input,
   caseName = "get_weather가 오류 없이 응답한다",
+  extra: { readonly serverMessage?: string; readonly failureLine?: string } = {},
 ): RepairTarget => ({
   caseId,
   caseName,
   tool: "get_weather",
   input,
-  serverMessage: "",
+  serverMessage: extra.serverMessage ?? "",
+  failureLine: extra.failureLine ?? DEFAULT_FAILURE_LINE,
 });
 
 /** 매번 같은 판정을 돌려주는 재실행. */
@@ -127,7 +132,9 @@ describe("repairInputs", () => {
       tools: weatherTools,
     });
 
-    expect(io.prompts).toEqual(["      city: [서울]"]);
+    expect(io.prompts).toEqual([
+      '      get_weather.city (필드 1/1, string, 현재 "example", 엔터 = 제안 값 "서울"): ',
+    ]);
   });
 
   it("AI 제안에 엔터만 누르면 그 값으로 재실행한다", async () => {
@@ -159,7 +166,9 @@ describe("repairInputs", () => {
       tools: weatherTools,
     });
 
-    expect(io.prompts).toEqual(['      city (string, 현재 "example"): ']);
+    expect(io.prompts).toEqual([
+      '      get_weather.city (필드 1/1, string, 현재 "example", 엔터 = 현재 값 유지): ',
+    ]);
     expect(calls).toEqual([{ caseId: "c1", input: { city: "서울" } }]);
   });
 
@@ -215,7 +224,10 @@ describe("repairInputs", () => {
       tools: weatherTools,
     });
 
-    expect(io.prompts).toEqual(["      city: [서울]", '      city (string, 현재 "서울"): ']);
+    expect(io.prompts).toEqual([
+      '      get_weather.city (필드 1/1, string, 현재 "example", 엔터 = 제안 값 "서울"): ',
+      '      get_weather.city (필드 1/1, string, 현재 "서울", 엔터 = 현재 값 유지): ',
+    ]);
     expect(calls.map((call) => call.input)).toEqual([{ city: "서울" }, { city: "부산" }]);
     expect(outcomes[0]?.repaired).toBe(true);
   });
@@ -405,14 +417,18 @@ describe("repairInputs", () => {
     expect(outcomes[1]?.attempts).toEqual([{ field: "city", value: "부산", passed: true }]);
   });
 
-  it("화면 문안이 설계 문서 §8.6 과 같다", async () => {
+  it("화면 문안이 2026-09-13 설계 §4.3 과 같다", async () => {
     const io = scriptedIO([""]);
     const { rerun } = rerunAlways(true);
 
     await repairInputs({
       io,
       suite: emptySuite,
-      targets: [target("c1", { city: "example" })],
+      targets: [
+        target("c1", { city: "example" }, undefined, {
+          serverMessage: "city 'example' 을 찾을 수 없습니다",
+        }),
+      ],
       rerun,
       propose: async () => ({ kind: "proposed", input: { city: "서울" } }),
       proposedBy: "codex(gpt-5.6-luna)",
@@ -421,11 +437,12 @@ describe("repairInputs", () => {
 
     expect(io.transcript()).toBe(
       [
-        "  [1] get_weather가 오류 없이 응답한다",
+        "  [1/1] get_weather가 오류 없이 응답한다",
         "      isError  정상 응답을 기대했지만 오류 응답을 받았습니다.",
+        "      → city 'example' 을 찾을 수 없습니다",
         "",
         "      입력값이 거절된 것으로 보입니다. codex(gpt-5.6-luna) 가 서버 응답을 보고 제안한 값입니다.",
-        "      city: [서울]",
+        '      get_weather.city (필드 1/1, string, 현재 "example", 엔터 = 제안 값 "서울"): ',
         "      ▸ 다시 실행 중... 1건",
         "      ✓ 통과",
         "",
@@ -433,7 +450,7 @@ describe("repairInputs", () => {
     );
   });
 
-  it("화면 문안이 설계 문서 §8.6.1 과 같다", async () => {
+  it("화면 문안이 2026-09-13 설계 §4.4 와 같다", async () => {
     const io = scriptedIO(["서울"]);
     const { rerun } = rerunAlways(false);
 
@@ -447,15 +464,142 @@ describe("repairInputs", () => {
 
     expect(io.transcript()).toBe(
       [
-        "  [1] get_weather가 오류 없이 응답한다",
+        "  [1/1] get_weather가 오류 없이 응답한다",
         "      isError  정상 응답을 기대했지만 오류 응답을 받았습니다.",
         "",
         "      입력값이 거절된 것으로 보입니다. 서버 응답에 쓸 만한 값이 없어 직접 받습니다.",
-        '      city (string, 현재 "example"): ',
+        '      get_weather.city (필드 1/1, string, 현재 "example", 엔터 = 현재 값 유지): ',
         "      ▸ 다시 실행 중... 1건",
         "      ✗ 여전히 실패합니다. 입력값 문제가 아닐 수 있습니다.",
         "",
       ].join("\n"),
+    );
+  });
+
+  it("머리줄에 전체 대상 수를 붙인다", async () => {
+    const io = scriptedIO(["서울", "부산"]);
+    const { rerun } = rerunAlways(true);
+
+    await repairInputs({
+      io,
+      suite: emptySuite,
+      targets: [target("c1", { city: "example" }), target("c2", { days: 3 }, "다른 케이스")],
+      rerun,
+      tools: weatherTools,
+    });
+
+    expect(io.transcript()).toContain("  [1/2] ");
+    expect(io.transcript()).toContain("  [2/2] ");
+  });
+
+  it("서버 위반 줄을 머리말에 찍는다", async () => {
+    const io = scriptedIO(["서울"]);
+    const { rerun } = rerunAlways(true);
+
+    await repairInputs({
+      io,
+      suite: emptySuite,
+      targets: [
+        target("c1", { city: "example" }, undefined, {
+          serverMessage: "city 'example' 을 찾을 수 없습니다",
+        }),
+      ],
+      rerun,
+      tools: weatherTools,
+    });
+
+    expect(io.transcript()).toContain("      → city 'example' 을 찾을 수 없습니다");
+  });
+
+  it("서버 위반 줄이 없으면 화살표 줄이 없다", async () => {
+    const io = scriptedIO(["서울"]);
+    const { rerun } = rerunAlways(true);
+
+    await repairInputs({
+      io,
+      suite: emptySuite,
+      targets: [target("c1", { city: "example" }, undefined, { serverMessage: "" })],
+      rerun,
+      tools: weatherTools,
+    });
+
+    // 관측하지 못한 것을 관측했다고 적지 않는다. 빈 화살표 줄을 만들지 않는다.
+    expect(io.transcript()).not.toContain("→ ");
+  });
+
+  it("실패 줄은 target 의 failureLine 을 그대로 쓴다", async () => {
+    const io = scriptedIO(["서울"]);
+    const { rerun } = rerunAlways(true);
+
+    await repairInputs({
+      io,
+      suite: emptySuite,
+      targets: [
+        target("c1", { city: "example" }, undefined, {
+          failureLine: "toolExists  선언되지 않은 툴입니다.",
+        }),
+      ],
+      rerun,
+      tools: weatherTools,
+    });
+
+    expect(io.transcript()).toContain("      toolExists  선언되지 않은 툴입니다.");
+    expect(io.transcript()).not.toContain("정상 응답을 기대했지만");
+  });
+
+  it("필드가 여럿이면 진행도를 센다", async () => {
+    const io = scriptedIO(["서울", "3", "kst"]);
+    const { rerun } = rerunAlways(true);
+
+    await repairInputs({
+      io,
+      suite: emptySuite,
+      targets: [target("c1", { city: "example", days: 1, zone: "utc" })],
+      rerun,
+      tools: weatherTools,
+    });
+
+    expect(io.prompts[0]).toContain("필드 1/3");
+    expect(io.prompts[1]).toContain("필드 2/3");
+    expect(io.prompts[2]).toContain("필드 3/3");
+  });
+
+  it("캐시로 건너뛴 필드는 진행도에서 빼고 센다", async () => {
+    const io = scriptedIO(["서울", "3"]);
+    const { rerun } = rerunAlways(true);
+
+    await repairInputs({
+      io,
+      suite: emptySuite,
+      targets: [
+        target("c1", { city: "example" }),
+        target("c2", { city: "example", days: 1 }, "둘째 케이스"),
+      ],
+      rerun,
+      tools: weatherTools,
+    });
+
+    // 둘째 케이스의 city 는 첫 케이스가 통과시킨 값으로 채워져 묻지 않는다(§4.6).
+    expect(io.prompts).toHaveLength(2);
+    expect(io.prompts[0]).toContain("필드 1/1");
+    expect(io.prompts[1]).toContain("필드 1/1");
+    expect(io.prompts[1]).toContain("get_weather.days");
+  });
+
+  it("선언 타입을 모르면 타입 자리를 뺀다", async () => {
+    const io = scriptedIO(["서울"]);
+    const { rerun } = rerunAlways(true);
+
+    await repairInputs({
+      io,
+      suite: emptySuite,
+      targets: [target("c1", { zone: "example" })],
+      rerun,
+      tools: weatherTools,
+    });
+
+    expect(io.prompts[0]).toBe(
+      '      get_weather.zone (필드 1/1, 현재 "example", 엔터 = 현재 값 유지): ',
     );
   });
 

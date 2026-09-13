@@ -3,7 +3,7 @@ import { Field, INPUT_CLASS, Toggle } from "../../components/Field.js";
 import type { GenerateForm } from "../build-argv.js";
 import { buildGenerateArgv } from "../build-argv.js";
 
-type ConfirmFields = Pick<GenerateForm, "dryRun" | "repair" | "resetCmd">;
+type ConfirmFields = Pick<GenerateForm, "dryRun" | "repair" | "diagnoseRejections" | "resetCmd">;
 
 /** argv 한 토큰을 셸 표기로 감싼다(표시 전용, 전송은 배열 그대로). */
 function quoteToken(token: string): string {
@@ -58,6 +58,7 @@ export function StepConfirm(props: {
     ],
     ["시험 실행", form.dryRun ? "켬" : "끔"],
     ["자동 교정", form.repair ? "켬" : "끔"],
+    ["거절 근거 진단", form.diagnoseRejections ? "켬" : "끔"],
     ["초기화 명령", form.resetCmd === "" ? "없음" : form.resetCmd],
   ];
 
@@ -86,6 +87,18 @@ export function StepConfirm(props: {
             : "끄면 --no-repair가 들어갑니다."
         }
         onChange={(repair) => props.onChange({ repair })}
+      />
+      <Toggle
+        id="generate-diagnose-rejections"
+        label="거절 근거 진단 보기 (--diagnose-rejections)"
+        checked={form.diagnoseRejections}
+        disabled={!form.dryRun}
+        hint={
+          form.dryRun
+            ? "통과한 거절 케이스의 목록과 AI 진단을 함께 봅니다. 시험 실행이 필요합니다."
+            : "시험 실행이 꺼져 있어 거절 근거 진단을 쓸 수 없습니다."
+        }
+        onChange={(diagnoseRejections) => props.onChange({ diagnoseRejections })}
       />
       <Field
         label="시험 실행 전 초기화 명령 (선택)"

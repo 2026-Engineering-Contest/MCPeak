@@ -139,6 +139,7 @@ describe("describeRun 은 대시보드가 만든 argv 를 되읽는다", () => {
       model: "",
       dryRun: true,
       repair: true,
+      diagnoseRejections: false,
       resetCmd: "",
     });
 

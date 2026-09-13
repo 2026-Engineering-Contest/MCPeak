@@ -33,7 +33,10 @@ interface RunOutcome {
   readonly exitCode: number;
 }
 
-/** 질문 종류별 답. 없으면 choose 는 `cancel`, input 은 빈 문자열, confirm 은 `y` 다. */
+/**
+ * 질문 종류별 답. 없으면 choose 는 `cancel`, input 은 빈 문자열, confirm 은 `y` 다.
+ * 예외는 픽스처 저장 질문 하나이며, 그 사유는 `answerFor` 에 적혀 있다.
+ */
 interface AnswerScript {
   readonly choices?: string[];
   readonly inputs?: string[];
@@ -46,7 +49,11 @@ function answerFor(question: PendingQuestion, script: AnswerScript): string {
     case "input":
       return script.inputs?.shift() ?? "";
     case "confirm":
-      return "y";
+      // 픽스처 저장(#390)만 거절한다. 예로 답하면 **대시보드 서버의 cwd 에 진짜
+      // `mcpeak.fixtures.json` 을 만든다.** 여기서는 그것이 저장소 루트다.
+      // cli 의 결함이 아니다. 사람이 예라고 답하면 파일을 만드는 것이 맞는 동작이고,
+      // 이 스크립트가 사람 대신 전부 예라고 답하는 것이 문제다.
+      return question.message === "저장할까요?" ? "n" : "y";
   }
 }
 

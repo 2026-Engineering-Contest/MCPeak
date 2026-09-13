@@ -133,6 +133,16 @@ const TITLE_OVER_MAX = "example".padEnd(81, "x");
 const TAGS_AT_MAX = ["home", "home", "home", "home", "home"];
 const TAGS_OVER_MAX = [...TAGS_AT_MAX, "home"];
 
+/**
+ * 정상 분기 케이스(`-branch-`)가 쓰는 값. 선언에서 합성된 것이라 손으로 고르지 않는다.
+ *
+ * `parentId` 는 여기 없다. `z.string().uuid()` 뿐이고 후보 키워드가 없어 generate 가 format 표의
+ * 문서용 예약 값을 넣게 되는데, 서버는 그 위에 "그 노트가 실제로 있는가" 를 더 본다. 없는
+ * 자원을 가리키는 정상 케이스는 만들지 않고 skip 을 남긴다. 아래 skip 단언이 그것이다.
+ */
+const TAGS_ONE = ["home"];
+const FILTER_BRANCH = { priority: "low" };
+
 /** 설계 §6 단언 3 의 표. 순서까지 사양이다. */
 const EXPECTED_OPERATIONS = [
   { type: "callTool", tool: "get_note", input: { id: EXAMPLE_ID } },
@@ -146,6 +156,10 @@ const EXPECTED_OPERATIONS = [
   { type: "callTool", tool: "create_note", input: CREATE_OK },
   { type: "callTool", tool: "create_note", input: { ...CREATE_OK, tags: TAGS_AT_MAX } },
   { type: "callTool", tool: "create_note", input: { ...CREATE_OK, title: TITLE_AT_MAX } },
+  { type: "callTool", tool: "create_note", input: { ...CREATE_OK, body: "example" } },
+  { type: "callTool", tool: "create_note", input: { ...CREATE_OK, priority: "mid" } },
+  { type: "callTool", tool: "create_note", input: { ...CREATE_OK, priority: "high" } },
+  { type: "callTool", tool: "create_note", input: { ...CREATE_OK, tags: TAGS_ONE } },
   { type: "callTool", tool: "create_note", input: CREATE_NO_AUTHOR },
   { type: "callTool", tool: "create_note", input: CREATE_NO_DUEAT },
   { type: "callTool", tool: "create_note", input: CREATE_NO_PRIORITY },
@@ -167,6 +181,8 @@ const EXPECTED_OPERATIONS = [
   { type: "callTool", tool: "create_note", input: { ...CREATE_OK, title: TITLE_OVER_MAX } },
   { type: "callTool", tool: "list_notes", input: {} },
   { type: "callTool", tool: "list_notes", input: { limit: 50 } },
+  { type: "callTool", tool: "list_notes", input: { filter: FILTER_BRANCH } },
+  { type: "callTool", tool: "list_notes", input: { limit: 10 } },
   { type: "callTool", tool: "list_notes", input: { filter: "example" } },
   { type: "callTool", tool: "list_notes", input: { limit: 1.5 } },
   { type: "callTool", tool: "list_notes", input: { limit: 0 } },
@@ -177,6 +193,9 @@ const EXPECTED_OPERATIONS = [
  * `-bound-` 는 경계 안쪽의 정상 케이스, `-range-lower-` · `-range-upper-` 는 그 바깥의 위반
  * 케이스다. 상·하한을 한 케이스로 묶어 두면 한쪽만 검사하는 서버가 범위를 다 지킨 것으로
  * 세어진다(이슈 #387).
+ *
+ * `-branch-` 는 정상 입력의 다른 갈래를 밟는 케이스다(이슈 #401). `-bound-` 와 같이 위반이
+ * 아니므로 축을 만들지 않고 케이스 수만 늘린다.
  */
 const EXPECTED_IDS = [
   "get-note-success",
@@ -186,6 +205,10 @@ const EXPECTED_IDS = [
   "create-note-success",
   "create-note-bound-upper-tags",
   "create-note-bound-upper-title",
+  "create-note-branch-with-body",
+  "create-note-branch-enum-priority-2",
+  "create-note-branch-enum-priority-last",
+  "create-note-branch-with-tags",
   "create-note-missing-author",
   "create-note-missing-dueat",
   "create-note-missing-priority",
@@ -203,6 +226,8 @@ const EXPECTED_IDS = [
   "create-note-range-upper-title",
   "list-notes-success",
   "list-notes-bound-upper-limit",
+  "list-notes-branch-with-filter",
+  "list-notes-branch-with-limit",
   "list-notes-type-filter",
   "list-notes-type-limit",
   "list-notes-range-lower-limit",
@@ -254,31 +279,57 @@ describe.sequential("zod-notes-server (McpServer + zod) 실서버 E2E", () => {
     }
   });
 
-  it("generate --baseline-only 가 세 툴 전부에서 28 케이스를 결정론적으로 만든다", async () => {
+  it("generate --baseline-only 가 세 툴 전부에서 34 케이스를 결정론적으로 만든다", async () => {
     const directory = await mkdtemp(join(tmpdir(), "mcpeak-zod-notes-"));
     const pidFile = join(directory, "server.pid");
     const secondPidFile = join(directory, "server-2.pid");
     const axisPidFile = join(directory, "axis-count.pid");
     const suitePath = join(directory, "baseline.json");
     const secondPath = join(directory, "baseline-2.json");
-    const out = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const outputs: string[] = [];
+    const out = vi.spyOn(process.stdout, "write").mockImplementation((text) => {
+      outputs.push(String(text));
+      return true;
+    });
     const err = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
     try {
       expect(await run(generateArgs(suitePath, pidFile))).toBe(0);
       expect(err).not.toHaveBeenCalled();
+      // 유닛테스트는 renderValidBranchSkips 를 직접 부른다. 실제 실행 경로에서 그 덩어리가
+      // 정말 stdout 에 닿는지는 배선의 문제라 여기서 한 번 본다.
+      //
+      // `author` 는 중첩 객체, `dueAt` 은 anyOf, `parentId` 는 format 표 값이라 셋 다 분기를
+      // 만들지 않는다. 서버 선언에서 그대로 오는 사실이므로 숫자를 손으로 고르지 않았다.
+      const generateOutput = outputs.join("");
+      expect(generateOutput).toContain("정상 분기: 툴 1개에서 3개 분기를 실행하지 않았습니다.");
+      expect(generateOutput).toContain(
+        "  create_note.author  중첩 객체 안의 분기는 아직 생성하지 않습니다.",
+      );
+      expect(generateOutput).toContain(
+        "  create_note.dueAt  anyOf/oneOf/$ref 가 선언돼 있어 갈래별 정상 입력을 만들지 않았습니다.",
+      );
+      expect(generateOutput).toContain(
+        "  create_note.parentId  선택 필드 값이 format 표의 문서용 예약 값이라 실재하는 자원을 가리키지 않습니다. '있음' 케이스를 만들지 않았습니다.",
+      );
       const suite = JSON.parse(await readFile(suitePath, "utf8")) as {
         cases: { id: string; operation: unknown }[];
       };
-      // 상수 28 과 선언에서 센 축 수를 둘 다 본다. 하나만 보면 "선언이 바뀌었다" 와 "생성이 깨졌다" 가
+      // 상수 34 와 선언에서 센 축 수를 둘 다 본다. 하나만 보면 "선언이 바뀌었다" 와 "생성이 깨졌다" 가
       // 구분되지 않는다(generate-integration-e2e.test.ts 와 같은 이유).
       //
-      // 케이스 수는 축 수와 같지 않다. 경계 안쪽 정상 케이스(`-bound-`)는 새 축을 만들지 않고
-      // 케이스만 늘리기 때문이다. 그래서 그 셋을 빼고 축 수와 맞춘다.
-      expect(suite.cases).toHaveLength(28);
+      // 케이스 수는 축 수와 같지 않다. 축을 만들지 않고 케이스만 늘리는 계열이 둘 있다.
+      // 경계 안쪽 정상 케이스(`-bound-`)와 정상 분기 케이스(`-branch-`)다. 둘 다 위반이
+      // 아니라서 위반 축이 없다. 그래서 두 계열을 빼고 축 수와 맞춘다.
+      //
+      // 두 계열의 개수를 따로 센다. 합쳐서 10 으로만 두면 한쪽이 줄고 다른 쪽이 그만큼 늘어도
+      // 통과한다. 그때 조용히 사라지는 것은 검출 케이스다.
+      expect(suite.cases).toHaveLength(34);
       const tools = await listTools(axisPidFile);
       const boundaryCases = suite.cases.filter((item) => item.id.includes("-bound-"));
       expect(boundaryCases).toHaveLength(3);
-      expect(suite.cases.length - boundaryCases.length).toBe(
+      const branchCases = suite.cases.filter((item) => item.id.includes("-branch-"));
+      expect(branchCases).toHaveLength(6);
+      expect(suite.cases.length - boundaryCases.length - branchCases.length).toBe(
         tools.reduce((sum, tool) => sum + deriveContractAxes(tool).axes.length, 0),
       );
       expect(suite.cases.map((item) => item.id)).toEqual(EXPECTED_IDS);
@@ -304,7 +355,7 @@ describe.sequential("zod-notes-server (McpServer + zod) 실서버 E2E", () => {
     }
   });
 
-  it("정상 서버는 28 케이스 전부 통과하고 변이 서버는 정확히 그 6 케이스에서 실패한다", async () => {
+  it("정상 서버는 34 케이스 전부 통과하고 변이 서버는 정확히 그 6 케이스에서 실패한다", async () => {
     const directory = await mkdtemp(join(tmpdir(), "mcpeak-zod-notes-"));
     const generatePid = join(directory, "generate.pid");
     const okPid = join(directory, "ok.pid");
@@ -326,8 +377,8 @@ describe.sequential("zod-notes-server (McpServer + zod) 실서버 E2E", () => {
         cases: { spec: { id: string }; status: string }[];
       };
       expect(okReport.summary).toEqual({
-        total: 28,
-        passed: 28,
+        total: 34,
+        passed: 34,
         failed: 0,
         timedOut: 0,
         cancelled: 0,
@@ -345,11 +396,15 @@ describe.sequential("zod-notes-server (McpServer + zod) 실서버 E2E", () => {
         cases: { spec: { id: string }; status: string }[];
       };
       expect(mutantReport.summary).toEqual({
-        total: 28,
+        total: 34,
         // 변이 서버는 title 과 limit 의 제약을 통째로 없앤다. 상·하한을 한 케이스로 묶던
         // 때는 방향당 한 건씩만 잡혀 4건이었다. 축이 갈라진 지금은 같은 결함이 상·하한
         // 두 건으로 잡혀 6건이다. 늘어난 2건이 곧 이슈 #387 이 되찾은 검출력이다.
-        passed: 22,
+        //
+        // 이슈 #401 의 정상 분기 케이스는 이 숫자를 바꾸지 않는다. 변이 셋(title·priority·
+        // limit 의 제약 제거)은 전부 거절 축을 노린 것이고, 정상 분기는 어느 쪽 서버에서도
+        // 통과해야 한다. 늘어난 6건은 전부 passed 로 간다.
+        passed: 28,
         failed: 6,
         timedOut: 0,
         cancelled: 0,

@@ -40,6 +40,7 @@ import {
   renderCoverage,
   renderOutputContractSkips,
   renderSkippedTools,
+  renderValidBranchSkips,
   runGenerateCommand,
 } from "../src/generate-command.js";
 
@@ -143,6 +144,9 @@ function deps(overrides: Partial<GenerateCommandDependencies> = {}) {
         coverage: { tools: [], verified: 0, total: 0 },
         skippedTools: [],
         outputContractSkips: [],
+        // 케이스가 0개이므로 밟지 않은 정상 분기도, 고정 필드도 없다.
+        validBranchSkips: [],
+        pinnedFieldsByCase: {},
         // 툴이 0개이므로 값 출처도 비어 있다. AI 사전보완 대상 판정의 재료다.
         provenance: [],
       };
@@ -418,6 +422,71 @@ describe("runGenerateCommand", () => {
     const output = stdout.join("");
     expect(output).toContain("건너뜀  1 tools — 지원하지 않는 입력 스키마");
     expect(output).toContain("count_things");
+  });
+  describe("정상 분기 미실행 목록을 찍는다", () => {
+    const skips = [
+      {
+        tool: "convert_units",
+        field: "unit",
+        reason: "enum 값 8개 중 3개만 실행했습니다. 첫 값·두 번째 값·마지막 값만 밟습니다.",
+      },
+      {
+        tool: "convert_units",
+        field: "precision",
+        reason: "선택 필드라 '있음' 케이스만 만들고 값 분기는 만들지 않았습니다.",
+      },
+      {
+        tool: "search_notes",
+        field: "filter",
+        reason: "anyOf/oneOf/$ref 가 선언돼 있어 갈래별 정상 입력을 만들지 않았습니다.",
+      },
+    ] as const;
+    it("머리말에 툴 수와 분기 수를 센다", () => {
+      expect(renderValidBranchSkips(skips)).toContain(
+        "정상 분기: 툴 2개에서 3개 분기를 실행하지 않았습니다.",
+      );
+    });
+    it("한 줄에 tool.field 와 사유를 찍는다", () => {
+      // 사유 문안은 generate 가 만든 것을 그대로 옮긴다. cli 가 새로 쓰면 두 문안으로 갈린다.
+      expect(renderValidBranchSkips(skips)).toContain(
+        "  convert_units.unit  enum 값 8개 중 3개만 실행했습니다. 첫 값·두 번째 값·마지막 값만 밟습니다.",
+      );
+    });
+    it("skips 가 비면 머리말을 안 찍는다", () => {
+      expect(renderValidBranchSkips([])).toBe("");
+    });
+    it("generate 가 준 순서를 그대로 쓴다", () => {
+      const output = renderValidBranchSkips([skips[2], skips[0]]);
+      expect(output.indexOf("search_notes.filter")).toBeLessThan(
+        output.indexOf("convert_units.unit"),
+      );
+    });
+    it("출력 계약 미검증 덩어리 다음에 온다", async () => {
+      const d = deps();
+      const stdout: string[] = [];
+      d.value.writeStdout = (text) => stdout.push(text);
+      const base = (
+        d.value.createBaselineSuite as ReturnType<typeof vi.fn>
+      ).getMockImplementation?.() as () => object;
+      d.value.createBaselineSuite = vi.fn(() => ({
+        ...(base() as Record<string, unknown>),
+        outputContractSkips: [
+          {
+            index: 0,
+            name: "labels",
+            path: "tools[0].outputSchema.patternProperties",
+            message: "의미를 보존해 변환할 수 없습니다.",
+          },
+        ],
+        validBranchSkips: skips,
+      })) as never;
+      expect(await runGenerateCommand(argv, d.value)).toBe(0);
+      const output = stdout.join("");
+      expect(output.indexOf("structuredContent 계약은 미검증")).toBeGreaterThanOrEqual(0);
+      expect(output.indexOf("structuredContent 계약은 미검증")).toBeLessThan(
+        output.indexOf("정상 분기: 툴 2개에서"),
+      );
+    });
   });
   it("baseline-only는 Core tools/list 뒤 server를 닫고 AI 없이 저장한다", async () => {
     const d = deps();

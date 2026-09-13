@@ -9,6 +9,7 @@
 import type { ToolDef } from "@mcpeak/core";
 import type { ResponseSchema } from "@mcpeak/runner";
 import { canonicalJson } from "./canonical.js";
+import { isKnownFormat } from "./constraints.js";
 import { fieldSlug } from "./filename.js";
 import {
   GenerateTestsError,
@@ -51,7 +52,33 @@ const SKIP_REASON = {
   enumTruncated: (count: number): string =>
     `enum 값 ${count}개 중 3개만 실행했습니다. 첫 값·두 번째 값·마지막 값만 밟습니다.`,
   optionalValue: (message: string): string => `선택 필드 값을 만들지 못했습니다: ${message}`,
+  formatPlaceholder:
+    "선택 필드 값이 format 표의 문서용 예약 값이라 실재하는 자원을 가리키지 않습니다. '있음' 케이스를 만들지 않았습니다.",
 } as const;
+
+/**
+ * 값을 서버가 직접 적은 키워드. 하나라도 있으면 `synthesizeValue` 가 format 표보다 이것을
+ * 먼저 쓴다(`synthesize.ts` 의 const → default → examples[0] → enum[0] 순서).
+ *
+ * `const` 는 아래 순회가 그 앞에서 이미 걸러 여기까지 오지 않는다. 그래도 적어 둔다. 이 목록은
+ * "서버가 적은 값인가" 의 정의이고, 앞의 거르기는 그것과 별개의 이유(분기가 없다)로 있다.
+ */
+const DECLARED_VALUE_KEYWORDS = ["const", "default", "examples", "enum"] as const;
+
+/**
+ * 합성값이 format 표에서만 온 경우인지.
+ *
+ * `FORMAT_VALUES` 는 문서용으로 예약된 값이다(RFC 2606 등). 그것으로 '있음' 케이스를 만들면
+ * 존재를 확인하는 서버가 옳게 거절하고, 우리 정상 케이스가 실패한다. 서버 결함이 아니라
+ * 우리가 없는 자원을 가리킨 것이다. 실제 값을 주는 길은 이슈 #390 의 픽스처 계약이다.
+ *
+ * 필드 이름으로 추측하지 않는다. 이름이 `q` 인 자원 식별자를 놓치고 이름이 `name` 인 순수
+ * 문자열에 잘못 붙는다. 여기서 보는 것은 우리 표가 이미 아는 사실뿐이다.
+ */
+const isFormatPlaceholder = (schema: Record<string, unknown>): boolean =>
+  typeof schema.format === "string" &&
+  isKnownFormat(schema.format) &&
+  !DECLARED_VALUE_KEYWORDS.some((keyword) => keyword in schema);
 
 /** 갈래가 여럿인 선언. 어느 갈래의 정상 입력을 만들어야 하는지 우리가 정할 수 없다. */
 const hasComposition = (schema: Record<string, unknown>): boolean =>
@@ -151,6 +178,10 @@ export function buildValidBranchCases(options: {
     if (!required.has(field)) {
       // 선택 필드는 "있음" 케이스만 만든다. 값 분기까지 만들면 한 케이스가 "필드가 있다" 와
       // "값이 저것이다" 를 동시에 검증해, 실패했을 때 둘 중 무엇 때문인지 알 수 없다.
+      if (isFormatPlaceholder(schema)) {
+        skip(field, SKIP_REASON.formatPlaceholder);
+        continue;
+      }
       let value: JsonValue;
       try {
         value = synthesizeValue(schema as JsonSchema, `properties.${field}`, root);

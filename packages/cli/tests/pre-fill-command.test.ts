@@ -19,6 +19,7 @@ import { validateMcpSuite } from "@mcpeak/runner";
 import { describe, expect, it, vi } from "vitest";
 import type { GenerateCommandDependencies, ReviewIO } from "../src/generate-command.js";
 import { runGenerateCommand } from "../src/generate-command.js";
+import type { ResetGrade } from "../src/reset-hook.js";
 
 /** `timezone` 만 근거가 없다. 실측의 `mcp-server-time` 이 이 모양이었다. */
 const needsHelp: ToolDef = {
@@ -94,11 +95,21 @@ function deps(options: {
   readonly io?: ReviewIO;
   readonly stdout?: string[];
   readonly sessionSpy?: typeof createAuthoringSession;
+  /**
+   * 초기화 등급. 기본은 `commandOnly` 다. 사전보완 채택은 **두 후보를 같은 초기 상태에서
+   * 돌렸을 때만** 성립하므로(#399) 그 전제를 여기서 세운다. 주입점을 쓰는 이유는 실제
+   * `attemptReset` 이 프로세스를 띄우기 때문이다. 이 파일은 인메모리로만 돈다.
+   */
+  readonly resetGrade?: ResetGrade | null;
 }): GenerateCommandDependencies {
   const stdout = options.stdout ?? [];
   let written = "{}";
   return {
     connect: vi.fn(async () => options.connection ?? (fakeConnection([]) as never)),
+    // null 이면 주입하지 않는다. 실제 attemptReset 이 돌고, resetCmd 가 없으므로 "none" 이다.
+    ...(options.resetGrade === null
+      ? {}
+      : { attemptReset: async () => ({ grade: options.resetGrade ?? "commandOnly" }) }),
     createBaselineSuite: (tools, suiteOptions) => createBaselineSuite(tools, suiteOptions),
     createAuthoringSession: options.sessionSpy ?? createAuthoringSession,
     finalizeAuthoringDraft,
@@ -262,6 +273,44 @@ describe("--baseline-only 에서 표 밖 format 툴 건너뛰기", () => {
 });
 
 describe("사전보완 채택", () => {
+  it("초기화 수단이 없으면 같은 상황에서도 채택하지 않는다", async () => {
+    // 바로 아래 테스트와 입력이 같다. 다른 것은 초기화 수단뿐이다. 두 케이스를 나란히 둬서
+    // "무엇이 전제인지" 가 눈에 보이게 한다(#399).
+    //
+    // baseline 회차가 서버 상태를 바꿔 놓았을 수 있으므로 AI 회차의 통과를 입력 개선으로
+    // 읽을 근거가 없다. 비교 조건이 안 갖춰졌으면 고르지 않는 것이 옳다.
+    const stdout: string[] = [];
+    const code = await runGenerateCommand(
+      argv("/tmp/mcpeak-pre-fill-no-reset.json", ["--provider", "codex", "--model", "m"]),
+      deps({
+        tools: [needsHelp],
+        connection: fakeConnection([]),
+        stdout,
+        io: reviewIO(true, stdout),
+        // 주입하지 않는다. resetCmd 가 없으므로 실제 attemptReset 이 "none" 을 낸다.
+        resetGrade: null,
+        provider: {
+          id: "codex",
+          model: "m",
+          preFill: vi.fn(async () => ({
+            proposals: [
+              { caseId: "needs-help-success", field: "timezone", valueJson: '"Asia/Seoul"' },
+            ],
+          })),
+        },
+      }),
+    );
+    expect(code).toBe(0);
+    const text = stdout.join("");
+    expect(text).toContain("  채택 0");
+    // 사유가 요약보다 먼저 온다. "채택 0" 만 보면 AI 제안이 나빴던 것으로 읽힌다.
+    expect(text).toContain("같은 초기 상태에서 실행할 수 없습니다");
+    expect(text).toContain("초기화 수단이 없습니다");
+    expect(text.indexOf("같은 초기 상태에서 실행할 수 없습니다")).toBeLessThan(
+      text.indexOf("  채택 0"),
+    );
+  });
+
   it("baseline 이 실패하고 제안이 통과하면 AI 값을 쓰고 출처를 남긴다", async () => {
     const events: string[] = [];
     const connection = fakeConnection(events);

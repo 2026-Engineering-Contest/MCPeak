@@ -361,7 +361,8 @@ describe.sequential("generate 실제 weather-server", () => {
       interactive: true,
       choose: vi.fn(async () => choices.shift() ?? "cancel"),
       input: vi.fn(async () => inputs.shift() ?? ""),
-      confirm: vi.fn(async () => true),
+      // 질문 문장을 받는다. 아래 단언이 **어느 질문이 불렸는지**를 보므로 인자가 기록돼야 한다.
+      confirm: vi.fn(async (_message: string) => true),
       write: vi.fn(),
     };
     const provider = {
@@ -429,9 +430,19 @@ describe.sequential("generate 실제 weather-server", () => {
         ),
       ).toBe(0);
       expect(provider.author).toHaveBeenCalledOnce();
-      // 셋은 기존(요청 전송·변경 적용·저장)이고 넷째가 시험 실행 고지다. 이 서버는 케이스가
-      // 전부 통과하므로 분류는 묻지 않는다.
-      expect(io.confirm).toHaveBeenCalledTimes(4);
+      // 횟수가 아니라 **어느 질문이 어떤 순서로 불렸는지**를 본다. 숫자만 세면 질문이 하나
+      // 늘 때마다 숫자만 고치게 되고, 그 숫자가 무엇을 세는 것인지 코드에 안 남는다. 순서가
+      // 바뀌거나 질문이 사라지면 여기서 드러난다.
+      //
+      // 이 서버는 케이스가 전부 통과하므로 분류는 묻지 않는다.
+      // "다시 실행할까요?" 는 #399 의 최종 전량 재검증이다.
+      expect(io.confirm.mock.calls.map((call) => call[0])).toEqual([
+        "이 요청을 전송할까요?",
+        "선택한 변경을 적용할까요?",
+        "계속할까요?",
+        "   다시 실행할까요?",
+        "최종 JSON을 저장할까요?",
+      ]);
       // 실제 서버에 돌린 결과가 승인 기록으로 남는다. 지문은 approval 을 제외해 계산하므로
       // 이것이 실려도 저장 직후 재검증 세 조건이 그대로 성립한다.
       const saved = JSON.parse(await readFile(suitePath, "utf8")) as {

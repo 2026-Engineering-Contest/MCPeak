@@ -68,6 +68,8 @@ const fakeDryRun =
         status: passes ? ("passed" as const) : ("failed" as const),
         detail: isAi ? (options.aiDetail ?? "") : "",
         rejectionBasis: "notApplicable" as const,
+        operationFailed: false,
+        failureLine: "",
       })),
       ...(options.abort === true
         ? { aborted: { reason: "connectionLost" as const, detail: "끊김" } }
@@ -159,6 +161,8 @@ describe("후보 채택 규칙", () => {
         status: item.id === "other" ? ("passed" as const) : ("failed" as const),
         detail: "",
         rejectionBasis: "notApplicable" as const,
+        operationFailed: false,
+        failureLine: "",
       })),
     });
     const result = await applyPreFill({

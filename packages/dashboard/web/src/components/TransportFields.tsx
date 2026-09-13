@@ -1,8 +1,8 @@
 import type { JSX } from "react";
 import { useState } from "react";
 import type { Transport } from "../build-test-argv.js";
-import { Field, INPUT_CLASS } from "../generate/steps/fields.js";
 import { Button } from "./Button.js";
+import { Field, INPUT_CLASS } from "./Field.js";
 
 const TRANSPORT_LABELS: Record<Transport, string> = {
   stdio: "stdio (위 서버 명령)",

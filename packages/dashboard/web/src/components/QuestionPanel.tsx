@@ -2,6 +2,7 @@ import type { JSX } from "react";
 import { useState } from "react";
 import type { PendingQuestion } from "../../../src/api-types.js";
 import { Button } from "./Button.js";
+import { INPUT_ON_ACCENT_CLASS } from "./Field.js";
 
 /**
  * 대화형 승인 질문 하나(UI 설계 §4). 터미널 흐름 안의 "질문" 라벨 + message + kind별 컨트롤.
@@ -82,7 +83,7 @@ export function QuestionPanel(props: {
             }}
           >
             <input
-              className="flex-1 rounded border border-accent-border bg-surface px-3 py-1.5 text-sm text-ink disabled:opacity-50"
+              className={INPUT_ON_ACCENT_CLASS}
               value={inputValue}
               disabled={busy}
               onChange={(event) => setInputValue(event.target.value)}

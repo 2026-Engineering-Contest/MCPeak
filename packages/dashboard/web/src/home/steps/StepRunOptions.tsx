@@ -2,8 +2,8 @@ import type { JSX } from "react";
 import type { SessionMode, TestOptions } from "../../build-test-argv.js";
 import { ArgChips } from "../../components/ArgChips.js";
 import { Button } from "../../components/Button.js";
+import { Field, INPUT_CLASS } from "../../components/Field.js";
 import { DETERMINISM_SESSION_HINT, TestOptionsPanel } from "../../components/TestOptionsPanel.js";
-import { Field, INPUT_CLASS } from "../../generate/steps/fields.js";
 import type { LastRun } from "../../last-run.js";
 
 /**

@@ -25,6 +25,8 @@ export {
   type ContractDeclaredType,
   deriveContractAxes,
   matchCoveredAxes,
+  type UnanalyzedField,
+  type UnanalyzedReason,
 } from "./contract-axes.js";
 export type { ContractRange, ContractRangeBound } from "./contract-range.js";
 export {

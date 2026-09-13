@@ -29,6 +29,8 @@ import type {
   SpecFinding,
   TestCaseSpec,
   TestSuiteSpec,
+  UnanalyzedField,
+  UnanalyzedReason,
 } from "@mcpeak/runner";
 import { suiteFingerprint, validateMcpSuite } from "@mcpeak/runner";
 import { describe, expect, it, vi } from "vitest";
@@ -2040,7 +2042,11 @@ describe("커버리지 화면", () => {
   const toolCoverage = (
     name: string,
     axes: ReturnType<typeof axis>[],
-    extra: { analyzable?: boolean; unanalyzableReason?: string; unanalyzedFields?: string[] } = {},
+    extra: {
+      analyzable?: boolean;
+      unanalyzableReason?: string;
+      unanalyzedFields?: UnanalyzedField[];
+    } = {},
   ) => ({
     tool: name,
     analyzable: extra.analyzable ?? true,
@@ -2187,10 +2193,10 @@ describe("커버리지 화면", () => {
     );
   });
 
-  it("해석 못 한 필드가 있으면 이름을 나열한 줄이 붙는다", () => {
+  it("해석 못 한 필드가 있으면 경로와 사유가 줄마다 붙는다", () => {
     const coverage = result([
       toolCoverage("search_docs", [...verifiedAxes(4), axis("TYPE_VIOLATION", "query", null)], {
-        unanalyzedFields: ["filters"],
+        unanalyzedFields: [{ path: "filters", reason: "blockingKeyword" }],
       }),
     ]);
     expect(renderCoverage(coverage)).toBe(
@@ -2198,10 +2204,71 @@ describe("커버리지 화면", () => {
         "커버리지  1 tools, 4/5 axes 검증",
         "  search_docs   4/5",
         "    ? query 의 타입 위반 거절     미검증",
-        "    → 해석 못 한 필드 1개: filters. 이 필드의 축은 세지 않았습니다",
+        "    → 해석 못 한 필드 1개. 이 필드의 축은 세지 않았습니다",
+        "      filters   anyOf·oneOf·allOf·not·$ref 가 선언돼 있어 읽지 못했습니다.",
         "",
       ].join("\n"),
     );
+  });
+
+  describe("미해석 필드가 사유를 찍는다", () => {
+    /**
+     * 유니온을 import 해서 순회한다. 손으로 복제하면 runner 가 사유를 늘렸을 때 테스트가
+     * 모른다. `renderCoverage` 는 문자열을 돌려줄 뿐이라 vitest 가 타입을 안 보고,
+     * 표에 빠진 사유는 `undefined` 로 찍히고도 통과한다.
+     */
+    const REASONS: Readonly<Record<UnanalyzedReason, string>> = {
+      blockingKeyword: "anyOf·oneOf·allOf·not·$ref 가 선언돼 있어 읽지 못했습니다.",
+      noProperties: "object 인데 properties 선언이 없어 안을 읽지 못했습니다.",
+      tupleItems: "items 가 배열(튜플)이라 원소 스키마를 하나로 묶지 못했습니다.",
+      depthLimit: "중첩 깊이 상한(3)을 넘어 더 내려가지 않았습니다.",
+      pathLimit: "한 도구의 경로 수 상한(64)을 넘어 더 만들지 않았습니다.",
+      pathCollision: "경로 표기가 다른 필드와 겹쳐 양쪽 다 제외했습니다.",
+      noGround: "type·enum·범위를 하나도 읽지 못해 요구할 근거가 없습니다.",
+      unreadablePath: "이름에 '.' 이나 '[' 가 들어 경로로 읽으면 다른 자리를 가리켜 제외했습니다.",
+    };
+
+    const render = (fields: UnanalyzedField[]) =>
+      renderCoverage(
+        result([
+          toolCoverage("t", [axis("TYPE_VIOLATION", "q", null)], { unanalyzedFields: fields }),
+        ]),
+      );
+
+    it("여덟 사유가 각각 정해진 문장으로 나온다", () => {
+      const reasons = Object.keys(REASONS) as UnanalyzedReason[];
+      // 유니온이 늘면 이 수가 틀려진다. 위 표는 Record 라 컴파일이 먼저 깨지고, 이 줄은
+      // 표를 실수로 넓혔을 때의 두 번째 그물이다. #388 T4 가 unreadablePath 를 더해 8 이 됐다.
+      expect(reasons).toHaveLength(8);
+      for (const reason of reasons) {
+        const output = render([{ path: "f", reason }]);
+        expect(output, `사유 ${reason} 의 문장이 화면에 없습니다`).toContain(REASONS[reason]);
+        expect(output).not.toContain("undefined");
+      }
+    });
+
+    it("경로 원문을 찍는다", () => {
+      // 슬러그가 아니다. 사용자가 선언에서 그 자리를 찾아야 하므로 경로 문법 그대로 간다.
+      const output = render([
+        { path: "user.profile", reason: "blockingKeyword" },
+        { path: "tags[]", reason: "tupleItems" },
+      ]);
+      expect(output).toContain("user.profile");
+      expect(output).toContain("tags[]");
+    });
+
+    it("미해석이 없으면 그 덩어리를 안 찍는다", () => {
+      expect(render([])).not.toContain("해석 못 한 필드");
+    });
+
+    it("runner 가 준 순서를 그대로 쓴다", () => {
+      const output = render([
+        { path: "zebra", reason: "noGround" },
+        { path: "alpha", reason: "depthLimit" },
+      ]);
+      // 코드 단위로는 alpha 가 앞이다. 여기서 정렬하면 runner 와 두 곳이 갈린다.
+      expect(output.indexOf("zebra")).toBeLessThan(output.indexOf("alpha"));
+    });
   });
 
   it("툴이 0개면 아무것도 찍지 않는다", () => {

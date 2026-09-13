@@ -161,21 +161,37 @@ const EXPECTED_OPERATIONS = [
   { type: "callTool", tool: "create_note", input: { ...CREATE_OK, priority: "high" } },
   { type: "callTool", tool: "create_note", input: { ...CREATE_OK, tags: TAGS_ONE } },
   { type: "callTool", tool: "create_note", input: CREATE_NO_AUTHOR },
+  { type: "callTool", tool: "create_note", input: { ...CREATE_OK, author: {} } },
   { type: "callTool", tool: "create_note", input: CREATE_NO_DUEAT },
   { type: "callTool", tool: "create_note", input: CREATE_NO_PRIORITY },
   { type: "callTool", tool: "create_note", input: CREATE_NO_TITLE },
   { type: "callTool", tool: "create_note", input: { ...CREATE_OK, author: "example" } },
+  {
+    type: "callTool",
+    tool: "create_note",
+    input: { ...CREATE_OK, author: { name: "example", email: 0 } },
+  },
+  { type: "callTool", tool: "create_note", input: { ...CREATE_OK, author: { name: 0 } } },
   { type: "callTool", tool: "create_note", input: { ...CREATE_OK, body: 0 } },
   { type: "callTool", tool: "create_note", input: { ...CREATE_OK, dueAt: 0 } },
   { type: "callTool", tool: "create_note", input: { ...CREATE_OK, parentId: 0 } },
   { type: "callTool", tool: "create_note", input: { ...CREATE_OK, priority: 0 } },
   { type: "callTool", tool: "create_note", input: { ...CREATE_OK, tags: "example" } },
+  // tags 는 선택 필드라 기준 정상 입력에 없다. 원소 경로 케이스를 만들려고 -branch-with-tags
+  // 와 같은 합성값으로 채운 뒤 첫 원소만 어긴다(#388 T5).
+  { type: "callTool", tool: "create_note", input: { ...CREATE_OK, tags: [0] } },
   { type: "callTool", tool: "create_note", input: { ...CREATE_OK, title: 0 } },
   {
     type: "callTool",
     tool: "create_note",
     input: { ...CREATE_OK, priority: "__mcpeak_invalid_enum__" },
   },
+  {
+    type: "callTool",
+    tool: "create_note",
+    input: { ...CREATE_OK, tags: ["__mcpeak_invalid_enum__"] },
+  },
+  { type: "callTool", tool: "create_note", input: { ...CREATE_OK, author: { name: "" } } },
   { type: "callTool", tool: "create_note", input: { ...CREATE_OK, tags: TAGS_OVER_MAX } },
   { type: "callTool", tool: "create_note", input: { ...CREATE_OK, title: "" } },
   { type: "callTool", tool: "create_note", input: { ...CREATE_OK, title: TITLE_OVER_MAX } },
@@ -183,8 +199,22 @@ const EXPECTED_OPERATIONS = [
   { type: "callTool", tool: "list_notes", input: { limit: 50 } },
   { type: "callTool", tool: "list_notes", input: { filter: FILTER_BRANCH } },
   { type: "callTool", tool: "list_notes", input: { limit: 10 } },
+  // filter 도 선택 필드다. FILTER_BRANCH 와 같은 값으로 채운 뒤 그 안에서 한 자리만 어긴다.
+  { type: "callTool", tool: "list_notes", input: { filter: {} } },
   { type: "callTool", tool: "list_notes", input: { filter: "example" } },
+  { type: "callTool", tool: "list_notes", input: { filter: { priority: 0 } } },
+  { type: "callTool", tool: "list_notes", input: { filter: { ...FILTER_BRANCH, tag: 0 } } },
   { type: "callTool", tool: "list_notes", input: { limit: 1.5 } },
+  {
+    type: "callTool",
+    tool: "list_notes",
+    input: { filter: { priority: "__mcpeak_invalid_enum__" } },
+  },
+  {
+    type: "callTool",
+    tool: "list_notes",
+    input: { filter: { ...FILTER_BRANCH, tag: "__mcpeak_invalid_enum__" } },
+  },
   { type: "callTool", tool: "list_notes", input: { limit: 0 } },
   { type: "callTool", tool: "list_notes", input: { limit: 51 } },
 ];
@@ -196,6 +226,9 @@ const EXPECTED_OPERATIONS = [
  *
  * `-branch-` 는 정상 입력의 다른 갈래를 밟는 케이스다(이슈 #401). `-bound-` 와 같이 위반이
  * 아니므로 축을 만들지 않고 케이스 수만 늘린다.
+ *
+ * `author.name` · `author.email` 은 중첩 경로 축이다(이슈 #388). 이쪽은 축을 만드므로 위 두
+ * 계열과 달리 아래 교차검증의 분자에 들어간다.
  */
 const EXPECTED_IDS = [
   "get-note-success",
@@ -210,17 +243,23 @@ const EXPECTED_IDS = [
   "create-note-branch-enum-priority-last",
   "create-note-branch-with-tags",
   "create-note-missing-author",
+  "create-note-missing-author-name",
   "create-note-missing-dueat",
   "create-note-missing-priority",
   "create-note-missing-title",
   "create-note-type-author",
+  "create-note-type-author-email",
+  "create-note-type-author-name",
   "create-note-type-body",
   "create-note-type-dueat",
   "create-note-type-parentid",
   "create-note-type-priority",
   "create-note-type-tags",
+  "create-note-type-tags-item",
   "create-note-type-title",
   "create-note-enum-priority",
+  "create-note-enum-tags-item",
+  "create-note-range-lower-author-name",
   "create-note-range-upper-tags",
   "create-note-range-lower-title",
   "create-note-range-upper-title",
@@ -228,8 +267,13 @@ const EXPECTED_IDS = [
   "list-notes-bound-upper-limit",
   "list-notes-branch-with-filter",
   "list-notes-branch-with-limit",
+  "list-notes-missing-filter-priority",
   "list-notes-type-filter",
+  "list-notes-type-filter-priority",
+  "list-notes-type-filter-tag",
   "list-notes-type-limit",
+  "list-notes-enum-filter-priority",
+  "list-notes-enum-filter-tag",
   "list-notes-range-lower-limit",
   "list-notes-range-upper-limit",
 ];
@@ -279,7 +323,7 @@ describe.sequential("zod-notes-server (McpServer + zod) 실서버 E2E", () => {
     }
   });
 
-  it("generate --baseline-only 가 세 툴 전부에서 34 케이스를 결정론적으로 만든다", async () => {
+  it("generate --baseline-only 가 세 툴 전부에서 45 케이스를 결정론적으로 만든다", async () => {
     const directory = await mkdtemp(join(tmpdir(), "mcpeak-zod-notes-"));
     const pidFile = join(directory, "server.pid");
     const secondPidFile = join(directory, "server-2.pid");
@@ -301,6 +345,15 @@ describe.sequential("zod-notes-server (McpServer + zod) 실서버 E2E", () => {
       // `author` 는 중첩 객체, `dueAt` 은 anyOf, `parentId` 는 format 표 값이라 셋 다 분기를
       // 만들지 않는다. 서버 선언에서 그대로 오는 사실이므로 숫자를 손으로 고르지 않았다.
       const generateOutput = outputs.join("");
+      // 커버리지 분모와 분자를 화면에서 직접 본다. 위 산술이 쓰는 7 이 어느 축인지를 여기서
+      // 이름으로 못 박는다.
+      //
+      // #388 T5 전에는 29/36 이었다. `tags` 와 `filter` 가 선택 필드라 기준 정상 입력에 없어
+      // 그 아래 축 7개에 케이스가 하나도 없었다. 이제 generate 가 부모를 채워 만든다.
+      expect(generateOutput).toContain("커버리지  3 tools, 36 axes 전부 검증");
+      // 미검증 줄이 **하나도** 없어야 한다. 숫자만 보면 다른 축이 대신 비어도 통과한다.
+      // 이 줄이 빨강이 되면 채울 수 없는 분모가 다시 생긴 것이다. 지우지 말고 원인을 봐라.
+      expect(generateOutput.match(/미검증/g) ?? []).toHaveLength(0);
       expect(generateOutput).toContain("정상 분기: 툴 1개에서 3개 분기를 실행하지 않았습니다.");
       expect(generateOutput).toContain(
         "  create_note.author  중첩 객체 안의 분기는 아직 생성하지 않습니다.",
@@ -314,16 +367,20 @@ describe.sequential("zod-notes-server (McpServer + zod) 실서버 E2E", () => {
       const suite = JSON.parse(await readFile(suitePath, "utf8")) as {
         cases: { id: string; operation: unknown }[];
       };
-      // 상수 34 와 선언에서 센 축 수를 둘 다 본다. 하나만 보면 "선언이 바뀌었다" 와 "생성이 깨졌다" 가
+      // 상수 45 와 선언에서 센 축 수를 둘 다 본다. 하나만 보면 "선언이 바뀌었다" 와 "생성이 깨졌다" 가
       // 구분되지 않는다(generate-integration-e2e.test.ts 와 같은 이유).
       //
-      // 케이스 수는 축 수와 같지 않다. 축을 만들지 않고 케이스만 늘리는 계열이 둘 있다.
-      // 경계 안쪽 정상 케이스(`-bound-`)와 정상 분기 케이스(`-branch-`)다. 둘 다 위반이
-      // 아니라서 위반 축이 없다. 그래서 두 계열을 빼고 축 수와 맞춘다.
+      // 케이스 수는 축 수와 같지 않다. 양쪽으로 어긋난다.
       //
-      // 두 계열의 개수를 따로 센다. 합쳐서 10 으로만 두면 한쪽이 줄고 다른 쪽이 그만큼 늘어도
+      // 빼는 쪽: 축을 만들지 않고 케이스만 늘리는 계열이 둘이다. 경계 안쪽 정상 케이스
+      // (`-bound-`)와 정상 분기 케이스(`-branch-`)다. 둘 다 위반이 아니라서 위반 축이 없다.
+      // 두 계열의 개수를 **따로** 센다. 합쳐서 9 로만 두면 한쪽이 줄고 다른 쪽이 그만큼 늘어도
       // 통과한다. 그때 조용히 사라지는 것은 검출 케이스다.
-      expect(suite.cases).toHaveLength(34);
+      //
+      // 더하는 쪽: 없다. #388 T5 로 케이스가 하나도 없는 축이 사라져 항등식이 정확해졌다.
+      // 전에는 여기에 UNCOVERED_AXES.length(7)를 더해야 맞았다. 그 항이 필요해지면 채울 수
+      // 없는 분모가 다시 생긴 것이고, 위 `미검증` 단언이 먼저 빨강이 된다.
+      expect(suite.cases).toHaveLength(45);
       const tools = await listTools(axisPidFile);
       const boundaryCases = suite.cases.filter((item) => item.id.includes("-bound-"));
       expect(boundaryCases).toHaveLength(3);
@@ -355,7 +412,7 @@ describe.sequential("zod-notes-server (McpServer + zod) 실서버 E2E", () => {
     }
   });
 
-  it("정상 서버는 34 케이스 전부 통과하고 변이 서버는 정확히 그 6 케이스에서 실패한다", async () => {
+  it("정상 서버는 45 케이스 전부 통과하고 변이 서버는 정확히 그 6 케이스에서 실패한다", async () => {
     const directory = await mkdtemp(join(tmpdir(), "mcpeak-zod-notes-"));
     const generatePid = join(directory, "generate.pid");
     const okPid = join(directory, "ok.pid");
@@ -377,8 +434,8 @@ describe.sequential("zod-notes-server (McpServer + zod) 실서버 E2E", () => {
         cases: { spec: { id: string }; status: string }[];
       };
       expect(okReport.summary).toEqual({
-        total: 34,
-        passed: 34,
+        total: 45,
+        passed: 45,
         failed: 0,
         timedOut: 0,
         cancelled: 0,
@@ -396,7 +453,7 @@ describe.sequential("zod-notes-server (McpServer + zod) 실서버 E2E", () => {
         cases: { spec: { id: string }; status: string }[];
       };
       expect(mutantReport.summary).toEqual({
-        total: 34,
+        total: 45,
         // 변이 서버는 title 과 limit 의 제약을 통째로 없앤다. 상·하한을 한 케이스로 묶던
         // 때는 방향당 한 건씩만 잡혀 4건이었다. 축이 갈라진 지금은 같은 결함이 상·하한
         // 두 건으로 잡혀 6건이다. 늘어난 2건이 곧 이슈 #387 이 되찾은 검출력이다.
@@ -404,7 +461,11 @@ describe.sequential("zod-notes-server (McpServer + zod) 실서버 E2E", () => {
         // 이슈 #401 의 정상 분기 케이스는 이 숫자를 바꾸지 않는다. 변이 셋(title·priority·
         // limit 의 제약 제거)은 전부 거절 축을 노린 것이고, 정상 분기는 어느 쪽 서버에서도
         // 통과해야 한다. 늘어난 6건은 전부 passed 로 간다.
-        passed: 28,
+        //
+        // 이슈 #388 의 중첩 경로 케이스도 마찬가지다. 변이 셋 중 어느 것도 `author` ·
+        // `tags` · `filter` 를 건드리지 않으므로 양쪽 서버에서 다 통과한다. T5 가 더한 7건도
+        // 전부 passed 로 간다.
+        passed: 39,
         failed: 6,
         timedOut: 0,
         cancelled: 0,

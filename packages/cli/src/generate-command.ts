@@ -34,6 +34,7 @@ import type {
   SuiteValidationResult,
   TestCaseSpec,
   TestSuiteSpec,
+  UnanalyzedReason,
 } from "@mcpeak/runner";
 import { describeSpecFinding, suiteFingerprint } from "@mcpeak/runner";
 import {
@@ -1881,6 +1882,25 @@ const RANGE_BOUND_LABEL: Readonly<Record<ContractRangeBound, string>> = {
 };
 
 /**
+ * 축을 못 만든 사유를 사람 문장으로. `Record<UnanalyzedReason, string>` 이라서 `runner` 가
+ * 사유를 늘리면 여기서 타입 오류가 난다. AXIS_LABEL 과 같은 이유로 같은 형태다.
+ *
+ * 이름만 나열하던 종전 화면은 사용자가 할 수 있는 일이 없었다. `filters` 하나만 보고는
+ * 선언을 고쳐야 하는지, 우리 상한에 걸린 것인지, 애초에 읽을 근거가 없는 것인지 알 수 없다.
+ * 이 프로젝트에서 실패 메시지는 곧 제품이다.
+ */
+const UNANALYZED_REASON_LABEL: Readonly<Record<UnanalyzedReason, string>> = {
+  blockingKeyword: "anyOf·oneOf·allOf·not·$ref 가 선언돼 있어 읽지 못했습니다.",
+  noProperties: "object 인데 properties 선언이 없어 안을 읽지 못했습니다.",
+  tupleItems: "items 가 배열(튜플)이라 원소 스키마를 하나로 묶지 못했습니다.",
+  depthLimit: "중첩 깊이 상한(3)을 넘어 더 내려가지 않았습니다.",
+  pathLimit: "한 도구의 경로 수 상한(64)을 넘어 더 만들지 않았습니다.",
+  pathCollision: "경로 표기가 다른 필드와 겹쳐 양쪽 다 제외했습니다.",
+  noGround: "type·enum·범위를 하나도 읽지 못해 요구할 근거가 없습니다.",
+  unreadablePath: "이름에 '.' 이나 '[' 가 들어 경로로 읽으면 다른 자리를 가리켜 제외했습니다.",
+};
+
+/**
  * 축 하나를 사람이 읽는 문장으로. 필드가 없는 축(HAPPY_PATH)은 종류만 적는다.
  *
  * 괄호는 범위 축에만 붙는다. 상한 축과 하한 축은 종류도 필드도 같아서, 경계를 안 적으면
@@ -1914,10 +1934,20 @@ function coverageToolLines(tool: ToolCoverage, nameWidth: number): string[] {
   const labelWidth = Math.max(0, ...labels.map(displayWidth)) + 5;
   const lines = [`${head}${tool.verified}/${tool.total}`];
   for (const label of labels) lines.push(`    ? ${padToWidth(label, labelWidth)}미검증`);
-  if (tool.unanalyzedFields.length > 0)
+  if (tool.unanalyzedFields.length > 0) {
     lines.push(
-      `    → 해석 못 한 필드 ${tool.unanalyzedFields.length}개: ${tool.unanalyzedFields.join(", ")}. 이 필드의 축은 세지 않았습니다`,
+      `    → 해석 못 한 필드 ${tool.unanalyzedFields.length}개. 이 필드의 축은 세지 않았습니다`,
     );
+    // 경로는 runner 가 만든 원문 그대로다. `user.profile` · `tags[]` 가 그 자체로 경로 문법이라
+    // 슬러그로 바꾸면 사용자가 선언에서 그 자리를 못 찾는다.
+    //
+    // 순서도 runner 가 준 배열 그대로다. 여기서 다시 정렬하면 두 곳이 갈린다.
+    const pathWidth = Math.max(0, ...tool.unanalyzedFields.map((f) => displayWidth(f.path))) + 3;
+    for (const field of tool.unanalyzedFields)
+      lines.push(
+        `      ${padToWidth(field.path, pathWidth)}${UNANALYZED_REASON_LABEL[field.reason]}`,
+      );
+  }
   return lines;
 }
 

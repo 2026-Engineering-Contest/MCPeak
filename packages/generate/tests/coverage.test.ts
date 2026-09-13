@@ -181,7 +181,10 @@ describe("computeCoverage", () => {
     });
     const coverage = computeCoverage({ suite: suiteWith([]), tools: [partial] });
     expect(coverage.tools[0]?.analyzable).toBe(true);
-    expect(coverage.tools[0]?.unanalyzedFields).toEqual(["weird"]);
+    // runner 가 경로와 사유의 쌍으로 낸다(#388). 정렬도 그쪽이 하므로 여기서 손대지 않는다.
+    expect(coverage.tools[0]?.unanalyzedFields).toEqual([
+      { path: "weird", reason: "blockingKeyword" },
+    ]);
   });
 
   it("tools 배열 순서를 뒤집어도 결과가 동일하다", () => {
@@ -303,5 +306,77 @@ describe("범위 커버리지가 상·하한을 따로 센다", () => {
     const axes = rangeAxes(suite);
     expect(axes).toHaveLength(2);
     for (const axis of axes) expect(axis.caseId).not.toBeNull();
+  });
+});
+
+describe("중첩 경로 커버리지", () => {
+  const userTool = tool("get_user", {
+    type: "object",
+    required: ["user"],
+    properties: {
+      user: { type: "object", properties: { name: { type: "string" } }, required: ["name"] },
+    },
+  });
+  const happyInput: JsonObject = { user: { name: "example" } };
+  const axesOf = (suite: TestSuiteSpec) =>
+    computeCoverage({ suite, tools: [userTool] }).tools[0]?.axes ?? [];
+
+  it("분모에 user.name 축이 들어간다", () => {
+    const axes = axesOf(suiteWith([]));
+    expect(axes.map((axis) => `${axis.kind}:${axis.field ?? ""}`)).toEqual([
+      "HAPPY_PATH:",
+      "REQUIRED_OMITTED:user",
+      "REQUIRED_OMITTED:user.name",
+      "TYPE_VIOLATION:user",
+      "TYPE_VIOLATION:user.name",
+    ]);
+  });
+
+  it("중첩 케이스가 없는 손수 작성 스위트는 그 축이 미검증이다", () => {
+    // 최상위만 검사한 스위트가 "다 덮었다" 로 세어지면 안 된다. 그것이 #388 의 동기다.
+    const suite = suiteWith([
+      caseOf("ok", "get_user", happyInput, false),
+      caseOf("no-user", "get_user", {}, true),
+      caseOf("bad-user", "get_user", { user: "example" }, true),
+    ]);
+    const nested = axesOf(suite).filter((axis) => axis.field?.includes("."));
+    expect(nested.map((axis) => `${axis.kind}:${axis.field}`)).toEqual([
+      "REQUIRED_OMITTED:user.name",
+      "TYPE_VIOLATION:user.name",
+    ]);
+    for (const axis of nested) expect(axis.caseId).toBeNull();
+  });
+
+  it("생성 스위트는 중첩 축을 다 덮는다", () => {
+    const suite = suiteWith([
+      caseOf("ok", "get_user", happyInput, false),
+      ...buildViolationCases({ tool: userTool, happyInput, baseName: "t" }).map((violation) =>
+        caseOf(violation.id, "get_user", violation.operation.input, true),
+      ),
+    ]);
+    const coverage = computeCoverage({ suite, tools: [userTool] });
+    expect(coverage.verified).toBe(coverage.total);
+    expect(coverage.total).toBe(5);
+  });
+
+  it("unanalyzedFields 를 사유와 함께 싣는다", () => {
+    const deepTool = tool("t", {
+      type: "object",
+      properties: {
+        user: {
+          type: "object",
+          properties: {
+            address: {
+              type: "object",
+              properties: { city: { type: "object", properties: { zip: { type: "string" } } } },
+            },
+          },
+        },
+      },
+    });
+    const coverage = computeCoverage({ suite: suiteWith([]), tools: [deepTool] });
+    expect(coverage.tools[0]?.unanalyzedFields).toEqual([
+      { path: "user.address.city.zip", reason: "depthLimit" },
+    ]);
   });
 });

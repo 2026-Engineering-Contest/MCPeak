@@ -97,7 +97,9 @@ describe("deriveContractAxes", () => {
     );
     expect(result.analyzable).toBe(true);
     expect(result.axes.map((axis) => axis.kind)).toEqual(["HAPPY_PATH"]);
-    expect(result.unanalyzedFields).toEqual(["city"]);
+    // type 이 배열이면 합집합이라 그 경로를 통째로 포기한다. 사용자가 볼 때 "우리가 못 읽는
+    // 선언" 이라는 점이 anyOf 와 같아 사유를 같이 묶는다(#388).
+    expect(result.unanalyzedFields).toEqual([{ path: "city", reason: "blockingKeyword" }]);
   });
 
   it("필드에 anyOf 가 있으면 그 필드만 축에서 빠지고 unanalyzedFields 에 들어간다", () => {
@@ -108,7 +110,7 @@ describe("deriveContractAxes", () => {
         required: ["a", "b"],
       }),
     );
-    expect(result.unanalyzedFields).toEqual(["b"]);
+    expect(result.unanalyzedFields).toEqual([{ path: "b", reason: "blockingKeyword" }]);
     expect(result.axes.map((axis) => `${axis.kind}:${axis.field ?? ""}`)).toEqual([
       "HAPPY_PATH:",
       "REQUIRED_OMITTED:a",
@@ -739,7 +741,7 @@ describe("nullable anyOf 필드 (#426)", () => {
 
   it("값 갈래가 둘이면 종전대로 포기한다", () => {
     expect(axesOf({ anyOf: [{ type: "string" }, { type: "number" }] }).unanalyzedFields).toEqual([
-      "note",
+      { path: "note", reason: "blockingKeyword" },
     ]);
   });
 
@@ -747,20 +749,22 @@ describe("nullable anyOf 필드 (#426)", () => {
     expect(
       axesOf({ anyOf: [{ type: "string" }, { type: "number" }, { type: "null" }] })
         .unanalyzedFields,
-    ).toEqual(["note"]);
+    ).toEqual([{ path: "note", reason: "blockingKeyword" }]);
   });
 
   it("null 갈래가 없으면 포기한다", () => {
-    expect(axesOf({ anyOf: [{ type: "string" }] }).unanalyzedFields).toEqual(["note"]);
+    expect(axesOf({ anyOf: [{ type: "string" }] }).unanalyzedFields).toEqual([
+      { path: "note", reason: "blockingKeyword" },
+    ]);
     expect(axesOf({ anyOf: [{ type: "string", minLength: 1 }] }).unanalyzedFields).toEqual([
-      "note",
+      { path: "note", reason: "blockingKeyword" },
     ]);
   });
 
   it("값 갈래에 차단 키워드가 있으면 포기한다", () => {
     expect(
       axesOf({ anyOf: [{ type: "string", not: {} }, { type: "null" }] }).unanalyzedFields,
-    ).toEqual(["note"]);
+    ).toEqual([{ path: "note", reason: "blockingKeyword" }]);
   });
 
   it("anyOf 와 oneOf 가 함께 있으면 포기한다", () => {
@@ -769,7 +773,7 @@ describe("nullable anyOf 필드 (#426)", () => {
         anyOf: [{ type: "string" }, { type: "null" }],
         oneOf: [{ type: "string" }, { type: "null" }],
       }).unanalyzedFields,
-    ).toEqual(["note"]);
+    ).toEqual([{ path: "note", reason: "blockingKeyword" }]);
   });
 
   it("루트 anyOf 는 여전히 해석 불가다", () => {
@@ -871,5 +875,411 @@ describe("UNDECLARED_FIELD 축 (#427)", () => {
       tool: withAdditional(),
     });
     expect(covered.map((axis) => axis.kind)).toEqual(["HAPPY_PATH"]);
+  });
+});
+
+describe("중첩 경로 축 도출", () => {
+  /** 축을 `종류:경로` 문자열로 납작하게 본다. 경로가 붙은 것만 고른다. */
+  const pathsOf = (inputSchema: unknown, kind: string) =>
+    deriveContractAxes(tool("t", inputSchema))
+      .axes.filter((axis) => axis.kind === kind)
+      .map((axis) => axis.field);
+
+  const userSchema = {
+    type: "object",
+    required: ["user"],
+    properties: {
+      user: { type: "object", properties: { name: { type: "string" } }, required: ["name"] },
+    },
+  };
+
+  it("user 와 user.name 이 모두 축을 갖는다", () => {
+    expect(pathsOf(userSchema, "REQUIRED_OMITTED")).toEqual(["user", "user.name"]);
+    expect(pathsOf(userSchema, "TYPE_VIOLATION")).toEqual(["user", "user.name"]);
+  });
+
+  it("배열 원소가 축을 갖는다", () => {
+    const schema = {
+      type: "object",
+      properties: { tags: { type: "array", items: { type: "string", minLength: 3 } } },
+    };
+    expect(pathsOf(schema, "TYPE_VIOLATION")).toEqual(["tags", "tags[]"]);
+    const range = deriveContractAxes(tool("t", schema)).axes.filter(
+      (axis) => axis.kind === "RANGE_VIOLATION",
+    );
+    expect(range.map((axis) => `${axis.field}:${axis.bound}`)).toEqual(["tags[]:lower"]);
+  });
+
+  it("배열 원소 경로는 REQUIRED_OMITTED 축을 안 만든다", () => {
+    // 원소가 없는 것은 minItems 위반이고 그것은 이미 그 배열의 RANGE_VIOLATION 축이다.
+    const schema = {
+      type: "object",
+      required: ["tags"],
+      properties: {
+        tags: {
+          type: "array",
+          minItems: 1,
+          items: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
+        },
+      },
+    };
+    const required = pathsOf(schema, "REQUIRED_OMITTED");
+    expect(required).toEqual(["tags", "tags[].id"]);
+    expect(required).not.toContain("tags[]");
+  });
+
+  it("tags 의 minItems 와 tags[] 의 minLength 가 섞이지 않는다", () => {
+    const schema = {
+      type: "object",
+      properties: {
+        tags: { type: "array", minItems: 2, items: { type: "string", minLength: 3 } },
+      },
+    };
+    const ranges = deriveContractAxes(tool("t", schema)).axes.filter(
+      (axis) => axis.kind === "RANGE_VIOLATION",
+    );
+    const tags = ranges.find((axis) => axis.field === "tags");
+    const items = ranges.find((axis) => axis.field === "tags[]");
+    expect(tags?.declaredRange?.minItems).toBe(2);
+    expect(tags?.declaredRange?.minLength).toBeNull();
+    expect(items?.declaredRange?.minLength).toBe(3);
+    expect(items?.declaredRange?.minItems).toBeNull();
+  });
+
+  const deep = (leaf: unknown) => ({
+    type: "object",
+    properties: {
+      user: {
+        type: "object",
+        properties: { address: { type: "object", properties: { city: leaf } } },
+      },
+    },
+  });
+
+  it("깊이 3 까지 내려간다", () => {
+    expect(pathsOf(deep({ type: "string" }), "TYPE_VIOLATION")).toEqual([
+      "user",
+      "user.address",
+      "user.address.city",
+    ]);
+  });
+
+  it("깊이 4 는 depthLimit 으로 표시한다", () => {
+    const schema = deep({ type: "object", properties: { zip: { type: "string" } } });
+    const result = deriveContractAxes(tool("t", schema));
+    expect(result.unanalyzedFields).toContainEqual({
+      path: "user.address.city.zip",
+      reason: "depthLimit",
+    });
+    // 그보다 얕은 축은 정상적으로 있다.
+    expect(
+      result.axes.filter((axis) => axis.kind === "TYPE_VIOLATION").map((a) => a.field),
+    ).toEqual(["user", "user.address", "user.address.city"]);
+  });
+
+  it("경로 수 상한을 넘으면 pathLimit 으로 표시한다", () => {
+    const properties = Object.fromEntries(
+      // 코드 단위 정렬이 안정적이도록 자릿수를 맞춘다.
+      Array.from({ length: 100 }, (_, index) => [
+        `f${String(index).padStart(3, "0")}`,
+        { type: "string" },
+      ]),
+    );
+    const result = deriveContractAxes(tool("t", { type: "object", properties }));
+    const types = result.axes.filter((axis) => axis.kind === "TYPE_VIOLATION");
+    expect(types).toHaveLength(64);
+    const limited = result.unanalyzedFields.filter((item) => item.reason === "pathLimit");
+    expect(limited).toHaveLength(36);
+    expect(limited[0]?.path).toBe("f064");
+  });
+
+  it("properties 없는 객체는 noProperties 다", () => {
+    const result = deriveContractAxes(
+      tool("t", { type: "object", properties: { user: { type: "object" } } }),
+    );
+    expect(result.unanalyzedFields).toEqual([{ path: "user", reason: "noProperties" }]);
+    // 그 경로 자신의 type 축은 남는다. user 가 객체인지는 여전히 요구할 수 있다.
+    expect(result.axes.map((axis) => `${axis.kind}:${axis.field ?? ""}`)).toContain(
+      "TYPE_VIOLATION:user",
+    );
+  });
+
+  it("튜플 items 는 tupleItems 다", () => {
+    const result = deriveContractAxes(
+      tool("t", {
+        type: "object",
+        properties: { pair: { type: "array", items: [{ type: "string" }, { type: "number" }] } },
+      }),
+    );
+    expect(result.unanalyzedFields).toEqual([{ path: "pair", reason: "tupleItems" }]);
+    expect(result.axes.some((axis) => axis.field === "pair[]")).toBe(false);
+  });
+
+  it("items 가 없으면 표시하지 않는다", () => {
+    // 못 읽은 것이 아니라 적히지 않은 것이다.
+    const result = deriveContractAxes(
+      tool("t", { type: "object", properties: { tags: { type: "array" } } }),
+    );
+    expect(result.unanalyzedFields).toEqual([]);
+    expect(result.axes.some((axis) => axis.field === "tags[]")).toBe(false);
+  });
+
+  it("중첩 anyOf 는 blockingKeyword 이고 그 아래는 안 본다", () => {
+    const result = deriveContractAxes(
+      tool("t", {
+        type: "object",
+        properties: {
+          user: { anyOf: [{ type: "object", properties: { a: { type: "string" } } }, { b: 1 }] },
+        },
+      }),
+    );
+    expect(result.unanalyzedFields).toEqual([{ path: "user", reason: "blockingKeyword" }]);
+    expect(result.axes.some((axis) => axis.field === "user.a")).toBe(false);
+  });
+
+  it("nullable 형태는 풀어서 내려간다", () => {
+    const result = deriveContractAxes(
+      tool("t", {
+        type: "object",
+        properties: {
+          user: {
+            anyOf: [{ type: "object", properties: { name: { type: "string" } } }, { type: "null" }],
+          },
+        },
+      }),
+    );
+    expect(result.axes.map((axis) => axis.field)).toContain("user.name");
+  });
+
+  it("순환 $ref 는 깊이 상한 전에 끊긴다", () => {
+    const result = deriveContractAxes(
+      tool("t", {
+        type: "object",
+        properties: { node: { type: "object", properties: { next: { $ref: "#" } } } },
+      }),
+    );
+    expect(result.axes.length).toBeLessThan(10);
+    expect(result.unanalyzedFields).toContainEqual({
+      path: "node.next",
+      reason: "blockingKeyword",
+    });
+  });
+});
+
+describe("경로 충돌", () => {
+  const collidingSchema = {
+    type: "object",
+    properties: {
+      "user.name": { type: "string" },
+      user: { type: "object", properties: { name: { type: "string" } } },
+    },
+  };
+
+  it("'user.name' 최상위 필드는 빠지고 user 객체의 name 은 남는다", () => {
+    // #388 T4 전에는 둘이 같은 경로를 만들어 pathCollision 으로 **양쪽**이 빠졌다. 이제는
+    // 최상위 `"user.name"` 이라는 이름 자체가 읽을 수 없어 경로를 만들기 전에 빠지고, 충돌할
+    // 짝이 없어진 `user` 객체의 `name` 은 정상적으로 축을 갖는다.
+    const result = deriveContractAxes(tool("t", collidingSchema));
+    expect(result.unanalyzedFields).toContainEqual({
+      path: "user.name",
+      reason: "unreadablePath",
+    });
+    expect(result.axes.map((axis) => axis.field)).toContain("user.name");
+    expect(result.axes.map((axis) => axis.field)).toContain("user");
+  });
+
+  it("읽을 수 없는 이름 아래는 안 내려가고 진짜 경로는 끝까지 내려간다", () => {
+    const result = deriveContractAxes(
+      tool("t", {
+        type: "object",
+        properties: {
+          "user.name": { type: "object", properties: { first: { type: "string" } } },
+          user: {
+            type: "object",
+            properties: { name: { type: "object", properties: { first: { type: "string" } } } },
+          },
+        },
+      }),
+    );
+    // 최상위 "user.name" 은 그 아래로 내려가지 않는다. 그 아래 경로도 같은 이유로 못 읽는다.
+    expect(result.unanalyzedFields).toEqual([{ path: "user.name", reason: "unreadablePath" }]);
+    // user 객체 쪽은 깊이 3 까지 그대로 내려간다.
+    expect(result.axes.map((axis) => axis.field)).toContain("user.name.first");
+  });
+
+  it("'a.b' 최상위 필드만 있고 a 객체가 없으면 충돌이 아니다", () => {
+    // 충돌이 아닌 것은 그대로 맞다. 사유가 pathCollision 이 아니라 unreadablePath 다.
+    // 축이 안 생기는 것은 아래 describe 가 따로 본다.
+    const result = deriveContractAxes(
+      tool("t", { type: "object", properties: { "a.b": { type: "string" } } }),
+    );
+    expect(result.unanalyzedFields).toEqual([{ path: "a.b", reason: "unreadablePath" }]);
+  });
+});
+
+describe("matchCoveredAxes 가 중첩 경로를 덮는다", () => {
+  const nested = tool("get_weather", {
+    type: "object",
+    required: ["user"],
+    properties: {
+      user: { type: "object", properties: { name: { type: "string" } }, required: ["name"] },
+    },
+  });
+  const coveredBy = (input: JsonObject, expected: boolean) =>
+    matchCoveredAxes({ testCase: callCase("c", input, expected), tool: nested });
+
+  it("{ user: {} } 는 user.name 의 REQUIRED_OMITTED 만 덮는다", () => {
+    const covered = coveredBy({ user: {} }, true);
+    expect(covered.map((axis) => `${axis.kind}:${axis.field}`)).toEqual([
+      "REQUIRED_OMITTED:user.name",
+    ]);
+  });
+
+  it("{} 는 user 의 REQUIRED_OMITTED 만 덮는다", () => {
+    // 이 구분이 없으면 케이스 하나가 축 둘을 덮어 커버리지가 부풀어 오른다.
+    const covered = coveredBy({}, true);
+    expect(covered.map((axis) => `${axis.kind}:${axis.field}`)).toEqual(["REQUIRED_OMITTED:user"]);
+  });
+
+  it("{ user: { name: 0 } } 는 user.name 의 TYPE_VIOLATION 만 덮는다", () => {
+    const covered = coveredBy({ user: { name: 0 } }, true);
+    expect(covered.map((axis) => `${axis.kind}:${axis.field}`)).toEqual([
+      "TYPE_VIOLATION:user.name",
+    ]);
+  });
+
+  it("{ user: 0 } 은 user 의 TYPE_VIOLATION 만 덮는다", () => {
+    const covered = coveredBy({ user: 0 }, true);
+    expect(covered.map((axis) => `${axis.kind}:${axis.field}`)).toEqual(["TYPE_VIOLATION:user"]);
+  });
+
+  it("배열 원소 하나만 위반이어도 그 축을 덮는다", () => {
+    const tagged = tool("get_weather", {
+      type: "object",
+      properties: { tags: { type: "array", items: { type: "string", minLength: 3 } } },
+    });
+    const covered = matchCoveredAxes({
+      testCase: callCase("c", { tags: ["ab", "example"] }, true),
+      tool: tagged,
+    });
+    expect(covered.map((axis) => `${axis.kind}:${axis.field}:${axis.bound}`)).toEqual([
+      "RANGE_VIOLATION:tags[]:lower",
+    ]);
+  });
+
+  it("정상 입력은 HAPPY_PATH 만 덮는다", () => {
+    const covered = coveredBy({ user: { name: "example" } }, false);
+    expect(covered.map((axis) => axis.kind)).toEqual(["HAPPY_PATH"]);
+  });
+});
+
+describe("unanalyzedFields 사유", () => {
+  it("경로 코드 단위 오름차순이다", () => {
+    const result = deriveContractAxes(
+      tool("t", {
+        type: "object",
+        properties: {
+          zeta: { anyOf: [{ type: "string" }] },
+          alpha: { anyOf: [{ type: "string" }] },
+          mid: {},
+        },
+      }),
+    );
+    expect(result.unanalyzedFields.map((item) => item.path)).toEqual(["alpha", "mid", "zeta"]);
+  });
+
+  it("차단 키워드와 근거 없음을 다른 사유로 낸다", () => {
+    const result = deriveContractAxes(
+      tool("t", {
+        type: "object",
+        properties: { blocked: { allOf: [{ type: "string" }] }, bare: {} },
+      }),
+    );
+    expect(result.unanalyzedFields).toEqual([
+      { path: "bare", reason: "noGround" },
+      { path: "blocked", reason: "blockingKeyword" },
+    ]);
+  });
+});
+
+describe("이름에 경로 문자가 든 필드는 축을 만들지 않는다", () => {
+  const fieldsOf = (inputSchema: unknown) => deriveContractAxes(tool("t", inputSchema));
+
+  it("'a.b' 최상위 필드는 unreadablePath 로 빠진다", () => {
+    // 축을 만들면 valuesAtPath 가 a → b 로 읽어 input["a.b"] 를 못 찾는다. 어떤 입력도 못
+    // 덮는 축이 분모에 남는다. 못 만드는 축을 분모에 넣지 않는 기존 규칙과 같다.
+    const result = fieldsOf({
+      type: "object",
+      required: ["a.b"],
+      properties: { "a.b": { type: "string" } },
+    });
+    expect(result.axes.map((axis) => axis.kind)).toEqual(["HAPPY_PATH"]);
+    expect(result.axes.some((axis) => axis.field === "a.b")).toBe(false);
+    expect(result.unanalyzedFields).toEqual([{ path: "a.b", reason: "unreadablePath" }]);
+  });
+
+  it("'xs[0]' 처럼 대괄호가 든 이름도 빠진다", () => {
+    const result = fieldsOf({ type: "object", properties: { "xs[0]": { type: "string" } } });
+    expect(result.axes.map((axis) => axis.kind)).toEqual(["HAPPY_PATH"]);
+    expect(result.unanalyzedFields).toEqual([{ path: "xs[0]", reason: "unreadablePath" }]);
+  });
+
+  it("중첩 이름에도 적용된다", () => {
+    const result = fieldsOf({
+      type: "object",
+      properties: {
+        user: { type: "object", required: ["a.b"], properties: { "a.b": { type: "string" } } },
+      },
+    });
+    expect(result.axes.some((axis) => axis.field === "user.a.b")).toBe(false);
+    expect(result.unanalyzedFields).toEqual([{ path: "user.a.b", reason: "unreadablePath" }]);
+    // 부모는 읽을 수 있는 이름이라 그대로 축을 갖는다.
+    expect(result.axes.map((axis) => axis.field)).toContain("user");
+  });
+
+  it("그 아래로 내려가지 않는다", () => {
+    // 그 아래 경로도 같은 이유로 읽을 수 없다. 내려가면 못 덮는 축이 더 생긴다.
+    const result = fieldsOf({
+      type: "object",
+      properties: {
+        "a.b": { type: "object", properties: { inner: { type: "string" } } },
+      },
+    });
+    expect(result.axes.some((axis) => axis.field?.startsWith("a.b"))).toBe(false);
+    expect(result.unanalyzedFields).toEqual([{ path: "a.b", reason: "unreadablePath" }]);
+  });
+
+  it("pathCollision 과 다른 사유다", () => {
+    // 충돌은 두 선언이 같은 경로를 가리켜 어느 쪽이 맞는지 모르는 것이고, unreadablePath 는
+    // 선언이 하나인데 우리가 못 읽는 것이다. 사용자가 할 일이 다르다.
+    const result = fieldsOf({
+      type: "object",
+      properties: {
+        "user.name": { type: "string" },
+        user: { type: "object", properties: { name: { type: "string" } } },
+        "x[0]": { type: "string" },
+      },
+    });
+    const byPath = new Map(result.unanalyzedFields.map((item) => [item.path, item.reason]));
+    expect(byPath.get("user.name")).toBe("unreadablePath");
+    expect(byPath.get("x[0]")).toBe("unreadablePath");
+    // user 객체 쪽 name 은 남는다. 충돌할 짝이 사라졌기 때문이다.
+    expect(result.axes.map((axis) => axis.field)).toContain("user.name");
+  });
+
+  it("평범한 이름은 영향이 없다", () => {
+    const result = fieldsOf({
+      type: "object",
+      required: ["city"],
+      properties: { city: { type: "string" }, user_id: { type: "integer", minimum: 1 } },
+    });
+    expect(result.unanalyzedFields).toEqual([]);
+    expect(result.axes.map((axis) => `${axis.kind}:${axis.field ?? ""}`)).toEqual([
+      "HAPPY_PATH:",
+      "REQUIRED_OMITTED:city",
+      "TYPE_VIOLATION:city",
+      "TYPE_VIOLATION:user_id",
+      "RANGE_VIOLATION:user_id",
+    ]);
   });
 });

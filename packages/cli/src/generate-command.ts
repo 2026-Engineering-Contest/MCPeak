@@ -69,7 +69,7 @@ import {
 } from "./process-diagnostics.js";
 import { proposeRepair } from "./repair-proposal.js";
 import { escapeTerminalText } from "./repair-render.js";
-import type { RepairAttempt } from "./repair-target.js";
+import type { RepairAttempt, RepairTarget } from "./repair-target.js";
 import { selectRepairTargets } from "./repair-target.js";
 import {
   attemptReset,
@@ -1157,6 +1157,206 @@ async function loadFixtures(
 }
 
 /**
+ * 교정한 값을 픽스처 파일로 되돌린다(#390 T3).
+ *
+ * **기존 파일을 절대 고치지 않는다.** 병합 로직을 만들지 않는다. 파일이 있으면 붙여 넣을
+ * 조각만 찍는다. 덮어쓸 수 있는 primitive 를 두지 않는다는 것이 이 저장소의 결론이고
+ * (`docs/reports/task-r4.md`), `rename` 으로 떨어지고 싶어지는 자리에서 그 결정을
+ * 우회하지 않는다. `openTemp` → `link` → `unlink` 만 쓴다.
+ */
+async function writeBackFixtures(
+  input: GenerateCommandInput,
+  deps: GenerateCommandDependencies,
+  io: ReviewIO,
+  targets: readonly RepairTarget[],
+  repairs: readonly { readonly caseId: string; readonly attempts: readonly RepairAttempt[] }[],
+): Promise<void> {
+  const { entries, nestedFields } = collectFixtureWriteback(targets, repairs);
+  if (nestedFields.length > 0)
+    io.write(
+      `▸ 중첩 경로 ${nestedFields.length}건은 픽스처에 적을 수 없습니다(최상위 필드만 받습니다): ${nestedFields.join(", ")}\n`,
+    );
+  if (entries.length === 0) return;
+  const path = input.fixturesPath ?? DEFAULT_FIXTURES_PATH;
+
+  let exists: boolean;
+  /** 확인 자체가 실패했을 때의 오류 코드. 파일이 **있는 것과 다르다.** */
+  let checkFailed: string | undefined;
+  try {
+    exists = await deps.exists(path);
+  } catch (error) {
+    // 확인에 실패하면 쓰지 않는다. 있는지 모르는 파일에 link 를 거는 것은 남의 파일을 건드릴
+    // 수 있는 자리다. 다만 **이유를 파일이 있는 것으로 적지 않는다.** 사용자는 그 문장을
+    // 읽고 파일이 있는 줄 안다.
+    exists = true;
+    const code = (error as { code?: unknown } | null)?.code;
+    checkFailed = typeof code === "string" ? code : "알 수 없는 오류";
+  }
+
+  if (checkFailed !== undefined) {
+    io.write(
+      `픽스처 파일이 있는지 확인하지 못해 쓰지 않았습니다: ${path} (${checkFailed})\n` +
+        "아래 조각을 직접 붙여 넣으세요.\n\n" +
+        renderFixtureSnippet(entries),
+    );
+    return;
+  }
+
+  if (exists) {
+    // **있으면 안 쓴다.** 병합하지 않는다. 사용자가 손으로 고쳐 둔 픽스처를 우리가 지우고
+    // 다시 쓰는 것이 R4 의 결정이 막으려던 바로 그 일이다.
+    io.write(
+      `교정한 값 ${entries.length}건을 픽스처에 반영하려면 ${path} 의 "tools" 아래에 붙이세요.\n` +
+        "기존 파일이 있어 우리가 고치지 않습니다.\n\n" +
+        renderFixtureSnippet(entries),
+    );
+    return;
+  }
+
+  // 파일을 만드는 것은 사용자 작업 공간을 바꾸는 일이다. 물어볼 수 없으면 안 만든다.
+  //
+  // 이 갈래는 지금 못 밟는다. `--baseline-only` 가 아닌 실행은 비대화형이면 위에서
+  // `GENERATE_INTERACTIVE_REQUIRED` 로 끊기고, `--baseline-only` 에는 교정이 없어 되돌릴 값
+  // 자체가 없다. 그래도 방어로 남긴다. "못 밟는다" 는 판단이 나중에 틀리면 그때 사용자
+  // 작업 공간에 파일이 조용히 생긴다. (`generate` 에 `--yes` 는 없다. 그것은 `repair` 의
+  // 옵션이다.)
+  if (!io.interactive) {
+    io.write(
+      `교정한 값 ${entries.length}건을 픽스처로 저장할 수 있습니다. 대화형으로 다시 실행하면 ${path} 에 저장할지 묻습니다.\n\n` +
+        renderFixtureSnippet(entries),
+    );
+    return;
+  }
+
+  io.write(`교정한 값 ${entries.length}건을 ${path} 에 저장할까요?\n`);
+  const width = Math.max(...entries.map((entry) => `${entry.tool}.${entry.field}`.length));
+  for (const entry of entries)
+    io.write(
+      `  ${`${entry.tool}.${entry.field}`.padEnd(width)}  ${JSON.stringify(entry.value)}  ${ORIGIN_LABEL[entry.origin]}\n`,
+    );
+  if (!(await io.confirm("저장할까요?"))) return;
+
+  const temporary = temporaryPath(path);
+  let created = false;
+  try {
+    const handle = await deps.openTemp(temporary);
+    created = true;
+    try {
+      await handle.writeFile(renderFixtureFile(entries), "utf8");
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    // link 는 대상이 있으면 EEXIST 로 실패한다. 위에서 없는 것을 확인했지만 그 사이에 생길
+    // 수 있고, 그때는 쓰지 않는 것이 맞다.
+    await deps.link(temporary, path);
+    io.write(`▸ 픽스처를 저장했습니다: ${path}\n`);
+  } catch (error) {
+    const code = (error as { code?: unknown } | null)?.code;
+    io.write(
+      `▸ 픽스처를 저장하지 못했습니다: ${path}${typeof code === "string" ? ` (${code})` : ""}\n` +
+        "  아래 조각을 직접 붙여 넣으세요.\n\n" +
+        renderFixtureSnippet(entries),
+    );
+  } finally {
+    if (created) await deps.unlink(temporary).catch(() => undefined);
+  }
+}
+
+/** UTF-16 코드 단위 안정 비교. `localeCompare` 는 로캘·ICU 데이터에 따라 결과가 달라진다. */
+const byCodeUnit = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+
+/** 픽스처에 되돌릴 값 한 건. 도구·필드·값과 그 값을 누가 정했는지다(#390). */
+interface FixtureWriteback {
+  readonly tool: string;
+  readonly field: string;
+  readonly value: JsonValue;
+  readonly origin: RepairAttempt["origin"];
+}
+
+/** 출처 표기. `humanRepaired` 와 `aiProposed` 를 갈라 적는다. */
+const ORIGIN_LABEL: Readonly<Record<RepairAttempt["origin"], string>> = {
+  humanRepaired: "(사람이 입력)",
+  // 1회차는 제안값을 채워 놓고 사람에게 묻는다. 사람이 그대로 두기로 한 값만 여기 온다.
+  aiProposed: "(AI 제안, 사람이 확인)",
+};
+
+/**
+ * 교정으로 통과한 값을 도구·필드로 모은다.
+ *
+ * 통과한 시도만 본다. 안 통한 값을 픽스처에 적으면 다음 실행이 그 값으로 시작해 같은 이유로
+ * 죽는다. 같은 `(도구, 필드)` 가 여러 케이스에서 나오면 **뒤 케이스가 앞을 덮지 않는다.**
+ * 앞 케이스의 값이 캐시로 뒤에 퍼진 것이라 값이 같고, 다르다면 먼저 통과한 쪽을 쓴다.
+ */
+function collectFixtureWriteback(
+  targets: readonly RepairTarget[],
+  repairs: readonly { readonly caseId: string; readonly attempts: readonly RepairAttempt[] }[],
+): { readonly entries: readonly FixtureWriteback[]; readonly nestedFields: readonly string[] } {
+  const toolOf = new Map(targets.map((item) => [item.caseId, item.tool]));
+  const entries = new Map<string, FixtureWriteback>();
+  const nested = new Set<string>();
+  for (const repair of repairs) {
+    const tool = toolOf.get(repair.caseId);
+    if (tool === undefined) continue;
+    for (const attempt of repair.attempts) {
+      if (!attempt.passed) continue;
+      // 픽스처는 이번 회차에서 최상위 필드만 받는다. 중첩 경로(#388 문법)는 적을 자리가 없다.
+      if (attempt.field.includes(".") || attempt.field.includes("[")) {
+        nested.add(`${tool}.${attempt.field}`);
+        continue;
+      }
+      const key = `${tool}\u0000${attempt.field}`;
+      if (entries.has(key)) continue;
+      entries.set(key, {
+        tool,
+        field: attempt.field,
+        value: attempt.value,
+        origin: attempt.origin,
+      });
+    }
+  }
+  return {
+    entries: [...entries.values()].sort((a, b) =>
+      a.tool === b.tool ? byCodeUnit(a.field, b.field) : byCodeUnit(a.tool, b.tool),
+    ),
+    nestedFields: [...nested].sort(byCodeUnit),
+  };
+}
+
+/**
+ * 픽스처 파일 본문. **결정론적이어야 한다.** 도구·필드 이름 코드 단위 오름차순,
+ * `JSON.stringify(x, null, 2)`, 끝 개행 하나다. 순서가 흔들리면 diff 가 매번 커진다.
+ */
+function renderFixtureFile(entries: readonly FixtureWriteback[]): string {
+  const tools: Record<string, Record<string, JsonValue>> = {};
+  for (const entry of entries) {
+    const fields = tools[entry.tool] ?? {};
+    fields[entry.field] = entry.value;
+    tools[entry.tool] = fields;
+  }
+  return `${JSON.stringify({ schemaVersion: 1, tools }, null, 2)}\n`;
+}
+
+/**
+ * 기존 파일이 있을 때 찍는 조각. **붙여 넣을 수 있는 모양이어야 한다.**
+ *
+ * 사용자가 손으로 JSON 을 고치는 자리라 쉼표 하나가 틀리면 파일이 깨진다. 마지막 줄에
+ * 쉼표를 붙이지 않는다.
+ */
+function renderFixtureSnippet(entries: readonly FixtureWriteback[]): string {
+  const byTool = new Map<string, Record<string, JsonValue>>();
+  for (const entry of entries) {
+    const fields = byTool.get(entry.tool) ?? {};
+    fields[entry.field] = entry.value;
+    byTool.set(entry.tool, fields);
+  }
+  const lines = [...byTool.entries()].map(
+    ([tool, fields]) => `  ${JSON.stringify(tool)}: ${JSON.stringify(fields)}`,
+  );
+  return `${lines.join(",\n")}\n`;
+}
+
+/**
  * 실패한 케이스에 붙이는 자리값 안내(설계 §2.2).
  *
  * **필드 이름으로 추측하지 않는다.** 판정 근거는 "그 값을 우리가 지어냈는가" 하나이고,
@@ -1822,6 +2022,9 @@ async function runInteractiveReview(
                 .filter((item) => !item.repaired && item.attempts.length > 0)
                 .map((item) => [item.caseId, item.attempts]),
             );
+            // 교정한 값을 픽스처로 되돌린다(#390). 다음 실행이 그 값으로 시작하면 같은 교정을
+            // 두 번 하지 않는다.
+            await writeBackFixtures(input, deps, io, targets, repairs);
             // 10. 교정 결과를 후보 명세에 반영(§5). 케이스마다가 아니라 한 번만 탄다.
             if (repaired.size > 0) {
               repairedCases = repaired.size;

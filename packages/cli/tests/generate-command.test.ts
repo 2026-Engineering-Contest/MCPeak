@@ -2395,7 +2395,8 @@ describe("generate 시험 실행 게이트", () => {
     /**
      * `io.confirm` 이 순서대로 돌려줄 답. **인덱스가 곧 질문이다.** save 경로의 순서는
      * `[시험 실행 계속, 최종 전량 재검증, 저장]` 이다(#399 이 가운데 하나를 더했다).
-     * 분류 질문이 끼는 경로는 그만큼 앞으로 밀린다.
+     * 입력값 교정이 실제로 값을 고친 경로는 `시험 실행 계속` 바로 뒤에 `픽스처 저장` 이
+     * 끼어 네 칸이 된다(#390). 분류 질문이 끼는 경로는 그만큼 앞으로 밀린다.
      *
      * 순서가 바뀌면 이 배열은 조용히 다른 질문에 답하고 테스트는 그대로 녹색이 된다. 그것을
      * 막으려고 `재검증만 거절하면 저장은 된다` 가 세 번째 자리를 `false` 로 고정한다.
@@ -3671,7 +3672,8 @@ describe("generate 시험 실행 게이트", () => {
       const d = gateDeps({
         choices: ["save"],
         inputs: ["서울"],
-        confirms: [true, true, true],
+        // 둘째가 픽스처 되돌리기다(#390). 이 테스트가 보는 것은 명세 저장이라 거절한다.
+        confirms: [true, false, true, true],
         respond: onlyAccepts("서울"),
       });
       await runGenerateCommand(gateArgv, d.value);
@@ -3684,7 +3686,7 @@ describe("generate 시험 실행 게이트", () => {
       const d = gateDeps({
         choices: ["save"],
         inputs: ["서울"],
-        confirms: [true, true, true],
+        confirms: [true, false, true, true],
         respond: onlyAccepts("서울"),
       });
       await runGenerateCommand(gateArgv, d.value);
@@ -3974,6 +3976,235 @@ describe("generate 시험 실행 게이트", () => {
     });
   });
 
+  describe("교정한 값을 픽스처로 되돌린다 (#390)", () => {
+    /**
+     * `confirms` 는 순서대로 답한다. 교정이 있는 save 경로는
+     * `[시험 실행 계속, 픽스처 저장, 최종 전량 재검증, 최종 JSON 저장]` 이다.
+     */
+    const repairArgv = gateArgv;
+
+    /** 쓰기 주입점을 따로 세어 본다. gateDeps 의 `saved` 는 명세 쪽이 쓰고 있다. */
+    const writeSpy = (d: ReturnType<typeof gateDeps>) => {
+      const written: string[] = [];
+      const links: string[] = [];
+      d.value.openTemp = vi.fn(async () => ({
+        writeFile: vi.fn(async (data: string) => {
+          written.push(data);
+        }),
+        sync: vi.fn(async () => undefined),
+        close: vi.fn(async () => undefined),
+      })) as never;
+      d.value.link = vi.fn(async (_from: string, to: string) => {
+        links.push(to);
+      }) as never;
+      return { written, links };
+    };
+
+    it("파일이 없고 승인하면 픽스처를 쓴다", async () => {
+      const d = gateDeps({
+        choices: ["save", "cancel"],
+        inputs: ["서울"],
+        confirms: [true, true],
+        respond: onlyAccepts("서울"),
+      });
+      const spy = writeSpy(d);
+      await runGenerateCommand(repairArgv, d.value);
+      expect(spy.links).toContain("mcpeak.fixtures.json");
+      expect(spy.written[0]).toBe(
+        `${JSON.stringify({ schemaVersion: 1, tools: { weather: { city: "서울" } } }, null, 2)}\n`,
+      );
+      // 출처를 화면에 적는다. 사람이 직접 입력한 값이다.
+      expect(d.output()).toContain("(사람이 입력)");
+    });
+
+    it("거절하면 안 쓴다", async () => {
+      const d = gateDeps({
+        choices: ["save", "cancel"],
+        inputs: ["서울"],
+        confirms: [true, false],
+        respond: onlyAccepts("서울"),
+      });
+      const spy = writeSpy(d);
+      await runGenerateCommand(repairArgv, d.value);
+      expect(spy.links).toEqual([]);
+    });
+
+    it("파일이 이미 있으면 안 쓰고 붙여 넣을 조각을 찍는다", async () => {
+      // 병합하지 않는다. 사용자가 손으로 고쳐 둔 픽스처를 우리가 지우고 다시 쓰는 것이
+      // R4 의 결정이 막으려던 일이다.
+      const d = gateDeps({
+        choices: ["save", "cancel"],
+        inputs: ["서울"],
+        confirms: [true, true],
+        respond: onlyAccepts("서울"),
+        fixtures: { text: '{"schemaVersion":1}' },
+      });
+      const spy = writeSpy(d);
+      await runGenerateCommand(repairArgv, d.value);
+      // EEXIST 를 잡아 넘기는 것이 아니라 시도조차 안 한다.
+      expect(spy.links).toEqual([]);
+      const output = d.output();
+      expect(output).toContain("기존 파일이 있어 우리가 고치지 않습니다.");
+      // 찍은 조각이 JSON 으로 파싱되는 모양이다. 마지막 줄에 쉼표가 없다.
+      const snippet = output.slice(output.indexOf('  "weather"')).split("\n")[0] as string;
+      expect(snippet.endsWith(",")).toBe(false);
+      expect(JSON.parse(`{${snippet}}`)).toEqual({ weather: { city: "서울" } });
+    });
+
+    it("exists 가 던지면 다른 문장을 찍고 안 쓴다", async () => {
+      // 확인에 실패한 것이지 파일이 있는 것이 아니다. 이유를 잘못 말하면 사용자는 파일이
+      // 있는 줄 안다.
+      const d = gateDeps({
+        choices: ["save", "cancel"],
+        inputs: ["서울"],
+        confirms: [true, true],
+        respond: onlyAccepts("서울"),
+      });
+      const spy = writeSpy(d);
+      // 픽스처 경로에서만 던진다. 출력 경로까지 던지면 저장 선검사가 먼저 죽어 이 갈래에
+      // 닿지도 못한다.
+      d.value.exists = vi.fn(async (path: string) => {
+        if (path === "mcpeak.fixtures.json")
+          throw Object.assign(new Error("nope"), { code: "EACCES" });
+        return false;
+      }) as never;
+      await runGenerateCommand(repairArgv, d.value);
+      expect(spy.links).toEqual([]);
+      expect(d.output()).toContain("픽스처 파일이 있는지 확인하지 못해 쓰지 않았습니다");
+      expect(d.output()).toContain("(EACCES)");
+      expect(d.output()).not.toContain("기존 파일이 있어 우리가 고치지 않습니다.");
+    });
+
+    it("도구·필드 이름이 코드 단위 오름차순으로 직렬화된다", async () => {
+      // 선언 순서를 뒤집어도 같은 바이트가 나와야 정렬을 보는 것이다. 같은 입력을 두 번
+      // 넣는 것만으로는 정렬이 없어도 통과한다.
+      const twoFields: ToolDef[] = [
+        {
+          name: "weather",
+          inputSchema: {
+            type: "object",
+            properties: { zone: { type: "string" }, city: { type: "string" } },
+            required: ["zone", "city"],
+          },
+        },
+      ];
+      const reversed: ToolDef[] = [
+        {
+          name: "weather",
+          inputSchema: {
+            type: "object",
+            properties: { city: { type: "string" }, zone: { type: "string" } },
+            required: ["city", "zone"],
+          },
+        },
+      ];
+      // 두 필드가 다 맞아야 통과하는 서버. 둘 다 교정 대상이 된다.
+      const bothNeeded = (_name: string, args: unknown): ToolResult => {
+        const input = args as { city?: unknown; zone?: unknown };
+        return input.city === "서울" && input.zone === "KR"
+          ? { content: [{ type: "text", text: "ok" }], isError: false, raw: { ok: true } }
+          : { content: [{ type: "text", text: "no" }], isError: true, raw: { error: true } };
+      };
+      const runWith = async (tools: ToolDef[], inputs: string[]) => {
+        const d = gateDeps({
+          choices: ["save", "cancel"],
+          inputs,
+          confirms: [true, true],
+          respond: bothNeeded,
+          tools,
+        });
+        const spy = writeSpy(d);
+        await runGenerateCommand(gateArgv, d.value);
+        return spy.written[0];
+      };
+      // 물어보는 순서는 선언 순서를 따르므로 답도 그 순서로 준다.
+      const forward = await runWith(twoFields, ["KR", "서울"]);
+      const backward = await runWith(reversed, ["서울", "KR"]);
+      expect(forward).toBe(
+        `${JSON.stringify({ schemaVersion: 1, tools: { weather: { city: "서울", zone: "KR" } } }, null, 2)}\n`,
+      );
+      expect(backward).toBe(forward);
+    });
+
+    it("중첩 경로 값은 안 쓰고 안내를 찍는다", async () => {
+      // 픽스처는 이번 회차에서 최상위 필드만 받는다. 이름에 `.` 이 든 필드는 픽스처의 경로
+      // 문법과 구분되지 않아 적을 자리가 없다.
+      const dotted: ToolDef[] = [
+        {
+          name: "weather",
+          inputSchema: {
+            type: "object",
+            properties: { "a.b": { type: "string" } },
+            required: ["a.b"],
+          },
+        },
+      ];
+      const d = gateDeps({
+        choices: ["save", "cancel"],
+        inputs: ["서울"],
+        confirms: [true, true],
+        respond: (_name: string, args: unknown) =>
+          (args as Record<string, unknown>)["a.b"] === "서울"
+            ? { content: [{ type: "text", text: "ok" }], isError: false, raw: { ok: true } }
+            : { content: [{ type: "text", text: "no" }], isError: true, raw: { error: true } },
+        tools: dotted,
+      });
+      const spy = writeSpy(d);
+      await runGenerateCommand(gateArgv, d.value);
+      expect(spy.links).toEqual([]);
+      expect(d.output()).toContain("픽스처에 적을 수 없습니다");
+      expect(d.output()).toContain("weather.a.b");
+    });
+
+    it("저장 후 다시 generate 하면 그 필드를 안 묻는다", async () => {
+      // **이 이슈가 닫히는 자리다.** 첫 실행이 쓴 픽스처를 둘째 실행이 읽어, 같은 교정을
+      // 두 번 하지 않는다.
+      const first = gateDeps({
+        choices: ["save", "cancel"],
+        inputs: ["서울"],
+        confirms: [true, true],
+        respond: onlyAccepts("서울"),
+      });
+      const spy = writeSpy(first);
+      await runGenerateCommand(gateArgv, first.value);
+      const fixtureText = spy.written[0];
+      expect(fixtureText).toBeDefined();
+
+      // 첫 실행이 쓴 그 내용을 둘째 실행이 읽는다.
+      const second = gateDeps({
+        choices: ["save", "cancel"],
+        inputs: [],
+        confirms: [true, true],
+        respond: onlyAccepts("서울"),
+        fixtures: { text: fixtureText as string },
+      });
+      await runGenerateCommand(gateArgv, second.value);
+      // 교정 질문이 한 번도 안 나온다. 픽스처 값으로 시작해 처음부터 통과하기 때문이다.
+      expect(second.io.input).not.toHaveBeenCalled();
+      expect(second.output()).toContain("✓ 통과");
+    });
+
+    it("두 번 써도 바이트가 같다", async () => {
+      const once = gateDeps({
+        choices: ["save", "cancel"],
+        inputs: ["서울"],
+        confirms: [true, true],
+        respond: onlyAccepts("서울"),
+      });
+      const first = writeSpy(once);
+      await runGenerateCommand(repairArgv, once.value);
+      const twice = gateDeps({
+        choices: ["save", "cancel"],
+        inputs: ["서울"],
+        confirms: [true, true],
+        respond: onlyAccepts("서울"),
+      });
+      const second = writeSpy(twice);
+      await runGenerateCommand(repairArgv, twice.value);
+      expect(second.written[0]).toBe(first.written[0]);
+    });
+  });
+
   describe("generate 지문 표시", () => {
     const printedFingerprint = (output: string): string =>
       output
@@ -3998,7 +4229,7 @@ describe("generate 시험 실행 게이트", () => {
       const d = gateDeps({
         choices: ["save"],
         inputs: ["서울"],
-        confirms: [true, true, true],
+        confirms: [true, false, true, true],
         respond: onlyAccepts("서울"),
       });
       await runGenerateCommand(gateArgv, d.value);

@@ -3,6 +3,7 @@ import type { JsonValue, TestSuiteSpec } from "@mcpeak/runner";
 import { describe, expect, it } from "vitest";
 import type { ReviewIO } from "../src/generate-command.js";
 import { repairInputs } from "../src/input-repair.js";
+import type { ProposalOutcome } from "../src/repair-proposal.js";
 import type { RepairTarget } from "../src/repair-target.js";
 
 type Input = Readonly<Record<string, JsonValue>>;
@@ -189,7 +190,8 @@ describe("repairInputs", () => {
         caseId: "c1",
         repaired: true,
         input: { city: "서울" },
-        attempts: [{ field: "city", value: "서울", passed: true }],
+        // propose 를 안 넘겼다. 사람이 직접 입력한 값이다.
+        attempts: [{ field: "city", value: "서울", passed: true, origin: "humanRepaired" }],
       },
     ]);
   });
@@ -262,9 +264,10 @@ describe("repairInputs", () => {
       tools: weatherTools,
     });
 
+    // 1회차는 AI 제안을 사람이 그대로 둔 값, 2회차는 사람이 직접 넣은 값이다.
     expect(outcomes[0]?.attempts).toEqual([
-      { field: "city", value: "서울", passed: false },
-      { field: "city", value: "부산", passed: false },
+      { field: "city", value: "서울", passed: false, origin: "aiProposed" },
+      { field: "city", value: "부산", passed: false, origin: "humanRepaired" },
     ]);
   });
 
@@ -414,7 +417,10 @@ describe("repairInputs", () => {
       tools: weatherTools,
     });
 
-    expect(outcomes[1]?.attempts).toEqual([{ field: "city", value: "부산", passed: true }]);
+    // 캐시에서 물려받은 값이다. 앞 케이스에서 사람이 넣었으므로 여기서도 humanRepaired 다.
+    expect(outcomes[1]?.attempts).toEqual([
+      { field: "city", value: "부산", passed: true, origin: "humanRepaired" },
+    ]);
   });
 
   it("화면 문안이 2026-09-13 설계 §4.3 과 같다", async () => {
@@ -684,5 +690,95 @@ describe("repairInputs", () => {
     const text = io.transcript();
     expect(text).toContain("서버 응답에 쓸 만한 값이 없어 직접 받습니다");
     expect(text).not.toContain("AI 전송을 거절했으므로");
+  });
+});
+
+describe("교정값의 출처 (#390)", () => {
+  it("AI 제안을 그대로 둔 필드는 aiProposed 다", async () => {
+    // 1회차는 제안값을 채워 놓고 사람에게 묻는다. 엔터로 그대로 두면 사람이 확인한 값이다.
+    const io = scriptedIO([""]);
+    const { rerun } = rerunAlways(true);
+    const outcomes = await repairInputs({
+      io,
+      suite: emptySuite,
+      targets: [target("c1", { city: "example" })],
+      rerun,
+      propose: async () => ({ kind: "proposed", input: { city: "서울" } }),
+      tools: weatherTools,
+    });
+    expect(outcomes[0]?.attempts).toEqual([
+      { field: "city", value: "서울", passed: true, origin: "aiProposed" },
+    ]);
+  });
+
+  it("AI 제안을 사람이 고친 필드는 humanRepaired 다", async () => {
+    const io = scriptedIO(["부산"]);
+    const { rerun } = rerunAlways(true);
+    const outcomes = await repairInputs({
+      io,
+      suite: emptySuite,
+      targets: [target("c1", { city: "example" })],
+      rerun,
+      propose: async () => ({ kind: "proposed", input: { city: "서울" } }),
+      tools: weatherTools,
+    });
+    expect(outcomes[0]?.attempts).toEqual([
+      { field: "city", value: "부산", passed: true, origin: "humanRepaired" },
+    ]);
+  });
+
+  it("AI 제안이 일부 필드만 덮어도 죽지 않는다", async () => {
+    // `canonicalJson` 은 undefined 를 받으면 던진다. 1회차는 입력 전체를 도는데 제안은
+    // 일부만 덮을 수 있다. 그 필드에서 던지면 대화형 검토가 통째로 죽는다.
+    //
+    // 제안한 적이 없는 필드는 의미상으로도 humanRepaired 다.
+    const io = scriptedIO(["", "3"]);
+    const { rerun } = rerunAlways(true);
+    const outcomes = await repairInputs({
+      io,
+      suite: emptySuite,
+      targets: [target("c1", { city: "example", days: 1 })],
+      rerun,
+      // city 만 제안한다. days 는 제안에 없다.
+      propose: async () => ({ kind: "proposed", input: { city: "서울" } }),
+      tools: weatherTools,
+    });
+    expect(outcomes[0]?.attempts).toEqual([
+      { field: "city", value: "서울", passed: true, origin: "aiProposed" },
+      { field: "days", value: 3, passed: true, origin: "humanRepaired" },
+    ]);
+  });
+
+  it("캐시에서 재사용한 필드는 준 케이스의 출처를 물려받는다", async () => {
+    // c1: 사람이 제안 "서울" 을 "부산" 으로 고친다. humanRepaired 로 캐시에 든다.
+    // c2: 캐시로 "부산" 을 재사용한다. **그런데 c2 의 제안도 "부산" 이다.**
+    //
+    // 물려받지 않으면 제안값과 같으니 aiProposed 로 찍힌다. 그것이 거짓말이다. 이 값을 정한
+    // 것은 c1 에서 사람이다. 두 제안을 같게 두면 캐시 조회 줄을 지웠을 때 이 테스트가 깨진다.
+    //
+    // c2 에 물어볼 필드(`days`)를 하나 둔다. 물어볼 것이 하나도 없으면 `propose` 가 아예 안
+    // 불려 `proposed` 가 undefined 가 되고, 그러면 캐시가 없어도 humanRepaired 로 떨어져
+    // 두 경로가 같은 답을 낸다.
+    const io = scriptedIO(["부산", "2"]);
+    const { rerun } = rerunAlways(true);
+    const outcomes = await repairInputs({
+      io,
+      suite: emptySuite,
+      targets: [target("c1", { city: "example" }), target("c2", { city: "example2", days: 1 })],
+      rerun,
+      propose: async (proposeTarget): Promise<ProposalOutcome> => ({
+        kind: "proposed",
+        input:
+          proposeTarget.caseId === "c1"
+            ? { city: "서울" }
+            : // c2 의 제안이 캐시에 든 값과 같다. 물려받지 않으면 여기서 aiProposed 로 찍힌다.
+              { city: "부산", days: 2 },
+      }),
+      tools: weatherTools,
+    });
+    expect(outcomes[1]?.attempts).toEqual([
+      { field: "city", value: "부산", passed: true, origin: "humanRepaired" },
+      { field: "days", value: 2, passed: true, origin: "aiProposed" },
+    ]);
   });
 });

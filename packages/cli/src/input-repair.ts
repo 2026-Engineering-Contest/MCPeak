@@ -1,5 +1,6 @@
 import type { ToolDef } from "@mcpeak/core";
 import type { JsonValue, TestSuiteSpec } from "@mcpeak/runner";
+import { canonicalJson } from "@mcpeak/runner";
 import type { ReviewIO } from "./generate-command.js";
 import type { ProposalOutcome } from "./repair-proposal.js";
 import type { RepairAttempt, RepairTarget } from "./repair-target.js";
@@ -230,7 +231,44 @@ export async function repairInputs(
    * 사람이 확인했고 재실행까지 통과한 값. `(tool, 필드명)` 하나당 하나다.
    * 이 호출이 끝나면 사라진다(§4.6).
    */
-  const cache = new Map<string, JsonValue>();
+  const cache = new Map<
+    string,
+    { readonly value: JsonValue; readonly origin: RepairAttempt["origin"] }
+  >();
+
+  /**
+   * 이 값을 누가 정했는가(#390 사양 0).
+   *
+   * 캐시에서 재사용한 필드는 **값을 준 케이스의 출처를 그대로 물려받는다.** 캐시가 값만
+   * 담으면 사람이 AI 제안을 고쳐 넣은 값이 뒤 케이스에서 "AI 제안" 으로 찍혀 화면이
+   * 거짓말을 한다.
+   *
+   * 비교는 `===` 가 아니라 `canonicalJson` 이다. 제안값이 객체나 배열일 수 있다.
+   */
+  const originOf = (
+    tool: string,
+    field: string,
+    value: JsonValue,
+    proposed: Readonly<Record<string, JsonValue>> | undefined,
+  ): RepairAttempt["origin"] => {
+    const cached = cache.get(cacheKey(tool, field));
+    if (cached !== undefined && canonicalJson(cached.value) === canonicalJson(value))
+      return cached.origin;
+    // 1회차는 제안값을 채워 놓고 사람에게 묻는다. 사람이 그대로 두기로 한 값만 여기 온다.
+    // 사람이 못 본 값이 `aiProposed` 로 찍히지 않는다.
+    //
+    // 키의 유무를 먼저 본다. `canonicalJson` 은 `undefined` 를 받으면 던지는데, 1회차는
+    // `first.input` 전체를 돌므로 AI 가 제안하지 않은 필드가 섞여 있다. 그 필드에서
+    // `proposed[field]` 가 `undefined` 가 되어 대화형 검토가 통째로 죽는다.
+    // 제안한 적이 없다는 것은 의미상으로도 `humanRepaired` 다.
+    if (
+      proposed !== undefined &&
+      Object.hasOwn(proposed, field) &&
+      canonicalJson(proposed[field] as JsonValue) === canonicalJson(value)
+    )
+      return "aiProposed";
+    return "humanRepaired";
+  };
   /** §8.6.3 을 이미 찍은 키. 같은 안내를 케이스마다 되풀이하지 않는다. */
   const announced = new Set<string>();
 
@@ -282,7 +320,10 @@ export async function repairInputs(
       current: target.input,
       proposed,
       reuse: new Map(
-        reused.map((field) => [field, cache.get(cacheKey(target.tool, field)) as JsonValue]),
+        reused.map((field) => [
+          field,
+          (cache.get(cacheKey(target.tool, field)) as { value: JsonValue }).value,
+        ]),
       ),
       tools: options.tools,
     });
@@ -295,13 +336,22 @@ export async function repairInputs(
     options.io.write(`${RERUN_LINE}\n`);
     const firstVerdict = await options.rerun(target.caseId, first.input);
     for (const [field, value] of Object.entries(first.input)) {
-      attempts.push({ field, value, passed: firstVerdict.passed });
+      attempts.push({
+        field,
+        value,
+        passed: firstVerdict.passed,
+        origin: originOf(target.tool, field, value, proposed),
+      });
     }
     // 통과한 값만 캐시에 담는다(§4.6). 안 통하는 값을 뒤 케이스에 퍼뜨리면 그 케이스들이
     // 자기 몫의 교정 기회를 한 번도 못 쓰고 같은 이유로 죽는다.
     if (firstVerdict.passed) {
       for (const field of first.asked) {
-        cache.set(cacheKey(target.tool, field), first.input[field] as JsonValue);
+        const value = first.input[field] as JsonValue;
+        cache.set(cacheKey(target.tool, field), {
+          value,
+          origin: originOf(target.tool, field, value, proposed),
+        });
       }
       options.io.write(`${PASSED_LINE}\n`);
       outcomes.push({
@@ -333,12 +383,23 @@ export async function repairInputs(
     options.io.write(`${RERUN_LINE}\n`);
     const secondVerdict = await options.rerun(target.caseId, second.input);
     for (const [field, value] of Object.entries(second.input)) {
-      attempts.push({ field, value, passed: secondVerdict.passed });
+      // 2회차는 제안 없이 사람에게만 묻는다(`proposed: undefined`). 재사용 필드만 출처를
+      // 물려받고 나머지는 사람이 입력한 값이다.
+      attempts.push({
+        field,
+        value,
+        passed: secondVerdict.passed,
+        origin: originOf(target.tool, field, value, undefined),
+      });
     }
     if (secondVerdict.passed) {
       // 1회차와 같은 규칙이다. 통과한 값만 뒤 케이스로 넘어간다.
       for (const field of second.asked) {
-        cache.set(cacheKey(target.tool, field), second.input[field] as JsonValue);
+        const value = second.input[field] as JsonValue;
+        cache.set(cacheKey(target.tool, field), {
+          value,
+          origin: originOf(target.tool, field, value, undefined),
+        });
       }
       options.io.write(`${PASSED_LINE}\n`);
       outcomes.push({

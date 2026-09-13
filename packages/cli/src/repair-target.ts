@@ -42,6 +42,12 @@ export interface RepairAttempt {
   readonly field: string;
   readonly value: JsonValue;
   readonly passed: boolean;
+  /**
+   * 이 값을 누가 정했는가. 픽스처 되돌리기가 화면에 출처를 적는 근거다(#390).
+   *
+   * 값 옆에 둔다. `input-repair.ts` 안에 나란한 지도를 따로 만들면 `attempts` 와 어긋난다.
+   */
+  readonly origin: "aiProposed" | "humanRepaired";
 }
 
 export interface SelectRepairTargetsOptions {

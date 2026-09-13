@@ -79,6 +79,7 @@ export type UnanalyzedReason =
   | "depthLimit" // MAX_DEPTH 초과
   | "pathLimit" // MAX_PATHS 초과
   | "pathCollision" // 경로 문자열이 다른 필드와 충돌
+  | "unreadablePath" // 이름에 . 또는 [ 가 들어 경로로 읽으면 다른 자리를 가리킨다
   | "noGround"; // type·enum·range 를 하나도 못 읽어 요구할 근거가 없다
 
 export interface UnanalyzedField {
@@ -225,6 +226,20 @@ export function analyzeInputSchema(schema: unknown): InputSchemaAnalysis {
   };
   const stringsOf = (value: unknown): readonly string[] =>
     Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+  /**
+   * 이름 자체에 경로 문자가 든 프로퍼티인지. 그런 이름은 경로로 읽으면 **다른 자리**를 가리킨다.
+   * `"a.b"` 라는 최상위 필드는 `a` 객체의 `b` 로 읽혀 입력의 `input["a.b"]` 를 못 찾는다.
+   *
+   * 축을 만들면 어떤 입력도 그것을 못 덮어 분모에 영원히 못 채우는 빈틈이 남는다.
+   * `contract-range.ts` 의 `rangeYieldsViolation` 이 범위에 대해 정한 것과 같은 규칙이다.
+   *
+   * `pathCollision` 과 사유를 나눈다. 충돌은 **두 선언이 같은 경로를 가리켜** 어느 쪽이 맞는지
+   * 모르는 것이고, 이쪽은 **선언이 하나인데 우리가 못 읽는** 것이다. 사용자가 할 일이 다르다.
+   * 전자는 둘 중 하나를 고쳐야 하고, 후자는 그 이름을 바꾸거나 그 필드의 검증을 포기해야 한다.
+   *
+   * 판정은 경로가 아니라 **이름**으로 한다. `childPath` 가 만든 경로에는 당연히 `.` 이 있다.
+   */
+  const unreadableName = (name: string): boolean => name.includes(".") || name.includes("[");
 
   /**
    * 경로 하나를 읽고 필요하면 그 아래로 내려간다.
@@ -232,13 +247,26 @@ export function analyzeInputSchema(schema: unknown): InputSchemaAnalysis {
    * `active` 에는 지금 해석 중인 스키마 객체가 담긴다. 깊이 상한에만 기대면 순환이 상한까지
    * 같은 축을 만들어 낸다. `synthesize.ts` 의 `active` 와 같은 방식이다.
    */
-  const visit = (raw: unknown, path: string, depth: number, active: Set<object>): void => {
+  const visit = (
+    raw: unknown,
+    path: string,
+    depth: number,
+    active: Set<object>,
+    /** 이 단계의 프로퍼티 이름. 배열 원소 단계는 이름이 없어 null 이다. */
+    name: string | null,
+  ): void => {
     if (depth > MAX_DEPTH) {
       mark(path, "depthLimit");
       return;
     }
     if (pathCount >= MAX_PATHS) {
       mark(path, "pathLimit");
+      return;
+    }
+    // 읽을 수 없는 이름은 경로를 만들지 않는다. 아래로 내려가지도 않는다. 그 아래 경로도
+    // 같은 이유로 읽을 수 없다. 경로 수에도 세지 않는다. 만들지 않은 경로다.
+    if (name !== null && unreadableName(name)) {
+      mark(path, "unreadablePath");
       return;
     }
     pathCount++;
@@ -283,9 +311,16 @@ export function analyzeInputSchema(schema: unknown): InputSchemaAnalysis {
       }
       // 중첩 required 를 경로로 편다. 선언에 없는 이름이 섞여 있어도 그대로 둔다. 루트의
       // required 가 properties 밖 이름을 담을 수 있는 것과 같은 사정이다.
-      for (const name of stringsOf(field.required)) required.push(childPath(path, name));
-      for (const name of Object.keys(childProperties).sort(byCodeUnit))
-        visit(childProperties[name], childPath(path, name), depth + 1, nested);
+      //
+      // 읽을 수 없는 이름은 required 에도 넣지 않는다. properties 에 그 이름이 없어 visit 이
+      // 안 도는 경우에도 축이 생기면 안 된다.
+      for (const childName of stringsOf(field.required)) {
+        const childRequiredPath = childPath(path, childName);
+        if (unreadableName(childName)) mark(childRequiredPath, "unreadablePath");
+        else required.push(childRequiredPath);
+      }
+      for (const childName of Object.keys(childProperties).sort(byCodeUnit))
+        visit(childProperties[childName], childPath(path, childName), depth + 1, nested, childName);
       return;
     }
     if (type === "array") {
@@ -300,16 +335,26 @@ export function analyzeInputSchema(schema: unknown): InputSchemaAnalysis {
       if (!plainObject(items)) return;
       // tags 의 minItems 는 tags 의 range 이고 tags[] 의 minLength 는 tags[] 의 range 다.
       // items 스키마를 그대로 넘기므로 둘이 섞이지 않는다.
-      visit(items, itemPath(path), depth + 1, nested);
+      visit(items, itemPath(path), depth + 1, nested, null);
     }
   };
 
   const rootActive = new Set<object>([schema]);
-  for (const name of stringsOf(schema.required)) required.push(name);
+  for (const name of stringsOf(schema.required)) {
+    if (unreadableName(name)) mark(name, "unreadablePath");
+    else required.push(name);
+  }
   for (const name of Object.keys(properties).sort(byCodeUnit))
-    visit(properties[name], name, 1, rootActive);
+    visit(properties[name], name, 1, rootActive, name);
 
   // 충돌한 경로는 지운다. 한쪽을 고르지 않는다. 어느 쪽이 맞는지 알 수 없다.
+  //
+  // 2026-09-13 현재 이 분기에 닿는 입력이 없다. 이름에 `.`·`[` 가 든 프로퍼티는 unreadablePath
+  // 로 먼저 빠지고, properties 는 JS 객체라 같은 키가 두 번 올 수 없다. 방어로 남긴다.
+  // 지우면, 판정이 틀렸을 때 두 선언이 조용히 하나로 접히고 아무도 모른다.
+  //
+  // 테스트가 없는 것은 그래서다. 지우지 마라. #387 의 `axis.bound === null` 방어 continue 와
+  // 같은 계열이다.
   if (collided.size > 0) {
     const under = (path: string, root: string): boolean =>
       path === root || path.startsWith(`${root}.`) || path.startsWith(`${root}[`);
@@ -344,9 +389,9 @@ type PathSegment = { readonly kind: "key"; readonly name: string } | { readonly 
 /**
  * 경로를 조각으로 나눈다. `tags[].id` 는 `tags` · 원소 · `id` 셋이다.
  *
- * 이름 안에 `.` 이나 `[]` 가 든 선언은 여기서 잘못 나뉜다. 그런 이름이 실제 경로와 겹치면
- * `analyzeInputSchema` 가 pathCollision 으로 양쪽을 지우므로 여기 도달하지 않는다. 겹치지
- * 않는 경우는 남는데, escape 하지 않기로 한 결정의 대가다(설계 §2.1).
+ * 이름 안에 `.` 이나 `[]` 가 든 선언은 여기서 잘못 나뉜다. 그래서 `analyzeInputSchema` 가
+ * 그런 이름을 `unreadablePath` 로 빼 경로 자체를 안 만든다(#388 T4). 여기 도달하는 경로는
+ * 전부 우리가 만든 것이다.
  */
 function parsePath(path: string): readonly PathSegment[] {
   const segments: PathSegment[] = [];

@@ -2,7 +2,11 @@ import type { ToolDef } from "@mcpeak/core";
 import { convertOutputSchema } from "./output-schema.js";
 import { fail, type JsonObject, plainObject, validateSchema } from "./schema.js";
 import { synthesizeValue } from "./synthesize.js";
-import { buildViolationCases, type GeneratedCase } from "./violation-cases.js";
+import {
+  buildUpperBoundaryCases,
+  buildViolationCases,
+  type GeneratedCase,
+} from "./violation-cases.js";
 
 type GeneratedSuiteSpec = {
   schemaVersion: 1;
@@ -95,6 +99,14 @@ function buildSuite(tool: ToolDef, index: number, baseName: string): BuiltSuite 
               : []),
           ],
         },
+        // 상한 경계 정상 케이스도 정상 입력을 한 군데만 고친 것이다. 위반 케이스보다 앞에
+        // 둔다. 정상 → 상한 경계 정상 → 위반 순서가 읽는 순서다.
+        ...buildUpperBoundaryCases({
+          tool,
+          happyInput: input as JsonObject,
+          baseName,
+          responseSchema: outputContract?.supported === true ? outputContract.schema : null,
+        }),
         // 위반 케이스는 정상 입력을 한 군데만 고친 것이다. 정상 입력을 따로 합성하지 않는다.
         // 두 벌이면 "정상 케이스는 통과하는데 위반 케이스는 다른 이유로 실패" 하는 상황을
         // 디버깅할 수 없다.

@@ -25,6 +25,7 @@ import {
 import type {
   CallToolCaseSpec,
   ContractAxisKind,
+  ContractRangeBound,
   SpecFinding,
   TestCaseSpec,
   TestSuiteSpec,
@@ -1956,10 +1957,16 @@ describe("AI 대화형 검토", () => {
 describe("커버리지 화면", () => {
   // 축 목록을 손으로 복제하지 않는다. 복제하면 runner 가 축을 늘릴 때마다 여기가 조용히
   // 어긋나고, vitest 는 타입을 안 보므로 테스트가 초록인 채로 typecheck 만 빨강이 된다.
-  const axis = (kind: ContractAxisKind, field: string | null, caseId: string | null) => ({
+  const axis = (
+    kind: ContractAxisKind,
+    field: string | null,
+    caseId: string | null,
+    bound: ContractRangeBound | null = null,
+  ) => ({
     kind,
     field,
     caseId,
+    bound,
   });
   const toolCoverage = (
     name: string,
@@ -2024,6 +2031,41 @@ describe("커버리지 화면", () => {
       toolCoverage("add", [...verifiedAxes(2), axis("TYPE_VIOLATION", "a", null)]),
     ]);
     expect(renderCoverage(coverage)).not.toContain("범위 제약");
+  });
+
+  describe("커버리지 화면이 범위 축의 방향을 찍는다", () => {
+    // 미검증 줄만 뽑는다. 고지 줄이나 툴 줄이 섞이면 "괄호가 없다" 같은 단언이 엉뚱한 줄을
+    // 본다.
+    const unverifiedLines = (output: string) =>
+      output.split("\n").filter((line) => line.startsWith("    ? "));
+
+    it("하한 축과 상한 축이 서로 다른 줄로 나온다", () => {
+      const coverage = result([
+        toolCoverage("count_things", [
+          axis("RANGE_VIOLATION", "n", null, "lower"),
+          axis("RANGE_VIOLATION", "n", null, "upper"),
+        ]),
+      ]);
+      const output = renderCoverage(coverage);
+      expect(output).toContain("n 의 선언된 범위 밖 값 거절 (하한)");
+      expect(output).toContain("n 의 선언된 범위 밖 값 거절 (상한)");
+      const [lower, upper] = unverifiedLines(output);
+      expect(lower).not.toBe(upper);
+    });
+
+    it("bound 가 null 이면 기존 문장 그대로다", () => {
+      const coverage = result([toolCoverage("count_things", [axis("TYPE_VIOLATION", "n", null)])]);
+      expect(unverifiedLines(renderCoverage(coverage))[0]).toContain("n 의 타입 위반 거절");
+    });
+
+    it("field 와 bound 가 둘 다 없으면 괄호를 안 붙인다", () => {
+      const coverage = result([
+        toolCoverage("count_things", [axis("UNDECLARED_FIELD", null, null)]),
+      ]);
+      const line = unverifiedLines(renderCoverage(coverage))[0];
+      expect(line).toContain("선언되지 않은 필드 거절");
+      expect(line).not.toContain("(");
+    });
   });
 
   it("전부 검증되면 한 줄이다", () => {

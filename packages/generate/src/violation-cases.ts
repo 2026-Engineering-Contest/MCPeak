@@ -6,6 +6,7 @@ import {
   deriveContractAxes,
   type ResponseSchema,
 } from "@mcpeak/runner";
+import { canonicalJson } from "./canonical.js";
 import { integerLowerBound, integerUpperBound } from "./constraints.js";
 import { fieldSlug } from "./filename.js";
 import type { JsonObject, JsonSchema, JsonValue } from "./schema.js";
@@ -134,9 +135,20 @@ function arrayOfLength(
   );
 }
 
+/** 필드 하나의 선언 스키마. 없으면 null 이다. */
+function propertySchema(tool: ToolDef, field: string): unknown {
+  const properties = plainObject(tool.inputSchema)
+    ? (tool.inputSchema.properties as Record<string, unknown> | undefined)
+    : undefined;
+  return plainObject(properties) ? properties[field] : null;
+}
+
+/** $ref 가 든 원소를 만들려면 루트가 필요하다. items 스키마만으로는 참조를 못 푼다. */
+const rootSchema = (tool: ToolDef): JsonSchema =>
+  plainObject(tool.inputSchema) ? (tool.inputSchema as JsonSchema) : {};
+
 /**
- * 범위를 한 칸 밖으로 넘긴 값. **하한 쪽에서 만든다.** 정상 경로가 하한 경계값이므로 위반도
- * 같은 쪽에서 만들어야 사용자가 두 케이스의 대응을 읽기 쉽다(설계서 §5.2).
+ * 범위 **하한**을 한 칸 밖으로 넘긴 값. 하한 축(`bound === "lower"`)의 위반 값이다.
  *
  * 하한이 `0` 이고 타입이 `integer` 면 위반 값은 `-1` 이다. 음수를 못 받는 서버가 있을 수 있으나
  * 그것이 곧 검증 대상이다.
@@ -144,7 +156,7 @@ function arrayOfLength(
  * 만들 수 없으면 undefined 다. 호출자가 그 축의 케이스를 만들지 않는다. `deriveContractAxes` 가
  * 이미 같은 규칙으로 축을 거르므로 여기 도달하는 것은 전부 만들 수 있는 축이다.
  */
-function rangeViolationValue(
+function lowerViolationValue(
   range: ContractRange,
   fieldSchema: unknown,
   path: string,
@@ -156,8 +168,6 @@ function rangeViolationValue(
   if (plainObject(fieldSchema) && fieldSchema.type === "integer") {
     const lower = integerLowerBound(range.minimum, range.exclusiveMinimum);
     if (lower !== null) return lower - 1;
-    const upper = integerUpperBound(range.maximum, range.exclusiveMaximum);
-    if (upper !== null) return upper + 1;
   }
   if (range.minimum !== null) return range.minimum - 1;
   if (range.exclusiveMinimum !== null) return range.exclusiveMinimum;
@@ -169,6 +179,26 @@ function rangeViolationValue(
       root,
     );
   if (range.minLength !== null && range.minLength >= 1) return stringOfLength(range.minLength - 1);
+  return undefined;
+}
+
+/**
+ * 범위 **상한**을 한 칸 밖으로 넘긴 값. 상한 축(`bound === "upper"`)의 위반 값이다.
+ * 하한 쪽과 대칭이고, 만들 수 없으면 undefined 다.
+ */
+function upperViolationValue(
+  range: ContractRange,
+  fieldSchema: unknown,
+  path: string,
+  root: JsonSchema,
+): JsonValue | undefined {
+  // integer 는 경계가 소수일 수 있다. maximum: 1.8 에 +1 을 하면 2.8 이 나와 자기 type 을 어긴다.
+  // 그러면 그 케이스는 TYPE_VIOLATION 축을 덮고 RANGE_VIOLATION 축은 영원히 미검증으로 남는다.
+  // 정상 경로가 integerUpperBound 를 쓰므로 위반도 같은 계산에서 한 칸 올라간다.
+  if (plainObject(fieldSchema) && fieldSchema.type === "integer") {
+    const upper = integerUpperBound(range.maximum, range.exclusiveMaximum);
+    if (upper !== null) return upper + 1;
+  }
   if (range.maximum !== null) return range.maximum + 1;
   if (range.exclusiveMaximum !== null) return range.exclusiveMaximum;
   if (range.maxItems !== null)
@@ -179,6 +209,35 @@ function rangeViolationValue(
       root,
     );
   if (range.maxLength !== null) return stringOfLength(range.maxLength + 1);
+  return undefined;
+}
+
+/**
+ * 상한 **바로 안쪽** 의 정상 값. 상한 경계 정상 케이스에 쓴다. 만들 수 없으면 undefined 다.
+ */
+function upperBoundaryValue(
+  range: ContractRange,
+  fieldSchema: unknown,
+  path: string,
+  root: JsonSchema,
+): JsonValue | undefined {
+  // 위반 값과 같은 이유로 integer 를 먼저 본다. 경계가 소수여도 자기 type 을 지킨 값을 낸다.
+  if (plainObject(fieldSchema) && fieldSchema.type === "integer") {
+    const upper = integerUpperBound(range.maximum, range.exclusiveMaximum);
+    if (upper !== null) return upper;
+  }
+  if (range.maximum !== null) return range.maximum;
+  if (range.maxItems !== null)
+    return arrayOfLength(
+      plainObject(fieldSchema) ? fieldSchema.items : null,
+      range.maxItems,
+      path,
+      root,
+    );
+  if (range.maxLength !== null) return stringOfLength(range.maxLength);
+  // exclusiveMaximum 만 있는 non-integer 는 만들지 않는다. 실수에서 "경계 바로 안쪽" 이
+  // 정의되지 않는다. exclusiveMaximum: 10 의 정상 최댓값은 10 도 9 도 아니다. 지어낸 값이
+  // 거절당하면 서버 결함인지 우리 값이 나쁜 건지 구분할 수 없다.
   return undefined;
 }
 
@@ -266,24 +325,86 @@ export function buildViolationCases(options: {
         ),
       );
     } else if (axis.kind === "RANGE_VIOLATION" && axis.declaredRange !== null) {
-      const properties = plainObject(tool.inputSchema)
-        ? (tool.inputSchema.properties as Record<string, unknown> | undefined)
-        : undefined;
-      const value = rangeViolationValue(
-        axis.declaredRange,
-        plainObject(properties) ? properties[field] : null,
-        `properties.${field}`,
-        // $ref 가 든 원소를 만들려면 루트가 필요하다. items 스키마만으로는 참조를 못 푼다.
-        plainObject(tool.inputSchema) ? (tool.inputSchema as JsonSchema) : {},
-      );
+      // 방향을 모르는 축에 값을 지어내지 않는다. T1 이후 bound 가 null 인 RANGE_VIOLATION 축은
+      // 나오지 않지만, 나오더라도 케이스를 만들지 않는 것이 정직하다.
+      if (axis.bound === null) continue;
+      const fieldSchema = propertySchema(tool, field);
+      const path = `properties.${field}`;
+      const root = rootSchema(tool);
+      const value =
+        axis.bound === "lower"
+          ? lowerViolationValue(axis.declaredRange, fieldSchema, path, root)
+          : upperViolationValue(axis.declaredRange, fieldSchema, path, root);
       if (value === undefined) continue;
+      const prefix = axis.bound === "lower" ? "range-lower" : "range-upper";
+      const direction = axis.bound === "lower" ? "하한 미만" : "상한 초과";
       cases.push(
-        violation(uniqueId("range", field), `${tool.name}가 '${field}' 범위 위반을 거절한다`, {
+        violation(uniqueId(prefix, field), `${tool.name}가 '${field}' ${direction} 값을 거절한다`, {
           ...happyInput,
           [field]: value,
         }),
       );
     }
+  }
+  return cases;
+}
+
+/**
+ * 한 도구의 상한 경계 **정상** 케이스 전량. 상한 바로 안쪽 값이 거절당하지 않는지 본다.
+ *
+ * 위반 케이스가 아니므로 단언은 정상 케이스와 같다. 상한 축이 있어도 정상 케이스가 이미 그
+ * 경계를 밟고 있으면 만들지 않는다. 같은 입력이 두 번 나가면 어느 쪽이 무엇을 검증한 것인지
+ * 읽을 수 없다.
+ */
+export function buildUpperBoundaryCases(options: {
+  readonly tool: ToolDef;
+  /** 정상 경로 입력. render.ts 의 synthesizeValue 결과를 그대로 받는다. */
+  readonly happyInput: JsonObject;
+  /** 케이스 id 접두사. render.ts 의 baseName 과 같은 값이다. */
+  readonly baseName: string;
+  /** 출력 계약이 지원되면 그 스키마. 아니면 null. 정상 케이스와 같은 단언을 붙인다. */
+  readonly responseSchema: ResponseSchema | null;
+}): readonly GeneratedCase[] {
+  const { tool, happyInput, baseName, responseSchema } = options;
+  const { axes } = deriveContractAxes(tool);
+  // id 중복 회피는 buildViolationCases 와 별도 Set 으로 한다. 접두사가 bound-upper 라
+  // range-* 와 겹치지 않는다.
+  const usedIds = new Set<string>();
+  const cases: GeneratedCase[] = [];
+  for (const axis of axes) {
+    if (axis.kind !== "RANGE_VIOLATION" || axis.bound !== "upper") continue;
+    const field = axis.field;
+    if (field === null || axis.declaredRange === null) continue;
+    const value = upperBoundaryValue(
+      axis.declaredRange,
+      propertySchema(tool, field),
+      `properties.${field}`,
+      rootSchema(tool),
+    );
+    if (value === undefined) continue;
+    // 정상 케이스가 이미 그 경계를 밟고 있으면 건너뛴다. 하한 없이 상한만 선언된 필드가 여기
+    // 해당한다(synthesize.ts 가 상한을 정상값으로 쓴다). === 로 비교하면 배열·문자열에서
+    // 틀리므로 canonicalJson 으로 본다.
+    if (
+      Object.hasOwn(happyInput, field) &&
+      canonicalJson(happyInput[field]) === canonicalJson(value)
+    )
+      continue;
+    const initial = `${baseName}-bound-upper-${fieldSlug(field)}`;
+    let id = initial;
+    for (let occurrence = 2; usedIds.has(id); occurrence++) id = `${initial}-${occurrence}`;
+    usedIds.add(id);
+    cases.push({
+      id,
+      name: `${tool.name}가 '${field}' 상한 경계값에 정상 응답한다`,
+      operation: { type: "callTool", tool: tool.name, input: { ...happyInput, [field]: value } },
+      assertions: [
+        { type: "isError", expected: false },
+        ...(responseSchema === null
+          ? []
+          : [{ type: "structuredContentMatchesSchema" as const, schema: responseSchema }]),
+      ],
+    });
   }
   return cases;
 }

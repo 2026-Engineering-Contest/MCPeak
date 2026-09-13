@@ -25,7 +25,6 @@ MCP 서버를 코드로 자동 테스트하는 오픈소스 프레임워크. 5�
 
 ## 작업 방식
 
-- 기능 구현 전에 **타입 시그니처와 테스트를 먼저** 제시하고 확인을 받아라.
 - 한 번에 한 패키지만 작업한다. 여러 패키지를 동시에 고치는 제안은 하지 마라.
 - 확신 없는 버전·API는 추측하지 말고 실제로 확인해라.
 - 작업 후 무엇을 바꿨고, 내가 임의로 판단한 부분이 무엇인지 보고해라.
@@ -44,6 +43,60 @@ fix(core): 서버 종료 시 좀비 프로세스 잔존 문제 해결
 
 `release` 는 npm 배포·릴리스 워크플로·버저닝, `adr` 는 여러 패키지에 걸친 설계 결정 기록.
 둘 다 소유 패키지가 없는 작업이라 패키지 scope 로는 집계되지 않는다.
+
+## PR 생성
+
+- PR 생성시 **먼저 템플릿이 있는지 확인하고** 템플릿이 있다면 반드시 그 템플릿을 지켜서 PR을 생성한다.
+
+## PR 마다 changeset 을 새로 넣는다
+
+`packages/*` 아래 파일을 하나라도 건드린 PR 은 `.changeset/*.md` 를 **그 브랜치에서 새로**
+추가해야 한다. CI 의 `changeset-check` 잡이 `pnpm changeset status --since=origin/<base>` 로
+판정하는데, 이 명령은 브랜치가 추가한 changeset 만 센다. `.changeset/` 에 파일이 수십 개
+쌓여 있어도 그것들은 이미 main 에 있어서 계산에 들어가지 않는다. 그래서 "changeset 이
+없습니다" 로 떨어진다.
+
+소스뿐 아니라 패키지 안의 테스트·주석·문서만 고쳐도 changesets 는 패키지 변경으로 본다.
+릴리스와 무관한 변경에도 빈 changeset 이 필요하다.
+
+```sh
+pnpm changeset             # 릴리스 노트가 필요한 변경
+pnpm changeset add --empty # 릴리스가 필요 없는 변경 (테스트·리팩터·주석)
+```
+
+생성된 파일을 커밋에 포함시킨다. 이 게이트는 ADR-0063 이고, 경고로만 두었더니 기능 네 개가
+CHANGELOG 없이 나갈 뻔해서 실패로 승격됐다. 예외는 `changesets/action` 이 만드는 Version
+Packages PR 하나뿐이며, head 브랜치·base 브랜치·저장소 세 조건을 모두 만족할 때만 빠진다.
+
+## 리뷰 코멘트는 그 스레드 안에서 답한다
+
+`main` 보호 설정에 `required_conversation_resolution` 이 켜져 있다. **리뷰 스레드가 하나라도
+미해결이면 CI 가 전부 녹색이어도 머지가 막힌다.** 이때 `mergeStateStatus` 는 `BLOCKED` 로만
+나오고 이유를 말해 주지 않아서, 사람 승인이 없어서라고 오진하기 쉽다. 이 저장소는
+`required_pull_request_reviews` 를 안 쓰므로 승인은 처음부터 필요 없다.
+
+- 지적을 받아 고쳤으면 봇이 스레드를 자동으로 닫는다. 따로 할 일이 없다.
+- **지적을 안 받을 때가 문제다.** 사유를 PR 본문이나 새 코멘트에 적으면 스레드는 그대로 열려
+  있다. 반드시 **그 스레드 안에 답글**을 달고 스레드를 해제해야 한다.
+
+```sh
+# 미해결 스레드 찾기
+gh api graphql -f query='{repository(owner:"<owner>",name:"<repo>"){pullRequest(number:<N>){
+  reviewThreads(first:30){nodes{id isResolved path comments(first:1){nodes{databaseId}}}}}}}' \
+  --jq '.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved==false)'
+
+# 그 스레드 안에 답글 (databaseId 는 스레드 첫 코멘트의 것)
+gh api repos/<owner>/<repo>/pulls/<N>/comments/<databaseId>/replies -f body='...'
+
+# 해제 (id 는 PRRT_ 로 시작하는 threadId)
+gh api graphql -f query='mutation{resolveReviewThread(input:{threadId:"<id>"}){thread{isResolved}}}'
+```
+
+막힌 이유를 추측하지 말고 보호 설정을 먼저 읽어라.
+
+```sh
+gh api repos/<owner>/<repo>/branches/main/protection
+```
 
 ## 설계 결정은 기록한다
 

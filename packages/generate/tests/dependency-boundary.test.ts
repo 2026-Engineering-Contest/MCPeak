@@ -19,6 +19,7 @@ const APPROVED_RUNNER_SYMBOLS = [
   "ContractAxisKind",
   "ContractDeclaredType",
   "ContractRange",
+  "ContractRangeBound",
   "DEFAULT_SENSITIVE_KEYS",
   "MCP_SUITE_JSON_SCHEMA",
   "REDACTED",

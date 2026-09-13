@@ -3,6 +3,7 @@ import type { SessionMode, TestOptions } from "../build-test-argv.js";
 import { DEFAULT_TEST_OPTIONS } from "../build-test-argv.js";
 import { managedRepairBundlePath } from "../repair-bundle-path.js";
 import { Field, INPUT_CLASS, Toggle } from "./Field.js";
+import { FOCUS_RING } from "./focus-ring.js";
 
 /** §5-4 와 같은 문장이다. 두 자리에서 같은 제약을 말하므로 한 곳에 둔다. */
 export const DETERMINISM_SESSION_HINT =
@@ -62,7 +63,7 @@ export function TestOptionsPanel(props: {
         <button
           type="button"
           aria-expanded={props.open}
-          className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left"
+          className={`flex w-full items-center justify-between gap-3 px-3 py-2 text-left ${FOCUS_RING}`}
           onClick={props.onToggle}
         >
           <span>{props.open ? "▾" : "▸"} 테스트 옵션</span>

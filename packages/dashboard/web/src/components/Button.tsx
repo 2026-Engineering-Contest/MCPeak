@@ -1,4 +1,5 @@
 import type { ButtonHTMLAttributes, JSX } from "react";
+import { FOCUS_RING } from "./focus-ring.js";
 
 /**
  * 버튼 하나 (ADR-0093 PR 2).
@@ -12,7 +13,7 @@ import type { ButtonHTMLAttributes, JSX } from "react";
  * 있고, `log-panel.test.tsx` 가 그 안을 `div[class] > div` 로 세고 있다. 여기서 래퍼를
  * 하나라도 만들면 이 버튼과 상관없는 그 테스트가 깨진다.
  */
-export type ButtonVariant = "primary" | "secondary" | "ghost";
+export type ButtonVariant = "primary" | "secondary" | "ghost" | "on-accent";
 
 /**
  * `xs` 는 기존 렌더링을 보존하려고 남긴 단계다. ReplayView 의 작은 버튼 2개가 여기 속한다.
@@ -29,6 +30,14 @@ const VARIANTS: Record<ButtonVariant, string> = {
   primary: "bg-accent text-white hover:bg-accent-hover active:bg-accent-active",
   secondary: "border border-line text-ink-muted hover:bg-line-subtle hover:text-ink",
   ghost: "text-ink-muted hover:bg-line-subtle hover:text-ink",
+  /*
+   * accent-soft 패널 위에 놓이는 갈래. 그 면 위에서 `secondary` 는 대비가 죽는다(#456) —
+   * `border-line` + `text-ink-muted` 가 연보라 바탕에 묻힌다.
+   *
+   * 이름이 위계(주·보조·투명)가 아니라 **놓이는 면**을 말하는 것은 일부러다. `surface` 라고만
+   * 하면 다른 흰 면 위 버튼도 여기를 골라 원래 문제가 돌아온다.
+   */
+  "on-accent": "border border-accent-border bg-surface text-ink hover:border-accent",
 };
 
 const SIZES: Record<ButtonSize, string> = {
@@ -45,8 +54,7 @@ const SIZES: Record<ButtonSize, string> = {
  * `disabled:cursor-not-allowed` 는 새로 붙는다. 예전에는 흐려지기만 해서, 눌리지 않는
  * 이유가 화면에 없었다.
  */
-const BASE =
-  "inline-flex items-center justify-center rounded-sm font-medium transition-colors duration-150 ease-standard focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:cursor-not-allowed disabled:opacity-50";
+const BASE = `inline-flex items-center justify-center rounded-sm font-medium transition-colors duration-150 ease-standard ${FOCUS_RING} disabled:cursor-not-allowed disabled:opacity-50`;
 
 export function Button({
   variant = "secondary",
@@ -59,8 +67,10 @@ export function Button({
    * `className` 은 덮지 않고 뒤에 붙인다. 호출부가 `shrink-0`·`w-full`·`whitespace-nowrap`
    * 같은 배치 클래스를 얹기 때문이다 — 덮으면 그 자리들이 조용히 무너진다.
    *
-   * `type` 기본값이 `"button"` 인 것은 HTML 기본값이 `"submit"` 이라서다. 지금 34곳이 전부
-   * 손으로 `type="button"` 을 적고 있는데, 하나라도 빠뜨리면 폼 안에서 제출이 된다.
+   * `type` 기본값이 `"button"` 인 것은 HTML 기본값이 `"submit"` 이라서다. 예전에는 30곳이
+   * 각자 손으로 적고 있었는데(`type="button"` 28 · `type="submit"` 2), 하나라도 빠뜨리면
+   * 폼 안에서 제출이 된다. 남은 개수는 여기 적지 않는다 — PR 마다 낡는 숫자를 코드에 박은
+   * 것이 이 주석을 고치게 만든 원인이다.
    */
   return (
     <button

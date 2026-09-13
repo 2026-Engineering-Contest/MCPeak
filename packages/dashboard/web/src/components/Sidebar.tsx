@@ -1,4 +1,5 @@
 import type { JSX } from "react";
+import { FOCUS_RING } from "./focus-ring.js";
 import { Logo } from "./Logo.js";
 
 /**
@@ -113,7 +114,7 @@ const HELP_ICON = (
 
 /** 활성 여부에 따른 항목 모양. 위 목록과 아래 보조 링크가 같은 모양을 쓴다. */
 function itemClass(active: boolean): string {
-  return `flex items-center gap-3 rounded-md px-3 py-2 text-body focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring ${
+  return `flex items-center gap-3 rounded-md px-3 py-2 text-body ${FOCUS_RING} ${
     active
       ? "bg-accent-soft font-semibold text-accent"
       : "font-medium text-ink-muted hover:bg-line-subtle hover:text-ink"

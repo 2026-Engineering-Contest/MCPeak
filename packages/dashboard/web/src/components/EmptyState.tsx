@@ -1,4 +1,5 @@
 import type { JSX } from "react";
+import { FOCUS_RING } from "./focus-ring.js";
 
 /**
  * 비어 있는 목록·화면 자리 (#459).
@@ -23,8 +24,7 @@ export interface EmptyStateProps {
   readonly secondaryAction?: EmptyStateAction;
 }
 
-const LINK_BASE =
-  "inline-flex items-center gap-1 rounded-sm px-3 py-1.5 text-sm font-medium transition-colors duration-150 ease-standard focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring";
+const LINK_BASE = `inline-flex items-center gap-1 rounded-sm px-3 py-1.5 text-sm font-medium transition-colors duration-150 ease-standard ${FOCUS_RING}`;
 
 export function EmptyState({
   message,

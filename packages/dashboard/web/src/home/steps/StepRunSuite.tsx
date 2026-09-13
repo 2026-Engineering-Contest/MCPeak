@@ -3,6 +3,7 @@ import { useRef, useState } from "react";
 import type { FileContent, FileEntry } from "../../../../src/api-types.js";
 import { apiGet } from "../../api.js";
 import { Button } from "../../components/Button.js";
+import { FOCUS_RING } from "../../components/focus-ring.js";
 import type { SuiteSummary } from "../../suite-summary.js";
 import { summarizeSuite } from "../../suite-summary.js";
 import { matchSuites } from "../match-suites.js";
@@ -196,7 +197,7 @@ export function StepRunSuite(props: {
             <button
               type="button"
               aria-expanded={showOthers}
-              className="text-sm text-ink-muted hover:text-ink"
+              className={`text-sm text-ink-muted hover:text-ink ${FOCUS_RING}`}
               onClick={() => setOthersOpen((previous) => !previous)}
             >
               {showOthers ? "▾" : "▸"} 다른 스위트 보기 ({others.length})

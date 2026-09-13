@@ -1,6 +1,7 @@
 import type { JSX } from "react";
 import { ArgChips } from "../../components/ArgChips.js";
 import { Field, INPUT_CLASS } from "../../components/Field.js";
+import { SegmentedControl } from "../../components/SegmentedControl.js";
 
 /** 1단계 실행 방법 세그먼트. command 문자열 조립 프리셋일 뿐이다(구현계획 §5 U3). */
 export type CommandMethod = "node" | "npx" | "python" | "custom";
@@ -75,24 +76,15 @@ export function StepServer(props: {
     <div className="space-y-5">
       <div>
         <p className="mb-2 text-sm font-medium text-ink">실행 방법</p>
-        <fieldset className="inline-flex overflow-hidden rounded-md border border-line">
-          {(Object.keys(METHOD_LABELS) as readonly CommandMethod[]).map((method) => (
-            <button
-              key={method}
-              type="button"
-              aria-pressed={props.method === method}
-              disabled={disabled}
-              className={`px-3 py-1.5 text-sm disabled:opacity-50 ${
-                props.method === method
-                  ? "bg-accent-soft font-semibold text-accent"
-                  : "text-ink-muted hover:bg-line-subtle"
-              }`}
-              onClick={() => props.onMethodChange(method)}
-            >
-              {METHOD_LABELS[method]}
-            </button>
-          ))}
-        </fieldset>
+        <SegmentedControl
+          options={(Object.keys(METHOD_LABELS) as readonly CommandMethod[]).map((method) => ({
+            value: method,
+            label: METHOD_LABELS[method],
+          }))}
+          value={props.method}
+          disabled={disabled}
+          onChange={props.onMethodChange}
+        />
       </div>
 
       <Field

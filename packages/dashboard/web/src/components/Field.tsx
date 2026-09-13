@@ -1,4 +1,5 @@
 import type { JSX, ReactNode } from "react";
+import { FOCUS_RING } from "./focus-ring.js";
 
 /**
  * 입력 프리미티브(ADR-0093 PR 3, #458). `Field`·`Toggle`·`INPUT_CLASS`·`INPUT_ON_ACCENT_CLASS`
@@ -35,8 +36,7 @@ export function Field(props: {
  * `${INPUT_CLASS} border-accent-border` 처럼 덧붙이면 승패를 호출부가 아니라 생성된 CSS 의
  * 소스 순서가 정한다.
  */
-const INPUT_BASE =
-  "rounded border bg-surface px-3 py-1.5 text-sm text-ink disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring";
+const INPUT_BASE = `rounded border bg-surface px-3 py-1.5 text-sm text-ink disabled:opacity-50 ${FOCUS_RING}`;
 
 /** 대시보드 기본 입력칸. `<input>`·`<select>` 가 함께 쓴다. */
 export const INPUT_CLASS = `w-full border-line ${INPUT_BASE}`;

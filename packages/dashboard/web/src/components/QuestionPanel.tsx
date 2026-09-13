@@ -94,15 +94,16 @@ export function QuestionPanel(props: {
             </Button>
           </form>
           {onBack !== undefined && (
-            <button
-              type="button"
-              className="inline-flex items-center gap-1 rounded border border-accent-border bg-surface px-3 py-1.5 text-sm text-ink-muted hover:border-accent disabled:opacity-50"
+            <Button
+              variant="on-accent"
+              size="sm"
+              className="gap-1"
               disabled={busy}
               onClick={() => void goBack()}
             >
               <span aria-hidden="true">←</span>
               검토 메뉴로 돌아가기
-            </button>
+            </Button>
           )}
         </div>
       )}
@@ -110,15 +111,15 @@ export function QuestionPanel(props: {
       {question.kind === "choose" && (
         <div className="flex flex-wrap gap-2">
           {question.choices.map((choice) => (
-            <button
+            <Button
               key={choice}
-              type="button"
-              className="rounded border border-accent-border bg-surface px-3 py-1.5 text-sm text-ink hover:border-accent disabled:opacity-50"
+              variant="on-accent"
+              size="sm"
               disabled={busy}
               onClick={() => void submit(choice)}
             >
               {choice}
-            </button>
+            </Button>
           ))}
         </div>
       )}
@@ -128,14 +129,9 @@ export function QuestionPanel(props: {
           <Button variant="primary" size="sm" disabled={busy} onClick={() => void submit("y")}>
             예
           </Button>
-          <button
-            type="button"
-            className="rounded border border-accent-border bg-surface px-3 py-1.5 text-sm text-ink hover:border-accent disabled:opacity-50"
-            disabled={busy}
-            onClick={() => void submit("n")}
-          >
+          <Button variant="on-accent" size="sm" disabled={busy} onClick={() => void submit("n")}>
             아니오
-          </button>
+          </Button>
         </div>
       )}
     </div>

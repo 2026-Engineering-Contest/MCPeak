@@ -189,6 +189,61 @@ describe("선택 필드 분기", () => {
   });
 });
 
+/**
+ * `FORMAT_VALUES` 는 문서용으로 예약된 값이다. 그것으로 '있음' 케이스를 만들면 자원의 존재를
+ * 확인하는 서버가 옳게 거절하고 우리 정상 케이스가 실패한다. 도그푸딩 E2E 의
+ * `create-note-branch-with-parentid` 가 실제로 그렇게 깨졌다.
+ */
+describe("format 표 값은 '있음' 케이스를 만들지 않는다", () => {
+  const PARENT_ID = "11111111-1111-4111-8111-111111111111";
+
+  it("format 이 표에 있으면 skip 을 남긴다", () => {
+    const result = build(
+      "create_note",
+      oneField("parentId", { type: "string", format: "uuid" }, []),
+      {},
+    );
+    expect(result.cases.some((item) => item.id === "t-branch-with-parentid")).toBe(false);
+    expect(result.skips).toEqual([
+      {
+        tool: "create_note",
+        field: "parentId",
+        reason:
+          "선택 필드 값이 format 표의 문서용 예약 값이라 실재하는 자원을 가리키지 않습니다. '있음' 케이스를 만들지 않았습니다.",
+      },
+    ]);
+  });
+
+  it("후보 키워드가 있으면 만든다", () => {
+    // 서버가 직접 적은 값이다. 우리 표에서 온 것이 아니므로 실재한다고 본다.
+    const result = build(
+      "create_note",
+      oneField("parentId", { type: "string", format: "uuid", default: PARENT_ID }, []),
+      {},
+    );
+    expect(result.cases.map((item) => item.id)).toEqual(["t-branch-with-parentid"]);
+    expect(inputValue(result.cases[0], "parentId")).toBe(PARENT_ID);
+    expect(result.skips).toEqual([]);
+  });
+
+  it("표 밖 format 은 종전대로 만든다", () => {
+    // 표 밖 format 은 값이 표에서 오지 않는다. 문서용 예약 값이라는 근거가 없으므로 거르지 않는다.
+    const result = build(
+      "create_note",
+      oneField("parentId", { type: "string", format: "custom-thing" }, []),
+      {},
+    );
+    expect(result.cases.map((item) => item.id)).toEqual(["t-branch-with-parentid"]);
+    expect(result.skips).toEqual([]);
+  });
+
+  it("format 이 없는 선택 필드는 종전대로 만든다", () => {
+    const result = build("create_note", oneField("body", { type: "string" }, []), {});
+    expect(result.cases.map((item) => item.id)).toEqual(["t-branch-with-body"]);
+    expect(result.skips).toEqual([]);
+  });
+});
+
 describe("분기를 만들지 않는 선언", () => {
   it("const 가 있으면 아무것도 안 만든다", () => {
     const result = build("t", oneField("v", { type: "string", const: "fixed" }, ["v"]), {

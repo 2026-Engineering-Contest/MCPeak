@@ -21,6 +21,7 @@ import type {
   SkippedTool,
   TestCaseOrigin,
   ToolCoverage,
+  ValidBranchSkip,
 } from "@mcpeak/generate";
 import type {
   CallToolCaseSpec,
@@ -1372,6 +1373,7 @@ async function runInteractiveReview(
   connection: CliConnection,
   skippedTools: readonly SkippedTool[] = [],
   outputContractSkips: readonly OutputContractSkip[] = [],
+  validBranchSkips: readonly ValidBranchSkip[] = [],
 ): Promise<number> {
   const io = deps.reviewIO;
   const prepare = deps.prepareAuthoringRequest;
@@ -1695,6 +1697,7 @@ async function runInteractiveReview(
             finalSuite,
             skippedTools,
             outputContractSkips,
+            validBranchSkips,
           );
           return 0;
         } catch (error) {
@@ -2041,6 +2044,24 @@ export function renderOutputContractSkips(skips: readonly OutputContractSkip[]):
 }
 
 /**
+ * 정상 입력 중 케이스를 만들지 못한 분기를 명시한다. 없으면 빈 문자열이다.
+ *
+ * 침묵하면 "정상 입력은 전부 밟았다" 로 읽힌다. 커버리지 표의 축은 위반 축이라 여기서 빠진
+ * 분기를 세지 않으므로, 이 덩어리가 없으면 사용자가 빈틈을 볼 수 있는 자리가 없다.
+ *
+ * `reason` 은 `generate` 가 만들어 보낸 문장을 그대로 쓴다. 여기서 다시 쓰면 같은 상황이 두
+ * 문안으로 갈린다. 순서도 `skips` 배열 그대로다. `generate` 가 이미 결정론적으로 정렬했고,
+ * 여기서 다시 정렬하면 두 곳이 갈린다.
+ */
+export function renderValidBranchSkips(skips: readonly ValidBranchSkip[]): string {
+  if (skips.length === 0) return "";
+  const toolCount = new Set(skips.map((skip) => skip.tool)).size;
+  const lines = [`정상 분기: 툴 ${toolCount}개에서 ${skips.length}개 분기를 실행하지 않았습니다.`];
+  for (const skip of skips) lines.push(`  ${skip.tool}.${skip.field}  ${skip.reason}`);
+  return `${lines.join("\n")}\n`;
+}
+
+/**
  * AI 사전보완 결과 요약. 대상이 없으면 빈 문자열이다.
  *
  * 네 갈래를 나눠 적는다(설계 §4.3). `미채택` 과 `보류` 를 합쳐 "baseline 값이 이미 통과" 라고
@@ -2132,6 +2153,7 @@ function writeCoverageReport(
   suite: TestSuiteSpec,
   skippedTools: readonly SkippedTool[],
   outputContractSkips: readonly OutputContractSkip[],
+  validBranchSkips: readonly ValidBranchSkip[],
 ): void {
   if (coverage !== undefined) {
     const text = renderCoverage(coverage);
@@ -2141,6 +2163,8 @@ function writeCoverageReport(
   if (skippedText !== "") deps.writeStdout(skippedText);
   const outputContractText = renderOutputContractSkips(outputContractSkips);
   if (outputContractText !== "") deps.writeStdout(outputContractText);
+  const validBranchText = renderValidBranchSkips(validBranchSkips);
+  if (validBranchText !== "") deps.writeStdout(validBranchText);
   const notice = renderCaseCountNotice(suite.cases.length);
   if (notice !== "") deps.writeStdout(notice);
 }
@@ -2161,9 +2185,17 @@ function reportCoverageSafely(
   suite: TestSuiteSpec,
   skippedTools: readonly SkippedTool[] = [],
   outputContractSkips: readonly OutputContractSkip[] = [],
+  validBranchSkips: readonly ValidBranchSkip[] = [],
 ): void {
   try {
-    writeCoverageReport(deps, coverage(), suite, skippedTools, outputContractSkips);
+    writeCoverageReport(
+      deps,
+      coverage(),
+      suite,
+      skippedTools,
+      outputContractSkips,
+      validBranchSkips,
+    );
   } catch {
     deps.writeStderr(
       "경고 [GENERATE_COVERAGE_UNAVAILABLE]: 명세는 저장했지만 커버리지를 계산하지 못했습니다.\n" +
@@ -2331,6 +2363,7 @@ export async function runGenerateCommand(
         readonly tools: readonly ToolDef[];
         readonly skippedTools: readonly SkippedTool[];
         readonly outputContractSkips: readonly OutputContractSkip[];
+        readonly validBranchSkips: readonly ValidBranchSkip[];
       }
     | undefined;
   try {
@@ -2386,6 +2419,7 @@ export async function runGenerateCommand(
         tools,
         skippedTools: baseline.skippedTools,
         outputContractSkips: baseline.outputContractSkips,
+        validBranchSkips: baseline.validBranchSkips,
       };
     } else {
       const final = deps.finalizeAuthoringDraft({
@@ -2404,6 +2438,7 @@ export async function runGenerateCommand(
         finalSuite,
         baseline.skippedTools,
         baseline.outputContractSkips,
+        baseline.validBranchSkips,
       );
       return 0;
     }
@@ -2461,6 +2496,7 @@ export async function runGenerateCommand(
       review.active,
       review.skippedTools,
       review.outputContractSkips,
+      review.validBranchSkips,
     );
   } finally {
     await review.active.close().catch(() => undefined);

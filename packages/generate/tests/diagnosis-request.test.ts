@@ -46,6 +46,7 @@ describe("prepareDiagnosisRequest", () => {
   it("같은 입력으로 두 번 조립한 요청의 직렬화가 동일하다", () => {
     const first = prepare({
       processDiagnostics: {
+        scope: "suite" as const,
         stderr: "boom\n",
         stderrTruncated: false,
         exitCode: 1,
@@ -54,6 +55,7 @@ describe("prepareDiagnosisRequest", () => {
     });
     const second = prepare({
       processDiagnostics: {
+        scope: "suite" as const,
         stderr: "boom\n",
         stderrTruncated: false,
         exitCode: 1,
@@ -83,7 +85,13 @@ describe("prepareDiagnosisRequest", () => {
   it("stderr 가 상한을 넘으면 뒤에서부터 남는다", () => {
     const stderr = `${"a".repeat(MAX_REPAIR_STDERR_BYTES)}TAIL`;
     const preview = prepare({
-      processDiagnostics: { stderr, stderrTruncated: false, exitCode: 1, signal: null },
+      processDiagnostics: {
+        scope: "suite",
+        stderr,
+        stderrTruncated: false,
+        exitCode: 1,
+        signal: null,
+      },
     });
     const sent = preview.request.processDiagnostics;
     expect(sent).toBeDefined();
@@ -100,7 +108,13 @@ describe("prepareDiagnosisRequest", () => {
     // 한글 한 글자는 UTF-8 로 3바이트다. 상한이 문자 경계와 어긋나도록 앞을 1바이트 채운다.
     const stderr = `a${"가".repeat(MAX_REPAIR_STDERR_BYTES)}`;
     const preview = prepare({
-      processDiagnostics: { stderr, stderrTruncated: false, exitCode: 1, signal: null },
+      processDiagnostics: {
+        scope: "suite",
+        stderr,
+        stderrTruncated: false,
+        exitCode: 1,
+        signal: null,
+      },
     });
     const sent = preview.request.processDiagnostics?.stderr ?? "";
     expect(sent).not.toContain("�");
@@ -112,7 +126,13 @@ describe("prepareDiagnosisRequest", () => {
   it("includeStderr 가 false 면 processDiagnostics 키가 없다", () => {
     const preview = prepare({
       includeStderr: false,
-      processDiagnostics: { stderr: "boom", stderrTruncated: false, exitCode: 1, signal: null },
+      processDiagnostics: {
+        scope: "suite",
+        stderr: "boom",
+        stderrTruncated: false,
+        exitCode: 1,
+        signal: null,
+      },
     });
     expect("processDiagnostics" in preview.request).toBe(false);
   });
@@ -132,6 +152,7 @@ describe("prepareDiagnosisRequest", () => {
       redaction: { sensitiveValues: ["s3cret"] },
       failures: [failure(1, { input: { token: "s3cret" } })],
       processDiagnostics: {
+        scope: "suite" as const,
         stderr: "Authorization: s3cret",
         stderrTruncated: false,
         exitCode: 1,

@@ -169,6 +169,9 @@ export function prepareDiagnosisRequest(options: {
     const tail = tailBytes(source.stderr, MAX_REPAIR_STDERR_BYTES);
     omittedStderrBytes = tail.omitted;
     processDiagnostics = {
+      // 범위는 호출자가 준 것을 그대로 싣는다. 지금 유니온이 "suite" 하나뿐이라 값은 같지만,
+      // 여기서 리터럴을 박으면 나중에 케이스별 수집이 생겼을 때 조용히 덮어쓴다(#393).
+      scope: source.scope,
       stderr: tail.kept,
       stderrTruncated: source.stderrTruncated || tail.omitted > 0,
       exitCode: source.exitCode,

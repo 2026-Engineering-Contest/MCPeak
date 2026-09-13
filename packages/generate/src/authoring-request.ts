@@ -33,6 +33,16 @@ export interface McpToolContext {
   readonly name: string;
   readonly description?: string;
   readonly inputSchema: unknown;
+  /**
+   * 서버가 선언한 출력 스키마. 없으면 키를 만들지 않는다.
+   *
+   * 진단이 "응답이 계약과 다르다" 를 말하려면 그 계약이 요청에 있어야 한다. 빈 객체를
+   * 넣으면 "아무 응답이나 허용" 으로 읽히므로 없을 때는 키 자체를 만들지 않는다(이슈 #393).
+   *
+   * **선택 필드다.** 여기는 번들 형식이 아니라 요청 타입이고 authoring 통로는 출력 스키마를
+   * 싣지 않는다. 필수로 만들면 그쪽이 깨진다.
+   */
+  readonly outputSchema?: unknown;
 }
 declare const requestBrand: unique symbol;
 export interface AuthoringRequestBinding {

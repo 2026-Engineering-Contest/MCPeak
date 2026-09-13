@@ -5,6 +5,7 @@ import { diagnosisPrompt } from "../src/diagnosis-prompt.js";
 import { prepareDiagnosisRequest } from "../src/diagnosis-request.js";
 import {
   buildDiagnosisProviderSchema,
+  type DiagnosisProcessDiagnostics,
   type DiagnosisRequest,
   type DiagnosisSpecTrust,
 } from "../src/diagnosis-schema.js";
@@ -258,5 +259,110 @@ describe("diagnosisPrompt", () => {
       expect.not.arrayContaining(["stdout"]),
     );
     expect((error as AuthoringProviderError).stderr).toEqual({ captured: true, truncated: false });
+  });
+});
+
+describe("stderr 읽는 법", () => {
+  const STDERR_HEAD = "stderr 는 서버 프로세스 전체에서 모은 꼬리다";
+  const CASE_HISTORY_HEAD = "승인 시점 케이스 판정(approvedAs) 읽는 법:";
+  const CASE_ID_LIST_HEAD = "허용 caseId 목록:";
+
+  const withStderr = (): DiagnosisRequest =>
+    prepareDiagnosisRequest({
+      specTrust: ORACLE,
+      suite: { id: "suite-1", name: "weather" },
+      failures: [
+        {
+          caseId: "case-1",
+          caseName: "케이스 1",
+          tool: "get_weather",
+          input: { city: "서울" },
+          diagnostics: [{ code: "FIELD_MISSING", message: "'temp' 필드가 없습니다." }],
+        },
+      ],
+      processDiagnostics: {
+        scope: "suite",
+        stderr: "boom",
+        stderrTruncated: false,
+        exitCode: 1,
+        signal: null,
+      },
+      tools: TOOLS,
+      providerId: "codex",
+      model: "m",
+    }).request;
+
+  it("processDiagnostics 가 있으면 프롬프트에 들어간다", () => {
+    expect(diagnosisPrompt(withStderr())).toContain(STDERR_HEAD);
+  });
+
+  it("processDiagnostics 가 없으면 안 들어간다", () => {
+    // 없는 것을 말하는 셈이고, 프롬프트가 길어진 만큼 다른 규칙의 비중이 줄어든다.
+    expect(diagnosisPrompt(request())).not.toContain(STDERR_HEAD);
+  });
+
+  it("CASE_HISTORY_RULE 다음, 허용 caseId 목록 앞에 온다", () => {
+    // 규칙끼리 모아 둔다. 요청 본문 뒤로 밀리면 AI 가 값을 먼저 읽고 뜻을 나중에 읽는다.
+    const prompt = diagnosisPrompt(withStderr());
+    const history = prompt.indexOf(CASE_HISTORY_HEAD);
+    const stderr = prompt.indexOf(STDERR_HEAD);
+    const caseIds = prompt.indexOf(CASE_ID_LIST_HEAD);
+    expect(history).toBeGreaterThan(-1);
+    expect(stderr).toBeGreaterThan(history);
+    expect(caseIds).toBeGreaterThan(stderr);
+  });
+
+  it("같은 요청이면 같은 프롬프트가 나온다", () => {
+    // 조건 분기를 넣었으므로 두 갈래 모두 본다.
+    expect(diagnosisPrompt(withStderr())).toBe(diagnosisPrompt(withStderr()));
+    expect(diagnosisPrompt(request())).toBe(diagnosisPrompt(request()));
+  });
+});
+
+describe("도구 출력 계약", () => {
+  const withTools = (tools: readonly McpToolContext[]): DiagnosisRequest =>
+    prepareDiagnosisRequest({
+      specTrust: ORACLE,
+      suite: { id: "suite-1", name: "weather" },
+      failures: [
+        {
+          caseId: "case-1",
+          caseName: "케이스 1",
+          tool: "get_weather",
+          input: { city: "서울" },
+          diagnostics: [{ code: "FIELD_MISSING", message: "'temp' 필드가 없습니다." }],
+        },
+      ],
+      tools,
+      providerId: "codex",
+      model: "m",
+    }).request;
+
+  it("outputSchema 가 있으면 요청에 실린다", () => {
+    const outputSchema = { type: "object", properties: { temperature: { type: "number" } } };
+    const sent = withTools([{ ...(TOOLS[0] as McpToolContext), outputSchema }]).tools[0];
+    expect(sent?.outputSchema).toEqual(outputSchema);
+    // 프롬프트는 요청을 직렬화해 싣는다. 계약이 실제로 provider 까지 간다.
+    expect(
+      diagnosisPrompt(withTools([{ ...(TOOLS[0] as McpToolContext), outputSchema }])),
+    ).toContain("temperature");
+  });
+
+  it("없으면 키 자체가 없다", () => {
+    // 빈 객체를 넣으면 "아무 응답이나 허용" 으로 읽힌다. undefined 로 들어가지도 않는다.
+    const sent = withTools(TOOLS).tools[0] as McpToolContext;
+    expect("outputSchema" in sent).toBe(false);
+  });
+
+  it("scope 가 없는 processDiagnostics 는 타입에서 막힌다", () => {
+    const diagnostics = {
+      // @ts-expect-error scope 는 필수다. 빠지면 범위 없이 나가는 요청이 생긴다(#393).
+      scope: undefined,
+      stderr: "boom",
+      stderrTruncated: false,
+      exitCode: 1,
+      signal: null,
+    } satisfies DiagnosisProcessDiagnostics;
+    expect(diagnostics.stderr).toBe("boom");
   });
 });

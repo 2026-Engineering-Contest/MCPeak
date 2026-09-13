@@ -1672,6 +1672,10 @@ async function runCliCore(
       suite: validated.value,
       specApproval,
       processDiagnostics: settled.value,
+      // repair 는 서버를 안 띄운다. 여기서 안 실으면 진단이 대조할 계약이 없다(#393).
+      // 위에서 listTools 로 읽은 그 목록이다. 번들이 실패한 케이스가 부른 것만 골라 담는다.
+      tools,
+      target: { transport: input.target.transport },
     });
     if (bundle === undefined) dependencies.writeStdout(`\n${REPAIR_BUNDLE_EMPTY_LINE}`);
     else

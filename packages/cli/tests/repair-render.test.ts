@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ReviewIO } from "../src/generate-command.js";
-import type { RepairBundle } from "../src/repair-bundle.js";
+import { REPAIR_BUNDLE_VERSION, type RepairBundle } from "../src/repair-bundle.js";
 import { type RepairCommandDependencies, runRepairCommand } from "../src/repair-command.js";
 import { renderRepairProviderFailure } from "../src/repair-render.js";
 
@@ -8,7 +8,9 @@ const ARGV = ["bundle.json", "--provider", "codex", "--model", "gpt-5-codex"];
 
 const bundle = (overrides: Partial<RepairBundle> = {}): RepairBundle =>
   ({
-    bundleVersion: 2,
+    // 상수로 쓴다. 버전을 올릴 때마다 이 픽스처가 깨질 이유가 없다. 버전 자체를 확인하는
+    // 테스트는 repair-bundle-read.test.ts 가 숫자로 본다.
+    bundleVersion: REPAIR_BUNDLE_VERSION,
     generatedBy: "mcpeak 0.7.0",
     spec: {
       suiteId: "weather",
@@ -24,6 +26,7 @@ const bundle = (overrides: Partial<RepairBundle> = {}): RepairBundle =>
         status: "failed",
         tool: "get_weather",
         input: { city: "toString" },
+        assertions: [{ type: "isError", status: "failed" }],
         diagnostics: [{ code: "IS_ERROR_MISMATCH", message: "isError 가 다릅니다." }],
       },
       {
@@ -32,9 +35,15 @@ const bundle = (overrides: Partial<RepairBundle> = {}): RepairBundle =>
         status: "failed",
         tool: "add",
         input: { a: -1, b: 2 },
+        assertions: [{ type: "bodyMatchesSchema", status: "failed" }],
         diagnostics: [{ code: "BODY_SCHEMA_MISMATCH", message: "본문이 다릅니다." }],
       },
     ],
+    tools: [
+      { name: "add", inputSchema: { type: "object" } },
+      { name: "get_weather", inputSchema: { type: "object" } },
+    ],
+    target: { transport: "stdio" },
     ...overrides,
   }) as RepairBundle;
 
@@ -76,9 +85,15 @@ function diagnosis(options: {
   stderr?: string;
   omittedFailures?: number;
   sentFailures?: number;
+  /** prepare 가 크기 상한에서 던지는 상황. 진짜 RangeError 를 던진다(#393). */
+  throwsTooLarge?: boolean;
 }) {
   const calls = { diagnose: 0, dispatch: 0 };
+  /** prepare 가 실제로 받은 입력. 번들이 도구를 넘겼는지 여기서 본다. */
+  const prepared: Record<string, unknown>[] = [];
   const prepare = ((input: Record<string, unknown>) => {
+    prepared.push(input);
+    if (options.throwsTooLarge === true) throw new RangeError("request byte limit을 초과했습니다.");
     const failures = (input.failures as readonly unknown[]).slice(
       0,
       options.sentFailures ?? (input.maxCases as number),
@@ -135,6 +150,7 @@ function diagnosis(options: {
     }) as never;
   return {
     calls,
+    prepared,
     value: { prepare, dispatch, providers: { codex: makeProvider, claude: makeProvider } },
   };
 }
@@ -590,5 +606,135 @@ describe("provider 실패 안내 (#285)", () => {
     });
     expect(text).toContain("REPAIR_PROVIDER_FAILED");
     expect(text).toContain("설치와 인증을 확인");
+  });
+});
+
+describe("repair 가 tools 를 넘긴다", () => {
+  it("진단 요청의 tools 가 비어 있지 않다", async () => {
+    // 이 이슈의 원래 증상이다. 전에는 `tools: []` 가 코드에 박혀 있었다(#393).
+    const diag = diagnosis({ result: diagnosisResult([cause()]) });
+    const d = deps({ diagnosis: diag });
+    expect(await runRepairCommand([...ARGV, "--yes"], d.value)).toBe(0);
+    const sent = (diag.prepared[0] as Record<string, unknown>).tools as readonly { name: string }[];
+    expect(sent.map((tool) => tool.name)).toEqual(["add", "get_weather"]);
+  });
+
+  it("outputSchema 와 description 이 있으면 함께 넘어간다", () => {
+    const diag = diagnosis({ result: diagnosisResult([cause()]) });
+    const withOutput = bundle({
+      tools: [
+        {
+          name: "get_weather",
+          inputSchema: { type: "object" },
+          outputSchema: { type: "object" },
+          description: "날씨",
+        },
+      ],
+    } as Partial<RepairBundle>);
+    return runRepairCommand(
+      [...ARGV, "--yes"],
+      deps({ bundle: withOutput, diagnosis: diag }).value,
+    ).then(() => {
+      const first = diag.prepared[0] as Record<string, unknown>;
+      const sent = (first.tools as readonly Record<string, unknown>[])[0];
+      expect(sent?.outputSchema).toEqual({ type: "object" });
+      expect(sent?.description).toBe("날씨");
+    });
+  });
+
+  it("도구에 outputSchema 가 없으면 키를 안 만든다", async () => {
+    const diag = diagnosis({ result: diagnosisResult([cause()]) });
+    await runRepairCommand([...ARGV, "--yes"], deps({ diagnosis: diag }).value);
+    const first = diag.prepared[0] as Record<string, unknown>;
+    const sent = (first.tools as readonly Record<string, unknown>[])[0] as object;
+    expect("outputSchema" in sent).toBe(false);
+  });
+});
+
+describe("process.scope", () => {
+  it("process 가 있으면 scope 가 그대로 넘어간다", async () => {
+    const diag = diagnosis({ result: diagnosisResult([cause()]), stderr: "boom" });
+    const withProcess = bundle({
+      process: {
+        scope: "suite",
+        stderr: "boom",
+        stderrTruncated: false,
+        exitCode: 1,
+        signal: null,
+      },
+    } as Partial<RepairBundle>);
+    await runRepairCommand(
+      [...ARGV, "--yes"],
+      deps({ bundle: withProcess, diagnosis: diag }).value,
+    );
+    const first = diag.prepared[0] as Record<string, unknown>;
+    expect((first.processDiagnostics as { scope: string }).scope).toBe("suite");
+  });
+
+  it("process 가 없으면 그 키도 없다", async () => {
+    const diag = diagnosis({ result: diagnosisResult([cause()]) });
+    await runRepairCommand([...ARGV, "--yes"], deps({ diagnosis: diag }).value);
+    expect("processDiagnostics" in (diag.prepared[0] as object)).toBe(false);
+  });
+});
+
+describe("요청 크기 상한", () => {
+  it("도구가 많아 상한을 넘으면 REPAIR_REQUEST_TOO_LARGE 로 끝낸다", async () => {
+    // RangeError 가 스택 트레이스로 새면 사용자가 할 수 있는 일이 없다. 번들을 다시 만들
+    // 수도 없다. 그 안에 이미 도구가 들어 있기 때문이다.
+    const diag = diagnosis({ throwsTooLarge: true });
+    const d = deps({ diagnosis: diag });
+    expect(await runRepairCommand([...ARGV, "--yes"], d.value)).toBe(1);
+    const err = d.writes.err.join("");
+    expect(err).toContain("REPAIR_REQUEST_TOO_LARGE");
+    expect(err).toContain("--max-cases");
+    expect(err).not.toContain("at ");
+    // provider 는 한 번도 안 불렀다.
+    expect(diag.calls.dispatch).toBe(0);
+  });
+
+  it("상한 안이면 종전대로 돈다", async () => {
+    const diag = diagnosis({ result: diagnosisResult([cause()]) });
+    expect(await runRepairCommand([...ARGV, "--yes"], deps({ diagnosis: diag }).value)).toBe(0);
+    expect(diag.calls.dispatch).toBe(1);
+  });
+});
+
+describe("확인 화면이 보내는 도구 수를 적는다", () => {
+  const screenOf = async (target?: RepairBundle) => {
+    const io = reviewIO(false);
+    const d = deps({
+      diagnosis: diagnosis({ result: diagnosisResult([cause()]) }),
+      reviewIO: io.io,
+      ...(target === undefined ? {} : { bundle: target }),
+    });
+    await runRepairCommand(ARGV, d.value);
+    return io.written.join("");
+  };
+
+  it("도구 수를 한 줄로 적는다", async () => {
+    // 전송 내용이 늘었는데 화면이 그대로면 사용자는 무엇을 승인하는지 모른다(#393).
+    expect(await screenOf()).toContain("  도구       2개\n");
+  });
+
+  it("스키마를 뺀 도구가 있으면 그 수도 적는다", async () => {
+    const trimmed = bundle({
+      tools: [
+        { name: "add", inputSchema: {}, schemasOmitted: true },
+        { name: "get_weather", inputSchema: { type: "object" } },
+      ],
+    } as Partial<RepairBundle>);
+    expect(await screenOf(trimmed)).toContain("  도구       2개 (스키마 제외 1개)\n");
+  });
+
+  it("제외가 0 이면 괄호를 안 찍는다", async () => {
+    // 위 scope 줄과 같은 방식이다.
+    expect(await screenOf()).not.toContain("스키마 제외");
+  });
+
+  it("도구가 없으면 0개로 적는다", async () => {
+    // listTools 케이스만 실패한 번들이다. 조용히 줄을 빼면 "도구가 나갔나" 를 알 수 없다.
+    const none = bundle({ tools: [] } as Partial<RepairBundle>);
+    expect(await screenOf(none)).toContain("  도구       0개\n");
   });
 });

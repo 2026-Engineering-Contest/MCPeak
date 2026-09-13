@@ -125,6 +125,20 @@ export function parseRepairCommand(argv: readonly string[]): RepairCommandInput 
  * `repair` 명령. 번들을 읽고, 전송 내용을 확인받고, provider 에게 진단을 물어 화면에 찍는다.
  * 파일도 명세도 고치지 않는다. 종료 코드는 운영 실패에만 1 이다(설계서 §7.1).
  */
+/**
+ * 진단 요청이 크기 상한을 넘었을 때의 문장.
+ *
+ * `repair-render.ts` 가 아니라 여기 두는 이유는 그 파일이 화면 조립을 맡고 이 문장은 이
+ * 명령의 실패 경로에만 쓰이기 때문이다. 다른 실패 문장들처럼 `deps.writeStderr` 로 나간다.
+ *
+ * 무엇이 왜 큰지와 사용자가 할 수 있는 일을 함께 적는다. 상한 계산이 틀렸을 때 스택
+ * 트레이스만 뜨면 사용자는 할 수 있는 일이 없다(#393).
+ */
+export const REPAIR_REQUEST_TOO_LARGE_LINE =
+  "오류 [REPAIR_REQUEST_TOO_LARGE]: 진단 요청이 크기 상한을 넘었습니다.\n" +
+  "  번들의 도구 선언이 너무 큽니다. --max-cases 를 줄여 실패 케이스 수를 낮추면\n" +
+  "  함께 실리는 도구도 줄어듭니다.\n";
+
 export async function runRepairCommand(
   argv: readonly string[],
   deps: RepairCommandDependencies,
@@ -160,25 +174,45 @@ export async function runRepairCommand(
     return 1;
   }
   const provider = deps.diagnosis.providers[input.providerId](input.model);
-  const preview = deps.diagnosis.prepare({
-    specTrust: { fingerprint: bundle.spec.approval, runHistory: bundle.spec.runHistory },
-    suite: { id: bundle.spec.suiteId, name: bundle.spec.suiteName },
-    failures: bundle.failures.map((failure) => ({
-      caseId: failure.caseId,
-      caseName: failure.caseName,
-      ...(failure.tool === undefined ? {} : { tool: failure.tool }),
-      ...(failure.input === undefined ? {} : { input: failure.input }),
-      ...(failure.approvedAs === undefined ? {} : { approvedAs: failure.approvedAs }),
-      diagnostics: failure.diagnostics.map((diagnostic) => ({ ...diagnostic })),
-    })),
-    ...(bundle.process === undefined ? {} : { processDiagnostics: bundle.process }),
-    // 번들에는 도구 선언이 없다. `repair` 는 서버를 띄우지 않으므로 목록을 만들 자리가 없다.
-    tools: [],
-    providerId: input.providerId,
-    model: input.model,
-    maxCases: input.maxCases,
-    includeStderr: input.includeStderr,
-  });
+  /**
+   * 요청 크기 상한을 넘으면 `prepareDiagnosisRequest` 가 `RangeError` 를 던진다.
+   * 도구 선언을 싣기 시작하면서 실제로 닿을 수 있는 자리가 됐다(#393).
+   *
+   * 던진 것을 그대로 두면 스택 트레이스가 화면에 뜨고 사용자가 할 수 있는 일이 없다.
+   * 번들을 다시 만들 수도 없다. 그 안에 이미 도구가 들어 있기 때문이다.
+   */
+  let preview: ReturnType<NonNullable<typeof deps.diagnosis>["prepare"]>;
+  try {
+    preview = deps.diagnosis.prepare({
+      specTrust: { fingerprint: bundle.spec.approval, runHistory: bundle.spec.runHistory },
+      suite: { id: bundle.spec.suiteId, name: bundle.spec.suiteName },
+      failures: bundle.failures.map((failure) => ({
+        caseId: failure.caseId,
+        caseName: failure.caseName,
+        ...(failure.tool === undefined ? {} : { tool: failure.tool }),
+        ...(failure.input === undefined ? {} : { input: failure.input }),
+        ...(failure.approvedAs === undefined ? {} : { approvedAs: failure.approvedAs }),
+        diagnostics: failure.diagnostics.map((diagnostic) => ({ ...diagnostic })),
+      })),
+      ...(bundle.process === undefined ? {} : { processDiagnostics: bundle.process }),
+      // 번들이 실어 온 도구 선언을 그대로 넘긴다. `repair` 는 서버를 안 띄우므로 이것이
+      // 유일한 계약 출처다(#393).
+      tools: bundle.tools.map((tool) => ({
+        name: tool.name,
+        inputSchema: tool.inputSchema,
+        ...(tool.description === undefined ? {} : { description: tool.description }),
+        ...(tool.outputSchema === undefined ? {} : { outputSchema: tool.outputSchema }),
+      })),
+      providerId: input.providerId,
+      model: input.model,
+      maxCases: input.maxCases,
+      includeStderr: input.includeStderr,
+    });
+  } catch (error: unknown) {
+    if (!(error instanceof RangeError)) throw error;
+    deps.writeStderr(REPAIR_REQUEST_TOO_LARGE_LINE);
+    return 1;
+  }
   const confirmView = {
     providerId: input.providerId,
     model: input.model,
@@ -192,6 +226,9 @@ export async function runRepairCommand(
     ...(preview.request.processDiagnostics === undefined
       ? {}
       : { stderr: preview.request.processDiagnostics.stderr }),
+    // 번들이 실어 온 도구 수를 그대로 적는다. 사용자가 무엇을 보내는지 보고 승인해야 한다.
+    sentTools: bundle.tools.length,
+    omittedToolSchemas: bundle.tools.filter((tool) => tool.schemasOmitted === true).length,
     requestBytes: preview.byteLength,
   };
   if (!input.yes) {

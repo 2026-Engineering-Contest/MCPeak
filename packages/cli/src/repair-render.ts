@@ -109,6 +109,15 @@ export interface RepairConfirmView {
   readonly includeStderr: boolean;
   /** 전송하는 stderr. `--no-stderr` 이거나 번들에 없으면 undefined 다. */
   readonly stderr?: string;
+  /**
+   * 함께 보내는 도구 선언 수. 번들이 실어 온 것을 그대로 넘긴다(#393).
+   *
+   * 전송 내용이 늘었는데 화면이 그대로면 사용자는 무엇을 승인하는지 모른다. 번들에 근거가
+   * 없던 것이 이 이슈의 문제였고, 근거를 넣고 화면에 안 적으면 같은 성질의 빈틈이 새로 생긴다.
+   */
+  readonly sentTools: number;
+  /** 크기 상한에 걸려 스키마를 뺀 도구 수. 0 이면 괄호를 안 찍는다. */
+  readonly omittedToolSchemas: number;
   readonly requestBytes: number;
 }
 
@@ -120,6 +129,11 @@ export function renderRepairConfirm(view: RepairConfirmView): string {
     view.omittedFailures === 0
       ? `실패 ${view.totalFailures}건 중 ${view.sentFailures}건`
       : `실패 ${view.totalFailures}건 중 ${view.sentFailures}건 (--max-cases ${view.maxCases}, ${view.omittedFailures}건 제외)`;
+  // 제외가 0 이면 괄호를 안 찍는다. 위 scope 줄과 같은 방식이다.
+  const toolLine =
+    view.omittedToolSchemas === 0
+      ? `${view.sentTools}개`
+      : `${view.sentTools}개 (스키마 제외 ${view.omittedToolSchemas}개)`;
   let stderrLine: string;
   if (!view.includeStderr) stderrLine = "(전송하지 않음)";
   else if (view.stderr === undefined || view.stderr === "") stderrLine = "없음";
@@ -135,6 +149,7 @@ export function renderRepairConfirm(view: RepairConfirmView): string {
     `  provider   ${view.providerId} (${escapeTerminalText(view.model)})\n`,
     `  대상       ${scope}\n`,
     `  명세 상태  ${APPROVAL_LABEL[view.approval]} · ${RUN_HISTORY_LABEL[view.runHistory]}\n`,
+    `  도구       ${toolLine}\n`,
     `  stderr     ${stderrLine}\n`,
     `  전송 크기  ${kilobytes(view.requestBytes)}\n`,
     "\n",

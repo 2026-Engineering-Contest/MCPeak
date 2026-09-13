@@ -1,4 +1,4 @@
-import type { McpStdioConnection } from "@mcpeak/core";
+import type { McpStdioConnection, ToolDef } from "@mcpeak/core";
 import type { RunnerExecution, RunnerReport, TestCaseResult, TestSuiteSpec } from "@mcpeak/runner";
 import { suiteFingerprint } from "@mcpeak/runner";
 import { describe, expect, it, vi } from "vitest";
@@ -75,8 +75,24 @@ const approvalOf = (target: TestSuiteSpec) => ({
   fingerprint: suiteFingerprint(target),
 });
 
-const build = (cases: readonly TestCaseResult[], target = suite()) =>
-  buildRepairBundle({ report: report(cases), suite: target, specApproval: approvalOf(target) });
+const WEATHER_TOOL = {
+  name: "get_weather",
+  description: "도시의 날씨를 돌려준다",
+  inputSchema: { type: "object", properties: { city: { type: "string" } } },
+};
+
+const build = (
+  cases: readonly TestCaseResult[],
+  target = suite(),
+  extra: { tools?: readonly ToolDef[]; transport?: string } = {},
+) =>
+  buildRepairBundle({
+    report: report(cases),
+    suite: target,
+    specApproval: approvalOf(target),
+    target: { transport: extra.transport ?? "stdio" },
+    ...(extra.tools === undefined ? {} : { tools: extra.tools }),
+  });
 
 describe("buildRepairBundle", () => {
   it("실패가 있으면 번들이 만들어지고 실패 케이스만 담긴다", () => {
@@ -190,6 +206,7 @@ describe("buildRepairBundle", () => {
       report: report([caseResult()]),
       suite: target,
       specApproval: approvalOf(target),
+      target: { transport: "stdio" },
       // stderr 가 비어 있고 정상 종료다. 화면에도 안 뜨는 내용이다.
       processDiagnostics: { stderr: "", stderrTruncated: false, exitCode: 0, signal: null },
     });
@@ -198,6 +215,7 @@ describe("buildRepairBundle", () => {
       report: report([caseResult()]),
       suite: target,
       specApproval: approvalOf(target),
+      target: { transport: "stdio" },
       processDiagnostics: {
         stderr: "TypeError: boom",
         stderrTruncated: false,
@@ -206,6 +224,9 @@ describe("buildRepairBundle", () => {
       },
     });
     expect(filled?.process?.stderr).toBe("TypeError: boom");
+    // 범위를 함께 적는다. 값 없이 stderr 만 실으면 프로세스 전체의 꼬리를 개별 케이스의
+    // 원인으로 읽는다(#393).
+    expect(filled?.process?.scope).toBe("suite");
   });
 
   it("callTool 이 아닌 케이스는 tool·input 키가 없다", () => {
@@ -386,5 +407,146 @@ describe("--repair-bundle 쓰기", () => {
     expect(code).toBe(0);
     expect((d.value.writeFile as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(0);
     expect(d.writes.out.join("")).toContain("실패한 케이스가 없어 파일을 만들지 않았습니다.");
+  });
+});
+
+describe("tools", () => {
+  const OTHER_TOOL = { name: "add", inputSchema: { type: "object" } };
+  const ZOO_TOOL = { name: "zoo", inputSchema: { type: "object" } };
+
+  it("실패한 케이스가 부른 도구만 싣는다", () => {
+    // 도구 셋 중 실패가 부른 것은 get_weather 하나다.
+    const bundle = build([caseResult()], suite(), {
+      tools: [OTHER_TOOL, WEATHER_TOOL, ZOO_TOOL],
+    });
+    expect(bundle?.tools.map((tool) => tool.name)).toEqual(["get_weather"]);
+  });
+
+  it("툴 이름 코드 단위 오름차순이다", () => {
+    // 서버가 준 순서를 그대로 쓰면 서버가 순서를 바꾸는 것만으로 번들 바이트가 흔들린다.
+    const callAdd = caseResult({
+      spec: {
+        ...CALL_TOOL_CASE,
+        id: "add-case",
+        operation: { type: "callTool" as const, tool: "add", input: {} },
+      },
+    });
+    const forward = build([caseResult(), callAdd], suite(), {
+      tools: [WEATHER_TOOL, OTHER_TOOL, ZOO_TOOL],
+    });
+    const reversed = build([caseResult(), callAdd], suite(), {
+      tools: [ZOO_TOOL, OTHER_TOOL, WEATHER_TOOL],
+    });
+    expect(forward?.tools.map((tool) => tool.name)).toEqual(["add", "get_weather"]);
+    expect(JSON.stringify(reversed?.tools)).toBe(JSON.stringify(forward?.tools));
+  });
+
+  it("outputSchema 가 없으면 키를 만들지 않는다", () => {
+    // 빈 객체를 넣으면 "아무 응답이나 허용" 으로 읽힌다.
+    const withoutOutput = build([caseResult()], suite(), { tools: [WEATHER_TOOL] });
+    expect(
+      "outputSchema" in ((withoutOutput as NonNullable<typeof withoutOutput>).tools[0] as object),
+    ).toBe(false);
+    const withOutput = build([caseResult()], suite(), {
+      tools: [{ ...WEATHER_TOOL, outputSchema: { type: "object" } }],
+    });
+    expect(withOutput?.tools[0]?.outputSchema).toEqual({ type: "object" });
+  });
+
+  it("listTools 실패만 있으면 tools 가 빈 배열이다", () => {
+    const bundle = build([caseResult({ spec: LIST_TOOLS_CASE, assertions: [] })], suite(), {
+      tools: [WEATHER_TOOL],
+    });
+    expect(bundle?.tools).toEqual([]);
+  });
+
+  it("도구를 안 넘기면 빈 배열이다", () => {
+    expect(build([caseResult()])?.tools).toEqual([]);
+  });
+
+  it("8 KiB 를 넘는 스키마는 빼고 schemasOmitted 를 넣는다", () => {
+    const huge = {
+      ...WEATHER_TOOL,
+      inputSchema: { type: "object", description: "x".repeat(9000) },
+    };
+    const bundle = build([caseResult()], suite(), { tools: [huge] });
+    const tool = bundle?.tools[0];
+    expect(tool?.schemasOmitted).toBe(true);
+    expect(tool?.inputSchema).toEqual({});
+    expect(bundle?.truncated?.toolSchemas).toBe(1);
+    // 이름과 description 은 남는다. 도구가 있었다는 사실까지 지우면 계약을 못 찾는다.
+    expect(tool?.name).toBe("get_weather");
+    expect(tool?.description).toBe("도시의 날씨를 돌려준다");
+  });
+
+  it("상한 안이면 schemasOmitted 도 truncated 도 없다", () => {
+    const bundle = build([caseResult()], suite(), { tools: [WEATHER_TOOL] });
+    expect("schemasOmitted" in ((bundle as NonNullable<typeof bundle>).tools[0] as object)).toBe(
+      false,
+    );
+    expect("truncated" in (bundle as object)).toBe(false);
+  });
+
+  it("바이트로 센다", () => {
+    // 한글 한 글자는 UTF-8 로 3바이트다. UTF-16 코드 단위로 세면 상한 안으로 잘못 읽힌다.
+    const korean = "가".repeat(3000);
+    expect(korean.length).toBeLessThan(8192);
+    expect(Buffer.byteLength(korean, "utf8")).toBeGreaterThan(8192);
+    const bundle = build([caseResult()], suite(), {
+      tools: [{ ...WEATHER_TOOL, inputSchema: { type: "object", description: korean } }],
+    });
+    expect(bundle?.tools[0]?.schemasOmitted).toBe(true);
+  });
+});
+
+describe("assertions", () => {
+  it("통과한 단언도 싣는다", () => {
+    const mixed = caseResult({
+      assertions: [
+        { spec: { type: "isError", expected: true }, status: "passed" },
+        { spec: { type: "bodyMatchesSchema", schema: { type: "string" } }, status: "failed" },
+      ],
+    } as Partial<TestCaseResult>);
+    const assertions = build([mixed])?.failures[0]?.assertions;
+    expect(assertions).toEqual([
+      { type: "isError", status: "passed" },
+      { type: "bodyMatchesSchema", status: "failed" },
+    ]);
+  });
+
+  it("단언 값은 안 싣는다", () => {
+    // 깨진 것의 값은 diagnostics 의 expected·actual 에 이미 있다.
+    const item = build([caseResult()])?.failures[0]?.assertions[0] as object;
+    expect("schema" in item).toBe(false);
+    expect("expected" in item).toBe(false);
+    expect(Object.keys(item).sort()).toEqual(["status", "type"]);
+  });
+});
+
+describe("target", () => {
+  it("transport 만 싣는다", () => {
+    expect(Object.keys(build([caseResult()])?.target as object)).toEqual(["transport"]);
+    expect(build([caseResult()], suite(), { transport: "http" })?.target.transport).toBe("http");
+  });
+
+  it("실행 명령이 번들 어디에도 없다", () => {
+    // 이 테스트가 이 항목의 존재 이유다. describeTarget 을 쓰면 여기서 걸린다.
+    const secret = "sk-super-secret-value";
+    const bundle = build([caseResult()], suite(), {
+      tools: [WEATHER_TOOL],
+      transport: "stdio",
+    });
+    expect(serializeRepairBundle(bundle as NonNullable<typeof bundle>)).not.toContain(secret);
+    expect(serializeRepairBundle(bundle as NonNullable<typeof bundle>)).not.toContain("--api-key");
+  });
+});
+
+describe("번들 결정론성", () => {
+  it("같은 실행에서 두 번 만든 번들이 바이트 단위로 같다", () => {
+    const once = build([caseResult()], suite(), { tools: [WEATHER_TOOL] });
+    const twice = build([caseResult()], suite(), { tools: [WEATHER_TOOL] });
+    expect(serializeRepairBundle(twice as NonNullable<typeof twice>)).toBe(
+      serializeRepairBundle(once as NonNullable<typeof once>),
+    );
   });
 });

@@ -1,6 +1,7 @@
 import { DEFAULT_MAX_REPAIR_CASES } from "@mcpeak/generate";
 import { describe, expect, it } from "vitest";
 import { commandHelp } from "../src/help.js";
+import { REPAIR_BUNDLE_VERSION } from "../src/repair-bundle.js";
 import {
   DEFAULT_REPAIR_MAX_CASES,
   parseRepairCommand,
@@ -100,7 +101,9 @@ describe("runRepairCommand", () => {
   });
 
   it("번들이 형식에 안 맞으면 사유 문장과 함께 1 이다", async () => {
-    const d = deps({ readFile: async () => JSON.stringify({ bundleVersion: 3 }) });
+    // 낡은 버전 번들이다. 숫자를 그대로 둔다. 상수로 바꾸면 늘 현재 버전이 되어 이 경로를
+    // 안 타고, 무엇을 거절하는지가 코드에서 사라진다.
+    const d = deps({ readFile: async () => JSON.stringify({ bundleVersion: 1 }) });
     expect(await runRepairCommand(BASE, d.value)).toBe(1);
     expect(d.writes.err.join("")).toContain("최신 `mcpeak test --repair-bundle` 로 다시 만드세요");
   });
@@ -111,7 +114,7 @@ describe("runRepairCommand", () => {
    */
   it("진단 통로가 없으면 안내와 함께 1 이다", async () => {
     const bundle = {
-      bundleVersion: 2,
+      bundleVersion: REPAIR_BUNDLE_VERSION,
       generatedBy: "mcpeak 0.7.0",
       spec: {
         suiteId: "weather",
@@ -120,7 +123,11 @@ describe("runRepairCommand", () => {
         runHistory: "present",
         fingerprint: "a",
       },
-      failures: [{ caseId: "c1", caseName: "케이스", status: "failed", diagnostics: [] }],
+      failures: [
+        { caseId: "c1", caseName: "케이스", status: "failed", assertions: [], diagnostics: [] },
+      ],
+      tools: [],
+      target: { transport: "stdio" },
     };
     const d = deps({ readFile: async () => JSON.stringify(bundle) });
     expect(await runRepairCommand(BASE, d.value)).toBe(1);

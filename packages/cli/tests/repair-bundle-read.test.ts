@@ -12,6 +12,7 @@ const FAILURE = {
   status: "failed",
   tool: "get_weather",
   input: { city: "toString" },
+  assertions: [{ type: "isError", status: "failed" }],
   diagnostics: [
     {
       code: "IS_ERROR_MISMATCH",
@@ -33,6 +34,8 @@ const bundle = (overrides: Record<string, unknown> = {}) => ({
     fingerprint: "a".repeat(64),
   },
   failures: [FAILURE],
+  tools: [{ name: "get_weather", inputSchema: { type: "object" } }],
+  target: { transport: "stdio" },
   ...overrides,
 });
 const text = (value: unknown) => JSON.stringify(value);
@@ -69,6 +72,95 @@ describe("readRepairBundle", () => {
       status: "invalid",
       reason: "versionMismatch",
     });
+  });
+
+  it("버전 2 번들은 versionMismatch 로 거절한다", () => {
+    // 낡은 번들이 근거 절반만 실은 채 조용히 통과하면 사용자는 진단이 왜 약한지 모른다.
+    // 숫자를 그대로 둔다. 상수로 바꾸면 무엇을 거절하는지가 코드에서 사라진다.
+    expect(readRepairBundle(text(bundle({ bundleVersion: 2 })))).toEqual({
+      status: "invalid",
+      reason: "versionMismatch",
+    });
+  });
+
+  it("새 필드가 없는 번들은 missingField 다", () => {
+    // #393 이 더한 tools · assertions · target 셋이다. 선택 필드로 얹지 않았다.
+    const withoutTools = bundle();
+    const { tools: _tools, ...noTools } = withoutTools;
+    expect(readRepairBundle(text(noTools))).toEqual({
+      status: "invalid",
+      reason: "missingField",
+    });
+
+    const withoutTarget = bundle();
+    const { target: _target, ...noTarget } = withoutTarget;
+    expect(readRepairBundle(text(noTarget))).toEqual({
+      status: "invalid",
+      reason: "missingField",
+    });
+
+    const { assertions: _assertions, ...failureWithoutAssertions } = FAILURE;
+    expect(readRepairBundle(text(bundle({ failures: [failureWithoutAssertions] })))).toEqual({
+      status: "invalid",
+      reason: "missingField",
+    });
+  });
+
+  it("단언 상태가 목록 밖이면 missingField 다", () => {
+    // 케이스 상태의 값(timedOut)은 단언 상태가 아니다. 두 유니온을 섞으면 여기서 걸린다.
+    expect(
+      readRepairBundle(
+        text(
+          bundle({
+            failures: [{ ...FAILURE, assertions: [{ type: "isError", status: "timedOut" }] }],
+          }),
+        ),
+      ),
+    ).toEqual({ status: "invalid", reason: "missingField" });
+  });
+
+  it("도구의 name 이나 inputSchema 가 형식과 다르면 missingField 다", () => {
+    for (const tool of [
+      { name: "", inputSchema: {} },
+      { name: "t" },
+      { name: "t", inputSchema: 1 },
+    ])
+      expect(readRepairBundle(text(bundle({ tools: [tool] })))).toEqual({
+        status: "invalid",
+        reason: "missingField",
+      });
+  });
+
+  it("tools 가 빈 배열이어도 읽힌다", () => {
+    // listTools 케이스만 실패한 실행이 그렇다. 부른 도구가 없는 것이 정상이다.
+    expect(readRepairBundle(text(bundle({ tools: [] }))).status).toBe("ok");
+  });
+
+  it("process 가 있는데 scope 가 없으면 missingField 다", () => {
+    expect(
+      readRepairBundle(
+        text(
+          bundle({
+            process: { stderr: "boom", stderrTruncated: false, exitCode: 1, signal: null },
+          }),
+        ),
+      ),
+    ).toEqual({ status: "invalid", reason: "missingField" });
+    expect(
+      readRepairBundle(
+        text(
+          bundle({
+            process: {
+              scope: "suite",
+              stderr: "boom",
+              stderrTruncated: false,
+              exitCode: 1,
+              signal: null,
+            },
+          }),
+        ),
+      ).status,
+    ).toBe("ok");
   });
 
   it("spec.runHistory 가 없으면 missingField 다", () => {

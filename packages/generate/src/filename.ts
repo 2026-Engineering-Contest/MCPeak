@@ -32,14 +32,22 @@ export function safeBaseName(name: string, _index: number): string {
 }
 
 /**
- * 필드 이름을 케이스 id 조각으로 바꾼다.
+ * 필드 경로를 케이스 id 조각으로 바꾼다.
  *
  * safeBaseName 과 fallback 이 다르다. 그쪽은 파일 기본 이름이라 `tool-<hash>` 로 떨어지고
  * Windows 예약어를 피해야 한다. 케이스 id 는 파일 이름이 아니므로 예약어를 피할 이유가 없고,
  * fallback 이 `tool-` 이면 이름이 거짓이 된다.
+ *
+ * 경로에 든 `[]` 는 `item` 으로 읽는다. 그냥 슬러그에 태우면 `tags` 와 `tags[]` 가 같은
+ * 문자열이 되어 배열 자신의 위반과 원소의 위반이 `-2` 접미사로만 갈린다. id 만 보고 어느
+ * 쪽인지 알 수 없다(#388). 배열에 원소 제약이 있는 스키마는 흔해서 예외가 아니라 기본
+ * 경로다. id 는 실패 보고·E2E 기대값·repair 번들에 그대로 나간다.
+ *
+ * 치환은 slugify 앞에서 한다. slugify 자체는 safeBaseName 이 파일 이름으로 함께 쓰므로
+ * 건드리지 않는다.
  */
 export function fieldSlug(name: string): string {
-  const slug = slugify(name);
+  const slug = slugify(name.replaceAll("[]", ".item"));
   return slug.length === 0
     ? `field-${createHash("sha256").update(name.normalize("NFC")).digest("hex").slice(0, 8)}`
     : slug;

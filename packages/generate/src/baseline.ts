@@ -3,6 +3,7 @@ import { type TestSuiteSpec, validateMcpSuite } from "@mcpeak/runner";
 import { deepFreeze, sha256 } from "./canonical.js";
 import { type CoverageResult, computeCoverage } from "./coverage.js";
 import { safeBaseName } from "./filename.js";
+import type { FieldOrigin, FixtureFile } from "./fixtures.js";
 import { analyzeToolProvenance, type ToolProvenance } from "./provenance.js";
 import { buildGeneratedCases, type OutputContractSkip, toSuiteCase } from "./render.js";
 import { GenerateTestsError } from "./schema.js";
@@ -19,6 +20,13 @@ export interface BaselineSuiteOptions {
   readonly suiteId: string;
   readonly suiteName: string;
   readonly defaultTimeoutMs?: number;
+  /**
+   * 사용자가 준 픽스처. 없으면 종전과 같다.
+   *
+   * `generate` 는 파일을 읽지 않는다. 읽어서 `readFixtureFile` 로 검증한 결과를 `cli` 가
+   * 여기 넘긴다(#390).
+   */
+  readonly fixtures?: FixtureFile;
 }
 
 /** 미지원 키워드로 케이스를 만들지 못해 건너뛴 툴. 오류가 이미 만든 문장을 그대로 싣는다. */
@@ -49,6 +57,16 @@ export interface BaselineGenerationResult {
   readonly outputContractSkips: readonly OutputContractSkip[];
   /** 밟지 않은 정상 분기. 툴 처리 순서다. 새로 정렬하지 않는다(이슈 #401). */
   readonly validBranchSkips: readonly ValidBranchSkip[];
+  /**
+   * 정상 입력에 든 값의 출처. 툴 처리 순서이고 툴 안에서는 필드 코드 단위 오름차순이다.
+   *
+   * 이름이 `provenances` 가 아니다. 바로 위 `provenance`(툴별 집계)와 한 글자 차이라 실제로
+   * 잘못 읽힌다. 타입이 `FieldOrigin[]` 이므로 이름도 그쪽에 맞춘다.
+   *
+   * 실패 진단이 "서버 결함인가 데이터 문제인가" 를 가르는 근거다. `schemaHint` 는 우리가
+   * 지어낸 값이라 어떤 자원도 가리키지 않는다(#390).
+   */
+  readonly fieldOrigins: readonly FieldOrigin[];
   /**
    * 케이스별 고정 필드. 값이 바뀌면 그 케이스의 목적이 사라지는 필드다.
    *
@@ -110,6 +128,7 @@ export function createBaselineSuite(
   const generatedTools: ToolDef[] = [];
   const outputContractSkips: OutputContractSkip[] = [];
   const validBranchSkips: ValidBranchSkip[] = [];
+  const fieldOrigins: FieldOrigin[] = [];
   const pinnedFieldsByCase: Record<string, readonly string[]> = {};
   const cases = tools.flatMap((tool, index) => {
     const initialName = safeBaseName(typeof tool?.name === "string" ? tool.name : "", index);
@@ -118,11 +137,12 @@ export function createBaselineSuite(
       baseName = `${initialName}-${occurrence}`;
     usedNames.add(baseName);
     try {
-      const built = buildGeneratedCases(tool, index, baseName);
+      const built = buildGeneratedCases(tool, index, baseName, options.fixtures);
       generatedTools.push(tool);
       if (built.outputContractSkip !== undefined)
         outputContractSkips.push(built.outputContractSkip);
       validBranchSkips.push(...built.validBranchSkips);
+      fieldOrigins.push(...built.fieldOrigins);
       // 고정 필드는 명세로 들어가기 전에 읽는다. toSuiteCase 가 벗긴 뒤에는 사라진다.
       for (const item of built.cases)
         if (item.pinnedFields.length > 0) pinnedFieldsByCase[item.id] = item.pinnedFields;
@@ -174,6 +194,7 @@ export function createBaselineSuite(
     skippedTools,
     outputContractSkips,
     validBranchSkips,
+    fieldOrigins,
     pinnedFieldsByCase,
     provenance: generatedTools.map((tool) => analyzeToolProvenance(tool)),
   };

@@ -97,6 +97,14 @@ export {
   MAX_CAUSE_CHARS,
   specIsOracle,
 } from "./diagnosis-schema.js";
+export {
+  type FieldOrigin,
+  type FixtureFile,
+  type FixtureRead,
+  fixtureValuesFor,
+  readFixtureFile,
+  type ValueOrigin,
+} from "./fixtures.js";
 export { convertOutputSchema, type OutputSchemaConversion } from "./output-schema.js";
 export type {
   PreFillCase,

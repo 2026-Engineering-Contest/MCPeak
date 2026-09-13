@@ -1897,6 +1897,7 @@ const UNANALYZED_REASON_LABEL: Readonly<Record<UnanalyzedReason, string>> = {
   pathLimit: "한 도구의 경로 수 상한(64)을 넘어 더 만들지 않았습니다.",
   pathCollision: "경로 표기가 다른 필드와 겹쳐 양쪽 다 제외했습니다.",
   noGround: "type·enum·범위를 하나도 읽지 못해 요구할 근거가 없습니다.",
+  unreadablePath: "이름에 '.' 이나 '[' 가 들어 경로로 읽으면 다른 자리를 가리켜 제외했습니다.",
 };
 
 /**

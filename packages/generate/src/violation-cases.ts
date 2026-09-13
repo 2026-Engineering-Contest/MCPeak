@@ -9,8 +9,13 @@ import {
 import { canonicalJson } from "./canonical.js";
 import { integerLowerBound, integerUpperBound } from "./constraints.js";
 import { fieldSlug } from "./filename.js";
-import type { JsonObject, JsonSchema, JsonValue } from "./schema.js";
-import { plainObject } from "./schema.js";
+import {
+  GenerateTestsError,
+  type JsonObject,
+  type JsonSchema,
+  type JsonValue,
+  plainObject,
+} from "./schema.js";
 import { synthesizeValue } from "./synthesize.js";
 
 /**
@@ -174,65 +179,173 @@ function parsePath(path: string): readonly PathSegment[] {
 }
 
 /**
+ * 경로 한 단계에서 우리가 아는 것. `walkPath` 가 스키마를 한 번 따라 내려가며 모은다.
+ * 판정 재료를 따로 순회해 모으면 두 순회가 갈린다.
+ */
+interface PathStep {
+  readonly segment: PathSegment;
+  /** 이 단계가 가리키는 선언 스키마. 못 찾으면 null 이다. */
+  readonly schema: unknown;
+  /** 이 단계를 담는 스키마. 배열 원소 단계에서 maxItems 를 보려면 필요하다. */
+  readonly container: unknown;
+  /** 키 단계가 부모의 required 에 **없는지**. 배열 원소 단계는 false 다(원소에 required 가 없다). */
+  readonly optional: boolean;
+}
+
+/** 경로를 따라 선언 스키마를 내려가며 단계별 재료를 모은다. */
+function walkPath(root: JsonSchema, path: string): readonly PathStep[] {
+  const steps: PathStep[] = [];
+  let current: unknown = root;
+  for (const segment of parsePath(path)) {
+    const container = current;
+    const node = plainObject(current) ? unwrapNullable(current) : null;
+    let next: unknown = null;
+    let optional = false;
+    if (node !== null) {
+      if (segment.kind === "item") next = node.items ?? null;
+      else {
+        const properties = node.properties;
+        next = plainObject(properties) ? (properties[segment.name] ?? null) : null;
+        const required = Array.isArray(node.required) ? node.required : [];
+        optional = !required.includes(segment.name);
+      }
+    }
+    steps.push({ segment, schema: next, container, optional });
+    current = next;
+  }
+  return steps;
+}
+
+/**
+ * 없는 중간 자리를 채울 값. 만들 수 없으면 undefined 다.
+ *
+ * `-branch-with-*`(#401)와 **같은 `synthesizeValue`** 를 쓴다. 두 케이스가 같은 필드에 다른
+ * 값을 넣으면 사용자가 왜 다른지 알 수 없다.
+ *
+ * `GenerateTestsError` 만 삼킨다. 그 밖의 오류는 우리 결함이므로 그대로 올린다. 전부 삼키면
+ * 우리 버그가 "케이스 못 만듦" 으로 위장돼 조용히 유지된다.
+ */
+function synthesizeFiller(schema: unknown, path: string, root: JsonSchema): JsonValue | undefined {
+  if (!plainObject(schema)) return undefined;
+  try {
+    return synthesizeValue(schema as JsonSchema, path, root);
+  } catch (error) {
+    if (!(error instanceof GenerateTestsError)) throw error;
+    return undefined;
+  }
+}
+
+/**
  * 경로가 가리키는 자리의 값을 바꾼 새 값. 원본을 바꾸지 않는다.
  *
  * **배열 원소 경로는 첫 원소만 바꾼다.** 전부 바꾸면 "서버가 첫 원소만 검사한다" 는 결함을
- * 못 잡는다(설계 §4.1). 배열이 비어 있으면 바꿀 원소가 없어 undefined 다.
+ * 못 잡는다(설계 §4.1).
  *
- * 경로 중간이 없거나 객체가 아니면 undefined 다. 마지막 조각은 없어도 넣는다. 중간을
- * 지어내면 정상 입력과 두 군데가 달라져 케이스가 무엇을 검증하는지 알 수 없게 된다.
+ * 경로 중간이 없어도 그 단계가 **선택 필드면 채워서 내려간다**(#388 T5). 안 채우면 선택 필드
+ * 아래의 축은 어떤 케이스로도 못 덮여 분모에 영원히 못 채우는 빈틈으로 남는다. 선택 필드가
+ * 있다는 사실 자체는 선언을 지키므로 거절 사유는 여전히 마지막 한 자리로 좁혀진다.
+ *
+ * **required 인 중간 필드가 없으면 undefined 다.** 그 경우는 기준 정상 입력 자체가 깨진
+ * 것이고, 지어내면 정상 입력과 두 군데가 달라져 무엇을 검증하는지 알 수 없어진다.
+ *
+ * 마지막 조각은 없어도 넣는다.
  */
-function setAtSegments(
+function setAtSteps(
   node: JsonValue,
-  segments: readonly PathSegment[],
+  steps: readonly PathStep[],
   value: JsonValue,
+  root: JsonSchema,
+  label: string,
 ): JsonValue | undefined {
-  const head = segments[0];
+  const head = steps[0];
   if (head === undefined) return value;
-  const rest = segments.slice(1);
-  if (head.kind === "item") {
-    if (!Array.isArray(node) || node.length === 0) return undefined;
-    const replaced = setAtSegments(node[0] as JsonValue, rest, value);
-    return replaced === undefined ? undefined : [replaced, ...node.slice(1)];
+  const rest = steps.slice(1);
+  if (head.segment.kind === "item") {
+    if (!Array.isArray(node)) return undefined;
+    let items: readonly JsonValue[] = node;
+    if (items.length === 0) {
+      // 빈 배열이면 원소를 하나 합성한다. maxItems: 0 이면 원소를 넣는 순간 그 제약까지
+      // 어겨 케이스가 축 둘을 덮으므로 만들지 않는다.
+      const container = plainObject(head.container) ? unwrapNullable(head.container) : null;
+      if (container?.maxItems === 0) return undefined;
+      const filled = synthesizeFiller(head.schema, `${label}.items`, root);
+      if (filled === undefined) return undefined;
+      items = [filled];
+    }
+    const replaced = setAtSteps(items[0] as JsonValue, rest, value, root, label);
+    return replaced === undefined ? undefined : [replaced, ...items.slice(1)];
   }
   if (!plainObject(node)) return undefined;
-  if (rest.length > 0 && !Object.hasOwn(node, head.name)) return undefined;
-  const replaced = setAtSegments((node[head.name] ?? null) as JsonValue, rest, value);
-  return replaced === undefined ? undefined : { ...node, [head.name]: replaced };
+  const name = head.segment.name;
+  if (rest.length === 0) return { ...node, [name]: value };
+  let child = node[name] as JsonValue | undefined;
+  if (!Object.hasOwn(node, name)) {
+    if (!head.optional) return undefined;
+    child = synthesizeFiller(head.schema, `${label}.${name}`, root);
+    if (child === undefined) return undefined;
+  }
+  const replaced = setAtSteps(child as JsonValue, rest, value, root, label);
+  return replaced === undefined ? undefined : { ...node, [name]: replaced };
 }
 
 /** 경로가 가리키는 자리의 값을 바꾼 새 입력. 만들 수 없으면 undefined 다. */
-function withValueAt(input: JsonObject, path: string, value: JsonValue): JsonObject | undefined {
-  const replaced = setAtSegments(input, parsePath(path), value);
+function withValueAt(
+  input: JsonObject,
+  path: string,
+  value: JsonValue,
+  root: JsonSchema,
+): JsonObject | undefined {
+  const replaced = setAtSteps(input, walkPath(root, path), value, root, `properties.${path}`);
   return plainObject(replaced) ? (replaced as JsonObject) : undefined;
 }
 
-/** 경로가 가리키는 키를 지운 새 값. 중간이 없거나 그 키가 원래 없으면 undefined 다. */
-function deleteAtSegments(
+/**
+ * 경로가 가리키는 키를 지운 새 값. 중간 규칙은 `setAtSteps` 와 같다. 선택 필드인 중간은
+ * 채워서 내려가고, 그 키가 원래 없으면 지울 것이 없어 undefined 다.
+ */
+function deleteAtSteps(
   node: JsonValue,
-  segments: readonly PathSegment[],
+  steps: readonly PathStep[],
+  root: JsonSchema,
+  label: string,
 ): JsonValue | undefined {
-  const head = segments[0];
+  const head = steps[0];
   if (head === undefined) return undefined;
-  const rest = segments.slice(1);
-  if (head.kind === "item") {
-    if (!Array.isArray(node) || node.length === 0) return undefined;
-    const replaced = deleteAtSegments(node[0] as JsonValue, rest);
-    return replaced === undefined ? undefined : [replaced, ...node.slice(1)];
+  const rest = steps.slice(1);
+  if (head.segment.kind === "item") {
+    if (!Array.isArray(node)) return undefined;
+    let items: readonly JsonValue[] = node;
+    if (items.length === 0) {
+      const container = plainObject(head.container) ? unwrapNullable(head.container) : null;
+      if (container?.maxItems === 0) return undefined;
+      const filled = synthesizeFiller(head.schema, `${label}.items`, root);
+      if (filled === undefined) return undefined;
+      items = [filled];
+    }
+    const replaced = deleteAtSteps(items[0] as JsonValue, rest, root, label);
+    return replaced === undefined ? undefined : [replaced, ...items.slice(1)];
   }
-  if (!plainObject(node) || !Object.hasOwn(node, head.name)) return undefined;
+  if (!plainObject(node)) return undefined;
+  const name = head.segment.name;
   if (rest.length === 0) {
+    if (!Object.hasOwn(node, name)) return undefined;
     const next = { ...node };
-    delete next[head.name];
+    delete next[name];
     return next;
   }
-  const replaced = deleteAtSegments(node[head.name] as JsonValue, rest);
-  return replaced === undefined ? undefined : { ...node, [head.name]: replaced };
+  let child = node[name] as JsonValue | undefined;
+  if (!Object.hasOwn(node, name)) {
+    if (!head.optional) return undefined;
+    child = synthesizeFiller(head.schema, `${label}.${name}`, root);
+    if (child === undefined) return undefined;
+  }
+  const replaced = deleteAtSteps(child as JsonValue, rest, root, label);
+  return replaced === undefined ? undefined : { ...node, [name]: replaced };
 }
 
 /** 경로가 가리키는 키를 지운 새 입력. REQUIRED_OMITTED 케이스에 쓴다. */
-function withoutValueAt(input: JsonObject, path: string): JsonObject | undefined {
-  const removed = deleteAtSegments(input, parsePath(path));
+function withoutValueAt(input: JsonObject, path: string, root: JsonSchema): JsonObject | undefined {
+  const removed = deleteAtSteps(input, walkPath(root, path), root, `properties.${path}`);
   return plainObject(removed) ? (removed as JsonObject) : undefined;
 }
 
@@ -270,21 +383,10 @@ function valueAtPath(input: JsonObject, path: string): JsonValue | undefined {
   return current;
 }
 
-/** 경로가 가리키는 선언 스키마. 못 찾으면 null 이다. */
+/** 경로가 가리키는 선언 스키마. 못 찾으면 null 이다. `walkPath` 의 마지막 단계다. */
 function schemaAtPath(root: JsonSchema, path: string): unknown {
-  let current: unknown = root;
-  for (const segment of parsePath(path)) {
-    if (!plainObject(current)) return null;
-    const node = unwrapNullable(current);
-    if (segment.kind === "item") {
-      current = node.items;
-      continue;
-    }
-    const properties = node.properties;
-    if (!plainObject(properties)) return null;
-    current = properties[segment.name];
-  }
-  return current ?? null;
+  const steps = walkPath(root, path);
+  return steps[steps.length - 1]?.schema ?? null;
 }
 
 /** $ref 가 든 원소를 만들려면 루트가 필요하다. items 스키마만으로는 참조를 못 푼다. */
@@ -395,6 +497,8 @@ export function buildViolationCases(options: {
 }): readonly GeneratedCase[] {
   const { tool, happyInput, baseName } = options;
   const { axes } = deriveContractAxes(tool);
+  // 경로 헬퍼가 선택 필드를 채우려면 루트 선언이 필요하다. 축마다 다시 만들지 않는다.
+  const root = rootSchema(tool);
   // ENUM_VIOLATION 축의 declaredType 은 설계상 null 이라 같은 필드의 TYPE_VIOLATION 축에서
   // 가져온다. ContractAxis 는 runner 공개 타입이므로 여기서 의미를 늘리지 않는다.
   const declaredTypeByField = new Map<string, ContractDeclaredType>();
@@ -444,7 +548,7 @@ export function buildViolationCases(options: {
       //
       // 중첩 경로도 같다. `{ user: {} }` 는 `user.name` 의 누락이지만, 정상 입력에 `user` 가
       // 없으면 `user.name` 에서 지울 것이 없어 undefined 다.
-      const input = withoutValueAt(happyInput, field);
+      const input = withoutValueAt(happyInput, field, root);
       if (input === undefined) continue;
       cases.push(
         violation(
@@ -455,7 +559,7 @@ export function buildViolationCases(options: {
       );
     } else if (axis.kind === "TYPE_VIOLATION") {
       const value = TYPE_VIOLATION_VALUE[axis.declaredType as ContractDeclaredType];
-      const input = withValueAt(happyInput, field, value);
+      const input = withValueAt(happyInput, field, value, root);
       if (input === undefined) continue;
       cases.push(
         violation(uniqueId("type", field), `${tool.name}가 '${field}' 타입 위반을 거절한다`, input),
@@ -465,7 +569,7 @@ export function buildViolationCases(options: {
         ...axis,
         declaredType: declaredTypeByField.get(field) ?? null,
       });
-      const input = withValueAt(happyInput, field, value);
+      const input = withValueAt(happyInput, field, value, root);
       if (input === undefined) continue;
       cases.push(
         violation(
@@ -478,7 +582,6 @@ export function buildViolationCases(options: {
       // 방향을 모르는 축에 값을 지어내지 않는다. T1 이후 bound 가 null 인 RANGE_VIOLATION 축은
       // 나오지 않지만, 나오더라도 케이스를 만들지 않는 것이 정직하다.
       if (axis.bound === null) continue;
-      const root = rootSchema(tool);
       const fieldSchema = schemaAtPath(root, field);
       // 이 path 는 합성 오류 문장에만 쓰인다. $ref 는 root 로 푼다.
       const path = `properties.${field}`;
@@ -487,7 +590,7 @@ export function buildViolationCases(options: {
           ? lowerViolationValue(axis.declaredRange, fieldSchema, path, root)
           : upperViolationValue(axis.declaredRange, fieldSchema, path, root);
       if (value === undefined) continue;
-      const input = withValueAt(happyInput, field, value);
+      const input = withValueAt(happyInput, field, value, root);
       if (input === undefined) continue;
       const prefix = axis.bound === "lower" ? "range-lower" : "range-upper";
       const direction = axis.bound === "lower" ? "하한 미만" : "상한 초과";
@@ -546,7 +649,7 @@ export function buildUpperBoundaryCases(options: {
     // 나간다(#388).
     const current = valueAtPath(happyInput, field);
     if (current !== undefined && canonicalJson(current) === canonicalJson(value)) continue;
-    const input = withValueAt(happyInput, field, value);
+    const input = withValueAt(happyInput, field, value, root);
     if (input === undefined) continue;
     const initial = `${baseName}-bound-upper-${fieldSlug(field)}`;
     let id = initial;

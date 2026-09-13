@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import { canonicalJson } from "../src/canonical.js";
 import type { JsonObject, JsonSchema } from "../src/schema.js";
 import { synthesizeValue } from "../src/synthesize.js";
+import { buildValidBranchCases } from "../src/valid-branches.js";
 import { buildUpperBoundaryCases, buildViolationCases } from "../src/violation-cases.js";
 
 const fixture = JSON.parse(
@@ -852,5 +853,123 @@ describe("중첩 경로 결정론성", () => {
   it("properties 선언 순서를 뒤집어도 케이스 배열이 같다", () => {
     const reversed = Object.fromEntries(Object.entries(properties).reverse());
     expect(canonicalJson(build(reversed))).toBe(canonicalJson(build(properties)));
+  });
+});
+
+describe("선택 필드 아래 경로도 케이스를 만든다", () => {
+  const optionalTags = (items: unknown, extra: Record<string, unknown> = {}) => ({
+    type: "object",
+    required: [],
+    properties: { tags: { type: "array", items, ...extra } },
+  });
+  const build = (inputSchema: unknown, happyInput: JsonObject) =>
+    buildViolationCases({ tool: tool("t", inputSchema), happyInput, baseName: "t" });
+
+  it("부모 선택 필드가 없으면 채워서 만든다", () => {
+    // 안 채우면 이 축은 어떤 케이스로도 못 덮여 분모에 영원히 못 채우는 빈틈으로 남는다.
+    const cases = build(optionalTags({ type: "string", enum: ["a", "b"] }), {});
+    const found = cases.find((item) => item.id === "t-type-tags-item");
+    const tags = (found?.operation.input as JsonObject | undefined)?.tags;
+    expect(Array.isArray(tags)).toBe(true);
+    expect((tags as unknown[])[0]).toBe(0);
+  });
+
+  it("부모가 required 인데 없으면 안 만든다", () => {
+    // 기준 정상 입력 자체가 깨진 경우다. 지어내면 정상 입력과 두 군데가 달라져 케이스가
+    // 무엇을 검증하는지 알 수 없어진다.
+    const cases = build(
+      {
+        type: "object",
+        required: ["tags"],
+        properties: { tags: { type: "array", items: { type: "string" } } },
+      },
+      {},
+    );
+    expect(cases.some((item) => item.id === "t-type-tags-item")).toBe(false);
+  });
+
+  it("빈 배열이면 원소를 하나 합성한다", () => {
+    const cases = build(optionalTags({ type: "string", minLength: 3 }), { tags: [] });
+    const tags = (
+      cases.find((item) => item.id === "t-range-lower-tags-item")?.operation.input as
+        | JsonObject
+        | undefined
+    )?.tags as string[] | undefined;
+    expect(tags).toHaveLength(1);
+    expect(tags?.[0]).toHaveLength(2);
+  });
+
+  it("maxItems: 0 이면 안 만든다", () => {
+    // 원소를 넣는 순간 maxItems 까지 어겨 케이스 하나가 축 둘을 덮는다.
+    const cases = build(optionalTags({ type: "string" }, { maxItems: 0 }), { tags: [] });
+    expect(cases.some((item) => item.id === "t-type-tags-item")).toBe(false);
+  });
+
+  it("채운 값이 -branch-with-* 와 같다", () => {
+    // 두 케이스가 같은 필드에 다른 값을 넣으면 사용자가 왜 다른지 알 수 없다. 같은
+    // synthesizeValue 를 쓰는지 값으로 확인한다.
+    const inputSchema = {
+      type: "object",
+      required: [],
+      properties: {
+        filter: {
+          type: "object",
+          required: ["tag"],
+          properties: {
+            tag: { type: "string" },
+            priority: { type: "string", enum: ["low", "high"] },
+          },
+        },
+      },
+    };
+    const declared = tool("t", inputSchema);
+    const branchFilter = (
+      buildValidBranchCases({
+        tool: declared,
+        happyInput: {},
+        baseName: "t",
+        responseSchema: null,
+      }).cases.find((item) => item.id === "t-branch-with-filter")?.operation.input as
+        | JsonObject
+        | undefined
+    )?.filter;
+    const violationFilter = (
+      buildViolationCases({ tool: declared, happyInput: {}, baseName: "t" }).find(
+        (item) => item.id === "t-enum-filter-priority",
+      )?.operation.input as JsonObject | undefined
+    )?.filter as JsonObject | undefined;
+
+    // 채우기가 만든 자리는 그대로다. 어긴 것은 priority 하나뿐이다.
+    expect(canonicalJson(branchFilter)).toBe(canonicalJson({ tag: "example" }));
+    expect(canonicalJson(violationFilter?.tag)).toBe(
+      canonicalJson((branchFilter as JsonObject).tag),
+    );
+    expect(violationFilter?.priority).not.toBe("low");
+    expect(violationFilter?.priority).not.toBe("high");
+  });
+
+  it("합성이 실패하면 그 케이스만 건너뛴다", () => {
+    // 순환 $ref 라 유한한 값이 없다. 툴 전체가 아니라 그 경로만 빠진다.
+    const cases = build(
+      {
+        type: "object",
+        required: [],
+        properties: {
+          loop: {
+            type: "object",
+            required: ["next"],
+            properties: { next: { $ref: "#/$defs/N" }, tag: { type: "string" } },
+          },
+          ok: { type: "array", items: { type: "string" } },
+        },
+        $defs: {
+          N: { type: "object", required: ["next"], properties: { next: { $ref: "#/$defs/N" } } },
+        },
+      },
+      {},
+    );
+    expect(cases.some((item) => item.id.startsWith("t-type-loop-tag"))).toBe(false);
+    // 다른 경로의 케이스는 정상적으로 나온다.
+    expect(cases.some((item) => item.id === "t-type-ok-item")).toBe(true);
   });
 });

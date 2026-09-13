@@ -2225,6 +2225,7 @@ describe("커버리지 화면", () => {
       pathLimit: "한 도구의 경로 수 상한(64)을 넘어 더 만들지 않았습니다.",
       pathCollision: "경로 표기가 다른 필드와 겹쳐 양쪽 다 제외했습니다.",
       noGround: "type·enum·범위를 하나도 읽지 못해 요구할 근거가 없습니다.",
+      unreadablePath: "이름에 '.' 이나 '[' 가 들어 경로로 읽으면 다른 자리를 가리켜 제외했습니다.",
     };
 
     const render = (fields: UnanalyzedField[]) =>
@@ -2234,11 +2235,11 @@ describe("커버리지 화면", () => {
         ]),
       );
 
-    it("일곱 사유가 각각 정해진 문장으로 나온다", () => {
+    it("여덟 사유가 각각 정해진 문장으로 나온다", () => {
       const reasons = Object.keys(REASONS) as UnanalyzedReason[];
       // 유니온이 늘면 이 수가 틀려진다. 위 표는 Record 라 컴파일이 먼저 깨지고, 이 줄은
-      // 표를 실수로 넓혔을 때의 두 번째 그물이다.
-      expect(reasons).toHaveLength(7);
+      // 표를 실수로 넓혔을 때의 두 번째 그물이다. #388 T4 가 unreadablePath 를 더해 8 이 됐다.
+      expect(reasons).toHaveLength(8);
       for (const reason of reasons) {
         const output = render([{ path: "f", reason }]);
         expect(output, `사유 ${reason} 의 문장이 화면에 없습니다`).toContain(REASONS[reason]);

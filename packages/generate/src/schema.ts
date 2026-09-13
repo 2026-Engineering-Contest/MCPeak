@@ -12,6 +12,10 @@ export type GenerateTestsErrorCode =
   | "OUTPUT_FILE_EXISTS"
   | "UNSUPPORTED_SCHEMA"
   | "INVALID_SCHEMA_CONSTRAINT" // 제약 키워드의 값이 깨졌거나 서로 모순이다
+  // 픽스처 값이 도구 선언을 만족하지 않는다. `UNSUPPORTED_SCHEMA` 를 쓰지 않는 이유는
+  // 그 코드가 baseline.ts 의 **툴 단위 건너뛰기** 신호이기 때문이다(ADR-0036). 픽스처 오타
+  // 때문에 툴이 조용히 건너뛰어지면 안 되고, 사용자가 고칠 곳도 스키마가 아니라 픽스처다.
+  | "INVALID_FIXTURE_VALUE"
   | "GENERATED_SUITE_INVALID";
 
 /** 생성 전에 발견한 입력 또는 스키마 오류. */

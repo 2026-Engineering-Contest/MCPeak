@@ -269,7 +269,10 @@ describe.sequential("generate 실제 weather-server", () => {
       interactive: true,
       choose: vi.fn(async () => choices.shift() ?? "cancel"),
       input: vi.fn(async () => inputs.shift() ?? ""),
-      confirm: vi.fn(async () => true),
+      // 픽스처 저장 질문만 거절한다. 이 테스트가 보려는 것은 교정한 값이 저장된 명세에
+      // 남는지이지 픽스처 파일이 아니다. 예로 답하면 실행 cwd 에 진짜 픽스처 파일을
+      // 만들어 두고 끝난다(#390). 다른 질문은 그대로 예로 답한다.
+      confirm: vi.fn(async (message: string) => message !== "저장할까요?"),
       write: vi.fn(),
     };
     try {

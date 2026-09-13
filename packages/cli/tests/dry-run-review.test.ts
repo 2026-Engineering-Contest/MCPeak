@@ -190,6 +190,8 @@ const attempt = (field: string, value: RepairAttempt["value"]): RepairAttempt =>
   field,
   value,
   passed: false,
+  // 이 화면은 출처를 안 쓴다. 값과 통과 여부만 읽는다. 기본값을 둬서 타입만 맞춘다(#390).
+  origin: "humanRepaired",
 });
 
 const historyOf = (

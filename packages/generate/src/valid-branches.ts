@@ -176,6 +176,12 @@ export function buildValidBranchCases(options: {
     if ("const" in schema) continue;
 
     if (!required.has(field)) {
+      // 픽스처가 준 선택 필드는 기준 정상 입력에 이미 있다. "있음" 케이스를 또 만들면 같은
+      // 것을 두 번 보고, 게다가 지어낸 값이 사용자가 보증한 값을 덮는다(#390).
+      //
+      // skip 을 넣지 않는다. 안 밟은 분기가 아니라 **기준 케이스가 이미 밟은** 분기다.
+      // 화면에 "안 밟았다" 로 찍히면 거짓이다. 위의 const 를 continue 로 넘기는 줄과 같다.
+      if (Object.hasOwn(happyInput, field)) continue;
       // 선택 필드는 "있음" 케이스만 만든다. 값 분기까지 만들면 한 케이스가 "필드가 있다" 와
       // "값이 저것이다" 를 동시에 검증해, 실패했을 때 둘 중 무엇 때문인지 알 수 없다.
       if (isFormatPlaceholder(schema)) {

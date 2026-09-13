@@ -1,7 +1,12 @@
 import type { ToolDef } from "@mcpeak/core";
 import { expectedIsError } from "./case-expectation.js";
-import type { ContractRange } from "./contract-range.js";
-import { rangeYieldsViolation, violatesRange } from "./contract-range.js";
+import type { ContractRange, ContractRangeBound } from "./contract-range.js";
+import {
+  hasUpperBound,
+  hasUsableLowerBound,
+  rangeYieldsViolation,
+  violatedBounds,
+} from "./contract-range.js";
 import type { DeclaredType, NormalizedInputSchema } from "./input-schema.js";
 import { analyzeInputSchema, judgeField, nullSatisfiesField } from "./input-schema.js";
 import { byCodeUnit } from "./ordering.js";
@@ -20,7 +25,7 @@ export type ContractAxisKind =
   | "RANGE_VIOLATION" // 선언된 범위 밖 값을 거절한다
   | "UNDECLARED_FIELD"; // 선언에 없는 필드를 넣은 입력을 거절한다
 
-/** 축 한 개. 같은 툴 안에서 (kind, field) 쌍은 유일하다. */
+/** 축 한 개. 같은 툴 안에서 (kind, field, bound) 셋은 유일하다. */
 export interface ContractAxis {
   readonly kind: ContractAxisKind;
   /** 서버가 선언한 툴 이름. 원문 그대로다. */
@@ -33,6 +38,12 @@ export interface ContractAxis {
   readonly declaredEnum: readonly JsonValue[] | null;
   /** 선언된 범위. RANGE_VIOLATION 에서만 값이 있고 그 밖에는 null 이다. */
   readonly declaredRange: ContractRange | null;
+  /**
+   * 범위의 어느 쪽 경계를 보는 축인지. RANGE_VIOLATION 에서만 값이 있고 그 밖에는 null 이다.
+   * 축 정체성은 이제 (kind, field, bound) 다. 이것을 키에서 빼면 한쪽 경계만 검사한 스위트가
+   * 범위 전체를 덮은 것으로 세어진다(이슈 #387).
+   */
+  readonly bound: ContractRangeBound | null;
 }
 
 /**
@@ -99,7 +110,16 @@ export function deriveContractAxes(
     declaredType: ContractDeclaredType | null,
     declaredEnum: readonly JsonValue[] | null,
     declaredRange: ContractRange | null = null,
-  ): ContractAxis => ({ kind, tool: tool.name, field, declaredType, declaredEnum, declaredRange });
+    bound: ContractRangeBound | null = null,
+  ): ContractAxis => ({
+    kind,
+    tool: tool.name,
+    field,
+    declaredType,
+    declaredEnum,
+    declaredRange,
+    bound,
+  });
 
   const axes: ContractAxis[] = [axis("HAPPY_PATH", null, null, null)];
   // required 는 서버가 준 순서다. 정렬해서 쓴다. cases 배열 순서는 지문에 들어가는 의미이므로
@@ -122,9 +142,16 @@ export function deriveContractAxes(
   // ENUM_VIOLATION 으로 먼저 잡힌다(violatedAxes 의 단락 순서). 그러면 이 축은 어떤 케이스로도
   // 안 덮여 영원히 못 채우는 빈틈이 분모에 남는다. enum 이 이미 허용 집합을 못 박고 있으므로
   // 거절 검증은 ENUM_VIOLATION 축이 대신한다.
-  for (const [name, field] of analysis.schema.fields)
-    if (field.enumValues === null && rangeYieldsViolation(field.range))
-      axes.push(axis("RANGE_VIOLATION", name, null, null, field.range));
+  //
+  // 한 필드의 상한과 하한은 서로 다른 축이다. 한쪽만 검사한 스위트가 범위 전체를 덮은 것으로
+  // 세어지면 안 된다(이슈 #387). 한 필드 안에서는 lower 가 upper 보다 먼저다.
+  for (const [name, field] of analysis.schema.fields) {
+    if (field.enumValues !== null || field.range === null) continue;
+    if (hasUsableLowerBound(field.range))
+      axes.push(axis("RANGE_VIOLATION", name, null, null, field.range, "lower"));
+    if (hasUpperBound(field.range))
+      axes.push(axis("RANGE_VIOLATION", name, null, null, field.range, "upper"));
+  }
   // additionalProperties 가 정확히 false 일 때만이다. JSON Schema 의 기본값이 "허용" 이라
   // 없거나 true 이거나 스키마 객체면 거절을 기대할 근거가 없다(#427). field 는 null 이다.
   // 선언 밖 키가 여럿이어도 축은 하나라 필드로 나눌 수 없고, 나눌 이유도 없다.
@@ -149,7 +176,16 @@ const contractAxis = (
   declaredType: ContractDeclaredType | null,
   declaredEnum: readonly JsonValue[] | null,
   declaredRange: ContractRange | null = null,
-): ContractAxis => ({ kind, tool: tool.name, field, declaredType, declaredEnum, declaredRange });
+  bound: ContractRangeBound | null = null,
+): ContractAxis => ({
+  kind,
+  tool: tool.name,
+  field,
+  declaredType,
+  declaredEnum,
+  declaredRange,
+  bound,
+});
 
 /** 입력이 선언을 어긴 지점을 축으로 바꾼다. §4.4 순서로 낸다. */
 function violatedAxes(
@@ -184,10 +220,11 @@ function violatedAxes(
       rangeYieldsViolation(field.range) &&
       // nullable 필드의 null 은 선언을 지킨 값이다. 범위 판정은 judgeField 를 거치지 않으므로
       // 여기서 따로 걸러야 한다(#426).
-      !nullSatisfiesField(field, input[name] as JsonValue) &&
-      violatesRange(field.range, input[name] as JsonValue)
+      !nullSatisfiesField(field, input[name] as JsonValue)
     )
-      rangeAxes.push(contractAxis(tool, "RANGE_VIOLATION", name, null, null, field.range));
+      // 어긴 쪽 경계의 축만 덮는다. 만족 불가능한 선언에서는 한 값이 양쪽을 다 덮는다.
+      for (const bound of violatedBounds(field.range, input[name] as JsonValue))
+        rangeAxes.push(contractAxis(tool, "RANGE_VIOLATION", name, null, null, field.range, bound));
   }
   // 선언 밖 키가 여럿이어도 축은 하나다. field 가 null 이라 구분할 수 없고 구분할 이유도 없다.
   const undeclaredAxes: ContractAxis[] =

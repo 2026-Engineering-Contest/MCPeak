@@ -24,6 +24,7 @@ describe("deriveContractAxes", () => {
         declaredType: null,
         declaredEnum: null,
         declaredRange: null,
+        bound: null,
       },
       {
         kind: "REQUIRED_OMITTED",
@@ -32,6 +33,7 @@ describe("deriveContractAxes", () => {
         declaredType: null,
         declaredEnum: null,
         declaredRange: null,
+        bound: null,
       },
       {
         kind: "TYPE_VIOLATION",
@@ -40,6 +42,7 @@ describe("deriveContractAxes", () => {
         declaredType: "string",
         declaredEnum: null,
         declaredRange: null,
+        bound: null,
       },
     ]);
   });
@@ -284,6 +287,7 @@ describe("matchCoveredAxes", () => {
         declaredType: null,
         declaredEnum: null,
         declaredRange: null,
+        bound: null,
       },
     ]);
   });
@@ -302,6 +306,7 @@ describe("matchCoveredAxes", () => {
         declaredType: null,
         declaredEnum: null,
         declaredRange: null,
+        bound: null,
       },
     ]);
   });
@@ -319,6 +324,7 @@ describe("matchCoveredAxes", () => {
         declaredType: "string",
         declaredEnum: null,
         declaredRange: null,
+        bound: null,
       },
     ]);
   });
@@ -336,6 +342,7 @@ describe("matchCoveredAxes", () => {
         declaredType: null,
         declaredEnum: ["c", "f"],
         declaredRange: null,
+        bound: null,
       },
     ]);
   });
@@ -462,10 +469,12 @@ describe("RANGE_VIOLATION 축 도출", () => {
     expect(rangeAxes({ count: { type: "integer" } }, ["count"])).toHaveLength(0);
   });
 
-  it("한 필드에 축은 하나다", () => {
+  it("한 필드에 상·하한이 함께 있으면 축이 둘이다", () => {
     expect(
-      rangeAxes({ count: { type: "integer", minimum: 1, maximum: 10 } }, ["count"]),
-    ).toHaveLength(1);
+      rangeAxes({ count: { type: "integer", minimum: 1, maximum: 10 } }, ["count"]).map(
+        (a) => a.bound,
+      ),
+    ).toEqual(["lower", "upper"]);
   });
 
   it("기존 축은 declaredRange 가 null 이다", () => {
@@ -493,6 +502,122 @@ describe("RANGE_VIOLATION 축 도출", () => {
       "RANGE_VIOLATION:a",
       "RANGE_VIOLATION:b",
     ]);
+  });
+});
+
+describe("RANGE_VIOLATION 축이 상·하한으로 갈린다", () => {
+  const ranged = (props: Record<string, unknown>, required: string[] = []): ToolDef =>
+    tool("t", { type: "object", required, properties: props });
+  const bounds = (props: Record<string, unknown>, required: string[] = []) =>
+    deriveContractAxes(ranged(props, required))
+      .axes.filter((a) => a.kind === "RANGE_VIOLATION")
+      .map((a) => a.bound);
+
+  it("minimum 과 maximum 이 함께 있으면 축이 둘이고 lower 가 먼저다", () => {
+    const axes = deriveContractAxes(
+      ranged({ n: { type: "integer", minimum: 1, maximum: 10 } }, ["n"]),
+    ).axes.filter((a) => a.kind === "RANGE_VIOLATION");
+    expect(axes.map((a) => a.bound)).toEqual(["lower", "upper"]);
+    expect(axes.map((a) => a.field)).toEqual(["n", "n"]);
+    expect(axes[0]?.declaredRange).toEqual(axes[1]?.declaredRange);
+  });
+
+  it("minimum 만 있으면 lower 축 하나다", () => {
+    expect(bounds({ n: { type: "integer", minimum: 1 } })).toEqual(["lower"]);
+  });
+
+  it("maximum 만 있으면 upper 축 하나다", () => {
+    expect(bounds({ n: { type: "integer", maximum: 10 } })).toEqual(["upper"]);
+  });
+
+  it("minItems: 0 단독은 축을 만들지 않는다", () => {
+    expect(bounds({ xs: { type: "array", minItems: 0 } })).toEqual([]);
+  });
+
+  it("maxItems: 0 은 upper 축을 만든다", () => {
+    expect(bounds({ xs: { type: "array", maxItems: 0 } })).toEqual(["upper"]);
+  });
+
+  it("enum 이 함께 선언되면 범위 축을 만들지 않는다", () => {
+    expect(bounds({ n: { type: "integer", enum: [1, 5], minimum: 1, maximum: 10 } })).toEqual([]);
+  });
+
+  it("RANGE_VIOLATION 이 아닌 축의 bound 는 전부 null 이다", () => {
+    const axes = deriveContractAxes(
+      ranged({ n: { type: "integer", minimum: 1, maximum: 10 } }, ["n"]),
+    ).axes;
+    for (const axis of axes) if (axis.kind !== "RANGE_VIOLATION") expect(axis.bound).toBeNull();
+  });
+});
+
+describe("matchCoveredAxes 가 위반한 쪽 축만 덮는다", () => {
+  const bounded = tool("t", {
+    type: "object",
+    required: ["n"],
+    properties: { n: { type: "integer", minimum: 1, maximum: 10 } },
+  });
+  const rejection = (input: JsonObject, toolDef: ToolDef = bounded) =>
+    matchCoveredAxes({
+      testCase: {
+        id: "c",
+        name: "c",
+        operation: { type: "callTool", tool: "t", input },
+        assertions: [{ type: "isError", expected: true }],
+      },
+      tool: toolDef,
+    });
+
+  it("하한 미만 입력은 lower 축만 덮는다", () => {
+    expect(rejection({ n: 0 }).map((a) => [a.kind, a.bound])).toEqual([
+      ["RANGE_VIOLATION", "lower"],
+    ]);
+  });
+
+  it("상한 초과 입력은 upper 축만 덮는다", () => {
+    expect(rejection({ n: 11 }).map((a) => [a.kind, a.bound])).toEqual([
+      ["RANGE_VIOLATION", "upper"],
+    ]);
+  });
+
+  it("범위 안 입력은 어느 범위 축도 안 덮는다", () => {
+    const testCase: TestCaseSpec = {
+      id: "c",
+      name: "c",
+      operation: { type: "callTool", tool: "t", input: { n: 5 } },
+      assertions: [{ type: "isError", expected: false }],
+    };
+    expect(matchCoveredAxes({ testCase, tool: bounded }).map((a) => a.kind)).toEqual([
+      "HAPPY_PATH",
+    ]);
+  });
+
+  it("만족 불가능한 선언에서는 한 값이 양쪽을 덮는다", () => {
+    const impossible = tool("t", {
+      type: "object",
+      required: ["n"],
+      properties: { n: { type: "number", minimum: 10, maximum: 1 } },
+    });
+    expect(rejection({ n: 5 }, impossible).map((a) => a.bound)).toEqual(["lower", "upper"]);
+  });
+
+  it("문자열 길이도 방향이 갈린다", () => {
+    const strings = tool("t", {
+      type: "object",
+      required: ["s"],
+      properties: { s: { type: "string", minLength: 3, maxLength: 5 } },
+    });
+    expect(rejection({ s: "ab" }, strings).map((a) => a.bound)).toEqual(["lower"]);
+    expect(rejection({ s: "abcdef" }, strings).map((a) => a.bound)).toEqual(["upper"]);
+  });
+
+  it("배열 길이도 방향이 갈린다", () => {
+    const arrays = tool("t", {
+      type: "object",
+      required: ["xs"],
+      properties: { xs: { type: "array", minItems: 2, maxItems: 3 } },
+    });
+    expect(rejection({ xs: [1] }, arrays).map((a) => a.bound)).toEqual(["lower"]);
+    expect(rejection({ xs: [1, 2, 3, 4] }, arrays).map((a) => a.bound)).toEqual(["upper"]);
   });
 });
 
@@ -582,6 +707,7 @@ describe("nullable anyOf 필드 (#426)", () => {
         declaredType: "string",
         declaredEnum: null,
         declaredRange: null,
+        bound: null,
       },
     ]);
   });
@@ -597,6 +723,7 @@ describe("nullable anyOf 필드 (#426)", () => {
         declaredType: "integer",
         declaredEnum: null,
         declaredRange: null,
+        bound: null,
       },
     ]);
   });
@@ -700,6 +827,7 @@ describe("UNDECLARED_FIELD 축 (#427)", () => {
       declaredType: null,
       declaredEnum: null,
       declaredRange: null,
+      bound: null,
     });
   });
 

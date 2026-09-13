@@ -92,27 +92,54 @@ export const rangeYieldsViolation = (range: ContractRange | null): range is Cont
 const charLength = (value: string): number => Array.from(value).length;
 
 /**
- * 값이 선언된 범위를 벗어나는지. 값의 타입에 해당하지 않는 항목은 보지 않는다.
- * 숫자가 아닌 값에 minimum 을 적용하면 타입 위반과 범위 위반이 겹쳐 보고된다.
+ * 범위의 어느 쪽 경계인지. 축 정체성 `(kind, field, bound)` 의 마지막 조각이다(이슈 #387).
+ * 이 타입은 generate 가 소비한다(ADR-0009 승인 목록 대상).
  */
-export function violatesRange(range: ContractRange, value: JsonValue): boolean {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    if (range.minimum !== null && value < range.minimum) return true;
-    if (range.maximum !== null && value > range.maximum) return true;
-    if (range.exclusiveMinimum !== null && value <= range.exclusiveMinimum) return true;
-    if (range.exclusiveMaximum !== null && value >= range.exclusiveMaximum) return true;
-    return false;
-  }
+export type ContractRangeBound = "lower" | "upper";
+
+/**
+ * 값이 선언된 범위의 어느 쪽을 벗어나는지. 값의 타입에 해당하지 않는 항목은 보지 않는다.
+ * 숫자가 아닌 값에 minimum 을 적용하면 타입 위반과 범위 위반이 겹쳐 보고된다.
+ *
+ * 반환 순서는 항상 `["lower", "upper"]` 의 부분열이다. 결정론성 때문이다.
+ * 만족 불가능한 선언(minimum 이 maximum 보다 큰 경우)에서는 한 값이 양쪽을 다 어긴다.
+ * runner 는 해석기이지 검증기가 아니므로 그 선언을 여기서 거절하지 않는다.
+ */
+export function violatedBounds(
+  range: ContractRange,
+  value: JsonValue,
+): readonly ContractRangeBound[] {
+  const bounds: ContractRangeBound[] = [];
+  const push = (lower: boolean, upper: boolean): readonly ContractRangeBound[] => {
+    if (lower) bounds.push("lower");
+    if (upper) bounds.push("upper");
+    return bounds;
+  };
+  if (typeof value === "number" && Number.isFinite(value))
+    return push(
+      (range.minimum !== null && value < range.minimum) ||
+        (range.exclusiveMinimum !== null && value <= range.exclusiveMinimum),
+      (range.maximum !== null && value > range.maximum) ||
+        (range.exclusiveMaximum !== null && value >= range.exclusiveMaximum),
+    );
   if (typeof value === "string") {
     const length = charLength(value);
-    if (range.minLength !== null && length < range.minLength) return true;
-    if (range.maxLength !== null && length > range.maxLength) return true;
-    return false;
+    return push(
+      range.minLength !== null && length < range.minLength,
+      range.maxLength !== null && length > range.maxLength,
+    );
   }
-  if (Array.isArray(value)) {
-    if (range.minItems !== null && value.length < range.minItems) return true;
-    if (range.maxItems !== null && value.length > range.maxItems) return true;
-    return false;
-  }
-  return false;
+  if (Array.isArray(value))
+    return push(
+      range.minItems !== null && value.length < range.minItems,
+      range.maxItems !== null && value.length > range.maxItems,
+    );
+  return bounds;
 }
+
+/**
+ * 값이 선언된 범위를 벗어나는지. 방향을 알 필요가 없는 호출부(`input-contract.ts`)를 위해
+ * 남긴다.
+ */
+export const violatesRange = (range: ContractRange, value: JsonValue): boolean =>
+  violatedBounds(range, value).length > 0;

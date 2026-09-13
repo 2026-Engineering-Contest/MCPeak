@@ -4,8 +4,9 @@ import { deepFreeze, sha256 } from "./canonical.js";
 import { type CoverageResult, computeCoverage } from "./coverage.js";
 import { safeBaseName } from "./filename.js";
 import { analyzeToolProvenance, type ToolProvenance } from "./provenance.js";
-import { buildGeneratedCases, type OutputContractSkip } from "./render.js";
+import { buildGeneratedCases, type OutputContractSkip, toSuiteCase } from "./render.js";
 import { GenerateTestsError } from "./schema.js";
+import type { ValidBranchSkip } from "./valid-branches.js";
 
 /**
  * 위반 케이스를 기본 생성하기 시작해 v2로 올린다(ADR-0022). 이 값이 baselineFingerprint
@@ -46,6 +47,16 @@ export interface BaselineGenerationResult {
   readonly skippedTools: readonly SkippedTool[];
   /** 입력 케이스는 만들었지만 출력 계약은 안전하게 변환하지 못한 툴. */
   readonly outputContractSkips: readonly OutputContractSkip[];
+  /** 밟지 않은 정상 분기. 툴 처리 순서다. 새로 정렬하지 않는다(이슈 #401). */
+  readonly validBranchSkips: readonly ValidBranchSkip[];
+  /**
+   * 케이스별 고정 필드. 값이 바뀌면 그 케이스의 목적이 사라지는 필드다.
+   *
+   * **명세에는 실리지 않는다.** `TestSuiteSpec` 은 runner 공개 타입이라 키를 더할 수 없다.
+   * 그래서 케이스 밖 맵으로 함께 낸다. `preparePreFillRequest` 가 이것을 받아 그 필드를
+   * AI 에게 묻지 않는다(설계서 §5.5). 고정 필드가 없는 케이스는 키 자체가 없다.
+   */
+  readonly pinnedFieldsByCase: Readonly<Record<string, readonly string[]>>;
   /**
    * 툴별 값 출처. **명세 파일에는 들어가지 않는다.** 들어가면 승인 지문의 계산 대상이 되고,
    * 우리 판정 규칙이 바뀔 때마다 사용자 명세의 지문이 흔들려 "명세가 바뀌었다" 경고가 일상이
@@ -98,6 +109,8 @@ export function createBaselineSuite(
   const skippedTools: SkippedTool[] = [];
   const generatedTools: ToolDef[] = [];
   const outputContractSkips: OutputContractSkip[] = [];
+  const validBranchSkips: ValidBranchSkip[] = [];
+  const pinnedFieldsByCase: Record<string, readonly string[]> = {};
   const cases = tools.flatMap((tool, index) => {
     const initialName = safeBaseName(typeof tool?.name === "string" ? tool.name : "", index);
     let baseName = initialName;
@@ -109,7 +122,11 @@ export function createBaselineSuite(
       generatedTools.push(tool);
       if (built.outputContractSkip !== undefined)
         outputContractSkips.push(built.outputContractSkip);
-      return built.cases;
+      validBranchSkips.push(...built.validBranchSkips);
+      // 고정 필드는 명세로 들어가기 전에 읽는다. toSuiteCase 가 벗긴 뒤에는 사라진다.
+      for (const item of built.cases)
+        if (item.pinnedFields.length > 0) pinnedFieldsByCase[item.id] = item.pinnedFields;
+      return built.cases.map(toSuiteCase);
     } catch (error) {
       // 미지원 키워드만 툴 단위로 격리한다(도그푸딩 실측: 툴 하나가 서버 전체를 막았다).
       // 다른 코드는 입력 자체의 결함이라 종전대로 전체를 멈춘다.
@@ -156,6 +173,8 @@ export function createBaselineSuite(
     coverage: computeCoverage({ suite, tools: generatedTools }),
     skippedTools,
     outputContractSkips,
+    validBranchSkips,
+    pinnedFieldsByCase,
     provenance: generatedTools.map((tool) => analyzeToolProvenance(tool)),
   };
   return deepFreeze(result);

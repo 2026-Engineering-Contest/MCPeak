@@ -41,6 +41,20 @@ export interface GeneratedCase {
     ),
     ...{ readonly type: "structuredContentMatchesSchema"; readonly schema: ResponseSchema }[],
   ];
+  /**
+   * 이 케이스를 이 케이스이게 하는 필드. 값이 바뀌면 케이스의 목적이 사라진다.
+   *
+   * AI 사전보완은 이 필드를 채울 후보에서 뺀다. `unit` 을 `"fahrenheit"` 로 고정한 케이스에
+   * `"celsius"` 를 넣으면 기준 케이스와 같아지고, 그 케이스가 잡으려던 결함이 사라진다.
+   * 나머지 필드는 정상적으로 제안을 받는다. `city` 같은 근거 없는 값은 채워져야 한다.
+   *
+   * 기준 정상 케이스와 위반 케이스는 빈 배열이다.
+   *
+   * **명세에는 실리지 않는다.** runner 의 케이스 검증이 모르는 키를 거절하므로
+   * (`spec/validation.ts` 의 `unknowns`) `render.ts` 의 `toSuiteCase` 가 벗겨낸다.
+   * 이 필드는 생성 단계 안에서만 산다.
+   */
+  readonly pinnedFields: readonly string[];
 }
 
 /**
@@ -271,6 +285,9 @@ export function buildViolationCases(options: {
     name,
     operation: { type: "callTool", tool: tool.name, input },
     assertions: [{ type: "isError", expected: true }],
+    // 위반 케이스는 사전보완이 애초에 안 고른다(isHappyPath 가 isError:false 만 본다).
+    // 고정할 것이 없다.
+    pinnedFields: [],
   });
 
   const cases: GeneratedCase[] = [];
@@ -404,6 +421,9 @@ export function buildUpperBoundaryCases(options: {
           ? []
           : [{ type: "structuredContentMatchesSchema" as const, schema: responseSchema }]),
       ],
+      // 경계값 자체가 이 케이스의 정체성이다. 사전보완이 이 값을 바꾸면 상한 off-by-one 이
+      // 있는 서버에서 케이스가 통과해 결함이 사라진다(설계서 §5.5).
+      pinnedFields: [field],
     });
   }
   return cases;

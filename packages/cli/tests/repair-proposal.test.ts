@@ -76,6 +76,7 @@ const targetOf = (
     tool: "get_weather",
     input: spec.operation.type === "callTool" ? spec.operation.input : {},
     serverMessage,
+    failureLine: "isError  정상 응답을 기대했지만 오류 응답을 받았습니다.",
   };
 };
 

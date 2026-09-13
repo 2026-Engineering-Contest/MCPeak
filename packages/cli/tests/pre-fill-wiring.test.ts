@@ -33,23 +33,43 @@ const preFill: PreFillResult = {
   discarded: [],
 };
 
-/** 케이스 입력의 v 값으로 baseline·AI 회차를 구분해 판정을 돌려준다. */
+/** baseline 에 listTools 케이스를 하나 더한 명세. callTool 이 아닌 제안을 제외로 세는지 본다. */
+const withListToolsCase: TestSuiteSpec = {
+  ...baselineSuite,
+  cases: [
+    ...baselineSuite.cases,
+    { id: "list-a", name: "list-a", operation: { type: "listTools" }, assertions: [] },
+  ],
+};
+
+/**
+ * 케이스 입력으로 baseline·AI 회차를 구분해 판정을 돌려준다.
+ * v 가 "AI" 이거나 baseline 에 없는 expression 필드가 얹혀 있으면 AI 회차다.
+ */
 const fakeDryRun =
-  (options: { baselinePasses: boolean; aiPasses: boolean; abort?: boolean }) =>
+  (options: {
+    baselinePasses: boolean;
+    aiPasses: boolean;
+    abort?: boolean;
+    /** AI 회차의 실패 상세. 서버 위반 줄 추출을 검증할 때 쓴다. */
+    aiDetail?: string;
+  }) =>
   async (o: { suite: TestSuiteSpec }): Promise<DryRunResult> => {
-    const isAi = o.suite.cases.some(
-      (item) =>
-        item.operation.type === "callTool" &&
-        (item.operation.input as JsonObject | undefined)?.v === "AI",
-    );
+    const isAi = o.suite.cases.some((item) => {
+      if (item.operation.type !== "callTool") return false;
+      const input = item.operation.input as JsonObject | undefined;
+      return input?.v === "AI" || input?.expression !== undefined;
+    });
     const passes = isAi ? options.aiPasses : options.baselinePasses;
     const result: DryRunResult = {
       outcomes: o.suite.cases.map((item) => ({
         caseId: item.id,
         caseName: item.name,
         status: passes ? ("passed" as const) : ("failed" as const),
-        detail: "",
+        detail: isAi ? (options.aiDetail ?? "") : "",
         rejectionBasis: "notApplicable" as const,
+        operationFailed: false,
+        failureLine: "",
       })),
       ...(options.abort === true
         ? { aborted: { reason: "connectionLost" as const, detail: "끊김" } }
@@ -141,6 +161,8 @@ describe("후보 채택 규칙", () => {
         status: item.id === "other" ? ("passed" as const) : ("failed" as const),
         detail: "",
         rejectionBasis: "notApplicable" as const,
+        operationFailed: false,
+        failureLine: "",
       })),
     });
     const result = await applyPreFill({
@@ -187,6 +209,9 @@ describe("후보 채택 규칙", () => {
     });
     expect(dryRun).not.toHaveBeenCalled();
     expect(result.cases).toEqual([]);
+    expect(result.excluded).toEqual([
+      { caseId: "ghost", field: "v", reason: "명세에 없는 케이스" },
+    ]);
   });
 
   it("대상 케이스만 두 번 실행한다", async () => {
@@ -197,6 +222,120 @@ describe("후보 채택 규칙", () => {
       expect((call[0] as { suite: TestSuiteSpec }).suite.cases.map((item) => item.id)).toEqual([
         "c",
       ]);
+  });
+
+  it("보류 케이스에 제안 값과 서버 위반 줄을 싣는다", async () => {
+    const result = await applyPreFill({
+      client,
+      preFill: { accepted: [{ caseId: "c", field: "expression", value: "2" }], discarded: [] },
+      baseline: baselineSuite,
+      dryRun: fakeDryRun({
+        baselinePasses: false,
+        aiPasses: false,
+        aiDetail: [
+          "    isError  정상 응답을 기대했지만 오류 응답을 받았습니다.",
+          "    → 식을 해석할 수 없습니다: '2'",
+          "    해결: 툴 입력값과 서버의 오류 응답을 확인하세요.",
+        ].join("\n"),
+      }),
+    });
+    expect(result.cases[0]?.proposedFields).toEqual([{ field: "expression", value: "2" }]);
+    expect(result.cases[0]?.serverMessage).toBe("식을 해석할 수 없습니다: '2'");
+  });
+
+  it("보류가 아닌 케이스에는 제안 값 키가 없다", async () => {
+    const result = await applyPreFill({
+      client,
+      preFill,
+      baseline: baselineSuite,
+      dryRun: fakeDryRun({ baselinePasses: false, aiPasses: true }),
+    });
+    expect("proposedFields" in (result.cases[0] ?? {})).toBe(false);
+    expect("serverMessage" in (result.cases[0] ?? {})).toBe(false);
+  });
+
+  it("위반 줄이 없으면 첫 본문 줄을 서버 응답으로 쓴다", async () => {
+    const result = await applyPreFill({
+      client,
+      preFill,
+      baseline: baselineSuite,
+      dryRun: fakeDryRun({
+        baselinePasses: false,
+        aiPasses: false,
+        aiDetail: "    툴 'x' 호출 중 오류가 발생했습니다.",
+      }),
+    });
+    expect(result.cases[0]?.serverMessage).toBe("툴 'x' 호출 중 오류가 발생했습니다.");
+  });
+
+  it("detail 이 비면 서버 응답이 빈 문자열이다", async () => {
+    const result = await applyPreFill({
+      client,
+      preFill,
+      baseline: baselineSuite,
+      dryRun: fakeDryRun({ baselinePasses: false, aiPasses: false }),
+    });
+    expect(result.cases[0]?.serverMessage).toBe("");
+  });
+
+  it("callTool 이 아닌 케이스의 제안은 제외로 센다", async () => {
+    const dryRun = vi.fn();
+    const result = await applyPreFill({
+      client,
+      preFill: { accepted: [{ caseId: "list-a", field: "query", value: "AI" }], discarded: [] },
+      baseline: withListToolsCase,
+      dryRun,
+    });
+    expect(result.excluded).toEqual([
+      { caseId: "list-a", field: "query", reason: "callTool 이 아닌 케이스" },
+    ]);
+    expect(result.cases).toEqual([]);
+    expect(result.adopted).toBe(0);
+    expect(result.notAdopted).toBe(0);
+  });
+
+  it("명세에 없는 케이스의 제안은 제외로 센다", async () => {
+    const result = await applyPreFill({
+      client,
+      preFill: { accepted: [{ caseId: "ghost", field: "v", value: "AI" }], discarded: [] },
+      baseline: baselineSuite,
+      dryRun: vi.fn(),
+    });
+    expect(result.excluded[0]?.reason).toBe("명세에 없는 케이스");
+  });
+
+  it("제안이 전부 제외되면 서버를 부르지 않는다", async () => {
+    const dryRun = vi.fn();
+    await applyPreFill({
+      client,
+      preFill: {
+        accepted: [
+          { caseId: "ghost", field: "v", value: "AI" },
+          { caseId: "list-a", field: "query", value: "AI" },
+        ],
+        discarded: [],
+      },
+      baseline: withListToolsCase,
+      dryRun,
+    });
+    expect(dryRun).toHaveBeenCalledTimes(0);
+  });
+
+  it("정상 대상이 있으면 제외와 함께 센다", async () => {
+    const result = await applyPreFill({
+      client,
+      preFill: {
+        accepted: [
+          { caseId: "c", field: "v", value: "AI" },
+          { caseId: "list-a", field: "query", value: "AI" },
+        ],
+        discarded: [],
+      },
+      baseline: withListToolsCase,
+      dryRun: fakeDryRun({ baselinePasses: true, aiPasses: true }),
+    });
+    expect(result.cases.length).toBe(1);
+    expect(result.excluded.length).toBe(1);
   });
 });
 

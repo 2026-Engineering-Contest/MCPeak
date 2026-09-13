@@ -195,6 +195,47 @@ describe("runDryRun", () => {
     expect(result.outcomes.some((outcome) => outcome.status === "notRun")).toBe(false);
   });
 
+  it("호출이 던진 케이스는 operationFailed 가 참이다", async () => {
+    const suite = suiteOf([callCase("a", "add")]);
+    const result = await runDryRun({ client: fakeClient({ throwOn: "add" }), suite });
+    const outcome = result.outcomes[0];
+    expect(outcome?.operationFailed).toBe(true);
+    expect(outcome?.failureLine.startsWith("툴 '")).toBe(true);
+    expect(outcome?.failureLine).not.toContain("(건너뜀)");
+  });
+
+  it("단언만 실패한 케이스는 operationFailed 가 거짓이다", async () => {
+    // 호출은 끝났고 서버가 오류 응답을 돌려준 경우다. 입력값을 고치면 달라질 수 있다.
+    const suite = suiteOf([callCase("a", "get_weather")]);
+    const result = await runDryRun({
+      client: fakeClient({
+        responses: {
+          get_weather: { content: [{ type: "text", text: "거절" }], isError: true, raw: {} },
+        },
+      }),
+      suite,
+    });
+    const outcome = result.outcomes[0];
+    expect(outcome?.status).toBe("failed");
+    expect(outcome?.operationFailed).toBe(false);
+    expect(outcome?.failureLine.startsWith("isError")).toBe(true);
+  });
+
+  it("통과한 케이스는 failureLine 이 빈 문자열이다", async () => {
+    const suite = suiteOf([callCase("a", "get_weather")]);
+    const result = await runDryRun({ client: fakeClient(), suite });
+    expect(result.outcomes[0]?.failureLine).toBe("");
+    expect(result.outcomes[0]?.operationFailed).toBe(false);
+  });
+
+  it("failureLine 은 렌더 블록의 줄과 같다", async () => {
+    // 문장을 새로 만들지 않고 고르기만 한다는 사실을 블록과 맞춰 확인한다.
+    const suite = suiteOf([callCase("a", "add")]);
+    const result = await runDryRun({ client: fakeClient({ throwOn: "add" }), suite });
+    const outcome = result.outcomes[0];
+    expect(outcome?.detail.split("\n")[0]?.slice(4)).toBe(outcome?.failureLine);
+  });
+
   it("서버가 살아서 낸 툴 오류는 중단이 아니다", async () => {
     // 오류를 던진 호출과 죽은 서버는 다르다. 이것을 섞으면 툴 하나가 오류를 낼 때마다 시험
     // 실행이 통째로 중단되고, 사용자는 멀쩡한 뒤 케이스의 판정을 못 본다.

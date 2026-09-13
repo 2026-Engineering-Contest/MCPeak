@@ -1516,13 +1516,29 @@ async function runInteractiveReview(
             );
           }
           // 9. 입력값 교정(§4). 대상이 없으면 아무것도 묻지 않는다.
-          const targets = input.repair
+          // `--no-repair` 는 이 단계를 통째로 끈다. 고지도 안 찍는다.
+          const selection = input.repair
             ? selectRepairTargets({
                 suite: dryRunSuite,
                 outcomes: result.outcomes,
                 origins: originsOf(session),
               })
-            : [];
+            : { targets: [], thrown: [] };
+          // 못 고칠 실패를 교정 목록보다 먼저 말한다(설계 §4.2). 교정 대상이 0건이어도
+          // 찍는다. 못 고치는 실패가 있다는 사실은 대상 유무와 무관하다.
+          if (selection.thrown.length > 0) {
+            io.write(
+              `  교정 대상이 아닌 실패 ${selection.thrown.length}건 (호출 자체가 실패했습니다. 입력값 문제가 아닙니다)\n`,
+            );
+            for (const item of selection.thrown) {
+              io.write(`    ${item.caseName}\n`);
+              const body = item.serverMessage.split("\n").filter((line) => line !== "");
+              if (body.length === 0) io.write(`      ${item.failureLine}\n`);
+              else for (const line of body) io.write(`      → ${line}\n`);
+            }
+            io.write("\n");
+          }
+          const targets = selection.targets;
           let attempts: ReadonlyMap<string, readonly RepairAttempt[]> | undefined;
           let effective = result;
           if (targets.length > 0) {
@@ -2018,16 +2034,50 @@ export function renderPreFillSummary(options: {
   readonly notAdopted: number;
   /** `notAdopted` 중 baseline 값도 제안 값도 실패한 수. 아래에서 빼서 따로 적는다. */
   readonly held: number;
+  /** 보류 케이스마다 제안 값과 서버 응답. 보류 줄 아래에 블록으로 찍는다(설계 §4.1). */
+  readonly heldCases: readonly {
+    readonly caseId: string;
+    readonly proposedFields: readonly { readonly field: string; readonly value: JsonValue }[];
+    readonly serverMessage: string;
+  }[];
+  /** 실행 대상에 못 들어간 제안. 제안 하나마다 사유와 대상을 한 줄로 적는다. */
+  readonly excluded: readonly {
+    readonly caseId: string;
+    readonly field: string;
+    readonly reason: string;
+  }[];
   readonly discarded: readonly PreFillDiscard[];
 }): string {
-  const { toolCount, proposedToolCount, adopted, notAdopted, held, discarded } = options;
-  if (proposedToolCount === 0 && discarded.length === 0) return "";
+  const {
+    toolCount,
+    proposedToolCount,
+    adopted,
+    notAdopted,
+    held,
+    heldCases,
+    excluded,
+    discarded,
+  } = options;
+  if (proposedToolCount === 0 && discarded.length === 0 && excluded.length === 0) return "";
   const lines = [
     `AI 사전보완: 툴 ${toolCount}개 중 ${proposedToolCount}개에 값 제안을 받았습니다.`,
     `  채택 ${adopted} (실제 서버에서 baseline 값이 실패하고 제안 값이 통과)`,
     `  미채택 ${notAdopted - held} (baseline 값이 이미 통과)`,
   ];
-  if (held > 0) lines.push(`  보류 ${held} (baseline 값도 제안 값도 실패. 분류 화면에서 정합니다)`);
+  if (held > 0) {
+    lines.push(`  보류 ${held} (baseline 값도 제안 값도 실패. 분류 화면에서 정합니다)`);
+    for (const item of heldCases) {
+      const proposals = item.proposedFields
+        .map((p) => `${p.field}: ${JSON.stringify(p.value)}`)
+        .join(", ");
+      lines.push(`    ${item.caseId}  ${proposals}`);
+      // 서버 응답이 비면 화살표 줄을 안 찍는다. 관측하지 못한 것을 관측했다고 적지 않는다.
+      for (const line of item.serverMessage.split("\n").filter((s) => s !== ""))
+        lines.push(`      → ${line}`);
+    }
+  }
+  for (const item of excluded)
+    lines.push(`  제외 1 (${item.reason}: ${item.caseId}.${item.field})`);
   for (const item of discarded)
     lines.push(`  버림 1 (${item.reason}: ${item.caseId}.${item.field})`);
   return `${lines.join("\n")}\n`;
@@ -2188,6 +2238,14 @@ async function runPreFill(
       adopted: applied.adopted,
       notAdopted: applied.notAdopted,
       held: applied.held,
+      heldCases: applied.cases
+        .filter((item) => item.needsClassification)
+        .map((item) => ({
+          caseId: item.caseId,
+          proposedFields: item.proposedFields ?? [],
+          serverMessage: item.serverMessage ?? "",
+        })),
+      excluded: applied.excluded,
       discarded: dispatched.result.discarded,
     }),
   );

@@ -3188,6 +3188,65 @@ describe("generate 시험 실행 게이트", () => {
       );
     });
 
+    it("호출이 던진 실패는 교정 대상이 아니라 고지로 나온다", async () => {
+      // 호출 자체가 끝나지 못하면 입력값을 무엇으로 바꿔도 같은 자리에서 죽는다. 사람에게
+      // 물어 세 번 실패시키는 대신 못 고치는 실패라고 말한다(설계 §4.2).
+      const d = gateDeps({
+        choices: ["save"],
+        inputs: Array.from({ length: baselineCases.length }, () => "s"),
+        confirms: [true, true],
+        respond: () => {
+          throw new Error("툴 호출에 실패했습니다.", {
+            cause: new Error(
+              "MCP error -32602: Structured content does not match the tool's output schema",
+            ),
+          });
+        },
+      });
+      await runGenerateCommand(gateArgv, d.value);
+
+      expect(d.output()).toContain(
+        "교정 대상이 아닌 실패 1건 (호출 자체가 실패했습니다. 입력값 문제가 아닙니다)",
+      );
+      expect(d.output()).not.toContain("입력값이 거절된 것으로 보입니다");
+    });
+
+    it("--no-repair 면 교정 대상이 아닌 실패 고지도 안 찍는다", async () => {
+      // `--no-repair` 는 이 단계를 통째로 끄는 것이다. 고지만 남기면 끈 적이 없는 화면이 된다.
+      const d = gateDeps({
+        choices: ["save"],
+        inputs: Array.from({ length: baselineCases.length }, () => "s"),
+        confirms: [true, true],
+        respond: () => {
+          throw new Error("툴 호출에 실패했습니다.", {
+            cause: new Error("MCP error -32602: 스키마 불일치"),
+          });
+        },
+      });
+      await runGenerateCommand([...gateArgv, "--no-repair"], d.value);
+
+      expect(d.output()).not.toContain("교정 대상이 아닌 실패");
+    });
+
+    it("교정 대상이 0건이어도 던진 실패는 고지한다", async () => {
+      // 못 고치는 실패가 있다는 사실은 교정 대상 유무와 무관하다.
+      const d = gateDeps({
+        choices: ["save"],
+        inputs: Array.from({ length: baselineCases.length }, () => "s"),
+        confirms: [true, true],
+        respond: () => {
+          throw new Error("툴 호출에 실패했습니다.", {
+            cause: new Error("MCP error -32602: 스키마 불일치"),
+          });
+        },
+      });
+      await runGenerateCommand(gateArgv, d.value);
+
+      expect(d.output()).toContain("교정 대상이 아닌 실패 1건");
+      expect(d.output()).toContain("      → 원인: MCP error -32602: 스키마 불일치");
+      expect(d.output()).not.toContain("입력값이 거절된 것으로 보입니다");
+    });
+
     it("--no-repair 면 고지에 재호출 줄이 안 나온다", async () => {
       const d = gateDeps({ choices: ["save", "cancel"], confirms: [false] });
       await runGenerateCommand([...gateArgv, "--no-repair"], d.value);

@@ -31,7 +31,15 @@ describe("표 밖 format 건너뜀 고지", () => {
 });
 
 describe("사전보완 결과 요약", () => {
-  const base = { toolCount: 8, proposedToolCount: 5, adopted: 3, notAdopted: 2, held: 0 };
+  const base = {
+    toolCount: 8,
+    proposedToolCount: 5,
+    adopted: 3,
+    notAdopted: 2,
+    held: 0,
+    heldCases: [],
+    excluded: [],
+  };
 
   it("채택·미채택 수를 적는다", () => {
     const text = renderPreFillSummary({ ...base, discarded: [] });
@@ -85,9 +93,100 @@ describe("사전보완 결과 요약", () => {
         adopted: 0,
         notAdopted: 0,
         held: 0,
+        heldCases: [],
+        excluded: [],
         discarded: [],
       }),
     ).toBe("");
+  });
+
+  const heldEval = {
+    ...base,
+    adopted: 1,
+    notAdopted: 3,
+    held: 1,
+    discarded: [],
+  };
+
+  it("보류 케이스의 제안 값과 서버 응답을 보류 줄 아래에 찍는다", () => {
+    const text = renderPreFillSummary({
+      ...heldEval,
+      heldCases: [
+        {
+          caseId: "eval-a",
+          proposedFields: [{ field: "expression", value: "2" }],
+          serverMessage: "식을 해석할 수 없습니다: '2'",
+        },
+      ],
+    });
+    expect(text).toContain("    eval-a  expression: \"2\"\n      → 식을 해석할 수 없습니다: '2'\n");
+  });
+
+  it("서버 응답이 비면 화살표 줄을 안 찍는다", () => {
+    const text = renderPreFillSummary({
+      ...heldEval,
+      heldCases: [
+        {
+          caseId: "eval-a",
+          proposedFields: [{ field: "expression", value: "2" }],
+          serverMessage: "",
+        },
+      ],
+    });
+    expect(text).toContain('    eval-a  expression: "2"');
+    expect(text).not.toContain("→");
+  });
+
+  it("서버 응답이 여러 줄이면 줄마다 화살표를 찍는다", () => {
+    const text = renderPreFillSummary({
+      ...heldEval,
+      heldCases: [
+        {
+          caseId: "eval-a",
+          proposedFields: [{ field: "expression", value: "2" }],
+          serverMessage: "첫째 줄\n둘째 줄",
+        },
+      ],
+    });
+    expect(text).toContain("      → 첫째 줄\n      → 둘째 줄\n");
+    expect(text.split("→").length - 1).toBe(2);
+  });
+
+  it("제외가 있으면 사유와 대상을 찍는다", () => {
+    const text = renderPreFillSummary({
+      ...base,
+      excluded: [{ caseId: "list-a", field: "query", reason: "callTool 이 아닌 케이스" }],
+      discarded: [],
+    });
+    expect(text).toContain("  제외 1 (callTool 이 아닌 케이스: list-a.query)");
+  });
+
+  it("제외가 0건이면 제외 줄이 없다", () => {
+    expect(renderPreFillSummary({ ...base, discarded: [] })).not.toContain("제외");
+  });
+
+  it("제외만 있고 대상도 버림도 없으면 요약을 찍는다", () => {
+    const text = renderPreFillSummary({
+      toolCount: 3,
+      proposedToolCount: 0,
+      adopted: 0,
+      notAdopted: 0,
+      held: 0,
+      heldCases: [],
+      excluded: [{ caseId: "ghost", field: "v", reason: "명세에 없는 케이스" }],
+      discarded: [],
+    });
+    expect(text).not.toBe("");
+    expect(text).toContain("제외 1 (명세에 없는 케이스: ghost.v)");
+  });
+
+  it("제외 줄이 버림 줄보다 앞이다", () => {
+    const text = renderPreFillSummary({
+      ...base,
+      excluded: [{ caseId: "list-a", field: "query", reason: "callTool 이 아닌 케이스" }],
+      discarded: [{ caseId: "search-a", field: "cursor", reason: "표 밖 format" }],
+    });
+    expect(text.indexOf("제외")).toBeLessThan(text.indexOf("버림"));
   });
 });
 

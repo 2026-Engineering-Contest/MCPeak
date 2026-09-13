@@ -45,8 +45,9 @@ export class WebReviewIO implements ReviewIO {
   /** POST /answer 처리기가 호출한다. id 불일치·pending 없음이면 false. */
   answer(questionId: string, value: string): boolean {
     if (this.pending === null || this.pending.question.id !== questionId) return false;
-    const { resolve } = this.pending;
+    const { resolve, question } = this.pending;
     this.pending = null; // resolve 전에 비운다. resolve가 동기 후속 질문을 던질 수 있다.
+    this.write(`${question.message}${displayAnswer(question.kind, value)}\n`);
     resolve(value);
     return true;
   }
@@ -74,3 +75,14 @@ export class WebReviewIO implements ReviewIO {
     return `q${this.counter}`; // run 안에서만 유일하면 된다. 난수 불필요(결정론성).
   }
 }
+
+/**
+ * 답을 로그에 되비출 때 쓰는 표시값. 터미널에서는 readline 이 하는 일을 웹에서 대신한다.
+ * `nodeReviewIO` 경로에는 넣지 않는다. 거기서는 같은 답이 두 줄 난다(설계 §3.6).
+ */
+const displayAnswer = (kind: PendingQuestion["kind"], value: string): string => {
+  if (value === REVIEW_BACK_VALUE) return "(뒤로)";
+  if (kind === "confirm") return value === "y" ? "예" : "아니오";
+  if (kind === "input" && value === "") return "(엔터)";
+  return value;
+};

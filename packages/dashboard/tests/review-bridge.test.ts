@@ -101,6 +101,65 @@ describe("WebReviewIO", () => {
     });
     expect(io.answer("q2", "b")).toBe(true);
     await expect(flow).resolves.toBe("하나/b");
-    expect(events.map((event) => event.kind)).toEqual(["question", "question"]);
+    // 답마다 되비추는 stdout 이 하나씩 끼어든다(설계 §3.6).
+    expect(events.map((event) => event.kind)).toEqual(["question", "stdout", "question", "stdout"]);
+  });
+});
+
+/** 되비춘 stdout 이벤트의 html 만 모은다. */
+function stdoutHtml(events: readonly RunEventInput[]): readonly string[] {
+  return events.flatMap((event) => (event.kind === "stdout" ? [event.html] : []));
+}
+
+describe("WebReviewIO 답 되비추기", () => {
+  it("input 답을 질문과 함께 로그에 되비춘다", () => {
+    const { io, events } = make();
+    void io.input("이름은? ");
+    expect(io.answer("q1", "홍길동")).toBe(true);
+    expect(stdoutHtml(events)).toEqual(["이름은? 홍길동\n"]);
+  });
+
+  it("빈 답은 (엔터) 로 적는다", () => {
+    const { io, events } = make();
+    void io.input("엔터 = 현재 값 유지: ");
+    expect(io.answer("q1", "")).toBe(true);
+    expect(stdoutHtml(events)).toEqual(["엔터 = 현재 값 유지: (엔터)\n"]);
+  });
+
+  it("confirm 의 y 는 예, 나머지는 아니오로 적는다", () => {
+    const yes = make();
+    void yes.io.confirm("이 요청을 전송할까요? ");
+    expect(yes.io.answer("q1", "y")).toBe(true);
+    expect(stdoutHtml(yes.events)).toEqual(["이 요청을 전송할까요? 예\n"]);
+
+    const no = make();
+    void no.io.confirm("이 요청을 전송할까요? ");
+    expect(no.io.answer("q1", "n")).toBe(true);
+    expect(stdoutHtml(no.events)).toEqual(["이 요청을 전송할까요? 아니오\n"]);
+  });
+
+  it("choose 는 고른 문자열을 그대로 적는다", () => {
+    const { io, events } = make();
+    void io.choose("무엇을 할까요? ", ["저장", "다시"]);
+    expect(io.answer("q1", "저장")).toBe(true);
+    expect(stdoutHtml(events)).toEqual(["무엇을 할까요? 저장\n"]);
+  });
+
+  it("back 은 (뒤로) 로 적는다", () => {
+    const { io, events } = make();
+    void io.input("AI 요청: ");
+    expect(io.back("q1")).toBe(true);
+    expect(stdoutHtml(events)).toEqual(["AI 요청: (뒤로)\n"]);
+  });
+
+  it("답을 못 받은 questionId 에는 아무것도 안 찍는다", async () => {
+    const { io, events } = make();
+    const answered = io.input("이름은? ");
+    expect(io.answer("없는-id", "x")).toBe(false);
+    expect(stdoutHtml(events)).toEqual([]);
+
+    // 미해결 promise 를 그대로 두면 테스트가 끝난 뒤에도 매달린다. 제대로 답해 닫는다.
+    expect(io.answer("q1", "홍길동")).toBe(true);
+    await expect(answered).resolves.toBe("홍길동");
   });
 });

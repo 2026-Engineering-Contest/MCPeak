@@ -39,6 +39,10 @@ const byCodeUnit = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0
  * `{ type: "integer", minLength: 3 }` 의 `minLength` 는 정수 값에 적용되지 않는다. 근거로 세면
  * 합성값은 제약이 안 걸린 `0` 인데 `needsAssist` 가 false 가 되어 AI 사전보완 대상에서 빠진다.
  * 개수 제약(`minItems` 등)은 배열 자신이 아니라 원소 값을 봐야 하므로 여기 오지 않는다.
+ *
+ * 이 판정은 pre-fill 의 `assistFields` 를 정한다. 배열은 자신을 안 세고 `items` 로 내려가므로
+ * `maxItems` 경계를 고정한 케이스의 그 필드가 `assistFields` 에 든다. 그 빈틈은 #401 의
+ * `GeneratedCase.pinnedFields` 가 막는다. 여기를 고칠 때 그쪽도 함께 봐라.
  */
 const hasApplicableRangeKeyword = (schema: JsonSchema, type: SchemaType): boolean => {
   const keys =

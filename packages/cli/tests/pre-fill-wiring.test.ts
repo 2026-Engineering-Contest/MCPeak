@@ -4,9 +4,16 @@ import type { JsonObject, TestSuiteSpec } from "@mcpeak/runner";
 import { describe, expect, it, vi } from "vitest";
 import type { DryRunResult } from "../src/dry-run.js";
 import { applyPreFill, dropSkippedTools, unknownFormatSkips } from "../src/pre-fill-wiring.js";
+import type { ResetGrade } from "../src/reset-hook.js";
 
 /** 서버를 부르지 않는다. dryRun 주입점이 판정을 대신한다. */
 const client = {} as McpClient;
+
+/**
+ * 비교가 성립하는 초기화. 아래 채택표 테스트들은 **초기화가 됐다는 전제**에서 어느 값을
+ * 고르는지를 본다. 초기화 자체의 규칙은 `후보 비교가 같은 초기 상태에서 돈다` 가 따로 본다.
+ */
+const okReset = async (): Promise<ResetGrade> => "commandOnly";
 
 const baselineSuite: TestSuiteSpec = {
   schemaVersion: 1,
@@ -90,6 +97,7 @@ describe("후보 채택 규칙", () => {
       preFill,
       baseline: baselineSuite,
       dryRun: fakeDryRun({ baselinePasses, aiPasses }),
+      reset: okReset,
     });
     expect(result.cases[0]?.source).toBe(expected);
   });
@@ -100,6 +108,7 @@ describe("후보 채택 규칙", () => {
       preFill,
       baseline: baselineSuite,
       dryRun: fakeDryRun({ baselinePasses: false, aiPasses: false }),
+      reset: okReset,
     });
     expect(result.cases[0]?.needsClassification).toBe(true);
   });
@@ -110,6 +119,7 @@ describe("후보 채택 규칙", () => {
       preFill,
       baseline: baselineSuite,
       dryRun: fakeDryRun({ baselinePasses: false, aiPasses: true }),
+      reset: okReset,
     });
     const [first, second] = result.suite.cases;
     expect(first?.operation.type === "callTool" && first.operation.input).toEqual({ v: "AI" });
@@ -127,6 +137,7 @@ describe("후보 채택 규칙", () => {
       preFill,
       baseline: baselineSuite,
       dryRun: fakeDryRun({ baselinePasses: true, aiPasses: true }),
+      reset: okReset,
     });
     expect(result.suite).toBe(baselineSuite);
     expect(result.adopted).toBe(0);
@@ -140,6 +151,7 @@ describe("후보 채택 규칙", () => {
       preFill,
       baseline: baselineSuite,
       dryRun: fakeDryRun({ baselinePasses: false, aiPasses: true, abort: true }),
+      reset: okReset,
     });
     expect(result.cases[0]?.source).toBe("baseline");
     expect(result.cases[0]?.needsClassification).toBe(false);
@@ -170,6 +182,7 @@ describe("후보 채택 규칙", () => {
       preFill: bothProposed,
       baseline: baselineSuite,
       dryRun,
+      reset: okReset,
     });
     expect(result.adopted).toBe(0);
     expect(result.notAdopted).toBe(2);
@@ -193,6 +206,7 @@ describe("후보 채택 규칙", () => {
       preFill: { accepted: [], discarded: [] },
       baseline: baselineSuite,
       dryRun,
+      reset: okReset,
     });
     expect(dryRun).not.toHaveBeenCalled();
     expect(result.cases).toEqual([]);
@@ -206,6 +220,7 @@ describe("후보 채택 규칙", () => {
       preFill: { accepted: [{ caseId: "ghost", field: "v", value: "AI" }], discarded: [] },
       baseline: baselineSuite,
       dryRun,
+      reset: okReset,
     });
     expect(dryRun).not.toHaveBeenCalled();
     expect(result.cases).toEqual([]);
@@ -238,6 +253,7 @@ describe("후보 채택 규칙", () => {
           "    해결: 툴 입력값과 서버의 오류 응답을 확인하세요.",
         ].join("\n"),
       }),
+      reset: okReset,
     });
     expect(result.cases[0]?.proposedFields).toEqual([{ field: "expression", value: "2" }]);
     expect(result.cases[0]?.serverMessage).toBe("식을 해석할 수 없습니다: '2'");
@@ -249,6 +265,7 @@ describe("후보 채택 규칙", () => {
       preFill,
       baseline: baselineSuite,
       dryRun: fakeDryRun({ baselinePasses: false, aiPasses: true }),
+      reset: okReset,
     });
     expect("proposedFields" in (result.cases[0] ?? {})).toBe(false);
     expect("serverMessage" in (result.cases[0] ?? {})).toBe(false);
@@ -264,6 +281,7 @@ describe("후보 채택 규칙", () => {
         aiPasses: false,
         aiDetail: "    툴 'x' 호출 중 오류가 발생했습니다.",
       }),
+      reset: okReset,
     });
     expect(result.cases[0]?.serverMessage).toBe("툴 'x' 호출 중 오류가 발생했습니다.");
   });
@@ -274,6 +292,7 @@ describe("후보 채택 규칙", () => {
       preFill,
       baseline: baselineSuite,
       dryRun: fakeDryRun({ baselinePasses: false, aiPasses: false }),
+      reset: okReset,
     });
     expect(result.cases[0]?.serverMessage).toBe("");
   });
@@ -285,6 +304,7 @@ describe("후보 채택 규칙", () => {
       preFill: { accepted: [{ caseId: "list-a", field: "query", value: "AI" }], discarded: [] },
       baseline: withListToolsCase,
       dryRun,
+      reset: okReset,
     });
     expect(result.excluded).toEqual([
       { caseId: "list-a", field: "query", reason: "callTool 이 아닌 케이스" },
@@ -317,6 +337,7 @@ describe("후보 채택 규칙", () => {
       },
       baseline: withListToolsCase,
       dryRun,
+      reset: okReset,
     });
     expect(dryRun).toHaveBeenCalledTimes(0);
   });
@@ -333,6 +354,7 @@ describe("후보 채택 규칙", () => {
       },
       baseline: withListToolsCase,
       dryRun: fakeDryRun({ baselinePasses: true, aiPasses: true }),
+      reset: okReset,
     });
     expect(result.cases.length).toBe(1);
     expect(result.excluded.length).toBe(1);
@@ -383,5 +405,193 @@ describe("표 밖 format 툴 건너뛰기", () => {
   it("건너뛸 것이 없으면 같은 명세를 그대로 돌려준다", () => {
     const baseline = createBaselineSuite([ok], { suiteId: "s", suiteName: "s" });
     expect(dropSkippedTools(baseline.suite, [])).toBe(baseline.suite);
+  });
+});
+
+/**
+ * 상태를 바꾸는 서버를 흉내 내는 인메모리 fixture. **실제 프로세스를 띄우지 않는다.**
+ *
+ * 첫 호출은 실패하고 두 번째부터 성공한다. 초기화가 불리면 카운터가 0 으로 돌아간다.
+ * 이 모양이 이 이슈의 증상을 그대로 재현한다. 초기화가 없으면 baseline 회차가 첫 호출을
+ * 써 버려 AI 회차만 통과하고, 그러면 "입력이 좋아서" 가 아니라 "앞 실행이 상태를 바꿔서"
+ * 채택된다(이슈 #399).
+ */
+function statefulFixture() {
+  let calls = 0;
+  const resets: ResetGrade[] = [];
+  return {
+    resets,
+    dryRun: async (o: { suite: TestSuiteSpec }): Promise<DryRunResult> => {
+      calls += 1;
+      const passes = calls > 1;
+      return {
+        outcomes: o.suite.cases.map((item) => ({
+          caseId: item.id,
+          caseName: item.name,
+          status: passes ? ("passed" as const) : ("failed" as const),
+          detail: "",
+          rejectionBasis: "notApplicable" as const,
+          operationFailed: false,
+          failureLine: "",
+        })),
+      };
+    },
+    /** 이 등급을 내는 초기화. 불릴 때마다 카운터를 0 으로 되돌린다. */
+    resetWith: (grades: readonly ResetGrade[]) => {
+      let index = 0;
+      return async (): Promise<ResetGrade> => {
+        const grade = grades[Math.min(index, grades.length - 1)] as ResetGrade;
+        index += 1;
+        resets.push(grade);
+        calls = 0;
+        return grade;
+      };
+    },
+  };
+}
+
+describe("후보 비교가 같은 초기 상태에서 돈다", () => {
+  it("초기화 없이 돌리면 상태 차이로 AI 가 통과하지만 채택하지 않는다 (회귀 재현)", async () => {
+    // **이 테스트는 고친 뒤에도 남긴다.** 초기화가 왜 필요한지가 여기 적혀 있다.
+    //
+    // 계획서는 이 자리에서 `adopted 1` 을 기대했는데, 같은 계획서 §3 이 "reset 이 undefined
+    // 면 none 과 같이 다룬다. 비교하지 않는다" 고 정한다. 둘은 함께 참일 수 없다. 사양 쪽을
+    // 따랐다. 재현하려는 **기전**(baseline 실패·AI 통과가 입력이 아니라 상태 때문이다)은
+    // 그대로 두고, 이제 그것을 근거로 채택하지 않는다는 것을 단언한다.
+    const fixture = statefulFixture();
+    const result = await applyPreFill({
+      client,
+      preFill,
+      baseline: baselineSuite,
+      dryRun: fixture.dryRun,
+    });
+    expect(result.compared).toBe(false);
+    expect(result.adopted).toBe(0);
+    expect(result.suite).toBe(baselineSuite);
+    expect(result.skippedReason).toContain("같은 초기 상태에서 실행할 수 없습니다");
+  });
+
+  it("초기화를 넣으면 둘 다 실패해 held 가 된다", async () => {
+    // 두 회차가 같은 자리에서 출발하므로 AI 회차도 첫 호출이다. 둘 다 실패한다.
+    const fixture = statefulFixture();
+    const result = await applyPreFill({
+      client,
+      preFill,
+      baseline: baselineSuite,
+      dryRun: fixture.dryRun,
+      reset: fixture.resetWith(["commandOnly"]),
+    });
+    expect(result.compared).toBe(true);
+    expect(result.adopted).toBe(0);
+    expect(result.held).toBe(1);
+    expect(result.suite).toBe(baselineSuite);
+  });
+
+  it("reset 을 후보 실행 앞과 사이에 각각 부른다", async () => {
+    const fixture = statefulFixture();
+    await applyPreFill({
+      client,
+      preFill,
+      baseline: baselineSuite,
+      dryRun: fixture.dryRun,
+      reset: fixture.resetWith(["commandOnly"]),
+    });
+    expect(fixture.resets).toHaveLength(2);
+  });
+
+  it("앞 초기화가 none 이면 비교하지 않는다", async () => {
+    const fixture = statefulFixture();
+    const result = await applyPreFill({
+      client,
+      preFill,
+      baseline: baselineSuite,
+      dryRun: fixture.dryRun,
+      reset: fixture.resetWith(["none", "commandOnly"]),
+    });
+    expect(result.compared).toBe(false);
+    expect(result.adopted).toBe(0);
+    expect(result.skippedReason).toContain("초기화 수단이 없습니다");
+  });
+
+  it("사이 초기화가 failed 면 비교하지 않는다", async () => {
+    const fixture = statefulFixture();
+    const result = await applyPreFill({
+      client,
+      preFill,
+      baseline: baselineSuite,
+      dryRun: fixture.dryRun,
+      reset: fixture.resetWith(["commandOnly", "failed"]),
+    });
+    expect(result.compared).toBe(false);
+    expect(result.adopted).toBe(0);
+    expect(result.skippedReason).toContain("초기화 명령이 실패했습니다");
+  });
+
+  it("등급이 둘 다 나쁘면 두 문장을 다 찍는다", async () => {
+    // failed 가 none 보다 약하다고 보지 않는다. 둘은 다음에 할 일이 다르다.
+    const fixture = statefulFixture();
+    const result = await applyPreFill({
+      client,
+      preFill,
+      baseline: baselineSuite,
+      dryRun: fixture.dryRun,
+      reset: fixture.resetWith(["none", "failed"]),
+    });
+    expect(result.skippedReason).toContain("초기화 수단이 없습니다");
+    expect(result.skippedReason).toContain("초기화 명령이 실패했습니다");
+  });
+
+  it("같은 등급이 두 번이면 문장을 한 번만 찍는다", async () => {
+    const fixture = statefulFixture();
+    const result = await applyPreFill({
+      client,
+      preFill,
+      baseline: baselineSuite,
+      dryRun: fixture.dryRun,
+      reset: fixture.resetWith(["none"]),
+    });
+    const lines = (result.skippedReason ?? "").split("\n");
+    expect(lines.filter((line) => line.includes("초기화 수단이 없습니다"))).toHaveLength(1);
+  });
+
+  it("commandOnly 두 번이면 비교한다", async () => {
+    const result = await applyPreFill({
+      client,
+      preFill,
+      baseline: baselineSuite,
+      dryRun: fakeDryRun({ baselinePasses: false, aiPasses: true }),
+      reset: async () => "commandOnly",
+    });
+    expect(result.compared).toBe(true);
+    expect(result.skippedReason).toBeUndefined();
+    expect(result.adopted).toBe(1);
+  });
+
+  it("aborted 면 종전대로 전부 baseline 을 유지한다", async () => {
+    const result = await applyPreFill({
+      client,
+      preFill,
+      baseline: baselineSuite,
+      dryRun: fakeDryRun({ baselinePasses: false, aiPasses: true, abort: true }),
+      reset: okReset,
+    });
+    // 비교 자체는 성립했다. 끊긴 연결의 판정을 안 믿는 것은 다른 규칙이다.
+    expect(result.compared).toBe(true);
+    expect(result.adopted).toBe(0);
+    expect(result.cases[0]?.source).toBe("baseline");
+  });
+
+  it("제안이 없으면 초기화를 아예 안 부른다", async () => {
+    // 부를 이유가 없는 호출은 만들지 않는다. 초기화는 사용자 명령을 실행하는 일이다.
+    const fixture = statefulFixture();
+    const result = await applyPreFill({
+      client,
+      preFill: { accepted: [], discarded: [] },
+      baseline: baselineSuite,
+      dryRun: fixture.dryRun,
+      reset: fixture.resetWith(["commandOnly"]),
+    });
+    expect(fixture.resets).toHaveLength(0);
+    expect(result.compared).toBe(true);
   });
 });

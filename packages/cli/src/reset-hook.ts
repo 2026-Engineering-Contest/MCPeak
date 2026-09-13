@@ -148,3 +148,63 @@ export async function runResetCommand(command: string): Promise<void> {
 /** stderr 이 비어 있는데 시그널로 죽었으면 그 사실만이라도 남긴다. */
 const describeSignal = (signal: NodeJS.Signals | null): string =>
   signal === null ? "" : `시그널 ${signal} 로 종료되었습니다.`;
+
+/**
+ * 초기화가 실제로 무엇을 했는가. `--reset-cmd` 가 0 으로 끝난 것을 "초기 상태" 라고
+ * 부르지 않기 위해 있다. 명령이 무엇을 복원했는지 우리는 모른다(이슈 #399).
+ */
+export type ResetGrade =
+  /**
+   * 새 프로세스·새 연결 + 초기화 명령 성공. 우리가 제공할 수 있는 가장 강한 것.
+   *
+   * **이번 회차는 이 값을 내지 않는다.** 프로세스를 다시 띄우는 것은 core 의 수명주기를
+   * 건드리고, generate 흐름 한가운데서 연결을 바꾸면 그 뒤 단계가 전부 새 client 를 봐야
+   * 한다. 값을 미리 정의하는 이유는, commandOnly 를 "초기 상태" 라고 부르지 않으려면
+   * 그보다 강한 것이 있다는 사실이 타입에 있어야 하기 때문이다. 죽은 값이 아니라
+   * 의도된 자리다. 지우지 마라(설계 §3).
+   */
+  | "freshProcess"
+  /** 같은 연결에 초기화 명령만 성공. 서버 프로세스의 메모리 상태는 그대로다. */
+  | "commandOnly"
+  /** 초기화 수단이 없다. 앞 실행이 바꾼 상태가 남아 있다. */
+  | "none"
+  /** 초기화를 시도했으나 실패했다. 상태를 모른다. */
+  | "failed";
+
+/** 등급이 "같은 초기 상태" 를 보장하는가. 후보 비교의 전제다. */
+export const resetIsComparable = (grade: ResetGrade): boolean =>
+  grade === "freshProcess" || grade === "commandOnly";
+
+/**
+ * 등급별 화면 문안. **상수로 둔다.** 호출부에서 문자열을 조립하면 같은 등급이 화면마다
+ * 다른 문장으로 나가고, 사용자는 두 화면이 같은 것을 말하는지 알 수 없다.
+ */
+export const RESET_GRADE_LINE: Readonly<Record<ResetGrade, string>> = {
+  freshProcess: "초기 상태: 서버를 다시 띄우고 초기화 명령을 실행했습니다.",
+  commandOnly: "초기 상태: 초기화 명령만 실행했습니다. 서버 프로세스의 메모리 상태는 그대로입니다.",
+  none: "초기 상태: 초기화 수단이 없습니다. 앞 실행이 바꾼 상태가 남아 있을 수 있습니다. --reset-cmd 로 지정하세요.",
+  failed: "초기 상태: 초기화 명령이 실패했습니다. 이 실행의 결과를 검증 완료로 보지 않습니다.",
+};
+
+/**
+ * 초기화를 시도하고 등급을 돌려준다. 던지지 않는다. 호출부가 등급을 보고 판단한다.
+ *
+ * `runResetCommand` 를 그대로 두는 이유: 그 함수는 "명령이 실패하면 던진다" 는 계약이고
+ * 시험 실행 직전 경로가 그 계약에 의존한다(실패하면 실행을 시작하지 않는다). 등급이
+ * 필요한 자리는 판단이 다르다. 실패해도 진행하되 무엇을 못 했는지 적는다.
+ *
+ * `ResetCommandError` 가 아닌 오류는 **던진다.** 우리 결함을 등급으로 위장하면 초기화가
+ * 안 된 것과 우리 코드가 깨진 것이 화면에서 같아 보인다.
+ */
+export async function attemptReset(
+  resetCmd: string | undefined,
+): Promise<{ readonly grade: ResetGrade; readonly error?: ResetCommandError }> {
+  if (resetCmd === undefined) return { grade: "none" };
+  try {
+    await runResetCommand(resetCmd);
+    return { grade: "commandOnly" };
+  } catch (error) {
+    if (!(error instanceof ResetCommandError)) throw error;
+    return { grade: "failed", error };
+  }
+}

@@ -17,6 +17,7 @@ import type {
 } from "@mcpeak/runner";
 import type { DryRunResult } from "./dry-run.js";
 import { runDryRun } from "./dry-run.js";
+import { RESET_GRADE_LINE, type ResetGrade, resetIsComparable } from "./reset-hook.js";
 
 /** 어느 값을 쓰기로 했는지. */
 export type PreFillSource = "baseline" | "ai";
@@ -57,6 +58,29 @@ export interface ApplyPreFillResult {
   readonly held: number;
   /** 제안은 받았지만 실행 대상에 못 들어간 제안. 어느 줄에도 안 세어지던 것을 사유와 함께 센다. */
   readonly excluded: readonly PreFillExclusion[];
+  /** 비교를 실제로 했는가. false 면 adopted 가 0 이고 skippedReason 이 있다. */
+  readonly compared: boolean;
+  /** 비교를 못 한 사유. compared 가 true 면 undefined 다. 화면에 그대로 찍는다. */
+  readonly skippedReason?: string;
+}
+
+/** 두 후보를 같은 초기 상태에서 못 돌렸을 때의 첫 줄. 아래에 등급 문장이 이어 붙는다. */
+const COMPARE_SKIPPED_HEAD =
+  "사전보완 비교를 건너뜁니다: 두 후보를 같은 초기 상태에서 실행할 수 없습니다.";
+
+/**
+ * 비교 불가 사유. 앞·사이 두 등급 중 비교 불가인 것의 문장을 이어 붙인다.
+ *
+ * 둘이 같은 등급이면 한 번만 찍는다. 다르면 **둘 다 찍는다.** `failed` 가 `none` 보다
+ * 약하다고 보지 않는다. 둘은 다음에 할 일이 다르다. `none` 은 `--reset-cmd` 를 주는 것이고
+ * `failed` 는 그 명령을 고치는 것이다.
+ */
+function compareSkippedReason(before: ResetGrade, between: ResetGrade): string {
+  const lines: string[] = [];
+  for (const grade of [before, between])
+    if (!resetIsComparable(grade) && !lines.includes(RESET_GRADE_LINE[grade]))
+      lines.push(RESET_GRADE_LINE[grade]);
+  return [COMPARE_SKIPPED_HEAD, ...lines].join("\n");
 }
 
 /**
@@ -144,6 +168,11 @@ export async function applyPreFill(options: {
     readonly client: McpClient;
     readonly suite: TestSuiteSpec;
   }) => Promise<DryRunResult>;
+  /**
+   * 후보 실행 앞과 사이에 부른다. 없으면 비교하지 않고 전부 baseline 을 유지한다.
+   * 테스트가 실제 명령을 실행하지 않게 주입으로 받는다.
+   */
+  readonly reset?: () => Promise<ResetGrade>;
 }): Promise<ApplyPreFillResult> {
   const { client, baseline, preFill } = options;
   const run = options.dryRun ?? runDryRun;
@@ -156,7 +185,16 @@ export async function applyPreFill(options: {
   }
   // 제안이 하나도 없으면 서버를 부르지 않는다. 부를 이유가 없는 호출은 만들지 않는다.
   if (byCase.size === 0)
-    return { suite: baseline, cases: [], adopted: 0, notAdopted: 0, held: 0, excluded: [] };
+    return {
+      suite: baseline,
+      cases: [],
+      adopted: 0,
+      notAdopted: 0,
+      held: 0,
+      excluded: [],
+      // 비교할 것이 없어 안 한 것이다. 못 한 것이 아니므로 사유를 만들지 않는다.
+      compared: true,
+    };
 
   // 실행 대상에 못 들어간 제안을 사유와 함께 모은다. 조용히 버리면 어느 줄에도 안 세어진다
   // (설계 §1.2). 순서는 `byCase` 의 삽입 순서, 즉 `preFill.accepted` 순서다.
@@ -191,12 +229,34 @@ export async function applyPreFill(options: {
     aiInputs.set(item.id, withProposals(input, proposals));
   }
   if (targetIds.size === 0)
-    return { suite: baseline, cases: [], adopted: 0, notAdopted: 0, held: 0, excluded };
+    return {
+      suite: baseline,
+      cases: [],
+      adopted: 0,
+      notAdopted: 0,
+      held: 0,
+      excluded,
+      compared: true,
+    };
 
   // 두 벌을 따로 돌린다. 한 명세에 섞어 돌리면 같은 툴을 두 번 부르는 순서가 카세트에 남아
   // 재생 때 어느 쪽이 어느 케이스인지 갈린다.
+  //
+  // 두 실행 **앞과 사이**에 초기화한다. 앞에 안 하면 이 단계 전의 실행이 바꾼 상태를 물려받고,
+  // 사이에 안 하면 baseline 실행이 바꾼 상태에서 AI 후보가 돈다. 후자가 이 이슈의 증상이다.
+  // 상태를 바꾸는 도구에서 AI 값만 통과해, "입력이 좋아서" 가 아니라 "앞 실행이 상태를
+  // 바꿔서" 채택된다(이슈 #399).
+  //
+  // reset 을 안 넘기면 초기화 수단이 없는 것과 같다. "none" 으로 다룬다.
+  const resetOnce = options.reset ?? (async (): Promise<ResetGrade> => "none");
+  const gradeBefore = await resetOnce();
   const baselineRun = await run({ client, suite: subsetSuite(baseline, targetIds) });
+  const gradeBetween = await resetOnce();
   const aiRun = await run({ client, suite: subsetSuite(baseline, targetIds, aiInputs) });
+  // 둘 중 하나라도 비교 불가면 채택하지 않는다. 비교 조건이 안 갖춰졌으면 고르지 않는 것이
+  // 옳다. 상태 차이를 입력 개선으로 오인해 채택한 값은 재현되지 않는 명세를 만들고, 그것은
+  // 이 프로젝트의 핵심 가치인 결정론성을 정면으로 어긴다.
+  const comparable = resetIsComparable(gradeBefore) && resetIsComparable(gradeBetween);
   const aborted = baselineRun.aborted !== undefined || aiRun.aborted !== undefined;
   const baselinePassed = passedIds(baselineRun);
   const aiPassed = passedIds(aiRun);
@@ -208,9 +268,10 @@ export async function applyPreFill(options: {
     if (!targetIds.has(item.id)) continue;
     const basePass = baselinePassed.has(item.id);
     const aiPass = aiPassed.has(item.id);
-    const useAi = !aborted && !basePass && aiPass;
+    const useAi = comparable && !aborted && !basePass && aiPass;
     if (useAi) adoptedIds.add(item.id);
-    const held = !aborted && !basePass && !aiPass;
+    // 비교를 못 했으면 "둘 다 실패" 라는 판정도 못 한다. 분류 화면으로 보내지 않는다.
+    const held = comparable && !aborted && !basePass && !aiPass;
     // 보류일 때만 제안 값과 서버 응답을 싣는다. 아니면 키 자체를 만들지 않는다.
     cases.push({
       caseId: item.id,
@@ -241,6 +302,8 @@ export async function applyPreFill(options: {
     notAdopted: cases.length - adopted,
     held: cases.filter((item) => item.needsClassification).length,
     excluded,
+    compared: comparable,
+    ...(comparable ? {} : { skippedReason: compareSkippedReason(gradeBefore, gradeBetween) }),
   };
 }
 

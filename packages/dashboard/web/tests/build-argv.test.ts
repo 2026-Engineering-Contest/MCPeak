@@ -21,6 +21,7 @@ const BASE: GenerateForm = {
   model: "",
   dryRun: true,
   repair: true,
+  diagnoseRejections: false,
   resetCmd: "",
 };
 
@@ -106,6 +107,30 @@ describe("buildGenerateArgv", () => {
     expect(() => buildGenerateArgv({ ...BASE, dryRun: false, repair: false })).toThrowError(
       "시험 실행과 자동 교정을 동시에 끌 수 없습니다.",
     );
+  });
+
+  it("diagnoseRejections 가 참이면 --diagnose-rejections 를 넣는다", () => {
+    expect(buildGenerateArgv({ ...BASE, diagnoseRejections: true })).toEqual([
+      ...buildGenerateArgv(BASE),
+      "--diagnose-rejections",
+    ]);
+  });
+
+  it("--no-repair 뒤, --reset-cmd 앞에 온다", () => {
+    const argv = buildGenerateArgv({
+      ...BASE,
+      repair: false,
+      diagnoseRejections: true,
+      resetCmd: "node scripts/reset.js",
+    });
+    expect(argv.indexOf("--no-repair")).toBeLessThan(argv.indexOf("--diagnose-rejections"));
+    expect(argv.indexOf("--diagnose-rejections")).toBeLessThan(argv.indexOf("--reset-cmd"));
+  });
+
+  it("시험 실행이 꺼진 채로 거절 진단을 켜면 던진다", () => {
+    expect(() =>
+      buildGenerateArgv({ ...BASE, dryRun: false, diagnoseRejections: true }),
+    ).toThrowError("시험 실행이 꺼져 있어 거절 근거 진단을 쓸 수 없습니다.");
   });
 
   it("필수 빈 값마다 throw한다", () => {

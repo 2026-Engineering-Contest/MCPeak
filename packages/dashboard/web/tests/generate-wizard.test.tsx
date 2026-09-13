@@ -439,6 +439,58 @@ describe("GenerateWizard", () => {
     expect(screen.getByLabelText("실패한 입력값 자동 교정")).toBeTruthy();
   });
 
+  it("4단계에 거절 근거 진단 토글이 있다", async () => {
+    await renderWizard();
+    fillStepServer("server.js");
+    fillStepSuite();
+
+    expect(screen.queryByLabelText("거절 근거 진단 보기 (--diagnose-rejections)")).toBeNull();
+
+    clickNext();
+    const toggle = screen.getByLabelText("거절 근거 진단 보기 (--diagnose-rejections)");
+    expect(toggle).toHaveProperty("checked", false);
+    expect(toggle).toHaveProperty("disabled", false);
+    expect(
+      screen.getByText(
+        "통과한 거절 케이스의 목록과 AI 진단을 함께 봅니다. 시험 실행이 필요합니다.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("시험 실행을 끄면 거절 근거 진단 토글이 비활성화된다", async () => {
+    await renderWizard();
+    fillStepServer("server.js");
+    fillStepSuite();
+    clickNext();
+    fireEvent.click(screen.getByLabelText("저장 전에 시험 실행으로 검증"));
+
+    expect(screen.getByLabelText("거절 근거 진단 보기 (--diagnose-rejections)")).toHaveProperty(
+      "disabled",
+      true,
+    );
+    expect(screen.getByText("시험 실행이 꺼져 있어 거절 근거 진단을 쓸 수 없습니다.")).toBeTruthy();
+  });
+
+  it("시험 실행을 끄면 켜 둔 거절 근거 진단이 꺼진다", async () => {
+    const fetchMock = await renderWizard();
+    fillStepServer("server.js");
+    fillStepSuite();
+    clickNext();
+    fireEvent.click(screen.getByLabelText("거절 근거 진단 보기 (--diagnose-rejections)"));
+    // 값이 남으면 입력이 잠긴 채 buildGenerateArgv 가 throw 해 복구 경로가 없다.
+    fireEvent.click(screen.getByLabelText("저장 전에 시험 실행으로 검증"));
+
+    expect(screen.getByLabelText("거절 근거 진단 보기 (--diagnose-rejections)")).toHaveProperty(
+      "checked",
+      false,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "생성 시작" }));
+    await waitFor(() => {
+      expect(window.location.hash).toBe("#/runs/run-new");
+    });
+    expect(postedArgv(fetchMock)).not.toContain("--diagnose-rejections");
+  });
+
   it("AI 도구에 따라 선택 가능한 모델을 바꾸고 이전 모델을 초기화한다", async () => {
     await renderWizard();
     fillStepServer("server.js");

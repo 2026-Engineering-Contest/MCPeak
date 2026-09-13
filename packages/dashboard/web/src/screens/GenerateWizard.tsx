@@ -70,6 +70,7 @@ const INITIAL_STATE: WizardState = {
   model: "",
   dryRun: true,
   repair: true,
+  diagnoseRejections: false,
   resetCmd: "",
 };
 
@@ -105,10 +106,10 @@ function applyPatch(
   candidates: readonly ServerCandidate[],
 ): WizardState {
   let next: WizardState = { ...previous, ...partial };
-  // 시험 실행을 끄면 그에 종속된 초기화 명령을 함께 비운다. 값이 남으면 입력이 잠긴 채
-  // buildGenerateArgv 가 throw 해 복구 경로가 없다(PR #199 리뷰 반영).
+  // 시험 실행을 끄면 그에 종속된 초기화 명령과 거절 근거 진단을 함께 내린다. 값이 남으면
+  // 입력이 잠긴 채 buildGenerateArgv 가 throw 해 복구 경로가 없다(PR #199 리뷰 반영).
   if (partial.dryRun === false) {
-    next = { ...next, resetCmd: "" };
+    next = { ...next, resetCmd: "", diagnoseRejections: false };
   }
 
   if (TARGET_KEYS.some((key) => key in partial)) {

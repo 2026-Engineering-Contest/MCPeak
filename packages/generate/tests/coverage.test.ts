@@ -4,6 +4,7 @@ import type { TestSuiteSpec } from "@mcpeak/runner";
 import { describe, expect, it } from "vitest";
 import { computeCoverage } from "../src/coverage.js";
 import { buildViolationCases } from "../src/index.js";
+import { buildGeneratedCases } from "../src/render.js";
 import type { JsonObject } from "../src/schema.js";
 
 const fixture = JSON.parse(
@@ -243,6 +244,64 @@ describe("커버리지에 RANGE_VIOLATION 이 들어간다", () => {
     const suite: TestSuiteSpec = { schemaVersion: 1, id: "s", name: "s", cases: [...cases] };
     const coverage = computeCoverage({ tools: [ranged], suite });
     const rangeAxis = coverage.tools[0]?.axes.find((axis) => axis.kind === "RANGE_VIOLATION");
-    expect(rangeAxis?.caseId).toBe("t-range-v");
+    expect(rangeAxis?.caseId).toBe("t-range-lower-v");
+  });
+});
+
+describe("범위 커버리지가 상·하한을 따로 센다", () => {
+  const ranged = tool("t", {
+    type: "object",
+    required: ["n"],
+    properties: { n: { type: "integer", minimum: 1, maximum: 10 } },
+  });
+  const emptySuite: TestSuiteSpec = { schemaVersion: 1, id: "s", name: "s", cases: [] };
+  /** 거절을 기대하는 케이스 하나. 범위 축을 덮는 재료다. */
+  const rejecting = (id: string, input: JsonObject) => ({
+    id,
+    name: id,
+    operation: { type: "callTool" as const, tool: "t", input },
+    assertions: [{ type: "isError" as const, expected: true }],
+  });
+  const rangeAxes = (suite: TestSuiteSpec) =>
+    computeCoverage({ tools: [ranged], suite }).tools[0]?.axes.filter(
+      (axis) => axis.kind === "RANGE_VIOLATION",
+    ) ?? [];
+
+  it("분모가 그 필드에서 2 다", () => {
+    const axes = rangeAxes(emptySuite);
+    expect(axes).toHaveLength(2);
+    expect(axes.map((axis) => axis.bound)).toEqual(["lower", "upper"]);
+  });
+
+  it("하한 케이스만 든 스위트는 상한 축이 미검증이다", () => {
+    const suite: TestSuiteSpec = {
+      schemaVersion: 1,
+      id: "s",
+      name: "s",
+      cases: [rejecting("c1", { n: 0 })],
+    };
+    const axes = rangeAxes(suite);
+    expect(axes.find((axis) => axis.bound === "lower")?.caseId).toBe("c1");
+    expect(axes.find((axis) => axis.bound === "upper")?.caseId).toBeNull();
+  });
+
+  it("양쪽 케이스가 다 있으면 둘 다 검증이다", () => {
+    const suite: TestSuiteSpec = {
+      schemaVersion: 1,
+      id: "s",
+      name: "s",
+      cases: [rejecting("c1", { n: 0 }), rejecting("c2", { n: 11 })],
+    };
+    const axes = rangeAxes(suite);
+    expect(axes.find((axis) => axis.bound === "lower")?.caseId).toBe("c1");
+    expect(axes.find((axis) => axis.bound === "upper")?.caseId).toBe("c2");
+  });
+
+  it("generate 가 만든 스위트는 양쪽을 다 덮는다", () => {
+    const { cases } = buildGeneratedCases(ranged, 0, "t");
+    const suite: TestSuiteSpec = { schemaVersion: 1, id: "s", name: "s", cases: [...cases] };
+    const axes = rangeAxes(suite);
+    expect(axes).toHaveLength(2);
+    for (const axis of axes) expect(axis.caseId).not.toBeNull();
   });
 });

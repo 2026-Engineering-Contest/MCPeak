@@ -37,6 +37,8 @@ export interface ApplyPreFillResult {
   readonly adopted: number;
   /** 제안은 받았지만 baseline 을 유지한 케이스 수. */
   readonly notAdopted: number;
+  /** baseline 값도 제안 값도 실패해 분류 화면으로 가는 수. `notAdopted` 에 포함된다. */
+  readonly held: number;
 }
 
 const plainObject = (value: unknown): value is JsonObject =>
@@ -112,7 +114,7 @@ export async function applyPreFill(options: {
     byCase.set(proposal.caseId, list);
   }
   // 제안이 하나도 없으면 서버를 부르지 않는다. 부를 이유가 없는 호출은 만들지 않는다.
-  if (byCase.size === 0) return { suite: baseline, cases: [], adopted: 0, notAdopted: 0 };
+  if (byCase.size === 0) return { suite: baseline, cases: [], adopted: 0, notAdopted: 0, held: 0 };
 
   const targetIds = new Set<string>();
   const aiInputs = new Map<string, JsonObject>();
@@ -125,7 +127,8 @@ export async function applyPreFill(options: {
     targetIds.add(item.id);
     aiInputs.set(item.id, withProposals(input, proposals));
   }
-  if (targetIds.size === 0) return { suite: baseline, cases: [], adopted: 0, notAdopted: 0 };
+  if (targetIds.size === 0)
+    return { suite: baseline, cases: [], adopted: 0, notAdopted: 0, held: 0 };
 
   // 두 벌을 따로 돌린다. 한 명세에 섞어 돌리면 같은 툴을 두 번 부르는 순서가 카세트에 남아
   // 재생 때 어느 쪽이 어느 케이스인지 갈린다.
@@ -164,6 +167,7 @@ export async function applyPreFill(options: {
     cases,
     adopted,
     notAdopted: cases.length - adopted,
+    held: cases.filter((item) => item.needsClassification).length,
   };
 }
 

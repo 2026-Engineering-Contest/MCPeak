@@ -459,6 +459,12 @@ export function runSuite(options: RunSuiteOptions): RunnerExecution {
         loss === undefined
           ? classifyRejectionBasis({
               expectsRejection,
+              // 거절이 안 온 케이스는 판정 대상이 아니다(설계 §4.1). isError 단언이 이미
+              // 실패로 잡았고, 아래 rejectionBody 도 `unverified` 조건에 걸리지 않아 안 싣는다.
+              rejected:
+                result !== undefined &&
+                result.type === "callTool" &&
+                result.result.isError === true,
               toolName: spec.operation.type === "callTool" ? spec.operation.tool : null,
               bodyText,
             })

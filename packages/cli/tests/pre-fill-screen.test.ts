@@ -31,7 +31,7 @@ describe("표 밖 format 건너뜀 고지", () => {
 });
 
 describe("사전보완 결과 요약", () => {
-  const base = { toolCount: 8, proposedToolCount: 5, adopted: 3, notAdopted: 2 };
+  const base = { toolCount: 8, proposedToolCount: 5, adopted: 3, notAdopted: 2, held: 0 };
 
   it("채택·미채택 수를 적는다", () => {
     const text = renderPreFillSummary({ ...base, discarded: [] });
@@ -59,6 +59,24 @@ describe("사전보완 결과 요약", () => {
     expect(text).toContain("근거 있는 값");
   });
 
+  it("보류가 있으면 미채택에서 빼고 보류 줄을 찍는다", () => {
+    // `held` 는 `notAdopted` 에 포함된 수다. 빼지 않으면 같은 케이스를 두 줄에서 센다.
+    const text = renderPreFillSummary({
+      ...base,
+      adopted: 1,
+      notAdopted: 3,
+      held: 1,
+      discarded: [],
+    });
+    expect(text).toContain("채택 1");
+    expect(text).toContain("미채택 2");
+    expect(text).toContain("보류 1 (baseline 값도 제안 값도 실패. 분류 화면에서 정합니다)");
+  });
+
+  it("보류가 0이면 보류 줄이 없다", () => {
+    expect(renderPreFillSummary({ ...base, discarded: [] })).not.toContain("보류");
+  });
+
   it("대상도 버림도 없으면 아무것도 찍지 않는다", () => {
     expect(
       renderPreFillSummary({
@@ -66,6 +84,7 @@ describe("사전보완 결과 요약", () => {
         proposedToolCount: 0,
         adopted: 0,
         notAdopted: 0,
+        held: 0,
         discarded: [],
       }),
     ).toBe("");

@@ -11,12 +11,64 @@ const fixture = JSON.parse(
 };
 
 const classify = (tool: string | null, body: string | null) =>
-  classifyRejectionBasis({ expectsRejection: true, toolName: tool, bodyText: body });
+  classifyRejectionBasis({
+    expectsRejection: true,
+    rejected: true,
+    toolName: tool,
+    bodyText: body,
+  });
 
 describe("classifyRejectionBasis", () => {
   it("거절을 기대하지 않는 케이스는 판정 대상이 아니다", () => {
     expect(
-      classifyRejectionBasis({ expectsRejection: false, toolName: "t", bodyText: "무엇이든" }),
+      classifyRejectionBasis({
+        expectsRejection: false,
+        rejected: true,
+        toolName: "t",
+        bodyText: "무엇이든",
+      }),
+    ).toBe("notApplicable");
+  });
+
+  it("거절을 기대하지 않으면 rejected 와 무관하게 판정 대상이 아니다", () => {
+    expect(
+      classifyRejectionBasis({
+        expectsRejection: false,
+        rejected: true,
+        toolName: "t",
+        bodyText: "MCP error -32602: x",
+      }),
+    ).toBe("notApplicable");
+    expect(
+      classifyRejectionBasis({
+        expectsRejection: false,
+        rejected: false,
+        toolName: "t",
+        bodyText: "MCP error -32602: x",
+      }),
+    ).toBe("notApplicable");
+  });
+
+  /**
+   * 거절이 없었으면 확인할 근거도 없다. 본문이 화이트리스트 모양이어도 `verified` 가 아니다.
+   * 그 케이스는 이미 `isError` 단언 실패로 빨간색이라, 미확인 목록과 AI 진단에 실을 이유가 없다.
+   */
+  it("거절을 기대했지만 거절이 오지 않으면 판정 대상이 아니다", () => {
+    expect(
+      classifyRejectionBasis({
+        expectsRejection: true,
+        rejected: false,
+        toolName: "t",
+        bodyText: "MCP error -32602: x",
+      }),
+    ).toBe("notApplicable");
+    expect(
+      classifyRejectionBasis({
+        expectsRejection: true,
+        rejected: false,
+        toolName: "t",
+        bodyText: null,
+      }),
     ).toBe("notApplicable");
   });
 

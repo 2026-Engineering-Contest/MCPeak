@@ -125,6 +125,45 @@ describe("후보 채택 규칙", () => {
     expect(result.cases[0]?.needsClassification).toBe(false);
   });
 
+  it("보류는 미채택에 포함하되 따로 센다", async () => {
+    const bothProposed: PreFillResult = {
+      accepted: [
+        { caseId: "c", field: "v", value: "AI" },
+        { caseId: "other", field: "v", value: "AI" },
+      ],
+      discarded: [],
+    };
+    // c 는 baseline 도 제안도 실패해 보류이고, other 는 baseline 이 이미 통과한다.
+    const dryRun = async (o: { suite: TestSuiteSpec }): Promise<DryRunResult> => ({
+      outcomes: o.suite.cases.map((item) => ({
+        caseId: item.id,
+        caseName: item.name,
+        status: item.id === "other" ? ("passed" as const) : ("failed" as const),
+        detail: "",
+        rejectionBasis: "notApplicable" as const,
+      })),
+    });
+    const result = await applyPreFill({
+      client,
+      preFill: bothProposed,
+      baseline: baselineSuite,
+      dryRun,
+    });
+    expect(result.adopted).toBe(0);
+    expect(result.notAdopted).toBe(2);
+    expect(result.held).toBe(1);
+  });
+
+  it("제안이 없으면 보류도 0이다", async () => {
+    const result = await applyPreFill({
+      client,
+      preFill: { accepted: [], discarded: [] },
+      baseline: baselineSuite,
+      dryRun: vi.fn(),
+    });
+    expect(result.held).toBe(0);
+  });
+
   it("제안이 없으면 서버를 부르지 않는다", async () => {
     const dryRun = vi.fn();
     const result = await applyPreFill({

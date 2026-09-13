@@ -23,6 +23,17 @@ describe("generate 도움말", () => {
     expect(help).toContain("멈추는 것입니다");
   });
 
+  it("--diagnose-rejections 가 사용법 줄에 나온다", () => {
+    expect(GENERATE_USAGE).toContain("[--diagnose-rejections]");
+  });
+
+  it("--diagnose-rejections 설명이 도움말에 있다", () => {
+    expect(help).toContain("--diagnose-rejections");
+    expect(help).toContain("통과한 거절 케이스의 응답을 나열하고");
+    // 기본값을 안 적으면 사용자가 이미 켜져 있다고 읽는다.
+    expect(help).toContain("기본은 끕니다");
+  });
+
   it("--no-repair 설명이 도움말에 있다", () => {
     expect(help).toContain(
       "--no-repair           시험 실행이 실패해도 입력값을 고쳐 다시 시도하지 않습니다.",

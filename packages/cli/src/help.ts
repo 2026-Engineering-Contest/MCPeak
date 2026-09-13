@@ -85,7 +85,7 @@ feature\` 가 stderr 에 한 줄 찍힙니다(실측: Node 22.18.0 에서 나오
 SQLite 파일이라 영향받지 않습니다.**`;
 
 export const GENERATE_USAGE =
-  "사용법: mcpeak generate --out <suite.json> (-- <executable> [args...] | --command <executable> [--arg <value> ...] [--env <NAME> ...] | --url <URL> [--header-env <헤더이름>=<환경변수이름> ...]) [--suite-id <id>] [--name <name>] [--baseline-only] [--provider <codex|claude>] [--model <model>] [--no-dry-run] [--reset-cmd <command>] [--no-repair] [--force]";
+  "사용법: mcpeak generate --out <suite.json> (-- <executable> [args...] | --command <executable> [--arg <value> ...] [--env <NAME> ...] | --url <URL> [--header-env <헤더이름>=<환경변수이름> ...]) [--suite-id <id>] [--name <name>] [--baseline-only] [--provider <codex|claude>] [--model <model>] [--no-dry-run] [--reset-cmd <command>] [--no-repair] [--diagnose-rejections] [--force]";
 
 /**
  * 시험 실행 옵션 설명. 사용법 한 줄로는 `--reset-cmd` 가 셸을 거치지 않는다는 제약을 알 수
@@ -108,6 +108,11 @@ const GENERATE_DRY_RUN_OPTIONS = `옵션:
                         파이프나 && 는 쓸 수 없습니다
   --no-repair           시험 실행이 실패해도 입력값을 고쳐 다시 시도하지 않습니다.
                         실패가 곧바로 분류 화면으로 갑니다
+  --diagnose-rejections
+                        통과한 거절 케이스의 응답을 나열하고, provider 가 있으면 그 거절이
+                        입력 검증 때문인지 서버 내부 오류인지 AI 에게 참고 의견을 묻습니다.
+                        기본은 끕니다. 손으로 쓴 거절 문장은 전부 이 목록에 오르므로,
+                        서버가 잘못된 입력에 그냥 터지는지 의심될 때 켜세요
   --force               \`--out\` 경로에 파일이 있으면 지우고 새로 씁니다. 기본은 저장을
                         멈추는 것입니다
 ${ENV_FORWARD_OPTION}

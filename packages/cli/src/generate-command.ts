@@ -89,6 +89,11 @@ export interface GenerateCommandInput {
   readonly resetCmd?: string;
   /** 입력값 교정 단계를 돌릴지 여부. 기본은 실행이고 `--no-repair` 가 끈다. 설계 문서 §7. */
   readonly repair: boolean;
+  /**
+   * 통과한 거절 케이스의 근거를 확인할지 여부. 기본은 꺼짐이고 `--diagnose-rejections` 가 켠다.
+   * 끄면 미확인 목록도 AI 진단도 나가지 않고 한 줄 고지만 남는다(ADR-0098 · 설계 §4.2).
+   */
+  readonly diagnoseRejections: boolean;
 }
 export interface GenerateCommandDependencies {
   connect(options: { command: string; args: readonly string[] }): Promise<McpStdioConnection>;
@@ -335,10 +340,17 @@ const optionNames = new Set([
   "--no-dry-run",
   "--reset-cmd",
   "--no-repair",
+  "--diagnose-rejections",
   "--force",
 ]);
 /** 값을 받지 않는 옵션. `=` 를 붙여 쓸 수 없고 두 번 쓸 수 없다. */
-const flagNames = new Set(["--baseline-only", "--no-dry-run", "--no-repair", "--force"]);
+const flagNames = new Set([
+  "--baseline-only",
+  "--no-dry-run",
+  "--no-repair",
+  "--diagnose-rejections",
+  "--force",
+]);
 const removedGenerateOptions = new Set(["--cassette", "--record"]);
 const removedGenerateOptionMessage = (option: string): string =>
   `\`${option}\` generate 옵션은 Tool 카세트와 함께 제거되었습니다(ADR-0059). ` +
@@ -510,6 +522,13 @@ export function parseGenerateCommand(argv: readonly string[]): GenerateCommandIn
   // 사용자가 둘 중 하나를 착각한 것이다. 조용히 무시하는 대신 사용 오류로 돌려준다.
   if (!dryRun && !repair)
     throw new UsageError("`--no-dry-run`과 `--no-repair`는 함께 사용할 수 없습니다.");
+  // 확인할 거절은 시험 실행이 만든다. 실행을 끈 채로 켜면 켜는 대상이 없고, 그 조합은
+  // 사용자가 둘 중 하나를 착각한 것이다. 위 `--no-repair` 와 같은 판단이다.
+  const diagnoseRejections = flags.has("--diagnose-rejections");
+  if (diagnoseRejections && !dryRun)
+    throw new UsageError(
+      "`--diagnose-rejections`는 `--no-dry-run`과 함께 사용할 수 없습니다. 시험 실행이 없으면 확인할 거절이 없습니다.",
+    );
   const resetCmd = values.get("--reset-cmd");
   // 시험 실행을 끄면 서버를 접촉하지 않는다. 초기화는 접촉을 전제한 옵션이므로 함께 주면
   // 조용히 무시된다. 무시하는 대신 사용 오류로 돌려준다.
@@ -542,6 +561,7 @@ export function parseGenerateCommand(argv: readonly string[]): GenerateCommandIn
     force: flags.has("--force"),
     resetCmd,
     repair,
+    diagnoseRejections,
   });
 }
 
@@ -1048,6 +1068,10 @@ function writeDryRunResult(io: ReviewIO, result: DryRunResult): void {
 
 /**
  * 거절 근거 미확인 목록 (#89 · 설계 문서 §5.2). 시험 실행 결과 블록 바로 아래에 붙는다.
+ * `--diagnose-rejections` 를 켰을 때만 부른다(ADR-0098).
+ *
+ * 무엇을 셀지는 부르는 쪽이 정해 배열로 넘긴다. 여기서 다시 거르면 같은 규칙이 두 곳에
+ * 생기고, 한쪽만 고쳐지면 목록의 건수와 진단 건수가 소리 없이 갈린다.
  *
  * **이 케이스들은 통과했다.** 목록은 판정도 저장 여부도 바꾸지 않는다. `unverified` 는
  * "거절이 아니다" 가 아니라 "확인하지 못했다" 는 뜻이라, 문장이 실패나 결함이라고 말하지 않고
@@ -1057,8 +1081,7 @@ function writeDryRunResult(io: ReviewIO, result: DryRunResult): void {
  * 여러 줄 응답이 한 줄이 되고 제어 문자도 함께 무해해진다. 자르기는 `runner` 가 이미 진단 값과
  * 같은 상한에서 했다(`clampObservedText`). 여기서 규칙을 새로 만들지 않는다.
  */
-function writeRejectionUnverified(io: ReviewIO, result: DryRunResult): void {
-  const unverified = result.outcomes.filter((outcome) => outcome.rejectionBasis === "unverified");
+function writeRejectionUnverified(io: ReviewIO, unverified: readonly DryRunCaseOutcome[]): void {
   if (unverified.length === 0) return;
   // 열은 이스케이프한 뒤의 폭으로 맞춘다. 순서를 뒤집으면 열이 어긋난다(reporter.ts 와 같다).
   const ids = unverified.map((outcome) => escapeTerminalText(outcome.caseId));
@@ -1127,20 +1150,17 @@ function writeRejectionDiagnosis(
 async function askRejectionDiagnosis(options: {
   readonly io: ReviewIO;
   readonly deps: GenerateCommandDependencies;
-  readonly result: DryRunResult;
+  /** 물을 대상. 부르는 쪽이 이미 골랐다. 여기서 다시 거르지 않는다. */
+  readonly unverified: readonly DryRunCaseOutcome[];
   readonly suite: TestSuiteSpec;
   readonly tools: readonly ToolDef[];
   readonly provider: RejectionDiagnosisProvider | undefined;
   readonly model: string;
 }): Promise<void> {
-  const { io, deps, provider } = options;
+  const { io, deps, provider, unverified } = options;
   const prepare = deps.prepareRejectionDiagnosisRequests;
   const dispatch = deps.dispatchRejectionDiagnosis;
   if (provider === undefined || prepare === undefined || dispatch === undefined) return;
-
-  const unverified = options.result.outcomes.filter(
-    (outcome) => outcome.rejectionBasis === "unverified",
-  );
   if (unverified.length === 0) return;
 
   const cases = unverified.flatMap((outcome) => {
@@ -1462,24 +1482,39 @@ async function runInteractiveReview(
             continue;
           }
           writeDryRunResult(io, result);
-          // 거절 근거 미확인 목록(§5.2). 결과 블록 바로 아래다. 판정을 바꾸지 않으므로 아래
-          // 교정·분류 흐름은 이 값을 읽지 않는다.
-          writeRejectionUnverified(io, result);
-          // 8.5. 거절 근거 AI 진단(§6). **호출은 사용자가 시작한다.** 자동으로 부르지 않는다 —
-          // 케이스가 많으면 비용이 곱해지고 provider 가 없는 사용자가 대다수다. 결과는 화면에만
-          // 나가고 아래 교정·분류·저장 흐름은 이 값을 읽지 않는다.
-          await askRejectionDiagnosis({
-            io,
-            deps,
-            result,
-            suite: dryRunSuite,
-            tools,
-            provider:
-              preferred === undefined
-                ? undefined
-                : deps.rejectionProviders?.[preferred]?.(model ?? defaultModel(preferred)),
-            model: model ?? (preferred === undefined ? "" : defaultModel(preferred)),
-          });
+          // 통과한 거절 케이스만 대상이다. runner 가 거절 없는 케이스를 notApplicable 로 내지만
+          // (설계 §4.1), 한 패키지만 먼저 들어가도 화면이 틀리지 않게 여기서 한 번 더 거른다.
+          // 실패한 케이스는 이미 위 결과 블록에 빨간색으로 있다. 두 번 읽힐 이유가 없다.
+          const unverified = result.outcomes.filter(
+            (outcome) => outcome.status === "passed" && outcome.rejectionBasis === "unverified",
+          );
+          if (input.diagnoseRejections) {
+            // 거절 근거 미확인 목록(§5.2). 결과 블록 바로 아래다. 판정을 바꾸지 않으므로 아래
+            // 교정·분류 흐름은 이 값을 읽지 않는다.
+            writeRejectionUnverified(io, unverified);
+            // 8.5. 거절 근거 AI 진단(§6). **호출은 사용자가 시작한다.** 자동으로 부르지 않는다.
+            // 케이스가 많으면 비용이 곱해지고 provider 가 없는 사용자가 대다수다. 결과는 화면에만
+            // 나가고 아래 교정·분류·저장 흐름은 이 값을 읽지 않는다.
+            await askRejectionDiagnosis({
+              io,
+              deps,
+              unverified,
+              suite: dryRunSuite,
+              tools,
+              provider:
+                preferred === undefined
+                  ? undefined
+                  : deps.rejectionProviders?.[preferred]?.(model ?? defaultModel(preferred)),
+              model: model ?? (preferred === undefined ? "" : defaultModel(preferred)),
+            });
+          } else if (unverified.length > 0) {
+            // 안 한 것과 못 한 것을 같은 말로 쓰면 플래그를 켠 뒤의 문장(`확인하지 못했습니다`)과
+            // 구분이 안 된다. 여기는 우리가 묻지 않기로 한 것이므로 `확인하지 않았습니다` 다.
+            io.write(
+              `  통과한 거절 케이스 ${unverified.length}건의 근거는 확인하지 않았습니다. ` +
+                "--diagnose-rejections 로 목록과 AI 진단을 볼 수 있습니다.\n\n",
+            );
+          }
           // 9. 입력값 교정(§4). 대상이 없으면 아무것도 묻지 않는다.
           const targets = input.repair
             ? selectRepairTargets({
@@ -1969,6 +2004,9 @@ export function renderOutputContractSkips(skips: readonly OutputContractSkip[]):
 /**
  * AI 사전보완 결과 요약. 대상이 없으면 빈 문자열이다.
  *
+ * 네 갈래를 나눠 적는다(설계 §4.3). `미채택` 과 `보류` 를 합쳐 "baseline 값이 이미 통과" 라고
+ * 쓰면 baseline 이 실패한 케이스에 사실과 다른 말이 붙는다.
+ *
  * **`버림` 은 사유와 대상을 반드시 적는다.** 개수만 적으면 사용자가 무엇을 잃었는지 모른다
  * (이슈 #120 이 `discarded` 가 개수뿐이라고 지적한 것과 같은 계열이다). 버림이 0건이면 그 줄을
  * 아예 찍지 않는다.
@@ -1978,15 +2016,18 @@ export function renderPreFillSummary(options: {
   readonly proposedToolCount: number;
   readonly adopted: number;
   readonly notAdopted: number;
+  /** `notAdopted` 중 baseline 값도 제안 값도 실패한 수. 아래에서 빼서 따로 적는다. */
+  readonly held: number;
   readonly discarded: readonly PreFillDiscard[];
 }): string {
-  const { toolCount, proposedToolCount, adopted, notAdopted, discarded } = options;
+  const { toolCount, proposedToolCount, adopted, notAdopted, held, discarded } = options;
   if (proposedToolCount === 0 && discarded.length === 0) return "";
   const lines = [
     `AI 사전보완: 툴 ${toolCount}개 중 ${proposedToolCount}개에 값 제안을 받았습니다.`,
     `  채택 ${adopted} (실제 서버에서 baseline 값이 실패하고 제안 값이 통과)`,
-    `  미채택 ${notAdopted} (baseline 값이 이미 통과)`,
+    `  미채택 ${notAdopted - held} (baseline 값이 이미 통과)`,
   ];
+  if (held > 0) lines.push(`  보류 ${held} (baseline 값도 제안 값도 실패. 분류 화면에서 정합니다)`);
   for (const item of discarded)
     lines.push(`  버림 1 (${item.reason}: ${item.caseId}.${item.field})`);
   return `${lines.join("\n")}\n`;
@@ -2146,6 +2187,7 @@ async function runPreFill(
       proposedToolCount: request.tools.length,
       adopted: applied.adopted,
       notAdopted: applied.notAdopted,
+      held: applied.held,
       discarded: dispatched.result.discarded,
     }),
   );

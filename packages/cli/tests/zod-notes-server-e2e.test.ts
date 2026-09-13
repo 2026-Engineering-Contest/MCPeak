@@ -325,8 +325,9 @@ describe.sequential("zod-notes-server (McpServer + zod) 실서버 E2E", () => {
         timedOut: 0,
         cancelled: 0,
         notRun: 0,
-        // 거절해야 할 입력을 받아들인 4건은 거절 근거를 확인할 수 없다.
-        rejectionUnverified: 4,
+        // 거절해야 할 입력을 받아들인 4건은 거절이 오지 않았으므로 판정 대상이 아니다
+        // (ADR-0098). 그 4건은 isError 단언 실패로 이미 failed 에 들어 있다.
+        rejectionUnverified: 0,
       });
       expect(
         mutantReport.cases.filter((item) => item.status === "failed").map((item) => item.spec.id),

@@ -217,6 +217,7 @@ describe("parseGenerateCommand", () => {
       force: false,
       resetCmd: undefined,
       repair: true,
+      diagnoseRejections: false,
     });
   });
   it("시험 실행 옵션을 파싱한다", () => {
@@ -296,6 +297,17 @@ describe("parseGenerateCommand", () => {
   it("--no-repair 와 --no-dry-run 을 함께 주면 사용 오류다", () => {
     const base = ["--suite-id=x", "--name=n", "--out=x.json", "--command=node"];
     expect(() => parseGenerateCommand([...base, "--no-repair", "--no-dry-run"])).toThrow();
+  });
+  it("--diagnose-rejections 와 --no-dry-run 을 함께 주면 사용 오류다", () => {
+    const base = ["--suite-id=x", "--name=n", "--out=x.json", "--command=node"];
+    expect(() => parseGenerateCommand([...base, "--diagnose-rejections", "--no-dry-run"])).toThrow(
+      "`--diagnose-rejections`는 `--no-dry-run`과 함께 사용할 수 없습니다. 시험 실행이 없으면 확인할 거절이 없습니다.",
+    );
+  });
+  it("--diagnose-rejections 는 기본이 꺼짐이다", () => {
+    const base = ["--suite-id=x", "--name=n", "--out=x.json", "--command=node"];
+    expect(parseGenerateCommand(base).diagnoseRejections).toBe(false);
+    expect(parseGenerateCommand([...base, "--diagnose-rejections"]).diagnoseRejections).toBe(true);
   });
   it("--no-repair 를 주면 repair 가 꺼진다", () => {
     expect(
@@ -2193,6 +2205,8 @@ describe("generate 시험 실행 게이트", () => {
     "--arg",
     "server.mjs",
   ];
+  /** 거절 근거 목록과 AI 진단은 이제 플래그 뒤에 있다(설계 §4.2). 그 화면을 보는 테스트가 쓴다. */
+  const diagArgv = [...gateArgv, "--diagnose-rejections"];
 
   interface GateOptions {
     readonly choices: string[];
@@ -2360,8 +2374,66 @@ describe("generate 시험 실행 게이트", () => {
         confirms: [true],
         respond: rejectWith("MCP error -32602: Input validation error: bad city"),
       });
-      await runGenerateCommand(gateArgv, d.value);
+      await runGenerateCommand(diagArgv, d.value);
       expect(d.output()).not.toContain("거절 근거 미확인");
+    });
+
+    it("플래그가 없으면 목록 대신 한 줄 고지만 찍는다", async () => {
+      const d = gateDeps({
+        choices: ["save", "cancel"],
+        confirms: [true],
+        respond: rejectWith("→ 'city' 는 문자열이어야 합니다."),
+      });
+      await runGenerateCommand(gateArgv, d.value);
+      const text = d.output();
+      expect(text).not.toContain("거절 근거 미확인");
+      expect(text).toContain(
+        `  통과한 거절 케이스 ${failingCases}건의 근거는 확인하지 않았습니다. --diagnose-rejections 로 목록과 AI 진단을 볼 수 있습니다.`,
+      );
+    });
+
+    it("미확인이 0건이면 고지도 없다", async () => {
+      const d = gateDeps({
+        choices: ["save", "cancel"],
+        confirms: [true],
+        // TS SDK 지문이라 전부 verified 다.
+        respond: rejectWith("MCP error -32602: Input validation error: bad city"),
+      });
+      await runGenerateCommand(gateArgv, d.value);
+      expect(d.output()).not.toContain("근거는 확인하지 않았습니다");
+    });
+
+    /**
+     * 거절을 기대했는데 정상 응답이 온 케이스는 실패다. 거절이 없었으니 확인할 근거도 없고,
+     * 그 케이스가 미확인 목록에 오르면 사용자가 이미 빨간 케이스를 두 번 읽는다.
+     */
+    it("거절이 오지 않은 케이스는 목록에 오르지 않는다", async () => {
+      const d = gateDeps({
+        choices: ["save"],
+        inputs: ["s"],
+        confirms: [true, true],
+        // 필수 필드 누락에는 정상 응답을, 타입 위반에는 손으로 쓴 거절을 준다.
+        respond: (_name, args) => {
+          const city = (args as { city?: unknown })?.city;
+          if (city !== undefined && typeof city !== "string")
+            return {
+              content: [{ type: "text", text: "→ 'city' 는 문자열이어야 합니다." }],
+              isError: true,
+              raw: null,
+            } as ToolResult;
+          return ok();
+        },
+      });
+      await runGenerateCommand(diagArgv, d.value);
+      const text = d.output();
+      expect(text).toContain("거절 근거 미확인 1건");
+      const listed = text.split("\n").filter((line) => line.includes("응답: "));
+      expect(listed).toHaveLength(1);
+      expect(listed[0]).toContain("weather-type-city");
+      expect(text).not.toContain("weather-missing-city");
+      // 실패 목록에는 그대로 있다.
+      expect(text).toContain("✗ 실패 1건");
+      expect(text).toContain("[1] weather가 필수 필드 'city' 누락을 거절한다");
     });
 
     it("미확인 케이스를 id 와 응답 한 줄로 나열한다", async () => {
@@ -2370,7 +2442,7 @@ describe("generate 시험 실행 게이트", () => {
         confirms: [true],
         respond: rejectWith("→ 'city' 는 문자열이어야 합니다."),
       });
-      await runGenerateCommand(gateArgv, d.value);
+      await runGenerateCommand(diagArgv, d.value);
       const text = d.output();
       expect(text).toContain(`거절 근거 미확인 ${failingCases}건`);
       expect(text).toContain("응답: → 'city' 는 문자열이어야 합니다.");
@@ -2383,7 +2455,7 @@ describe("generate 시험 실행 게이트", () => {
         confirms: [true],
         respond: rejectWith("첫 줄\n[31m빨강"),
       });
-      await runGenerateCommand(gateArgv, d.value);
+      await runGenerateCommand(diagArgv, d.value);
       const lines = d.output().split("\n");
       const listed = lines.filter((line) => line.includes("응답: "));
       expect(listed).toHaveLength(failingCases);
@@ -2398,7 +2470,7 @@ describe("generate 시험 실행 게이트", () => {
         confirms: [true],
         respond: rejectWith("→ 손으로 쓴 거절"),
       });
-      await runGenerateCommand(gateArgv, d.value);
+      await runGenerateCommand(diagArgv, d.value);
       const columns = d
         .output()
         .split("\n")
@@ -2413,7 +2485,7 @@ describe("generate 시험 실행 게이트", () => {
         confirms: [true, true],
         respond: rejectWith("→ 'city' 는 문자열이어야 합니다."),
       });
-      await expect(runGenerateCommand(gateArgv, d.value)).resolves.toBe(0);
+      await expect(runGenerateCommand(diagArgv, d.value)).resolves.toBe(0);
       // 미확인이어도 케이스는 통과다. 분류를 묻지 않고 저장까지 간다.
       expect(d.io.input).not.toHaveBeenCalled();
       expect(d.output()).toContain(`  ✓ 통과 ${baselineCases.length}건`);
@@ -2457,9 +2529,24 @@ describe("generate 시험 실행 게이트", () => {
 
     it("provider 가 없으면 진단을 묻지 않는다", async () => {
       const d = gateDeps({ choices: ["save", "cancel"], confirms: [true], respond: handWritten });
-      await runGenerateCommand(gateArgv, d.value);
+      await runGenerateCommand(diagArgv, d.value);
       expect(d.output()).toContain("거절 근거 미확인");
       expect(d.output()).not.toContain("진단을 AI 에게 요청할까요");
+    });
+
+    it("플래그 없이는 provider 가 있어도 진단을 요청하지 않는다", async () => {
+      const ai = answering("rejected");
+      const d = gateDeps({
+        choices: ["save", "cancel"],
+        confirms: [true],
+        respond: handWritten,
+        rejectionProviders: ai.providers,
+      });
+      await runGenerateCommand([...gateArgv, "--provider", "claude"], d.value);
+      const text = d.output();
+      expect(text).not.toContain("진단을 AI 에게 요청할까요");
+      expect(text).not.toContain("AI 진단을 요청했습니다");
+      expect(ai.seen).toHaveLength(0);
     });
 
     it("미확인이 0건이면 진단을 묻지 않는다", async () => {
@@ -2479,7 +2566,7 @@ describe("generate 시험 실행 게이트", () => {
             : ok(),
         rejectionProviders: ai.providers,
       });
-      await runGenerateCommand([...gateArgv, "--provider", "claude"], d.value);
+      await runGenerateCommand([...diagArgv, "--provider", "claude"], d.value);
       expect(d.output()).not.toContain("진단을 AI 에게 요청할까요");
       expect(ai.seen).toHaveLength(0);
     });
@@ -2496,7 +2583,7 @@ describe("generate 시험 실행 게이트", () => {
         respond: handWritten,
         rejectionProviders: ai.providers,
       });
-      await runGenerateCommand([...gateArgv, "--provider", "claude"], d.value);
+      await runGenerateCommand([...diagArgv, "--provider", "claude"], d.value);
       const text = d.output();
       expect(text).toContain("서버가 자유롭게 쓰는 텍스트");
       expect(text).toContain("값 치환을 적용하지 않습니다");
@@ -2513,7 +2600,7 @@ describe("generate 시험 실행 게이트", () => {
         respond: handWritten,
         rejectionProviders: ai.providers,
       });
-      await runGenerateCommand([...gateArgv, "--provider", "claude"], d.value);
+      await runGenerateCommand([...diagArgv, "--provider", "claude"], d.value);
       expect(d.output()).toContain("진단을 AI 에게 요청할까요");
       expect(ai.seen).toHaveLength(0);
     });
@@ -2529,7 +2616,7 @@ describe("generate 시험 실행 게이트", () => {
         respond: handWritten,
         rejectionProviders: ai.providers,
       });
-      await runGenerateCommand([...gateArgv, "--provider", "claude"], d.value);
+      await runGenerateCommand([...diagArgv, "--provider", "claude"], d.value);
       const text = d.output();
       expect(text).toContain(`거절 근거 미확인 ${failingCases}건에 대해 AI 진단을 요청했습니다.`);
       expect(text).toContain("판단 불가");
@@ -2552,7 +2639,7 @@ describe("generate 시험 실행 게이트", () => {
           respond: handWritten,
           rejectionProviders: ai.providers,
         });
-        await runGenerateCommand([...gateArgv, "--provider", "claude"], d.value);
+        await runGenerateCommand([...diagArgv, "--provider", "claude"], d.value);
         expect(d.output()).toContain(label);
       }
     });
@@ -2566,7 +2653,7 @@ describe("generate 시험 실행 게이트", () => {
         rejectionProviders: ai.providers,
       });
       await expect(
-        runGenerateCommand([...gateArgv, "--provider", "claude"], d.value),
+        runGenerateCommand([...diagArgv, "--provider", "claude"], d.value),
       ).resolves.toBe(0);
       // crashed 라고 답해도 케이스는 통과이고 저장까지 간다. 분류를 묻지 않는다.
       expect(d.io.input).not.toHaveBeenCalled();
@@ -2589,7 +2676,7 @@ describe("generate 시험 실행 게이트", () => {
         },
       });
       await expect(
-        runGenerateCommand([...gateArgv, "--provider", "claude"], d.value),
+        runGenerateCommand([...diagArgv, "--provider", "claude"], d.value),
       ).resolves.toBe(0);
       expect(d.stderr.join("")).toContain("GENERATE_PROVIDER_TIMEOUT");
       // 실패해도 승인 화면이 이어져 최종 지문까지 간다.
@@ -2608,7 +2695,7 @@ describe("generate 시험 실행 게이트", () => {
           }),
         },
       });
-      await runGenerateCommand([...gateArgv, "--provider", "claude"], d.value);
+      await runGenerateCommand([...diagArgv, "--provider", "claude"], d.value);
       expect(d.stderr.join("")).toContain("GENERATE_PROVIDER_SCHEMA");
       expect(d.output()).toContain("Final fingerprint:");
     });
@@ -2630,7 +2717,7 @@ describe("generate 시험 실행 게이트", () => {
         },
       });
       await expect(
-        runGenerateCommand([...gateArgv, "--provider", "claude"], d.value),
+        runGenerateCommand([...diagArgv, "--provider", "claude"], d.value),
       ).resolves.toBe(0);
       expect(d.output()).toContain("진단 요청이 크기 상한(256KB)을 넘어 보내지 못했습니다.");
       expect(d.output()).toContain("케이스 판정과 저장에는 영향이 없습니다.");
@@ -2649,7 +2736,7 @@ describe("generate 시험 실행 게이트", () => {
         },
       });
       await expect(
-        runGenerateCommand([...gateArgv, "--provider", "claude"], d.value),
+        runGenerateCommand([...diagArgv, "--provider", "claude"], d.value),
       ).rejects.toThrow("예상치 못한 오류");
     });
 
@@ -2666,7 +2753,7 @@ describe("generate 시험 실행 게이트", () => {
             : ok(),
         rejectionProviders: ai.providers,
       });
-      await runGenerateCommand([...gateArgv, "--provider", "claude"], d.value);
+      await runGenerateCommand([...diagArgv, "--provider", "claude"], d.value);
       expect(d.output()).toContain(
         `응답 본문이 없어 ${failingCases}건 전부를 AI 에게 물을 수 없습니다.`,
       );

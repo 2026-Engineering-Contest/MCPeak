@@ -847,6 +847,70 @@ describe("runSuite와 bodyMatchesSchema", () => {
       expect(never?.status).toBe("notRun");
       expect(never?.rejectionBasis).toBe("notApplicable");
     });
+
+    /**
+     * 거절을 기대했는데 정상 응답이 온 케이스는 `isError` 단언이 이미 실패로 잡는다. 거절이
+     * 없었으니 확인할 "거절의 근거" 도 없다. 이 케이스를 `unverified` 로 두면 실패 목록에
+     * 이미 오른 케이스가 미확인 목록과 AI 진단에 한 번 더 실린다(설계 §1.2 · §4.1).
+     */
+    it("거절을 기대했지만 정상 응답이 오면 failed 이고 notApplicable 이다", async () => {
+      const report = await runSuite({
+        client: respondWith("MCP error -32602: 이 본문은 지문 모양이지만 거절이 아니다", false),
+        suite: rejectionSuite("not-rejected"),
+      }).report;
+      expect(report.cases[0]?.status).toBe("failed");
+      expect(report.cases[0]?.rejectionBasis).toBe("notApplicable");
+      expect(report.cases[0]).not.toHaveProperty("rejectionBody");
+      expect(report.summary.rejectionUnverified).toBe(0);
+    });
+
+    it("거절이 오지 않은 케이스는 빼고 손으로 쓴 거절만 unverified 로 센다", async () => {
+      const suite: TestSuiteSpec = {
+        schemaVersion: 1,
+        id: "mixed-not-rejected",
+        name: "mixed-not-rejected",
+        defaultTimeoutMs: 1_000,
+        cases: [
+          {
+            id: "not-rejected",
+            name: "not-rejected",
+            operation: { type: "callTool", tool: "get_weather", input: { city: 1 } },
+            assertions: [{ type: "isError", expected: true }],
+          },
+          {
+            id: "handwritten",
+            name: "handwritten",
+            operation: { type: "callTool", tool: "get_weather", input: { city: 2 } },
+            assertions: [{ type: "isError", expected: true }],
+          },
+        ],
+      };
+      const report = await runSuite({
+        client: {
+          listTools: async () => [{ name: "get_weather", inputSchema: {} }],
+          callTool: async (_name, args) => {
+            const city = (args as { city?: unknown }).city;
+            if (city === 1)
+              return { content: [{ type: "text", text: "맑음" }], isError: false, raw: null };
+            return {
+              content: [{ type: "text", text: "→ 'city' 는 문자열이어야 합니다." }],
+              isError: true,
+              raw: null,
+            };
+          },
+          close: async () => undefined,
+        },
+        suite,
+      }).report;
+      expect(report.cases.map((item) => item.status)).toEqual(["failed", "passed"]);
+      expect(report.cases.map((item) => item.rejectionBasis)).toEqual([
+        "notApplicable",
+        "unverified",
+      ]);
+      expect(report.cases[0]).not.toHaveProperty("rejectionBody");
+      expect(report.cases[1]?.rejectionBody).toBe("→ 'city' 는 문자열이어야 합니다.");
+      expect(report.summary.rejectionUnverified).toBe(1);
+    });
   });
 
   it("기존 isError 전용 스위트의 보고서가 변하지 않는다", async () => {
@@ -1070,9 +1134,11 @@ describe("runSuite와 연결 상실", () => {
     expect(renderReport(report)).not.toContain("거절 근거를 확인하지 못했습니다");
   });
 
-  it("서버가 살아 있는 작업 실패의 거절 근거는 그대로 확인한다", async () => {
-    // 위 규칙이 넓어지면 안 된다. 서버가 살아서 낸 실패는 응답이 있을 수 있고, 그때 크래시가
-    // 초록으로 숨는 것이 #89 가 막으려던 것이다.
+  it("서버가 살아 있어도 호출이 던져 응답이 없으면 판정 대상이 아니다", async () => {
+    // 호출이 예외로 끝나면 `isError: true` 응답 자체가 없다. 거절이 없었으니 확인할 근거도
+    // 없고(설계 2026-09-12 §4.1), 그 케이스는 작업 실패로 이미 빨간색이라 크래시가 초록으로
+    // 숨을 자리가 없다. #89 가 막으려던 것은 서버가 **응답으로** 낸 거절이 확인 없이 초록이
+    // 되는 것이고, 그 경로는 "지문에 안 걸리면 unverified 다" 가 그대로 지킨다.
     const rejecting: TestSuiteSpec = { ...dying, cases: [call("add-missing-a", true)] };
 
     const report = await runSuite({
@@ -1080,8 +1146,10 @@ describe("runSuite와 연결 상실", () => {
       suite: rejecting,
     }).report;
 
-    expect(report.cases[0]?.rejectionBasis).toBe("unverified");
-    expect(report.summary.rejectionUnverified).toBe(1);
+    expect(report.cases[0]?.status).toBe("failed");
+    expect(report.cases[0]?.rejectionBasis).toBe("notApplicable");
+    expect(report.cases[0]).not.toHaveProperty("rejectionBody");
+    expect(report.summary.rejectionUnverified).toBe(0);
   });
 
   it("타임아웃이 연결 상실보다 먼저다", async () => {

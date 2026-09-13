@@ -39,11 +39,18 @@ const MCPEAK_MOCK_SCHEMA_REJECTION_SUFFIX = [
  */
 export function classifyRejectionBasis(options: {
   readonly expectsRejection: boolean;
+  /** 실제 응답의 `isError` 가 `true` 였는가. 거절이 안 왔으면 확인할 근거도 없다. */
+  readonly rejected: boolean;
   readonly toolName: string | null;
   readonly bodyText: string | null;
 }): RejectionBasis {
-  const { expectsRejection, toolName, bodyText } = options;
+  const { expectsRejection, rejected, toolName, bodyText } = options;
   if (!expectsRejection) return "notApplicable";
+  // 거절을 기대했지만 정상 응답이 왔다. 그 케이스는 isError 단언이 이미 실패로 잡았고,
+  // "거절의 근거" 는 거절이 있어야 물을 수 있다. 이 검사가 본문 검사보다 앞에 있어야 한다.
+  // 뒤에 두면 본문 없는 정상 응답이 `unverified` 로 떨어져, 이미 빨간 케이스가 미확인
+  // 목록과 AI 진단에 한 번 더 오른다. 본문이 지문 모양이어도 마찬가지로 대상이 아니다.
+  if (!rejected) return "notApplicable";
   if (bodyText === null) return "unverified";
   const text = bodyText.trim();
 

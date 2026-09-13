@@ -1075,19 +1075,20 @@ describe("경로 충돌", () => {
     },
   };
 
-  it("'user.name' 최상위 필드와 user 객체의 name 이 함께 있으면 둘 다 뺀다", () => {
-    // 지우는 것이지 한쪽을 고르는 것이 아니다. 어느 쪽이 맞는지 알 수 없다.
+  it("'user.name' 최상위 필드는 빠지고 user 객체의 name 은 남는다", () => {
+    // #388 T4 전에는 둘이 같은 경로를 만들어 pathCollision 으로 **양쪽**이 빠졌다. 이제는
+    // 최상위 `"user.name"` 이라는 이름 자체가 읽을 수 없어 경로를 만들기 전에 빠지고, 충돌할
+    // 짝이 없어진 `user` 객체의 `name` 은 정상적으로 축을 갖는다.
     const result = deriveContractAxes(tool("t", collidingSchema));
-    expect(result.axes.some((axis) => axis.field === "user.name")).toBe(false);
     expect(result.unanalyzedFields).toContainEqual({
       path: "user.name",
-      reason: "pathCollision",
+      reason: "unreadablePath",
     });
-    // 부모인 user 는 충돌한 경로가 아니므로 그대로 남는다.
-    expect(result.axes.some((axis) => axis.field === "user")).toBe(true);
+    expect(result.axes.map((axis) => axis.field)).toContain("user.name");
+    expect(result.axes.map((axis) => axis.field)).toContain("user");
   });
 
-  it("충돌한 경로 아래도 전부 뺀다", () => {
+  it("읽을 수 없는 이름 아래는 안 내려가고 진짜 경로는 끝까지 내려간다", () => {
     const result = deriveContractAxes(
       tool("t", {
         type: "object",
@@ -1100,17 +1101,19 @@ describe("경로 충돌", () => {
         },
       }),
     );
-    expect(result.axes.some((axis) => axis.field?.startsWith("user.name"))).toBe(false);
-    expect(result.unanalyzedFields.map((item) => item.path)).toContain("user.name.first");
+    // 최상위 "user.name" 은 그 아래로 내려가지 않는다. 그 아래 경로도 같은 이유로 못 읽는다.
+    expect(result.unanalyzedFields).toEqual([{ path: "user.name", reason: "unreadablePath" }]);
+    // user 객체 쪽은 깊이 3 까지 그대로 내려간다.
+    expect(result.axes.map((axis) => axis.field)).toContain("user.name.first");
   });
 
   it("'a.b' 최상위 필드만 있고 a 객체가 없으면 충돌이 아니다", () => {
-    // 이름만 보고 미리 거르면 이 경우까지 함께 지워진다.
+    // 충돌이 아닌 것은 그대로 맞다. 사유가 pathCollision 이 아니라 unreadablePath 다.
+    // 축이 안 생기는 것은 아래 describe 가 따로 본다.
     const result = deriveContractAxes(
       tool("t", { type: "object", properties: { "a.b": { type: "string" } } }),
     );
-    expect(result.axes.map((axis) => axis.field)).toContain("a.b");
-    expect(result.unanalyzedFields).toEqual([]);
+    expect(result.unanalyzedFields).toEqual([{ path: "a.b", reason: "unreadablePath" }]);
   });
 });
 
@@ -1195,6 +1198,88 @@ describe("unanalyzedFields 사유", () => {
     expect(result.unanalyzedFields).toEqual([
       { path: "bare", reason: "noGround" },
       { path: "blocked", reason: "blockingKeyword" },
+    ]);
+  });
+});
+
+describe("이름에 경로 문자가 든 필드는 축을 만들지 않는다", () => {
+  const fieldsOf = (inputSchema: unknown) => deriveContractAxes(tool("t", inputSchema));
+
+  it("'a.b' 최상위 필드는 unreadablePath 로 빠진다", () => {
+    // 축을 만들면 valuesAtPath 가 a → b 로 읽어 input["a.b"] 를 못 찾는다. 어떤 입력도 못
+    // 덮는 축이 분모에 남는다. 못 만드는 축을 분모에 넣지 않는 기존 규칙과 같다.
+    const result = fieldsOf({
+      type: "object",
+      required: ["a.b"],
+      properties: { "a.b": { type: "string" } },
+    });
+    expect(result.axes.map((axis) => axis.kind)).toEqual(["HAPPY_PATH"]);
+    expect(result.axes.some((axis) => axis.field === "a.b")).toBe(false);
+    expect(result.unanalyzedFields).toEqual([{ path: "a.b", reason: "unreadablePath" }]);
+  });
+
+  it("'xs[0]' 처럼 대괄호가 든 이름도 빠진다", () => {
+    const result = fieldsOf({ type: "object", properties: { "xs[0]": { type: "string" } } });
+    expect(result.axes.map((axis) => axis.kind)).toEqual(["HAPPY_PATH"]);
+    expect(result.unanalyzedFields).toEqual([{ path: "xs[0]", reason: "unreadablePath" }]);
+  });
+
+  it("중첩 이름에도 적용된다", () => {
+    const result = fieldsOf({
+      type: "object",
+      properties: {
+        user: { type: "object", required: ["a.b"], properties: { "a.b": { type: "string" } } },
+      },
+    });
+    expect(result.axes.some((axis) => axis.field === "user.a.b")).toBe(false);
+    expect(result.unanalyzedFields).toEqual([{ path: "user.a.b", reason: "unreadablePath" }]);
+    // 부모는 읽을 수 있는 이름이라 그대로 축을 갖는다.
+    expect(result.axes.map((axis) => axis.field)).toContain("user");
+  });
+
+  it("그 아래로 내려가지 않는다", () => {
+    // 그 아래 경로도 같은 이유로 읽을 수 없다. 내려가면 못 덮는 축이 더 생긴다.
+    const result = fieldsOf({
+      type: "object",
+      properties: {
+        "a.b": { type: "object", properties: { inner: { type: "string" } } },
+      },
+    });
+    expect(result.axes.some((axis) => axis.field?.startsWith("a.b"))).toBe(false);
+    expect(result.unanalyzedFields).toEqual([{ path: "a.b", reason: "unreadablePath" }]);
+  });
+
+  it("pathCollision 과 다른 사유다", () => {
+    // 충돌은 두 선언이 같은 경로를 가리켜 어느 쪽이 맞는지 모르는 것이고, unreadablePath 는
+    // 선언이 하나인데 우리가 못 읽는 것이다. 사용자가 할 일이 다르다.
+    const result = fieldsOf({
+      type: "object",
+      properties: {
+        "user.name": { type: "string" },
+        user: { type: "object", properties: { name: { type: "string" } } },
+        "x[0]": { type: "string" },
+      },
+    });
+    const byPath = new Map(result.unanalyzedFields.map((item) => [item.path, item.reason]));
+    expect(byPath.get("user.name")).toBe("unreadablePath");
+    expect(byPath.get("x[0]")).toBe("unreadablePath");
+    // user 객체 쪽 name 은 남는다. 충돌할 짝이 사라졌기 때문이다.
+    expect(result.axes.map((axis) => axis.field)).toContain("user.name");
+  });
+
+  it("평범한 이름은 영향이 없다", () => {
+    const result = fieldsOf({
+      type: "object",
+      required: ["city"],
+      properties: { city: { type: "string" }, user_id: { type: "integer", minimum: 1 } },
+    });
+    expect(result.unanalyzedFields).toEqual([]);
+    expect(result.axes.map((axis) => `${axis.kind}:${axis.field ?? ""}`)).toEqual([
+      "HAPPY_PATH:",
+      "REQUIRED_OMITTED:city",
+      "TYPE_VIOLATION:city",
+      "TYPE_VIOLATION:user_id",
+      "RANGE_VIOLATION:user_id",
     ]);
   });
 });

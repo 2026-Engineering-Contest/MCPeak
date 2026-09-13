@@ -15,19 +15,21 @@ const ENV_KEYS = {
  * 재생에서만 오는 선택 키라 `ENV_KEYS` 와 나눠 둔다. 위 목록은 "하나라도 빠지면 설정이 깨진
  * 것" 이라는 전부-아니면-전무 검사를 받는데, 여기 섞으면 녹화 실행이 그 검사에 걸린다.
  */
-const ENV_OBSERVER_PATH = "MCPEAK_EXTERNAL_OBSERVER_PATH";
+const ENV_OBSERVER_DIR = "MCPEAK_EXTERNAL_OBSERVER_DIR";
 
 const values = Object.fromEntries(
   Object.entries(ENV_KEYS).map(([name, key]) => [name, process.env[key]]),
 );
-const observerPath = process.env[ENV_OBSERVER_PATH];
-
 /**
- * **관측 경로만 지금 지운다.** 관측 사이드카는 파일 하나를 덮어쓰므로 여럿이 쓰면 마지막에
- * 끝난 프로세스의 숫자만 남는다. 이 경로의 런처 환경 정확도는 이번 변경의 범위가 아니라
- * (설계 §3), 지금 동작을 그대로 둔다.
+ * **관측 디렉터리는 지우지 않는다.** 체인의 Node 프로세스마다 관측이 설치되고 각자 자기
+ * 파일에 쓴다 — 예전에는 파일 하나라 여럿이 덮어써서 마지막에 끝난 프로세스의 숫자만
+ * 남았고, 그것이 런처 자신의 트래픽이었다(ADR-0100).
+ *
+ * 설정과 달리 **첫 가로챈 호출에서 소비하지도 않는다.** 관측은 그 호출보다 앞에서 나간
+ * `node:http` 호출도 세야 하는데, 소비 시점까지 기다리면 서버 부팅 중 호출을 놓친다.
+ * 런처의 것이 섞이는 문제는 부모가 `claimed` 로 거른다.
  */
-delete process.env[ENV_OBSERVER_PATH];
+const observerDir = process.env[ENV_OBSERVER_DIR];
 
 /**
  * **설정은 지금 지우지 않는다.** 지우면 중간에 낀 Node 런처(`npx`)가 설정을 삼켜 진짜 서버가
@@ -59,24 +61,32 @@ if (configured) {
     const timeoutMs = Number(values.timeoutMs);
     if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 60_000)
       throw new Error("Coordinator timeout이 올바르지 않습니다.");
+    // 관측은 어댑터보다 **먼저** 설치해야 부팅 중에 나간 호출도 센다. 다만 기록자 자격은
+    // 어댑터가 정하므로, 둘이 같은 상자를 본다.
+    //
+    // 재생에서만 센다. 녹화는 범위 밖 호출이 실제로 나가는 것이 정상이고(그래서 안 남는다는
+    // 사실만 알리면 된다), 재생에서야 "나가면 안 되는데 나갔다" 가 된다.
+    const claim = { won: false };
+    if (values.mode === "replay" && observerDir !== undefined) {
+      installOutOfScopeObserver({
+        coordinatorHostHeader: coordinatorUrl.host,
+        reportDir: observerDir,
+        isClaimed: () => claim.won,
+      });
+    }
     installFetchAdapter({
       mode: values.mode,
       url: coordinatorUrl.href,
       token: values.token,
       schemaVersion: 1,
       timeoutMs,
-      // 프로세스마다 하나. 세션에 저장되지 않고 와이어에만 산다(설계 §4.2).
+      // 프로세스마다 하나. 세션에 저장되지 않고 와이어에만 산다(ADR-0095).
       writerId: randomUUID(),
       onFirstCall: consumeConfiguration,
+      onClaim: () => {
+        claim.won = true;
+      },
     });
-    // 재생에서만 센다. 녹화는 범위 밖 호출이 실제로 나가는 것이 정상이고(그래서 안 남는다는
-    // 사실만 알리면 된다), 재생에서야 "나가면 안 되는데 나갔다" 가 된다.
-    if (values.mode === "replay" && observerPath !== undefined) {
-      installOutOfScopeObserver({
-        coordinatorHostHeader: coordinatorUrl.host,
-        reportPath: observerPath,
-      });
-    }
   } catch {
     process.stderr.write(
       "오류 [EXTERNAL_BOOTSTRAP_FAILED]: 외부 호출 Adapter를 설치하지 못했습니다.\n",

@@ -1,5 +1,5 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -38,7 +38,7 @@ const ENV_ADAPTERS = "MCPEAK_EXTERNAL_ADAPTERS";
 const ENV_SCHEMA = "MCPEAK_EXTERNAL_SCHEMA_VERSION";
 const ENV_TIMEOUT = "MCPEAK_EXTERNAL_TIMEOUT_MS";
 /** 재생에서만 넘긴다. 자식이 종료 시 범위 밖 호출 개수를 여기에 동기로 쓴다(ADR-0068). */
-const ENV_OBSERVER_PATH = "MCPEAK_EXTERNAL_OBSERVER_PATH";
+const ENV_OBSERVER_DIR = "MCPEAK_EXTERNAL_OBSERVER_DIR";
 
 export type StartExternalCoordinatorOptions =
   | {
@@ -697,7 +697,7 @@ export async function startExternalCoordinator(
     [ENV_ADAPTERS]: "node.fetch.v1",
     [ENV_SCHEMA]: String(PROTOCOL_SCHEMA_VERSION),
     [ENV_TIMEOUT]: String(timeout),
-    ...(observer === undefined ? {} : { [ENV_OBSERVER_PATH]: observer.path }),
+    ...(observer === undefined ? {} : { [ENV_OBSERVER_DIR]: observer.dir }),
     NODE_OPTIONS: childNodeOptions(options.existingNodeOptions),
   });
   let finishPromise: Promise<SessionSummary> | undefined;
@@ -737,7 +737,7 @@ function tryCreateObserverSidecar(): ObserverSidecar | undefined {
 }
 
 interface ObserverSidecar {
-  readonly path: string;
+  readonly dir: string;
   read(): number | undefined;
 }
 
@@ -745,32 +745,58 @@ interface ObserverSidecar {
  * 자식이 종료 시 개수를 쓸 자리. 비동기 비콘 대신 파일을 쓰는 이유는
  * `out-of-scope-observer.mjs` 에 적었다 — 마지막 호출이 종료와 경합하면, 잃는 것이 하필 이
  * 기능이 잡으려는 모양이다.
+ *
+ * **파일 하나가 아니라 디렉터리다.** 체인의 Node 프로세스마다 자기 파일을 쓴다(ADR-0100).
  */
 function createObserverSidecar(): ObserverSidecar {
-  const directory = mkdtempSync(join(tmpdir(), "mcpeak-external-observer-"));
-  const path = join(directory, "out-of-scope.json");
+  const dir = mkdtempSync(join(tmpdir(), "mcpeak-external-observer-"));
   return {
-    path,
+    dir,
     read() {
-      let raw: string;
+      let names: string[];
       try {
-        raw = readFileSync(path, "utf8");
+        names = readdirSync(dir);
       } catch {
-        // 강제 종료돼 훅이 안 뛰었거나 쓰기에 실패했다. "못 셌음" 이다.
         return undefined;
-      } finally {
-        rmSync(directory, { recursive: true, force: true });
       }
       try {
-        const parsed: unknown = JSON.parse(raw);
-        const value = (parsed as { outOfScope?: unknown })?.outOfScope;
-        // 자식이 쓴 값이라 형식을 믿지 않는다. 이상하면 0 이 아니라 "못 셌음" 이다.
-        return typeof value === "number" && Number.isSafeInteger(value) && value >= 0
-          ? value
-          : undefined;
-      } catch {
-        return undefined;
+        // **기록자의 보고가 있으면 그것만 센다.** 중간에 낀 Node 런처(`npx`)도 이 디렉터리를
+        // 물려받아 자기 `node:http` 트래픽을 보고하는데, 그것은 서버가 한 일이 아니다.
+        // 런처는 Coordinator 를 한 번도 부르지 않으므로 언제나 `claimed: false` 다(ADR-0100).
+        //
+        // **기록자가 없으면 전부 센다.** 서버가 `node:http` 만 쓰면 어댑터를 한 번도 지나지
+        // 않아 아무도 임자가 되지 않는데, 그 경우가 바로 이 기능이 만들어진 이유다
+        // (ADR-0068). 기록자만 세는 규칙을 무조건 걸면 본래 용도가 죽는다.
+        const reports = names.map((name) => readReport(join(dir, name)));
+        const usable = reports.filter((one) => one !== undefined);
+        if (usable.length === 0) return undefined;
+        const claimed = usable.filter((one) => one.claimed);
+        const counted = claimed.length > 0 ? claimed : usable;
+        return counted.reduce((sum, one) => sum + one.outOfScope, 0);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
       }
     },
   };
+}
+
+/**
+ * 자식이 쓴 보고 하나. 이상하면 **그 파일만** 버린다. 예전에는 파일이 하나라 이상하면 곧바로
+ * "못 셌음" 이었는데, 이제 여럿이라 한 파일의 손상이 나머지를 버릴 이유가 되지 않는다.
+ */
+function readReport(path: string): { outOfScope: number; claimed: boolean } | undefined {
+  let raw: string;
+  try {
+    raw = readFileSync(path, "utf8");
+  } catch {
+    return undefined;
+  }
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    const value = (parsed as { outOfScope?: unknown })?.outOfScope;
+    if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) return undefined;
+    return { outOfScope: value, claimed: (parsed as { claimed?: unknown })?.claimed === true };
+  } catch {
+    return undefined;
+  }
 }

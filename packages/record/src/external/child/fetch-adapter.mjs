@@ -52,6 +52,18 @@ export function installFetchAdapter(options) {
     options.onFirstCall();
   };
 
+  /**
+   * **`WRITER_CONFLICT` 가 아닌 응답이면 임자다.** 단일 기록자 판정은 인증 바로 뒤, body 파싱
+   * 앞에 있으므로(ADR-0095), `REPLAY_MISS` 로 끝난 호출도 "이 프로세스가 통과했다" 는 증거다.
+   * 성공만 세면 미스가 난 실행의 관측이 통째로 폴백으로 떨어진다.
+   */
+  let claimed = false;
+  const markClaimed = () => {
+    if (claimed) return;
+    claimed = true;
+    options.onClaim();
+  };
+
   globalThis.fetch = async (input, init) => {
     const request = new Request(input, init);
     consumeOnce();
@@ -59,9 +71,15 @@ export function installFetchAdapter(options) {
     if (options.mode === "replay") {
       // 기록자가 아니면 여기서 `WRITER_CONFLICT` 로 던진다. **원래 fetch 로 넘기지 않는다** —
       // 재생의 계약은 실제 네트워크를 부르지 않는 것이고, 그 계약은 프로세스마다 달라지지
-      // 않는다(설계 §4.2).
-      const hit = await client.lookup(normalized);
-      return restoreHttpOutcome(hit.outcome);
+      // 않는다(ADR-0095).
+      try {
+        const hit = await client.lookup(normalized);
+        markClaimed();
+        return restoreHttpOutcome(hit.outcome);
+      } catch (error) {
+        if (error?.code !== "WRITER_CONFLICT") markClaimed();
+        throw error;
+      }
     }
 
     // ADR-0062. **정확한** pathname 은 자식 안에서만 산다 — 되돌아온 경로 판정의 기준이고,
@@ -78,6 +96,7 @@ export function installFetchAdapter(options) {
     let reservation;
     try {
       reservation = await client.begin(normalized);
+      markClaimed();
     } catch (error) {
       // **기록자 경합만 삼킨다.** 다른 오류는 그대로 올린다 — Coordinator 가 죽었거나
       // payload 가 상한을 넘은 것은 사용자가 알아야 하는 실패다.
@@ -85,7 +104,12 @@ export function installFetchAdapter(options) {
       // 이 호출은 녹화되지 않는다. 지금도 녹화되지 않았다(설정이 이 프로세스까지 오지 않았다).
       // 달라지는 것은 부모가 거절을 세어 화면에 적을 수 있다는 것뿐이다. 던져서 서버를 죽이는
       // 것은 진단을 위해 멀쩡한 실행을 깨는 것이라 하지 않는다.
-      if (error?.code !== "WRITER_CONFLICT") throw error;
+      if (error?.code !== "WRITER_CONFLICT") {
+        // 경합이 아닌 실패도 이 프로세스가 판정을 통과했다는 뜻이다. 녹화는 관측을 쓰지
+        // 않지만, 갈래를 하나만 두는 편이 다음 사람에게 읽힌다.
+        markClaimed();
+        throw error;
+      }
       return originalFetch.call(globalThis, request);
     }
 

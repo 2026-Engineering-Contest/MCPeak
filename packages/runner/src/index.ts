@@ -26,7 +26,7 @@ export {
   deriveContractAxes,
   matchCoveredAxes,
 } from "./contract-axes.js";
-export type { ContractRange } from "./contract-range.js";
+export type { ContractRange, ContractRangeBound } from "./contract-range.js";
 export {
   type CheckDeterminismOptions,
   checkDeterminism,

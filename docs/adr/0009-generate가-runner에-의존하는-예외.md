@@ -20,7 +20,7 @@ cli → runner / generate / record / mock → core
 
 | 종류 | 심볼 |
 |---|---|
-| 타입 | `TestSuiteSpec`, `TestCaseSpec`, `SuiteValidationIssue`, `RunnerRedactionOptions`, `ResponseSchema`, `SpecFindingsResult`, `ContractAxis`, `ContractAxisKind`, `ContractDeclaredType`, `ContractRange` |
+| 타입 | `TestSuiteSpec`, `TestCaseSpec`, `SuiteValidationIssue`, `RunnerRedactionOptions`, `ResponseSchema`, `SpecFindingsResult`, `ContractAxis`, `ContractAxisKind`, `ContractDeclaredType`, `ContractRange`, `ContractRangeBound` |
 | 함수 | `validateMcpSuite`, `canonicalJson`, `sha256`, `deepFreeze`, `checkInputContract`, `checkAssertionSubstance`, `deriveContractAxes`, `matchCoveredAxes`, `isSensitiveKey` |
 | 상수 | `MCP_SUITE_JSON_SCHEMA`, `DEFAULT_SENSITIVE_KEYS`, `REDACTED` |
 

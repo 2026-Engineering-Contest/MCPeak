@@ -68,7 +68,13 @@ import { proposeRepair } from "./repair-proposal.js";
 import { escapeTerminalText } from "./repair-render.js";
 import type { RepairAttempt } from "./repair-target.js";
 import { selectRepairTargets } from "./repair-target.js";
-import { attemptReset, ResetCommandError, type ResetGrade, runResetCommand } from "./reset-hook.js";
+import {
+  attemptReset,
+  RESET_GRADE_LINE,
+  ResetCommandError,
+  type ResetGrade,
+  runResetCommand,
+} from "./reset-hook.js";
 
 export { GENERATE_USAGE } from "./help.js";
 
@@ -1249,6 +1255,53 @@ interface RepairApplication {
 }
 
 /**
+ * 이 케이스의 통과가 어떤 실행에서 나왔는가. **화면 문장을 만드는 데만 쓴다**(이슈 #399).
+ *
+ * **저장 명세에 싣지 않는다.** `runner` 의 `spec/validation.ts` 가 `approval.cases[]` 를
+ * `["id","status"]` 로, `approval` 자신을 `["fingerprint","cases"]` 로 막는다. 키를 더하면
+ * `validateMcpSuite` 가 우리가 저장한 명세를 거절한다. 이슈 #401 이 `pinnedFields` 로 정확히
+ * 같은 자리를 밟았다. 싣자면 runner 의 저장 형식을 넓혀야 하는데 그것은 다섯 명이 함께 보는
+ * 계약이고 표시용 사실 하나 때문에 넓힐 것이 아니다.
+ */
+export type CaseVerification = "fullSuite" | "isolated";
+
+/**
+ * 최종 전량 재검증을 못 했을 때의 문장. 상수로 둔다.
+ *
+ * 개별 케이스가 단독으로 통과한 것과 전량을 순서대로 돌려 통과한 것은 다르다. A 가 통과하고
+ * B 가 단독으로 통과해도, A 다음에 B 를 돌리면 B 가 실패할 수 있다. 그 사실을 안 적으면
+ * 사용자는 저장 뒤 첫 `mcpeak test` 에서 처음 안다(이슈 #399).
+ */
+const FINAL_REVALIDATION_SKIPPED_LINES =
+  "최종 전량 재검증을 하지 않았습니다. 개별 케이스 통과 기록만 있습니다.\n" +
+  "저장 후 `mcpeak test` 로 전체를 한 번 실행해 확인하세요.\n";
+
+/** 재검증 확인 화면. 실제 서버 호출이 는다는 사실을 묻기 전에 적는다. */
+function writeFinalRevalidationNotice(io: ReviewIO, grade: ResetGrade, caseCount: number): void {
+  io.write(
+    "최종 명세를 처음부터 다시 실행해 검증합니다.\n" +
+      `  ${RESET_GRADE_LINE[grade]}\n` +
+      `  실행할 케이스: ${caseCount}건 (실제 서버 호출입니다)\n`,
+  );
+}
+
+/** 저장 화면의 검증 범위 줄(§5). 검증 범위를 남기는 **유일한 자리**다. */
+function writeVerificationScope(
+  io: ReviewIO,
+  verification: CaseVerification,
+  caseCount: number,
+): void {
+  if (verification === "fullSuite") {
+    io.write(`  검증 범위: ${caseCount}건을 최종 전량 실행에서 확인했습니다.\n`);
+    return;
+  }
+  io.write(
+    `  검증 범위: ${caseCount}건은 개별 실행에서만 확인했습니다. 전량 재검증을 하지 않았습니다.\n` +
+      "  저장 후 `mcpeak test` 로 전체를 한 번 실행해 확인하세요.\n",
+  );
+}
+
+/**
  * 반영 요약(§8.8). 저장 확인 직전에 찍는다. 교정이 0건이면 아무것도 찍지 않는다.
  * 지문이 바뀐 이유가 화면에 남아야 사용자가 나중에 diff 를 보고 놀라지 않는다(§5.4).
  */
@@ -1669,11 +1722,71 @@ async function runInteractiveReview(
           }
           approvals = review.approvals;
         }
+        /**
+         * 11.5. 최종 전량 재검증(§2, 이슈 #399).
+         *
+         * 입력값 교정은 케이스 하나만 담은 스위트로 재실행한다. 그 판단은 그 자리에서 옳다.
+         * 문제는 그 뒤다. 저장 판정이 원래 실행 결과와 교정된 케이스의 **단독 통과**를 합친
+         * 것이었다. **합집합은 실행이 아니다.** A 가 통과하고 B 가 단독으로 통과해도 A 다음에
+         * B 를 돌리면 B 가 실패할 수 있고, 그 사실은 저장 뒤 첫 `mcpeak test` 에서야 드러난다.
+         *
+         * 여기서 초기 상태로 되돌리고 최종 스위트 전량을 한 번에 돌린다. **그 결과가 저장
+         * 판정이다.**
+         */
+        let verification: CaseVerification = "isolated";
+        // 교정이 명세를 바꿨을 수 있으므로 반영이 끝난 뒤의 스위트를 읽는다. 아래 저장 경로의
+        // `finalSuite`(getAuthoringExecutionSuite 결과)와 이름이 겹치지 않게 따로 둔다.
+        const revalidationSuite = session.approvedDraft.suite;
+        if (input.dryRun) {
+          const finalCaseCount = revalidationSuite.cases.length;
+          const grade = (await (deps.attemptReset ?? attemptReset)(input.resetCmd)).grade;
+          // 등급이 약해도 재검증 자체는 한다. 채택(T1)과 다르다. 채택은 명세의 **내용**을
+          // 바꾸는 것이고 이쪽은 이미 정해진 명세를 **확인**하는 것이다. 확인을 못 했다고
+          // 내용을 버릴 이유는 없다. 대신 등급 문장을 함께 찍어 확인이 얼마나 강한지 말한다.
+          writeFinalRevalidationNotice(io, grade, finalCaseCount);
+          // **질문이 runDryRun 보다 먼저다.** 부른 뒤에 묻는 자리가 하나라도 있으면 #397 의
+          // 경계가 무너진다. 거절해도 저장은 막지 않는다. 사용자가 부작용을 알고 거절한 것을
+          // 우리가 저장 실패로 바꿀 이유가 없다.
+          if (await io.confirm("   다시 실행할까요?")) {
+            // 케이스 사이에는 초기화하지 않는다. 스위트 경계에서만이다. 스위트 안의 케이스
+            // 순서는 의미가 있고(앞 케이스가 만든 것을 뒤 케이스가 읽는 명세를 사람이 쓸 수
+            // 있다), 매 케이스마다 초기화하면 우리가 검증한 것이 사용자가 나중에 실행할 것과
+            // 달라진다.
+            const again = await runDryRun({ client: connection.client, suite: revalidationSuite });
+            if (again.aborted !== undefined) {
+              writeDryRunAborted(io, again, finalCaseCount, diagnostics());
+              continue;
+            }
+            writeDryRunResult(io, again);
+            // 합집합을 쓰지 않는다. 이 실행이 저장 판정이다.
+            //
+            // 다만 `serverDefect` 로 분류한 케이스는 **실패하는 것이 사양이다.** 사람이
+            // "명세가 맞고 서버가 틀렸다" 고 판정한 것이라, 그것을 저장 차단 사유로 쓰면
+            // 그런 케이스가 하나라도 있는 명세를 영원히 저장할 수 없다. 막아야 하는 것은
+            // **통과로 승인된 케이스가 전량 실행에서 뒤집히는 것**이다. 그것이 합집합이
+            // 숨기던 바로 그 결함이다(이슈 #399).
+            const expectedToFail = new Set(
+              approvals.filter((item) => item.status === "serverDefect").map((item) => item.id),
+            );
+            const regressed = again.outcomes.filter(
+              (outcome) => outcome.status !== "passed" && !expectedToFail.has(outcome.caseId),
+            );
+            if (regressed.length > 0) {
+              io.write(
+                `최종 전량 실행에서 ${regressed.length}건이 실패했습니다. 개별 실행에서는 통과했지만 순서대로 돌리면 실패합니다.\n` +
+                  "  앞 케이스가 바꾼 상태를 뒤 케이스가 물려받습니다. 케이스 순서나 입력값을 확인하세요.\n",
+              );
+              continue;
+            }
+            verification = "fullSuite";
+          } else io.write(FINAL_REVALIDATION_SKIPPED_LINES);
+        }
         // 12. 최종 지문 표시(§6). 교정이 명세를 바꿨을 수 있으므로 반영이 끝난 뒤에 읽는다.
         // 화면에 찍은 값과 저장되는 approval.fingerprint 는 언제나 같아야 한다.
         const fingerprint = session.approvedDraft.suiteFingerprint;
         io.write(`Final fingerprint: ${fingerprint}\n`);
         writeRepairSummary(io, repairedCases, repairChanges);
+        writeVerificationScope(io, verification, revalidationSuite.cases.length);
         if (!(await io.confirm("최종 JSON을 저장할까요?"))) continue;
         const final = deps.finalizeAuthoringDraft({
           session,

@@ -18,7 +18,7 @@ node examples/live-weather-server/server.mjs
 | `list_recent_quakes` | 외부 (USGS) | `minMagnitude`(default 5), `hours`(default 24) | 요청 URL 에 **현재 시각**을 넣는다. 재생 때 "재현 가능하지 않다" 진단이 뜨는 툴 |
 | `add_note` | 로컬, 파일 상태 | `title, body, tags[]` | `--determinism` 이 `id` 차이를 잡고 `--reset-cmd` 로 통과한다 |
 | `list_notes` | 로컬, 파일 상태 | `tag?` | 위 파일을 읽는다 |
-| `convert_units` | 로컬 | `value`, `from` · `to`(enum) | **결함 A** |
+| `convert_units` | 로컬 | `value`, `from` · `to`(enum, 길이·질량·온도) | **결함 A**. enum 정상 분기 4건이 함께 실패한다 |
 | `summarize_text` | 로컬 | `text`, `options: { maxWords, style }` | 중첩 객체 baseline. **결함 B** |
 | `lookup_country` | 로컬 정적 표 | `code`(enum), `fields[]`(enum 배열) | **결함 C** |
 | `evaluate_expression` | 로컬 | `expression` | baseline 자리값 `"example"` 이 실패하고 AI 사전보완이 값을 제안하는 툴 |
@@ -40,9 +40,13 @@ node examples/live-weather-server/server.mjs
 로 검증해 `MCP error -32602: Structured content does not match the tool's output schema` 를 던지고,
 mcpeak 은 그 오류를 그대로 실패 원인으로 보여준다.
 
-결함 셋을 다 고치면 baseline 스위트에서 `evaluate-expression-success` 하나만 실패로 남는다.
-그 케이스는 결함이 아니라 자리값 `"example"` 이 유효한 수식이 아닌 것이고, generate 의 AI
-사전보완이 `2 + 2` 같은 값을 제안해 채우는 자리다.
+결함 A 는 `convert_units` 케이스 5건(기준 정상 1건 + `from`·`to` 의 정상 분기 4건)을 한꺼번에
+떨어뜨린다. 응답 모양이 틀렸으니 어떤 입력이든 같은 이유로 실패한다.
+
+결함 셋을 다 고치면 baseline 스위트(`server.suite.json`)에서 `evaluate-expression-success` 하나만
+실패로 남는다. 그 케이스는 결함이 아니라 자리값 `"example"` 이 유효한 수식이 아닌 것이고,
+generate 의 AI 사전보완이나 시험 실행 뒤 교정이 `(2 + 3) * 4 / 5` 같은 값을 제안해 채우는
+자리다. AI 로 생성한 명세는 그 값이 들어가 있으므로 결함 셋을 고치면 전부 녹색이다.
 
 ## 상태 파일
 
@@ -54,38 +58,57 @@ mcpeak 은 그 오류를 그대로 실패 원인으로 보여준다.
 
 ## 데모 순서
 
+**`mcpeak` 을 그대로 치지 않는다.** `PATH` 의 `mcpeak` 은 npm 에 배포된 버전이라 이 저장소의
+main 보다 뒤에 있고, 이 명세의 `structuredContentMatchesSchema` 단언과 repair 번들 형식 3 을
+모른다. `pnpm build --force` 로 `Cached: 0 cached` 를 확인한 뒤 로컬 산출물을 쓴다.
+
 ```bash
+MCPEAK="node packages/cli/dist/cli.mjs"
 SRV=examples/live-weather-server/server.mjs
+RESET="rm -f $HOME/.live-weather-notes.json"
 
 # 1. 명세 생성. 시험 실행과 승인 화면을 거치면 승인 지문이 찍힌다.
-#    evaluate_expression 의 자리값은 AI 사전보완(--provider)이 채운다.
-mcpeak generate --out live-weather.suite.json --command node --arg $SRV --provider claude --model sonnet
+#    --reset-cmd 가 없으면 AI 사전보완은 "두 후보를 같은 초기 상태에서 실행할 수 없다" 며
+#    비교를 통째로 건너뛴다(add_note 가 파일 상태를 바꾸기 때문이다). 그러면 evaluate_expression
+#    의 자리값은 사전보완이 아니라 시험 실행 뒤 교정 단계에서 채워진다. 둘 다 같은 값을 낸다.
+$MCPEAK generate --out live-weather.suite.json --command node --arg $SRV \
+  --provider claude --model sonnet --reset-cmd "$RESET"
 
 # 2. 실행. 결함 A · B · C 가 각자 다른 문장으로 실패한다.
-mcpeak test live-weather.suite.json --command node --arg $SRV --repair-bundle repair.json
+$MCPEAK test live-weather.suite.json --command node --arg $SRV --repair-bundle repair.json
 
-# 3. repair 가 번들을 보고 원인 후보를 짚는다. 서버 코드는 고치지 않는다.
-mcpeak repair repair.json --provider claude --model sonnet
+# 3. repair 가 번들을 보고 원인 후보를 짚는다. 서버 코드는 고치지 않는다. 1분 안팎 걸린다.
+$MCPEAK repair repair.json --provider claude --model sonnet
 
 # 4. 표식 세 줄을 고친 뒤 다시 실행하면 녹색이다.
 
-# 5. 녹화. 외부 호출 5건이 세션에 저장된다.
-mcpeak test live-weather.suite.json --command node --arg $SRV --record-session live-weather.session.json
+# 5. 녹화. 외부 호출 12건이 세션에 저장된다(get_forecast 2 · convert_currency 1 · search_city 4 ·
+#    list_recent_quakes 5). 끝에 "세션 파일 본문에 URL 이 남아 있다" 는 알림이 붙는데 오류가 아니다.
+#    이 서버의 외부 API 는 자격증명이 없으므로 그대로 두면 된다.
+$MCPEAK test live-weather.suite.json --command node --arg $SRV --record-session live-weather.session.json
 
-# 6. 재생. 네트워크 없이 같은 결과가 나온다. list_recent_quakes 만 "재현 가능하지 않다" 로 진단된다.
-mcpeak test live-weather.suite.json --command node --arg $SRV --session live-weather.session.json
+# 6. 재생. 네트워크 없이 같은 결과가 나온다. list_recent_quakes 5건만 "재생 원본에서 찾지 못한
+#    호출" 로 진단되고 그만큼 실패로 센다. 2회 재생의 출력은 그 요청 URL 의 시각만 빼고 같다.
+$MCPEAK test live-weather.suite.json --command node --arg $SRV --session live-weather.session.json
 
-# 7. 결정론. add_note 의 id 가 회차마다 달라진다. 초기화 명령을 주면 같아진다.
-mcpeak test live-weather.suite.json --command node --arg $SRV --determinism
-mcpeak test live-weather.suite.json --command node --arg $SRV --determinism --reset-cmd "rm -f $HOME/.live-weather-notes.json"
+# 7. 결정론. add_note 의 id 가 회차마다 달라진다. 초기화 명령을 주면 같아지고,
+#    list_recent_quakes 5건만 "시간 의존" 으로 남는다. 결함 A 를 고친 뒤에 돌린다(아래 한계 참고).
+$MCPEAK test live-weather.suite.json --command node --arg $SRV --determinism
+$MCPEAK test live-weather.suite.json --command node --arg $SRV --determinism --reset-cmd "$RESET"
 ```
+
+`server.suite.json` 으로 2번부터 시작해도 된다. 그 경우 실패는 결함 A 5건 · B 1건 · C 1건에
+`evaluate-expression-success` 가 더해져 8건이다.
 
 `server.suite.json` 은 `--baseline-only --no-dry-run` 으로 뽑은 baseline 이다. 승인 지문이 없으므로
 그 파일로 `repair` 를 부르면 명세 쪽 원인도 함께 후보로 본다(ADR-0032). 데모에서는 1번처럼
 직접 생성해 승인 지문을 찍는 것을 권한다.
 
-대시보드에서는 홈 실행 폼의 「External 세션」에서 갈래(외부 호출 녹화 / 녹화본 재생)와 세션
-파일 경로를 고르면 같은 argv 가 만들어진다.
+대시보드에서는 Test 폼의 「External 세션」에서 녹화를, Replay 탭에서 재생을 고르면 같은 argv 가
+만들어진다. Generate 2단계의 저장 위치 기본값은 이 디렉터리의 `server.suite.json` 이다. 그대로
+두면 추적 파일을 덮어쓰므로 `.mcpeak/` 아래 경로로 바꾼다. 이 디렉터리에 `server.suite_*.json`
+같은 이름으로 만든 일회성 명세는 gitignore 되지만 대시보드 목록에는 그대로 뜨니 촬영 전에
+지운다.
 
 ## 왜 `weather-server` 와 따로 있나
 
@@ -107,7 +130,18 @@ CI 에는 넣지 않는다. 외부 API 에 기대는 순간 CI 가 그 API 의 �
 
 ## 한계
 
-- Open-Meteo 지오코딩은 한글 `서울` 을 못 찾는다(`부산`·`제주`·`Seoul` 은 찾는다). 스키마의
-  `examples` 가 `부산` 인 이유다. 데모에서 도시를 바꿀 때는 먼저 한 번 실행해 찾히는지 본다.
+- Open-Meteo 지오코딩은 한글 `서울`·`제주` 를 못 찾는다(`부산`·`Seoul`·`Tokyo` 는 찾는다).
+  스키마의 `examples` 가 `부산` 인 이유다. 데모에서 도시를 바꿀 때는 먼저 한 번 실행해 찾히는지
+  본다. IPv6 가 막힌 망에서는 서버 상단의 `ipv4first` 가 없으면 `ETIMEDOUT` 이 난다. 그 줄을
+  지우지 않는다.
 - `list_recent_quakes` 는 재생이 어긋나는 것이 **의도**다. 깨끗한 재생 장면이 필요하면 그 툴의
   케이스를 스위트에서 뺀다.
+- `convert_units` 의 enum 순서(`km · m · kg · lb · c · f · mi`)는 generate 의 정상 분기 규칙에
+  맞춘 것이다. generate 는 enum 의 첫·두 번째·마지막 값을 밟으면서 상대 필드를 기준값에
+  고정하므로, 그 세 값이 같은 종류가 아니면 `f → km` 같은 케이스가 생겨 서버가 옳게 거절해도
+  영원히 실패한다. **도구는 enum 값 사이의 관계를 모른다.** 사용자 서버에서 같은 일이 나면
+  승인 화면에서 그 케이스를 `[m]` 로 빼는 수밖에 없다. 그 출구를 도구에 넣는 일은 후속이다.
+- `--determinism` 을 결함 A 를 고치기 전에 돌리면 `convert_units` 가 "1회차 skipped · 2회차
+  passed" 로 흔들린다고 나온다. 서버가 아니라 도구 쪽 문제다. 1회차만 `listTools` 를 불러 SDK 가
+  outputSchema 검증기를 채우고, 2회차는 그것 없이 호출해 `-32602` 가 안 난다. 데모 순서대로
+  고친 뒤에 돌리면 보이지 않는다.

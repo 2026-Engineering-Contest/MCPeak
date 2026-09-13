@@ -24,3 +24,8 @@ coverage/
 
 # adoption.md §1.6 의 공개 서버 조사 재현 출력. 서버마다 파일이 하나씩 생긴다.
 /.survey-out/
+
+# generate 가 만드는 임시 데모 명세. examples/*/server.suite.json 은 도그푸딩 대상이라
+# 추적하지만, --out 이름을 붙여 만든 일회성 산출물은 추적하지 않는다.
+examples/**/server.suite_*.json
+examples/**/server.*.suite.json

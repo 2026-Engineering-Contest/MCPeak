@@ -11,11 +11,17 @@ type OptionalKey<T> = {
 }[keyof T];
 
 /**
- * `@mcpeak/generate` 가 아니라 `@mcpeak/core` 에서 오는 선택 의존이다(#137). 아래 배선
- * 단언은 generate 모듈의 export 와 키 이름으로 대조하므로 이 둘은 대상에서 뺀다. 빼는 대신
- * 같은 테스트 안에서 core 배선을 따로 단언한다 — 목록에서 빠진 것과 안 보는 것은 다르다.
+ * `@mcpeak/generate` **밖에서** 오는 선택 의존이다. 출처가 둘이다. `connectHttp` · `readEnv` 는
+ * `@mcpeak/core` 에서 오고(#137), `attemptReset` 은 `cli` 자신의 `reset-hook.ts` 에서 온다(#399).
+ *
+ * 아래 배선 단언은 generate 모듈의 export 와 키 이름으로 대조하므로 이 셋은 대상에서 뺀다.
+ * 빼는 대신 같은 테스트 안에서 core 배선을 따로 단언한다 — 목록에서 빠진 것과 안 보는 것은
+ * 다르다.
+ *
+ * 이름에 `Core` 를 쓰지 않는다. `attemptReset` 이 들어온 뒤로는 거짓이 되고, 이름이 거짓인
+ * 목록은 다음 사람이 "core 것들" 로 읽어 잘못 판단한다.
  */
-type CoreBackedDependencyKey = "connectHttp" | "readEnv";
+type ExternallyBackedDependencyKey = "connectHttp" | "readEnv" | "attemptReset";
 
 type OptionalFunctionDependencyKey = Exclude<
   {
@@ -25,7 +31,7 @@ type OptionalFunctionDependencyKey = Exclude<
       ? K
       : never;
   }[OptionalKey<GenerateCommandDependencies>],
-  CoreBackedDependencyKey
+  ExternallyBackedDependencyKey
 >;
 
 const OPTIONAL_GENERATE_DEPENDENCIES = {

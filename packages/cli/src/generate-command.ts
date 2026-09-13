@@ -68,7 +68,7 @@ import { proposeRepair } from "./repair-proposal.js";
 import { escapeTerminalText } from "./repair-render.js";
 import type { RepairAttempt } from "./repair-target.js";
 import { selectRepairTargets } from "./repair-target.js";
-import { ResetCommandError, runResetCommand } from "./reset-hook.js";
+import { attemptReset, ResetCommandError, type ResetGrade, runResetCommand } from "./reset-hook.js";
 
 export { GENERATE_USAGE } from "./help.js";
 
@@ -110,6 +110,15 @@ export interface GenerateCommandDependencies {
   }): Promise<McpHttpConnection>;
   /** `--header-env` 가 가리키는 환경변수를 읽는다. CLI 가 `process` 를 직접 읽지 않기 위한 주입점. */
   readEnv?(name: string): string | undefined;
+  /**
+   * 초기화 주입점. 기본은 `attemptReset` 이다.
+   *
+   * 사전보완 후보 비교가 같은 초기 상태에서 도는지를 유닛테스트가 보려면 초기화를 세워야 하는데,
+   * 실제 `attemptReset` 은 프로세스를 띄운다. 이 저장소는 유닛테스트를 인메모리로만 돌린다
+   * (터미널 병렬 안전). `dryRun` · `preparePreFillRequest` 를 주입으로 받는 것과 같은 이유다.
+   * 실제 명령을 돌리는 테스트는 `reset-hook-e2e.test.ts` 하나에만 둔다(#399).
+   */
+  attemptReset?(resetCmd: string | undefined): Promise<{ readonly grade: ResetGrade }>;
   createBaselineSuite(
     tools: readonly ToolDef[],
     options: { suiteId: string; suiteName: string },
@@ -2315,7 +2324,12 @@ async function runPreFill(
     client,
     baseline: baseline.suite,
     preFill: dispatched.result,
+    // 두 후보를 같은 초기 상태에서 돌린다. 이 주입이 없으면 baseline 실행이 바꾼 상태에서
+    // AI 후보가 돌아, 입력이 좋아서가 아니라 앞 실행 때문에 채택된다(이슈 #399).
+    reset: () => (deps.attemptReset ?? attemptReset)(input.resetCmd).then((result) => result.grade),
   });
+  // 비교를 못 했으면 사유를 먼저 찍는다. 요약의 "채택 0" 만 보면 AI 제안이 나빴던 것으로 읽힌다.
+  if (applied.skippedReason !== undefined) io.write(`▸ ${applied.skippedReason}\n`);
   io.write(
     renderPreFillSummary({
       toolCount: tools.length,

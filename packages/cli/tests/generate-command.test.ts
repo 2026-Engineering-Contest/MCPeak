@@ -4276,3 +4276,87 @@ describe("parseGenerateCommand — 원격(--url) 대상", () => {
     expect(messageOf(["--url", "mcp.example.com"])).toContain("올바른 URL 이 아닙니다");
   });
 });
+
+const outPathForNoDryRun = "/tmp/mcpeak-no-dry-run.json";
+
+describe("--no-dry-run 경계 (#399)", () => {
+  const base = ["--suite-id=x", "--name=n", "--out=x.json", "--command=node"];
+
+  it("--no-dry-run 과 --reset-cmd 를 함께 주면 UsageError 다", () => {
+    // 두 겹 중 둘째 겹이다. 이 회차가 그것을 깨지 않았음을 고정한다. 이것 때문에 resetCmd 가
+    // 있으면 dryRun 은 항상 참이고, attemptReset 이 --no-dry-run 경로에서 불릴 길이 없다.
+    // 순서를 바꿔도 걸린다. 문장까지 본다. "함께 쓸 수 없다" 가 사용자가 읽어야 할 것이다.
+    for (const argv of [
+      [...base, "--no-dry-run", "--reset-cmd", "npm run seed"],
+      [...base, "--reset-cmd", "npm run seed", "--no-dry-run"],
+    ])
+      expect(() => parseGenerateCommand(argv)).toThrow(
+        "`--no-dry-run`과 `--reset-cmd`는 함께 사용할 수 없습니다.",
+      );
+  });
+
+  it("--no-dry-run 이면 resetCmd 가 undefined 다", () => {
+    // 초기화 명령이 한 번도 실행될 수 없다는 것의 근거다. attemptReset(undefined) 는 프로세스를
+    // 띄우지 않는다. 새 게이트를 만들지 않고 이 두 사실을 고정하는 것이 이번 일이다.
+    const parsed = parseGenerateCommand([...base, "--no-dry-run"]);
+    expect(parsed.dryRun).toBe(false);
+    expect(parsed.resetCmd).toBeUndefined();
+  });
+
+  it("--no-dry-run 이면 applyPreFill 앞에서 되돌아간다", async () => {
+    // 두 겹 중 첫째 겹이다. applyPreFill 이 안 불리므로 그 안의 초기화도 안 불린다.
+    //
+    // applyPreFill 은 주입점이 아니라 import 라 직접 못 센다. 바로 앞 단계인 provider 전송
+    // (dispatchPreFillRequest)이 0회인 것과 건너뜀 안내가 찍힌 것으로 본다. prepare 는 이
+    // 게이트보다 **먼저** 불리므로 그것으로는 판정할 수 없다.
+    const dispatch = vi.fn(async () => ({ status: "providerFailed" as const }));
+    const d = deps({
+      preparePreFillRequest: (() => ({ tools: [], cases: [] })) as never,
+      previewPreFillRequest: (() => ({ fingerprint: "f" })) as never,
+      dispatchPreFillRequest: dispatch as never,
+      preFillProviders: { codex: () => ({}) } as never,
+    });
+    const stdout: string[] = [];
+    const stderrLines: string[] = [];
+    d.value.writeStdout = (text) => stdout.push(text);
+    d.value.writeStderr = (text) => stderrLines.push(text);
+    d.value.reviewIO = {
+      input: async () => "",
+      choose: async () => "",
+      confirm: async () => true,
+      write: (text) => stdout.push(text),
+      interactive: true,
+    };
+    const code = await runGenerateCommand(
+      [
+        "generate",
+        "--suite-id",
+        "weather",
+        "--name",
+        "Weather",
+        "--out",
+        outPathForNoDryRun,
+        "--command",
+        "node",
+        "--arg",
+        "server.mjs",
+        "--no-dry-run",
+        "--provider",
+        "codex",
+        "--model",
+        "m",
+      ],
+      d.value,
+    );
+    // 종료 코드는 단언하지 않는다. `--provider` 를 주면 그 뒤에 AI 검토 메뉴 경로가 이어지는데
+    // 이 테스트는 그 경로의 의존을 주입하지 않는다(GENERATE_INTERACTIVE_REQUIRED 로 끝난다).
+    // 여기서 보는 것은 그 앞의 게이트 하나다. 종료 코드를 함께 묶으면 무관한 경로가 바뀔 때
+    // 이 테스트가 같이 깨진다.
+    expect(code).toBeTypeOf("number");
+    expect(stderrLines.join("")).not.toContain("RESET");
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(stdout.join("")).toContain(
+      "시험 실행이 꺼져 있어(--no-dry-run) AI 사전보완을 건너뜁니다",
+    );
+  });
+});

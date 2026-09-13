@@ -21,11 +21,27 @@ import { runDryRun } from "./dry-run.js";
 /** 어느 값을 쓰기로 했는지. */
 export type PreFillSource = "baseline" | "ai";
 
+export interface PreFillProposedField {
+  readonly field: string;
+  readonly value: JsonValue;
+}
+
+/** 제안을 받았지만 어느 갈래에도 못 들어간 케이스. 사유를 반드시 함께 싣는다(설계 §3.2). */
+export interface PreFillExclusion {
+  readonly caseId: string;
+  readonly field: string;
+  readonly reason: "명세에 없는 케이스" | "callTool 이 아닌 케이스" | "입력이 객체가 아닌 케이스";
+}
+
 export interface PreFillCaseOutcome {
   readonly caseId: string;
   readonly source: PreFillSource;
   /** baseline 도 AI 도 실패했다. 분류 화면이 이어받고 사후수리가 그다음이다. */
   readonly needsClassification: boolean;
+  /** 보류(`needsClassification === true`)일 때만 있다. 그 케이스에 얹은 제안 값이다. */
+  readonly proposedFields?: readonly PreFillProposedField[];
+  /** 보류일 때만 있다. AI 회차에서 서버가 낸 위반 줄. 여러 줄이면 개행으로 잇는다. */
+  readonly serverMessage?: string;
 }
 
 export interface ApplyPreFillResult {
@@ -39,6 +55,31 @@ export interface ApplyPreFillResult {
   readonly notAdopted: number;
   /** baseline 값도 제안 값도 실패해 분류 화면으로 가는 수. `notAdopted` 에 포함된다. */
   readonly held: number;
+  /** 제안은 받았지만 실행 대상에 못 들어간 제안. 어느 줄에도 안 세어지던 것을 사유와 함께 센다. */
+  readonly excluded: readonly PreFillExclusion[];
+}
+
+/**
+ * 시험 실행 상세의 본문 들여쓰기. `dry-run.ts` 의 `INDENT` 와 같은 값이다.
+ * 그 파일을 다른 태스크가 고치고 있어 import 하지 않고 여기에 둔다.
+ */
+const DETAIL_INDENT = "    ";
+/** 서버 위반 줄의 접두사. 들여쓰기 뒤에 붙는다. */
+const VIOLATION_PREFIX = `${DETAIL_INDENT}→ `;
+
+/**
+ * 시험 실행 상세에서 서버가 낸 위반 줄만 뽑아 개행으로 잇는다.
+ * 위반 줄이 없으면 들여쓰기가 있는 첫 본문 줄을 그대로 쓴다. 그것도 없으면 빈 문자열이다.
+ * 관측하지 못한 것을 관측했다고 적지 않는다(설계 §4.1).
+ */
+function serverMessageOf(detail: string): string {
+  const lines = detail.split("\n");
+  const violations = lines
+    .filter((line) => line.startsWith(VIOLATION_PREFIX))
+    .map((line) => line.slice(VIOLATION_PREFIX.length));
+  if (violations.length > 0) return violations.join("\n");
+  const first = lines.find((line) => line.startsWith(DETAIL_INDENT) && line.trim() !== "");
+  return first === undefined ? "" : first.slice(DETAIL_INDENT.length);
 }
 
 const plainObject = (value: unknown): value is JsonObject =>
@@ -107,14 +148,36 @@ export async function applyPreFill(options: {
   const { client, baseline, preFill } = options;
   const run = options.dryRun ?? runDryRun;
 
-  const byCase = new Map<string, { readonly field: string; readonly value: JsonValue }[]>();
+  const byCase = new Map<string, PreFillProposedField[]>();
   for (const proposal of preFill.accepted) {
     const list = byCase.get(proposal.caseId) ?? [];
     list.push({ field: proposal.field, value: proposal.value });
     byCase.set(proposal.caseId, list);
   }
   // 제안이 하나도 없으면 서버를 부르지 않는다. 부를 이유가 없는 호출은 만들지 않는다.
-  if (byCase.size === 0) return { suite: baseline, cases: [], adopted: 0, notAdopted: 0, held: 0 };
+  if (byCase.size === 0)
+    return { suite: baseline, cases: [], adopted: 0, notAdopted: 0, held: 0, excluded: [] };
+
+  // 실행 대상에 못 들어간 제안을 사유와 함께 모은다. 조용히 버리면 어느 줄에도 안 세어진다
+  // (설계 §1.2). 순서는 `byCase` 의 삽입 순서, 즉 `preFill.accepted` 순서다.
+  const excluded: PreFillExclusion[] = [];
+  const specById = new Map(baseline.cases.map((item) => [item.id, item]));
+  for (const [caseId, proposals] of byCase) {
+    const item = specById.get(caseId);
+    for (const proposal of proposals) {
+      if (item === undefined) {
+        excluded.push({ caseId, field: proposal.field, reason: "명세에 없는 케이스" });
+        continue;
+      }
+      if (item.operation.type !== "callTool") {
+        excluded.push({ caseId, field: proposal.field, reason: "callTool 이 아닌 케이스" });
+        continue;
+      }
+      if (!plainObject(item.operation.input)) {
+        excluded.push({ caseId, field: proposal.field, reason: "입력이 객체가 아닌 케이스" });
+      }
+    }
+  }
 
   const targetIds = new Set<string>();
   const aiInputs = new Map<string, JsonObject>();
@@ -128,7 +191,7 @@ export async function applyPreFill(options: {
     aiInputs.set(item.id, withProposals(input, proposals));
   }
   if (targetIds.size === 0)
-    return { suite: baseline, cases: [], adopted: 0, notAdopted: 0, held: 0 };
+    return { suite: baseline, cases: [], adopted: 0, notAdopted: 0, held: 0, excluded };
 
   // 두 벌을 따로 돌린다. 한 명세에 섞어 돌리면 같은 툴을 두 번 부르는 순서가 카세트에 남아
   // 재생 때 어느 쪽이 어느 케이스인지 갈린다.
@@ -137,6 +200,7 @@ export async function applyPreFill(options: {
   const aborted = baselineRun.aborted !== undefined || aiRun.aborted !== undefined;
   const baselinePassed = passedIds(baselineRun);
   const aiPassed = passedIds(aiRun);
+  const aiDetails = new Map(aiRun.outcomes.map((outcome) => [outcome.caseId, outcome.detail]));
 
   const cases: PreFillCaseOutcome[] = [];
   const adoptedIds = new Set<string>();
@@ -146,10 +210,18 @@ export async function applyPreFill(options: {
     const aiPass = aiPassed.has(item.id);
     const useAi = !aborted && !basePass && aiPass;
     if (useAi) adoptedIds.add(item.id);
+    const held = !aborted && !basePass && !aiPass;
+    // 보류일 때만 제안 값과 서버 응답을 싣는다. 아니면 키 자체를 만들지 않는다.
     cases.push({
       caseId: item.id,
       source: useAi ? "ai" : "baseline",
-      needsClassification: !aborted && !basePass && !aiPass,
+      needsClassification: held,
+      ...(held
+        ? {
+            proposedFields: byCase.get(item.id) ?? [],
+            serverMessage: serverMessageOf(aiDetails.get(item.id) ?? ""),
+          }
+        : {}),
     });
   }
 
@@ -168,6 +240,7 @@ export async function applyPreFill(options: {
     adopted,
     notAdopted: cases.length - adopted,
     held: cases.filter((item) => item.needsClassification).length,
+    excluded,
   };
 }
 

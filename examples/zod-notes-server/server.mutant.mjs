@@ -6,9 +6,14 @@
  *   priority: z.enum(PRIORITIES)                   → z.string()
  *   limit:    z.number().int().min(1).max(50)      → z.number()
  *
- * 정상 서버에서 만든 명세를 이 서버에 돌리면 정확히 4건이 실패해야 한다
- * (create-note-enum-priority · create-note-range-title · list-notes-type-limit ·
- * list-notes-range-limit). 그 4건이 통과하면 우리 도구가 그 축의 검출력을 잃은 것이다.
+ * 정상 서버에서 만든 명세를 이 서버에 돌리면 정확히 6건이 실패해야 한다
+ * (create-note-enum-priority · create-note-range-lower-title · create-note-range-upper-title ·
+ * list-notes-type-limit · list-notes-range-lower-limit · list-notes-range-upper-limit).
+ * 그 6건이 통과하면 우리 도구가 그 축의 검출력을 잃은 것이다.
+ *
+ * title 과 limit 은 제약을 통째로 없애므로 상·하한 양쪽이 다 뚫린다. 범위 축이 상한과 하한으로
+ * 갈리기 전에는 방향당 한 건씩만 잡혀 4건이었다(이슈 #387). 결함은 그때나 지금이나 넷이고,
+ * 늘어난 2건은 갈라진 축이 되찾은 검출력이다.
  *
  * **실제 서버로 쓰지 마라.** `server.mjs` 가 이 예제의 정상 구현이다.
  */

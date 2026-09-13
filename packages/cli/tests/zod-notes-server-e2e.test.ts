@@ -123,6 +123,16 @@ const { dueAt: _d, ...CREATE_NO_DUEAT } = CREATE_OK;
 const { priority: _p, ...CREATE_NO_PRIORITY } = CREATE_OK;
 const { title: _t, ...CREATE_NO_TITLE } = CREATE_OK;
 
+/**
+ * 경계값. 서버 선언(`title.max(80)` · `tags.max(5)` · `limit.min(1).max(50)`)에서 그대로 온다.
+ * 숫자를 여기 손으로 적어 두면 선언이 바뀔 때 어느 쪽이 옳은지 알 수 없으므로, 이름으로
+ * 어느 경계인지만 밝힌다.
+ */
+const TITLE_AT_MAX = "example".padEnd(80, "x");
+const TITLE_OVER_MAX = "example".padEnd(81, "x");
+const TAGS_AT_MAX = ["home", "home", "home", "home", "home"];
+const TAGS_OVER_MAX = [...TAGS_AT_MAX, "home"];
+
 /** 설계 §6 단언 3 의 표. 순서까지 사양이다. */
 const EXPECTED_OPERATIONS = [
   { type: "callTool", tool: "get_note", input: { id: EXAMPLE_ID } },
@@ -134,6 +144,8 @@ const EXPECTED_OPERATIONS = [
     input: { id: EXAMPLE_ID, __mcpeak_undeclared__: "example" },
   },
   { type: "callTool", tool: "create_note", input: CREATE_OK },
+  { type: "callTool", tool: "create_note", input: { ...CREATE_OK, tags: TAGS_AT_MAX } },
+  { type: "callTool", tool: "create_note", input: { ...CREATE_OK, title: TITLE_AT_MAX } },
   { type: "callTool", tool: "create_note", input: CREATE_NO_AUTHOR },
   { type: "callTool", tool: "create_note", input: CREATE_NO_DUEAT },
   { type: "callTool", tool: "create_note", input: CREATE_NO_PRIORITY },
@@ -150,24 +162,30 @@ const EXPECTED_OPERATIONS = [
     tool: "create_note",
     input: { ...CREATE_OK, priority: "__mcpeak_invalid_enum__" },
   },
-  {
-    type: "callTool",
-    tool: "create_note",
-    input: { ...CREATE_OK, tags: ["home", "home", "home", "home", "home", "home"] },
-  },
+  { type: "callTool", tool: "create_note", input: { ...CREATE_OK, tags: TAGS_OVER_MAX } },
   { type: "callTool", tool: "create_note", input: { ...CREATE_OK, title: "" } },
+  { type: "callTool", tool: "create_note", input: { ...CREATE_OK, title: TITLE_OVER_MAX } },
   { type: "callTool", tool: "list_notes", input: {} },
+  { type: "callTool", tool: "list_notes", input: { limit: 50 } },
   { type: "callTool", tool: "list_notes", input: { filter: "example" } },
   { type: "callTool", tool: "list_notes", input: { limit: 1.5 } },
   { type: "callTool", tool: "list_notes", input: { limit: 0 } },
+  { type: "callTool", tool: "list_notes", input: { limit: 51 } },
 ];
 
+/**
+ * `-bound-` 는 경계 안쪽의 정상 케이스, `-range-lower-` · `-range-upper-` 는 그 바깥의 위반
+ * 케이스다. 상·하한을 한 케이스로 묶어 두면 한쪽만 검사하는 서버가 범위를 다 지킨 것으로
+ * 세어진다(이슈 #387).
+ */
 const EXPECTED_IDS = [
   "get-note-success",
   "get-note-missing-id",
   "get-note-type-id",
   "get-note-undeclared",
   "create-note-success",
+  "create-note-bound-upper-tags",
+  "create-note-bound-upper-title",
   "create-note-missing-author",
   "create-note-missing-dueat",
   "create-note-missing-priority",
@@ -180,12 +198,15 @@ const EXPECTED_IDS = [
   "create-note-type-tags",
   "create-note-type-title",
   "create-note-enum-priority",
-  "create-note-range-tags",
-  "create-note-range-title",
+  "create-note-range-upper-tags",
+  "create-note-range-lower-title",
+  "create-note-range-upper-title",
   "list-notes-success",
+  "list-notes-bound-upper-limit",
   "list-notes-type-filter",
   "list-notes-type-limit",
-  "list-notes-range-limit",
+  "list-notes-range-lower-limit",
+  "list-notes-range-upper-limit",
 ];
 
 describe.sequential("zod-notes-server (McpServer + zod) 실서버 E2E", () => {
@@ -233,7 +254,7 @@ describe.sequential("zod-notes-server (McpServer + zod) 실서버 E2E", () => {
     }
   });
 
-  it("generate --baseline-only 가 세 툴 전부에서 23 케이스를 결정론적으로 만든다", async () => {
+  it("generate --baseline-only 가 세 툴 전부에서 28 케이스를 결정론적으로 만든다", async () => {
     const directory = await mkdtemp(join(tmpdir(), "mcpeak-zod-notes-"));
     const pidFile = join(directory, "server.pid");
     const secondPidFile = join(directory, "server-2.pid");
@@ -248,11 +269,16 @@ describe.sequential("zod-notes-server (McpServer + zod) 실서버 E2E", () => {
       const suite = JSON.parse(await readFile(suitePath, "utf8")) as {
         cases: { id: string; operation: unknown }[];
       };
-      // 상수 23 과 선언에서 센 축 수를 둘 다 본다. 하나만 보면 "선언이 바뀌었다" 와 "생성이 깨졌다" 가
+      // 상수 28 과 선언에서 센 축 수를 둘 다 본다. 하나만 보면 "선언이 바뀌었다" 와 "생성이 깨졌다" 가
       // 구분되지 않는다(generate-integration-e2e.test.ts 와 같은 이유).
-      expect(suite.cases).toHaveLength(23);
+      //
+      // 케이스 수는 축 수와 같지 않다. 경계 안쪽 정상 케이스(`-bound-`)는 새 축을 만들지 않고
+      // 케이스만 늘리기 때문이다. 그래서 그 셋을 빼고 축 수와 맞춘다.
+      expect(suite.cases).toHaveLength(28);
       const tools = await listTools(axisPidFile);
-      expect(suite.cases).toHaveLength(
+      const boundaryCases = suite.cases.filter((item) => item.id.includes("-bound-"));
+      expect(boundaryCases).toHaveLength(3);
+      expect(suite.cases.length - boundaryCases.length).toBe(
         tools.reduce((sum, tool) => sum + deriveContractAxes(tool).axes.length, 0),
       );
       expect(suite.cases.map((item) => item.id)).toEqual(EXPECTED_IDS);
@@ -278,7 +304,7 @@ describe.sequential("zod-notes-server (McpServer + zod) 실서버 E2E", () => {
     }
   });
 
-  it("정상 서버는 23 케이스 전부 통과하고 변이 서버는 정확히 그 4 케이스에서 실패한다", async () => {
+  it("정상 서버는 28 케이스 전부 통과하고 변이 서버는 정확히 그 6 케이스에서 실패한다", async () => {
     const directory = await mkdtemp(join(tmpdir(), "mcpeak-zod-notes-"));
     const generatePid = join(directory, "generate.pid");
     const okPid = join(directory, "ok.pid");
@@ -300,8 +326,8 @@ describe.sequential("zod-notes-server (McpServer + zod) 실서버 E2E", () => {
         cases: { spec: { id: string }; status: string }[];
       };
       expect(okReport.summary).toEqual({
-        total: 23,
-        passed: 23,
+        total: 28,
+        passed: 28,
         failed: 0,
         timedOut: 0,
         cancelled: 0,
@@ -319,14 +345,17 @@ describe.sequential("zod-notes-server (McpServer + zod) 실서버 E2E", () => {
         cases: { spec: { id: string }; status: string }[];
       };
       expect(mutantReport.summary).toEqual({
-        total: 23,
-        passed: 19,
-        failed: 4,
+        total: 28,
+        // 변이 서버는 title 과 limit 의 제약을 통째로 없앤다. 상·하한을 한 케이스로 묶던
+        // 때는 방향당 한 건씩만 잡혀 4건이었다. 축이 갈라진 지금은 같은 결함이 상·하한
+        // 두 건으로 잡혀 6건이다. 늘어난 2건이 곧 이슈 #387 이 되찾은 검출력이다.
+        passed: 22,
+        failed: 6,
         timedOut: 0,
         cancelled: 0,
         notRun: 0,
-        // 거절해야 할 입력을 받아들인 4건은 거절이 오지 않았으므로 판정 대상이 아니다
-        // (ADR-0098). 그 4건은 isError 단언 실패로 이미 failed 에 들어 있다.
+        // 거절해야 할 입력을 받아들인 6건은 거절이 오지 않았으므로 판정 대상이 아니다
+        // (ADR-0098). 그 6건은 isError 단언 실패로 이미 failed 에 들어 있다.
         rejectionUnverified: 0,
       });
       expect(
@@ -335,9 +364,11 @@ describe.sequential("zod-notes-server (McpServer + zod) 실서버 E2E", () => {
           "늘어난 id 는 예제나 변이 서버가 설계 §5.2 와 다르게 바뀐 것입니다.",
       ).toEqual([
         "create-note-enum-priority",
-        "create-note-range-title",
+        "create-note-range-lower-title",
+        "create-note-range-upper-title",
         "list-notes-type-limit",
-        "list-notes-range-limit",
+        "list-notes-range-lower-limit",
+        "list-notes-range-upper-limit",
       ]);
 
       await exited(generatePid);

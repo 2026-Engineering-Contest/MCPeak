@@ -25,6 +25,7 @@ import type {
 import type {
   CallToolCaseSpec,
   ContractAxisKind,
+  ContractRangeBound,
   JsonObject,
   JsonValue,
   SpecFinding,
@@ -1866,9 +1867,31 @@ function padToWidth(text: string, width: number): string {
   return padding > 0 ? text + " ".repeat(padding) : text;
 }
 
-/** 축 하나를 사람이 읽는 문장으로. 필드가 없는 축(HAPPY_PATH)은 종류만 적는다. */
-function axisLabel(kind: ContractAxisKind, field: string | null): string {
-  return field === null ? AXIS_LABEL[kind] : `${field} 의 ${AXIS_LABEL[kind]}`;
+/**
+ * 범위 경계를 사람이 읽는 말로. 화면에만 쓰는 이름이라 축 정체성(`bound`)과는 별개다.
+ * `Record<ContractRangeBound, string>` 이라서 `runner` 가 경계를 늘리면 여기서 타입 오류가
+ * 난다. AXIS_LABEL 과 같은 이유로 같은 형태다.
+ */
+const RANGE_BOUND_LABEL: Readonly<Record<ContractRangeBound, string>> = {
+  lower: "하한",
+  upper: "상한",
+};
+
+/**
+ * 축 하나를 사람이 읽는 문장으로. 필드가 없는 축(HAPPY_PATH)은 종류만 적는다.
+ *
+ * 괄호는 범위 축에만 붙는다. 상한 축과 하한 축은 종류도 필드도 같아서, 경계를 안 적으면
+ * 미검증 줄이 두 번 똑같이 나온다(이슈 #387). 같은 문장이 두 줄이면 사용자는 화면이 고장 난
+ * 것으로 읽지, 한쪽 경계만 비었다는 뜻으로 읽지 않는다. 다른 축은 그럴 일이 없으므로 문장을
+ * 그대로 둔다.
+ */
+function axisLabel(
+  kind: ContractAxisKind,
+  field: string | null,
+  bound: ContractRangeBound | null,
+): string {
+  const base = field === null ? AXIS_LABEL[kind] : `${field} 의 ${AXIS_LABEL[kind]}`;
+  return bound === null ? base : `${base} (${RANGE_BOUND_LABEL[bound]})`;
 }
 
 /** 툴 한 개의 줄과 그 아래 들여쓴 줄들. */
@@ -1882,7 +1905,7 @@ function coverageToolLines(tool: ToolCoverage, nameWidth: number): string[] {
     ];
   }
   const unverified = tool.axes.filter((axis) => axis.caseId === null);
-  const labels = unverified.map((axis) => axisLabel(axis.kind, axis.field));
+  const labels = unverified.map((axis) => axisLabel(axis.kind, axis.field, axis.bound));
   // 미검증 라벨을 한 열에 맞춘다. 여백은 가장 긴 라벨 기준이라 툴마다 달라질 수 있고, 같은
   // 입력에는 항상 같은 폭이 나온다.
   const labelWidth = Math.max(0, ...labels.map(displayWidth)) + 5;

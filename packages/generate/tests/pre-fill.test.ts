@@ -108,9 +108,14 @@ describe("preparePreFillRequest", () => {
 
   it("정상 경로 케이스만 싣는다", () => {
     const request = requestFor([needsHelp]);
-    expect(request?.cases).toHaveLength(1);
-    expect(request?.cases[0]?.caseId).toBe("needs-help-success");
-    expect(request?.cases[0]?.tool).toBe("needs-help");
+    // 상한 경계 정상 케이스가 생겨 툴당 정상 경로 케이스가 둘이다(#387). count 가
+    // minimum·maximum 을 함께 선언해 bound-upper 케이스가 따라온다. 위반 케이스는 여전히 없다.
+    expect(request?.cases).toHaveLength(2);
+    expect(request?.cases.map((item) => item.caseId)).toEqual([
+      "needs-help-success",
+      "needs-help-bound-upper-count",
+    ]);
+    expect(request?.cases.map((item) => item.tool)).toEqual(["needs-help", "needs-help"]);
   });
 
   it("근거 없는 필드만 assistFields 에 담는다", () => {
@@ -238,13 +243,16 @@ describe("validatePreFillResult", () => {
     const two = requestFor([needsHelp, { ...needsHelp, name: "needs-help-2" }]);
     if (two === null) throw new Error("요청이 만들어져야 한다");
     const ids = two.cases.map((item) => item.caseId);
-    const [first, second] = ids;
-    if (first === undefined || second === undefined) throw new Error("케이스가 둘이어야 한다");
+    // 툴당 정상 경로 케이스가 둘이 되어(#387 의 상한 경계 정상 케이스) ids 는 넷이다.
+    // 확인하려는 것은 툴 순서이므로 툴마다 첫 케이스 하나씩, 즉 ids[0] 과 ids[2] 를 집는다.
+    const [first, second] = [ids[0], ids[2]];
+    if (first === undefined || second === undefined) throw new Error("툴이 둘이어야 한다");
     const result = validatePreFillResult(
       { proposals: [wire(second, "timezone", "UTC"), wire(first, "timezone", "Asia/Seoul")] },
       two,
     );
-    expect(result.accepted.map((item) => item.caseId)).toEqual(ids);
+    // 제안을 거꾸로 보냈어도 요청 케이스 순서, 즉 needs-help 가 needs-help-2 보다 먼저다.
+    expect(result.accepted.map((item) => item.caseId)).toEqual([first, second]);
   });
 });
 

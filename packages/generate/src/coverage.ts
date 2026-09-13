@@ -1,6 +1,7 @@
 import type { ToolDef } from "@mcpeak/core";
 import {
   type ContractAxisKind,
+  type ContractRangeBound,
   deriveContractAxes,
   matchCoveredAxes,
   type TestSuiteSpec,
@@ -19,9 +20,21 @@ const byCodeUnit = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0
 export interface AxisCoverage {
   readonly kind: ContractAxisKind;
   readonly field: string | null;
+  /** RANGE_VIOLATION 이면 어느 쪽 경계인지. 그 밖의 축은 null 이다(이슈 #387). */
+  readonly bound: ContractRangeBound | null;
   /** 이 축을 덮는 케이스의 id. 없으면 미검증이다. */
   readonly caseId: string | null;
 }
+
+/**
+ * 축 조회 키. 만드는 자리가 셋이라(덮은 축을 넣을 때, 조회할 때) 한 군데서 만든다.
+ * 한 곳이라도 다른 규칙으로 만들면 조회가 어긋나 전부 미검증으로 찍힌다.
+ */
+const axisKey = (axis: {
+  readonly kind: ContractAxisKind;
+  readonly field: string | null;
+  readonly bound: ContractRangeBound | null;
+}): string => `${axis.kind} ${axis.field ?? ""} ${axis.bound ?? ""}`;
 
 export interface ToolCoverage {
   readonly tool: string;
@@ -66,11 +79,11 @@ export function computeCoverage(options: {
   for (const name of [...declared.keys()].sort(byCodeUnit)) {
     const tool = declared.get(name) as ToolDef;
     const derived = deriveContractAxes(tool, { duplicated: duplicated.has(name) });
-    // 축 키는 kind 와 field 쌍이다. 같은 툴 안에서 유일하다(설계서 §3.2).
+    // 축 키는 kind · field · bound 셋이다. 같은 툴 안에서 유일하다(설계서 §3.2, 이슈 #387).
     const coveredBy = new Map<string, string>();
     for (const testCase of suite.cases)
       for (const axis of matchCoveredAxes({ testCase, tool })) {
-        const key = `${axis.kind} ${axis.field ?? ""}`;
+        const key = axisKey(axis);
         // 첫 케이스만 남긴다. suite.cases 순서를 쓰므로 결정론적이다.
         if (!coveredBy.has(key)) coveredBy.set(key, testCase.id);
       }
@@ -79,7 +92,8 @@ export function computeCoverage(options: {
     const axes: AxisCoverage[] = derived.axes.map((axis) => ({
       kind: axis.kind,
       field: axis.field,
-      caseId: coveredBy.get(`${axis.kind} ${axis.field ?? ""}`) ?? null,
+      bound: axis.bound,
+      caseId: coveredBy.get(axisKey(axis)) ?? null,
     }));
     toolCoverages.push({
       tool: name,

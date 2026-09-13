@@ -975,3 +975,70 @@ describe("nullable 필드 (#426)", () => {
     expect(findings.map((item) => item.code)).toEqual(["TYPE_MISMATCH"]);
   });
 });
+
+describe("input-contract 가 경로 required 를 옳게 본다", () => {
+  const nested = {
+    type: "object",
+    required: ["user"],
+    properties: {
+      user: { type: "object", properties: { name: { type: "string" } }, required: ["name"] },
+    },
+  };
+  const missing = (input: JsonObject) =>
+    check(nested, input).findings.filter((item) => item.code === "REQUIRED_MISSING");
+
+  it("완전한 입력에 REQUIRED_MISSING 을 안 낸다", () => {
+    // required 가 경로가 되면서 Object.hasOwn(input, "user.name") 은 늘 false 가 됐다.
+    // 그대로 두면 승인 화면이 정상 명세를 결함으로 보고한다. 이 테스트가 그것을 막는다(#388).
+    expect(missing({ user: { name: "example" } })).toEqual([]);
+  });
+
+  it("{ user: {} } 는 input.user.name 하나만 낸다", () => {
+    const findings = missing({ user: {} });
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toMatchObject({ path: "input.user.name", expected: "user.name" });
+  });
+
+  it("{} 는 input.user 하나만 낸다", () => {
+    const findings = missing({});
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toMatchObject({ path: "input.user", expected: "user" });
+  });
+
+  it("오타 제안 후보에 중첩 경로가 안 들어간다", () => {
+    // 사용자가 고쳐야 하는 것은 최상위 키다. user.name 을 제안하면 고칠 수 없는 것을 가리킨다.
+    const undeclared = check({ ...nested, additionalProperties: false }, { usr: {} }).findings.find(
+      (item) => item.code === "UNDECLARED_FIELD",
+    );
+    expect(undeclared).toMatchObject({ path: "input.usr", suggestion: "user" });
+  });
+
+  it("배열 원소 경로는 REQUIRED_MISSING 을 안 낸다", () => {
+    const arraySchema = {
+      type: "object",
+      required: ["tags"],
+      properties: {
+        tags: {
+          type: "array",
+          items: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
+        },
+      },
+    };
+    // 원소가 있고 그 안에 id 가 있으면 아무것도 안 난다.
+    expect(
+      check(arraySchema, { tags: [{ id: "a" }] }).findings.filter(
+        (item) => item.code === "REQUIRED_MISSING",
+      ),
+    ).toEqual([]);
+    // 빈 배열은 원소가 없으므로 판정 대상이 아니다. 원소 수는 minItems 가 볼 몫이다.
+    expect(
+      check(arraySchema, { tags: [] }).findings.filter((item) => item.code === "REQUIRED_MISSING"),
+    ).toEqual([]);
+    // 원소 하나에 id 가 없으면 그 경로가 난다.
+    const findings = check(arraySchema, { tags: [{ id: "a" }, {}] }).findings.filter(
+      (item) => item.code === "REQUIRED_MISSING",
+    );
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toMatchObject({ path: "input.tags[].id" });
+  });
+});

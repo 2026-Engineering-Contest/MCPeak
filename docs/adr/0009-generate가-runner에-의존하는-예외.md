@@ -20,7 +20,7 @@ cli → runner / generate / record / mock → core
 
 | 종류 | 심볼 |
 |---|---|
-| 타입 | `TestSuiteSpec`, `TestCaseSpec`, `SuiteValidationIssue`, `RunnerRedactionOptions`, `ResponseSchema`, `SpecFindingsResult`, `ContractAxis`, `ContractAxisKind`, `ContractDeclaredType`, `ContractRange`, `ContractRangeBound` |
+| 타입 | `TestSuiteSpec`, `TestCaseSpec`, `SuiteValidationIssue`, `RunnerRedactionOptions`, `ResponseSchema`, `SpecFindingsResult`, `ContractAxis`, `ContractAxisKind`, `ContractDeclaredType`, `ContractRange`, `ContractRangeBound`, `UnanalyzedField` |
 | 함수 | `validateMcpSuite`, `canonicalJson`, `sha256`, `deepFreeze`, `checkInputContract`, `checkAssertionSubstance`, `deriveContractAxes`, `matchCoveredAxes`, `isSensitiveKey` |
 | 상수 | `MCP_SUITE_JSON_SCHEMA`, `DEFAULT_SENSITIVE_KEYS`, `REDACTED` |
 
@@ -37,6 +37,11 @@ cli → runner / generate / record / mock → core
 `generate` 를 부를 수 없기 때문이다. canonical JSON 구현을 두 벌로 만들면 저장 시점 지문과
 실행 시점 지문이 조용히 갈린다. 구현을 한 벌로 유지하려고 낮은 층으로 옮긴 것이고, 의존이
 새로 늘어난 것이 아니라 같은 코드의 소유 패키지가 바뀐 것이다.
+
+`UnanalyzedField` 는 2026-09-13 에 추가했다. 입력 스키마 해석이 중첩 경로로 넓어지면서
+(#388) `ContractAxesResult.unanalyzedFields` 가 문자열 배열에서 경로와 사유의 쌍이 됐다.
+`generate` 의 `ToolCoverage` 가 그 값을 그대로 실어 `cli` 화면으로 넘기므로 타입이 필요하다.
+같은 유니온을 `generate` 에 손으로 복제하면 `runner` 가 사유를 하나 더할 때 조용히 갈린다.
 
 `deriveContractAxes` · `ContractAxis` · `ContractDeclaredType` 세 개는 2026-08-15 에 계약 축
 커버리지를 위해 추가했다. 축 도출을 `runner` 에 두는 이유가 둘이다. 첫째, 정규화를 한 벌로

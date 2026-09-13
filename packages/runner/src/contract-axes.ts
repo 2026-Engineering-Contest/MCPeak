@@ -7,8 +7,19 @@ import {
   rangeYieldsViolation,
   violatedBounds,
 } from "./contract-range.js";
-import type { DeclaredType, NormalizedInputSchema } from "./input-schema.js";
-import { analyzeInputSchema, judgeField, nullSatisfiesField } from "./input-schema.js";
+import type {
+  DeclaredType,
+  NormalizedInputSchema,
+  UnanalyzedField,
+  UnanalyzedReason,
+} from "./input-schema.js";
+import {
+  analyzeInputSchema,
+  judgeField,
+  nullSatisfiesField,
+  requiredPathOmitted,
+  valuesAtPath,
+} from "./input-schema.js";
 import { byCodeUnit } from "./ordering.js";
 import { plainObject } from "./schema-match.js";
 import type { JsonValue, TestCaseSpec } from "./spec/types.js";
@@ -30,7 +41,10 @@ export interface ContractAxis {
   readonly kind: ContractAxisKind;
   /** 서버가 선언한 툴 이름. 원문 그대로다. */
   readonly tool: string;
-  /** 대상 필드. HAPPY_PATH 와 UNDECLARED_FIELD 는 null 이다. */
+  /**
+   * 대상 필드의 **경로**. HAPPY_PATH 와 UNDECLARED_FIELD 는 null 이다.
+   * 최상위 필드는 이름 그대로이고, 중첩은 `user.name` · `tags[]` · `tags[].id` 다(#388).
+   */
   readonly field: string | null;
   /** 필드에 선언된 type. TYPE_VIOLATION 에서만 값이 있고 그 밖에는 null 이다. */
   readonly declaredType: ContractDeclaredType | null;
@@ -55,6 +69,12 @@ export interface ContractAxis {
  */
 export type ContractDeclaredType = DeclaredType;
 
+/**
+ * 축을 못 만든 경로와 사유. `input-schema.ts` 는 패키지 내부 전용이라 그쪽을 직접 내보내지
+ * 않고 여기서 다시 낸다. `ContractDeclaredType` 이 `DeclaredType` 을 다시 내는 것과 같다.
+ */
+export type { UnanalyzedField, UnanalyzedReason };
+
 export interface ContractAxesResult {
   /**
    * §4.4 순서로 정렬돼 있다. analyzable 이 false 면 빈 배열이다.
@@ -75,10 +95,10 @@ export interface ContractAxesResult {
    */
   readonly unanalyzableReason: string | null;
   /**
-   * 해석하지 못해 축을 못 만든 필드 이름. UTF-16 코드 단위 오름차순.
+   * 해석하지 못해 축을 못 만든 경로와 그 사유. path 코드 단위 오름차순.
    * 커버리지 분모에 안 들어가므로 이것을 숨기면 "축을 다 덮었다" 로 잘못 읽힌다.
    */
-  readonly unanalyzedFields: readonly string[];
+  readonly unanalyzedFields: readonly UnanalyzedField[];
 }
 
 /**
@@ -128,8 +148,11 @@ export function deriveContractAxes(
   // 서버가 같은 이름을 required 에 두 번 적을 수 있다(JSON Schema 가 막지 않는다). 축은
   // (kind, field) 로 유일해야 하므로 여기서 중복을 제거한다. 안 하면 분모가 부풀어 케이스
   // 하나가 덮는 축이 둘로 세어진다.
-  for (const name of [...new Set(analysis.schema.required)].sort(byCodeUnit))
-    axes.push(axis("REQUIRED_OMITTED", name, null, null));
+  //
+  // tags[] 는 부모 배열의 required 에 들어갈 수 없다. 원소가 없는 것은 minItems 위반이고
+  // 그것은 이미 tags 의 RANGE_VIOLATION 축이다.
+  for (const path of [...new Set(analysis.schema.required)].sort(byCodeUnit))
+    if (!path.endsWith("[]")) axes.push(axis("REQUIRED_OMITTED", path, null, null));
   // fields 는 analyzeInputSchema 가 이미 코드 단위로 정렬해 넣은 Map 이다. 다시 정렬하지 않는다.
   for (const [name, field] of analysis.schema.fields)
     if (field.type !== null) axes.push(axis("TYPE_VIOLATION", name, field.type, null));
@@ -194,37 +217,48 @@ function violatedAxes(
   input: Record<string, unknown>,
 ): ContractAxis[] {
   const axes: ContractAxis[] = [];
-  // deriveContractAxes 와 같은 이유로 중복을 제거하고 정렬한다. 같은 이름이 required 에 두 번
-  // 있어도 덮는 축은 하나다.
-  for (const name of [...new Set(schema.required)].sort(byCodeUnit))
-    if (!Object.hasOwn(input, name))
-      axes.push(contractAxis(tool, "REQUIRED_OMITTED", name, null, null));
+  // deriveContractAxes 와 같은 이유로 중복을 제거하고 정렬한다. 같은 경로가 required 에 두 번
+  // 있어도 덮는 축은 하나다. 누락 판정은 requiredPathOmitted 한 곳에서만 한다. 규칙을 여기
+  // 손으로 다시 적으면 input-contract.ts 와 갈린다(#388).
+  for (const path of [...new Set(schema.required)].sort(byCodeUnit))
+    if (requiredPathOmitted(input as JsonValue, path))
+      axes.push(contractAxis(tool, "REQUIRED_OMITTED", path, null, null));
   const typeAxes: ContractAxis[] = [];
   const enumAxes: ContractAxis[] = [];
   const rangeAxes: ContractAxis[] = [];
   // fields 는 analyzeInputSchema 가 이미 코드 단위로 정렬해 넣은 Map 이다. 다시 정렬하지 않는다.
-  for (const [name, field] of schema.fields) {
-    if (!Object.hasOwn(input, name)) continue;
-    const code = judgeField(field, input[name] as JsonValue);
-    // judgeField 는 타입 위반이면 enum 을 보지 않는다. 그래서 한 케이스가 같은 필드의 타입 축과
-    // enum 축을 동시에 덮지 않는다. 우리 생성기도 케이스를 따로 만든다.
-    if (code === "TYPE_MISMATCH")
-      typeAxes.push(contractAxis(tool, "TYPE_VIOLATION", name, field.type, null));
-    else if (code === "ENUM_MISMATCH")
+  for (const [path, field] of schema.fields) {
+    // 배열 원소 경로는 값이 여럿이다. 하나라도 위반이면 그 축을 덮은 것이다(설계 §4.1).
+    const values = valuesAtPath(input as JsonValue, path);
+    if (values.length === 0) continue;
+    const codes = values.map((value) => judgeField(field, value));
+    // judgeField 는 타입 위반이면 enum 을 보지 않는다. 그래서 한 케이스가 같은 경로의 타입 축과
+    // enum 축을 동시에 덮지 않는다. 값이 여럿일 때도 같은 단락 순서를 경로 단위로 유지한다.
+    // 원소 하나는 타입 위반이고 다른 하나는 범위 위반인 입력이 축 둘을 덮으면, 우리 생성기가
+    // 케이스를 따로 만드는 것과 어긋나 커버리지가 부풀어 오른다.
+    if (codes.includes("TYPE_MISMATCH"))
+      typeAxes.push(contractAxis(tool, "TYPE_VIOLATION", path, field.type, null));
+    else if (codes.includes("ENUM_MISMATCH"))
       enumAxes.push(
-        contractAxis(tool, "ENUM_VIOLATION", name, null, [...(field.enumValues ?? [])]),
+        contractAxis(tool, "ENUM_VIOLATION", path, null, [...(field.enumValues ?? [])]),
       );
-    // 타입·enum 을 이미 어긴 값은 그 축을 덮는다. 같은 케이스가 범위 축까지 덮으면 케이스
-    // 하나가 축 둘을 덮게 되어 우리 생성기가 케이스를 따로 만드는 것과 어긋난다.
-    else if (
-      rangeYieldsViolation(field.range) &&
-      // nullable 필드의 null 은 선언을 지킨 값이다. 범위 판정은 judgeField 를 거치지 않으므로
-      // 여기서 따로 걸러야 한다(#426).
-      !nullSatisfiesField(field, input[name] as JsonValue)
-    )
+    else if (rangeYieldsViolation(field.range)) {
       // 어긴 쪽 경계의 축만 덮는다. 만족 불가능한 선언에서는 한 값이 양쪽을 다 덮는다.
-      for (const bound of violatedBounds(field.range, input[name] as JsonValue))
-        rangeAxes.push(contractAxis(tool, "RANGE_VIOLATION", name, null, null, field.range, bound));
+      // 값이 여럿이면 경계를 모아 두고 한 번씩만 낸다. 축은 경로 하나에 경계 하나다.
+      const bounds = new Set<ContractRangeBound>();
+      for (const value of values) {
+        // nullable 필드의 null 은 선언을 지킨 값이다. 범위 판정은 judgeField 를 거치지 않으므로
+        // 여기서 따로 걸러야 한다(#426).
+        if (nullSatisfiesField(field, value)) continue;
+        for (const bound of violatedBounds(field.range, value)) bounds.add(bound);
+      }
+      // 순서는 늘 lower 다음 upper 다. Set 의 삽입 순서에 기대면 값 순서가 축 순서를 바꾼다.
+      for (const bound of ["lower", "upper"] as const)
+        if (bounds.has(bound))
+          rangeAxes.push(
+            contractAxis(tool, "RANGE_VIOLATION", path, null, null, field.range, bound),
+          );
+    }
   }
   // 선언 밖 키가 여럿이어도 축은 하나다. field 가 null 이라 구분할 수 없고 구분할 이유도 없다.
   const undeclaredAxes: ContractAxis[] =

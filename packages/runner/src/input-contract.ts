@@ -3,7 +3,12 @@ import { expectedIsError } from "./case-expectation.js";
 import type { ContractRange } from "./contract-range.js";
 import { rangeYieldsViolation, violatesRange } from "./contract-range.js";
 import type { InputSchemaAnalysis } from "./input-schema.js";
-import { analyzeInputSchema, judgeField, nullSatisfiesField } from "./input-schema.js";
+import {
+  analyzeInputSchema,
+  judgeField,
+  nullSatisfiesField,
+  requiredPathOmitted,
+} from "./input-schema.js";
 import { byCodeUnit } from "./ordering.js";
 import { plainObject, typeName } from "./schema-match.js";
 import type { JsonValue, TestSuiteSpec } from "./spec/types.js";
@@ -205,10 +210,22 @@ export function checkInputContract(options: InputContractOptions): SpecFindingsR
           contractChecked = true;
           const inputKeys = Object.keys(input).sort(byCodeUnit);
           const undeclaredKeys = inputKeys.filter((key) => !schema.fields.has(key));
-          const declaredNames = [...schema.fields.keys()];
+          // 오타 제안 후보는 **깊이 1 경로만**이다. 경로가 섞이면 `usr` 오타에 `user.name` 을
+          // 제안한다. 사용자가 고쳐야 하는 것은 최상위 키다.
+          const declaredNames = [...schema.fields.keys()].filter(
+            (path) => !path.includes(".") && !path.includes("["),
+          );
 
+          // required 가 경로가 됐다(#388). `Object.hasOwn(input, "user.name")` 은 입력이
+          // `{ user: { name: "example" } }` 로 완벽해도 항상 false 라, 그대로 두면 승인 화면이
+          // 정상 명세를 결함으로 보고한다. 판정은 requiredPathOmitted 한 곳에서만 하고
+          // violatedAxes 와 같은 규칙을 쓴다. 갈리면 커버리지가 덮었다고 세는 케이스를 이쪽이
+          // 결함으로 낸다.
+          //
+          // path 는 지금도 `input.${name}` 이라 경로가 들어가면 `input.user.name` 이 되어
+          // 저절로 맞는 문장이 된다. 형식을 바꾸지 않는다.
           for (const name of schema.required) {
-            if (Object.hasOwn(input, name)) continue;
+            if (!requiredPathOmitted(input as JsonValue, name)) continue;
             caseFindings.push(
               withSuggestion(
                 {

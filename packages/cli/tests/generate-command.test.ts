@@ -151,6 +151,9 @@ function deps(overrides: Partial<GenerateCommandDependencies> = {}) {
         pinnedFieldsByCase: {},
         // 툴이 0개이므로 값 출처도 비어 있다. AI 사전보완 대상 판정의 재료다.
         provenance: [],
+        // 필드별 값 출처(#390). 위의 provenance 와 다른 것이다. 그쪽은 툴별 집계이고
+        // 이쪽은 정상 입력에 든 필드마다 "그 값이 어디서 왔는가" 한 건이다.
+        fieldOrigins: [],
       };
     }),
     createAuthoringSession: vi.fn(

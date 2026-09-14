@@ -10,5 +10,13 @@ catalog:
   # The split-package 2.0 SDK is still in development and would break core.
   "@modelcontextprotocol/sdk": "1.30.0"
 
+# 발행된 지 24시간이 안 된 버전은 설치하지 않는다. 공급망 방어다 — npm 계정이 탈취돼
+# 악성 버전이 올라가는 사고는 대개 몇 시간 안에 발견되고 unpublish 되므로, 하루를 기다리면
+# 그 창을 대부분 피한다. `--frozen-lockfile` 로 도는 CI 는 락파일의 버전을 그대로 쓰므로
+# 영향받지 않고, 새 의존을 **추가·갱신할 때만** 걸린다.
+#
+# 아래 예외는 catalog 에 고정된 SDK 다. 이미 고정된 버전이라 나이 검사가 의미가 없고,
+# 걸리면 설치가 막힌다.
+minimumReleaseAge: 1440
 minimumReleaseAgeExclude:
   - '@modelcontextprotocol/sdk@1.30.0'

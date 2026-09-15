@@ -10,5 +10,16 @@ catalog:
   # The split-package 2.0 SDK is still in development and would break core.
   "@modelcontextprotocol/sdk": "1.30.0"
 
+# 발행된 지 24시간이 안 된 버전은 설치하지 않는다. 공급망 방어다 — npm 계정이 탈취돼
+# 악성 버전이 올라가는 사고는 대개 몇 시간 안에 발견되고 unpublish 되므로, 하루를 기다리면
+# 그 창을 대부분 피한다. 지금 고정한 pnpm 10.34.5 에서는 `--frozen-lockfile` 이 락파일의 버전을
+# 그대로 쓰고 나이를 검사하지 않으므로, 새 의존을 **추가·갱신할 때만** 걸린다 (pnpm#10438).
+# pnpm 11 부터는 다르다 — frozen install 도 락파일 전체를 검사해서, 기준보다 어린 버전이 이미
+# 락파일에 있으면 ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION 으로 CI 가 막힌다. pnpm 을 11 로 올릴
+# 때는 이 값 때문에 CI 가 깨질 수 있으니 락파일을 먼저 재생성해라.
+#
+# 아래 예외는 catalog 에 고정된 SDK 다. 이미 고정된 버전이라 나이 검사가 의미가 없고,
+# 걸리면 설치가 막힌다.
+minimumReleaseAge: 1440
 minimumReleaseAgeExclude:
   - '@modelcontextprotocol/sdk@1.30.0'

@@ -61,7 +61,26 @@ const QUAKES_URL = "https://earthquake.usgs.gov/fdsnws/event/1/query";
  */
 export const NOTES_FILE = join(homedir(), ".live-weather-notes.json");
 
-const UNIT_KINDS = { km: "length", mi: "length", kg: "mass", lb: "mass", c: "temp", f: "temp" };
+/**
+ * 단위 표. **순서가 사양이다.** `mcpeak generate` 의 정상 분기(#401)는 enum 의 첫 값·두 번째
+ * 값·마지막 값을 밟는데, 그때 상대 필드는 기준값(첫 값)에 고정된다. 첫·두 번째·마지막이 서로
+ * 다른 종류면 `f → km` 같은 케이스가 생겨 서버가 옳게 거절해도 "정상 응답 기대" 로 영원히
+ * 실패한다. 길이를 셋(km · m · mi) 두고 처음 둘과 마지막에 놓아 그 자리를 피한다. mi 가 맨 뒤인 이유다.
+ * 도구가 enum 값 사이의 관계를 모른다는 한계는 예제 README 에 적었다.
+ *
+ * `factor` 는 기준 단위(길이 m · 질량 kg)로 가는 배율이다. 온도는 원점이 달라 표로 못 적고
+ * `convertUnits` 가 따로 계산한다.
+ */
+const UNIT_KINDS = {
+  km: "length",
+  m: "length",
+  kg: "mass",
+  lb: "mass",
+  c: "temp",
+  f: "temp",
+  mi: "length",
+};
+const UNIT_FACTORS = { km: 1000, m: 1, mi: 1609.344, kg: 1, lb: 0.45359237 };
 
 const COUNTRY_CODES = ["KR", "US", "JP", "DE", "FR", "GB", "BR", "IN"];
 const COUNTRIES = {
@@ -172,7 +191,7 @@ const TOOLS = [
   },
   {
     name: "convert_units",
-    description: "길이(km·mi)·질량(kg·lb)·온도(c·f) 단위를 환산한다.",
+    description: "길이(km·m·mi)·질량(kg·lb)·온도(c·f) 단위를 환산한다. 같은 종류끼리만 된다.",
     inputSchema: {
       type: "object",
       properties: {
@@ -490,12 +509,9 @@ function convertUnits(args) {
   }
   let converted = value;
   if (from !== to) {
-    if (from === "km") converted = value / 1.609344;
-    else if (from === "mi") converted = value * 1.609344;
-    else if (from === "kg") converted = value * 2.20462262;
-    else if (from === "lb") converted = value / 2.20462262;
-    else if (from === "c") converted = value * 1.8 + 32;
-    else if (from === "f") converted = (value - 32) / 1.8;
+    if (UNIT_KINDS[from] === "temp")
+      converted = from === "c" ? value * 1.8 + 32 : (value - 32) / 1.8;
+    else converted = (value * UNIT_FACTORS[from]) / UNIT_FACTORS[to];
   }
   converted = Math.round(converted * 1000) / 1000;
   // 결함 A: outputSchema 는 `converted` 를 선언하는데 여기서는 `result` 로 싣는다. 한 줄 수정: result → converted

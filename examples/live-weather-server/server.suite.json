@@ -3,7 +3,7 @@
   "id": "live-weather",
   "name": "live-weather baseline",
   "approval": {
-    "fingerprint": "ab05ad16522e318ec9b34ec13702aff433800e2e77538f2fe1c9d78a325cdf8d"
+    "fingerprint": "78af1b7e416b6c45ea013c8370a2f430f09adf9c1aa5662175d63074d7bab5eb"
   },
   "defaultTimeoutMs": 10000,
   "cases": [
@@ -204,6 +204,60 @@
       ]
     },
     {
+      "id": "search-city-bound-upper-count",
+      "name": "search_city가 'count' 상한 경계값에 정상 응답한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "search_city",
+        "input": {
+          "query": "Seoul",
+          "count": 10
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": false
+        }
+      ]
+    },
+    {
+      "id": "search-city-branch-with-count",
+      "name": "search_city가 선택 필드 'count' 를 받아 정상 응답한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "search_city",
+        "input": {
+          "query": "Seoul",
+          "count": 5
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": false
+        }
+      ]
+    },
+    {
+      "id": "search-city-branch-with-language",
+      "name": "search_city가 선택 필드 'language' 를 받아 정상 응답한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "search_city",
+        "input": {
+          "query": "Seoul",
+          "language": "ko"
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": false
+        }
+      ]
+    },
+    {
       "id": "search-city-missing-query",
       "name": "search_city가 필수 필드 'query' 누락을 거절한다",
       "operation": {
@@ -290,8 +344,8 @@
       ]
     },
     {
-      "id": "search-city-range-count",
-      "name": "search_city가 'count' 범위 위반을 거절한다",
+      "id": "search-city-range-lower-count",
+      "name": "search_city가 'count' 하한 미만 값을 거절한다",
       "operation": {
         "type": "callTool",
         "tool": "search_city",
@@ -308,12 +362,98 @@
       ]
     },
     {
+      "id": "search-city-range-upper-count",
+      "name": "search_city가 'count' 상한 초과 값을 거절한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "search_city",
+        "input": {
+          "query": "Seoul",
+          "count": 11
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": true
+        }
+      ]
+    },
+    {
       "id": "list-recent-quakes-success",
       "name": "list_recent_quakes가 오류 없이 응답한다",
       "operation": {
         "type": "callTool",
         "tool": "list_recent_quakes",
         "input": {}
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": false
+        }
+      ]
+    },
+    {
+      "id": "list-recent-quakes-bound-upper-hours",
+      "name": "list_recent_quakes가 'hours' 상한 경계값에 정상 응답한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "list_recent_quakes",
+        "input": {
+          "hours": 168
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": false
+        }
+      ]
+    },
+    {
+      "id": "list-recent-quakes-bound-upper-minmagnitude",
+      "name": "list_recent_quakes가 'minMagnitude' 상한 경계값에 정상 응답한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "list_recent_quakes",
+        "input": {
+          "minMagnitude": 10
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": false
+        }
+      ]
+    },
+    {
+      "id": "list-recent-quakes-branch-with-hours",
+      "name": "list_recent_quakes가 선택 필드 'hours' 를 받아 정상 응답한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "list_recent_quakes",
+        "input": {
+          "hours": 24
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": false
+        }
+      ]
+    },
+    {
+      "id": "list-recent-quakes-branch-with-minmagnitude",
+      "name": "list_recent_quakes가 선택 필드 'minMagnitude' 를 받아 정상 응답한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "list_recent_quakes",
+        "input": {
+          "minMagnitude": 5
+        }
       },
       "assertions": [
         {
@@ -357,8 +497,8 @@
       ]
     },
     {
-      "id": "list-recent-quakes-range-hours",
-      "name": "list_recent_quakes가 'hours' 범위 위반을 거절한다",
+      "id": "list-recent-quakes-range-lower-hours",
+      "name": "list_recent_quakes가 'hours' 하한 미만 값을 거절한다",
       "operation": {
         "type": "callTool",
         "tool": "list_recent_quakes",
@@ -374,13 +514,47 @@
       ]
     },
     {
-      "id": "list-recent-quakes-range-minmagnitude",
-      "name": "list_recent_quakes가 'minMagnitude' 범위 위반을 거절한다",
+      "id": "list-recent-quakes-range-upper-hours",
+      "name": "list_recent_quakes가 'hours' 상한 초과 값을 거절한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "list_recent_quakes",
+        "input": {
+          "hours": 169
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": true
+        }
+      ]
+    },
+    {
+      "id": "list-recent-quakes-range-lower-minmagnitude",
+      "name": "list_recent_quakes가 'minMagnitude' 하한 미만 값을 거절한다",
       "operation": {
         "type": "callTool",
         "tool": "list_recent_quakes",
         "input": {
           "minMagnitude": -1
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": true
+        }
+      ]
+    },
+    {
+      "id": "list-recent-quakes-range-upper-minmagnitude",
+      "name": "list_recent_quakes가 'minMagnitude' 상한 초과 값을 거절한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "list_recent_quakes",
+        "input": {
+          "minMagnitude": 11
         }
       },
       "assertions": [
@@ -399,6 +573,25 @@
         "input": {
           "title": "example",
           "body": "example"
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": false
+        }
+      ]
+    },
+    {
+      "id": "add-note-branch-with-tags",
+      "name": "add_note가 선택 필드 'tags' 를 받아 정상 응답한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "add_note",
+        "input": {
+          "title": "example",
+          "body": "example",
+          "tags": []
         }
       },
       "assertions": [
@@ -480,6 +673,25 @@
       ]
     },
     {
+      "id": "add-note-type-tags-item",
+      "name": "add_note가 'tags[]' 타입 위반을 거절한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "add_note",
+        "input": {
+          "title": "example",
+          "body": "example",
+          "tags": [0]
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": true
+        }
+      ]
+    },
+    {
       "id": "add-note-type-title",
       "name": "add_note가 'title' 타입 위반을 거절한다",
       "operation": {
@@ -498,8 +710,8 @@
       ]
     },
     {
-      "id": "add-note-range-title",
-      "name": "add_note가 'title' 범위 위반을 거절한다",
+      "id": "add-note-range-lower-title",
+      "name": "add_note가 'title' 하한 미만 값을 거절한다",
       "operation": {
         "type": "callTool",
         "tool": "add_note",
@@ -522,6 +734,23 @@
         "type": "callTool",
         "tool": "list_notes",
         "input": {}
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": false
+        }
+      ]
+    },
+    {
+      "id": "list-notes-branch-with-tag",
+      "name": "list_notes가 선택 필드 'tag' 를 받아 정상 응답한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "list_notes",
+        "input": {
+          "tag": "example"
+        }
       },
       "assertions": [
         {
@@ -557,6 +786,166 @@
           "value": 0,
           "from": "km",
           "to": "km"
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": false
+        },
+        {
+          "type": "structuredContentMatchesSchema",
+          "schema": {
+            "type": "object",
+            "required": ["value", "from", "to", "converted"],
+            "properties": {
+              "converted": {
+                "type": "number"
+              },
+              "from": {
+                "type": "string"
+              },
+              "to": {
+                "type": "string"
+              },
+              "value": {
+                "type": "number"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "convert-units-branch-enum-from-2",
+      "name": "convert_units가 'from' 의 다른 선언값에 정상 응답한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "convert_units",
+        "input": {
+          "value": 0,
+          "from": "m",
+          "to": "km"
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": false
+        },
+        {
+          "type": "structuredContentMatchesSchema",
+          "schema": {
+            "type": "object",
+            "required": ["value", "from", "to", "converted"],
+            "properties": {
+              "converted": {
+                "type": "number"
+              },
+              "from": {
+                "type": "string"
+              },
+              "to": {
+                "type": "string"
+              },
+              "value": {
+                "type": "number"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "convert-units-branch-enum-from-last",
+      "name": "convert_units가 'from' 의 마지막 선언값에 정상 응답한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "convert_units",
+        "input": {
+          "value": 0,
+          "from": "mi",
+          "to": "km"
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": false
+        },
+        {
+          "type": "structuredContentMatchesSchema",
+          "schema": {
+            "type": "object",
+            "required": ["value", "from", "to", "converted"],
+            "properties": {
+              "converted": {
+                "type": "number"
+              },
+              "from": {
+                "type": "string"
+              },
+              "to": {
+                "type": "string"
+              },
+              "value": {
+                "type": "number"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "convert-units-branch-enum-to-2",
+      "name": "convert_units가 'to' 의 다른 선언값에 정상 응답한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "convert_units",
+        "input": {
+          "value": 0,
+          "from": "km",
+          "to": "m"
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": false
+        },
+        {
+          "type": "structuredContentMatchesSchema",
+          "schema": {
+            "type": "object",
+            "required": ["value", "from", "to", "converted"],
+            "properties": {
+              "converted": {
+                "type": "number"
+              },
+              "from": {
+                "type": "string"
+              },
+              "to": {
+                "type": "string"
+              },
+              "value": {
+                "type": "number"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "convert-units-branch-enum-to-last",
+      "name": "convert_units가 'to' 의 마지막 선언값에 정상 응답한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "convert_units",
+        "input": {
+          "value": 0,
+          "from": "km",
+          "to": "mi"
         }
       },
       "assertions": [
@@ -754,6 +1143,44 @@
       ]
     },
     {
+      "id": "summarize-text-bound-upper-options-maxwords",
+      "name": "summarize_text가 'options.maxWords' 상한 경계값에 정상 응답한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "summarize_text",
+        "input": {
+          "text": "example",
+          "options": {
+            "maxWords": 200
+          }
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": false
+        }
+      ]
+    },
+    {
+      "id": "summarize-text-branch-with-options",
+      "name": "summarize_text가 선택 필드 'options' 를 받아 정상 응답한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "summarize_text",
+        "input": {
+          "text": "example",
+          "options": {}
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": false
+        }
+      ]
+    },
+    {
       "id": "summarize-text-missing-text",
       "name": "summarize_text가 필수 필드 'text' 누락을 거절한다",
       "operation": {
@@ -787,6 +1214,46 @@
       ]
     },
     {
+      "id": "summarize-text-type-options-maxwords",
+      "name": "summarize_text가 'options.maxWords' 타입 위반을 거절한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "summarize_text",
+        "input": {
+          "text": "example",
+          "options": {
+            "maxWords": 1.5
+          }
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": true
+        }
+      ]
+    },
+    {
+      "id": "summarize-text-type-options-style",
+      "name": "summarize_text가 'options.style' 타입 위반을 거절한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "summarize_text",
+        "input": {
+          "text": "example",
+          "options": {
+            "style": 0
+          }
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": true
+        }
+      ]
+    },
+    {
       "id": "summarize-text-type-text",
       "name": "summarize_text가 'text' 타입 위반을 거절한다",
       "operation": {
@@ -804,6 +1271,66 @@
       ]
     },
     {
+      "id": "summarize-text-enum-options-style",
+      "name": "summarize_text가 'options.style' 의 선언되지 않은 값을 거절한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "summarize_text",
+        "input": {
+          "text": "example",
+          "options": {
+            "style": "__mcpeak_invalid_enum__"
+          }
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": true
+        }
+      ]
+    },
+    {
+      "id": "summarize-text-range-lower-options-maxwords",
+      "name": "summarize_text가 'options.maxWords' 하한 미만 값을 거절한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "summarize_text",
+        "input": {
+          "text": "example",
+          "options": {
+            "maxWords": 0
+          }
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": true
+        }
+      ]
+    },
+    {
+      "id": "summarize-text-range-upper-options-maxwords",
+      "name": "summarize_text가 'options.maxWords' 상한 초과 값을 거절한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "summarize_text",
+        "input": {
+          "text": "example",
+          "options": {
+            "maxWords": 201
+          }
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": true
+        }
+      ]
+    },
+    {
       "id": "lookup-country-success",
       "name": "lookup_country가 오류 없이 응답한다",
       "operation": {
@@ -811,6 +1338,58 @@
         "tool": "lookup_country",
         "input": {
           "code": "KR"
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": false
+        }
+      ]
+    },
+    {
+      "id": "lookup-country-branch-enum-code-2",
+      "name": "lookup_country가 'code' 의 다른 선언값에 정상 응답한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "lookup_country",
+        "input": {
+          "code": "US"
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": false
+        }
+      ]
+    },
+    {
+      "id": "lookup-country-branch-enum-code-last",
+      "name": "lookup_country가 'code' 의 마지막 선언값에 정상 응답한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "lookup_country",
+        "input": {
+          "code": "IN"
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": false
+        }
+      ]
+    },
+    {
+      "id": "lookup-country-branch-with-fields",
+      "name": "lookup_country가 선택 필드 'fields' 를 받아 정상 응답한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "lookup_country",
+        "input": {
+          "code": "KR",
+          "fields": ["name", "capital", "currency", "callingCode"]
         }
       },
       "assertions": [
@@ -871,6 +1450,24 @@
       ]
     },
     {
+      "id": "lookup-country-type-fields-item",
+      "name": "lookup_country가 'fields[]' 타입 위반을 거절한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "lookup_country",
+        "input": {
+          "code": "KR",
+          "fields": [0, "capital", "currency", "callingCode"]
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": true
+        }
+      ]
+    },
+    {
       "id": "lookup-country-enum-code",
       "name": "lookup_country가 'code' 의 선언되지 않은 값을 거절한다",
       "operation": {
@@ -878,6 +1475,24 @@
         "tool": "lookup_country",
         "input": {
           "code": "__mcpeak_invalid_enum__"
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": true
+        }
+      ]
+    },
+    {
+      "id": "lookup-country-enum-fields-item",
+      "name": "lookup_country가 'fields[]' 의 선언되지 않은 값을 거절한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "lookup_country",
+        "input": {
+          "code": "KR",
+          "fields": ["__mcpeak_invalid_enum__", "capital", "currency", "callingCode"]
         }
       },
       "assertions": [
@@ -952,8 +1567,8 @@
       ]
     },
     {
-      "id": "evaluate-expression-range-expression",
-      "name": "evaluate_expression가 'expression' 범위 위반을 거절한다",
+      "id": "evaluate-expression-range-lower-expression",
+      "name": "evaluate_expression가 'expression' 하한 미만 값을 거절한다",
       "operation": {
         "type": "callTool",
         "tool": "evaluate_expression",

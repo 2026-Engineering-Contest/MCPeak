@@ -16,7 +16,8 @@
   "homepage": "https://github.com/2026-Engineering-Contest/MCPeak#readme",
   "bugs": "https://github.com/2026-Engineering-Contest/MCPeak/issues",
   "bin": {
-    "mcpeak-mock": "./dist/stdio.mjs"
+    "mcpeak-mock": "./dist/stdio.mjs",
+    "mcpeak-relay": "./dist/relay.mjs"
   },
   "publishConfig": {
     "access": "public"

@@ -1516,7 +1516,9 @@ export async function main(argv: readonly string[]): Promise<void> {
 // top-level await 를 쓰지 않는다 — 빌드가 cjs 도 함께 내는데 그쪽에서 지원되지 않는다.
 // src/stdio.ts · packages/cli/src/cli.ts 도 같은 이유로 이 형태다.
 main(process.argv.slice(2)).catch((error: unknown) => {
-  fail(`→ 중계기를 띄우지 못했습니다.\n→ ${error instanceof Error ? error.message : String(error)}`);
+  fail(
+    `→ 중계기를 띄우지 못했습니다.\n→ ${error instanceof Error ? error.message : String(error)}`,
+  );
 });
 ```
 

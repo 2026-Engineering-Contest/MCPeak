@@ -1868,6 +1868,35 @@ grep -c "중계기 대기 중" packages/mock/dist/relay.mjs
 - [ ] 기존 목 소스 4 개가 안 바뀌었다: `git diff --stat main -- packages/mock/src/index.ts packages/mock/src/stdio.ts packages/mock/src/input-validation.ts packages/mock/src/key-violation.ts` 가 **빈 출력**
 - [ ] `package.json` 의 `mcpeak-mock` 이 그대로 있다
 
+## 1 단계를 마치며 남은 미결 (2026-09-19 실측)
+
+구현 8 개가 끝난 시점에 확인된 것들이다. **2 단계 계획을 쓰기 전에 판단이 필요하다.**
+
+1. **중계기가 부모 환경을 자식에게 물려주지 않는다.** `startRelay` 가 `StdioClientTransport` 에
+   `env` 를 넘기지 않아 SDK 의 `getDefaultEnvironment()` 가 적용되고, 자식은
+   `HOME`·`LOGNAME`·`PATH`·`SHELL`·`TERM`·`USER` 여섯 개만 받는다. 테스트 문제가 아니라
+   **제품 동작**이다 — `mcpeak-relay -- node ./server.mjs` 로 띄운 진짜 서버가
+   `process.env.WEATHER_API_KEY` 를 읽으면 조용히 못 받는다. 지금 저장소 안에서는 안 깨진다:
+   예제 서버 넷 중 `process.env` 를 쓰는 것이 하나도 없어 CI 가 초록이다. 2·4 단계에서 실제
+   서버를 붙이는 순간 드러난다. SDK 의 제한은 신뢰할 수 없는 서버를 띄우는 클라이언트를 상정한
+   보안 기본값인데 중계기는 개발자가 직접 지목한 자기 서버를 띄운다 — **무엇을 넘길 것인가가
+   설계 결정이라 ADR 감이다.**
+2. **인자 오류 문안 3 개에 회귀 보호가 없다.** `--port` 범위, 모르는 인자, 명령 누락. 설계 §8 에
+   항목이 없어 만들지 않았다. 문안이 곧 제품인 저장소에서 테스트 없는 문안이 남는다.
+3. **표 I 와 구현이 어긋난다.** 표는 서버발 요청(sampling·roots)을 "기록만 하고 버린다" 인데
+   구현은 `child.onmessage` 첫 분기에서 기록 없이 `return` 한다. 표를 고치거나 기록을 넣거나
+   둘 중 하나. 테스트도 없다.
+4. **§8-13 이 0.85 초 → 2.86 초로 느려졌다.** 픽스처가 stdin 종료를 무시하고 이벤트 루프를
+   붙잡게 만든 결과다. 그래야 중계기의 종료 책임을 실제로 검사한다 — 그 전에는 OS 동작을
+   확인하고 있었다.
+5. **`parseArgs` 가 export 인데 `process.exit(1)` 을 부른다.** 1 단계에서는 프로세스를 띄워서만
+   검사하므로 막히지 않는다. 단위 테스트를 붙이려 하면 그때 막힌다.
+6. **저장소 전체 테스트는 `packages/dashboard/web` 에서 81 건 실패한다.** `window.localStorage.clear
+   is not a function` — jsdom 환경 문제이고 이 작업과 무관하다. 1 단계 커밋은 dashboard 파일을
+   한 개도 건드리지 않았다(`git diff --name-only 9f271d8..HEAD`). 남의 영역이라 손대지 않았다.
+
+---
+
 ## 이 계획이 하지 않는 것
 
 2·3·4 단계다. 다음 계획에서 다룬다.

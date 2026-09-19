@@ -1071,10 +1071,15 @@ describe("수명", () => {
   it("§8-8 뒤 서버가 먼저 죽어도 close() 가 멈추지 않는다", async () => {
     const { handle } = await startFixtureRelay(["--exit-after-initialize"]);
     const session = await openSession(handle.url);
+    const pid = handle.childPid;
+    expect(pid).not.toBeNull();
     await session.close();
-    // 자식이 스스로 종료할 시간을 준다. setTimeout 이 아니라 종료 사실을 폴링한다 —
-    // 고정 대기는 느린 CI 에서 가끔 실패한다.
-    await waitFor(() => handle.childPid !== null && !isAlive(handle.childPid));
+    // 기다리는 조건은 `childPid` 가 null 이 되는 것이다. getter 는 살아 있으면 pid ·
+    // 끝났으면 null 두 상태뿐이라 "null 이 아니면서 죽어 있다" 는 상태가 존재하지 않는다.
+    // setTimeout 이 아니라 폴링인 이유는 고정 대기가 느린 CI 에서 가끔 실패하기 때문이다.
+    await waitFor(() => handle.childPid === null);
+    // 계약이 아니라 실제 프로세스가 죽었는지도 따로 본다.
+    expect(isAlive(pid as number)).toBe(false);
 
     await expect(handle.close()).resolves.toBeUndefined();
   });
@@ -1144,6 +1149,8 @@ export interface RelayHandle {
   // 확인하려면 우리가 처음 pid 를 들고 있어야 한다.
   const childPid = child.pid;
   let childAlive = true;
+  /** 닫기는 한 번만 실제로 수행한다. 아래 `close` 주석 참고. */
+  let closing: Promise<void> | undefined;
   child.onclose = () => {
     childAlive = false;
     // 대기 중인 세션에 **오류 문장을 지어내지 않는다** — HTTP 연결만 끊는다. 오류는
@@ -1162,14 +1169,21 @@ export interface RelayHandle {
     get childPid() {
       return childAlive ? childPid : null;
     },
-    close: async () => {
-      await new Promise<void>((resolve, reject) => {
-        http.closeAllConnections();
-        http.close((error) => (error ? reject(error) : resolve()));
-      });
-      // 자식이 이미 죽었으면 SDK 가 즉시 반환한다. 살아 있으면 stdin 을 닫고 기다렸다가
-      // SIGTERM · SIGKILL 로 올라간다 (SDK StdioClientTransport.close).
-      await child.close();
+    close: () => {
+      // **두 번 불러도 안전해야 한다.** 두 번째 `http.close()` 는 ERR_SERVER_NOT_RUNNING
+      // ("Server is not running.") 을 던지는데, 닫기를 두 번 부르는 것은 정상적인 일이다 —
+      // 테스트의 afterEach 가 정리로 한 번 더 부르고, Task 7 의 bin 은 신호 처리와 정상 종료
+      // 양쪽에서 부른다. 같은 약속을 돌려주어 두 번째 호출이 첫 번째의 결과를 기다리게 한다.
+      closing ??= (async () => {
+        await new Promise<void>((resolve, reject) => {
+          http.closeAllConnections();
+          http.close((error) => (error ? reject(error) : resolve()));
+        });
+        // 자식이 이미 죽었으면 SDK 가 즉시 반환한다. 살아 있으면 stdin 을 닫고 기다렸다가
+        // SIGTERM · SIGKILL 로 올라간다 (SDK StdioClientTransport.close).
+        await child.close();
+      })();
+      return closing;
     },
   };
 ```

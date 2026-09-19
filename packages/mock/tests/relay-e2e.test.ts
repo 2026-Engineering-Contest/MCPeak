@@ -78,6 +78,24 @@ async function startFixtureRelay(
   return { handle, lines };
 }
 
+/** 프로세스 수를 세지 않고 **이 pid 하나**만 본다. 프로세스 수는 병렬 실행에서 남의 서버를 센다. */
+function isAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function waitFor(predicate: () => boolean, timeoutMs = 3000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate()) {
+    if (Date.now() > deadline) throw new Error("조건이 제한 시간 안에 참이 되지 않았습니다.");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+}
+
 describe("startRelay — 진짜 서버가 답한다", () => {
   it("§8-1 tools/list 가 진짜 서버가 선언한 목록 그대로 온다", async () => {
     const { handle } = await startFixtureRelay();
@@ -201,5 +219,40 @@ describe("세션 격리", () => {
 
     expect(a).toMatchObject({ id: 1, result: { structuredContent: { echo: { who: "first" } } } });
     expect(b).toMatchObject({ id: 1, result: { structuredContent: { echo: { who: "second" } } } });
+  });
+});
+
+describe("수명", () => {
+  it("§8-8 뒤 서버가 먼저 죽어도 close() 가 멈추지 않는다", async () => {
+    const { handle } = await startFixtureRelay(["--exit-after-initialize"]);
+    const session = await openSession(handle.url);
+    const pid = handle.childPid;
+    expect(pid).not.toBeNull();
+    await session.close();
+    // 자식이 스스로 종료할 시간을 준다. setTimeout 이 아니라 종료 사실을 폴링한다 —
+    // 고정 대기는 느린 CI 에서 가끔 실패한다.
+    //
+    // 기다리는 조건은 `childPid` 가 null 이 되는 것이다. `RelayHandle` 이 약속한 계약이
+    // 바로 그것이고(자식이 끝나면 null), getter 는 살아 있으면 pid · 끝났으면 null 두
+    // 상태뿐이라 "null 이 아니면서 죽어 있다" 는 상태는 존재하지 않는다.
+    await waitFor(() => handle.childPid === null);
+    // 계약이 아니라 실제 프로세스가 죽었는지도 따로 본다.
+    expect(isAlive(pid as number)).toBe(false);
+
+    await expect(handle.close()).resolves.toBeUndefined();
+  });
+
+  it("§8-9 close() 뒤 자식 프로세스가 남지 않는다", async () => {
+    const { handle } = await startFixtureRelay();
+    const session = await openSession(handle.url);
+    await session.call(1, "tools/list");
+    const pid = handle.childPid;
+    expect(pid).not.toBeNull();
+    expect(isAlive(pid as number)).toBe(true);
+
+    await handle.close();
+
+    await waitFor(() => !isAlive(pid as number));
+    expect(isAlive(pid as number)).toBe(false);
   });
 });

@@ -28,6 +28,8 @@ export interface RelayOptions {
 export interface RelayHandle {
   readonly port: number;
   readonly url: string;
+  /** 자식 프로세스의 pid. 자식이 끝나면 null 이 된다. */
+  readonly childPid: number | null;
   /** HTTP 를 닫고 자식이 실제로 끝날 때까지 기다린다. */
   close(): Promise<void>;
 }
@@ -45,6 +47,18 @@ export async function startRelay(options: RelayOptions): Promise<RelayHandle> {
 
   const child = new StdioClientTransport({ command, args: [...args], stderr: "inherit" });
   await child.start();
+
+  // SDK 트랜스포트는 자식이 끝나면 내부 참조를 지워 pid 를 null 로 만든다. 종료 여부를
+  // 확인하려면 우리가 처음 pid 를 들고 있어야 한다.
+  const childPid = child.pid;
+  let childAlive = true;
+  child.onclose = () => {
+    childAlive = false;
+    // 대기 중인 세션에 **오류 문장을 지어내지 않는다** — HTTP 연결만 끊는다. 오류는
+    // 진짜 서버가 준 것만 쓴다는 규칙(설계 §4)을 중계기가 스스로 어기지 않기 위해서다.
+    for (const entry of pending.values()) void entry.transport.close();
+    pending.clear();
+  };
 
   interface Pending {
     readonly transport: StreamableHTTPServerTransport;
@@ -132,6 +146,9 @@ export async function startRelay(options: RelayOptions): Promise<RelayHandle> {
     });
   });
 
+  /** 닫기는 한 번만 실제로 수행한다. 아래 `close` 주석 참고. */
+  let closing: Promise<void> | undefined;
+
   const address = http.address();
   if (address === null || typeof address === "string") {
     throw new Error("중계기 주소를 확인할 수 없습니다 (예상치 못한 address() 반환값).");
@@ -143,12 +160,24 @@ export async function startRelay(options: RelayOptions): Promise<RelayHandle> {
   return {
     port: address.port,
     url: `http://${HOST}:${address.port}/mcp`,
-    close: async () => {
-      await new Promise<void>((resolve, reject) => {
-        http.closeAllConnections();
-        http.close((error) => (error ? reject(error) : resolve()));
-      });
-      await child.close();
+    get childPid() {
+      return childAlive ? childPid : null;
+    },
+    close: () => {
+      // 두 번 불러도 안전해야 한다. 두 번째 `http.close()` 는 ERR_SERVER_NOT_RUNNING
+      // ("Server is not running.") 을 던지는데, 닫기를 두 번 부르는 것은 정상적인 일이다 —
+      // 테스트의 afterEach 가 정리로 한 번 더 부르고, bin 은 신호 처리와 정상 종료 양쪽에서
+      // 부른다. 같은 약속을 돌려주어 두 번째 호출이 첫 번째의 결과를 기다리게 한다.
+      closing ??= (async () => {
+        await new Promise<void>((resolve, reject) => {
+          http.closeAllConnections();
+          http.close((error) => (error ? reject(error) : resolve()));
+        });
+        // 자식이 이미 죽었으면 SDK 가 즉시 반환한다. 살아 있으면 stdin 을 닫고 기다렸다가
+        // SIGTERM · SIGKILL 로 올라간다 (SDK StdioClientTransport.close).
+        await child.close();
+      })();
+      return closing;
     },
   };
 }

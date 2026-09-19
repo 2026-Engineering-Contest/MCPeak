@@ -11,14 +11,20 @@
  *
  * argv:
  *   --exit-after-initialize   initialize 에 답한 뒤 스스로 종료한다 (§8-8)
- * env:
- *   MCPEAK_RELAY_TEST_PIDFILE  주어지면 자기 pid 를 그 경로에 쓴다 (§8-13)
+ *   --pidfile <경로>          주어지면 자기 pid 를 그 경로에 쓴다 (§8-13)
+ *   --ignore-stdin-close      stdin 이 닫혀도 스스로 끝내지 않는다 (§8-13)
+ *
+ * pid 를 **환경변수가 아니라 argv 로** 받는 이유: 중계기가 자식을 띄울 때 쓰는 SDK 의
+ * `StdioClientTransport` 는 부모 환경을 통째로 물려주지 않는다. `getDefaultEnvironment()`
+ * 이 `HOME·LOGNAME·PATH·SHELL·TERM·USER` 만 추려 넘기므로, 테스트가 심은 환경변수는
+ * 자식에 닿지 않는다(실측). argv 는 `-- <명령> [인자...]` 로 그대로 전달된다.
  */
 import { writeFileSync } from "node:fs";
 
 const argv = process.argv.slice(2);
 const exitAfterInitialize = argv.includes("--exit-after-initialize");
-const pidfile = process.env.MCPEAK_RELAY_TEST_PIDFILE;
+const pidfileIndex = argv.indexOf("--pidfile");
+const pidfile = pidfileIndex === -1 ? undefined : argv[pidfileIndex + 1];
 if (pidfile !== undefined) writeFileSync(pidfile, String(process.pid), "utf8");
 
 const TOOLS = [
@@ -101,4 +107,15 @@ process.stdin.on("data", (chunk) => {
     index = buffer.indexOf("\n");
   }
 });
-process.stdin.on("close", () => process.exit(0));
+// stdin 이 닫히면 스스로 끝내는 것이 기본이다. `--ignore-stdin-close` 는 그것을 끈다 —
+// 그래야 "중계기가 자식을 **직접** 끝낸다" 를 검사할 수 있다. 이 플래그가 없으면 중계기가
+// 아무것도 안 해도 부모가 죽는 순간 파이프가 닫혀 자식이 알아서 끝나므로, 테스트가
+// 중계기가 아니라 OS 의 동작을 확인하게 된다 (실측).
+if (argv.includes("--ignore-stdin-close")) {
+  // 핸들러를 떼는 것만으로는 모자란다. stdin 이 끝나면 이벤트 루프에 남는 일이 없어
+  // 프로세스가 **저절로** 끝나기 때문이다(실측). 타이머로 루프를 붙잡아 둬야 비로소
+  // "중계기가 죽이지 않으면 살아남는 자식" 이 된다.
+  setInterval(() => {}, 1000);
+} else {
+  process.stdin.on("close", () => process.exit(0));
+}

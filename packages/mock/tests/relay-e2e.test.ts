@@ -144,3 +144,38 @@ describe("startRelay — 진짜 서버가 답한다", () => {
     expect(handle.url).toBe(`http://127.0.0.1:${handle.port}/mcp`);
   });
 });
+
+describe("중계기는 응답을 해석하지 않는다", () => {
+  /**
+   * **이 테스트는 구조를 고정한다.** 중계기에 `outputSchema` 검증을 넣거나 SDK `Client`
+   * 를 끼우면 이 테스트가 실패한다 — 그게 이 테스트의 목적이다.
+   *
+   * SDK `Client` 는 `structuredContent` 를 `outputSchema` 로 검증해 `-32602` 를 던진다
+   * (`examples/live-weather-server` 의 결함 A 가 내는 그 오류가 이 경로다). 중계기가
+   * `Client` 를 쓰면 진짜 서버의 잘못된 응답을 중계기가 대신 받아서 던지고, 사용자는
+   * 서버의 답이 아니라 중계기가 만든 오류를 본다. 설계 §2-2 가 거기서 깨진다.
+   */
+  it("§8-3 outputSchema 와 안 맞는 structuredContent 가 걸러지지 않고 그대로 간다", async () => {
+    const { handle } = await startFixtureRelay();
+    const session = await openSession(handle.url);
+
+    const response = await session.call(9, "tools/call", {
+      name: "bad_structured",
+      arguments: {},
+    });
+
+    // 중계기가 만든 오류가 아니라 서버의 응답이 온다.
+    expect(response).not.toHaveProperty("error");
+    expect(response).toMatchObject({
+      id: 9,
+      result: { structuredContent: { temp: "21" } },
+    });
+    // 스키마가 요구하는 필드는 실제로 없다 — 즉 검증을 통과할 수 없는 값이다.
+    // `JSONRPCMessage` 는 오류 갈래를 포함하는 유니온이라 곧바로 좁히면 TS2352 다.
+    // 위 `toMatchObject` 가 이미 result 갈래임을 확인했으므로 `unknown` 을 경유한다.
+    const result = (
+      response as unknown as { result: { structuredContent: Record<string, unknown> } }
+    ).result;
+    expect(result.structuredContent).not.toHaveProperty("temperature");
+  });
+});

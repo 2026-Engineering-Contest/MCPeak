@@ -888,7 +888,11 @@ describe("중계기는 응답을 해석하지 않는다", () => {
       result: { structuredContent: { temp: "21" } },
     });
     // 스키마가 요구하는 필드는 실제로 없다 — 즉 검증을 통과할 수 없는 값이다.
-    const result = (response as { result: { structuredContent: Record<string, unknown> } }).result;
+    // `JSONRPCMessage` 는 오류 갈래를 포함하는 유니온이라 곧바로 좁히면 TS2352 다.
+    // 위 `toMatchObject` 가 이미 result 갈래임을 확인했으므로 `unknown` 을 경유한다.
+    const result = (
+      response as unknown as { result: { structuredContent: Record<string, unknown> } }
+    ).result;
     expect(result.structuredContent).not.toHaveProperty("temperature");
   });
 });

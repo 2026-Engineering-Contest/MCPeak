@@ -1023,9 +1023,13 @@ describe("세션 격리", () => {
 ```ts
     // `id` 는 Task 2 가 블록 앞에서 뽑아 둔 지역 상수다. `message.id` 를 다시 쓰지 마라 —
     // `isRequest` 의 부정 분기에서 TS 가 유니온을 되돌려 `undefined` 가 다시 섞인다(TS2345).
-    const entry = typeof id === "number" ? pending.get(id) : undefined;
+    //
+    // 문(statement)으로 좁힌다. 삼항 안에서 좁히면 그 좁히기가 다음 문장까지 이어지지 않아
+    // 아래 세 줄이 전부 `as number` 를 달아야 한다(실측: 빼면 TS2345·TS2322).
+    if (typeof id !== "number") return;
+    const entry = pending.get(id);
     if (entry === undefined) return;
-    pending.delete(id as number);
+    pending.delete(id);
     void entry.transport.send({ ...message, id: entry.clientId });
 ```
 
@@ -1230,11 +1234,11 @@ describe("기록", () => {
     const masked = lines.map((line) => line.replace(/\d+\.\d초/g, "N초"));
     expect(masked).toEqual([
       "→ initialize",
-      "← initialize 성공 · 132바이트 · N초",
+      "← initialize 성공 · 114바이트 · N초",
       "→ tools/list",
       "← tools/list  툴 3개",
       '→ tools/call  echo {"text":"부산"}',
-      "← tools/call  echo 성공 · 76바이트 · N초",
+      "← tools/call  echo 성공 · 107바이트 · N초",
     ]);
   });
 
@@ -1273,7 +1277,7 @@ describe("기록", () => {
 });
 ```
 
-**주의:** `"← initialize 성공 · 132바이트 · N초"` 와 `"76바이트"` 의 숫자는 픽스처 응답을 직렬화한 실제 바이트 수다. 처음 돌릴 때 실패 출력에 찍힌 실제 값으로 **한 번 맞춰 넣는다.** 픽스처가 고정값이므로 그 뒤로는 변하지 않는다(결정론적이다). 값을 짐작해서 적지 말고 실측값을 쓴다.
+**주의:** 위 숫자 114·107 은 픽스처 응답을 직렬화한 **실측** 바이트 수다. 픽스처가 고정값이라 변하지 않는다. 픽스처를 고치면 이 값도 실측으로 다시 맞춘다 — 짐작해서 적지 않는다. 참고로 `echo` 응답은 글자수 99 · 바이트 107 이다. `부산` 이 두 번 들어가 4 자가 12 바이트가 된다 — 표 C 가 바이트로 통일한 이유가 이것이다.
 
 - [ ] **Step 2: 실패하는 것을 본다**
 
@@ -1358,7 +1362,7 @@ function describeResponse(
 호출부에서 id 를 채운다 — `child.onmessage` 의 그 줄을 다음으로 한다.
 
 ```ts
-    writeResponse({ ...describeResponse(message, entry), id: id as number });
+    writeResponse({ ...describeResponse(message, entry), id });
 ```
 
 - [ ] **Step 4: 통과하는 것을 본다**

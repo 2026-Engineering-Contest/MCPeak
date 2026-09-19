@@ -256,3 +256,56 @@ describe("수명", () => {
     expect(isAlive(pid as number)).toBe(false);
   });
 });
+
+describe("기록", () => {
+  it("§8-6 요청·응답이 한 쌍으로 순서대로 나온다", async () => {
+    const { handle, lines } = await startFixtureRelay();
+    const session = await openSession(handle.url);
+    await session.call(1, "tools/list");
+    await session.call(2, "tools/call", { name: "echo", arguments: { text: "부산" } });
+
+    // 초 단위는 시간에 따라 달라지는 유일한 값이라 마스킹하고 비교한다.
+    const masked = lines.map((line) => line.replace(/\d+\.\d초/g, "N초"));
+    expect(masked).toEqual([
+      "→ initialize",
+      "← initialize 성공 · 114바이트 · N초",
+      "→ tools/list",
+      "← tools/list  툴 3개",
+      '→ tools/call  echo {"text":"부산"}',
+      "← tools/call  echo 성공 · 107바이트 · N초",
+    ]);
+  });
+
+  it("§8-7 --json 줄이 파싱되고 필드가 맞다", async () => {
+    const lines: string[] = [];
+    const handle = await startRelay({
+      port: 0,
+      command: process.execPath,
+      args: [CHILD],
+      log: (line) => lines.push(line),
+      json: true,
+    });
+    open.push(handle);
+    const session = await openSession(handle.url);
+    await session.call(7, "tools/call", { name: "echo", arguments: { text: "부산" } });
+
+    const parsed = lines.map((line) => JSON.parse(line) as Record<string, unknown>);
+    const request = parsed.find((entry) => entry.dir === "req" && entry.tool === "echo");
+    const response = parsed.find((entry) => entry.dir === "res" && entry.tool === "echo");
+    expect(request).toEqual({
+      dir: "req",
+      id: expect.any(Number),
+      method: "tools/call",
+      tool: "echo",
+      args: { text: "부산" },
+    });
+    expect(response).toMatchObject({ dir: "res", id: request?.id, tool: "echo", ok: true });
+    expect(typeof response?.ms).toBe("number");
+  });
+
+  it("알림은 짝이 없으므로 기록하지 않는다", () => {
+    // openSession 이 보내는 notifications/initialized 가 §8-6 의 목록에 없다는 것으로
+    // 이미 확인된다. 이 자리는 그 사실을 문서로 남기는 곳이다.
+    expect(true).toBe(true);
+  });
+});

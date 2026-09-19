@@ -2,6 +2,14 @@ import { createServer, type Server as HttpServer } from "node:http";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import type { JSONRPCMessage } from "@modelcontextprotocol/sdk/types.js";
+import {
+  humanRequest,
+  humanResponse,
+  jsonRequest,
+  jsonResponse,
+  type RelayRequestEvent,
+  type RelayResponseEvent,
+} from "./relay-log.js";
 
 /**
  * 중계기 — 앞은 Streamable HTTP, 뒤는 stdio 자식 하나.
@@ -43,7 +51,11 @@ function isRequest(
 }
 
 export async function startRelay(options: RelayOptions): Promise<RelayHandle> {
-  const { port, command, args, log } = options;
+  const { port, command, args, log, json } = options;
+  const writeRequest = (event: RelayRequestEvent): void =>
+    log(json ? jsonRequest(event) : humanRequest(event));
+  const writeResponse = (event: RelayResponseEvent): void =>
+    log(json ? jsonResponse(event) : humanResponse(event));
 
   const child = new StdioClientTransport({ command, args: [...args], stderr: "inherit" });
   await child.start();
@@ -84,9 +96,16 @@ export async function startRelay(options: RelayOptions): Promise<RelayHandle> {
     }
     // `id` 는 위 블록에서 뽑아 둔 지역 상수다. `message.id` 를 다시 쓰지 마라 —
     // `isRequest` 의 부정 분기에서 TS 가 유니온을 되돌려 `undefined` 가 다시 섞인다(TS2345).
-    const entry = typeof id === "number" ? pending.get(id) : undefined;
+    //
+    // 문(statement)으로 좁힌다. 삼항 안에서 좁히면 그 좁히기가 다음 문장까지 이어지지 않아
+    // 아래 세 줄이 전부 `as number` 를 달아야 한다. 중계기가 매기는 id 는 항상 number 이므로
+    // 여기 걸리는 것은 자식이 우리가 보낸 적 없는 id 를 낸 경우뿐이고, 그건 아래 `entry`
+    // 조회에서도 똑같이 버려진다 — 동작은 같고 캐스트만 사라진다.
+    if (typeof id !== "number") return;
+    const entry = pending.get(id);
     if (entry === undefined) return;
-    pending.delete(id as number);
+    pending.delete(id);
+    writeResponse({ ...describeResponse(message, entry), id });
     void entry.transport.send({ ...message, id: entry.clientId });
   };
 
@@ -105,6 +124,12 @@ export async function startRelay(options: RelayOptions): Promise<RelayHandle> {
       const params = (message as { params?: { name?: unknown; arguments?: unknown } }).params;
       const tool = typeof params?.name === "string" ? params.name : undefined;
       const relayId = nextId++;
+      writeRequest({
+        id: relayId,
+        method: message.method,
+        ...(tool === undefined ? {} : { tool }),
+        ...(params?.arguments === undefined ? {} : { args: params.arguments }),
+      });
       pending.set(relayId, {
         transport,
         clientId: message.id,
@@ -154,9 +179,6 @@ export async function startRelay(options: RelayOptions): Promise<RelayHandle> {
     throw new Error("중계기 주소를 확인할 수 없습니다 (예상치 못한 address() 반환값).");
   }
 
-  void log; // Task 6 에서 배선한다.
-  void isRequest;
-
   return {
     port: address.port,
     url: `http://${HOST}:${address.port}/mcp`,
@@ -180,4 +202,31 @@ export async function startRelay(options: RelayOptions): Promise<RelayHandle> {
       return closing;
     },
   };
+}
+
+/**
+ * 자식이 낸 봉투 하나를 기록 이벤트로 옮긴다. **여기서 값을 바꾸지 않는다** — 오류 코드와
+ * 메시지는 진짜 서버가 준 것을 그대로 싣는다.
+ */
+function describeResponse(
+  message: JSONRPCMessage,
+  entry: { method: string; tool?: string; startedAt: number },
+): RelayResponseEvent {
+  const head = {
+    id: 0, // 아래에서 덮어쓴다 — 호출부가 relayId 를 안다.
+    method: entry.method,
+    ...(entry.tool === undefined ? {} : { tool: entry.tool }),
+    ms: Date.now() - entry.startedAt,
+  };
+  if ("error" in message) {
+    const error = message.error as { code: number; message: string };
+    return { ...head, kind: "protocolError", code: error.code, message: error.message };
+  }
+  const result = (message as { result: Record<string, unknown> }).result;
+  const bytes = Buffer.byteLength(JSON.stringify(result), "utf8");
+  if (Array.isArray(result.tools)) {
+    return { ...head, kind: "ok", bytes, toolCount: result.tools.length };
+  }
+  if (result.isError === true) return { ...head, kind: "toolError", bytes };
+  return { ...head, kind: "ok", bytes };
 }

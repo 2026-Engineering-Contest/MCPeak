@@ -179,3 +179,27 @@ describe("중계기는 응답을 해석하지 않는다", () => {
     expect(result.structuredContent).not.toHaveProperty("temperature");
   });
 });
+
+describe("세션 격리", () => {
+  /**
+   * 대시보드는 `claude -p` 를 **질문마다 새 프로세스로** 띄운다. 새 프로세스는 JSON-RPC
+   * id 를 1 부터 다시 시작하므로, 동시에 붙은 두 세션이 같은 id 를 쓴다. 자식은 하나뿐이라
+   * (설계 §5) 파이프가 1:N 이 되고, 봉투의 id 를 그대로 흘려보내면 나중 세션이 앞 세션의
+   * 대기 항목을 덮어써서 응답이 엉뚱한 세션으로 간다.
+   *
+   * 중계기가 자기 id 를 새로 매기고 돌아올 때 되돌리는 것이 그 해법이다.
+   */
+  it("§8-11 두 세션이 같은 id 로 번갈아 불러도 응답이 섞이지 않는다", async () => {
+    const { handle } = await startFixtureRelay();
+    const first = await openSession(handle.url);
+    const second = await openSession(handle.url);
+
+    const [a, b] = await Promise.all([
+      first.call(1, "tools/call", { name: "echo", arguments: { who: "first" } }),
+      second.call(1, "tools/call", { name: "echo", arguments: { who: "second" } }),
+    ]);
+
+    expect(a).toMatchObject({ id: 1, result: { structuredContent: { echo: { who: "first" } } } });
+    expect(b).toMatchObject({ id: 1, result: { structuredContent: { echo: { who: "second" } } } });
+  });
+});

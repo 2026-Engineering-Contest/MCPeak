@@ -53,7 +53,11 @@ export async function startRelay(options: RelayOptions): Promise<RelayHandle> {
     readonly tool?: string;
     readonly startedAt: number;
   }
-  const pending = new Map<string | number, Pending>();
+  const pending = new Map<number, Pending>();
+  // 중계기가 매기는 id. 자식 파이프는 하나인데 세션은 여럿이라, 클라이언트가 준 id 를
+  // 그대로 쓰면 서로 덮어쓴다. 봉투의 id 만 바꾼다 — params·result 는 손대지 않으므로
+  // "값을 만들지도 바꾸지도 않는다" 는 그대로다. 1 부터 세므로 결정론적이다.
+  let nextId = 1;
 
   child.onmessage = (message) => {
     // id 를 지역 상수로 뽑는다. `isRequest` 의 부정 분기에서는 `message` 가 다시 유니온 전체로
@@ -64,9 +68,11 @@ export async function startRelay(options: RelayOptions): Promise<RelayHandle> {
       // 1 단계 범위 밖이라 버린다.
       return;
     }
-    const entry = pending.get(id);
+    // `id` 는 위 블록에서 뽑아 둔 지역 상수다. `message.id` 를 다시 쓰지 마라 —
+    // `isRequest` 의 부정 분기에서 TS 가 유니온을 되돌려 `undefined` 가 다시 섞인다(TS2345).
+    const entry = typeof id === "number" ? pending.get(id) : undefined;
     if (entry === undefined) return;
-    pending.delete(id);
+    pending.delete(id as number);
     void entry.transport.send({ ...message, id: entry.clientId });
   };
 
@@ -84,14 +90,15 @@ export async function startRelay(options: RelayOptions): Promise<RelayHandle> {
       }
       const params = (message as { params?: { name?: unknown; arguments?: unknown } }).params;
       const tool = typeof params?.name === "string" ? params.name : undefined;
-      pending.set(message.id, {
+      const relayId = nextId++;
+      pending.set(relayId, {
         transport,
         clientId: message.id,
         method: message.method,
         tool,
         startedAt: Date.now(),
       });
-      void child.send(message);
+      void child.send({ ...message, id: relayId });
     };
     res.on("close", () => {
       void transport.close();

@@ -1868,7 +1868,21 @@ grep -c "중계기 대기 중" packages/mock/dist/relay.mjs
 - [ ] 기존 목 소스 4 개가 안 바뀌었다: `git diff --stat main -- packages/mock/src/index.ts packages/mock/src/stdio.ts packages/mock/src/input-validation.ts packages/mock/src/key-violation.ts` 가 **빈 출력**
 - [ ] `package.json` 의 `mcpeak-mock` 이 그대로 있다
 
-## 1 단계를 마치며 남은 미결 (2026-09-19 실측)
+## 1 단계를 마치며 남은 미결 (2026-09-19 실측 · 2026-09-20 갱신)
+
+> **1·2·3·5 는 닫혔다.** `ba6dbf7`·`e00abf3`(환경변수 `--env`), `5e9a09d`(argv 순수화와 문안
+> 고정), `b9b01e5`(버리는 메시지 기록), ADR-0102. 아래 원문은 그대로 두고 상태만 표시한다.
+> 남은 것은 4(§8-13 이 느려진 것 — 기록으로 족하다)와 6(dashboard 실패 — 남의 영역)이다.
+>
+> 닫는 과정에서 새로 실측된 것 둘:
+> - **`id: null` 갈래는 닿지 않는 길이다.** SDK 의 `JSONRPCMessageSchema` 가 `onmessage`
+>   앞에서 거절한다. `relay-server.ts` 의 `id === null` 조건과 `"method" in message` 가드는
+>   둘 다 지금은 실행되지 않고 테스트도 덮지 못한다 — 가드를 빼도 e2e 가 초록이다. SDK 가
+>   검증을 느슨하게 할 때를 위한 안전망으로 남겼고, 덮은 척하지 않는다.
+> - **`--port=` 로 값이 비면 포트 0 으로 둔갑했다.** `Number("")` 가 `0` 이라 조용히 자동
+>   할당이 됐다. `5e9a09d` 에서 막았다.
+
+
 
 구현 8 개가 끝난 시점에 확인된 것들이다. **2 단계 계획을 쓰기 전에 판단이 필요하다.**
 

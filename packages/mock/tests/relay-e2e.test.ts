@@ -65,6 +65,7 @@ async function openSession(url: string): Promise<Session> {
 
 async function startFixtureRelay(
   extra: readonly string[] = [],
+  env: Readonly<Record<string, string>> = {},
 ): Promise<{ handle: RelayHandle; lines: string[] }> {
   const lines: string[] = [];
   const handle = await startRelay({
@@ -73,6 +74,7 @@ async function startFixtureRelay(
     args: [CHILD, ...extra],
     log: (line) => lines.push(line),
     json: false,
+    env,
   });
   open.push(handle);
   return { handle, lines };
@@ -110,6 +112,7 @@ describe("startRelay — 진짜 서버가 답한다", () => {
           { name: "echo", description: "받은 인자를 그대로 돌려준다." },
           { name: "bad_structured" },
           { name: "boom" },
+          { name: "read_env" },
         ],
       },
     });
@@ -270,7 +273,7 @@ describe("기록", () => {
       "→ initialize",
       "← initialize 성공 · 114바이트 · N초",
       "→ tools/list",
-      "← tools/list  툴 3개",
+      "← tools/list  툴 4개",
       '→ tools/call  echo {"text":"부산"}',
       "← tools/call  echo 성공 · 107바이트 · N초",
     ]);
@@ -284,6 +287,7 @@ describe("기록", () => {
       args: [CHILD],
       log: (line) => lines.push(line),
       json: true,
+      env: {},
     });
     open.push(handle);
     const session = await openSession(handle.url);
@@ -307,5 +311,83 @@ describe("기록", () => {
     // openSession 이 보내는 notifications/initialized 가 §8-6 의 목록에 없다는 것으로
     // 이미 확인된다. 이 자리는 그 사실을 문서로 남기는 곳이다.
     expect(true).toBe(true);
+  });
+});
+
+/**
+ * `--env` 의 배선. 여기서 보는 것은 **자식이 실제로 보는 `process.env`** 다 — 중계기가
+ * 무엇을 넘겼다고 주장하는지가 아니라, 자식이 무엇을 받았는지를 본다. 그래서 `read_env`
+ * 툴이 픽스처에 있다.
+ */
+describe("자식에게 물려주는 환경변수", () => {
+  /** 자식이 본 값. `read_env` 의 structuredContent 를 그대로 꺼낸다. */
+  async function readChildEnv(
+    session: Session,
+    id: number,
+    name: string,
+  ): Promise<{ present: boolean; value: string | null }> {
+    const response = await session.call(id, "tools/call", {
+      name: "read_env",
+      arguments: { name },
+    });
+    expect(response).not.toHaveProperty("error");
+    // `JSONRPCMessage` 는 오류 갈래를 포함하는 유니온이라 곧바로 좁히면 TS2352 다 (§8-3 과 같다).
+    const structured = (
+      response as unknown as {
+        result: { structuredContent: { name: string; present: boolean; value: string | null } };
+      }
+    ).result.structuredContent;
+    // 물어본 이름의 답이 맞는지 먼저 확인한다 — 세션이 섞이면 엉뚱한 답을 보고 통과할 수 있다.
+    expect(structured.name).toBe(name);
+    return { present: structured.present, value: structured.value };
+  }
+
+  it("env 로 지목한 변수가 자식에게 보인다", async () => {
+    const { handle } = await startFixtureRelay([], { MCPEAK_RELAY_E2E_SECRET: "sk-live-1234" });
+    const session = await openSession(handle.url);
+
+    expect(await readChildEnv(session, 1, "MCPEAK_RELAY_E2E_SECRET")).toEqual({
+      present: true,
+      value: "sk-live-1234",
+    });
+  });
+
+  /**
+   * **이 테스트는 SDK 의 기본 동작을 고정한다.** 누가 `env: { ...process.env }` 로 바꾸면
+   * 여기서 실패한다 — 그게 이 테스트의 목적이다. 중계기를 띄운 셸의 모든 비밀이 감사하지
+   * 않은 사용자 서버에 넘어가는 것이 ADR-0102 가 선택지 ① 로 버린 것이고, 그 판단을
+   * 지키는 자리가 여기다.
+   *
+   * 부모에 실제로 심어야 검사가 성립한다 — 자식이 못 보는 이유가 "부모에도 없어서" 면
+   * 아무것도 확인하지 않은 것이다. 전역을 흔들므로 `finally` 에서 반드시 되돌린다.
+   */
+  it("env 로 지목하지 않은 변수는 자식에게 안 보인다", async () => {
+    const UNLISTED = "MCPEAK_RELAY_E2E_UNLISTED";
+    process.env[UNLISTED] = "sk-live-9999";
+    try {
+      // 부모에는 분명히 있다.
+      expect(process.env[UNLISTED]).toBe("sk-live-9999");
+
+      const { handle } = await startFixtureRelay([], { MCPEAK_RELAY_E2E_SECRET: "sk-live-1234" });
+      const session = await openSession(handle.url);
+
+      expect(await readChildEnv(session, 1, UNLISTED)).toEqual({ present: false, value: null });
+      // 같은 자식이 지목된 것은 받았다 — 즉 "아무것도 안 넘어갔다" 가 아니다.
+      expect(await readChildEnv(session, 2, "MCPEAK_RELAY_E2E_SECRET")).toEqual({
+        present: true,
+        value: "sk-live-1234",
+      });
+    } finally {
+      delete process.env[UNLISTED];
+    }
+  });
+
+  it("SDK 기본 여섯 개는 지목하지 않아도 자식에게 간다", async () => {
+    // `getDefaultEnvironment()` 위에 얹는 구조라는 것을 고정한다. PATH 가 끊기면 자식이
+    // 띄울 명령을 못 찾으므로, 이것이 깨지면 중계기 자체가 못 쓰게 된다.
+    const { handle } = await startFixtureRelay();
+    const session = await openSession(handle.url);
+
+    expect((await readChildEnv(session, 1, "PATH")).present).toBe(true);
   });
 });

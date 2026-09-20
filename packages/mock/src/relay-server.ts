@@ -31,6 +31,13 @@ export interface RelayOptions {
   /** 한 줄씩 부른다. bin 은 stderr 쓰기를 넣고, 테스트는 배열에 모은다. */
   log: (line: string) => void;
   json: boolean;
+  /**
+   * 자식에게 물려줄 환경변수. 이름이 아니라 **해석된 값**이다. bin 이 `resolveEnv` 로 만든다.
+   *
+   * `log` 를 주입받는 것과 같은 결이다 — 테스트가 `process.env` 를 건드리지 않게 하기
+   * 위해서다. 전역을 흔드는 테스트는 실행 순서에 따라 결과가 달라진다.
+   */
+  env: Readonly<Record<string, string>>;
 }
 
 export interface RelayHandle {
@@ -51,13 +58,24 @@ function isRequest(
 }
 
 export async function startRelay(options: RelayOptions): Promise<RelayHandle> {
-  const { port, command, args, log, json } = options;
+  const { port, command, args, log, json, env } = options;
   const writeRequest = (event: RelayRequestEvent): void =>
     log(json ? jsonRequest(event) : humanRequest(event));
   const writeResponse = (event: RelayResponseEvent): void =>
     log(json ? jsonResponse(event) : humanResponse(event));
 
-  const child = new StdioClientTransport({ command, args: [...args], stderr: "inherit" });
+  // `env` 를 넘기면 SDK 가 `{ ...getDefaultEnvironment(), ...env }` 로 합친다
+  // (`client/stdio.js` 의 `start()`, 실측). 즉 자식이 받는 것은 SDK 기본 여섯 개
+  // (`HOME`·`LOGNAME`·`PATH`·`SHELL`·`TERM`·`USER`) 위에 지정된 이름만 얹은 것이고,
+  // `packages/core/src/controlled-stdio.ts:80` 의 합치기와 **같은 의미**가 된다.
+  // 여기서 `{ ...process.env }` 로 바꾸면 중계기를 띄운 셸의 모든 비밀이 자식에게 간다
+  // (ADR-0102 선택지 ①). relay-e2e 의 "넘기지 않은 변수는 자식에게 안 보인다" 가 그 회귀다.
+  const child = new StdioClientTransport({
+    command,
+    args: [...args],
+    env: { ...env },
+    stderr: "inherit",
+  });
   await child.start();
 
   // SDK 트랜스포트는 자식이 끝나면 내부 참조를 지워 pid 를 null 로 만든다. 종료 여부를

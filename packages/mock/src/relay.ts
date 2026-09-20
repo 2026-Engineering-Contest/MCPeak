@@ -8,12 +8,14 @@
  * **stdout 에 아무것도 쓰지 않는다.** 기록은 전부 stderr 다. 4 단계 대시보드가 이 채널을
  * 읽는다.
  */
+import { parseEnvName, resolveEnv } from "./relay-env.js";
 import { startRelay } from "./relay-server.js";
 
 const usage = [
-  "사용법: mcpeak-relay [--port <번호>] [--json] -- <명령> [인자...]",
+  "사용법: mcpeak-relay [--port <번호>] [--json] [--env <이름>]... -- <명령> [인자...]",
   "  --port 0 (기본) 이면 빈 포트를 자동으로 받습니다.",
   "  --json 을 주면 기록을 한 줄 JSON 으로 냅니다.",
+  "  --env <이름> 은 그 환경변수를 중계 대상 서버에 물려줍니다. 값이 아니라 이름만 받습니다.",
   "  -- 뒤는 중계할 stdio MCP 서버의 실행 명령입니다.",
 ].join("\n");
 
@@ -25,6 +27,11 @@ function fail(message: string): never {
 interface Parsed {
   port: number;
   json: boolean;
+  /**
+   * `--env` 로 받은 **이름들**. 값 해석은 여기서 하지 않는다 — `main` 이 `resolveEnv` 에
+   * `process.env` 읽기를 넘겨 한다. 그래야 `parseArgs` 가 전역을 안 읽는 순수 함수로 남는다.
+   */
+  envNames: string[];
   command: string;
   args: string[];
 }
@@ -32,6 +39,7 @@ interface Parsed {
 export function parseArgs(argv: readonly string[]): Parsed {
   let port = 0;
   let json = false;
+  const envNames: string[] = [];
   let index = 0;
   for (; index < argv.length; index += 1) {
     const token = argv[index];
@@ -53,6 +61,28 @@ export function parseArgs(argv: readonly string[]): Parsed {
       index += 1;
       continue;
     }
+    // `noUncheckedIndexedAccess` 아래서 `token` 은 `string | undefined` 다. 위 `===` 비교들과
+    // 달리 `startsWith` 는 좁히기가 필요하므로 여기서 한 번 건다.
+    if (token !== undefined && (token === "--env" || token.startsWith("--env="))) {
+      // `--env=NAME` 은 붙은 값을, `--env NAME` 은 다음 토큰을 쓴다. 값이 아예 없으면
+      // 빈 문자열을 넘긴다 — `parseEnvName` 이 "옵션 값이 필요합니다" 로 답하는 자리다.
+      //
+      // 다음 토큰이 `--` 면 그것도 "값이 없다" 로 본다. 구분자를 이름으로 집어삼키면
+      // `mcpeak-relay --env -- node s.mjs` 가 "'--' 는 이름이 아닙니다" 라고 답하는데,
+      // 사용자가 빠뜨린 것은 이름이지 이름 형식이 아니다. 그 문장은 고칠 곳을 잘못 가리킨다.
+      const inline = token.startsWith("--env=");
+      const next = argv[index + 1];
+      const raw = inline ? token.slice("--env=".length) : next === "--" ? "" : (next ?? "");
+      const parsed = parseEnvName(raw);
+      // 문안을 다시 쓰지 않는다. 이름 규칙과 거절 문장은 `relay-env.ts` 한 곳에만 산다.
+      if (!parsed.ok) fail(parsed.message);
+      // 중복은 파서가 보지 않는다(이름 하나만 보므로). argv 를 도는 여기가 그 자리다.
+      if (envNames.includes(parsed.value))
+        fail(`→ \`--env ${parsed.value}\` 이 두 번 있습니다. 한 번만 쓰세요.`);
+      envNames.push(parsed.value);
+      if (!inline) index += 1;
+      continue;
+    }
     fail(`→ 모르는 인자입니다: ${token}\n${usage}`);
   }
   const rest = argv.slice(index);
@@ -60,7 +90,7 @@ export function parseArgs(argv: readonly string[]): Parsed {
   if (command === undefined) {
     fail(`→ 중계할 서버의 실행 명령이 필요합니다. -- 뒤에 적으세요.\n${usage}`);
   }
-  return { port, json, command, args: rest.slice(1) };
+  return { port, json, envNames, command, args: rest.slice(1) };
 }
 
 export async function main(argv: readonly string[]): Promise<void> {
@@ -68,7 +98,12 @@ export async function main(argv: readonly string[]): Promise<void> {
     process.stderr.write(`${usage}\n`);
     return;
   }
-  const { port, json, command, args } = parseArgs(argv);
+  const { port, json, envNames, command, args } = parseArgs(argv);
+
+  // 값은 여기서, 부모 환경에서 읽는다. argv 에 값을 싣지 않는 것이 이 옵션의 존재 이유다
+  // (ADR-0097·ADR-0102). 읽기를 주입하는 형태라 테스트는 `process.env` 없이 볼 수 있다.
+  const env = resolveEnv(envNames, (name) => process.env[name]);
+  if (!env.ok) fail(env.message);
 
   const handle = await startRelay({
     port,
@@ -76,6 +111,7 @@ export async function main(argv: readonly string[]): Promise<void> {
     args,
     log: (line) => process.stderr.write(`${line}\n`),
     json,
+    env: env.value,
   });
 
   // --port 0 이면 받은 포트를 알려 줄 채널이 이 줄뿐이다. 4 단계 대시보드도 이 줄로 URL 을 안다.

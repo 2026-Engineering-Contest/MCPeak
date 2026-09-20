@@ -113,3 +113,44 @@ describe("cli 와 일부러 다른 것", () => {
     ).toEqual({ ok: true, value: { NODE_OPTIONS: "--enable-source-maps", MCPEAK_FOO: "1" } });
   });
 });
+
+/**
+ * 거절 문안은 **받은 값을 그대로 싣는다.** 그 값이 stderr 를 거쳐 터미널에 닿으므로,
+ * `mcpeak-relay --env $'\e[2J…'` 같은 인자가 화면을 지우거나 커서를 옮길 수 있다.
+ * 값 자리에만 이스케이프를 걸고, 우리가 쓴 개행은 살려 둔다 (#289).
+ */
+describe("거절 문안의 터미널 이스케이프", () => {
+  it("ANSI 제어 문자를 무해한 토큰으로 바꾼다", () => {
+    const result = parseEnvName("\u001b[2J");
+    if (result.ok) throw new Error("unreachable");
+    expect(result.message).toBe(NOT_A_NAME("\\u001b[2J"));
+    // 날것의 ESC 가 문장에 남지 않는다.
+    expect(result.message).not.toContain("\u001b");
+  });
+
+  it("값에 섞인 개행은 이스케이프하고 우리가 쓴 개행은 남긴다", () => {
+    const result = parseEnvName("A\nB");
+    if (result.ok) throw new Error("unreachable");
+    expect(result.message).toBe(NOT_A_NAME("A\\u000aB"));
+    // 안내가 한 줄로 뭉개지지 않는다 — 문안은 다섯 줄이다.
+    expect(result.message.split("\n")).toHaveLength(5);
+  });
+
+  it("DEL·C1 제어 문자도 바꾼다", () => {
+    const result = parseEnvName("A\u007fB\u009bC");
+    if (result.ok) throw new Error("unreachable");
+    expect(result.message).toBe(NOT_A_NAME("A\\u007fB\\u009bC"));
+  });
+
+  it("200자를 넘으면 자르고 말줄임표를 붙인다", () => {
+    const result = parseEnvName(`${"A".repeat(250)}!`);
+    if (result.ok) throw new Error("unreachable");
+    expect(result.message).toBe(NOT_A_NAME(`${"A".repeat(200)}…`));
+  });
+
+  it("평범한 값은 그대로 실린다", () => {
+    const result = parseEnvName("MY-KEY");
+    if (result.ok) throw new Error("unreachable");
+    expect(result.message).toBe(NOT_A_NAME("MY-KEY"));
+  });
+});

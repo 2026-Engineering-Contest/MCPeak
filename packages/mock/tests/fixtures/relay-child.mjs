@@ -18,6 +18,10 @@
  * `StdioClientTransport` 는 부모 환경을 통째로 물려주지 않는다. `getDefaultEnvironment()`
  * 이 `HOME·LOGNAME·PATH·SHELL·TERM·USER` 만 추려 넘기므로, 테스트가 심은 환경변수는
  * 자식에 닿지 않는다(실측). argv 는 `-- <명령> [인자...]` 로 그대로 전달된다.
+ *
+ * `read_env` 툴은 바로 그 성질을 **검사 대상으로** 삼는 자리다. `RelayOptions.env` 로
+ * 지목한 이름만 자식에 닿고 나머지는 안 닿는다는 것을, 자식이 실제로 보는 `process.env`
+ * 를 되돌려 받아 확인한다. 값을 지어내지 않으므로 여전히 결정론적이다.
  */
 import { writeFileSync } from "node:fs";
 
@@ -48,6 +52,15 @@ const TOOLS = [
     description: "isError: true 인 결과를 낸다.",
     inputSchema: { type: "object", properties: {} },
   },
+  {
+    name: "read_env",
+    description: "자식이 실제로 보는 process.env 에서 그 이름의 값을 돌려준다.",
+    inputSchema: {
+      type: "object",
+      properties: { name: { type: "string" } },
+      required: ["name"],
+    },
+  },
 ];
 
 function send(message) {
@@ -58,6 +71,16 @@ function callResult(name, args) {
   if (name === "bad_structured") {
     // outputSchema 는 temperature(number) 를 요구하는데 temp(string) 를 낸다.
     return { content: [{ type: "text", text: "고장" }], structuredContent: { temp: "21" } };
+  }
+  if (name === "read_env") {
+    const wanted = args?.name;
+    const value = process.env[wanted];
+    // `present` 를 따로 낸다. 없는 변수의 `value` 를 `undefined` 로 두면 JSON 직렬화가
+    // 키째로 지워서, 호출한 쪽이 "없다" 와 "키를 안 냈다" 를 구별할 수 없다.
+    return {
+      content: [{ type: "text", text: value === undefined ? "(없음)" : value }],
+      structuredContent: { name: wanted, present: value !== undefined, value: value ?? null },
+    };
   }
   if (name === "boom") {
     return { content: [{ type: "text", text: "툴이 실패했습니다" }], isError: true };

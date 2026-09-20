@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   formatSeconds,
   groupDigits,
+  humanDrop,
   humanRequest,
   humanResponse,
+  jsonDrop,
   jsonRequest,
   jsonResponse,
 } from "../src/relay-log.js";
@@ -179,5 +181,61 @@ describe("서식 보조", () => {
     expect(formatSeconds(0)).toBe("0.0초");
     expect(formatSeconds(120)).toBe("0.1초");
     expect(formatSeconds(1834)).toBe("1.8초");
+  });
+});
+
+/**
+ * 서버가 **먼저 건** 것을 버렸다는 기록. 계획서 표 I 가 "기록만 하고 버린다" 로 정한 줄이다.
+ *
+ * 문안이 곧 제품이라 전문을 고정한다 — 부분 일치로 두면 뒤에 무엇이 붙어도 통과한다.
+ */
+describe("humanDrop", () => {
+  it("서버가 먼저 건 요청은 서버가 기다린다는 것까지 적는다", () => {
+    expect(humanDrop({ method: "sampling/createMessage", kind: "request" })).toBe(
+      "← sampling/createMessage  버림 · 서버가 먼저 거는 요청은 중계하지 않습니다 (서버는 응답을 기다립니다)",
+    );
+  });
+
+  it("서버가 보낸 알림은 기다리는 쪽이 없으므로 괄호를 달지 않는다", () => {
+    expect(humanDrop({ method: "notifications/message", kind: "notification" })).toBe(
+      "← notifications/message  버림 · 서버가 보내는 알림은 중계하지 않습니다",
+    );
+  });
+
+  it("서버에서 온 것이므로 화살표가 왼쪽이다", () => {
+    for (const kind of ["request", "notification"] as const) {
+      expect(humanDrop({ method: "roots/list", kind }).startsWith("← ")).toBe(true);
+    }
+  });
+});
+
+describe("jsonDrop", () => {
+  it("요청 줄이 파싱되고 필드가 맞다", () => {
+    expect(JSON.parse(jsonDrop({ method: "sampling/createMessage", kind: "request" }))).toEqual({
+      dir: "drop",
+      kind: "request",
+      method: "sampling/createMessage",
+    });
+  });
+
+  it("알림 줄이 파싱되고 필드가 맞다", () => {
+    expect(JSON.parse(jsonDrop({ method: "notifications/message", kind: "notification" }))).toEqual(
+      { dir: "drop", kind: "notification", method: "notifications/message" },
+    );
+  });
+
+  /** 키 순서를 고정한다 — 4 단계의 스냅샷 비교가 이유 없이 깨지지 않게. */
+  it("키 순서가 dir·kind·method 다", () => {
+    expect(jsonDrop({ method: "sampling/createMessage", kind: "request" })).toBe(
+      '{"dir":"drop","kind":"request","method":"sampling/createMessage"}',
+    );
+  });
+
+  /** `dir` 이 세 번째 값이라 요청·응답 집계에 섞이지 않는다. */
+  it("dir 이 req·res 와 겹치지 않는다", () => {
+    const dir = (JSON.parse(jsonDrop({ method: "roots/list", kind: "request" })) as { dir: string })
+      .dir;
+    expect(dir).toBe("drop");
+    expect(["req", "res"]).not.toContain(dir);
   });
 });

@@ -30,6 +30,18 @@ export type RelayResponseEvent = {
 );
 
 /**
+ * 중계기가 **버린** 서버발 메시지 하나. 자식이 먼저 건 요청·알림이다.
+ *
+ * `id`·`ms` 가 없다. 중계기가 id 를 매긴 적이 없고(우리가 보낸 것이 아니다), 짝지을 응답이
+ * 없어 걸린 시간도 없다. 그래서 요청·응답 이벤트와 같은 타입에 얹지 않고 따로 둔다.
+ */
+export interface RelayDropEvent {
+  readonly method: string;
+  /** `id` 가 있으면 요청, 없으면 알림이다. 문장이 갈리는 유일한 축이다. */
+  readonly kind: "request" | "notification";
+}
+
+/**
  * 세 자리마다 쉼표를 넣는다. `toLocaleString` 을 쓰지 않는 이유는 로케일에 따라
  * 결과가 달라지기 때문이다 — 같은 입력에 같은 출력이 이 저장소의 핵심 가치다.
  */
@@ -58,6 +70,20 @@ export function humanResponse(event: RelayResponseEvent): string {
   }
   const verdict = event.kind === "ok" ? "성공" : "툴 오류";
   return `${label} ${verdict} · ${groupDigits(event.bytes)}바이트 · ${formatSeconds(event.ms)}`;
+}
+
+/**
+ * 버린 것을 사람이 읽는 줄. 서버에서 온 것이므로 `←` 다.
+ *
+ * **무엇을 버렸는지로 끝내지 않고 그 결과까지 적는다.** 서버가 먼저 건 요청은 서버가
+ * 응답을 기다리고 있다는 뜻이라, 그 줄이 없으면 사용자는 자기 서버가 멈춘 이유를 알
+ * 방법이 없다 — 중계기의 기록이 유일한 관찰 채널이다(설계 §3). 알림은 기다리는 쪽이
+ * 없으므로 괄호를 달지 않는다.
+ */
+export function humanDrop(event: RelayDropEvent): string {
+  return event.kind === "request"
+    ? `← ${event.method}  버림 · 서버가 먼저 거는 요청은 중계하지 않습니다 (서버는 응답을 기다립니다)`
+    : `← ${event.method}  버림 · 서버가 보내는 알림은 중계하지 않습니다`;
 }
 
 export function jsonRequest(event: RelayRequestEvent): string {
@@ -97,4 +123,10 @@ export function jsonResponse(event: RelayResponseEvent): string {
     bytes: event.bytes,
     ms: event.ms,
   });
+}
+
+export function jsonDrop(event: RelayDropEvent): string {
+  // 키 순서를 리터럴로 고정한다 — `jsonRequest` 와 같은 이유다. `dir` 이 `req`·`res` 가
+  // 아닌 세 번째 값이라, 4 단계가 이 줄을 요청·응답으로 세지 않게 하는 것도 이 필드다.
+  return JSON.stringify({ dir: "drop", kind: event.kind, method: event.method });
 }

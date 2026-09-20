@@ -26,10 +26,15 @@ interface Session {
  * 통과시켰는지 보는 테스트가 클라이언트 쪽 검증에 가려진다 (§8-3 이 그 자리다).
  * 트랜스포트만 써서 봉투를 그대로 본다.
  */
-async function openSession(url: string): Promise<Session> {
+async function openSession(
+  url: string,
+  /** 이 세션에 **도착한 모든 봉투**를 엿본다. "버린 것이 새어 나오지 않는다" 가 쓴다. */
+  onAny?: (message: JSONRPCMessage) => void,
+): Promise<Session> {
   const transport = new StreamableHTTPClientTransport(new URL(url));
   const waiters = new Map<number, (m: JSONRPCMessage) => void>();
   transport.onmessage = (message) => {
+    onAny?.(message);
     if ("id" in message && typeof message.id === "number") waiters.get(message.id)?.(message);
   };
   await transport.start();
@@ -389,5 +394,118 @@ describe("자식에게 물려주는 환경변수", () => {
     const session = await openSession(handle.url);
 
     expect((await readChildEnv(session, 1, "PATH")).present).toBe(true);
+  });
+});
+
+/**
+ * 서버발 메시지를 **버리되 기록한다**(계획서 표 I). 여기서 보는 것은 기록이지 중계가
+ * 아니다 — 버리는 동작은 그대로고, 화면에 단서가 남는지만 달라진다.
+ */
+describe("버린 서버발 메시지의 기록", () => {
+  it("서버가 먼저 건 요청을 버렸다고 적는다", async () => {
+    const { handle, lines } = await startFixtureRelay(["--server-request"]);
+    await openSession(handle.url);
+
+    // 자식이 initialize 에 답한 **뒤** 내므로 openSession 이 끝난 시점과 순서가 정해져
+    // 있지 않다. 고정 대기가 아니라 줄이 도착하는 것을 폴링한다.
+    await waitFor(() => lines.some((line) => line.includes("버림")));
+    expect(lines).toContain(
+      "← sampling/createMessage  버림 · 서버가 먼저 거는 요청은 중계하지 않습니다 (서버는 응답을 기다립니다)",
+    );
+  });
+
+  it("서버가 보낸 알림을 버렸다고 적는다", async () => {
+    const { handle, lines } = await startFixtureRelay(["--server-notification"]);
+    await openSession(handle.url);
+
+    await waitFor(() => lines.some((line) => line.includes("버림")));
+    expect(lines).toContain(
+      "← notifications/message  버림 · 서버가 보내는 알림은 중계하지 않습니다",
+    );
+  });
+
+  it("--json 이면 버린 줄도 한 줄 JSON 이다", async () => {
+    const lines: string[] = [];
+    const handle = await startRelay({
+      port: 0,
+      command: process.execPath,
+      args: [CHILD, "--server-request", "--server-notification"],
+      log: (line) => lines.push(line),
+      json: true,
+      env: {},
+    });
+    open.push(handle);
+    await openSession(handle.url);
+
+    await waitFor(() => lines.filter((line) => line.includes('"drop"')).length === 2);
+    const dropped = lines
+      .map((line) => JSON.parse(line) as Record<string, unknown>)
+      .filter((entry) => entry.dir === "drop");
+    expect(dropped).toEqual([
+      { dir: "drop", kind: "request", method: "sampling/createMessage" },
+      { dir: "drop", kind: "notification", method: "notifications/message" },
+    ]);
+  });
+
+  /**
+   * 서버발 메시지를 기록해도 **버리는 동작은 그대로다.** 중계기가 그것을 클라이언트에
+   * 흘려보내기 시작하면 이 테스트가 깨진다 — 1 단계 범위 밖이라 버리기로 한 판단이 여기 산다.
+   */
+  it("버린 것을 클라이언트에게 흘려보내지는 않는다", async () => {
+    const { handle, lines } = await startFixtureRelay(["--server-request"]);
+    const received: JSONRPCMessage[] = [];
+    const session = await openSession(handle.url, (message) => received.push(message));
+
+    await waitFor(() => lines.some((line) => line.includes("버림")));
+    // 서버의 요청이 세션으로 새어 나가지 않는다. 정상 왕복은 그대로 된다.
+    expect(received.some((m) => "method" in m && m.method === "sampling/createMessage")).toBe(
+      false,
+    );
+    await expect(session.call(1, "tools/list")).resolves.toMatchObject({ id: 1 });
+  });
+
+  /**
+   * 플래그를 안 준 자식은 서버발 메시지를 내지 않는다. §8-6 의 엄격한 줄 목록이 이
+   * 기능 때문에 흔들리지 않는다는 것을 따로 못박는다.
+   */
+  /**
+   * **대기표에 없는 응답은 기록하지 않는다.** 우리가 보낸 적 없는 id 로 온 것이라
+   * 프로토콜 위반이고, 서버가 먼저 건 요청과 달리 지어낼 문안이 없다.
+   *
+   * 기록을 더하면서 이 갈래가 실수로 같이 끌려 들어가지 않았는지를 보는 자리다.
+   * 자식은 `--server-notification` 도 함께 받는다 — 그 줄이 나온 뒤에도 버림 줄이
+   * 하나뿐이어야, "아직 안 왔을 뿐" 이 아니라 "안 적는다" 를 본 것이 된다.
+   */
+  it("대기표에 없는 응답은 적지 않는다", async () => {
+    const { handle, lines } = await startFixtureRelay([
+      "--stray-response",
+      "--server-notification",
+    ]);
+    const session = await openSession(handle.url);
+
+    // 자식은 stray 둘을 **먼저** 내고 알림을 낸다. 알림 줄이 보이면 stray 둘은 이미
+    // 중계기를 지나갔다는 뜻이다 — 고정 대기 없이 순서로 확인한다.
+    await waitFor(() => lines.some((line) => line.includes("notifications/message")));
+
+    expect(lines.filter((line) => line.includes("버림"))).toEqual([
+      "← notifications/message  버림 · 서버가 보내는 알림은 중계하지 않습니다",
+    ]);
+    // 모르는 id 9999 가 어떤 모양으로도 새어 들어오지 않았다. **이것이 이 테스트의 몫이다**
+    // — 기록을 이 갈래에 잘못 달면 여기서 깨진다(실측으로 확인).
+    expect(lines.filter((line) => line.includes("9999"))).toEqual([]);
+    // `id: null` 쪽은 **중계기까지 오지도 않는다** — SDK 스키마가 먼저 거절한다(실측).
+    // 그래서 이 줄은 중계기의 동작이 아니라 SDK 의 동작을 확인하는 것이고, 중계기의
+    // `id === null` 갈래는 이 테스트가 덮지 못한다.
+    expect(lines.filter((line) => line.includes("-32700"))).toEqual([]);
+    // 중계기가 멀쩡히 계속 돈다 — 조용히 버린다는 것이 멈춘다는 뜻은 아니다.
+    await expect(session.call(1, "tools/list")).resolves.toMatchObject({ id: 1 });
+  });
+
+  it("플래그가 없으면 버림 줄이 하나도 없다", async () => {
+    const { handle, lines } = await startFixtureRelay();
+    const session = await openSession(handle.url);
+    await session.call(1, "tools/list");
+
+    expect(lines.filter((line) => line.includes("버림"))).toEqual([]);
   });
 });

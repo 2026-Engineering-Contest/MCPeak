@@ -3,10 +3,13 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import type { JSONRPCMessage } from "@modelcontextprotocol/sdk/types.js";
 import {
+  humanDrop,
   humanRequest,
   humanResponse,
+  jsonDrop,
   jsonRequest,
   jsonResponse,
+  type RelayDropEvent,
   type RelayRequestEvent,
   type RelayResponseEvent,
 } from "./relay-log.js";
@@ -63,6 +66,7 @@ export async function startRelay(options: RelayOptions): Promise<RelayHandle> {
     log(json ? jsonRequest(event) : humanRequest(event));
   const writeResponse = (event: RelayResponseEvent): void =>
     log(json ? jsonResponse(event) : humanResponse(event));
+  const writeDrop = (event: RelayDropEvent): void => log(json ? jsonDrop(event) : humanDrop(event));
 
   // `env` 를 넘기면 SDK 가 `{ ...getDefaultEnvironment(), ...env }` 로 합친다
   // (`client/stdio.js` 의 `start()`, 실측). 즉 자식이 받는 것은 SDK 기본 여섯 개
@@ -109,7 +113,23 @@ export async function startRelay(options: RelayOptions): Promise<RelayHandle> {
     const id = "id" in message ? message.id : undefined;
     if (id === undefined || id === null || isRequest(message)) {
       // 서버가 스스로 낸 요청·알림이다. stateless HTTP 에는 돌려보낼 채널이 없다 —
-      // 1 단계 범위 밖이라 버린다.
+      // 1 단계 범위 밖이라 버린다. **버리되 기록은 한다**(계획서 표 I).
+      //
+      // 조용히 버리면 사용자는 자기 서버가 응답을 기다리며 멈춘 이유를 알 방법이 없다.
+      // 화면에도 `--json` 보고서에도 단서가 없다 — 중계기의 기록이 유일한 관찰
+      // 채널이기 때문이다(설계 §3). 버리는 **동작**은 그대로다.
+      //
+      // `method` 가 있을 때만 적는다. `method` 없이 여기 닿을 수 있는 것은 `id` 가
+      // `null` 인 응답인데, 그건 서버가 먼저 건 것이 아니라 프로토콜 위반이다. 적을
+      // 메서드 이름이 없고 문안을 만들 근거도 없어서 조용히 버린다.
+      //
+      // **다만 그 경우는 지금 여기까지 오지 않는다.** SDK 의 `JSONRPCMessageSchema` 가
+      // `id: null` 을 `onmessage` 앞에서 거절한다(실측). 즉 위 `id === null` 조건과 이
+      // 가드는 둘 다 지금은 닿지 않는 길이고, 테스트도 이 갈래를 덮지 못한다 — 가드를
+      // 빼도 e2e 가 초록이다(실측). SDK 가 검증을 느슨하게 하면 그때 살아나는 안전망이라
+      // 남겨 둔다. 실제로 도는 갈래는 아래 "대기표에 없는 id" 쪽이고 그것은 덮여 있다.
+      if ("method" in message)
+        writeDrop({ method: message.method, kind: "id" in message ? "request" : "notification" });
       return;
     }
     // `id` 는 위 블록에서 뽑아 둔 지역 상수다. `message.id` 를 다시 쓰지 마라 —
@@ -119,6 +139,9 @@ export async function startRelay(options: RelayOptions): Promise<RelayHandle> {
     // 아래 세 줄이 전부 `as number` 를 달아야 한다. 중계기가 매기는 id 는 항상 number 이므로
     // 여기 걸리는 것은 자식이 우리가 보낸 적 없는 id 를 낸 경우뿐이고, 그건 아래 `entry`
     // 조회에서도 똑같이 버려진다 — 동작은 같고 캐스트만 사라진다.
+    // 아래 두 `return` 은 **기록하지 않는다.** 우리가 보낸 적 없는 id 로 온 응답이라
+    // 프로토콜 위반이고, 위 `writeDrop` 이 말하는 "서버가 먼저 건 것" 이 아니다.
+    // 지어낼 문안이 없으므로 조용히 버리는 지금 동작을 그대로 둔다.
     if (typeof id !== "number") return;
     const entry = pending.get(id);
     if (entry === undefined) return;

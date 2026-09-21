@@ -8,6 +8,8 @@ import {
   jsonDrop,
   jsonRequest,
   jsonResponse,
+  MAX_CASE_TAG,
+  readCaseTag,
 } from "../src/relay-log.js";
 
 describe("humanRequest", () => {
@@ -26,6 +28,12 @@ describe("humanRequest", () => {
     const line = humanRequest({ id: 4, method: "tools/call", tool: "add_note", args });
     expect(line).toContain(JSON.stringify(args));
     expect(line).not.toContain("…");
+  });
+
+  it("사람이 읽는 줄은 꼬리표를 싣지 않는다", () => {
+    expect(
+      humanRequest({ id: 1, method: "tools/call", tool: "get_weather", case: "seoul-weather" }),
+    ).toBe("→ tools/call  get_weather");
   });
 });
 
@@ -102,6 +110,21 @@ describe("humanResponse", () => {
     expect(line).not.toContain("structuredContent");
     expect(line).not.toContain("\n");
   });
+
+  it("사람이 읽는 줄은 꼬리표를 싣지 않는다", () => {
+    expect(
+      humanResponse({
+        id: 1,
+        method: "tools/call",
+        tool: "get_weather",
+        kind: "ok",
+        bytes: 97,
+        ms: 4,
+        body: {},
+        case: "seoul-weather",
+      }),
+    ).toBe("← tools/call  get_weather 성공 · 97바이트 · 0.0초");
+  });
 });
 
 describe("jsonRequest · jsonResponse", () => {
@@ -119,6 +142,76 @@ describe("jsonRequest · jsonResponse", () => {
       tool: "get_forecast",
       args: { city: "부산" },
     });
+  });
+
+  it("케이스 꼬리표가 있으면 요청 줄에 싣는다", () => {
+    const line = jsonRequest({
+      id: 1,
+      method: "tools/call",
+      tool: "get_weather",
+      args: { city: "서울" },
+      case: "seoul-weather",
+    });
+    expect(JSON.parse(line)).toEqual({
+      dir: "req",
+      id: 1,
+      method: "tools/call",
+      tool: "get_weather",
+      case: "seoul-weather",
+      args: { city: "서울" },
+    });
+  });
+
+  it("꼬리표가 없으면 요청 줄에 필드 자체가 없다", () => {
+    expect(JSON.parse(jsonRequest({ id: 1, method: "tools/list" }))).not.toHaveProperty("case");
+  });
+
+  it("케이스 꼬리표가 있으면 응답 줄에 싣는다", () => {
+    const line = jsonResponse({
+      id: 1,
+      method: "tools/call",
+      tool: "get_weather",
+      kind: "ok",
+      bytes: 97,
+      ms: 4,
+      body: { content: [] },
+      case: "seoul-weather",
+    });
+    expect(JSON.parse(line)).toEqual({
+      dir: "res",
+      id: 1,
+      tool: "get_weather",
+      case: "seoul-weather",
+      ok: true,
+      bytes: 97,
+      ms: 4,
+      body: { content: [] },
+    });
+  });
+
+  it("꼬리표가 없으면 응답 줄에 필드 자체가 없다", () => {
+    const line = jsonResponse({
+      id: 1,
+      method: "tools/call",
+      kind: "ok",
+      bytes: 1,
+      ms: 1,
+      body: {},
+    });
+    expect(JSON.parse(line)).not.toHaveProperty("case");
+  });
+
+  it("프로토콜 오류 줄도 꼬리표를 싣는다", () => {
+    const line = jsonResponse({
+      id: 1,
+      method: "tools/call",
+      kind: "protocolError",
+      code: -32602,
+      message: "Unknown tool",
+      ms: 1,
+      case: "missing-tool",
+    });
+    expect(JSON.parse(line)).toMatchObject({ case: "missing-tool", ok: false });
   });
 
   it("인자·툴이 없으면 그 키를 내지 않는다", () => {
@@ -351,5 +444,41 @@ describe("jsonDrop", () => {
       .dir;
     expect(dir).toBe("drop");
     expect(["req", "res"]).not.toContain(dir);
+  });
+});
+
+describe("readCaseTag", () => {
+  it("case 쿼리가 있으면 그 값을 돌려준다", () => {
+    expect(readCaseTag("/mcp?case=seoul-weather")).toBe("seoul-weather");
+  });
+
+  it("url 이 없거나 case 쿼리가 없으면 undefined 다", () => {
+    expect(readCaseTag(undefined)).toBeUndefined();
+    expect(readCaseTag("/mcp")).toBeUndefined();
+    expect(readCaseTag("/mcp?other=1")).toBeUndefined();
+  });
+
+  it("빈 값은 꼬리표가 아니다", () => {
+    expect(readCaseTag("/mcp?case=")).toBeUndefined();
+  });
+
+  it("퍼센트 인코딩을 디코드한다 — 케이스 id 에 문자 제약이 없다", () => {
+    // core 의 스위트 스키마에서 `cases[].id` 는 nonEmptyString 뿐이다. 한글·공백 id 가
+    // 적법하므로 허용 문자를 kebab-case 로 좁히면 멀쩡한 케이스의 꼬리표가 조용히 사라진다.
+    expect(readCaseTag("/mcp?case=%EC%84%9C%EC%9A%B8%20%EB%A7%91%EC%9D%8C")).toBe("서울 맑음");
+  });
+
+  it("상한을 넘는 값은 버린다", () => {
+    expect(readCaseTag(`/mcp?case=${"a".repeat(MAX_CASE_TAG)}`)).toBe("a".repeat(MAX_CASE_TAG));
+    expect(readCaseTag(`/mcp?case=${"a".repeat(MAX_CASE_TAG + 1)}`)).toBeUndefined();
+  });
+
+  it("제어문자가 섞인 값은 버린다 — 기록 채널이 줄 단위다", () => {
+    expect(readCaseTag("/mcp?case=a%0Ab")).toBeUndefined();
+    expect(readCaseTag("/mcp?case=a%00b")).toBeUndefined();
+  });
+
+  it("case 가 여러 번 오면 첫 값을 쓴다", () => {
+    expect(readCaseTag("/mcp?case=first&case=second")).toBe("first");
   });
 });

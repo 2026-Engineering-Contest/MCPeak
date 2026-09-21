@@ -342,6 +342,60 @@ describe("기록", () => {
     });
   });
 
+  it("서로 다른 꼬리표로 붙은 두 세션의 줄이 꼬리표로 갈린다", async () => {
+    const lines: string[] = [];
+    const handle = await startRelay({
+      port: 0,
+      command: process.execPath,
+      args: [CHILD],
+      log: (line) => lines.push(line),
+      json: true,
+      env: {},
+    });
+    open.push(handle);
+
+    const first = await openSession(`${handle.url}?case=seoul-weather`);
+    const second = await openSession(`${handle.url}?case=%EC%84%9C%EC%9A%B8%20%EB%A7%91%EC%9D%8C`);
+    sessions.push(first, second);
+    await Promise.all([
+      first.call(1, "tools/call", { name: "echo", arguments: { text: "가" } }),
+      second.call(1, "tools/call", { name: "echo", arguments: { text: "나" } }),
+    ]);
+
+    const parsed = lines.map((line) => JSON.parse(line) as Record<string, unknown>);
+    // `initialize` 도 같은 접속의 일부라 꼬리표를 싣는다(설계대로) — 여기서 보려는 것은
+    // 동시 실행된 `tools/call` 줄이 꼬리표로 갈리는지이므로 그것만 본다. 응답 줄에는
+    // `method` 가 없으므로(요청·응답 공통으로 있는 것은 `tool`) `tool` 로 가른다 —
+    // `initialize` 요청·응답에는 `tool` 이 없다.
+    const tagsOf = (dir: string): string[] =>
+      parsed
+        .filter((entry) => entry.dir === dir && entry.tool === "echo")
+        .map((entry) => String(entry.case));
+    // 요청·응답 양쪽에 실린다. 순서는 동시 실행이라 보장하지 않으므로 정렬해서 본다.
+    expect(tagsOf("req").sort()).toEqual(["seoul-weather", "서울 맑음"].sort());
+    expect(tagsOf("res").sort()).toEqual(["seoul-weather", "서울 맑음"].sort());
+  });
+
+  it("꼬리표 없이 붙으면 줄에 case 필드가 없다", async () => {
+    const lines: string[] = [];
+    const handle = await startRelay({
+      port: 0,
+      command: process.execPath,
+      args: [CHILD],
+      log: (line) => lines.push(line),
+      json: true,
+      env: {},
+    });
+    open.push(handle);
+    const session = await openSession(handle.url);
+    sessions.push(session);
+    await session.call(1, "tools/call", { name: "echo", arguments: {} });
+
+    for (const line of lines) {
+      expect(JSON.parse(line)).not.toHaveProperty("case");
+    }
+  });
+
   it("알림은 짝이 없으므로 기록하지 않는다", () => {
     // openSession 이 보내는 notifications/initialized 가 §8-6 의 목록에 없다는 것으로
     // 이미 확인된다. 이 자리는 그 사실을 문서로 남기는 곳이다.

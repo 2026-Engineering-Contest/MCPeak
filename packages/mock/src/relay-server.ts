@@ -12,6 +12,7 @@ import {
   type RelayDropEvent,
   type RelayRequestEvent,
   type RelayResponseEvent,
+  readCaseTag,
 } from "./relay-log.js";
 
 /**
@@ -99,6 +100,8 @@ export async function startRelay(options: RelayOptions): Promise<RelayHandle> {
     readonly clientId: string | number;
     readonly method: string;
     readonly tool?: string;
+    /** 이 접속이 URL 로 실어 온 케이스 꼬리표. 응답 줄에 그대로 옮긴다. */
+    readonly case?: string;
     readonly startedAt: number;
   }
   const pending = new Map<number, Pending>();
@@ -151,6 +154,9 @@ export async function startRelay(options: RelayOptions): Promise<RelayHandle> {
   };
 
   const http: HttpServer = createServer((req, res) => {
+    // 꼬리표는 접속당 하나다. 여기서 한 번 읽어 아래 클로저가 쓴다 — `onmessage` 안에서
+    // 다시 읽을 수 있지만, 같은 접속에서 값이 달라질 여지를 만들지 않는다.
+    const caseTag = readCaseTag(req.url);
     // stateless 모드는 요청마다 새 transport 를 요구한다
     // (SDK: "Stateless transport cannot be reused across requests."). stateful 로 가면
     // sessionIdGenerator 가 randomUUID 를 쓰게 되어 결정론성이 깨진다.
@@ -169,6 +175,7 @@ export async function startRelay(options: RelayOptions): Promise<RelayHandle> {
         id: relayId,
         method: message.method,
         ...(tool === undefined ? {} : { tool }),
+        ...(caseTag === undefined ? {} : { case: caseTag }),
         ...(params?.arguments === undefined ? {} : { args: params.arguments }),
       });
       pending.set(relayId, {
@@ -176,6 +183,7 @@ export async function startRelay(options: RelayOptions): Promise<RelayHandle> {
         clientId: message.id,
         method: message.method,
         tool,
+        case: caseTag,
         startedAt: Date.now(),
       });
       void child.send({ ...message, id: relayId });
@@ -251,12 +259,13 @@ export async function startRelay(options: RelayOptions): Promise<RelayHandle> {
  */
 function describeResponse(
   message: JSONRPCMessage,
-  entry: { method: string; tool?: string; startedAt: number },
+  entry: { method: string; tool?: string; case?: string; startedAt: number },
 ): RelayResponseEvent {
   const head = {
     id: 0, // 아래에서 덮어쓴다 — 호출부가 relayId 를 안다.
     method: entry.method,
     ...(entry.tool === undefined ? {} : { tool: entry.tool }),
+    ...(entry.case === undefined ? {} : { case: entry.case }),
     ms: Date.now() - entry.startedAt,
   };
   if ("error" in message) {

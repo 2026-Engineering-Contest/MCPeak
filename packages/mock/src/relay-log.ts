@@ -16,6 +16,13 @@ export interface RelayRequestEvent {
   readonly method: string;
   readonly tool?: string;
   readonly args?: unknown;
+  /**
+   * 대시보드가 URL(`?case=<id>`)로 실어 보낸 케이스 꼬리표. **터미널 사용에는 없다.**
+   *
+   * 중계기가 stateless 라 접속을 구분할 식별자가 없다(`relay-server.ts` 의
+   * `sessionIdGenerator: undefined`). 동시 실행에서 케이스를 가르는 유일한 축이다.
+   */
+  readonly case?: string;
 }
 
 export type RelayResponseEvent = {
@@ -23,6 +30,8 @@ export type RelayResponseEvent = {
   readonly method: string;
   readonly tool?: string;
   readonly ms: number;
+  /** `RelayRequestEvent.case` 와 같다 — 짝지은 요청의 꼬리표를 그대로 옮긴다. */
+  readonly case?: string;
 } & (
   | {
       readonly kind: "ok";
@@ -53,6 +62,47 @@ export interface RelayDropEvent {
   readonly method: string;
   /** `id` 가 있으면 요청, 없으면 알림이다. 문장이 갈리는 유일한 축이다. */
   readonly kind: "request" | "notification";
+}
+
+/**
+ * 꼬리표 길이 상한. 케이스 id 는 화면 칸 제목에 쓰이는 짧은 식별자다 — 이보다 길면
+ * 그것은 id 가 아니라 누가 URL 에 딴 것을 실은 것이다.
+ */
+export const MAX_CASE_TAG = 200;
+
+/**
+ * 제어문자. **기록 채널이 줄 단위라** 개행이 섞이면 대시보드의 줄 파서가 없던 줄을
+ * 하나 더 본다. `JSON.stringify` 가 이스케이프하므로 지금 통로로는 새지 않지만, 거르는
+ * 자리는 값이 들어오는 지점 한 곳에 둔다.
+ */
+// biome-ignore lint/suspicious/noControlCharactersInRegex: 제어문자를 걸러내는 것이 이 정규식의 목적이다.
+const CONTROL_CHARS = /[\x00-\x1f\x7f]/;
+
+/**
+ * URL 쿼리의 `case` 꼬리표. 순수 함수 — 길이·문자 상한을 건다.
+ *
+ * **허용 문자를 kebab-case 로 좁히지 않는다.** `cases[].id` 는 스위트 스키마에서
+ * `nonEmptyString` 뿐이라 한글·공백 id 가 적법하고(실측: `packages/runner/src/spec/json-schema.ts`),
+ * 좁히면 멀쩡한 케이스의 꼬리표가 조용히 사라져 화면이 칸을 못 가른다. 거르는 것은
+ * **줄 단위 채널을 깨는 것**(제어문자)과 **id 가 아닌 크기**(상한) 둘뿐이다.
+ *
+ * 버릴 때 오류를 던지지 않는다 — 꼬리표는 화면을 나누는 편의이고, 없으면 칸이 하나로
+ * 합쳐질 뿐 중계 자체는 정상이다. 중계기가 사용자의 요청을 거절할 이유가 되지 않는다.
+ */
+export function readCaseTag(url: string | undefined): string | undefined {
+  if (url === undefined) return undefined;
+  let value: string | null;
+  try {
+    // `req.url` 은 경로+쿼리라 절대 URL 이 아니다. 기준이 필요하고, 그 기준은 버려지므로
+    // 어떤 값이든 결과에 영향이 없다.
+    value = new URL(url, "http://127.0.0.1").searchParams.get("case");
+  } catch {
+    return undefined;
+  }
+  if (value === null || value === "") return undefined;
+  if (value.length > MAX_CASE_TAG) return undefined;
+  if (CONTROL_CHARS.test(value)) return undefined;
+  return value;
 }
 
 /**
@@ -108,6 +158,7 @@ export function jsonRequest(event: RelayRequestEvent): string {
     id: event.id,
     method: event.method,
     ...(event.tool === undefined ? {} : { tool: event.tool }),
+    ...(event.case === undefined ? {} : { case: event.case }),
     ...(event.args === undefined ? {} : { args: event.args }),
   });
 }
@@ -117,6 +168,7 @@ export function jsonResponse(event: RelayResponseEvent): string {
     dir: "res" as const,
     id: event.id,
     ...(event.tool === undefined ? {} : { tool: event.tool }),
+    ...(event.case === undefined ? {} : { case: event.case }),
   };
   if (event.kind === "protocolError") {
     return JSON.stringify({

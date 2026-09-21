@@ -227,6 +227,14 @@ jobs:
       - name: Verify built record external subpath
         run: pnpm --filter @mcpeak/record test:e2e
 
+      # relayBinPath() 는 package.json 의 bin 을 읽어 경로를 계산할 뿐, 파일이 있는지는
+      # 보지 않는다. vitest 쪽(relay-bin-path.test.ts)은 매니페스트와의 합의만 보고,
+      # `pnpm test` 는 빌드를 앞세우지 않아 존재 확인을 거기 넣을 수 없다. 산출물이
+      # 정말 나왔는지는 빌드가 끝난 이 자리에서만 볼 수 있다 — src/relay.ts 가 tsdown
+      # entry 에서 빠지면 타입체크도 테스트도 초록인 채 발행본의 bin 만 사라진다.
+      - name: Verify built relay bin path
+        run: pnpm --filter @mcpeak/mock test:e2e
+
       # "우리 도구로 우리를 검증한다" 의 마지막 한 칸이다 (CLAUDE.md).
       #
       # 위 스텝은 CLI 가 도는지만 본다. 이 스텝은 그 결과를 --junit 으로 내보내

@@ -1,9 +1,11 @@
 import type { JSX } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type {
   FileEntry,
   ServerCandidate,
   ServerMeta,
+  StartRelayRequest,
+  StartRelayResponse,
   StartRunRequest,
   StartRunResponse,
 } from "../../../src/api-types.js";
@@ -16,6 +18,7 @@ import { PageHeader } from "../components/PageHeader.js";
 import { Stepper } from "../components/Stepper.js";
 import type { CommandMethod } from "../generate/steps/StepServer.js";
 import { splitCommand } from "../generate/steps/StepServer.js";
+import { StepRelay } from "../home/steps/StepRelay.js";
 import { StepRunOptions } from "../home/steps/StepRunOptions.js";
 import type { RunServerChoice, RunServerPatch } from "../home/steps/StepRunServer.js";
 import { StepRunServer } from "../home/steps/StepRunServer.js";
@@ -23,9 +26,22 @@ import { StepRunSuite } from "../home/steps/StepRunSuite.js";
 import type { LastRun } from "../last-run.js";
 import { readLastRun, saveLastRun } from "../last-run.js";
 import { readRecentCommands, saveRecentCommand } from "../recent-commands.js";
+import { runAfterClose } from "../relay/close-first.js";
+import { useRelayEvents } from "../relay/relay-stream.js";
 import { effectiveRepairBundlePath } from "../repair-bundle-path.js";
 
-const STEPS = ["테스트할 서버", "테스트할 스위트", "실행 옵션"] as const;
+const BASE_STEPS = ["테스트할 서버", "테스트할 스위트", "실행 옵션"] as const;
+const RELAY_STEP = "실제 응답";
+/** 4 단계의 인덱스. `BASE_STEPS` 뒤에 붙으므로 곧 `BASE_STEPS.length` 다. */
+const RELAY_STEP_INDEX = BASE_STEPS.length;
+
+/**
+ * 닫기가 실패했을 때의 안내. **판정 실행을 시작하지 않은 이유**가 요점이다 — 여기서 그냥
+ * 시작하면 같은 사용자 서버가 두 벌 뜬다(설계 §1).
+ */
+const RELAY_CLOSE_FAILED_HINT =
+  "→ 중계기를 닫지 못해 실행을 시작하지 않았습니다. 같은 서버가 두 벌 뜨는 것을 막기 위해서입니다.\n" +
+  "→ 새로고침한 뒤 다시 시도하세요.";
 
 /**
  * 홈 실행 마법사의 상태(설계 §6). `command` 는 갈래별로 구하므로 직접 입력 갈래에서는
@@ -121,6 +137,17 @@ export function Home(): JSX.Element {
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
+  /** 3 단계 체크박스. 켜면 4 단계 「실제 응답」이 붙는다. */
+  const [liveResponse, setLiveResponse] = useState(false);
+  const [relay, setRelay] = useState<StartRelayResponse | null>(null);
+  /** 중계기를 못 띄운 사유 **전문**. 서버가 준 문장을 고치지 않고 그대로 화면에 올린다. */
+  const [relayError, setRelayError] = useState<string | null>(null);
+  /**
+   * 살아 있는 중계기를 **렌더와 무관하게** 들고 있는다. 언마운트 정리는 첫 렌더의 함수를
+   * 붙잡으므로, 상태만 보면 그때 `relay` 가 늘 null 이라 아무것도 닫지 않는다.
+   */
+  const relayRef = useRef<StartRelayResponse | null>(null);
+  const relayEvents = useRelayEvents(relay?.relayId ?? null);
 
   useEffect(() => {
     apiGet<FileEntry[]>("/api/suites")
@@ -156,6 +183,50 @@ export function Home(): JSX.Element {
 
   const target = effectiveTarget(state);
   const http = state.options.transport === "http";
+
+  /**
+   * HTTP 대상에서는 4 단계가 붙지 않는다. 중계기는 stdio 서버를 HTTP 로 **중계**하는
+   * 물건이라, 대상이 이미 HTTP 면 중계할 것이 없다.
+   */
+  const steps: readonly string[] = liveResponse && !http ? [...BASE_STEPS, RELAY_STEP] : BASE_STEPS;
+
+  function rememberRelay(next: StartRelayResponse | null): void {
+    relayRef.current = next;
+    setRelay(next);
+  }
+
+  /** 중계기를 닫고 **닫힌 것을 확인한 뒤** 돌아온다. 없으면 할 일이 없다. */
+  async function closeRelay(): Promise<void> {
+    const current = relayRef.current;
+    if (current === null) {
+      return;
+    }
+    await apiSend<void>("DELETE", `/api/relay/${encodeURIComponent(current.relayId)}`);
+    rememberRelay(null);
+  }
+
+  /** 4 단계에 들어설 때 중계기를 띄운다. */
+  async function openRelay(suitePath: string): Promise<void> {
+    setRelayError(null);
+    try {
+      rememberRelay(
+        await apiSend<StartRelayResponse>("POST", "/api/relay", {
+          suitePath,
+          command: target.command,
+          args: target.args,
+          envNames: state.envNames,
+          model: "sonnet",
+          ...(state.choice.kind === "candidate" ? { serverId: state.choice.id } : {}),
+        } satisfies StartRelayRequest),
+      );
+    } catch (err) {
+      setRelayError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  // 화면을 떠나도 중계기는 남는다 — 사용자 서버가 그대로 떠 있다는 뜻이다. 정리한다.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 언마운트 1회 정리. 살아 있는 중계기는 `relayRef` 가 들고 있다.
+  useEffect(() => () => void closeRelay().catch(() => undefined), []);
 
   function patchServer(partial: Partial<RunServerPatch>): void {
     setState((previous) => {
@@ -335,6 +406,13 @@ export function Home(): JSX.Element {
     }
   }
 
+  /**
+   * 건너뛴 케이스 안내. `find` 로 집으면 좁혀지지 않아 `message` 를 읽을 수 없다 —
+   * 이벤트 종류마다 필드가 다르기 때문이다.
+   */
+  const skippedNotice =
+    relayEvents.flatMap((event) => (event.kind === "notice" ? [event.message] : []))[0] ?? null;
+
   return (
     <section className="mx-auto max-w-[800px] space-y-6">
       <PageHeader
@@ -342,7 +420,7 @@ export function Home(): JSX.Element {
         description="서버를 고르고, 그 서버의 테스트 스위트를 골라 실행합니다."
       />
 
-      <Stepper steps={STEPS} current={step} />
+      <Stepper steps={steps} current={step} />
 
       {loadError !== null && (
         <p className="text-sm" style={{ color: "var(--status-failed-fg)" }}>
@@ -388,6 +466,8 @@ export function Home(): JSX.Element {
             lastRun={lastRun}
             lastRunDiffers={differsFromLastRun(state, lastRun)}
             result={result}
+            liveResponse={liveResponse}
+            onLiveResponseChange={setLiveResponse}
             onArgsChange={(args) => setState((previous) => ({ ...previous, args }))}
             onSessionModeChange={(sessionMode) =>
               setState((previous) => ({ ...previous, sessionMode }))
@@ -403,6 +483,14 @@ export function Home(): JSX.Element {
             onUseLastRun={useLastRun}
           />
         )}
+        {step === RELAY_STEP_INDEX && (
+          <StepRelay
+            cases={relay?.cases ?? []}
+            events={relayEvents}
+            error={relayError}
+            skipped={skippedNotice}
+          />
+        )}
       </Card>
 
       {startError !== null && (
@@ -414,7 +502,13 @@ export function Home(): JSX.Element {
       <div className="flex items-center justify-between">
         <Button
           disabled={step === 0}
-          onClick={() => setStep((previous) => Math.max(previous - 1, 0))}
+          // 4 단계에서 물러날 때도 중계기를 닫는다. 남겨 두면 사용자 서버가 뜬 채로
+          // 3 단계가 「실행 시작」을 다시 내민다.
+          onClick={() =>
+            void closeRelay()
+              .catch(() => undefined)
+              .finally(() => setStep((previous) => Math.max(previous - 1, 0)))
+          }
         >
           이전
         </Button>
@@ -422,11 +516,19 @@ export function Home(): JSX.Element {
           {reasonForInvalid() !== null && (
             <span className="text-xs text-ink-muted">{reasonForInvalid()}</span>
           )}
-          {step < STEPS.length - 1 ? (
+          {step < steps.length - 1 ? (
             <Button
               variant="primary"
               disabled={!stepValid}
-              onClick={() => setStep((previous) => Math.min(previous + 1, STEPS.length - 1))}
+              onClick={() => {
+                const next = Math.min(step + 1, steps.length - 1);
+                // 4 단계는 들어서는 순간 중계기를 띄운다. 버튼을 따로 두지 않는 것이
+                // 이 단계의 요점이다 — 화면에 들어온 것이 곧 "보겠다" 는 뜻이다.
+                if (next === RELAY_STEP_INDEX && state.suitePath !== null) {
+                  void openRelay(state.suitePath);
+                }
+                setStep(next);
+              }}
             >
               다음
             </Button>
@@ -434,7 +536,15 @@ export function Home(): JSX.Element {
             <Button
               variant="primary"
               disabled={starting || !stepValid}
-              onClick={() => void startRun()}
+              // **닫기가 먼저다.** 중계기를 닫고 닫힌 것을 확인한 뒤에야 판정 실행을
+              // 시작한다. 순서 보장은 `runAfterClose` 가 한다(설계 §1).
+              onClick={() =>
+                void runAfterClose(closeRelay, startRun).catch((err: unknown) => {
+                  setStartError(
+                    `${err instanceof Error ? err.message : String(err)}\n${RELAY_CLOSE_FAILED_HINT}`,
+                  );
+                })
+              }
             >
               실행 시작
             </Button>

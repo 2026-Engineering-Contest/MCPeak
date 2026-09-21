@@ -43,7 +43,8 @@
   "scripts": {
     "build": "tsdown --config-loader native",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --root ../.. packages/mock"
+    "test": "vitest run --root ../.. packages/mock",
+    "test:e2e": "node ./tests/dist-relay-bin-e2e.mjs"
   },
   "dependencies": {
     "@mcpeak/core": "workspace:*",

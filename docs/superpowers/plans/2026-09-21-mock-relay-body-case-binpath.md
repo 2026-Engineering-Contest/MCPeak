@@ -720,6 +720,13 @@ Expected: PASS. 기존 케이스까지 전부 초록이어야 한다 — 꼬리�
   });
 ```
 
+> **정정 (2026-09-21, 구현 단계).** 위 `tagsOf` 는 적힌 그대로는 통과하지 않는다. 꼬리표는
+> **접속 단위**라 `initialize` 줄에도 실린다 — `entry.dir === dir` 만 보면 세션 2 개 ×
+> (`initialize` + `tools/call`) = 4 건을 집어, 각 케이스의 꼬리표가 두 번씩 섞인 배열을
+> 돌려줘 `["seoul-weather", "서울 맑음"]` 과 비교하는 `toEqual` 이 깨진다. 실제 구현은
+> `entry.tool === "echo"` 를 필터에 더해 `tools/call` 만 보도록 좁혔다:
+> `parsed.filter((entry) => entry.dir === dir && entry.tool === "echo")`.
+
 - [ ] **Step 10: 실패를 확인한다**
 
 Run: `cd /Users/cheonjamin/projects/mcptest && pnpm vitest run packages/mock/tests/relay-e2e.test.ts -t 꼬리표`

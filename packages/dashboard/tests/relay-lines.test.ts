@@ -62,14 +62,17 @@ describe("중계기 줄 파서", () => {
   it("꼬리표가 없으면 case 필드도 없다", () => {
     const reader = new RelayLineReader();
     const [line] = reader.push('{"dir":"req","id":1,"method":"initialize"}\n');
-    expect(line).toEqual({ kind: "request", id: 1, method: "initialize" });
+    // `toStrictEqual` 이어야 한다. `toEqual` 은 `{case: undefined}` 를 `{}` 와 같다고 보므로,
+    // 구현이 없는 필드를 `undefined` 로 싣도록 바뀌어도 이 테스트가 통과한다 — 계약이
+    // "필드 자체가 없다" 인 자리에서는 그 관대함이 회귀를 덮는다.
+    expect(line).toStrictEqual({ kind: "request", id: 1, method: "initialize" });
   });
 
   it("프로토콜 오류 줄은 body 없이 코드와 메시지를 낸다", () => {
     const reader = new RelayLineReader();
     expect(
       reader.push('{"dir":"res","id":4,"ok":false,"code":-32602,"message":"bad","ms":1}\n'),
-    ).toEqual([{ kind: "response", id: 4, ok: false, ms: 1, code: -32602, message: "bad" }]);
+    ).toStrictEqual([{ kind: "response", id: 4, ok: false, ms: 1, code: -32602, message: "bad" }]);
   });
 
   it("버린 줄을 낸다", () => {

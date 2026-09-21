@@ -44,6 +44,15 @@ const RELAY_CLOSE_FAILED_HINT =
   "→ 새로고침한 뒤 다시 시도하세요.";
 
 /**
+ * 「이전」에서 닫기가 실패했을 때의 안내. 위와 **맥락이 다르다** — 여기서는 시작하지 않은
+ * 실행이 없다. 남은 것은 "사용자 서버가 아직 떠 있다" 이고, 그 사실과 다음 동작이 요점이다.
+ * 서버가 준 문장 뒤에 이어 붙이므로 그 문장을 되풀이하지 않는다.
+ */
+const RELAY_BACK_CLOSE_FAILED_HINT =
+  "→ 중계기가 아직 떠 있습니다. 그 중계기가 띄운 서버도 함께 떠 있습니다.\n" +
+  "→ 새로고침한 뒤 다시 시도하세요. 그대로 두면 판정 실행이 같은 서버를 두 벌 띄웁니다.";
+
+/**
  * 홈 실행 마법사의 상태(설계 §6). `command` 는 갈래별로 구하므로 직접 입력 갈래에서는
  * 쓰이지 않는다 — Generate 마법사와 같은 모양이다.
  */
@@ -147,6 +156,14 @@ export function Home(): JSX.Element {
    * 붙잡으므로, 상태만 보면 그때 `relay` 가 늘 null 이라 아무것도 닫지 않는다.
    */
   const relayRef = useRef<StartRelayResponse | null>(null);
+  /**
+   * 진행 중인 `POST /api/relay`. **상태가 아니라 ref 인 이유**는 같은 틱의 재진입을 막아야
+   * 하기 때문이다 — 상태는 다음 렌더에야 보이므로 두 번째 「다음」이 그 사이를 지나간다.
+   *
+   * 닫기도 이것을 본다. 안 보면 POST 가 풀리기 전에 「이전」을 눌렀을 때 `relayRef.current`
+   * 가 null 이라 일찍 돌아가고, 그 뒤 도착한 중계기를 아무도 닫지 못한다.
+   */
+  const relayOpeningRef = useRef<Promise<void> | null>(null);
   const relayEvents = useRelayEvents(relay?.relayId ?? null);
 
   useEffect(() => {
@@ -197,6 +214,11 @@ export function Home(): JSX.Element {
 
   /** 중계기를 닫고 **닫힌 것을 확인한 뒤** 돌아온다. 없으면 할 일이 없다. */
   async function closeRelay(): Promise<void> {
+    // 여는 중이면 먼저 그것이 끝나기를 기다린다. 기다리지 않으면 방금 띄운 중계기를 놓친다.
+    const opening = relayOpeningRef.current;
+    if (opening !== null) {
+      await opening;
+    }
     const current = relayRef.current;
     if (current === null) {
       return;
@@ -205,23 +227,40 @@ export function Home(): JSX.Element {
     rememberRelay(null);
   }
 
-  /** 4 단계에 들어설 때 중계기를 띄운다. */
-  async function openRelay(suitePath: string): Promise<void> {
-    setRelayError(null);
-    try {
-      rememberRelay(
-        await apiSend<StartRelayResponse>("POST", "/api/relay", {
-          suitePath,
-          command: target.command,
-          args: target.args,
-          envNames: state.envNames,
-          model: "sonnet",
-          ...(state.choice.kind === "candidate" ? { serverId: state.choice.id } : {}),
-        } satisfies StartRelayRequest),
-      );
-    } catch (err) {
-      setRelayError(err instanceof Error ? err.message : String(err));
+  /**
+   * 4 단계에 들어설 때 중계기를 띄운다.
+   *
+   * **이미 하나 있거나 여는 중이면 열지 않는다.** `rememberRelay` 로 덮어쓰면 앞 중계기의
+   * id 를 되찾을 길이 없어 아무도 그것을 DELETE 하지 못하고, 사용자 서버가 고아로 남는다.
+   * 판정은 `relayRef`·`relayOpeningRef` 로만 한다 — 상태로 하면 같은 틱의 두 번째 호출이
+   * 아직 null 을 본다.
+   */
+  function openRelay(suitePath: string): Promise<void> {
+    if (relayRef.current !== null || relayOpeningRef.current !== null) {
+      return Promise.resolve();
     }
+    setRelayError(null);
+    const opening = apiSend<StartRelayResponse>("POST", "/api/relay", {
+      suitePath,
+      command: target.command,
+      args: target.args,
+      envNames: state.envNames,
+      model: "sonnet",
+      ...(state.choice.kind === "candidate" ? { serverId: state.choice.id } : {}),
+    } satisfies StartRelayRequest)
+      .then((response) => {
+        // `rememberRelay` 는 여전히 유일한 기록자다 — `relay` 와 `relayRef` 가 어긋나지 않는다.
+        rememberRelay(response);
+      })
+      .catch((err: unknown) => {
+        setRelayError(err instanceof Error ? err.message : String(err));
+      })
+      .finally(() => {
+        relayOpeningRef.current = null;
+      });
+    // 동기적으로 건다. 여기까지 마이크로태스크가 끼어들지 않으므로 같은 틱의 재진입이 막힌다.
+    relayOpeningRef.current = opening;
+    return opening;
   }
 
   // 화면을 떠나도 중계기는 남는다 — 사용자 서버가 그대로 떠 있다는 뜻이다. 정리한다.
@@ -504,9 +543,19 @@ export function Home(): JSX.Element {
           disabled={step === 0}
           // 4 단계에서 물러날 때도 중계기를 닫는다. 남겨 두면 사용자 서버가 뜬 채로
           // 3 단계가 「실행 시작」을 다시 내민다.
+          //
+          // **닫기 실패를 삼키지 않는다.** 삼키면 사용자 서버가 도는데 화면에 그 말이 없다.
+          // 뒤로 가는 것 자체는 막지 않는다 — 못 닫은 중계기는 `relayRef` 가 그대로 들고
+          // 있어 `openRelay` 가 두 번째를 열지 않고, 「실행 시작」도 닫히기 전에는 시작하지
+          // 않는다. 여기서 4 단계에 가두면 나갈 길만 없어진다.
           onClick={() =>
             void closeRelay()
-              .catch(() => undefined)
+              .then(() => setStartError(null))
+              .catch((err: unknown) =>
+                setStartError(
+                  `${err instanceof Error ? err.message : String(err)}\n${RELAY_BACK_CLOSE_FAILED_HINT}`,
+                ),
+              )
               .finally(() => setStep((previous) => Math.max(previous - 1, 0)))
           }
         >
@@ -527,7 +576,9 @@ export function Home(): JSX.Element {
                 if (next === RELAY_STEP_INDEX && state.suitePath !== null) {
                   void openRelay(state.suitePath);
                 }
-                setStep(next);
+                // 옆의 「이전」과 같은 updater 형으로 둔다. 클로저의 `step` 을 읽으면 batched
+                // update 에서 낡은 값을 볼 여지가 생기고, 한 파일 안에 두 모양이 남는다.
+                setStep((previous) => Math.min(previous + 1, steps.length - 1));
               }}
             >
               다음

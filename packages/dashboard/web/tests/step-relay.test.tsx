@@ -170,9 +170,17 @@ function stubEventSource(): void {
  */
 function stubHomeFetch(
   suitePath: string,
-  options: { readonly deleteStatus?: number; readonly gate?: Promise<void> } = {},
+  options: {
+    readonly deleteStatus?: number;
+    readonly gate?: Promise<void>;
+    /** `POST /api/relay` 를 붙잡아 둔다. "여는 중" 상태를 만드는 유일한 방법이다. */
+    readonly relayGate?: Promise<void>;
+  } = {},
 ): Traffic {
   const calls: string[] = [];
+  // 중계기마다 **다른 id** 를 준다. 같은 id 를 돌려주면 두 번째가 열렸는지 DELETE 경로만
+  // 보고는 알 수 없다 — 첫 번째를 닫은 것과 구분이 안 된다.
+  let relayCount = 0;
   const suites: readonly FileEntry[] = [{ path: suitePath }];
   vi.stubGlobal(
     "fetch",
@@ -188,9 +196,14 @@ function stubHomeFetch(
           : new Response(JSON.stringify({ error: "중계기를 닫지 못했습니다." }), { status });
       }
       if (url === "/api/relay") {
-        return new Response(JSON.stringify({ relayId: "relay-1", cases: RELAY_CASES }), {
-          status: 200,
-        });
+        await options.relayGate;
+        relayCount += 1;
+        return new Response(
+          JSON.stringify({ relayId: `relay-${relayCount}`, cases: RELAY_CASES }),
+          {
+            status: 200,
+          },
+        );
       }
       if (method === "POST") {
         return new Response(JSON.stringify({ runId: "run-new" }), { status: 200 });
@@ -365,5 +378,108 @@ describe("떠날 때 중계기를 먼저 닫는다", () => {
 
     view.unmount();
     await waitFor(() => expect(traffic.calls).toContain("DELETE /api/relay/relay-1"));
+  });
+});
+
+/**
+ * `POST /api/relay` 는 +1, `DELETE /api/relay/...` 는 -1. **동시에 살아 있는 중계기의
+ * 최대치**가 이 화면의 진짜 계약이다 — 호출이 찍힌 순서만 세면 둘이 겹쳐 떠 있어도 통과한다.
+ */
+function maxLiveRelays(calls: readonly string[]): number {
+  let live = 0;
+  let peak = 0;
+  for (const call of calls) {
+    if (call === "POST /api/relay") {
+      live += 1;
+      peak = Math.max(peak, live);
+    } else if (call.startsWith("DELETE /api/relay/")) {
+      live -= 1;
+    }
+  }
+  return peak;
+}
+
+const relayPosts = (calls: readonly string[]): number =>
+  calls.filter((call) => call === "POST /api/relay").length;
+
+/** 3 단계로 돌아온 것을 확인한다. 체크박스는 3 단계에만 있다. */
+const atOptions = async (): Promise<void> => {
+  await screen.findByLabelText(/판정 전에 서버의 실제 응답을 본다/);
+};
+
+describe("중계기는 한 번에 하나만 뜬다", () => {
+  it("「이전」으로 닫은 뒤에야 「다음」이 새 중계기를 연다", async () => {
+    stubEventSource();
+    const traffic = stubHomeFetch("examples/i/suite.json");
+    render(<Home />);
+    await goToRelay("examples/i/suite.json");
+
+    fireEvent.click(screen.getByRole("button", { name: "이전" }));
+    await waitFor(() => expect(traffic.calls).toContain("DELETE /api/relay/relay-1"));
+    await atOptions();
+
+    next();
+    await waitFor(() => expect(relayPosts(traffic.calls)).toBe(2));
+    // 두 번째는 첫 번째를 닫은 **뒤에** 나갔다. 겹쳐 뜬 적이 없다.
+    expect(maxLiveRelays(traffic.calls)).toBe(1);
+  });
+
+  it("「이전」의 닫기가 실패했으면 「다음」이 두 번째를 열지 않는다", async () => {
+    stubEventSource();
+    const traffic = stubHomeFetch("examples/j/suite.json", { deleteStatus: 500 });
+    render(<Home />);
+    await goToRelay("examples/j/suite.json");
+
+    fireEvent.click(screen.getByRole("button", { name: "이전" }));
+    await waitFor(() => expect(traffic.calls).toContain("DELETE /api/relay/relay-1"));
+    await atOptions();
+
+    // 닫히지 않은 중계기가 그대로 있다. 여기서 또 열면 앞 중계기의 id 를 잃어 아무도
+    // 그것을 닫지 못한다 — 사용자 서버가 고아로 남는다.
+    next();
+    await screen.findByText("get-weather-success");
+    await waitFor(() => expect(relayPosts(traffic.calls)).toBe(1));
+    expect(maxLiveRelays(traffic.calls)).toBe(1);
+  });
+
+  it("여는 중에 「이전」을 눌러도 중계기가 둘이 되지 않는다", async () => {
+    stubEventSource();
+    let release = (): void => undefined;
+    const relayGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const traffic = stubHomeFetch("examples/k/suite.json", { relayGate });
+    render(<Home />);
+    await goToOptions("examples/k/suite.json");
+    fireEvent.click(screen.getByLabelText(/판정 전에 서버의 실제 응답을 본다/));
+    next();
+    await waitFor(() => expect(traffic.calls).toContain("POST /api/relay"));
+
+    // POST 가 아직 안 풀렸다. 여기서 물러나면 닫기는 **기다렸다가** 닫아야 한다.
+    fireEvent.click(screen.getByRole("button", { name: "이전" }));
+    release();
+    await atOptions();
+    await waitFor(() => expect(traffic.calls).toContain("DELETE /api/relay/relay-1"));
+
+    next();
+    await screen.findByText("get-weather-success");
+    expect(maxLiveRelays(traffic.calls)).toBe(1);
+  });
+});
+
+describe("「이전」의 닫기 실패는 화면에 보인다", () => {
+  it("서버가 준 문장과 남은 것이 무엇인지 함께 뜬다", async () => {
+    stubEventSource();
+    stubHomeFetch("examples/l/suite.json", { deleteStatus: 500 });
+    render(<Home />);
+    await goToRelay("examples/l/suite.json");
+
+    fireEvent.click(screen.getByRole("button", { name: "이전" }));
+    // 서버가 준 문장을 고쳐 쓰지 않는다.
+    expect(await screen.findByText(/중계기를 닫지 못했습니다/)).toBeDefined();
+    expect(screen.getByText(/중계기가 아직 떠 있습니다/)).toBeDefined();
+    expect(screen.getByText(/판정 실행이 같은 서버를 두 벌 띄웁니다/)).toBeDefined();
+    // 뒤로 가는 것 자체는 막지 않는다.
+    await atOptions();
   });
 });

@@ -1,0 +1,260 @@
+import { spawn } from "node:child_process";
+import { tmpdir } from "node:os";
+import { CLAUDE_ENV_ALLOWLIST, runProviderProcess } from "@mcpeak/generate";
+import { relayBinPath } from "@mcpeak/mock";
+import type { RelayCase, RelayEvent, RelayEventInput, StartRelayRequest } from "../api-types.js";
+import { buildRelayAiArgs } from "./relay-argv.js";
+import { RelayLineReader } from "./relay-lines.js";
+import { planRelayCases } from "./relay-questions.js";
+
+/** AI 한 대에 주는 시간. 툴 한 번 부르고 끝나는 일이라 authoring 보다 짧다. */
+const AI_TIMEOUT_MS = 120_000;
+/** AI stdout 상한. `--output-format json` 봉투 하나라 크지 않다. */
+const AI_MAX_OUTPUT_BYTES = 1_000_000;
+/** 기동 줄을 기다리는 시간. 넘으면 중계기가 못 떴다고 본다. */
+const RELAY_START_TIMEOUT_MS = 15_000;
+
+/** 중계기 자식. 테스트가 가짜로 바꿔 끼울 수 있게 최소면만 요구한다. */
+export interface RelayChild {
+  readonly stderr: { on(event: "data", listener: (chunk: Buffer) => void): unknown };
+  kill(signal: NodeJS.Signals): boolean;
+  on(event: "close", listener: () => void): unknown;
+}
+
+export interface RelayAiSpec {
+  readonly tag: string;
+  readonly args: readonly string[];
+  readonly stdin: string;
+}
+
+export interface RelaySessionDeps {
+  readonly readSuite: (suitePath: string) => Promise<string>;
+  readonly spawnRelay: (args: readonly string[]) => RelayChild;
+  readonly runAi: (
+    spec: RelayAiSpec,
+  ) => Promise<{ readonly ok: boolean; readonly failure?: string }>;
+}
+
+/**
+ * `generate` 의 비공개 `environment()` 와 같은 일을 한다. 그쪽은 export 되지 않아 여기서
+ * 다시 적되, **목록은 공개된 것을 쓴다**(`CLAUDE_ENV_ALLOWLIST`). 합집합
+ * `PROVIDER_ENV_ALLOWLIST` 를 쓰면 `claude` 자식이 `OPENAI_API_KEY` 를 받는데,
+ * `providers.ts:26-29` 의 주석이 금하는 것이 정확히 그것이다(ADR-0104).
+ */
+function aiEnvironment(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return Object.fromEntries(
+    CLAUDE_ENV_ALLOWLIST.flatMap((key) => (source[key] === undefined ? [] : [[key, source[key]]])),
+  );
+}
+
+export class RelaySession {
+  readonly relayId = crypto.randomUUID(); // UI 식별 전용. 산출물에 안 들어간다(RunRegistry 와 같다).
+  readonly cases: readonly RelayCase[];
+  /** 모든 AI 가 끝나면 풀린다. 테스트가 기다릴 자리다. */
+  readonly settled: Promise<void>;
+
+  private readonly accumulated: RelayEvent[] = [];
+  private readonly listeners = new Set<(event: RelayEvent) => void>();
+  private closing: Promise<void> | undefined;
+
+  constructor(
+    private readonly child: RelayChild,
+    cases: readonly RelayCase[],
+    settled: Promise<void>,
+  ) {
+    this.cases = cases;
+    this.settled = settled;
+  }
+
+  get events(): readonly RelayEvent[] {
+    return this.accumulated;
+  }
+
+  /**
+   * 늦은 구독자에게 과거 이벤트를 다시 보내는 것은 호출부 몫이다 — `RunRecord.subscribe` 와
+   * 같은 이유이고 같은 모양이다(재전송과 라이브 사이에 틈이 생기면 중복·누락이 난다).
+   */
+  subscribe(listener: (event: RelayEvent) => void): () => void {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
+  emit(event: RelayEventInput): void {
+    const identified = { ...event, id: this.accumulated.length + 1 } as RelayEvent;
+    this.accumulated.push(identified);
+    for (const listener of this.listeners) listener(identified);
+  }
+
+  /**
+   * 중계기와 그 자식 서버를 닫고 **닫힌 것을 확인한 뒤** 반환한다. 멱등이다.
+   *
+   * AI 프로세스는 따로 죽이지 않는다 — 중계기가 닫히면 MCP 접속이 끊겨 스스로 끝나고,
+   * 그래도 남으면 `runProviderProcess` 의 타임아웃이 SIGTERM · SIGKILL 로 올라간다.
+   */
+  close(): Promise<void> {
+    this.closing ??= new Promise<void>((resolve) => {
+      this.child.on("close", () => resolve());
+      try {
+        this.child.kill("SIGTERM");
+      } catch {
+        // 이미 죽었으면 close 가 오지 않을 수 있다. 아래 타이머가 푼다.
+      }
+      setTimeout(resolve, 5_000).unref?.();
+    });
+    return this.closing;
+  }
+}
+
+const systemDeps: RelaySessionDeps = {
+  readSuite: () => {
+    throw new Error("readSuite 는 호출부가 주입한다");
+  },
+  // `relayBinPath()` 는 실행 권한이 아니라 파일 경로를 준다. shebang 에 기대지 않고
+  // 지금 도는 node 로 직접 띄운다 — 사용자의 PATH 에 다른 node 가 있어도 같은 런타임이다.
+  spawnRelay: (args) =>
+    spawn(process.execPath, [relayBinPath(), ...args], {
+      stdio: ["ignore", "ignore", "pipe"],
+    }) as unknown as RelayChild,
+  runAi: async (spec) => {
+    const result = await runProviderProcess({
+      command: "claude",
+      args: spec.args,
+      stdin: spec.stdin,
+      timeoutMs: AI_TIMEOUT_MS,
+      env: aiEnvironment(process.env),
+      cwdPrefix: tmpdir(),
+      maxOutputBytes: AI_MAX_OUTPUT_BYTES,
+    });
+    return result.ok ? { ok: true } : { ok: false, failure: result.code };
+  },
+};
+
+export class RelaySessionRegistry {
+  private readonly sessions = new Map<string, RelaySession>();
+
+  constructor(private readonly deps: Partial<RelaySessionDeps> = {}) {}
+
+  get(relayId: string): RelaySession | undefined {
+    return this.sessions.get(relayId);
+  }
+
+  async start(
+    request: StartRelayRequest,
+    readSuite?: (suitePath: string) => Promise<string>,
+  ): Promise<RelaySession | { readonly error: string }> {
+    const deps: RelaySessionDeps = {
+      readSuite: this.deps.readSuite ?? readSuite ?? systemDeps.readSuite,
+      spawnRelay: this.deps.spawnRelay ?? systemDeps.spawnRelay,
+      runAi: this.deps.runAi ?? systemDeps.runAi,
+    };
+    let content: string;
+    try {
+      content = await deps.readSuite(request.suitePath);
+    } catch {
+      return {
+        error: `→ 스위트 파일을 읽지 못했습니다: ${request.suitePath}\n→ 2 단계로 돌아가 파일이 그 자리에 있는지 확인하세요.`,
+      };
+    }
+    const plan = planRelayCases(content);
+    // **중계기를 띄우기 전에** 계획이 서는지 본다. 못 서면 아무 프로세스도 띄우지 않는다 —
+    // 띄운 뒤 실패하면 사용자에게 닫으라고 말할 대상만 남는다.
+    if ("error" in plan) return plan;
+
+    const relayArgs = [
+      "--json",
+      "--port",
+      "0",
+      ...request.envNames.flatMap((name) => ["--env", name]),
+      "--",
+      request.command,
+      ...request.args,
+    ];
+    const child = deps.spawnRelay(relayArgs);
+    const reader = new RelayLineReader();
+
+    let session: RelaySession | undefined;
+    let settleAll: () => void = () => undefined;
+    const settled = new Promise<void>((resolve) => {
+      settleAll = resolve;
+    });
+
+    const url = await new Promise<string | null>((resolve) => {
+      const timer = setTimeout(() => resolve(null), RELAY_START_TIMEOUT_MS);
+      timer.unref?.();
+      child.stderr.on("data", (chunk: Buffer) => {
+        for (const line of reader.push(chunk.toString("utf8"))) {
+          if (line.kind === "up") {
+            clearTimeout(timer);
+            resolve(line.url);
+            session?.emit({ kind: "up", url: line.url });
+            continue;
+          }
+          if (session === undefined) continue;
+          if (line.kind === "request") {
+            session.emit({
+              kind: "call",
+              method: line.method,
+              ...(line.case === undefined ? {} : { case: line.case }),
+              ...(line.tool === undefined ? {} : { tool: line.tool }),
+              ...(line.args === undefined ? {} : { args: line.args }),
+            });
+          } else if (line.kind === "response") {
+            const { kind: _kind, id: _id, ...rest } = line;
+            session.emit({ kind: "result", ...rest });
+          }
+          // `drop` 은 화면에 칸이 없다. 버린 것은 자식이 먼저 건 것이라 케이스를 말할 근거가 없다.
+        }
+      });
+    });
+
+    if (url === null) {
+      try {
+        child.kill("SIGTERM");
+      } catch {
+        /* 이미 죽었으면 할 일이 없다. */
+      }
+      return {
+        error: [
+          "→ 중계기가 기동 줄을 내지 않았습니다. 서버 명령이 stdio MCP 서버가 맞는지 확인하세요.",
+          `→ 실행한 명령: ${request.command} ${request.args.join(" ")}`,
+          "→ 터미널에서 같은 명령을 직접 띄워 서버가 뜨는지 먼저 보세요.",
+        ].join("\n"),
+      };
+    }
+
+    session = new RelaySession(child, plan.cases, settled);
+    session.emit({ kind: "up", url });
+    if (plan.skipped.length > 0) {
+      session.emit({
+        kind: "notice",
+        message: `→ 툴을 부르지 않는 케이스 ${plan.skipped.length} 건은 띄우지 않았습니다: ${plan.skipped.join(", ")}`,
+      });
+    }
+    this.sessions.set(session.relayId, session);
+
+    const current = session;
+    // **동시에 띄운다**(설계 §2-3). 케이스들이 한 서버를 같이 치는 대가는 사용자가 알고 고른 것이다.
+    void Promise.all(
+      plan.cases.map(async (relayCase) => {
+        const result = await deps.runAi({
+          tag: relayCase.tag,
+          args: buildRelayAiArgs({ model: request.model, url, tag: relayCase.tag }),
+          stdin: plan.prompts[relayCase.tag] ?? "",
+        });
+        current.emit({
+          kind: "aiDone",
+          case: relayCase.id,
+          ok: result.ok,
+          ...(result.failure === undefined ? {} : { failure: result.failure }),
+        });
+      }),
+    ).then(() => {
+      current.emit({ kind: "done" });
+      settleAll();
+    });
+
+    return session;
+  }
+}

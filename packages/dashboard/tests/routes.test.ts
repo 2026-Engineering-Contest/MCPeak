@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { RunEvent, StartRunRequest } from "../src/api-types.js";
 import { startDashboardServer } from "../src/index.js";
+import { RelaySessionRegistry } from "../src/server/relay-session.js";
 import { handleRequest } from "../src/server/routes.js";
 import type { RunIo } from "../src/server/run-registry.js";
 import { RunRegistry } from "../src/server/run-registry.js";
@@ -34,11 +35,13 @@ async function startTestServer(
 ): Promise<TestServer> {
   const root = await mkdtemp(join(tmpdir(), "mcpeak-dashboard-routes-"));
   const registry = new RunRegistry();
+  const relays = new RelaySessionRegistry();
   const server: Server = createServer((request, response) => {
     handleRequest(request, response, {
       root,
       webDist: join(root, "__no-web-dist__"),
       registry,
+      relays,
       execute,
     }).catch((error: unknown) => {
       response.destroy(error instanceof Error ? error : new Error(String(error)));

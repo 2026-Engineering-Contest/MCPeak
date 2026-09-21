@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { RelayLineReader } from "../src/server/relay-lines.js";
+import { RELAY_SKIPPED_TAIL_LINES, RelayLineReader } from "../src/server/relay-lines.js";
 
 const UP = '{"dir":"up","port":51234,"url":"http://127.0.0.1:51234/mcp"}';
 const REQ =
@@ -86,5 +86,20 @@ describe("중계기 줄 파서", () => {
     const reader = new RelayLineReader();
     reader.push("\n\n");
     expect(reader.skipped).toBe(0);
+  });
+
+  it("버린 줄의 마지막 N개만 링버퍼처럼 들고 있는다", () => {
+    const reader = new RelayLineReader();
+    const total = RELAY_SKIPPED_TAIL_LINES + 3;
+    for (let i = 0; i < total; i += 1) reader.push(`그냥 로그 ${i}\n`);
+    expect(reader.skipped).toBe(total);
+    expect(reader.skippedTail).toHaveLength(RELAY_SKIPPED_TAIL_LINES);
+    // 가장 오래된 것부터 밀려나야 한다 — 남은 것은 마지막 N개.
+    expect(reader.skippedTail).toEqual(
+      Array.from(
+        { length: RELAY_SKIPPED_TAIL_LINES },
+        (_, i) => `그냥 로그 ${total - RELAY_SKIPPED_TAIL_LINES + i}`,
+      ),
+    );
   });
 });

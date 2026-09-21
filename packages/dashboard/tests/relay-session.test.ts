@@ -157,6 +157,22 @@ describe("중계 세션", () => {
     expect(session.events.at(-1)?.kind).toBe("done");
   });
 
+  it("aiDone 의 case 는 꼬리표가 아니라 케이스 id 다", async () => {
+    // 스위트의 케이스 id 는 a·b 이고 AI 에 실리는 꼬리표는 c1·c2 다(SUITE·buildRelayAiArgs).
+    // 이 구분이 관찰 가능해야 `case: relayCase.tag` 로 바꿔치기해도 여기서 빨갛게 잡힌다.
+    const { relay, registry } = harness();
+    const started = registry.start(START);
+    relay.line('{"dir":"up","port":1,"url":"http://127.0.0.1:1/mcp"}');
+    const session = await started;
+    if ("error" in session) throw new Error(session.error);
+    await session.settled;
+    const aiDoneCases = session.events
+      .filter((event) => event.kind === "aiDone")
+      .map((event) => (event as { readonly case: string }).case)
+      .sort();
+    expect(aiDoneCases).toEqual(["a", "b"]);
+  });
+
   it("닫기는 중계기에 SIGTERM 을 보내고 닫힐 때까지 기다린다", async () => {
     const { relay, registry } = harness();
     const started = registry.start(START);
@@ -177,6 +193,27 @@ describe("중계 세션", () => {
     expect(relay.signals).toEqual(["SIGTERM"]);
   });
 
+  it("레지스트리의 close 는 닫고 나서 등록을 지운다 — 누수·재-close 의미 둘 다를 고친다", async () => {
+    const { relay, registry } = harness();
+    const started = registry.start(START);
+    relay.line('{"dir":"up","port":1,"url":"http://127.0.0.1:1/mcp"}');
+    const session = await started;
+    if ("error" in session) throw new Error(session.error);
+
+    expect(registry.get(session.relayId)).toBe(session);
+    const closed = await registry.close(session.relayId);
+    expect(closed).toBe(true);
+    // 지워졌으니 더는 조회되지 않는다 — accumulated 이벤트 배열도 여기서 놓는다.
+    expect(registry.get(session.relayId)).toBeUndefined();
+    // 이미 없는 것을 또 닫으면 false 다. 라우트가 이 값으로 404·204 를 가른다.
+    expect(await registry.close(session.relayId)).toBe(false);
+  });
+
+  it("없는 relayId 를 닫으면 false 다", async () => {
+    const { registry } = harness();
+    expect(await registry.close("nope")).toBe(false);
+  });
+
   it("스위트에 callTool 케이스가 없으면 중계기를 띄우지 않는다", async () => {
     const relay = new FakeRelay();
     let spawned = 0;
@@ -191,6 +228,50 @@ describe("중계 세션", () => {
     const result = await registry.start(START);
     expect("error" in result).toBe(true);
     expect(spawned).toBe(0);
+  });
+
+  it("자식이 up 줄 전에 죽으면 15초 타임아웃을 기다리지 않고 바로 실패한다", {
+    timeout: 3_000,
+  }, async () => {
+    const relay = new FakeRelay();
+    const registry = new RelaySessionRegistry({
+      readSuite: () => Promise.resolve(SUITE),
+      spawnRelay: () => relay,
+      runAi: () => Promise.resolve({ ok: true }),
+    });
+    const started = registry.start(START);
+    relay.line("→ 중계기를 띄우지 못했습니다.");
+    relay.line("→ spawn nosuchbinary ENOENT");
+    // `close` 리스너는 `readSuite` 를 기다린 뒤에 붙는다 — 한 틱 기다렸다가 낸다
+    // (`line()` 은 리스너가 없어도 버퍼링되지만 EventEmitter 의 `close` 는 아니다).
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    relay.emit("close");
+    const result = await started;
+    expect("error" in result).toBe(true);
+    if (!("error" in result)) throw new Error("실패했어야 합니다.");
+    expect(result.error).toContain("중계기가 기동 줄을 내지 않았습니다");
+    // 기존 세 줄은 그대로 남고 뒤에 관찰된 stderr 가 붙는다.
+    expect(result.error).toContain("→ 중계기를 띄우지 못했습니다.");
+    expect(result.error).toContain("→ spawn nosuchbinary ENOENT");
+  });
+
+  it("기동 실패 진단에 후보 env 값이 그대로 실리면 가린다", { timeout: 3_000 }, async () => {
+    const relay = new FakeRelay();
+    const registry = new RelaySessionRegistry({
+      readSuite: () => Promise.resolve(SUITE),
+      spawnRelay: () => relay,
+      runAi: () => Promise.resolve({ ok: true }),
+    });
+    const started = registry.start(START, undefined, { API_KEY: "secret-value" });
+    relay.line("→ 중계기를 띄우지 못했습니다.");
+    relay.line("→ env API_KEY=secret-value 로 접속을 시도했으나 실패했습니다.");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    relay.emit("close");
+    const result = await started;
+    if (!("error" in result)) throw new Error("실패했어야 합니다.");
+    expect(result.error).toContain("중계기가 남긴 마지막 줄:");
+    expect(result.error).not.toContain("secret-value");
+    expect(result.error).toContain("***");
   });
 
   it("건너뛴 케이스가 있으면 안내 이벤트로 알린다", async () => {

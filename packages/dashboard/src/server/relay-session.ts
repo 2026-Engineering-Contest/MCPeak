@@ -47,6 +47,26 @@ function aiEnvironment(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   );
 }
 
+/**
+ * 기동 실패 오류 문구 뒤에 파싱 못 한 stderr 마지막 줄을 붙인다. 「실패 메시지가 곧
+ * 제품이다」(`CLAUDE.md`) — 중계기가 이미 말해 준 것을 버리고 사용자에게 다시 해보라고만
+ * 하면 안 된다. 기존 세 줄은 지우지 않고 **뒤에** 덧붙이는 모양이다.
+ *
+ * 후보 env 값(설계 §4.3)이 자식 stderr 에 그대로 찍혔을 수 있어(자식이 자기 환경을
+ * 되찍는 경우) 그 값을 아는 자리마다 문자열 치환으로 가린다 — 중계기 자신의 진단이든
+ * 사용자 서버가 흘린 것이든(관례상 같은 채널을 탄다, relay-lines.ts) 구분 없이 적용한다.
+ */
+function diagnosticTail(
+  lines: readonly string[],
+  candidateEnv: Readonly<Record<string, string>> | undefined,
+): readonly string[] {
+  if (lines.length === 0) return [];
+  const secrets = Object.values(candidateEnv ?? {}).filter((value) => value.length > 0);
+  const redact = (line: string): string =>
+    secrets.reduce((acc, secret) => acc.split(secret).join("***"), line);
+  return ["→ 중계기가 남긴 마지막 줄:", ...lines.map((line) => `→ ${redact(line)}`)];
+}
+
 export class RelaySession {
   readonly relayId = crypto.randomUUID(); // UI 식별 전용. 산출물에 안 들어간다(RunRegistry 와 같다).
   readonly cases: readonly RelayCase[];
@@ -141,6 +161,19 @@ export class RelaySessionRegistry {
     return this.sessions.get(relayId);
   }
 
+  /**
+   * 닫고 **동시에** 맵에서 지운다. 등록이 안 풀리면 `accumulated`(응답 본문 포함)가
+   * 대시보드 프로세스가 사는 동안 메모리에 남고, 이미 닫힌 세션에 또 닫아도 204 가 나가
+   * 브라우저가 "내가 닫았다"와 "이미 없다"를 가를 수 없다. 없는 relayId 면 `false`.
+   */
+  async close(relayId: string): Promise<boolean> {
+    const session = this.sessions.get(relayId);
+    if (session === undefined) return false;
+    await session.close();
+    this.sessions.delete(relayId);
+    return true;
+  }
+
   async start(
     request: StartRelayRequest,
     readSuite?: (suitePath: string) => Promise<string>,
@@ -186,14 +219,24 @@ export class RelaySessionRegistry {
       settleAll = resolve;
     });
 
+    // 기동 경주: `up` 줄, 자식이 먼저 죽는 것(`close`), 타임아웃 셋 중 가장 먼저 온 것이 이긴다.
+    // 타임아웃은 셋 중 가장 느린 마지막 수단이어야 한다 — `-- nosuchbinary` 처럼 자식이 즉시
+    // 죽는 가장 흔한 실패에서 15초를 붙들면 안 된다.
+    let startupSettled = false;
     const url = await new Promise<string | null>((resolve) => {
-      const timer = setTimeout(() => resolve(null), RELAY_START_TIMEOUT_MS);
+      const timer = setTimeout(() => finish(null), RELAY_START_TIMEOUT_MS);
       timer.unref?.();
+      function finish(result: string | null): void {
+        if (startupSettled) return;
+        startupSettled = true;
+        clearTimeout(timer);
+        resolve(result);
+      }
+      child.on("close", () => finish(null));
       child.stderr.on("data", (chunk: Buffer) => {
         for (const line of reader.push(chunk.toString("utf8"))) {
           if (line.kind === "up") {
-            clearTimeout(timer);
-            resolve(line.url);
+            finish(line.url);
             session?.emit({ kind: "up", url: line.url });
             continue;
           }
@@ -226,6 +269,7 @@ export class RelaySessionRegistry {
           "→ 중계기가 기동 줄을 내지 않았습니다. 서버 명령이 stdio MCP 서버가 맞는지 확인하세요.",
           `→ 실행한 명령: ${request.command} ${request.args.join(" ")}`,
           "→ 터미널에서 같은 명령을 직접 띄워 서버가 뜨는지 먼저 보세요.",
+          ...diagnosticTail(reader.skippedTail, candidateEnv),
         ].join("\n"),
       };
     }

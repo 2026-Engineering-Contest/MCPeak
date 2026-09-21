@@ -75,11 +75,24 @@ function toLine(raw: Record<string, unknown>): RelayLine | null {
   return null;
 }
 
+/**
+ * 파싱 못 한 stderr 줄을 얼마나 들고 있을지. 기동 실패 진단에 붙일 최소한의 맥락이면
+ * 충분하고, 커지면 그 자체가 누적 이벤트처럼 메모리에 쌓인다. 5~10 중 8로 정한다.
+ */
+export const RELAY_SKIPPED_TAIL_LINES = 8;
+
 export class RelayLineReader {
   /** JSON 이 아니거나 우리 모양이 아니어서 버린 줄의 수. 빈 줄은 세지 않는다. */
   skipped = 0;
   /** 청크 경계에 걸린 반쪽 줄. */
   private buffer = "";
+  /** 버린 줄의 마지막 `RELAY_SKIPPED_TAIL_LINES` 개. 링버퍼처럼 오래된 것부터 밀어낸다. */
+  private readonly tail: string[] = [];
+
+  /** 기동 실패 진단에 붙일 자리. 값 유출은 호출부가 알아서 가린다 — 여기는 원문 그대로다. */
+  get skippedTail(): readonly string[] {
+    return this.tail;
+  }
 
   push(chunk: string): readonly RelayLine[] {
     this.buffer += chunk;
@@ -93,16 +106,22 @@ export class RelayLineReader {
       try {
         parsed = JSON.parse(part);
       } catch {
-        this.skipped += 1;
+        this.recordSkipped(part);
         continue;
       }
       const line = isRecord(parsed) ? toLine(parsed) : null;
       if (line === null) {
-        this.skipped += 1;
+        this.recordSkipped(part);
         continue;
       }
       lines.push(line);
     }
     return lines;
+  }
+
+  private recordSkipped(part: string): void {
+    this.skipped += 1;
+    this.tail.push(part);
+    if (this.tail.length > RELAY_SKIPPED_TAIL_LINES) this.tail.shift();
   }
 }

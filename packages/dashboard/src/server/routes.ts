@@ -497,8 +497,10 @@ function handleRelayEvents(
     sendJson(response, 404, { error: "그런 중계 세션이 없습니다." });
     return;
   }
+  const header = request.headers["last-event-id"];
+  const lastEventId = parseLastEventId(Array.isArray(header) ? header[0] : header);
   response.writeHead(200, SSE_HEADERS);
-  response.write(formatSseEvents(session.events));
+  response.write(formatSseEvents(session.events.filter((event) => event.id > lastEventId)));
   const unsubscribe = session.subscribe((event) => {
     response.write(formatSseEvent(event));
   });
@@ -514,12 +516,11 @@ async function handleCloseRelay(
   relays: RelaySessionRegistry,
   relayId: string,
 ): Promise<void> {
-  const session = relays.get(relayId);
-  if (session === undefined) {
+  const closed = await relays.close(relayId);
+  if (!closed) {
     sendJson(response, 404, { error: "그런 중계 세션이 없습니다." });
     return;
   }
-  await session.close();
   response.writeHead(204);
   response.end();
 }

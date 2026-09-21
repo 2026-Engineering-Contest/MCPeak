@@ -1,3 +1,4 @@
+import { EventEmitter } from "node:events";
 import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -6,6 +7,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { RunEvent, StartRunRequest } from "../src/api-types.js";
 import { startDashboardServer } from "../src/index.js";
+import type { RelayChild } from "../src/server/relay-session.js";
 import { RelaySessionRegistry } from "../src/server/relay-session.js";
 import { handleRequest } from "../src/server/routes.js";
 import type { RunIo } from "../src/server/run-registry.js";
@@ -121,6 +123,83 @@ async function collectSseEvents(
   }
   controller.abort();
   return events;
+}
+
+/**
+ * 중계기 자리에 세울 가짜. `relay-session.test.ts` 의 `FakeRelay` 와 같은 모양이다 —
+ * `stderr` 로 줄을 흘리고 `kill` 을 기록한다. `on("data", ...)` 이 붙기 전에 온 줄도
+ * 버퍼에 남았다가 리스너가 붙는 순간 흐른다(진짜 자식의 Readable 버퍼링을 흉내 낸다).
+ */
+class FakeRelayChild extends EventEmitter implements RelayChild {
+  private dataListener: ((chunk: Buffer) => void) | undefined;
+  private readonly pending: Buffer[] = [];
+  readonly stderr = {
+    on: (_event: "data", listener: (chunk: Buffer) => void): unknown => {
+      this.dataListener = listener;
+      for (const chunk of this.pending.splice(0)) listener(chunk);
+      return this;
+    },
+  };
+
+  line(text: string): void {
+    const chunk = Buffer.from(`${text}\n`, "utf8");
+    if (this.dataListener === undefined) this.pending.push(chunk);
+    else this.dataListener(chunk);
+  }
+
+  kill(): boolean {
+    queueMicrotask(() => this.emit("close"));
+    return true;
+  }
+}
+
+interface RelayTestServer {
+  readonly baseUrl: string;
+  readonly root: string;
+  close(): Promise<void>;
+}
+
+/**
+ * 중계 라우트 전용 테스트 서버. 진짜 프로세스는 절대 안 띄운다 — `spawnRelay` 를
+ * `FakeRelayChild` 로 갈아 끼운다. `runAi` 는 기본적으로 영영 안 끝나는 프로미스라
+ * `aiDone`·`done` 이벤트가 끼어들어 id 순서를 흔들지 않는다(결정론성).
+ */
+async function startRelayTestServer(options: {
+  readonly spawnRelay: (args: readonly string[], env: NodeJS.ProcessEnv) => RelayChild;
+  readonly runAi?: () => Promise<{ readonly ok: boolean }>;
+}): Promise<RelayTestServer> {
+  const root = await mkdtemp(join(tmpdir(), "mcpeak-dashboard-relay-routes-"));
+  const registry = new RunRegistry();
+  const relays = new RelaySessionRegistry({
+    spawnRelay: options.spawnRelay,
+    runAi: options.runAi ?? (() => new Promise(() => undefined)),
+  });
+  const httpServer: Server = createServer((request, response) => {
+    handleRequest(request, response, {
+      root,
+      webDist: join(root, "__no-web-dist__"),
+      registry,
+      relays,
+    }).catch((error: unknown) => {
+      response.destroy(error instanceof Error ? error : new Error(String(error)));
+    });
+  });
+  await new Promise<void>((resolve) => httpServer.listen(0, resolve));
+  const address = httpServer.address() as AddressInfo;
+  return {
+    baseUrl: `http://127.0.0.1:${address.port}`,
+    root,
+    close: async () => {
+      await new Promise<void>((resolve, reject) => {
+        httpServer.closeAllConnections();
+        httpServer.close((error) => {
+          if (error) reject(error);
+          else resolve();
+        });
+      });
+      await rm(root, { recursive: true, force: true });
+    },
+  };
 }
 
 let server: TestServer | undefined;
@@ -433,6 +512,63 @@ describe("routes.ts", () => {
       "Last-Event-ID": "1",
     });
     expect(resumed.map((event) => event.kind)).toEqual(["stderr", "question"]);
+  });
+
+  it("중계 SSE 재연결도 Last-Event-ID 뒤의 이벤트만 보낸다", async () => {
+    let captured: FakeRelayChild | undefined;
+    const relayServer = await startRelayTestServer({
+      spawnRelay: () => {
+        const relay = new FakeRelayChild();
+        captured = relay;
+        relay.line('{"dir":"up","port":1,"url":"http://127.0.0.1:1/mcp"}');
+        return relay;
+      },
+    });
+    try {
+      await writeFile(
+        join(relayServer.root, "relay.suite.json"),
+        JSON.stringify({
+          cases: [{ id: "a", operation: { type: "callTool", tool: "get_weather", input: {} } }],
+        }),
+        "utf8",
+      );
+      const started = await fetch(`${relayServer.baseUrl}/api/relay`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          suitePath: "relay.suite.json",
+          command: "node",
+          args: ["server.mjs"],
+          envNames: [],
+          model: "sonnet",
+        }),
+      });
+      expect(started.status).toBe(200);
+      const { relayId } = (await started.json()) as { relayId: string };
+      if (captured === undefined) throw new Error("spawnRelay 가 호출되지 않았습니다.");
+      // "up" 은 세션 생성 시 id 1로 이미 나갔다. 여기서 두 개를 더 흘린다.
+      captured.line(
+        '{"dir":"res","id":1,"tool":"get_weather","ok":true,"bytes":1,"ms":1,"case":"c1"}',
+      );
+      captured.line(
+        '{"dir":"res","id":2,"tool":"get_weather","ok":true,"bytes":1,"ms":1,"case":"c1"}',
+      );
+
+      const events = await collectSseEvents(
+        `${relayServer.baseUrl}/api/relay/${relayId}/events`,
+        3,
+      );
+      expect(events.map((event) => event.kind)).toEqual(["up", "result", "result"]);
+
+      const resumed = await collectSseEvents(
+        `${relayServer.baseUrl}/api/relay/${relayId}/events`,
+        2,
+        { "Last-Event-ID": "1" },
+      );
+      expect(resumed.map((event) => event.kind)).toEqual(["result", "result"]);
+    } finally {
+      await relayServer.close();
+    }
   });
 
   it("스위트 PUT은 실제 스위트 JSON만 저장하고 일반 JSON은 원본을 보존한다", async () => {

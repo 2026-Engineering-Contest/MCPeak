@@ -265,9 +265,10 @@ function describeResponse(
   }
   const result = (message as { result: Record<string, unknown> }).result;
   const bytes = Buffer.byteLength(JSON.stringify(result), "utf8");
+  // `result` 를 그대로 싣는다. 복사하거나 고치지 않는다 — 중계기는 값을 만들지 않는다.
   if (Array.isArray(result.tools)) {
-    return { ...head, kind: "ok", bytes, toolCount: result.tools.length };
+    return { ...head, kind: "ok", bytes, toolCount: result.tools.length, body: result };
   }
-  if (result.isError === true) return { ...head, kind: "toolError", bytes };
-  return { ...head, kind: "ok", bytes };
+  if (result.isError === true) return { ...head, kind: "toolError", bytes, body: result };
+  return { ...head, kind: "ok", bytes, body: result };
 }

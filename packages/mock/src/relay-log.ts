@@ -24,8 +24,22 @@ export type RelayResponseEvent = {
   readonly tool?: string;
   readonly ms: number;
 } & (
-  | { readonly kind: "ok"; readonly bytes: number; readonly toolCount?: number }
-  | { readonly kind: "toolError"; readonly bytes: number }
+  | {
+      readonly kind: "ok";
+      readonly bytes: number;
+      readonly toolCount?: number;
+      /**
+       * JSON-RPC `result` **전체**. `content` 와 `structuredContent` 가 같이 들어 있다.
+       *
+       * AI 경유로는 `structuredContent` 가 오지 않는다(설계 §3 실측). 사용자가 자기 서버
+       * 답의 반쪽만 보게 되므로 중계기가 직접 싣는다. **줄이지 않는다** — 접는 것은 화면이
+       * 할 일이고, 관찰 채널의 충실성이 여기서는 먼저다(설계 §2-6).
+       */
+      readonly body: unknown;
+    }
+  | { readonly kind: "toolError"; readonly bytes: number; readonly body: unknown }
+  // `protocolError` 에는 `body` 가 없다. 서버가 결과를 준 적이 없어 지어낼 것이 없다 —
+  // "오류는 진짜 서버가 준 것만 쓴다" 를 타입이 지키게 한다.
   | { readonly kind: "protocolError"; readonly code: number; readonly message: string }
 );
 
@@ -114,14 +128,24 @@ export function jsonResponse(event: RelayResponseEvent): string {
     });
   }
   if (event.kind === "toolError") {
-    return JSON.stringify({ ...head, ok: false, isError: true, bytes: event.bytes, ms: event.ms });
+    return JSON.stringify({
+      ...head,
+      ok: false,
+      isError: true,
+      bytes: event.bytes,
+      ms: event.ms,
+      body: event.body,
+    });
   }
+  // `body` 를 맨 뒤에 둔다. 키 순서를 리터럴로 고정하면서 **큰 값이 줄 끝에 오게** 하는
+  // 것이다 — 사람이 `--json` 줄을 눈으로 훑을 때 머리 필드들이 먼저 보인다.
   return JSON.stringify({
     ...head,
     ok: true,
     ...(event.toolCount === undefined ? {} : { tools: event.toolCount }),
     bytes: event.bytes,
     ms: event.ms,
+    body: event.body,
   });
 }
 

@@ -312,6 +312,36 @@ describe("기록", () => {
     expect(typeof response?.ms).toBe("number");
   });
 
+  /**
+   * 유닛 테스트는 `jsonResponse` 에 `body` 를 **손으로 넣어** 확인한 것이다. `describeResponse`
+   * 가 실제로 채우는지는 여기서만 보인다. `bad_structured` 를 고른 이유는 설계 §3 이 실측한
+   * 그 모양이라서다 — AI 경유로는 `structuredContent` 가 사라지는 자리이므로, 중계기 경로로는
+   * 살아 있어야 한다는 것이 이 테스트의 요점이다.
+   */
+  it("--json 응답 줄의 body 에 자식이 낸 content 와 structuredContent 가 다 실린다", async () => {
+    const lines: string[] = [];
+    const handle = await startRelay({
+      port: 0,
+      command: process.execPath,
+      args: [CHILD],
+      log: (line) => lines.push(line),
+      json: true,
+      env: {},
+    });
+    open.push(handle);
+    const session = await openSession(handle.url);
+    await session.call(1, "tools/call", { name: "bad_structured", arguments: {} });
+
+    const responses = lines
+      .map((line) => JSON.parse(line) as Record<string, unknown>)
+      .filter((entry) => entry.dir === "res" && entry.tool === "bad_structured");
+    expect(responses).toHaveLength(1);
+    expect(responses[0]?.body).toEqual({
+      content: [{ type: "text", text: "고장" }],
+      structuredContent: { temp: "21" },
+    });
+  });
+
   it("알림은 짝이 없으므로 기록하지 않는다", () => {
     // openSession 이 보내는 notifications/initialized 가 §8-6 의 목록에 없다는 것으로
     // 이미 확인된다. 이 자리는 그 사실을 문서로 남기는 곳이다.

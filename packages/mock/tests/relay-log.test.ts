@@ -32,7 +32,15 @@ describe("humanRequest", () => {
 describe("humanResponse", () => {
   it("tools/list 는 툴 개수를 적는다", () => {
     expect(
-      humanResponse({ id: 1, method: "tools/list", kind: "ok", bytes: 900, ms: 12, toolCount: 10 }),
+      humanResponse({
+        id: 1,
+        method: "tools/list",
+        kind: "ok",
+        bytes: 900,
+        ms: 12,
+        toolCount: 10,
+        body: { tools: [] },
+      }),
     ).toBe("← tools/list  툴 10개");
   });
 
@@ -45,6 +53,7 @@ describe("humanResponse", () => {
         kind: "ok",
         bytes: 1240,
         ms: 1834,
+        body: { content: [{ type: "text", text: "맑음" }] },
       }),
     ).toBe("← tools/call  get_forecast 성공 · 1,240바이트 · 1.8초");
   });
@@ -58,6 +67,7 @@ describe("humanResponse", () => {
         kind: "toolError",
         bytes: 84,
         ms: 120,
+        body: { content: [], isError: true },
       }),
     ).toBe("← tools/call  boom 툴 오류 · 84바이트 · 0.1초");
   });
@@ -76,6 +86,21 @@ describe("humanResponse", () => {
     ).toBe(
       "← tools/call  convert_units 오류 -32602 Structured content does not match the tool's output schema",
     );
+  });
+
+  it("사람이 읽는 줄은 body 를 싣지 않는다 — 한 줄로 유지된다", () => {
+    const line = humanResponse({
+      id: 7,
+      method: "tools/call",
+      tool: "bad_structured",
+      kind: "ok",
+      bytes: 174,
+      ms: 3,
+      body: { content: [{ type: "text", text: "고장" }], structuredContent: { temp: "21" } },
+    });
+    expect(line).toBe("← tools/call  bad_structured 성공 · 174바이트 · 0.0초");
+    expect(line).not.toContain("structuredContent");
+    expect(line).not.toContain("\n");
   });
 });
 
@@ -105,6 +130,7 @@ describe("jsonRequest · jsonResponse", () => {
   });
 
   it("성공 응답 줄이 파싱되고 필드가 맞다", () => {
+    const body = { content: [{ type: "text", text: "맑음" }] };
     const line = jsonResponse({
       id: 3,
       method: "tools/call",
@@ -112,6 +138,7 @@ describe("jsonRequest · jsonResponse", () => {
       kind: "ok",
       bytes: 1240,
       ms: 1834,
+      body,
     });
     expect(JSON.parse(line)).toEqual({
       dir: "res",
@@ -120,6 +147,7 @@ describe("jsonRequest · jsonResponse", () => {
       ok: true,
       bytes: 1240,
       ms: 1834,
+      body,
     });
   });
 
@@ -133,9 +161,19 @@ describe("jsonRequest · jsonResponse", () => {
           kind: "toolError",
           bytes: 84,
           ms: 120,
+          body: { content: [], isError: true },
         }),
       ),
-    ).toEqual({ dir: "res", id: 5, tool: "boom", ok: false, isError: true, bytes: 84, ms: 120 });
+    ).toEqual({
+      dir: "res",
+      id: 5,
+      tool: "boom",
+      ok: false,
+      isError: true,
+      bytes: 84,
+      ms: 120,
+      body: { content: [], isError: true },
+    });
   });
 
   it("프로토콜 오류는 코드와 메시지를 싣는다", () => {
@@ -166,6 +204,82 @@ describe("jsonRequest · jsonResponse", () => {
     const args = { text: "첫 줄\n둘째 줄" };
     expect(jsonRequest({ id: 1, method: "tools/call", tool: "echo", args })).not.toContain("\n");
     expect(humanRequest({ id: 1, method: "tools/call", tool: "echo", args })).not.toContain("\n");
+  });
+
+  it("성공 응답 줄은 result 전체를 body 로 싣는다 — content 와 structuredContent 가 다 있다", () => {
+    const result = {
+      content: [{ type: "text", text: "고장" }],
+      structuredContent: { temp: "21" },
+    };
+    const line = jsonResponse({
+      id: 7,
+      method: "tools/call",
+      tool: "bad_structured",
+      kind: "ok",
+      bytes: 174,
+      ms: 3,
+      body: result,
+    });
+    expect(JSON.parse(line)).toEqual({
+      dir: "res",
+      id: 7,
+      tool: "bad_structured",
+      ok: true,
+      bytes: 174,
+      ms: 3,
+      body: result,
+    });
+  });
+
+  it("툴 오류 응답 줄도 body 를 싣는다", () => {
+    const result = { content: [{ type: "text", text: "툴이 실패했습니다" }], isError: true };
+    const line = jsonResponse({
+      id: 8,
+      method: "tools/call",
+      tool: "boom",
+      kind: "toolError",
+      bytes: 61,
+      ms: 2,
+      body: result,
+    });
+    expect(JSON.parse(line)).toEqual({
+      dir: "res",
+      id: 8,
+      tool: "boom",
+      ok: false,
+      isError: true,
+      bytes: 61,
+      ms: 2,
+      body: result,
+    });
+  });
+
+  it("프로토콜 오류 줄에는 body 가 없다 — 서버가 결과를 준 적이 없다", () => {
+    const line = jsonResponse({
+      id: 9,
+      method: "tools/call",
+      tool: "없는툴",
+      kind: "protocolError",
+      code: -32602,
+      message: "Unknown tool",
+      ms: 1,
+    });
+    expect(JSON.parse(line)).not.toHaveProperty("body");
+  });
+
+  it("body 를 줄이지 않는다 — 큰 응답도 전문이 실린다", () => {
+    const result = { content: [{ type: "text", text: "가".repeat(20_000) }] };
+    const line = jsonResponse({
+      id: 10,
+      method: "tools/call",
+      tool: "echo",
+      kind: "ok",
+      bytes: 1,
+      ms: 1,
+      body: result,
+    });
+    expect((JSON.parse(line) as { body: typeof result }).body).toEqual(result);
+    expect(line).not.toContain("…");
   });
 });
 

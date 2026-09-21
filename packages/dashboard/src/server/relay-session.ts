@@ -29,7 +29,7 @@ export interface RelayAiSpec {
 
 export interface RelaySessionDeps {
   readonly readSuite: (suitePath: string) => Promise<string>;
-  readonly spawnRelay: (args: readonly string[]) => RelayChild;
+  readonly spawnRelay: (args: readonly string[], env: NodeJS.ProcessEnv) => RelayChild;
   readonly runAi: (
     spec: RelayAiSpec,
   ) => Promise<{ readonly ok: boolean; readonly failure?: string }>;
@@ -113,9 +113,10 @@ const systemDeps: RelaySessionDeps = {
   },
   // `relayBinPath()` 는 실행 권한이 아니라 파일 경로를 준다. shebang 에 기대지 않고
   // 지금 도는 node 로 직접 띄운다 — 사용자의 PATH 에 다른 node 가 있어도 같은 런타임이다.
-  spawnRelay: (args) =>
+  spawnRelay: (args, env) =>
     spawn(process.execPath, [relayBinPath(), ...args], {
       stdio: ["ignore", "ignore", "pipe"],
+      env,
     }) as unknown as RelayChild,
   runAi: async (spec) => {
     const result = await runProviderProcess({
@@ -143,6 +144,7 @@ export class RelaySessionRegistry {
   async start(
     request: StartRelayRequest,
     readSuite?: (suitePath: string) => Promise<string>,
+    candidateEnv?: Readonly<Record<string, string>>,
   ): Promise<RelaySession | { readonly error: string }> {
     const deps: RelaySessionDeps = {
       readSuite: this.deps.readSuite ?? readSuite ?? systemDeps.readSuite,
@@ -171,7 +173,11 @@ export class RelaySessionRegistry {
       request.command,
       ...request.args,
     ];
-    const child = deps.spawnRelay(relayArgs);
+    // 후보 env 를 중계기 자식 환경에 물린다. 중계기는 사용자 서버 명령을 다시 spawn 해야
+    // 하므로 `PATH` 등 기본 환경이 필요하다 — 그래서 덮어쓰기가 아니라 병합이고, 후보 값이
+    // 그 위를 덮는다(`/api/runs` 경로의 `readEnv` 와 같은 우선순위, wiring.ts:111).
+    const relayEnv: NodeJS.ProcessEnv = { ...process.env, ...candidateEnv };
+    const child = deps.spawnRelay(relayArgs, relayEnv);
     const reader = new RelayLineReader();
 
     let session: RelaySession | undefined;

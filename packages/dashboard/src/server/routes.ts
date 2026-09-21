@@ -464,8 +464,9 @@ async function handleStartRelay(
   }
   // 후보를 골랐으면 그 후보의 `.mcp.json` env 를 **여기서** 값으로 바꿔 중계기에 물린다.
   // 값은 이 프로세스 안에서만 살고 argv 에도 응답에도 실리지 않는다(설계 §4.3 과 같은 규칙).
+  let candidateEnv: Readonly<Record<string, string>> | undefined;
   if (body.serverId !== undefined) {
-    const candidateEnv = await resolveCandidateEnv(root, body.serverId, process.env);
+    candidateEnv = await resolveCandidateEnv(root, body.serverId, process.env);
     if (candidateEnv === undefined) {
       sendJson(response, 400, { error: `서버 후보를 찾을 수 없습니다: ${body.serverId}` });
       return;
@@ -474,6 +475,7 @@ async function handleStartRelay(
   const session = await relays.start(
     body,
     async () => (await readFileContent(root, absolute)).content,
+    candidateEnv,
   );
   if ("error" in session) {
     sendJson(response, 400, session);

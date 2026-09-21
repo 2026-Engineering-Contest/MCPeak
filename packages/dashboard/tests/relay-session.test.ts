@@ -50,10 +50,12 @@ function harness(options: { readonly onAi?: (tag: string) => Promise<{ ok: boole
   const relay = new FakeRelay();
   const aiArgs: (readonly string[])[] = [];
   const order: string[] = [];
+  const spawnEnvs: NodeJS.ProcessEnv[] = [];
   const registry = new RelaySessionRegistry({
     readSuite: () => Promise.resolve(SUITE),
-    spawnRelay: (args) => {
+    spawnRelay: (args, env) => {
       order.push(`relay:${args.join(" ")}`);
+      spawnEnvs.push(env);
       return relay;
     },
     runAi: (spec) => {
@@ -62,7 +64,7 @@ function harness(options: { readonly onAi?: (tag: string) => Promise<{ ok: boole
       return (options.onAi?.(spec.tag) ?? Promise.resolve({ ok: true })).then((r) => r);
     },
   });
-  return { relay, aiArgs, order, registry };
+  return { relay, aiArgs, order, spawnEnvs, registry };
 }
 
 const START = {
@@ -103,6 +105,17 @@ describe("중계 세션", () => {
     await started;
     expect(order[0]).toContain("--env API_KEY");
     expect(order[0]).toContain("-- node server.mjs");
+  });
+
+  it("후보 env 값이 중계기 자식 환경에 실제로 실린다", async () => {
+    const { relay, spawnEnvs, registry } = harness();
+    const started = registry.start(START, undefined, { API_KEY: "secret-value" });
+    relay.line('{"dir":"up","port":1,"url":"http://127.0.0.1:1/mcp"}');
+    await started;
+    expect(spawnEnvs).toHaveLength(1);
+    // 병합이지 덮어쓰기가 아니다: 후보 값과 기본 환경(PATH 등)이 같이 실려야 한다.
+    expect(spawnEnvs[0]?.API_KEY).toBe("secret-value");
+    expect(spawnEnvs[0]?.PATH).toBe(process.env.PATH);
   });
 
   it("기록 줄이 이벤트로 흐른다", async () => {

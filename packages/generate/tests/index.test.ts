@@ -8,12 +8,17 @@ import { afterEach, describe, expect, it } from "vitest";
 import { deepFreeze } from "../src/canonical.js";
 import { assertConstraints } from "../src/constraints.js";
 import {
+  CLAUDE_ENV_ALLOWLIST,
+  CODEX_ENV_ALLOWLIST,
   canonicalJson,
   createBaselineSuite,
   GenerateTestsError,
   generateTests,
+  PROVIDER_ENV_ALLOWLIST,
+  runProviderProcess,
   sha256,
 } from "../src/index.js";
+import { runProviderProcess as directRunProviderProcess } from "../src/provider-process.js";
 import { validateSchema } from "../src/schema.js";
 
 const temporaryDirectories: string[] = [];
@@ -1109,5 +1114,50 @@ describe("propertyNames (#425)", () => {
         "t.inputSchema",
       ),
     ).not.toThrow();
+  });
+});
+
+describe("provider-process 재수출", () => {
+  // 4 단계 「실제 응답」의 대시보드가 이 함수로 AI 프로세스를 띄운다. 공개 면에서 빠지면
+  // 부르는 쪽이 임시 cwd·타임아웃·출력 상한·bounded 종료를 자기 손으로 다시 만들게 된다.
+  // 그 사본이 갈라지는 것을 막는 것이 ADR-0104 다.
+  it("index 가 내보내는 runProviderProcess 가 provider-process 의 그 함수다", () => {
+    expect(runProviderProcess).toBe(directRunProviderProcess);
+  });
+});
+
+describe("provider 별 env 목록 재수출", () => {
+  // runProviderProcess 는 환경변수를 거르지 않고 spec.env 를 그대로 넘긴다. 공개된 것이
+  // 합집합뿐이면 부르는 쪽이 그것을 쓰고, claude 자식이 OPENAI_API_KEY 를 받는다.
+  // providers.ts 의 주석이 금하는 바로 그것이다(ADR-0104).
+  it("claude 목록에 OpenAI 자격증명이 없다", () => {
+    expect(CLAUDE_ENV_ALLOWLIST).toEqual([
+      "PATH",
+      "HOME",
+      "USER",
+      "SHELL",
+      "ANTHROPIC_API_KEY",
+      "CLAUDE_CODE_OAUTH_TOKEN",
+    ]);
+  });
+
+  it("codex 목록에 Anthropic 자격증명이 없다", () => {
+    expect(CODEX_ENV_ALLOWLIST).toEqual([
+      "PATH",
+      "HOME",
+      "USER",
+      "SHELL",
+      "CODEX_HOME",
+      "OPENAI_API_KEY",
+      "OPENAI_ORG_ID",
+      "OPENAI_PROJECT_ID",
+    ]);
+  });
+
+  // 합집합은 계속 나간다(기존 소비자가 있다). 다만 그것이 두 목록의 합이라는 사실을 고정해서,
+  // 누가 한쪽에만 키를 더하고 다른 쪽을 잊는 것을 막는다.
+  it("합집합이 두 목록을 모두 덮는다", () => {
+    for (const key of [...CLAUDE_ENV_ALLOWLIST, ...CODEX_ENV_ALLOWLIST])
+      expect(PROVIDER_ENV_ALLOWLIST).toContain(key);
   });
 });

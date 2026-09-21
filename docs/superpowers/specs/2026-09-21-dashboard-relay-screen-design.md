@@ -156,9 +156,23 @@ export function relayBinPath(): string;
 
 ```ts
 export { runProviderProcess } from "./provider-process.js";
+export { CLAUDE_ENV_ALLOWLIST, CODEX_ENV_ALLOWLIST } from "./providers.js";
 ```
 
-타입 5 개(`ProviderProcessSpec` 등)는 이미 나가 있다. 새 타입 0 개.
+타입 **7 개**(`ProviderProcessSpec` 등)는 이미 나가 있다. 새 타입 0 개.
+
+> **정정 (2026-09-21, T2 계획 단계).** 처음에 이 절은 `runProviderProcess` 한 줄만 적었다.
+> 실측해 보니 **그 함수는 환경변수를 거르지 않는다** — `spec.env` 를 그대로 spawn 에 넘기고
+> (`provider-process.ts:155`), 거르는 것은 `providers.ts:285` 의 비공개 함수
+> `environment()` 다. 실패 분류도 `spec.classifyFailure` 로 주입받는다.
+>
+> 그래서 함수만 열면 T3 가 env 를 스스로 정해야 하는데, 공개된 목록이 **두 provider 의
+> 합집합** `PROVIDER_ENV_ALLOWLIST` 하나뿐이다. 그것을 쓰면 `claude` 자식이
+> `OPENAI_API_KEY` 를 받는다 — `providers.ts:26-29` 의 주석이 금하는 바로 그것이다.
+> **자격증명은 provider 별로 맞춘다**(사용자 결정). 반쪽 둘을 같이 연다.
+>
+> §5 의 비교표도 같이 고쳤다. 근거와 판단은
+> `docs/superpowers/plans/2026-09-21-generate-provider-process-export.md` 와 ADR-0104 에 있다.
 
 ### T3 · `@mcpeak/dashboard`
 
@@ -186,7 +200,8 @@ claude -p --model <모델> --no-session-persistence \
 
 | | generate · repair | 4 단계 |
 |---|---|---|
-| 임시 cwd · env allowlist · 타임아웃 · 출력 상한 · 실패 분류 | `runProviderProcess` | **똑같이 그것** |
+| 임시 cwd · 타임아웃 · 출력 상한 · bounded 종료 | `runProviderProcess` | **똑같이 그것** |
+| env allowlist 적용 · 실패 분류 | `providers.ts` (비공개) | **부르는 쪽이 한다** ⚠ 아래 정정 |
 | 질문 전달 | stdin | stdin |
 | `--mcp-config` | `{}` — 닫는다 | 중계기 URL — **연다** |
 | `--allowedTools` | 없다 | **있다** |
@@ -219,6 +234,8 @@ claude -p --model <모델> --no-session-persistence \
 | 4 | mock | 케이스 꼬리표가 요청·응답 줄에 실리고, 없으면 필드 자체가 없다 |
 | 5 | mock | `readCaseTag` — 없음 · 빈 값 · 상한 초과 · 이상한 문자 |
 | 6 | mock | `relayBinPath()` 가 가리키는 파일이 실제로 있다 |
+| 6b | generate | `index` 의 `runProviderProcess` 가 `provider-process` 의 그 함수다 (공개 면 회귀) |
+| 6c | generate | `CLAUDE_ENV_ALLOWLIST` 에 OpenAI 키가, `CODEX_ENV_ALLOWLIST` 에 Anthropic 키가 없다 |
 | 7 | dashboard | 스위트 → 질문 목록. 같은 스위트면 **항상 같은 순서** |
 | 8 | dashboard | argv 조립 — `--allowedTools` 가 붙고 URL 에 케이스 꼬리표가 붙는다 |
 | 9 | dashboard | 줄 파서가 **JSON 이 아닌 줄을 건너뛴다** (자식 서버 로그가 같은 채널로 섞인다) |
@@ -231,7 +248,8 @@ claude -p --model <모델> --no-session-persistence \
 **한 번에 한 패키지.** 사이에 사람이 만든 SHA 를 확인하고 넘어간다.
 
 1. **T1 · mock** — `body` · 케이스 꼬리표 · `relayBinPath()` · 테스트 1–6 · **ADR-B**.
-2. **T2 · generate** — export 한 줄 · **ADR-A**.
+2. **T2 · generate** — `runProviderProcess` + provider 별 env 목록 둘 · 공개 면 테스트 · **ADR-A**.
+   (처음엔 "export 한 줄 · 테스트 없음" 이었다. §4 의 정정 참고.)
 3. **T3 · dashboard** — 통로 셋 · 화면 · 테스트 7–12.
 
 ADR 둘:

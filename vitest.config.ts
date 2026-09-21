@@ -57,9 +57,12 @@ const E2E_GLOB = "packages/*/tests/**/*-e2e.test.ts";
  * 이유 없이 빨개진다 — 산출물을 띄우는 검사는 빌드가 끝난 `build` 잡에서만 의미가 있다
  * (`.github/workflows/ci.yml` 의 "Verify built …" 스텝들과 같은 판단).
  *
- * 각 패키지의 `test:e2e` 스크립트가 이 목록을 돌린다.
+ * 각 패키지의 `test:e2e` 스크립트가 이 목록을 돌린다 — 그 설정들이 이 상수를 **그대로
+ * 가져다 쓴다**(`packages/dashboard/vitest.e2e.config.ts`). 손으로 맞추는 두 목록이면
+ * 어긋나는 날이 오고, 그때 그 스펙은 루트 e2e 갈래에서도 빠지고 e2e 설정에도 없어 **어느
+ * 잡에서도 안 돈다.** `resolve` 를 한 곳에서 가져오는 것과 같은 이유다.
  */
-const NEEDS_BUILD = ["packages/dashboard/tests/relay-e2e.test.ts"];
+export const NEEDS_BUILD = ["packages/dashboard/tests/relay-e2e.test.ts"];
 
 export default defineConfig({
   resolve,

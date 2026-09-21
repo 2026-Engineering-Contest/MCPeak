@@ -25,9 +25,11 @@ import { StepRunServer } from "../home/steps/StepRunServer.js";
 import { StepRunSuite } from "../home/steps/StepRunSuite.js";
 import type { LastRun } from "../last-run.js";
 import { readLastRun, saveLastRun } from "../last-run.js";
+import type { MODEL_OPTIONS } from "../provider-models.js";
 import { readRecentCommands, saveRecentCommand } from "../recent-commands.js";
 import { runAfterClose } from "../relay/close-first.js";
 import { useRelayEvents } from "../relay/relay-stream.js";
+import { installUnloadClose } from "../relay/unload-close.js";
 import { effectiveRepairBundlePath } from "../repair-bundle-path.js";
 
 const BASE_STEPS = ["테스트할 서버", "테스트할 스위트", "실행 옵션"] as const;
@@ -41,7 +43,7 @@ const RELAY_STEP_INDEX = BASE_STEPS.length;
  */
 const RELAY_CLOSE_FAILED_HINT =
   "→ 중계기를 닫지 못해 실행을 시작하지 않았습니다. 같은 서버가 두 벌 뜨는 것을 막기 위해서입니다.\n" +
-  "→ 새로고침한 뒤 다시 시도하세요.";
+  "→ 새로고침하지 말고 [실행 시작] 을 다시 누르세요. 새로고침해도 신호를 무시하는 중계기는 닫히지 않고, 이 화면이 그것을 다시 닫을 수 있는 유일한 자리입니다.";
 
 /**
  * 「이전」에서 닫기가 실패했을 때의 안내. 위와 **맥락이 다르다** — 여기서는 시작하지 않은
@@ -50,7 +52,15 @@ const RELAY_CLOSE_FAILED_HINT =
  */
 const RELAY_BACK_CLOSE_FAILED_HINT =
   "→ 중계기가 아직 떠 있습니다. 그 중계기가 띄운 서버도 함께 떠 있습니다.\n" +
-  "→ 새로고침한 뒤 다시 시도하세요. 그대로 두면 판정 실행이 같은 서버를 두 벌 띄웁니다.";
+  "→ 남은 프로세스를 끝낸 뒤 4 단계로 돌아와 다시 닫으세요. 그대로 두면 판정 실행이 같은 서버를 두 벌 띄웁니다.";
+
+/**
+ * 4 단계 AI 의 모델. **지금은 고정이다** — 이 단계의 AI 는 사용자의 서버를 대신 두드리는
+ * 운전기사라(`relay-argv.ts`) 모델 선택이 결과를 바꾸지 않고, 고를 자리를 만들면 3·4 단계에
+ * 고를 것이 하나 더 는다. 값은 `MODEL_OPTIONS.claude` 의 첫 항목과 같아야 한다 — 고를 수
+ * 있게 여는 날 이 상수를 그 목록에서 읽는 상태로 바꾼다.
+ */
+const RELAY_MODEL: (typeof MODEL_OPTIONS.claude)[number][0] = "sonnet";
 
 /**
  * 홈 실행 마법사의 상태(설계 §6). `command` 는 갈래별로 구하므로 직접 입력 갈래에서는
@@ -245,7 +255,7 @@ export function Home(): JSX.Element {
       command: target.command,
       args: target.args,
       envNames: state.envNames,
-      model: "sonnet",
+      model: RELAY_MODEL,
       ...(state.choice.kind === "candidate" ? { serverId: state.choice.id } : {}),
     } satisfies StartRelayRequest)
       .then((response) => {
@@ -266,6 +276,22 @@ export function Home(): JSX.Element {
   // 화면을 떠나도 중계기는 남는다 — 사용자 서버가 그대로 떠 있다는 뜻이다. 정리한다.
   // biome-ignore lint/correctness/useExhaustiveDependencies: 언마운트 1회 정리. 살아 있는 중계기는 `relayRef` 가 들고 있다.
   useEffect(() => () => void closeRelay().catch(() => undefined), []);
+
+  /**
+   * 언마운트로는 **새로고침·탭 닫기를 못 잡는다.** 문서가 통째로 사라지면 정리 함수가 돌지
+   * 않고, 새 페이지에는 `relayId` 가 없어 아무도 그 세션을 DELETE 하지 못한다. 자세한
+   * 이유와 `pagehide` 를 고른 근거는 `relay/unload-close.ts` 에 적었다.
+   */
+  // 마운트 1회 등록이다. 그때의 relayId 는 `relayRef` 에서 읽는다.
+  useEffect(
+    () =>
+      installUnloadClose(
+        window,
+        () => relayRef.current?.relayId ?? null,
+        (input, init) => fetch(input, init),
+      ),
+    [],
+  );
 
   function patchServer(partial: Partial<RunServerPatch>): void {
     setState((previous) => {

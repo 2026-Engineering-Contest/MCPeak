@@ -42,7 +42,19 @@ export function toCaseCards(
   const results = new Map<string, CaseResult[]>();
   const finished = new Set<string>();
   // 응답 줄에는 method 가 없다(`relay-log.ts`). 툴 호출의 응답인지는 **같은 꼬리표의
-  // 마지막 요청이 tools/call 이었는지**로 본다 — 중계기는 요청·응답을 짝지어 순서대로 낸다.
+  // 마지막 요청이 tools/call 이었는지**로 본다.
+  //
+  // **이것은 보장이 아니라 관찰이다.** 중계기는 stateless 이고 응답 줄은 자식이 답한
+  // 순서로 기록된다 — 요청·응답을 짝지어 낸다고 약속한 적이 없다. 지금 이 추측이 맞는
+  // 것은 붙는 클라이언트가 `claude` 한 대뿐이라 한 꼬리표 안에서 왕복이 겹치지 않기
+  // 때문이고, 그 전제가 깨지면 이렇게 틀린다:
+  //   같은 꼬리표에서 `tools/call` 응답이 **그 다음 비-`tools/call` 요청보다 늦게**
+  //   도착하면, 그 사이에 `lastWasToolCall` 이 false 로 덮여 결과가 어느 칸에도 안
+  //   들어간다. `ownCalls` 는 비어 있지 않으니 「호출 없음」도 아니다 — 칸은 **영영
+  //   「기다리는 중」**에 머문다. 중계기는 멀쩡한 답을 기록해 뒀는데도.
+  // 보이는 오류이고 데이터 손상은 아니다(이벤트 원본은 그대로 남아 있고, 화면 상태만
+  // 틀린다). 제대로 된 해법은 요청 줄의 `id` 를 이벤트에 실어 응답을 **id 로 짝짓는
+  // 것**인데, 그것은 `RelayEvent` 공개 면 변경이라 여기서 하지 않는다.
   const lastWasToolCall = new Map<string, boolean>();
 
   for (const event of events) {

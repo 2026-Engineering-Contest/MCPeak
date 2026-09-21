@@ -77,21 +77,42 @@ function toLine(raw: Record<string, unknown>): RelayLine | null {
 
 /**
  * 파싱 못 한 stderr 줄을 얼마나 들고 있을지. 기동 실패 진단에 붙일 최소한의 맥락이면
- * 충분하고, 커지면 그 자체가 누적 이벤트처럼 메모리에 쌓인다. 5~10 중 8로 정한다.
+ * 충분하고, 커지면 그 자체가 누적 이벤트처럼 메모리에 쌓인다. 합쳐서 8줄이다.
+ *
+ * **머리와 꼬리를 같이 남긴다.** 꼬리만 남기던 때 가장 흔한 실패에서 진단이 적극적으로
+ * 오도했다 — node 크래시는 **첫 줄이 원인**(`Error: Cannot find module '…/dist/relay.mjs'`)
+ * 이고 뒤는 스택 프레임이라, 마지막 8줄을 남기면 원인이 밀려 나가고 프레임만 남는다.
+ * 반대로 머리만 남기면 기동 줄을 수십 개 찍고 뒤에서 죽는 수다스러운 서버에서 원인이
+ * 꼬리에 있어 또 놓친다. 어느 쪽인지 줄을 보기 전에는 알 수 없으므로 둘 다 남긴다.
  */
-export const RELAY_SKIPPED_TAIL_LINES = 8;
+export const RELAY_SKIPPED_HEAD_LINES = 3;
+export const RELAY_SKIPPED_TAIL_LINES = 5;
+
+/**
+ * 진단에 붙일 버린 줄. `omitted` 가 0 보다 크면 가운데를 잘랐다는 뜻이고, 그 사실은
+ * **화면에 보여야 한다** — 조용한 생략은 남은 줄이 연속인 것처럼 읽혀 진단을 틀리게 만든다.
+ */
+export interface SkippedLines {
+  readonly head: readonly string[];
+  readonly tail: readonly string[];
+  readonly omitted: number;
+}
 
 export class RelayLineReader {
   /** JSON 이 아니거나 우리 모양이 아니어서 버린 줄의 수. 빈 줄은 세지 않는다. */
   skipped = 0;
   /** 청크 경계에 걸린 반쪽 줄. */
   private buffer = "";
-  /** 버린 줄의 마지막 `RELAY_SKIPPED_TAIL_LINES` 개. 링버퍼처럼 오래된 것부터 밀어낸다. */
+  /** 버린 줄의 **처음** `RELAY_SKIPPED_HEAD_LINES` 개. 한 번 차면 바뀌지 않는다. */
+  private readonly head: string[] = [];
+  /** 머리를 채운 뒤의 마지막 `RELAY_SKIPPED_TAIL_LINES` 개. 링버퍼처럼 밀어낸다. */
   private readonly tail: string[] = [];
+  /** 머리에도 꼬리에도 못 남고 밀려난 줄의 수. */
+  private omitted = 0;
 
   /** 기동 실패 진단에 붙일 자리. 값 유출은 호출부가 알아서 가린다 — 여기는 원문 그대로다. */
-  get skippedTail(): readonly string[] {
-    return this.tail;
+  get skippedLines(): SkippedLines {
+    return { head: this.head, tail: this.tail, omitted: this.omitted };
   }
 
   push(chunk: string): readonly RelayLine[] {
@@ -121,7 +142,15 @@ export class RelayLineReader {
 
   private recordSkipped(part: string): void {
     this.skipped += 1;
+    if (this.head.length < RELAY_SKIPPED_HEAD_LINES) {
+      this.head.push(part);
+      return;
+    }
     this.tail.push(part);
-    if (this.tail.length > RELAY_SKIPPED_TAIL_LINES) this.tail.shift();
+    // 꼬리에서 밀려난 줄이 곧 생략된 줄이다. 머리는 밀려나지 않으므로 여기서만 센다.
+    if (this.tail.length > RELAY_SKIPPED_TAIL_LINES) {
+      this.tail.shift();
+      this.omitted += 1;
+    }
   }
 }

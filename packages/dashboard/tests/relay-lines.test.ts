@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { RELAY_SKIPPED_TAIL_LINES, RelayLineReader } from "../src/server/relay-lines.js";
+import {
+  RELAY_SKIPPED_HEAD_LINES,
+  RELAY_SKIPPED_TAIL_LINES,
+  RelayLineReader,
+} from "../src/server/relay-lines.js";
 
 const UP = '{"dir":"up","port":51234,"url":"http://127.0.0.1:51234/mcp"}';
 const REQ =
@@ -88,18 +92,37 @@ describe("중계기 줄 파서", () => {
     expect(reader.skipped).toBe(0);
   });
 
-  it("버린 줄의 마지막 N개만 링버퍼처럼 들고 있는다", () => {
+  it("상한을 넘으면 첫 줄과 마지막 줄이 둘 다 남고 가운데를 생략한다", () => {
+    // 꼬리만 남기던 때 가장 흔한 실패에서 진단이 오도했다: node 크래시는 **첫 줄이
+    // 원인**이고 뒤는 스택 프레임이라, 마지막 N 줄만 남기면 원인이 밀려 나간다.
     const reader = new RelayLineReader();
-    const total = RELAY_SKIPPED_TAIL_LINES + 3;
+    const total = RELAY_SKIPPED_HEAD_LINES + RELAY_SKIPPED_TAIL_LINES + 4;
     for (let i = 0; i < total; i += 1) reader.push(`그냥 로그 ${i}\n`);
     expect(reader.skipped).toBe(total);
-    expect(reader.skippedTail).toHaveLength(RELAY_SKIPPED_TAIL_LINES);
-    // 가장 오래된 것부터 밀려나야 한다 — 남은 것은 마지막 N개.
-    expect(reader.skippedTail).toEqual(
+
+    const { head, tail, omitted } = reader.skippedLines;
+    // 머리: 가장 먼저 온 줄들. 원인이 여기 있다.
+    expect(head).toEqual(
+      Array.from({ length: RELAY_SKIPPED_HEAD_LINES }, (_, i) => `그냥 로그 ${i}`),
+    );
+    // 꼬리: 마지막 줄들. 수다스러운 서버에서는 원인이 이쪽에 있다.
+    expect(tail).toEqual(
       Array.from(
         { length: RELAY_SKIPPED_TAIL_LINES },
         (_, i) => `그냥 로그 ${total - RELAY_SKIPPED_TAIL_LINES + i}`,
       ),
     );
+    // 생략한 건수를 세어 둬야 화면에 「생략했다」고 적을 수 있다. 조용한 생략은 안 된다.
+    expect(omitted).toBe(total - RELAY_SKIPPED_HEAD_LINES - RELAY_SKIPPED_TAIL_LINES);
+  });
+
+  it("상한을 안 넘으면 생략이 없다", () => {
+    const reader = new RelayLineReader();
+    for (let i = 0; i < RELAY_SKIPPED_HEAD_LINES + RELAY_SKIPPED_TAIL_LINES; i += 1) {
+      reader.push(`그냥 로그 ${i}\n`);
+    }
+    const { head, tail, omitted } = reader.skippedLines;
+    expect(omitted).toBe(0);
+    expect([...head, ...tail]).toHaveLength(RELAY_SKIPPED_HEAD_LINES + RELAY_SKIPPED_TAIL_LINES);
   });
 });

@@ -45,9 +45,12 @@ describe("케이스 칸", () => {
         },
       ]),
     );
-    expect(cards[0]?.results).toEqual([{ ok: true, bytes: 97, ms: 2, body: { t: 21 } }]);
-    expect(cards[1]?.results).toEqual([]);
-    expect(cards[1]?.calls).toEqual([{ tool: "add", args: { b: 2 } }]);
+    // `toStrictEqual` 이어야 한다. `toEqual` 은 `{code: undefined}` 를 `{}` 와 같다고 보므로,
+    // 구현이 없는 필드를 `undefined` 로 싣도록 바뀌어도 통과한다 — 계약이 "필드 자체가
+    // 없다" 인 자리에서는 그 관대함이 회귀를 덮는다(`relay-lines.test.ts` 가 먼저 배운 것).
+    expect(cards[0]?.results).toStrictEqual([{ ok: true, bytes: 97, ms: 2, body: { t: 21 } }]);
+    expect(cards[1]?.results).toStrictEqual([]);
+    expect(cards[1]?.calls).toStrictEqual([{ tool: "add", args: { b: 2 } }]);
   });
 
   it("툴을 안 부른 채 AI 가 끝나면 「호출 없음」이다", () => {
@@ -96,6 +99,6 @@ describe("케이스 칸", () => {
       CASES,
       withIds([{ kind: "call", method: "tools/call", tool: "get_weather" }]),
     );
-    expect(cards.flatMap((card) => card.calls)).toEqual([]);
+    expect(cards.flatMap((card) => card.calls)).toStrictEqual([]);
   });
 });

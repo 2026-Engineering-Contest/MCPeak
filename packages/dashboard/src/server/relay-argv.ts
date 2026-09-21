@@ -12,7 +12,11 @@
 const SERVER_NAME = "target";
 
 export interface RelayAiArgsInput {
-  /** `MODEL_OPTIONS.claude` 의 값 하나. */
+  /**
+   * `MODEL_OPTIONS.claude` 의 값 하나. **지금 UI 는 고를 자리를 주지 않고** 홈 화면의
+   * `RELAY_MODEL` 상수가 그중 하나로 고정한다(`web/src/screens/Home.tsx`, 이유는 거기
+   * 주석에). 통로는 열려 있으니 그 상수를 목록에서 읽게 바꾸면 그대로 돈다.
+   */
   readonly model: string;
   /** 중계기 기동 줄이 준 URL. `http://127.0.0.1:<port>/mcp` */
   readonly url: string;

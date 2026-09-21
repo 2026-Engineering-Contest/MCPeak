@@ -226,13 +226,15 @@ describe.sequential("중계 세션 E2E — 진짜 중계기 · 가짜 AI", () =>
     expect(isAlive(relayPid)).toBe(true);
     expect(isAlive(serverPid)).toBe(true);
 
-    await session.close();
+    // `true` 는 자식의 `close` 를 **실제로 본** 것이다. 타이머가 이긴 것은 true 가 아니다.
+    expect(await session.close()).toBe(true);
 
     await waitFor(() => !isAlive(relayPid) && !isAlive(serverPid));
     expect(isAlive(relayPid)).toBe(false);
     expect(isAlive(serverPid)).toBe(false);
 
-    // 두 번 닫아도 걸리지 않는다. 화면 이탈과 `[실행 시작]` 이 둘 다 부를 수 있다.
-    await expect(session.close()).resolves.toBeUndefined();
+    // 두 번 닫아도 걸리지 않고, 두 번째도 「닫혔다」로 답한다. 화면 이탈과 `[실행 시작]`
+    // 이 둘 다 부를 수 있다.
+    await expect(session.close()).resolves.toBe(true);
   }, 60_000);
 });

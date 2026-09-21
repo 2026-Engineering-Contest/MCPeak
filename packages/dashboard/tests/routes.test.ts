@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { RunEvent, StartRunRequest } from "../src/api-types.js";
 import { startDashboardServer } from "../src/index.js";
-import type { RelayChild } from "../src/server/relay-session.js";
+import type { RelayChild, Schedule } from "../src/server/relay-session.js";
 import { RelaySessionRegistry } from "../src/server/relay-session.js";
 import { handleRequest } from "../src/server/routes.js";
 import type { RunIo } from "../src/server/run-registry.js";
@@ -167,12 +167,15 @@ interface RelayTestServer {
 async function startRelayTestServer(options: {
   readonly spawnRelay: (args: readonly string[], env: NodeJS.ProcessEnv) => RelayChild;
   readonly runAi?: () => Promise<{ readonly ok: boolean }>;
+  /** 종료 승격 타이머. 안 주면 즉시 실행이라 테스트가 실제로 기다리지 않는다. */
+  readonly schedule?: Schedule;
 }): Promise<RelayTestServer> {
   const root = await mkdtemp(join(tmpdir(), "mcpeak-dashboard-relay-routes-"));
   const registry = new RunRegistry();
   const relays = new RelaySessionRegistry({
     spawnRelay: options.spawnRelay,
     runAi: options.runAi ?? (() => new Promise(() => undefined)),
+    ...(options.schedule === undefined ? {} : { schedule: options.schedule }),
   });
   const httpServer: Server = createServer((request, response) => {
     handleRequest(request, response, {
@@ -566,6 +569,59 @@ describe("routes.ts", () => {
         { "Last-Event-ID": "1" },
       );
       expect(resumed.map((event) => event.kind)).toEqual(["result", "result"]);
+    } finally {
+      await relayServer.close();
+    }
+  });
+
+  it("닫기에 실패하면 DELETE 는 204 가 아니라 오류로 답한다", async () => {
+    // 브라우저는 닫기가 실패하면 판정 실행을 시작하지 않는다(`runAfterClose`). 서버가
+    // 실패를 **말해 주어야** 그럴 수 있다 — 여기서 204 를 내면 같은 서버가 두 벌 뜬다.
+    const relayServer = await startRelayTestServer({
+      // 신호를 받아도 close 를 내지 않는 자식.
+      spawnRelay: () => {
+        const relay = new (class extends FakeRelayChild {
+          override kill(): boolean {
+            return true;
+          }
+        })();
+        relay.line('{"dir":"up","port":1,"url":"http://127.0.0.1:1/mcp"}');
+        return relay;
+      },
+      // 유예를 기다리지 않는다. 승격 순서는 relay-session.test.ts 가 시계로 본다.
+      schedule: (_ms, run) => {
+        const timer = setTimeout(run, 0);
+        return () => clearTimeout(timer);
+      },
+    });
+    try {
+      await writeFile(
+        join(relayServer.root, "relay.suite.json"),
+        JSON.stringify({
+          cases: [{ id: "a", operation: { type: "callTool", tool: "get_weather", input: {} } }],
+        }),
+        "utf8",
+      );
+      const started = await fetch(`${relayServer.baseUrl}/api/relay`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          suitePath: "relay.suite.json",
+          command: "node",
+          args: ["server.mjs"],
+          envNames: [],
+          model: "sonnet",
+        }),
+      });
+      const { relayId } = (await started.json()) as { relayId: string };
+      const closed = await fetch(`${relayServer.baseUrl}/api/relay/${relayId}`, {
+        method: "DELETE",
+      });
+      // 404("그런 세션이 없다")와도 갈려야 한다. 없는 것이 아니라 못 닫은 것이다.
+      expect(closed.status).toBe(500);
+      const body = (await closed.json()) as { error: string };
+      expect(body.error).toContain("중계기를 닫지 못했습니다");
+      expect(body.error).toContain("판정 실행을 시작하지 않았습니다");
     } finally {
       await relayServer.close();
     }

@@ -510,15 +510,23 @@ function handleRelayEvents(
 /**
  * **닫힌 것을 확인하고 나서 응답한다.** 브라우저의 `[실행 시작]` 이 이 응답을 기다렸다가
  * 판정 실행을 시작하므로(설계 §1), 여기서 먼저 답하면 같은 서버가 두 벌 뜬다.
+ *
+ * 못 닫은 것을 204 로 답하지 않는 것이 그 계약의 나머지 절반이다 — 브라우저는 닫기가
+ * 실패하면 시작하지 않는데(`runAfterClose`), 서버가 실패를 **말해 주어야** 그럴 수 있다.
+ * 500 인 이유는 대상이 없는 것(404)이 아니라 우리가 끝내지 못한 것이기 때문이다.
  */
 async function handleCloseRelay(
   response: ServerResponse,
   relays: RelaySessionRegistry,
   relayId: string,
 ): Promise<void> {
-  const closed = await relays.close(relayId);
-  if (!closed) {
+  const result = await relays.close(relayId);
+  if (result.kind === "notFound") {
     sendJson(response, 404, { error: "그런 중계 세션이 없습니다." });
+    return;
+  }
+  if (result.kind === "failed") {
+    sendJson(response, 500, { error: result.error });
     return;
   }
   response.writeHead(204);

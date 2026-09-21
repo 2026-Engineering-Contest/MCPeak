@@ -153,3 +153,17 @@ export type PutFileResponse =
 export interface ApiError {
   readonly error: string;
 }
+
+/**
+ * 4 단계 「실제 응답」이 띄울 케이스 하나.
+ *
+ * `tag` 는 **대시보드가 매긴다** — 중계기 URL(`?case=<tag>`)에 실리는 값이라 짧고 안전한
+ * 문자여야 하고, 사용자의 케이스 id 를 그대로 실으면 `readCaseTag` 의 길이·문자 상한에
+ * 걸려 조용히 사라진다. 화면 칸 제목에는 `id` 를 쓴다(사용자가 아는 이름).
+ */
+export interface RelayCase {
+  readonly id: string;
+  readonly tag: string;
+  readonly tool: string;
+  readonly input: unknown;
+}

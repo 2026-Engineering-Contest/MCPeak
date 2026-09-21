@@ -13,6 +13,18 @@ const AI_TIMEOUT_MS = 120_000;
 const AI_MAX_OUTPUT_BYTES = 1_000_000;
 /** 기동 줄을 기다리는 시간. 넘으면 중계기가 못 떴다고 본다. */
 const RELAY_START_TIMEOUT_MS = 15_000;
+/**
+ * 진단 꼬리에서 마스킹할 값의 최소 길이. 이보다 짧은 값(포트 번호, 지역 코드, `1`·`true`
+ * 같은 플래그)은 마스킹 대상에서 뺀다 — 과잉 마스킹은 `line.split(secret).join("***")` 이
+ * 그 짧은 문자열과 우연히 겹치는 무관한 글자까지 지워, 「실패 메시지가 곧 제품이다」의 존재
+ * 이유(무엇이 왜 다른지 보여주는 것)를 스스로 깬다. 이런 짧은 값은 비밀일 가능성도 낮다.
+ * 저장소 선례를 따른다 — `packages/record/src/external/origin-redaction.ts` 의
+ * `MIN_SECRET_LENGTH`(R4, ADR-0097)도 20 이다. 그쪽은 "이 값이 비밀처럼 생겼나"를 접두사
+ * 모양으로 재는 것이고 여기는 "이미 아는 값을 가릴지"를 재는 것이라 근거는 다르지만, 같은
+ * 저장소 안에서 "짧은 값은 비밀 취급하지 않는다"는 문턱을 두 자리에 따로 정하지 않으려고
+ * 값을 맞췄다.
+ */
+const MIN_MASK_VALUE_LENGTH = 20;
 
 /** 중계기 자식. 테스트가 가짜로 바꿔 끼울 수 있게 최소면만 요구한다. */
 export interface RelayChild {
@@ -52,16 +64,21 @@ function aiEnvironment(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
  * 제품이다」(`CLAUDE.md`) — 중계기가 이미 말해 준 것을 버리고 사용자에게 다시 해보라고만
  * 하면 안 된다. 기존 세 줄은 지우지 않고 **뒤에** 덧붙이는 모양이다.
  *
- * 후보 env 값(설계 §4.3)이 자식 stderr 에 그대로 찍혔을 수 있어(자식이 자기 환경을
- * 되찍는 경우) 그 값을 아는 자리마다 문자열 치환으로 가린다 — 중계기 자신의 진단이든
- * 사용자 서버가 흘린 것이든(관례상 같은 채널을 탄다, relay-lines.ts) 구분 없이 적용한다.
+ * 자식에게 실제로 간 환경(`relayEnv` — `{ ...process.env, ...candidateEnv }`)의 값이 자식
+ * stderr 에 그대로 찍혔을 수 있어(자식이 자기 환경을 되찍는 경우) 그 값을 아는 자리마다
+ * 문자열 치환으로 가린다 — 중계기 자신의 진단이든 사용자 서버가 흘린 것이든(관례상 같은
+ * 채널을 탄다, relay-lines.ts) 구분 없이 적용한다. **`candidateEnv` 만 보면 안 된다** — 자식은
+ * 대시보드 프로세스에서 물려받은 나머지 환경(`process.env` 의 다른 비밀 포함)도 그대로
+ * 갖고 있고, 그걸 되찍으면 그 값은 마스킹 없이 그대로 나간다.
  */
 function diagnosticTail(
   lines: readonly string[],
-  candidateEnv: Readonly<Record<string, string>> | undefined,
+  relayEnv: Readonly<Record<string, string | undefined>>,
 ): readonly string[] {
   if (lines.length === 0) return [];
-  const secrets = Object.values(candidateEnv ?? {}).filter((value) => value.length > 0);
+  const secrets = Object.values(relayEnv).filter(
+    (value): value is string => value !== undefined && value.length >= MIN_MASK_VALUE_LENGTH,
+  );
   const redact = (line: string): string =>
     secrets.reduce((acc, secret) => acc.split(secret).join("***"), line);
   return ["→ 중계기가 남긴 마지막 줄:", ...lines.map((line) => `→ ${redact(line)}`)];
@@ -178,6 +195,9 @@ export class RelaySessionRegistry {
     request: StartRelayRequest,
     readSuite?: (suitePath: string) => Promise<string>,
     candidateEnv?: Readonly<Record<string, string>>,
+    // 테스트가 실제 `process.env` 를 건드리지 않고 마스킹 대상(자식 환경 전체)을 주입할 수
+    // 있게 여는 자리다. 운영 경로는 넘기지 않으므로 항상 `process.env` 를 쓴다.
+    baseEnv: NodeJS.ProcessEnv = process.env,
   ): Promise<RelaySession | { readonly error: string }> {
     const deps: RelaySessionDeps = {
       readSuite: this.deps.readSuite ?? readSuite ?? systemDeps.readSuite,
@@ -209,7 +229,7 @@ export class RelaySessionRegistry {
     // 후보 env 를 중계기 자식 환경에 물린다. 중계기는 사용자 서버 명령을 다시 spawn 해야
     // 하므로 `PATH` 등 기본 환경이 필요하다 — 그래서 덮어쓰기가 아니라 병합이고, 후보 값이
     // 그 위를 덮는다(`/api/runs` 경로의 `readEnv` 와 같은 우선순위, wiring.ts:111).
-    const relayEnv: NodeJS.ProcessEnv = { ...process.env, ...candidateEnv };
+    const relayEnv: NodeJS.ProcessEnv = { ...baseEnv, ...candidateEnv };
     const child = deps.spawnRelay(relayArgs, relayEnv);
     const reader = new RelayLineReader();
 
@@ -269,7 +289,7 @@ export class RelaySessionRegistry {
           "→ 중계기가 기동 줄을 내지 않았습니다. 서버 명령이 stdio MCP 서버가 맞는지 확인하세요.",
           `→ 실행한 명령: ${request.command} ${request.args.join(" ")}`,
           "→ 터미널에서 같은 명령을 직접 띄워 서버가 뜨는지 먼저 보세요.",
-          ...diagnosticTail(reader.skippedTail, candidateEnv),
+          ...diagnosticTail(reader.skippedTail, relayEnv),
         ].join("\n"),
       };
     }

@@ -262,16 +262,74 @@ describe("중계 세션", () => {
       spawnRelay: () => relay,
       runAi: () => Promise.resolve({ ok: true }),
     });
-    const started = registry.start(START, undefined, { API_KEY: "secret-value" });
+    // 마스킹 최소 길이(`MIN_MASK_VALUE_LENGTH`) 이상인 값으로 골라야 이 테스트가 그 문턱에
+    // 걸려 우연히 통과하는 일이 없다.
+    const started = registry.start(START, undefined, { API_KEY: "secret-value-0123456789" });
     relay.line("→ 중계기를 띄우지 못했습니다.");
-    relay.line("→ env API_KEY=secret-value 로 접속을 시도했으나 실패했습니다.");
+    relay.line("→ env API_KEY=secret-value-0123456789 로 접속을 시도했으나 실패했습니다.");
     await new Promise((resolve) => setTimeout(resolve, 0));
     relay.emit("close");
     const result = await started;
     if (!("error" in result)) throw new Error("실패했어야 합니다.");
     expect(result.error).toContain("중계기가 남긴 마지막 줄:");
-    expect(result.error).not.toContain("secret-value");
+    expect(result.error).not.toContain("secret-value-0123456789");
     expect(result.error).toContain("***");
+  });
+
+  it("candidateEnv 가 아니라 자식이 물려받은 나머지 환경의 값이 찍혀도 가린다", {
+    timeout: 3_000,
+  }, async () => {
+    const relay = new FakeRelay();
+    const registry = new RelaySessionRegistry({
+      readSuite: () => Promise.resolve(SUITE),
+      spawnRelay: () => relay,
+      runAi: () => Promise.resolve({ ok: true }),
+    });
+    // process.env 를 실제로 건드리지 않고, 가짜 baseEnv 를 주입한다(4번째 인자). 값은
+    // candidateEnv 의 "candidate-only-value" 와 겹치는 부분 문자열이 없어야
+    // 한다 — 우연히 겹치면 candidateEnv 만 보는 낡은 구현도 통과해 버려서 이 테스트가
+    // 아무것도 증명하지 못한다.
+    const fakeBaseEnv = { ANTHROPIC_API_KEY: "zzz-unrelated-inherited-env-value-9988776655" };
+    const started = registry.start(
+      START,
+      undefined,
+      { API_KEY: "candidate-only-value" },
+      fakeBaseEnv,
+    );
+    relay.line("→ 중계기를 띄우지 못했습니다.");
+    relay.line(
+      "→ env ANTHROPIC_API_KEY=zzz-unrelated-inherited-env-value-9988776655 로 접속을 시도했으나 실패했습니다.",
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    relay.emit("close");
+    const result = await started;
+    if (!("error" in result)) throw new Error("실패했어야 합니다.");
+    expect(result.error).toContain("중계기가 남긴 마지막 줄:");
+    expect(result.error).not.toContain("zzz-unrelated-inherited-env-value-9988776655");
+    expect(result.error).toContain("***");
+  });
+
+  it("짧은 env 값은 마스킹 대상이 아니라 무관한 글자가 온전히 남는다", {
+    timeout: 3_000,
+  }, async () => {
+    const relay = new FakeRelay();
+    const registry = new RelaySessionRegistry({
+      readSuite: () => Promise.resolve(SUITE),
+      spawnRelay: () => relay,
+      runAi: () => Promise.resolve({ ok: true }),
+    });
+    // candidateEnv 를 통해 넣는다 — 그래야 마스킹 대상 구성이 candidateEnv 뿐이던 낡은
+    // 구현에서도 이 값이 후보에 들어가, 길이 문턱이 없으면 실제로 과잉 마스킹이 재현된다.
+    const started = registry.start(START, undefined, { PORT: "1" });
+    relay.line("→ 중계기를 띄우지 못했습니다.");
+    // 짧은 값 "1" 이 마스킹 대상이면 "127.0.0.1" 같은 무관한 문자열까지 "***" 로 잘린다.
+    relay.line("→ connect ECONNREFUSED 127.0.0.1:5432 에 실패했습니다.");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    relay.emit("close");
+    const result = await started;
+    if (!("error" in result)) throw new Error("실패했어야 합니다.");
+    expect(result.error).toContain("connect ECONNREFUSED 127.0.0.1:5432 에 실패했습니다.");
+    expect(result.error).not.toContain("***");
   });
 
   it("건너뛴 케이스가 있으면 안내 이벤트로 알린다", async () => {

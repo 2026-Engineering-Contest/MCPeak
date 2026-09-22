@@ -116,7 +116,12 @@ describe("runWithLimit", () => {
     await tick();
     expect(t.started.length).toBe(7);
     expect(t.peak).toBe(6);
-    for (const item of items(12)) t.release(item);
+    // 한 번만 풀면 안 된다 — 지금 gate 를 쥔 것은 1~7 뿐이고, 8~12 는 이 해제 뒤
+    // 마이크로태스크에서 일꾼이 집으면서 gate 가 새로 생긴다. 라운드로 돌아야 한다.
+    for (let round = 0; round < 12; round += 1) {
+      await tick();
+      for (const item of items(12)) t.release(item);
+    }
     await done;
     expect(t.peak).toBe(6);
   });
@@ -775,3 +780,31 @@ git status --short
 
 기대: 커밋 목록에 `packages/dashboard/**`, `docs/adr/0106-*`, `.changeset/*` 만 보인다.
 `git status` 에는 `packages/mock/tests/stdio-e2e.test.ts` 가 **미커밋으로 그대로 남아 있어야** 한다 — 사용자 것이다.
+
+---
+
+## 구현 중 드러난 계획서 정정
+
+### 1. Task 1 테스트 1 의 마지막 해제가 한 번뿐이었다 (2026-09-22, Task 1 실행 중 발견)
+
+원래 이랬다:
+
+```ts
+    for (const item of items(12)) t.release(item);
+    await done;
+```
+
+이 시점에 gate 를 쥔 것은 1~7 뿐이다. 8~12 는 이 해제 **뒤** 마이크로태스크에서 일꾼이
+집으면서 gate 가 새로 생기고, 아무도 풀지 않아 `await done` 이 영영 안 풀린다 → 5 초 타임아웃.
+
+**상한이 제대로 걸릴 때만 매달리는 뒤집힌 테스트였다.** 상한을 빼면 12 개가 한꺼번에 떠
+gate 가 전부 먼저 생기므로 오히려 통과한다. 테스트 2·3 은 `tick()` + 전체 해제를 12 라운드
+도는 구조라 같은 함정을 피해 갔다.
+
+테스트 2·3 과 같은 라운드 모양으로 고쳤다. 앞의 `expect(t.started.length).toBe(6)` ·
+`toBe(7)` · `expect(t.peak).toBe(6)` 단언은 그대로라 상한 검증력은 줄지 않았다 — 상한을
+빼고 돌려 이 테스트가 `expected 12 to be 6` 으로 실패하는 것을 확인했다(4 번 테스트도 같이
+잡는다).
+
+**교훈:** 손으로 푸는 gate 로 풀을 통제할 때, 해제 루프는 **일꾼이 새로 집을 기회를 주는
+라운드**여야 한다. 한 번의 일괄 해제는 "그 순간 이미 떠 있던 것" 만 푼다.

@@ -111,6 +111,23 @@ function signalChild(child: RelayChild, signal: NodeJS.Signals): void {
  */
 const MIN_MASK_VALUE_LENGTH = 20;
 
+/**
+ * 이름만 보고도 비밀로 취급할 환경변수. 길이 문턱(위)은 **값이 비밀처럼 생겼나**를 재는데,
+ * 짧은 비밀값은 그 그물을 그냥 빠져나간다 — 12 자짜리 키를 쓰는 서버가 그 값을 stderr 에
+ * 되찍으면 기동 실패 진단(HTTP 400 본문)에 원문이 그대로 실렸다(ADR-0107).
+ *
+ * 이름으로 잡으면 값 길이와 무관하게 가릴 수 있지만, **그래도 길이 바닥은 남긴다**
+ * (`MIN_NAMED_SECRET_LENGTH`). `AUTH=1` 같은 플래그를 가리기 시작하면 `line.split("1")` 이
+ * 무관한 숫자를 전부 `***` 로 지워, 「실패 메시지가 곧 제품이다」의 존재 이유를 스스로 깬다.
+ */
+const SECRET_NAME_PATTERN = /KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL/i;
+
+/**
+ * 이름으로 잡은 값에 적용할 최소 길이. 이보다 짧은 값은 비밀이라기보다 플래그일 가능성이
+ * 높고, 가렸을 때 무관한 글자를 지우는 손해가 더 크다. 실제 비밀이 8 자 미만인 경우는 드물다.
+ */
+const MIN_NAMED_SECRET_LENGTH = 8;
+
 /** 중계기 자식. 테스트가 가짜로 바꿔 끼울 수 있게 최소면만 요구한다. */
 export interface RelayChild {
   readonly stderr: { on(event: "data", listener: (chunk: Buffer) => void): unknown };
@@ -171,8 +188,12 @@ function diagnosticTail(
   relayEnv: Readonly<Record<string, string | undefined>>,
 ): readonly string[] {
   if (skipped.head.length === 0 && skipped.tail.length === 0) return [];
-  const secrets = Object.values(relayEnv).filter(
-    (value): value is string => value !== undefined && value.length >= MIN_MASK_VALUE_LENGTH,
+  const secrets = Object.entries(relayEnv).flatMap(([name, value]) =>
+    value !== undefined &&
+    (value.length >= MIN_MASK_VALUE_LENGTH ||
+      (SECRET_NAME_PATTERN.test(name) && value.length >= MIN_NAMED_SECRET_LENGTH))
+      ? [value]
+      : [],
   );
   const redact = (line: string): string =>
     secrets.reduce((acc, secret) => acc.split(secret).join("***"), line);

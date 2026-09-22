@@ -695,4 +695,41 @@ describe("중계 세션", () => {
     const result = session.events.find((event: RelayEvent) => event.kind === "result");
     expect(JSON.stringify(result)).toContain("서울 맑음");
   });
+
+  it("이름이 비밀 같으면 20 자 미만이어도 가린다", { timeout: 3_000 }, async () => {
+    const relay = new FakeRelay();
+    const registry = new RelaySessionRegistry({
+      readSuite: () => Promise.resolve(SUITE),
+      spawnRelay: () => relay,
+      runAi: () => Promise.resolve({ ok: true }),
+    });
+    // 13 자라 `MIN_MASK_VALUE_LENGTH`(20) 문턱에 안 걸린다. 이름으로 잡아야 한다.
+    const started = registry.start(START, undefined, { API_TOKEN: "tok-abc-12345" }, {});
+    relay.line("→ 중계기를 띄우지 못했습니다.");
+    relay.line("→ env API_TOKEN=tok-abc-12345 로 접속을 시도했으나 실패했습니다.");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    relay.emit("close");
+    const result = await started;
+    if (!("error" in result)) throw new Error("실패했어야 합니다.");
+    expect(result.error).not.toContain("tok-abc-12345");
+    expect(result.error).toContain("***");
+  });
+
+  it("이름이 비밀 같아도 아주 짧은 값은 가리지 않는다", { timeout: 3_000 }, async () => {
+    const relay = new FakeRelay();
+    const registry = new RelaySessionRegistry({
+      readSuite: () => Promise.resolve(SUITE),
+      spawnRelay: () => relay,
+      runAi: () => Promise.resolve({ ok: true }),
+    });
+    // 과잉 마스킹은 진단을 스스로 지운다 — "1" 을 가리면 무관한 숫자까지 전부 `***` 가 된다.
+    const started = registry.start(START, undefined, { AUTH_TOKEN: "1" }, {});
+    relay.line("→ 중계기를 띄우지 못했습니다.");
+    relay.line("→ 포트 1 에서 수신 대기 중이었습니다.");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    relay.emit("close");
+    const result = await started;
+    if (!("error" in result)) throw new Error("실패했어야 합니다.");
+    expect(result.error).toContain("포트 1 에서 수신 대기 중이었습니다.");
+  });
 });

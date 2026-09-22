@@ -153,3 +153,70 @@ export type PutFileResponse =
 export interface ApiError {
   readonly error: string;
 }
+
+/**
+ * 4 단계 「실제 응답」이 띄울 케이스 하나.
+ *
+ * `tag` 는 **대시보드가 매긴다** — 중계기 URL(`?case=<tag>`)에 실리는 값이라 짧고 안전한
+ * 문자여야 하고, 사용자의 케이스 id 를 그대로 실으면 `readCaseTag` 의 길이·문자 상한에
+ * 걸려 조용히 사라진다. 화면 칸 제목에는 `id` 를 쓴다(사용자가 아는 이름).
+ */
+export interface RelayCase {
+  readonly id: string;
+  readonly tag: string;
+  readonly tool: string;
+  readonly input: unknown;
+}
+
+/** 중계 세션이 브라우저로 흘리는 이벤트. `RunEvent` 와 별개다 — 실행이 아니라 관찰이다. */
+export type RelayEventInput =
+  | { readonly kind: "up"; readonly url: string }
+  | {
+      readonly kind: "call";
+      readonly case?: string;
+      readonly method: string;
+      readonly tool?: string;
+      readonly args?: unknown;
+    }
+  | {
+      readonly kind: "result";
+      readonly case?: string;
+      readonly tool?: string;
+      readonly ok: boolean;
+      readonly bytes?: number;
+      readonly ms?: number;
+      readonly body?: unknown;
+      readonly code?: number;
+      readonly message?: string;
+    }
+  /**
+   * AI 프로세스 하나가 끝났다. **`ok` 가 성공을 뜻하지 않는다** — 권한에 막혀도 `claude` 는
+   * 0 으로 끝난다(설계 §3). 툴을 불렀는지는 `call` 이벤트로만 판정한다. 이 이벤트가 말하는
+   * 것은 "이 케이스는 더 기다릴 것이 없다" 하나다.
+   */
+  | {
+      readonly kind: "aiDone";
+      readonly case: string;
+      readonly ok: boolean;
+      readonly failure?: string;
+    }
+  | { readonly kind: "notice"; readonly message: string }
+  | { readonly kind: "done" };
+
+export type RelayEvent = RelayEventInput & { readonly id: number };
+
+/** POST /api/relay */
+export interface StartRelayRequest {
+  readonly suitePath: string;
+  readonly command: string;
+  readonly args: readonly string[];
+  /** 중계기 `--env` 에 실을 **이름**. 값은 브라우저를 지나지 않는다(설계 §4.3 과 같은 규칙). */
+  readonly envNames: readonly string[];
+  readonly serverId?: string;
+  readonly model: string;
+}
+
+export interface StartRelayResponse {
+  readonly relayId: string;
+  readonly cases: readonly RelayCase[];
+}

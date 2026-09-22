@@ -138,7 +138,22 @@ export type {
   ProviderProcessResult,
   ProviderProcessSpec,
 } from "./provider-process.js";
+/**
+ * 프로바이더 프로세스 기계. 임시 cwd · 타임아웃 · 출력 상한 · bounded 종료를 한 곳에 둔다.
+ * 4 단계 「실제 응답」의 대시보드가 같은 기계로 AI 를 띄우려고 공개한다.
+ *
+ * **환경변수를 거르지 않는다.** `spec.env` 를 그대로 자식에게 넘긴다. 무엇을 넘길지는 부르는
+ * 쪽이 정하고, provider 별 목록(`CLAUDE_ENV_ALLOWLIST` · `CODEX_ENV_ALLOWLIST`)이 그 단일
+ * 출처다. 실패 분류도 `spec.classifyFailure` 로 주입받는다.
+ *
+ * **MCP 를 여는 argv(`--mcp-config` · `--allowedTools`)는 여기에 두지 않는다**(ADR-0104).
+ * 합성 경로의 AI 는 저자이고 그 산출물이 승인 게이트를 지나므로 MCP 를 닫아 둔다
+ * (ADR-0006 이 세우고 ADR-0079 가 현재 argv 로 유지한다). 이 함수는 프로세스만 다룬다.
+ */
+export { runProviderProcess } from "./provider-process.js";
 export {
+  CLAUDE_ENV_ALLOWLIST,
+  CODEX_ENV_ALLOWLIST,
   createClaudeAuthoringProvider,
   createClaudeProvider,
   createCodexAuthoringProvider,

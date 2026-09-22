@@ -61,6 +61,9 @@ export function StepRunOptions(props: {
   lastRunDiffers: boolean;
   /** `buildTestArgv` 의 결과. 성공이면 미리보기, 실패면 그 사유가 같은 자리에 나온다. */
   result: { readonly argv: readonly string[] } | { readonly error: string };
+  /** 켜면 4 단계 「실제 응답」이 붙는다. */
+  liveResponse: boolean;
+  onLiveResponseChange: (value: boolean) => void;
   onArgsChange: (args: readonly string[]) => void;
   onSessionModeChange: (mode: SessionMode) => void;
   onSessionPathChange: (path: string) => void;
@@ -148,6 +151,24 @@ export function StepRunOptions(props: {
         onToggle={props.onOptionsToggle}
         onChange={props.onOptionsChange}
       />
+
+      <label className="flex items-start gap-2">
+        <input
+          type="checkbox"
+          id="home-run-live-response"
+          checked={props.liveResponse}
+          disabled={http}
+          onChange={(event) => props.onLiveResponseChange(event.target.checked)}
+        />
+        <span className="text-sm text-ink">
+          판정 전에 서버의 실제 응답을 본다
+          <span className="mt-0.5 block text-xs text-ink-muted">
+            {http
+              ? "원격 서버에는 중계기를 붙일 수 없습니다. 우리가 띄우는 stdio 서버에서만 됩니다."
+              : "케이스마다 AI 를 한 대씩 띄워 서버를 두드리고, 오간 호출을 그대로 보여줍니다. 판정은 아직 하지 않습니다."}
+          </span>
+        </span>
+      </label>
 
       <div className="rounded-md border border-line bg-line-subtle px-3 py-2">
         <p className="text-xs text-ink-muted">실행될 명령</p>

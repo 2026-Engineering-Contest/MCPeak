@@ -227,6 +227,24 @@ jobs:
       - name: Verify built record external subpath
         run: pnpm --filter @mcpeak/record test:e2e
 
+      # relayBinPath() 는 package.json 의 bin 을 읽어 경로를 계산할 뿐, 파일이 있는지는
+      # 보지 않는다. vitest 쪽(relay-bin-path.test.ts)은 매니페스트와의 합의만 보고,
+      # `pnpm test` 는 빌드를 앞세우지 않아 존재 확인을 거기 넣을 수 없다. 산출물이
+      # 정말 나왔는지는 빌드가 끝난 이 자리에서만 볼 수 있다 — src/relay.ts 가 tsdown
+      # entry 에서 빠지면 타입체크도 테스트도 초록인 채 발행본의 bin 만 사라진다.
+      - name: Verify built relay bin path
+        run: pnpm --filter @mcpeak/mock test:e2e
+
+      # 4 단계 「실제 응답」은 relayBinPath() 로 **빌드된** 중계기를 자식으로 띄운다.
+      # `verify` 잡은 빌드 없이 돌고 vitest alias 가 워크스페이스를 소스로 해석하므로,
+      # 거기서는 dist/relay.mjs 가 아예 없어 이 스펙이 이유 없이 빨개진다. 그래서 루트
+      # vitest 설정의 e2e 갈래에서 빼고(NEEDS_BUILD) 빌드가 끝난 이 자리에서만 돌린다.
+      #
+      # 가짜 AI 를 쓴다 — 진짜 claude 는 같은 입력에 같은 결과를 주지 않는다. 진짜인 것은
+      # 중계기와 examples/weather-server 이고, 이 스텝이 보는 것은 그 배선이다.
+      - name: Verify relay wiring on built relay bin
+        run: pnpm --filter @mcpeak/dashboard test:e2e
+
       # "우리 도구로 우리를 검증한다" 의 마지막 한 칸이다 (CLAUDE.md).
       #
       # 위 스텝은 CLI 가 도는지만 본다. 이 스텝은 그 결과를 --junit 으로 내보내

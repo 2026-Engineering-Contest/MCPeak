@@ -104,6 +104,9 @@ importers:
       '@mcpeak/generate':
         specifier: workspace:*
         version: link:../generate
+      '@mcpeak/mock':
+        specifier: workspace:*
+        version: link:../mock
       '@mcpeak/record':
         specifier: workspace:*
         version: link:../record

@@ -18,7 +18,7 @@ const workspaceAliases = Object.fromEntries(
   ]),
 );
 
-const resolve = {
+export const resolve = {
   alias: {
     // `mcpeak` 키보다 먼저 와야 한다. rollup alias는 `find + "/"` 접두 일치라
     // `mcpeak` 키가 있으면 `@mcpeak/cli/commands`를 삼킨다. 지금은 `mcpeak` 키가
@@ -49,6 +49,21 @@ const resolve = {
  */
 const E2E_GLOB = "packages/*/tests/**/*-e2e.test.ts";
 
+/**
+ * `pnpm test` 가 돌리지 **않는** 스펙. 빌드 산출물을 실제로 띄우는 것들이다.
+ *
+ * `verify` 잡은 `pnpm build` 없이 돌고, 위 `resolve.alias` 가 워크스페이스 패키지를
+ * 소스로 해석한다. 그래서 여기 있는 스펙을 `pnpm test` 에 두면 `dist/` 가 없는 CI 에서
+ * 이유 없이 빨개진다 — 산출물을 띄우는 검사는 빌드가 끝난 `build` 잡에서만 의미가 있다
+ * (`.github/workflows/ci.yml` 의 "Verify built …" 스텝들과 같은 판단).
+ *
+ * 각 패키지의 `test:e2e` 스크립트가 이 목록을 돌린다 — 그 설정들이 이 상수를 **그대로
+ * 가져다 쓴다**(`packages/dashboard/vitest.e2e.config.ts`). 손으로 맞추는 두 목록이면
+ * 어긋나는 날이 오고, 그때 그 스펙은 루트 e2e 갈래에서도 빠지고 e2e 설정에도 없어 **어느
+ * 잡에서도 안 돈다.** `resolve` 를 한 곳에서 가져오는 것과 같은 이유다.
+ */
+export const NEEDS_BUILD = ["packages/dashboard/tests/relay-e2e.test.ts"];
+
 export default defineConfig({
   resolve,
   test: {
@@ -66,6 +81,8 @@ export default defineConfig({
         test: {
           name: "e2e",
           include: [E2E_GLOB],
+          // 산출물을 띄우는 스펙은 빌드 뒤에만 의미가 있다. 위 NEEDS_BUILD 주석 참고.
+          exclude: ["**/node_modules/**", ...NEEDS_BUILD],
           /**
            * e2e 갈래는 파일끼리도 직렬이다(#119). `describe.sequential` 은 파일 안만
            * 직렬화하고 파일 사이는 못 막는다. 실프로세스 스펙들이 병렬로 돌면 서로의

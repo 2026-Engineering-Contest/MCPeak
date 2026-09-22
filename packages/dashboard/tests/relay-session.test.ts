@@ -674,4 +674,25 @@ describe("중계 세션", () => {
     await session.settled;
     expect(session.events.filter((event: RelayEvent) => event.kind === "done").length).toBe(1);
   });
+
+  it("멀티바이트 문자가 청크 경계에서 잘려도 본문이 깨지지 않는다", async () => {
+    const h = harness();
+    const session = await startSession(h);
+    const payload = `${JSON.stringify({
+      dir: "res",
+      id: 3,
+      tool: "get_weather",
+      ok: true,
+      body: { text: "서울 맑음" },
+      case: "c1",
+    })}\n`;
+    const bytes = Buffer.from(payload, "utf8");
+    // "서"(3 바이트) 한가운데를 자른다. 청크마다 따로 디코드하면 여기서 U+FFFD 가 된다.
+    const cut = bytes.indexOf(Buffer.from("서", "utf8")) + 1;
+    h.relay.stderr.write(bytes.subarray(0, cut));
+    h.relay.stderr.write(bytes.subarray(cut));
+
+    const result = session.events.find((event: RelayEvent) => event.kind === "result");
+    expect(JSON.stringify(result)).toContain("서울 맑음");
+  });
 });

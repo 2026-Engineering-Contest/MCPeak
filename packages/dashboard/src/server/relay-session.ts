@@ -423,6 +423,11 @@ export class RelaySessionRegistry {
     const relayEnv: NodeJS.ProcessEnv = { ...baseEnv, ...candidateEnv };
     const child = deps.spawnRelay(relayArgs, relayEnv);
     const reader = new RelayLineReader();
+    // **청크마다 따로 디코드하면 안 된다.** 멀티바이트 문자가 청크 경계에 걸리면 그 자리에서
+    // U+FFFD 가 되고, `RelayLineReader` 는 이미 디코드된 **문자열**을 이어 붙이므로 되살릴
+    // 길이 없다. JSON 파싱은 성공해서 조용히 깨진 본문이 화면까지 간다.
+    // `provider-process.ts` 와 같은 모양이다(스트리밍 디코더).
+    const stderrDecoder = new TextDecoder("utf-8");
 
     let session: RelaySession | undefined;
     let settleAll: () => void = () => undefined;
@@ -450,7 +455,7 @@ export class RelaySessionRegistry {
         finish(null);
       });
       child.stderr.on("data", (chunk: Buffer) => {
-        for (const line of reader.push(chunk.toString("utf8"))) {
+        for (const line of reader.push(stderrDecoder.decode(chunk, { stream: true }))) {
           if (line.kind === "up") {
             // 여기서 `emit` 하지 않는다. 첫 `up` 에서는 세션이 아직 없어 늘 no-op 이고,
             // 둘째 `up` 이 오면 세션 생성 뒤의 `emit` 과 겹쳐 중복 이벤트가 된다.

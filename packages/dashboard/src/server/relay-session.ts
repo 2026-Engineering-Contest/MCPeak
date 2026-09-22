@@ -6,6 +6,7 @@ import type { RelayCase, RelayEvent, RelayEventInput, StartRelayRequest } from "
 import { buildRelayAiArgs } from "./relay-argv.js";
 import { RelayLineReader, type SkippedLines } from "./relay-lines.js";
 import { planRelayCases } from "./relay-questions.js";
+import { runWithLimit } from "./run-with-limit.js";
 
 /** AI 한 대에 주는 시간. 툴 한 번 부르고 끝나는 일이라 authoring 보다 짧다. */
 const AI_TIMEOUT_MS = 120_000;
@@ -24,6 +25,18 @@ const RELAY_KILL_GRACE_MS = 2_000;
  * 붙들고 있지도 않는다.
  */
 const RELAY_IDLE_REAP_MS = 10 * 60_000;
+
+/**
+ * 동시에 띄우는 AI 수의 상한.
+ *
+ * 케이스마다 `claude` 를 한 대씩 띄우는데, 82 케이스 스위트를 켜자 82 대가 한꺼번에 떠
+ * 12 코어 머신의 부하 평균이 73 까지 올라갔다(개당 약 0.9). 6 을 골라 개발 머신에서 체감
+ * 대기를 줄이되 부하는 코어 수 안쪽에 둔다.
+ *
+ * **코어 수에서 유도하지 않는다.** 머신마다 값이 달라지면 같은 조작의 부하·타이밍 진단이
+ * 재현되지 않는다(결정론성, ADR-0106). 고정 상수로 두고, 바꿀 때는 이 주석도 같이 고친다.
+ */
+const RELAY_AI_CONCURRENCY = 6;
 
 /**
  * 닫기 실패 안내. **판정 실행을 시작하지 않은 이유**가 요점이다 — 여기서 그냥 시작하면
@@ -109,6 +122,8 @@ export interface RelayAiSpec {
   readonly tag: string;
   readonly args: readonly string[];
   readonly stdin: string;
+  /** 세션이 닫히면 서는 중단 신호. 진행 중인 `claude` 를 정리한다. */
+  readonly signal?: AbortSignal;
 }
 
 export interface RelaySessionDeps {
@@ -181,6 +196,11 @@ export class RelaySession {
   /** 자식이 스스로 죽었는가. 죽은 자식에게 신호를 보내고 `close` 를 기다리면 영영 못 푼다. */
   private childClosed = false;
   private subscribers = 0;
+  /**
+   * AI 쪽 중단 신호. `close()` 가 세운다 — 대기열이 새 `claude` 를 뱉는 것을 막고, 이미
+   * 떠 있는 것은 `runProviderProcess` 가 SIGTERM → SIGKILL 로 정리한다.
+   */
+  private readonly aiAbort = new AbortController();
   /** 구독자가 0 이 된 시각. 구독자가 있으면 의미가 없다. */
   private idleSince: number;
 
@@ -201,6 +221,10 @@ export class RelaySession {
 
   get events(): readonly RelayEvent[] {
     return this.accumulated;
+  }
+
+  get aiSignal(): AbortSignal {
+    return this.aiAbort.signal;
   }
 
   /**
@@ -248,6 +272,9 @@ export class RelaySession {
    * 그래도 남으면 `runProviderProcess` 의 타임아웃이 SIGTERM · SIGKILL 로 올라간다.
    */
   close(): Promise<boolean> {
+    // 중계기에 신호를 보내기 **전에** 대기열을 세운다. 순서가 반대면 중계기가 닫히는
+    // 사이에 대기열이 새 `claude` 를 뱉는다.
+    this.aiAbort.abort();
     this.closing ??= (
       this.childClosed ? Promise.resolve(true) : terminateChild(this.child, this.schedule)
     ).then((closed) => {
@@ -280,6 +307,7 @@ const systemDeps: RelaySessionDeps = {
       env: aiEnvironment(process.env),
       cwdPrefix: tmpdir(),
       maxOutputBytes: AI_MAX_OUTPUT_BYTES,
+      ...(spec.signal === undefined ? {} : { signal: spec.signal }),
     });
     return result.ok ? { ok: true } : { ok: false, failure: result.code };
   },
@@ -479,21 +507,33 @@ export class RelaySessionRegistry {
     this.sessions.set(session.relayId, session);
 
     const current = session;
-    // **동시에 띄운다**(설계 §2-3). 케이스들이 한 서버를 같이 치는 대가는 사용자가 알고 고른 것이다.
-    void Promise.all(
-      plan.cases.map(async (relayCase) => {
-        const result = await deps.runAi({
-          tag: relayCase.tag,
-          args: buildRelayAiArgs({ model: request.model, url, tag: relayCase.tag }),
-          stdin: plan.prompts[relayCase.tag] ?? "",
-        });
+    // 동시에 뜨는 수를 `RELAY_AI_CONCURRENCY` 로 막는다. 상한이 없을 때 82 케이스가 82 대를
+    // 한꺼번에 띄운 것이 이 자리의 결함이었다.
+    void runWithLimit(
+      plan.cases,
+      RELAY_AI_CONCURRENCY,
+      async (relayCase) => {
+        let result: { readonly ok: boolean; readonly failure?: string };
+        try {
+          result = await deps.runAi({
+            tag: relayCase.tag,
+            args: buildRelayAiArgs({ model: request.model, url, tag: relayCase.tag }),
+            stdin: plan.prompts[relayCase.tag] ?? "",
+            signal: current.aiSignal,
+          });
+        } catch {
+          // `runAi` 가 reject 해도 이 케이스만 실패로 답한다. 여기서 새면 `done` 이 영영
+          // 안 나가고 화면이 끝나지 않는다.
+          result = { ok: false, failure: "internal" };
+        }
         current.emit({
           kind: "aiDone",
           case: relayCase.id,
           ok: result.ok,
           ...(result.failure === undefined ? {} : { failure: result.failure }),
         });
-      }),
+      },
+      current.aiSignal,
     ).then(() => {
       current.emit({ kind: "done" });
       settleAll();

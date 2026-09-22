@@ -1,7 +1,7 @@
 import { EventEmitter } from "node:events";
 import { describe, expect, it } from "vitest";
 import type { RelayEvent } from "../src/api-types.js";
-import type { Schedule } from "../src/server/relay-session.js";
+import type { RelaySession, Schedule } from "../src/server/relay-session.js";
 import { RelaySessionRegistry } from "../src/server/relay-session.js";
 
 const SUITE = JSON.stringify({
@@ -10,6 +10,15 @@ const SUITE = JSON.stringify({
     { id: "b", operation: { type: "callTool", tool: "add", input: { a: 1, b: 2 } } },
   ],
 });
+
+/** 케이스 `n` 개짜리 스위트. 상한(6) 을 넘겨 봐야 동시성을 잴 수 있다. */
+const suiteOf = (count: number): string =>
+  JSON.stringify({
+    cases: Array.from({ length: count }, (_, index) => ({
+      id: `case-${index + 1}`,
+      operation: { type: "callTool", tool: "get_weather", input: { city: `city-${index + 1}` } },
+    })),
+  });
 
 /**
  * 진짜 자식의 `stderr` 는 Readable 이라 `on("data")` 가 붙기 전에 온 바이트도 버퍼에 남았다가
@@ -91,23 +100,70 @@ function manualClock() {
 /** 마이크로태스크 큐를 한 바퀴 비운다. */
 const tick = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 
+/** 손으로 푸는 약속. 태그마다 하나씩 쥐고 원하는 순간에 푼다. */
+function aiGates() {
+  const gates = new Map<string, { resolve: () => void; reject: (e: Error) => void }>();
+  let running = 0;
+  let peak = 0;
+  const onAi = (tag: string): Promise<{ ok: boolean }> => {
+    running += 1;
+    peak = Math.max(peak, running);
+    return new Promise<{ ok: boolean }>((resolve, reject) => {
+      gates.set(tag, {
+        resolve: () => {
+          running -= 1;
+          resolve({ ok: true });
+        },
+        reject: (e: Error) => {
+          running -= 1;
+          reject(e);
+        },
+      });
+    });
+  };
+  return {
+    onAi,
+    get peak() {
+      return peak;
+    },
+    releaseAll: (): void => {
+      for (const gate of [...gates.values()]) gate.resolve();
+    },
+    release: (tag: string): void => gates.get(tag)?.resolve(),
+    reject: (tag: string, error: Error): void => gates.get(tag)?.reject(error),
+    has: (tag: string): boolean => gates.has(tag),
+  };
+}
+
+/** 기동 줄을 흘려 세션을 연다. 실패면 던진다. */
+async function startSession(h: ReturnType<typeof harness>): Promise<RelaySession> {
+  const started = h.registry.start(START);
+  h.relay.line('{"dir":"up","port":1,"url":"http://127.0.0.1:1/mcp"}');
+  const session = await started;
+  if ("error" in session) throw new Error(session.error);
+  return session;
+}
+
 function harness(
   options: {
     readonly onAi?: (tag: string) => Promise<{ ok: boolean }>;
     /** 자식을 갈아 끼운다. 기본은 SIGTERM 에 얌전히 닫히는 `FakeRelay`. */
     readonly child?: FakeRelay;
+    /** 스위트를 갈아 끼운다. 기본은 2 케이스짜리 `SUITE`. */
+    readonly suite?: string;
     readonly clock?: ReturnType<typeof manualClock>;
   } = {},
 ) {
   const relay = options.child ?? new FakeRelay();
   const clock = options.clock ?? manualClock();
   const aiArgs: (readonly string[])[] = [];
+  const aiSignals: (AbortSignal | undefined)[] = [];
   const order: string[] = [];
   const spawnEnvs: NodeJS.ProcessEnv[] = [];
   const registry = new RelaySessionRegistry({
     schedule: clock.schedule,
     now: clock.now,
-    readSuite: () => Promise.resolve(SUITE),
+    readSuite: () => Promise.resolve(options.suite ?? SUITE),
     spawnRelay: (args, env) => {
       order.push(`relay:${args.join(" ")}`);
       spawnEnvs.push(env);
@@ -116,10 +172,11 @@ function harness(
     runAi: (spec) => {
       aiArgs.push(spec.args);
       order.push(`ai:${spec.tag}`);
+      aiSignals.push(spec.signal);
       return (options.onAi?.(spec.tag) ?? Promise.resolve({ ok: true })).then((r) => r);
     },
   });
-  return { relay, aiArgs, order, spawnEnvs, registry, clock };
+  return { relay, aiArgs, aiSignals, order, spawnEnvs, registry, clock };
 }
 
 const START = {
@@ -546,5 +603,75 @@ describe("중계 세션", () => {
     expect(notice).toMatchObject({
       message: "→ 툴을 부르지 않는 케이스 1 건은 띄우지 않았습니다: only-list",
     });
+  });
+  it("동시에 뜨는 AI 가 상한 6 을 넘지 않는다", async () => {
+    const gates = aiGates();
+    const h = harness({ suite: suiteOf(12), onAi: gates.onAi });
+    const session = await startSession(h);
+    await tick();
+    // 12 케이스인데 여섯 대만 떠 있어야 한다.
+    expect(h.aiArgs.length).toBe(6);
+    expect(gates.peak).toBe(6);
+    for (let round = 0; round < 12; round += 1) {
+      await tick();
+      gates.releaseAll();
+    }
+    await session.settled;
+    expect(gates.peak).toBe(6);
+  });
+
+  it("상한을 둬도 케이스가 하나도 빠지지 않고 done 은 한 번만 나간다", async () => {
+    const gates = aiGates();
+    const h = harness({ suite: suiteOf(12), onAi: gates.onAi });
+    const session = await startSession(h);
+    for (let round = 0; round < 12; round += 1) {
+      await tick();
+      gates.releaseAll();
+    }
+    await session.settled;
+    expect(h.aiArgs.length).toBe(12);
+    const aiDone = session.events.filter((event: RelayEvent) => event.kind === "aiDone");
+    expect(aiDone.length).toBe(12);
+    // `case` 는 꼬리표가 아니라 케이스 id 다.
+    expect(aiDone.map((event) => (event as { case: string }).case).sort()).toEqual(
+      Array.from({ length: 12 }, (_, index) => `case-${index + 1}`).sort(),
+    );
+    expect(session.events.filter((event: RelayEvent) => event.kind === "done").length).toBe(1);
+  });
+
+  it("runAi 하나가 reject 해도 나머지가 돌고 done 이 나간다", async () => {
+    const gates = aiGates();
+    const h = harness({ suite: suiteOf(12), onAi: gates.onAi });
+    const session = await startSession(h);
+    await tick();
+    gates.reject("c1", new Error("boom"));
+    for (let round = 0; round < 12; round += 1) {
+      await tick();
+      gates.releaseAll();
+    }
+    await session.settled;
+    expect(h.aiArgs.length).toBe(12);
+    const aiDone = session.events.filter((event: RelayEvent) => event.kind === "aiDone");
+    expect(aiDone.length).toBe(12);
+    expect(session.events.filter((event: RelayEvent) => event.kind === "done").length).toBe(1);
+  });
+
+  it("닫으면 대기열이 멈추고 진행 중인 AI 는 중단 신호를 받는다", async () => {
+    const gates = aiGates();
+    const h = harness({ suite: suiteOf(12), onAi: gates.onAi });
+    const session = await startSession(h);
+    await tick();
+    expect(h.aiArgs.length).toBe(6);
+    const closed = session.close();
+    // 닫는 순간 진행 중이던 여섯 대에 중단이 서 있어야 한다.
+    expect(h.aiSignals.filter((signal) => signal?.aborted === true).length).toBe(6);
+    // 진행 중이던 것을 풀어도 일곱 번째가 새로 뜨지 않는다.
+    gates.releaseAll();
+    for (let round = 0; round < 12; round += 1) await tick();
+    expect(h.aiArgs.length).toBe(6);
+    expect(await closed).toBe(true);
+    // 닫힌 뒤에도 done 과 settled 는 결국 풀린다 — 안 그러면 기다리는 쪽이 매달린다.
+    await session.settled;
+    expect(session.events.filter((event: RelayEvent) => event.kind === "done").length).toBe(1);
   });
 });

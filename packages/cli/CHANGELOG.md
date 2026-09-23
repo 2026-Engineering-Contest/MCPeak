@@ -1,5 +1,17 @@
 # ohmymcp
 
+## 0.12.1
+
+### Patch Changes
+
+- 5318801: generate 의 입력값 교정에서 서버의 출력 계약 위반(`Output validation error` · `Structured content does not match`)을 교정 대상에서 뺀다. SDK 1.30 의 `McpServer` 는 이것을 `isError: true` 응답으로 돌려줘 보통 거절과 모양이 같았고, 그래서 입력값을 세 번 바꿔 보게 하며 사람이 엉뚱한 곳을 의심하게 했다. 이제 "교정 대상이 아닌 실패" 고지로 가고, 갈래(호출 실패 · 출력 계약 위반)마다 무엇을 보라는 문장을 따로 찍는다.
+
+  입력값 교정 프롬프트에서 AI 제안 값이 현재 값과 같으면 `(현재 값과 같음)` 을 덧붙인다. AI 는 입력 쪽에 고칠 데를 못 찾으면 받은 값을 그대로 돌려주는데, 그것을 제안으로만 찍으면 같은 값을 왜 다시 넣으라는지 알 수 없었다.
+
+- Updated dependencies [cac23a3]
+  - @mcpeak/runner@0.11.1
+  - @mcpeak/generate@0.8.1
+
 ## 0.12.0
 
 ### Minor Changes

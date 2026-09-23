@@ -1,5 +1,16 @@
 # @ohmymcp-hsu/dashboard
 
+## 0.4.1
+
+### Patch Changes
+
+- dad804c: 실행 화면의 상태 문구를 문장마다 한 줄로 나눈다. 통 문자열을 브라우저 줄바꿈에 맡기면 한국어가 글자 단위로 끊겨 "나옵니다" 가 "나옵" 과 "니다." 로 쪼개졌다. 이제 줄은 문장 경계에서만 나뉜다.
+- Updated dependencies [5318801]
+- Updated dependencies [cac23a3]
+  - @mcpeak/cli@0.12.1
+  - @mcpeak/runner@0.11.1
+  - @mcpeak/generate@0.8.1
+
 ## 0.4.0
 
 ### Minor Changes

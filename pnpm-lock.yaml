@@ -44,6 +44,9 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: 'catalog:'
         version: 1.30.0(zod@4.4.3)
+      zod:
+        specifier: 4.4.3
+        version: 4.4.3
 
   examples/mock-server:
     dependencies:

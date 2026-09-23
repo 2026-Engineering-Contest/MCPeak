@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "description": "External 세션 데모용 예제 MCP 서버 (stdio) — 실제 공개 API 를 fetch 로 부른다",
+  "description": "External 세션 데모용 예제 MCP 서버 (stdio). McpServer + zod 로 짜고 실제 공개 API 를 fetch 로 부른다",
   "license": "MIT",
   "bin": {
     "example-live-weather-server": "./server.mjs"
@@ -12,6 +12,7 @@
     "start": "node ./server.mjs"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "catalog:"
+    "@modelcontextprotocol/sdk": "catalog:",
+    "zod": "4.4.3"
   }
 }

@@ -138,6 +138,26 @@ describe("repairInputs", () => {
     ]);
   });
 
+  it("AI 제안이 현재 값과 같으면 화면에 그렇다고 적는다", async () => {
+    // AI 는 입력 쪽에 고칠 데를 못 찾으면 받은 값을 그대로 돌려준다. 그것을 "제안 값" 으로만
+    // 찍으면 사용자가 같은 값을 왜 다시 넣으라는지 알 수 없다(live-weather 결함 A 실측).
+    const io = scriptedIO();
+    const { rerun } = rerunAlways(true);
+
+    await repairInputs({
+      io,
+      suite: emptySuite,
+      targets: [target("c1", { city: "example" })],
+      rerun,
+      propose: async () => ({ kind: "proposed", input: { city: "example" } }),
+      tools: weatherTools,
+    });
+
+    expect(io.prompts).toEqual([
+      '      get_weather.city (필드 1/1, string, 현재 "example", 엔터 = 제안 값 "example" (현재 값과 같음)): ',
+    ]);
+  });
+
   it("AI 제안에 엔터만 누르면 그 값으로 재실행한다", async () => {
     const io = scriptedIO([""]);
     const { calls, rerun } = rerunAlways(true);

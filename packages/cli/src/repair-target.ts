@@ -21,14 +21,20 @@ export interface RepairTarget {
 }
 
 /**
- * 호출 자체가 끝나지 못한 케이스. 입력값을 고쳐도 결과가 안 바뀌므로 교정 대상이 아니다.
- * 화면에는 §4.2 고지로 따로 나온다(설계 §3.3).
+ * 입력값을 고쳐도 결과가 안 바뀌는 실패. 교정 대상이 아니고 화면에는 §4.2 고지로 따로 나온다
+ * (설계 §3.3). 두 갈래다.
+ *
+ * - `operationFailed`: 호출 자체가 끝나지 못했다.
+ * - `outputContract`: 호출은 끝났지만 서버가 자기 응답을 `outputSchema` 로 검증하다 실패했다.
+ *   TS SDK 1.30 의 `McpServer` 는 이것을 `isError: true` 응답으로 돌려주므로 보통 거절과
+ *   모양이 같다. 입력 거절로 읽고 값을 세 번 바꿔 보게 하던 것이 이번 결함이다.
  */
 export interface ThrownCase {
   readonly caseId: string;
   readonly caseName: string;
   readonly failureLine: string;
   readonly serverMessage: string;
+  readonly reason: "operationFailed" | "outputContract";
 }
 
 /** 한 번 순회해 가른 결과. 두 배열 모두 `outcomes` 순서다. */
@@ -71,6 +77,24 @@ const IS_ERROR = "isError";
 
 /** `renderReport` 가 건너뛴 단언 줄에 붙이는 표시. 건너뛴 단언은 실패가 아니다. */
 const SKIPPED_MARK = "(건너뜀) ";
+
+/**
+ * 서버가 자기 응답을 `outputSchema` 로 검증하다 실패한 본문의 지문. 입력값을 무엇으로 바꿔도
+ * 같은 자리에서 실패한다. 둘 다 TS SDK 가 만드는 문장이고 핸들러 코드는 이 접두어를 만들지 않는다.
+ *
+ * - 서버 쪽 `McpServer` (1.30): `Output validation error: Invalid structured content for tool …`
+ * - 클라이언트 쪽 `Client`: `Structured content does not match the tool's output schema: …`
+ *   보통은 호출이 던져 `operationFailed` 로 먼저 걸리지만, 본문으로 돌아오는 경로도 막는다.
+ */
+const OUTPUT_CONTRACT_PREFIXES = [
+  "MCP error -32602: Output validation error:",
+  "MCP error -32602: Structured content does not match the tool's output schema",
+] as const;
+
+const isOutputContractFailure = (serverMessage: string): boolean => {
+  const text = serverMessage.trimStart();
+  return OUTPUT_CONTRACT_PREFIXES.some((prefix) => text.startsWith(prefix));
+};
 
 /** 케이스 본문 줄에서 들여쓰기를 벗긴다. 들여쓰기가 없는 줄은 본문이 아니다. */
 const bodyLines = (detail: string): readonly string[] =>
@@ -147,17 +171,31 @@ export function selectRepairTargets(options: SelectRepairTargetsOptions): Repair
         caseName: outcome.caseName,
         failureLine: outcome.failureLine,
         serverMessage: serverMessageOf(outcome.detail),
+        reason: "operationFailed",
       });
       continue;
     }
     if (!failedByIsError(outcome.detail)) continue;
     if (spec.operation.type !== "callTool") continue;
+    const serverMessage = serverMessageOf(outcome.detail);
+    // 출력 계약 위반은 `isError` 로 오지만 입력 문제가 아니다. 값을 제안받아 다시 불러도 같은
+    // 문장으로 실패한다. 호출이 던진 것과 같은 고지 갈래로 보낸다.
+    if (isOutputContractFailure(serverMessage)) {
+      thrown.push({
+        caseId: outcome.caseId,
+        caseName: outcome.caseName,
+        failureLine: outcome.failureLine,
+        serverMessage,
+        reason: "outputContract",
+      });
+      continue;
+    }
     targets.push({
       caseId: outcome.caseId,
       caseName: outcome.caseName,
       tool: spec.operation.tool,
       input: spec.operation.input,
-      serverMessage: serverMessageOf(outcome.detail),
+      serverMessage,
       failureLine: outcome.failureLine,
     });
   }

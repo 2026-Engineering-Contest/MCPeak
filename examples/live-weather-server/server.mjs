@@ -2,20 +2,26 @@
 /**
  * 예제 MCP 서버. mcpeak 의 전 과정을 한 서버로 보여주는 데모용 서버.
  *
+ * `McpServer.registerTool` 에 zod 스키마를 넘겨 **SDK 가 JSON Schema 를 만들고 인자를 검증하게**
+ * 한다. 타입·필수·범위·enum 위반은 핸들러에 닿기 전에 SDK 가 `-32602` 로 거절하므로, 핸들러는
+ * 스키마로 못 적는 의미 검증(모르는 도시, 종류가 다른 단위, 해석 못 하는 식)만 맡는다.
+ *
  * 툴 10개가 각자 다른 단계를 맡는다.
  *
  * | 툴 | 종류 | 보여주는 것 |
  * |---|---|---|
  * | get_forecast · convert_currency · search_city | 외부 fetch | 녹화·재생. 호출마다 값이 바뀌는 비결정성을 재생이 고정한다 |
- * | list_recent_quakes | 외부 fetch | 요청 URL 에 **현재 시각**을 넣어 재생이 어긋나는 툴. "재현 가능하지 않다" 진단 |
+ * | list_recent_quakes | 외부 fetch | 최근 N건. 요청에 시각을 넣지 않아 재생이 맞는다(아래 5번) |
  * | add_note · list_notes | 로컬, 파일 상태 | `--determinism` 이 차이를 잡고 `--reset-cmd` 로 통과 |
  * | convert_units | 로컬 | **결함 A.** outputSchema 는 `converted` 인데 `result` 를 돌려준다 |
- * | summarize_text | 로컬 | **결함 B.** 필수 필드 `text` 가 빠져도 거절하지 않는다 |
- * | lookup_country | 로컬 | **결함 C.** enum 밖 코드에 `isError: false` 로 "not found" 를 돌려준다 |
+ * | summarize_text | 로컬 | 중첩 객체 baseline. 필수 `text` 누락은 zod 가 막는다 |
+ * | lookup_country | 로컬 | enum 밖 코드는 zod 가 막는다 |
  * | evaluate_expression | 로컬 | baseline 자리값 `"example"` 이 실패하고 AI 사전보완이 값을 제안한다 |
  *
- * 결함 세 곳은 일부러 둔 것이다. `mcpeak test` 가 잡고 `mcpeak repair` 가 원인을 짚는 장면을
- * 위해서다. 각 자리에 `// 결함 X` 표식이 있고 **한 줄만 고치면** 사라진다.
+ * 결함 A 는 일부러 둔 것이다. `mcpeak test` 가 잡고 `mcpeak repair` 가 원인을 짚는 장면을
+ * 위해서다. `// 결함 A` 표식이 있고 **한 줄만 고치면** 사라진다. 저수준 `Server` 시절에 있던
+ * 결함 B(필수 필드 누락 미거절)·C(enum 밖 값에 정상 응답)는 zod 로 옮기면서 사라졌다. 스키마가
+ * 곧 검증이라 그 두 종류의 결함은 만들 수 없다.
  *
  * 지킨 것:
  *
@@ -23,7 +29,11 @@
  *    `node:http`·axios 로 부르면 녹화되지 않고 재생 중 실제 네트워크로 나간다.
  * 2. **API 키가 필요 없다.** Open-Meteo · Frankfurter · USGS 는 무료·무인증이다.
  * 3. **실패 경로가 있다.** 모르는 도시, 모르는 통화, 해석 못 하는 식은 `isError: true` 로 이유를 말한다.
- * 4. **의존성이 없다.** SDK 의 저수준 `Server` 와 JSON Schema 를 그대로 쓴다.
+ * 4. **의존성은 SDK 와 zod 둘뿐이다.** `examples/zod-notes-server` 와 같은 조합이다.
+ * 5. **요청에 현재 시각을 넣지 않는다.** 재생은 요청(메서드·URL·본문)의 해시로 응답을 찾는다.
+ *    URL 에 `Date.now()` 가 들어가면 같은 입력이라도 매번 다른 요청이 되어 녹화본에서 못 찾는다.
+ *    `list_recent_quakes` 가 예전에 그랬다(`starttime=` 에 현재 시각). 지금은 `limit` 으로 최근
+ *    N건을 받아 요청이 입력만으로 정해진다.
  *
  * CI 도그푸딩 대상은 아니다(examples/README.md). 외부 API 에 기대는 서버는 CI 에서 결정론적이지
  * 않다.
@@ -33,9 +43,9 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { setDefaultAutoSelectFamilyAttemptTimeout } from "node:net";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import { z } from "zod";
 
 // Open-Meteo 는 AAAA 레코드를 내놓는데, IPv6 가 라우팅되지 않는 망(카페 와이파이·일부 회사망)에서
 // Node 는 v6 를 먼저 잡고 실패한다. 그리고 v4 로 넘어갈 때 쓰는 시도 타임아웃 기본값이 250ms 라
@@ -80,6 +90,7 @@ const UNIT_KINDS = {
   f: "temp",
   mi: "length",
 };
+const UNITS = Object.keys(UNIT_KINDS);
 const UNIT_FACTORS = { km: 1000, m: 1, mi: 1609.344, kg: 1, lb: 0.45359237 };
 
 const COUNTRY_CODES = ["KR", "US", "JP", "DE", "FR", "GB", "BR", "IN"];
@@ -94,176 +105,6 @@ const COUNTRIES = {
   IN: { name: "인도", capital: "뉴델리", currency: "INR", callingCode: "+91" },
 };
 const COUNTRY_FIELDS = ["name", "capital", "currency", "callingCode"];
-
-const TOOLS = [
-  {
-    name: "get_forecast",
-    description: "도시 이름으로 현재 기온과 날씨 코드를 조회한다 (Open-Meteo).",
-    inputSchema: {
-      type: "object",
-      properties: {
-        city: { type: "string", description: "도시 이름. 예: 부산, Seoul", examples: ["부산"] },
-      },
-      required: ["city"],
-    },
-  },
-  {
-    name: "convert_currency",
-    description: "금액을 다른 통화로 환산한다 (Frankfurter, ECB 고시 환율).",
-    inputSchema: {
-      type: "object",
-      properties: {
-        amount: { type: "number", description: "환산할 금액", examples: [100] },
-        from: { type: "string", description: "출발 통화 코드. 예: USD", examples: ["USD"] },
-        to: { type: "string", description: "도착 통화 코드. 예: KRW", examples: ["KRW"] },
-      },
-      required: ["amount", "from", "to"],
-    },
-  },
-  {
-    name: "search_city",
-    description: "이름으로 도시를 검색해 좌표와 시간대를 돌려준다 (Open-Meteo 지오코딩).",
-    inputSchema: {
-      type: "object",
-      properties: {
-        query: { type: "string", description: "검색어. 예: Seoul, 부산", examples: ["Seoul"] },
-        count: {
-          type: "integer",
-          minimum: 1,
-          maximum: 10,
-          default: 5,
-          description: "최대 결과 수",
-        },
-        language: {
-          type: "string",
-          enum: ["ko", "en", "ja"],
-          default: "ko",
-          description: "결과 언어",
-        },
-      },
-      required: ["query"],
-    },
-  },
-  {
-    name: "list_recent_quakes",
-    description:
-      "최근 N시간 안에 일어난 규모 M 이상의 지진을 돌려준다 (USGS). 요청에 현재 시각이 들어가므로 녹화본과 요청이 달라진다.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        minMagnitude: {
-          type: "number",
-          minimum: 0,
-          maximum: 10,
-          default: 5,
-          description: "최소 규모",
-        },
-        hours: {
-          type: "integer",
-          minimum: 1,
-          maximum: 168,
-          default: 24,
-          description: "조회 범위(시간)",
-        },
-      },
-    },
-  },
-  {
-    name: "add_note",
-    description: "메모를 하나 추가한다. 파일에 저장되므로 서버를 다시 띄워도 남는다.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        title: { type: "string", minLength: 1, description: "제목" },
-        body: { type: "string", description: "본문" },
-        tags: { type: "array", items: { type: "string" }, default: [], description: "태그 목록" },
-      },
-      required: ["title", "body"],
-    },
-  },
-  {
-    name: "list_notes",
-    description: "저장된 메모를 돌려준다. 태그로 거를 수 있다.",
-    inputSchema: {
-      type: "object",
-      properties: { tag: { type: "string", description: "이 태그가 붙은 메모만" } },
-    },
-  },
-  {
-    name: "convert_units",
-    description: "길이(km·m·mi)·질량(kg·lb)·온도(c·f) 단위를 환산한다. 같은 종류끼리만 된다.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        value: { type: "number", description: "환산할 값" },
-        from: { type: "string", enum: Object.keys(UNIT_KINDS), description: "출발 단위" },
-        to: { type: "string", enum: Object.keys(UNIT_KINDS), description: "도착 단위" },
-      },
-      required: ["value", "from", "to"],
-    },
-    outputSchema: {
-      type: "object",
-      properties: {
-        value: { type: "number" },
-        from: { type: "string" },
-        to: { type: "string" },
-        converted: { type: "number" },
-      },
-      required: ["value", "from", "to", "converted"],
-    },
-  },
-  {
-    name: "summarize_text",
-    description: "본문을 앞에서부터 N단어로 줄인다. 외부 호출 없이 결정론적으로 동작한다.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        text: { type: "string", description: "요약할 본문" },
-        options: {
-          type: "object",
-          properties: {
-            maxWords: { type: "integer", minimum: 1, maximum: 200, default: 20 },
-            style: { type: "string", enum: ["plain", "bullets"], default: "plain" },
-          },
-        },
-      },
-      required: ["text"],
-    },
-  },
-  {
-    name: "lookup_country",
-    description: "ISO 3166-1 alpha-2 코드로 나라 정보를 돌려준다. 내장 표에서 읽는다.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        code: { type: "string", enum: COUNTRY_CODES, description: "나라 코드. 예: KR" },
-        fields: {
-          type: "array",
-          items: { type: "string", enum: COUNTRY_FIELDS },
-          default: COUNTRY_FIELDS,
-          description: "돌려줄 필드",
-        },
-      },
-      required: ["code"],
-    },
-  },
-  {
-    name: "evaluate_expression",
-    description: "사칙연산과 괄호로 된 수식을 계산한다. 예: (2 + 3) * 4 / 5",
-    inputSchema: {
-      type: "object",
-      properties: {
-        expression: { type: "string", minLength: 1, description: "수식. 예: 2 + 2 * 3" },
-      },
-      required: ["expression"],
-    },
-    outputSchema: {
-      type: "object",
-      properties: { expression: { type: "string" }, value: { type: "number" } },
-      required: ["expression", "value"],
-    },
-  },
-];
 
 /** WMO 날씨 코드 중 자주 나오는 것만. 모르는 코드는 숫자 그대로 돌려준다. */
 const WEATHER_CODES = {
@@ -283,7 +124,7 @@ const WEATHER_CODES = {
 
 const text = (value) => ({ content: [{ type: "text", text: JSON.stringify(value) }] });
 
-/** outputSchema 를 선언한 툴은 같은 값을 `structuredContent` 에도 싣는다. runner 가 대조하는 자리다. */
+/** outputSchema 를 선언한 툴은 같은 값을 `structuredContent` 에도 싣는다. SDK 와 runner 가 대조하는 자리다. */
 const structured = (value) => ({
   content: [{ type: "text", text: JSON.stringify(value) }],
   structuredContent: value,
@@ -306,145 +147,197 @@ async function getJson(url) {
   return response.json();
 }
 
+/**
+ * 외부 호출 툴의 핸들러를 감싼다. 네트워크 단절·DNS 실패가 여기로 온다. 재생 중이라면 이
+ * 갈래에 닿지 않아야 정상이다. 로컬 툴은 던질 것이 없어 감싸지 않는다.
+ */
+const external = (handler) => async (args) => {
+  try {
+    return await handler(args);
+  } catch (error) {
+    return fail(
+      `→ 외부 API 호출에 실패했습니다: ${error instanceof Error ? error.message : String(error)}\n` +
+        "→ 네트워크 연결을 확인하거나, 녹화해 둔 세션이 있으면 --session 으로 재생하세요.",
+    );
+  }
+};
+
+const server = new McpServer({ name: "example-live-weather-server", version: "0.3.0" });
+
 // ---------------------------------------------------------------------------
 // 외부 호출 툴 넷
 // ---------------------------------------------------------------------------
 
-async function getForecast(args) {
-  const city = args?.city;
-  if (typeof city !== "string" || city.trim() === "") {
-    return fail('→ \'city\' 는 비어 있지 않은 문자열이어야 합니다. 예: { "city": "부산" }');
-  }
+server.registerTool(
+  "get_forecast",
+  {
+    description: "도시 이름으로 현재 기온과 날씨 코드를 조회한다 (Open-Meteo).",
+    inputSchema: {
+      city: z
+        .string()
+        .meta({ examples: ["부산"] })
+        .describe("도시 이름. 예: 부산, Seoul"),
+    },
+  },
+  external(async ({ city }) => {
+    if (city.trim() === "") {
+      return fail('→ \'city\' 는 비어 있지 않은 문자열이어야 합니다. 예: { "city": "부산" }');
+    }
 
-  const geo = new URL(GEOCODING_URL);
-  geo.searchParams.set("name", city.trim());
-  geo.searchParams.set("count", "1");
-  geo.searchParams.set("language", "ko");
-  const places = await getJson(geo);
-  const place = places.results?.[0];
-  if (place === undefined) {
-    return fail(
-      `→ '${city}' 에 해당하는 지역을 찾지 못했습니다.\n` +
-        "→ 도시 이름을 한글이나 영문 정식 명칭으로 적어 보세요. 예: 부산, Seoul, Tokyo",
-    );
-  }
-
-  const forecast = new URL(FORECAST_URL);
-  forecast.searchParams.set("latitude", String(place.latitude));
-  forecast.searchParams.set("longitude", String(place.longitude));
-  forecast.searchParams.set("current", "temperature_2m,weather_code");
-  forecast.searchParams.set("timezone", place.timezone ?? "UTC");
-  const data = await getJson(forecast);
-  const code = data.current?.weather_code;
-
-  return text({
-    city: place.name,
-    country: place.country,
-    temp: data.current?.temperature_2m,
-    condition: WEATHER_CODES[code] ?? `코드 ${code}`,
-    observedAt: data.current?.time,
-  });
-}
-
-async function convertCurrency(args) {
-  const { amount, from, to } = args ?? {};
-  if (typeof amount !== "number" || !Number.isFinite(amount) || amount < 0) {
-    return fail("→ 'amount' 는 0 이상의 숫자여야 합니다.");
-  }
-  if (typeof from !== "string" || typeof to !== "string") {
-    return fail(
-      '→ \'from\' 과 \'to\' 는 통화 코드 문자열이어야 합니다. 예: { "from": "USD", "to": "KRW" }',
-    );
-  }
-  const base = from.toUpperCase();
-  const quote = to.toUpperCase();
-  if (base === quote) {
-    return text({ amount, from: base, to: quote, converted: amount, rate: 1 });
-  }
-
-  const url = new URL(RATES_URL);
-  url.searchParams.set("base", base);
-  url.searchParams.set("symbols", quote);
-  let data;
-  try {
-    data = await getJson(url);
-  } catch (error) {
-    if (error?.status === 404 || error?.status === 422) {
+    const geo = new URL(GEOCODING_URL);
+    geo.searchParams.set("name", city.trim());
+    geo.searchParams.set("count", "1");
+    geo.searchParams.set("language", "ko");
+    const places = await getJson(geo);
+    const place = places.results?.[0];
+    if (place === undefined) {
       return fail(
-        `→ '${base}' → '${quote}' 환율을 찾지 못했습니다.\n` +
-          "→ ISO 4217 통화 코드인지 확인하세요. 예: USD, EUR, KRW, JPY",
+        `→ '${city}' 에 해당하는 지역을 찾지 못했습니다.\n` +
+          "→ 도시 이름을 한글이나 영문 정식 명칭으로 적어 보세요. 예: 부산, Seoul, Tokyo",
       );
     }
-    throw error;
-  }
-  const rate = data.rates?.[quote];
-  if (typeof rate !== "number") {
-    return fail(`→ 응답에 '${quote}' 환율이 없습니다. 지원하지 않는 통화일 수 있습니다.`);
-  }
-  return text({
-    amount,
-    from: base,
-    to: quote,
-    converted: Math.round(amount * rate * 100) / 100,
-    rate,
-    date: data.date,
-  });
-}
 
-async function searchCity(args) {
-  const { query, count = 5, language = "ko" } = args ?? {};
-  if (typeof query !== "string" || query.trim() === "") {
-    return fail('→ \'query\' 는 비어 있지 않은 문자열이어야 합니다. 예: { "query": "Seoul" }');
-  }
-  if (!Number.isInteger(count) || count < 1 || count > 10) {
-    return fail("→ 'count' 는 1 이상 10 이하의 정수여야 합니다.");
-  }
-  if (!["ko", "en", "ja"].includes(language)) {
-    return fail("→ 'language' 는 ko · en · ja 중 하나여야 합니다.");
-  }
-  const url = new URL(GEOCODING_URL);
-  url.searchParams.set("name", query.trim());
-  url.searchParams.set("count", String(count));
-  url.searchParams.set("language", language);
-  const data = await getJson(url);
-  const results = (data.results ?? []).map((place) => ({
-    name: place.name,
-    country: place.country,
-    latitude: place.latitude,
-    longitude: place.longitude,
-    timezone: place.timezone,
-  }));
-  if (results.length === 0) {
-    return fail(`→ '${query}' 에 해당하는 도시를 찾지 못했습니다. 영문 정식 명칭으로 적어 보세요.`);
-  }
-  return text({ query, count: results.length, results });
-}
+    const forecast = new URL(FORECAST_URL);
+    forecast.searchParams.set("latitude", String(place.latitude));
+    forecast.searchParams.set("longitude", String(place.longitude));
+    forecast.searchParams.set("current", "temperature_2m,weather_code");
+    forecast.searchParams.set("timezone", place.timezone ?? "UTC");
+    const data = await getJson(forecast);
+    const code = data.current?.weather_code;
 
-async function listRecentQuakes(args) {
-  const { minMagnitude = 5, hours = 24 } = args ?? {};
-  if (typeof minMagnitude !== "number" || minMagnitude < 0 || minMagnitude > 10) {
-    return fail("→ 'minMagnitude' 는 0 이상 10 이하의 숫자여야 합니다.");
-  }
-  if (!Number.isInteger(hours) || hours < 1 || hours > 168) {
-    return fail("→ 'hours' 는 1 이상 168 이하의 정수여야 합니다.");
-  }
-  // 요청 URL 에 현재 시각이 들어간다. 그래서 같은 입력이라도 실행마다 요청이 달라지고, 재생은
-  // 녹화본에서 이 요청을 찾지 못한다. mcpeak 이 "재현 가능하지 않다" 로 진단하는 자리다.
-  const since = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
-  const url = new URL(QUAKES_URL);
-  url.searchParams.set("format", "geojson");
-  url.searchParams.set("starttime", since);
-  url.searchParams.set("minmagnitude", String(minMagnitude));
-  url.searchParams.set("orderby", "time");
-  url.searchParams.set("limit", "10");
-  const data = await getJson(url);
-  const quakes = (data.features ?? []).map((f) => ({
-    place: f.properties?.place,
-    magnitude: f.properties?.mag,
-    time: new Date(f.properties?.time ?? 0).toISOString(),
-  }));
-  return text({ since, minMagnitude, count: quakes.length, quakes });
-}
+    return text({
+      city: place.name,
+      country: place.country,
+      temp: data.current?.temperature_2m,
+      condition: WEATHER_CODES[code] ?? `코드 ${code}`,
+      observedAt: data.current?.time,
+    });
+  }),
+);
+
+server.registerTool(
+  "convert_currency",
+  {
+    description: "금액을 다른 통화로 환산한다 (Frankfurter, ECB 고시 환율).",
+    inputSchema: {
+      amount: z
+        .number()
+        .meta({ examples: [100] })
+        .describe("환산할 금액"),
+      from: z
+        .string()
+        .meta({ examples: ["USD"] })
+        .describe("출발 통화 코드. 예: USD"),
+      to: z
+        .string()
+        .meta({ examples: ["KRW"] })
+        .describe("도착 통화 코드. 예: KRW"),
+    },
+  },
+  external(async ({ amount, from, to }) => {
+    if (amount < 0) {
+      return fail("→ 'amount' 는 0 이상의 숫자여야 합니다.");
+    }
+    const base = from.toUpperCase();
+    const quote = to.toUpperCase();
+    if (base === quote) {
+      return text({ amount, from: base, to: quote, converted: amount, rate: 1 });
+    }
+
+    const url = new URL(RATES_URL);
+    url.searchParams.set("base", base);
+    url.searchParams.set("symbols", quote);
+    let data;
+    try {
+      data = await getJson(url);
+    } catch (error) {
+      if (error?.status === 404 || error?.status === 422) {
+        return fail(
+          `→ '${base}' → '${quote}' 환율을 찾지 못했습니다.\n` +
+            "→ ISO 4217 통화 코드인지 확인하세요. 예: USD, EUR, KRW, JPY",
+        );
+      }
+      throw error;
+    }
+    const rate = data.rates?.[quote];
+    if (typeof rate !== "number") {
+      return fail(`→ 응답에 '${quote}' 환율이 없습니다. 지원하지 않는 통화일 수 있습니다.`);
+    }
+    return text({
+      amount,
+      from: base,
+      to: quote,
+      converted: Math.round(amount * rate * 100) / 100,
+      rate,
+      date: data.date,
+    });
+  }),
+);
+
+server.registerTool(
+  "search_city",
+  {
+    description: "이름으로 도시를 검색해 좌표와 시간대를 돌려준다 (Open-Meteo 지오코딩).",
+    inputSchema: {
+      query: z
+        .string()
+        .meta({ examples: ["Seoul"] })
+        .describe("검색어. 예: Seoul, 부산"),
+      count: z.number().int().min(1).max(10).default(5).describe("최대 결과 수"),
+      language: z.enum(["ko", "en", "ja"]).default("ko").describe("결과 언어"),
+    },
+  },
+  external(async ({ query, count, language }) => {
+    if (query.trim() === "") {
+      return fail('→ \'query\' 는 비어 있지 않은 문자열이어야 합니다. 예: { "query": "Seoul" }');
+    }
+    const url = new URL(GEOCODING_URL);
+    url.searchParams.set("name", query.trim());
+    url.searchParams.set("count", String(count));
+    url.searchParams.set("language", language);
+    const data = await getJson(url);
+    const results = (data.results ?? []).map((place) => ({
+      name: place.name,
+      country: place.country,
+      latitude: place.latitude,
+      longitude: place.longitude,
+      timezone: place.timezone,
+    }));
+    if (results.length === 0) {
+      return fail(
+        `→ '${query}' 에 해당하는 도시를 찾지 못했습니다. 영문 정식 명칭으로 적어 보세요.`,
+      );
+    }
+    return text({ query, count: results.length, results });
+  }),
+);
+
+server.registerTool(
+  "list_recent_quakes",
+  {
+    description: "규모 M 이상의 지진을 최근 것부터 N건 돌려준다 (USGS).",
+    inputSchema: {
+      minMagnitude: z.number().min(0).max(10).default(5).describe("최소 규모"),
+      limit: z.number().int().min(1).max(20).default(10).describe("최대 건수"),
+    },
+  },
+  external(async ({ minMagnitude, limit }) => {
+    // 요청에 시각을 넣지 않는다. `starttime=<현재 시각>` 을 넣으면 같은 입력이라도 실행마다
+    // 요청이 달라져 재생이 녹화본에서 못 찾는다(파일 상단 5번).
+    const url = new URL(QUAKES_URL);
+    url.searchParams.set("format", "geojson");
+    url.searchParams.set("minmagnitude", String(minMagnitude));
+    url.searchParams.set("orderby", "time");
+    url.searchParams.set("limit", String(limit));
+    const data = await getJson(url);
+    const quakes = (data.features ?? []).map((f) => ({
+      place: f.properties?.place,
+      magnitude: f.properties?.mag,
+      time: new Date(f.properties?.time ?? 0).toISOString(),
+    }));
+    return text({ minMagnitude, limit, count: quakes.length, quakes });
+  }),
+);
 
 // ---------------------------------------------------------------------------
 // 파일 상태 툴 둘
@@ -463,99 +356,120 @@ function writeNotes(notes) {
   writeFileSync(NOTES_FILE, JSON.stringify(notes, null, 2));
 }
 
-function addNote(args) {
-  const { title, body, tags = [] } = args ?? {};
-  if (typeof title !== "string" || title.trim() === "") {
-    return fail("→ 'title' 은 비어 있지 않은 문자열이어야 합니다.");
-  }
-  if (typeof body !== "string") {
-    return fail("→ 'body' 는 문자열이어야 합니다. 비어 있어도 됩니다.");
-  }
-  if (!Array.isArray(tags) || tags.some((tag) => typeof tag !== "string")) {
-    return fail('→ \'tags\' 는 문자열 배열이어야 합니다. 예: { "tags": ["work"] }');
-  }
-  const notes = readNotes();
-  const note = { id: notes.length + 1, title: title.trim(), body, tags };
-  notes.push(note);
-  writeNotes(notes);
-  return text({ id: note.id, title: note.title, count: notes.length, file: NOTES_FILE });
-}
+server.registerTool(
+  "add_note",
+  {
+    description: "메모를 하나 추가한다. 파일에 저장되므로 서버를 다시 띄워도 남는다.",
+    inputSchema: {
+      title: z.string().min(1).describe("제목"),
+      body: z.string().describe("본문"),
+      tags: z.array(z.string()).default([]).describe("태그 목록"),
+    },
+  },
+  async ({ title, body, tags }) => {
+    if (title.trim() === "") {
+      return fail("→ 'title' 은 비어 있지 않은 문자열이어야 합니다.");
+    }
+    const notes = readNotes();
+    const note = { id: notes.length + 1, title: title.trim(), body, tags };
+    notes.push(note);
+    writeNotes(notes);
+    return text({ id: note.id, title: note.title, count: notes.length, file: NOTES_FILE });
+  },
+);
 
-function listNotes(args) {
-  const { tag } = args ?? {};
-  if (tag !== undefined && typeof tag !== "string") {
-    return fail("→ 'tag' 는 문자열이어야 합니다.");
-  }
-  const notes = readNotes().filter((note) => tag === undefined || note.tags.includes(tag));
-  return text({ count: notes.length, notes });
-}
+server.registerTool(
+  "list_notes",
+  {
+    description: "저장된 메모를 돌려준다. 태그로 거를 수 있다.",
+    inputSchema: {
+      tag: z.string().optional().describe("이 태그가 붙은 메모만"),
+    },
+  },
+  async ({ tag }) => {
+    const notes = readNotes().filter((note) => tag === undefined || note.tags.includes(tag));
+    return text({ count: notes.length, notes });
+  },
+);
 
 // ---------------------------------------------------------------------------
-// 로컬 결정론 툴 넷 (결함 A · B · C 가 여기 있다)
+// 로컬 결정론 툴 넷 (결함 A 가 여기 있다)
 // ---------------------------------------------------------------------------
 
-function convertUnits(args) {
-  const { value, from, to } = args ?? {};
-  if (typeof value !== "number" || !Number.isFinite(value)) {
-    return fail("→ 'value' 는 유한한 숫자여야 합니다.");
-  }
-  if (UNIT_KINDS[from] === undefined || UNIT_KINDS[to] === undefined) {
-    return fail(`→ 'from' 과 'to' 는 ${Object.keys(UNIT_KINDS).join(" · ")} 중 하나여야 합니다.`);
-  }
-  if (UNIT_KINDS[from] !== UNIT_KINDS[to]) {
-    return fail(
-      `→ '${from}'(${UNIT_KINDS[from]}) 을 '${to}'(${UNIT_KINDS[to]}) 로 환산할 수 없습니다. 같은 종류의 단위끼리만 됩니다.`,
-    );
-  }
-  let converted = value;
-  if (from !== to) {
-    if (UNIT_KINDS[from] === "temp")
-      converted = from === "c" ? value * 1.8 + 32 : (value - 32) / 1.8;
-    else converted = (value * UNIT_FACTORS[from]) / UNIT_FACTORS[to];
-  }
-  converted = Math.round(converted * 1000) / 1000;
-  // 결함 A: outputSchema 는 `converted` 를 선언하는데 여기서는 `result` 로 싣는다. 한 줄 수정: result → converted
-  return structured({ value, from, to, result: converted });
-}
+server.registerTool(
+  "convert_units",
+  {
+    description: "길이(km·m·mi)·질량(kg·lb)·온도(c·f) 단위를 환산한다. 같은 종류끼리만 된다.",
+    inputSchema: {
+      value: z.number().describe("환산할 값"),
+      from: z.enum(UNITS).describe("출발 단위"),
+      to: z.enum(UNITS).describe("도착 단위"),
+    },
+    outputSchema: {
+      value: z.number(),
+      from: z.string(),
+      to: z.string(),
+      converted: z.number(),
+    },
+  },
+  async ({ value, from, to }) => {
+    if (UNIT_KINDS[from] !== UNIT_KINDS[to]) {
+      return fail(
+        `→ '${from}'(${UNIT_KINDS[from]}) 을 '${to}'(${UNIT_KINDS[to]}) 로 환산할 수 없습니다. 같은 종류의 단위끼리만 됩니다.`,
+      );
+    }
+    let converted = value;
+    if (from !== to) {
+      if (UNIT_KINDS[from] === "temp")
+        converted = from === "c" ? value * 1.8 + 32 : (value - 32) / 1.8;
+      else converted = (value * UNIT_FACTORS[from]) / UNIT_FACTORS[to];
+    }
+    converted = Math.round(converted * 1000) / 1000;
+    // 결함 A: outputSchema 는 `converted` 를 선언하는데 여기서는 `result` 로 싣는다. 한 줄 수정: result → converted
+    return structured({ value, from, to, result: converted });
+  },
+);
 
-function summarizeText(args) {
-  const { text: body, options = {} } = args ?? {};
-  if (options === null || typeof options !== "object" || Array.isArray(options)) {
-    return fail('→ \'options\' 는 객체여야 합니다. 예: { "options": { "maxWords": 10 } }');
-  }
-  const { maxWords = 20, style = "plain" } = options;
-  // 결함 B: `text` 는 필수인데 빠져도 거절하지 않고 빈 요약을 돌려준다. 한 줄 수정: 아래 조건에서 `body === undefined` 를 fail 로 보낸다
-  if (body !== undefined && typeof body !== "string") {
-    return fail("→ 'text' 는 문자열이어야 합니다.");
-  }
-  if (!Number.isInteger(maxWords) || maxWords < 1 || maxWords > 200) {
-    return fail("→ 'options.maxWords' 는 1 이상 200 이하의 정수여야 합니다.");
-  }
-  if (!["plain", "bullets"].includes(style)) {
-    return fail("→ 'options.style' 은 plain 또는 bullets 여야 합니다.");
-  }
-  const words = (body ?? "").split(/\s+/).filter((word) => word !== "");
-  const kept = words.slice(0, maxWords);
-  const summary = style === "bullets" ? kept.map((word) => `- ${word}`).join("\n") : kept.join(" ");
-  return text({ summary, wordCount: kept.length, truncated: words.length > kept.length });
-}
+server.registerTool(
+  "summarize_text",
+  {
+    description: "본문을 앞에서부터 N단어로 줄인다. 외부 호출 없이 결정론적으로 동작한다.",
+    inputSchema: {
+      text: z.string().describe("요약할 본문"),
+      options: z
+        .object({
+          maxWords: z.number().int().min(1).max(200).default(20),
+          style: z.enum(["plain", "bullets"]).default("plain"),
+        })
+        .optional(),
+    },
+  },
+  async ({ text: body, options }) => {
+    const { maxWords = 20, style = "plain" } = options ?? {};
+    const words = body.split(/\s+/).filter((word) => word !== "");
+    const kept = words.slice(0, maxWords);
+    const summary =
+      style === "bullets" ? kept.map((word) => `- ${word}`).join("\n") : kept.join(" ");
+    return text({ summary, wordCount: kept.length, truncated: words.length > kept.length });
+  },
+);
 
-function lookupCountry(args) {
-  const { code, fields = COUNTRY_FIELDS } = args ?? {};
-  if (typeof code !== "string") {
-    return fail('→ \'code\' 는 두 글자 나라 코드 문자열이어야 합니다. 예: { "code": "KR" }');
-  }
-  if (!Array.isArray(fields) || fields.some((field) => !COUNTRY_FIELDS.includes(field))) {
-    return fail(`→ 'fields' 는 ${COUNTRY_FIELDS.join(" · ")} 로만 이루어진 배열이어야 합니다.`);
-  }
-  const country = COUNTRIES[code.toUpperCase()];
-  if (country === undefined) {
-    // 결함 C: enum 밖의 코드인데 정상 응답 모양으로 "not found" 를 돌려준다. 한 줄 수정: text → fail
-    return text({ code, error: `not found: ${code}` });
-  }
-  const picked = Object.fromEntries(fields.map((field) => [field, country[field]]));
-  return text({ code: code.toUpperCase(), ...picked });
-}
+server.registerTool(
+  "lookup_country",
+  {
+    description: "ISO 3166-1 alpha-2 코드로 나라 정보를 돌려준다. 내장 표에서 읽는다.",
+    inputSchema: {
+      code: z.enum(COUNTRY_CODES).describe("나라 코드. 예: KR"),
+      fields: z.array(z.enum(COUNTRY_FIELDS)).default(COUNTRY_FIELDS).describe("돌려줄 필드"),
+    },
+  },
+  async ({ code, fields }) => {
+    // enum 밖의 코드는 SDK 가 -32602 로 거절하므로 여기 오는 code 는 항상 표에 있다.
+    const country = COUNTRIES[code];
+    const picked = Object.fromEntries(fields.map((field) => [field, country[field]]));
+    return text({ code, ...picked });
+  },
+);
 
 /**
  * 사칙연산 계산기. `eval` 을 쓰지 않고 재귀 하강으로 푼다. 문법은
@@ -606,65 +520,34 @@ function evaluate(source) {
   return value;
 }
 
-function evaluateExpression(args) {
-  const { expression } = args ?? {};
-  if (typeof expression !== "string" || expression.trim() === "") {
-    return fail(
-      '→ \'expression\' 은 비어 있지 않은 문자열이어야 합니다. 예: { "expression": "2 + 2 * 3" }',
-    );
-  }
-  try {
-    const value = evaluate(expression);
-    return structured({ expression, value });
-  } catch (error) {
-    return fail(
-      `→ 식을 해석할 수 없습니다: '${expression}' (${error.message})\n` +
-        "→ 숫자, + - * /, 괄호만 쓸 수 있습니다. 예: (2 + 3) * 4 / 5",
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-
-const HANDLERS = {
-  get_forecast: getForecast,
-  convert_currency: convertCurrency,
-  search_city: searchCity,
-  list_recent_quakes: listRecentQuakes,
-  add_note: addNote,
-  list_notes: listNotes,
-  convert_units: convertUnits,
-  summarize_text: summarizeText,
-  lookup_country: lookupCountry,
-  evaluate_expression: evaluateExpression,
-};
-
-async function handleCall(name, args) {
-  const handler = HANDLERS[name];
-  if (handler === undefined) {
-    return fail(
-      `→ 알 수 없는 툴 '${name}'. 사용 가능한 툴: ${TOOLS.map((t) => t.name).join(", ")}`,
-    );
-  }
-  try {
-    return await handler(args);
-  } catch (error) {
-    // 네트워크 단절·DNS 실패가 여기로 온다. 재생 중이라면 이 갈래에 닿지 않아야 정상이다.
-    return fail(
-      `→ 외부 API 호출에 실패했습니다: ${error instanceof Error ? error.message : String(error)}\n` +
-        "→ 네트워크 연결을 확인하거나, 녹화해 둔 세션이 있으면 --session 으로 재생하세요.",
-    );
-  }
-}
-
-const server = new Server(
-  { name: "example-live-weather-server", version: "0.2.0" },
-  { capabilities: { tools: {} } },
-);
-
-server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOLS }));
-server.setRequestHandler(CallToolRequestSchema, async (req) =>
-  handleCall(req.params.name, req.params.arguments),
+server.registerTool(
+  "evaluate_expression",
+  {
+    description: "사칙연산과 괄호로 된 수식을 계산한다. 예: (2 + 3) * 4 / 5",
+    inputSchema: {
+      expression: z.string().min(1).describe("수식. 예: 2 + 2 * 3"),
+    },
+    outputSchema: {
+      expression: z.string(),
+      value: z.number(),
+    },
+  },
+  async ({ expression }) => {
+    if (expression.trim() === "") {
+      return fail(
+        '→ \'expression\' 은 비어 있지 않은 문자열이어야 합니다. 예: { "expression": "2 + 2 * 3" }',
+      );
+    }
+    try {
+      const value = evaluate(expression);
+      return structured({ expression, value });
+    } catch (error) {
+      return fail(
+        `→ 식을 해석할 수 없습니다: '${expression}' (${error.message})\n` +
+          "→ 숫자, + - * /, 괄호만 쓸 수 있습니다. 예: (2 + 3) * 4 / 5",
+      );
+    }
+  },
 );
 
 await server.connect(new StdioServerTransport());

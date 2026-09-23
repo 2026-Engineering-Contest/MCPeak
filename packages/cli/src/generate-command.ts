@@ -1938,10 +1938,18 @@ async function runInteractiveReview(
           // 찍는다. 못 고치는 실패가 있다는 사실은 대상 유무와 무관하다.
           if (selection.thrown.length > 0) {
             io.write(
-              `  교정 대상이 아닌 실패 ${selection.thrown.length}건 (호출 자체가 실패했습니다. 입력값 문제가 아닙니다)\n`,
+              `  교정 대상이 아닌 실패 ${selection.thrown.length}건 (입력값 문제가 아닙니다)\n`,
             );
             for (const item of selection.thrown) {
               io.write(`    ${item.caseName}\n`);
+              // 갈래마다 사람이 할 일이 다르다. 호출이 던진 것은 연결·서버 쪽을, 출력 계약
+              // 위반은 서버의 structuredContent 를 보라고 말한다. 같은 말로 뭉개면 두 번째
+              // 갈래에서 입력값을 의심하며 시간을 버린다.
+              io.write(
+                item.reason === "outputContract"
+                  ? "      서버 응답이 선언한 outputSchema 와 다릅니다. 입력값을 바꿔도 같은 자리에서 실패합니다. 서버의 structuredContent 를 고치세요.\n"
+                  : "      호출 자체가 실패했습니다.\n",
+              );
               const body = item.serverMessage.split("\n").filter((line) => line !== "");
               if (body.length === 0) io.write(`      ${item.failureLine}\n`);
               else for (const line of body) io.write(`      → ${line}\n`);

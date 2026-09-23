@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "tools": {
+    "evaluate_expression": {
+      "expression": "(2 + 3) * 4 / 5"
+    }
+  }
+}

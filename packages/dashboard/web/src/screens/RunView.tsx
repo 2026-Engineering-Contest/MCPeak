@@ -35,15 +35,19 @@ const FLOW_TITLES: Record<RunSummary["flow"], string> = {
 };
 
 /**
- * 상태 뱃지 아래 한 줄. 뱃지는 **무엇인지**만 말하므로 사람이 지금 할 일을 따로 적는다.
- * 입력 대기일 때가 가장 중요하다 — 화면 어딘가에 답할 자리가 있다는 것을 모르면 run 이 멈춘
+ * 상태 뱃지 아래 문구. 뱃지는 **무엇인지**만 말하므로 사람이 지금 할 일을 따로 적는다.
+ * 입력 대기일 때가 가장 중요하다. 화면 어딘가에 답할 자리가 있다는 것을 모르면 run 이 멈춘
  * 것처럼 보인다.
+ *
+ * 한 문장이 한 줄이다. 그래서 통 문자열이 아니라 문장 배열로 들고 있다. 통 문자열을 브라우저
+ * 줄바꿈에 맡기면 끊기는 자리가 폭에 따라 달라지고, 한국어는 글자 단위로 끊겨서 "나옵니다" 가
+ * "나옵" 과 "니다." 로 쪼개지기까지 했다. 끊는 자리를 문장 경계로 못 박는다.
  */
-const STATUS_NOTES: Record<RunStatus, string> = {
-  running: "CLI 가 실행 중입니다. 끝나면 요약이 나옵니다.",
-  "waiting-input": "아래 질문에 답하면 이어서 진행합니다.",
-  done: "실행이 끝났습니다.",
-  failed: "실패로 끝났습니다. 원인은 터미널 출력에 있습니다.",
+const STATUS_NOTES: Record<RunStatus, readonly string[]> = {
+  running: ["CLI 가 실행 중입니다.", "끝나면 요약이 나옵니다."],
+  "waiting-input": ["아래 질문에 답하면 이어서 진행합니다."],
+  done: ["실행이 끝났습니다."],
+  failed: ["실패로 끝났습니다.", "원인은 터미널 출력에 있습니다."],
 };
 
 /** 터미널 카드 머리의 수신 표시. 서버는 스트림을 닫지 않으므로 끝은 status 로만 안다. */
@@ -407,12 +411,24 @@ export function RunStreamPanel({
               그런 값은 없다(running/waiting-input/done/failed). 그래서 없는 run 과 도는 run 이
               여기서 같은 글자가 됐다(#295). 모르는 것은 모른다고 쓴다.
             */}
-            {/* 폭을 좁게 둔다. 문구가 두 줄로 감기는 대신 왼쪽 스위트 경로가 덜 잘린다. */}
-            <div className="flex max-w-[200px] flex-col items-end gap-1 text-right">
+            {/*
+              문장은 감지 않는다(`whitespace-nowrap`). 줄을 나누는 것은 `STATUS_NOTES` 의 문장
+              경계뿐이고, 브라우저가 폭에 맞춰 임의로 끊는 일은 없다.
+              왼쪽 스위트 경로가 눌리지는 않는다. `PageHeader` 의 제목 줄이 `flex-wrap` 이고
+              왼쪽 칸의 기준 폭이 360px 이라, 자리가 모자라면 경로가 끊기는 대신 이 `aside`
+              가 통째로 아랫줄로 내려간다.
+            */}
+            <div className="flex flex-col items-end gap-1 whitespace-nowrap text-right">
               {status !== null ? (
                 <>
                   <StatusBadge status={status} exitCode={exitCode} />
-                  <p className="text-caption text-ink-muted">{STATUS_NOTES[status]}</p>
+                  <p className="text-caption text-ink-muted">
+                    {STATUS_NOTES[status].map((sentence) => (
+                      <span className="block" key={sentence}>
+                        {sentence}
+                      </span>
+                    ))}
+                  </p>
                 </>
               ) : streamError === null ? (
                 <span className="text-caption text-ink-muted">상태를 확인하는 중...</span>

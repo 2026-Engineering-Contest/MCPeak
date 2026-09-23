@@ -2,7 +2,8 @@
 
 mcpeak 의 **전 과정을 한 서버로 보여주는** 데모용 예제 MCP 서버. **stdio** 트랜스포트로 동작하고,
 툴 10개가 각자 다른 단계를 맡는다. 일부는 **실제 공개 API 를 `fetch` 로 부르고**, 일부는 로컬에서
-결정론적으로 동작하며, 세 곳에는 **일부러 둔 결함**이 있다.
+결정론적으로 동작하며, 한 곳에는 **일부러 둔 결함**이 있다. `McpServer.registerTool` 에 zod 스키마를
+넘겨 SDK 가 JSON Schema 를 만들고 인자를 검증하는 경로를 쓴다(`zod-notes-server` 와 같은 조합).
 
 ```bash
 node examples/live-weather-server/server.mjs
@@ -15,38 +16,42 @@ node examples/live-weather-server/server.mjs
 | `get_forecast` | 외부 (Open-Meteo, fetch 2회) | `city` | 호출마다 기온이 바뀐다. 재생이 그것을 고정한다 |
 | `convert_currency` | 외부 (Frankfurter) | `amount, from, to` | 환율 날짜가 날마다 바뀐다 |
 | `search_city` | 외부 (Open-Meteo 지오코딩) | `query`, `count`(default 5), `language`(enum) | baseline 이 `default` · `enum` 에서 값을 고르는 자리 |
-| `list_recent_quakes` | 외부 (USGS) | `minMagnitude`(default 5), `hours`(default 24) | 요청 URL 에 **현재 시각**을 넣는다. 재생 때 "재현 가능하지 않다" 진단이 뜨는 툴 |
+| `list_recent_quakes` | 외부 (USGS) | `minMagnitude`(default 5), `limit`(default 10) | 최근 N건. 요청에 시각을 넣지 않아 재생이 맞는다 |
 | `add_note` | 로컬, 파일 상태 | `title, body, tags[]` | `--determinism` 이 `id` 차이를 잡고 `--reset-cmd` 로 통과한다 |
 | `list_notes` | 로컬, 파일 상태 | `tag?` | 위 파일을 읽는다 |
 | `convert_units` | 로컬 | `value`, `from` · `to`(enum, 길이·질량·온도) | **결함 A**. enum 정상 분기 4건이 함께 실패한다 |
-| `summarize_text` | 로컬 | `text`, `options: { maxWords, style }` | 중첩 객체 baseline. **결함 B** |
-| `lookup_country` | 로컬 정적 표 | `code`(enum), `fields[]`(enum 배열) | **결함 C** |
+| `summarize_text` | 로컬 | `text`, `options: { maxWords, style }` | 중첩 객체 baseline. 필수 `text` 누락은 zod 가 `-32602` 로 막는다 |
+| `lookup_country` | 로컬 정적 표 | `code`(enum), `fields[]`(enum 배열) | enum 밖 코드는 zod 가 `-32602` 로 막는다 |
 | `evaluate_expression` | 로컬 | `expression` | baseline 자리값 `"example"` 이 실패하고 AI 사전보완이 값을 제안하는 툴 |
 
 외부 API 는 전부 무료·무인증이다. 로컬 툴은 네트워크 없이 돈다.
 
-## 일부러 둔 결함 세 곳
+## 일부러 둔 결함 한 곳
 
 `mcpeak test` 가 잡고 `mcpeak repair` 가 원인을 짚는 장면을 위한 것이다. `server.mjs` 안에
-`// 결함 A` · `// 결함 B` · `// 결함 C` 표식이 있고, 각각 **한 줄만 고치면** 사라진다.
+`// 결함 A` 표식이 있고 **한 줄만 고치면** 사라진다.
 
 | 결함 | 툴 | 무엇이 틀렸나 | test 가 잡는 케이스 | 고치는 법 |
 |---|---|---|---|---|
 | A | `convert_units` | `outputSchema` 는 `converted` 를 선언하는데 `structuredContent` 에 `result` 로 싣는다 | `convert-units-success` | `result:` → `converted:` |
-| B | `summarize_text` | 필수 필드 `text` 가 빠져도 거절하지 않고 빈 요약을 돌려준다 | `summarize-text-missing-text` | `body === undefined` 를 `fail` 로 보낸다 |
-| C | `lookup_country` | enum 밖의 코드에 `isError: false` 로 `not found` 를 돌려준다 | `lookup-country-enum-code` | `text(...)` → `fail(...)` |
 
-결함 A 의 실패 문장은 SDK 가 만든다. MCP SDK 클라이언트가 `structuredContent` 를 `outputSchema`
-로 검증해 `MCP error -32602: Structured content does not match the tool's output schema` 를 던지고,
-mcpeak 은 그 오류를 그대로 실패 원인으로 보여준다.
+결함 A 의 실패 문장은 SDK 가 만든다. `McpServer` 가 핸들러의 `structuredContent` 를 `outputSchema`
+로 검증해 `MCP error -32602: Output validation error: Invalid structured content for tool
+convert_units: Invalid input: expected number, received undefined at converted` 를 던지고, mcpeak 은
+그 오류를 그대로 실패 원인으로 보여준다.
 
 결함 A 는 `convert_units` 케이스 5건(기준 정상 1건 + `from`·`to` 의 정상 분기 4건)을 한꺼번에
 떨어뜨린다. 응답 모양이 틀렸으니 어떤 입력이든 같은 이유로 실패한다.
 
-결함 셋을 다 고치면 baseline 스위트(`server.suite.json`)에서 `evaluate-expression-success` 하나만
+저수준 `Server` 로 짜던 시절에는 결함 B(`summarize_text` 가 필수 `text` 누락을 거절하지 않음)와
+C(`lookup_country` 가 enum 밖 코드에 정상 응답)도 있었다. zod 로 옮기면서 둘 다 사라졌다. SDK 가
+핸들러에 닿기 전에 인자를 검증하므로 스키마가 곧 거절이고, 그 종류의 결함은 만들 수 없다.
+`summarize-text-missing-text` · `lookup-country-enum-code` 케이스는 그래서 통과한다.
+
+결함 A 를 고치면 baseline 스위트(`server.suite.json`)에서 `evaluate-expression-success` 하나만
 실패로 남는다. 그 케이스는 결함이 아니라 자리값 `"example"` 이 유효한 수식이 아닌 것이고,
 generate 의 AI 사전보완이나 시험 실행 뒤 교정이 `(2 + 3) * 4 / 5` 같은 값을 제안해 채우는
-자리다. AI 로 생성한 명세는 그 값이 들어가 있으므로 결함 셋을 고치면 전부 녹색이다.
+자리다. AI 로 생성한 명세는 그 값이 들어가 있으므로 결함 A 를 고치면 전부 녹색이다.
 
 ## 상태 파일
 
@@ -74,31 +79,31 @@ RESET="rm -f $HOME/.live-weather-notes.json"
 $MCPEAK generate --out live-weather.suite.json --command node --arg $SRV \
   --provider claude --model sonnet --reset-cmd "$RESET"
 
-# 2. 실행. 결함 A · B · C 가 각자 다른 문장으로 실패한다.
+# 2. 실행. 결함 A 가 convert_units 5건을 떨어뜨린다.
 $MCPEAK test live-weather.suite.json --command node --arg $SRV --repair-bundle repair.json
 
 # 3. repair 가 번들을 보고 원인 후보를 짚는다. 서버 코드는 고치지 않는다. 1분 안팎 걸린다.
 $MCPEAK repair repair.json --provider claude --model sonnet
 
-# 4. 표식 세 줄을 고친 뒤 다시 실행하면 녹색이다.
+# 4. 표식 한 줄을 고친 뒤 다시 실행하면 녹색이다.
 
 # 5. 녹화. 외부 호출 12건이 세션에 저장된다(get_forecast 2 · convert_currency 1 · search_city 4 ·
 #    list_recent_quakes 5). 끝에 "세션 파일 본문에 URL 이 남아 있다" 는 알림이 붙는데 오류가 아니다.
 #    이 서버의 외부 API 는 자격증명이 없으므로 그대로 두면 된다.
 $MCPEAK test live-weather.suite.json --command node --arg $SRV --record-session live-weather.session.json
 
-# 6. 재생. 네트워크 없이 같은 결과가 나온다. list_recent_quakes 5건만 "재생 원본에서 찾지 못한
-#    호출" 로 진단되고 그만큼 실패로 센다. 2회 재생의 출력은 그 요청 URL 의 시각만 빼고 같다.
+# 6. 재생. 네트워크 없이 녹화 때와 같은 결과가 나온다. 실패도 녹화 때와 같은 6건뿐이다.
+#    요청이 입력만으로 정해지므로 외부 호출 12건 전부 녹화본에서 찾는다.
 $MCPEAK test live-weather.suite.json --command node --arg $SRV --session live-weather.session.json
 
-# 7. 결정론. add_note 의 id 가 회차마다 달라진다. 초기화 명령을 주면 같아지고,
-#    list_recent_quakes 5건만 "시간 의존" 으로 남는다. 결함 A 를 고친 뒤에 돌린다(아래 한계 참고).
+# 7. 결정론. add_note 의 id 가 회차마다 달라진다. 초기화 명령을 주면 같아진다.
+#    외부 툴은 두 회차 사이에 실제 데이터(기온·환율·지진 목록)가 바뀌면 그만큼 차이로 보인다.
 $MCPEAK test live-weather.suite.json --command node --arg $SRV --determinism
 $MCPEAK test live-weather.suite.json --command node --arg $SRV --determinism --reset-cmd "$RESET"
 ```
 
-`server.suite.json` 으로 2번부터 시작해도 된다. 그 경우 실패는 결함 A 5건 · B 1건 · C 1건에
-`evaluate-expression-success` 가 더해져 8건이다.
+`server.suite.json` 으로 2번부터 시작해도 된다. 그 경우 실패는 결함 A 5건에
+`evaluate-expression-success` 가 더해져 6건이다.
 
 `server.suite.json` 은 `--baseline-only --no-dry-run` 으로 뽑은 baseline 이다. 승인 지문이 없으므로
 그 파일로 `repair` 를 부르면 명세 쪽 원인도 함께 후보로 본다(ADR-0032). 데모에서는 1번처럼
@@ -123,10 +128,12 @@ CI 에는 넣지 않는다. 외부 API 에 기대는 순간 CI 가 그 API 의 �
 
 - **`globalThis.fetch` 만 쓴다.** `@mcpeak/record` 가 가로채는 경계가 그것 하나다(ADR-0057).
   `node:http`·axios 로 부르면 녹화되지 않고, 재생 중 실제 네트워크로 나간다.
+- **요청에 현재 시각을 넣지 않는다.** 재생이 요청 해시로 응답을 찾기 때문이다(위 한계 참고).
 - **실패 경로가 있다.** 모르는 도시, 모르는 통화 코드, 해석 못 하는 수식, 종류가 다른 단위는
   `isError: true` 와 함께 무엇을 고쳐야 하는지 말한다.
-- **저수준 `Server` 를 쓴다.** JSON Schema 를 그대로 넘기고 zod 의존성을 붙이지 않는다.
-  `outputSchema` 를 선언한 툴은 같은 값을 `structuredContent` 에도 싣는다.
+- **`McpServer` + zod 를 쓴다.** `registerTool` 에 zod 스키마를 넘겨 SDK 가 JSON Schema 를
+  만들고 인자를 검증한다. 핸들러는 스키마로 못 적는 의미 검증만 맡는다. `outputSchema` 를
+  선언한 툴은 같은 값을 `structuredContent` 에도 싣는다.
 
 ## 한계
 
@@ -134,14 +141,13 @@ CI 에는 넣지 않는다. 외부 API 에 기대는 순간 CI 가 그 API 의 �
   스키마의 `examples` 가 `부산` 인 이유다. 데모에서 도시를 바꿀 때는 먼저 한 번 실행해 찾히는지
   본다. IPv6 가 막힌 망에서는 서버 상단의 `ipv4first` 가 없으면 `ETIMEDOUT` 이 난다. 그 줄을
   지우지 않는다.
-- `list_recent_quakes` 는 재생이 어긋나는 것이 **의도**다. 깨끗한 재생 장면이 필요하면 그 툴의
-  케이스를 스위트에서 뺀다.
+- `list_recent_quakes` 는 예전에 요청 URL 에 `starttime=<현재 시각>` 을 넣어 재생 때 "재생 원본에서
+  찾지 못한 호출" 로 실패했다. 재생은 요청(메서드·URL·본문)의 해시로 응답을 찾으므로 요청에
+  실행마다 바뀌는 값이 들어가면 같은 입력이라도 못 찾는다. 지금은 `limit` 으로 최근 N건을 받아
+  요청이 입력만으로 정해진다. 사용자 서버가 같은 패턴이면 재생이 그 툴만 떨어지고, 세션 요약에
+  빠진 요청 URL 이 실린다.
 - `convert_units` 의 enum 순서(`km · m · kg · lb · c · f · mi`)는 generate 의 정상 분기 규칙에
   맞춘 것이다. generate 는 enum 의 첫·두 번째·마지막 값을 밟으면서 상대 필드를 기준값에
   고정하므로, 그 세 값이 같은 종류가 아니면 `f → km` 같은 케이스가 생겨 서버가 옳게 거절해도
   영원히 실패한다. **도구는 enum 값 사이의 관계를 모른다.** 사용자 서버에서 같은 일이 나면
   승인 화면에서 그 케이스를 `[m]` 로 빼는 수밖에 없다. 그 출구를 도구에 넣는 일은 후속이다.
-- `--determinism` 을 결함 A 를 고치기 전에 돌리면 `convert_units` 가 "1회차 skipped · 2회차
-  passed" 로 흔들린다고 나온다. 서버가 아니라 도구 쪽 문제다. 1회차만 `listTools` 를 불러 SDK 가
-  outputSchema 검증기를 채우고, 2회차는 그것 없이 호출해 `-32602` 가 안 난다. 데모 순서대로
-  고친 뒤에 돌리면 보이지 않는다.

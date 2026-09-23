@@ -1,5 +1,12 @@
 # @ohmymcp-hsu/generate
 
+## 0.8.1
+
+### Patch Changes
+
+- Updated dependencies [cac23a3]
+  - @mcpeak/runner@0.11.1
+
 ## 0.8.0
 
 ### Minor Changes

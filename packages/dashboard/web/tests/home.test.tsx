@@ -589,9 +589,7 @@ describe("Home 실행 마법사", () => {
     fireEvent.change(screen.getByLabelText("서버 stderr 줄 수"), { target: { value: "5" } });
     fireEvent.click(screen.getByRole("button", { name: "이전" }));
     fireEvent.click(screen.getByRole("button", { name: "이전" }));
-    // 「이전」은 중계기를 먼저 닫고 `.finally` 에서 단계를 물린다(`Home.tsx`) — 전환이
-    // **비동기**다. 동기로 조회하면 아직 3 단계라 1 단계의 접속 방식 컨트롤이 없다.
-    fireEvent.click(await screen.findByRole("button", { name: "HTTP URL" }));
+    fireEvent.click(screen.getByRole("button", { name: "HTTP URL" }));
     fireEvent.change(screen.getByLabelText("URL"), {
       target: { value: "https://example.test/mcp" },
     });

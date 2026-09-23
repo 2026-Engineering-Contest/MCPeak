@@ -43,13 +43,11 @@
     "build": "tsdown --config-loader native && vite build web --outDir ../dist/web",
     "typecheck": "tsc --noEmit && tsc --noEmit -p web/tsconfig.json",
     "dev": "vite dev web",
-    "test": "vitest run --root ../.. packages/dashboard && vitest run --root ../.. --project web",
-    "test:e2e": "vitest run --config vitest.e2e.config.ts"
+    "test": "vitest run --root ../.. packages/dashboard && vitest run --root ../.. --project web"
   },
   "dependencies": {
     "@mcpeak/core": "workspace:*",
     "@mcpeak/generate": "workspace:*",
-    "@mcpeak/mock": "workspace:*",
     "@mcpeak/record": "workspace:*",
     "@mcpeak/runner": "workspace:*",
     "@mcpeak/cli": "workspace:*"

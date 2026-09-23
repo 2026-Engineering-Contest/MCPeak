@@ -5,8 +5,6 @@ import type {
   ApiError,
   PutFileRequest,
   ServerMeta,
-  StartRelayRequest,
-  StartRelayResponse,
   StartRunRequest,
   StartRunResponse,
 } from "../api-types.js";
@@ -20,7 +18,6 @@ import {
   writeFileContent,
 } from "./files.js";
 import { resolveProjectPath } from "./paths.js";
-import type { RelaySessionRegistry } from "./relay-session.js";
 import type { RunIo, RunRegistry } from "./run-registry.js";
 import { formatSseEvent, formatSseEvents, SSE_HEADERS } from "./sse.js";
 import { serveStatic } from "./static.js";
@@ -31,8 +28,6 @@ export interface RouterOptions {
   readonly root: string;
   readonly webDist: string;
   readonly registry: RunRegistry;
-  /** 중계 세션 레지스트리. run 과 별개다 — 중계기는 스스로 끝나지 않는 유일한 실행이다(설계 §2-8). */
-  readonly relays: RelaySessionRegistry;
   /**
    * flow 실행기. 기본값은 `wiring.ts`의 실제 `executeFlow`다. 테스트가 실제 커맨드
    * 함수(서버 연결·프로세스 기동)를 돌리지 않고 fake로 바꿔치기할 수 있도록 연다.
@@ -92,23 +87,6 @@ export async function handleRequest(
     await handlePutFile(request, response, options.root, decodeParam(pathname, "/api/suites/"));
     return;
   }
-  if (method === "POST" && pathname === "/api/relay") {
-    await handleStartRelay(request, response, options.root, options.relays);
-    return;
-  }
-  if (method === "GET" && pathname.startsWith("/api/relay/") && pathname.endsWith("/events")) {
-    handleRelayEvents(
-      request,
-      response,
-      options.relays,
-      extractId(pathname, "/api/relay/", "/events"),
-    );
-    return;
-  }
-  if (method === "DELETE" && pathname.startsWith("/api/relay/")) {
-    await handleCloseRelay(response, options.relays, decodeParam(pathname, "/api/relay/") ?? "");
-    return;
-  }
   if (method === "POST" && pathname === "/api/runs") {
     await handleStartRun(
       request,
@@ -124,21 +102,11 @@ export async function handleRequest(
     return;
   }
   if (method === "GET" && pathname.startsWith("/api/runs/") && pathname.endsWith("/events")) {
-    handleRunEvents(
-      request,
-      response,
-      options.registry,
-      extractId(pathname, "/api/runs/", "/events"),
-    );
+    handleRunEvents(request, response, options.registry, extractRunId(pathname, "/events"));
     return;
   }
   if (method === "POST" && pathname.startsWith("/api/runs/") && pathname.endsWith("/answer")) {
-    await handleAnswer(
-      request,
-      response,
-      options.registry,
-      extractId(pathname, "/api/runs/", "/answer"),
-    );
+    await handleAnswer(request, response, options.registry, extractRunId(pathname, "/answer"));
     return;
   }
   if (method === "GET" && pathname.startsWith("/api/runs/")) {
@@ -163,9 +131,10 @@ function decodeParam(pathname: string, prefix: string): string | null {
   }
 }
 
-/** `/api/runs/<id>/events` 처럼 앞뒤가 고정된 경로에서 가운데 id 만 떼어낸다. */
-function extractId(pathname: string, prefix: string, suffix: string): string {
-  const raw = pathname.slice(prefix.length, pathname.length - suffix.length);
+function extractRunId(pathname: string, suffix: string): string {
+  const prefix = "/api/runs/";
+  const withoutSuffix = pathname.slice(0, pathname.length - suffix.length);
+  const raw = withoutSuffix.slice(prefix.length);
   try {
     return decodeURIComponent(raw);
   } catch {
@@ -424,111 +393,4 @@ function sendJson(response: ServerResponse, status: number, body: unknown): void
     "content-length": Buffer.byteLength(payload),
   });
   response.end(payload);
-}
-
-function isStartRelayRequest(value: unknown): value is StartRelayRequest {
-  if (typeof value !== "object" || value === null) return false;
-  const record = value as Record<string, unknown>;
-  return (
-    typeof record.suitePath === "string" &&
-    typeof record.command === "string" &&
-    typeof record.model === "string" &&
-    Array.isArray(record.args) &&
-    record.args.every((item) => typeof item === "string") &&
-    Array.isArray(record.envNames) &&
-    record.envNames.every((item) => typeof item === "string") &&
-    (record.serverId === undefined || typeof record.serverId === "string")
-  );
-}
-
-async function handleStartRelay(
-  request: IncomingMessage,
-  response: ServerResponse,
-  root: string,
-  relays: RelaySessionRegistry,
-): Promise<void> {
-  const body = await readJsonBody<unknown>(request);
-  if (body === undefined) {
-    sendJson(response, 400, { error: "본문이 올바른 JSON이 아닙니다." });
-    return;
-  }
-  if (!isStartRelayRequest(body)) {
-    sendJson(response, 400, { error: "suitePath·command·args·envNames·model 이 필요합니다." });
-    return;
-  }
-  // 경로 가드는 파일 라우트와 같은 한 곳을 쓴다. 두 벌이 되면 한쪽만 고쳐지는 사고가 난다.
-  const absolute = resolveProjectPath(root, body.suitePath);
-  if (absolute === null) {
-    sendJson(response, 400, { error: "허용되지 않는 경로입니다." });
-    return;
-  }
-  // 후보를 골랐으면 그 후보의 `.mcp.json` env 를 **여기서** 값으로 바꿔 중계기에 물린다.
-  // 값은 이 프로세스 안에서만 살고 argv 에도 응답에도 실리지 않는다(설계 §4.3 과 같은 규칙).
-  let candidateEnv: Readonly<Record<string, string>> | undefined;
-  if (body.serverId !== undefined) {
-    candidateEnv = await resolveCandidateEnv(root, body.serverId, process.env);
-    if (candidateEnv === undefined) {
-      sendJson(response, 400, { error: `서버 후보를 찾을 수 없습니다: ${body.serverId}` });
-      return;
-    }
-  }
-  const session = await relays.start(
-    body,
-    async () => (await readFileContent(root, absolute)).content,
-    candidateEnv,
-  );
-  if ("error" in session) {
-    sendJson(response, 400, session);
-    return;
-  }
-  const result: StartRelayResponse = { relayId: session.relayId, cases: session.cases };
-  sendJson(response, 200, result);
-}
-
-/** run 의 SSE 와 같은 모양이다 — 과거 이벤트를 동기 구간에서 흘리고 이어서 구독한다. */
-function handleRelayEvents(
-  request: IncomingMessage,
-  response: ServerResponse,
-  relays: RelaySessionRegistry,
-  relayId: string,
-): void {
-  const session = relays.get(relayId);
-  if (session === undefined) {
-    sendJson(response, 404, { error: "그런 중계 세션이 없습니다." });
-    return;
-  }
-  const header = request.headers["last-event-id"];
-  const lastEventId = parseLastEventId(Array.isArray(header) ? header[0] : header);
-  response.writeHead(200, SSE_HEADERS);
-  response.write(formatSseEvents(session.events.filter((event) => event.id > lastEventId)));
-  const unsubscribe = session.subscribe((event) => {
-    response.write(formatSseEvent(event));
-  });
-  response.on("close", unsubscribe);
-}
-
-/**
- * **닫힌 것을 확인하고 나서 응답한다.** 브라우저의 `[실행 시작]` 이 이 응답을 기다렸다가
- * 판정 실행을 시작하므로(설계 §1), 여기서 먼저 답하면 같은 서버가 두 벌 뜬다.
- *
- * 못 닫은 것을 204 로 답하지 않는 것이 그 계약의 나머지 절반이다 — 브라우저는 닫기가
- * 실패하면 시작하지 않는데(`runAfterClose`), 서버가 실패를 **말해 주어야** 그럴 수 있다.
- * 500 인 이유는 대상이 없는 것(404)이 아니라 우리가 끝내지 못한 것이기 때문이다.
- */
-async function handleCloseRelay(
-  response: ServerResponse,
-  relays: RelaySessionRegistry,
-  relayId: string,
-): Promise<void> {
-  const result = await relays.close(relayId);
-  if (result.kind === "notFound") {
-    sendJson(response, 404, { error: "그런 중계 세션이 없습니다." });
-    return;
-  }
-  if (result.kind === "failed") {
-    sendJson(response, 500, { error: result.error });
-    return;
-  }
-  response.writeHead(204);
-  response.end();
 }

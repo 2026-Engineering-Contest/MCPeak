@@ -283,6 +283,56 @@ describe("selectRepairTargets", () => {
     expect(result.thrown).toHaveLength(1);
     expect(result.thrown[0]?.caseId).toBe("c1");
     expect(result.thrown[0]?.serverMessage).toContain("원인: MCP error -32602");
+    expect(result.thrown[0]?.reason).toBe("operationFailed");
+  });
+
+  it("서버 쪽 출력 검증 실패는 isError 로 와도 targets 가 아니라 thrown 이다", async () => {
+    // TS SDK 1.30 의 McpServer 는 structuredContent 가 outputSchema 와 다르면 호출을 던지지
+    // 않고 -32602 문장을 `isError: true` 응답으로 돌려준다. 보통 거절과 모양이 같아 입력값을
+    // 세 번 바꿔 보게 하던 것이 이번 결함이다. 입력을 무엇으로 바꿔도 같은 문장으로 실패한다.
+    const result = await select(
+      [callCase("c1", "get_weather", { city: "서울" })],
+      new Map(),
+      rejects(
+        "get_weather",
+        "MCP error -32602: Output validation error: Invalid structured content for tool get_weather: Invalid input: expected number, received undefined at temp",
+      ),
+    );
+
+    expect(result.targets).toEqual([]);
+    expect(result.thrown).toHaveLength(1);
+    expect(result.thrown[0]?.caseId).toBe("c1");
+    expect(result.thrown[0]?.reason).toBe("outputContract");
+    expect(result.thrown[0]?.serverMessage).toContain("Output validation error");
+  });
+
+  it("클라이언트 쪽 출력 검증 문장이 본문으로 와도 thrown 이다", async () => {
+    const result = await select(
+      [callCase("c1", "get_weather", { city: "서울" })],
+      new Map(),
+      rejects(
+        "get_weather",
+        "MCP error -32602: Structured content does not match the tool's output schema: x",
+      ),
+    );
+
+    expect(result.targets).toEqual([]);
+    expect(result.thrown[0]?.reason).toBe("outputContract");
+  });
+
+  it("-32602 입력 거절 문장은 여전히 교정 대상이다", async () => {
+    // 출력 계약 위반을 거르는 지문이 입력 거절까지 삼키면 교정 기능이 통째로 죽는다.
+    const result = await select(
+      [callCase("c1", "get_weather", { city: 0 })],
+      new Map(),
+      rejects(
+        "get_weather",
+        "MCP error -32602: Input validation error: Invalid arguments for tool get_weather: Invalid input: expected string, received number at city",
+      ),
+    );
+
+    expect(result.thrown).toEqual([]);
+    expect(result.targets).toHaveLength(1);
   });
 
   it("건너뛴 isError 줄을 실패로 읽지 않는다", async () => {

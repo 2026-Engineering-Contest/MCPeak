@@ -3754,9 +3754,34 @@ describe("generate 시험 실행 게이트", () => {
       });
       await runGenerateCommand(gateArgv, d.value);
 
-      expect(d.output()).toContain(
-        "교정 대상이 아닌 실패 1건 (호출 자체가 실패했습니다. 입력값 문제가 아닙니다)",
-      );
+      expect(d.output()).toContain("교정 대상이 아닌 실패 1건 (입력값 문제가 아닙니다)");
+      expect(d.output()).toContain("      호출 자체가 실패했습니다.");
+      expect(d.output()).not.toContain("입력값이 거절된 것으로 보입니다");
+    });
+
+    it("서버 쪽 출력 검증 실패는 isError 응답이어도 교정이 아니라 고지로 나온다", async () => {
+      // TS SDK 1.30 의 McpServer 는 structuredContent 가 outputSchema 와 다르면 -32602 문장을
+      // `isError: true` 응답으로 돌려준다. 이것을 입력 거절로 읽고 값을 세 번 바꿔 보게 하던
+      // 것이 이번 결함이다. 사람이 볼 것은 입력값이 아니라 서버의 structuredContent 다.
+      const d = gateDeps({
+        choices: ["save"],
+        inputs: Array.from({ length: baselineCases.length }, () => "s"),
+        confirms: [true, true],
+        respond: (): ToolResult => ({
+          content: [
+            {
+              type: "text",
+              text: "MCP error -32602: Output validation error: Invalid structured content for tool get_weather: Invalid input: expected number, received undefined at temp",
+            },
+          ],
+          isError: true,
+          raw: null,
+        }),
+      });
+      await runGenerateCommand(gateArgv, d.value);
+
+      expect(d.output()).toContain("교정 대상이 아닌 실패 1건 (입력값 문제가 아닙니다)");
+      expect(d.output()).toContain("서버의 structuredContent 를 고치세요.");
       expect(d.output()).not.toContain("입력값이 거절된 것으로 보입니다");
     });
 

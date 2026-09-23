@@ -154,10 +154,17 @@ const askField = async (
   // 선언 타입을 모르는 필드는 괄호에서 타입만 뺀다. 없는 타입을 지어내지 않는다.
   if (options.declared !== undefined) parts.push(options.declared);
   if (options.current !== undefined) parts.push(`현재 ${JSON.stringify(options.current)}`);
+  // 제안이 현재 값과 같으면 그렇다고 말한다. AI 는 고칠 데를 못 찾으면 받은 값을 그대로
+  // 돌려주는데, 그것을 "제안" 으로만 찍으면 사용자가 같은 값을 왜 다시 넣으라는지 헷갈린다.
+  // JSON 문자열 비교면 충분하다. 값은 명세에서 온 JSON 이고 키 순서도 거기서 정해진다.
+  const proposedText =
+    options.proposed === undefined ? undefined : JSON.stringify(options.proposed);
+  const sameAsCurrent =
+    proposedText !== undefined && proposedText === JSON.stringify(options.current);
   parts.push(
-    options.proposed === undefined
+    proposedText === undefined
       ? "엔터 = 현재 값 유지"
-      : `엔터 = 제안 값 ${JSON.stringify(options.proposed)}`,
+      : `엔터 = 제안 값 ${proposedText}${sameAsCurrent ? " (현재 값과 같음)" : ""}`,
   );
   const question = `${BODY}${options.tool}.${options.field} (${parts.join(", ")}): `;
   for (;;) {

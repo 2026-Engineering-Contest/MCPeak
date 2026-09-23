@@ -666,6 +666,21 @@ describe("RunView — 실행 화면 (#459)", () => {
     expect(screen.getByText("저장할까요?")).toBeTruthy();
   });
 
+  it("상태 문구는 문장마다 줄을 나눈다", () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    stubFetch();
+    render(<RunView runId="run-1" />);
+    act(() => {
+      lastSource().emit({ kind: "done", exitCode: 1 });
+    });
+
+    // 두 문장이 한 덩어리로 붙어 있으면 끊기는 자리를 폭이 정한다. 문장마다 제 줄을 준다.
+    const first = screen.getByText("실패로 끝났습니다.");
+    const second = screen.getByText("원인은 터미널 출력에 있습니다.");
+    expect(first).not.toBe(second);
+    expect(screen.queryByText("실패로 끝났습니다. 원인은 터미널 출력에 있습니다.")).toBeNull();
+  });
+
   it("없다고 확인된 run 은 빈 터미널 대신 다음 행동 링크를 준다", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     vi.stubGlobal(

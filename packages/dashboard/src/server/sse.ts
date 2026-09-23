@@ -1,19 +1,17 @@
+import type { RunEvent } from "../api-types.js";
+
 /**
  * SSE 직렬화 유틸. 한 이벤트가 `id:`와 `data:`를 가진 한 덩어리다.
- *
- * `id` 를 가진 이벤트면 무엇이든 받는다 — run 과 중계 세션이 같은 직렬화를 쓴다.
  *
  * id는 RunRecord가 이벤트 발생 순서로 붙인 값이다. 같은 이벤트 배열은 항상 같은
  * id와 바이트를 내므로 Last-Event-ID 재연결도 결정론적이다.
  */
-export function formatSseEvent<Event extends { readonly id: number }>(event: Event): string {
+export function formatSseEvent(event: RunEvent): string {
   return `id: ${event.id}\ndata: ${JSON.stringify(event)}\n\n`;
 }
 
 /** 과거 이벤트 전체 선전송용. 순서를 그대로 유지한 채 이어 붙인다. */
-export function formatSseEvents<Event extends { readonly id: number }>(
-  events: readonly Event[],
-): string {
+export function formatSseEvents(events: readonly RunEvent[]): string {
   return events.map(formatSseEvent).join("");
 }
 

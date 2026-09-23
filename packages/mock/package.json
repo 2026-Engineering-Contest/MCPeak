@@ -16,8 +16,7 @@
   "homepage": "https://github.com/2026-Engineering-Contest/MCPeak#readme",
   "bugs": "https://github.com/2026-Engineering-Contest/MCPeak/issues",
   "bin": {
-    "mcpeak-mock": "./dist/stdio.mjs",
-    "mcpeak-relay": "./dist/relay.mjs"
+    "mcpeak-mock": "./dist/stdio.mjs"
   },
   "publishConfig": {
     "access": "public"
@@ -43,8 +42,7 @@
   "scripts": {
     "build": "tsdown --config-loader native",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --root ../.. packages/mock",
-    "test:e2e": "node ./tests/dist-relay-bin-e2e.mjs"
+    "test": "vitest run --root ../.. packages/mock"
   },
   "dependencies": {
     "@mcpeak/core": "workspace:*",

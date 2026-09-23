@@ -3,7 +3,6 @@ import type { AddressInfo } from "node:net";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ApiError } from "./api-types.js";
-import { RelaySessionRegistry } from "./server/relay-session.js";
 import { handleRequest } from "./server/routes.js";
 import { RunRegistry } from "./server/run-registry.js";
 
@@ -36,13 +35,11 @@ const WEB_DIST = join(dirname(fileURLToPath(import.meta.url)), "web");
  */
 export function startDashboardServer(options: DashboardServerOptions): Promise<DashboardServer> {
   const registry = new RunRegistry();
-  const relays = new RelaySessionRegistry();
   const server = createServer((request, response) => {
     handleRequest(request, response, {
       root: options.root,
       webDist: WEB_DIST,
       registry,
-      relays,
     }).catch((error: unknown) => {
       if (response.headersSent) {
         response.destroy();

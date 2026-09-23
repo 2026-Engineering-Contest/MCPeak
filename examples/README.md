@@ -9,7 +9,7 @@
 | 예제 | 트랜스포트 | 설명 |
 |---|---|---|
 | [`weather-server`](./weather-server) | stdio | 고정 데이터로 결정론적으로 응답한다. 실패 경로 포함. CI 도그푸딩 대상 |
-| [`live-weather-server`](./live-weather-server) | stdio | 실제 공개 API(Open-Meteo·Frankfurter)를 `fetch` 로 부른다. External 세션 녹화·재생 데모용. CI 에는 넣지 않는다 |
+| [`live-weather-server`](./live-weather-server) | stdio | `McpServer` + zod. 실제 공개 API(Open-Meteo·Frankfurter)를 `fetch` 로 부른다. External 세션 녹화·재생 데모용. CI 에는 넣지 않는다 |
 | [`zod-notes-server`](./zod-notes-server) | stdio | `McpServer` + zod. SDK 가 JSON Schema 를 만드는 경로를 밟는다. 변이 서버 포함. CI 도그푸딩 대상 |
 
 E2E 는 `packages/cli/tests/*-e2e.test.ts` 에 있고 CI `verify` 잡의 `pnpm test` 가 돌린다. 실서버 스펙은 파일명을 `*-e2e.test.ts` 로 지어야 직렬 갈래로 간다(#119).

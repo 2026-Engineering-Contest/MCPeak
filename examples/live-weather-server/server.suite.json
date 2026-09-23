@@ -1,9 +1,339 @@
 {
   "schemaVersion": 1,
-  "id": "live-weather",
-  "name": "live-weather baseline",
+  "id": "server",
+  "name": "server",
   "approval": {
-    "fingerprint": "78af1b7e416b6c45ea013c8370a2f430f09adf9c1aa5662175d63074d7bab5eb"
+    "fingerprint": "e189ead45658cac088c94c8021ff6946f76a4a6ab3b684ade770ce0b1d05a2d0",
+    "cases": [
+      {
+        "id": "get-forecast-success",
+        "status": "passed"
+      },
+      {
+        "id": "get-forecast-missing-city",
+        "status": "passed"
+      },
+      {
+        "id": "get-forecast-type-city",
+        "status": "passed"
+      },
+      {
+        "id": "convert-currency-success",
+        "status": "passed"
+      },
+      {
+        "id": "convert-currency-missing-amount",
+        "status": "passed"
+      },
+      {
+        "id": "convert-currency-missing-from",
+        "status": "passed"
+      },
+      {
+        "id": "convert-currency-missing-to",
+        "status": "passed"
+      },
+      {
+        "id": "convert-currency-type-amount",
+        "status": "passed"
+      },
+      {
+        "id": "convert-currency-type-from",
+        "status": "passed"
+      },
+      {
+        "id": "convert-currency-type-to",
+        "status": "passed"
+      },
+      {
+        "id": "search-city-success",
+        "status": "passed"
+      },
+      {
+        "id": "search-city-bound-upper-count",
+        "status": "passed"
+      },
+      {
+        "id": "search-city-branch-with-count",
+        "status": "passed"
+      },
+      {
+        "id": "search-city-branch-with-language",
+        "status": "passed"
+      },
+      {
+        "id": "search-city-missing-query",
+        "status": "passed"
+      },
+      {
+        "id": "search-city-type-count",
+        "status": "passed"
+      },
+      {
+        "id": "search-city-type-language",
+        "status": "passed"
+      },
+      {
+        "id": "search-city-type-query",
+        "status": "passed"
+      },
+      {
+        "id": "search-city-enum-language",
+        "status": "passed"
+      },
+      {
+        "id": "search-city-range-lower-count",
+        "status": "passed"
+      },
+      {
+        "id": "search-city-range-upper-count",
+        "status": "passed"
+      },
+      {
+        "id": "list-recent-quakes-success",
+        "status": "passed"
+      },
+      {
+        "id": "list-recent-quakes-bound-upper-limit",
+        "status": "passed"
+      },
+      {
+        "id": "list-recent-quakes-bound-upper-minmagnitude",
+        "status": "passed"
+      },
+      {
+        "id": "list-recent-quakes-branch-with-limit",
+        "status": "passed"
+      },
+      {
+        "id": "list-recent-quakes-branch-with-minmagnitude",
+        "status": "passed"
+      },
+      {
+        "id": "list-recent-quakes-type-limit",
+        "status": "passed"
+      },
+      {
+        "id": "list-recent-quakes-type-minmagnitude",
+        "status": "passed"
+      },
+      {
+        "id": "list-recent-quakes-range-lower-limit",
+        "status": "passed"
+      },
+      {
+        "id": "list-recent-quakes-range-upper-limit",
+        "status": "passed"
+      },
+      {
+        "id": "list-recent-quakes-range-lower-minmagnitude",
+        "status": "passed"
+      },
+      {
+        "id": "list-recent-quakes-range-upper-minmagnitude",
+        "status": "passed"
+      },
+      {
+        "id": "add-note-success",
+        "status": "passed"
+      },
+      {
+        "id": "add-note-branch-with-tags",
+        "status": "passed"
+      },
+      {
+        "id": "add-note-missing-body",
+        "status": "passed"
+      },
+      {
+        "id": "add-note-missing-title",
+        "status": "passed"
+      },
+      {
+        "id": "add-note-type-body",
+        "status": "passed"
+      },
+      {
+        "id": "add-note-type-tags",
+        "status": "passed"
+      },
+      {
+        "id": "add-note-type-tags-item",
+        "status": "passed"
+      },
+      {
+        "id": "add-note-type-title",
+        "status": "passed"
+      },
+      {
+        "id": "add-note-range-lower-title",
+        "status": "passed"
+      },
+      {
+        "id": "list-notes-success",
+        "status": "passed"
+      },
+      {
+        "id": "list-notes-branch-with-tag",
+        "status": "passed"
+      },
+      {
+        "id": "list-notes-type-tag",
+        "status": "passed"
+      },
+      {
+        "id": "convert-units-success",
+        "status": "serverDefect"
+      },
+      {
+        "id": "convert-units-branch-enum-from-2",
+        "status": "serverDefect"
+      },
+      {
+        "id": "convert-units-branch-enum-from-last",
+        "status": "serverDefect"
+      },
+      {
+        "id": "convert-units-branch-enum-to-2",
+        "status": "serverDefect"
+      },
+      {
+        "id": "convert-units-branch-enum-to-last",
+        "status": "serverDefect"
+      },
+      {
+        "id": "convert-units-missing-from",
+        "status": "passed"
+      },
+      {
+        "id": "convert-units-missing-to",
+        "status": "passed"
+      },
+      {
+        "id": "convert-units-missing-value",
+        "status": "passed"
+      },
+      {
+        "id": "convert-units-type-from",
+        "status": "passed"
+      },
+      {
+        "id": "convert-units-type-to",
+        "status": "passed"
+      },
+      {
+        "id": "convert-units-type-value",
+        "status": "passed"
+      },
+      {
+        "id": "convert-units-enum-from",
+        "status": "passed"
+      },
+      {
+        "id": "convert-units-enum-to",
+        "status": "passed"
+      },
+      {
+        "id": "summarize-text-success",
+        "status": "passed"
+      },
+      {
+        "id": "summarize-text-bound-upper-options-maxwords",
+        "status": "passed"
+      },
+      {
+        "id": "summarize-text-branch-with-options",
+        "status": "passed"
+      },
+      {
+        "id": "summarize-text-missing-text",
+        "status": "passed"
+      },
+      {
+        "id": "summarize-text-type-options",
+        "status": "passed"
+      },
+      {
+        "id": "summarize-text-type-options-maxwords",
+        "status": "passed"
+      },
+      {
+        "id": "summarize-text-type-options-style",
+        "status": "passed"
+      },
+      {
+        "id": "summarize-text-type-text",
+        "status": "passed"
+      },
+      {
+        "id": "summarize-text-enum-options-style",
+        "status": "passed"
+      },
+      {
+        "id": "summarize-text-range-lower-options-maxwords",
+        "status": "passed"
+      },
+      {
+        "id": "summarize-text-range-upper-options-maxwords",
+        "status": "passed"
+      },
+      {
+        "id": "lookup-country-success",
+        "status": "passed"
+      },
+      {
+        "id": "lookup-country-branch-enum-code-2",
+        "status": "passed"
+      },
+      {
+        "id": "lookup-country-branch-enum-code-last",
+        "status": "passed"
+      },
+      {
+        "id": "lookup-country-branch-with-fields",
+        "status": "passed"
+      },
+      {
+        "id": "lookup-country-missing-code",
+        "status": "passed"
+      },
+      {
+        "id": "lookup-country-type-code",
+        "status": "passed"
+      },
+      {
+        "id": "lookup-country-type-fields",
+        "status": "passed"
+      },
+      {
+        "id": "lookup-country-type-fields-item",
+        "status": "passed"
+      },
+      {
+        "id": "lookup-country-enum-code",
+        "status": "passed"
+      },
+      {
+        "id": "lookup-country-enum-fields-item",
+        "status": "passed"
+      },
+      {
+        "id": "evaluate-expression-success",
+        "status": "passed"
+      },
+      {
+        "id": "evaluate-expression-missing-expression",
+        "status": "passed"
+      },
+      {
+        "id": "evaluate-expression-type-expression",
+        "status": "passed"
+      },
+      {
+        "id": "evaluate-expression-range-lower-expression",
+        "status": "passed"
+      }
+    ]
   },
   "defaultTimeoutMs": 10000,
   "cases": [
@@ -395,13 +725,13 @@
       ]
     },
     {
-      "id": "list-recent-quakes-bound-upper-hours",
-      "name": "list_recent_quakes가 'hours' 상한 경계값에 정상 응답한다",
+      "id": "list-recent-quakes-bound-upper-limit",
+      "name": "list_recent_quakes가 'limit' 상한 경계값에 정상 응답한다",
       "operation": {
         "type": "callTool",
         "tool": "list_recent_quakes",
         "input": {
-          "hours": 168
+          "limit": 20
         }
       },
       "assertions": [
@@ -429,13 +759,13 @@
       ]
     },
     {
-      "id": "list-recent-quakes-branch-with-hours",
-      "name": "list_recent_quakes가 선택 필드 'hours' 를 받아 정상 응답한다",
+      "id": "list-recent-quakes-branch-with-limit",
+      "name": "list_recent_quakes가 선택 필드 'limit' 를 받아 정상 응답한다",
       "operation": {
         "type": "callTool",
         "tool": "list_recent_quakes",
         "input": {
-          "hours": 24
+          "limit": 10
         }
       },
       "assertions": [
@@ -463,13 +793,13 @@
       ]
     },
     {
-      "id": "list-recent-quakes-type-hours",
-      "name": "list_recent_quakes가 'hours' 타입 위반을 거절한다",
+      "id": "list-recent-quakes-type-limit",
+      "name": "list_recent_quakes가 'limit' 타입 위반을 거절한다",
       "operation": {
         "type": "callTool",
         "tool": "list_recent_quakes",
         "input": {
-          "hours": 1.5
+          "limit": 1.5
         }
       },
       "assertions": [
@@ -497,13 +827,13 @@
       ]
     },
     {
-      "id": "list-recent-quakes-range-lower-hours",
-      "name": "list_recent_quakes가 'hours' 하한 미만 값을 거절한다",
+      "id": "list-recent-quakes-range-lower-limit",
+      "name": "list_recent_quakes가 'limit' 하한 미만 값을 거절한다",
       "operation": {
         "type": "callTool",
         "tool": "list_recent_quakes",
         "input": {
-          "hours": 0
+          "limit": 0
         }
       },
       "assertions": [
@@ -514,13 +844,13 @@
       ]
     },
     {
-      "id": "list-recent-quakes-range-upper-hours",
-      "name": "list_recent_quakes가 'hours' 상한 초과 값을 거절한다",
+      "id": "list-recent-quakes-range-upper-limit",
+      "name": "list_recent_quakes가 'limit' 상한 초과 값을 거절한다",
       "operation": {
         "type": "callTool",
         "tool": "list_recent_quakes",
         "input": {
-          "hours": 169
+          "limit": 21
         }
       },
       "assertions": [
@@ -811,7 +1141,8 @@
               "value": {
                 "type": "number"
               }
-            }
+            },
+            "additionalProperties": false
           }
         }
       ]
@@ -851,7 +1182,8 @@
               "value": {
                 "type": "number"
               }
-            }
+            },
+            "additionalProperties": false
           }
         }
       ]
@@ -891,7 +1223,8 @@
               "value": {
                 "type": "number"
               }
-            }
+            },
+            "additionalProperties": false
           }
         }
       ]
@@ -931,7 +1264,8 @@
               "value": {
                 "type": "number"
               }
-            }
+            },
+            "additionalProperties": false
           }
         }
       ]
@@ -971,7 +1305,8 @@
               "value": {
                 "type": "number"
               }
-            }
+            },
+            "additionalProperties": false
           }
         }
       ]
@@ -1509,7 +1844,7 @@
         "type": "callTool",
         "tool": "evaluate_expression",
         "input": {
-          "expression": "example"
+          "expression": "(2 + 3) * 4 / 5"
         }
       },
       "assertions": [
@@ -1529,7 +1864,8 @@
               "value": {
                 "type": "number"
               }
-            }
+            },
+            "additionalProperties": false
           }
         }
       ]

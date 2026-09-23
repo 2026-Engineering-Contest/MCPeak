@@ -54,8 +54,11 @@ export function classifyRejectionBasis(options: {
   if (bodyText === null) return "unverified";
   const text = bodyText.trim();
 
-  // TS SDK. 프로토콜 검증이 낸 잘못된 인자 오류다. 핸들러 코드는 이 접두어를 만들지 않는다.
-  if (text.startsWith("MCP error -32602:")) return "verified";
+  // TS SDK. `-32602` 만으로는 부족하다. SDK 1.30 의 `McpServer` 는 **출력 검증 실패**도 같은
+  // 코드로 `Output validation error:` 를 내고, 그것을 `isError: true` 응답으로 돌려준다. 그건
+  // 입력 거절이 아니라 서버 결함이다. 그래서 입력 검증 문장(`Input validation error:`)만 인정한다.
+  // 핸들러 코드는 이 접두어를 만들지 않는다.
+  if (text.startsWith("MCP error -32602: Input validation error:")) return "verified";
 
   // Python 하위 SDK. jsonschema 검증 자리에서만 나온다.
   if (text.startsWith("Input validation error:")) return "verified";

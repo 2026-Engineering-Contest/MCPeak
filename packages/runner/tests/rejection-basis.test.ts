@@ -85,6 +85,22 @@ describe("classifyRejectionBasis", () => {
     ).toBe("verified");
   });
 
+  it("TS SDK 의 출력 검증 실패는 같은 -32602 라도 확인하지 않는다", () => {
+    // `McpServer` 가 핸들러의 structuredContent 를 outputSchema 로 검증하다 실패하면 같은 코드로
+    // 이 문장을 낸다. 입력 거절이 아니라 서버 결함이다. 이것을 verified 로 찍으면 거절 기대
+    // 케이스에서 출력 계약 위반이 초록으로 숨는다.
+    expect(
+      classify(
+        "convert_units",
+        "MCP error -32602: Output validation error: Invalid structured content for tool convert_units: Invalid input: expected number, received undefined at converted",
+      ),
+    ).toBe("unverified");
+  });
+
+  it("-32602 코드만 있고 입력 검증 문장이 아니면 확인하지 않는다", () => {
+    expect(classify("echo", "MCP error -32602: Tool echo not found")).toBe("unverified");
+  });
+
   it("Python 하위 SDK 의 검증 오류를 확인한다", () => {
     expect(classify("fetch", "Input validation error: 'url' is a required property")).toBe(
       "verified",

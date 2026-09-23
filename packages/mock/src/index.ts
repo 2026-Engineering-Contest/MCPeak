@@ -1,8 +1,5 @@
-import { readFileSync } from "node:fs";
 import type { Server as HttpServer } from "node:http";
 import { createServer } from "node:http";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import type { ToolDef } from "@mcpeak/core";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -638,38 +635,4 @@ export async function serveStdio(
   // 파일이 없는 문장이 나간다. 둘은 다른 값이다.
   const server = buildServer(definition.tools, seed(definition, origin), definitionPath);
   await server.connect(new StdioServerTransport());
-}
-
-/**
- * 중계기 실행 파일(`mcpeak-relay`)의 절대경로. 대시보드가 `spawn` 대상으로 쓴다.
- *
- * **경로를 짐작하지 않고 `package.json` 의 `bin` 을 읽는다.** bin 이름이나 산출물
- * 파일명이 바뀌면 여기가 자동으로 따라오도록 진실 원천을 하나로 둔다(설계 §9).
- *
- * `src/` 와 `dist/` 가 패키지 루트 바로 아래 같은 깊이라, `../package.json` 은 소스로
- * 돌 때(vitest)와 산출물로 돌 때(발행본) **같은 파일**을 가리킨다. cjs 산출물에서도
- * 돈다 — rolldown 이 `import.meta.url` 을
- * `require("url").pathToFileURL(__filename).href` 로 바꿔 넣는다(tsdown 0.22.14 실측).
- * dist 의 해시 청크도 `dist/` 바로 아래라 깊이가 같다.
- *
- * `relay.mjs` 는 **빌드 산출물이다.** 이 함수는 경로를 계산할 뿐 파일이 있는지는 보지
- * 않는다 — 빌드 전에 부르면 없는 경로가 나온다. 존재 확인은 부르는 쪽이 한다.
- */
-export function relayBinPath(): string {
-  const manifestUrl = new URL("../package.json", import.meta.url);
-  const manifest = JSON.parse(readFileSync(manifestUrl, "utf8")) as {
-    bin?: Record<string, string>;
-  };
-  const relative = manifest.bin?.["mcpeak-relay"];
-  if (relative === undefined) {
-    throw new Error(
-      [
-        "→ package.json 의 bin 에 'mcpeak-relay' 항목이 없어 중계기 실행 파일의 위치를 알 수 없습니다.",
-        `→ 읽은 파일: ${fileURLToPath(manifestUrl)}`,
-        `→ 발견된 bin 항목: ${Object.keys(manifest.bin ?? {}).join(", ") || "없음"}`,
-        "→ bin 이름을 바꿨다면 relayBinPath() 가 찾는 이름도 같이 바꾸세요.",
-      ].join("\n"),
-    );
-  }
-  return join(dirname(fileURLToPath(manifestUrl)), relative);
 }

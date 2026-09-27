@@ -1,13 +1,15 @@
 import { readFile, writeFile } from "node:fs/promises";
+import optimizeMetadata from "../../optimize/package.json";
 import packageMetadata from "../package.json";
 import { nodeGenerateDependencies, nodeReviewIO, runGenerateCommand } from "./generate-command.js";
 import { commandDiscovery, commandHelp, GLOBAL_HELP } from "./help.js";
+import { type OptimizeCommandDependencies, runOptimizeCommand } from "./optimize-command.js";
 import { type RepairCommandDependencies, runRepairCommand } from "./repair-command.js";
 import { escapeTerminalText } from "./repair-render.js";
 import { parseTestCommand, runCli } from "./test-command.js";
 
 export type Command = (argv: string[]) => Promise<number>;
-export const COMMANDS = ["test", "generate", "repair", "record", "mock"] as const;
+export const COMMANDS = ["test", "generate", "repair", "record", "mock", "optimize"] as const;
 
 const unavailableDependencies = {
   readFile: async (): Promise<Uint8Array> => {
@@ -71,9 +73,34 @@ export function nodeRepairDependencies(
   };
 }
 
+/**
+ * `optimize` 실행 의존성. `nodeRepairDependencies` 와 같은 이유로 함수로 뺀다. 주입 자체를
+ * 테스트가 단언할 수 있어야 `connectHttp` 나 `readEnv` 를 빠뜨린 배선이 초록으로 남지 않는다.
+ *
+ * `generatorVersion` 은 오버레이의 `generator` 가 `@mcpeak/optimize` 이므로 그 패키지의 버전이다.
+ * 그 패키지의 `exports` 가 `package.json` 을 열지 않아 상대 경로로 읽는다. 빌드가 값으로 싣고,
+ * 릴리스는 `changeset version` 뒤에 빌드하므로 발행되는 두 패키지의 버전이 맞는다.
+ */
+export function nodeOptimizeDependencies(
+  core: typeof import("@mcpeak/core"),
+  optimize: typeof import("@mcpeak/optimize"),
+): OptimizeCommandDependencies {
+  return {
+    connectStdio: core.connectStdio,
+    connectHttp: core.connectHttp,
+    readEnv: (name) => process.env[name],
+    optimize: optimize.optimize,
+    renderReport: optimize.renderReport,
+    generatorVersion: optimizeMetadata.version,
+    writeFile: (path, text) => writeFile(path, text, "utf8"),
+    writeStdout: (text) => void process.stdout.write(text),
+    writeStderr: (text) => void process.stderr.write(text),
+  };
+}
+
 /** `mcpeak help <이름>` 으로 볼 수 있는 명령. 위 두 갈래가 같은 목록을 봐야 한다. */
 // `replay`·`verify` 는 ADR-0059 로 제거됐다. 그 둘은 위쪽에서 마이그레이션 안내로 간다.
-const HELP_TOPICS = ["test", "generate", "repair"] as const;
+const HELP_TOPICS = ["test", "generate", "repair", "optimize"] as const;
 const isHelpTopic = (value: string | undefined): value is (typeof HELP_TOPICS)[number] =>
   HELP_TOPICS.includes(value as (typeof HELP_TOPICS)[number]);
 
@@ -204,6 +231,20 @@ export async function run(argv: string[]): Promise<number> {
       // 확인 화면을 띄웠으면 readline 이 열려 있다. 닫지 않으면 TTY 에서 프로세스가 안 끝난다.
       dependencies.reviewIO?.close?.();
     }
+  }
+  if (argv[0] === "optimize") {
+    // `repair` 분기와 같은 모양이다. `test` 경로가 이 패키지를 로드하지 않게 동적 import 한다.
+    let core: typeof import("@mcpeak/core");
+    let optimize: typeof import("@mcpeak/optimize");
+    try {
+      [core, optimize] = await Promise.all([import("@mcpeak/core"), import("@mcpeak/optimize")]);
+    } catch {
+      process.stderr.write(
+        "오류 [OPTIMIZE_RUNTIME_UNAVAILABLE]: @mcpeak/optimize 를 로드하지 못했습니다.\n해결: 의존성을 설치한 뒤 다시 실행하세요.\n",
+      );
+      return 1;
+    }
+    return runOptimizeCommand(argv, nodeOptimizeDependencies(core, optimize));
   }
   if (argv[0] !== "test") return runCli(argv, unavailableDependencies);
   try {

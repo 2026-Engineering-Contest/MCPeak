@@ -6,7 +6,7 @@ import type { OptimizedTool, OptimizeOverlay, ToolChange } from "../src/types.js
 
 // T2 는 T1 의 실제 출력을 기다리지 않는다(계획서 §9.2). 아래 오버레이는 §8.1 의 설계 의도를 따라
 // 손으로 만든 원본·압축 쌍이고, 바이트는 measureToolBytes 로 실제로 잰다.
-// T4 가 T1 의 synthetic.expected.overlay.json 으로 기대 리포트를 갱신한다.
+// 기대 리포트 파일과 비교하는 첫 테스트만 T1 의 synthetic.expected.overlay.json 을 입력으로 쓴다(T4).
 
 const WORKSPACE = "Workspace that owns the item to operate.";
 
@@ -296,11 +296,16 @@ const LAST_LINE =
 
 describe("renderReport", () => {
   it("synthetic 오버레이의 리포트가 fixtures/synthetic.expected.report.txt 와 글자 단위로 같다", () => {
+    // 입력은 손으로 만든 오버레이가 아니라 T1 의 optimize() 가 낸 파일 픽스처다. 기대 리포트의
+    // 숫자가 실제 변환기의 출력과 한 쌍으로 묶여야 둘 중 하나만 바뀌었을 때 여기서 걸린다.
+    const overlay = JSON.parse(
+      readFileSync(new URL("./fixtures/synthetic.expected.overlay.json", import.meta.url), "utf8"),
+    ) as OptimizeOverlay;
     const expected = readFileSync(
       new URL("./fixtures/synthetic.expected.report.txt", import.meta.url),
       "utf8",
     );
-    expect(renderReport(syntheticOverlay())).toBe(expected);
+    expect(renderReport(overlay)).toBe(expected);
   });
 
   it("otherCapabilities 가 있으면 주의 문단이 마지막 줄 앞에 들어간다", () => {

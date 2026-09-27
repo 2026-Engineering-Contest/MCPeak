@@ -83,6 +83,9 @@ importers:
       '@mcpeak/mock':
         specifier: workspace:*
         version: link:../mock
+      '@mcpeak/optimize':
+        specifier: workspace:*
+        version: link:../optimize
       '@mcpeak/record':
         specifier: workspace:*
         version: link:../record

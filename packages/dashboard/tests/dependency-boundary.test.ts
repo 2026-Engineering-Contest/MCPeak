@@ -5,7 +5,16 @@ import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
 const packagesDir = fileURLToPath(new URL("../..", import.meta.url));
-const packageNames = ["core", "runner", "generate", "record", "mock", "cli", "dashboard"] as const;
+const packageNames = [
+  "core",
+  "runner",
+  "generate",
+  "record",
+  "mock",
+  "optimize",
+  "cli",
+  "dashboard",
+] as const;
 type PackageName = (typeof packageNames)[number];
 
 /**
@@ -18,7 +27,8 @@ const ALLOWED_INTERNAL_DEPENDENCIES: Readonly<Record<PackageName, readonly Packa
   generate: ["core", "runner"],
   record: [],
   mock: ["core"],
-  cli: ["core", "runner", "generate", "record", "mock"],
+  optimize: ["core"],
+  cli: ["core", "runner", "generate", "record", "mock", "optimize"],
   dashboard: ["core", "runner", "generate", "record", "mock", "cli"],
 };
 

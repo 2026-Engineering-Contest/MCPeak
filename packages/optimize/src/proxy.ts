@@ -18,7 +18,8 @@ import {
   ListToolsRequestSchema,
   type Tool,
 } from "@modelcontextprotocol/sdk/types.js";
-import { OptimizeError, type OptimizeOverlay, OVERLAY_SCHEMA_VERSION } from "./types.js";
+import { parseOverlay } from "./overlay.js";
+import { OptimizeError, type OptimizeOverlay } from "./types.js";
 
 export interface ProxyOptions {
   readonly overlay: OptimizeOverlay;
@@ -288,7 +289,7 @@ function sameList(a: readonly string[], b: readonly string[]): boolean {
 // ── 오버레이 읽기 ──────────────────────────────────────────────────────────────
 
 /**
- * 오버레이 파일을 읽어 최소 형식을 검사한다. 실패하면 `OVERLAY_INVALID` 를 던지고 message 는
+ * 오버레이 파일을 읽어 형식을 검사한다. 실패하면 `OVERLAY_INVALID` 를 던지고 message 는
  * **원인 한 줄**이다. §7.3 의 나머지 줄은 `overlayUnreadableMessage` 가 붙인다.
  */
 export function readOverlayFile(path: string): OptimizeOverlay {
@@ -304,43 +305,9 @@ export function readOverlayFile(path: string): OptimizeOverlay {
   } catch (error) {
     throw new OptimizeError("OVERLAY_INVALID", `올바른 JSON 이 아닙니다. ${firstLine(error)}`);
   }
-  // T4: parseOverlay 로 교체
-  return checkOverlayShape(raw);
-}
-
-/**
- * 프록시가 도는 데 필요한 것만 본다. 정식 검사는 T1 의 `parseOverlay` 몫이다.
- * 여기서 보는 것은 셋이다: 형식 버전, 내보낼 도구 목록, 상류와 대조할 이름 목록.
- */
-function checkOverlayShape(raw: unknown): OptimizeOverlay {
-  const fail = (why: string): never => {
-    throw new OptimizeError("OVERLAY_INVALID", why);
-  };
-  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) fail("JSON 객체가 아닙니다.");
-  const value = raw as Record<string, unknown>;
-  if (value.schemaVersion !== OVERLAY_SCHEMA_VERSION) {
-    fail(
-      `schemaVersion 이 ${OVERLAY_SCHEMA_VERSION} 이어야 하는데 ${JSON.stringify(value.schemaVersion) ?? "없습니다"} 입니다.`,
-    );
-  }
-  if (!Array.isArray(value.tools)) fail("'tools' 가 배열이 아닙니다.");
-  (value.tools as unknown[]).forEach((tool, index) => {
-    if (tool === null || typeof tool !== "object") fail(`tools[${index}] 가 객체가 아닙니다.`);
-    if (typeof (tool as { name?: unknown }).name !== "string") {
-      fail(`tools[${index}] 에 문자열 'name' 이 없습니다.`);
-    }
-  });
-  const source = value.source as { toolNames?: unknown } | null | undefined;
-  if (
-    source === null ||
-    typeof source !== "object" ||
-    !Array.isArray(source.toolNames) ||
-    !source.toolNames.every((name) => typeof name === "string")
-  ) {
-    fail("'source.toolNames' 가 문자열 배열이 아닙니다.");
-  }
-  if (typeof value.instructions !== "string") fail("'instructions' 가 문자열이 아닙니다.");
-  return raw as OptimizeOverlay;
+  // 이름표를 경로가 아니라 "오버레이" 로 준다. 경로는 §7.3 첫 줄이 이미 싣는다. 둘째 줄에
+  // 또 실으면 긴 절대 경로가 두 번 찍혀 정작 원인이 줄 끝으로 밀린다.
+  return parseOverlay(raw, "오버레이");
 }
 
 // ── 실패 문장 (§7.3, 글자 단위로 고정) ─────────────────────────────────────────
@@ -352,7 +319,7 @@ export function overlayUnreadableMessage(
 ): string {
   return [
     `→ 오버레이 파일을 읽을 수 없습니다: ${path}`,
-    // parseOverlay 로 바뀌면 원인이 이미 "→ " 로 시작할 수 있다. 겹치지 않게 뗀다.
+    // 원인이 이미 "→ " 로 시작하면 겹치지 않게 뗀다.
     `→ ${cause.replace(/^→ /, "")}`,
     `해결: mcpeak optimize --out ${path} ${rebuildTarget(upstream)} 으로 다시 만드세요.`,
   ].join("\n");
@@ -380,7 +347,9 @@ function upstreamUnavailableMessage(upstream: ConnectOptions, error: unknown): s
   return [
     `→ 원본 서버에 붙지 못했습니다: ${describeTarget(upstream)}`,
     `→ ${firstLine(error)}`,
-    "해결: 프록시 없이 같은 명령으로 서버가 뜨는지 먼저 확인하세요.",
+    isHttp(upstream)
+      ? "해결: 프록시 없이 같은 URL 로 서버에 붙는지 먼저 확인하세요."
+      : "해결: 프록시 없이 같은 명령으로 서버가 뜨는지 먼저 확인하세요.",
   ].join("\n");
 }
 

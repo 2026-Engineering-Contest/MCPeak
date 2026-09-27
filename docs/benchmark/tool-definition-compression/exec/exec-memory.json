@@ -1,0 +1,78 @@
+{
+  "orig": [
+    {
+      "n": 1,
+      "tool": "create_entities",
+      "isError": false,
+      "body": "[{\"type\":\"text\",\"text\":\"[\\n  {\\n    \\\"name\\\": \\\"홍길동\\\",\\n    \\\"entityType\\\": \\\"person\\\",\\n    \\\"observations\\\": [\\n      \\\"개발자\\\"\\n    ]\\n  }\\n]\"}]"
+    },
+    {
+      "n": 2,
+      "tool": "create_relations",
+      "isError": false,
+      "body": "[{\"type\":\"text\",\"text\":\"[\\n  {\\n    \\\"from\\\": \\\"홍길동\\\",\\n    \\\"to\\\": \\\"OhMyMCP\\\",\\n    \\\"relationType\\\": \\\"works_on\\\"\\n  }\\n]\"}]"
+    },
+    {
+      "n": 3,
+      "tool": "add_observations",
+      "isError": false,
+      "body": "[{\"type\":\"text\",\"text\":\"[\\n  {\\n    \\\"entityName\\\": \\\"홍길동\\\",\\n    \\\"addedObservations\\\": [\\n      \\\"서울 거주\\\"\\n    ]\\n  }\\n]\"}]"
+    },
+    {
+      "n": 4,
+      "tool": "read_graph",
+      "isError": false,
+      "body": "[{\"type\":\"text\",\"text\":\"{\\n  \\\"entities\\\": [\\n    {\\n      \\\"name\\\": \\\"홍길동\\\",\\n      \\\"entityType\\\": \\\"person\\\",\\n      \\\"observations\\\": [\\n        \\\"개발자\\\",\\n        \\\"서울 거주\\\"\\n      ]\\n    }\\n  ],\\n  \\\"relations\\\": [\\n    {\\n      \\\"from\\\": \\\"홍길동\\\",\\n      \\\"to\\\": \\\"OhMyMCP\\\",\\n      \\\"relationType\\\": \\\"works_on\\\"\\n    }\\n  ]\\n}\"}]"
+    },
+    {
+      "n": 5,
+      "tool": "search_nodes",
+      "isError": false,
+      "body": "[{\"type\":\"text\",\"text\":\"{\\n  \\\"entities\\\": [\\n    {\\n      \\\"name\\\": \\\"홍길동\\\",\\n      \\\"entityType\\\": \\\"person\\\",\\n      \\\"observations\\\": [\\n        \\\"개발자\\\",\\n        \\\"서울 거주\\\"\\n      ]\\n    }\\n  ],\\n  \\\"relations\\\": [\\n    {\\n      \\\"from\\\": \\\"홍길동\\\",\\n      \\\"to\\\": \\\"OhMyMCP\\\",\\n      \\\"relationType\\\": \\\"works_on\\\"\\n    }\\n  ]\\n}\"}]"
+    },
+    {
+      "n": 6,
+      "tool": "open_nodes",
+      "isError": false,
+      "body": "[{\"type\":\"text\",\"text\":\"{\\n  \\\"entities\\\": [\\n    {\\n      \\\"name\\\": \\\"홍길동\\\",\\n      \\\"entityType\\\": \\\"person\\\",\\n      \\\"observations\\\": [\\n        \\\"개발자\\\",\\n        \\\"서울 거주\\\"\\n      ]\\n    }\\n  ],\\n  \\\"relations\\\": [\\n    {\\n      \\\"from\\\": \\\"홍길동\\\",\\n      \\\"to\\\": \\\"OhMyMCP\\\",\\n      \\\"relationType\\\": \\\"works_on\\\"\\n    }\\n  ]\\n}\"}]"
+    }
+  ],
+  "safe": [
+    {
+      "n": 1,
+      "tool": "create_entities",
+      "isError": false,
+      "body": "[{\"type\":\"text\",\"text\":\"[\\n  {\\n    \\\"name\\\": \\\"홍길동\\\",\\n    \\\"entityType\\\": \\\"person\\\",\\n    \\\"observations\\\": [\\n      \\\"개발자\\\"\\n    ]\\n  }\\n]\"}]"
+    },
+    {
+      "n": 2,
+      "tool": "create_relations",
+      "isError": false,
+      "body": "[{\"type\":\"text\",\"text\":\"[\\n  {\\n    \\\"from\\\": \\\"홍길동\\\",\\n    \\\"to\\\": \\\"OhMyMCP\\\",\\n    \\\"relationType\\\": \\\"works_on\\\"\\n  }\\n]\"}]"
+    },
+    {
+      "n": 3,
+      "tool": "add_observations",
+      "isError": false,
+      "body": "[{\"type\":\"text\",\"text\":\"[\\n  {\\n    \\\"entityName\\\": \\\"홍길동\\\",\\n    \\\"addedObservations\\\": [\\n      \\\"서울 거주\\\"\\n    ]\\n  }\\n]\"}]"
+    },
+    {
+      "n": 4,
+      "tool": "read_graph",
+      "isError": false,
+      "body": "[{\"type\":\"text\",\"text\":\"{\\n  \\\"entities\\\": [\\n    {\\n      \\\"name\\\": \\\"홍길동\\\",\\n      \\\"entityType\\\": \\\"person\\\",\\n      \\\"observations\\\": [\\n        \\\"개발자\\\",\\n        \\\"서울 거주\\\"\\n      ]\\n    }\\n  ],\\n  \\\"relations\\\": [\\n    {\\n      \\\"from\\\": \\\"홍길동\\\",\\n      \\\"to\\\": \\\"OhMyMCP\\\",\\n      \\\"relationType\\\": \\\"works_on\\\"\\n    }\\n  ]\\n}\"}]"
+    },
+    {
+      "n": 5,
+      "tool": "search_nodes",
+      "isError": false,
+      "body": "[{\"type\":\"text\",\"text\":\"{\\n  \\\"entities\\\": [\\n    {\\n      \\\"name\\\": \\\"홍길동\\\",\\n      \\\"entityType\\\": \\\"person\\\",\\n      \\\"observations\\\": [\\n        \\\"개발자\\\",\\n        \\\"서울 거주\\\"\\n      ]\\n    }\\n  ],\\n  \\\"relations\\\": [\\n    {\\n      \\\"from\\\": \\\"홍길동\\\",\\n      \\\"to\\\": \\\"OhMyMCP\\\",\\n      \\\"relationType\\\": \\\"works_on\\\"\\n    }\\n  ]\\n}\"}]"
+    },
+    {
+      "n": 6,
+      "tool": "open_nodes",
+      "isError": false,
+      "body": "[{\"type\":\"text\",\"text\":\"{\\n  \\\"entities\\\": [\\n    {\\n      \\\"name\\\": \\\"홍길동\\\",\\n      \\\"entityType\\\": \\\"person\\\",\\n      \\\"observations\\\": [\\n        \\\"개발자\\\",\\n        \\\"서울 거주\\\"\\n      ]\\n    }\\n  ],\\n  \\\"relations\\\": [\\n    {\\n      \\\"from\\\": \\\"홍길동\\\",\\n      \\\"to\\\": \\\"OhMyMCP\\\",\\n      \\\"relationType\\\": \\\"works_on\\\"\\n    }\\n  ]\\n}\"}]"
+    }
+  ]
+}

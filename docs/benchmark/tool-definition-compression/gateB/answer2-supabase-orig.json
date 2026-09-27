@@ -1,0 +1,31 @@
+[
+  { "n": 1, "tool": "list_projects", "args": {} },
+  {
+    "n": 2,
+    "tool": "list_tables",
+    "args": { "project_id": "proj-1", "schemas": ["public"], "verbose": false }
+  },
+  {
+    "n": 3,
+    "tool": "execute_sql",
+    "args": { "project_id": "proj-1", "query": "select count(*) from users" }
+  },
+  {
+    "n": 4,
+    "tool": "apply_migration",
+    "args": {
+      "project_id": "proj-1",
+      "name": "add_nickname",
+      "query": "ALTER TABLE users ADD COLUMN nickname TEXT;"
+    }
+  },
+  {
+    "n": 5,
+    "tool": "query_logs",
+    "args": {
+      "project_id": "proj-1",
+      "sql": "SELECT * FROM logs WHERE source = 'edge_logs' ORDER BY timestamp DESC LIMIT 100"
+    }
+  },
+  { "n": 6, "tool": "list_edge_functions", "args": { "project_id": "proj-1" } }
+]

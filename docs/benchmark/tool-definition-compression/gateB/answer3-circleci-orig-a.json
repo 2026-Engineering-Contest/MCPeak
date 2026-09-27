@@ -1,0 +1,8 @@
+[
+  {"n":1,"tool":"get_latest_pipeline_status","args":{"params":{"projectSlug":"gh/acme/web","branch":"main"}}},
+  {"n":2,"tool":"get_build_failure_logs","args":{"params":{"projectSlug":"gh/acme/web","branch":"main"}}},
+  {"n":3,"tool":"find_flaky_tests","args":{"params":{"projectSlug":"gh/acme/web"}}},
+  {"n":4,"tool":"run_pipeline","args":{"params":{"projectSlug":"gh/acme/web","branch":"main"}}},
+  {"n":5,"tool":"rerun_workflow","args":{"params":{"workflowId":"wf-1"}}},
+  {"n":6,"tool":"list_followed_projects","args":{"params":{}}}
+]

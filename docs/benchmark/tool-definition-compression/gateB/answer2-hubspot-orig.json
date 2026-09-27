@@ -1,0 +1,33 @@
+[
+  {
+    "n": 1,
+    "tool": "hubspot-search-objects",
+    "args": {
+      "objectType": "contacts",
+      "filterGroups": [
+        { "filters": [{ "propertyName": "email", "operator": "EQ", "value": "kim@example.com" }] }
+      ]
+    }
+  },
+  { "n": 2, "tool": "hubspot-list-objects", "args": { "objectType": "companies", "limit": 20 } },
+  {
+    "n": 3,
+    "tool": "hubspot-batch-create-objects",
+    "args": {
+      "objectType": "contacts",
+      "inputs": [{ "properties": { "firstname": "홍길동", "email": "hong@example.com" } }]
+    }
+  },
+  { "n": 4, "tool": "hubspot-list-properties", "args": { "objectType": "contacts" } },
+  {
+    "n": 5,
+    "tool": "hubspot-create-engagement",
+    "args": {
+      "type": "NOTE",
+      "ownerId": 1,
+      "associations": { "contactIds": [123] },
+      "metadata": { "body": "전화 통화 완료" }
+    }
+  },
+  { "n": 6, "tool": "hubspot-list-workflows", "args": {} }
+]

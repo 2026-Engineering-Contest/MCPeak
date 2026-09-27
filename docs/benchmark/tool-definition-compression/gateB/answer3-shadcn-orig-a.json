@@ -1,0 +1,8 @@
+[
+  {"n":1,"tool":"get_component","args":{"componentName":"button"}},
+  {"n":2,"tool":"get_component_demo","args":{"componentName":"button"}},
+  {"n":3,"tool":"list_components","args":{}},
+  {"n":4,"tool":"get_component_metadata","args":{"componentName":"dialog"}},
+  {"n":5,"tool":"list_blocks","args":{}},
+  {"n":6,"tool":"get_block","args":{"blockName":"login-01"}}
+]

@@ -1,0 +1,1 @@
+[{"n":1,"tool":"git_set_working_dir","args":{"path":"/Users/me/project"}},{"n":2,"tool":"git_status","args":{}},{"n":3,"tool":"git_add","args":{"paths":["src/app.ts"]}},{"n":4,"tool":"git_commit","args":{"message":"로그인 수정"}},{"n":5,"tool":"git_log","args":{"maxCount":5}},{"n":6,"tool":"git_checkout","args":{"target":"feature/login","createBranch":true}}]

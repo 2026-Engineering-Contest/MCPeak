@@ -1,0 +1,82 @@
+{
+  "azure": [
+    "구독 목록을 보여줘",
+    "구독 sub-1 의 리소스 그룹 목록을 보여줘",
+    "Key Vault 'kv-prod' 에 있는 시크릿 이름들을 나열해줘",
+    "스토리지 계정 'stprod01' 의 컨테이너 목록을 보여줘",
+    "리소스 그룹 'rg-app' 의 App Service 앱 목록을 보여줘",
+    "Azure Functions 를 배포할 때의 베스트 프랙티스를 알려줘"
+  ],
+  "paypal": [
+    "고객 buyer@example.com 에게 100 USD 짜리 인보이스를 만들어줘",
+    "인보이스 INV2-ABCD 를 고객에게 발송해줘",
+    "주문 ORDER-123 의 상세를 조회해줘",
+    "거래 TXN-999 에 대해 25 USD 를 환불해줘",
+    "분쟁 DISPUTE-77 의 내용을 보여줘",
+    "구독 I-SUB123 을 취소해줘"
+  ],
+  "hubspot": [
+    "contacts 객체 중 이메일이 kim@example.com 인 레코드를 검색해줘",
+    "companies 객체 목록을 20개만 보여줘",
+    "contacts 에 이름 '홍길동', 이메일 hong@example.com 인 레코드를 만들어줘",
+    "contacts 객체의 속성(property) 목록을 보여줘",
+    "contact 123 에 '전화 통화 완료' 라는 노트(engagement)를 남겨줘",
+    "워크플로 목록을 보여줘"
+  ],
+  "sentry": [
+    "내가 속한 조직 목록을 보여줘",
+    "조직 acme 의 프로젝트 목록을 보여줘",
+    "조직 acme 에서 'TypeError' 가 들어간 이슈를 검색해줘",
+    "이슈 ACME-123 을 resolved 상태로 바꿔줘",
+    "이슈 ACME-456 의 근본 원인을 Seer 로 분석해줘",
+    "조직 acme 프로젝트 web 에서 최근 24시간 에러 이벤트를 검색해줘"
+  ],
+  "kubernetes": [
+    "default 네임스페이스의 파드 목록을 보여줘",
+    "default 네임스페이스의 파드 api-7d9f 를 자세히 설명해줘",
+    "default 네임스페이스의 파드 api-7d9f 로그를 100줄 보여줘",
+    "default 네임스페이스의 디플로이먼트 api 를 3개로 스케일해줘",
+    "default 네임스페이스의 파드 api-7d9f 안에서 'ls /app' 을 실행해줘",
+    "디플로이먼트 api 의 롤아웃 상태를 확인해줘"
+  ],
+  "apify": [
+    "인스타그램 스크래퍼 액터를 찾아줘",
+    "액터 apify/instagram-scraper 의 상세 정보를 보여줘",
+    "액터 apify/web-scraper 를 startUrls 가 https://example.com 인 입력으로 실행해줘",
+    "실행 run-abc 의 상태를 확인해줘",
+    "데이터셋 ds-123 의 항목을 10개만 가져와줘",
+    "실행 run-abc 를 중단해줘"
+  ],
+  "supabase": [
+    "내 프로젝트 목록을 보여줘",
+    "프로젝트 proj-1 의 public 스키마 테이블 목록을 보여줘",
+    "프로젝트 proj-1 에서 'select count(*) from users' 를 실행해줘",
+    "프로젝트 proj-1 에 users 테이블에 nickname 컬럼을 추가하는 마이그레이션 'add_nickname' 을 적용해줘",
+    "프로젝트 proj-1 의 최근 api 로그를 보여줘",
+    "프로젝트 proj-1 의 엣지 함수 목록을 보여줘"
+  ],
+  "playwright": [
+    "https://example.com 으로 이동해줘",
+    "현재 페이지의 접근성 스냅샷을 찍어줘",
+    "ref 'e12' 인 '로그인' 버튼을 클릭해줘",
+    "ref 'e5' 인 이메일 입력창에 'a@b.com' 을 입력해줘",
+    "브라우저 콘솔 메시지를 보여줘",
+    "뒤로 가기 해줘"
+  ],
+  "github-legacy": [
+    "acme/web 저장소의 열린 이슈 목록을 보여줘",
+    "acme/web 에 제목 '로그인 버그', 본문 '로그인이 안 됨' 인 이슈를 만들어줘",
+    "acme/web 의 README.md 파일 내용을 가져와줘",
+    "acme/web 에 fix/login 브랜치에서 main 으로 제목 '로그인 수정' 인 PR 을 만들어줘",
+    "acme/web 의 PR 42 에 대해 approve 리뷰를 남겨줘",
+    "acme/web 의 이슈 7 에 '재현 확인했습니다' 라는 댓글을 달아줘"
+  ],
+  "playwright-ea": [
+    "https://example.com 으로 이동해줘",
+    "셀렉터 '#login' 버튼을 클릭해줘",
+    "셀렉터 '#email' 입력창에 'a@b.com' 을 채워줘",
+    "iframe '#frame' 안의 '#ok' 버튼을 클릭해줘",
+    "https://api.example.com/items 에 GET 요청을 보내줘",
+    "현재 페이지의 보이는 텍스트를 가져와줘"
+  ]
+}

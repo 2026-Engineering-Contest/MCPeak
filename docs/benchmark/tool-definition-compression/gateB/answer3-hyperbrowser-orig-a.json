@@ -1,0 +1,47 @@
+[
+  {
+    "n": 1,
+    "tool": "scrape_webpage",
+    "args": {
+      "url": "https://example.com",
+      "outputFormat": ["markdown"]
+    }
+  },
+  {
+    "n": 2,
+    "tool": "crawl_webpages",
+    "args": {
+      "url": "https://example.com",
+      "outputFormat": ["markdown"],
+      "followLinks": true,
+      "maxPages": 10
+    }
+  },
+  {
+    "n": 3,
+    "tool": "extract_structured_data",
+    "args": {
+      "urls": ["https://example.com/team"],
+      "prompt": "Extract the name and job title for each person"
+    }
+  },
+  {
+    "n": 4,
+    "tool": "search_with_bing",
+    "args": {
+      "query": "MCP token optimization"
+    }
+  },
+  {
+    "n": 5,
+    "tool": "list_profiles",
+    "args": {}
+  },
+  {
+    "n": 6,
+    "tool": "claude_computer_use_agent",
+    "args": {
+      "task": "Go to https://example.com and find the title of the first link on the page"
+    }
+  }
+]

@@ -1,0 +1,12 @@
+[
+  { "n": 1, "tool": "search-actors", "args": { "keywords": "Instagram", "limit": 5 } },
+  { "n": 2, "tool": "fetch-actor-details", "args": { "actor": "apify/instagram-scraper" } },
+  {
+    "n": 3,
+    "tool": "call-actor",
+    "args": { "actor": "apify/web-scraper", "input": { "startUrls": "https://example.com" } }
+  },
+  { "n": 4, "tool": "get-actor-run", "args": { "runId": "run-abc" } },
+  { "n": 5, "tool": "get-dataset-items", "args": { "datasetId": "ds-123", "limit": 10 } },
+  { "n": 6, "tool": "abort-actor-run", "args": { "runId": "run-abc" } }
+]

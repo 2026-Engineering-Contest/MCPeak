@@ -1,0 +1,34 @@
+[
+  { "n": 1, "tool": "list_issues", "args": { "owner": "acme", "repo": "web", "state": "open" } },
+  {
+    "n": 2,
+    "tool": "create_issue",
+    "args": { "owner": "acme", "repo": "web", "title": "로그인 버그", "body": "로그인이 안 됨" }
+  },
+  {
+    "n": 3,
+    "tool": "get_file_contents",
+    "args": { "owner": "acme", "repo": "web", "path": "README.md" }
+  },
+  {
+    "n": 4,
+    "tool": "create_pull_request",
+    "args": {
+      "owner": "acme",
+      "repo": "web",
+      "title": "로그인 수정",
+      "head": "fix/login",
+      "base": "main"
+    }
+  },
+  {
+    "n": 5,
+    "tool": "create_pull_request_review",
+    "args": { "owner": "acme", "repo": "web", "pull_number": 42, "body": "", "event": "APPROVE" }
+  },
+  {
+    "n": 6,
+    "tool": "add_issue_comment",
+    "args": { "owner": "acme", "repo": "web", "issue_number": 7, "body": "재현 확인했습니다" }
+  }
+]

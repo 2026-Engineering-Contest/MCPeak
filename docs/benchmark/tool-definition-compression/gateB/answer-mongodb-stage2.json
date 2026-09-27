@@ -1,0 +1,49 @@
+[
+  {
+    "n": 1,
+    "tool": "find",
+    "args": {
+      "connectionId": "conn-1",
+      "database": "shop",
+      "collection": "orders",
+      "filter": { "status": "paid" }
+    }
+  },
+  { "n": 2, "tool": "list-collections", "args": { "connectionId": "conn-1", "database": "shop" } },
+  {
+    "n": 3,
+    "tool": "create-index",
+    "args": {
+      "connectionId": "conn-1",
+      "database": "shop",
+      "collection": "orders",
+      "name": "customerId_1",
+      "definition": [{ "type": "classic", "keys": { "customerId": 1 } }]
+    }
+  },
+  {
+    "n": 4,
+    "tool": "count",
+    "args": {
+      "connectionId": "conn-1",
+      "database": "shop",
+      "collection": "orders",
+      "query": { "status": "cancelled" }
+    }
+  },
+  {
+    "n": 5,
+    "tool": "collection-schema",
+    "args": { "connectionId": "conn-1", "database": "shop", "collection": "orders" }
+  },
+  {
+    "n": 6,
+    "tool": "delete-many",
+    "args": {
+      "connectionId": "conn-1",
+      "database": "shop",
+      "collection": "orders",
+      "filter": { "status": "draft" }
+    }
+  }
+]

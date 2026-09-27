@@ -1,0 +1,67 @@
+[
+  {
+    "n": 1,
+    "tool": "list-indexes",
+    "args": {
+      "llm_provider": "Anthropic",
+      "llm_model": "Claude Haiku 4.5"
+    }
+  },
+  {
+    "n": 2,
+    "tool": "describe-index",
+    "args": {
+      "name": "docs-idx",
+      "llm_provider": "Anthropic",
+      "llm_model": "Claude Haiku 4.5"
+    }
+  },
+  {
+    "n": 3,
+    "tool": "describe-index-stats",
+    "args": {
+      "name": "docs-idx",
+      "llm_provider": "Anthropic",
+      "llm_model": "Claude Haiku 4.5"
+    }
+  },
+  {
+    "n": 4,
+    "tool": "search-records",
+    "args": {
+      "name": "docs-idx",
+      "namespace": "default",
+      "query": {
+        "topK": 10,
+        "inputs": {
+          "text": "MCP 토큰 최적화"
+        }
+      },
+      "llm_provider": "Anthropic",
+      "llm_model": "Claude Haiku 4.5"
+    }
+  },
+  {
+    "n": 5,
+    "tool": "upsert-records",
+    "args": {
+      "name": "docs-idx",
+      "namespace": "default",
+      "records": [
+        {
+          "_id": "d1",
+          "text": "hello"
+        }
+      ],
+      "llm_provider": "Anthropic",
+      "llm_model": "Claude Haiku 4.5"
+    }
+  },
+  {
+    "n": 6,
+    "tool": "search-docs",
+    "args": {
+      "query": "namespace"
+    }
+  }
+]

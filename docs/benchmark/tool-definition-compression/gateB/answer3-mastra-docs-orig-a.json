@@ -1,0 +1,8 @@
+[
+  {"n":1,"tool":"mastraDocs","args":{"paths":["reference/agents/"]}},
+  {"n":2,"tool":"mastraDocs","args":{"paths":["reference/workflows/"],"queryKeywords":["workflow"]}},
+  {"n":3,"tool":"startMastraCourse","args":{}},
+  {"n":4,"tool":"listMastraPackages","args":{"projectPath":"./"}},
+  {"n":5,"tool":"getMastraExports","args":{"package":"@mastra/core","projectPath":"./"}},
+  {"n":6,"tool":"nextMastraCourseStep","args":{}}
+]

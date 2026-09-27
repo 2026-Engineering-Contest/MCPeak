@@ -1,0 +1,28 @@
+[
+  { "n": 1, "tool": "read_file", "args": { "path": "/Users/me/notes/todo.md" } },
+  {
+    "n": 2,
+    "tool": "write_file",
+    "args": { "path": "/Users/me/notes/새파일.md", "content": "회의록", "mode": "rewrite" }
+  },
+  {
+    "n": 3,
+    "tool": "start_search",
+    "args": { "path": "/Users/me/project", "pattern": "TODO", "searchType": "content" }
+  },
+  {
+    "n": 4,
+    "tool": "edit_block",
+    "args": {
+      "file_path": "/Users/me/project/app.js",
+      "old_string": "const port = 3000",
+      "new_string": "const port = 8080"
+    }
+  },
+  {
+    "n": 5,
+    "tool": "start_process",
+    "args": { "command": "cd /Users/me/project && npm test", "timeout_ms": 30000 }
+  },
+  { "n": 6, "tool": "list_directory", "args": { "path": "/Users/me/notes" } }
+]

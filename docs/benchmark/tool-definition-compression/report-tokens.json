@@ -1,0 +1,52 @@
+[
+  {
+    "server": "notion",
+    "tools": 24,
+    "base": 17140,
+    "stage1": 16168,
+    "s1 %": "5.7",
+    "stage2": 16045,
+    "s2 %": "6.4",
+    "boilerplate": 0
+  },
+  {
+    "server": "mongodb",
+    "tools": 27,
+    "base": 13648,
+    "stage1": 13126,
+    "s1 %": "3.8",
+    "stage2": 12394,
+    "s2 %": "9.2",
+    "boilerplate": 0
+  },
+  {
+    "server": "firecrawl",
+    "tools": 29,
+    "base": 11458,
+    "stage1": 11046,
+    "s1 %": "3.6",
+    "stage2": 10737,
+    "s2 %": "6.3",
+    "boilerplate": 0
+  },
+  {
+    "server": "desktop-commander",
+    "tools": 26,
+    "base": 11012,
+    "stage1": 10604,
+    "s1 %": "3.7",
+    "stage2": 6907,
+    "s2 %": "37.3",
+    "boilerplate": 6
+  },
+  {
+    "server": "chrome-devtools",
+    "tools": 30,
+    "base": 5508,
+    "stage1": 5023,
+    "s1 %": "8.8",
+    "stage2": 4956,
+    "s2 %": "10.0",
+    "boilerplate": 0
+  }
+]

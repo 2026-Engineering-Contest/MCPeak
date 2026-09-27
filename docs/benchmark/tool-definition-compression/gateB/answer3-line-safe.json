@@ -1,0 +1,47 @@
+[
+  {
+    "n": 1,
+    "tool": "push_text_message",
+    "args": {
+      "userId": "U123",
+      "message": {
+        "type": "text",
+        "text": "안녕하세요"
+      }
+    }
+  },
+  {
+    "n": 2,
+    "tool": "broadcast_text_message",
+    "args": {
+      "message": {
+        "type": "text",
+        "text": "점검 안내"
+      }
+    }
+  },
+  {
+    "n": 3,
+    "tool": "get_profile",
+    "args": {
+      "userId": "U123"
+    }
+  },
+  {
+    "n": 4,
+    "tool": "get_message_quota",
+    "args": {}
+  },
+  {
+    "n": 5,
+    "tool": "get_rich_menu_list",
+    "args": {}
+  },
+  {
+    "n": 6,
+    "tool": "set_rich_menu_default",
+    "args": {
+      "richMenuId": "rm-1"
+    }
+  }
+]

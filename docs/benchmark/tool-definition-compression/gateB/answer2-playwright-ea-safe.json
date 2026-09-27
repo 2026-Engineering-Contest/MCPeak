@@ -1,0 +1,12 @@
+[
+  { "n": 1, "tool": "playwright_navigate", "args": { "url": "https://example.com" } },
+  { "n": 2, "tool": "playwright_click", "args": { "selector": "#login" } },
+  { "n": 3, "tool": "playwright_fill", "args": { "selector": "#email", "value": "a@b.com" } },
+  {
+    "n": 4,
+    "tool": "playwright_iframe_click",
+    "args": { "iframeSelector": "#frame", "selector": "#ok" }
+  },
+  { "n": 5, "tool": "playwright_get", "args": { "url": "https://api.example.com/items" } },
+  { "n": 6, "tool": "playwright_get_visible_text", "args": {} }
+]

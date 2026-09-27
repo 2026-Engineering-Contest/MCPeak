@@ -1,0 +1,78 @@
+{
+  "orig": [
+    {
+      "n": 1,
+      "tool": "mastraDocs",
+      "isError": false,
+      "body": "[{\"type\":\"text\",\"text\":\"## reference/agents/\\n\\nDirectory contents of reference/agents/:\\n\\nAvailable documentation paths:\\n- reference/agents//agent\\n- reference/agents//channels\\n- reference/agents//createSkill\\n- reference/agents//durable-agent\\n- reference/agents//generate\\n- reference/agents//generateLegacy\\n- reference/agents//getDefaultGenerateOptions\\n- reference/agents//getDefaultOptions\\n- reference/agents//getDefaultStreamOptions\\n- reference/agents//getDescription\\n- reference/agents//getInstructions\\n- reference/agents//getLLM\\n- reference/agents//getMemory\\n- reference/agents//getMetadata\\n- reference/agents//getModel\\n- reference/agents//getSkill\\n- reference/agents//getTools\\n- reference/agents//getVoice\\n- reference/agents//inngest-agent\\n- reference/agents//listAgents\\n- reference/agents//listScorers\\n- reference/agents//listSkills\\n- reference/agents//listSuspendedRuns\\n- reference/agents//listTools\\n- reference/agents//listWorkflows\\n- reference/agents//network\\n\\n\\n---\\n\"}]"
+    },
+    {
+      "n": 2,
+      "tool": "mastraDocs",
+      "isError": false,
+      "body": "[{\"type\":\"text\",\"text\":\"## reference/workflows/\\n\\nDirectory contents of reference/workflows/:\\n\\nSubdirectories:\\n- reference/workflows//run-methods/\\n- reference/workflows//workflow-methods/\\n\\nAvailable documentation paths:\\n- reference/workflows//dynamic-workflow-definition\\n- reference/workflows//run\\n- reference/workflows//step\\n- reference/workflows//workflow\\n- reference/workflows//workflow-state-reader\\n---\\n\\nHere are some paths that might be relevant based on your query:\\n\\n- docs/workflows/overview.md\\n- reference/client-js/workflows.md\\n- integrations/agentic-ui/ai-sdk-ui.md\\n- integrations/deploy/inngest.md\\n- reference/workflows/workflow.md\\n- docs/workflows/control-flow.md\\n- reference/migrations/upgrade-to-v1/workflows.md\\n- docs/workflows/error-handling.md\\n- reference/workflows/workflow-state-reader.md\\n- docs/workflows/time-travel.md\\n\\n\\n---\\n\"}]"
+    },
+    {
+      "n": 3,
+      "tool": "startMastraCourse",
+      "isError": false,
+      "body": "[{\"type\":\"text\",\"text\":\"To start the Mastra Course, you need to register first. Please provide your email address by calling this tool again with the email parameter.\"}]"
+    },
+    {
+      "n": 4,
+      "tool": "listMastraPackages",
+      "isError": true,
+      "body": "[{\"type\":\"text\",\"text\":\"Tool validation failed. Please fix the following errors and try again:\\nProject path must be absolute\\n\\nProvided arguments: {\\n  \\\"projectPath\\\": \\\"./\\\"\\n}\"}]"
+    },
+    {
+      "n": 5,
+      "tool": "getMastraExports",
+      "isError": true,
+      "body": "[{\"type\":\"text\",\"text\":\"Tool validation failed. Please fix the following errors and try again:\\nProject path must be absolute\\n\\nProvided arguments: {\\n  \\\"package\\\": \\\"@mastra/core\\\",\\n  \\\"projectPath\\\": \\\"./\\\"\\n}\"}]"
+    },
+    {
+      "n": 6,
+      "tool": "nextMastraCourseStep",
+      "isError": false,
+      "body": "[{\"type\":\"text\",\"text\":\"You need to register for the Mastra Course first. Please use the `startMastraCourse` tool to register.\"}]"
+    }
+  ],
+  "safe": [
+    {
+      "n": 1,
+      "tool": "mastraDocs",
+      "isError": false,
+      "body": "[{\"type\":\"text\",\"text\":\"## docs/agents\\n\\nDirectory contents of docs/agents:\\n\\nAvailable documentation paths:\\n- docs/agents/code-mode\\n- docs/agents/guardrails\\n- docs/agents/human-in-the-loop\\n- docs/agents/networks\\n- docs/agents/overview\\n- docs/agents/processors\\n- docs/agents/structured-output\\n- docs/agents/tools\\n---\\n\\nHere are some paths that might be relevant based on your query:\\n\\n- integrations/voice/livekit.md\\n- docs/connections/sdk-agents.md\\n- docs/harness/durable-agents.md\\n- reference/index.md\\n- docs/subagents.md\\n- reference/agents/durable-agent.md\\n- reference/client-js/agents.md\\n- docs/agents/overview.md\\n- docs/workflows/agents-and-tools.md\\n- docs/agents/tools.md\\n\\n\\n---\\n\\n## reference/agents\\n\\nDirectory contents of reference/agents:\\n\\nAvailable documentation paths:\\n- reference/agents/agent\\n- reference/agents/channels\\n- reference/agents/createSkill\\n- reference/agents/durable-agent\\n- reference/agents/generate\\n- reference/agents/generateLegacy\\n- reference/agents/getDefaultGenerateOptions\\n- reference/agents/getDefaultOptions\\n- reference/agents/getDefaultStreamOptions\\n- reference/agents/getDescription\\n- reference/agents/getInstructions\\n- reference/agents/getLLM\\n- reference/agents/getMemory\\n- reference/agents/getMetadata\\n- reference/agents/getModel\\n- reference/agents/getSkill\\n- reference/agents/getTools\\n- reference/agents/getVoice\\n- reference/agents/inngest-agent\\n- reference/agents/listAgents\\n- reference/agents/listScorers\\n- reference/agents/listSkills\\n- reference/agents/listSuspendedRuns\\n- reference/agents/listTools\\n- reference/agents/listWorkflows\\n- reference/agents/network\\n---\\n\\nHere are some paths that might be relevant based on your query:\\n\\n- integrations/voice/livekit.md\\n- docs/connections/sdk-agents.md\\n- docs/harness/durable-agents.md\\n- reference/index.md\\n- docs/subagents.md\\n- reference/agents/durable-agent.md\\n- reference/client-js/agents.md\\n- docs/agents/overview.md\\n- docs/workflows/agents-and-tools.md\\n- docs/agents/tools.md\\n\\n\\n---\\n\"}]"
+    },
+    {
+      "n": 2,
+      "tool": "searchMastraDocs",
+      "isError": true,
+      "body": "[{\"type\":\"text\",\"text\":\"Tool validation failed. Please fix the following errors and try again:\\nProject path must be absolute\\n\\nProvided arguments: {\\n  \\\"query\\\": \\\"workflow\\\",\\n  \\\"projectPath\\\": \\\".\\\"\\n}\"}]"
+    },
+    {
+      "n": 3,
+      "tool": "startMastraCourse",
+      "isError": false,
+      "body": "[{\"type\":\"text\",\"text\":\"To start the Mastra Course, you need to register first. Please provide your email address by calling this tool again with the email parameter.\"}]"
+    },
+    {
+      "n": 4,
+      "tool": "listMastraPackages",
+      "isError": true,
+      "body": "[{\"type\":\"text\",\"text\":\"Tool validation failed. Please fix the following errors and try again:\\nProject path must be absolute\\n\\nProvided arguments: {\\n  \\\"projectPath\\\": \\\".\\\"\\n}\"}]"
+    },
+    {
+      "n": 5,
+      "tool": "getMastraExports",
+      "isError": true,
+      "body": "[{\"type\":\"text\",\"text\":\"Tool validation failed. Please fix the following errors and try again:\\nProject path must be absolute\\n\\nProvided arguments: {\\n  \\\"package\\\": \\\"@mastra/core\\\",\\n  \\\"projectPath\\\": \\\".\\\"\\n}\"}]"
+    },
+    {
+      "n": 6,
+      "tool": "nextMastraCourseStep",
+      "isError": false,
+      "body": "[{\"type\":\"text\",\"text\":\"You need to register for the Mastra Course first. Please use the `startMastraCourse` tool to register.\"}]"
+    }
+  ]
+}

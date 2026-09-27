@@ -15,6 +15,9 @@
   },
   "homepage": "https://github.com/2026-Engineering-Contest/MCPeak#readme",
   "bugs": "https://github.com/2026-Engineering-Contest/MCPeak/issues",
+  "bin": {
+    "mcpeak-optimize-proxy": "./dist/proxy-stdio.mjs"
+  },
   "publishConfig": {
     "access": "public"
   },

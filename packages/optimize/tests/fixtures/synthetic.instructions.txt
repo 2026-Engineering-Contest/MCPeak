@@ -1,0 +1,2 @@
+Items service for the synthetic optimize fixture.
+Every tool acts inside exactly one workspace.

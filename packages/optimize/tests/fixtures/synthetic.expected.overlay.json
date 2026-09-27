@@ -1,0 +1,306 @@
+{
+  "schemaVersion": 1,
+  "generator": {
+    "name": "@mcpeak/optimize",
+    "version": "0.1.0"
+  },
+  "source": {
+    "toolCount": 5,
+    "toolNames": ["archive_item", "delete_item", "get_item", "list_items", "update_item"],
+    "instructions": "Items service for the synthetic optimize fixture.\nEvery tool acts inside exactly one workspace.\n",
+    "bytes": 2875,
+    "otherCapabilities": []
+  },
+  "instructions": "Items service for the synthetic optimize fixture.\nEvery tool acts inside exactly one workspace.\n\nCommon parameters (shared by several tools):\n- workspaceId: Workspace that owns the item being used.\n- note: Optional note recorded in the audit log",
+  "tools": [
+    {
+      "name": "get_item",
+      "description": "Fetch a single item by its ID. Returns the full record.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "workspaceId": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        }
+      },
+      "changes": [
+        {
+          "kind": "schema-key-removed",
+          "path": "inputSchema",
+          "key": "$schema"
+        },
+        {
+          "kind": "schema-key-removed",
+          "path": "inputSchema",
+          "key": "title"
+        },
+        {
+          "kind": "schema-key-removed",
+          "path": "inputSchema.properties.id",
+          "key": "title"
+        },
+        {
+          "kind": "schema-key-removed",
+          "path": "inputSchema",
+          "key": "required"
+        },
+        {
+          "kind": "schema-key-removed",
+          "path": "inputSchema",
+          "key": "additionalProperties"
+        },
+        {
+          "kind": "description-cleaned",
+          "path": "description",
+          "before": "Fetch a single item by its ID (https://docs.example.com/items/get). Returns the full record.\n\nExample: get_item({\"workspaceId\": \"ws_1\", \"id\": \"42\"}) returns the item.",
+          "after": "Fetch a single item by its ID. Returns the full record."
+        },
+        {
+          "kind": "description-removed",
+          "path": "inputSchema.properties.id.description",
+          "before": "The ID",
+          "reason": "restates-name"
+        },
+        {
+          "kind": "description-removed",
+          "path": "inputSchema.properties.workspaceId.description",
+          "before": "Workspace that owns the item being used.",
+          "reason": "promoted"
+        },
+        {
+          "kind": "description-removed",
+          "path": "inputSchema.properties.note.description",
+          "before": "Optional note recorded in the audit log",
+          "reason": "promoted"
+        }
+      ],
+      "bytes": {
+        "before": 606,
+        "after": 219
+      }
+    },
+    {
+      "name": "list_items",
+      "description": "List items in a workspace. Pass cursor to page, e.g. the nextCursor of the previous page.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "workspaceId": {
+            "type": "string"
+          },
+          "sort": {
+            "type": "string",
+            "enum": ["asc", "desc"],
+            "default": "asc",
+            "description": "Sort order by creation time"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Maximum number of items to return."
+          },
+          "filter": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": false,
+            "description": "Reserved for future filters and must stay empty"
+          }
+        },
+        "required": ["workspaceId"]
+      },
+      "changes": [
+        {
+          "kind": "description-cleaned",
+          "path": "inputSchema.properties.limit.description",
+          "before": "Maximum number of items to return. For example: 50",
+          "after": "Maximum number of items to return."
+        },
+        {
+          "kind": "description-removed",
+          "path": "inputSchema.properties.workspaceId.description",
+          "before": "Workspace that owns the item being used.",
+          "reason": "promoted"
+        }
+      ],
+      "bytes": {
+        "before": 667,
+        "after": 594
+      }
+    },
+    {
+      "name": "update_item",
+      "description": "Update fields of an existing item.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "workspaceId": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "description": "Identifier of the item to update"
+          },
+          "patch": {
+            "$ref": "#/$defs/ItemPatch"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": ["workspaceId", "id", "patch"],
+        "$defs": {
+          "ItemPatch": {
+            "type": "object",
+            "description": "Fields to change.",
+            "properties": {
+              "label": {
+                "type": "string",
+                "description": "Display label shown in lists"
+              },
+              "tags": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "description": "Tag name"
+                }
+              }
+            }
+          }
+        }
+      },
+      "changes": [
+        {
+          "kind": "schema-key-removed",
+          "path": "inputSchema.$defs.ItemPatch",
+          "key": "title"
+        },
+        {
+          "kind": "description-cleaned",
+          "path": "inputSchema.$defs.ItemPatch.description",
+          "before": "Fields to change (https://docs.example.com/items/patch).",
+          "after": "Fields to change."
+        },
+        {
+          "kind": "description-removed",
+          "path": "inputSchema.properties.workspaceId.description",
+          "before": "Workspace that owns the item being used.",
+          "reason": "promoted"
+        },
+        {
+          "kind": "description-removed",
+          "path": "inputSchema.properties.note.description",
+          "before": "Optional note recorded in the audit log",
+          "reason": "promoted"
+        }
+      ],
+      "bytes": {
+        "before": 734,
+        "after": 562
+      }
+    },
+    {
+      "name": "delete_item",
+      "description": "Delete an item permanently.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "workspaceId": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "description": "Identifier of the item to delete"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": ["workspaceId", "id"]
+      },
+      "outputSchema": {
+        "type": "object",
+        "title": "DeleteResult",
+        "properties": {
+          "deleted": {
+            "type": "boolean",
+            "description": "Whether the item was deleted"
+          }
+        },
+        "required": ["deleted"],
+        "additionalProperties": true
+      },
+      "changes": [
+        {
+          "kind": "description-removed",
+          "path": "inputSchema.description",
+          "before": "Delete an item permanently. ",
+          "reason": "duplicate-of-tool-description"
+        },
+        {
+          "kind": "description-removed",
+          "path": "inputSchema.properties.workspaceId.description",
+          "before": "Workspace that owns the item being used.",
+          "reason": "promoted"
+        },
+        {
+          "kind": "description-removed",
+          "path": "inputSchema.properties.note.description",
+          "before": "Optional note recorded in the audit log",
+          "reason": "promoted"
+        }
+      ],
+      "bytes": {
+        "before": 433,
+        "after": 275
+      }
+    },
+    {
+      "name": "archive_item",
+      "description": "Move an item to the archive. Archived items are hidden from list_items.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "workspaceId": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "description": "Identifier of the item to archive"
+          },
+          "note": {
+            "type": "string",
+            "description": "Reason for archiving, shown to reviewers"
+          }
+        },
+        "required": ["workspaceId", "id"]
+      },
+      "changes": [
+        {
+          "kind": "description-removed",
+          "path": "inputSchema.properties.workspaceId.description",
+          "before": "Workspace that owns the item being used.",
+          "reason": "promoted"
+        }
+      ],
+      "bytes": {
+        "before": 435,
+        "after": 378
+      }
+    }
+  ],
+  "totals": {
+    "bytesBefore": 2875,
+    "bytesAfter": 2028,
+    "bytesAfterWithInstructions": 2177,
+    "promotedParameters": 2
+  }
+}

@@ -23,10 +23,13 @@ import type {
   TestSuiteSpec,
 } from "@mcpeak/runner";
 import {
+  describeAcceptedRejection,
   describeDeterminismDifference,
   describeSpecFinding,
   MAX_VALUE_STRING_CHARS,
   RunnerPayloadLimitError,
+  rejectionAccepted,
+  acceptedViolations as runnerAcceptedViolations,
   checkAssertionSubstance as runnerCheckAssertionSubstance,
   checkDeterminism as runnerCheckDeterminism,
   checkInputContract as runnerCheckInputContract,
@@ -156,7 +159,11 @@ export interface TestCommandDependencies {
   readEnv?(name: string): string | undefined;
   startRunner(options: RunSuiteOptions): RunnerExecution;
   finalize(options: FinalizeRunnerExecutionOptions): Promise<RunnerReport>;
-  renderReport(report: RunnerReport, options?: { color?: boolean }): string;
+  /**
+   * `specApproved` 는 명세에 approval 블록이 있는지다. 거절 근거 미확인 고지가 generate 승인
+   * 화면을 가리킬지 `--json` 의 rejectionBody 를 가리킬지 가른다. 설계 문서(경쟁 도구 비교) §3.4.
+   */
+  renderReport(report: RunnerReport, options?: { color?: boolean; specApproved?: boolean }): string;
   /**
    * runner 의 `renderJUnit`. 두 번째 인자를 선언하지 않는다 — CLI 는 `suiteName` 을 넘길 이유가
    * 없고(기본값이 `report.suite.name` 이다), 선택 인자를 가진 실제 함수는 이 시그니처에 그대로
@@ -170,6 +177,11 @@ export interface TestCommandDependencies {
    */
   checkInputContract?(options: InputContractOptions): SpecFindingsResult;
   checkAssertionSubstance?(suite: TestSuiteSpec): SpecFindingsResult;
+  /**
+   * 거절 기대 케이스에서 억제된 선언 위반. 위 두 필드와 같은 이유로 선택 사항이다. 생략하면
+   * `runner` 의 `acceptedViolations` 다. 설계 문서(경쟁 도구 비교) §3.2.
+   */
+  acceptedViolations?(options: InputContractOptions): ReadonlyMap<string, readonly SpecFinding[]>;
   /**
    * 결정론성 비교와 초기화 명령의 주입 지점. 위 두 필드와 같은 이유로 선택 사항이다.
    * 생략하면 각각 `runner` 의 `checkDeterminism` 과 `reset-hook.ts` 의 `runResetCommand` 다.
@@ -1529,6 +1541,38 @@ async function runCliCore(
         .map((item) => item.spec.id),
     );
   })();
+  /**
+   * 서버가 받아들인 선언 위반의 문장. 키는 caseId 다. 설계 문서(경쟁 도구 비교) §3.2.
+   *
+   * 통과하지 않았고, 보고서상 거절 기대에 정상 응답(`rejectionAccepted`)이며, 억제된 위반이
+   * 있는 케이스만 담는다. 시간 초과나 호출 오류는 서버가 받아들였는지 모르므로 뺀다.
+   * 툴 목록이 없으면 대조할 선언이 없어 부르지 않는다. 던지면 삼킨다. `specFindings` 와 같은
+   * 이유다. 비차단 참고가 판정과 exit code 를 바꾸면 안 된다. 사람이 읽는 출력에만 쓰므로
+   * `--json` 에서는 계산하지 않는다.
+   */
+  const acceptedRejections: ReadonlyMap<string, string> = (() => {
+    const sentences = new Map<string, string>();
+    if (input.json) return sentences;
+    const candidates = finalReport.cases.filter(
+      (item) => item.status !== "passed" && rejectionAccepted(item),
+    );
+    if (tools.length === 0 || candidates.length === 0) return sentences;
+    try {
+      const accepted = (dependencies.acceptedViolations ?? runnerAcceptedViolations)({
+        suite: validated.value,
+        tools,
+      });
+      for (const item of candidates) {
+        const violations = accepted.get(item.spec.id);
+        const sentence =
+          violations === undefined ? undefined : describeAcceptedRejection(violations);
+        if (sentence !== undefined) sentences.set(item.spec.id, sentence);
+      }
+      return sentences;
+    } catch {
+      return new Map<string, string>();
+    }
+  })();
   try {
     if (input.json) {
       /**
@@ -1577,13 +1621,16 @@ async function runCliCore(
       dependencies.writeStdout(`${JSON.stringify(machine, null, 2)}\n`);
     } else {
       dependencies.writeStdout(
-        dependencies.renderReport(finalReport, { color: dependencies.colorEnabled }),
+        dependencies.renderReport(finalReport, {
+          color: dependencies.colorEnabled,
+          specApproved: validated.value.approval !== undefined,
+        }),
       );
       /**
        * 참고 문장은 보고서 뒤, 명세 승인 블록 앞이다. 케이스마다 한 블록으로 묶는다.
        * 순서는 `runner` 가 정한 finding 순서이고 여기서 다시 정렬하지 않는다. 설계 문서 §7.2.
        */
-      if (specFindings.length > 0 || serverDefectCases.size > 0) {
+      if (specFindings.length > 0 || serverDefectCases.size > 0 || acceptedRejections.size > 0) {
         const byCase = new Map<string, SpecFinding[]>();
         for (const finding of specFindings) {
           const list = byCase.get(finding.caseId) ?? [];
@@ -1604,6 +1651,15 @@ async function runCliCore(
             item.status === "passed"
               ? allFindings.filter((finding) => FINDING_GROUP[finding.code] === "skipped")
               : allFindings;
+          // 서버가 받아들인 선언 위반이 이 케이스의 다른 참고보다 먼저다. 실패의 직접 원인이다.
+          const accepted = acceptedRejections.get(caseId);
+          if (accepted !== undefined)
+            dependencies.writeStdout(
+              `\n참고: ${escapeTerminalText(caseId)} 는 거절을 기대했지만 서버가 선언 위반 입력을 받아들였습니다\n  → ${accepted}\n`,
+            );
+          // 서버가 받아들였는지는 문장 선택에만 쓴다. REJECTION_WITHOUT_VIOLATION 이 입력을
+          // 고치라고 하지 않게 한다. 설계 문서(경쟁 도구 비교) §3.3.
+          const context = { rejectionAccepted: rejectionAccepted(item) };
           for (const group of FINDING_GROUP_ORDER) {
             const grouped = list.filter(
               (finding) =>
@@ -1614,7 +1670,7 @@ async function runCliCore(
             // caseId 는 남이 쓴 명세에서 온다. 다른 표시 항목과 같은 이스케이프를 쓴다.
             dependencies.writeStdout(
               `\n${FINDING_HEADING[group](escapeTerminalText(caseId))}\n${grouped
-                .map((finding) => `  → ${describeSpecFinding(finding)}\n`)
+                .map((finding) => `  → ${describeSpecFinding(finding, context)}\n`)
                 .join("")}`,
             );
           }

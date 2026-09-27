@@ -1,4 +1,5 @@
 import type { BodyExtraction, BodyExtractionFailure } from "./body.js";
+import { canonicalJson } from "./canonical.js";
 import {
   DEFAULT_SENSITIVE_KEYS,
   isSensitiveKey,
@@ -61,6 +62,8 @@ export interface RunnerDiagnostic {
    * 우리가 만든 판정 문장이 아니라 서버가 준 값을 옮기는 자리다. ADR-0027.
    */
   notes?: string[];
+  /** 기대와 실제를 나란히 놓은 줄. 이미 가림 처리가 끝난 값이다. 없으면 키가 없다. */
+  diff?: string[];
 }
 
 export type NormalizedThrownValue =
@@ -190,7 +193,11 @@ export function isErrorMismatchDiagnostic(
       : "정상 응답을 기대했지만 오류 응답을 받았습니다.",
     expected,
     actual,
-    hint: "툴 입력값과 서버의 오류 응답을 확인하세요.",
+    // 거절이 뚫린 쪽은 선언을 모른 채로도 맞는 문장이어야 한다. generate 와 dashboard 도
+    // 이 hint 를 쓴다. 어떤 선언을 받아들였는지는 선언을 아는 cli 가 따로 말한다.
+    hint: expected
+      ? "서버가 거절을 기대한 입력을 받아들였습니다. 입력이 서버 선언을 어긴다면 서버의 입력 검증을, 어기지 않는다면 명세가 기대하는 거절 근거를 확인하세요."
+      : "툴 입력값과 서버의 오류 응답을 확인하세요.",
     ...(notes === undefined ? {} : { notes }),
   };
 }
@@ -439,21 +446,166 @@ function toViolationDiagnostic(
   };
 }
 
+/**
+ * 모양이 다르다는 위반. 이 밖의 코드는 모양은 같고 값이 다르다는 뜻이다(설계 §3.1).
+ * 구조가 맞아야 값을 볼 수 있으므로, 하나라도 섞이면 구조 문구가 이긴다.
+ */
+const STRUCTURE_CODES: ReadonlySet<SchemaViolationCode> = new Set([
+  "TYPE_MISMATCH",
+  "REQUIRED_MISSING",
+  "ADDITIONAL_PROPERTY",
+]);
+
+const TRUNCATED_HINT = "표시된 위반을 고친 뒤 나머지를 다시 확인하세요.";
+const VALUE_HINT =
+  "응답 형식은 같고 값만 다릅니다. 서버가 돌려준 값이 맞다면 테스트의 기대값을 고치고, 아니라면 서버 로직을 확인하세요. 값이 실행마다 바뀐다면 --determinism 으로 확인하세요.";
+
+/**
+ * 해결 문구를 고른다. 잘린 결과는 부류와 무관하게 기존 문구다. 판정은 **표시된** 위반만 본다.
+ * 구조 문구는 통로마다 다르다. 구조화 응답은 원인(출력 계약)을 이미 가리키는 문장이 있어서다.
+ */
+function schemaMismatchHint(result: SchemaMatchResult, structureHint: string): string {
+  if (result.totalViolations > result.violations.length) return TRUNCATED_HINT;
+  return result.violations.some((violation) => STRUCTURE_CODES.has(violation.code))
+    ? structureHint
+    : VALUE_HINT;
+}
+
+/** diff 의 상한(줄). 넘으면 만들지 않는다. 위반 줄은 그대로 남으므로 정보는 잃지 않는다. */
+const MAX_DIFF_LINES = 60;
+
+type PathStep = { kind: "key"; key: string } | { kind: "index"; index: number };
+
+const isScalar = (value: JsonValue): boolean => value === null || typeof value !== "object";
+
+/**
+ * schema-match 가 만든 경로(`$.a[0].b`)를 단계로 푼다. `pathKeys` 와 달리 배열 인덱스를 남긴다.
+ * 키는 이스케이프되지 않고 경로에 들어가므로(`${path}.${key}`), 키에 `.`·`[`·`]` 가 있으면 경로가
+ * 모호하다. 따라가는 동안 만나는 객체에 그런 키가 하나라도 있거나 길이 막히면 undefined 다.
+ */
+function resolvePath(body: JsonValue, path: string): PathStep[] | undefined {
+  if (!path.startsWith("$")) return undefined;
+  const steps: PathStep[] = [];
+  const pattern = /\.([^.[\]]+)|\[(\d+)\]/y;
+  pattern.lastIndex = 1;
+  while (pattern.lastIndex < path.length) {
+    const matched = pattern.exec(path);
+    if (matched === null) return undefined;
+    steps.push(
+      matched[1] !== undefined
+        ? { kind: "key", key: matched[1] }
+        : { kind: "index", index: Number(matched[2]) },
+    );
+  }
+  let current: JsonValue = body;
+  for (const step of steps) {
+    if (step.kind === "index") {
+      if (!Array.isArray(current) || step.index >= current.length) return undefined;
+      current = current[step.index] as JsonValue;
+      continue;
+    }
+    if (!plainObject(current) || !Object.hasOwn(current, step.key)) return undefined;
+    if (Object.keys(current).some((key) => /[.[\]]/.test(key))) return undefined;
+    current = current[step.key] as JsonValue;
+  }
+  return steps;
+}
+
+/** 경로 위치의 값을 바꾼다. 경로는 `resolvePath` 가 이미 확인한 것이다. */
+function replaceAt(root: JsonValue, steps: readonly PathStep[], value: JsonValue): void {
+  let current = root as Record<string, JsonValue> | JsonValue[];
+  steps.forEach((step, position) => {
+    const last = position === steps.length - 1;
+    if (step.kind === "index") {
+      const array = current as JsonValue[];
+      if (last) array[step.index] = value;
+      else current = array[step.index] as Record<string, JsonValue> | JsonValue[];
+      return;
+    }
+    const object = current as Record<string, JsonValue>;
+    // `__proto__` 키에 대입하면 프로토타입 세터가 불린다. sanitization.ts 와 같은 이유다.
+    if (last)
+      Object.defineProperty(object, step.key, {
+        value,
+        enumerable: true,
+        writable: true,
+        configurable: true,
+      });
+    else current = object[step.key] as Record<string, JsonValue> | JsonValue[];
+  });
+}
+
+/** 키를 정렬해 2칸 들여쓴 JSON 줄. 서버가 키 순서를 바꿔도 같은 줄이 나온다. */
+const canonicalLines = (value: JsonValue): string[] =>
+  JSON.stringify(JSON.parse(canonicalJson(value)), null, 2).split("\n");
+
+/**
+ * 값 불일치가 여럿일 때 기대와 실제를 줄 단위로 맞댄다. 설계 §3.5 의 조건을 하나라도 못 맞추면
+ * undefined 다. 못 만든 diff 는 위반 줄이 대신 말하므로 조용히 빠져도 잃는 것이 없다.
+ *
+ * 가림 대상 경로의 위반이 있으면 만들지 않는다. 키 기반 가림은 기대와 실제를 같은 표기로 만들어
+ * 다른 값을 "같음" 으로 보이게 한다. 틀린 말을 하는 diff 는 없는 것보다 나쁘다.
+ */
+function constMismatchDiff(
+  result: SchemaMatchResult,
+  body: JsonValue,
+  options?: RunnerRedactionOptions,
+): string[] | undefined {
+  const { violations } = result;
+  if (result.totalViolations !== violations.length || violations.length < 2) return undefined;
+  if (violations.some((violation) => violation.code !== "CONST_MISMATCH")) return undefined;
+  if (isScalar(body)) return undefined;
+  if (violations.some((violation) => !isScalar(violation.expected) || !isScalar(violation.actual)))
+    return undefined;
+
+  const actual = sanitizeJsonValue(body, options);
+  const expected = JSON.parse(JSON.stringify(actual)) as JsonValue;
+  for (const violation of violations) {
+    const steps = resolvePath(body, violation.path);
+    if (steps === undefined) return undefined;
+    const keys = steps.flatMap((step) => (step.kind === "key" ? [step.key] : []));
+    // null 은 값 가림에 안 걸리므로, REDACTED 가 나오면 경로의 키(조상 포함)가 가림 대상이다.
+    if (redactByPath(null, keys, options) === REDACTED) return undefined;
+    const expectedValue = sanitizeJsonValue(violation.expected, options);
+    // 값 가림(sensitiveValues)이 양쪽을 같은 표기로 만든 경우도 같은 이유로 만들지 않는다.
+    if (expectedValue === sanitizeJsonValue(violation.actual, options)) return undefined;
+    replaceAt(expected, steps, expectedValue);
+  }
+
+  const expectedLines = canonicalLines(expected);
+  const actualLines = canonicalLines(actual);
+  // 조건 4(스칼라끼리)라 두 줄 수가 같다. 다르면 맞댈 수 없으므로 만들지 않는다.
+  if (expectedLines.length !== actualLines.length) return undefined;
+  const diff = expectedLines.flatMap((line, index) => {
+    const other = actualLines[index] as string;
+    return line === other ? [`  ${line}`] : [`- ${line}`, `+ ${other}`];
+  });
+  return diff.length > MAX_DIFF_LINES ? undefined : diff;
+}
+
+/**
+ * `body` 는 검사한 응답 본문이다. 주면 값 불일치가 여럿일 때 diff 를 만든다(설계 §3.5).
+ * 안 주면 diff 키가 없다.
+ */
 export function bodySchemaMismatchDiagnostic(
   result: SchemaMatchResult,
   options?: RunnerRedactionOptions,
+  body?: JsonValue,
 ): RunnerDiagnostic {
   const truncated = result.totalViolations > result.violations.length;
+  const diff = body === undefined ? undefined : constMismatchDiff(result, body, options);
   return {
     code: "BODY_SCHEMA_MISMATCH",
     message: truncated
       ? `응답이 기대 스키마와 다릅니다. 위반 ${result.totalViolations}건 중 ${result.violations.length}건을 표시합니다.`
       : `응답이 기대 스키마와 다릅니다. 위반 ${result.totalViolations}건.`,
-    hint: truncated
-      ? "표시된 위반을 고친 뒤 나머지를 다시 확인하세요."
-      : "스키마 변경이 의도된 것이라면 테스트를 업데이트하세요.",
+    hint: schemaMismatchHint(
+      result,
+      "응답의 형식이 기대와 다릅니다. 서버의 응답 형식 변경이 의도된 것이라면 테스트의 기대 스키마를 업데이트하세요.",
+    ),
     violations: result.violations.map((violation) => toViolationDiagnostic(violation, options)),
     totalViolations: result.totalViolations,
+    ...(diff === undefined ? {} : { diff }),
   };
 }
 
@@ -471,9 +623,10 @@ export function structuredContentSchemaMismatchDiagnostic(
       : `구조화된 응답이 저장된 출력 계약과 다릅니다. 위반 ${result.totalViolations}건.`,
     expected: sanitizeJsonValue(expected, options),
     actual: sanitizeJsonValue(actual, options),
-    hint: truncated
-      ? "표시된 위반을 고친 뒤 나머지를 다시 확인하세요."
-      : "서버의 outputSchema 또는 structuredContent 변경이 의도된 것인지 확인하세요.",
+    hint: schemaMismatchHint(
+      result,
+      "서버의 outputSchema 또는 structuredContent 변경이 의도된 것인지 확인하세요.",
+    ),
     violations: result.violations.map((violation) => toViolationDiagnostic(violation, options)),
     totalViolations: result.totalViolations,
   };

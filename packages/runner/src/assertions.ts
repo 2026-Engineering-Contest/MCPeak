@@ -117,6 +117,6 @@ export function assertBodyMatchesSchema(
   return {
     spec,
     status: "failed",
-    diagnostic: bodySchemaMismatchDiagnostic(result, options?.redaction),
+    diagnostic: bodySchemaMismatchDiagnostic(result, options?.redaction, extraction.body),
   };
 }

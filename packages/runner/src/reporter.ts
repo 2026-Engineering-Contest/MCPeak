@@ -6,6 +6,11 @@ import type { RunnerReport, RunnerSummary, TestCaseResult } from "./executor.js"
 export interface RenderReportOptions {
   /** ANSI 색상 사용 여부. 기본 false. */
   color?: boolean;
+  /**
+   * 명세에 approval 블록이 있는가. false 일 때만 손으로 쓴 명세의 안내를 낸다.
+   * 생략하면 지금 문장이다. dry-run 처럼 generate 안에서 부르는 자리는 넘기지 않는다.
+   */
+  specApproved?: boolean;
 }
 
 /** 진단과 단언 줄의 들여쓰기. 설계 문서 §5.3, §5.4. */
@@ -159,15 +164,23 @@ const summaryLine = (summary: RunnerSummary): string => {
  * 케이스 옆에 기호가 붙으면 판정이 바뀐 것으로 읽힌다.
  *
  * 색은 넣지 않는다. 바로 위 요약 줄과 같은 규칙이다.
+ *
+ * 셋째 줄은 명세 출처로 가른다. 손으로 쓴 명세(`specApproved === false`)에는 승인 화면이 없으므로
+ * 거절 문장이 실리는 `--json` 의 `rejectionBody` 를 가리킨다. 모르면(생략) 지금 문장이다.
  */
-const rejectionNoticeLines = (summary: RunnerSummary): readonly string[] =>
+const rejectionNoticeLines = (
+  summary: RunnerSummary,
+  specApproved: boolean | undefined,
+): readonly string[] =>
   summary.rejectionUnverified === 0
     ? []
     : [
         "",
         `${GAP}→ 거절을 기대한 케이스 ${summary.rejectionUnverified}건은 거절 근거를 확인하지 못했습니다.`,
         `${INDENT}서버가 거절한 것인지 다른 이유로 실패한 것인지 이 도구는 판단하지 못합니다.`,
-        `${INDENT}확인: mcpeak generate 의 승인 화면에서 해당 케이스의 응답을 확인하세요.`,
+        specApproved === false
+          ? `${INDENT}확인: --json 출력에서 해당 케이스의 rejectionBody 로 서버가 보낸 거절 문장을 확인하세요.`
+          : `${INDENT}확인: mcpeak generate 의 승인 화면에서 해당 케이스의 응답을 확인하세요.`,
       ];
 
 /**
@@ -338,6 +351,11 @@ export function renderReport(report: RunnerReport, options?: RenderReportOptions
       for (const violation of assertion.diagnostic.violations ?? []) {
         lines.push(bulletLine(violation.message));
       }
+      // diff 는 위반 줄을 한눈에 모은 것이라 위반 바로 다음이다. 글머리를 붙이지 않는다.
+      // `- `·`+ ` 표지가 곧 줄의 뜻이고, `→` 가 붙으면 서버 문장처럼 읽힌다. 색은 넣지 않는다.
+      for (const line of assertion.diagnostic.diff ?? []) {
+        lines.push(`${INDENT}${escapeTerminalText(line)}`);
+      }
       // notes 는 위반 다음이다. 위반은 우리가 낸 판정이고 notes 는 서버가 준 값이라,
       // 판정을 먼저 읽고 근거를 나중에 읽는 순서가 된다. ADR-0027.
       for (const note of assertion.diagnostic.notes ?? []) {
@@ -354,7 +372,7 @@ export function renderReport(report: RunnerReport, options?: RenderReportOptions
   }
   lines.push(...failedRecapLines(report, color));
   lines.push(summaryLine(report.summary));
-  lines.push(...rejectionNoticeLines(report.summary));
+  lines.push(...rejectionNoticeLines(report.summary, options?.specApproved));
   lines.push(...payloadNoticeLines(report.payload));
 
   return `${lines.join("\n")}\n`;

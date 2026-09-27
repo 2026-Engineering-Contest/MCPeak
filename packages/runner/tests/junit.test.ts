@@ -184,7 +184,7 @@ describe("renderJUnit", () => {
     const diagnostic: RunnerDiagnostic = {
       code: "BODY_SCHEMA_MISMATCH",
       message: "응답이 기대 스키마와 다릅니다. 위반 2건.",
-      hint: "스키마 변경이 의도된 것이라면 테스트를 업데이트하세요.",
+      hint: "응답의 형식이 기대와 다릅니다. 서버의 응답 형식 변경이 의도된 것이라면 테스트의 기대 스키마를 업데이트하세요.",
       totalViolations: 2,
       violations: [
         {

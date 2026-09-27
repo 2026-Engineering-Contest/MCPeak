@@ -473,6 +473,12 @@ function schemaMismatchHint(result: SchemaMatchResult, structureHint: string): s
 
 /** diff 의 상한(줄). 넘으면 만들지 않는다. 위반 줄은 그대로 남으므로 정보는 잃지 않는다. */
 const MAX_DIFF_LINES = 60;
+/**
+ * diff 의 상한(UTF-8 바이트). 줄 수만으로는 막지 못한다. 위반이 아닌 필드의 긴 문자열도 한 줄로
+ * 통째로 실리기 때문이다. 케이스 예산(`DEFAULT_MAX_CASE_BYTES`, 64KiB)의 8분의 1이라 위반 줄·notes
+ * 와 함께 실려도 예산을 넘기지 않는다. 넘으면 만들지 않는다. 줄 상한과 같은 이유로 잃는 것이 없다.
+ */
+const MAX_DIFF_BYTES = 8192;
 
 type PathStep = { kind: "key"; key: string } | { kind: "index"; index: number };
 
@@ -576,10 +582,19 @@ function constMismatchDiff(
   const actualLines = canonicalLines(actual);
   // 조건 4(스칼라끼리)라 두 줄 수가 같다. 다르면 맞댈 수 없으므로 만들지 않는다.
   if (expectedLines.length !== actualLines.length) return undefined;
-  const diff = expectedLines.flatMap((line, index) => {
+  const diff: string[] = [];
+  // sanitization.ts 의 바이트 계산과 같은 도구를 쓴다.
+  const encoder = new TextEncoder();
+  let bytes = 0;
+  for (const [index, line] of expectedLines.entries()) {
     const other = actualLines[index] as string;
-    return line === other ? [`  ${line}`] : [`- ${line}`, `+ ${other}`];
-  });
+    for (const text of line === other ? [`  ${line}`] : [`- ${line}`, `+ ${other}`]) {
+      // 줄바꿈 한 바이트를 포함해 센다. 화면과 JSON 어느 쪽에서도 줄마다 구분자가 붙는다.
+      bytes += encoder.encode(text).byteLength + 1;
+      if (bytes > MAX_DIFF_BYTES) return undefined;
+      diff.push(text);
+    }
+  }
   return diff.length > MAX_DIFF_LINES ? undefined : diff;
 }
 

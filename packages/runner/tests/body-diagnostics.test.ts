@@ -395,6 +395,18 @@ describe("값 불일치 diff", () => {
     ]);
   });
 
+  it("위반이 아닌 필드가 길어 diff 가 8KiB 를 넘으면 만들지 않는다", () => {
+    // 한글은 UTF-8 로 3바이트다. 3000자는 글자 수로는 8192 미만이고 바이트로는 9000을 넘는다.
+    // 글자 수로 세면 이 diff 가 통과해 버린다.
+    const body = { ...WEATHER, note: "가".repeat(3000) };
+    expect("diff" in diffOf(weatherViolations, body)).toBe(false);
+  });
+
+  it("위반이 아닌 필드가 있어도 8KiB 이하면 diff 를 만든다", () => {
+    const body = { ...WEATHER, note: "가".repeat(2000) };
+    expect(diffOf(weatherViolations, body).diff).toContain(`    "note": "${"가".repeat(2000)}",`);
+  });
+
   it("본문을 넘기지 않으면 diff 를 만들지 않는다", () => {
     expect("diff" in diffOf(weatherViolations, undefined)).toBe(false);
   });

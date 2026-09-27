@@ -1,8 +1,13 @@
 import type { ToolDef } from "@mcpeak/core";
 import { describe, expect, it } from "vitest";
 import { readContractRange } from "../src/contract-range.js";
-import type { JsonObject, TestCaseSpec, TestSuiteSpec } from "../src/index.js";
-import { checkInputContract, describeSpecFinding } from "../src/index.js";
+import type { CallToolCaseSpec, JsonObject, TestCaseSpec, TestSuiteSpec } from "../src/index.js";
+import {
+  acceptedViolations,
+  checkInputContract,
+  describeSpecFinding,
+  MAX_FINDINGS_PER_CASE,
+} from "../src/index.js";
 import { analyzeInputSchema } from "../src/input-schema.js";
 
 const tool = (name: string, inputSchema: unknown): ToolDef => ({ name, inputSchema });
@@ -1040,5 +1045,140 @@ describe("input-contract 가 경로 required 를 옳게 본다", () => {
     );
     expect(findings).toHaveLength(1);
     expect(findings[0]).toMatchObject({ path: "input.tags[].id" });
+  });
+});
+
+describe("acceptedViolations (설계 §3.2)", () => {
+  const add = tool(
+    "add",
+    objectSchema({
+      properties: { a: { type: "number" }, b: { type: "number" } },
+      required: ["a", "b"],
+      additionalProperties: false,
+    }),
+  );
+  const addCase = (
+    id: string,
+    input: JsonObject,
+    expected: boolean,
+    toolName = "add",
+  ): CallToolCaseSpec => ({
+    id,
+    name: id,
+    operation: { type: "callTool", tool: toolName, input },
+    assertions: [{ type: "isError", expected }],
+  });
+
+  it("거절 기대 케이스의 억제된 위반을 돌려준다", () => {
+    const result = acceptedViolations({
+      suite: suiteOf(addCase("missing-b", { a: 1 }, true)),
+      tools: [add],
+    });
+    expect([...result.keys()]).toEqual(["missing-b"]);
+    const violations = result.get("missing-b");
+    expect(violations).toHaveLength(1);
+    expect(violations?.[0]).toMatchObject({
+      code: "REQUIRED_MISSING",
+      caseId: "missing-b",
+      path: "input.b",
+      expected: "b",
+    });
+  });
+
+  it("거절을 기대하지 않는 케이스는 담지 않는다", () => {
+    const result = acceptedViolations({
+      suite: suiteOf(addCase("missing-b", { a: 1 }, false)),
+      tools: [add],
+    });
+    expect(result.has("missing-b")).toBe(false);
+  });
+
+  it("위반이 없는 거절 기대 케이스는 담지 않는다", () => {
+    const result = acceptedViolations({
+      suite: suiteOf(addCase("ok", { a: 1, b: 2 }, true)),
+      tools: [add],
+    });
+    expect(result.has("ok")).toBe(false);
+  });
+
+  it("대조를 끝까지 못 한 케이스는 담지 않는다", () => {
+    const result = acceptedViolations({
+      suite: suiteOf(
+        addCase("undeclared-tool", {}, true, "sub"),
+        addCase("unanalyzable", {}, true),
+      ),
+      tools: [tool("add", { anyOf: [{ type: "object" }] })],
+    });
+    expect(result.size).toBe(0);
+  });
+
+  it("checkInputContract 가 억제한 것과 같은 위반이다", () => {
+    const cases = [
+      // 필수 누락 + 선언 밖 필드 + 타입 위반이 겹친 케이스. 순서가 CODE_ORDER·path 를 따라야 한다.
+      addCase("mixed", { a: "1", z: 1, y: 2 }, true),
+      addCase("missing-both", {}, true),
+      addCase("ok", { a: 1, b: 2 }, true),
+      addCase("accepting", { a: 1 }, false),
+    ];
+    const suppressed = new Set([
+      "REQUIRED_MISSING",
+      "UNDECLARED_FIELD",
+      "TYPE_MISMATCH",
+      "ENUM_MISMATCH",
+      "RANGE_MISMATCH",
+    ]);
+    const accepted = acceptedViolations({ suite: suiteOf(...cases), tools: [add] });
+
+    // 거절 기대를 뒤집으면 checkInputContract 가 억제하지 않고 전부 낸다.
+    const flipped = cases.map(
+      (testCase): CallToolCaseSpec => ({
+        ...testCase,
+        assertions: [{ type: "isError", expected: false }],
+      }),
+    );
+    const { findings } = checkInputContract({ suite: suiteOf(...flipped), tools: [add] });
+    const expected = new Map<string, unknown[]>();
+    for (const testCase of cases) {
+      if (testCase.assertions[0]?.type !== "isError" || !testCase.assertions[0].expected) continue;
+      const own = findings.filter(
+        (item) => item.caseId === testCase.id && suppressed.has(item.code),
+      );
+      if (own.length > 0) expected.set(testCase.id, own);
+    }
+
+    expect([...accepted.keys()]).toEqual(["mixed", "missing-both"]);
+    expect(accepted).toEqual(expected);
+    expect(accepted.get("mixed")?.map((item) => item.code)).toEqual([
+      "REQUIRED_MISSING",
+      "UNDECLARED_FIELD",
+      "UNDECLARED_FIELD",
+      "TYPE_MISMATCH",
+    ]);
+  });
+
+  it("상한으로 자르지 않는다", () => {
+    const wide = tool("wide", objectSchema({ properties: {}, additionalProperties: false }));
+    const input: JsonObject = {};
+    for (let index = 0; index < MAX_FINDINGS_PER_CASE + 2; index++) input[`k${index}`] = index;
+    const result = acceptedViolations({
+      suite: suiteOf({
+        id: "wide",
+        name: "wide",
+        operation: { type: "callTool", tool: "wide", input },
+        assertions: [{ type: "isError", expected: true }],
+      }),
+      tools: [wide],
+    });
+    expect(result.get("wide")).toHaveLength(MAX_FINDINGS_PER_CASE + 2);
+  });
+
+  it("거절 기대 케이스가 있어도 checkInputContract 결과는 그대로다", () => {
+    const suite = suiteOf(
+      addCase("missing-b", { a: 1 }, true),
+      addCase("ok", { a: 1, b: 2 }, true),
+    );
+    const before = JSON.stringify(checkInputContract({ suite, tools: [add] }));
+    acceptedViolations({ suite, tools: [add] });
+    expect(JSON.stringify(checkInputContract({ suite, tools: [add] }))).toBe(before);
   });
 });

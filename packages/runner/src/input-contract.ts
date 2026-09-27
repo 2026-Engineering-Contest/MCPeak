@@ -129,14 +129,21 @@ const declaredRangeValue = (range: ContractRange, checked: JsonValue): JsonValue
 const withSuggestion = (finding: SpecFinding, suggestion: string | undefined): SpecFinding =>
   suggestion === undefined ? finding : { ...finding, suggestion };
 
+/** callTool 케이스 하나를 대조한 결과. 억제·자르기 전이다. */
+interface CaseContract {
+  readonly caseId: string;
+  /** expectedIsError 가 정확히 true 인가. null(단언 없음·모순)은 false 로 둔다. */
+  readonly rejectionExpected: boolean;
+  /** CODE_ORDER, 그다음 path 순으로 정렬돼 있다. */
+  readonly findings: readonly SpecFinding[];
+}
+
 /**
- * 명세의 callTool 입력을 서버가 선언한 inputSchema와 대조한다. 서버를 호출하지 않는다.
- * 해석하지 못하는 스키마는 SCHEMA_NOT_ANALYZABLE 하나만 내고 그 툴의 다른 검사를 전부 건너뛴다.
- *
- * 판정이 애매하면 finding 을 내지 않는다. 이 결과가 승인 차단 근거로 쓰이므로 오탐 1 건이
- * 미탐 1 건보다 비싸다(ADR-0015).
+ * 케이스마다 입력을 선언과 대조한다. `checkInputContract` 와 `acceptedViolations` 가 이 루프
+ * 하나를 쓴다. 따로 계산하면 한쪽만 고쳐졌을 때 두 자리가 서로 다른 위반을 말한다.
+ * 억제(ADR-0021)와 상한 자르기는 부르는 쪽이 한다.
  */
-export function checkInputContract(options: InputContractOptions): SpecFindingsResult {
+function contractByCase(options: InputContractOptions): CaseContract[] {
   const { suite, tools } = options;
 
   // 이름으로만 조회한다. 배열 순서를 쓰지 않아야 tools 순서가 결과를 바꾸지 않는다.
@@ -165,8 +172,7 @@ export function checkInputContract(options: InputContractOptions): SpecFindingsR
     return analysis;
   };
 
-  const findings: SpecFinding[] = [];
-  let totalFindings = 0;
+  const contracts: CaseContract[] = [];
 
   for (const testCase of suite.cases) {
     // listTools 는 입력이 없어서 대조할 계약이 없다.
@@ -334,15 +340,33 @@ export function checkInputContract(options: InputContractOptions): SpecFindingsR
         path: "operation.input",
       });
 
-    const kept = rejectionExpected
-      ? caseFindings.filter((finding) => !SUPPRESSED_WHEN_REJECTION_EXPECTED.has(finding.code))
-      : caseFindings;
-
-    kept.sort(
+    // 억제 전에 정렬한다. 안정 정렬이라 걸러낸 뒤의 상대 순서는 걸러낸 다음 정렬한 것과 같다.
+    caseFindings.sort(
       (left, right) =>
         (CODE_ORDER[left.code] ?? 0) - (CODE_ORDER[right.code] ?? 0) ||
         byCodeUnit(left.path, right.path),
     );
+    contracts.push({ caseId, rejectionExpected, findings: caseFindings });
+  }
+
+  return contracts;
+}
+
+/**
+ * 명세의 callTool 입력을 서버가 선언한 inputSchema와 대조한다. 서버를 호출하지 않는다.
+ * 해석하지 못하는 스키마는 SCHEMA_NOT_ANALYZABLE 하나만 내고 그 툴의 다른 검사를 전부 건너뛴다.
+ *
+ * 판정이 애매하면 finding 을 내지 않는다. 이 결과가 승인 차단 근거로 쓰이므로 오탐 1 건이
+ * 미탐 1 건보다 비싸다(ADR-0015).
+ */
+export function checkInputContract(options: InputContractOptions): SpecFindingsResult {
+  const findings: SpecFinding[] = [];
+  let totalFindings = 0;
+
+  for (const contract of contractByCase(options)) {
+    const kept = contract.rejectionExpected
+      ? contract.findings.filter((finding) => !SUPPRESSED_WHEN_REJECTION_EXPECTED.has(finding.code))
+      : contract.findings;
     // 총합은 침묵 후 개수다. 침묵시킨 것을 총합에 남기면 소비자가 "위반 N건이 있는데 목록은
     // 비어 있다" 를 보고 버그로 읽는다.
     totalFindings += kept.length;
@@ -351,4 +375,24 @@ export function checkInputContract(options: InputContractOptions): SpecFindingsR
   }
 
   return { findings, totalFindings };
+}
+
+/**
+ * 거절을 기대하는 케이스마다, checkInputContract 가 억제한 선언 위반을 돌려준다.
+ * 억제 전의 순서(CODE_ORDER, 그다음 path)를 그대로 쓴다. 상한으로 자르지 않는다.
+ * 위반이 없거나 대조를 끝까지 못 한 케이스(툴 미선언, 스키마 해석 불가, 비객체 입력)는
+ * 키가 없다. 서버를 호출하지 않는 순수 함수다.
+ */
+export function acceptedViolations(
+  options: InputContractOptions,
+): ReadonlyMap<string, readonly SpecFinding[]> {
+  const accepted = new Map<string, readonly SpecFinding[]>();
+  for (const contract of contractByCase(options)) {
+    if (!contract.rejectionExpected) continue;
+    const suppressed = contract.findings.filter((finding) =>
+      SUPPRESSED_WHEN_REJECTION_EXPECTED.has(finding.code),
+    );
+    if (suppressed.length > 0) accepted.set(contract.caseId, suppressed);
+  }
+  return accepted;
 }

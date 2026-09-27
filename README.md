@@ -25,9 +25,9 @@ mcpeak test weather.suite.json -- node ./server.js
 
 MCP(Model Context Protocol) 서버는 LLM 클라이언트에 붙여 손으로 눌러 봐야 동작을 알 수 있었다.
 MCPeak 은 그 확인을 JSON 명세와 터미널 명령으로 바꾼다. 테스트가 실패하면 어느 단언이 무엇과
-왜 다른지, 어떻게 고치는지를 한 줄로 찍는다. 서버가 밖으로 부르는 HTTP 호출은 한 번 녹화해 두고
-이후에는 재생하므로 같은 입력에 같은 결과가 나온다. 서버 코드가 아직 없어도 목 정의 파일 하나로
-설계를 먼저 검증할 수 있다.
+왜 다른지, 어떻게 고치는지를 한 줄로 찍는다. 서버가 `globalThis.fetch` 로 밖에 부르는 HTTP 호출은
+한 번 녹화해 두고 이후에는 재생하므로 같은 입력에 같은 결과가 나온다. 서버 코드가 아직 없어도
+목 정의 파일 하나로 설계를 먼저 검증할 수 있다.
 
 ## 시작하기
 
@@ -132,9 +132,12 @@ mcpeak test weather.suite.json -- node examples/weather-server/server.mjs
 
 - 실패 메시지가 곧 제품이다. `expected true, got false` 대신 무엇이 왜 다른지, 어떻게 고치는지를
   출력한다.
-- 같은 입력에 같은 결과가 나온다. 서버가 밖으로 부르는 `fetch` 호출은 한 번 녹화해 재생하고,
-  목 서버의 응답은 사람이 지정한 값이라 언제나 같은 바이트를 돌려준다. `--determinism` 을 붙이면
-  같은 명세를 두 번 돌려 결과가 같은지까지 확인한다.
+- 같은 입력에 같은 결과가 나온다. 서버가 `globalThis.fetch` 로 밖에 부르는 호출은 한 번 녹화해
+  재생하고, 목 서버의 응답은 사람이 지정한 값이라 언제나 같은 바이트를 돌려준다. `node:http` 나
+  axios 처럼 `fetch` 를 거치지 않는 호출은 녹화 범위 밖이라 실제로 나간다. `--determinism` 을
+  붙이면 같은 명세를 두 번 돌려 결과를 비교한다. 이 비교는 판정을 막지 않는 진단이라 차이가
+  있어도 종료 코드는 그대로이고, `--reset-cmd` 로 실행 사이에 상태를 복원해야 결정론성 확인으로
+  친다.
 - 명세를 손으로 다 쓰지 않아도 된다. 서버의 툴 스키마를 읽어 정상 케이스와 위반 케이스를
   결정론적으로 합성하고, 사람이 승인한 명세에만 지문을 찍는다.
 
@@ -185,8 +188,7 @@ node packages/cli/dist/cli.mjs test <suite.json> -- node ./server.js
 ```
 
 `pnpm build` 를 건너뛰면 낡은 `dist/` 를 문다. 소스를 고쳤으면 다시 빌드한다. CI 는 최소 버전인
-Node 22.18.0 과 Node 24 에서 검사하며, Node 25 의 알려진 실패는
-[#212](https://github.com/2026-Engineering-Contest/MCPeak/issues/212)에 있다.
+Node 22.18.0 과 Node 24 에서 검사한다.
 
 가이드 사이트의 원고는 `website/` 에 있고, main 에 푸시되면 GitHub Pages 로 배포된다.
 기여 규칙은 [CONTRIBUTING.md](./CONTRIBUTING.md)에 있다.

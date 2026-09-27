@@ -7,7 +7,17 @@ import {
   type RunnerRedactionOptions,
   type SchemaViolation,
   type SchemaViolationDiagnostic,
+  structuredContentSchemaMismatchDiagnostic,
 } from "../src/index.js";
+
+/** 설계 §3.1 문안. 완전 일치로 고정한다. */
+const STRUCTURE_HINT =
+  "응답의 형식이 기대와 다릅니다. 서버의 응답 형식 변경이 의도된 것이라면 테스트의 기대 스키마를 업데이트하세요.";
+const VALUE_HINT =
+  "응답 형식은 같고 값만 다릅니다. 서버가 돌려준 값이 맞다면 테스트의 기대값을 고치고, 아니라면 서버 로직을 확인하세요. 값이 실행마다 바뀐다면 --determinism 으로 확인하세요.";
+const TRUNCATED_HINT = "표시된 위반을 고친 뒤 나머지를 다시 확인하세요.";
+const STRUCTURED_STRUCTURE_HINT =
+  "서버의 outputSchema 또는 structuredContent 변경이 의도된 것인지 확인하세요.";
 
 /** 위반 하나만 담은 진단을 만든다. */
 const one = (violation: SchemaViolation, options?: RunnerRedactionOptions) =>
@@ -127,7 +137,7 @@ describe("요약 문장", () => {
     });
     expect(diagnostic.code).toBe("BODY_SCHEMA_MISMATCH");
     expect(diagnostic.message).toBe("응답이 기대 스키마와 다릅니다. 위반 3건.");
-    expect(diagnostic.hint).toBe("스키마 변경이 의도된 것이라면 테스트를 업데이트하세요.");
+    expect(diagnostic.hint).toBe(STRUCTURE_HINT);
     expect(diagnostic.totalViolations).toBe(3);
   });
 
@@ -275,5 +285,203 @@ describe("값 요약과 상한", () => {
     const left = bodySchemaMismatchDiagnostic({ violations, totalViolations: 2 });
     const right = bodySchemaMismatchDiagnostic({ violations, totalViolations: 2 });
     expect(JSON.stringify(left)).toBe(JSON.stringify(right));
+  });
+});
+
+/** 설계 §3.1. hint 를 위반 부류로 가른다. */
+describe("위반 부류별 해결 문구", () => {
+  const constMismatch: SchemaViolation = {
+    code: "CONST_MISMATCH",
+    path: "$.temp",
+    expected: 25,
+    actual: 21,
+  };
+
+  it("구조 위반이 하나라도 있으면 형식 변경 문구를 낸다", () => {
+    const diagnostic = bodySchemaMismatchDiagnostic({
+      violations: [
+        {
+          code: "REQUIRED_MISSING",
+          path: "$",
+          expected: "temperature",
+          actual: null,
+          observedKeys: ["temp"],
+        },
+        constMismatch,
+      ],
+      totalViolations: 2,
+    });
+    expect(diagnostic.hint).toBe(STRUCTURE_HINT);
+  });
+
+  it("값 위반만 있으면 기대값을 고치라는 문구를 낸다", () => {
+    expect(one(constMismatch).hint).toBe(VALUE_HINT);
+  });
+
+  it("범위·길이 위반도 값 부류로 본다", () => {
+    const diagnostic = bodySchemaMismatchDiagnostic({
+      violations: [
+        { code: "MAXIMUM", path: "$.temp", expected: 60, actual: 210 },
+        { code: "MIN_LENGTH", path: "$.city", expected: 1, actual: 0 },
+      ],
+      totalViolations: 2,
+    });
+    expect(diagnostic.hint).toBe(VALUE_HINT);
+  });
+
+  it("잘린 결과는 기존 문구를 유지한다", () => {
+    const diagnostic = bodySchemaMismatchDiagnostic({
+      violations: [constMismatch],
+      totalViolations: 11,
+    });
+    expect(diagnostic.hint).toBe(TRUNCATED_HINT);
+  });
+
+  it("구조화 응답은 구조 위반에 출력 계약 문구를 유지한다", () => {
+    const diagnostic = structuredContentSchemaMismatchDiagnostic(
+      {
+        violations: [{ code: "TYPE_MISMATCH", path: "$.temp", expected: "number", actual: "21" }],
+        totalViolations: 1,
+      },
+      { type: "object" },
+      { temp: "21" },
+    );
+    expect(diagnostic.hint).toBe(STRUCTURED_STRUCTURE_HINT);
+  });
+
+  it("구조화 응답도 값 위반만 있으면 값 문구를 낸다", () => {
+    const diagnostic = structuredContentSchemaMismatchDiagnostic(
+      { violations: [constMismatch], totalViolations: 1 },
+      { type: "object" },
+      { temp: 21 },
+    );
+    expect(diagnostic.hint).toBe(VALUE_HINT);
+  });
+});
+
+/** 설계 §3.5. 값 불일치가 여럿이면 기대와 실제를 나란히 놓는다. */
+describe("값 불일치 diff", () => {
+  const WEATHER = { city: "서울", condition: "흐림", temp: 21 };
+  const weatherViolations: SchemaViolation[] = [
+    { code: "CONST_MISMATCH", path: "$.condition", expected: "맑음", actual: "흐림" },
+    { code: "CONST_MISMATCH", path: "$.temp", expected: 25, actual: 21 },
+  ];
+  const diffOf = (
+    violations: SchemaViolation[],
+    body: unknown,
+    options?: RunnerRedactionOptions,
+    totalViolations = violations.length,
+  ) =>
+    bodySchemaMismatchDiagnostic(
+      { violations, totalViolations },
+      options,
+      body as Parameters<typeof bodySchemaMismatchDiagnostic>[2],
+    );
+
+  it("값 불일치가 1건이면 diff 를 만들지 않는다", () => {
+    const diagnostic = diffOf([weatherViolations[1] as SchemaViolation], WEATHER);
+    expect("diff" in diagnostic).toBe(false);
+  });
+
+  it("값 불일치가 2건 이상이면 diff 를 만든다", () => {
+    expect(diffOf(weatherViolations, WEATHER).diff).toEqual([
+      "  {",
+      '    "city": "서울",',
+      '-   "condition": "맑음",',
+      '+   "condition": "흐림",',
+      '-   "temp": 25',
+      '+   "temp": 21',
+      "  }",
+    ]);
+  });
+
+  it("본문을 넘기지 않으면 diff 를 만들지 않는다", () => {
+    expect("diff" in diffOf(weatherViolations, undefined)).toBe(false);
+  });
+
+  it("잘린 결과는 diff 를 만들지 않는다", () => {
+    expect("diff" in diffOf(weatherViolations, WEATHER, undefined, 11)).toBe(false);
+  });
+
+  it("배열 안의 값 불일치도 인덱스로 짚는다", () => {
+    const diagnostic = diffOf(
+      [
+        { code: "CONST_MISMATCH", path: "$.items[1].t", expected: 20, actual: 2 },
+        { code: "CONST_MISMATCH", path: "$.items[0].t", expected: 10, actual: 1 },
+      ],
+      { items: [{ t: 1 }, { t: 2 }] },
+    );
+    expect(diagnostic.diff).toEqual([
+      "  {",
+      '    "items": [',
+      "      {",
+      '-       "t": 10',
+      '+       "t": 1',
+      "      },",
+      "      {",
+      '-       "t": 20',
+      '+       "t": 2',
+      "      }",
+      "    ]",
+      "  }",
+    ]);
+  });
+
+  it("경로를 풀 수 없으면 diff 를 만들지 않는다", () => {
+    const diagnostic = diffOf(
+      [
+        { code: "CONST_MISMATCH", path: "$.a.b", expected: 5, actual: 1 },
+        { code: "CONST_MISMATCH", path: "$.c", expected: 3, actual: 2 },
+      ],
+      { "a.b": 1, c: 2 },
+    );
+    expect("diff" in diagnostic).toBe(false);
+  });
+
+  it("다른 위반이 섞이면 diff 를 만들지 않는다", () => {
+    const diagnostic = diffOf(
+      [
+        ...weatherViolations,
+        { code: "TYPE_MISMATCH", path: "$.city", expected: "number", actual: "서울" },
+      ],
+      WEATHER,
+    );
+    expect("diff" in diagnostic).toBe(false);
+  });
+
+  it("기대값이 스칼라가 아니면 diff 를 만들지 않는다", () => {
+    const diagnostic = diffOf(
+      [
+        weatherViolations[0] as SchemaViolation,
+        { code: "CONST_MISMATCH", path: "$.temp", expected: { value: 25 }, actual: 21 },
+      ],
+      WEATHER,
+    );
+    expect("diff" in diagnostic).toBe(false);
+  });
+
+  it("diff 는 서버의 키 순서와 무관하다", () => {
+    const reordered = { temp: 21, condition: "흐림", city: "서울" };
+    expect(diffOf(weatherViolations, reordered).diff).toEqual(
+      diffOf(weatherViolations, WEATHER).diff,
+    );
+  });
+
+  it("가림 대상 경로에 위반이 있으면 diff 를 만들지 않는다", () => {
+    const diagnostic = diffOf(
+      [
+        { code: "CONST_MISMATCH", path: "$.token", expected: "sk-expected", actual: "sk-actual" },
+        weatherViolations[1] as SchemaViolation,
+      ],
+      { ...WEATHER, token: "sk-actual" },
+    );
+    expect("diff" in diagnostic).toBe(false);
+  });
+
+  it("diff 의 다른 줄에 있는 민감값도 가린다", () => {
+    const diff = diffOf(weatherViolations, { ...WEATHER, token: "sk-live-123" }).diff;
+    expect(diff).toBeDefined();
+    expect(diff?.join("\n")).not.toContain("sk-live-123");
+    expect(diff).toContain('    "token": "[REDACTED]"');
   });
 });

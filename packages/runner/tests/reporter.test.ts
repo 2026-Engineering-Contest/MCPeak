@@ -1000,6 +1000,95 @@ describe("renderReport", () => {
     it("한 건이어도 같은 문장을 쓴다", () => {
       expect(renderReport(makeReport(unverifiedCases(1)))).toContain("거절을 기대한 케이스 1건은");
     });
+
+    /** 설계 §3.4. 셋째 줄만 명세 출처로 가른다. */
+    const GENERATE_LINE =
+      "    확인: mcpeak generate 의 승인 화면에서 해당 케이스의 응답을 확인하세요.";
+    const HANDWRITTEN_LINE =
+      "    확인: --json 출력에서 해당 케이스의 rejectionBody 로 서버가 보낸 거절 문장을 확인하세요.";
+    const thirdNoticeLine = (text: string): string | undefined => {
+      const lines = text.split("\n");
+      const head = lines.findIndex((line) => line.includes("거절 근거를 확인하지 못했습니다"));
+      return head < 0 ? undefined : lines[head + 2];
+    };
+
+    it("승인된 명세의 거절 근거 미확인 고지는 generate 를 가리킨다", () => {
+      const text = renderReport(makeReport(unverifiedCases(1)), { specApproved: true });
+      expect(thirdNoticeLine(text)).toBe(GENERATE_LINE);
+    });
+
+    it("specApproved 를 생략하면 기존 고지를 낸다", () => {
+      expect(thirdNoticeLine(renderReport(makeReport(unverifiedCases(1))))).toBe(GENERATE_LINE);
+    });
+
+    it("손으로 쓴 명세의 거절 근거 미확인 고지는 rejectionBody 를 가리킨다", () => {
+      const text = renderReport(makeReport(unverifiedCases(1)), { specApproved: false });
+      expect(thirdNoticeLine(text)).toBe(HANDWRITTEN_LINE);
+      expect(text).not.toContain("generate");
+    });
+
+    it("미확인이 0건이면 명세 출처와 무관하게 아무 줄도 없다", () => {
+      const report = makeReport([testCase({ id: "a", name: "첫 번째", status: "passed" })]);
+      for (const specApproved of [true, false]) {
+        const text = renderReport(report, { specApproved });
+        expect(text).not.toContain("거절 근거");
+        expect(text).not.toContain("확인:");
+      }
+    });
+  });
+
+  /** 설계 §3.5 렌더. diff 는 우리가 만든 판정이라 위반 다음, 서버 값인 notes 앞이다. */
+  describe("값 불일치 diff", () => {
+    it("diff 줄은 위반 다음 notes 앞에 글머리 없이 찍힌다", () => {
+      const report = makeReport([
+        testCase({
+          id: "w",
+          name: "날씨",
+          status: "failed",
+          assertions: [
+            assertion("bodyMatchesSchema", "failed", {
+              ...diagnostic("응답이 기대 스키마와 다릅니다. 위반 2건.", "값을 고치세요.", [
+                "$.a: 값이 다릅니다.",
+                "$.b: 값이 다릅니다.",
+              ]),
+              diff: ["  {", '-   "a": 1,', '+   "a": 2,', "  }"],
+              notes: ["서버 원문"],
+            }),
+          ],
+        }),
+      ]);
+      const lines = renderReport(report).split("\n");
+      const start = lines.indexOf("    → $.a: 값이 다릅니다.");
+      expect(lines.slice(start, start + 8)).toEqual([
+        "    → $.a: 값이 다릅니다.",
+        "    → $.b: 값이 다릅니다.",
+        "      {",
+        '    -   "a": 1,',
+        '    +   "a": 2,',
+        "      }",
+        "    → 서버 원문",
+        "    해결: 값을 고치세요.",
+      ]);
+    });
+
+    it("diff 줄의 제어 문자를 이스케이프한다", () => {
+      const report = makeReport([
+        testCase({
+          id: "w",
+          name: "날씨",
+          status: "failed",
+          assertions: [
+            assertion("bodyMatchesSchema", "failed", {
+              ...diagnostic("m", "h"),
+              diff: [`+   "a": "${ESC}[31m"`],
+            }),
+          ],
+        }),
+      ]);
+      const text = renderReport(report);
+      expect(text).not.toContain(ESC);
+      expect(text).toContain(`    +   "a": "${ESCAPED_ESC}[31m"`);
+    });
   });
 
   /**

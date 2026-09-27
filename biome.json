@@ -54,6 +54,18 @@
       "formatter": {
         "enabled": false
       }
+    },
+    {
+      "includes": ["docs/benchmark/**"],
+      "linter": {
+        "enabled": false
+      },
+      "formatter": {
+        "enabled": false
+      },
+      "assist": {
+        "enabled": false
+      }
     }
   ]
 }

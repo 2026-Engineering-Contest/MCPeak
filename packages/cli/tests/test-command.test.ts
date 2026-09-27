@@ -584,12 +584,43 @@ describe("runCli", () => {
   it("colorEnabled를 renderReport에 그대로 넘긴다", async () => {
     const d = deps({ colorEnabled: true });
     await runCli(["test", "x.json", "--command", "node"], d.value);
-    expect(d.value.renderReport).toHaveBeenCalledWith(report(), { color: true });
+    expect(d.value.renderReport).toHaveBeenCalledWith(report(), {
+      color: true,
+      specApproved: false,
+    });
   });
   it("colorEnabled가 false면 그대로 넘긴다", async () => {
     const d = deps({ colorEnabled: false });
     await runCli(["test", "x.json", "--command", "node"], d.value);
-    expect(d.value.renderReport).toHaveBeenCalledWith(report(), { color: false });
+    expect(d.value.renderReport).toHaveBeenCalledWith(report(), {
+      color: false,
+      specApproved: false,
+    });
+  });
+  it("손으로 쓴 명세는 specApproved false 로 렌더한다", async () => {
+    // 기본 명세에는 approval 블록이 없다. 승인 화면이 없으니 generate 를 가리키면 안 된다.
+    const d = deps();
+    await runCli(["test", "x.json", "--command", "node"], d.value);
+    expect(d.value.renderReport).toHaveBeenCalledWith(report(), {
+      color: false,
+      specApproved: false,
+    });
+  });
+  it("승인된 명세는 specApproved true 로 렌더한다", async () => {
+    // 지문이 달라도 approval 블록이 있으면 generate 승인을 거친 명세다. 설계 §3.4.
+    for (const approvalFingerprint of [fingerprint, WRONG_FINGERPRINT]) {
+      const d = deps({
+        validateSuite: vi.fn(() => ({
+          valid: true as const,
+          value: approvedSuite(approvalFingerprint),
+        })),
+      });
+      await runCli(["test", "x.json", "--command", "node"], d.value);
+      expect(d.value.renderReport).toHaveBeenCalledWith(report(), {
+        color: false,
+        specApproved: true,
+      });
+    }
   });
   it("--json을 두 번 쓰면 거절한다", async () => {
     const d = deps();
@@ -1469,6 +1500,36 @@ describe("입력 계약 참고 문장", () => {
       },
     };
   };
+  /**
+   * 거절을 기대한 케이스에 서버가 정상 응답한 보고서로 바꾼다. runner 의 assertIsError 가
+   * 그 경우에 내는 모양 그대로다(IS_ERROR_MISMATCH, expected true, actual false).
+   */
+  const withAcceptedRejection = (
+    value: RunnerReport,
+    caseIds: readonly string[],
+  ): RunnerReport => ({
+    ...value,
+    cases: value.cases.map((item) =>
+      caseIds.includes(item.spec.id)
+        ? {
+            ...item,
+            assertions: [
+              {
+                spec: { type: "isError", expected: true },
+                status: "failed",
+                diagnostic: {
+                  code: "IS_ERROR_MISMATCH",
+                  message: "오류 응답을 기대했지만 정상 응답을 받았습니다.",
+                  expected: true,
+                  actual: false,
+                  hint: "",
+                },
+              },
+            ],
+          }
+        : item,
+    ),
+  });
   const runTest = async (options: {
     suite: TestSuiteSpec;
     statuses: Record<string, TestCaseResult["status"]>;
@@ -1476,11 +1537,18 @@ describe("입력 계약 참고 문장", () => {
     listTools?: () => Promise<ToolDef[]>;
     json?: boolean;
     serverNotes?: Readonly<Record<string, readonly string[]>>;
+    /** 서버가 거절 기대 입력을 받아들인 케이스. */
+    accepted?: readonly string[];
+    overrides?: Partial<TestCommandDependencies>;
   }) => {
-    const finalReport = reportWith(options.suite, options.statuses, options.serverNotes);
+    const finalReport = withAcceptedRejection(
+      reportWith(options.suite, options.statuses, options.serverNotes),
+      options.accepted ?? [],
+    );
     const d = deps({
       validateSuite: vi.fn(() => ({ valid: true as const, value: options.suite })),
       finalize: async () => finalReport,
+      ...options.overrides,
     });
     d.conn.client.listTools = options.listTools ?? (async () => [...(options.tools ?? [])]);
     const exitCode = await runCli(
@@ -1674,25 +1742,155 @@ describe("입력 계약 참고 문장", () => {
     // 입력 문제가 아니므로 입력 머리글이 붙으면 읽는 사람이 입력을 고치러 간다.
     expect(out.stdout).not.toContain("의 입력이 서버 선언과 다릅니다");
   });
-  it("거절 기대 케이스의 입력이 선언을 안 어기면 전용 머리글로 알린다 (#94)", async () => {
-    // 선언에 맞는 입력에 isError true 를 기대한다. 서버가 거절하지 않아 실패했을 때가
-    // 정확히 이 신호가 필요한 순간이다. '입력이 서버 선언과 다릅니다' 는 정반대 상황이라 못 쓴다.
-    const rejectClean: TestCaseSpec = {
-      id: "reject-clean",
-      name: "reject-clean",
-      operation: { type: "callTool", tool: "get_weather", input: { city: "Seoul" } },
-      assertions: [{ type: "isError", expected: true }],
+  /** 선언에 맞는 입력에 isError true 를 기대한다(#94). */
+  const rejectClean: TestCaseSpec = {
+    id: "reject-clean",
+    name: "reject-clean",
+    operation: { type: "callTool", tool: "get_weather", input: { city: "Seoul" } },
+    assertions: [{ type: "isError", expected: true }],
+  };
+  /** 필수 'city' 를 빠뜨린 입력에 isError true 를 기대한다. 억제되는 위반이 하나 있다. */
+  const rejectMissing: TestCaseSpec = {
+    id: "reject-missing",
+    name: "reject-missing",
+    operation: { type: "callTool", tool: "get_weather", input: { units: "c" } },
+    assertions: [{ type: "isError", expected: true }],
+  };
+  const ACCEPTED_HEADING =
+    "참고: reject-missing 는 거절을 기대했지만 서버가 선언 위반 입력을 받아들였습니다";
+  const ACCEPTED_SENTENCE =
+    "서버가 필수 필드 'city' 가 빠진 입력을 받아들였습니다. 서버의 입력 검증을 확인하세요";
+  const EXISTING_CLEAN_SENTENCE =
+    "→ 거절을 기대하지만 입력이 서버 선언을 어기지 않습니다. 서버가 선언 밖 제약으로 거절한다면 그대로 두고, 아니라면 입력을 확인하세요";
+
+  it("서버가 선언 위반 입력을 받아들이면 참고 블록으로 알린다", async () => {
+    const out = await runTest({
+      suite: suiteOf(rejectMissing),
+      tools: weatherTools,
+      statuses: { "reject-missing": "failed" },
+      accepted: ["reject-missing"],
+    });
+    // 레이아웃은 다른 참고 블록과 같다. 앞에 빈 줄, 머리글, 두 칸 들여쓴 화살표 줄.
+    expect(out.stdout).toContain(`\n${ACCEPTED_HEADING}\n  → ${ACCEPTED_SENTENCE}\n`);
+    // 참고는 비차단이다. 판정과 exit code 를 바꾸지 않는다.
+    expect(out.exitCode).toBe(1);
+  });
+  it("거절 기대가 통과하면 받아들임 블록이 없다", async () => {
+    const out = await runTest({
+      suite: suiteOf(rejectMissing),
+      tools: weatherTools,
+      statuses: { "reject-missing": "passed" },
+    });
+    expect(out.stdout).not.toContain("받아들였습니다");
+    expect(out.exitCode).toBe(0);
+  });
+  it("서버가 정상 응답하지 않은 실패에는 받아들임 블록이 없다", async () => {
+    // 시간 초과나 호출 오류로 실패했으면 서버가 받아들였는지 모른다.
+    const out = await runTest({
+      suite: suiteOf(rejectMissing),
+      tools: weatherTools,
+      statuses: { "reject-missing": "timedOut" },
+    });
+    expect(out.stdout).not.toContain("받아들였습니다");
+  });
+  it("받아들임 블록은 그 케이스의 다른 참고 블록보다 먼저 나온다", async () => {
+    const withVacuous: TestCaseSpec = {
+      ...rejectMissing,
+      assertions: [
+        { type: "isError", expected: true },
+        { type: "bodyMatchesSchema", schema: { type: "string", minLength: 0 } },
+      ],
     };
+    const out = await runTest({
+      suite: suiteOf(withVacuous),
+      tools: weatherTools,
+      statuses: { "reject-missing": "failed" },
+      accepted: ["reject-missing"],
+    });
+    const accepted = out.stdout.indexOf(ACCEPTED_HEADING);
+    const substance = out.stdout.indexOf("참고: reject-missing 의 단언은 무엇이 와도 통과합니다");
+    expect(accepted).toBeGreaterThan(0);
+    expect(substance).toBeGreaterThan(accepted);
+  });
+  it("받아들임 블록의 caseId 도 터미널 이스케이프를 거친다", async () => {
+    const id = "reject\u001b[31m";
+    const out = await runTest({
+      suite: suiteOf({ ...rejectMissing, id, name: id }),
+      tools: weatherTools,
+      statuses: { [id]: "failed" },
+      accepted: [id],
+    });
+    expect(out.stdout).toContain(
+      "참고: reject\\u001b[31m 는 거절을 기대했지만 서버가 선언 위반 입력을 받아들였습니다",
+    );
+    expect(out.stdout).not.toContain("\u001b");
+  });
+  it("툴 목록이 비면 acceptedViolations 를 부르지 않는다", async () => {
+    const acceptedViolations = vi.fn(() => new Map());
+    const out = await runTest({
+      suite: suiteOf(rejectMissing),
+      tools: [],
+      statuses: { "reject-missing": "failed" },
+      accepted: ["reject-missing"],
+      overrides: { acceptedViolations },
+    });
+    expect(acceptedViolations).not.toHaveBeenCalled();
+    expect(out.stdout).not.toContain("받아들였습니다");
+  });
+  it("acceptedViolations 가 던져도 판정과 exit code 는 그대로이고 블록만 빠진다", async () => {
+    const out = await runTest({
+      suite: suiteOf(rejectMissing),
+      tools: weatherTools,
+      statuses: { "reject-missing": "failed" },
+      accepted: ["reject-missing"],
+      overrides: {
+        acceptedViolations: () => {
+          throw new Error("boom");
+        },
+      },
+    });
+    expect(out.exitCode).toBe(1);
+    expect(out.stdout.startsWith(RENDERED)).toBe(true);
+    expect(out.stdout).not.toContain("받아들였습니다");
+    expect(out.stderr).toBe("");
+  });
+  it("--json 출력에는 받아들임 블록이 섞이지 않는다", async () => {
+    const accepted = await runTest({
+      json: true,
+      suite: suiteOf(rejectMissing),
+      tools: weatherTools,
+      statuses: { "reject-missing": "failed" },
+      accepted: ["reject-missing"],
+    });
+    expect(accepted.stdout).not.toContain("받아들였습니다");
+    // 기계 출력은 보고서와 spec 블록뿐이다. 한 JSON 문서로 끝나야 한다.
+    expect(() => JSON.parse(accepted.stdout)).not.toThrow();
+  });
+  it("선언을 안 어기는 거절 기대를 서버가 받아들이면 제약 변경 문장을 낸다", async () => {
     const out = await runTest({
       suite: suiteOf(rejectClean),
       tools: weatherTools,
       statuses: { "reject-clean": "failed" },
+      accepted: ["reject-clean"],
     });
+    // 머리글은 사실만 말하므로 그대로다. 설계 §3.3.
     expect(out.stdout).toContain("참고: reject-clean 는 거절을 기대하지만 선언을 어기지 않습니다");
     expect(out.stdout).toContain(
-      "→ 거절을 기대하지만 입력이 서버 선언을 어기지 않습니다. 서버가 선언 밖 제약으로 거절한다면 그대로 두고, 아니라면 입력을 확인하세요",
+      "→ 거절을 기대하지만 입력이 현재 서버 선언을 어기지 않고, 서버도 이 입력을 받아들였습니다. 명세를 만든 뒤 서버의 입력 제약이 사라졌을 수 있습니다. 의도한 변경이면 이 케이스를 지우고, 아니라면 서버의 입력 스키마와 검증을 확인하세요",
     );
+    expect(out.stdout).not.toContain("아니라면 입력을 확인하세요");
     expect(out.stdout).not.toContain("의 입력이 서버 선언과 다릅니다");
+    // 억제된 위반이 없으므로 받아들임 블록과 동시에 나오지 않는다.
+    expect(out.stdout).not.toContain("서버가 선언 위반 입력을 받아들였습니다");
+  });
+  it("선언을 안 어기는 거절 기대가 시간 초과면 기존 문장을 낸다", async () => {
+    const out = await runTest({
+      suite: suiteOf(rejectClean),
+      tools: weatherTools,
+      statuses: { "reject-clean": "timedOut" },
+    });
+    expect(out.stdout).toContain("참고: reject-clean 는 거절을 기대하지만 선언을 어기지 않습니다");
+    expect(out.stdout).toContain(EXISTING_CLEAN_SENTENCE);
   });
   it("한 케이스에 둘 다 있으면 머리글을 갈라 찍고 입력 계약이 먼저다", async () => {
     const out = await runTest({

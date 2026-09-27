@@ -128,11 +128,20 @@ function describeRange(expected: JsonValue | undefined): string {
 }
 
 /**
+ * 문장을 고를 때 쓰는 호출 지점의 문맥(ADR-0078). 문안은 이 파일의 표가 갖고, 호출 지점은
+ * 자기가 아는 사실만 얹는다. 넘기지 않으면 문맥 없는 문장이다.
+ */
+export interface SpecFindingContext {
+  /** 거절을 기대한 케이스에 서버가 정상 응답했는가. rejectionAccepted 의 결과. */
+  readonly rejectionAccepted?: boolean;
+}
+
+/**
  * finding 한 건을 사용자가 읽는 한 문장으로 만든다.
  * 문안은 설계 문서 §7에 전량으로 있다. 소비자는 이 함수만 쓰고 문장을 새로 짓지 않는다.
  * 반환에 줄바꿈이 없다. 들여쓰기와 화살표는 소비자가 붙인다.
  */
-export function describeSpecFinding(finding: SpecFinding): string {
+export function describeSpecFinding(finding: SpecFinding, context?: SpecFindingContext): string {
   const { expected, actual } = finding;
   // path에도 스키마 프로퍼티 이름이 그대로 들어간다. 같은 규칙으로 이스케이프한다.
   const path = escapeInline(finding.path);
@@ -152,10 +161,56 @@ export function describeSpecFinding(finding: SpecFinding): string {
     case "SCHEMA_NOT_ANALYZABLE":
       return describeUnanalyzableSchema(finding);
     case "REJECTION_WITHOUT_VIOLATION":
+      // 서버가 받아들였다면 입력은 원래 계약을 어기도록 만든 것이고 계약이 바뀐 것이다.
+      // 사용자에게 입력을 고치라고 하면 방향이 틀린다(설계 §3.3).
+      if (context?.rejectionAccepted === true)
+        return "거절을 기대하지만 입력이 현재 서버 선언을 어기지 않고, 서버도 이 입력을 받아들였습니다. 명세를 만든 뒤 서버의 입력 제약이 사라졌을 수 있습니다. 의도한 변경이면 이 케이스를 지우고, 아니라면 서버의 입력 스키마와 검증을 확인하세요";
       return "거절을 기대하지만 입력이 서버 선언을 어기지 않습니다. 서버가 선언 밖 제약으로 거절한다면 그대로 두고, 아니라면 입력을 확인하세요";
     case "VACUOUS_MIN_LENGTH":
       return `${path} 는 0이라 모든 문자열이 통과합니다`;
     case "VACUOUS_MIN_ITEMS":
       return `${path} 는 0이라 모든 배열이 통과합니다`;
   }
+}
+
+/**
+ * 서버가 받아들인 위반 한 건의 문장. 거절 기대 케이스에서 억제되는 다섯 코드만 문장이 있고,
+ * 나머지는 undefined 다.
+ */
+function acceptedSentence(finding: SpecFinding): string | undefined {
+  const { expected, actual } = finding;
+  const path = escapeInline(finding.path);
+  switch (finding.code) {
+    case "REQUIRED_MISSING":
+      return `서버가 필수 필드 ${literal(expected)} 가 빠진 입력을 받아들였습니다. 서버의 입력 검증을 확인하세요`;
+    case "TYPE_MISMATCH":
+      return `서버가 ${path} 에 선언과 다른 타입의 값을 받아들였습니다. 서버 선언: ${literal(expected)}, 명세: ${literal(actual)}. 서버의 입력 검증을 확인하세요`;
+    case "ENUM_MISMATCH":
+      return `서버가 ${path} 에 선언되지 않은 값 ${literal(actual)} 을 받아들였습니다. 허용: ${literal(expected)}. 서버의 입력 검증을 확인하세요`;
+    case "RANGE_MISMATCH":
+      return `서버가 ${path} 에 선언된 범위 밖의 값 ${literal(actual)} 을 받아들였습니다. 서버 선언: ${describeRange(expected)}. 서버의 입력 검증을 확인하세요`;
+    case "UNDECLARED_FIELD":
+      // additionalProperties: false 를 선언했을 때만 이 코드가 생긴다(schema.rejectsUndeclared).
+      // 그래서 "선언해 두고 받아들였다" 는 사실을 말한다.
+      return `서버가 선언하지 않은 필드 ${literal(actual)} 가 든 입력을 받아들였습니다. 서버 스키마는 선언 밖 필드를 거절한다고 선언합니다(additionalProperties: false). 서버의 입력 검증을 확인하세요`;
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * 거절을 기대한 케이스에서 서버가 받아들인 선언 위반을 한 문장으로 만든다(설계 §3.2).
+ * 재료는 `acceptedViolations` 가 돌려준 목록이다. 첫 위반으로 문장을 고르고, 나머지는 수만
+ * 말한다. 문장이 없는 코드는 첫 위반에도 나머지 수에도 넣지 않는다. 남는 것이 없으면
+ * undefined. 반환에 줄바꿈이 없고 끝에 마침표를 두지 않는다(`describeSpecFinding` 과 같은 규칙).
+ */
+export function describeAcceptedRejection(findings: readonly SpecFinding[]): string | undefined {
+  const sentences = findings
+    .map(acceptedSentence)
+    .filter((sentence): sentence is string => sentence !== undefined);
+  const [first, ...rest] = sentences;
+  if (first === undefined) return undefined;
+  return rest.length === 0
+    ? first
+    : `${first}. 이 입력의 다른 위반 ${rest.length}건도 함께 받아들여졌습니다`;
 }

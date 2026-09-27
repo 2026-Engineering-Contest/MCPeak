@@ -94,6 +94,24 @@ describe("Runner assertion", () => {
     });
   });
 
+  it("거절을 기대했는데 정상 응답이면 입력 검증을 확인하라는 hint 를 낸다", () => {
+    const result = assertIsError(
+      { content: null, isError: false, raw: null },
+      { type: "isError", expected: true },
+    );
+    expect(result.diagnostic?.hint).toBe(
+      "서버가 거절을 기대한 입력을 받아들였습니다. 입력이 서버 선언을 어긴다면 서버의 입력 검증을, 어기지 않는다면 명세가 기대하는 거절 근거를 확인하세요.",
+    );
+  });
+
+  it("정상을 기대했는데 오류 응답이면 기존 hint 를 유지한다", () => {
+    const result = assertIsError(
+      { content: null, isError: true, raw: null },
+      { type: "isError", expected: false },
+    );
+    expect(result.diagnostic?.hint).toBe("툴 입력값과 서버의 오류 응답을 확인하세요.");
+  });
+
   it("isError 실패에 서버 응답 본문을 notes로 싣는다", () => {
     const result = assertIsError(
       { content: null, isError: true, raw: null },
@@ -365,6 +383,27 @@ describe("assertBodyMatchesSchema", () => {
     );
     expect(result.status).toBe("failed");
     expect(result.diagnostic?.code).toBe("BODY_SCHEMA_MISMATCH");
+  });
+
+  it("값 불일치가 여럿이면 본문을 넘겨 diff 를 싣는다", () => {
+    const result = assertBodyMatchesSchema(
+      { ok: true, body: { city: "서울", temp: 21 }, form: "json" },
+      {
+        type: "bodyMatchesSchema",
+        schema: {
+          type: "object",
+          properties: { city: { const: "부산" }, temp: { const: 25 } },
+        },
+      },
+    );
+    expect(result.diagnostic?.diff).toEqual([
+      "  {",
+      '-   "city": "부산",',
+      '+   "city": "서울",',
+      '-   "temp": 25',
+      '+   "temp": 21',
+      "  }",
+    ]);
   });
 
   it("추출 실패면 실패한다", () => {

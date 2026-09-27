@@ -29,3 +29,8 @@ coverage/
 # 추적하지만, --out 이름을 붙여 만든 일회성 산출물은 추적하지 않는다.
 examples/**/server.suite_*.json
 examples/**/server.*.suite.json
+
+# 가이드 문서 사이트 (website/, VitePress). 의존성은 npm 으로 따로 설치한다.
+website/node_modules/
+website/.vitepress/cache/
+website/.vitepress/dist/

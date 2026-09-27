@@ -62,8 +62,13 @@ export {
   type TestCaseResult,
 } from "./executor.js";
 export { suiteFingerprint } from "./fingerprint.js";
-export { checkInputContract, type InputContractOptions } from "./input-contract.js";
+export {
+  acceptedViolations,
+  checkInputContract,
+  type InputContractOptions,
+} from "./input-contract.js";
 export { type JUnitRenderOptions, renderJUnit } from "./junit.js";
+export { rejectionAccepted } from "./rejection-accepted.js";
 export { classifyRejectionBasis, type RejectionBasis } from "./rejection-basis.js";
 export { type RenderReportOptions, renderReport } from "./reporter.js";
 export {
@@ -121,10 +126,12 @@ export type {
 export { SuiteValidationError } from "./spec/types.js";
 export { defineMcpSuite, validateMcpSuite } from "./spec/validation.js";
 export {
+  describeAcceptedRejection,
   describeSpecFinding,
   MAX_FINDINGS_PER_CASE,
   type SpecFinding,
   type SpecFindingCode,
+  type SpecFindingContext,
   type SpecFindingsResult,
 } from "./spec-findings.js";
 export {

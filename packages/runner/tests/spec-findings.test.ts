@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { SpecFinding } from "../src/index.js";
-import { describeSpecFinding, MAX_FINDINGS_PER_CASE } from "../src/index.js";
+import {
+  describeAcceptedRejection,
+  describeSpecFinding,
+  MAX_FINDINGS_PER_CASE,
+} from "../src/index.js";
 
 /** 문장 검사에 필요한 필드만 넘기고 나머지는 기본값을 쓴다. */
 const finding = (over: Partial<SpecFinding> & Pick<SpecFinding, "code">): SpecFinding => ({
@@ -235,5 +239,134 @@ describe("리뷰 회귀: 한 줄 계약", () => {
     );
     expect(text).not.toContain("\n");
     expect(text).toContain("properties.a\\nb");
+  });
+});
+
+describe("REJECTION_WITHOUT_VIOLATION 문맥 (설계 §3.3)", () => {
+  const unviolated = finding({
+    code: "REJECTION_WITHOUT_VIOLATION",
+    severity: "advisory",
+    path: "operation.input",
+  });
+  const existing =
+    "거절을 기대하지만 입력이 서버 선언을 어기지 않습니다. 서버가 선언 밖 제약으로 거절한다면 그대로 두고, 아니라면 입력을 확인하세요";
+
+  it("문맥이 없으면 선언을 안 어기는 거절 기대에 기존 문장을 낸다", () => {
+    expect(describeSpecFinding(unviolated)).toBe(existing);
+  });
+
+  it("서버가 받아들였다는 문맥이면 서버 제약 변경을 말한다", () => {
+    const text = describeSpecFinding(unviolated, { rejectionAccepted: true });
+    expect(text).toBe(
+      "거절을 기대하지만 입력이 현재 서버 선언을 어기지 않고, 서버도 이 입력을 받아들였습니다. 명세를 만든 뒤 서버의 입력 제약이 사라졌을 수 있습니다. 의도한 변경이면 이 케이스를 지우고, 아니라면 서버의 입력 스키마와 검증을 확인하세요",
+    );
+    expect(text).not.toContain("입력을 확인하세요");
+  });
+
+  it("받아들이지 않았다는 문맥이면 기존 문장을 낸다", () => {
+    expect(describeSpecFinding(unviolated, { rejectionAccepted: false })).toBe(existing);
+  });
+});
+
+describe("describeAcceptedRejection 문안 (설계 §3.2)", () => {
+  it("받아들인 필수 필드 누락을 말한다", () => {
+    expect(
+      describeAcceptedRejection([
+        finding({ code: "REQUIRED_MISSING", path: "input.b", expected: "b" }),
+      ]),
+    ).toBe("서버가 필수 필드 'b' 가 빠진 입력을 받아들였습니다. 서버의 입력 검증을 확인하세요");
+  });
+
+  it("받아들인 타입 위반을 말한다", () => {
+    expect(
+      describeAcceptedRejection([
+        finding({ code: "TYPE_MISMATCH", path: "input.a", expected: "number", actual: "string" }),
+      ]),
+    ).toBe(
+      "서버가 input.a 에 선언과 다른 타입의 값을 받아들였습니다. 서버 선언: 'number', 명세: 'string'. 서버의 입력 검증을 확인하세요",
+    );
+  });
+
+  it("받아들인 enum 위반을 말한다", () => {
+    expect(
+      describeAcceptedRejection([
+        finding({
+          code: "ENUM_MISMATCH",
+          path: "input.units",
+          expected: ["c", "f"],
+          actual: "k",
+        }),
+      ]),
+    ).toBe(
+      '서버가 input.units 에 선언되지 않은 값 \'k\' 을 받아들였습니다. 허용: ["c","f"]. 서버의 입력 검증을 확인하세요',
+    );
+  });
+
+  it("받아들인 범위 위반을 말한다", () => {
+    const range = finding({
+      code: "RANGE_MISMATCH",
+      severity: "advisory",
+      path: "input.title",
+      expected: { minLength: 1, maxLength: 80 },
+      actual: "",
+    });
+    expect(describeAcceptedRejection([range])).toBe(
+      "서버가 input.title 에 선언된 범위 밖의 값 '' 을 받아들였습니다. 서버 선언: 1자 이상 80자 이하. 서버의 입력 검증을 확인하세요",
+    );
+    // 범위 표기는 describeSpecFinding 과 같은 함수에서 나온다.
+    expect(describeSpecFinding(range)).toContain("서버 선언: 1자 이상 80자 이하.");
+  });
+
+  it("받아들인 선언 밖 필드는 선언 사실을 말한다", () => {
+    const text = describeAcceptedRejection([
+      finding({ code: "UNDECLARED_FIELD", path: "input.nope", actual: "nope" }),
+    ]);
+    expect(text).toBe(
+      "서버가 선언하지 않은 필드 'nope' 가 든 입력을 받아들였습니다. 서버 스키마는 선언 밖 필드를 거절한다고 선언합니다(additionalProperties: false). 서버의 입력 검증을 확인하세요",
+    );
+    expect(text).toContain("additionalProperties: false");
+  });
+
+  it("위반이 여럿이면 첫 위반과 나머지 수를 말한다", () => {
+    expect(
+      describeAcceptedRejection([
+        finding({ code: "REQUIRED_MISSING", path: "input.b", expected: "b" }),
+        finding({ code: "UNDECLARED_FIELD", path: "input.nope", actual: "nope" }),
+      ]),
+    ).toBe(
+      "서버가 필수 필드 'b' 가 빠진 입력을 받아들였습니다. 서버의 입력 검증을 확인하세요. 이 입력의 다른 위반 1건도 함께 받아들여졌습니다",
+    );
+  });
+
+  it("억제 대상이 아닌 코드만 있으면 undefined", () => {
+    expect(
+      describeAcceptedRejection([
+        finding({
+          code: "VACUOUS_MIN_LENGTH",
+          severity: "advisory",
+          path: "assertions[0].schema.minLength",
+        }),
+      ]),
+    ).toBeUndefined();
+  });
+
+  it("억제 대상이 아닌 코드는 첫 위반과 나머지 수에서 뺀다", () => {
+    expect(
+      describeAcceptedRejection([
+        finding({ code: "TOOL_NOT_DECLARED", path: "operation.tool", actual: "x" }),
+        finding({ code: "REQUIRED_MISSING", path: "input.b", expected: "b" }),
+      ]),
+    ).toBe("서버가 필수 필드 'b' 가 빠진 입력을 받아들였습니다. 서버의 입력 검증을 확인하세요");
+  });
+
+  it("빈 목록이면 undefined", () => {
+    expect(describeAcceptedRejection([])).toBeUndefined();
+  });
+
+  it("반환에 줄바꿈이 없다", () => {
+    const text = describeAcceptedRejection([
+      finding({ code: "TYPE_MISMATCH", path: "input.a\nb", expected: "number", actual: "string" }),
+    ]);
+    expect(text).not.toContain("\n");
   });
 });

@@ -11,6 +11,7 @@ import {
   resolveConnectOptions,
   resolveHttpConnectOptions,
 } from "./options.js";
+import { type McpServerInfo, readServerInfo } from "./server-info.js";
 import type { McpClient } from "./types.js";
 
 export {
@@ -26,6 +27,7 @@ export type {
 export type { McpClientErrorCode, McpClientErrorPhase } from "./errors.js";
 export { McpClientError } from "./errors.js";
 export type { ConnectOptions, HttpConnectOptions, StdioConnectOptions } from "./options.js";
+export type { McpServerInfo } from "./server-info.js";
 export type { McpClient, ToolDef, ToolResult } from "./types.js";
 
 export interface McpStdioConnection {
@@ -43,7 +45,13 @@ export interface McpHttpConnection {
   close(): Promise<void>;
 }
 
-export async function connectStdio(options: StdioConnectOptions): Promise<McpStdioConnection> {
+/**
+ * 반환 타입의 `McpServerInfo` 는 인터페이스가 아니라 교차로 더한다. `McpStdioConnection` 에
+ * 필드를 넣으면 이 인터페이스로 객체 리터럴을 만드는 cli 의 test double 이 전부 깨진다.
+ */
+export async function connectStdio(
+  options: StdioConnectOptions,
+): Promise<McpStdioConnection & McpServerInfo> {
   const transport = new NodeControlledStdioTransport(resolveConnectOptions(options));
   const sdk = new Client({ name: "mcpeak", version: "0.0.0" });
   // SDK close는 facade에서 끝내고, 실제 child 종료는 lifecycle controller가 한 번만 수행한다.
@@ -122,6 +130,7 @@ export async function connectStdio(options: StdioConnectOptions): Promise<McpStd
     getDiagnostics: () => transport.getDiagnostics(),
     close,
     forceClose: () => transport.forceClose(),
+    ...readServerInfo(sdk),
   };
 }
 
@@ -129,7 +138,9 @@ export async function connectStdio(options: StdioConnectOptions): Promise<McpStd
  * Streamable HTTP MCP 서버에 연결하고 handshake 를 완료한 뒤 연결을 반환한다.
  * 프로세스를 띄우지 않으므로 죽일 대상이 없다. `forceClose` 를 두지 않는 이유다(설계 §9).
  */
-export async function connectHttp(options: HttpConnectOptions): Promise<McpHttpConnection> {
+export async function connectHttp(
+  options: HttpConnectOptions,
+): Promise<McpHttpConnection & McpServerInfo> {
   const resolved = resolveHttpConnectOptions(options);
   const state = new HttpConnectionState(resolved);
   const sdk = new Client({ name: "mcpeak", version: "0.0.0" });
@@ -149,6 +160,7 @@ export async function connectHttp(options: HttpConnectOptions): Promise<McpHttpC
     ),
     getDiagnostics: () => state.getDiagnostics(),
     close,
+    ...readServerInfo(sdk),
   };
 }
 

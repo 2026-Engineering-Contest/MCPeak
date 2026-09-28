@@ -169,6 +169,9 @@ export function ResponseEditor({
         id={`${id}-error`}
         label="서버의 거절로 표시 (isError)"
         checked={response.isError}
+        hint={
+          '켜면 이 result 를 도구의 실패 답으로 돌려줍니다. 예: 없는 도시를 물었을 때 "지역을 찾지 못했습니다".'
+        }
         onChange={(isError) => onChange({ ...response, isError })}
       />
       {preserved !== null && <p className="text-xs text-ink-muted">{preserved}</p>}

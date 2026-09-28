@@ -237,6 +237,15 @@ describe("ResponseEditor", () => {
     expect(screen.queryByText(/URL 이 1개 있습니다/)).toBeNull();
   });
 
+  it("isError 칸 아래에 무엇을 하는 칸인지 적는다", () => {
+    render(<ResponseHarness initial={newResponseDraft("get_weather")} />);
+    expect(
+      screen.getByText(
+        '켜면 이 result 를 도구의 실패 답으로 돌려줍니다. 예: 없는 도시를 물었을 때 "지역을 찾지 못했습니다".',
+      ),
+    ).toBeTruthy();
+  });
+
   it("강조되면 data-highlighted 가 붙는다", () => {
     const { container } = render(
       <ResponseHarness initial={newResponseDraft("get_weather")} highlighted />,

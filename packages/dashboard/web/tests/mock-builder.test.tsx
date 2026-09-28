@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
   FileContent,
@@ -7,6 +7,7 @@ import type {
   SessionEntry,
   SessionInteractionEntry,
 } from "../../src/api-types.js";
+import { leaveBlocker } from "../src/leave-guard.js";
 import { MockBuilder } from "../src/screens/MockBuilder.js";
 
 interface Put {
@@ -43,7 +44,7 @@ const LOADED: FileContent = {
 };
 
 /** PUT 응답을 차례대로 돌려준다. GET 은 목 하나 · 녹화본 하나 · 응답 하나다. */
-function mockApi(putResponses: Response[]): void {
+function mockApi(putResponses: (Response | Promise<Response>)[]): void {
   puts = [];
   const mocks: MockFileEntry[] = [{ path: LOADED.path, toolCount: 1, responseCount: 1 }];
   const sessions: SessionEntry[] = [
@@ -82,6 +83,17 @@ function mockApi(putResponses: Response[]): void {
 
 const saved = (mtimeMs = 1) =>
   new Response(JSON.stringify({ saved: true, mtimeMs }), { status: 200 });
+/** 테스트가 `resolve` 를 부를 때까지 PUT 을 붙잡아 둔다 — 저장이 나가 있는 동안을 만든다. */
+function heldPut(): {
+  readonly response: Promise<Response>;
+  readonly resolve: (r: Response) => void;
+} {
+  let resolve: (r: Response) => void = () => {};
+  const response = new Promise<Response>((r) => {
+    resolve = r;
+  });
+  return { response, resolve };
+}
 const conflict = (mtimeMs: number) =>
   new Response(JSON.stringify({ saved: false, reason: "conflict", mtimeMs }));
 
@@ -99,6 +111,22 @@ async function openLoaded(): Promise<void> {
   render(<MockBuilder />);
   fireEvent.click(await screen.findByRole("button", { name: `${LOADED.path} 열기` }));
   await screen.findByText(`편집 중: ${LOADED.path}`);
+}
+
+/**
+ * 눌리거나 고칠 수 없는가. `.disabled` 속성은 제 속성만 보므로 잠긴 `<fieldset>` 안의 칸을
+ * false 로 읽는다 — 브라우저가 실제로 막는지는 `:disabled` 로 본다.
+ */
+const isDisabled = (element: HTMLElement): boolean => element.matches(":disabled");
+
+/** 저장이 나가 있는 동안 잠기는 것들. 편집 영역의 입력 · 버튼과 [← 처음으로]. */
+function lockedElements(): HTMLElement[] {
+  return [
+    screen.getByLabelText("도구 이름"),
+    screen.getByRole("button", { name: "응답 추가" }),
+    screen.getByLabelText("저장 위치"),
+    screen.getByRole("button", { name: "← 처음으로" }),
+  ];
 }
 
 /** 도구 하나 · 응답 하나를 폼으로 채운다. */
@@ -324,6 +352,83 @@ describe("MockBuilder — 녹화본 가져오기 · 처음으로", () => {
     await screen.findByLabelText("녹화본");
     expect(screen.getAllByLabelText("녹화본")).toHaveLength(1);
     expect(screen.getAllByRole("button", { name: "녹화본 닫기" })).toHaveLength(1);
+  });
+
+  it("저장이 나가 있는 동안 폼과 [← 처음으로] 가 잠긴다", async () => {
+    const put = heldPut();
+    mockApi([put.response]);
+    await openLoaded();
+    fireEvent.change(screen.getByLabelText("설명"), { target: { value: "고침" } });
+    fireEvent.click(screen.getByRole("button", { name: "저장" }));
+    await waitFor(() => expect(puts).toHaveLength(1));
+
+    expect(lockedElements().map(isDisabled)).toEqual([true, true, true, true]);
+    await act(async () => put.resolve(saved(8)));
+  });
+
+  it("저장이 성공하면 잠금이 풀리고, 저장 안 한 내용이 없으니 처음으로 바로 간다", async () => {
+    const put = heldPut();
+    mockApi([put.response]);
+    await openLoaded();
+    fireEvent.change(screen.getByLabelText("설명"), { target: { value: "고침" } });
+    fireEvent.click(screen.getByRole("button", { name: "저장" }));
+    await waitFor(() => expect(puts).toHaveLength(1));
+    await act(async () => put.resolve(saved(8)));
+
+    expect(await screen.findByText(`저장했습니다 — ${LOADED.path}`)).toBeTruthy();
+    expect(lockedElements().map(isDisabled)).toEqual([false, false, false, false]);
+    expect(leaveBlocker()).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "← 처음으로" }));
+    expect(await screen.findByRole("button", { name: `${LOADED.path} 열기` })).toBeTruthy();
+  });
+
+  it.each([
+    ["충돌", () => conflict(9), `이 파일이 불러온 뒤에 바뀌었습니다 — ${LOADED.path}. 덮어쓸까요?`],
+    [
+      "실패",
+      () => new Response(JSON.stringify({ error: "→ 쓸 수 없습니다." }), { status: 400 }),
+      "→ 쓸 수 없습니다.",
+    ],
+  ])("저장이 %s 으로 끝나도 잠금이 풀려 다시 고칠 수 있다", async (_, response, shown) => {
+    const put = heldPut();
+    mockApi([put.response]);
+    await openLoaded();
+    fireEvent.change(screen.getByLabelText("설명"), { target: { value: "고침" } });
+    fireEvent.click(screen.getByRole("button", { name: "저장" }));
+    await waitFor(() => expect(puts).toHaveLength(1));
+    await act(async () => put.resolve(response()));
+
+    expect(await screen.findByText(shown)).toBeTruthy();
+    expect(lockedElements().map(isDisabled)).toEqual([false, false, false, false]);
+    expect(leaveBlocker()).not.toBeNull();
+  });
+
+  it("저장이 나가 있는 동안 다른 화면으로 가려던 확인은 저장이 성공하면 닫힌다", async () => {
+    const put = heldPut();
+    mockApi([put.response]);
+    await openLoaded();
+    fireEvent.change(screen.getByLabelText("설명"), { target: { value: "고침" } });
+    fireEvent.click(screen.getByRole("button", { name: "저장" }));
+    await waitFor(() => expect(puts).toHaveLength(1));
+    act(() => leaveBlocker()?.("#/runs"));
+    expect(screen.getByText("→ 저장하지 않은 목을 버리고 다른 화면으로 이동합니다.")).toBeTruthy();
+
+    await act(async () => put.resolve(saved(8)));
+    expect(await screen.findByText(`저장했습니다 — ${LOADED.path}`)).toBeTruthy();
+    expect(screen.queryByText("→ 저장하지 않은 목을 버리고 다른 화면으로 이동합니다.")).toBeNull();
+  });
+
+  it("처음으로 확인이 떠 있을 때 저장을 누르면, 저장이 나가 있는 동안 [버리고 돌아가기] 도 잠긴다", async () => {
+    const put = heldPut();
+    mockApi([put.response]);
+    await openLoaded();
+    fireEvent.change(screen.getByLabelText("설명"), { target: { value: "고침" } });
+    fireEvent.click(screen.getByRole("button", { name: "← 처음으로" }));
+    fireEvent.click(screen.getByRole("button", { name: "저장" }));
+    await waitFor(() => expect(puts).toHaveLength(1));
+
+    expect(isDisabled(screen.getByRole("button", { name: "버리고 돌아가기" }))).toBe(true);
+    await act(async () => put.resolve(saved(8)));
   });
 
   it("고친 뒤 처음으로 가려면 버릴지 묻는다. 고치지 않았으면 바로 간다", async () => {

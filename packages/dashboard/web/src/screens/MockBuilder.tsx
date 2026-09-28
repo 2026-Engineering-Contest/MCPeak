@@ -97,6 +97,12 @@ export function MockBuilder(): JSX.Element {
   }
 
   const editing = source;
+  /**
+   * 저장이 나가 있는 동안은 폼과 [← 처음으로] 를 잠근다(설계 U9). 고친 내용이 저장 성공과 함께
+   * "저장했습니다" 로 묻히거나, 처음으로 → 다른 목을 연 뒤 그 성공이 편집 대상을 옛 경로로 덮는
+   * 상태를 아예 만들지 않는다. 저장은 로컬 PUT 한 번이라 잠기는 시간은 짧다.
+   */
+  const saving = save.kind === "saving";
   const urlWarning = bodyUrlWarning(recordingUrlCount(draft), "definition");
   const topPreserved = preservedKeysNote(draft.extra);
 
@@ -169,7 +175,7 @@ export function MockBuilder(): JSX.Element {
         title="목 만들기"
         description={editing.kind === "new" ? "새 목" : `편집 중: ${editing.path}`}
         aside={
-          <Button variant="ghost" onClick={leave}>
+          <Button variant="ghost" disabled={saving} onClick={leave}>
             ← 처음으로
           </Button>
         }
@@ -178,7 +184,7 @@ export function MockBuilder(): JSX.Element {
       {leaving && (
         <div className="flex items-center gap-3">
           <p className="text-sm text-ink">→ 지금 폼의 내용을 버리고 처음으로 돌아갑니다.</p>
-          <Button size="sm" variant="primary" onClick={() => setSource(null)}>
+          <Button size="sm" variant="primary" disabled={saving} onClick={() => setSource(null)}>
             버리고 돌아가기
           </Button>
           <Button size="sm" variant="ghost" onClick={() => setLeaving(false)}>
@@ -201,7 +207,7 @@ export function MockBuilder(): JSX.Element {
 
       {topPreserved !== null && <p className="text-xs text-ink-muted">{topPreserved}</p>}
 
-      <div className="space-y-6">
+      <fieldset disabled={saving} className="m-0 min-w-0 space-y-6 border-0 p-0">
         <Card className="space-y-4 p-6">
           <h2 className="text-title font-semibold text-ink">도구</h2>
           <p className="text-sm text-ink-muted">
@@ -301,7 +307,7 @@ export function MockBuilder(): JSX.Element {
           )}
           <Button
             variant="primary"
-            disabled={save.kind === "saving"}
+            disabled={saving}
             onClick={() => void submit(baseMtimeFor(targetPath.trim()))}
           >
             저장
@@ -312,7 +318,7 @@ export function MockBuilder(): JSX.Element {
             onCancel={() => setSave({ kind: "idle" })}
           />
         </Card>
-      </div>
+      </fieldset>
     </div>
   );
 }

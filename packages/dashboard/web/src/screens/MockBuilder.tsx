@@ -6,6 +6,7 @@ import { Button } from "../components/Button.js";
 import { Card } from "../components/Card.js";
 import { Field, INPUT_CLASS } from "../components/Field.js";
 import { PageHeader } from "../components/PageHeader.js";
+import { newResponseFor } from "../mock-builder/args-check.js";
 import { bodyUrlWarning, recordingUrlCount } from "../mock-builder/body-urls.js";
 import {
   addPickedResponse,
@@ -13,7 +14,6 @@ import {
   EMPTY_MOCK_DRAFT,
   type MockDraft,
   mockFilePath,
-  newResponseDraft,
   newToolDraft,
   preservedKeysNote,
   replaceResult,
@@ -188,6 +188,11 @@ export function MockBuilder(): JSX.Element {
         <div className="space-y-6">
           <Card className="space-y-4 p-6">
             <h2 className="text-title font-semibold text-ink">도구</h2>
+            <p className="text-sm text-ink-muted">
+              {
+                '목 서버가 "이런 도구가 있다" 고 알려 주는 목록입니다. 입력 필드는 그 도구를 부를 때 넘기는 값입니다.'
+              }
+            </p>
             {draft.tools.map((tool, index) => (
               <ToolEditor
                 // biome-ignore lint/suspicious/noArrayIndexKey: 도구 이름은 비거나 겹칠 수 있어 유일 키가 없고, 목록은 변경마다 통째로 재생성된다
@@ -209,13 +214,18 @@ export function MockBuilder(): JSX.Element {
 
           <Card className="space-y-4 p-6">
             <h2 className="text-title font-semibold text-ink">응답</h2>
+            <p className="text-sm text-ink-muted">
+              {
+                "도구가 불렸을 때 목이 돌려줄 답입니다. 도구와 args 가 호출과 똑같을 때 그 줄의 result 를 돌려줍니다."
+              }
+            </p>
             {draft.responses.map((response, index) => (
               <ResponseEditor
                 // biome-ignore lint/suspicious/noArrayIndexKey: 같은 도구 · 같은 인자 응답이 겹칠 수 있어 유일 키가 없고, 목록은 변경마다 통째로 재생성된다
                 key={index}
                 index={index}
                 response={response}
-                toolNames={toolNames}
+                tools={draft.tools}
                 highlighted={highlighted === index}
                 onChange={(next) =>
                   update({
@@ -232,7 +242,7 @@ export function MockBuilder(): JSX.Element {
               onClick={() =>
                 update({
                   ...draft,
-                  responses: [...draft.responses, newResponseDraft(toolNames[0] ?? "")],
+                  responses: [...draft.responses, newResponseFor(draft.tools)],
                 })
               }
             >

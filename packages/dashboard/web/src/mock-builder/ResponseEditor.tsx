@@ -1,13 +1,15 @@
 import type { JSX } from "react";
 import { Button } from "../components/Button.js";
 import { INPUT_CLASS, Toggle } from "../components/Field.js";
+import { argsProblems, findTool, prefillArgs, toolProblem } from "./args-check.js";
 import { bodyUrlWarning, responseUrlCount } from "./body-urls.js";
-import { preservedKeysNote, type ResponseDraft } from "./draft.js";
+import { preservedKeysNote, type ResponseDraft, type ToolDraft } from "./draft.js";
 
 export interface ResponseEditorProps {
   readonly index: number;
   readonly response: ResponseDraft;
-  readonly toolNames: readonly string[];
+  /** 폼의 도구 전부. 도구 선택지 · args 점검 · 채우기에 쓴다. */
+  readonly tools: readonly ToolDraft[];
   /** 녹화본에서 방금 가져온 줄. 다음 편집 전까지 강조한다(타이머 없음). */
   readonly highlighted: boolean;
   readonly onChange: (response: ResponseDraft) => void;
@@ -21,12 +23,15 @@ export interface ResponseEditorProps {
 export function ResponseEditor({
   index,
   response,
-  toolNames,
+  tools,
   highlighted,
   onChange,
   onRemove,
 }: ResponseEditorProps): JSX.Element {
   const id = `response-${index}`;
+  const toolNames = tools.map((tool) => tool.name.trim()).filter((name) => name !== "");
+  const toolIssue = toolProblem(response.tool, toolNames);
+  const argsIssues = argsProblems(response, tools);
   // 폼에서 도구 이름을 고치면 이 응답의 도구가 목록에서 사라질 수 있다. 그 값도 보여야
   // 사용자가 무엇을 다시 골라야 하는지 안다.
   const options = toolNames.includes(response.tool) ? toolNames : [response.tool, ...toolNames];
@@ -50,7 +55,14 @@ export function ResponseEditor({
           id={`${id}-tool`}
           className={INPUT_CLASS}
           value={response.tool}
-          onChange={(event) => onChange({ ...response, tool: event.target.value })}
+          onChange={(event) =>
+            onChange(
+              prefillArgs(
+                { ...response, tool: event.target.value },
+                findTool(tools, event.target.value),
+              ),
+            )
+          }
         >
           {options.map((name) => (
             <option key={name} value={name}>
@@ -58,6 +70,11 @@ export function ResponseEditor({
             </option>
           ))}
         </select>
+        {toolIssue !== null && (
+          <p role="note" className="text-xs text-ink">
+            {toolIssue}
+          </p>
+        )}
       </div>
       <Toggle
         id={`${id}-any`}
@@ -78,6 +95,13 @@ export function ResponseEditor({
           value={response.argsJson}
           onChange={(event) => onChange({ ...response, argsJson: event.target.value })}
         />
+        {argsIssues.length > 0 && (
+          <div role="note" className="space-y-0.5 text-xs text-ink">
+            {argsIssues.map((line) => (
+              <p key={line}>{line}</p>
+            ))}
+          </div>
+        )}
       </div>
       <div className="space-y-1">
         <label className="block text-sm font-medium text-ink" htmlFor={`${id}-result`}>

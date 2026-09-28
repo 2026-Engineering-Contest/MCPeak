@@ -31,6 +31,11 @@ function ToolHarness(props: { initial: ToolDraft; onLatest?: (tool: ToolDraft) =
   );
 }
 
+const TOOLS: readonly ToolDraft[] = [
+  { ...newToolDraft("get_weather"), fields: [{ name: "city", type: "string", required: true }] },
+  newToolDraft("search"),
+];
+
 function ResponseHarness(props: {
   initial: ResponseDraft;
   highlighted?: boolean;
@@ -41,7 +46,7 @@ function ResponseHarness(props: {
     <ResponseEditor
       index={0}
       response={response}
-      toolNames={["get_weather", "search"]}
+      tools={TOOLS}
       highlighted={props.highlighted ?? false}
       onChange={(next) => {
         setResponse(next);
@@ -211,5 +216,52 @@ describe("ResponseEditor", () => {
       <ResponseHarness initial={newResponseDraft("get_weather")} highlighted />,
     );
     expect(container.querySelector("fieldset")?.getAttribute("data-highlighted")).toBe("true");
+  });
+
+  it("도구를 고르면 args 가 {} 일 때만 그 도구의 입력 필드로 채운다", () => {
+    let latest: ResponseDraft | undefined;
+    render(
+      <ResponseHarness
+        initial={newResponseDraft("search")}
+        onLatest={(r) => {
+          latest = r;
+        }}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText("도구"), { target: { value: "get_weather" } });
+    expect(latest?.argsJson).toBe('{"city":""}');
+
+    fireEvent.change(screen.getByLabelText("args (JSON)"), {
+      target: { value: '{"city":"Seoul"}' },
+    });
+    fireEvent.change(screen.getByLabelText("도구"), { target: { value: "search" } });
+    fireEvent.change(screen.getByLabelText("도구"), { target: { value: "get_weather" } });
+    expect(latest?.argsJson).toBe('{"city":"Seoul"}');
+  });
+
+  it("필수 입력이 빠진 args 는 그 줄에서 말하고, 채우면 사라진다", () => {
+    render(<ResponseHarness initial={newResponseDraft("get_weather")} />);
+    const missing =
+      "→ args 에 get_weather 의 필수 입력 'city' 값이 없습니다. 목 서버가 이 호출을 인자 검사에서 거절하므로 이 응답은 쓰이지 않습니다.";
+    expect(screen.getByText(missing)).toBeTruthy();
+    expect(
+      screen.getByText("→ 도구에 입력 필드를 추가했거나 이름을 바꿨다면 args 도 같이 고치세요."),
+    ).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("args (JSON)"), {
+      target: { value: '{"city":"Seoul"}' },
+    });
+    expect(screen.queryByText(missing)).toBeNull();
+  });
+
+  it("응답의 도구가 폼에 없으면 그 줄에서 바로 말한다", () => {
+    render(<ResponseHarness initial={newResponseDraft("get_weathr")} />);
+    expect(
+      screen.getByText("→ 'get_weathr' 도구가 폼에 없습니다. 위 도구 목록에서 다시 고르세요."),
+    ).toBeTruthy();
+  });
+
+  it("도구가 비어 있으면 고르라고 말한다", () => {
+    render(<ResponseHarness initial={newResponseDraft("")} />);
+    expect(screen.getByText("→ 어느 도구의 답인지 고르세요.")).toBeTruthy();
   });
 });

@@ -197,6 +197,29 @@ describe("MockBuilder — 새로 만들기", () => {
     ]);
     expect(puts).toEqual([]);
   });
+
+  it("카드 머리가 도구와 응답이 무엇인지 말하고, 새 응답은 첫 도구의 입력 필드로 args 를 채운다", async () => {
+    mockApi([]);
+    await startNew();
+    expect(
+      screen.getByText(
+        '목 서버가 "이런 도구가 있다" 고 알려 주는 목록입니다. 입력 필드는 그 도구를 부를 때 넘기는 값입니다.',
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        "도구가 불렸을 때 목이 돌려줄 답입니다. 도구와 args 가 호출과 똑같을 때 그 줄의 result 를 돌려줍니다.",
+      ),
+    ).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "도구 추가" }));
+    fireEvent.change(screen.getByLabelText("도구 이름"), { target: { value: "get_weather" } });
+    fireEvent.click(screen.getByRole("button", { name: "필드 추가" }));
+    fireEvent.change(screen.getByLabelText("필드 1 이름"), { target: { value: "city" } });
+    fireEvent.click(screen.getByLabelText("필드 1 필수"));
+    fireEvent.click(screen.getByRole("button", { name: "응답 추가" }));
+    expect((screen.getByLabelText("args (JSON)") as HTMLTextAreaElement).value).toBe('{"city":""}');
+  });
 });
 
 describe("MockBuilder — 기존 목 수정", () => {

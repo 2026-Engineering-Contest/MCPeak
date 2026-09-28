@@ -84,4 +84,28 @@ describe("목 만들기 이탈 확인", () => {
     fireEvent.click(screen.getByRole("button", { name: "도구 추가" }));
     expect(unloadPrevented()).toBe(true);
   });
+
+  it("처음으로 확인 중에 해시가 바뀌면 이동 확인 하나만 남는다", async () => {
+    await editMock();
+    fireEvent.click(screen.getByRole("button", { name: "← 처음으로" }));
+    expect(await screen.findByText("→ 지금 폼의 내용을 버리고 처음으로 돌아갑니다.")).toBeTruthy();
+
+    window.location.hash = "#/runs";
+    expect(await screen.findByText(LEAVE)).toBeTruthy();
+
+    expect(screen.queryByText("→ 지금 폼의 내용을 버리고 처음으로 돌아갑니다.")).toBeNull();
+    expect(screen.getAllByRole("button", { name: "취소" })).toHaveLength(1);
+  });
+
+  it("이동 확인 중에 처음으로를 누르면 처음으로 확인 하나만 남는다", async () => {
+    await editMock();
+    window.location.hash = "#/runs";
+    expect(await screen.findByText(LEAVE)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "← 처음으로" }));
+    expect(await screen.findByText("→ 지금 폼의 내용을 버리고 처음으로 돌아갑니다.")).toBeTruthy();
+
+    expect(screen.queryByText(LEAVE)).toBeNull();
+    expect(screen.getAllByRole("button", { name: "취소" })).toHaveLength(1);
+  });
 });

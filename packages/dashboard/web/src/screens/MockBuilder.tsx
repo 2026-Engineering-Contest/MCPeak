@@ -1,5 +1,5 @@
 import type { JSX } from "react";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import type { PutFileRequest, PutFileResponse } from "../../../src/api-types.js";
 import { apiSend } from "../api.js";
 import { Button } from "../components/Button.js";
@@ -64,7 +64,11 @@ export function MockBuilder(): JSX.Element {
   const [leaving, setLeaving] = useState(false);
   /** 막힌 이동의 목적지. 확인 줄을 띄운다. */
   const [leavingTo, setLeavingTo] = useState<string | null>(null);
-  useLeaveGuard(source !== null && dirty, setLeavingTo);
+  const onBlocked = useCallback((targetHash: string) => {
+    setLeaving(false);
+    setLeavingTo(targetHash);
+  }, []);
+  useLeaveGuard(source !== null && dirty, onBlocked);
 
   function begin(next: EditSource, nextDraft: MockDraft, path: string): void {
     setSource(next);
@@ -149,6 +153,7 @@ export function MockBuilder(): JSX.Element {
   function leave(): void {
     if (dirty) {
       setLeaving(true);
+      setLeavingTo(null);
       return;
     }
     setSource(null);

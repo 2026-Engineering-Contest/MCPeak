@@ -23,6 +23,9 @@ export function leaveAnyway(targetHash: string): void {
 
 function preventUnload(event: BeforeUnloadEvent): void {
   event.preventDefault();
+  // 구형 Safari · Firefox 는 preventDefault 를 무시하고 returnValue 로만 확인 창을 띄운다.
+  // 표준에서는 폐기됐지만 그 브라우저들을 위해 최소한으로 유지한다.
+  event.returnValue = "";
 }
 
 /** `active` 인 동안 해시 이동을 막고 새로고침 · 탭 닫기에 브라우저 기본 경고를 건다. */

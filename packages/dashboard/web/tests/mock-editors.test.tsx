@@ -245,7 +245,7 @@ describe("ResponseEditor", () => {
   it("필수 입력이 빠진 args 는 그 줄에서 말하고, 채우면 사라진다", () => {
     render(<ResponseHarness initial={newResponseDraft("get_weather")} />);
     const missing =
-      "→ args 에 get_weather 의 필수 입력 'city' 값이 없습니다. 목 서버가 이 호출을 인자 검사에서 거절하므로 이 응답은 쓰이지 않습니다.";
+      "→ args 에 get_weather 의 필수 입력 'city' 값이 없습니다. 'city' 없이 부르면 목 서버가 인자 검사에서 거절하고, 넣고 부르면 args 가 달라 이 응답은 쓰이지 않습니다.";
     expect(screen.getByText(missing)).toBeTruthy();
     expect(
       screen.getByText("→ 도구에 입력 필드를 추가했거나 이름을 바꿨다면 args 도 같이 고치세요."),

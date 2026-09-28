@@ -51,6 +51,26 @@ describe("inputFields", () => {
     expect(inputFields({ ...jsonTool, schemaJson: "{" })).toBeNull();
     expect(inputFields({ ...jsonTool, schemaJson: '{"properties":[]}' })).toBeNull();
   });
+
+  it("목 서버가 해석을 포기하는 스키마면 null 이다(unanalyzableReason 과 맞춘다)", () => {
+    const allOfTool = {
+      ...jsonTool,
+      schemaJson: JSON.stringify({ allOf: [{ type: "object" }], required: ["city"] }),
+    };
+    expect(inputFields(allOfTool)).toBeNull();
+    expect(argsProblems({ ...newResponseDraft("search"), argsJson: "{}" }, [allOfTool])).toEqual(
+      [],
+    );
+
+    const arrayTypeTool = {
+      ...jsonTool,
+      schemaJson: JSON.stringify({
+        type: ["object", "null"],
+        properties: { q: { type: "string" } },
+      }),
+    };
+    expect(inputFields(arrayTypeTool)).toBeNull();
+  });
 });
 
 describe("prefillArgs · newResponseFor", () => {
@@ -60,9 +80,9 @@ describe("prefillArgs · newResponseFor", () => {
     );
   });
 
-  it("args 가 비어 있어도 채운다. 모르는 타입은 null 이다", () => {
+  it("args 가 비어 있어도 채운다. 스칼라가 아닌 타입은 넣지 않는다", () => {
     const blank = { ...newResponseDraft("search"), argsJson: "  " };
-    expect(prefillArgs(blank, jsonTool).argsJson).toBe('{"q":"","filter":null}');
+    expect(prefillArgs(blank, jsonTool).argsJson).toBe('{"q":""}');
   });
 
   it("사람이 적은 args 는 덮지 않는다", () => {
@@ -100,7 +120,7 @@ describe("argsProblems", () => {
 
   it("필수 입력이 빠지면 쓰이지 않는다고 말하고, 끝에 고칠 곳을 붙인다", () => {
     expect(argsProblems(respond("get_weather", "{}"), [weather])).toEqual([
-      "→ args 에 get_weather 의 필수 입력 'city' 값이 없습니다. 목 서버가 이 호출을 인자 검사에서 거절하므로 이 응답은 쓰이지 않습니다.",
+      "→ args 에 get_weather 의 필수 입력 'city' 값이 없습니다. 'city' 없이 부르면 목 서버가 인자 검사에서 거절하고, 넣고 부르면 args 가 달라 이 응답은 쓰이지 않습니다.",
       TAIL,
     ]);
   });
@@ -121,7 +141,7 @@ describe("argsProblems", () => {
 
   it("빠진 필수 입력을 먼저, 모르는 키를 args 순서로 적는다", () => {
     expect(argsProblems(respond("get_weather", '{"b":1,"a":2}'), [weather])).toEqual([
-      "→ args 에 get_weather 의 필수 입력 'city' 값이 없습니다. 목 서버가 이 호출을 인자 검사에서 거절하므로 이 응답은 쓰이지 않습니다.",
+      "→ args 에 get_weather 의 필수 입력 'city' 값이 없습니다. 'city' 없이 부르면 목 서버가 인자 검사에서 거절하고, 넣고 부르면 args 가 달라 이 응답은 쓰이지 않습니다.",
       "→ args 의 'b' 키는 get_weather 의 입력 필드에 없습니다. 입력 필드는 'city', 'days' 입니다.",
       "→ args 의 'a' 키는 get_weather 의 입력 필드에 없습니다. 입력 필드는 'city', 'days' 입니다.",
       TAIL,
@@ -130,6 +150,20 @@ describe("argsProblems", () => {
 
   it("맞으면 아무 말도 하지 않는다", () => {
     expect(argsProblems(respond("get_weather", '{"city":"Seoul"}'), [weather])).toEqual([]);
+  });
+
+  it("선택 입력이 빈 문자열이면 그 응답이 좁게만 쓰인다고 말한다. 다른 문제가 없으면 그 줄만 있다", () => {
+    expect(argsProblems(respond("get_weather", '{"city":"Seoul","days":""}'), [weather])).toEqual([
+      "→ 선택 입력 'days' 값이 비어 있습니다. 이 응답은 args 가 똑같은 호출에만 쓰이므로, 'days' 없이 부르는 호출에 쓰려면 이 키를 지우세요.",
+    ]);
+  });
+
+  it("필수 누락과 선택 빈 값이 같이 있으면 누락 · 꼬리 · 빈 값 순서다", () => {
+    expect(argsProblems(respond("get_weather", '{"days":""}'), [weather])).toEqual([
+      "→ args 에 get_weather 의 필수 입력 'city' 값이 없습니다. 'city' 없이 부르면 목 서버가 인자 검사에서 거절하고, 넣고 부르면 args 가 달라 이 응답은 쓰이지 않습니다.",
+      TAIL,
+      "→ 선택 입력 'days' 값이 비어 있습니다. 이 응답은 args 가 똑같은 호출에만 쓰이므로, 'days' 없이 부르는 호출에 쓰려면 이 키를 지우세요.",
+    ]);
   });
 
   it.each([

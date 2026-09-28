@@ -34,11 +34,11 @@ export type FlattenResult =
 
 const TOP_KEYS = new Set(["type", "properties", "required"]);
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function isFieldType(value: unknown): value is FieldType {
+export function isFieldType(value: unknown): value is FieldType {
   return typeof value === "string" && (FIELD_TYPES as readonly string[]).includes(value);
 }
 

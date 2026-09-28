@@ -1,6 +1,6 @@
 import type { JsonValue } from "../../../src/api-types.js";
 import { isBlankResult, newResponseDraft, type ResponseDraft, type ToolDraft } from "./draft.js";
-import { FIELD_TYPES, type FieldType } from "./schema-fields.js";
+import { type FieldType, isFieldType, isRecord } from "./schema-fields.js";
 
 /**
  * 응답 줄의 args 가 도구와 맞는지 그 줄에서 말한다(설계 §사용 훑기 반영 U1 · U3 · U4).
@@ -17,12 +17,17 @@ export interface InputField {
   readonly required: boolean;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isFieldType(value: unknown): value is FieldType {
-  return typeof value === "string" && (FIELD_TYPES as readonly string[]).includes(value);
+/**
+ * 목 서버가 인자 검사를 통째로 건너뛰는 스키마면 여기서도 침묵한다 — `packages/mock/src/
+ * input-validation.ts` 의 `unanalyzableReason` 과 판정을 맞춘다(web 은 `@mcpeak/mock` 을
+ * import 하지 않으므로 조건을 그대로 옮겨 적는다).
+ */
+function serverWouldSkip(schema: Record<string, unknown>): boolean {
+  const declared = schema.type;
+  if (Array.isArray(declared)) return true;
+  if (declared !== undefined && declared !== "object") return true;
+  const unreadable = ["anyOf", "oneOf", "allOf", "not", "$ref", "if"];
+  return unreadable.some((keyword) => keyword in schema);
 }
 
 /** JSON 모드에서 `properties` 를 읽을 수 없으면 `null` — 그때는 아무 말도 하지 않는다. */
@@ -39,6 +44,7 @@ export function inputFields(tool: ToolDraft): readonly InputField[] | null {
     return null;
   }
   if (!isRecord(schema)) return null;
+  if (serverWouldSkip(schema)) return null;
   const properties = schema.properties ?? {};
   if (!isRecord(properties)) return null;
   const required = Array.isArray(schema.required)
@@ -64,13 +70,23 @@ const BLANK: Readonly<Record<FieldType, JsonValue>> = {
   boolean: false,
 };
 
-/** args 가 비었거나 `{}` 일 때만 도구의 입력 필드로 채운다. 사람이 적은 args 는 덮지 않는다. */
+/**
+ * args 가 비었거나 `{}` 일 때만 도구의 입력 필드로 채운다. 사람이 적은 args 는 덮지 않는다.
+ *
+ * 스칼라 넷(string · number · integer · boolean)이 아닌 필드는 채우지 않는다. `null` 을 넣으면
+ * 목 서버의 타입 검사에서 그 호출이 거절된다. 필수 필드라면 빠진 것을 `argsProblems` 가 말한다.
+ * 남는 필드가 없으면 응답을 그대로 둔다.
+ */
 export function prefillArgs(response: ResponseDraft, tool: ToolDraft | undefined): ResponseDraft {
   if (tool === undefined || !isBlankResult(response.argsJson)) return response;
   const fields = inputFields(tool);
   if (fields === null || fields.length === 0) return response;
   const args: Record<string, JsonValue> = {};
-  for (const field of fields) args[field.name] = field.type === null ? null : BLANK[field.type];
+  for (const field of fields) {
+    if (field.type === null) continue;
+    args[field.name] = BLANK[field.type];
+  }
+  if (Object.keys(args).length === 0) return response;
   return { ...response, argsJson: JSON.stringify(args) };
 }
 
@@ -124,7 +140,7 @@ export function argsProblems(
   for (const field of fields) {
     if (field.required && !keys.includes(field.name)) {
       lines.push(
-        `→ args 에 ${name} 의 필수 입력 '${field.name}' 값이 없습니다. 목 서버가 이 호출을 인자 검사에서 거절하므로 이 응답은 쓰이지 않습니다.`,
+        `→ args 에 ${name} 의 필수 입력 '${field.name}' 값이 없습니다. '${field.name}' 없이 부르면 목 서버가 인자 검사에서 거절하고, 넣고 부르면 args 가 달라 이 응답은 쓰이지 않습니다.`,
       );
     }
   }
@@ -134,6 +150,15 @@ export function argsProblems(
   }
   if (lines.length > 0) {
     lines.push("→ 도구에 입력 필드를 추가했거나 이름을 바꿨다면 args 도 같이 고치세요.");
+  }
+  // 목은 args 가 똑같은 호출에만 응답한다. 채우기가 넣어 둔 "" 가 남으면 그 키를 "" 로 보내는
+  // 호출에만 걸린다. "" 만 본다 — 0 · false 는 사람이 고른 값일 수 있어 "비어 있다" 가 틀린다.
+  for (const field of fields) {
+    if (!field.required && args[field.name] === "") {
+      lines.push(
+        `→ 선택 입력 '${field.name}' 값이 비어 있습니다. 이 응답은 args 가 똑같은 호출에만 쓰이므로, '${field.name}' 없이 부르는 호출에 쓰려면 이 키를 지우세요.`,
+      );
+    }
   }
   return lines;
 }

@@ -1,5 +1,5 @@
 import type { JSX } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { JsonValue, SessionEntry, SessionInteractionEntry } from "../../../src/api-types.js";
 import { apiGet } from "../api.js";
 import { Button } from "../components/Button.js";
@@ -37,16 +37,27 @@ export function RecordingPicker({ id, resultJson, onPick }: RecordingPickerProps
   const [interactions, setInteractions] = useState<readonly SessionInteractionEntry[] | null>(null);
   const [openError, setOpenError] = useState<string | null>(null);
   const [pending, setPending] = useState<Pending | null>(null);
+  // 빠르게 녹화본을 바꾸면 먼저 부른 요청이 나중 것보다 늦게 돌아올 수 있다. ref 로 "지금
+  // 고른 경로" 를 들고 있다가, 응답이 왔을 때 그 경로가 아니면 버린다 — state 는 리렌더를
+  // 트리거해 .then 클로저가 가진 낡은 값을 다시 읽는 문제가 있어 ref 를 쓴다.
+  const requestedPath = useRef("");
 
   function open(path: string): void {
     setSessionPath(path);
     setInteractions(null);
     setOpenError(null);
     setPending(null);
+    requestedPath.current = path;
     if (path === "") return;
     apiGet<SessionInteractionEntry[]>(interactionsPath(path))
-      .then(setInteractions)
-      .catch((err: unknown) => setOpenError(err instanceof Error ? err.message : String(err)));
+      .then((found) => {
+        if (requestedPath.current !== path) return; // 그 사이에 다른 녹화본을 골랐다
+        setInteractions(found);
+      })
+      .catch((err: unknown) => {
+        if (requestedPath.current !== path) return;
+        setOpenError(err instanceof Error ? err.message : String(err));
+      });
   }
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: 열 때 한 번만 목록을 부른다

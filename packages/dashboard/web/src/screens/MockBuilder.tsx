@@ -137,6 +137,10 @@ export function MockBuilder(): JSX.Element {
         setSource({ kind: "file", path, mtimeMs: result.mtimeMs });
         setDirty(false);
         setSave({ kind: "saved", path });
+        // 저장이 성공했으니 그 전에 떠 있던 이동 확인은 더 이상 맞지 않는다 — 지금은
+        // "저장하지 않은 목" 이 아니다.
+        setLeaving(false);
+        setLeavingTo(null);
         return;
       }
       setSave({

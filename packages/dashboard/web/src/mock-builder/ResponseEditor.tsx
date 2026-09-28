@@ -117,16 +117,23 @@ export function ResponseEditor({
           <label className="block text-sm font-medium text-ink" htmlFor={`${id}-result`}>
             result (JSON)
           </label>
-          <Button size="xs" aria-expanded={pickerOpen} onClick={onTogglePicker}>
+          <Button
+            size="xs"
+            aria-expanded={pickerOpen}
+            aria-controls={`${id}-picker`}
+            onClick={onTogglePicker}
+          >
             {pickerOpen ? "녹화본 닫기" : "녹화본에서 가져오기"}
           </Button>
         </div>
         {pickerOpen && (
-          <RecordingPicker
-            id={id}
-            resultJson={response.resultJson}
-            onPick={(body, recordedFrom) => onPicked(pickedResult(response, body, recordedFrom))}
-          />
+          <div id={`${id}-picker`}>
+            <RecordingPicker
+              id={id}
+              resultJson={response.resultJson}
+              onPick={(body, recordedFrom) => onPicked(pickedResult(response, body, recordedFrom))}
+            />
+          </div>
         )}
         <textarea
           id={`${id}-result`}

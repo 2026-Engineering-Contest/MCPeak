@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { JsonValue, SessionEntry, SessionInteractionEntry } from "../../src/api-types.js";
 import { RecordingPicker, recordedFromNote } from "../src/mock-builder/RecordingPicker.js";
@@ -126,6 +126,72 @@ describe("RecordingPicker", () => {
     mockApi(ONE, () => new Response(JSON.stringify({ error: message }), { status: 404 }));
     renderPicker();
     expect((await screen.findByRole("alert")).textContent).toBe(message);
+  });
+
+  it("빨리 다른 녹화본으로 바꾸면 먼저 고른 쪽의 늦게 온 응답은 버린다", async () => {
+    const A = SESSION;
+    const B = OTHER;
+    const bodies: Record<string, SessionInteractionEntry[]> = {
+      [A]: [
+        {
+          ordinal: 0,
+          method: "GET",
+          url: LONG_URL,
+          outcome: { kind: "response", status: 200, body: { temperature: 21.5 } },
+        },
+      ],
+      [B]: [
+        {
+          ordinal: 1,
+          method: "GET",
+          url: "https://b.example/<redacted>",
+          outcome: { kind: "response", status: 200, body: { temperature: 21.5 } },
+        },
+      ],
+    };
+    // 응답 도착 순서를 테스트가 직접 정한다. 실제 시간 지연에 기대지 않는다(결정론).
+    const release: Record<string, () => void> = {};
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: unknown) => {
+        const url = String(input);
+        if (url.endsWith("/api/sessions"))
+          return Promise.resolve(
+            new Response(
+              JSON.stringify([
+                { path: A, status: "completed", interactionCount: 1 },
+                { path: B, status: "completed", interactionCount: 1 },
+              ]),
+            ),
+          );
+        if (url.endsWith("/interactions")) {
+          const path = decodeURIComponent(url).includes(B) ? B : A;
+          return new Promise<Response>((resolve) => {
+            release[path] = () => resolve(new Response(JSON.stringify(bodies[path])));
+          });
+        }
+        throw new Error(`예상하지 못한 요청: ${url}`);
+      }),
+    );
+    const picks = renderPicker();
+    await screen.findByRole("option", { name: `${B} · 외부 호출 1건` });
+
+    fireEvent.change(screen.getByLabelText("녹화본"), { target: { value: A } });
+    fireEvent.change(screen.getByLabelText("녹화본"), { target: { value: B } });
+
+    // 나중에 고른 B 가 먼저 온다.
+    release[B]?.();
+    expect(await screen.findByText("GET https://b.example/<redacted> · 200")).toBeTruthy();
+    // 먼저 고른 A 가 늦게 온다 — 버려야 한다. A 의 응답 처리가 끝날 때까지 흘려 보낸다.
+    await act(async () => {
+      release[A]?.();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(screen.getByText("GET https://b.example/<redacted> · 200")).toBeTruthy();
+    expect(screen.queryByText(`GET ${LONG_URL} · 200`)).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "이걸로 채우기" }));
+    expect(picks[0]?.[1]).toBe(`${B} 의 2번째 외부 호출에서 가져왔습니다.`);
   });
 
   it("녹화본이 없으면 어떻게 만드는지 말한다", async () => {

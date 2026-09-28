@@ -3,6 +3,7 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createSqliteSessionStore } from "@mcpeak/record/external";
 import { afterEach, describe, expect, it } from "vitest";
 import type { RunEvent, StartRunRequest } from "../src/api-types.js";
 import { startDashboardServer } from "../src/index.js";
@@ -540,4 +541,259 @@ describe("routes.ts", () => {
       }
     },
   );
+});
+
+/** 완료된 응답 하나짜리 세션을 만든다. */
+function writeOneResponseSession(path: string): void {
+  const store = createSqliteSessionStore({ path });
+  store.createSession("default");
+  const reservation = store.reserve({
+    sessionId: "default",
+    request: {
+      protocol: "http",
+      interactionSchemaVersion: 1,
+      matchKey: "a",
+      display: {
+        method: "GET",
+        url: "https://api.open-meteo.com/<redacted>?city=Seoul",
+        headers: {},
+        body: { kind: "none" },
+      },
+    },
+  });
+  store.complete({
+    sessionId: "default",
+    interactionId: reservation.interactionId,
+    outcome: {
+      kind: "response",
+      status: 200,
+      statusText: "OK",
+      headers: [],
+      url: "https://api.open-meteo.com/v1/forecast?city=Seoul",
+      body: { temperature: 21.5 },
+    },
+  });
+  store.finish("default", "completed");
+  store.close();
+}
+
+describe("GET /api/sessions/<path>/interactions", () => {
+  it("녹화본의 외부 호출 목록을 준다", async () => {
+    server = await startTestServer();
+    await mkdir(join(server.root, "recordings"));
+    writeOneResponseSession(join(server.root, "recordings", "weather.session.db"));
+
+    const response = await fetch(
+      `${server.baseUrl}/api/sessions/${encodeURIComponent("recordings/weather.session.db")}/interactions`,
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual([
+      {
+        ordinal: 0,
+        method: "GET",
+        url: "https://api.open-meteo.com/<redacted>?city=Seoul",
+        outcome: { kind: "response", status: 200, body: { temperature: 21.5 } },
+      },
+    ]);
+  });
+
+  it("세션이 아닌 파일이면 404 와 고칠 방법을 말하는 문장 전문을 준다", async () => {
+    server = await startTestServer();
+    await writeFile(join(server.root, "weather.session.db"), "not a database", "utf8");
+
+    const response = await fetch(
+      `${server.baseUrl}/api/sessions/${encodeURIComponent("weather.session.db")}/interactions`,
+    );
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({
+      error: [
+        "→ 이 녹화본을 읽을 수 없습니다 — weather.session.db",
+        "→ MCPeak 이 녹화한 세션 파일인지 확인하세요. 목록에는 읽을 수 있는 파일만 나옵니다.",
+      ].join("\n"),
+    });
+  });
+
+  it("경로 탈출은 400 이다", async () => {
+    server = await startTestServer();
+    const response = await fetch(
+      `${server.baseUrl}/api/sessions/${encodeURIComponent("../outside.db")}/interactions`,
+    );
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "허용되지 않는 경로입니다." });
+  });
+});
+
+async function putMock(
+  server: TestServer,
+  path: string,
+  content: string,
+  baseMtimeMs = 0,
+): Promise<Response> {
+  return fetch(`${server.baseUrl}/api/mocks/${encodeURIComponent(path)}`, {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ content, baseMtimeMs }),
+  });
+}
+
+const VALID_MOCK = {
+  tools: [
+    {
+      name: "get_weather",
+      inputSchema: {
+        type: "object",
+        properties: { city: { type: "string" } },
+        required: ["city"],
+      },
+    },
+  ],
+  responses: [{ tool: "get_weather", args: { city: "Seoul" }, result: { temperature: 21.5 } }],
+};
+
+/** `responses[0]` 의 도구가 tools 에 없는 정의와, 그것을 `path` 로 저장할 때의 문장 전문. */
+const INVALID_MOCK = { tools: VALID_MOCK.tools, responses: [{ tool: "nope", result: {} }] };
+const invalidMockMessage = (path: string): string =>
+  [
+    `→ 올바르지 않은 목 정의입니다 — ${path}: responses[0] 의 툴 'nope' 이 tools 에 없습니다. 있는 툴: get_weather`,
+    '→ 형식: { "tools": [ { "name": ..., "inputSchema": ... } ], "responses": [ { "tool": ..., "result": ... } ] }',
+  ].join("\n");
+
+describe("PUT /api/mocks/<path>", () => {
+  it("올바른 목 정의를 content 바이트 그대로 저장한다", async () => {
+    server = await startTestServer();
+    const content = `${JSON.stringify(VALID_MOCK, null, 2)}\n`;
+
+    const response = await putMock(server, "weather.mock.json", content);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ saved: true });
+    await expect(readFile(join(server.root, "weather.mock.json"), "utf8")).resolves.toBe(content);
+  });
+
+  it("잘못된 정의면 400 과 assertMockDefinition 문장 전문을 주고 파일을 만들지 않는다", async () => {
+    server = await startTestServer();
+    await mkdir(join(server.root, "mocks"));
+
+    const response = await putMock(server, "mocks/bad.mock.json", JSON.stringify(INVALID_MOCK));
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: invalidMockMessage("mocks/bad.mock.json") });
+    await expect(stat(join(server.root, "mocks", "bad.mock.json"))).rejects.toThrow();
+  });
+
+  it("content 가 JSON 이 아니면 400 이다", async () => {
+    server = await startTestServer();
+    const response = await putMock(server, "weather.mock.json", "{ tools: ");
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "본문 content가 올바른 JSON이 아닙니다." });
+  });
+
+  it("이미 있는 파일은 baseMtimeMs 가 현재 mtime 과 같을 때만 덮어쓴다", async () => {
+    server = await startTestServer();
+    const target = join(server.root, "weather.mock.json");
+    const original = '{"tools":[]}\n';
+    await writeFile(target, original, "utf8");
+    const before = await stat(target);
+    const content = `${JSON.stringify(VALID_MOCK, null, 2)}\n`;
+
+    // 새 목은 0 을 보낸다. 있는 파일이면 충돌로 돌아와야 확인을 받을 수 있다.
+    const first = await putMock(server, "weather.mock.json", content, 0);
+    expect(first.status).toBe(200);
+    expect(await first.json()).toEqual({
+      saved: false,
+      reason: "conflict",
+      mtimeMs: before.mtimeMs,
+    });
+    await expect(readFile(target, "utf8")).resolves.toBe(original);
+
+    const second = await putMock(server, "weather.mock.json", content, before.mtimeMs);
+    expect(second.status).toBe(200);
+    expect(await second.json()).toMatchObject({ saved: true });
+    await expect(readFile(target, "utf8")).resolves.toBe(content);
+  });
+
+  it(".json 이 아니면 거절하고 파일을 만들지 않는다", async () => {
+    server = await startTestServer();
+    const response = await putMock(server, "weather.mock.txt", JSON.stringify(VALID_MOCK));
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      error: "목 정의는 .json 확장자 파일만 저장할 수 있습니다.",
+    });
+    await expect(stat(join(server.root, "weather.mock.txt"))).rejects.toThrow();
+  });
+
+  it("경로 탈출을 거절한다", async () => {
+    server = await startTestServer();
+    const response = await putMock(server, "../outside.mock.json", JSON.stringify(VALID_MOCK));
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "허용되지 않는 경로입니다." });
+    await expect(stat(join(server.root, "..", "outside.mock.json"))).rejects.toThrow();
+  });
+});
+
+describe("GET /api/mocks", () => {
+  it("유효한 목 정의만 경로순으로 도구 · 응답 수와 함께 싣는다", async () => {
+    server = await startTestServer();
+    await mkdir(join(server.root, "mocks"));
+    await writeFile(join(server.root, "mocks", "weather.mock.json"), JSON.stringify(VALID_MOCK));
+    await writeFile(
+      join(server.root, "a-tools-only.json"),
+      JSON.stringify({ tools: VALID_MOCK.tools }),
+    );
+    await writeFile(join(server.root, "bad.mock.json"), JSON.stringify(INVALID_MOCK));
+    await writeFile(join(server.root, "broken.json"), "{");
+    await writeFile(join(server.root, "package.json"), '{"name":"x"}');
+
+    const response = await fetch(`${server.baseUrl}/api/mocks`);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual([
+      { path: "a-tools-only.json", toolCount: 1, responseCount: 0 },
+      { path: "mocks/weather.mock.json", toolCount: 1, responseCount: 1 },
+    ]);
+  });
+});
+
+describe("GET /api/mocks/<path>", () => {
+  it("파일 하나를 내용 · mtime 과 함께 준다", async () => {
+    server = await startTestServer();
+    const content = `${JSON.stringify(VALID_MOCK, null, 2)}\n`;
+    const target = join(server.root, "weather.mock.json");
+    await writeFile(target, content, "utf8");
+    const stats = await stat(target);
+
+    const response = await fetch(
+      `${server.baseUrl}/api/mocks/${encodeURIComponent("weather.mock.json")}`,
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      path: "weather.mock.json",
+      content,
+      mtimeMs: stats.mtimeMs,
+    });
+  });
+
+  it("목 정의가 아니면 400 과 assertMockDefinition 문장 전문을 준다", async () => {
+    server = await startTestServer();
+    await writeFile(join(server.root, "bad.mock.json"), JSON.stringify(INVALID_MOCK));
+
+    const response = await fetch(
+      `${server.baseUrl}/api/mocks/${encodeURIComponent("bad.mock.json")}`,
+    );
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: invalidMockMessage("bad.mock.json") });
+  });
+
+  it("없는 파일은 404 다", async () => {
+    server = await startTestServer();
+    const response = await fetch(`${server.baseUrl}/api/mocks/${encodeURIComponent("none.json")}`);
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: "파일을 찾을 수 없습니다." });
+  });
+
+  it("경로 탈출은 400 이다", async () => {
+    server = await startTestServer();
+    const response = await fetch(
+      `${server.baseUrl}/api/mocks/${encodeURIComponent("../outside.mock.json")}`,
+    );
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "허용되지 않는 경로입니다." });
+  });
 });

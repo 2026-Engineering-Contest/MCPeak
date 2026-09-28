@@ -153,3 +153,44 @@ export type PutFileResponse =
 export interface ApiError {
   readonly error: string;
 }
+
+/**
+ * JSON 값. record 의 `JsonValue` 와 같은 모양이지만 여기서 다시 적는다 — web 이
+ * `@mcpeak/record` 를 import 하지 않기 때문이다(`SessionEntry.status` 와 같은 이유).
+ */
+export type JsonValue =
+  | null
+  | boolean
+  | number
+  | string
+  | readonly JsonValue[]
+  | { readonly [key: string]: JsonValue };
+
+/**
+ * GET /api/sessions/<path>/interactions — 녹화본 하나의 외부 호출 한 건.
+ *
+ * 녹화본은 `loadSession` 으로 **읽기만** 한다. 서버를 띄우거나 재생하지 않는다. 싣는 것은
+ * 목의 답을 고르는 데 필요한 것뿐이다 — 응답 헤더와 `statusText` 는 싣지 않는다.
+ */
+export interface SessionInteractionEntry {
+  /** 녹화 순서. 목록 정렬 키이자 식별자. */
+  readonly ordinal: number;
+  readonly method: string;
+  /** 경로가 지워진 표시용 URL(`HttpDisplayV1.url`). 녹화 때 값 그대로다. */
+  readonly url: string;
+  readonly outcome:
+    | { readonly kind: "response"; readonly status: number; readonly body: JsonValue }
+    | { readonly kind: "throw"; readonly failureKind: string; readonly code?: string }
+    | { readonly kind: "incomplete" };
+}
+
+/**
+ * GET /api/mocks — 목 정의 파일 한 건. `assertMockDefinition` 을 통과한 `.json` 만 나온다.
+ * `tools` 만 있는 픽스처 파일도 유효한 목 정의라 함께 나온다.
+ */
+export interface MockFileEntry {
+  /** 루트 기준 상대경로(`/` 구분). */
+  readonly path: string;
+  readonly toolCount: number;
+  readonly responseCount: number;
+}

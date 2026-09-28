@@ -1,8 +1,10 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { assertMockDefinition } from "@mcpeak/mock";
 import { validateMcpSuite } from "@mcpeak/runner";
 import type {
   AnswerRequest,
   ApiError,
+  FileContent,
   PutFileRequest,
   ServerMeta,
   StartRunRequest,
@@ -10,10 +12,12 @@ import type {
 } from "../api-types.js";
 import {
   ensureRepairBundleDir,
+  listMocks,
   listServerCandidates,
   listSessions,
   listSuites,
   readFileContent,
+  readSessionInteractions,
   resolveCandidateEnv,
   writeFileContent,
 } from "./files.js";
@@ -40,6 +44,8 @@ export interface RouterOptions {
 }
 
 const RUN_FLOWS = new Set<StartRunRequest["flow"]>(["test", "generate", "repair"]);
+
+const INTERACTIONS_SUFFIX = "/interactions";
 
 /**
  * 계획서 §4-4 HTTP 면 표를 전부 연결한다. 매칭되는 경로가 없으면 정적 서빙으로 넘긴다
@@ -79,12 +85,48 @@ export async function handleRequest(
     sendJson(response, 200, await listSessions(options.root));
     return;
   }
+  if (
+    method === "GET" &&
+    pathname.startsWith("/api/sessions/") &&
+    pathname.endsWith(INTERACTIONS_SUFFIX)
+  ) {
+    await handleGetInteractions(
+      response,
+      options.root,
+      decodeParam(pathname.slice(0, -INTERACTIONS_SUFFIX.length), "/api/sessions/"),
+    );
+    return;
+  }
+  if (method === "GET" && pathname === "/api/mocks") {
+    sendJson(response, 200, await listMocks(options.root));
+    return;
+  }
+  if (method === "GET" && pathname.startsWith("/api/mocks/")) {
+    await handleGetMock(response, options.root, decodeParam(pathname, "/api/mocks/"));
+    return;
+  }
   if (method === "GET" && pathname.startsWith("/api/suites/")) {
     await handleGetFile(response, options.root, decodeParam(pathname, "/api/suites/"));
     return;
   }
   if (method === "PUT" && pathname.startsWith("/api/suites/")) {
-    await handlePutFile(request, response, options.root, decodeParam(pathname, "/api/suites/"));
+    await handlePutFile(
+      request,
+      response,
+      options.root,
+      decodeParam(pathname, "/api/suites/"),
+      SUITE_PUT_RULES,
+    );
+    return;
+  }
+  if (method === "PUT" && pathname.startsWith("/api/mocks/")) {
+    await handlePutFile(
+      request,
+      response,
+      options.root,
+      decodeParam(pathname, "/api/mocks/"),
+      MOCK_PUT_RULES,
+    );
     return;
   }
   if (method === "POST" && pathname === "/api/runs") {
@@ -164,8 +206,11 @@ async function handleGetFile(
   }
 }
 
-async function handlePutFile(
-  request: IncomingMessage,
+/**
+ * 목 정의 파일 하나. 목록에는 유효한 것만 나오지만, 목록을 본 뒤 파일이 바뀌었을 수 있다.
+ * 그때는 폼으로 옮길 수 없으므로 `assertMockDefinition` 문장 그대로 400 이다.
+ */
+async function handleGetMock(
   response: ServerResponse,
   root: string,
   relativeOrNull: string | null,
@@ -179,8 +224,90 @@ async function handlePutFile(
     sendJson(response, 400, { error: "허용되지 않는 경로입니다." });
     return;
   }
+  let content: FileContent;
+  try {
+    content = await readFileContent(root, absolute);
+  } catch {
+    sendJson(response, 404, { error: "파일을 찾을 수 없습니다." });
+    return;
+  }
+  const problem = validateMockContent(content.content, relativeOrNull);
+  if (problem !== null) {
+    sendJson(response, 400, { error: problem });
+    return;
+  }
+  sendJson(response, 200, content);
+}
+
+/**
+ * 녹화본 하나의 외부 호출 목록. 녹화본은 읽기만 한다 — 서버를 띄우거나 재생하지 않는다.
+ * 세션이 아닌 파일은 404 다. 목록(`/api/sessions`)에는 안 나오는 파일을 손으로 친 경우다.
+ */
+async function handleGetInteractions(
+  response: ServerResponse,
+  root: string,
+  relativeOrNull: string | null,
+): Promise<void> {
+  if (relativeOrNull === null) {
+    sendJson(response, 400, { error: "경로를 해석할 수 없습니다." });
+    return;
+  }
+  const absolute = resolveProjectPath(root, relativeOrNull);
+  if (absolute === null) {
+    sendJson(response, 400, { error: "허용되지 않는 경로입니다." });
+    return;
+  }
+  const interactions = await readSessionInteractions(absolute);
+  if (interactions === null) {
+    sendJson(response, 404, {
+      error: [
+        `→ 이 녹화본을 읽을 수 없습니다 — ${relativeOrNull}`,
+        "→ MCPeak 이 녹화한 세션 파일인지 확인하세요. 목록에는 읽을 수 있는 파일만 나옵니다.",
+      ].join("\n"),
+    });
+    return;
+  }
+  sendJson(response, 200, interactions);
+}
+
+/**
+ * 파일 PUT 의 종류별 규칙. 스위트와 목 정의가 **같은 저장 경로**(mtime 충돌 감지 · errno
+ * 문장)를 쓴다 — 두 벌이면 한쪽만 고쳐지는 날이 온다. 다른 것은 확장자 안내와 내용 검증뿐이다.
+ */
+interface PutRules {
+  readonly extensionError: string;
+  /** 저장해도 되면 `null`, 아니면 사용자에게 그대로 보일 문장. */
+  validate(content: string, relative: string): string | null;
+}
+
+const SUITE_PUT_RULES: PutRules = {
+  extensionError: "스위트는 .json 확장자 파일만 저장할 수 있습니다.",
+  validate: (content) => validateSuiteContent(content),
+};
+
+const MOCK_PUT_RULES: PutRules = {
+  extensionError: "목 정의는 .json 확장자 파일만 저장할 수 있습니다.",
+  validate: validateMockContent,
+};
+
+async function handlePutFile(
+  request: IncomingMessage,
+  response: ServerResponse,
+  root: string,
+  relativeOrNull: string | null,
+  rules: PutRules,
+): Promise<void> {
+  if (relativeOrNull === null) {
+    sendJson(response, 400, { error: "경로를 해석할 수 없습니다." });
+    return;
+  }
+  const absolute = resolveProjectPath(root, relativeOrNull);
+  if (absolute === null) {
+    sendJson(response, 400, { error: "허용되지 않는 경로입니다." });
+    return;
+  }
   if (!relativeOrNull.toLowerCase().endsWith(".json")) {
-    sendJson(response, 400, { error: "스위트는 .json 확장자 파일만 저장할 수 있습니다." });
+    sendJson(response, 400, { error: rules.extensionError });
     return;
   }
   const body = await readJsonBody<Partial<PutFileRequest>>(request);
@@ -192,7 +319,7 @@ async function handlePutFile(
     sendJson(response, 400, { error: "content·baseMtimeMs가 필요합니다." });
     return;
   }
-  const validationError = await validateFileContent(body.content);
+  const validationError = rules.validate(body.content, relativeOrNull);
   if (validationError !== null) {
     sendJson(response, 400, { error: validationError });
     return;
@@ -314,7 +441,7 @@ function parseLastEventId(value: string | undefined): number {
   return Number(value);
 }
 
-async function validateFileContent(content: string): Promise<string | null> {
+function validateSuiteContent(content: string): string | null {
   let parsed: unknown;
   try {
     parsed = JSON.parse(content) as unknown;
@@ -322,6 +449,29 @@ async function validateFileContent(content: string): Promise<string | null> {
     return "본문 content가 올바른 JSON이 아닙니다.";
   }
   return validateMcpSuite(parsed).valid ? null : "본문 content가 올바른 MCP 스위트가 아닙니다.";
+}
+
+/**
+ * 목 정의 검증은 `@mcpeak/mock` 의 `assertMockDefinition` 에 맡기고 **문장을 새로 쓰지 않는다.**
+ * 대시보드와 `mcpeak-mock` 이 같은 파일에 다른 말을 하면 사용자가 둘을 잇지 못한다.
+ * `source` 로 경로를 넘겨 문장이 어느 파일인지 말하게 한다.
+ *
+ * 같은 도구 · 같은 args 응답이 두 줄인 것은 여기서 걸리지 않는다. 그 검사는 목이 뜰 때
+ * (`seed`) 한다 — 계획서 "남는 위험".
+ */
+function validateMockContent(content: string, relative: string): string | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content) as unknown;
+  } catch {
+    return "본문 content가 올바른 JSON이 아닙니다.";
+  }
+  try {
+    assertMockDefinition(parsed, relative);
+    return null;
+  } catch (error: unknown) {
+    return error instanceof Error ? error.message : String(error);
+  }
 }
 
 function isErrno(error: unknown, code: "ENOENT" | "EISDIR" | "EACCES"): boolean {

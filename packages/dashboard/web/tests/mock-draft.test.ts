@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  addPickedResponse,
   buildMockDefinition,
   EMPTY_MOCK_DRAFT,
   isBlankResult,
@@ -8,9 +7,9 @@ import {
   mockFilePath,
   newResponseDraft,
   newToolDraft,
+  pickedResult,
   preservedKeysNote,
   type ResponseDraft,
-  replaceResult,
   serializeMockDefinition,
   type ToolDraft,
 } from "../src/mock-builder/draft.js";
@@ -259,46 +258,39 @@ describe("serializeMockDefinition", () => {
 });
 
 describe("녹화 응답 넣기", () => {
-  const body = { temperature: 21.5, source: "https://api.open-meteo.com/docs" };
-
-  it("addPickedResponse: 도구가 없으면 이름만 채운 도구를 함께 추가하고, 본문을 가공 없이 result 에 넣는다", () => {
-    const next = addPickedResponse(EMPTY_MOCK_DRAFT, {
-      tool: "get_weather",
+  it("pickedResult: 그 줄의 result 만 바꾸고 녹화 응답 · 출처로 표시한다", () => {
+    const start = {
+      ...newResponseDraft("get_weather"),
       argsJson: '{"city":"Seoul"}',
-      body,
-    });
-    expect(next.tools).toEqual([newToolDraft("get_weather")]);
-    expect(next.responses).toEqual([
-      {
-        tool: "get_weather",
-        anyArgs: false,
-        argsJson: '{"city":"Seoul"}',
-        resultJson: JSON.stringify(body, null, 2),
-        isError: false,
-        origin: "recording",
-        extra: {},
-      },
-    ]);
-  });
-
-  it("addPickedResponse: 도구가 있으면 늘리지 않는다. argsJson 이 null 이면 인자 무관이다", () => {
-    const next = addPickedResponse(draftOf([weatherTool], []), {
-      tool: "get_weather",
-      argsJson: null,
-      body,
-    });
-    expect(next.tools).toEqual([weatherTool]);
-    expect(next.responses[0]?.anyArgs).toBe(true);
-  });
-
-  it("replaceResult: 그 줄의 result 만 바꾸고 녹화 응답으로 표시한다", () => {
-    const start = draftOf([weatherTool], [response(), response({ argsJson: '{"city":"Busan"}' })]);
-    const next = replaceResult(start, 1, body);
-    expect(next.responses[0]).toEqual(start.responses[0]);
-    expect(next.responses[1]).toEqual({
-      ...start.responses[1],
-      resultJson: JSON.stringify(body, null, 2),
+      isError: true,
+    };
+    expect(
+      pickedResult(
+        start,
+        { temperature: 21.5 },
+        "w.session.db 의 1번째 외부 호출에서 가져왔습니다.",
+      ),
+    ).toEqual({
+      ...start,
+      resultJson: JSON.stringify({ temperature: 21.5 }, null, 2),
       origin: "recording",
+      recordedFrom: "w.session.db 의 1번째 외부 호출에서 가져왔습니다.",
+    });
+  });
+
+  it("출처는 저장 파일에 실리지 않는다", () => {
+    const response = pickedResult(newResponseDraft("ping"), { ok: true }, "출처");
+    const built = buildMockDefinition({
+      tools: [newToolDraft("ping")],
+      responses: [response],
+      extra: {},
+    });
+    expect(built).toEqual({
+      ok: true,
+      definition: {
+        tools: [{ name: "ping", inputSchema: { type: "object", properties: {} } }],
+        responses: [{ tool: "ping", args: {}, result: { ok: true } }],
+      },
     });
   });
 

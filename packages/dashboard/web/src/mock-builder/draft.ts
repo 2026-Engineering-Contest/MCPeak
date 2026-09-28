@@ -36,6 +36,8 @@ export interface ResponseDraft {
    * 띄우는 데 쓴다 — 손으로 친 값에 "녹화 때 가려지지 않는 자리" 라고 말하면 틀린 문장이다.
    */
   readonly origin: "manual" | "recording";
+  /** 녹화본에서 가져왔다면 어디서인지 알리는 문장. 화면 전용이라 `mock.json` 에 실리지 않는다. */
+  readonly recordedFrom?: string;
   readonly extra: JsonObject;
 }
 
@@ -207,45 +209,20 @@ export function serializeMockDefinition(definition: MockDefinitionJson): string 
   return `${JSON.stringify(definition, null, 2)}\n`;
 }
 
-/** 녹화본에서 고른 응답. `argsJson` 이 `null` 이면 인자 무관(ANY)이다. */
-export interface PickedResponse {
-  readonly tool: string;
-  readonly argsJson: string | null;
-  readonly body: JsonValue;
-}
-
 /**
- * 고른 응답을 "응답 추가" 한 줄로 넣는다. 본문은 **가공 없이** result 에 들어간다 — 필요 없는
- * 필드를 지우는 것은 사람이 한다(설계 §목적). 도구가 폼에 없으면 이름만 채운 도구도 함께 넣는다.
+ * 녹화 본문으로 이 응답 줄의 result 만 바꾼다. 도구 · args · isError 는 그대로다. 본문은
+ * **가공 없이** 들어간다 — 필요 없는 필드를 지우는 것은 사람이 한다(설계 §목적).
  */
-export function addPickedResponse(draft: MockDraft, pick: PickedResponse): MockDraft {
-  const tool = pick.tool.trim();
-  const hasTool = draft.tools.some((existing) => existing.name.trim() === tool);
+export function pickedResult(
+  response: ResponseDraft,
+  body: JsonValue,
+  recordedFrom: string,
+): ResponseDraft {
   return {
-    ...draft,
-    tools: hasTool ? draft.tools : [...draft.tools, newToolDraft(tool)],
-    responses: [
-      ...draft.responses,
-      {
-        ...newResponseDraft(tool),
-        anyArgs: pick.argsJson === null,
-        argsJson: pick.argsJson ?? "{}",
-        resultJson: JSON.stringify(pick.body, null, 2),
-        origin: "recording",
-      },
-    ],
-  };
-}
-
-/** 이미 있는 응답 줄의 result 만 녹화 본문으로 바꾼다. 도구 · args · isError 는 그대로다. */
-export function replaceResult(draft: MockDraft, index: number, body: JsonValue): MockDraft {
-  return {
-    ...draft,
-    responses: draft.responses.map((response, i) =>
-      i === index
-        ? { ...response, resultJson: JSON.stringify(body, null, 2), origin: "recording" as const }
-        : response,
-    ),
+    ...response,
+    resultJson: JSON.stringify(body, null, 2),
+    origin: "recording",
+    recordedFrom,
   };
 }
 

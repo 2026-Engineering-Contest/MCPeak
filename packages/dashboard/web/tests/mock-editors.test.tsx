@@ -48,6 +48,9 @@ function ResponseHarness(props: {
       response={response}
       tools={TOOLS}
       highlighted={props.highlighted ?? false}
+      pickerOpen={false}
+      onTogglePicker={() => undefined}
+      onPicked={() => undefined}
       onChange={(next) => {
         setResponse(next);
         props.onLatest?.(next);

@@ -9,18 +9,15 @@ import { PageHeader } from "../components/PageHeader.js";
 import { newResponseFor } from "../mock-builder/args-check.js";
 import { bodyUrlWarning, recordingUrlCount } from "../mock-builder/body-urls.js";
 import {
-  addPickedResponse,
   buildMockDefinition,
   EMPTY_MOCK_DRAFT,
   type MockDraft,
   mockFilePath,
   newToolDraft,
   preservedKeysNote,
-  replaceResult,
   serializeMockDefinition,
 } from "../mock-builder/draft.js";
 import { MockStart } from "../mock-builder/MockStart.js";
-import { RecordingPanel } from "../mock-builder/RecordingPanel.js";
 import { ResponseEditor } from "../mock-builder/ResponseEditor.js";
 import { ToolEditor } from "../mock-builder/ToolEditor.js";
 
@@ -48,8 +45,8 @@ const DEFAULT_TARGET = "mock.json";
 /**
  * 목 만들기 — `mock.json` 을 새로 만들거나 기존 파일을 열어 고친다(설계 2026-09-28).
  *
- * 첫 화면에서 새로 만들기 · 기존 목 수정을 고른다. 녹화본은 시작 갈래가 아니라 편집 화면
- * 옆에 펴 두는 패널이다. 검증은 서버가 `assertMockDefinition` 으로 한다 — web 은
+ * 첫 화면에서 새로 만들기 · 기존 목 수정을 고른다. 녹화본은 시작 갈래가 아니라 응답 카드
+ * 안에서 result 를 채울 때 고르는 곳이다. 검증은 서버가 `assertMockDefinition` 으로 한다 — web 은
  * `@mcpeak/mock` 을 import 하지 않는다.
  *
  * 덮어쓰기: 새 목은 `baseMtimeMs: 0`, 연 파일은 열 때 받은 mtime 을 보낸다. 저장에 성공하면
@@ -61,7 +58,7 @@ export function MockBuilder(): JSX.Element {
   const [dirty, setDirty] = useState(false);
   const [targetPath, setTargetPath] = useState(DEFAULT_TARGET);
   const [save, setSave] = useState<SaveState>({ kind: "idle" });
-  const [showRecordings, setShowRecordings] = useState(false);
+  const [pickerAt, setPickerAt] = useState<number | null>(null);
   const [highlighted, setHighlighted] = useState<number | null>(null);
   const [leaving, setLeaving] = useState(false);
 
@@ -71,7 +68,7 @@ export function MockBuilder(): JSX.Element {
     setTargetPath(path);
     setDirty(false);
     setSave({ kind: "idle" });
-    setShowRecordings(false);
+    setPickerAt(null);
     setHighlighted(null);
     setLeaving(false);
   }
@@ -91,7 +88,6 @@ export function MockBuilder(): JSX.Element {
   }
 
   const editing = source;
-  const toolNames = draft.tools.map((tool) => tool.name.trim()).filter((name) => name !== "");
   const urlWarning = bodyUrlWarning(recordingUrlCount(draft), "definition");
   const topPreserved = preservedKeysNote(draft.extra);
 
@@ -159,14 +155,9 @@ export function MockBuilder(): JSX.Element {
         title="목 만들기"
         description={editing.kind === "new" ? "새 목" : `편집 중: ${editing.path}`}
         aside={
-          <div className="flex gap-2">
-            <Button onClick={() => setShowRecordings((shown) => !shown)}>
-              {showRecordings ? "녹화본 닫기" : "녹화본 보기"}
-            </Button>
-            <Button variant="ghost" onClick={leave}>
-              ← 처음으로
-            </Button>
-          </div>
+          <Button variant="ghost" onClick={leave}>
+            ← 처음으로
+          </Button>
         }
       />
 
@@ -184,123 +175,117 @@ export function MockBuilder(): JSX.Element {
 
       {topPreserved !== null && <p className="text-xs text-ink-muted">{topPreserved}</p>}
 
-      <div className={showRecordings ? "grid grid-cols-2 items-start gap-6" : ""}>
-        <div className="space-y-6">
-          <Card className="space-y-4 p-6">
-            <h2 className="text-title font-semibold text-ink">도구</h2>
-            <p className="text-sm text-ink-muted">
-              {
-                '목 서버가 "이런 도구가 있다" 고 알려 주는 목록입니다. 입력 필드는 그 도구를 부를 때 넘기는 값입니다.'
+      <div className="space-y-6">
+        <Card className="space-y-4 p-6">
+          <h2 className="text-title font-semibold text-ink">도구</h2>
+          <p className="text-sm text-ink-muted">
+            {
+              '목 서버가 "이런 도구가 있다" 고 알려 주는 목록입니다. 입력 필드는 그 도구를 부를 때 넘기는 값입니다.'
+            }
+          </p>
+          {draft.tools.map((tool, index) => (
+            <ToolEditor
+              // biome-ignore lint/suspicious/noArrayIndexKey: 도구 이름은 비거나 겹칠 수 있어 유일 키가 없고, 목록은 변경마다 통째로 재생성된다
+              key={index}
+              index={index}
+              tool={tool}
+              onChange={(next) =>
+                update({ ...draft, tools: draft.tools.map((t, i) => (i === index ? next : t)) })
               }
-            </p>
-            {draft.tools.map((tool, index) => (
-              <ToolEditor
-                // biome-ignore lint/suspicious/noArrayIndexKey: 도구 이름은 비거나 겹칠 수 있어 유일 키가 없고, 목록은 변경마다 통째로 재생성된다
-                key={index}
-                index={index}
-                tool={tool}
-                onChange={(next) =>
-                  update({ ...draft, tools: draft.tools.map((t, i) => (i === index ? next : t)) })
-                }
-                onRemove={() =>
-                  update({ ...draft, tools: draft.tools.filter((_, i) => i !== index) })
-                }
-              />
-            ))}
-            <Button onClick={() => update({ ...draft, tools: [...draft.tools, newToolDraft()] })}>
-              도구 추가
-            </Button>
-          </Card>
+              onRemove={() =>
+                update({ ...draft, tools: draft.tools.filter((_, i) => i !== index) })
+              }
+            />
+          ))}
+          <Button onClick={() => update({ ...draft, tools: [...draft.tools, newToolDraft()] })}>
+            도구 추가
+          </Button>
+        </Card>
 
-          <Card className="space-y-4 p-6">
-            <h2 className="text-title font-semibold text-ink">응답</h2>
-            <p className="text-sm text-ink-muted">
-              {
-                "도구가 불렸을 때 목이 돌려줄 답입니다. 도구와 args 가 호출과 똑같을 때 그 줄의 result 를 돌려줍니다."
-              }
-            </p>
-            {draft.responses.map((response, index) => (
-              <ResponseEditor
-                // biome-ignore lint/suspicious/noArrayIndexKey: 같은 도구 · 같은 인자 응답이 겹칠 수 있어 유일 키가 없고, 목록은 변경마다 통째로 재생성된다
-                key={index}
-                index={index}
-                response={response}
-                tools={draft.tools}
-                highlighted={highlighted === index}
-                onChange={(next) =>
-                  update({
-                    ...draft,
-                    responses: draft.responses.map((r, i) => (i === index ? next : r)),
-                  })
-                }
-                onRemove={() =>
-                  update({ ...draft, responses: draft.responses.filter((_, i) => i !== index) })
-                }
-              />
-            ))}
-            <Button
-              onClick={() =>
+        <Card className="space-y-4 p-6">
+          <h2 className="text-title font-semibold text-ink">응답</h2>
+          <p className="text-sm text-ink-muted">
+            {
+              "도구가 불렸을 때 목이 돌려줄 답입니다. 도구와 args 가 호출과 똑같을 때 그 줄의 result 를 돌려줍니다."
+            }
+          </p>
+          {draft.responses.map((response, index) => (
+            <ResponseEditor
+              // biome-ignore lint/suspicious/noArrayIndexKey: 같은 도구 · 같은 인자 응답이 겹칠 수 있어 유일 키가 없고, 목록은 변경마다 통째로 재생성된다
+              key={index}
+              index={index}
+              response={response}
+              tools={draft.tools}
+              highlighted={highlighted === index}
+              pickerOpen={pickerAt === index}
+              onTogglePicker={() => setPickerAt(pickerAt === index ? null : index)}
+              onPicked={(next) => {
+                update(
+                  { ...draft, responses: draft.responses.map((r, i) => (i === index ? next : r)) },
+                  index,
+                );
+                setPickerAt(null);
+              }}
+              onChange={(next) =>
                 update({
                   ...draft,
-                  responses: [...draft.responses, newResponseFor(draft.tools)],
+                  responses: draft.responses.map((r, i) => (i === index ? next : r)),
                 })
               }
-            >
-              응답 추가
-            </Button>
-          </Card>
-
-          <Card className="space-y-3 p-6">
-            <Field
-              label="저장 위치"
-              htmlFor="mock-target"
-              hint="대시보드를 띄운 디렉터리 기준 상대경로"
-            >
-              <input
-                id="mock-target"
-                className={INPUT_CLASS}
-                value={targetPath}
-                onChange={(event) => {
-                  setTargetPath(event.target.value);
-                  setSave({ kind: "idle" });
-                }}
-              />
-            </Field>
-            {urlWarning.length > 0 && (
-              <div role="note" className="space-y-0.5 text-xs text-ink">
-                {urlWarning.map((line) => (
-                  <p key={line}>{line}</p>
-                ))}
-              </div>
-            )}
-            <Button
-              variant="primary"
-              disabled={save.kind === "saving"}
-              onClick={() => void submit(baseMtimeFor(targetPath.trim()))}
-            >
-              저장
-            </Button>
-            <SaveStatus
-              state={save}
-              onOverwrite={(mtimeMs) => void submit(mtimeMs)}
-              onCancel={() => setSave({ kind: "idle" })}
+              onRemove={() => {
+                update({ ...draft, responses: draft.responses.filter((_, i) => i !== index) });
+                setPickerAt(null);
+              }}
             />
-          </Card>
-        </div>
+          ))}
+          <Button
+            onClick={() =>
+              update({
+                ...draft,
+                responses: [...draft.responses, newResponseFor(draft.tools)],
+              })
+            }
+          >
+            응답 추가
+          </Button>
+        </Card>
 
-        {showRecordings && (
-          <Card className="sticky top-0 p-6">
-            <RecordingPanel
-              toolNames={toolNames}
-              responses={draft.responses.map((response, index) => ({
-                label: `응답 ${index + 1} (${response.tool.trim() === "" ? "도구 없음" : response.tool.trim()})`,
-                resultJson: response.resultJson,
-              }))}
-              onAdd={(pick) => update(addPickedResponse(draft, pick), draft.responses.length)}
-              onReplaceResult={(index, body) => update(replaceResult(draft, index, body), index)}
+        <Card className="space-y-3 p-6">
+          <Field
+            label="저장 위치"
+            htmlFor="mock-target"
+            hint="대시보드를 띄운 디렉터리 기준 상대경로"
+          >
+            <input
+              id="mock-target"
+              className={INPUT_CLASS}
+              value={targetPath}
+              onChange={(event) => {
+                setTargetPath(event.target.value);
+                setSave({ kind: "idle" });
+              }}
             />
-          </Card>
-        )}
+          </Field>
+          {urlWarning.length > 0 && (
+            <div role="note" className="space-y-0.5 text-xs text-ink">
+              {urlWarning.map((line) => (
+                <p key={line}>{line}</p>
+              ))}
+            </div>
+          )}
+          <Button
+            variant="primary"
+            disabled={save.kind === "saving"}
+            onClick={() => void submit(baseMtimeFor(targetPath.trim()))}
+          >
+            저장
+          </Button>
+          <SaveStatus
+            state={save}
+            onOverwrite={(mtimeMs) => void submit(mtimeMs)}
+            onCancel={() => setSave({ kind: "idle" })}
+          />
+        </Card>
       </div>
     </div>
   );

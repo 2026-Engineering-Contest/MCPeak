@@ -258,21 +258,18 @@ describe("MockBuilder — 기존 목 수정", () => {
   });
 });
 
-describe("MockBuilder — 녹화본 패널 · 처음으로", () => {
-  it("녹화본에서 새 응답으로 넣으면 도구와 함께 폼에 들어가 강조되고, URL 경고가 줄과 저장 위에 뜬다", async () => {
+describe("MockBuilder — 녹화본 가져오기 · 처음으로", () => {
+  it("응답 카드에서 녹화본을 가져오면 result 가 채워져 강조되고, 출처와 URL 경고가 뜬다", async () => {
     mockApi([saved()]);
     await startNew();
-    fireEvent.click(screen.getByRole("button", { name: "녹화본 보기" }));
-    await screen.findByRole("option", { name: "weather.session.db · 외부 호출 1건" });
-    fireEvent.change(screen.getByLabelText("녹화본"), { target: { value: "weather.session.db" } });
-    fireEvent.click(await screen.findByRole("button", { name: "새 응답으로 추가" }));
-    fireEvent.change(screen.getByLabelText("어느 도구의 답인가"), {
-      target: { value: "get_weather" },
-    });
-    fireEvent.click(screen.getByLabelText("인자 무관으로 넣기"));
-    fireEvent.click(screen.getByRole("button", { name: "목에 넣기" }));
+    fireEvent.click(screen.getByRole("button", { name: "도구 추가" }));
+    fireEvent.change(screen.getByLabelText("도구 이름"), { target: { value: "get_weather" } });
+    fireEvent.click(screen.getByRole("button", { name: "응답 추가" }));
+    expect(screen.queryByRole("button", { name: "녹화본 보기" })).toBeNull();
 
-    expect((screen.getByLabelText("도구 이름") as HTMLInputElement).value).toBe("get_weather");
+    fireEvent.click(screen.getByRole("button", { name: "녹화본에서 가져오기" }));
+    fireEvent.click(await screen.findByRole("button", { name: "이걸로 채우기" }));
+
     expect((screen.getByLabelText("result (JSON)") as HTMLTextAreaElement).value).toBe(
       JSON.stringify(
         { temperature: 21.5, next: "https://api.open-meteo.com/v1/page/2?key=abc" },
@@ -283,6 +280,10 @@ describe("MockBuilder — 녹화본 패널 · 처음으로", () => {
     expect(
       screen.getByLabelText("result (JSON)").closest("fieldset")?.getAttribute("data-highlighted"),
     ).toBe("true");
+    expect(
+      screen.getByText("weather.session.db 의 1번째 외부 호출에서 가져왔습니다."),
+    ).toBeTruthy();
+    expect(screen.queryByLabelText("녹화본")).toBeNull(); // 채우면 선택 창을 닫는다
     expect(
       screen.getByText(
         "→ 이 응답 본문에 URL 이 1개 있습니다. 녹화 때 가려지지 않는 자리라 자격증명이 담겼을 수 있습니다.",
@@ -297,6 +298,20 @@ describe("MockBuilder — 녹화본 패널 · 처음으로", () => {
     // 경고는 저장을 막지 않는다.
     fireEvent.click(screen.getByRole("button", { name: "저장" }));
     await waitFor(() => expect(puts).toHaveLength(1));
+  });
+
+  it("선택 창은 한 카드에서만 열린다", async () => {
+    mockApi([]);
+    await startNew();
+    fireEvent.click(screen.getByRole("button", { name: "응답 추가" }));
+    fireEvent.click(screen.getByRole("button", { name: "응답 추가" }));
+    const [first, second] = screen.getAllByRole("button", { name: "녹화본에서 가져오기" });
+    fireEvent.click(first as HTMLElement);
+    await screen.findByLabelText("녹화본");
+    fireEvent.click(second as HTMLElement);
+    await screen.findByLabelText("녹화본");
+    expect(screen.getAllByLabelText("녹화본")).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "녹화본 닫기" })).toHaveLength(1);
   });
 
   it("고친 뒤 처음으로 가려면 버릴지 묻는다. 고치지 않았으면 바로 간다", async () => {

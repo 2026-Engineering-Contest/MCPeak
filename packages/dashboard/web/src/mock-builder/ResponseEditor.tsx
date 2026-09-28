@@ -3,7 +3,8 @@ import { Button } from "../components/Button.js";
 import { INPUT_CLASS, Toggle } from "../components/Field.js";
 import { argsProblems, findTool, prefillArgs, toolProblem } from "./args-check.js";
 import { bodyUrlWarning, responseUrlCount } from "./body-urls.js";
-import { preservedKeysNote, type ResponseDraft, type ToolDraft } from "./draft.js";
+import { pickedResult, preservedKeysNote, type ResponseDraft, type ToolDraft } from "./draft.js";
+import { RecordingPicker } from "./RecordingPicker.js";
 
 export interface ResponseEditorProps {
   readonly index: number;
@@ -12,6 +13,11 @@ export interface ResponseEditorProps {
   readonly tools: readonly ToolDraft[];
   /** 녹화본에서 방금 가져온 줄. 다음 편집 전까지 강조한다(타이머 없음). */
   readonly highlighted: boolean;
+  /** 이 줄의 녹화본 선택 창이 열려 있나. 한 번에 한 줄만 열린다 — 부모가 정한다. */
+  readonly pickerOpen: boolean;
+  readonly onTogglePicker: () => void;
+  /** 녹화본에서 result 를 채운 줄. 부모가 강조하고 선택 창을 닫는다. */
+  readonly onPicked: (response: ResponseDraft) => void;
   readonly onChange: (response: ResponseDraft) => void;
   readonly onRemove: () => void;
 }
@@ -25,6 +31,9 @@ export function ResponseEditor({
   response,
   tools,
   highlighted,
+  pickerOpen,
+  onTogglePicker,
+  onPicked,
   onChange,
   onRemove,
 }: ResponseEditorProps): JSX.Element {
@@ -104,9 +113,21 @@ export function ResponseEditor({
         )}
       </div>
       <div className="space-y-1">
-        <label className="block text-sm font-medium text-ink" htmlFor={`${id}-result`}>
-          result (JSON)
-        </label>
+        <div className="flex flex-wrap items-end justify-between gap-2">
+          <label className="block text-sm font-medium text-ink" htmlFor={`${id}-result`}>
+            result (JSON)
+          </label>
+          <Button size="xs" aria-expanded={pickerOpen} onClick={onTogglePicker}>
+            {pickerOpen ? "녹화본 닫기" : "녹화본에서 가져오기"}
+          </Button>
+        </div>
+        {pickerOpen && (
+          <RecordingPicker
+            id={id}
+            resultJson={response.resultJson}
+            onPick={(body, recordedFrom) => onPicked(pickedResult(response, body, recordedFrom))}
+          />
+        )}
         <textarea
           id={`${id}-result`}
           className={`${INPUT_CLASS} font-mono`}
@@ -114,6 +135,9 @@ export function ResponseEditor({
           value={response.resultJson}
           onChange={(event) => onChange({ ...response, resultJson: event.target.value })}
         />
+        {response.origin === "recording" && response.recordedFrom !== undefined && (
+          <p className="text-xs text-ink-muted">{response.recordedFrom}</p>
+        )}
       </div>
       {warning.length > 0 && (
         <div role="note" className="space-y-0.5 text-xs text-ink">

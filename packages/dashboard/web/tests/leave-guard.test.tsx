@@ -90,6 +90,19 @@ describe("목 만들기 이탈 확인", () => {
     expect(screen.queryByText(LEAVE)).toBeNull();
   });
 
+  it("처음으로 확인이 뜬 뒤 저장하면 그 확인이 사라진다", async () => {
+    await editMock();
+    fireEvent.click(screen.getByRole("button", { name: "← 처음으로" }));
+    const back = "→ 지금 폼의 내용을 버리고 처음으로 돌아갑니다.";
+    expect(screen.getByText(back)).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("도구 이름"), { target: { value: "ping" } });
+    fireEvent.click(screen.getByRole("button", { name: "저장" }));
+    await screen.findByText("저장했습니다 — mock.json");
+
+    expect(screen.queryByText(back)).toBeNull();
+  });
+
   it("고친 동안만 새로고침 · 탭 닫기를 막는다", async () => {
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: "시작" }));

@@ -107,7 +107,8 @@ export function toolProblem(tool: string, toolNames: readonly string[]): string 
 
 /**
  * args 가 도구의 입력 필드와 어긋나는 곳(U1 · U3). 빠진 필수 입력을 필드 순서로, 모르는 키를
- * args 순서로 적고, 하나라도 있으면 끝에 고칠 곳을 붙인다.
+ * args 순서로 적고, 둘 중 하나라도 있으면 고칠 곳을 붙인다. 그 뒤에 값이 `""` 인 선택 입력을
+ * 필드 순서로 적는다.
  *
  * 말하지 않는 경우: 인자 무관 · 도구가 폼에 없음(U4 가 말한다) · 스키마를 못 읽음 · args 가
  * JSON 객체가 아님(저장 때의 문장이 따로 있다).

@@ -3,14 +3,14 @@ import { FOCUS_RING } from "./focus-ring.js";
 import { Logo } from "./Logo.js";
 
 /**
- * 좌측 고정 사이드바(248px). UI 설계 §2: 로고 블록 + 내비 5항목(영어 라벨,
+ * 좌측 고정 사이드바(248px). UI 설계 §2: 로고 블록 + 내비 6항목(영어 라벨,
  * 인라인 SVG stroke 아이콘) + 하단 보조 링크(Settings · Help & Docs, #459).
  * 활성 항목은 `aria-current="page"` 하나로 표시하고 스타일도 그 속성을 본다.
  *
  * 하단에 있던 서버 주소(`location.host`)는 뺐다. 주소창에 이미 있는 값이고, 그 자리를 설정 ·
  * 도움말이 쓴다.
  */
-export type NavId = "home" | "runs" | "generate" | "replay" | "repair" | "settings";
+export type NavId = "home" | "runs" | "generate" | "replay" | "mock" | "repair" | "settings";
 
 /** README. package.json 의 `homepage` 와 같은 값이다. */
 export const HELP_URL = "https://github.com/2026-Engineering-Contest/MCPeak#readme";
@@ -79,6 +79,18 @@ const NAV_ITEMS: readonly NavItem[] = [
       <svg {...ICON_PROPS}>
         <circle cx="12" cy="12" r="9" />
         <polygon points="10 8 16 12 10 16 10 8" />
+      </svg>
+    ),
+  },
+  {
+    id: "mock",
+    label: "Mock",
+    hash: "#/mock",
+    icon: (
+      // biome-ignore lint/a11y/noSvgWithoutTitle: 장식용 아이콘, 라벨 텍스트가 인접
+      <svg {...ICON_PROPS}>
+        <rect x="4" y="4" width="16" height="16" rx="2" />
+        <path d="M9 9h6v6H9z" />
       </svg>
     ),
   },

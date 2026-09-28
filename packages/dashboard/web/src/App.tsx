@@ -4,6 +4,7 @@ import { Sidebar } from "./components/Sidebar.js";
 import { ThemeToggle } from "./components/ThemeToggle.js";
 import { GenerateWizard } from "./screens/GenerateWizard.js";
 import { Home } from "./screens/Home.js";
+import { MockBuilder } from "./screens/MockBuilder.js";
 import { RepairReview } from "./screens/RepairReview.js";
 import { ReplayView } from "./screens/ReplayView.js";
 import { RunView } from "./screens/RunView.js";
@@ -17,6 +18,7 @@ import { SettingsView } from "./screens/SettingsView.js";
  * | `#/home` (기본 리다이렉트 대상) | Home |
  * | `#/runs`, `#/runs/:id` | RunView (`#/runs`는 목록 상태) |
  * | `#/generate` | GenerateWizard |
+ * | `#/mock` | MockBuilder (목 만들기) |
  * | `#/repair/:id` | RepairReview |
  * | `#/settings` | SettingsView (준비 중) |
  *
@@ -26,6 +28,7 @@ type Route =
   | { readonly screen: "runs"; readonly runId: string | null }
   | { readonly screen: "generate" }
   | { readonly screen: "replay" }
+  | { readonly screen: "mock" }
   | { readonly screen: "repair"; readonly runId: string | null }
   | { readonly screen: "settings" }
   | { readonly screen: "redirect" };
@@ -60,6 +63,9 @@ function parseRoute(hash: string): Route {
   }
   if (first === "replay") {
     return { screen: "replay" };
+  }
+  if (first === "mock") {
+    return { screen: "mock" };
   }
   if (first === "repair") {
     return {
@@ -146,6 +152,8 @@ function Screen({
       return <GenerateWizard />;
     case "replay":
       return <ReplayView />;
+    case "mock":
+      return <MockBuilder />;
     case "repair":
       return <RepairReview runId={route.runId} />;
     case "settings":

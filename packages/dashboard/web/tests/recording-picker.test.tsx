@@ -65,8 +65,20 @@ function renderPicker(resultJson = "{}"): [JsonValue, string][] {
 
 describe("RecordingPicker", () => {
   it("출처 문장은 사람이 세는 순서(1부터)로 쓴다", () => {
-    expect(recordedFromNote(SESSION, 0)).toBe(
-      "recordings/weather.session.db 의 1번째 외부 호출에서 가져왔습니다.",
+    expect(recordedFromNote(SESSION, INTERACTIONS[0] as SessionInteractionEntry)).toBe(
+      "recordings/weather.session.db 의 1번째 외부 호출(GET api.open-meteo.com)에서 가져왔습니다.",
+    );
+  });
+
+  it("URL 에서 호스트를 읽을 수 없으면 URL 을 그대로 쓴다", () => {
+    const entry: SessionInteractionEntry = {
+      ordinal: 4,
+      method: "POST",
+      url: "not a url",
+      outcome: { kind: "incomplete" },
+    };
+    expect(recordedFromNote(SESSION, entry)).toBe(
+      "recordings/weather.session.db 의 5번째 외부 호출(POST not a url)에서 가져왔습니다.",
     );
   });
 
@@ -102,7 +114,10 @@ describe("RecordingPicker", () => {
     const picks = renderPicker("{}");
     fireEvent.click(await screen.findByRole("button", { name: "이걸로 채우기" }));
     expect(picks).toEqual([
-      [{ temperature: 21.5 }, "recordings/weather.session.db 의 1번째 외부 호출에서 가져왔습니다."],
+      [
+        { temperature: 21.5 },
+        "recordings/weather.session.db 의 1번째 외부 호출(GET api.open-meteo.com)에서 가져왔습니다.",
+      ],
     ]);
   });
 
@@ -191,7 +206,7 @@ describe("RecordingPicker", () => {
     expect(screen.queryByText(`GET ${LONG_URL} · 200`)).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "이걸로 채우기" }));
-    expect(picks[0]?.[1]).toBe(`${B} 의 2번째 외부 호출에서 가져왔습니다.`);
+    expect(picks[0]?.[1]).toBe(`${B} 의 2번째 외부 호출(GET b.example)에서 가져왔습니다.`);
   });
 
   it("녹화본이 없으면 어떻게 만드는지 말한다", async () => {

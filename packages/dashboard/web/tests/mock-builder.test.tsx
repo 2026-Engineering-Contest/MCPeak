@@ -281,7 +281,19 @@ describe("MockBuilder — 녹화본 가져오기 · 처음으로", () => {
       screen.getByLabelText("result (JSON)").closest("fieldset")?.getAttribute("data-highlighted"),
     ).toBe("true");
     expect(
-      screen.getByText("weather.session.db 의 1번째 외부 호출에서 가져왔습니다."),
+      screen.getByText(
+        "weather.session.db 의 1번째 외부 호출(GET api.open-meteo.com)에서 가져왔습니다.",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        "→ 서버가 바깥 API 에게서 받은 응답을 그대로 가져왔습니다. 서버가 사용자에게 돌려주는 답이 아닙니다.",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        "→ 실제 서버가 이 응답에서 값을 꺼내 다른 모양으로 답한다면, result 도 그 모양으로 고쳐 쓰세요.",
+      ),
     ).toBeTruthy();
     expect(screen.queryByLabelText("녹화본")).toBeNull(); // 채우면 선택 창을 닫는다
     expect(

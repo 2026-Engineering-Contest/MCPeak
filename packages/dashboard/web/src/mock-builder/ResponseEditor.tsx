@@ -143,7 +143,19 @@ export function ResponseEditor({
           onChange={(event) => onChange({ ...response, resultJson: event.target.value })}
         />
         {response.origin === "recording" && response.recordedFrom !== undefined && (
-          <p className="text-xs text-ink-muted">{response.recordedFrom}</p>
+          <div className="space-y-0.5 text-xs">
+            <p className="text-ink-muted">{response.recordedFrom}</p>
+            {/* 녹화본은 서버가 받은 것이고 목의 result 는 서버가 주는 것이다. 가공하는 도구라면
+                사람이 답 모양으로 고쳐야 한다(설계 U6 · 가져온 응답은 가공하지 않는다). */}
+            <p className="text-ink">
+              → 서버가 바깥 API 에게서 받은 응답을 그대로 가져왔습니다. 서버가 사용자에게 돌려주는
+              답이 아닙니다.
+            </p>
+            <p className="text-ink">
+              → 실제 서버가 이 응답에서 값을 꺼내 다른 모양으로 답한다면, result 도 그 모양으로 고쳐
+              쓰세요.
+            </p>
+          </div>
         )}
       </div>
       {warning.length > 0 && (

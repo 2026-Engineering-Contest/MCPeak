@@ -205,6 +205,29 @@ describe("ResponseEditor", () => {
     expect(screen.queryByText(first)).toBeNull();
   });
 
+  it("녹화본에서 가져온 result 에는 받은 응답 그대로라는 안내를 붙이고, 손으로 친 result 에는 붙이지 않는다", () => {
+    const raw =
+      "→ 서버가 바깥 API 에게서 받은 응답을 그대로 가져왔습니다. 서버가 사용자에게 돌려주는 답이 아닙니다.";
+    const fix =
+      "→ 실제 서버가 이 응답에서 값을 꺼내 다른 모양으로 답한다면, result 도 그 모양으로 고쳐 쓰세요.";
+    render(
+      <ResponseHarness
+        initial={{
+          ...newResponseDraft("get_weather"),
+          origin: "recording",
+          recordedFrom: "w.session.db 의 1번째 외부 호출(GET api.example.com)에서 가져왔습니다.",
+        }}
+      />,
+    );
+    expect(screen.getByText(raw)).toBeTruthy();
+    expect(screen.getByText(fix)).toBeTruthy();
+    cleanup();
+
+    render(<ResponseHarness initial={newResponseDraft("get_weather")} />);
+    expect(screen.queryByText(raw)).toBeNull();
+    expect(screen.queryByText(fix)).toBeNull();
+  });
+
   it("손으로 친 응답은 URL 이 있어도 경고하지 않는다", () => {
     render(
       <ResponseHarness

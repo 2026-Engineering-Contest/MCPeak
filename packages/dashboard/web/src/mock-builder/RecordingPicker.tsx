@@ -7,9 +7,19 @@ import { INPUT_CLASS } from "../components/Field.js";
 import { isBlankResult } from "./draft.js";
 import { describeInteraction, interactionsPath } from "./interactions.js";
 
-/** 채운 result 아래 출처 한 줄. `ordinal` 은 0부터라 사람이 세는 번호로 바꾼다. */
-export function recordedFromNote(sessionPath: string, ordinal: number): string {
-  return `${sessionPath} 의 ${ordinal + 1}번째 외부 호출에서 가져왔습니다.`;
+/**
+ * 채운 result 아래 출처 한 줄. `ordinal` 은 0부터라 사람이 세는 번호로 바꾼다. 어느 API 의
+ * 응답인지 보이게 method 와 호스트를 붙인다 — 도구 하나가 외부 API 를 여러 번 부르면 같은
+ * 녹화본 안에서도 호출마다 받은 것이 다르다. 호스트를 못 읽으면 URL 을 그대로 쓴다.
+ */
+export function recordedFromNote(sessionPath: string, entry: SessionInteractionEntry): string {
+  let where = entry.url;
+  try {
+    where = new URL(entry.url).host;
+  } catch {
+    // 표시용 URL 이 절대 URL 이 아니면 그대로 보인다.
+  }
+  return `${sessionPath} 의 ${entry.ordinal + 1}번째 외부 호출(${entry.method} ${where})에서 가져왔습니다.`;
 }
 
 export interface RecordingPickerProps {
@@ -71,8 +81,8 @@ export function RecordingPicker({ id, resultJson, onPick }: RecordingPickerProps
       .catch((err: unknown) => setListError(err instanceof Error ? err.message : String(err)));
   }, []);
 
-  function pick(body: JsonValue, ordinal: number): void {
-    const recordedFrom = recordedFromNote(sessionPath, ordinal);
+  function pick(body: JsonValue, entry: SessionInteractionEntry): void {
+    const recordedFrom = recordedFromNote(sessionPath, entry);
     if (isBlankResult(resultJson)) {
       onPick(body, recordedFrom);
       return;
@@ -163,11 +173,7 @@ export function RecordingPicker({ id, resultJson, onPick }: RecordingPickerProps
                     <pre className="max-h-32 overflow-auto text-xs text-ink-muted">
                       {JSON.stringify(view.body, null, 2)}
                     </pre>
-                    <Button
-                      size="xs"
-                      variant="primary"
-                      onClick={() => pick(view.body, entry.ordinal)}
-                    >
+                    <Button size="xs" variant="primary" onClick={() => pick(view.body, entry)}>
                       이걸로 채우기
                     </Button>
                   </>

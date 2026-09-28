@@ -20,8 +20,8 @@ export interface MockStartProps {
 }
 
 /**
- * 첫 화면. 새로 만들기 · 기존 목 수정 둘 중 하나다. 녹화본은 여기서 고르지 않는다 — 편집 중
- * 옆에 펴 두는 참고 패널이다(설계 §화면 흐름).
+ * 첫 화면. 새로 만들기 · 기존 목 수정 둘 중 하나다. 녹화본은 시작 갈래가 아니다 — 편집 중
+ * 응답 카드 안에서 result 를 채울 때 고른다(설계 §화면 흐름, U6).
  */
 export function MockStart({ onNew, onOpen }: MockStartProps): JSX.Element {
   const [mocks, setMocks] = useState<readonly MockFileEntry[] | null>(null);

@@ -6,6 +6,7 @@ import { Button } from "../components/Button.js";
 import { Card } from "../components/Card.js";
 import { Field, INPUT_CLASS } from "../components/Field.js";
 import { PageHeader } from "../components/PageHeader.js";
+import { leaveAnyway, useLeaveGuard } from "../leave-guard.js";
 import { newResponseFor } from "../mock-builder/args-check.js";
 import { bodyUrlWarning, recordingUrlCount } from "../mock-builder/body-urls.js";
 import {
@@ -61,6 +62,9 @@ export function MockBuilder(): JSX.Element {
   const [pickerAt, setPickerAt] = useState<number | null>(null);
   const [highlighted, setHighlighted] = useState<number | null>(null);
   const [leaving, setLeaving] = useState(false);
+  /** 막힌 이동의 목적지. 확인 줄을 띄운다. */
+  const [leavingTo, setLeavingTo] = useState<string | null>(null);
+  useLeaveGuard(source !== null && dirty, setLeavingTo);
 
   function begin(next: EditSource, nextDraft: MockDraft, path: string): void {
     setSource(next);
@@ -71,6 +75,7 @@ export function MockBuilder(): JSX.Element {
     setPickerAt(null);
     setHighlighted(null);
     setLeaving(false);
+    setLeavingTo(null);
   }
 
   if (source === null) {
@@ -168,6 +173,18 @@ export function MockBuilder(): JSX.Element {
             버리고 돌아가기
           </Button>
           <Button size="sm" variant="ghost" onClick={() => setLeaving(false)}>
+            취소
+          </Button>
+        </div>
+      )}
+
+      {leavingTo !== null && (
+        <div className="flex items-center gap-3">
+          <p className="text-sm text-ink">→ 저장하지 않은 목을 버리고 다른 화면으로 이동합니다.</p>
+          <Button size="sm" variant="primary" onClick={() => leaveAnyway(leavingTo)}>
+            버리고 이동
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setLeavingTo(null)}>
             취소
           </Button>
         </div>

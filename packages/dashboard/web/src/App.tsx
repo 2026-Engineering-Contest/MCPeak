@@ -1,7 +1,8 @@
 import type { JSX } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Sidebar } from "./components/Sidebar.js";
 import { ThemeToggle } from "./components/ThemeToggle.js";
+import { leaveBlocker } from "./leave-guard.js";
 import { GenerateWizard } from "./screens/GenerateWizard.js";
 import { Home } from "./screens/Home.js";
 import { MockBuilder } from "./screens/MockBuilder.js";
@@ -22,6 +23,7 @@ import { SettingsView } from "./screens/SettingsView.js";
  * | `#/repair/:id` | RepairReview |
  * | `#/settings` | SettingsView (준비 중) |
  *
+ * 이탈 확인: 화면이 `useLeaveGuard` 로 막아 두면 해시를 되돌리고 그 화면이 묻는다(leave-guard.ts).
  */
 type Route =
   | { readonly screen: "home" }
@@ -82,9 +84,20 @@ function parseRoute(hash: string): Route {
 
 export function App(): JSX.Element {
   const [hash, setHash] = useState<string>(() => window.location.hash);
+  /** 마지막으로 받아들인 해시. 이탈을 막을 때 여기로 되돌린다. */
+  const accepted = useRef(window.location.hash);
 
   useEffect(() => {
     const onHashChange = (): void => {
+      const onBlocked = leaveBlocker();
+      if (onBlocked !== null) {
+        const target = window.location.hash;
+        // replaceState 는 hashchange 를 다시 쏘지 않는다.
+        window.history.replaceState(null, "", accepted.current);
+        onBlocked(target);
+        return;
+      }
+      accepted.current = window.location.hash;
       setHash(window.location.hash);
     };
     window.addEventListener("hashchange", onHashChange);
@@ -98,6 +111,7 @@ export function App(): JSX.Element {
   useEffect(() => {
     if (route.screen === "redirect") {
       window.location.hash = "#/home";
+      accepted.current = "#/home";
       setHash("#/home");
     }
   }, [route.screen]);

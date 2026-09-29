@@ -12,7 +12,12 @@ for spec in "${specs[@]}"; do
   for n in "${trials[@]}"; do
     for c in ${CONDS:-manual mcpeak}; do
       echo "▶ $s $c 회차 $n  ($(date +%H:%M:%S))"
-      "$here/run.sh" "$s" "$c" "$n" "$model" 2>&1 | grep -v '^환경' || echo "✗ $s $c 회차 $n 실패"
+      # 환경 줄은 격리 진단이다. 숨기지 않고, mcp 나 slash 가 0 이 아니면 그 회차를 실패로 친다.
+      out=$("$here/run.sh" "$s" "$c" "$n" "$model" 2>&1); code=$?
+      printf '%s\n' "$out"
+      if [ $code -ne 0 ]; then echo "✗ $s $c 회차 $n 실패 (종료 코드 $code)"
+      elif printf '%s\n' "$out" | grep -q '^환경: .*\(mcp=[1-9]\|slash=[1-9]\)'; then echo "✗ $s $c 회차 $n 격리 실패 (환경 줄 확인)"
+      fi
     done
   done
 done

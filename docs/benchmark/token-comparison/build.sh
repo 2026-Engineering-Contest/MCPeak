@@ -12,6 +12,8 @@ make_run() { # 시나리오 조건 서버경로 requirements여부 B안변형(su
   mkdir -p "$dir"
   # 서버 파일의 주석을 벗긴다. 예제 서버는 주석에 결함 위치를 적어 두므로 정답 힌트가 된다.
   node "$here/strip-comments.mjs" "$root/$server" | sed 's/example-weather-server-broken-demo/example-weather-server/; s/zod-notes-server-mutant/zod-notes-server/' > "$dir/server.mjs"
+  # 주석 제거기는 정규식 리터럴 안의 /* 를 구분하지 못한다. 산출물의 구문을 확인해 손상을 막는다.
+  node --check "$dir/server.mjs" || { echo "주석 제거 결과가 유효한 JS 가 아닙니다: $server"; exit 1; }
   local method="$here/method-$c.md"; [ "$c" = mcpeak ] && method="$here/method-mcpeak-$variant.md"
   # agent 조건: 실험용 파이프라인 파일을 함께 둔다
   [ "$c" = agent ] && cp "$here/agent-pipeline/mcpeak-agent.mjs" "$here/agent-pipeline/lib.mjs" "$here/agent-pipeline/empty-mcp.json" "$dir/"

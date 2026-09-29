@@ -69,10 +69,16 @@ function runSuite() {
     console.error(r.out + r.err);
     process.exit(1);
   }
-  return JSON.parse(r.out.slice(start));
+  try {
+    return JSON.parse(r.out.slice(start));
+  } catch {
+    console.error(`test --json 출력을 해석하지 못했습니다.\n${r.out}${r.err}`);
+    process.exit(1);
+  }
 }
 
-const llm = { calls: 0, input_tokens: 0, output_tokens: 0, cost: 0 };
+// failed: 응답을 해석하지 못한 호출. 토큰을 썼어도 usage 를 못 읽으므로 횟수로만 남긴다.
+const llm = { calls: 0, failed: 0, input_tokens: 0, output_tokens: 0, cost: 0 };
 function askLlm(prompt) {
   const empty = new URL("./empty-mcp.json", import.meta.url).pathname;
   // 에이전트와 같은 모델을 쓴다. 기본 모델(Opus)로 나가면 호출당 비용이 4배라 회계가 어긋난다.
@@ -98,12 +104,13 @@ function askLlm(prompt) {
     "--disable-slash-commands",
   ]);
   let j;
+  llm.calls++;
   try {
     j = JSON.parse(r.out);
   } catch {
+    llm.failed++;
     return { kind: "defect", reason: "분류기 호출 실패" };
   }
-  llm.calls++;
   llm.input_tokens +=
     (j.usage?.input_tokens ?? 0) +
     (j.usage?.cache_creation_input_tokens ?? 0) +

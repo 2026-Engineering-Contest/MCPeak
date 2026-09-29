@@ -6,9 +6,11 @@
   직접 짜서 서버를 두드린다.
 - **B안 (mcpeak)**: 같은 과제에 MCPeak 사용법을 적은 md 지침을 준다.
 
-두 지침은 **방법 절만 다르고 나머지는 바이트 단위로 같다.** `task.md` 가 공통 본문이고
-`method-manual.md` · `method-mcpeak.md` 가 방법 절이다. `build.sh` 가 둘을 이어 붙여 조건별
-`CLAUDE.md` 를 만든다. 손으로 두 파일을 따로 고치지 않는다.
+지침은 **방법 절만 다르고 나머지는 바이트 단위로 같다.** `task.md` 가 공통 본문이고 조건마다
+방법 절이 하나씩이다. `method-manual.md`(A안), `method-mcpeak-full.md`(B안, 에이전트가 generate
+부터), `method-mcpeak-suite.md`(B안, 승인된 명세에서 시작), `method-agent.md`(C안, 실험 파이프라인).
+`build.sh` 가 공통 본문과 방법 절을 이어 붙여 조건별 `CLAUDE.md` 를 만든다. 손으로 따로 고치지
+않는다.
 
 ## 대상 서버와 정답지
 

@@ -13,6 +13,11 @@ for (const s of readdirSync(root))
       const f = join(logs, t, "summary.json");
       if (!existsSync(f)) continue;
       const r = JSON.parse(readFileSync(f, "utf8"));
+      // 보고서가 없는 회차는 실패한 실행이다. 표본에 넣으면 결함 0행으로 집계가 왜곡된다.
+      if (r.report_exists === false) {
+        console.error(`제외: ${s}/${c}/${t} (report.md 없음)`);
+        continue;
+      }
       const rep = existsSync(join(dir, t, "report.md"))
         ? readFileSync(join(dir, t, "report.md"), "utf8")
         : "";

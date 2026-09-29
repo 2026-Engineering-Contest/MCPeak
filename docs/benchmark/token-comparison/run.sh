@@ -4,6 +4,10 @@
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 s="$1"; c="$2"; n="${3:-1}"; model="${4:-sonnet}"
+# 인자는 경로 조각이 된다. 아래 rm -rf 앞에서 이름 형식을 제한한다(`1/../logs` 같은 값 차단).
+for v in "$s" "$c" "$n"; do
+  case "$v" in *[!A-Za-z0-9_-]*|"") echo "인자가 이름 형식이 아닙니다: '$v'" >&2; exit 2;; esac
+done
 runs="${MCPEAK_BENCH_RUNS:-$HOME/.mcpeak-bench/runs}"
 src="$runs/$s/$c"
 dir="$src/trial-$n"
@@ -18,7 +22,13 @@ cd "$dir"
 env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT claude -p "$(cat "$here/prompt.txt")" \
   --model "$model" --output-format stream-json --verbose --max-turns 60 --dangerously-skip-permissions \
   --setting-sources project --strict-mcp-config --mcp-config "$here/empty-mcp.json" --disable-slash-commands \
-  > "$log/trace.jsonl" 2> "$log/stderr.log" || echo "claude 종료 코드 $?" >&2
+  > "$log/trace.jsonl" 2> "$log/stderr.log"
+code=$?
+if [ $code -ne 0 ]; then
+  # 실패한 실행은 요약을 만들지 않는다. 만들면 집계에 성공처럼 섞인다.
+  echo "claude 종료 코드 $code" >&2
+  exit $code
+fi
 # 마지막 줄(type: result)이 usage 요약이다. 앞줄들은 턴별 메시지·도구 호출이다.
 grep '"type":"result"' "$log/trace.jsonl" | tail -1 > "$log/result.json"
 cd "$log"

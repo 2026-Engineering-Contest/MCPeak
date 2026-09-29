@@ -35,7 +35,12 @@ interface StartRunFields {
 export type StartRunRequest =
   | ({ readonly flow: "test" } & StartRunFields)
   | ({ readonly flow: "generate" } & StartRunFields)
-  | ({ readonly flow: "repair" } & StartRunFields);
+  | ({ readonly flow: "repair" } & StartRunFields)
+  /**
+   * 한 번에 검증. generate argv 를 받아 승인 질문에 자동으로 답해 명세를 저장하고, 같은 대상에
+   * test 를 이어 돌린다. 판정 로직은 generate·test 의 것이다(ADR-0046).
+   */
+  | ({ readonly flow: "verify" } & StartRunFields);
 
 export interface StartRunResponse {
   readonly runId: string;

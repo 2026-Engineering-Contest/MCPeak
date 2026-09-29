@@ -170,6 +170,21 @@ describe("routes.ts", () => {
     expect(await readFile(join(server.root, ".mcpeak", ".gitignore"), "utf8")).toBe("*\n");
   });
 
+  it("verify 플로우를 받아 run 을 시작한다", async () => {
+    let seenFlow: string | undefined;
+    server = await startTestServer(async (request) => {
+      seenFlow = request.flow;
+      return 0;
+    });
+    const response = await fetch(`${server.baseUrl}/api/runs`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ flow: "verify", argv: ["--out", "s.json", "--command", "node"] }),
+    });
+    expect(response.status).toBe(200);
+    expect(seenFlow).toBe("verify");
+  });
+
   it("generate 실행은 .mcpeak 을 만들지 않는다", async () => {
     server = await startTestServer(async () => 0);
 

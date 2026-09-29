@@ -34,6 +34,8 @@ const DERIVED_HINT = "저장 위치의 파일명에서 뽑았습니다.";
 /** 상태 모델은 설계 §6-1 이다. `command` 는 갈래별로 구하므로 상태에 두지 않는다. */
 interface WizardState extends Omit<GenerateForm, "command"> {
   readonly choice: ServerChoice;
+  /** 4단계 옵션. 켜면 `generate` 대신 `verify` 플로우로 시작한다(ADR-0103). argv 에는 안 들어간다. */
+  readonly verify: boolean;
   /** 후보 갈래의 유효 명령. manual 이면 쓰이지 않는다. */
   readonly candidateCommand: string;
   readonly candidateArgs: readonly string[];
@@ -72,6 +74,7 @@ const INITIAL_STATE: WizardState = {
   repair: true,
   diagnoseRejections: false,
   resetCmd: "",
+  verify: false,
 };
 
 /** 1단계에서 이 필드들이 바뀌면 저장 위치를 다시 제안한다(설계 §6-4). */
@@ -200,7 +203,9 @@ export function GenerateWizard(): JSX.Element {
   }, []);
 
   const { command, args } = effectiveCommand(state);
-  const form: GenerateForm = { ...state, command, args };
+  // `verify` 는 플로우 선택이지 generate 옵션이 아니다. 폼(=argv 재료)에서 뺀다.
+  const { verify, ...formState } = state;
+  const form: GenerateForm = { ...formState, command, args };
   const http = state.transport === "http";
 
   function patch(partial: Partial<WizardState>): void {
@@ -233,13 +238,17 @@ export function GenerateWizard(): JSX.Element {
     return "저장 위치를 입력하세요.";
   }
 
+  /**
+   * `generate` 는 승인 화면을 거치며 저장하고, `verify` 는 같은 argv 로 승인 질문에 자동으로
+   * 답해 저장한 뒤 곧바로 test 를 이어 돌린다(한 번에 검증).
+   */
   async function start(): Promise<void> {
     setStarting(true);
     setError(null);
     try {
       const argv = buildGenerateArgv(form);
       const response = await apiSend<StartRunResponse>("POST", "/api/runs", {
-        flow: "generate",
+        flow: verify ? "verify" : "generate",
         argv: [...argv],
         // 후보 갈래면 id 를 함께 보낸다. 서버가 그 후보의 `.mcp.json` env 를 값으로 바꿔
         // 이 run 의 `readEnv` 에 싣는다. 값은 브라우저를 지나지 않는다(설계 §4.3).
@@ -308,7 +317,7 @@ export function GenerateWizard(): JSX.Element {
             onChange={patch}
           />
         )}
-        {step === 3 && <StepConfirm form={form} onChange={patch} />}
+        {step === 3 && <StepConfirm form={form} options={{ verify }} onChange={patch} />}
       </Card>
 
       {error !== null && (
@@ -338,7 +347,7 @@ export function GenerateWizard(): JSX.Element {
             </Button>
           ) : (
             <Button variant="primary" disabled={starting} onClick={() => void start()}>
-              생성 시작
+              {verify ? "생성하고 바로 검증" : "생성 시작"}
             </Button>
           )}
         </div>

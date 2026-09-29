@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { RunEventInput } from "../src/api-types.js";
 import { WebReviewIO } from "../src/server/review-bridge.js";
 import type { RunIo } from "../src/server/run-registry.js";
-import { executeFlow } from "../src/server/wiring.js";
+import { executeFlow, testArgvFromGenerateArgv } from "../src/server/wiring.js";
 
 /** wiring.ts가 조립 결과를 검사할 수 있도록 캡처만 하고 아무 것도 하지 않는 IO. */
 function fakeIo(): RunIo {
@@ -387,5 +387,114 @@ describe("wiring.ts 후보 env 로 만든 readEnv", () => {
     } finally {
       restore();
     }
+  });
+});
+
+describe("verify 플로우 (한 번에 검증)", () => {
+  const loaders = {
+    loadCore: () => Promise.resolve(fakeCoreModule()),
+    loadRunner: () => Promise.resolve(fakeRunnerModule()),
+    loadGenerate: () => Promise.resolve(fakeGenerateModule()),
+  };
+  const generateArgv = [
+    "--command",
+    "node",
+    "--arg",
+    "server.mjs",
+    "--env",
+    "TOKEN",
+    "--suite-id",
+    "weather",
+    "--name",
+    "Weather",
+    "--out",
+    "out/weather.suite.json",
+    "--provider",
+    "claude",
+  ];
+
+  it("generate argv 에서 대상 인자와 --out 만 옮겨 test argv 를 만든다", () => {
+    expect(testArgvFromGenerateArgv(generateArgv)).toEqual([
+      "test",
+      "out/weather.suite.json",
+      "--command",
+      "node",
+      "--arg",
+      "server.mjs",
+      "--env",
+      "TOKEN",
+    ]);
+    expect(
+      testArgvFromGenerateArgv([
+        "--url",
+        "https://x.test/mcp",
+        "--header-env",
+        "Authorization=T",
+        "--out",
+        "s.json",
+      ]),
+    ).toEqual(["test", "s.json", "--url", "https://x.test/mcp", "--header-env", "Authorization=T"]);
+    expect(testArgvFromGenerateArgv(["--command", "node"])).toBeNull();
+  });
+
+  it("generate 를 자동 승인 IO 로 돌린 뒤 같은 대상에 test 를 이어 돌린다", async () => {
+    const order: string[] = [];
+    let generateIo: Record<string, unknown> | undefined;
+    let testArgv: readonly string[] | undefined;
+    const io = fakeIo();
+    const code = await executeFlow({ flow: "verify", argv: generateArgv }, io, {
+      runners: {
+        generate: async (argv, deps) => {
+          order.push("generate");
+          expect(argv).toBe(generateArgv);
+          generateIo = deps as unknown as Record<string, unknown>;
+          return 0;
+        },
+        test: async (argv) => {
+          order.push("test");
+          testArgv = argv;
+          return 3;
+        },
+      },
+      loaders,
+    });
+    expect(order).toEqual(["generate", "test"]);
+    expect(code).toBe(3);
+    // generate 의 승인 IO 는 브라우저 질문(WebReviewIO)이 아니라 자동 승인 IO 다.
+    expect(generateIo?.reviewIO).not.toBe(io.reviewIO);
+    const auto = generateIo?.reviewIO as {
+      choose(m: string, c: readonly string[]): Promise<string>;
+    };
+    await expect(auto.choose("검토 메뉴", ["save"])).resolves.toBe("save");
+    expect(testArgv).toEqual([
+      "test",
+      "out/weather.suite.json",
+      "--command",
+      "node",
+      "--arg",
+      "server.mjs",
+      "--env",
+      "TOKEN",
+    ]);
+  });
+
+  it("generate 가 실패하면 test 를 부르지 않고 그 코드로 끝난다", async () => {
+    const test = vi.fn(async () => 0);
+    const code = await executeFlow({ flow: "verify", argv: generateArgv }, fakeIo(), {
+      runners: { generate: async () => 1, test },
+      loaders,
+    });
+    expect(code).toBe(1);
+    expect(test).not.toHaveBeenCalled();
+  });
+
+  it("--out 이 없으면 시작하지 않는다", async () => {
+    const generate = vi.fn(async () => 0);
+    const code = await executeFlow({ flow: "verify", argv: ["--command", "node"] }, fakeIo(), {
+      runners: { generate },
+      loaders,
+    });
+    expect(code).toBe(1);
+    expect(generate).not.toHaveBeenCalled();
   });
 });

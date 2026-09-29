@@ -1,5 +1,6 @@
 import { readFile, writeFile } from "node:fs/promises";
 import {
+  autoReviewIO,
   type GenerateCommandDependencies,
   nodeGenerateDependencies,
   type RepairCommandDependencies,
@@ -91,6 +92,8 @@ export function executeFlow(
       return executeGenerate(request.argv, io, runners, loaders, readEnv);
     case "repair":
       return executeRepair(request.argv, io, runners, loaders);
+    case "verify":
+      return executeVerify(request.argv, io, runners, loaders, readEnv);
     default: {
       const exhaustive: never = request;
       throw new Error(`알 수 없는 flow: ${JSON.stringify(exhaustive)}`);
@@ -109,6 +112,57 @@ function createReadEnv(
   candidateEnv: Readonly<Record<string, string>> | undefined,
 ): (name: string) => string | undefined {
   return (name) => candidateEnv?.[name] ?? process.env[name];
+}
+
+/** generate argv 에서 대상 인자와 함께 실리는 옵션. test 도 같은 이름·형식으로 받는다. */
+const TARGET_OPTIONS = new Set(["--command", "--arg", "--env", "--url", "--header-env"]);
+
+/**
+ * generate argv 에서 test argv 를 만든다. 대상 인자(`--command`·`--arg`·`--env` 또는
+ * `--url`·`--header-env`)는 그대로 옮기고, `--out` 이 가리키는 파일이 스위트가 된다.
+ * `--out` 이 없으면 null 이다. 생성 옵션(`--suite-id`, `--provider` 등)은 싣지 않는다.
+ */
+export function testArgvFromGenerateArgv(argv: readonly string[]): readonly string[] | null {
+  let out: string | undefined;
+  const target: string[] = [];
+  for (let i = 0; i < argv.length; i += 1) {
+    const token = argv[i] as string;
+    if (token === "--out") {
+      out = argv[i + 1];
+      i += 1;
+    } else if (TARGET_OPTIONS.has(token) && argv[i + 1] !== undefined) {
+      target.push(token, argv[i + 1] as string);
+      i += 1;
+    }
+  }
+  if (out === undefined) return null;
+  return ["test", out, ...target];
+}
+
+/**
+ * 한 번에 검증. generate 의 승인 질문은 `autoReviewIO` 가 답하고, 저장이 끝나면 그 명세로
+ * test 를 이어 돌린다. generate 가 0 이 아니면 거기서 끝난다. 최종 종료 코드는 test 의 것이다.
+ */
+async function executeVerify(
+  argv: readonly string[],
+  io: RunIo,
+  runners: FlowRunners,
+  loaders: FlowModuleLoaders,
+  readEnv: (name: string) => string | undefined,
+): Promise<number> {
+  const testArgv = testArgvFromGenerateArgv(argv);
+  if (testArgv === null) {
+    io.writeStderr("오류 [VERIFY_USAGE]: `--out` 이 없어 어느 명세를 테스트할지 알 수 없습니다.\n");
+    return 1;
+  }
+  const autoIo: RunIo = { ...io, reviewIO: autoReviewIO({ write: io.writeStdout }) };
+  io.writeStdout(
+    "▸ 한 번에 검증: 승인 질문에 자동으로 답합니다. 남은 실패는 서버 결함으로 기록합니다.\n\n",
+  );
+  const generated = await executeGenerate(argv, autoIo, runners, loaders, readEnv);
+  if (generated !== 0) return generated;
+  io.writeStdout(`\n▸ 저장한 명세로 테스트를 시작합니다: ${testArgv[1]}\n\n`);
+  return executeTest(testArgv, io, runners, loaders, readEnv);
 }
 
 async function executeTest(

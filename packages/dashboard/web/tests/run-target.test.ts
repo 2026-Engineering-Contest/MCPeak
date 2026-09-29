@@ -32,6 +32,15 @@ describe("describeRun", () => {
     });
   });
 
+  it("verify 는 generate argv 를 그대로 받으므로 --out 이 스위트다", () => {
+    expect(
+      describeRun("verify", ["--command", "node", "--arg", "s.mjs", "--out", "s.json"]),
+    ).toEqual({
+      server: "node s.mjs",
+      suite: "s.json",
+    });
+  });
+
   it("generate 는 --out 이 스위트다", () => {
     expect(
       describeRun("generate", [

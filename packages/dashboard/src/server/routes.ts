@@ -43,7 +43,7 @@ export interface RouterOptions {
   ) => Promise<number>;
 }
 
-const RUN_FLOWS = new Set<StartRunRequest["flow"]>(["test", "generate", "repair"]);
+const RUN_FLOWS = new Set<StartRunRequest["flow"]>(["test", "generate", "repair", "verify"]);
 
 const INTERACTIONS_SUFFIX = "/interactions";
 

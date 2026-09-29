@@ -1,3 +1,6 @@
+import { rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { RunEventInput } from "../src/api-types.js";
 import { WebReviewIO } from "../src/server/review-bridge.js";
@@ -396,7 +399,7 @@ describe("verify 플로우 (한 번에 검증)", () => {
     loadRunner: () => Promise.resolve(fakeRunnerModule()),
     loadGenerate: () => Promise.resolve(fakeGenerateModule()),
   };
-  const generateArgv = [
+  const GENERATE_ARGV_BASE = [
     "--command",
     "node",
     "--arg",
@@ -407,6 +410,9 @@ describe("verify 플로우 (한 번에 검증)", () => {
     "weather",
     "--name",
     "Weather",
+  ];
+  const generateArgv = [
+    ...GENERATE_ARGV_BASE,
     "--out",
     "out/weather.suite.json",
     "--provider",
@@ -438,6 +444,10 @@ describe("verify 플로우 (한 번에 검증)", () => {
   });
 
   it("generate 를 자동 승인 IO 로 돌린 뒤 같은 대상에 test 를 이어 돌린다", async () => {
+    // 저장 성공 뒤에만 test 가 이어진다. 실제 파일이 있어야 하므로 임시 파일을 --out 으로 준다.
+    const out = join(tmpdir(), `mcpeak-verify-${process.pid}.suite.json`);
+    await writeFile(out, "{}", "utf8");
+    const generateArgv = [...GENERATE_ARGV_BASE, "--out", out, "--provider", "claude"];
     const order: string[] = [];
     let generateIo: Record<string, unknown> | undefined;
     let testArgv: readonly string[] | undefined;
@@ -468,7 +478,7 @@ describe("verify 플로우 (한 번에 검증)", () => {
     await expect(auto.choose("검토 메뉴", ["save"])).resolves.toBe("save");
     expect(testArgv).toEqual([
       "test",
-      "out/weather.suite.json",
+      out,
       "--command",
       "node",
       "--arg",
@@ -476,6 +486,38 @@ describe("verify 플로우 (한 번에 검증)", () => {
       "--env",
       "TOKEN",
     ]);
+    await rm(out, { force: true });
+  });
+
+  it("자동 승인이 cancel 로 끝나면(저장 없음, 종료 0) test 를 부르지 않는다", async () => {
+    const test = vi.fn(async () => 0);
+    const io = fakeIo();
+    const code = await executeFlow({ flow: "verify", argv: generateArgv }, io, {
+      runners: {
+        generate: async (_argv, deps) => {
+          // 저장이 되돌아온 흐름: 검토 메뉴에 두 번 닿는다. 두 번째 답이 cancel 이고 0 이다.
+          const rio = deps.reviewIO as { choose(m: string, c: readonly string[]): Promise<string> };
+          await rio.choose("검토 메뉴", ["save", "cancel"]);
+          await rio.choose("검토 메뉴", ["save", "cancel"]);
+          return 0;
+        },
+        test,
+      },
+      loaders,
+    });
+    expect(code).toBe(1);
+    expect(test).not.toHaveBeenCalled();
+  });
+
+  it("generate 가 0 인데 --out 파일이 없으면 test 를 부르지 않는다", async () => {
+    const test = vi.fn(async () => 0);
+    const code = await executeFlow(
+      { flow: "verify", argv: ["--command", "node", "--out", "/nonexistent-dir/x.suite.json"] },
+      fakeIo(),
+      { runners: { generate: async () => 0, test }, loaders },
+    );
+    expect(code).toBe(1);
+    expect(test).not.toHaveBeenCalled();
   });
 
   it("generate 가 실패하면 test 를 부르지 않고 그 코드로 끝난다", async () => {

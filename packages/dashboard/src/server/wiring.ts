@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import {
   autoReviewIO,
@@ -155,13 +156,28 @@ async function executeVerify(
     io.writeStderr("오류 [VERIFY_USAGE]: `--out` 이 없어 어느 명세를 테스트할지 알 수 없습니다.\n");
     return 1;
   }
-  const autoIo: RunIo = { ...io, reviewIO: autoReviewIO({ write: io.writeStdout }) };
+  const auto = autoReviewIO({ write: io.writeStdout });
+  const autoIo: RunIo = { ...io, reviewIO: auto };
   io.writeStdout(
     "▸ 한 번에 검증: 승인 질문에 자동으로 답합니다. 남은 실패는 서버 결함으로 기록합니다.\n\n",
   );
   const generated = await executeGenerate(argv, autoIo, runners, loaders, readEnv);
   if (generated !== 0) return generated;
-  io.writeStdout(`\n▸ 저장한 명세로 테스트를 시작합니다: ${testArgv[1]}\n\n`);
+  // generate 는 검토 메뉴에서 cancel 해도 0 을 돌려준다. 저장이 되돌아와 자동 승인이 cancel 로
+  // 끝낸 경우와, 저장됐다는데 파일이 없는 경우는 테스트할 명세가 없다. 이어 돌리면 이전 파일을
+  // 테스트하거나 파일이 없어 test 단계에서 엉뚱하게 실패한다.
+  const outPath = testArgv[1] as string;
+  if (auto.cancelled) {
+    io.writeStderr(
+      "오류 [VERIFY_NOT_SAVED]: 명세가 저장되지 않아 테스트를 시작하지 않습니다. 위의 자동 승인 로그에서 저장이 되돌아온 이유를 확인하세요.\n",
+    );
+    return 1;
+  }
+  if (!existsSync(outPath)) {
+    io.writeStderr(`오류 [VERIFY_NOT_SAVED]: 저장된 명세 파일이 없습니다: ${outPath}\n`);
+    return 1;
+  }
+  io.writeStdout(`\n▸ 저장한 명세로 테스트를 시작합니다: ${outPath}\n\n`);
   return executeTest(testArgv, io, runners, loaders, readEnv);
 }
 

@@ -170,6 +170,8 @@ describe("GenerateWizard", () => {
     const toggle = screen.getByLabelText("한 번에 검증");
     expect(toggle).toHaveProperty("checked", false);
     fireEvent.click(toggle);
+    // 미리보기가 생성 단계만 나타낸다는 안내가 붙는다. 명령만 복사해 돌리면 재현되지 않기 때문이다.
+    expect(screen.getByText("실행될 CLI 명령 (생성 단계)")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "생성하고 바로 검증" }));
 
     await waitFor(() => {

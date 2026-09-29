@@ -149,12 +149,21 @@ export function StepConfirm(props: {
       </div>
 
       <div className="rounded-md border border-line bg-line-subtle px-3 py-2">
-        <p className="text-xs text-ink-muted">실행될 CLI 명령</p>
+        <p className="text-xs text-ink-muted">
+          {props.options.verify ? "실행될 CLI 명령 (생성 단계)" : "실행될 CLI 명령"}
+        </p>
         {cliCommand !== null ? (
           <p className="font-mono text-sm break-all text-ink">{cliCommand}</p>
         ) : (
           <p className="text-sm" style={{ color: "var(--status-failed-fg)" }}>
             {buildError}
+          </p>
+        )}
+        {props.options.verify && (
+          <p className="mt-1 text-xs text-ink-muted">
+            한 번에 검증은 대시보드 전용 흐름입니다. 이 명령의 승인 질문에 자동으로 답해 저장한 뒤
+            같은 서버에 mcpeak test 를 이어 돌립니다. 이 명령만 터미널에서 실행하면 재현되지
+            않습니다.
           </p>
         )}
       </div>

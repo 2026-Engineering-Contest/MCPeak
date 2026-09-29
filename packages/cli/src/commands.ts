@@ -3,7 +3,7 @@
  * 여기 있는 이름만이 `@mcpeak/cli/commands` 공개 계약이다.
  */
 
-export { autoReviewIO } from "./auto-review-io.js";
+export { type AutoReviewIO, autoReviewIO } from "./auto-review-io.js";
 export {
   type GenerateCommandDependencies,
   type GenerateCommandInput,

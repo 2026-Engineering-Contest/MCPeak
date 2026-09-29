@@ -11,7 +11,9 @@ describe("autoReviewIO 정책", () => {
   it("검토 메뉴는 처음 save, 그 뒤 cancel", async () => {
     const { io } = make();
     expect(await io.choose("검토 메뉴", ["show", "save", "cancel"])).toBe("save");
+    expect(io.cancelled).toBe(false);
     expect(await io.choose("검토 메뉴", ["show", "save", "cancel"])).toBe("cancel");
+    expect(io.cancelled).toBe(true);
   });
   it("확인은 예. 선언 위반이 남은 후보의 적용만 아니오", async () => {
     const { io } = make();

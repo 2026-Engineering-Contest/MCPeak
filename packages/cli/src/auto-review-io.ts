@@ -17,17 +17,30 @@ import type { ReviewIO } from "./generate-command.js";
  * - 교정 값 입력(`엔터 = …`): 빈 문자열. 제안이 있으면 제안 값, 없으면 현재 값을 그대로 둔다.
  * - 그 밖의 입력: 빈 문자열. 저장 경로에서는 나오지 않는다.
  */
-export function autoReviewIO(sink: { write(text: string): void }): ReviewIO {
+export interface AutoReviewIO extends ReviewIO {
+  /**
+   * 검토 메뉴에 두 번째로 닿아 `cancel` 로 끝냈는가. 저장이 되돌아왔다는 뜻이고, 그때 generate
+   * 는 저장 없이 0 을 돌려준다. 호출자는 이 값으로 "저장 성공" 과 "취소" 를 가른다.
+   */
+  readonly cancelled: boolean;
+}
+
+export function autoReviewIO(sink: { write(text: string): void }): AutoReviewIO {
   let menuSeen = false;
+  let cancelled = false;
   const note = (question: string, answer: string): void => {
     sink.write(`▸ 자동 승인: ${summarize(question)} → ${answer}\n`);
   };
   return {
     interactive: true,
+    get cancelled() {
+      return cancelled;
+    },
     write: (text) => sink.write(text),
     async choose(message, choices) {
       if (message === "검토 메뉴") {
         const answer = menuSeen ? "cancel" : "save";
+        if (menuSeen) cancelled = true;
         menuSeen = true;
         note(message, answer);
         return answer;

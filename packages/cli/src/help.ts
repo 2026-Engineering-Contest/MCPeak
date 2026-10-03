@@ -164,7 +164,7 @@ MCP 클라이언트 설정에서 서버 명령 자리에 프록시를 넣어 씁
 클라이언트에서는 그 설명이 모델에 닿지 않습니다.`;
 
 export const AUDIT_USAGE =
-  "사용법: mcpeak audit (-- <executable> [args...] | --command <executable> [--arg <value> ...] [--env <NAME> ...] | --url <URL> [--header-env <헤더이름>=<환경변수이름> ...]) [--probe readonly|none|all] [--baseline <path>] [--update-baseline] [--json]";
+  "사용법: mcpeak audit (-- <executable> [args...] | --command <executable> [--arg <value> ...] [--env <NAME> ...] | --url <URL> [--header-env <헤더이름>=<환경변수이름> ...]) [--probe readonly|none|all] [--baseline <path>] [--update-baseline] [--sandbox [--sandbox-session <path> | --sandbox-replay <path>] [--allow-host <host> ...] [--compare-host] [--sandbox-mount <dir>]] [--json]";
 
 /**
  * audit 옵션 설명. 사용법 한 줄로는 `--probe` 가 서버의 상태를 바꿀 수 있는지, 감사가 서버 환경에
@@ -176,6 +176,9 @@ const AUDIT_OPTIONS = `옵션:
                         나머지가 그 인자입니다. \`--command\`/\`--arg\` 와 같은 일을 하며
                         함께 쓸 수 없습니다
   --probe <정책>        도구를 실제로 호출할 범위입니다. 기본값은 readonly 입니다.
+                        --sandbox 로 격리가 실제로 켜진 실행은 기본값이 all 입니다.
+                        격리가 켜지지 않으면 readonly 로 돌아갑니다. 값을 직접 주면
+                        어느 쪽에서도 그 값입니다
                         readonly  readOnlyHint 가 true 인 도구만 호출합니다
                         none      아무 도구도 호출하지 않습니다. 응답 검사를 건너뜁니다
                         all       모든 도구를 호출합니다. 파일 삭제·메시지 전송처럼
@@ -186,6 +189,28 @@ const AUDIT_OPTIONS = `옵션:
                         의도된 것일 때만 쓰세요. --baseline 과 함께 써야 합니다
   --json                리포트 대신 결과 JSON 을 stdout 에 냅니다. 같은 서버에 같은
                         명령이면 바이트까지 같습니다
+  --sandbox             격리 실행을 켭니다. 서버를 Docker 컨테이너 안에서 띄우고 모든
+                        도구를 불러 파일·프로세스·네트워크 행위를 관측합니다. 컨테이너의
+                        홈은 가짜 자격 증명으로 채우고, 밖으로 나가는 접속은 가로채
+                        기록합니다. node, npx, npm 으로 띄우는 서버만 격리합니다. Docker 가
+                        없거나 격리를 켜지 못하면 서버는 격리 없이 이 머신에서 돌고, 리포트
+                        둘째 줄이 그 사실을 말합니다. --url 과 함께 쓸 수 없습니다
+  --sandbox-session <path>
+                        녹화할 세션 파일 경로입니다. 격리 안의 서버가 주고받은 HTTP 왕복을
+                        이 파일에 적습니다. 주지 않으면 녹화하지 않습니다
+  --sandbox-replay <path>
+                        이 세션 파일로만 답합니다. 상류에 접속하지 않습니다.
+                        --sandbox-session 과 함께 쓸 수 없습니다
+  --allow-host <host>   선언된 목적지에 더합니다. 여러 번 쓸 수 있습니다. 그 호스트와
+                        하위 도메인으로 가는 접속을 서버가 선언한 것으로 취급합니다
+  --compare-host        이 머신에서 격리 없이 서버를 한 번 더 띄워 tools/list 만 받고,
+                        격리 안의 도구 표면과 비교합니다. 도구는 호출하지 않지만 서버의
+                        시작 코드는 이 머신에서 실행됩니다. 격리를 알아채고 다르게 구는
+                        서버를 잡습니다
+  --sandbox-mount <dir> 컨테이너에 읽기 전용으로 보일 호스트 디렉터리입니다. 주지 않으면
+                        실행한 자리에서 위로 가장 가까운 pnpm-workspace.yaml 의 디렉터리,
+                        없으면 가장 가까운 .git 의 디렉터리, 둘 다 없으면 실행한 자리입니다.
+                        홈 디렉터리와 / 는 줄 수 없습니다
 ${ENV_FORWARD_OPTION}
 ${REMOTE_TARGET_OPTIONS}
 
@@ -196,9 +221,9 @@ stdio 서버를 띄울 때 GITHUB_TOKEN 같은 흔한 비밀 이름에 가짜 �
 값을 응답에 내면 환경변수를 밖으로 흘리는 것이라 발견으로 알립니다. --env 로 넘긴 이름에는
 카나리 대신 실제 값이 가고, 그 값이 응답에 나오는지도 봅니다. 값은 출력에 쓰지 않습니다.
 
-이 검사는 도구 정의의 문형과 프로토콜 표면만 봅니다. 바꿔 말한 지시와 서버 코드의 실제
-행위는 보지 못하므로 발견 0 이 안전하다는 뜻은 아닙니다. 판정은 이 컴퓨터 안에서만 하고 도구
-정의를 외부로 보내지 않습니다.`;
+--sandbox 없이는 도구 정의의 문형과 프로토콜 표면만 봅니다. 바꿔 말한 지시와 서버 코드의 실제
+행위는 보지 못하므로 발견 0 이 안전하다는 뜻은 아닙니다. --sandbox 는 한 번의 실행에서 관측된
+행위만 봅니다. 판정은 이 컴퓨터 안에서만 하고 도구 정의를 외부로 보내지 않습니다.`;
 
 const COMMANDS = `명령:
   test      JSON 테스트 명세로 MCP 서버를 실행하고 검증합니다.

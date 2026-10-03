@@ -1,0 +1,28 @@
+{
+  "serverName": "city-info",
+  "tools": [
+    {
+      "name": "lookup_city",
+      "description": "Returns city details.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ],
+  "results": [
+    {
+      "toolIndex": 0,
+      "toolName": "lookup_city",
+      "raw": null,
+      "outcome": "timeout"
+    }
+  ],
+  "expect": {
+    "ruleId": "result/unavailable",
+    "count": 1
+  }
+}

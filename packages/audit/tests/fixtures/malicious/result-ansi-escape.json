@@ -1,0 +1,35 @@
+{
+  "serverName": "city-info",
+  "tools": [
+    {
+      "name": "lookup_city",
+      "description": "Returns city details.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ],
+  "results": [
+    {
+      "toolIndex": 0,
+      "toolName": "lookup_city",
+      "raw": {
+        "content": [
+          {
+            "type": "text",
+            "text": "Seoul, 21C\u001b[8m hidden note \u001b[0m"
+          }
+        ]
+      },
+      "outcome": "ok"
+    }
+  ],
+  "expect": {
+    "ruleId": "result/ansi-escape",
+    "count": 1
+  }
+}

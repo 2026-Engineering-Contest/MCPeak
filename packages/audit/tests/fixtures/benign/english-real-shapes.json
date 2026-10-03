@@ -1,0 +1,379 @@
+{
+  "serverName": "workbench-tools",
+  "tools": [
+    {
+      "name": "delete_file",
+      "description": "Deletes the file at the given path. This cannot be undone.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Absolute path of the file to delete.",
+            "pattern": "^/workspace/"
+          }
+        },
+        "required": ["path"]
+      },
+      "annotations": {
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "count_tokens",
+      "description": "Counts tokens in the text. Token counts use the cl100k tokenizer; each token is roughly four characters.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "Text whose tokens are counted.",
+            "maxLength": 100000
+          }
+        },
+        "required": ["text"]
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "add_note",
+      "description": "Adds a note to the notebook.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "note": {
+            "type": "string",
+            "description": "Note body in Markdown.",
+            "maxLength": 4000
+          }
+        },
+        "required": ["note"]
+      }
+    },
+    {
+      "name": "search_issues",
+      "description": "Searches GitHub issues in the configured repository by keyword.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "keyword": {
+            "type": "string",
+            "description": "Words to search for.",
+            "maxLength": 200
+          }
+        },
+        "required": ["keyword"]
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "set_credentials",
+      "description": "Stores credentials for the API client. Pass the api_key from your dashboard.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "api_key": {
+            "type": "string",
+            "description": "API key issued by the dashboard.",
+            "maxLength": 200
+          }
+        },
+        "required": ["api_key"]
+      }
+    },
+    {
+      "name": "list_deleted_items",
+      "description": "Lists items in the trash that can still be restored.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "read_env_file",
+      "description": "Reads key/value pairs from a .env file in the project root.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "File name, e.g. .env.local",
+            "enum": [".env", ".env.local", ".env.test"]
+          }
+        },
+        "required": ["name"]
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "fetch_url",
+      "description": "Fetches a web page and returns the body as Markdown, e.g. https://example.com/docs.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Page address.",
+            "format": "uri",
+            "pattern": "^https://"
+          }
+        },
+        "required": ["url"]
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "convert_units",
+      "description": "Converts a value between units, e.g. 10 km to miles. See https://en.wikipedia.org/wiki/SI for unit names.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "number"
+          },
+          "from": {
+            "type": "string",
+            "description": "Source unit.",
+            "enum": ["km", "mi", "kg", "lb"]
+          },
+          "to": {
+            "type": "string",
+            "description": "Target unit.",
+            "enum": ["km", "mi", "kg", "lb"]
+          }
+        },
+        "required": ["value", "from", "to"]
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "render_markdown",
+      "description": "Renders Markdown to HTML.\n\n```\nrender_markdown({ \"source\": \"# Title\" })\n```",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string",
+            "description": "Markdown source.",
+            "maxLength": 100000
+          }
+        },
+        "required": ["source"]
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "get_time",
+      "description": "Returns the current time.\u3000Times use ISO 8601.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "timezone": {
+            "type": "string",
+            "description": "IANA zone name, e.g. Asia/Seoul.",
+            "maxLength": 64
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "run_report",
+      "description": "Runs a saved read-only report against Postgres and returns the rows.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "report_id": {
+            "type": "string",
+            "description": "Saved report id.",
+            "pattern": "^[a-z0-9-]+$"
+          }
+        },
+        "required": ["report_id"]
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "create_issue",
+      "description": "Creates an issue. Additionally logs the request id for debugging.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Issue title.",
+            "maxLength": 200
+          },
+          "body": {
+            "type": "string",
+            "description": "Issue body in Markdown.",
+            "maxLength": 20000
+          }
+        },
+        "required": ["title"]
+      }
+    },
+    {
+      "name": "summarize_text",
+      "description": "Summarizes text. This is important: use short sentences when you summarize.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "Text to summarize.",
+            "maxLength": 100000
+          }
+        },
+        "required": ["text"]
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "tag_photo",
+      "description": "Tags a photo. Each time the user uploads an image, call tag_photo to label it.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "photo_id": {
+            "type": "string",
+            "description": "Photo id.",
+            "pattern": "^[0-9]+$"
+          }
+        },
+        "required": ["photo_id"]
+      }
+    },
+    {
+      "name": "convert_temperature",
+      "description": "Converts temperatures. If the user does not specify a unit, use Celsius.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "number"
+          },
+          "unit": {
+            "type": "string",
+            "description": "Target unit.",
+            "enum": ["C", "F"]
+          }
+        },
+        "required": ["value"]
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "get_weather",
+      "title": "Weather",
+      "description": "Returns the current weather for a city.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "city": {
+            "type": "string",
+            "description": "City name, e.g. Seoul.",
+            "maxLength": 100
+          }
+        },
+        "required": ["city"]
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "translate_text",
+      "description": "Translates text into the target language.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "Text to translate.",
+            "maxLength": 20000
+          },
+          "target": {
+            "type": "string",
+            "description": "Target language code.",
+            "enum": ["en", "ko", "ja"]
+          }
+        },
+        "required": ["text", "target"]
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "list_calendar_events",
+      "description": "Lists calendar events between two dates.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "type": "string",
+            "description": "Start date.",
+            "format": "date"
+          },
+          "end": {
+            "type": "string",
+            "description": "End date.",
+            "format": "date"
+          }
+        },
+        "required": ["start", "end"]
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "rename_label",
+      "description": "Renames a label. Existing items keep the label under its new name.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string",
+            "description": "Current label.",
+            "maxLength": 64
+          },
+          "new_name": {
+            "type": "string",
+            "description": "New label.",
+            "maxLength": 64
+          }
+        },
+        "required": ["label", "new_name"]
+      },
+      "annotations": {
+        "destructiveHint": false
+      }
+    }
+  ]
+}

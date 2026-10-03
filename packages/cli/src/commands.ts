@@ -3,6 +3,12 @@
  * 여기 있는 이름만이 `@mcpeak/cli/commands` 공개 계약이다.
  */
 
+export {
+  type AuditCommandDependencies,
+  type AuditCommandInput,
+  parseAuditCommand,
+  runAuditCommand,
+} from "./audit-command.js";
 export { type AutoReviewIO, autoReviewIO } from "./auto-review-io.js";
 export {
   type GenerateCommandDependencies,
@@ -13,6 +19,7 @@ export {
   type ReviewIO,
   runGenerateCommand,
 } from "./generate-command.js";
+export { nodeAuditDependencies } from "./index.js";
 export {
   type OptimizeCommandDependencies,
   type OptimizeCommandInput,

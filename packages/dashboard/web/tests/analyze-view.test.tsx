@@ -7,6 +7,7 @@ import type {
   ServerCandidate,
   ServerMeta,
 } from "../../src/api-types.js";
+import { describeChange, formatToolSide } from "../src/analyze/tool-diff.js";
 import { AnalyzeView } from "../src/screens/AnalyzeView.js";
 
 const META: ServerMeta = { root: "/tmp/proj" };
@@ -19,6 +20,13 @@ const WEATHER: ServerCandidate = {
   source: "mcp-config",
   path: ".mcp.json",
   envNames: ["API_KEY"],
+};
+
+/** 도구 a 의 원본. 압축본은 `$schema` 키만 빠진다. */
+const SOURCE_A = {
+  name: "a",
+  description: "A",
+  inputSchema: { $schema: "http://json-schema.org/draft-07/schema#", type: "object" },
 };
 
 const OVERLAY_TEXT = '{\n  "schemaVersion": 1\n}\n';
@@ -41,7 +49,8 @@ function analyzeResponse(
       tools: [
         {
           name: "a",
-          inputSchema: {},
+          description: "A",
+          inputSchema: { type: "object" },
           bytes: { before: 600, after: 400 },
           changes: [{ kind: "schema-key-removed", path: "/", key: "$schema" }],
         },
@@ -56,6 +65,7 @@ function analyzeResponse(
     },
     overlayText: OVERLAY_TEXT,
     report: "REPORT\n",
+    sourceTools: [SOURCE_A, { name: "b", inputSchema: {} }],
   };
 }
 
@@ -99,6 +109,11 @@ function sentBody(fetchMock: ReturnType<typeof vi.fn>, method: string): Record<s
 async function analyze(): Promise<void> {
   await screen.findByRole("radio", { name: /^weather/ });
   fireEvent.click(screen.getByRole("button", { name: "분석 시작" }));
+}
+
+/** `aria-current="step"` 인 단계의 이름. 번호 칸을 빼고 라벨(마지막 span)만 읽는다. */
+function currentStep(): string | null {
+  return document.querySelector('[aria-current="step"] > span:last-child')?.textContent ?? null;
 }
 
 describe("AnalyzeView", () => {
@@ -190,8 +205,8 @@ describe("AnalyzeView", () => {
         .map((cell) => cell.textContent),
     );
     expect(cells).toEqual([
-      ["a", "600", "400", "33.3%", "1"],
-      ["b", "400", "360", "10.0%", "0"],
+      ["a", "600", "400", "33.3%", "1", "변경사항"],
+      ["b", "400", "360", "10.0%", "0", "변경 없음"],
     ]);
     expect(screen.getByText("REPORT", { selector: "pre" })).toBeTruthy();
     // otherCapabilities 가 비었으면 주의 문장이 없다.
@@ -249,5 +264,104 @@ describe("AnalyzeView", () => {
 
     const status = await screen.findByRole("status");
     expect(status.textContent).toContain("이미 있는 파일입니다: server.optimize.json");
+  });
+  it("처음에는 서버 선택 단계다", async () => {
+    stubFetch();
+    render(<AnalyzeView tab="tokens" />);
+    await screen.findByRole("radio", { name: /^weather/ });
+
+    expect(currentStep()).toBe("서버 선택");
+    expect(screen.queryByRole("table", { name: "도구별 감소" })).toBeNull();
+  });
+
+  it("성공하면 결과 단계로 넘어가 폼이 사라진다", async () => {
+    stubFetch();
+    render(<AnalyzeView tab="tokens" />);
+    await analyze();
+
+    await screen.findByRole("table", { name: "도구별 감소" });
+    expect(currentStep()).toBe("결과");
+    expect(screen.queryByRole("button", { name: "분석 시작" })).toBeNull();
+  });
+
+  it("실패하면 서버 선택 단계에 머문다", async () => {
+    stubFetch({ analyze: { status: 400, body: { error: "오류 [X]: a\n해결: b" } } });
+    render(<AnalyzeView tab="tokens" />);
+    await analyze();
+
+    await screen.findByRole("alert");
+    expect(currentStep()).toBe("서버 선택");
+    expect(screen.getByRole("button", { name: "분석 시작" })).toBeTruthy();
+  });
+
+  it("서버 다시 고르기를 누르면 폼으로 돌아온다", async () => {
+    stubFetch();
+    render(<AnalyzeView tab="tokens" />);
+    await analyze();
+
+    fireEvent.click(await screen.findByRole("button", { name: "← 서버 다시 고르기" }));
+
+    expect(currentStep()).toBe("서버 선택");
+    expect(screen.queryByRole("table", { name: "도구별 감소" })).toBeNull();
+    // 폼 상태는 유지된다. 고른 후보가 그대로다.
+    expect(screen.getByRole("radio", { name: /^weather/ })).toHaveProperty("checked", true);
+    expect(screen.getByRole("button", { name: "분석 시작" })).toHaveProperty("disabled", false);
+  });
+
+  it("변경사항을 누르면 원본·압축 JSON 과 변경 목록이 보이고 다시 누르면 사라진다", async () => {
+    stubFetch();
+    render(<AnalyzeView tab="tokens" />);
+    await analyze();
+
+    const table = await screen.findByRole("table", { name: "도구별 감소" });
+    const rowA = within(table).getAllByRole("row")[1] as HTMLElement;
+    const toggle = within(rowA).getByRole("button", { name: "변경사항" });
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+
+    fireEvent.click(toggle);
+
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    const panelId = toggle.getAttribute("aria-controls") ?? "";
+    const panel = document.getElementById(panelId) as HTMLElement;
+    expect(panel).toBeTruthy();
+    expect(within(panel).getByText("원본 (600 바이트)")).toBeTruthy();
+    expect(within(panel).getByText("압축 (400 바이트)")).toBeTruthy();
+    const pres = panel.querySelectorAll("pre");
+    expect([...pres].map((pre) => pre.textContent)).toEqual([
+      formatToolSide(SOURCE_A),
+      formatToolSide({ name: "a", description: "A", inputSchema: { type: "object" } }),
+    ]);
+    const list = within(panel).getByRole("list", { name: "a 변경 목록" });
+    expect(
+      within(list)
+        .getAllByRole("listitem")
+        .map((item) => item.textContent),
+    ).toEqual([describeChange({ kind: "schema-key-removed", path: "/", key: "$schema" })]);
+
+    fireEvent.click(toggle);
+
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(document.getElementById(panelId)).toBeNull();
+  });
+
+  it("원본을 찾지 못하면 그 자리에 안내 문장을 보인다", async () => {
+    stubFetch({ analyze: { status: 200, body: { ...analyzeResponse(), sourceTools: [] } } });
+    render(<AnalyzeView tab="tokens" />);
+    await analyze();
+
+    fireEvent.click(await screen.findByRole("button", { name: "변경사항" }));
+
+    expect(screen.getByText("원본 정의를 찾지 못했습니다.")).toBeTruthy();
+  });
+
+  it("변경이 없는 도구는 변경 없음 버튼이 비활성이다", async () => {
+    stubFetch();
+    render(<AnalyzeView tab="tokens" />);
+    await analyze();
+
+    expect(await screen.findByRole("button", { name: "변경 없음" })).toHaveProperty(
+      "disabled",
+      true,
+    );
   });
 });

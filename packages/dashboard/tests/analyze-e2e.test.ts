@@ -113,6 +113,18 @@ describe.sequential("analyze tokens e2e (weather-server)", () => {
   );
 
   it(
+    "sourceTools 이름 목록이 overlay.tools 이름 목록과 같다",
+    async () => {
+      const body = await analyzeOk();
+      expect(body.sourceTools.length).toBeGreaterThan(0);
+      expect(body.sourceTools.map((tool) => tool.name)).toEqual(
+        body.overlay.tools.map((tool) => tool.name),
+      );
+    },
+    REAL_SERVER_TIMEOUT_MS,
+  );
+
+  it(
     "저장한 오버레이는 바이트가 같고 parseOverlay 를 통과한다",
     async () => {
       const body = await analyzeOk();

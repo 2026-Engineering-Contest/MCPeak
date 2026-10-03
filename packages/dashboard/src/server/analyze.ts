@@ -1,4 +1,5 @@
 import { type OptimizeCommandDependencies, runOptimizeCommand } from "@mcpeak/cli/commands";
+import type { ToolDef } from "@mcpeak/core";
 import type { OptimizeOverlay } from "@mcpeak/optimize";
 import optimizeMetadata from "../../../optimize/package.json";
 import type { AnalyzeTokensResponse } from "../api-types.js";
@@ -68,13 +69,18 @@ export async function analyzeTokens(
   // readEnv 는 wiring.ts 의 createReadEnv 와 같은 규칙(후보 env 가 process.env 를 이긴다)이다.
   // 그 함수는 export 되지 않아 여기 한 줄로 다시 적는다.
   let overlayText: string | undefined;
+  // 화면의 before/after 비교용 원본. 오버레이에서는 역산할 수 없다(지운 키의 값이 남지 않는다).
+  let sourceTools: readonly ToolDef[] | undefined;
   let stdout = "";
   let stderr = "";
   const deps: OptimizeCommandDependencies = {
     connectStdio: core.connectStdio,
     connectHttp: core.connectHttp,
     readEnv: (name) => overrides.candidateEnv?.[name] ?? process.env[name],
-    optimize: optimize.optimize,
+    optimize: (input, version) => {
+      sourceTools = input.tools;
+      return optimize.optimize(input, version);
+    },
     renderReport: optimize.renderReport,
     // CLI 와 같은 값이어야 overlay.generator.version 이 같아진다(계획서 §1.3-1).
     generatorVersion: optimizeMetadata.version,
@@ -97,6 +103,12 @@ export async function analyzeTokens(
   }
   return {
     ok: true,
-    body: { overlay: JSON.parse(overlayText) as OptimizeOverlay, overlayText, report: stdout },
+    body: {
+      overlay: JSON.parse(overlayText) as OptimizeOverlay,
+      overlayText,
+      report: stdout,
+      // exitCode 0 이면 계약상 항상 채워진다. [] 는 방어다.
+      sourceTools: sourceTools ?? [],
+    },
   };
 }

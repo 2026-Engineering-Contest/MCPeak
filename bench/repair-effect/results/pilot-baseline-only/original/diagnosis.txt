@@ -1,0 +1,25 @@
+── 서버 수정 방향 (claude / claude-sonnet-5) ──
+
+⚠ 이 명세는 승인 지문이 일치하지만 실제 서버 실행 기록이 없습니다.
+  --baseline-only 나 --no-dry-run 으로 저장하면 케이스가 한 번도 실행되지 않은 채 승인됩니다.
+  입력값이 생성 시점의 자리값일 수 있어, 아래 제안은 명세 쪽 원인도 함께 받았습니다.
+
+test-error-handling-success  (test_error_handling)
+  원인 후보  test_error_handling은 도구 설명과 노트에 '의도적으로 오류를 반환하도록' 설계돼 있는데, 명세는 이 케이스에서 is_error=false(정상 응답)를 기대하고 있다. 도구의 의도된 동작과 명세의 기대값이 정반대다.
+  확인할 곳  테스트 스펙의 test-error-handling-success 기대값(expected: false, is_error 비교) 정의부
+  근거       diagnostics: IS_ERROR_MISMATCH, expected:false actual:true, notes: 'This tool intentionally returns an error for testing'. 도구 설명도 'Tests error response handling'으로 오류 반환이 정상 동작임을 시사.
+  분류       명세 쪽 원인으로 봄
+
+test-reconnection-success  (test_reconnection)
+  원인 후보  test_reconnection 호출이 10000ms 안에 결과를 받지 못했고 MCP 작업 결과 자체가 없다. 서버가 SEP-1699 재연결 후 결과를 재전송하는 로직을 완료하지 못했을 가능성이 크다.
+  확인할 곳  서버의 test_reconnection 핸들러 중 SSE 스트림 재연결/결과 재전송(resume) 로직
+  근거       diagnostics: CASE_TIMEOUT(10000ms 초과) + OPERATION_RESULT_UNAVAILABLE(결과 자체가 없음). 단순 지연이 아니라 결과가 아예 도달하지 않은 것으로 보임.
+
+test-reconnection-success  (test_reconnection)
+  원인 후보  도구 설명상 '스트림을 끊었다가 재연결 후 결과 전송'은 여러 단계(연결 종료, 클라이언트 재연결, 결과 재전송)를 거치는 흐름이라 정상적으로도 10000ms를 넘길 수 있다. 명세의 타임아웃 설정이 이 흐름에 비해 너무 짧게 잡혔을 가능성도 있다.
+  확인할 곳  테스트 스펙의 test-reconnection-success 케이스 타임아웃 값(10000ms) 설정
+  근거       도구 설명: 'Server will close the stream mid-call and send the result after client reconnects (SEP-1699)' — 다단계 재연결 흐름이 명시돼 있음에도 타임아웃이 고정값으로만 주어짐.
+  분류       명세 쪽 원인으로 봄
+
+※ AI 제안입니다. 파일을 고치지 않았고 명세도 그대로입니다.
+※ 명세 쪽이 틀렸다고 판단되면 `mcpeak generate` 로 다시 승인받으세요.

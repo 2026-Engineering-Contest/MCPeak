@@ -1,0 +1,42 @@
+suite  (17 cases)
+
+✓ test-simple-text-success                   test_simple_text가 오류 없이 응답한다
+✓ test-image-content-success                 test_image_content가 오류 없이 응답한다
+✓ test-audio-content-success                 test_audio_content가 오류 없이 응답한다
+✗ test-embedded-resource-success             test_embedded_resource가 오류 없이 응답한다
+    툴 'test_embedded_resource' 호출 중 오류가 발생했습니다.
+    → 원인: MCP error -32602: MCP error -32602: Invalid tools/call result: [\u000a  {\u000a    "code": "invalid_union",\u000a    "errors": [\u000a      [\u000a        {\u000a          "code": "invalid_value",\u000a          "values": [\u000a           …(총 3694자)
+    해결: 요청한 tool과 서버 기능 및 진단을 확인하세요.
+    isError  (건너뜀) MCP 작업 결과가 없어 assertion을 검사할 수 없습니다.
+    해결: 먼저 MCP 작업 실패 원인을 해결하세요.
+✓ test-multiple-content-types-success        test_multiple_content_types가 오류 없이 응답한다
+✓ test-tool-with-logging-success             test_tool_with_logging가 오류 없이 응답한다
+✓ test-tool-with-progress-success            test_tool_with_progress가 오류 없이 응답한다
+✗ test-error-handling-success                test_error_handling가 오류 없이 응답한다
+    isError  정상 응답을 기대했지만 오류 응답을 받았습니다.
+    → This tool intentionally returns an error for testing
+    해결: 툴 입력값과 서버의 오류 응답을 확인하세요.
+⧖ test-reconnection-success                  test_reconnection가 오류 없이 응답한다
+    테스트 'test_reconnection가 오류 없이 응답한다'가 제한 시간 10000ms 안에 완료되지 않았습니다.
+    해결: 서버 응답 지연과 테스트의 timeoutMs 설정을 확인하세요.
+    isError  (건너뜀) MCP 작업 결과가 없어 assertion을 검사할 수 없습니다.
+    해결: 먼저 MCP 작업 실패 원인을 해결하세요.
+· test-sampling-success                      test_sampling가 오류 없이 응답한다
+· test-sampling-missing-prompt               test_sampling가 필수 필드 'prompt' 누락을 거절한다
+· test-sampling-type-prompt                  test_sampling가 'prompt' 타입 위반을 거절한다
+· test-elicitation-success                   test_elicitation가 오류 없이 응답한다
+· test-elicitation-missing-message           test_elicitation가 필수 필드 'message' 누락을 거절한다
+· test-elicitation-type-message              test_elicitation가 'message' 타입 위반을 거절한다
+· test-elicitation-sep1034-defaults-success  test_elicitation_sep1034_defaults가 오류 없이 응답한다
+· test-elicitation-sep1330-enums-success     test_elicitation_sep1330_enums가 오류 없이 응답한다
+
+중단: 케이스 'test-reconnection-success' 타임아웃으로 실행을 멈췄습니다.
+
+실패한 케이스
+  ✗ test-embedded-resource-success  → 원인: MCP error -32602: MCP error -32602: Invalid tools/call result: [\u000a  {\u000a    "code": "inv…
+  ✗ test-error-handling-success     → This tool intentionally returns an error for testing
+  ⧖ test-reconnection-success       → 테스트 'test_reconnection가 오류 없이 응답한다'가 제한 시간 10000ms 안에 완료되지 않았습니다.
+
+6 passed, 2 failed, 1 timed out, 8 not run  (17 total)
+
+명세: 승인 시점과 동일 (6bd8aed6d561…)

@@ -1,0 +1,30 @@
+── 서버 수정 방향 (claude / claude-sonnet-5) ──
+
+⚠ 이 명세는 승인 지문이 일치하지만 실제 서버 실행 기록이 없습니다.
+  --baseline-only 나 --no-dry-run 으로 저장하면 케이스가 한 번도 실행되지 않은 채 승인됩니다.
+  입력값이 생성 시점의 자리값일 수 있어, 아래 제안은 명세 쪽 원인도 함께 받았습니다.
+
+test-image-content-success  (test_image_content)
+  원인 후보  test_image_content가 반환하는 콘텐츠 객체가 image 타입 스키마의 필수 필드인 mimeType을 누락해 클라이언트 zod 검증에서 invalid_union으로 거절됨
+  확인할 곳  서버측 test_image_content 툴 핸들러의 응답 content 생성 로직
+  근거       invalid_union 에러의 5개 분기 중 두 번째 분기(ImageContent로 추정)만 mimeType 필드에 대해 'expected string, received undefined' 단일 에러를 내고 type/data 관련 에러가 없음. 이는 type:'image'와 data는 유효하지만 mimeType만 빠졌다는 뜻으로, TextContent/AudioContent/ResourceLink/Resource 분기는 모두 type 불일치가 함께 보고된 것과 대조됨. 서버가 mimeType 없이 이미지 콘텐츠를 만들고 있을 가능성이 높음
+
+test-error-handling-success  (test_error_handling)
+  원인 후보  케이스 이름과 기대값(isError=false)이 '오류 없이 응답한다'를 요구하지만, 툴 설명 자체가 '의도적으로 오류를 반환하는' 테스트 툴임을 명시하고 있어 케이스 기대값이 툴의 설계 목적과 모순됨
+  확인할 곳  테스트 스위트의 test-error-handling-success 케이스 정의(기대 isError 값)
+  근거       tools 목록에서 test_error_handling의 description은 'Tests error response handling'이고, 실제 응답 notes에도 'This tool intentionally returns an error for testing'라고 명시됨. 즉 서버는 설계대로 동작했고, 케이스가 반대 기대값(성공)을 갖도록 생성 시점에 잘못 채워졌을 가능성이 큼
+  분류       명세 쪽 원인으로 봄
+
+test-reconnection-success  (test_reconnection)
+  원인 후보  SEP-1699 재연결 플로우(스트림 중단 후 재연결 시 결과 전달)는 구조적으로 일반 호출보다 오래 걸리는데, 스위트가 다른 케이스와 동일한 10000ms 고정 타임아웃을 적용해 정상적으로 느린 흐름도 타임아웃으로 실패했을 가능성
+  확인할 곳  테스트 케이스/스위트의 타임아웃 설정 (test-reconnection-success에 대한 개별 타임아웃 미설정)
+  근거       test_reconnection 툴 설명에 'Server will close the stream mid-call and send the result after client reconnects'라고 명시되어 재연결 대기 시간이 내재적으로 필요함이 드러남. 그런데도 다른 즉시 응답 케이스와 동일한 10000ms 제한이 적용된 것으로 보임
+  분류       명세 쪽 원인으로 봄
+
+test-reconnection-success  (test_reconnection)
+  원인 후보  서버가 재연결 이후 실제로 결과를 전송하지 않아(구현 누락 또는 버그) 클라이언트가 재연결해도 응답이 영구히 도달하지 않았을 가능성
+  확인할 곳  서버측 test_reconnection 핸들러의 재연결 후 결과 전송 로직
+  근거       CASE_TIMEOUT과 OPERATION_RESULT_UNAVAILABLE만 보고되고 부분 응답이나 재연결 시도 자체에 대한 로그가 없어, 재연결 후 응답이 아예 오지 않았는지 타임아웃 값만 부족했는지 구분할 근거가 부족함. 다만 이 실패가 단순 지연이 아니라 서버 로직 누락일 가능성도 배제할 수 없음
+
+※ AI 제안입니다. 파일을 고치지 않았고 명세도 그대로입니다.
+※ 명세 쪽이 틀렸다고 판단되면 `mcpeak generate` 로 다시 승인받으세요.

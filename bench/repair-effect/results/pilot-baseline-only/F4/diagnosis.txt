@@ -1,0 +1,30 @@
+── 서버 수정 방향 (claude / claude-sonnet-5) ──
+
+⚠ 이 명세는 승인 지문이 일치하지만 실제 서버 실행 기록이 없습니다.
+  --baseline-only 나 --no-dry-run 으로 저장하면 케이스가 한 번도 실행되지 않은 채 승인됩니다.
+  입력값이 생성 시점의 자리값일 수 있어, 아래 제안은 명세 쪽 원인도 함께 받았습니다.
+
+test-embedded-resource-success  (test_embedded_resource)
+  원인 후보  서버가 반환한 content 항목이 text/image/audio/resource_link/resource 중 어떤 콘텐츠 타입 스키마와도 맞지 않아 tools/call 결과 검증(Zod)에서 전부 실패함. type 필드 누락이나 resource 하위 필드(uri/text/blob) 누락 등 형식 자체가 잘못됐을 가능성이 높음.
+  확인할 곳  서버의 test_embedded_resource 툴 핸들러에서 content 배열을 구성하는 부분
+  근거       McpError -32602: invalid_union 오류에서 5개 분기(text/image/audio/resource_link/resource) 전부가 필수 필드 누락으로 실패함. 이는 명세가 요구하는 형식과 다른 문제가 아니라, 서버가 MCP 프로토콜이 정의한 콘텐츠 스키마 자체를 만족하지 못하는 응답을 보냈다는 뜻임.
+
+test-error-handling-success  (test_error_handling)
+  원인 후보  케이스가 '오류 없이 응답한다'(isError:false)를 기대하지만, 툴 자체가 의도적으로 오류를 반환하도록 설계돼 있어 기대값이 툴의 의도된 동작과 모순됨. 이 케이스의 기대 결과값이 생성 시점 자리값으로 잘못 채워졌을 가능성이 큼.
+  확인할 곳  케이스 명세의 expected(isError) 값, test_error_handling 케이스 정의
+  근거       진단 notes에 'This tool intentionally returns an error for testing'라고 명시돼 있고, 실제 actual=true(오류 응답)임. 툴 설명(description)도 '에러 응답 처리를 테스트'하는 것이 목적이라고 돼 있어, 정상 응답을 기대하는 케이스 설계 자체가 툴 의도와 어긋남.
+  분류       명세 쪽 원인으로 봄
+
+test-reconnection-success  (test_reconnection)
+  원인 후보  케이스의 타임아웃(10000ms)이 SSE 중간 disconnect 후 재연결까지 걸리는 흐름을 감안하지 않고 너무 짧게 설정됐을 가능성.
+  확인할 곳  케이스 명세의 timeout 설정값 (test-reconnection-success)
+  근거       진단이 CASE_TIMEOUT(10000ms 초과)이며, 툴 설명에 '서버가 호출 도중 스트림을 끊고 클라이언트가 재연결한 뒤 결과를 보낸다(SEP-1699)'고 명시돼 있어, 이 시나리오는 본질적으로 disconnect+reconnect 왕복 지연을 포함하는 다단계 흐름임.
+  분류       명세 쪽 원인으로 봄
+
+test-reconnection-success  (test_reconnection)
+  원인 후보  서버의 재연결 후 결과 재전송 로직이 실제로 멈춰있어 응답이 전혀 도착하지 않았을 가능성도 배제할 수 없음.
+  확인할 곳  서버의 test_reconnection 핸들러 중 재연결 감지 및 결과 재전송 경로
+  근거       CASE_TIMEOUT과 함께 OPERATION_RESULT_UNAVAILABLE이 동시에 발생함. 즉 타임아웃 시점까지 결과 자체가 전혀 오지 않았으며, 이는 타임아웃 값 문제가 아니라 서버가 재연결 후 응답을 보내는 경로에서 실제로 멈췄을 가능성도 시사함.
+
+※ AI 제안입니다. 파일을 고치지 않았고 명세도 그대로입니다.
+※ 명세 쪽이 틀렸다고 판단되면 `mcpeak generate` 로 다시 승인받으세요.

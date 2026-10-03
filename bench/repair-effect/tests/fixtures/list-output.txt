@@ -1,0 +1,9 @@
+Server scenarios (test against a server):
+  - server-initialize [2025-06-18,2025-11-25]
+  - tools-list [2025-06-18,2025-11-25]
+  - json-schema-2020-12 [2025-11-25]
+  - dns-rebinding-protection [2025-11-25]
+
+Client scenarios (test against a client):
+  - initialize [2025-06-18,2025-11-25]
+  - auth/basic-cimd [2025-11-25]

@@ -7,7 +7,6 @@ import type {
 } from "../../../src/api-types.js";
 import { ErrorAlert, REMOTE_SANDBOX_HINT, SecurityProgress } from "../analyze/SecurityPanel.js";
 import { SecurityResult } from "../analyze/SecurityResult.js";
-import { SEVERITIES, SEVERITY_TONE } from "../analyze/security-view.js";
 import { apiGet, apiSend } from "../api.js";
 import { Button } from "../components/Button.js";
 import { Card } from "../components/Card.js";
@@ -15,7 +14,6 @@ import { Field, INPUT_CLASS, Toggle } from "../components/Field.js";
 import { PageHeader } from "../components/PageHeader.js";
 import { Stepper } from "../components/Stepper.js";
 import { buildPrecheckRequest } from "../precheck/build-precheck-request.js";
-import { type FixLine, fixSummary } from "../precheck/fix-summary.js";
 import { type PastedServer, parseServerInput } from "../precheck/parse-server-input.js";
 import { describeRun } from "../run-target.js";
 
@@ -34,54 +32,16 @@ const SANDBOX_OFF_HINT = "격리를 끄면 서버가 이 머신에서 사용자 
 const TARGET_LINE_CLASS = "break-all font-mono text-xs text-ink";
 /** 넘기지 않는 것을 알리는 줄과 버튼 아래 사유 줄. 보안 탭의 사유 줄과 같은 모양이다. */
 const NOTE_CLASS = "text-xs text-ink-muted";
-/** 요약 줄의 심각도 칩. `SecurityResult` 의 발견 배지와 같은 모양이고 줄이 길어도 눌리지 않는다. */
-const SEVERITY_CHIP_CLASS = "inline-block shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold";
-
 /** 점검 대상 한 줄. stdio 는 command 와 args 를 공백으로 이은 글자, http 는 주소다. */
 function targetOf(server: PastedServer): string {
   return server.transport === "http" ? server.url : [server.command, ...server.args].join(" ");
 }
 
 /**
- * 결과 맨 위의 "먼저 할 일" 카드. 문장은 발견의 `fix` 그대로이고 텍스트 노드로 넣는다. 줄이 없으면
- * 그리지 않는다.
- */
-function FixSummaryCard({ lines }: { readonly lines: readonly FixLine[] }): JSX.Element | null {
-  if (lines.length === 0) {
-    return null;
-  }
-  return (
-    <Card className="space-y-3 p-4">
-      <h2 className="text-title font-semibold text-ink">먼저 할 일</h2>
-      <ul className="space-y-2">
-        {lines.map((line) => {
-          const tone = SEVERITY_TONE[line.severity];
-          return (
-            // 같은 심각도의 같은 문장은 `fixSummary` 가 한 줄로 접으므로 이 쌍이 유일하다.
-            <li key={`${line.severity}:${line.fix}`} className="flex items-start gap-2">
-              <span
-                data-severity={line.severity}
-                className={SEVERITY_CHIP_CLASS}
-                style={{ color: tone.fg, background: tone.bg }}
-              >
-                {SEVERITIES.find((entry) => entry.severity === line.severity)?.label}
-              </span>
-              <span className="min-w-0 break-words text-sm text-ink">
-                {line.fix}
-                {line.count >= 2 && ` (발견 ${line.count}건)`}
-              </span>
-            </li>
-          );
-        })}
-      </ul>
-    </Card>
-  );
-}
-
-/**
  * 사전 점검(ADR-0111). 사용자 모드의 첫 화면이다. 붙여 넣은 서버 설정을 `POST /api/analyze/security` 로
  * 한 번 점검한다. 진행은 그 run 의 SSE 로 받고, 끝나면 `GET /api/analyze/security/<runId>` 를 한 번
- * 읽는다. 판정은 CLI 와 같은 함수가 한 것이고 이 화면은 받은 글자를 보이기만 한다.
+ * 읽는다. 판정은 CLI 와 같은 함수가 한 것이다. 이 화면은 발견마다 해결 문장 대신 왜 위험한지를
+ * 보인다. 읽는 사람이 MCP 를 고치는 사람이 아니기 때문이다.
  *
  * 붙여 넣은 설정의 env 값과 헤더 값은 입력 칸 밖 어디에도 보이지 않고 어디에도 보내지 않는다. 이름만
  * 화면에 보이고 요청에는 이름도 싣지 않는다. 최근 명령 목록에도 쓰지 않는다.
@@ -301,8 +261,8 @@ export function PreCheck(): JSX.Element {
           </div>
           {/* 다시 점검의 시작 실패는 결과 위에 보인다. 앞 결과는 그대로 둔다. */}
           {errorAlert}
-          <FixSummaryCard lines={fixSummary(result.report.findings)} />
-          <SecurityResult response={result} request={sent} />
+          {/* 사용자는 MCP 를 고치지 않는다. 해결 문장 대신 왜 위험한지를 보인다. */}
+          <SecurityResult response={result} request={sent} audience="user" />
         </>
       )}
     </section>

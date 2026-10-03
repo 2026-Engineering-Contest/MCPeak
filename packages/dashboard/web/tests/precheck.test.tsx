@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import type { AuditReport, Finding, SandboxReport, Severity } from "@mcpeak/audit";
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AnalyzeSecurityResponse, RunEventInput } from "../../src/api-types.js";
 import { REMOTE_SANDBOX_HINT } from "../src/analyze/SecurityPanel.js";
@@ -71,7 +71,7 @@ function finding(severity: Severity, fix: string): Finding {
   };
 }
 
-/** 같은 해결 문장의 심각 둘 사이에 다른 문장의 주의 하나. 요약은 심각을 먼저 낸다. */
+/** 심각 둘 사이에 주의 하나. */
 const FINDINGS: readonly Finding[] = [
   finding("high", "보이지 않는 문자를 지우세요."),
   finding("medium", "https 를 쓰세요."),
@@ -234,15 +234,6 @@ async function runToResult(
   });
   await screen.findByText(/^판정: /);
   return fetchMock;
-}
-
-/** "먼저 할 일" 카드. 제목을 감싼 가장 가까운 `<div>` 다. */
-function summaryCard(): HTMLElement {
-  const card = screen.getByRole("heading", { level: 2, name: "먼저 할 일" }).closest("div");
-  if (card === null) {
-    throw new Error("먼저 할 일 카드를 찾지 못했습니다.");
-  }
-  return card;
 }
 
 describe("PreCheck", () => {
@@ -476,27 +467,46 @@ describe("PreCheck", () => {
     expect(screen.getByRole("button", { name: "다시 점검" })).toBeTruthy();
   });
 
-  it("심각·주의 발견이 있으면 먼저 할 일 카드가 해결 문장을 보인다", async () => {
-    await runToResult();
+  it("결과는 해결 문장 대신 왜 위험한지를 보인다", async () => {
+    const hidden: Finding = {
+      ruleId: "desc/hidden-unicode",
+      severity: "high",
+      location: { kind: "server", path: "" },
+      message: "보이지 않는 문자 U+200B 가 들어 있습니다",
+      fix: "설명을 ASCII 로 다시 쓰세요.",
+      evidence: ["U+200B"],
+    };
+    await runToResult(securityResponse([hidden]));
 
-    const card = summaryCard();
-    const lines = within(card).getAllByRole("listitem");
-    expect(lines).toHaveLength(2);
-    expect(lines[0]?.textContent).toBe("심각보이지 않는 문자를 지우세요. (발견 2건)");
-    expect(lines[1]?.textContent).toBe("주의https 를 쓰세요.");
-    const chips = [...card.querySelectorAll<HTMLElement>("[data-severity]")];
-    expect(chips.map((chip) => chip.dataset.severity)).toEqual(["high", "medium"]);
-    expect(chips.map((chip) => chip.textContent)).toEqual(["심각", "주의"]);
-    // 카드는 결과(판정 줄)보다 위에 있다.
-    const verdict = screen.getByText(/^판정: /);
-    expect(card.compareDocumentPosition(verdict) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const text = document.body.textContent ?? "";
+    // 무엇이 발견됐는지와 왜 위험한지는 보인다.
+    expect(text).toContain("→ 보이지 않는 문자 U+200B 가 들어 있습니다");
+    expect(text).toContain(
+      "왜 위험한가: 사람 눈에는 안 보이지만 모델은 읽는 문자가 들어 있습니다. 화면에서 확인한 설명과 모델이 실제로 읽는 내용이 다를 수 있습니다.",
+    );
+    // 사용자는 MCP 를 고치지 않는다. 고치라는 말은 어디에도 없다.
+    expect(text).not.toContain("설명을 ASCII 로 다시 쓰세요.");
+    expect(text).not.toContain("해결");
+    expect(screen.queryByRole("heading", { name: "먼저 할 일" })).toBeNull();
+    // CLI 리포트 원문에는 해결 줄이 있어서 사용자에게는 내지 않는다.
+    expect(screen.queryByText("CLI 리포트 원문")).toBeNull();
   });
 
-  it("심각·주의 발견이 없으면 먼저 할 일 카드가 없다", async () => {
-    await runToResult(securityResponse([finding("low", "설명을 줄이세요.")]));
+  it("권한 조합 경고도 해결 문장 대신 왜 위험한지를 보인다", async () => {
+    const flow: Finding = {
+      ruleId: "flow/toxic-combination",
+      severity: "low",
+      location: { kind: "server", path: "" },
+      message: "세 역할의 도구가 함께 있습니다",
+      fix: "세 역할을 한 세션에서 함께 켜지 마세요.",
+      evidence: [],
+    };
+    await runToResult(securityResponse([flow]));
 
-    expect(screen.queryByRole("heading", { name: "먼저 할 일" })).toBeNull();
-    expect(screen.getByText(/^판정: /)).toBeTruthy();
+    const text = document.body.textContent ?? "";
+    expect(text).toContain("→ 세 역할의 도구가 함께 있습니다");
+    expect(text).toContain("왜 위험한가: 외부 내용을 읽는 도구");
+    expect(text).not.toContain("세 역할을 한 세션에서 함께 켜지 마세요.");
   });
 
   it("격리를 쓰지 못했으면 그 문장을 alert 로 보인다", async () => {
@@ -631,11 +641,11 @@ describe("PreCheck", () => {
     });
   });
 
-  it("해결 문장을 HTML 로 해석하지 않는다", async () => {
+  it("서버가 보낸 글자를 HTML 로 해석하지 않는다", async () => {
     const markup = "<img src=x onerror=1>";
     await runToResult(securityResponse([finding("high", markup)]));
 
     expect(document.querySelector("img")).toBeNull();
-    expect(within(summaryCard()).getByText(markup)).toBeTruthy();
+    expect(screen.getByText(`→ ${markup} 의 메시지`)).toBeTruthy();
   });
 });

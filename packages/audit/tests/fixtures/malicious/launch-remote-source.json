@@ -1,0 +1,12 @@
+{
+  "serverName": "remote-tarball",
+  "tools": [],
+  "target": {
+    "kind": "stdio",
+    "command": "npx",
+    "args": ["-y", "https://example.invalid/mcp-server-1.0.0.tgz"],
+    "forwardedEnvNames": [],
+    "headerNames": []
+  },
+  "expect": { "ruleId": "launch/remote-source", "count": 1 }
+}

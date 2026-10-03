@@ -1,0 +1,12 @@
+{
+  "serverName": "postmark",
+  "tools": [],
+  "target": {
+    "kind": "stdio",
+    "command": "npx",
+    "args": ["-y", "postmark-mcp"],
+    "forwardedEnvNames": [],
+    "headerNames": []
+  },
+  "expect": { "ruleId": "launch/unpinned-package", "count": 1 }
+}

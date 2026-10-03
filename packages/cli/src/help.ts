@@ -163,11 +163,49 @@ MCP 클라이언트 설정에서 서버 명령 자리에 프록시를 넣어 씁
 공통 파라미터 설명은 서버 instructions 로 옮겨집니다. instructions 를 모델에 보여 주지 않는
 클라이언트에서는 그 설명이 모델에 닿지 않습니다.`;
 
+export const AUDIT_USAGE =
+  "사용법: mcpeak audit (-- <executable> [args...] | --command <executable> [--arg <value> ...] [--env <NAME> ...] | --url <URL> [--header-env <헤더이름>=<환경변수이름> ...]) [--probe readonly|none|all] [--baseline <path>] [--update-baseline] [--json]";
+
+/**
+ * audit 옵션 설명. 사용법 한 줄로는 `--probe` 가 서버의 상태를 바꿀 수 있는지, 감사가 서버 환경에
+ * 무엇을 넣는지 알 수 없다. 둘 다 모르고 쓰면 사고가 나거나 결과를 잘못 읽는 값이다.
+ */
+const AUDIT_OPTIONS = `옵션:
+  -- <executable> [args...]
+                        \`--\` 뒤는 전부 서버를 띄울 명령입니다. 첫 토큰이 실행 파일,
+                        나머지가 그 인자입니다. \`--command\`/\`--arg\` 와 같은 일을 하며
+                        함께 쓸 수 없습니다
+  --probe <정책>        도구를 실제로 호출할 범위입니다. 기본값은 readonly 입니다.
+                        readonly  readOnlyHint 가 true 인 도구만 호출합니다
+                        none      아무 도구도 호출하지 않습니다. 응답 검사를 건너뜁니다
+                        all       모든 도구를 호출합니다. 파일 삭제·메시지 전송처럼
+                                  상태를 바꾸는 도구도 불리므로 버려도 되는 환경에서만 쓰세요
+  --baseline <path>     도구 정의의 기준 파일입니다. 없으면 만들고, 있으면 지금 정의와
+                        비교해 바뀐 도구를 알립니다. 승인 뒤 정의를 바꾸는 서버를 잡습니다
+  --update-baseline     비교하지 않고 기준 파일을 지금 정의로 다시 씁니다. 서버 갱신이
+                        의도된 것일 때만 쓰세요. --baseline 과 함께 써야 합니다
+  --json                리포트 대신 결과 JSON 을 stdout 에 냅니다. 같은 서버에 같은
+                        명령이면 바이트까지 같습니다
+${ENV_FORWARD_OPTION}
+${REMOTE_TARGET_OPTIONS}
+
+종료 코드는 심각·주의 발견이 있으면 2, 없으면 0, 연결·입력 실패는 1 입니다. 권한 조합 경고와
+정보 발견은 종료 코드에 넣지 않습니다.
+
+stdio 서버를 띄울 때 GITHUB_TOKEN 같은 흔한 비밀 이름에 가짜 값(카나리)을 넣습니다. 서버가 그
+값을 응답에 내면 환경변수를 밖으로 흘리는 것이라 발견으로 알립니다. --env 로 넘긴 이름에는
+카나리 대신 실제 값이 가고, 그 값이 응답에 나오는지도 봅니다. 값은 출력에 쓰지 않습니다.
+
+이 검사는 도구 정의의 문형과 프로토콜 표면만 봅니다. 바꿔 말한 지시와 서버 코드의 실제
+행위는 보지 못하므로 발견 0 이 안전하다는 뜻은 아닙니다. 판정은 이 컴퓨터 안에서만 하고 도구
+정의를 외부로 보내지 않습니다.`;
+
 const COMMANDS = `명령:
   test      JSON 테스트 명세로 MCP 서버를 실행하고 검증합니다.
   generate  MCP 서버의 툴 스키마에서 테스트 명세를 생성합니다.
   repair    실패한 test 실행의 번들로 서버 코드의 원인 후보를 제안받습니다.
-  optimize  기능을 바꾸지 않고 MCP 서버의 도구 정의를 줄인 오버레이를 만듭니다.`;
+  optimize  기능을 바꾸지 않고 MCP 서버의 도구 정의를 줄인 오버레이를 만듭니다.
+  audit     MCP 서버를 쓰기 전에 도구 정의와 프로토콜의 보안 위험을 점검합니다.`;
 
 export const GLOBAL_HELP = `MCPeak — MCP 서버 테스트 프레임워크
 
@@ -195,7 +233,7 @@ ${COMMANDS}
  * 묻지도 않은 명령의 사용법 200 자를 읽고 나서야 목록에 닿는다.
  */
 export const commandDiscovery =
-  "사용 가능한 명령: test, generate, repair, optimize. 전체 도움말: mcpeak --help";
+  "사용 가능한 명령: test, generate, repair, optimize, audit. 전체 도움말: mcpeak --help";
 
 export const TEST_USAGE_HINT = `${TEST_USAGE} ${commandDiscovery}`;
 
@@ -205,7 +243,11 @@ export const REPAIR_USAGE_HINT = `${REPAIR_USAGE} ${commandDiscovery}`;
 
 export const OPTIMIZE_USAGE_HINT = `${OPTIMIZE_USAGE} ${commandDiscovery}`;
 
-export function commandHelp(command: "test" | "generate" | "repair" | "optimize"): string {
+export const AUDIT_USAGE_HINT = `${AUDIT_USAGE} ${commandDiscovery}`;
+
+export function commandHelp(
+  command: "test" | "generate" | "repair" | "optimize" | "audit",
+): string {
   if (command === "test")
     return `test — JSON 테스트 명세로 MCP 서버를 실행하고 검증합니다.
 
@@ -219,6 +261,13 @@ ${TEST_OPTIONS}
 ${OPTIMIZE_USAGE}
 
 ${OPTIMIZE_OPTIONS}
+`;
+  if (command === "audit")
+    return `audit — MCP 서버를 쓰기 전에 도구 정의와 프로토콜의 보안 위험을 점검합니다.
+
+${AUDIT_USAGE}
+
+${AUDIT_OPTIONS}
 `;
   if (command === "repair")
     return `repair — 실패한 test 실행의 번들로 서버 코드의 원인 후보를 제안받습니다.

@@ -12,7 +12,7 @@ import { defineConfig } from "vitest/config";
 const workspaceAliases = Object.fromEntries(
   // `record` 는 여기 없다. 그 패키지는 진입점이 `src/index.ts` 가 아니라
   // `src/external/index.ts` 라, 아래에서 따로 적는다(ADR-0059 로 카세트가 사라진 결과).
-  (["core", "runner", "generate", "mock", "optimize"] as const).map((name) => [
+  (["core", "runner", "generate", "mock", "optimize", "audit"] as const).map((name) => [
     `@mcpeak/${name}`,
     fileURLToPath(new URL(`./packages/${name}/src/index.ts`, import.meta.url)),
   ]),

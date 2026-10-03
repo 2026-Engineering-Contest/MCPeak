@@ -1,7 +1,9 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { assertMockDefinition } from "@mcpeak/mock";
+import { parseOverlay } from "@mcpeak/optimize";
 import { validateMcpSuite } from "@mcpeak/runner";
 import type {
+  AnalyzeTokensRequest,
   AnswerRequest,
   ApiError,
   FileContent,
@@ -10,6 +12,11 @@ import type {
   StartRunRequest,
   StartRunResponse,
 } from "../api-types.js";
+import {
+  type AnalyzeTokensOutcome,
+  type AnalyzeTokensOverrides,
+  analyzeTokens,
+} from "./analyze.js";
 import {
   ensureRepairBundleDir,
   listMocks,
@@ -41,6 +48,14 @@ export interface RouterOptions {
     io: RunIo,
     options?: ExecuteFlowOverrides,
   ) => Promise<number>;
+  /**
+   * 토큰 분석 실행기. 기본값은 `analyze.ts` 의 `analyzeTokens`다. `execute` 와 같은 이유로
+   * 연다(테스트가 실제 서버 접속 없이 fake 를 끼운다).
+   */
+  readonly analyze?: (
+    argv: readonly string[],
+    overrides?: AnalyzeTokensOverrides,
+  ) => Promise<AnalyzeTokensOutcome>;
 }
 
 const RUN_FLOWS = new Set<StartRunRequest["flow"]>(["test", "generate", "repair", "verify"]);
@@ -127,6 +142,20 @@ export async function handleRequest(
       decodeParam(pathname, "/api/mocks/"),
       MOCK_PUT_RULES,
     );
+    return;
+  }
+  if (method === "PUT" && pathname.startsWith("/api/overlays/")) {
+    await handlePutFile(
+      request,
+      response,
+      options.root,
+      decodeParam(pathname, "/api/overlays/"),
+      OVERLAY_PUT_RULES,
+    );
+    return;
+  }
+  if (method === "POST" && pathname === "/api/analyze/tokens") {
+    await handleAnalyzeTokens(request, response, options.root, options.analyze ?? analyzeTokens);
     return;
   }
   if (method === "POST" && pathname === "/api/runs") {
@@ -290,6 +319,15 @@ const MOCK_PUT_RULES: PutRules = {
   validate: validateMockContent,
 };
 
+/**
+ * 오버레이 검증은 `@mcpeak/optimize` 의 `parseOverlay` 에 맡긴다. 프록시가 같은 파일을 읽을 때
+ * 내는 문장과 같아야 사용자가 둘을 잇는다(`validateMockContent` 와 같은 이유).
+ */
+const OVERLAY_PUT_RULES: PutRules = {
+  extensionError: "오버레이는 .json 확장자 파일만 저장할 수 있습니다.",
+  validate: validateOverlayContent,
+};
+
 async function handlePutFile(
   request: IncomingMessage,
   response: ServerResponse,
@@ -335,6 +373,56 @@ async function handlePutFile(
     }
     throw error;
   }
+}
+
+function isAnalyzeTokensRequest(value: unknown): value is AnalyzeTokensRequest {
+  if (typeof value !== "object" || value === null) return false;
+  const record = value as Record<string, unknown>;
+  if (!Array.isArray(record.argv)) return false;
+  if (!record.argv.every((item) => typeof item === "string")) return false;
+  return record.serverId === undefined || typeof record.serverId === "string";
+}
+
+/**
+ * 토큰 분석은 수 초 안에 끝나는 동기 요청이다(계획서 §3). run-registry·SSE 를 쓰지 않고
+ * 결과를 한 번에 돌려준다. CLI 가 0 이 아니면 사유와 무관하게 400 이고, 문장은 CLI 것 그대로다.
+ */
+async function handleAnalyzeTokens(
+  request: IncomingMessage,
+  response: ServerResponse,
+  root: string,
+  analyze: (
+    argv: readonly string[],
+    overrides?: AnalyzeTokensOverrides,
+  ) => Promise<AnalyzeTokensOutcome>,
+): Promise<void> {
+  const body = await readJsonBody<unknown>(request);
+  if (body === undefined) {
+    sendJson(response, 400, { error: "본문이 올바른 JSON이 아닙니다." });
+    return;
+  }
+  if (!isAnalyzeTokensRequest(body)) {
+    sendJson(response, 400, { error: "argv 형식이 올바르지 않습니다." });
+    return;
+  }
+  // 후보 env 는 handleStartRun 과 같은 규칙이다. 값은 이 프로세스 안에서만 산다(설계 §4.3).
+  let candidateEnv: Readonly<Record<string, string>> | undefined;
+  if (body.serverId !== undefined) {
+    candidateEnv = await resolveCandidateEnv(root, body.serverId, process.env);
+    if (candidateEnv === undefined) {
+      sendJson(response, 400, { error: `서버 후보를 찾을 수 없습니다: ${body.serverId}` });
+      return;
+    }
+  }
+  const outcome = await analyze(
+    body.argv,
+    candidateEnv === undefined ? undefined : { candidateEnv },
+  );
+  if (outcome.ok) {
+    sendJson(response, 200, outcome.body);
+    return;
+  }
+  sendJson(response, 400, { error: outcome.error });
 }
 
 function isStartRunRequest(value: unknown): value is StartRunRequest {
@@ -468,6 +556,21 @@ function validateMockContent(content: string, relative: string): string | null {
   }
   try {
     assertMockDefinition(parsed, relative);
+    return null;
+  } catch (error: unknown) {
+    return error instanceof Error ? error.message : String(error);
+  }
+}
+
+function validateOverlayContent(content: string, relative: string): string | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content) as unknown;
+  } catch {
+    return "본문 content가 올바른 JSON이 아닙니다.";
+  }
+  try {
+    parseOverlay(parsed, relative);
     return null;
   } catch (error: unknown) {
     return error instanceof Error ? error.message : String(error);

@@ -1,0 +1,16 @@
+{
+  "serverName": "fixture-schema-annotation-mismatch",
+  "tools": [
+    {
+      "name": "delete_item",
+      "description": "Removes an item by id.",
+      "inputSchema": {
+        "type": "object",
+        "properties": { "id": { "type": "string" } },
+        "required": ["id"]
+      },
+      "annotations": { "readOnlyHint": true }
+    }
+  ],
+  "expect": { "ruleId": "schema/annotation-mismatch", "count": 1 }
+}

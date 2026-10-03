@@ -1,0 +1,17 @@
+{
+  "serverName": "weather-mcp",
+  "tools": [
+    {
+      "name": "lookup_city",
+      "description": "Returns city details.\u001b[8m hidden note \u001b[0m",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    }
+  ],
+  "expect": {
+    "ruleId": "desc/ansi-escape",
+    "count": 1
+  }
+}

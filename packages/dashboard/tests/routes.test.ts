@@ -5,8 +5,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createSqliteSessionStore } from "@mcpeak/record/external";
 import { afterEach, describe, expect, it } from "vitest";
-import type { RunEvent, StartRunRequest } from "../src/api-types.js";
+import type { AnalyzeTokensResponse, RunEvent, StartRunRequest } from "../src/api-types.js";
 import { startDashboardServer } from "../src/index.js";
+import type { AnalyzeTokensOutcome, AnalyzeTokensOverrides } from "../src/server/analyze.js";
 import { handleRequest } from "../src/server/routes.js";
 import type { RunIo } from "../src/server/run-registry.js";
 import { RunRegistry } from "../src/server/run-registry.js";
@@ -32,6 +33,10 @@ async function startTestServer(
     io: RunIo,
     options?: ExecuteFlowOverrides,
   ) => Promise<number>,
+  analyze?: (
+    argv: readonly string[],
+    overrides?: AnalyzeTokensOverrides,
+  ) => Promise<AnalyzeTokensOutcome>,
 ): Promise<TestServer> {
   const root = await mkdtemp(join(tmpdir(), "mcpeak-dashboard-routes-"));
   const registry = new RunRegistry();
@@ -41,6 +46,7 @@ async function startTestServer(
       webDist: join(root, "__no-web-dist__"),
       registry,
       execute,
+      analyze,
     }).catch((error: unknown) => {
       response.destroy(error instanceof Error ? error : new Error(String(error)));
     });
@@ -808,6 +814,180 @@ describe("GET /api/mocks/<path>", () => {
     const response = await fetch(
       `${server.baseUrl}/api/mocks/${encodeURIComponent("../outside.mock.json")}`,
     );
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "허용되지 않는 경로입니다." });
+  });
+});
+
+async function postAnalyze(server: TestServer, body: string): Promise<Response> {
+  return fetch(`${server.baseUrl}/api/analyze/tokens`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body,
+  });
+}
+
+/** 분석 fake. 받은 argv·overrides 를 남기고 정해 둔 결과를 돌려준다. */
+function fakeAnalyze(outcome: AnalyzeTokensOutcome) {
+  const calls: { argv: readonly string[]; overrides?: AnalyzeTokensOverrides }[] = [];
+  const analyze = (argv: readonly string[], overrides?: AnalyzeTokensOverrides) => {
+    calls.push({ argv, overrides });
+    return Promise.resolve(outcome);
+  };
+  return { analyze, calls };
+}
+
+const ANALYZE_BODY = {
+  overlay: { schemaVersion: 1 },
+  overlayText: "t",
+  report: "r",
+} as unknown as AnalyzeTokensResponse;
+
+describe("POST /api/analyze/tokens", () => {
+  it("ok 결과를 200 으로 그대로 돌려주고 argv 를 그대로 넘긴다", async () => {
+    const { analyze, calls } = fakeAnalyze({ ok: true, body: ANALYZE_BODY });
+    server = await startTestServer(undefined, analyze);
+    const argv = ["--command", "node", "--arg", "server.mjs"];
+
+    const response = await postAnalyze(server, JSON.stringify({ argv }));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(ANALYZE_BODY);
+    expect(calls.map((call) => call.argv)).toEqual([argv]);
+  });
+
+  it("ok:false 면 400 과 error 문장 그대로다", async () => {
+    const { analyze } = fakeAnalyze({ ok: false, error: "오류 [X]: a\n해결: b" });
+    server = await startTestServer(undefined, analyze);
+
+    const response = await postAnalyze(server, JSON.stringify({ argv: ["--command", "node"] }));
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "오류 [X]: a\n해결: b" });
+  });
+
+  it("본문이 JSON 이 아니면 400 이다", async () => {
+    const { analyze, calls } = fakeAnalyze({ ok: true, body: ANALYZE_BODY });
+    server = await startTestServer(undefined, analyze);
+
+    const response = await postAnalyze(server, "{ argv: ");
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "본문이 올바른 JSON이 아닙니다." });
+    expect(calls).toHaveLength(0);
+  });
+
+  it("argv 가 문자열 배열이 아니면 400 이다", async () => {
+    const { analyze, calls } = fakeAnalyze({ ok: true, body: ANALYZE_BODY });
+    server = await startTestServer(undefined, analyze);
+
+    const response = await postAnalyze(server, JSON.stringify({ argv: "x" }));
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "argv 형식이 올바르지 않습니다." });
+    expect(calls).toHaveLength(0);
+  });
+
+  it("모르는 serverId 는 400 이고 analyze 를 부르지 않는다", async () => {
+    const { analyze, calls } = fakeAnalyze({ ok: true, body: ANALYZE_BODY });
+    server = await startTestServer(undefined, analyze);
+
+    const response = await postAnalyze(server, JSON.stringify({ argv: [], serverId: "nope" }));
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "서버 후보를 찾을 수 없습니다: nope" });
+    expect(calls).toHaveLength(0);
+  });
+
+  it("아는 serverId 면 .mcp.json 의 env 값이 candidateEnv 로 넘어가고 응답에는 실리지 않는다", async () => {
+    const { analyze, calls } = fakeAnalyze({ ok: true, body: ANALYZE_BODY });
+    server = await startTestServer(undefined, analyze);
+    await writeFile(
+      join(server.root, ".mcp.json"),
+      JSON.stringify({
+        mcpServers: { w: { command: "node", args: [], env: { API_KEY: `\${API_KEY}` } } },
+      }),
+      "utf8",
+    );
+    const previous = process.env.API_KEY;
+    process.env.API_KEY = "secret";
+    try {
+      const response = await postAnalyze(
+        server,
+        JSON.stringify({
+          argv: ["--command", "node", "--env", "API_KEY"],
+          serverId: "mcp-config:.mcp.json:w",
+        }),
+      );
+      expect(response.status).toBe(200);
+      expect(await response.text()).not.toContain("secret");
+      expect(calls).toHaveLength(1);
+      expect(calls[0]?.overrides?.candidateEnv?.API_KEY).toBe("secret");
+    } finally {
+      if (previous === undefined) delete process.env.API_KEY;
+      else process.env.API_KEY = previous;
+    }
+  });
+});
+
+async function putOverlay(server: TestServer, path: string, content: string): Promise<Response> {
+  return fetch(`${server.baseUrl}/api/overlays/${encodeURIComponent(path)}`, {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ content, baseMtimeMs: 0 }),
+  });
+}
+
+/** `parseOverlay` 를 통과하는 오버레이. optimize 패키지의 기대값 픽스처를 읽기만 한다. */
+function validOverlayText(): Promise<string> {
+  return readFile(
+    new URL("../../optimize/tests/fixtures/synthetic.expected.overlay.json", import.meta.url),
+    "utf8",
+  );
+}
+
+describe("PUT /api/overlays/<path>", () => {
+  it("parseOverlay 를 통과하는 내용을 저장하고 saved:true 를 준다", async () => {
+    server = await startTestServer();
+    const content = await validOverlayText();
+
+    const response = await putOverlay(server, "server.optimize.json", content);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ saved: true });
+    await expect(readFile(join(server.root, "server.optimize.json"), "utf8")).resolves.toBe(
+      content,
+    );
+  });
+
+  it("두 번째 PUT(baseMtimeMs 0)은 conflict 다", async () => {
+    server = await startTestServer();
+    const content = await validOverlayText();
+
+    await putOverlay(server, "server.optimize.json", content);
+    const second = await putOverlay(server, "server.optimize.json", content);
+    expect(second.status).toBe(200);
+    expect(await second.json()).toMatchObject({ saved: false, reason: "conflict" });
+  });
+
+  it("오버레이 형식이 아니면 400 이고 문장은 parseOverlay 의 것이다", async () => {
+    server = await startTestServer();
+
+    const response = await putOverlay(server, "bad.json", JSON.stringify({ schemaVersion: 2 }));
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as { error: string };
+    expect(body.error).toContain("'schemaVersion' 값이 형식에 맞지 않습니다");
+    await expect(stat(join(server.root, "bad.json"))).rejects.toThrow();
+  });
+
+  it(".json 이 아니면 400 이다", async () => {
+    server = await startTestServer();
+
+    const response = await putOverlay(server, "o.txt", await validOverlayText());
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      error: "오버레이는 .json 확장자 파일만 저장할 수 있습니다.",
+    });
+  });
+
+  it("루트 밖 경로는 400 이다", async () => {
+    server = await startTestServer();
+
+    const response = await putOverlay(server, "../o.json", await validOverlayText());
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({ error: "허용되지 않는 경로입니다." });
   });

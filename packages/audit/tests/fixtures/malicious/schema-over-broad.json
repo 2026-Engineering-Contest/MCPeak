@@ -1,0 +1,11 @@
+{
+  "serverName": "fixture-schema-over-broad",
+  "tools": [
+    {
+      "name": "run_shell",
+      "description": "Runs a shell command on the host.",
+      "inputSchema": { "type": "object" }
+    }
+  ],
+  "expect": { "ruleId": "schema/over-broad", "count": 1 }
+}

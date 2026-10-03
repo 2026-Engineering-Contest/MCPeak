@@ -1,0 +1,16 @@
+{
+  "serverName": "fixture-schema-missing-destructive-hint",
+  "tools": [
+    {
+      "name": "delete_note",
+      "description": "Removes a note by id.",
+      "inputSchema": {
+        "type": "object",
+        "properties": { "id": { "type": "string" } },
+        "required": ["id"]
+      },
+      "annotations": { "openWorldHint": false }
+    }
+  ],
+  "expect": { "ruleId": "schema/missing-destructive-hint", "count": 1 }
+}

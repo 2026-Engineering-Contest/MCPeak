@@ -1,0 +1,521 @@
+{
+  "_comment": "examples/ 네 서버의 tools/list 를 옮긴 것. weather-server·mock-server 는 server.mjs·weather.mock.json 의 JSON 을 그대로, zod-notes·live-weather 는 server.mjs 의 registerTool 설정을 인메모리 McpServer 에 등록해 나온 tools/list 를 옮겼다(예제 서버는 실행하지 않았다).",
+  "servers": [
+    {
+      "serverName": "example-weather-server",
+      "tools": [
+        {
+          "name": "get_weather",
+          "description": "지정한 도시의 현재 날씨를 반환한다.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "city": {
+                "type": "string",
+                "description": "도시 이름"
+              }
+            },
+            "required": ["city"]
+          }
+        },
+        {
+          "name": "add",
+          "description": "두 수를 더한다.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "a": {
+                "type": "number"
+              },
+              "b": {
+                "type": "number"
+              }
+            },
+            "required": ["a", "b"]
+          }
+        }
+      ]
+    },
+    {
+      "serverName": "example-zod-notes-server",
+      "tools": [
+        {
+          "name": "get_note",
+          "description": "id 로 노트 하나를 조회한다.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                "examples": ["11111111-1111-4111-8111-111111111111"],
+                "description": "노트 id (UUID)"
+              }
+            },
+            "required": ["id"],
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "additionalProperties": false
+          },
+          "execution": {
+            "taskSupport": "forbidden"
+          }
+        },
+        {
+          "name": "create_note",
+          "description": "노트를 만든다. 저장하지 않고 받은 값을 그대로 돌려준다.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "title": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80,
+                "description": "제목"
+              },
+              "body": {
+                "description": "본문",
+                "type": "string"
+              },
+              "tags": {
+                "description": "태그",
+                "maxItems": 5,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": ["home", "work", "idea"]
+                }
+              },
+              "priority": {
+                "type": "string",
+                "enum": ["low", "mid", "high"],
+                "description": "우선순위"
+              },
+              "dueAt": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "마감 시각. 없으면 null"
+              },
+              "parentId": {
+                "description": "상위 노트 id",
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              "author": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "작성자 이름"
+                  },
+                  "email": {
+                    "description": "작성자 이메일",
+                    "type": "string",
+                    "format": "email",
+                    "pattern": "^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+                  }
+                },
+                "required": ["name"]
+              }
+            },
+            "required": ["title", "priority", "dueAt", "author"],
+            "$schema": "http://json-schema.org/draft-07/schema#"
+          },
+          "execution": {
+            "taskSupport": "forbidden"
+          }
+        },
+        {
+          "name": "list_notes",
+          "description": "노트 id 목록을 돌려준다. filter 로 태그·우선순위를 거른다.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "filter": {
+                "type": "object",
+                "properties": {
+                  "tag": {
+                    "description": "이 태그가 붙은 노트만",
+                    "type": "string",
+                    "enum": ["home", "work", "idea"]
+                  },
+                  "priority": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": ["low", "mid", "high"]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "이 우선순위만. null 이면 전부"
+                  }
+                },
+                "required": ["priority"]
+              },
+              "limit": {
+                "default": 10,
+                "description": "최대 개수",
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 50
+              }
+            },
+            "$schema": "http://json-schema.org/draft-07/schema#"
+          },
+          "execution": {
+            "taskSupport": "forbidden"
+          }
+        }
+      ]
+    },
+    {
+      "serverName": "example-live-weather-server",
+      "tools": [
+        {
+          "name": "get_forecast",
+          "description": "도시 이름으로 현재 기온과 날씨 코드를 조회한다 (Open-Meteo).",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "city": {
+                "type": "string",
+                "examples": ["부산"],
+                "description": "도시 이름. 예: 부산, Seoul"
+              }
+            },
+            "required": ["city"],
+            "$schema": "http://json-schema.org/draft-07/schema#"
+          },
+          "execution": {
+            "taskSupport": "forbidden"
+          }
+        },
+        {
+          "name": "convert_currency",
+          "description": "금액을 다른 통화로 환산한다 (Frankfurter, ECB 고시 환율).",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "amount": {
+                "type": "number",
+                "examples": [100],
+                "description": "환산할 금액"
+              },
+              "from": {
+                "type": "string",
+                "examples": ["USD"],
+                "description": "출발 통화 코드. 예: USD"
+              },
+              "to": {
+                "type": "string",
+                "examples": ["KRW"],
+                "description": "도착 통화 코드. 예: KRW"
+              }
+            },
+            "required": ["amount", "from", "to"],
+            "$schema": "http://json-schema.org/draft-07/schema#"
+          },
+          "execution": {
+            "taskSupport": "forbidden"
+          }
+        },
+        {
+          "name": "search_city",
+          "description": "이름으로 도시를 검색해 좌표와 시간대를 돌려준다 (Open-Meteo 지오코딩).",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "query": {
+                "type": "string",
+                "examples": ["Seoul"],
+                "description": "검색어. 예: Seoul, 부산"
+              },
+              "count": {
+                "default": 5,
+                "description": "최대 결과 수",
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 10
+              },
+              "language": {
+                "default": "ko",
+                "description": "결과 언어",
+                "type": "string",
+                "enum": ["ko", "en", "ja"]
+              }
+            },
+            "required": ["query"],
+            "$schema": "http://json-schema.org/draft-07/schema#"
+          },
+          "execution": {
+            "taskSupport": "forbidden"
+          }
+        },
+        {
+          "name": "list_recent_quakes",
+          "description": "규모 M 이상의 지진을 최근 것부터 N건 돌려준다 (USGS).",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "minMagnitude": {
+                "default": 5,
+                "description": "최소 규모",
+                "type": "number",
+                "minimum": 0,
+                "maximum": 10
+              },
+              "limit": {
+                "default": 10,
+                "description": "최대 건수",
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 20
+              }
+            },
+            "$schema": "http://json-schema.org/draft-07/schema#"
+          },
+          "execution": {
+            "taskSupport": "forbidden"
+          }
+        },
+        {
+          "name": "add_note",
+          "description": "메모를 하나 추가한다. 파일에 저장되므로 서버를 다시 띄워도 남는다.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "title": {
+                "type": "string",
+                "minLength": 1,
+                "description": "제목"
+              },
+              "body": {
+                "type": "string",
+                "description": "본문"
+              },
+              "tags": {
+                "default": [],
+                "description": "태그 목록",
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": ["title", "body"],
+            "$schema": "http://json-schema.org/draft-07/schema#"
+          },
+          "execution": {
+            "taskSupport": "forbidden"
+          }
+        },
+        {
+          "name": "list_notes",
+          "description": "저장된 메모를 돌려준다. 태그로 거를 수 있다.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "tag": {
+                "description": "이 태그가 붙은 메모만",
+                "type": "string"
+              }
+            },
+            "$schema": "http://json-schema.org/draft-07/schema#"
+          },
+          "execution": {
+            "taskSupport": "forbidden"
+          }
+        },
+        {
+          "name": "convert_units",
+          "description": "길이(km·m·mi)·질량(kg·lb)·온도(c·f) 단위를 환산한다. 같은 종류끼리만 된다.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "value": {
+                "type": "number",
+                "description": "환산할 값"
+              },
+              "from": {
+                "type": "string",
+                "enum": ["km", "m", "kg", "lb", "c", "f", "mi"],
+                "description": "출발 단위"
+              },
+              "to": {
+                "type": "string",
+                "enum": ["km", "m", "kg", "lb", "c", "f", "mi"],
+                "description": "도착 단위"
+              }
+            },
+            "required": ["value", "from", "to"],
+            "$schema": "http://json-schema.org/draft-07/schema#"
+          },
+          "outputSchema": {
+            "type": "object",
+            "properties": {
+              "value": {
+                "type": "number"
+              },
+              "from": {
+                "type": "string"
+              },
+              "to": {
+                "type": "string"
+              },
+              "converted": {
+                "type": "number"
+              }
+            },
+            "required": ["value", "from", "to", "converted"],
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "additionalProperties": false
+          },
+          "execution": {
+            "taskSupport": "forbidden"
+          }
+        },
+        {
+          "name": "summarize_text",
+          "description": "본문을 앞에서부터 N단어로 줄인다. 외부 호출 없이 결정론적으로 동작한다.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "text": {
+                "type": "string",
+                "description": "요약할 본문"
+              },
+              "options": {
+                "type": "object",
+                "properties": {
+                  "maxWords": {
+                    "default": 20,
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 200
+                  },
+                  "style": {
+                    "default": "plain",
+                    "type": "string",
+                    "enum": ["plain", "bullets"]
+                  }
+                }
+              }
+            },
+            "required": ["text"],
+            "$schema": "http://json-schema.org/draft-07/schema#"
+          },
+          "execution": {
+            "taskSupport": "forbidden"
+          }
+        },
+        {
+          "name": "lookup_country",
+          "description": "ISO 3166-1 alpha-2 코드로 나라 정보를 돌려준다. 내장 표에서 읽는다.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "enum": ["KR", "US", "JP", "DE", "FR", "GB", "BR", "IN"],
+                "description": "나라 코드. 예: KR"
+              },
+              "fields": {
+                "default": ["name", "capital", "currency", "callingCode"],
+                "description": "돌려줄 필드",
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": ["name", "capital", "currency", "callingCode"]
+                }
+              }
+            },
+            "required": ["code"],
+            "$schema": "http://json-schema.org/draft-07/schema#"
+          },
+          "execution": {
+            "taskSupport": "forbidden"
+          }
+        },
+        {
+          "name": "evaluate_expression",
+          "description": "사칙연산과 괄호로 된 수식을 계산한다. 예: (2 + 3) * 4 / 5",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "expression": {
+                "type": "string",
+                "minLength": 1,
+                "description": "수식. 예: 2 + 2 * 3"
+              }
+            },
+            "required": ["expression"],
+            "$schema": "http://json-schema.org/draft-07/schema#"
+          },
+          "outputSchema": {
+            "type": "object",
+            "properties": {
+              "expression": {
+                "type": "string"
+              },
+              "value": {
+                "type": "number"
+              }
+            },
+            "required": ["expression", "value"],
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "additionalProperties": false
+          },
+          "execution": {
+            "taskSupport": "forbidden"
+          }
+        }
+      ]
+    },
+    {
+      "serverName": "example-mock-server",
+      "tools": [
+        {
+          "name": "get_weather",
+          "description": "지정한 도시의 현재 날씨를 반환한다 (목).",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "city": {
+                "type": "string"
+              }
+            },
+            "required": ["city"]
+          }
+        },
+        {
+          "name": "add",
+          "description": "두 수를 더한다 (목).",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "a": {
+                "type": "number"
+              },
+              "b": {
+                "type": "number"
+              }
+            },
+            "required": ["a", "b"]
+          }
+        }
+      ]
+    }
+  ]
+}

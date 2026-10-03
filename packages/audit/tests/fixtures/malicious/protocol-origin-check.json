@@ -1,0 +1,44 @@
+{
+  "serverName": "local-notes",
+  "protocolContext": {
+    "target": {
+      "kind": "http",
+      "url": "https://localhost:3000/mcp",
+      "forwardedEnvNames": [],
+      "headerNames": ["Authorization"]
+    },
+    "fetch": [
+      {
+        "method": "POST",
+        "url": "https://localhost:3000/mcp",
+        "headers": {
+          "origin": "http://evil.invalid"
+        },
+        "response": {
+          "status": 200,
+          "headers": {
+            "content-type": "application/json"
+          },
+          "body": "{\"jsonrpc\": \"2.0\", \"id\": 1, \"result\": {\"protocolVersion\": \"2025-06-18\", \"capabilities\": {}, \"serverInfo\": {\"name\": \"remote-notes\", \"version\": \"1.0.0\"}}}"
+        }
+      },
+      {
+        "method": "POST",
+        "url": "https://localhost:3000/mcp",
+        "response": {
+          "status": 401
+        }
+      }
+    ],
+    "serverMessages": [],
+    "listChanged": {
+      "notified": false,
+      "surfaceHashBefore": "h1",
+      "surfaceHashAfter": "h1"
+    }
+  },
+  "expect": {
+    "ruleId": "protocol/origin-check",
+    "count": 1
+  }
+}

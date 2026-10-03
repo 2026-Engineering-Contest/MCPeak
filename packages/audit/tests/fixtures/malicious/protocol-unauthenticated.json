@@ -1,0 +1,34 @@
+{
+  "serverName": "remote-notes",
+  "protocolContext": {
+    "target": {
+      "kind": "http",
+      "url": "https://mcp.example.invalid/mcp",
+      "forwardedEnvNames": [],
+      "headerNames": ["Authorization"]
+    },
+    "fetch": [
+      {
+        "method": "POST",
+        "url": "https://mcp.example.invalid/mcp",
+        "response": {
+          "status": 200,
+          "headers": {
+            "content-type": "application/json"
+          },
+          "body": "{\"jsonrpc\": \"2.0\", \"id\": 1, \"result\": {\"protocolVersion\": \"2025-06-18\", \"capabilities\": {}, \"serverInfo\": {\"name\": \"remote-notes\", \"version\": \"1.0.0\"}}}"
+        }
+      }
+    ],
+    "serverMessages": [],
+    "listChanged": {
+      "notified": false,
+      "surfaceHashBefore": "h1",
+      "surfaceHashAfter": "h1"
+    }
+  },
+  "expect": {
+    "ruleId": "protocol/unauthenticated",
+    "count": 1
+  }
+}

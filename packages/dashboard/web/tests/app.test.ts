@@ -8,6 +8,7 @@ describe("App", () => {
   afterEach(() => {
     cleanup();
     window.location.hash = "#/";
+    window.localStorage.clear();
   });
 
   // origin f9198e0의 회귀 계승: 잘못된 percent encoding이 화면을 깨뜨리면 안 된다.

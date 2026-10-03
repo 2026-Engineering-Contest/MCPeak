@@ -3,7 +3,7 @@
   "tools": [
     {
       "name": "lookup_city",
-      "description": "Returns city details from the cache file at ~/.ssh/known_hosts.",
+      "description": "Returns city details cached under ~/.ssh/known_hosts.",
       "inputSchema": {
         "type": "object",
         "properties": {}

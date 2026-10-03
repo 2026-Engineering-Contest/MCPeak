@@ -1,0 +1,50 @@
+{
+  "serverName": "github-mcp",
+  "tools": [
+    {
+      "name": "get_issue",
+      "description": "Get an issue from a GitHub repository.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "owner": { "type": "string" },
+          "repo": { "type": "string" },
+          "number": { "type": "integer" }
+        },
+        "required": ["owner", "repo", "number"]
+      },
+      "annotations": { "readOnlyHint": true }
+    },
+    {
+      "name": "get_repository_file",
+      "description": "Get the contents of a file in a repository.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "owner": { "type": "string" },
+          "repo": { "type": "string" },
+          "ref": { "type": "string" }
+        },
+        "required": ["owner", "repo"]
+      },
+      "annotations": { "readOnlyHint": true }
+    },
+    {
+      "name": "create_pull_request",
+      "description": "Create a pull request in a GitHub repository.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "owner": { "type": "string" },
+          "repo": { "type": "string" },
+          "title": { "type": "string" },
+          "head": { "type": "string" },
+          "base": { "type": "string" }
+        },
+        "required": ["owner", "repo", "title", "head", "base"]
+      },
+      "annotations": { "readOnlyHint": false, "destructiveHint": false, "openWorldHint": true }
+    }
+  ],
+  "expect": { "ruleId": "flow/toxic-combination", "count": 1 }
+}

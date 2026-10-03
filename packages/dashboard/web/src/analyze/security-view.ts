@@ -26,6 +26,19 @@ export const SEVERITIES: readonly { readonly severity: Severity; readonly label:
   { severity: "info", label: "정보" },
 ];
 
+/**
+ * 심각도별 색. 글자색(fg)과 바탕색(bg) 한 쌍이고 전부 `theme.css` 의 기존 토큰이다. 색만으로 뜻을
+ * 전하지 않는다. 라벨 글자는 언제나 함께 보인다.
+ */
+export const SEVERITY_TONE: Readonly<
+  Record<Severity, { readonly fg: string; readonly bg: string }>
+> = {
+  high: { fg: "var(--status-failed-fg)", bg: "var(--status-failed-bg)" },
+  medium: { fg: "var(--status-waiting-fg)", bg: "var(--status-waiting-bg)" },
+  low: { fg: "var(--status-running-fg)", bg: "var(--status-running-bg)" },
+  info: { fg: "var(--ink-muted)", bg: "var(--line-subtle)" },
+};
+
 /** flow 는 결함이 아니라 경고다. 한 목록에 섞지 않는다(검사 목록 보강 검토 §6). */
 export function splitFindings(response: AnalyzeSecurityResponse): {
   readonly defects: readonly FindingRow[];

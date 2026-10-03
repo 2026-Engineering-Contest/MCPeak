@@ -14,6 +14,7 @@ import { LogPanel } from "../components/LogPanel.js";
 import { SegmentedControl } from "../components/SegmentedControl.js";
 import { Stepper } from "../components/Stepper.js";
 import { useRunEvents } from "../run-stream.js";
+import { describeRun } from "../run-target.js";
 import { AnalyzeTargetForm } from "./AnalyzeTargetForm.js";
 import {
   buildSecurityRequest,
@@ -24,8 +25,8 @@ import {
 import { SecurityResult } from "./SecurityResult.js";
 import type { AnalyzeTarget } from "./use-analyze-target.js";
 
-/** 단계 이름. 토큰 탭과 같다. 결과는 run 한 번의 산물이라 라우트가 아니라 단계다. */
-const STEPS = ["서버 선택", "결과"] as const;
+/** 단계 이름. 결과는 run 한 번의 산물이라 라우트가 아니라 단계다. */
+const STEPS = ["서버 선택", "점검", "결과"] as const;
 
 const PROBE_OPTIONS: readonly { readonly value: ProbeChoice; readonly label: string }[] = [
   { value: "auto", label: "자동" },
@@ -56,7 +57,7 @@ function ErrorAlert({ message }: { readonly message: string }): JSX.Element {
 }
 
 /**
- * 도는 점검 하나의 진행. run 마다 새로 마운트된다(부모가 `key` 를 run 으로 준다). 그래서 앞 run 의
+ * 점검 단계의 진행 패널. 도는 점검 하나의 진행이다. run 마다 새로 마운트된다(부모가 `key` 를 run 으로 준다). 그래서 앞 run 의
  * 완료 상태가 새 run 의 첫 렌더에 남지 않고, 완료 보고는 run 마다 정확히 한 번이다.
  *
  * 타이머·폴링이 없다. 완료는 `useRunEvents` 의 status 로만 안다. `failed` 는 "발견이 있다"(종료 코드 2)일
@@ -113,8 +114,9 @@ function SecurityProgress({
  * run 을 시작한다. 진행은 그 run 의 SSE 로 받고, 끝나면 `GET /api/analyze/security/<runId>` 를 한 번
  * 읽는다. 판정은 CLI 와 같은 함수가 한 것이고 이 화면은 받은 글자를 보이기만 한다.
  *
- * 단계는 `result` 하나에서 구한다. 결과를 받으면 결과 단계로 넘어가고, 시작이나 결과 읽기가 실패하면
- * 서버 선택 단계에 머문다.
+ * 단계는 따로 상태를 두지 않고 구한다. 결과가 있으면 결과, 도는 run 이 있으면 점검, 아니면 서버
+ * 선택이다. 시작에 성공하는 순간 점검 단계로 넘어가 폼이 사라지고, 결과 읽기가 실패하거나 run 이
+ * 없다고 확인되면 서버 선택 단계로 돌아간다.
  */
 export function SecurityPanel({ target }: { readonly target: AnalyzeTarget }): JSX.Element {
   const [form, setForm] = useState<SecurityForm>(INITIAL_SECURITY_FORM);
@@ -124,6 +126,10 @@ export function SecurityPanel({ target }: { readonly target: AnalyzeTarget }): J
   const [result, setResult] = useState<AnalyzeSecurityResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
+  /**
+   * 지금 기다리는 run. 점검 단계를 떠난 뒤에 늦게 도착한 결과를 버리는 데 쓴다. 렌더에서는 읽지 않는다.
+   */
+  const awaitedRun = useRef<string | null>(null);
 
   const http = target.state.transport === "http";
   /** 원격 대상에서는 체크가 남아 있어도 꺼진 것으로 보인다. 요청도 싣지 않는다. */
@@ -156,8 +162,6 @@ export function SecurityPanel({ target }: { readonly target: AnalyzeTarget }): J
   }
 
   const built = requestResult();
-  /** 시작했고 아직 결과를 받지 못한 run 이 있다. */
-  const running = runId !== null && result === null;
 
   /** 점검을 시작한다. 성공 여부를 돌려준다. 실패하면 서버 문장을 그대로 보인다. */
   async function start(request: AnalyzeSecurityRequest): Promise<boolean> {
@@ -169,6 +173,7 @@ export function SecurityPanel({ target }: { readonly target: AnalyzeTarget }): J
       setResult(null);
       setSent(request);
       setRunId(response.runId);
+      awaitedRun.current = response.runId;
       return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -190,24 +195,38 @@ export function SecurityPanel({ target }: { readonly target: AnalyzeTarget }): J
   /** run 이 끝난 뒤 결과를 한 번 읽는다. 리포트 없이 끝난 점검은 400 이고 그 본문이 CLI stderr 원문이다. */
   async function loadResult(finishedRunId: string): Promise<void> {
     try {
-      setResult(
-        await apiGet<AnalyzeSecurityResponse>(
-          `/api/analyze/security/${encodeURIComponent(finishedRunId)}`,
-        ),
+      const response = await apiGet<AnalyzeSecurityResponse>(
+        `/api/analyze/security/${encodeURIComponent(finishedRunId)}`,
       );
+      if (awaitedRun.current === finishedRunId) {
+        setResult(response);
+      }
     } catch (err) {
-      setRunId(null);
+      if (awaitedRun.current !== finishedRunId) {
+        return;
+      }
+      leaveRun();
       setError(err instanceof Error ? err.message : String(err));
     }
   }
+
+  /** 서버 선택 단계로 돌아간다. 점검 옵션(form)과 접속 상태(target)는 그대로 두므로 고른 것이 남는다. */
+  function leaveRun(): void {
+    awaitedRun.current = null;
+    setRunId(null);
+    setResult(null);
+    setError(null);
+  }
+
+  const step = result !== null && sent !== null ? 2 : runId !== null && sent !== null ? 1 : 0;
 
   const errorAlert = error !== null && <ErrorAlert message={error} />;
 
   return (
     <div className="space-y-6">
-      <Stepper steps={STEPS} current={result === null ? 0 : 1} />
+      <Stepper steps={STEPS} current={step} />
 
-      {result === null || sent === null ? (
+      {step === 0 && (
         <>
           <Card className="space-y-5 p-6">
             <AnalyzeTargetForm target={target} />
@@ -284,42 +303,47 @@ export function SecurityPanel({ target }: { readonly target: AnalyzeTarget }): J
             <div className="space-y-2">
               <Button
                 variant="primary"
-                disabled={starting || running || !("request" in built)}
+                disabled={starting || !("request" in built)}
                 onClick={() => void startFromForm()}
               >
-                {starting || running ? "점검 중…" : "점검 시작"}
+                {starting ? "점검 중…" : "점검 시작"}
               </Button>
               {"error" in built && <p className="text-xs text-ink-muted">{built.error}</p>}
             </div>
           </Card>
 
-          {runId !== null && (
-            <SecurityProgress
-              key={runId}
-              runId={runId}
-              onFinished={(finished) => void loadResult(finished)}
-              onMissing={(message) => {
-                setRunId(null);
-                setError(message);
-              }}
-            />
-          )}
-
           {errorAlert}
         </>
-      ) : (
+      )}
+
+      {step === 1 && runId !== null && sent !== null && (
+        <>
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-3">
+              <Button onClick={leaveRun}>← 서버 다시 고르기</Button>
+              {/* 취소 API 가 없다. 화면만 돌아가고 서버의 run 은 끝까지 돈다. */}
+              <p className="text-xs text-ink-muted">점검은 중단되지 않고 끝까지 돕니다.</p>
+            </div>
+            <p className="break-all font-mono text-xs text-ink">
+              {`점검 대상: ${describeRun("audit", sent.argv).server ?? ""}`}
+            </p>
+          </div>
+          <SecurityProgress
+            key={runId}
+            runId={runId}
+            onFinished={(finished) => void loadResult(finished)}
+            onMissing={(message) => {
+              leaveRun();
+              setError(message);
+            }}
+          />
+        </>
+      )}
+
+      {step === 2 && result !== null && sent !== null && (
         <>
           <div className="flex flex-wrap gap-2">
-            {/* 점검 옵션(form)과 접속 상태(target)는 그대로 두므로 돌아가면 고른 것이 남아 있다. */}
-            <Button
-              onClick={() => {
-                setResult(null);
-                setRunId(null);
-                setError(null);
-              }}
-            >
-              ← 서버 다시 고르기
-            </Button>
+            <Button onClick={leaveRun}>← 서버 다시 고르기</Button>
             <Button disabled={starting} onClick={() => void start(sent)}>
               다시 점검
             </Button>

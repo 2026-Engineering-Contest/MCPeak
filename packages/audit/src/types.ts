@@ -175,6 +175,8 @@ export interface Observation {
   readonly traceShrank: boolean;
   /** 읽지 못한 관측원. 비어 있지 않으면 audit() 이 skipped 로 옮긴다(§4). 조용한 "발견 0" 을 막는다. */
   readonly gaps: ReadonlyArray<{ readonly source: "trace" | "gateway"; readonly reason: string }>;
+  /** parseTrace 가 해석하지 못한 줄 수의 합. 백엔드는 언제나 채운다(없으면 0). */
+  readonly unparsedLines?: number;
 }
 
 /** 격리 안에서 도구 하나에 보낼 호출 하나(§3.3). */

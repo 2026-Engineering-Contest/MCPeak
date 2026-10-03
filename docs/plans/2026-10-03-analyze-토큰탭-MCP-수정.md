@@ -96,7 +96,7 @@ export async function resolveSourceFile(root: string, argv: readonly string[]): 
 |---|---|---|
 | `description-cleaned` (before, after) | `LIT(before)` | 따옴표는 그대로 두고 내용을 `after` 로 바꾼다. `after` 는 그 따옴표에 맞게 이스케이프한다(`\`, 그 따옴표 문자, 개행은 `\n`, 백틱이면 `${` 도) |
 | `description-removed` (before), reason 이 `promoted` 가 아닐 때 | `.describe(LIT(before))`(괄호 안 공백·끝 쉼표 허용) 또는 속성 `description: LIT(before)`(키에 따옴표 허용) | `.describe(...)` 는 통째로 지운다. 속성은 속성 삭제 규칙으로 지운다 |
-| `description-removed` reason=`promoted` | 없음(찾지 않는다) | `unsupported`. 압축기는 이 설명을 서버 `instructions` 사전으로 옮긴다. 소스에서 설명만 지우면 정보가 사라진다. 그룹에 넣지 않으므로 같은 before 의 다른 사유 변경의 개수 n 에도 세지 않는다 |
+| `description-removed` reason=`promoted` | 없음(찾지 않는다) | `unsupported`. 압축기는 이 설명을 서버 `instructions` 사전으로 옮긴다. 소스에서 설명만 지우면 정보가 사라진다. 같은 before 를 가진 다른 사유의 `description-removed` 그룹이 있으면 그 그룹은 `ambiguous` 다(소스의 출현이 어느 쪽 것인지 가릴 수 없다) |
 | `schema-key-removed` key=`properties` | 속성 `properties: {}` | 속성 삭제 |
 | `schema-key-removed` key=`required` | 속성 `required: []` | 속성 삭제 |
 | `schema-key-removed` key=`additionalProperties` | 속성 `additionalProperties: true` | 속성 삭제 |
@@ -157,6 +157,7 @@ export async function resolveSourceFile(root: string, argv: readonly string[]): 
 | `ambiguous` (after 불일치) | `같은 문자열을 서로 다르게 바꾸는 변경이 있어 건드리지 않습니다.` |
 | `ambiguous` (범위 겹침) | `다른 변경과 같은 자리를 고치게 되어 건드리지 않습니다.` |
 | `unsupported` | `이 종류의 변경은 자동으로 고치지 않습니다. 직접 고쳐야 합니다.` |
+| `ambiguous` (promoted 와 같은 before) | `같은 설명이 공통 파라미터 변경에도 있어 어느 것인지 가릴 수 없습니다. 건드리지 않습니다.` |
 | `unsupported` (reason=`promoted`) | `공통 파라미터 설명은 서버 instructions 에 사전을 함께 더해야 뜻이 남습니다. 자동으로 고치지 않습니다.` |
 
 ### 3.5 `routes.ts`: `POST /api/analyze/source-edits`
@@ -264,7 +265,7 @@ describe("planSourceEdits")
   it("같은 before 를 다르게 바꾸는 cleaned 는 ambiguous 다")
   it("지원하지 않는 key 는 unsupported 다")   key "default"
   it("reason 이 promoted 인 description-removed 는 소스에 있어도 unsupported 이고 건드리지 않는다")   detail 은 promoted 문장
-  it("promoted 변경은 같은 before 의 다른 사유 변경의 개수에 세지 않는다")   restates-name 1건 + promoted 1건, 출현 1곳 → restates-name 은 ready
+  it("promoted 와 같은 before 를 가진 다른 사유 변경은 ambiguous 다")   restates-name 1건 + promoted 1건, 출현 1곳 → restates-name 은 ambiguous(위 문장), promoted 는 unsupported, 소스 그대로
   it("results 는 edits 와 같은 순서이고 detail 은 §3.4 문장이다")   네 status 각각 문장 전체 비교
   it("같은 입력은 같은 결과다")
   it("examples/audit-target-server/server.mjs 의 properties 변경 4건이 전부 ready 다")

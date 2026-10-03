@@ -1,9 +1,11 @@
 import { randomBytes } from "node:crypto";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, stat, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import auditMetadata from "../../audit/package.json";
 import optimizeMetadata from "../../optimize/package.json";
 import packageMetadata from "../package.json";
 import { type AuditCommandDependencies, runAuditCommand } from "./audit-command.js";
+import { nodeDockerIo } from "./audit-sandbox-io.js";
 import { nodeGenerateDependencies, nodeReviewIO, runGenerateCommand } from "./generate-command.js";
 import { commandDiscovery, commandHelp, GLOBAL_HELP } from "./help.js";
 import { type OptimizeCommandDependencies, runOptimizeCommand } from "./optimize-command.js";
@@ -116,6 +118,9 @@ export function nodeOptimizeDependencies(
  * `random` 은 카나리 값이다. 출력에 쓰지 않으므로 무작위여도 `--json` 의 바이트 결정론을 깨지
  * 않는다. 서버가 값을 예측해 숨길 수 없게 암호학적 난수를 쓴다. `generatorVersion` 은 리포트의
  * `generator` 가 `@mcpeak/audit` 이므로 그 패키지의 버전이고, 읽는 방식은 optimize 와 같다.
+ *
+ * `sandbox.createBackend` 는 `--sandbox` 를 준 실행에서만 불린다. 그 밖의 실행은 Docker 를 찾지도
+ * 부르지도 않는다.
  */
 export function nodeAuditDependencies(
   core: typeof import("@mcpeak/core"),
@@ -134,6 +139,20 @@ export function nodeAuditDependencies(
     writeStderr: (text) => void process.stderr.write(text),
     fetch: globalThis.fetch,
     random: () => randomBytes(8).toString("hex"),
+    sandbox: {
+      createBackend: (progress) =>
+        audit.createDockerBackend(nodeDockerIo({ progress }), audit.parseTrace),
+      stat: async (path) => {
+        try {
+          const found = await stat(path);
+          return found.isDirectory() ? "directory" : found.isFile() ? "file" : undefined;
+        } catch {
+          return undefined;
+        }
+      },
+      cwd: process.cwd(),
+      home: homedir(),
+    },
   };
 }
 

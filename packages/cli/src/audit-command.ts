@@ -7,9 +7,18 @@
  * 명령줄이 서브커맨드마다 다르게 거절되면 사용자는 그 차이를 기능으로 읽는다.
  *
  * `@mcpeak/audit` 를 값으로 import 하지 않는다. 정적으로 import 하면 `test` 경로가 그 패키지를
- * 함께 로드한다. 감사 함수와 렌더러는 index.ts 가 동적 import 해서 주입한다.
+ * 함께 로드한다. 감사 함수와 렌더러, 격리 백엔드는 index.ts 가 동적 import 해서 주입한다.
+ *
+ * `--sandbox` 는 서버를 Docker 컨테이너 안에서 띄워 행위를 관측한다(격리 계획서 §3.1, §7). 격리가
+ * 켜지지 않으면 같은 감사가 격리 없이 돌고 리포트 둘째 줄이 그 사실을 말한다.
  */
-import type { AuditTarget, ProbePolicy } from "@mcpeak/audit";
+import type {
+  AuditReport,
+  AuditTarget,
+  ProbePolicy,
+  SandboxBackend,
+  SandboxOptions,
+} from "@mcpeak/audit";
 import type {
   AdvertiseOptions,
   HttpConnectOptions,
@@ -18,6 +27,13 @@ import type {
   McpServerSurface,
   McpStdioConnection,
 } from "@mcpeak/core";
+import {
+  isInside,
+  readDeclarationTexts,
+  resolveMountRoot,
+  SandboxTargetError,
+  type SandboxTargetFs,
+} from "./audit-sandbox-target.js";
 import {
   type ConnectTarget,
   ConnectTargetError,
@@ -34,12 +50,44 @@ import {
 import { escapeTerminalText } from "./repair-render.js";
 import { parseTestCommand } from "./test-command.js";
 
+/** `--sandbox` 와 그 하위 옵션. 경로는 사용자가 쓴 글자 그대로다. 실행할 때 푼다. */
+export interface AuditSandboxInput {
+  readonly session?: { readonly mode: "record" | "replay"; readonly path: string };
+  /** `--allow-host` 값. 준 순서 그대로다. */
+  readonly allowHosts: readonly string[];
+  readonly compareHost: boolean;
+  /** `--sandbox-mount` 값. */
+  readonly mountPath?: string;
+}
+
 export interface AuditCommandInput {
   readonly target: ConnectTarget;
+  /** 격리가 켜지지 않은 실행의 호출 정책. 사용자가 주지 않았으면 `readonly` 다. */
   readonly probe: ProbePolicy;
+  /**
+   * 사용자가 `--probe` 를 직접 주었는가. 격리가 실제로 켜진 실행은 주지 않았을 때만 `all` 로 돈다
+   * (ADR-0107). 준 값은 어느 쪽에서도 그대로다.
+   */
+  readonly probeExplicit: boolean;
   readonly baselinePath?: string;
   readonly updateBaseline: boolean;
   readonly json: boolean;
+  /** `--sandbox` 를 준 실행에만 있다. */
+  readonly sandbox?: AuditSandboxInput;
+}
+
+/** `--sandbox` 실행에만 쓰는 의존성. 호스트의 파일 시스템과 Docker 를 만지는 유일한 통로다. */
+export interface AuditSandboxDependencies {
+  /**
+   * 격리 백엔드를 만든다. `--sandbox` 를 준 실행에서만 불린다. `progress` 는 백엔드의 진행 문장
+   * (이미지를 처음 만들 때의 한 줄)을 받는다.
+   */
+  createBackend(progress: (line: string) => void): SandboxBackend;
+  stat: SandboxTargetFs["stat"];
+  /** 서버 인자의 상대 경로를 푸는 기준이자 서버의 작업 디렉터리. */
+  readonly cwd: string;
+  /** 사용자 홈 디렉터리. 마운트 범위가 이것이면 거절한다. */
+  readonly home: string;
 }
 
 /** 감사가 쓰는 연결. core 의 connectStdio·connectHttp 반환이 이 꼴이다. */
@@ -68,6 +116,7 @@ export interface AuditCommandDependencies {
   readonly fetch: typeof globalThis.fetch;
   /** 카나리 값 하나. 16자 소문자 hex 이고 호출마다 다르다. */
   random(): string;
+  readonly sandbox: AuditSandboxDependencies;
 }
 
 /** 서버 연결 stderr 진단의 줄 수. `test` 의 `--stderr-lines` 기본값과 같다. */
@@ -93,14 +142,39 @@ const TEST_ONLY_OPTIONS = new Set([
 /** 대상 옵션 중 값을 다음 토큰으로 받는 것. 그 값이 `--json` 처럼 생겨도 옵션으로 읽지 않는다. */
 const TARGET_VALUE_OPTIONS = new Set(["--command", "--arg", "--env", "--url", "--header-env"]);
 
+/** 값을 받지 않는 audit 옵션. */
+const FLAG_OPTIONS = ["--update-baseline", "--json", "--sandbox", "--compare-host"] as const;
+type FlagOption = (typeof FLAG_OPTIONS)[number];
+/** 값을 하나 받고 한 번만 쓰는 격리 옵션. */
+const SANDBOX_PATH_OPTIONS = ["--sandbox-session", "--sandbox-replay", "--sandbox-mount"] as const;
+type SandboxPathOption = (typeof SANDBOX_PATH_OPTIONS)[number];
+/** `--sandbox` 없이 주면 거절하는 옵션. 이 순서로 본다. 어느 옵션을 먼저 썼는지에 기대지 않는다. */
+const SANDBOX_ONLY_OPTIONS = [
+  "--sandbox-session",
+  "--sandbox-replay",
+  "--allow-host",
+  "--compare-host",
+  "--sandbox-mount",
+] as const;
+
+/** 게이트웨이와 선언 목록이 쓰는 것과 같은 호스트 이름 문법(`sandbox/declared.ts`). 대소문자는 가리지 않는다. */
+const HOSTNAME = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/i;
+
 /** `parseTestCommand` 의 첫 위치 인자 자리. 명세 경로를 쓰지 않으므로 형식만 채운다. */
 const PLACEHOLDER_SUITE = "audit.json";
 
 export function parseAuditCommand(argv: readonly string[]): AuditCommandInput {
   let probe: ProbePolicy | undefined;
   let baselinePath: string | undefined;
-  let updateBaseline = false;
-  let json = false;
+  const flags: Record<FlagOption, boolean> = {
+    "--update-baseline": false,
+    "--json": false,
+    "--sandbox": false,
+    "--compare-host": false,
+  };
+  const paths: Partial<Record<SandboxPathOption, string>> = {};
+  const allowHosts: string[] = [];
+  let usesUrl = false;
   const targetArgv: string[] = [];
   for (let index = 0; index < argv.length; index++) {
     const token = argv[index] as string;
@@ -129,14 +203,36 @@ export function parseAuditCommand(argv: readonly string[]): AuditCommandInput {
       baselinePath = value;
       continue;
     }
-    if (name === "--update-baseline" || name === "--json") {
+    if ((FLAG_OPTIONS as readonly string[]).includes(name)) {
+      const flag = name as FlagOption;
       if (token !== name) throw new UsageError(`\`${name}\`은 값을 받지 않습니다.`);
-      const already = name === "--json" ? json : updateBaseline;
-      if (already) throw new UsageError(`\`${name}\`은 한 번만 사용할 수 있습니다.`);
-      if (name === "--json") json = true;
-      else updateBaseline = true;
+      if (flags[flag]) throw new UsageError(`\`${name}\`은 한 번만 사용할 수 있습니다.`);
+      flags[flag] = true;
       continue;
     }
+    if ((SANDBOX_PATH_OPTIONS as readonly string[]).includes(name)) {
+      const option = name as SandboxPathOption;
+      if (paths[option] !== undefined)
+        throw new UsageError(`\`${name}\`은 한 번만 사용할 수 있습니다.`);
+      const value = token === name ? argv[++index] : token.slice(name.length + 1);
+      if (value === undefined || value.trim() === "" || value.startsWith("--"))
+        throw new UsageError(`\`${name}\` 옵션 값이 필요합니다.`);
+      paths[option] = value;
+      continue;
+    }
+    if (name === "--allow-host") {
+      const value = token === name ? argv[++index] : token.slice(name.length + 1);
+      // 값 자리의 플래그는 값을 빠뜨린 오타다. 호스트 이름은 `-` 로 시작하지 않는다.
+      if (value === undefined || (token === name && value.startsWith("--")))
+        throw new UsageError("`--allow-host` 옵션 값이 필요합니다.");
+      if (value.length > 253 || !HOSTNAME.test(value))
+        throw new UsageError(
+          `--allow-host 값은 호스트 이름이어야 합니다(예: api.example.com): '${escapeTerminalText(value)}'`,
+        );
+      allowHosts.push(value);
+      continue;
+    }
+    if (name === "--url") usesUrl = true;
     if (TEST_ONLY_OPTIONS.has(name) || (token.startsWith("-") && !TARGET_VALUE_OPTIONS.has(name)))
       throw new UsageError(`지원하지 않는 audit 옵션 '${escapeTerminalText(name)}'입니다.`);
     targetArgv.push(token);
@@ -144,8 +240,11 @@ export function parseAuditCommand(argv: readonly string[]): AuditCommandInput {
       targetArgv.push(argv[++index] as string);
     }
   }
+  const updateBaseline = flags["--update-baseline"];
+  const json = flags["--json"];
   if (updateBaseline && baselinePath === undefined)
     throw new UsageError("--update-baseline 은 --baseline 과 함께 써야 합니다.");
+  const sandbox = parseSandbox(flags, paths, allowHosts, usesUrl);
   let target: ConnectTarget;
   try {
     target = parseTestCommand([PLACEHOLDER_SUITE, ...targetArgv]).target;
@@ -159,10 +258,55 @@ export function parseAuditCommand(argv: readonly string[]): AuditCommandInput {
   return Object.freeze({
     target,
     probe: probe ?? "readonly",
+    probeExplicit: probe !== undefined,
     ...(baselinePath === undefined ? {} : { baselinePath }),
     updateBaseline,
     json,
+    ...(sandbox === undefined ? {} : { sandbox }),
   });
+}
+
+/** 격리 옵션의 조합을 본다. 문장은 격리 계획서 §6.3 이 정본이다. */
+function parseSandbox(
+  flags: Readonly<Record<FlagOption, boolean>>,
+  paths: Readonly<Partial<Record<SandboxPathOption, string>>>,
+  allowHosts: readonly string[],
+  usesUrl: boolean,
+): AuditSandboxInput | undefined {
+  if (!flags["--sandbox"]) {
+    const given = (option: (typeof SANDBOX_ONLY_OPTIONS)[number]) =>
+      option === "--allow-host"
+        ? allowHosts.length > 0
+        : option === "--compare-host"
+          ? flags[option]
+          : paths[option] !== undefined;
+    const orphan = SANDBOX_ONLY_OPTIONS.find(given);
+    if (orphan !== undefined) throw new UsageError(`${orphan} 은 --sandbox 와 함께 써야 합니다.`);
+    return undefined;
+  }
+  if (usesUrl)
+    throw new UsageError(
+      "--sandbox 는 --url 과 함께 쓸 수 없습니다. 격리는 프로세스를 띄우는 대상(--, --command)에만 적용됩니다.",
+    );
+  const record = paths["--sandbox-session"];
+  const replay = paths["--sandbox-replay"];
+  if (record !== undefined && replay !== undefined)
+    throw new UsageError(
+      "--sandbox-session 과 --sandbox-replay 는 함께 쓸 수 없습니다. 녹화와 재생은 따로 실행하세요.",
+    );
+  const session =
+    record !== undefined
+      ? ({ mode: "record", path: record } as const)
+      : replay !== undefined
+        ? ({ mode: "replay", path: replay } as const)
+        : undefined;
+  const mountPath = paths["--sandbox-mount"];
+  return {
+    ...(session === undefined ? {} : { session }),
+    allowHosts: [...allowHosts],
+    compareHost: flags["--compare-host"],
+    ...(mountPath === undefined ? {} : { mountPath }),
+  };
 }
 
 /** `parseTestCommand` 가 던진 사용 오류의 문장. 그 오류 클래스는 export 되지 않아 모양으로 본다. */
@@ -254,11 +398,28 @@ export async function runAuditCommand(
   // 대상 해석과 환경·헤더 처리는 그 함수에 맡기고, 감사에 줄 연결은 주입한 함수의 반환에서 잡는다.
   // 연결 실패의 원래 오류도 잡아 둔다. AuditError 는 첫 줄만 싣기 때문에 서버 stderr 꼬리는 여기서 낸다.
   let connectError: unknown;
+  const original = auditTarget(input.target);
   const connect = async (
-    _target: AuditTarget,
+    target: AuditTarget,
     env: Readonly<Record<string, string>>,
     advertise: AdvertiseOptions,
   ) => {
+    // 격리가 켜지면 audit 가 원래 대상이 아니라 컨테이너를 띄우는 명령(docker run …)을 넘긴다. 그
+    // env 에는 컨테이너에 넘길 값과 docker CLI 가 데몬을 찾는 변수가 이미 들어 있어 그대로 쓴다.
+    // `--env` 를 여기서 다시 읽어 얹지 않는다. --compare-host 의 둘째 연결은 원래 대상으로 온다.
+    if (target !== original) {
+      try {
+        return await deps.connectStdio({
+          command: target.command ?? "",
+          args: target.args ?? [],
+          env,
+          advertise,
+        });
+      } catch (error) {
+        connectError = error;
+        throw error;
+      }
+    }
     let opened: StdioAuditConnection | HttpAuditConnection | undefined;
     try {
       await openConnection(
@@ -283,14 +444,25 @@ export async function runAuditCommand(
     return opened as StdioAuditConnection | HttpAuditConnection;
   };
 
-  let report: Awaited<ReturnType<AuditCommandDependencies["audit"]>>;
+  let sandbox: SandboxOptions | undefined;
+  try {
+    sandbox = await sandboxOptions(input, deps);
+  } catch (error) {
+    if (error instanceof SandboxTargetError) return usageFailure(deps, error.message);
+    throw error;
+  }
+  // 진행 문장은 stderr 로 간다. `--json` 이어도 stdout 은 JSON 하나뿐이다.
+  const progress = (line: string) => deps.writeStderr(`${escapeTerminalText(line)}\n`);
+
+  let report: AuditReport;
   try {
     report = await deps.audit(
       {
-        target: auditTarget(input.target),
+        target: original,
         probe: input.probe,
         ...(input.baselinePath === undefined ? {} : { baselinePath: input.baselinePath }),
         updateBaseline: input.updateBaseline,
+        ...(sandbox === undefined ? {} : { sandbox }),
       },
       {
         connect,
@@ -306,22 +478,93 @@ export async function runAuditCommand(
         random: () => deps.random(),
         generatorVersion: deps.generatorVersion,
         forwardedEnv,
+        ...(sandbox === undefined
+          ? {}
+          : { sandbox: deps.sandbox.createBackend(progress), progress }),
       },
     );
   } catch (error) {
-    return writeAuditFailure(deps, input.target, error, connectError);
+    const kept = cleanupFailureReport(error);
+    if (kept === undefined) return writeAuditFailure(deps, input.target, error, connectError);
+    // 정리 실패는 리포트를 버리지 않는다. 발견을 본 사용자가 정리 실패 때문에 그 발견을 잃으면 안
+    // 된다. 리포트를 먼저 내고 남은 자원을 말한 뒤 1 로 끝난다(발견이 있어 2 였더라도).
+    writeReport(deps, input, kept);
+    deps.writeStderr(`${escapeLines((error as Error).message)}\n`);
+    return 1;
   }
 
+  writeReport(deps, input, report);
+  return report.exitCode;
+}
+
+function writeReport(
+  deps: AuditCommandDependencies,
+  input: AuditCommandInput,
+  report: AuditReport,
+): void {
   deps.writeStdout(
     input.json ? `${JSON.stringify(report, null, 2)}\n` : escapeLines(deps.renderReport(report)),
   );
-  return report.exitCode;
+}
+
+/**
+ * `--sandbox` 를 `audit()` 의 격리 옵션으로 바꾼다. 마운트 범위를 정하지 못하면 `SandboxTargetError`
+ * 를 던진다.
+ *
+ * 호출 정책은 둘이다. 격리가 실제로 켜지면 `sandbox.probe`, 켜지지 않으면 `options.probe` 가 쓰인다.
+ * 사용자가 `--probe` 를 주지 않았을 때만 둘이 갈린다(안은 `all`, 밖은 `readonly`).
+ */
+async function sandboxOptions(
+  input: AuditCommandInput,
+  deps: AuditCommandDependencies,
+): Promise<SandboxOptions | undefined> {
+  const requested = input.sandbox;
+  // `--url` 과 함께 쓰는 것은 파서가 이미 거절했다.
+  if (requested === undefined || input.target.transport !== "stdio") return undefined;
+  const { cwd, home, stat } = deps.sandbox;
+  const serverArgs = input.target.args;
+  const mountRoot = await resolveMountRoot(
+    {
+      ...(requested.mountPath === undefined ? {} : { mountPath: requested.mountPath }),
+      cwd,
+      home,
+      serverArgs,
+    },
+    { stat },
+  );
+  return {
+    probe: input.probeExplicit ? input.probe : "all",
+    mountRoot,
+    // 컨테이너에는 마운트 범위만 있다. 실행한 자리가 그 밖이면 범위의 꼭대기에서 띄운다. 그 경우
+    // 서버 인자는 전부 범위 안의 절대 경로다(상대 경로였다면 범위 밖으로 풀려 위에서 거절됐다).
+    cwd: isInside(mountRoot, cwd) ? cwd : mountRoot,
+    ...(requested.session === undefined ? {} : { session: requested.session }),
+    allowHosts: requested.allowHosts,
+    compareHost: requested.compareHost,
+    declarationTexts: await readDeclarationTexts(
+      { mountRoot, cwd, serverArgs },
+      { stat, readFile: deps.readFile },
+    ),
+  };
+}
+
+/**
+ * 정리 실패(`SandboxCleanupError`)가 실어 온 리포트. 코드와 실린 리포트로 알아본다. 패키지 사본이
+ * 둘이면 instanceof 가 어긋나고, 이 오류의 `name` 은 `AuditError` 가 아니라 `isAuditError` 에도 걸리지
+ * 않는다.
+ */
+function cleanupFailureReport(error: unknown): AuditReport | undefined {
+  if (!(error instanceof Error)) return undefined;
+  const { code, report } = error as { code?: unknown; report?: unknown };
+  if (code !== "SANDBOX_CLEANUP_FAILED" || typeof report !== "object" || report === null)
+    return undefined;
+  return report as AuditReport;
 }
 
 /**
  * 감사 실패를 찍는다. 종료 코드는 언제나 1 이다.
  *
- * - AuditError(연결 실패·기준 파일 문제): message 가 §6.3 블록 전체다. 그대로 찍는다. 연결
+ * - AuditError(연결 실패·기준 파일 문제·재생 세션을 읽지 못함): message 가 §6.3 블록 전체다. 그대로 찍는다. 연결
  *   실패면 core 오류가 들고 온 진단(서버 stderr 꼬리, HTTP 엔드포인트)을 그 뒤에 붙인다.
  * - 기준 파일 쓰기 실패: optimize 의 오버레이 쓰기 실패와 같은 모양.
  * - 그 밖(연결이 선 뒤 tools/list 실패 등): audit 가 감싸지 않고 올린 원래 오류다.

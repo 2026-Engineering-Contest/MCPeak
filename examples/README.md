@@ -12,6 +12,7 @@
 | [`live-weather-server`](./live-weather-server) | stdio | `McpServer` + zod. 실제 공개 API(Open-Meteo·Frankfurter)를 `fetch` 로 부른다. External 세션 녹화·재생 데모용. CI 에는 넣지 않는다 |
 | [`zod-notes-server`](./zod-notes-server) | stdio | `McpServer` + zod. SDK 가 JSON Schema 를 만드는 경로를 밟는다. 변이 서버 포함. CI 도그푸딩 대상 |
 | [`audit-target-server`](./audit-target-server) | stdio | 보안 검사 표적 전용. 도구마다 `mcpeak audit` 규칙 하나를 일부러 밟는다. `audit` E2E 만 쓰고, 다른 E2E 의 대상이 아니다 |
+| [`sandbox-target-server`](./sandbox-target-server) | stdio | 행위 관측 표적 전용. 도구가 실제로 파일을 읽고 프로세스를 띄우고 밖으로 요청을 보낸다. `mcpeak audit --sandbox` E2E 만 쓴다. 격리 없이 띄우지 않는다 |
 
 E2E 는 `packages/cli/tests/*-e2e.test.ts` 에 있고 CI `verify` 잡의 `pnpm test` 가 돌린다. 실서버 스펙은 파일명을 `*-e2e.test.ts` 로 지어야 직렬 갈래로 간다(#119).
 

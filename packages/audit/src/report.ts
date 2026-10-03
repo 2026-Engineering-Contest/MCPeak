@@ -138,6 +138,8 @@ function describeLocation(location: Location): string {
     case "result":
       // §6.1 이 이 위치만 "응답의" 로 붙여 쓴다.
       return at(`도구 '${escapeInvisible(location.toolName)}' 호출 응답`, "의 ");
+    case "call":
+      return `도구 '${escapeInvisible(location.toolName)}' 호출(${escapeInvisible(location.callId)}) 중`;
     case "server":
       return "서버 전체";
   }

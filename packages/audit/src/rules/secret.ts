@@ -72,7 +72,7 @@ export function planCanaries(
   return { env, names };
 }
 
-interface Needle {
+export interface Needle {
   readonly form: Exclude<TextForm, "folded">;
   readonly text: string;
   readonly caseInsensitive: boolean;
@@ -104,7 +104,7 @@ function base64Cores(value: string): string[] {
 }
 
 /** §3.1 의 raw·base64·hex·rot13 형. 설명문을 디코딩하지 않고 값 쪽을 인코딩해 찾는다. */
-function needlesFor(value: string): Needle[] {
+export function needlesFor(value: string): Needle[] {
   return [
     { form: "raw", text: value, caseInsensitive: true },
     ...base64Cores(value).map((text) => ({
@@ -117,7 +117,7 @@ function needlesFor(value: string): Needle[] {
   ];
 }
 
-function findForm(haystack: string, needles: readonly Needle[]): Needle["form"] | undefined {
+export function findForm(haystack: string, needles: readonly Needle[]): Needle["form"] | undefined {
   const lower = haystack.toLowerCase();
   for (const needle of needles) {
     const found = needle.caseInsensitive

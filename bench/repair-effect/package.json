@@ -1,0 +1,24 @@
+{
+  "name": "mcpeak-repair-effect-bench",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "tsx --test tests/*.test.ts",
+    "baseline": "tsx src/cmd/baseline.ts",
+    "verify-variants": "tsx src/cmd/verify-variants.ts",
+    "pilot": "tsx src/cmd/pilot.ts",
+    "generate-ai": "tsx src/cmd/generate-ai.ts",
+    "canary": "tsx src/cmd/canary.ts",
+    "repair-runs": "tsx src/cmd/repair-runs.ts",
+    "score": "tsx src/cmd/score.ts",
+    "report": "tsx src/cmd/report.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/conformance": "0.1.16",
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "cors": "2.8.5",
+    "express": "5.2.1",
+    "tsx": "4.23.15",
+    "zod": "4.3.6"
+  }
+}

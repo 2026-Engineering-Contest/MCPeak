@@ -1,0 +1,73 @@
+── 서버 수정 방향 (claude / claude-sonnet-5) ──
+
+⚠ 이 명세는 승인 지문이 일치하지만 실제 서버 실행 기록이 없습니다.
+  --baseline-only 나 --no-dry-run 으로 저장하면 케이스가 한 번도 실행되지 않은 채 승인됩니다.
+  입력값이 생성 시점의 자리값일 수 있어, 아래 제안은 명세 쪽 원인도 함께 받았습니다.
+
+test-error-handling-success  (test_error_handling)
+  원인 후보  스펙은 isError=false(정상 응답)를 기대하지만, 진단의 notes에 '이 툴은 테스트를 위해 의도적으로 오류를 반환한다'고 명시되어 있어 툴 설계 자체가 오류 반환을 전제로 함. 스펙의 기대값이 툴의 의도된 동작과 반대로 작성된 것으로 보임.
+  확인할 곳  명세의 test-error-handling-success 케이스(기대 isError 값), 서버의 test_error_handling 핸들러 구현
+  근거       diagnostics[0].notes: "This tool intentionally returns an error for testing" / expected:false, actual:true
+  분류       명세 쪽 원인으로 봄
+
+test-reconnection-success  (test_reconnection)
+  원인 후보  OPERATION_RESULT_UNAVAILABLE로 보아 재연결 후 결과 자체가 도달하지 않아 10초 타임아웃까지 갔을 가능성. 서버가 스트림 중단 후 재연결 시 결과를 실제로 재전송하지 못하고 멈춘(hang) 것이 더 유력한 원인으로 보임.
+  확인할 곳  test_reconnection 핸들러의 스트림 재개/결과 재전송 로직
+  근거       CASE_TIMEOUT + OPERATION_RESULT_UNAVAILABLE (결과가 존재하지 않아 assertion 자체를 검사 못함, 단순 지연이 아니라 결과 부재)
+
+test-reconnection-success  (test_reconnection)
+  원인 후보  10000ms 타임아웃이 SEP-1699 재연결 시나리오(스트림 중단 후 클라이언트 재연결 대기 포함)에 비해 지나치게 짧게 설정됐을 가능성도 배제할 수 없음. 다만 서버 결함 쪽이 더 유력.
+  확인할 곳  케이스의 timeout 설정값
+  근거       툴 설명: "Server will close the stream mid-call and send the result after client reconnects" — 재연결까지 포함한 전체 흐름이 10초 안에 끝나야 한다는 가정이 타이트할 수 있음
+  분류       명세 쪽 원인으로 봄
+
+test-sampling-success  (test_sampling)
+  원인 후보  sampling/elicitation 관련 8개 케이스가 모두 diagnostics 없이 동일하게 실패함. 성공 케이스뿐 아니라 필수 필드 누락/타입 위반 같은 스키마 검증 케이스까지 똑같이 diagnostics 없이 실패한 것으로 보아, 개별 툴 로직 문제가 아니라 테스트 하네스(클라이언트)가 sampling capability를 선언하지 않았거나 server-initiated 요청을 처리하지 못해 케이스 실행 자체가 무효화됐을 가능성이 큼.
+  확인할 곳  테스트 하네스/클라이언트의 capabilities 선언(sampling) 및 server-initiated 요청 처리 로직
+  근거       test-sampling-success, test-sampling-missing-prompt, test-sampling-type-prompt 3개 모두 diagnostics: [] — 정상 케이스와 거절 케이스가 구분 없이 동일하게 빈 진단으로 실패
+  분류       명세 쪽 원인으로 봄
+
+test-sampling-missing-prompt  (test_sampling)
+  원인 후보  필수 필드 누락 거절 테스트인데도 diagnostics가 비어 있음. 스키마 검증은 보통 핸들러 진입 전에 처리되므로, sampling capability 협상 단계에서 이미 실패해 검증 로직까지 도달하지 못했을 가능성이 큼.
+  확인할 곳  테스트 하네스/클라이언트의 capabilities 선언(sampling) 및 server-initiated 요청 처리 로직
+  근거       diagnostics: [] (다른 실패 케이스들과 달리 구체적 코드/메시지 없음)
+  분류       명세 쪽 원인으로 봄
+
+test-sampling-type-prompt  (test_sampling)
+  원인 후보  타입 위반 거절 테스트인데도 diagnostics가 비어 있어, 개별 입력 검증 문제가 아니라 sampling 관련 케이스 전반에 공통된 하네스 레벨 실패로 보임.
+  확인할 곳  테스트 하네스/클라이언트의 capabilities 선언(sampling) 및 server-initiated 요청 처리 로직
+  근거       diagnostics: [] — 같은 패턴이 sampling/elicitation 8개 케이스 전체에서 반복됨
+  분류       명세 쪽 원인으로 봄
+
+test-elicitation-success  (test_elicitation)
+  원인 후보  elicitation은 server-initiated 사용자 입력 요청 방식인데, 성공/거절 케이스 전부 diagnostics 없이 동일하게 실패함. 테스트 하네스가 elicitation capability를 선언하지 않았거나 서버의 elicitation 요청에 응답하는 로직이 없을 가능성이 큼.
+  확인할 곳  테스트 하네스/클라이언트의 capabilities 선언(elicitation) 및 server-initiated 요청 처리 로직
+  근거       diagnostics: [] — sampling 케이스들과 동일한 실패 패턴
+  분류       명세 쪽 원인으로 봄
+
+test-elicitation-missing-message  (test_elicitation)
+  원인 후보  필수 필드 누락 거절 테스트인데도 diagnostics가 비어 있음. 스키마 검증 전 단계인 elicitation capability 협상에서부터 실패했을 가능성이 큼.
+  확인할 곳  테스트 하네스/클라이언트의 capabilities 선언(elicitation) 및 server-initiated 요청 처리 로직
+  근거       diagnostics: []
+  분류       명세 쪽 원인으로 봄
+
+test-elicitation-type-message  (test_elicitation)
+  원인 후보  타입 위반 거절 테스트인데도 diagnostics가 비어 있어 elicitation 관련 케이스 전반의 공통 하네스 실패로 보임.
+  확인할 곳  테스트 하네스/클라이언트의 capabilities 선언(elicitation) 및 server-initiated 요청 처리 로직
+  근거       diagnostics: []
+  분류       명세 쪽 원인으로 봄
+
+test-elicitation-sep1034-defaults-success  (test_elicitation_sep1034_defaults)
+  원인 후보  SEP-1034 기본값 elicitation 케이스도 diagnostics 없이 실패해 동일한 하네스 레벨 원인(capability 미선언)에 해당하는 것으로 보임.
+  확인할 곳  테스트 하네스/클라이언트의 capabilities 선언(elicitation) 및 server-initiated 요청 처리 로직
+  근거       diagnostics: []
+  분류       명세 쪽 원인으로 봄
+
+test-elicitation-sep1330-enums-success  (test_elicitation_sep1330_enums)
+  원인 후보  SEP-1330 enum 스키마 elicitation 케이스도 diagnostics 없이 실패해 동일한 하네스 레벨 원인(capability 미선언)에 해당하는 것으로 보임.
+  확인할 곳  테스트 하네스/클라이언트의 capabilities 선언(elicitation) 및 server-initiated 요청 처리 로직
+  근거       diagnostics: []
+  분류       명세 쪽 원인으로 봄
+
+※ AI 제안입니다. 파일을 고치지 않았고 명세도 그대로입니다.
+※ 명세 쪽이 틀렸다고 판단되면 `mcpeak generate` 로 다시 승인받으세요.

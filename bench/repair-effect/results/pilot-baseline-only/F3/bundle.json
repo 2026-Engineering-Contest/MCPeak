@@ -1,0 +1,223 @@
+{
+  "bundleVersion": 3,
+  "generatedBy": "mcpeak 0.12.0",
+  "spec": {
+    "suiteId": "suite",
+    "suiteName": "suite",
+    "approval": "matched",
+    "runHistory": "absent",
+    "fingerprint": "6bd8aed6d56188f604afa766922d5fe660e2e6f9634320fba267c33f171a4c63",
+    "approvedFingerprint": "6bd8aed6d56188f604afa766922d5fe660e2e6f9634320fba267c33f171a4c63"
+  },
+  "failures": [
+    {
+      "caseId": "test-reconnection-success",
+      "caseName": "test_reconnection가 오류 없이 응답한다",
+      "status": "timedOut",
+      "assertions": [
+        {
+          "type": "isError",
+          "status": "skipped"
+        }
+      ],
+      "diagnostics": [
+        {
+          "code": "CASE_TIMEOUT",
+          "message": "테스트 'test_reconnection가 오류 없이 응답한다'가 제한 시간 10000ms 안에 완료되지 않았습니다."
+        },
+        {
+          "code": "OPERATION_RESULT_UNAVAILABLE",
+          "message": "MCP 작업 결과가 없어 assertion을 검사할 수 없습니다."
+        }
+      ],
+      "tool": "test_reconnection",
+      "input": {}
+    },
+    {
+      "caseId": "test-sampling-success",
+      "caseName": "test_sampling가 오류 없이 응답한다",
+      "status": "notRun",
+      "assertions": [
+        {
+          "type": "isError",
+          "status": "notRun"
+        }
+      ],
+      "diagnostics": [],
+      "tool": "test_sampling",
+      "input": {
+        "prompt": "example"
+      }
+    },
+    {
+      "caseId": "test-sampling-missing-prompt",
+      "caseName": "test_sampling가 필수 필드 'prompt' 누락을 거절한다",
+      "status": "notRun",
+      "assertions": [
+        {
+          "type": "isError",
+          "status": "notRun"
+        }
+      ],
+      "diagnostics": [],
+      "tool": "test_sampling",
+      "input": {}
+    },
+    {
+      "caseId": "test-sampling-type-prompt",
+      "caseName": "test_sampling가 'prompt' 타입 위반을 거절한다",
+      "status": "notRun",
+      "assertions": [
+        {
+          "type": "isError",
+          "status": "notRun"
+        }
+      ],
+      "diagnostics": [],
+      "tool": "test_sampling",
+      "input": {
+        "prompt": 0
+      }
+    },
+    {
+      "caseId": "test-elicitation-success",
+      "caseName": "test_elicitation가 오류 없이 응답한다",
+      "status": "notRun",
+      "assertions": [
+        {
+          "type": "isError",
+          "status": "notRun"
+        }
+      ],
+      "diagnostics": [],
+      "tool": "test_elicitation",
+      "input": {
+        "message": "example"
+      }
+    },
+    {
+      "caseId": "test-elicitation-missing-message",
+      "caseName": "test_elicitation가 필수 필드 'message' 누락을 거절한다",
+      "status": "notRun",
+      "assertions": [
+        {
+          "type": "isError",
+          "status": "notRun"
+        }
+      ],
+      "diagnostics": [],
+      "tool": "test_elicitation",
+      "input": {}
+    },
+    {
+      "caseId": "test-elicitation-type-message",
+      "caseName": "test_elicitation가 'message' 타입 위반을 거절한다",
+      "status": "notRun",
+      "assertions": [
+        {
+          "type": "isError",
+          "status": "notRun"
+        }
+      ],
+      "diagnostics": [],
+      "tool": "test_elicitation",
+      "input": {
+        "message": 0
+      }
+    },
+    {
+      "caseId": "test-elicitation-sep1034-defaults-success",
+      "caseName": "test_elicitation_sep1034_defaults가 오류 없이 응답한다",
+      "status": "notRun",
+      "assertions": [
+        {
+          "type": "isError",
+          "status": "notRun"
+        }
+      ],
+      "diagnostics": [],
+      "tool": "test_elicitation_sep1034_defaults",
+      "input": {}
+    },
+    {
+      "caseId": "test-elicitation-sep1330-enums-success",
+      "caseName": "test_elicitation_sep1330_enums가 오류 없이 응답한다",
+      "status": "notRun",
+      "assertions": [
+        {
+          "type": "isError",
+          "status": "notRun"
+        }
+      ],
+      "diagnostics": [],
+      "tool": "test_elicitation_sep1330_enums",
+      "input": {}
+    }
+  ],
+  "tools": [
+    {
+      "name": "test_elicitation",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "description": "The message to show the user"
+          }
+        },
+        "required": [
+          "message"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "description": "Tests server-initiated elicitation (user input request)"
+    },
+    {
+      "name": "test_elicitation_sep1034_defaults",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "description": "Tests elicitation with default values per SEP-1034"
+    },
+    {
+      "name": "test_elicitation_sep1330_enums",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "description": "Tests elicitation with enum schema improvements per SEP-1330"
+    },
+    {
+      "name": "test_reconnection",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "description": "Tests SSE stream disconnection and client reconnection (SEP-1699). Server will close the stream mid-call and send the result after client reconnects."
+    },
+    {
+      "name": "test_sampling",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "description": "The prompt to send to the LLM"
+          }
+        },
+        "required": [
+          "prompt"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "description": "Tests server-initiated sampling (LLM completion request)"
+    }
+  ],
+  "target": {
+    "transport": "http"
+  }
+}

@@ -1,0 +1,49 @@
+suite  (24 cases)
+
+✓ test-simple-text-success                      test_simple_text가 오류 없이 응답한다
+✓ test-image-content-success                    test_image_content가 오류 없이 응답한다
+✓ test-audio-content-success                    test_audio_content가 오류 없이 응답한다
+✓ test-embedded-resource-success                test_embedded_resource가 오류 없이 응답한다
+✓ test-multiple-content-types-success           test_multiple_content_types가 오류 없이 응답한다
+✓ test-tool-with-logging-success                test_tool_with_logging가 오류 없이 응답한다
+✓ test-tool-with-progress-success               test_tool_with_progress가 오류 없이 응답한다
+✗ test-error-handling-success                   test_error_handling가 오류 없이 응답한다
+    isError  정상 응답을 기대했지만 오류 응답을 받았습니다.
+    → This tool intentionally returns an error for testing
+    해결: 툴 입력값과 서버의 오류 응답을 확인하세요.
+⧖ test-reconnection-success                     test_reconnection가 오류 없이 응답한다
+    테스트 'test_reconnection가 오류 없이 응답한다'가 제한 시간 10000ms 안에 완료되지 않았습니다.
+    해결: 서버 응답 지연과 테스트의 timeoutMs 설정을 확인하세요.
+    isError  (건너뜀) MCP 작업 결과가 없어 assertion을 검사할 수 없습니다.
+    해결: 먼저 MCP 작업 실패 원인을 해결하세요.
+· test-sampling-success                         test_sampling가 오류 없이 응답한다
+· test-sampling-missing-prompt                  test_sampling가 필수 필드 'prompt' 누락을 거절한다
+· test-sampling-type-prompt                     test_sampling가 'prompt' 타입 위반을 거절한다
+· test-elicitation-success                      test_elicitation가 오류 없이 응답한다
+· test-elicitation-missing-message              test_elicitation가 필수 필드 'message' 누락을 거절한다
+· test-elicitation-type-message                 test_elicitation가 'message' 타입 위반을 거절한다
+· test-elicitation-sep1034-defaults-success     test_elicitation_sep1034_defaults가 오류 없이 응답한다
+· test-elicitation-sep1330-enums-success        test_elicitation_sep1330_enums가 오류 없이 응답한다
+· json-schema-2020-12-tool-success              json_schema_2020_12_tool가 오류 없이 응답한다
+· json-schema-2020-12-tool-branch-with-address  json_schema_2020_12_tool가 선택 필드 'address' 를 받아 정상 응답한다
+· json-schema-2020-12-tool-branch-with-name     json_schema_2020_12_tool가 선택 필드 'name' 를 받아 정상 응답한다
+· json-schema-2020-12-tool-type-address         json_schema_2020_12_tool가 'address' 타입 위반을 거절한다
+· json-schema-2020-12-tool-type-address-city    json_schema_2020_12_tool가 'address.city' 타입 위반을 거절한다
+· json-schema-2020-12-tool-type-address-street  json_schema_2020_12_tool가 'address.street' 타입 위반을 거절한다
+· json-schema-2020-12-tool-type-name            json_schema_2020_12_tool가 'name' 타입 위반을 거절한다
+
+중단: 케이스 'test-reconnection-success' 타임아웃으로 실행을 멈췄습니다.
+
+실패한 케이스
+  ✗ test-error-handling-success  → This tool intentionally returns an error for testing
+  ⧖ test-reconnection-success    → 테스트 'test_reconnection가 오류 없이 응답한다'가 제한 시간 10000ms 안에 완료되지 않았습니다.
+
+7 passed, 1 failed, 1 timed out, 15 not run  (24 total)
+
+참고: json-schema-2020-12-tool-type-address-city 는 거절을 기대하지만 선언을 어기지 않습니다
+  → 거절을 기대하지만 입력이 서버 선언을 어기지 않습니다. 서버가 선언 밖 제약으로 거절한다면 그대로 두고, 아니라면 입력을 확인하세요
+
+참고: json-schema-2020-12-tool-type-address-street 는 거절을 기대하지만 선언을 어기지 않습니다
+  → 거절을 기대하지만 입력이 서버 선언을 어기지 않습니다. 서버가 선언 밖 제약으로 거절한다면 그대로 두고, 아니라면 입력을 확인하세요
+
+명세: 승인 시점과 동일 (c023f2add07a…)

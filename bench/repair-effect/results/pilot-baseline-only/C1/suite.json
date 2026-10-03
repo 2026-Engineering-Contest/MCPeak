@@ -1,0 +1,274 @@
+{
+  "schemaVersion": 1,
+  "id": "suite",
+  "name": "suite",
+  "approval": {
+    "fingerprint": "6bd8aed6d56188f604afa766922d5fe660e2e6f9634320fba267c33f171a4c63"
+  },
+  "defaultTimeoutMs": 10000,
+  "cases": [
+    {
+      "id": "test-simple-text-success",
+      "name": "test_simple_text가 오류 없이 응답한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "test_simple_text",
+        "input": {}
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": false
+        }
+      ]
+    },
+    {
+      "id": "test-image-content-success",
+      "name": "test_image_content가 오류 없이 응답한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "test_image_content",
+        "input": {}
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": false
+        }
+      ]
+    },
+    {
+      "id": "test-audio-content-success",
+      "name": "test_audio_content가 오류 없이 응답한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "test_audio_content",
+        "input": {}
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": false
+        }
+      ]
+    },
+    {
+      "id": "test-embedded-resource-success",
+      "name": "test_embedded_resource가 오류 없이 응답한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "test_embedded_resource",
+        "input": {}
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": false
+        }
+      ]
+    },
+    {
+      "id": "test-multiple-content-types-success",
+      "name": "test_multiple_content_types가 오류 없이 응답한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "test_multiple_content_types",
+        "input": {}
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": false
+        }
+      ]
+    },
+    {
+      "id": "test-tool-with-logging-success",
+      "name": "test_tool_with_logging가 오류 없이 응답한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "test_tool_with_logging",
+        "input": {}
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": false
+        }
+      ]
+    },
+    {
+      "id": "test-tool-with-progress-success",
+      "name": "test_tool_with_progress가 오류 없이 응답한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "test_tool_with_progress",
+        "input": {}
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": false
+        }
+      ]
+    },
+    {
+      "id": "test-error-handling-success",
+      "name": "test_error_handling가 오류 없이 응답한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "test_error_handling",
+        "input": {}
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": false
+        }
+      ]
+    },
+    {
+      "id": "test-reconnection-success",
+      "name": "test_reconnection가 오류 없이 응답한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "test_reconnection",
+        "input": {}
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": false
+        }
+      ]
+    },
+    {
+      "id": "test-sampling-success",
+      "name": "test_sampling가 오류 없이 응답한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "test_sampling",
+        "input": {
+          "prompt": "example"
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": false
+        }
+      ]
+    },
+    {
+      "id": "test-sampling-missing-prompt",
+      "name": "test_sampling가 필수 필드 'prompt' 누락을 거절한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "test_sampling",
+        "input": {}
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": true
+        }
+      ]
+    },
+    {
+      "id": "test-sampling-type-prompt",
+      "name": "test_sampling가 'prompt' 타입 위반을 거절한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "test_sampling",
+        "input": {
+          "prompt": 0
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": true
+        }
+      ]
+    },
+    {
+      "id": "test-elicitation-success",
+      "name": "test_elicitation가 오류 없이 응답한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "test_elicitation",
+        "input": {
+          "message": "example"
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": false
+        }
+      ]
+    },
+    {
+      "id": "test-elicitation-missing-message",
+      "name": "test_elicitation가 필수 필드 'message' 누락을 거절한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "test_elicitation",
+        "input": {}
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": true
+        }
+      ]
+    },
+    {
+      "id": "test-elicitation-type-message",
+      "name": "test_elicitation가 'message' 타입 위반을 거절한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "test_elicitation",
+        "input": {
+          "message": 0
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": true
+        }
+      ]
+    },
+    {
+      "id": "test-elicitation-sep1034-defaults-success",
+      "name": "test_elicitation_sep1034_defaults가 오류 없이 응답한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "test_elicitation_sep1034_defaults",
+        "input": {}
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": false
+        }
+      ]
+    },
+    {
+      "id": "test-elicitation-sep1330-enums-success",
+      "name": "test_elicitation_sep1330_enums가 오류 없이 응답한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "test_elicitation_sep1330_enums",
+        "input": {}
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": false
+        }
+      ]
+    }
+  ]
+}

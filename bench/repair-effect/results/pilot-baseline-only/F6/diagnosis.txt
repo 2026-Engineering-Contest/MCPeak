@@ -1,0 +1,19 @@
+── 서버 수정 방향 (claude / claude-sonnet-5) ──
+
+⚠ 이 명세는 승인 지문이 일치하지만 실제 서버 실행 기록이 없습니다.
+  --baseline-only 나 --no-dry-run 으로 저장하면 케이스가 한 번도 실행되지 않은 채 승인됩니다.
+  입력값이 생성 시점의 자리값일 수 있어, 아래 제안은 명세 쪽 원인도 함께 받았습니다.
+
+test-error-handling-success  (test_error_handling)
+  원인 후보  test_error_handling 도구는 설명과 진단 노트에 따르면 테스트용으로 의도적으로 오류를 반환하도록 설계되어 있는데, 명세는 이 케이스에 '오류 없이 응답한다(isError=false)'를 기대값으로 적어 두었다. 승인 이력이 없는 상태에서 저장된 자리값 기대치로 보이며, 도구 동작과 명세 기대값이 애초에 모순된다.
+  확인할 곳  명세: test-error-handling-success 기대값(expected isError=false) / 서버: test_error_handling 도구 설명("Tests error response handling")
+  근거       diagnostics: IS_ERROR_MISMATCH, expected=false actual=true, notes=["This tool intentionally returns an error for testing"]
+  분류       명세 쪽 원인으로 봄
+
+test-reconnection-success  (test_reconnection)
+  원인 후보  test_reconnection은 SEP-1699에 따라 서버가 스트림을 의도적으로 끊고 재연결 후 결과를 보내는 시나리오인데, 10000ms 제한 내에 결과를 전혀 받지 못하고 OPERATION_RESULT_UNAVAILABLE까지 발생했다. 재연결 로직이 실제로 끝까지 완료되지 않고 멈춘 것으로 보여 서버(혹은 하네스의 재연결 처리)가 이 시나리오를 온전히 구현하지 못했을 가능성이 크다. 다만 재연결이 원래 의도적으로 시간이 걸리는 흐름이라 명세의 10초 타임아웃 자체가 이 케이스에 비해 너무 짧게 설정된 자리값일 가능성도 배제할 수 없다.
+  확인할 곳  서버: test_reconnection 도구의 SSE 재연결 처리 로직 / 명세: test-reconnection-success 케이스의 타임아웃 값(10000ms)
+  근거       diagnostics: CASE_TIMEOUT(10000ms 초과), OPERATION_RESULT_UNAVAILABLE(MCP 작업 결과 없음)
+
+※ AI 제안입니다. 파일을 고치지 않았고 명세도 그대로입니다.
+※ 명세 쪽이 틀렸다고 판단되면 `mcpeak generate` 로 다시 승인받으세요.

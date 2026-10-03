@@ -1,0 +1,25 @@
+── 서버 수정 방향 (claude / claude-sonnet-5) ──
+
+⚠ 이 명세는 승인 지문이 일치하지만 실제 서버 실행 기록이 없습니다.
+  --baseline-only 나 --no-dry-run 으로 저장하면 케이스가 한 번도 실행되지 않은 채 승인됩니다.
+  입력값이 생성 시점의 자리값일 수 있어, 아래 제안은 명세 쪽 원인도 함께 받았습니다.
+
+test-error-handling-success  (test_error_handling)
+  원인 후보  test_error_handling 도구는 설계상 항상 오류를 반환하도록 되어 있는데(진단 메시지의 note: "This tool intentionally returns an error for testing"), 스펙 케이스는 이 도구 호출이 오류 없이 성공해야 한다고 기대한다. 도구의 존재 목적(오류 응답 테스트)과 케이스의 기대값(성공)이 정면으로 모순되므로, 서버가 아니라 케이스의 기대값(자리값으로 success를 잘못 지정)이 틀렸을 가능성이 높다.
+  확인할 곳  test-error-handling-success 케이스의 isError 기대값(expected:false) 및 test_error_handling 도구 설명("Tests error response handling")
+  근거       diagnostics: IS_ERROR_MISMATCH, expected:false, actual:true, notes:["This tool intentionally returns an error for testing"]
+  분류       명세 쪽 원인으로 봄
+
+test-reconnection-success  (test_reconnection)
+  원인 후보  test_reconnection 도구 설명 자체가 "서버가 호출 중간에 스트림을 끊고 클라이언트 재연결 후 결과를 보낸다"는 SEP-1699 시나리오인데, 이 왕복(끊김-재연결-지연 응답)에 필요한 시간이 케이스에 설정된 10000ms 제한보다 길 가능성이 있다. 즉 케이스의 타임아웃 값이 이 특수 플로우에 맞지 않는 자리값일 수 있다.
+  확인할 곳  test-reconnection-success 케이스의 타임아웃 설정(현재 10000ms)
+  근거       diagnostics: CASE_TIMEOUT (10000ms 초과), OPERATION_RESULT_UNAVAILABLE; 도구 설명: "Server will close the stream mid-call and send the result after client reconnects."
+  분류       명세 쪽 원인으로 봄
+
+test-reconnection-success  (test_reconnection)
+  원인 후보  반대로, 서버가 스트림을 끊은 뒤 클라이언트 재연결 시점에 보류된 결과를 실제로 재전송하는 로직(SEP-1699 재연결 처리)이 누락되었거나 오동작해 응답 자체가 영영 도착하지 않았을 가능성도 있다. 이 경우 타임아웃을 늘려도 실패가 재현될 것이다.
+  확인할 곳  test_reconnection 도구 핸들러의 재연결 후 결과 재전송 로직
+  근거       OPERATION_RESULT_UNAVAILABLE(작업 결과 자체가 없음)와 CASE_TIMEOUT이 함께 발생 — 단순 지연이 아니라 결과가 아예 전달되지 않았을 가능성을 시사
+
+※ AI 제안입니다. 파일을 고치지 않았고 명세도 그대로입니다.
+※ 명세 쪽이 틀렸다고 판단되면 `mcpeak generate` 로 다시 승인받으세요.

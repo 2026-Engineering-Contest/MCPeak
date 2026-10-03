@@ -1,5 +1,16 @@
 # @ohmymcp-hsu/runner
 
+## 0.11.1
+
+### Patch Changes
+
+- 4aa22e6: 거절을 기대한 케이스에 서버가 정상 응답했을 때 서버가 무엇을 받아들였는지 말할 재료를 내보낸다. `acceptedViolations` 는 `checkInputContract` 가 거절 기대 케이스에서 억제한 선언 위반을 케이스별로 돌려주고(같은 대조 루프를 써서 두 함수가 다른 위반을 말하지 않는다), `describeAcceptedRejection` 은 그것을 `서버가 필수 필드 'b' 가 빠진 입력을 받아들였습니다` 같은 문장으로 만들며, `rejectionAccepted` 는 보고서만 보고 "거절 기대에 정상 응답" 인지 판정한다. `describeSpecFinding` 은 선택 인자로 `{ rejectionAccepted }` 문맥을 받아, 서버가 받아들인 경우의 `REJECTION_WITHOUT_VIOLATION` 을 입력을 고치라는 말 대신 서버의 입력 제약이 사라졌을 수 있다는 문장으로 낸다. 문맥을 넘기지 않으면 문장은 이전과 같다.
+- 90d9682: 실패 hint 를 실패 종류별로 나눈다. 응답 스키마 불일치는 구조 위반(타입·필수 필드·선언 밖 필드)이 섞이면 형식 변경 문구를, 값 위반만 있으면 기대값과 서버 로직을 확인하라는 문구를 낸다(`--determinism` 안내 포함). 구조화 응답은 구조 위반에서 기존 출력 계약 문구를 유지한다. 거절을 기대했는데 정상 응답이 오면 서버가 입력을 받아들였다고 말한다. 값 불일치가 둘 이상이면 진단에 `diff` 를 싣고 화면에 기대와 실제를 `-`/`+` 줄로 나란히 찍는다. `renderReport` 는 `specApproved: false` 를 받으면 거절 근거 미확인 고지에서 generate 승인 화면 대신 `--json` 의 `rejectionBody` 를 가리킨다.
+- cac23a3: 거절 근거 확인에서 TS SDK 의 `-32602` 를 `Input validation error:` 문장일 때만 "확인된 거절" 로 본다. SDK 1.30 의 `McpServer` 는 출력 검증 실패(`Output validation error:`)도 같은 코드로 `isError: true` 응답에 싣는데, 그것은 입력 거절이 아니라 서버 결함이라 거절 기대 케이스에서 초록으로 숨으면 안 된다.
+- Updated dependencies [fb511b8]
+- Updated dependencies [f4248d9]
+  - @mcpeak/core@0.6.0
+
 ## 0.11.0
 
 ### Minor Changes

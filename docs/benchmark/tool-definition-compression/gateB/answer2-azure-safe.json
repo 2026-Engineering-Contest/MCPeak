@@ -1,0 +1,36 @@
+[
+  { "n": 1, "tool": "subscription_list", "args": {} },
+  { "n": 2, "tool": "group_list", "args": { "subscription": "sub-1" } },
+  {
+    "n": 3,
+    "tool": "keyvault",
+    "args": {
+      "intent": "list secrets in key vault kv-prod",
+      "command": "list-secrets",
+      "parameters": { "vault-name": "kv-prod" }
+    }
+  },
+  {
+    "n": 4,
+    "tool": "storage",
+    "args": {
+      "intent": "list containers in storage account stprod01",
+      "command": "list-containers",
+      "parameters": { "account-name": "stprod01" }
+    }
+  },
+  {
+    "n": 5,
+    "tool": "appservice",
+    "args": {
+      "intent": "list apps in resource group rg-app",
+      "command": "list-apps",
+      "parameters": { "resource-group": "rg-app" }
+    }
+  },
+  {
+    "n": 6,
+    "tool": "get_azure_bestpractices",
+    "args": { "intent": "Azure Functions deployment best practices" }
+  }
+]

@@ -1,0 +1,25 @@
+[
+  { "n": 1, "tool": "find_organizations", "args": {} },
+  { "n": 2, "tool": "find_projects", "args": { "organizationSlug": "acme" } },
+  { "n": 3, "tool": "search_issues", "args": { "organizationSlug": "acme", "query": "TypeError" } },
+  {
+    "n": 4,
+    "tool": "update_issue",
+    "args": { "organizationSlug": "acme", "issueId": "ACME-123", "status": "resolved" }
+  },
+  {
+    "n": 5,
+    "tool": "analyze_issue_with_seer",
+    "args": { "organizationSlug": "acme", "issueId": "ACME-456" }
+  },
+  {
+    "n": 6,
+    "tool": "search_events",
+    "args": {
+      "organizationSlug": "acme",
+      "projectSlug": "web",
+      "query": "error events",
+      "period": "24h"
+    }
+  }
+]

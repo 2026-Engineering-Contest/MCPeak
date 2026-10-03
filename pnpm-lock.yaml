@@ -83,6 +83,9 @@ importers:
       '@mcpeak/mock':
         specifier: workspace:*
         version: link:../mock
+      '@mcpeak/optimize':
+        specifier: workspace:*
+        version: link:../optimize
       '@mcpeak/record':
         specifier: workspace:*
         version: link:../record
@@ -158,6 +161,15 @@ importers:
         version: link:../runner
 
   packages/mock:
+    dependencies:
+      '@mcpeak/core':
+        specifier: workspace:*
+        version: link:../core
+      '@modelcontextprotocol/sdk':
+        specifier: 'catalog:'
+        version: 1.30.0(zod@4.4.3)
+
+  packages/optimize:
     dependencies:
       '@mcpeak/core':
         specifier: workspace:*

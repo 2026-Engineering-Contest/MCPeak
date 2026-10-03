@@ -1,0 +1,51 @@
+{
+  "name": "@mcpeak/optimize",
+  "version": "0.1.0",
+  "private": false,
+  "type": "module",
+  "description": "MCP 도구 정의 무손실 압축 · 오버레이 프록시",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/2026-Engineering-Contest/MCPeak.git",
+    "directory": "packages/optimize"
+  },
+  "homepage": "https://github.com/2026-Engineering-Contest/MCPeak#readme",
+  "bugs": "https://github.com/2026-Engineering-Contest/MCPeak/issues",
+  "bin": {
+    "mcpeak-optimize-proxy": "./dist/proxy-stdio.mjs"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.mjs"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    }
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.mts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsdown --config-loader native",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --root ../.. packages/optimize"
+  },
+  "dependencies": {
+    "@mcpeak/core": "workspace:*",
+    "@modelcontextprotocol/sdk": "catalog:"
+  }
+}

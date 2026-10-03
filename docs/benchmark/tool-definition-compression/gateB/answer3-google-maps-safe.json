@@ -1,0 +1,8 @@
+[
+  {"n":1,"tool":"maps_geocode","args":{"address":"서울특별시 중구 세종대로 110"}},
+  {"n":2,"tool":"maps_reverse_geocode","args":{"latitude":37.5665,"longitude":126.9780}},
+  {"n":3,"tool":"maps_search_places","args":{"query":"강남역 카페"}},
+  {"n":4,"tool":"maps_place_details","args":{"place_id":"ChIJ123"}},
+  {"n":5,"tool":"maps_directions","args":{"origin":"서울역","destination":"강남역","mode":"transit"}},
+  {"n":6,"tool":"maps_distance_matrix","args":{"origins":["서울역"],"destinations":["강남역"]}}
+]

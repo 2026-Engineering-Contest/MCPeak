@@ -1,0 +1,8 @@
+[
+  {"n": 1, "tool": "echo", "args": {"message": "hello"}},
+  {"n": 2, "tool": "get-sum", "args": {"a": 3, "b": 5}},
+  {"n": 3, "tool": "get-env", "args": {}},
+  {"n": 4, "tool": "get-tiny-image", "args": {}},
+  {"n": 5, "tool": "trigger-long-running-operation", "args": {"duration": 10, "steps": 5}},
+  {"n": 6, "tool": "get-resource-links", "args": {"count": 3}}
+]

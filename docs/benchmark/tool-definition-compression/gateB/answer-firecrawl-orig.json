@@ -1,0 +1,23 @@
+[
+  {
+    "n": 1,
+    "tool": "firecrawl_scrape",
+    "args": { "url": "https://example.com/pricing", "formats": ["markdown"] }
+  },
+  { "n": 2, "tool": "firecrawl_map", "args": { "url": "https://example.com" } },
+  { "n": 3, "tool": "firecrawl_search", "args": { "query": "MCP token optimization" } },
+  { "n": 4, "tool": "firecrawl_crawl", "args": { "url": "https://example.com/blog", "limit": 50 } },
+  { "n": 5, "tool": "firecrawl_check_crawl_status", "args": { "id": "job-123" } },
+  {
+    "n": 6,
+    "tool": "firecrawl_scrape",
+    "args": {
+      "url": "https://example.com/team",
+      "formats": ["json"],
+      "jsonOptions": {
+        "prompt": "Extract team member names and titles",
+        "schema": { "teamMembers": {} }
+      }
+    }
+  }
+]

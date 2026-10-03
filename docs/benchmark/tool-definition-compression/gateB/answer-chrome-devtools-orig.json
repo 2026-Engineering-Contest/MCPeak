@@ -1,0 +1,12 @@
+[
+  {
+    "n": 1,
+    "tool": "navigate_page",
+    "args": { "pageId": 0, "type": "url", "url": "https://example.com" }
+  },
+  { "n": 2, "tool": "take_screenshot", "args": { "pageId": 0 } },
+  { "n": 3, "tool": "click", "args": { "pageId": 0, "uid": "btn-12" } },
+  { "n": 4, "tool": "list_console_messages", "args": { "pageId": 0 } },
+  { "n": 5, "tool": "emulate", "args": { "pageId": 0, "networkConditions": "Slow 3G" } },
+  { "n": 6, "tool": "fill", "args": { "pageId": 0, "uid": "input-3", "value": "hello" } }
+]

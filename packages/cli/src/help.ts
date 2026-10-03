@@ -138,10 +138,36 @@ const REPAIR_OPTIONS = `옵션:
   --no-stderr        서버 stderr 를 전송에서 뺍니다. stderr 는 서버가 자유롭게 쓰는
                      텍스트라 경로·토큰·데이터가 섞일 수 있습니다
   --yes              전송 확인 화면을 건너뜁니다. 비대화형 환경에서 필요합니다`;
+export const OPTIMIZE_USAGE =
+  "사용법: mcpeak optimize --out <overlay.json> (-- <executable> [args...] | --command <executable> [--arg <value> ...] [--env <NAME> ...] | --url <URL> [--header-env <헤더이름>=<환경변수이름> ...]) [--json]";
+
+/**
+ * optimize 옵션 설명. 사용법 한 줄로는 오버레이를 어떻게 쓰는지, 즉 프록시 명령을 알 수 없다.
+ * 만든 파일을 쓰는 방법을 모르면 이 명령은 리포트를 찍는 도구로만 보인다.
+ */
+const OPTIMIZE_OPTIONS = `옵션:
+  -- <executable> [args...]
+                        \`--\` 뒤는 전부 서버를 띄울 명령입니다. 첫 토큰이 실행 파일,
+                        나머지가 그 인자입니다. \`--command\`/\`--arg\` 와 같은 일을 하며
+                        함께 쓸 수 없습니다
+  --out <overlay.json>  오버레이를 쓸 경로입니다. 기본값이 없습니다. 파일이 있으면
+                        덮어씁니다. 서버가 바뀌면 같은 명령으로 다시 만들기 때문입니다
+  --json                리포트 대신 오버레이 JSON 을 stdout 에 냅니다
+${ENV_FORWARD_OPTION}
+${REMOTE_TARGET_OPTIONS}
+
+바뀌는 것은 tools/list 뿐입니다. 도구 이름·인자·호출 결과는 원본과 같습니다. 만든 오버레이는
+MCP 클라이언트 설정에서 서버 명령 자리에 프록시를 넣어 씁니다:
+  mcpeak-optimize-proxy <overlay.json> -- <원래 서버 명령>
+  mcpeak-optimize-proxy <overlay.json> --url <URL>
+공통 파라미터 설명은 서버 instructions 로 옮겨집니다. instructions 를 모델에 보여 주지 않는
+클라이언트에서는 그 설명이 모델에 닿지 않습니다.`;
+
 const COMMANDS = `명령:
   test      JSON 테스트 명세로 MCP 서버를 실행하고 검증합니다.
   generate  MCP 서버의 툴 스키마에서 테스트 명세를 생성합니다.
-  repair    실패한 test 실행의 번들로 서버 코드의 원인 후보를 제안받습니다.`;
+  repair    실패한 test 실행의 번들로 서버 코드의 원인 후보를 제안받습니다.
+  optimize  기능을 바꾸지 않고 MCP 서버의 도구 정의를 줄인 오버레이를 만듭니다.`;
 
 export const GLOBAL_HELP = `MCPeak — MCP 서버 테스트 프레임워크
 
@@ -169,7 +195,7 @@ ${COMMANDS}
  * 묻지도 않은 명령의 사용법 200 자를 읽고 나서야 목록에 닿는다.
  */
 export const commandDiscovery =
-  "사용 가능한 명령: test, generate, repair. 전체 도움말: mcpeak --help";
+  "사용 가능한 명령: test, generate, repair, optimize. 전체 도움말: mcpeak --help";
 
 export const TEST_USAGE_HINT = `${TEST_USAGE} ${commandDiscovery}`;
 
@@ -177,13 +203,22 @@ export const GENERATE_USAGE_HINT = `${GENERATE_USAGE} ${commandDiscovery}`;
 
 export const REPAIR_USAGE_HINT = `${REPAIR_USAGE} ${commandDiscovery}`;
 
-export function commandHelp(command: "test" | "generate" | "repair"): string {
+export const OPTIMIZE_USAGE_HINT = `${OPTIMIZE_USAGE} ${commandDiscovery}`;
+
+export function commandHelp(command: "test" | "generate" | "repair" | "optimize"): string {
   if (command === "test")
     return `test — JSON 테스트 명세로 MCP 서버를 실행하고 검증합니다.
 
 ${TEST_USAGE}
 
 ${TEST_OPTIONS}
+`;
+  if (command === "optimize")
+    return `optimize — 기능을 바꾸지 않고 MCP 서버의 도구 정의를 줄인 오버레이를 만듭니다.
+
+${OPTIMIZE_USAGE}
+
+${OPTIMIZE_OPTIONS}
 `;
   if (command === "repair")
     return `repair — 실패한 test 실행의 번들로 서버 코드의 원인 후보를 제안받습니다.

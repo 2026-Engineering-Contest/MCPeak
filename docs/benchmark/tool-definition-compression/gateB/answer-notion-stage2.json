@@ -1,0 +1,34 @@
+[
+  {
+    "n": 1,
+    "tool": "API-retrieve-page-markdown",
+    "args": { "page_id": "1a2b3c4d-0000-0000-0000-000000000001" }
+  },
+  { "n": 2, "tool": "API-post-search", "args": { "query": "분기 계획" } },
+  {
+    "n": 3,
+    "tool": "API-update-page-markdown",
+    "args": {
+      "page_id": "1a2b3c4d-0000-0000-0000-000000000002",
+      "type": "update_content",
+      "update_content": { "content_updates": [{ "old_str": "초안", "new_str": "확정" }] }
+    }
+  },
+  {
+    "n": 4,
+    "tool": "API-create-a-comment",
+    "args": {
+      "parent": "1a2b3c4d-0000-0000-0000-000000000003",
+      "rich_text": [{ "text": { "content": "검토 필요" } }]
+    }
+  },
+  {
+    "n": 5,
+    "tool": "API-query-data-source",
+    "args": {
+      "data_source_id": "1a2b3c4d-0000-0000-0000-000000000004",
+      "filter": { "property": "status", "select": { "equals": "Done" } }
+    }
+  },
+  { "n": 6, "tool": "API-get-self", "args": {} }
+]

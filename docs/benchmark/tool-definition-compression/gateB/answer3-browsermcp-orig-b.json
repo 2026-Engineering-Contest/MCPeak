@@ -1,0 +1,42 @@
+[
+  {
+    "n": 1,
+    "tool": "browser_navigate",
+    "args": {
+      "url": "https://example.com"
+    }
+  },
+  {
+    "n": 2,
+    "tool": "browser_snapshot",
+    "args": {}
+  },
+  {
+    "n": 3,
+    "tool": "browser_click",
+    "args": {
+      "element": "element e12",
+      "ref": "e12"
+    }
+  },
+  {
+    "n": 4,
+    "tool": "browser_type",
+    "args": {
+      "element": "element e5",
+      "ref": "e5",
+      "text": "hello",
+      "submit": false
+    }
+  },
+  {
+    "n": 5,
+    "tool": "browser_go_back",
+    "args": {}
+  },
+  {
+    "n": 6,
+    "tool": "browser_get_console_logs",
+    "args": {}
+  }
+]

@@ -1,0 +1,8 @@
+[
+  {"n":1,"tool":"slack_list_channels","args":{}},
+  {"n":2,"tool":"slack_post_message","args":{"channel_id":"C123","text":"배포 완료"}},
+  {"n":3,"tool":"slack_reply_to_thread","args":{"channel_id":"C123","thread_ts":"1700000000.000100","text":"확인했습니다"}},
+  {"n":4,"tool":"slack_add_reaction","args":{"channel_id":"C123","timestamp":"1700000000.000100","reaction":"thumbsup"}},
+  {"n":5,"tool":"slack_get_channel_history","args":{"channel_id":"C123","limit":20}},
+  {"n":6,"tool":"slack_get_user_profile","args":{"user_id":"U123"}}
+]

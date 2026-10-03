@@ -1,0 +1,66 @@
+{
+  "orig": [
+    {
+      "n": 1,
+      "tool": "git_set_working_dir",
+      "threw": "connect: MCP error -32000: Connection closed"
+    },
+    {
+      "n": 2,
+      "tool": "git_status",
+      "threw": "connect: MCP error -32000: Connection closed"
+    },
+    {
+      "n": 3,
+      "tool": "git_add",
+      "threw": "connect: MCP error -32000: Connection closed"
+    },
+    {
+      "n": 4,
+      "tool": "git_commit",
+      "threw": "connect: MCP error -32000: Connection closed"
+    },
+    {
+      "n": 5,
+      "tool": "git_log",
+      "threw": "connect: MCP error -32000: Connection closed"
+    },
+    {
+      "n": 6,
+      "tool": "git_checkout",
+      "threw": "connect: MCP error -32000: Connection closed"
+    }
+  ],
+  "safe": [
+    {
+      "n": 1,
+      "tool": "git_set_working_dir",
+      "threw": "connect: MCP error -32000: Connection closed"
+    },
+    {
+      "n": 2,
+      "tool": "git_status",
+      "threw": "connect: MCP error -32000: Connection closed"
+    },
+    {
+      "n": 3,
+      "tool": "git_add",
+      "threw": "connect: MCP error -32000: Connection closed"
+    },
+    {
+      "n": 4,
+      "tool": "git_commit",
+      "threw": "connect: MCP error -32000: Connection closed"
+    },
+    {
+      "n": 5,
+      "tool": "git_log",
+      "threw": "connect: MCP error -32000: Connection closed"
+    },
+    {
+      "n": 6,
+      "tool": "git_checkout",
+      "threw": "connect: MCP error -32000: Connection closed"
+    }
+  ]
+}

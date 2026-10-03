@@ -1,0 +1,33 @@
+[
+  { "n": 1, "tool": "kubectl_get", "args": { "resourceType": "pods", "namespace": "default" } },
+  {
+    "n": 2,
+    "tool": "kubectl_describe",
+    "args": { "resourceType": "pods", "name": "api-7d9f", "namespace": "default" }
+  },
+  {
+    "n": 3,
+    "tool": "kubectl_logs",
+    "args": { "resourceType": "pod", "name": "api-7d9f", "namespace": "default", "tail": 100 }
+  },
+  {
+    "n": 4,
+    "tool": "kubectl_scale",
+    "args": { "name": "api", "namespace": "default", "replicas": 3 }
+  },
+  {
+    "n": 5,
+    "tool": "exec_in_pod",
+    "args": { "name": "api-7d9f", "namespace": "default", "command": ["ls", "/app"] }
+  },
+  {
+    "n": 6,
+    "tool": "kubectl_rollout",
+    "args": {
+      "subCommand": "status",
+      "resourceType": "deployment",
+      "name": "api",
+      "namespace": "default"
+    }
+  }
+]

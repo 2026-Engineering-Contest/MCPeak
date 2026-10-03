@@ -1,0 +1,8 @@
+[
+  { "n": 1, "tool": "browser_navigate", "args": { "url": "https://example.com" } },
+  { "n": 2, "tool": "browser_snapshot", "args": {} },
+  { "n": 3, "tool": "browser_click", "args": { "target": "e12" } },
+  { "n": 4, "tool": "browser_type", "args": { "target": "e5", "text": "a@b.com" } },
+  { "n": 5, "tool": "browser_console_messages", "args": { "level": "info" } },
+  { "n": 6, "tool": "browser_navigate_back", "args": {} }
+]

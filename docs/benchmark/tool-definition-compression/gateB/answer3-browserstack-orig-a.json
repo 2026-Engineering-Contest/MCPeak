@@ -1,0 +1,8 @@
+[
+  {"n":1,"tool":"startAccessibilityScan","args":{"name":"example.com accessibility scan","pageURL":"https://example.com"}},
+  {"n":2,"tool":"getFailureLogs","args":{"sessionType":"automate","sessionId":"build-9","logTypes":["sessionLogs","consoleLogs"]}},
+  {"n":3,"tool":"createTestCase","args":{"project_identifier":"proj-1","folder_id":"1","name":"로그인 성공","test_case_steps":[{"step":"로그인을 수행","result":"로그인이 성공적으로 완료됨"}]}},
+  {"n":4,"tool":"listTestCases","args":{"project_identifier":"proj-1"}},
+  {"n":5,"tool":null,"args":{}},
+  {"n":6,"tool":"runBrowserLiveSession","args":{"platformType":"desktop","desiredURL":"https://example.com","desiredOS":"Windows","desiredOSVersion":"latest","desiredBrowser":"chrome","desiredBrowserVersion":"latest"}}
+]

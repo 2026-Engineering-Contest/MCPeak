@@ -1,0 +1,37 @@
+[
+  {
+    "n": 1,
+    "tool": "create_invoice",
+    "args": {
+      "currency_code": "USD",
+      "primary_recipients": [{ "billing_info": { "email_address": "buyer@example.com" } }],
+      "items": [
+        {
+          "name": "Service",
+          "quantity": "1",
+          "unit_amount": { "currency_code": "USD", "value": "100.00" }
+        }
+      ]
+    }
+  },
+  {
+    "n": 2,
+    "tool": "send_invoice",
+    "args": { "invoice_id": "INV2-ABCD", "send_to_recipient": true }
+  },
+  { "n": 3, "tool": "get_order", "args": { "id": "ORDER-123" } },
+  {
+    "n": 4,
+    "tool": "create_refund",
+    "args": { "capture_id": "TXN-999", "amount": { "currency_code": "USD", "value": "25.00" } }
+  },
+  { "n": 5, "tool": "get_dispute", "args": { "dispute_id": "DISPUTE-77" } },
+  {
+    "n": 6,
+    "tool": "cancel_subscription",
+    "args": {
+      "subscription_id": "I-SUB123",
+      "payload": { "reason": "Customer requested cancellation" }
+    }
+  }
+]

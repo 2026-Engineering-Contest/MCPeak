@@ -1,0 +1,40 @@
+[
+  {
+    "n": 1,
+    "tool": "browserbase_session_create",
+    "args": {}
+  },
+  {
+    "n": 2,
+    "tool": "browserbase_stagehand_navigate",
+    "args": {
+      "url": "https://example.com"
+    }
+  },
+  {
+    "n": 3,
+    "tool": "browserbase_stagehand_act",
+    "args": {
+      "action": "Click the login button"
+    }
+  },
+  {
+    "n": 4,
+    "tool": "browserbase_stagehand_extract",
+    "args": {
+      "instruction": "Extract title text from the page"
+    }
+  },
+  {
+    "n": 5,
+    "tool": "browserbase_screenshot",
+    "args": {
+      "name": "screenshot"
+    }
+  },
+  {
+    "n": 6,
+    "tool": "browserbase_session_close",
+    "args": {}
+  }
+]

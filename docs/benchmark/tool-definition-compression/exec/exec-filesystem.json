@@ -1,0 +1,78 @@
+{
+  "orig": [
+    {
+      "n": 1,
+      "tool": "read_text_file",
+      "isError": false,
+      "body": "[{\"type\":\"text\",\"text\":\"- 할 일\\n\"}]"
+    },
+    {
+      "n": 2,
+      "tool": "write_file",
+      "isError": false,
+      "body": "[{\"type\":\"text\",\"text\":\"Successfully wrote to /tmp/notes/new.md\"}]"
+    },
+    {
+      "n": 3,
+      "tool": "list_directory",
+      "isError": false,
+      "body": "[{\"type\":\"text\",\"text\":\"[FILE] new.md\\n[FILE] todo.md\"}]"
+    },
+    {
+      "n": 4,
+      "tool": "search_files",
+      "isError": false,
+      "body": "[{\"type\":\"text\",\"text\":\"/private/tmp/notes/todo.md\"}]"
+    },
+    {
+      "n": 5,
+      "tool": "move_file",
+      "isError": false,
+      "body": "[{\"type\":\"text\",\"text\":\"Successfully moved /tmp/notes/todo.md to /tmp/notes/done.md\"}]"
+    },
+    {
+      "n": 6,
+      "tool": "directory_tree",
+      "isError": false,
+      "body": "[{\"type\":\"text\",\"text\":\"[\\n  {\\n    \\\"name\\\": \\\"done.md\\\",\\n    \\\"type\\\": \\\"file\\\"\\n  },\\n  {\\n    \\\"name\\\": \\\"new.md\\\",\\n    \\\"type\\\": \\\"file\\\"\\n  }\\n]\"}]"
+    }
+  ],
+  "safe": [
+    {
+      "n": 1,
+      "tool": "read_text_file",
+      "isError": false,
+      "body": "[{\"type\":\"text\",\"text\":\"- 할 일\\n\"}]"
+    },
+    {
+      "n": 2,
+      "tool": "write_file",
+      "isError": false,
+      "body": "[{\"type\":\"text\",\"text\":\"Successfully wrote to /tmp/notes/new.md\"}]"
+    },
+    {
+      "n": 3,
+      "tool": "list_directory",
+      "isError": false,
+      "body": "[{\"type\":\"text\",\"text\":\"[FILE] new.md\\n[FILE] todo.md\"}]"
+    },
+    {
+      "n": 4,
+      "tool": "search_files",
+      "isError": false,
+      "body": "[{\"type\":\"text\",\"text\":\"/private/tmp/notes/todo.md\"}]"
+    },
+    {
+      "n": 5,
+      "tool": "move_file",
+      "isError": false,
+      "body": "[{\"type\":\"text\",\"text\":\"Successfully moved /tmp/notes/todo.md to /tmp/notes/done.md\"}]"
+    },
+    {
+      "n": 6,
+      "tool": "directory_tree",
+      "isError": false,
+      "body": "[{\"type\":\"text\",\"text\":\"[\\n  {\\n    \\\"name\\\": \\\"done.md\\\",\\n    \\\"type\\\": \\\"file\\\"\\n  },\\n  {\\n    \\\"name\\\": \\\"new.md\\\",\\n    \\\"type\\\": \\\"file\\\"\\n  }\\n]\"}]"
+    }
+  ]
+}

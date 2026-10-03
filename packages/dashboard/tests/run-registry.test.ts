@@ -36,6 +36,13 @@ describe("RunRegistry", () => {
     expect(handle.events.at(-1)).toEqual({ kind: "done", exitCode: 0, id: 1 });
   });
 
+  it("audit flow 로 시작한 run 의 summary.flow 는 audit 이다", () => {
+    const registry = new RunRegistry();
+    const handle = registry.start("audit", ["--json"], () => Promise.resolve(0));
+    expect(handle.summary.flow).toBe("audit");
+    expect(registry.list().map((run) => run.flow)).toEqual(["audit"]);
+  });
+
   it("exitCode 0이 아니면 failed다", async () => {
     const registry = new RunRegistry();
     const handle = registry.start("test", [], () => Promise.resolve(3));

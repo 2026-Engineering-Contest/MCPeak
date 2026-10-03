@@ -10,7 +10,7 @@
  * 아는 척하는 것은 사용자에게 다른 말이다(#295).
  */
 
-import type { StartRunRequest } from "../../src/api-types.js";
+import type { RunFlow } from "../../src/api-types.js";
 
 export interface RunTarget {
   /** 실행 명령 전문(`node server.mjs --port 3000`) 또는 HTTP URL. 모르면 null. */
@@ -68,10 +68,7 @@ function firstPositional(argv: readonly string[]): string | null {
 }
 
 /** 플로우별로 대상 서버와 스위트를 뽑는다. argv 를 못 읽으면 두 값 다 null 이다. */
-export function describeRun(
-  flow: StartRunRequest["flow"],
-  argv: readonly string[] | undefined,
-): RunTarget {
+export function describeRun(flow: RunFlow, argv: readonly string[] | undefined): RunTarget {
   if (!Array.isArray(argv) || argv.length === 0) {
     return { server: null, suite: null };
   }

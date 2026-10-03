@@ -12,6 +12,11 @@ import {
   resolveHttpConnectOptions,
 } from "./options.js";
 import { type McpServerInfo, readServerInfo } from "./server-info.js";
+import {
+  clientCapabilities,
+  createServerSurface,
+  type McpServerSurface,
+} from "./server-surface.js";
 import type { McpClient } from "./types.js";
 
 export {
@@ -26,8 +31,14 @@ export type {
 } from "./diagnostics.js";
 export type { McpClientErrorCode, McpClientErrorPhase } from "./errors.js";
 export { McpClientError } from "./errors.js";
-export type { ConnectOptions, HttpConnectOptions, StdioConnectOptions } from "./options.js";
+export type {
+  AdvertiseOptions,
+  ConnectOptions,
+  HttpConnectOptions,
+  StdioConnectOptions,
+} from "./options.js";
 export type { McpServerInfo } from "./server-info.js";
+export type { McpServerSurface, RawTool, ServerMessage } from "./server-surface.js";
 export type { McpClient, ToolDef, ToolResult } from "./types.js";
 
 export interface McpStdioConnection {
@@ -46,14 +57,17 @@ export interface McpHttpConnection {
 }
 
 /**
- * 반환 타입의 `McpServerInfo` 는 인터페이스가 아니라 교차로 더한다. `McpStdioConnection` 에
- * 필드를 넣으면 이 인터페이스로 객체 리터럴을 만드는 cli 의 test double 이 전부 깨진다.
+ * 반환 타입의 `McpServerInfo`·`McpServerSurface` 는 인터페이스가 아니라 교차로 더한다.
+ * `McpStdioConnection` 에 필드를 넣으면 이 인터페이스로 객체 리터럴을 만드는 cli 의 test double 이 전부 깨진다.
  */
 export async function connectStdio(
   options: StdioConnectOptions,
-): Promise<McpStdioConnection & McpServerInfo> {
+): Promise<McpStdioConnection & McpServerInfo & McpServerSurface> {
   const transport = new NodeControlledStdioTransport(resolveConnectOptions(options));
-  const sdk = new Client({ name: "mcpeak", version: "0.0.0" });
+  const sdk = new Client(
+    { name: "mcpeak", version: "0.0.0" },
+    { capabilities: clientCapabilities(options.advertise) },
+  );
   // SDK close는 facade에서 끝내고, 실제 child 종료는 lifecycle controller가 한 번만 수행한다.
   // 이 순서가 아니면 lifecycle의 normalClose hook이 다시 자기 close Promise를 await하게 된다.
   const sdkTransport: Transport = {
@@ -131,6 +145,7 @@ export async function connectStdio(
     close,
     forceClose: () => transport.forceClose(),
     ...readServerInfo(sdk),
+    ...createServerSurface(sdk, () => transport.getDiagnostics()),
   };
 }
 
@@ -140,10 +155,13 @@ export async function connectStdio(
  */
 export async function connectHttp(
   options: HttpConnectOptions,
-): Promise<McpHttpConnection & McpServerInfo> {
+): Promise<McpHttpConnection & McpServerInfo & McpServerSurface> {
   const resolved = resolveHttpConnectOptions(options);
   const state = new HttpConnectionState(resolved);
-  const sdk = new Client({ name: "mcpeak", version: "0.0.0" });
+  const sdk = new Client(
+    { name: "mcpeak", version: "0.0.0" },
+    { capabilities: clientCapabilities(options.advertise) },
+  );
   try {
     await sdk.connect(state.transport, { timeout: resolved.connectTimeoutMs });
   } catch (cause) {
@@ -161,6 +179,7 @@ export async function connectHttp(
     getDiagnostics: () => state.getDiagnostics(),
     close,
     ...readServerInfo(sdk),
+    ...createServerSurface(sdk, () => state.getDiagnostics()),
   };
 }
 

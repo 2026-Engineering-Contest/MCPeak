@@ -1,3 +1,10 @@
+/** 클라이언트가 광고할 능력. 켠 것만 서버가 요청을 보낼 수 있다. 기본은 전부 꺼짐. */
+export interface AdvertiseOptions {
+  readonly sampling?: boolean;
+  readonly elicitation?: boolean;
+  readonly roots?: boolean;
+}
+
 export interface StdioConnectOptions {
   command: string;
   args?: readonly string[];
@@ -6,12 +13,14 @@ export interface StdioConnectOptions {
   connectTimeoutMs?: number;
   maxMessageBytes?: number;
   maxStderrBytes?: number;
+  readonly advertise?: AdvertiseOptions;
 }
 
 export interface HttpConnectOptions {
   url: string;
   headers?: Readonly<Record<string, string>>;
   connectTimeoutMs?: number;
+  readonly advertise?: AdvertiseOptions;
 }
 
 export type ConnectOptions = StdioConnectOptions | HttpConnectOptions;
@@ -40,9 +49,10 @@ const OPTION_KEYS = new Set([
   "connectTimeoutMs",
   "maxMessageBytes",
   "maxStderrBytes",
+  "advertise",
 ]);
 
-const HTTP_OPTION_KEYS = new Set(["url", "headers", "connectTimeoutMs"]);
+const HTTP_OPTION_KEYS = new Set(["url", "headers", "connectTimeoutMs", "advertise"]);
 
 /** RFC 9110 의 field-name token. 헤더 키는 이 문자 집합만 허용한다. */
 const HTTP_TOKEN_PATTERN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;

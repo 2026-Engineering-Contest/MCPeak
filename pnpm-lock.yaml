@@ -72,6 +72,15 @@ importers:
         specifier: 4.4.3
         version: 4.4.3
 
+  packages/audit:
+    dependencies:
+      '@mcpeak/core':
+        specifier: workspace:*
+        version: link:../core
+      '@modelcontextprotocol/sdk':
+        specifier: 'catalog:'
+        version: 1.30.0(zod@4.4.3)
+
   packages/cli:
     dependencies:
       '@mcpeak/core':

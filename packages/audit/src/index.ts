@@ -1,0 +1,15 @@
+export { type AuditDependencies, audit } from "./audit.js";
+export { collectStrings } from "./collect.js";
+export { probeArguments } from "./probe-args.js";
+export { renderReport } from "./report.js";
+export { DESC_RULES, runDescRules } from "./rules/description.js";
+export { FLOW_RULES, runFlowRules } from "./rules/flow.js";
+export { LAUNCH_RULES, runLaunchRules } from "./rules/launch.js";
+export { PROTOCOL_RULES, runProtocolRules } from "./rules/protocol.js";
+export { RESULT_RULES, runResultRules } from "./rules/result.js";
+export { runSchemaRules, SCHEMA_RULES } from "./rules/schema.js";
+export { planCanaries, runSecretRules, SECRET_RULES } from "./rules/secret.js";
+export { compareBaseline, computeSurface, parseBaseline, SURFACE_RULES } from "./surface/index.js";
+export { type NormalizedText, normalizeText } from "./text/normalize.js";
+export type * from "./types.js";
+export { AUDIT_SCHEMA_VERSION, AuditError } from "./types.js";

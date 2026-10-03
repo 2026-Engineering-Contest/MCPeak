@@ -206,6 +206,53 @@ async function leftovers() {
 const NOTHING_LEFT = { containers: [], networks: [], volumes: [], tmp: [] };
 
 /**
+ * 떠 있는 게이트웨이 컨테이너 안에서 상류에 직접 접속해 본다(진단 전용). 전달이 멈췄을 때 게이트웨이의
+ * 전달 코드가 문제인지 컨테이너와 상류 사이가 문제인지를 가른다. 주소마다 5초 제한이다.
+ */
+function probeUpstreamFromGateway(host: string): string {
+  const names = spawnSync(
+    "docker",
+    ["ps", "--filter", "label=mcpeak.audit=1", "--format", "{{.Names}}"],
+    { encoding: "utf8" },
+  ).stdout.split("\n");
+  const gateway = names.find((name) => name.endsWith("-gateway"));
+  if (gateway === undefined) return "게이트웨이 컨테이너를 찾지 못했습니다";
+  const script = `
+    const dns = require("node:dns/promises");
+    const https = require("node:https");
+    (async () => {
+      const out = [];
+      let addresses = [];
+      try { addresses = await dns.lookup(${JSON.stringify(host)}, { all: true }); }
+      catch (error) { out.push("이름 풀이 실패 " + error.code); }
+      for (const { address, family } of addresses) {
+        for (const path of ["/v1/search?name=Seoul&count=1&language=ko", "/v1/search?name=mcpeak&count=1&language=ko"]) {
+          const started = Date.now();
+          const result = await new Promise((done) => {
+            const request = https.request({ host: address, port: 443, path, servername: ${JSON.stringify(host)}, headers: { host: ${JSON.stringify(host)} }, agent: false, timeout: 5000 }, (response) => {
+              let size = 0;
+              response.on("data", (chunk) => { size += chunk.length; });
+              response.on("end", () => done("HTTP " + response.statusCode + " " + size + "B " + (response.headers["content-encoding"] || "identity")));
+              response.on("error", (error) => done("응답 오류 " + error.code));
+            });
+            request.on("timeout", () => { request.destroy(); done("5초 무응답"); });
+            request.on("error", (error) => done("오류 " + (error.code || error.message)));
+            request.end();
+          });
+          out.push("IPv" + family + " " + address + " " + path.slice(16, 22) + ": " + result + " (" + (Date.now() - started) + "ms)");
+        }
+      }
+      console.log(out.join(" | "));
+    })();
+  `;
+  const ran = spawnSync("docker", ["exec", gateway, "node", "-e", script], {
+    encoding: "utf8",
+    timeout: 60_000,
+  });
+  return (ran.stdout.trim() || ran.stderr.trim() || "출력 없음").slice(0, 1500);
+}
+
+/**
  * 백엔드를 직접 띄워 격리 안의 서버에 붙는다. CLI 가 넘기는 것과 같은 꼴의 명세를 쓴다. 감사를 거치지
  * 않고 호출 응답 자체를 봐야 하는 스펙이 쓴다.
  */
@@ -395,6 +442,7 @@ describe("audit sandbox e2e", () => {
         ]);
         if (waited !== undefined) return waited.value;
         const seen = await handle.snapshot();
+        const probe = probeUpstreamFromGateway("geocoding-api.open-meteo.com");
         throw new Error(
           [
             `→ get_forecast 가 ${CALL_WAIT_MS / 1000}초 안에 답하지 않았습니다. 게이트웨이가 본 것:`,
@@ -415,6 +463,7 @@ describe("audit sandbox e2e", () => {
                 .join(", ") || "없음"
             }`,
             `→ 읽지 못한 관측: ${seen.gaps.map((gap) => `${gap.source}: ${gap.reason}`).join(" | ") || "없음"}`,
+            `→ 게이트웨이 컨테이너에서 상류에 직접 접속: ${probe}`,
             "요청이 없으면 서버가 게이트웨이에 닿지 못한 것이고, 요청이 있으면 상류가 답하지 않은 것입니다.",
           ].join("\n"),
         );

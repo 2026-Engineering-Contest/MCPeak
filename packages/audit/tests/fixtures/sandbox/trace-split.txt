@@ -1,0 +1,317 @@
+28    execve("/bin/sh", ["/bin/sh", "-c", "cat /etc/hostname > /dev/null"], 0x1eb39760 /* 6 vars */) = 0
+28    openat(AT_FDCWD, "/etc/ld.so.cache", O_RDONLY|O_CLOEXEC) = 3
+28    openat(AT_FDCWD, "/lib/aarch64-linux-gnu/libc.so.6", O_RDONLY|O_CLOEXEC) = 3
+28    openat(AT_FDCWD, "/dev/null", O_WRONLY|O_CREAT|O_TRUNC, 0666) = 3
+30    execve("/usr/bin/cat", ["cat", "/etc/hostname"], 0xaaaad89e2900 /* 6 vars */) = 0
+30    openat(AT_FDCWD, "/etc/ld.so.cache", O_RDONLY|O_CLOEXEC) = 3
+30    openat(AT_FDCWD, "/lib/aarch64-linux-gnu/libc.so.6", O_RDONLY|O_CLOEXEC) = 3
+29    execve("/bin/sh", ["/bin/sh", "-c", "cat /etc/hostname > /dev/null"], 0x1eb39760 /* 6 vars */) = 0
+29    openat(AT_FDCWD, "/etc/ld.so.cache", O_RDONLY|O_CLOEXEC) = 3
+29    openat(AT_FDCWD, "/lib/aarch64-linux-gnu/libc.so.6", O_RDONLY|O_CLOEXEC) = 3
+30    openat(AT_FDCWD, "/etc/hostname", O_RDONLY) = 3
+28    --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=30, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+10    --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=28, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+29    openat(AT_FDCWD, "/dev/null", O_WRONLY|O_CREAT|O_TRUNC, 0666) = 3
+32    execve("/usr/bin/cat", ["cat", "/etc/hostname"], 0xaaaaca352900 /* 6 vars */) = 0
+32    openat(AT_FDCWD, "/etc/ld.so.cache", O_RDONLY|O_CLOEXEC) = 3
+31    execve("/bin/sh", ["/bin/sh", "-c", "cat /etc/hostname > /dev/null"], 0x1eb38a70 /* 6 vars */ <unfinished ...>
+32    openat(AT_FDCWD, "/lib/aarch64-linux-gnu/libc.so.6", O_RDONLY|O_CLOEXEC <unfinished ...>
+31    <... execve resumed>)             = 0
+32    <... openat resumed>)             = 3
+31    openat(AT_FDCWD, "/etc/ld.so.cache", O_RDONLY|O_CLOEXEC) = 3
+31    openat(AT_FDCWD, "/lib/aarch64-linux-gnu/libc.so.6", O_RDONLY|O_CLOEXEC) = 3
+32    openat(AT_FDCWD, "/etc/hostname", O_RDONLY) = 3
+29    --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=32, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+10    --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=29, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+31    openat(AT_FDCWD, "/dev/null", O_WRONLY|O_CREAT|O_TRUNC, 0666) = 3
+34    execve("/usr/bin/cat", ["cat", "/etc/hostname"], 0xaaaad2992900 /* 6 vars */) = 0
+34    openat(AT_FDCWD, "/etc/ld.so.cache", O_RDONLY|O_CLOEXEC) = 3
+33    execve("/bin/sh", ["/bin/sh", "-c", "cat /etc/hostname > /dev/null"], 0x1eb38a70 /* 6 vars */) = 0
+34    openat(AT_FDCWD, "/lib/aarch64-linux-gnu/libc.so.6", O_RDONLY|O_CLOEXEC) = 3
+33    openat(AT_FDCWD, "/etc/ld.so.cache", O_RDONLY|O_CLOEXEC) = 3
+33    openat(AT_FDCWD, "/lib/aarch64-linux-gnu/libc.so.6", O_RDONLY|O_CLOEXEC) = 3
+34    openat(AT_FDCWD, "/etc/hostname", O_RDONLY) = 3
+31    --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=34, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+10    --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=31, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+33    openat(AT_FDCWD, "/dev/null", O_WRONLY|O_CREAT|O_TRUNC, 0666) = 3
+36    execve("/usr/bin/cat", ["cat", "/etc/hostname"], 0xaaaab7752900 /* 6 vars */) = 0
+36    openat(AT_FDCWD, "/etc/ld.so.cache", O_RDONLY|O_CLOEXEC) = 3
+35    execve("/bin/sh", ["/bin/sh", "-c", "cat /etc/hostname > /dev/null"], 0x1eb38a70 /* 6 vars */) = 0
+36    openat(AT_FDCWD, "/lib/aarch64-linux-gnu/libc.so.6", O_RDONLY|O_CLOEXEC) = 3
+35    openat(AT_FDCWD, "/etc/ld.so.cache", O_RDONLY|O_CLOEXEC) = 3
+35    openat(AT_FDCWD, "/lib/aarch64-linux-gnu/libc.so.6", O_RDONLY|O_CLOEXEC) = 3
+36    openat(AT_FDCWD, "/etc/hostname", O_RDONLY) = 3
+33    --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=36, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+10    --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=33, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+35    openat(AT_FDCWD, "/dev/null", O_WRONLY|O_CREAT|O_TRUNC, 0666) = 3
+38    execve("/usr/bin/cat", ["cat", "/etc/hostname"], 0xaaaaac5c2900 /* 6 vars */) = 0
+38    openat(AT_FDCWD, "/etc/ld.so.cache", O_RDONLY|O_CLOEXEC) = 3
+37    execve("/bin/sh", ["/bin/sh", "-c", "cat /etc/hostname > /dev/null"], 0x1eb4c450 /* 6 vars */ <unfinished ...>
+38    openat(AT_FDCWD, "/lib/aarch64-linux-gnu/libc.so.6", O_RDONLY|O_CLOEXEC) = 3
+37    <... execve resumed>)             = 0
+37    openat(AT_FDCWD, "/etc/ld.so.cache", O_RDONLY|O_CLOEXEC) = 3
+37    openat(AT_FDCWD, "/lib/aarch64-linux-gnu/libc.so.6", O_RDONLY|O_CLOEXEC) = 3
+38    openat(AT_FDCWD, "/etc/hostname", O_RDONLY) = 3
+35    --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=38, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+10    --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=35, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+37    openat(AT_FDCWD, "/dev/null", O_WRONLY|O_CREAT|O_TRUNC, 0666) = 3
+40    execve("/usr/bin/cat", ["cat", "/etc/hostname"], 0xaaaaaea32900 /* 6 vars */) = 0
+40    openat(AT_FDCWD, "/etc/ld.so.cache", O_RDONLY|O_CLOEXEC) = 3
+39    execve("/bin/sh", ["/bin/sh", "-c", "cat /etc/hostname > /dev/null"], 0x1eb4c450 /* 6 vars */ <unfinished ...>
+40    openat(AT_FDCWD, "/lib/aarch64-linux-gnu/libc.so.6", O_RDONLY|O_CLOEXEC) = 3
+39    <... execve resumed>)             = 0
+39    openat(AT_FDCWD, "/etc/ld.so.cache", O_RDONLY|O_CLOEXEC) = 3
+39    openat(AT_FDCWD, "/lib/aarch64-linux-gnu/libc.so.6", O_RDONLY|O_CLOEXEC) = 3
+40    openat(AT_FDCWD, "/etc/hostname", O_RDONLY) = 3
+37    --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=40, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+10    --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=37, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+39    openat(AT_FDCWD, "/dev/null", O_WRONLY|O_CREAT|O_TRUNC, 0666) = 3
+42    execve("/usr/bin/cat", ["cat", "/etc/hostname"], 0xaaaad31d2900 /* 6 vars */) = 0
+41    execve("/bin/sh", ["/bin/sh", "-c", "cat /etc/hostname > /dev/null"], 0x1eb4c450 /* 6 vars */ <unfinished ...>
+42    openat(AT_FDCWD, "/etc/ld.so.cache", O_RDONLY|O_CLOEXEC) = 3
+41    <... execve resumed>)             = 0
+42    openat(AT_FDCWD, "/lib/aarch64-linux-gnu/libc.so.6", O_RDONLY|O_CLOEXEC) = 3
+41    openat(AT_FDCWD, "/etc/ld.so.cache", O_RDONLY|O_CLOEXEC) = 3
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC <unfinished ...>
+41    openat(AT_FDCWD, "/lib/aarch64-linux-gnu/libc.so.6", O_RDONLY|O_CLOEXEC <unfinished ...>
+10    <... openat resumed>)             = 39
+41    <... openat resumed>)             = 3
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+42    openat(AT_FDCWD, "/etc/hostname", O_RDONLY) = 3
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+39    --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=42, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=39, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+41    openat(AT_FDCWD, "/dev/null", O_WRONLY|O_CREAT|O_TRUNC, 0666) = 3
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC <unfinished ...>
+43    execve("/usr/bin/cat", ["cat", "/etc/hostname"], 0xaaaae4dc2900 /* 6 vars */ <unfinished ...>
+10    <... openat resumed>)             = 39
+43    <... execve resumed>)             = 0
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+43    openat(AT_FDCWD, "/etc/ld.so.cache", O_RDONLY|O_CLOEXEC) = 3
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+43    openat(AT_FDCWD, "/lib/aarch64-linux-gnu/libc.so.6", O_RDONLY|O_CLOEXEC) = 3
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+43    openat(AT_FDCWD, "/etc/hostname", O_RDONLY) = 3
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+41    --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=43, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=41, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+10    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+26    openat(AT_FDCWD, "/home/node/nope", O_RDONLY|O_CLOEXEC <unfinished ...>
+25    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 39
+27    openat(AT_FDCWD, "/home/node/nope", O_RDONLY|O_CLOEXEC <unfinished ...>
+25    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 44
+25    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC <unfinished ...>
+24    openat(AT_FDCWD, "/home/node/nope", O_RDONLY|O_CLOEXEC <unfinished ...>
+25    <... openat resumed>)             = 46
+25    openat(AT_FDCWD, "/home/node/nope", O_RDONLY|O_CLOEXEC <unfinished ...>
+26    <... openat resumed>)             = -1 ENOENT (No such file or directory)
+26    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC) = 42
+25    <... openat resumed>)             = -1 ENOENT (No such file or directory)
+26    openat(AT_FDCWD, "/home/node/nope", O_RDONLY|O_CLOEXEC) = -1 ENOENT (No such file or directory)
+25    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC <unfinished ...>
+24    <... openat resumed>)             = -1 ENOENT (No such file or directory)
+27    <... openat resumed>)             = -1 ENOENT (No such file or directory)
+26    openat(AT_FDCWD, "/home/node/nope", O_RDONLY|O_CLOEXEC <unfinished ...>
+25    <... openat resumed>)             = 45
+24    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC <unfinished ...>
+27    openat(AT_FDCWD, "/home/node/nope", O_RDONLY|O_CLOEXEC <unfinished ...>
+25    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC <unfinished ...>
+24    <... openat resumed>)             = 48
+25    <... openat resumed>)             = 50
+24    openat(AT_FDCWD, "/home/node/nope", O_RDONLY|O_CLOEXEC <unfinished ...>
+25    openat(AT_FDCWD, "/etc/hostname", O_RDONLY|O_CLOEXEC <unfinished ...>
+26    <... openat resumed>)             = -1 ENOENT (No such file or directory)
+25    <... openat resumed>)             = 51
+24    <... openat resumed>)             = -1 ENOENT (No such file or directory)
+27    <... openat resumed>)             = -1 ENOENT (No such file or directory)

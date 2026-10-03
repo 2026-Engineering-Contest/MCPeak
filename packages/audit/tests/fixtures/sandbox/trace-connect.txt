@@ -1,0 +1,21 @@
+10    connect(18, {sa_family=AF_INET, sin_port=htons(80), sin_addr=inet_addr("169.254.169.254")}, 16) = -1 ENETUNREACH (Network is unreachable)
+10    connect(18, {sa_family=AF_INET, sin_port=htons(8080), sin_addr=inet_addr("127.0.0.1")}, 16) = -1 EINPROGRESS (Operation now in progress)
+10    connect(18, {sa_family=AF_INET, sin_port=htons(443), sin_addr=inet_addr("10.0.0.1")}, 16) = -1 ENETUNREACH (Network is unreachable)
+10    connect(18, {sa_family=AF_INET, sin_port=htons(443), sin_addr=inet_addr("8.8.8.8")}, 16) = -1 ENETUNREACH (Network is unreachable)
+10    connect(18, {sa_family=AF_INET6, sin6_port=htons(8080), sin6_flowinfo=htonl(0), inet_pton(AF_INET6, "::1", &sin6_addr), sin6_scope_id=0}, 28) = -1 EINPROGRESS (Operation now in progress)
+10    connect(18, {sa_family=AF_INET6, sin6_port=htons(80), sin6_flowinfo=htonl(0), inet_pton(AF_INET6, "fe80::1", &sin6_addr), sin6_scope_id=0}, 28) = -1 EINVAL (Invalid argument)
+10    connect(18, {sa_family=AF_INET6, sin6_port=htons(443), sin6_flowinfo=htonl(0), inet_pton(AF_INET6, "2001:db8::1", &sin6_addr), sin6_scope_id=0}, 28) = -1 ENETUNREACH (Network is unreachable)
+10    connect(18, {sa_family=AF_UNIX, sun_path="/tmp/mcpeak-no-such.sock"}, 110) = -1 ENOENT (No such file or directory)
+10    openat(AT_FDCWD, "/etc/resolv.conf", O_RDONLY) = 18
+10    openat(AT_FDCWD, "/etc/nsswitch.conf", O_RDONLY) = 18
+10    openat(AT_FDCWD, "/etc/netsvc.conf", O_RDONLY) = -1 ENOENT (No such file or directory)
+10    openat(AT_FDCWD, "/etc/svc.conf", O_RDONLY) = -1 ENOENT (No such file or directory)
+10    connect(18, {sa_family=AF_INET, sin_port=htons(53), sin_addr=inet_addr("192.168.65.7")}, 16) = -1 ENETUNREACH (Network is unreachable)
+24    connect(18, {sa_family=AF_UNIX, sun_path="/var/run/nscd/socket"}, 110) = -1 ENOENT (No such file or directory)
+24    connect(18, {sa_family=AF_UNIX, sun_path="/var/run/nscd/socket"}, 110) = -1 ENOENT (No such file or directory)
+24    openat(AT_FDCWD, "/etc/nsswitch.conf", O_RDONLY|O_CLOEXEC) = 18
+24    openat(AT_FDCWD, "/etc/host.conf", O_RDONLY|O_CLOEXEC) = 18
+24    openat(AT_FDCWD, "/etc/resolv.conf", O_RDONLY|O_CLOEXEC) = 18
+24    openat(AT_FDCWD, "/etc/hosts", O_RDONLY|O_CLOEXEC) = 18
+24    connect(18, {sa_family=AF_INET, sin_port=htons(53), sin_addr=inet_addr("192.168.65.7")}, 16) = -1 ENETUNREACH (Network is unreachable)
+24    connect(18, {sa_family=AF_INET, sin_port=htons(53), sin_addr=inet_addr("192.168.65.7")}, 16) = -1 ENETUNREACH (Network is unreachable)

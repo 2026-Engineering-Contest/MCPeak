@@ -1,0 +1,43 @@
+10    execve("/usr/local/bin/npx", ["npx", "--no-install", "tsc", "--version"], 0xffffd295ef28 /* 6 vars */) = 0
+10    execve("/usr/local/sbin/node", ["node", "/usr/local/bin/npx", "--no-install", "tsc", "--version"], 0xffffc04afa10 /* 6 vars */) = -1 ENOENT (No such file or directory)
+10    execve("/usr/local/bin/node", ["node", "/usr/local/bin/npx", "--no-install", "tsc", "--version"], 0xffffc04afa10 /* 6 vars */) = 0
+10    openat(AT_FDCWD, "/home/node/.npm/_logs/2026-10-03T10_06_02_739Z-debug-0.log", O_WRONLY|O_CREAT|O_APPEND|O_CLOEXEC, 0666) = -1 ENOENT (No such file or directory)
+17    openat(AT_FDCWD, "/home/node/.npm/_update-notifier-last-checked", O_WRONLY|O_CREAT|O_TRUNC|O_CLOEXEC, 0666) = -1 ENOENT (No such file or directory)
+18    connect(19, {sa_family=AF_UNIX, sun_path="/var/run/nscd/socket"}, 110) = -1 ENOENT (No such file or directory)
+18    connect(19, {sa_family=AF_UNIX, sun_path="/var/run/nscd/socket"}, 110) = -1 ENOENT (No such file or directory)
+18    connect(18, {sa_family=AF_INET, sin_port=htons(53), sin_addr=inet_addr("192.168.65.7")}, 16) = -1 ENETUNREACH (Network is unreachable)
+17    openat(AT_FDCWD, "/workspace/package.json", O_RDONLY|O_CLOEXEC <unfinished ...>
+18    connect(18, {sa_family=AF_INET, sin_port=htons(53), sin_addr=inet_addr("192.168.65.7")}, 16 <unfinished ...>
+17    <... openat resumed>)             = 19
+18    <... connect resumed>)            = -1 ENETUNREACH (Network is unreachable)
+22    execve("/workspace/node_modules/.bin/sh", ["sh", "-c", "tsc --version"], 0x10d137a0 /* 31 vars */) = -1 ENOENT (No such file or directory)
+22    execve("/workspace/node_modules/.bin/sh", ["sh", "-c", "tsc --version"], 0x10d137a0 /* 31 vars */) = -1 ENOENT (No such file or directory)
+22    execve("/node_modules/.bin/sh", ["sh", "-c", "tsc --version"], 0x10d137a0 /* 31 vars */) = -1 ENOENT (No such file or directory)
+22    execve("/usr/local/lib/node_modules/npm/node_modules/@npmcli/run-script/lib/node-gyp-bin/sh", ["sh", "-c", "tsc --version"], 0x10d137a0 /* 31 vars */) = -1 ENOENT (No such file or directory)
+22    execve("/usr/local/sbin/sh", ["sh", "-c", "tsc --version"], 0x10d137a0 /* 31 vars */) = -1 ENOENT (No such file or directory)
+22    execve("/usr/local/bin/sh", ["sh", "-c", "tsc --version"], 0x10d137a0 /* 31 vars */) = -1 ENOENT (No such file or directory)
+22    execve("/usr/sbin/sh", ["sh", "-c", "tsc --version"], 0x10d137a0 /* 31 vars */) = -1 ENOENT (No such file or directory)
+22    execve("/usr/bin/sh", ["sh", "-c", "tsc --version"], 0x10d137a0 /* 31 vars */) = 0
+23    execve("/workspace/node_modules/.bin/tsc", ["tsc", "--version"], 0xaaaae64d2878 /* 31 vars */) = 0
+25    --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=26, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+27    execve("/usr/bin/sed", ["sed", "-e", "s,\\\\,/,g"], 0xaaaae4ebca38 /* 31 vars */) = 0
+25    --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=27, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+24    --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=25, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+24    execve("/usr/bin/dirname", ["dirname", "/workspace/node_modules/.bin/tsc"], 0xaaaae4ebca10 /* 31 vars */) = 0
+23    --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=24, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+28    execve("/usr/bin/uname", ["uname"], 0xaaaae4ebcca0 /* 31 vars */) = 0
+23    --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=28, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+23    execve("/workspace/node_modules/.bin/node", ["node", "/workspace/node_modules/.bin/../typescript/bin/tsc", "--version"], 0xaaaae4ebcc68 /* 32 vars */) = -1 ENOENT (No such file or directory)
+23    execve("/workspace/node_modules/.bin/node", ["node", "/workspace/node_modules/.bin/../typescript/bin/tsc", "--version"], 0xaaaae4ebcc68 /* 32 vars */) = -1 ENOENT (No such file or directory)
+23    execve("/node_modules/.bin/node", ["node", "/workspace/node_modules/.bin/../typescript/bin/tsc", "--version"], 0xaaaae4ebcc68 /* 32 vars */) = -1 ENOENT (No such file or directory)
+23    execve("/usr/local/lib/node_modules/npm/node_modules/@npmcli/run-script/lib/node-gyp-bin/node", ["node", "/workspace/node_modules/.bin/../typescript/bin/tsc", "--version"], 0xaaaae4ebcc68 /* 32 vars */) = -1 ENOENT (No such file or directory)
+23    execve("/usr/local/sbin/node", ["node", "/workspace/node_modules/.bin/../typescript/bin/tsc", "--version"], 0xaaaae4ebcc68 /* 32 vars */) = -1 ENOENT (No such file or directory)
+23    execve("/usr/local/bin/node", ["node", "/workspace/node_modules/.bin/../typescript/bin/tsc", "--version"], 0xaaaae4ebcc68 /* 32 vars */) = 0
+23    openat(AT_FDCWD, "/tmp/node-compile-cache/v22.23.3-arm64-2b4477fa-1000/2c7de4d2.5VGipW", O_RDWR|O_CREAT|O_EXCL|O_CLOEXEC, 0600) = 18
+23    renameat(AT_FDCWD, "/tmp/node-compile-cache/v22.23.3-arm64-2b4477fa-1000/2c7de4d2.5VGipW", AT_FDCWD, "/tmp/node-compile-cache/v22.23.3-arm64-2b4477fa-1000/2c7de4d2") = 0
+22    --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=23, si_uid=1000, si_status=0, si_utime=5 /* 0.05 s */, si_stime=1 /* 0.01 s */} ---
+10    --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=22, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+10    openat(AT_FDCWD, "/tmp/node-compile-cache/v22.23.3-arm64-2b4477fa-1000/e9502cdb.rnxAXq", O_RDWR|O_CREAT|O_EXCL|O_CLOEXEC, 0600) = 18
+10    renameat(AT_FDCWD, "/tmp/node-compile-cache/v22.23.3-arm64-2b4477fa-1000/e9502cdb.rnxAXq", AT_FDCWD, "/tmp/node-compile-cache/v22.23.3-arm64-2b4477fa-1000/e9502cdb") = 0
+10    openat(AT_FDCWD, "/tmp/node-compile-cache/v22.23.3-arm64-2b4477fa-1000/52839e32.L3Ygjs", O_RDWR|O_CREAT|O_EXCL|O_CLOEXEC, 0600) = 18
+10    renameat(AT_FDCWD, "/tmp/node-compile-cache/v22.23.3-arm64-2b4477fa-1000/52839e32.L3Ygjs", AT_FDCWD, "/tmp/node-compile-cache/v22.23.3-arm64-2b4477fa-1000/52839e32") = 0

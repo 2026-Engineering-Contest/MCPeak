@@ -1,0 +1,39 @@
+10    execve("/usr/bin/sh", ["sh", "-c", "touch a.txt; mv a.txt b.txt; mv -n b.txt /tmp/c.txt; mv /home/node/.gitconfig /home/node/.gitconfig.bak"], 0xffffffcdeb60 /* 6 vars */) = 0
+10    openat(AT_FDCWD, "/etc/ld.so.cache", O_RDONLY|O_CLOEXEC) = 3
+10    openat(AT_FDCWD, "/lib/aarch64-linux-gnu/libc.so.6", O_RDONLY|O_CLOEXEC) = 3
+11    execve("/usr/bin/touch", ["touch", "a.txt"], 0xaaaadbb05648 /* 6 vars */) = 0
+11    openat(AT_FDCWD, "/etc/ld.so.cache", O_RDONLY|O_CLOEXEC) = 3
+11    openat(AT_FDCWD, "/lib/aarch64-linux-gnu/libc.so.6", O_RDONLY|O_CLOEXEC) = 3
+11    openat(AT_FDCWD, "a.txt", O_WRONLY|O_CREAT|O_NOCTTY|O_NONBLOCK, 0666) = 3
+10    --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=11, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+12    execve("/usr/bin/mv", ["mv", "a.txt", "b.txt"], 0xaaaadbb057a8 /* 6 vars */) = 0
+12    openat(AT_FDCWD, "/etc/ld.so.cache", O_RDONLY|O_CLOEXEC) = 3
+12    openat(AT_FDCWD, "/lib/aarch64-linux-gnu/libselinux.so.1", O_RDONLY|O_CLOEXEC) = 3
+12    openat(AT_FDCWD, "/lib/aarch64-linux-gnu/libacl.so.1", O_RDONLY|O_CLOEXEC) = 3
+12    openat(AT_FDCWD, "/lib/aarch64-linux-gnu/libattr.so.1", O_RDONLY|O_CLOEXEC) = 3
+12    openat(AT_FDCWD, "/lib/aarch64-linux-gnu/libc.so.6", O_RDONLY|O_CLOEXEC) = 3
+12    openat(AT_FDCWD, "/lib/aarch64-linux-gnu/libpcre2-8.so.0", O_RDONLY|O_CLOEXEC) = 3
+12    openat(AT_FDCWD, "/proc/filesystems", O_RDONLY|O_CLOEXEC) = 3
+12    renameat2(AT_FDCWD, "a.txt", AT_FDCWD, "b.txt", RENAME_NOREPLACE) = 0
+10    --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=12, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+13    execve("/usr/bin/mv", ["mv", "-n", "b.txt", "/tmp/c.txt"], 0xaaaadbb057a8 /* 6 vars */) = 0
+13    openat(AT_FDCWD, "/etc/ld.so.cache", O_RDONLY|O_CLOEXEC) = 3
+13    openat(AT_FDCWD, "/lib/aarch64-linux-gnu/libselinux.so.1", O_RDONLY|O_CLOEXEC) = 3
+13    openat(AT_FDCWD, "/lib/aarch64-linux-gnu/libacl.so.1", O_RDONLY|O_CLOEXEC) = 3
+13    openat(AT_FDCWD, "/lib/aarch64-linux-gnu/libattr.so.1", O_RDONLY|O_CLOEXEC) = 3
+13    openat(AT_FDCWD, "/lib/aarch64-linux-gnu/libc.so.6", O_RDONLY|O_CLOEXEC) = 3
+13    openat(AT_FDCWD, "/lib/aarch64-linux-gnu/libpcre2-8.so.0", O_RDONLY|O_CLOEXEC) = 3
+13    openat(AT_FDCWD, "/proc/filesystems", O_RDONLY|O_CLOEXEC) = 3
+13    renameat2(AT_FDCWD, "b.txt", AT_FDCWD, "/tmp/c.txt", RENAME_NOREPLACE) = 0
+10    --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=13, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+14    execve("/usr/bin/mv", ["mv", "/home/node/.gitconfig", "/home/node/.gitconfig.bak"], 0xaaaadbb057a8 /* 6 vars */) = 0
+14    openat(AT_FDCWD, "/etc/ld.so.cache", O_RDONLY|O_CLOEXEC) = 3
+14    openat(AT_FDCWD, "/lib/aarch64-linux-gnu/libselinux.so.1", O_RDONLY|O_CLOEXEC) = 3
+14    openat(AT_FDCWD, "/lib/aarch64-linux-gnu/libacl.so.1", O_RDONLY|O_CLOEXEC) = 3
+14    openat(AT_FDCWD, "/lib/aarch64-linux-gnu/libattr.so.1", O_RDONLY|O_CLOEXEC) = 3
+14    openat(AT_FDCWD, "/lib/aarch64-linux-gnu/libc.so.6", O_RDONLY|O_CLOEXEC) = 3
+14    openat(AT_FDCWD, "/lib/aarch64-linux-gnu/libpcre2-8.so.0", O_RDONLY|O_CLOEXEC) = 3
+14    openat(AT_FDCWD, "/proc/filesystems", O_RDONLY|O_CLOEXEC) = 3
+14    renameat2(AT_FDCWD, "/home/node/.gitconfig", AT_FDCWD, "/home/node/.gitconfig.bak", RENAME_NOREPLACE) = -1 EROFS (Read-only file system)
+14    openat(AT_FDCWD, "/home/node/.gitconfig.bak", O_RDONLY|O_PATH|O_DIRECTORY) = -1 ENOENT (No such file or directory)
+10    --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=14, si_uid=1000, si_status=1, si_utime=0, si_stime=0} ---

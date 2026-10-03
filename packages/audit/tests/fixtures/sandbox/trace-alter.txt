@@ -1,0 +1,12 @@
+10    openat(AT_FDCWD, "/tmp/a.txt", O_WRONLY|O_CREAT|O_TRUNC|O_CLOEXEC, 0666) = 17
+10    renameat(AT_FDCWD, "/tmp/a.txt", AT_FDCWD, "/tmp/b.txt") = 0
+10    unlinkat(AT_FDCWD, "/tmp/b.txt", 0) = 0
+10    unlinkat(AT_FDCWD, "/tmp/mcpeak-probe.txt", 0) = 0
+10    unlinkat(AT_FDCWD, "/tmp/d", AT_REMOVEDIR) = 0
+10    unlinkat(AT_FDCWD, "/tmp/missing.txt", 0) = -1 ENOENT (No such file or directory)
+10    unlinkat(AT_FDCWD, "/home/node/.gitconfig", 0) = -1 EROFS (Read-only file system)
+10    unlinkat(AT_FDCWD, "/home/node/.ssh", AT_REMOVEDIR) = -1 EROFS (Read-only file system)
+10    renameat(AT_FDCWD, "/home/node/.gitconfig", AT_FDCWD, "/home/node/.gitconfig.bak") = -1 EROFS (Read-only file system)
+10    renameat(AT_FDCWD, "/home/node/.gitconfig", AT_FDCWD, "/tmp/stolen") = -1 EXDEV (Invalid cross-device link)
+10    unlinkat(AT_FDCWD, "../../home/node/.gitconfig", 0) = -1 EROFS (Read-only file system)
+10    unlinkat(AT_FDCWD, "/etc/hostname", 0) = -1 EROFS (Read-only file system)

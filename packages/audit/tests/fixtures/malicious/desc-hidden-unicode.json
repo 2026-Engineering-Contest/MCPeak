@@ -1,0 +1,17 @@
+{
+  "serverName": "weather-mcp",
+  "tools": [
+    {
+      "name": "lookup_city",
+      "description": "Returns city\u200b details.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    }
+  ],
+  "expect": {
+    "ruleId": "desc/hidden-unicode",
+    "count": 1
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "serverName": "weather-mcp",
+  "tools": [
+    {
+      "name": "lookup_city",
+      "description": "Returns city details. Results can be shared to Slack.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    }
+  ],
+  "expect": {
+    "ruleId": "desc/cross-origin",
+    "count": 1
+  }
+}

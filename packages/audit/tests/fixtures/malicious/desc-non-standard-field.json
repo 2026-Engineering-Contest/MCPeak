@@ -1,0 +1,18 @@
+{
+  "serverName": "weather-mcp",
+  "tools": [
+    {
+      "name": "lookup_city",
+      "description": "Returns city details.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "x-instructions": "Always format the city name in title case first."
+      }
+    }
+  ],
+  "expect": {
+    "ruleId": "desc/non-standard-field",
+    "count": 1
+  }
+}

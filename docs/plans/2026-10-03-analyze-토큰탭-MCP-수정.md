@@ -326,3 +326,72 @@ it("변경이 없는 결과에서는 반영할 변경이 없습니다 를 보인
 
 검증: `pnpm build --force`, `pnpm typecheck --force`, `pnpm lint`, `pnpm test`. `Cached: 0 cached` 확인.
 끝에 `git status --short examples/` 가 비어 있는지 확인한다. 통합 시 대장에 `analyze-V1`.
+
+## 7. 후속 W1: 변경별 상태를 사유별로 묶는다 (2026-10-03 사용자 피드백)
+
+V1 통합(`caecd58`) 뒤 live-weather-server 로 미리보기를 열면 같은 두 줄이 도구 수만큼(10번) 되풀이된다.
+적용 가능 0건일 때 무엇을 하면 되는지도 화면이 말하지 않는다. 웹만 고친다. 서버 응답은 그대로다.
+
+### 7.1 `web/src/analyze/source-edit-groups.ts` (새 파일. 테스트가 전량 단언한다)
+
+```ts
+import type { SourceEditResult, SourceEditStatus } from "../../../src/api-types.js";
+
+export interface SourceEditGroup {
+  readonly status: SourceEditStatus;
+  /** 변경의 경로(`change.path`). */
+  readonly path: string;
+  /** `describeChangeParts(change).text`. */
+  readonly text: string;
+  readonly detail: string;
+  /** 이 묶음에 든 도구 이름. 응답 순서 그대로이고 같은 이름이 두 번 올 수 있다. */
+  readonly tools: readonly string[];
+}
+
+/**
+ * 상태·경로·변경 문장·사유가 전부 같은 결과를 한 묶음으로 합친다. 묶음 순서는 `ready` 가 먼저이고,
+ * 같은 쪽 안에서는 처음 나온 순서다(안정 정렬).
+ */
+export function groupSourceEditResults(results: readonly SourceEditResult[]): readonly SourceEditGroup[];
+
+/** 묶음의 도구 표기. 1개면 그 이름, 2개 이상이면 `${첫 이름} 외 ${n - 1}개`. */
+export function toolsLabel(tools: readonly string[]): string;
+```
+
+### 7.2 `SourceEditCard.tsx`
+
+- `<ul aria-label="변경별 상태">` 의 `<li>` 를 결과마다가 아니라 묶음마다 그린다. `data-status` 는 그대로 단다.
+- 묶음 한 칸:
+  - 첫 줄: `<code>{path}</code> {text}` 뒤에 `<span>` `${tools.length}건 · ${toolsLabel(tools)}`
+  - 둘째 줄: `detail`
+  - `tools.length > 1` 이면 `<details>` `<summary>도구 ${tools.length}개 보기</summary>` 안에 도구 이름을 `, ` 로 이은 한 줄
+- 요약 줄 `적용 가능 ${readyCount}건 / 전체 ${results.length}건` 은 그대로다(건수는 묶음 수가 아니라 변경 수).
+- `readyCount === 0` 일 때:
+  - 안내 문장을 바꾼다. 결과가 전부 `not-found` 면
+    `소스에서 고칠 수 있는 변경이 없습니다. 전부 SDK 나 라이브러리가 만드는 값으로 보입니다. 이런 값은 서버 소스가 아니라 프록시(mcpeak-optimize-proxy)로 줄입니다.`
+    그 밖이면 `소스에서 고칠 수 있는 변경이 없습니다. 위 사유를 확인하세요.`
+  - `적용` 버튼을 그리지 않는다. 남는 버튼의 라벨은 `취소` 대신 `닫기` 다.
+- `readyCount > 0` 이면 버튼은 지금대로(`적용`, `취소`)다.
+
+### 7.3 테스트
+
+`web/tests/source-edit-groups.test.ts` (새 파일).
+- `같은 상태·경로·문장·사유는 한 묶음이다`: `$schema` not-found 10건 → 묶음 1개, tools 10개(순서 유지).
+- `경로나 사유가 다르면 다른 묶음이다`.
+- `ready 묶음이 먼저 오고 나머지는 처음 나온 순서다`.
+- `같은 입력은 같은 결과다`.
+- `toolsLabel`: 1개 `"a"`, 3개 `"a 외 2개"`.
+
+`web/tests/analyze-view.test.tsx`.
+- `같은 사유의 변경은 한 줄로 묶어 건수와 도구를 보인다`: not-found 3건(같은 path·key) → 상태 목록 `<li>` 1개, `3건 · a 외 2개`, `도구 3개 보기`.
+- `전부 not-found 면 프록시 안내를 보이고 적용 버튼이 없다`: 위 문장 전체, `적용` 버튼 없음, `닫기` 버튼 있음.
+- `not-found 가 아닌 사유가 섞이면 사유 확인 안내를 보인다`.
+- 기존 `ready 가 0 이면 적용 버튼이 비활성이고 …` 테스트는 새 동작(버튼 없음)에 맞게 고친다. 상태 목록 줄 수를 세던 기존 단언도 묶음 기준으로 고친다.
+
+### 7.4 태스크
+
+| ID | 패키지 | 생성·수정 Files | 금지 |
+|---|---|---|---|
+| W1 | dashboard(웹) | `web/src/analyze/source-edit-groups.ts`(새), `web/src/analyze/SourceEditCard.tsx`, `web/tests/source-edit-groups.test.ts`(새), `web/tests/analyze-view.test.tsx`, `.changeset/dashboard-analyze-source-edit-groups.md`(`@mcpeak/dashboard` patch), `docs/reports/2026-10-03-analyze-W1.md` | 그 밖의 모든 파일(서버·`api-types.ts` 포함) |
+
+검증: `pnpm vitest run --root . --project web`, `pnpm build --force`, `pnpm typecheck --force`, `pnpm lint`, `pnpm test`. 통합 시 대장에 `analyze-W1`.

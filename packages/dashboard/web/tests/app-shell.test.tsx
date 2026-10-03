@@ -10,7 +10,7 @@ function fakeFetch(): typeof fetch {
 
 const NAV_LABELS = ["Test", "Runs", "Generate", "Replay", "Mock", "Repair", "Analyze"];
 /** 사이드바 아래쪽 보조 링크(#459). 주 메뉴 뒤에 따로 선다. */
-const SECONDARY_LABELS = ["Settings", "Help & Docs"];
+const SECONDARY_LABELS = ["Switch to User", "Settings", "Help & Docs"];
 
 /** 링크의 보이는 이름. 화면 읽기 전용 꼬리("새 탭에서 열림")는 뺀다. */
 function visibleLabel(link: HTMLAnchorElement): string | undefined {
@@ -22,6 +22,7 @@ function visibleLabel(link: HTMLAnchorElement): string | undefined {
 describe("app shell", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", fakeFetch());
+    window.localStorage.clear();
   });
 
   afterEach(() => {
@@ -30,7 +31,7 @@ describe("app shell", () => {
     window.location.hash = "";
   });
 
-  it("사이드바 라벨이 순서대로 Test, Runs, Generate, Replay, Mock, Repair, Analyze 이고 그 뒤에 Settings, Help & Docs 가 온다", async () => {
+  it("사이드바 라벨이 순서대로 Test, Runs, Generate, Replay, Mock, Repair, Analyze 이고 그 뒤에 Switch to User, Settings, Help & Docs 가 온다", async () => {
     window.location.hash = "#/home";
     render(<App />);
     const nav = await screen.findByRole("navigation");
@@ -71,7 +72,20 @@ describe("app shell", () => {
     expect(current[0]?.textContent?.trim()).toBe("Settings");
   });
 
-  it("해시가 비어 있으면 #/home으로 온다", async () => {
+  it("저장된 모드가 없고 해시가 비어 있으면 #/welcome 으로 온다", async () => {
+    window.location.hash = "";
+    render(<App />);
+    await waitFor(() => {
+      expect(window.location.hash).toBe("#/welcome");
+    });
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "MCPeak 을 어떻게 쓰시나요?" }),
+    ).toBeTruthy();
+    expect(document.querySelector("nav")).toBeNull();
+  });
+
+  it("저장된 모드가 developer 면 빈 해시가 #/home 으로 온다", async () => {
+    window.localStorage.setItem("mcpeak-mode", "developer");
     window.location.hash = "";
     render(<App />);
     await waitFor(() => {
@@ -81,6 +95,151 @@ describe("app shell", () => {
     const current = document.querySelectorAll('[aria-current="page"]');
     expect(current).toHaveLength(1);
     expect(current[0]?.textContent?.trim()).toBe("Test");
+  });
+
+  it("저장된 모드가 user 면 빈 해시가 #/user/check 로 온다", async () => {
+    window.localStorage.setItem("mcpeak-mode", "user");
+    window.location.hash = "";
+    render(<App />);
+    await waitFor(() => {
+      expect(window.location.hash).toBe("#/user/check");
+    });
+    expect(await screen.findByRole("heading", { level: 1, name: "사전 점검" })).toBeTruthy();
+    const current = document.querySelectorAll('[aria-current="page"]');
+    expect(current).toHaveLength(1);
+    expect(current[0]?.textContent?.trim()).toBe("Check");
+  });
+
+  it("선택 화면의 두 링크는 #/home 과 #/user/check 를 가리킨다", async () => {
+    window.location.hash = "#/welcome";
+    render(<App />);
+    await screen.findByRole("heading", { level: 1, name: "MCPeak 을 어떻게 쓰시나요?" });
+    const hrefs = screen.getAllByRole("link").map((link) => link.getAttribute("href"));
+    expect(hrefs).toEqual(["#/home", "#/user/check"]);
+    // 카드 전체가 링크 하나이고, 접근 이름은 제목과 설명을 이은 글자다.
+    expect(
+      screen
+        .getByRole("link", {
+          name: "개발자 MCP 서버를 만들고 테스트합니다. 테스트 실행, 생성, 녹화·재생, 목, 분석을 씁니다.",
+        })
+        .getAttribute("href"),
+    ).toBe("#/home");
+    expect(
+      screen
+        .getByRole("link", { name: "사용자 쓰려는 MCP 서버를 등록하기 전에 점검합니다." })
+        .getAttribute("href"),
+    ).toBe("#/user/check");
+    expect(screen.getByText("사이드바 아래에서 언제든 바꿀 수 있습니다.")).toBeTruthy();
+  });
+
+  it("#/home 에 도착하면 mcpeak-mode 가 developer 로 저장된다", async () => {
+    window.location.hash = "#/home";
+    render(<App />);
+    await waitFor(() => {
+      expect(window.localStorage.getItem("mcpeak-mode")).toBe("developer");
+    });
+  });
+
+  it("#/user/check 에 도착하면 user 로 저장된다", async () => {
+    window.location.hash = "#/user/check";
+    render(<App />);
+    await waitFor(() => {
+      expect(window.localStorage.getItem("mcpeak-mode")).toBe("user");
+    });
+  });
+
+  it.each(["#/welcome", "#/settings"])(
+    "#/welcome 과 #/settings 는 저장된 모드를 바꾸지 않는다: %s",
+    async (hash) => {
+      window.localStorage.setItem("mcpeak-mode", "user");
+      window.location.hash = hash;
+      render(<App />);
+      await screen.findByRole("heading", { level: 1 });
+      expect(window.localStorage.getItem("mcpeak-mode")).toBe("user");
+    },
+  );
+
+  it("사용자 모드 사이드바는 Check, Switch to Developer, Settings, Help & Docs 다", async () => {
+    window.location.hash = "#/user/check";
+    render(<App />);
+    const nav = await screen.findByRole("navigation");
+    const links = Array.from(nav.querySelectorAll("a")).map(visibleLabel);
+    expect(links).toEqual(["Check", "Switch to Developer", "Settings", "Help & Docs"]);
+  });
+
+  it.each([
+    ["#/home", "Switch to User", "#/user/check"],
+    ["#/user/check", "Switch to Developer", "#/home"],
+  ])("전환 링크는 반대 모드의 첫 화면을 가리킨다: %s", async (hash, label, target) => {
+    window.location.hash = hash;
+    render(<App />);
+    const link = await screen.findByRole("link", { name: label });
+    expect(link.getAttribute("href")).toBe(target);
+    expect(link.hasAttribute("aria-current")).toBe(false);
+  });
+
+  it("#/settings 는 저장된 모드의 사이드바로 그린다", async () => {
+    window.localStorage.setItem("mcpeak-mode", "user");
+    window.location.hash = "#/settings";
+    const first = render(<App />);
+    await screen.findByRole("heading", { level: 1, name: "설정" });
+    expect(screen.getByRole("link", { name: "Check" })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "Test" })).toBeNull();
+    first.unmount();
+
+    // 저장값이 없으면 개발자 사이드바다.
+    window.localStorage.clear();
+    render(<App />);
+    await screen.findByRole("heading", { level: 1, name: "설정" });
+    expect(screen.getByRole("link", { name: "Test" })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "Check" })).toBeNull();
+  });
+
+  it("저장된 모드가 없어도 #/runs/abc 는 선택 화면을 거치지 않는다", async () => {
+    // 실행 화면은 run 요약을 읽고 구독한다. 요약은 끝난 run 하나로 답하고, jsdom 에 없는
+    // EventSource 는 아무 일도 하지 않는 것으로 세운다.
+    const summary = { runId: "abc", flow: "test", status: "done", exitCode: 0, argv: [] };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: unknown) =>
+        String(input).endsWith("/api/runs/abc")
+          ? new Response(JSON.stringify(summary), { status: 200 })
+          : new Response("[]", { status: 200 }),
+      ),
+    );
+    vi.stubGlobal(
+      "EventSource",
+      class {
+        addEventListener(): void {}
+        close(): void {}
+      },
+    );
+    window.location.hash = "#/runs/abc";
+    render(<App />);
+    const nav = await screen.findByRole("navigation");
+    expect(window.location.hash).toBe("#/runs/abc");
+    const current = nav.querySelectorAll('[aria-current="page"]');
+    expect(current).toHaveLength(1);
+    expect(current[0]?.textContent?.trim()).toBe("Runs");
+  });
+
+  it("#/user/unknown 은 저장된 모드의 첫 화면으로 간다", async () => {
+    // 도착 전이라 저장값이 없으면 선택 화면이다. 해시의 `user` 를 저장하지 않는다.
+    window.location.hash = "#/user/unknown";
+    const first = render(<App />);
+    await waitFor(() => {
+      expect(window.location.hash).toBe("#/welcome");
+    });
+    expect(window.localStorage.getItem("mcpeak-mode")).toBeNull();
+    first.unmount();
+
+    window.localStorage.setItem("mcpeak-mode", "developer");
+    window.location.hash = "#/user/unknown";
+    render(<App />);
+    await waitFor(() => {
+      expect(window.location.hash).toBe("#/home");
+    });
+    expect(window.localStorage.getItem("mcpeak-mode")).toBe("developer");
   });
 
   /**

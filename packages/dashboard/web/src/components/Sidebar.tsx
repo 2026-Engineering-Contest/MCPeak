@@ -1,11 +1,15 @@
 import type { JSX } from "react";
+import { type AppMode, MODE_HOME } from "../mode.js";
 import { FOCUS_RING } from "./focus-ring.js";
 import { Logo } from "./Logo.js";
 
 /**
  * 좌측 고정 사이드바(248px). UI 설계 §2: 로고 블록 + 내비 7항목(영어 라벨,
- * 인라인 SVG stroke 아이콘) + 하단 보조 링크(Settings · Help & Docs, #459).
+ * 인라인 SVG stroke 아이콘) + 하단 보조 링크(모드 전환 · Settings · Help & Docs, #459).
  * 활성 항목은 `aria-current="page"` 하나로 표시하고 스타일도 그 속성을 본다.
+ *
+ * 주 메뉴는 모드가 고른다(ADR-0111). 개발자는 일곱 항목, 사용자는 `Check` 하나다. 로고와 아래쪽
+ * 묶음은 두 모드가 같고, 전환 링크의 글자와 주소만 반대 모드를 가리킨다.
  *
  * 하단에 있던 서버 주소(`location.host`)는 뺐다. 주소창에 이미 있는 값이고, 그 자리를 설정 ·
  * 도움말이 쓴다.
@@ -18,6 +22,7 @@ export type NavId =
   | "mock"
   | "repair"
   | "analyze"
+  | "check"
   | "settings";
 
 /** README. package.json 의 `homepage` 와 같은 값이다. */
@@ -128,6 +133,43 @@ const NAV_ITEMS: readonly NavItem[] = [
   },
 ];
 
+/** 사용자 모드의 주 메뉴. 구현 안 된 메뉴는 넣지 않는다. */
+const USER_NAV_ITEMS: readonly NavItem[] = [
+  {
+    id: "check",
+    label: "Check",
+    hash: MODE_HOME.user,
+    icon: (
+      // biome-ignore lint/a11y/noSvgWithoutTitle: 장식용 아이콘, 라벨 텍스트가 인접
+      <svg {...ICON_PROPS}>
+        <path d="M12 3 4 6v6c0 4.5 3.2 8 8 9 4.8-1 8-4.5 8-9V6l-8-3z" />
+        <path d="m9 12 2 2 4-4" />
+      </svg>
+    ),
+  },
+];
+
+const MAIN_ITEMS: Readonly<Record<AppMode, readonly NavItem[]>> = {
+  developer: NAV_ITEMS,
+  user: USER_NAV_ITEMS,
+};
+
+/** 전환 링크가 가리키는 반대 모드와 그 글자. */
+const SWITCH_TO: Readonly<Record<AppMode, { readonly mode: AppMode; readonly label: string }>> = {
+  developer: { mode: "user", label: "Switch to User" },
+  user: { mode: "developer", label: "Switch to Developer" },
+};
+
+const SWITCH_ICON = (
+  // biome-ignore lint/a11y/noSvgWithoutTitle: 장식용 아이콘, 라벨 텍스트가 인접
+  <svg {...ICON_PROPS}>
+    <path d="M7 4 3 8l4 4" />
+    <path d="M3 8h18" />
+    <path d="m17 12 4 4-4 4" />
+    <path d="M21 16H3" />
+  </svg>
+);
+
 const SETTINGS_ICON = (
   // biome-ignore lint/a11y/noSvgWithoutTitle: 장식용 아이콘, 라벨 텍스트가 인접
   <svg {...ICON_PROPS}>
@@ -154,7 +196,14 @@ function itemClass(active: boolean): string {
   }`;
 }
 
-export function Sidebar({ active }: { readonly active: NavId }): JSX.Element {
+export function Sidebar({
+  active,
+  mode,
+}: {
+  readonly active: NavId;
+  readonly mode: AppMode;
+}): JSX.Element {
+  const switchTo = SWITCH_TO[mode];
   return (
     <nav className="flex w-[248px] shrink-0 flex-col border-r border-line bg-surface">
       <div className="flex items-center gap-3 px-5 py-5">
@@ -165,7 +214,7 @@ export function Sidebar({ active }: { readonly active: NavId }): JSX.Element {
         </div>
       </div>
       <ul className="flex-1 space-y-1 px-3">
-        {NAV_ITEMS.map((item) => (
+        {MAIN_ITEMS[mode].map((item) => (
           <li key={item.id}>
             <a
               href={item.hash}
@@ -179,6 +228,14 @@ export function Sidebar({ active }: { readonly active: NavId }): JSX.Element {
         ))}
       </ul>
       <ul className="space-y-1 px-3 pb-5">
+        <li>
+          {/* 버튼이 아니라 링크다. 이탈 확인이 hashchange 에 걸려 있어 링크면 그대로 탄다. 모드는
+              누를 때가 아니라 App 이 그 해시를 받아들일 때 저장된다. */}
+          <a href={MODE_HOME[switchTo.mode]} className={itemClass(false)}>
+            {SWITCH_ICON}
+            {switchTo.label}
+          </a>
+        </li>
         <li>
           <a
             href="#/settings"

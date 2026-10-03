@@ -4,27 +4,43 @@ import type { AnalyzeTab } from "./analyze/types.js";
 import { Sidebar } from "./components/Sidebar.js";
 import { ThemeToggle } from "./components/ThemeToggle.js";
 import { leaveBlocker } from "./leave-guard.js";
+import {
+  type AppMode,
+  getStoredAppMode,
+  MODE_HOME,
+  modeOfHash,
+  saveAppMode,
+  WELCOME_HASH,
+} from "./mode.js";
 import { AnalyzeView } from "./screens/AnalyzeView.js";
 import { GenerateWizard } from "./screens/GenerateWizard.js";
 import { Home } from "./screens/Home.js";
 import { MockBuilder } from "./screens/MockBuilder.js";
+import { PreCheck } from "./screens/PreCheck.js";
 import { RepairReview } from "./screens/RepairReview.js";
 import { ReplayView } from "./screens/ReplayView.js";
 import { RunView } from "./screens/RunView.js";
 import { SettingsView } from "./screens/SettingsView.js";
+import { Welcome } from "./screens/Welcome.js";
+import { themeStorage } from "./theme.js";
 
 /**
  * 해시 라우팅(구현계획 §4-3). 라우터 의존성 없이 `location.hash`만 본다.
  *
  * | 라우트 | 화면 |
  * |---|---|
- * | `#/home` (기본 리다이렉트 대상) | Home |
+ * | `#/home` (개발자 모드의 기본 리다이렉트 대상) | Home |
  * | `#/runs`, `#/runs/:id` | RunView (`#/runs`는 목록 상태) |
  * | `#/generate` | GenerateWizard |
  * | `#/mock` | MockBuilder (목 만들기) |
  * | `#/repair/:id` | RepairReview |
- * | `#/analyze`, `#/analyze/:tab` | AnalyzeView (`tokens` 기본, `security` 는 준비 중) |
+ * | `#/analyze`, `#/analyze/:tab` | AnalyzeView (`tokens` 기본, `security` 는 보안 탭) |
  * | `#/settings` | SettingsView (준비 중) |
+ * | `#/user/check` (사용자 모드의 기본 리다이렉트 대상) | PreCheck (사전 점검) |
+ * | `#/welcome` | Welcome (모드 선택. 저장된 모드가 없을 때의 기본 리다이렉트 대상) |
+ *
+ * 모드(ADR-0111): 지금 화면의 모드는 해시가 먼저 정하고(`modeOfHash`), 해시가 말하지 않으면 저장값,
+ * 그것도 없으면 개발자다. 저장값은 해시를 받아들일 때 쓴다. 링크를 누를 때가 아니다.
  *
  * 이탈 확인: 화면이 `useLeaveGuard` 로 막아 두면 해시를 되돌리고 그 화면이 묻는다(leave-guard.ts).
  */
@@ -37,6 +53,8 @@ type Route =
   | { readonly screen: "repair"; readonly runId: string | null }
   | { readonly screen: "analyze"; readonly tab: AnalyzeTab }
   | { readonly screen: "settings" }
+  | { readonly screen: "check" }
+  | { readonly screen: "welcome" }
   | { readonly screen: "redirect" };
 
 /** 잘못된 인코딩(%zz 등)이 화면을 깨뜨리지 않게 한다. origin f9198e0 계승. */
@@ -87,7 +105,14 @@ function parseRoute(hash: string): Route {
   if (first === "settings") {
     return { screen: "settings" };
   }
-  // 빈 해시·알 수 없는 해시는 #/home으로 보낸다(§4-3 기본 리다이렉트).
+  if (first === "welcome") {
+    return { screen: "welcome" };
+  }
+  if (first === "user") {
+    // 사용자 모드의 화면은 아직 사전 점검 하나다. 그 밖의 `#/user/...` 는 갈 곳이 없는 주소다.
+    return rest[0] === "check" ? { screen: "check" } : { screen: "redirect" };
+  }
+  // 빈 해시·알 수 없는 해시는 모드의 첫 화면으로, 고른 모드가 없으면 선택 화면으로 보낸다.
   return { screen: "redirect" };
 }
 
@@ -115,15 +140,34 @@ export function App(): JSX.Element {
     };
   }, []);
 
+  /** 마지막으로 머문 모드. 없으면 아직 고르지 않았다. */
+  const [storedMode, setStoredMode] = useState<AppMode | null>(() =>
+    getStoredAppMode(themeStorage()),
+  );
+
   const route = parseRoute(hash);
+  const hashMode = modeOfHash(hash);
+
+  /*
+    **도착할 때 저장한다.** 링크를 누를 때 저장하면, 이탈 확인이 이동을 막았을 때 이동은 안 했는데
+    저장만 바뀐다. `hash` 는 이탈 확인을 통과한 해시만 담는다. 리다이렉트될 해시(`#/user/unknown`)는
+    화면에 도착하지 않았으므로 저장하지 않는다.
+  */
+  useEffect(() => {
+    if (route.screen === "redirect" || hashMode === null || hashMode === storedMode) return;
+    saveAppMode(hashMode, themeStorage());
+    setStoredMode(hashMode);
+  }, [route.screen, hashMode, storedMode]);
+
+  const redirectTarget = storedMode === null ? WELCOME_HASH : MODE_HOME[storedMode];
 
   useEffect(() => {
     if (route.screen === "redirect") {
-      window.location.hash = "#/home";
-      accepted.current = "#/home";
-      setHash("#/home");
+      window.location.hash = redirectTarget;
+      accepted.current = redirectTarget;
+      setHash(redirectTarget);
     }
-  }, [route.screen]);
+  }, [route.screen, redirectTarget]);
 
   if (route.screen === "redirect") {
     return <div className="min-h-screen bg-canvas" />;
@@ -140,7 +184,10 @@ export function App(): JSX.Element {
       사용자에게는 같아 보인다.
     */
     <div className="flex h-screen bg-canvas text-ink">
-      <Sidebar active={route.screen} />
+      {/* 선택 화면에는 사이드바가 없다. 아직 모드를 고르지 않아 보일 메뉴가 없다. */}
+      {route.screen !== "welcome" && (
+        <Sidebar active={route.screen} mode={hashMode ?? storedMode ?? "developer"} />
+      )}
       {/*
         **헤더 스트립이 없다**(#459). 예전에는 64px 스트립이 `Test` 한 단어를 담고 본문 h1 이
         `테스트` 를 또 말했다. 제목은 화면의 `PageHeader` 한 곳에만 둔다. 테마 토글만 남아
@@ -183,5 +230,9 @@ function Screen({
       return <AnalyzeView tab={route.tab} />;
     case "settings":
       return <SettingsView />;
+    case "check":
+      return <PreCheck />;
+    case "welcome":
+      return <Welcome />;
   }
 }

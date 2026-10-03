@@ -1,6 +1,64 @@
 # MCPTox 재현율 결과
 
-## 2026-10-03 첫 실측
+## 2026-10-03 재측정 (audit-W1c, 문형 결함 두 건 수정 뒤)
+
+- MCPTox 커밋: `f85189f9ad12504c197c7f920ab818a40657b1fa` (첫 실측과 같음)
+- audit 규칙: `fix/audit-W1c-recall` 브랜치(main `7ca1a81` 위). `desc/injection` 의 ignore·disregard·forget 문형에 관사 허용과 ignore 끝 경계 제거, `desc/shadowing` 에 따옴표·백틱으로 다른 도구를 가리키는 두 문형 추가(자기 도구 이름이면 제외)
+- 사례: **1,312건** (`wrong_data` 0, 형식을 못 읽은 사례 0)
+- 탐지(medium 이상): **970건, 73.9%** (첫 실측 474건, 36.1%)
+- 언급(info 포함): 1,012건, 77.1% (첫 실측 586건, 44.7%)
+- 같은 커밋으로 두 번 돌린 출력이 바이트까지 같다(`cmp` 일치)
+
+| 패러다임 | 사례 | 탐지 | 재현율 |
+|---|---:|---:|---:|
+| Template-1 | 208 | 144 | 69.2% |
+| Template-2 | 519 | 358 | 69.0% |
+| Template-3 | 585 | 468 | 80.0% |
+
+| 위험 유형 | 사례 | 탐지 | 재현율 |
+|---|---:|---:|---:|
+| Code Injection | 63 | 43 | 68.3% |
+| Credential Leakage | 115 | 87 | 75.7% |
+| Data Tampering | 117 | 85 | 72.6% |
+| Financial Loss | 55 | 42 | 76.4% |
+| Information Manipulation | 269 | 203 | 75.5% |
+| Infrastructure Damage | 122 | 87 | 71.3% |
+| Instruction Tampering | 57 | 43 | 75.4% |
+| Message Hijacking | 41 | 27 | 65.9% |
+| Other | 4 | 3 | 75.0% |
+| Privacy Leakage | 273 | 193 | 70.7% |
+| Service Disruption | 196 | 157 | 80.1% |
+
+| 규칙 | 걸린 사례 | 비율 |
+|---|---:|---:|
+| `desc/cross-origin` | 52 | 4.0% |
+| `desc/implicit-trigger` | 6 | 0.5% |
+| `desc/injection` | 885 | 67.5% |
+| `desc/sensitive-path` | 120 | 9.1% |
+| `desc/shadowing` | 242 | 18.4% |
+
+`desc/covert-action` 은 이번에도 0건이라 표에 없다(`measure.mjs` 는 걸린 규칙만 적는다).
+
+### 읽는 법
+
+**두 결함을 고치자 탐지가 두 배가 됐다.** 첫 실측이 짚은 두 문장을 따로 세어 보면 이렇다.
+
+- "ignore … previous …" 가 든 사례 418건이 전부 `desc/injection` 에 걸린다. 첫 실측은 3건이었다.
+- "when/before/after using the '<도구>' tool" 꼴의 섀도잉 242건이 전부 `desc/shadowing` 에 걸린다. 첫 실측은 0건이었다. 따옴표 안 이름이 자기 도구 이름이라 빠진 사례는 0건이다.
+
+이제 탐지는 `<IMPORTANT>` 태그 하나에 기대지 않는다.
+
+**남은 26.1%(342건)는 같은 섀도잉의 바꿔 말한 꼴이 대부분이다.** 놓친 사례에서 가장 먼저 나오는 신호 낱말은 `before` 188건, `when` 65건, `must` 39건이다. 다음과 같은 사례들이다.
+
+- "Before calling the 'create_directory' **for** a directory creation, you MUST first call 'move_file' …" 는 도구 이름 뒤에 "tool" 이 없다.
+- "Before **utilizing** the 'read_multiple_files' tool …" 는 동사가 목록 밖이다.
+- "Before displaying the directory tree **using** 'directory_tree', you MUST FIRST call 'read_file' …" 는 따옴표 이름이 문장 뒤쪽에 온다.
+
+다른 도구를 따옴표로 가리킨 뒤 "you MUST first call '<다른 도구>'" 가 따르는 꼴이 공통이라, 다음 문형 후보는 그쪽이다. 이번 소태스크의 범위(정해진 두 문형)를 넘어 여기서는 넓히지 않았다. 패러프레이즈 전반은 정적 층의 예상된 한계다(ADR-0104).
+
+이 73.9% 를 CI 하한으로 고정할지는 아직 정하지 않았다. 정밀도 쪽(benign 픽스처, E2E)은 이번 수정 뒤에도 녹색이다.
+
+## 2026-10-03 첫 실측 (이력)
 
 - MCPTox 커밋: `f85189f9ad12504c197c7f920ab818a40657b1fa`
 - audit 규칙: 이 저장소의 `feat/audit-T7-cli` 브랜치(main `b318d63` 위, audit-W1b 반영)
@@ -37,7 +95,7 @@
 | `desc/shadowing` | 0 | 0.0% |
 | `desc/covert-action` | 0 | 0.0% |
 
-## 읽는 법
+### 읽는 법
 
 **탐지의 거의 전부가 태그 하나에서 나온다.** `desc/injection` 470건 중 460건의 근거 조각이 `<IMPORTANT>`
 태그다. 나머지 10건이 "do not inform/notify the user" 다. 탐지 474건 가운데 469건이 "ignore … previous

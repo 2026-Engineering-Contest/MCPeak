@@ -1,3 +1,4 @@
+import { escapeInvisible } from "./rules/description.js";
 import type { AuditReport, Finding, Location, Severity } from "./types.js";
 
 const SEVERITY_ORDER: readonly Severity[] = ["high", "medium", "low", "info"];
@@ -108,28 +109,35 @@ function compareText(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
 }
 
-/** §6.1 의 위치 한 줄. path 가 비면 " 의 <path>" 를 생략한다. */
+/**
+ * §6.1 의 위치 한 줄. path 가 비면 " 의 <path>" 를 생략한다.
+ *
+ * 이름·uri·path 는 서버가 보낸 글자라 `escapeInvisible` 로 보이지 않는 문자와 제어 문자를 `<U+XXXX>` 로
+ * 드러낸다. 그대로 쓰면 hidden-unicode 발견의 위치 줄이 정작 그 문자를 숨기고(`get<U+200B>time` 이
+ * `gettime` 으로 보인다), ESC 가 들어 있으면 터미널을 조작한다(근거 조각의 evidenceFragment 와 같은 규약).
+ */
 function describeLocation(location: Location): string {
+  const path = escapeInvisible(location.path);
   const at = (subject: string, joiner = " 의 "): string =>
-    location.path === "" ? subject : `${subject}${joiner}${location.path}`;
+    path === "" ? subject : `${subject}${joiner}${path}`;
   switch (location.kind) {
     case "tool":
-      return at(`도구 '${location.toolName}'`);
+      return at(`도구 '${escapeInvisible(location.toolName)}'`);
     case "prompt":
-      return at(`프롬프트 '${location.name}'`);
+      return at(`프롬프트 '${escapeInvisible(location.name)}'`);
     case "resource":
-      return at(`리소스 ${location.uri}`);
+      return at(`리소스 ${escapeInvisible(location.uri)}`);
     case "instructions":
       return "서버 instructions";
     case "launch":
-      return location.path === "" ? "실행 명령" : `실행 명령 ${location.path}`;
+      return path === "" ? "실행 명령" : `실행 명령 ${path}`;
     case "protocol":
       return "프로토콜";
     case "surface":
       return "도구 표면";
     case "result":
       // §6.1 이 이 위치만 "응답의" 로 붙여 쓴다.
-      return at(`도구 '${location.toolName}' 호출 응답`, "의 ");
+      return at(`도구 '${escapeInvisible(location.toolName)}' 호출 응답`, "의 ");
     case "server":
       return "서버 전체";
   }

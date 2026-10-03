@@ -77,11 +77,18 @@ export const DESC_RULES: readonly RuleInfo[] = [
 
 // ── 문형 (§3.2). folded 형(소문자)을 기준으로 쓴다. raw 형에는 대소문자 무시 사본을 쓴다. ──
 
-/** `this is important … <동사>` 문형은 계획서에서 `use` 를 뺐다. "This is important: use short sentences" 같은 정상 문장이 high 가 된다. */
+/**
+ * `this is important … <동사>` 문형은 계획서에서 `use` 를 뺐다. "This is important: use short sentences" 같은 정상 문장이 high 가 된다.
+ *
+ * ignore·disregard·forget 세 문형은 계획서와 달리 관사(`the`, `all the`, `any of the`)를 허용하고,
+ * ignore 문형의 끝 `\b` 를 뺐다. MCPTox 의 가장 흔한 주입 문장 "Ignore the previous instructions" 가
+ * 관사 때문에 418건 중 3건만 걸렸고, 그중 292건은 원문이 "instructionsand" 처럼 공백이 빠져 끝 경계에도
+ * 막혔다(audit-T7 실측).
+ */
 export const INJECTION_PATTERNS: readonly RegExp[] = [
-  /\bignore (all |any )?(previous|prior|above|earlier|preceding) (instructions?|prompts?|rules?|messages?)\b/,
-  /\bdisregard (all |any )?(previous|prior|above|earlier) /,
-  /\bforget (all |everything |any )?(previous|prior|above|earlier|you were told)/,
+  /\bignore (all |any |the |all the |any of the )?(previous|prior|above|earlier|preceding) (instructions?|prompts?|rules?|messages?)/,
+  /\bdisregard (all |any |the |all the |any of the )?(previous|prior|above|earlier) /,
+  /\bforget (all |everything |any |the |all the |any of the )?(previous|prior|above|earlier|you were told)/,
   /\b(do not|don'?t|never) (tell|inform|alert|notify|mention|show|display|reveal|disclose)( this| it| that)? (to )?(the )?user\b/,
   /\b(the )?user (should|must|can) ?not (see|know|be told|be informed)\b/,
   /\b(hide|conceal) (this|it|that|these instructions?) from (the )?user\b/,
@@ -147,6 +154,13 @@ export const IMPLICIT_ACTION_PATTERN =
  * 첫 문형은 계획서와 다르다. 도구 이름 자리를 한 단어에서 세 단어까지로 넓혔다. folded 형은
  * `send_email` 을 `send email` 로 접으므로, 원래 문형으로는 키릴 문자 등으로 raw 대조를 피한
  * 경우 folded 에서 다시 잡을 수 없다.
+ *
+ * 끝의 두 문형은 계획서에 더한 것이다. 따옴표·백틱으로 다른 도구를 가리키는 꼴("when using the
+ * 'get-autocomplete' tool", "the `x` tool is available")로, MCPTox 의 주된 섀도잉 표현인데 0건이었다
+ * (audit-T7 실측). 따옴표 안 이름은 `quoted` 이름표로 잡고, 그것이 자기 도구 이름이면 자기 사용법이라
+ * 제외한다(`isSelfReference`). 이름 자리에 공백을 세 번까지 허용하는 것은 folded 형이 `-`·`_` 를 공백으로
+ * 접기 때문이다. 둘째 문형의 관사는 `(\bthe )?` 다. `\b` 를 앞에 두면 관사가 없을 때 따옴표 앞에서
+ * 경계가 성립하지 않는다.
  */
 export const SHADOWING_PATTERNS: readonly RegExp[] = [
   /\bwhen(ever)? (the )?\w[\w-]*( [\w-]+){0,2} tool is (available|present|installed|enabled)\b/,
@@ -157,7 +171,29 @@ export const SHADOWING_PATTERNS: readonly RegExp[] = [
   /\breplace (the|all|any) (function|tool|method)s?\b/,
   /\bprioriti[sz]e this (tool|function)( over| above)/,
   /\b(this tool|this function) (must|should) (always )?be (called|used|invoked) (first|before|instead)\b/,
+  /\b(when|whenever|before|after|while) (using|calling|invoking) (the )?['"`](?<quoted>[\w.-]+(?: [\w.-]+){0,3})['"`] (tool|function)\b/,
+  /(\bthe )?['"`](?<quoted>[\w.-]+(?: [\w.-]+){0,3})['"`] (tool|function) (is|has been|becomes) (available|present|installed|enabled)\b/,
 ];
+
+/** 도구 이름 비교용. 대소문자를 무시하고 밑줄·하이픈·공백 덩어리를 공백 하나로 본다. */
+const comparableName = (name: string) =>
+  name
+    .toLowerCase()
+    .replace(/[\s_-]+/g, " ")
+    .trim();
+
+/**
+ * 따옴표로 가리킨 도구가 이 문자열이 속한 도구 자신인지. 자기 설명에서 "when using the 'read_file'
+ * tool, pass an absolute path" 라고 쓰는 것은 자기 사용법이다. 도구 위치가 아니면 판단하지 않는다.
+ */
+function isSelfReference(location: Location): (match: RegExpExecArray) => boolean {
+  if (location.kind !== "tool") return () => false;
+  const own = comparableName(location.toolName);
+  return (match) => {
+    const quoted = match.groups?.quoted;
+    return quoted !== undefined && own !== "" && comparableName(quoted) === own;
+  };
+}
 
 export const SENSITIVE_PATH_PATTERNS: readonly RegExp[] = [
   /~\/\.ssh\b/,
@@ -286,11 +322,25 @@ export interface PatternHit {
 }
 
 /** 형 하나에 문형 묶음을 대조해 가장 앞에서 시작하는 일치를 돌려준다. 같은 위치면 문형 순서. */
-function firstMatch(text: string, patterns: readonly RegExp[]): string | undefined {
+function firstMatch(
+  text: string,
+  patterns: readonly RegExp[],
+  exclude?: (match: RegExpExecArray) => boolean,
+): string | undefined {
   let best: RegExpExecArray | undefined;
   for (const pattern of patterns) {
-    const match = pattern.exec(text);
-    if (match !== null && (best === undefined || match.index < best.index)) best = match;
+    if (exclude === undefined) {
+      const match = pattern.exec(text);
+      if (match !== null && (best === undefined || match.index < best.index)) best = match;
+      continue;
+    }
+    // 제외가 있으면 같은 문형의 다음 일치도 본다. 첫 일치가 자기 사용법이어도 뒤에 다른 도구를
+    // 가리키는 일치가 있을 수 있다.
+    for (const match of text.matchAll(new RegExp(pattern.source, `${pattern.flags}g`))) {
+      if (exclude(match)) continue;
+      if (best === undefined || match.index < best.index) best = match;
+      break;
+    }
   }
   return best?.[0];
 }
@@ -299,10 +349,14 @@ function firstMatch(text: string, patterns: readonly RegExp[]): string | undefin
 type FormHit = PatternHit & { readonly entry: TextFormEntry };
 
 /** 각 형에 문형을 대조한다. 형 순서(raw, folded, base64…, hex…, rot13)대로 걸린 것 전부. */
-function matchForms(forms: readonly TextFormEntry[], set: PatternSet): FormHit[] {
+function matchForms(
+  forms: readonly TextFormEntry[],
+  set: PatternSet,
+  exclude?: (match: RegExpExecArray) => boolean,
+): FormHit[] {
   const hits: FormHit[] = [];
   for (const entry of forms) {
-    const fragment = firstMatch(entry.text, entry.form === "raw" ? set.raw : set.folded);
+    const fragment = firstMatch(entry.text, entry.form === "raw" ? set.raw : set.folded, exclude);
     if (fragment !== undefined) hits.push({ form: entry.form, fragment, entry });
   }
   return hits;
@@ -590,7 +644,11 @@ function scanString(entry: CollectedString, serverName: string): Finding[] {
     "medium",
     matchImplicitTrigger(entry.raw, forms, entry.location),
   );
-  const shadowing = record("desc/shadowing", "high", matchForms(forms, SHADOWING));
+  const shadowing = record(
+    "desc/shadowing",
+    "high",
+    matchForms(forms, SHADOWING, isSelfReference(entry.location)),
+  );
   record("desc/sensitive-path", injected || covert ? "high" : "info", matchForms(forms, SENSITIVE));
 
   findings.push(

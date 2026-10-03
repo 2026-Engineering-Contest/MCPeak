@@ -156,7 +156,7 @@ const material = (findings: readonly Finding[]) =>
 describe("benign 픽스처", () => {
   it("english-real-shapes.json 에서 info·flow 를 제외한 발견이 0건이다", async () => {
     const fixture = read(join(BENIGN, "english-real-shapes.json"));
-    expect(fixture.tools).toHaveLength(20);
+    expect(fixture.tools).toHaveLength(21);
     expect(material(await runAll(fixture)).map(describeFinding)).toEqual([]);
   });
 

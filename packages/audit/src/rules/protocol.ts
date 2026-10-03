@@ -434,9 +434,10 @@ const SIDE_PATTERNS_RAW: readonly RegExp[] = SIDE_PATTERNS.map((pattern) =>
 /**
  * 문자열 하나에서 desc/injection·covert-action·shadowing 문형을 찾는다. injection 은 T1 의 findInjection 이
  * 모든 형(raw, folded, 디코딩형, rot13)을 본다. 나머지 둘은 같은 형 순서로 대조해 처음 걸린 형에서 가장 앞의
- * 일치를 쓴다. 문자열 하나에 발견 하나이고 injection 이 먼저다.
+ * 일치를 쓴다. 문자열 하나에 발견 하나이고 injection 이 먼저다. fragment 는 evidenceFragment 를 거친 값이다.
+ * result.ts 의 result/injection 도 이 함수를 쓴다.
  */
-function findInstruction(
+export function findInstruction(
   text: string,
 ): { readonly fragment: string; readonly form: TextForm } | undefined {
   const injection = findInjection(text);

@@ -1,14 +1,6 @@
-import { normalizeTextWithSources } from "../text/normalize.js";
 import type { CollectedString, Finding, Location, RuleInfo } from "../types.js";
-import {
-  COVERT_ACTION_PATTERNS,
-  evidenceFragment,
-  findAnsiEscape,
-  findHiddenCharacters,
-  findInjection,
-  type PatternHit,
-  SHADOWING_PATTERNS,
-} from "./description.js";
+import { evidenceFragment, findAnsiEscape, findHiddenCharacters } from "./description.js";
+import { findInstruction } from "./protocol.js";
 
 export const RESULT_RULES: readonly RuleInfo[] = [
   {
@@ -127,32 +119,6 @@ export function collectResultStrings(results: readonly ToolCallResult[]): Collec
   return out;
 }
 
-const caseInsensitive = (pattern: RegExp) =>
-  pattern.flags.includes("i") ? pattern : new RegExp(pattern.source, `${pattern.flags}i`);
-
-const OTHER_INSTRUCTIONS = [...COVERT_ACTION_PATTERNS, ...SHADOWING_PATTERNS];
-const OTHER_INSTRUCTIONS_RAW = OTHER_INSTRUCTIONS.map(caseInsensitive);
-
-/**
- * §3.7 `result/injection` 의 판정: desc 의 injection·covert-action·shadowing 문형. injection 은
- * T1 의 `findInjection` 이 모든 형을 본다. 나머지 둘은 같은 형 순서로 대조하고, 문형이 소문자
- * 기준이라 raw 에는 대소문자 무시 사본을 댄다(protocol.ts 의 server-request-injection 과 같은 방식).
- */
-function findInstruction(raw: string): PatternHit | undefined {
-  const injection = findInjection(raw);
-  if (injection !== undefined) return injection;
-  for (const entry of normalizeTextWithSources(raw)) {
-    const patterns = entry.form === "raw" ? OTHER_INSTRUCTIONS_RAW : OTHER_INSTRUCTIONS;
-    let best: RegExpExecArray | undefined;
-    for (const pattern of patterns) {
-      const match = pattern.exec(entry.text);
-      if (match !== null && (best === undefined || match.index < best.index)) best = match;
-    }
-    if (best !== undefined) return { form: entry.form, fragment: best[0] };
-  }
-  return undefined;
-}
-
 /** result/hidden-unicode 가 보는 범주. confusable-space·variation 은 응답 본문에서 흔해 보지 않는다(§3.7). */
 const RESULT_HIDDEN = new Set(["zero-width", "bidi", "tag"]);
 
@@ -163,7 +129,8 @@ function stringFindings(entry: CollectedString): Finding[] {
   const findings: Finding[] = [];
   const instruction = findInstruction(entry.raw);
   if (instruction !== undefined) {
-    const fragment = evidenceFragment(instruction.fragment);
+    // findInstruction 이 이미 evidenceFragment 를 거친 조각을 준다.
+    const fragment = instruction.fragment;
     findings.push({
       ruleId: "result/injection",
       severity: "high",

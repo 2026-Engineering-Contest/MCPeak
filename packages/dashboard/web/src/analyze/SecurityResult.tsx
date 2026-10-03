@@ -4,6 +4,7 @@ import { Fragment, useState } from "react";
 import type { AnalyzeSecurityRequest, AnalyzeSecurityResponse } from "../../../src/api-types.js";
 import { Card } from "../components/Card.js";
 import { SegmentedControl } from "../components/SegmentedControl.js";
+import { riskOf } from "./risk-text.js";
 import {
   baselineStatus,
   bySeverity,
@@ -13,6 +14,13 @@ import {
   SEVERITY_TONE,
   splitFindings,
 } from "./security-view.js";
+
+/**
+ * 누가 읽는가(ADR-0111). 개발자는 자기 MCP 를 고치는 사람이라 발견마다 "해결" 줄을 본다. 사용자는
+ * 남의 MCP 를 등록할지 가리는 사람이라 고칠 것이 없다. "해결" 줄 대신 "왜 위험한가" 줄을 보고,
+ * 해결 문장이 든 CLI 리포트 원문도 보지 않는다.
+ */
+export type Audience = "developer" | "user";
 
 /** 결함 목록을 묶는 기준. */
 type Grouping = "severity" | "tool";
@@ -53,10 +61,48 @@ function FixLine({ fix }: { readonly fix: string }): JSX.Element {
 }
 
 /**
- * 발견 하나. 위에서 아래로 심각도 배지·규칙·위치, 메시지, 해결, 근거다. 가장 먼저 읽혀야 하는 것은
+ * "왜 위험한가: ..." 한 줄. 사용자에게 보인다. 문장은 규칙 id 로 정해진다(`risk-text.ts`). 모르는
+ * 규칙이면 줄이 없다.
+ */
+function RiskLine({ ruleId }: { readonly ruleId: string }): JSX.Element | null {
+  const risk = riskOf(ruleId);
+  if (risk === null) {
+    return null;
+  }
+  return (
+    <p className="break-words text-sm text-ink">
+      <span className={LINE_LABEL_CLASS} style={{ color: FAILED_TONE.fg }}>
+        왜 위험한가
+      </span>
+      {`: ${risk}`}
+    </p>
+  );
+}
+
+/** 발견의 설명 줄. 개발자에게는 해결, 사용자에게는 위험 설명이다. */
+function DetailLine({
+  audience,
+  ruleId,
+  fix,
+}: {
+  readonly audience: Audience;
+  readonly ruleId: string;
+  readonly fix: string;
+}): JSX.Element | null {
+  return audience === "user" ? <RiskLine ruleId={ruleId} /> : <FixLine fix={fix} />;
+}
+
+/**
+ * 발견 하나. 위에서 아래로 심각도 배지·규칙·위치, 메시지, 해결(사용자에게는 위험 설명), 근거다. 가장 먼저 읽혀야 하는 것은
  * 메시지 줄이다. 서버가 보낸 글자는 전부 텍스트 노드다.
  */
-function FindingItem({ row }: { readonly row: FindingRow }): JSX.Element {
+function FindingItem({
+  row,
+  audience,
+}: {
+  readonly row: FindingRow;
+  readonly audience: Audience;
+}): JSX.Element {
   const { finding, view } = row;
   const tone = SEVERITY_TONE[finding.severity];
   return (
@@ -69,7 +115,7 @@ function FindingItem({ row }: { readonly row: FindingRow }): JSX.Element {
         <span className="break-words text-sm text-ink-muted">{view.where}</span>
       </p>
       <p className="break-words text-sm font-medium text-ink">{`→ ${finding.message}`}</p>
-      <FixLine fix={finding.fix} />
+      <DetailLine audience={audience} ruleId={finding.ruleId} fix={finding.fix} />
       {finding.evidence.length > 0 && (
         <p className="flex flex-wrap items-center gap-1.5">
           <span className={`${LINE_LABEL_CLASS} text-ink-muted`}>근거</span>
@@ -93,11 +139,13 @@ function FindingSection({
   title,
   titleColor,
   rows,
+  audience,
 }: {
   readonly title: string;
   /** 심각도별 보기에서만 준다. 없으면 ink 색이다. */
   readonly titleColor?: string;
   readonly rows: readonly FindingRow[];
+  readonly audience: Audience;
 }): JSX.Element {
   return (
     <section className="space-y-2">
@@ -111,7 +159,7 @@ function FindingSection({
       <Card className="overflow-hidden">
         <ul className="divide-y divide-line-subtle">
           {rows.map((row) => (
-            <FindingItem key={row.index} row={row} />
+            <FindingItem key={row.index} row={row} audience={audience} />
           ))}
         </ul>
       </Card>
@@ -130,9 +178,12 @@ function FindingSection({
 export function SecurityResult({
   response,
   request,
+  audience = "developer",
 }: {
   readonly response: AnalyzeSecurityResponse;
   readonly request: AnalyzeSecurityRequest;
+  /** 주지 않으면 개발자다. 보안 탭은 주지 않는다. */
+  readonly audience?: Audience;
 }): JSX.Element {
   const [grouping, setGrouping] = useState<Grouping>("severity");
   const { report } = response;
@@ -244,6 +295,7 @@ export function SecurityResult({
               title={group.title}
               titleColor={group.titleColor}
               rows={group.rows}
+              audience={audience}
             />
           ))}
         </>
@@ -265,7 +317,11 @@ export function SecurityResult({
                   <p className="break-words text-sm font-medium text-ink">
                     {`→ ${row.finding.message}`}
                   </p>
-                  <FixLine fix={row.finding.fix} />
+                  <DetailLine
+                    audience={audience}
+                    ruleId={row.finding.ruleId}
+                    fix={row.finding.fix}
+                  />
                 </li>
               ))}
             </ul>
@@ -358,14 +414,17 @@ export function SecurityResult({
         </div>
       </section>
 
-      <details className="rounded-lg border border-line bg-surface">
-        <summary className="cursor-pointer px-4 py-2 text-sm font-medium text-ink">
-          CLI 리포트 원문
-        </summary>
-        <pre className="overflow-x-auto whitespace-pre border-t border-line px-4 py-3 font-mono text-xs text-ink">
-          {response.rendered}
-        </pre>
-      </details>
+      {/* 원문에는 발견마다 "해결:" 줄이 있다. 사용자에게는 보이지 않는다. */}
+      {audience === "developer" && (
+        <details className="rounded-lg border border-line bg-surface">
+          <summary className="cursor-pointer px-4 py-2 text-sm font-medium text-ink">
+            CLI 리포트 원문
+          </summary>
+          <pre className="overflow-x-auto whitespace-pre border-t border-line px-4 py-3 font-mono text-xs text-ink">
+            {response.rendered}
+          </pre>
+        </details>
+      )}
     </div>
   );
 }

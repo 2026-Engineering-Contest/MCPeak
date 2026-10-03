@@ -35,7 +35,7 @@ const PROBE_OPTIONS: readonly { readonly value: ProbeChoice; readonly label: str
   { value: "all", label: "전부" },
 ];
 
-const REMOTE_SANDBOX_HINT =
+export const REMOTE_SANDBOX_HINT =
   "원격 서버는 격리할 수 없습니다. 격리는 프로세스를 띄우는 대상에만 적용됩니다.";
 /** 격리 이미지가 띄울 수 있는 명령. `npx -y` 로 받는 서버도 뜬다(PR #498, ADR-0109). */
 const SANDBOX_HINT = "격리 이미지는 node, npx, npm 으로 띄우는 서버만 실행합니다.";
@@ -47,7 +47,7 @@ const PROGRESS_DESCRIPTION =
 const ALERT_CLASS =
   "overflow-x-auto whitespace-pre-wrap rounded-lg border border-line bg-surface px-4 py-3 font-mono text-xs";
 
-function ErrorAlert({ message }: { readonly message: string }): JSX.Element {
+export function ErrorAlert({ message }: { readonly message: string }): JSX.Element {
   return (
     <pre role="alert" className={ALERT_CLASS} style={{ color: "var(--status-failed-fg)" }}>
       {message}
@@ -62,7 +62,7 @@ function ErrorAlert({ message }: { readonly message: string }): JSX.Element {
  * 타이머·폴링이 없다. 완료는 `useRunEvents` 의 status 로만 안다. `failed` 는 "발견이 있다"(종료 코드 2)일
  * 수도 있으므로 여기서는 끝났다는 것만 알리고 실패로 그리지 않는다.
  */
-function SecurityProgress({
+export function SecurityProgress({
   runId,
   onFinished,
   onMissing,

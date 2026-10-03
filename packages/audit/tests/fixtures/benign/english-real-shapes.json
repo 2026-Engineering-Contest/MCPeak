@@ -3,7 +3,7 @@
   "tools": [
     {
       "name": "delete_file",
-      "description": "Deletes the file at the given path. This cannot be undone.",
+      "description": "Deletes the file at the given path. This cannot be undone. When using the 'delete_file' tool, pass an absolute path.",
       "inputSchema": {
         "type": "object",
         "properties": {

@@ -183,6 +183,30 @@ describe("renderReport", () => {
     }
   });
 
+  it("위치 줄의 이름에 든 보이지 않는 문자·제어 문자를 <U+XXXX> 로 드러낸다", () => {
+    const zwsp = String.fromCodePoint(0x200b);
+    const esc = String.fromCodePoint(0x1b);
+    const text = renderReport(
+      report({
+        findings: [
+          toolFinding("desc/hidden-unicode", "high", 0, `get${zwsp}time`, "name"),
+          {
+            ...toolFinding("desc/injection", "high", 1, "x", "description"),
+            location: { kind: "resource", uri: `file:///a${esc}[8m.txt`, path: "uri" },
+          },
+        ],
+        counts: { high: 2, medium: 0, low: 0, info: 0 },
+      }),
+    );
+    // 리소스 위치는 toolIndex 가 없어(-1) §3.0 정렬에서 도구보다 앞선다.
+    expect(headLines(text)).toEqual([
+      "[심각] desc/injection · 리소스 file:///a<U+001B>[8m.txt 의 uri",
+      "[심각] desc/hidden-unicode · 도구 'get<U+200B>time' 의 name",
+    ]);
+    expect(text).not.toContain(zwsp);
+    expect(text).not.toContain(esc);
+  });
+
   it("probe all 이면 머리에 경고 괄호가 붙는다", () => {
     const all = renderReport(report({ probe: "all", probedTools: ["a", "b"] })).split("\n");
     expect(all[2]).toBe("호출 정책 all · 호출한 도구 2개 (상태를 바꾸는 도구도 호출했습니다)");

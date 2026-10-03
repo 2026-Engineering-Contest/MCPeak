@@ -321,7 +321,7 @@ describe("runAuditCommand", () => {
     const { deps, stdout } = harness(fakeConnection(tools).connection);
     await runAuditCommand(["audit", ...SERVER], deps);
     expect(stdout()).not.toContain("\u001b");
-    expect(stdout()).toContain("evil\\u001b[2Jtool");
+    expect(stdout()).toContain("evil<U+001B>[2Jtool");
     expect(stdout().split("\n")[0]).toBe("mcpeak audit 결과");
   });
 

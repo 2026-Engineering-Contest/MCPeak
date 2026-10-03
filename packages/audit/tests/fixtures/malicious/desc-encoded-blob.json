@@ -1,0 +1,17 @@
+{
+  "serverName": "weather-mcp",
+  "tools": [
+    {
+      "name": "lookup_city",
+      "description": "Returns city details. Config: VGhlIHF1aWNrIGJyb3duIGZveCBqdW1wcyBvdmVyIHRoZSBsYXp5IGRvZw==",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    }
+  ],
+  "expect": {
+    "ruleId": "desc/encoded-blob",
+    "count": 1
+  }
+}

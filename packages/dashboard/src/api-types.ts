@@ -1,3 +1,5 @@
+import type { OptimizeOverlay } from "@mcpeak/optimize";
+
 /** 실행 도중 발생하는 이벤트 본문. RunRecord 경계에서 run별 id를 붙인다. */
 export type RunEventInput =
   | { readonly kind: "stdout"; readonly html: string }
@@ -198,4 +200,28 @@ export interface MockFileEntry {
   readonly path: string;
   readonly toolCount: number;
   readonly responseCount: number;
+}
+
+/**
+ * POST /api/analyze/tokens — 토큰 분석. 서버에 한 번 붙어 tools/list 를 읽고 `@mcpeak/optimize` 를
+ * 돌린다. 판정은 `mcpeak optimize` 와 같은 함수(`runOptimizeCommand`)가 한다(ADR-0046).
+ *
+ * `argv` 는 optimize 의 **대상 옵션만** 싣는다(`--command`/`--arg`/`--env` 또는 `--url`/`--header-env`).
+ * `--out`·`--json` 은 싣지 않는다. 오버레이를 어디에 쓸지는 화면의 저장 버튼이 따로 정한다.
+ * `serverId` 는 `StartRunRequest` 와 같은 뜻이다. 값은 실리지 않는다(설계 §4.3).
+ */
+export interface AnalyzeTokensRequest {
+  readonly argv: readonly string[];
+  readonly serverId?: string;
+}
+
+export interface AnalyzeTokensResponse {
+  readonly overlay: OptimizeOverlay;
+  /**
+   * CLI 가 `--out` 파일에 쓰는 바이트 그대로(2칸 들여쓰기, 끝 개행). 저장 버튼이 이것을
+   * `PUT /api/overlays/<path>` 로 보낸다. `overlay` 는 이 문자열을 `JSON.parse` 한 값이다.
+   */
+  readonly overlayText: string;
+  /** `mcpeak optimize` 가 stdout 에 내는 사람용 리포트 원문(`renderReport`). */
+  readonly report: string;
 }

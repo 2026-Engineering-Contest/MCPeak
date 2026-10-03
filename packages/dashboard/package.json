@@ -51,6 +51,7 @@
     "@mcpeak/mock": "workspace:*",
     "@mcpeak/record": "workspace:*",
     "@mcpeak/runner": "workspace:*",
+    "@mcpeak/optimize": "workspace:*",
     "@mcpeak/cli": "workspace:*"
   },
   "devDependencies": {

@@ -1,0 +1,70 @@
+{
+  "observation": {
+    "events": [
+      {
+        "kind": "connect",
+        "phase": {
+          "kind": "call",
+          "toolIndex": 0,
+          "toolName": "disk_usage",
+          "callId": "placeholder"
+        },
+        "family": "inet",
+        "address": "192.168.65.7",
+        "port": 53
+      }
+    ],
+    "requests": [],
+    "tlsRejections": [],
+    "dnsNames": [],
+    "traceShrank": false,
+    "gaps": []
+  },
+  "tools": [
+    {
+      "name": "disk_usage",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    }
+  ],
+  "calls": [
+    {
+      "toolIndex": 0,
+      "toolName": "disk_usage",
+      "callId": "placeholder",
+      "outcome": "ok"
+    }
+  ],
+  "home": {
+    "hostname": "jiwoo-laptop",
+    "files": [
+      {
+        "path": ".aws/credentials",
+        "content": "[default]\naws_secret_access_key = 0123456789abcdef0123456789abcdef\n",
+        "mode": 420,
+        "canary": "0123456789abcdef0123456789abcdef"
+      },
+      {
+        "path": ".ssh/id_ed25519",
+        "content": "fedcba9876543210fedcba9876543210\n",
+        "mode": 420,
+        "canary": "fedcba9876543210fedcba9876543210"
+      },
+      {
+        "path": ".gitconfig",
+        "content": "[user]\n\tname = Jiwoo Kim\n",
+        "mode": 420
+      }
+    ]
+  },
+  "resultStrings": [],
+  "exfiltrated": [],
+  "mountRoot": "/workspace",
+  "command": "node",
+  "expect": {
+    "ruleId": "behavior/internal-address",
+    "count": 1
+  }
+}

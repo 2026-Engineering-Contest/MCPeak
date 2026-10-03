@@ -1,0 +1,4 @@
+9     execve("/usr/local/bin/node", ["node", "-e", "require(\"dns\").lookup(\"example.com\",()=>{})"], 0xffffc4037c50 /* 6 vars */) = 0
+16    connect(17, {sa_family=AF_UNIX, sun_path="/var/run/nscd/socket"}, 110) = -1 ENOENT (No such file or directory)
+16    connect(17, {sa_family=AF_UNIX, sun_path="/var/run/nscd/socket"}, 110) = -1 ENOENT (No such file or directory)
+16    connect(17, {sa_family=AF_INET, sin_port=htons(53), sin_addr=inet_addr("127.0.0.11")}, 16) = 0

@@ -1,12 +1,14 @@
-import type { CSSProperties, JSX } from "react";
+import type { JSX } from "react";
 import { Fragment, useState } from "react";
-import type { AnalyzeTokensResponse, PutFileResponse } from "../../../src/api-types.js";
-import { apiSend } from "../api.js";
+import type { AnalyzeTokensResponse } from "../../../src/api-types.js";
 import { Button } from "../components/Button.js";
 import { Card } from "../components/Card.js";
-import { Field, INPUT_CLASS } from "../components/Field.js";
 import { percent, tokens } from "./format.js";
+import { SourceEditCard } from "./SourceEditCard.js";
 import {
+  DIFF_MARK,
+  DIFF_PRE_CLASS,
+  DIFF_STYLE,
   type DiffLine,
   describeChangeParts,
   diffLines,
@@ -15,11 +17,6 @@ import {
 } from "./tool-diff.js";
 
 type OptimizedTool = AnalyzeTokensResponse["overlay"]["tools"][number];
-
-/** 저장 결과 문장. 성공·충돌은 안내라 status, 요청 실패는 alert 다. */
-type SaveMessage = { readonly kind: "status" | "alert"; readonly text: string };
-
-const DEFAULT_OVERLAY_PATH = "server.optimize.json";
 
 /**
  * 도구별 표의 행 순서. 감소 바이트 내림차순이고 같으면 원본 순서다(`report.ts` 의 `shrunk` 와 같은
@@ -34,20 +31,6 @@ function sortedTools(
     .sort((x, y) => y.reduced - x.reduced || x.index - y.index)
     .map(({ tool, index }) => ({ tool, index }));
 }
-
-/** 비교 칸의 `<pre>`. 원본·압축이 같은 모양이어야 나란히 읽힌다. */
-const DIFF_PRE_CLASS =
-  "overflow-x-auto whitespace-pre rounded-sm border border-line bg-surface px-3 py-2 font-mono text-xs text-ink";
-
-/** 줄 앞 표시 글자 한 칸. 색을 못 보는 화면에서도 지운 줄과 바뀐 줄이 갈린다. */
-const DIFF_MARK: Record<DiffLine["kind"], string> = { same: " ", removed: "-", added: "+" };
-
-/** 지운 줄·바뀐 줄의 색. 라이트·다크 양쪽에 이미 정의된 상태 색을 그대로 쓴다. */
-const DIFF_STYLE: Record<DiffLine["kind"], CSSProperties | undefined> = {
-  same: undefined,
-  removed: { backgroundColor: "var(--status-failed-bg)", color: "var(--status-failed-fg)" },
-  added: { backgroundColor: "var(--status-done-bg)", color: "var(--status-done-fg)" },
-};
 
 /**
  * 비교 칸 하나(계획서 §6.3). 줄마다 `data-diff` 를 달고, 표시 글자를 뺀 `textContent` 가 원래 줄이다.
@@ -125,12 +108,18 @@ function ToolDiff({
  * 토큰 분석 결과. 숫자는 `overlay` 에서 `format.ts` 의 식으로만 만든다(CLI 리포트와 같은 식).
  * 변환별 기여는 화면이 다시 계산하지 않고 CLI 리포트 원문 구획에만 있다(계획서 §3).
  */
-export function TokensResult({ result }: { readonly result: AnalyzeTokensResponse }): JSX.Element {
+export function TokensResult({
+  result,
+  argv,
+  onReanalyze,
+}: {
+  readonly result: AnalyzeTokensResponse;
+  /** 분석에 쓴 argv 그대로. 소스 수정이 같은 서버를 가리키게 한다. */
+  readonly argv: readonly string[];
+  readonly onReanalyze: () => void;
+}): JSX.Element {
   const { source, totals, tools } = result.overlay;
   const reduced = totals.bytesBefore - totals.bytesAfterWithInstructions;
-  const [path, setPath] = useState(DEFAULT_OVERLAY_PATH);
-  const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<SaveMessage | null>(null);
   /** 펼친 도구 이름. 여러 도구를 동시에 펼쳐 둘 수 있다. */
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
 
@@ -154,30 +143,6 @@ export function TokensResult({ result }: { readonly result: AnalyzeTokensRespons
     ],
     ["도구", `${source.toolCount}개 (공통 파라미터 ${totals.promotedParameters}개 승격)`],
   ];
-
-  async function save(): Promise<void> {
-    setSaving(true);
-    setMessage(null);
-    try {
-      // 있는 파일은 덮지 않는다(baseMtimeMs 0). 분석은 다시 돌리면 그만이라, 지우는 판단은
-      // 사용자에게 남긴다(계획서 §3).
-      const response = await apiSend<PutFileResponse>(
-        "PUT",
-        `/api/overlays/${encodeURIComponent(path)}`,
-        { content: result.overlayText, baseMtimeMs: 0 },
-      );
-      setMessage({
-        kind: "status",
-        text: response.saved
-          ? `저장했습니다: ${path}. 프록시로 띄우려면: mcpeak-optimize-proxy ${path} -- <서버 명령>`
-          : `이미 있는 파일입니다: ${path}. 다른 경로를 쓰거나 파일을 지운 뒤 다시 저장하세요.`,
-      });
-    } catch (err) {
-      setMessage({ kind: "alert", text: err instanceof Error ? err.message : String(err) });
-    } finally {
-      setSaving(false);
-    }
-  }
 
   return (
     <div className="space-y-4">
@@ -275,33 +240,7 @@ export function TokensResult({ result }: { readonly result: AnalyzeTokensRespons
         </pre>
       </details>
 
-      <Card className="space-y-3 p-4">
-        <Field label="저장 경로 (프로젝트 루트 기준)" htmlFor="analyze-overlay-path">
-          <input
-            id="analyze-overlay-path"
-            className={INPUT_CLASS}
-            value={path}
-            onChange={(event) => setPath(event.target.value)}
-          />
-        </Field>
-        <Button
-          variant="primary"
-          disabled={saving || path.trim() === ""}
-          onClick={() => void save()}
-        >
-          오버레이 저장
-        </Button>
-        {message !== null &&
-          (message.kind === "status" ? (
-            <p role="status" className="text-sm text-ink">
-              {message.text}
-            </p>
-          ) : (
-            <p role="alert" className="whitespace-pre-line text-sm text-ink">
-              {message.text}
-            </p>
-          ))}
-      </Card>
+      <SourceEditCard result={result} argv={argv} onReanalyze={onReanalyze} />
     </div>
   );
 }

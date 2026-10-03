@@ -1,4 +1,5 @@
 import type { ToolDef } from "@mcpeak/core";
+import type { CSSProperties } from "react";
 import type { AnalyzeTokensResponse } from "../../../src/api-types.js";
 
 /**
@@ -79,16 +80,27 @@ export type DiffLine =
   | { readonly kind: "removed"; readonly text: string }
   | { readonly kind: "added"; readonly text: string };
 
+/** 비교 칸의 `<pre>`. 원본·압축이 같은 모양이어야 나란히 읽힌다. */
+export const DIFF_PRE_CLASS =
+  "overflow-x-auto whitespace-pre rounded-sm border border-line bg-surface px-3 py-2 font-mono text-xs text-ink";
+
+/** 줄 앞 표시 글자 한 칸. 색을 못 보는 화면에서도 지운 줄과 바뀐 줄이 갈린다. */
+export const DIFF_MARK: Record<DiffLine["kind"], string> = { same: " ", removed: "-", added: "+" };
+
+/** 지운 줄·바뀐 줄의 색. 라이트·다크 양쪽에 이미 정의된 상태 색을 그대로 쓴다. */
+export const DIFF_STYLE: Record<DiffLine["kind"], CSSProperties | undefined> = {
+  same: undefined,
+  removed: { backgroundColor: "var(--status-failed-bg)", color: "var(--status-failed-fg)" },
+  added: { backgroundColor: "var(--status-done-bg)", color: "var(--status-done-fg)" },
+};
+
 /**
- * 줄 단위 LCS. `before` 배열은 원본의 모든 줄(same·removed), `after` 배열은 압축의 모든 줄(same·added)
- * 이다. 줄 순서는 입력 그대로다. LCS 가 여럿이면 앞쪽 줄을 먼저 맞춘다(결정론).
+ * 줄 단위 LCS 를 따라 걸은 순서. `diffLines` 와 `diffHunks` 가 같은 표와 같은 걸음을 쓴다. LCS 가
+ * 여럿이면 앞쪽 줄을 먼저 맞춘다(결정론).
  *
- * 도구 정의 JSON 은 줄 수가 작아 O(n·m) 표로 충분하다.
+ * 도구 정의 JSON 과 서버 스크립트는 줄 수가 작아 O(n·m) 표로 충분하다.
  */
-export function diffLines(
-  before: string,
-  after: string,
-): { readonly before: readonly DiffLine[]; readonly after: readonly DiffLine[] } {
+function walkLines(before: string, after: string): readonly DiffLine[] {
   const a = before.split("\n");
   const b = after.split("\n");
   const width = b.length + 1;
@@ -102,26 +114,99 @@ export function diffLines(
     }
   }
 
-  const left: DiffLine[] = [];
-  const right: DiffLine[] = [];
+  const steps: DiffLine[] = [];
   let i = 0;
   let j = 0;
   while (i < a.length || j < b.length) {
     const removed = a[i];
     const added = b[j];
     if (removed !== undefined && removed === added) {
-      left.push({ kind: "same", text: removed });
-      right.push({ kind: "same", text: added });
+      steps.push({ kind: "same", text: removed });
       i += 1;
       j += 1;
     } else if (added !== undefined && (removed === undefined || lcs(i, j + 1) >= lcs(i + 1, j))) {
       // 길이가 같으면 압축 쪽 줄을 먼저 넘긴다. 원본의 지금 줄이 남아 있어 그 줄이 먼저 맞는다.
-      right.push({ kind: "added", text: added });
+      steps.push({ kind: "added", text: added });
       j += 1;
     } else if (removed !== undefined) {
-      left.push({ kind: "removed", text: removed });
+      steps.push({ kind: "removed", text: removed });
       i += 1;
     }
   }
-  return { before: left, after: right };
+  return steps;
+}
+
+/**
+ * 줄 단위 LCS. `before` 배열은 원본의 모든 줄(same·removed), `after` 배열은 압축의 모든 줄(same·added)
+ * 이다. 줄 순서는 입력 그대로다.
+ */
+export function diffLines(
+  before: string,
+  after: string,
+): { readonly before: readonly DiffLine[]; readonly after: readonly DiffLine[] } {
+  const steps = walkLines(before, after);
+  return {
+    before: steps.filter((line) => line.kind !== "added"),
+    after: steps.filter((line) => line.kind !== "removed"),
+  };
+}
+
+export interface HunkLine {
+  readonly kind: "same" | "removed" | "added";
+  readonly text: string;
+  /** 원본 파일의 줄 번호(1 기반). added 면 undefined. */
+  readonly beforeNo?: number;
+  /** 고친 파일의 줄 번호(1 기반). removed 면 undefined. */
+  readonly afterNo?: number;
+}
+
+/** 걸은 순서를 통합 diff 순서로 바꾸고 줄 번호를 붙인다. 같은 자리의 removed 가 added 보다 먼저다. */
+function unifiedLines(steps: readonly DiffLine[]): readonly HunkLine[] {
+  const lines: HunkLine[] = [];
+  let beforeNo = 0;
+  let afterNo = 0;
+  let pendingAdded: HunkLine[] = [];
+  for (const step of steps) {
+    if (step.kind === "added") {
+      afterNo += 1;
+      pendingAdded.push({ kind: "added", text: step.text, afterNo });
+    } else if (step.kind === "removed") {
+      beforeNo += 1;
+      lines.push({ kind: "removed", text: step.text, beforeNo });
+    } else {
+      lines.push(...pendingAdded);
+      pendingAdded = [];
+      beforeNo += 1;
+      afterNo += 1;
+      lines.push({ kind: "same", text: step.text, beforeNo, afterNo });
+    }
+  }
+  lines.push(...pendingAdded);
+  return lines;
+}
+
+/**
+ * 파일 전체 대신 달라진 줄과 그 앞뒤 `context` 줄만 묶음으로 돌려준다. 묶음 사이가 `2 * context` 줄
+ * 이하로 가까우면 하나로 합친다. 달라진 줄이 없으면 빈 배열이다.
+ */
+export function diffHunks(
+  before: string,
+  after: string,
+  context = 2,
+): readonly (readonly HunkLine[])[] {
+  const lines = unifiedLines(walkLines(before, after));
+  // 묶음의 [from, to) 범위. 문맥이 앞 묶음과 닿거나 겹치면 앞 묶음을 늘린다.
+  const ranges: { from: number; to: number }[] = [];
+  for (const [index, line] of lines.entries()) {
+    if (line.kind === "same") continue;
+    const from = Math.max(0, index - context);
+    const to = Math.min(lines.length, index + context + 1);
+    const last = ranges.at(-1);
+    if (last !== undefined && from <= last.to) {
+      last.to = to;
+    } else {
+      ranges.push({ from, to });
+    }
+  }
+  return ranges.map(({ from, to }) => lines.slice(from, to));
 }

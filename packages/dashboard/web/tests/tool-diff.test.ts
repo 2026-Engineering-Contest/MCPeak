@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   describeChange,
   describeChangeParts,
+  diffHunks,
   diffLines,
   findSourceTool,
   formatToolSide,
@@ -184,5 +185,110 @@ describe("diffLines", () => {
       before: [{ kind: "same", text: "" }],
       after: [{ kind: "same", text: "" }],
     });
+  });
+});
+
+describe("diffHunks", () => {
+  /** 1 부터 count 까지의 숫자를 한 줄씩. */
+  function numbered(count: number): string[] {
+    return Array.from({ length: count }, (_unused, index) => `line ${index + 1}`);
+  }
+
+  it("달라진 줄이 없으면 빈 배열이다", () => {
+    expect(diffHunks("a\nb\nc", "a\nb\nc")).toEqual([]);
+    expect(diffHunks("", "")).toEqual([]);
+  });
+
+  it("가운데 한 줄을 바꾸면 묶음 하나에 앞뒤 2줄 문맥과 줄 번호가 있다", () => {
+    const before = numbered(9);
+    const after = [...before];
+    after[4] = "changed";
+
+    expect(diffHunks(before.join("\n"), after.join("\n"))).toEqual([
+      [
+        { kind: "same", text: "line 3", beforeNo: 3, afterNo: 3 },
+        { kind: "same", text: "line 4", beforeNo: 4, afterNo: 4 },
+        { kind: "removed", text: "line 5", beforeNo: 5 },
+        { kind: "added", text: "changed", afterNo: 5 },
+        { kind: "same", text: "line 6", beforeNo: 6, afterNo: 6 },
+        { kind: "same", text: "line 7", beforeNo: 7, afterNo: 7 },
+      ],
+    ]);
+  });
+
+  it("줄을 지우면 뒤 줄의 고친 파일 번호가 하나 당겨진다", () => {
+    expect(diffHunks("a\nb\nc\nd", "a\nc\nd", 1)).toEqual([
+      [
+        { kind: "same", text: "a", beforeNo: 1, afterNo: 1 },
+        { kind: "removed", text: "b", beforeNo: 2 },
+        { kind: "same", text: "c", beforeNo: 3, afterNo: 2 },
+      ],
+    ]);
+  });
+
+  it("같은 자리에서는 removed 가 added 보다 먼저다", () => {
+    const [hunk] = diffHunks("a\nb\nc\nz", "x\ny\nz", 0);
+    expect(hunk?.map((line) => line.kind)).toEqual([
+      "removed",
+      "removed",
+      "removed",
+      "added",
+      "added",
+    ]);
+    expect(hunk?.map((line) => line.text)).toEqual(["a", "b", "c", "x", "y"]);
+  });
+
+  it("멀리 떨어진 두 변경은 묶음 둘이다", () => {
+    const before = numbered(12);
+    const after = [...before];
+    after[1] = "first";
+    // 두 변경 사이에 같은 줄이 5줄이다. 문맥 2줄씩으로는 닿지 않는다.
+    after[7] = "second";
+
+    const hunks = diffHunks(before.join("\n"), after.join("\n"));
+    expect(hunks).toHaveLength(2);
+    expect(hunks[0]?.map((line) => line.text)).toEqual([
+      "line 1",
+      "line 2",
+      "first",
+      "line 3",
+      "line 4",
+    ]);
+    expect(hunks[1]?.map((line) => line.text)).toEqual([
+      "line 6",
+      "line 7",
+      "line 8",
+      "second",
+      "line 9",
+      "line 10",
+    ]);
+  });
+
+  it("사이가 2 * context 줄 이하면 묶음 하나로 합친다", () => {
+    const before = numbered(12);
+    const after = [...before];
+    after[1] = "first";
+    // 두 변경 사이에 같은 줄이 4줄이다. 문맥이 맞닿는다.
+    after[6] = "second";
+
+    const hunks = diffHunks(before.join("\n"), after.join("\n"));
+    expect(hunks).toHaveLength(1);
+    expect(hunks[0]?.map((line) => line.text)).toEqual([
+      "line 1",
+      "line 2",
+      "first",
+      "line 3",
+      "line 4",
+      "line 5",
+      "line 6",
+      "line 7",
+      "second",
+      "line 8",
+      "line 9",
+    ]);
+  });
+
+  it("같은 입력은 같은 결과다", () => {
+    expect(diffHunks("a\nb\nc\nb", "b\na\nb\nc")).toEqual(diffHunks("a\nb\nc\nb", "b\na\nb\nc"));
   });
 });

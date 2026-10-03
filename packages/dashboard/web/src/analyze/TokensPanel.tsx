@@ -78,6 +78,11 @@ export function TokensPanel(): JSX.Element {
   const [analyzing, setAnalyzing] = useState(false);
   const [result, setResult] = useState<AnalyzeTokensResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** 분석에 성공한 요청 그대로. 다시 분석이 폼을 다시 읽지 않고 이것을 보낸다. */
+  const [analyzed, setAnalyzed] = useState<AnalyzeTokensRequest | null>(null);
+  /** 결과가 새로 올 때마다 하나 오른다. 결과 화면의 키라서, 같은 내용이 다시 와도 상태가 비워진다. */
+  const [resultSerial, setResultSerial] = useState(0);
+  const [reanalyzing, setReanalyzing] = useState(false);
 
   useEffect(() => {
     apiGet<ServerMeta>("/api/meta")
@@ -153,13 +158,16 @@ export function TokensPanel(): JSX.Element {
     setAnalyzing(true);
     setError(null);
     setResult(null);
+    const body: AnalyzeTokensRequest = {
+      argv: argv.argv,
+      // 후보 갈래면 id 를 함께 보낸다. 서버가 그 후보의 env 값을 채운다(Home 과 같다).
+      ...(state.choice.kind === "candidate" ? { serverId: state.choice.id } : {}),
+    };
     try {
-      const response = await apiSend<AnalyzeTokensResponse>("POST", "/api/analyze/tokens", {
-        argv: argv.argv,
-        // 후보 갈래면 id 를 함께 보낸다. 서버가 그 후보의 env 값을 채운다(Home 과 같다).
-        ...(state.choice.kind === "candidate" ? { serverId: state.choice.id } : {}),
-      } satisfies AnalyzeTokensRequest);
+      const response = await apiSend<AnalyzeTokensResponse>("POST", "/api/analyze/tokens", body);
       setResult(response);
+      setAnalyzed(body);
+      setResultSerial((previous) => previous + 1);
       if (
         state.transport === "stdio" &&
         state.choice.kind === "manual" &&
@@ -174,6 +182,41 @@ export function TokensPanel(): JSX.Element {
       setAnalyzing(false);
     }
   }
+
+  /**
+   * 소스를 고친 뒤 같은 요청으로 다시 분석한다. 결과 단계를 떠나지 않는다. 실패하면 이전 결과를 둔 채
+   * CLI 문장만 보인다(고친 서버가 안 뜨는 것이 바로 이때 드러난다).
+   */
+  async function reanalyze(): Promise<void> {
+    if (analyzed === null || reanalyzing) {
+      return;
+    }
+    setReanalyzing(true);
+    setError(null);
+    try {
+      const response = await apiSend<AnalyzeTokensResponse>(
+        "POST",
+        "/api/analyze/tokens",
+        analyzed,
+      );
+      setResult(response);
+      setResultSerial((previous) => previous + 1);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setReanalyzing(false);
+    }
+  }
+
+  const errorAlert = error !== null && (
+    <pre
+      role="alert"
+      className="overflow-x-auto whitespace-pre-wrap rounded-lg border border-line bg-surface px-4 py-3 font-mono text-xs"
+      style={{ color: "var(--status-failed-fg)" }}
+    >
+      {error}
+    </pre>
+  );
 
   return (
     <div className="space-y-6">
@@ -208,21 +251,32 @@ export function TokensPanel(): JSX.Element {
             </div>
           </Card>
 
-          {error !== null && (
-            <pre
-              role="alert"
-              className="overflow-x-auto whitespace-pre-wrap rounded-lg border border-line bg-surface px-4 py-3 font-mono text-xs"
-              style={{ color: "var(--status-failed-fg)" }}
-            >
-              {error}
-            </pre>
-          )}
+          {errorAlert}
         </>
       ) : (
         <>
           {/* 폼 상태(state)는 그대로 두므로 돌아가면 고른 서버가 남아 있다. */}
-          <Button onClick={() => setResult(null)}>← 서버 다시 고르기</Button>
-          <TokensResult result={result} />
+          <Button
+            onClick={() => {
+              setResult(null);
+              setError(null);
+            }}
+          >
+            ← 서버 다시 고르기
+          </Button>
+          {/* 다시 분석의 실패는 결과 위에 보인다. 이전 결과는 그대로 둔다. */}
+          {errorAlert}
+          {reanalyzing && (
+            <p role="status" className="text-sm text-ink-muted">
+              분석 중…
+            </p>
+          )}
+          <TokensResult
+            key={resultSerial}
+            result={result}
+            argv={analyzed?.argv ?? []}
+            onReanalyze={() => void reanalyze()}
+          />
         </>
       )}
     </div>

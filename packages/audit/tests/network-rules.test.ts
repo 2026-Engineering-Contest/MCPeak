@@ -8,6 +8,7 @@ import {
   type NetworkContext,
   runNetworkRules,
 } from "../src/rules/network.js";
+import { filterNoise } from "../src/sandbox/noise.js";
 import type {
   CanaryValue,
   Finding,
@@ -728,6 +729,25 @@ describe("runNetworkRules", () => {
 
   it("network-benign-startup.json 에서 info 를 제외한 발견이 0", () => {
     const findings = runNetworkRules(loadFixture("network-benign-startup.json"));
+    expect(findings.filter((finding) => finding.severity !== "info")).toEqual([]);
+  });
+
+  it("benign-node-startup.json 에서 info 를 제외한 발견이 0", () => {
+    // T4 가 실제 컨테이너에서 떠 온 관측이다(§8.1). 규칙이 보는 것은 잡음 표를 거친 관측이다.
+    const fixture = JSON.parse(readFileSync(join(SANDBOX, "benign-node-startup.json"), "utf8")) as {
+      readonly observation: Observation;
+      readonly mountRoot: string;
+      readonly command: string;
+    };
+    const findings = runNetworkRules({
+      observation: filterNoise(fixture.observation, {
+        mountRoot: fixture.mountRoot,
+        command: fixture.command,
+      }),
+      declaredHosts: [],
+      canaries: [],
+      mode: "live",
+    });
     expect(findings.filter((finding) => finding.severity !== "info")).toEqual([]);
   });
 

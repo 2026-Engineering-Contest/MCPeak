@@ -1,9 +1,9 @@
 export { type AuditDependencies, audit } from "./audit.js";
 export { collectStrings } from "./collect.js";
 export { probeArguments } from "./probe-args.js";
-export { renderReport } from "./report.js";
+export { describeLocation, renderReport } from "./report.js";
 export { BEHAVIOR_RULES, type BehaviorContext, runBehaviorRules } from "./rules/behavior.js";
-export { DESC_RULES, runDescRules } from "./rules/description.js";
+export { DESC_RULES, escapeInvisible, runDescRules } from "./rules/description.js";
 export { FLOW_RULES, runFlowRules } from "./rules/flow.js";
 export { LAUNCH_RULES, runLaunchRules } from "./rules/launch.js";
 export {

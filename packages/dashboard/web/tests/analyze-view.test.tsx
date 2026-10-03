@@ -264,16 +264,6 @@ describe("AnalyzeView", () => {
     await screen.findByRole("radio", { name: /^weather/ });
   });
 
-  it("보안 탭은 준비 중 안내와 토큰 탭 링크를 보인다", () => {
-    stubFetch();
-    render(<AnalyzeView tab="security" />);
-
-    expect(screen.getByText("보안 탭은 준비 중입니다.")).toBeTruthy();
-    expect(screen.getByRole("link", { name: /토큰 탭으로/ }).getAttribute("href")).toBe(
-      "#/analyze/tokens",
-    );
-  });
-
   it("첫 후보가 초기 선택이고 분석 시작이 올바른 본문을 POST 한다", async () => {
     const fetchMock = stubFetch();
     render(<AnalyzeView tab="tokens" />);

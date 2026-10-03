@@ -33,6 +33,7 @@ const FLOW_TITLES: Record<RunSummary["flow"], string> = {
   generate: "생성 실행",
   repair: "수리 실행",
   verify: "한 번에 검증",
+  audit: "보안 점검",
 };
 
 /**
@@ -445,9 +446,11 @@ export function RunStreamPanel({
               칸을 그리지 않는다. 다만 요약 줄이 실제로 왔다면 흐름과 무관하게 그것이 사실이다.
               없다고 확인된 run 에도 그리지 않는다 — 셀 것이 없다.
             */}
-            {!missing && (tally !== null || (flow !== "generate" && flow !== "repair")) && (
-              <RunCounts tally={tally} />
-            )}
+            {!missing &&
+              (tally !== null ||
+                (flow !== "generate" && flow !== "repair" && flow !== "audit")) && (
+                <RunCounts tally={tally} />
+              )}
             {showRepairButton && (
               <Button
                 variant="primary"

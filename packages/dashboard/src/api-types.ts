@@ -1,3 +1,4 @@
+import type { AuditReport, ProbePolicy } from "@mcpeak/audit";
 import type { ToolDef } from "@mcpeak/core";
 import type { OptimizeOverlay } from "@mcpeak/optimize";
 
@@ -45,6 +46,12 @@ export type StartRunRequest =
    */
   | ({ readonly flow: "verify" } & StartRunFields);
 
+/**
+ * run 의 종류. `audit` 는 보안 탭이 `POST /api/analyze/security` 로 시작하는 점검이다.
+ * `POST /api/runs` 로는 시작할 수 없고 `GET /api/runs` 목록에도 실리지 않는다(ADR-0110).
+ */
+export type RunFlow = StartRunRequest["flow"] | "audit";
+
 export interface StartRunResponse {
   readonly runId: string;
 }
@@ -53,7 +60,7 @@ export type RunStatus = "running" | "waiting-input" | "done" | "failed";
 
 export interface RunSummary {
   readonly runId: string;
-  readonly flow: StartRunRequest["flow"];
+  readonly flow: RunFlow;
   readonly status: RunStatus;
   readonly exitCode: number | null;
   /** 시작 요청의 argv 그대로. 실행 뷰가 --repair-bundle 값을 여기서 읽는다(ADR-0080). */
@@ -275,4 +282,56 @@ export interface SourceEditResponse {
   readonly applied: boolean;
   /** `apply.baseMtimeMs` 가 지금 mtime 과 달라 쓰지 않았다. 본문은 새 미리보기다. */
   readonly conflict: boolean;
+}
+
+/**
+ * POST /api/analyze/security. 보안 점검을 run 으로 시작한다. 판정은 `mcpeak audit --json` 과 같은
+ * 함수(`runAuditCommand`)가 한다(ADR-0046).
+ *
+ * `argv` 는 `AnalyzeTokensRequest.argv` 와 같은 배열이다. **대상 옵션과 그 값만** 싣는다. 점검 옵션은
+ * 아래 필드로 보낸다. 서버가 경로를 가둔 뒤 CLI argv 로 조립한다.
+ */
+export interface AnalyzeSecurityRequest {
+  readonly argv: readonly string[];
+  readonly serverId?: string;
+  /** 없으면 CLI 기본값이다(격리가 실제로 켜지면 `all`, 아니면 `readonly`. ADR-0107). */
+  readonly probe?: ProbePolicy;
+  /** 프로젝트 루트 기준 상대경로(`.json`). 없으면 도구 표면 비교를 건너뛴다. */
+  readonly baselinePath?: string;
+  readonly updateBaseline?: boolean;
+  /** 있으면 `--sandbox` 다. */
+  readonly sandbox?: {
+    readonly compareHost: boolean;
+    /** `--allow-host` 값. 준 순서 그대로다. */
+    readonly allowHosts: readonly string[];
+  };
+}
+
+/** 발견 하나의 표시용 글자. `report.findings` 와 같은 순서·같은 길이로 온다. */
+export interface SecurityFindingView {
+  /** `describeLocation(finding.location)`. CLI 리포트의 위치와 같은 글자다. */
+  readonly where: string;
+  /** 도구에 걸린 발견이면 `escapeInvisible(toolName)`, 아니면 null. 도구별 묶음의 제목이다. */
+  readonly tool: string | null;
+  /** 도구에 걸린 발견이면 그 `toolIndex`, 아니면 -1(CLI 정렬과 같은 값). */
+  readonly toolIndex: number;
+}
+
+/** GET /api/analyze/security/<runId>. 시각·난수·runId 를 싣지 않는다. */
+export interface AnalyzeSecurityResponse {
+  /** `reportText` 를 `JSON.parse` 한 값. */
+  readonly report: AuditReport;
+  /** `mcpeak audit --json` 이 stdout 에 내는 바이트 그대로(2칸 들여쓰기, 끝 개행). */
+  readonly reportText: string;
+  /** `renderReport(report)`. CLI 의 사람용 리포트와 같은 함수가 만든다. */
+  readonly rendered: string;
+  readonly views: readonly SecurityFindingView[];
+  /** `report.sandbox` 가 있으면 `rendered` 의 둘째 줄(격리 실행 줄 또는 "행위 관측 안 함" 줄), 없으면 null. */
+  readonly sandboxLine: string | null;
+  /** `rendered` 의 마지막 빈 줄 뒤의 줄들(이 점검의 한계). */
+  readonly limits: readonly string[];
+  /** CLI 종료 코드. 0 은 발견 없음, 2 는 발견 있음, 1 은 리포트를 낸 뒤 격리 자원 정리에 실패한 경우다. */
+  readonly exitCode: number;
+  /** 리포트를 낸 **뒤에** CLI 가 stderr 에 쓴 글자(정리 실패 문장). 끝 개행은 뗀다. 없으면 "". */
+  readonly cleanupError: string;
 }

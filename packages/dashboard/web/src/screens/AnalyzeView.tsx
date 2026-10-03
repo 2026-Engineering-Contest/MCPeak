@@ -1,8 +1,8 @@
 import type { JSX } from "react";
+import { SecurityPanel } from "../analyze/SecurityPanel.js";
 import { TokensPanel } from "../analyze/TokensPanel.js";
 import type { AnalyzeTab } from "../analyze/types.js";
-import { Card } from "../components/Card.js";
-import { EmptyState } from "../components/EmptyState.js";
+import { useAnalyzeTarget } from "../analyze/use-analyze-target.js";
 import { FOCUS_RING_INSET } from "../components/focus-ring.js";
 import { PageHeader } from "../components/PageHeader.js";
 
@@ -16,6 +16,9 @@ const TABS: readonly { readonly id: AnalyzeTab; readonly label: string }[] = [
  * 가기·공유한 주소가 같은 탭을 연다. 눌린 탭의 모양은 `SegmentedControl` 의 눌린 쪽과 같다.
  */
 export function AnalyzeView({ tab }: { readonly tab: AnalyzeTab }): JSX.Element {
+  // 접속 상태는 여기 한 번만 둔다. 두 탭이 같은 인스턴스라 탭을 오가도 고른 서버가 남는다.
+  const target = useAnalyzeTarget();
+
   return (
     <section className="mx-auto max-w-[800px] space-y-6">
       <PageHeader
@@ -45,17 +48,7 @@ export function AnalyzeView({ tab }: { readonly tab: AnalyzeTab }): JSX.Element 
         ))}
       </div>
 
-      {tab === "tokens" ? (
-        <TokensPanel />
-      ) : (
-        <Card>
-          <EmptyState
-            message="보안 탭은 준비 중입니다."
-            hint="mcpeak audit 의 결과(심각도별 발견 목록, 드리프트 기준 파일 상태)를 이 자리에 보여 줄 예정입니다."
-            action={{ href: "#/analyze/tokens", label: "토큰 탭으로" }}
-          />
-        </Card>
-      )}
+      {tab === "tokens" ? <TokensPanel target={target} /> : <SecurityPanel target={target} />}
     </section>
   );
 }

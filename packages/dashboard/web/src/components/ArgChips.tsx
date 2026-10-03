@@ -22,10 +22,18 @@ export function ArgChips(props: {
   disabled?: boolean;
   /** 라벨 우측 부제. 비활성 사유나 값의 출처를 적는다. */
   hint?: string;
+  /**
+   * 라벨·입력칸 안내·제거 버튼 이름. 서버 인자가 아닌 값(허용 호스트 등)을 받는 호출부가 준다.
+   * 주지 않으면 서버 인자의 문장이다.
+   */
+  label?: string;
+  placeholder?: string;
+  removeLabel?: (value: string) => string;
   onChange: (args: readonly string[]) => void;
 }): JSX.Element {
   const [argDraft, setArgDraft] = useState("");
   const disabled = props.disabled ?? false;
+  const removeLabel = props.removeLabel ?? ((arg: string) => `인자 ${arg} 제거`);
 
   function addArg(): void {
     if (disabled || argDraft.trim() === "") {
@@ -42,7 +50,7 @@ export function ArgChips(props: {
           className="block text-sm font-medium text-ink"
           htmlFor={`${props.idPrefix}-arg-draft`}
         >
-          서버 인자
+          {props.label ?? "서버 인자"}
         </label>
         {props.hint !== undefined && <p className="text-xs text-ink-muted">{props.hint}</p>}
       </div>
@@ -57,7 +65,7 @@ export function ArgChips(props: {
               {arg}
               <button
                 type="button"
-                aria-label={`인자 ${arg} 제거`}
+                aria-label={removeLabel(arg)}
                 disabled={disabled}
                 className={`text-ink-muted hover:text-ink disabled:opacity-50 ${FOCUS_RING}`}
                 onClick={() => props.onChange(props.args.filter((_, i) => i !== index))}
@@ -74,7 +82,7 @@ export function ArgChips(props: {
           className={`${INPUT_CLASS} font-mono`}
           value={argDraft}
           disabled={disabled}
-          placeholder="인자 하나씩 추가"
+          placeholder={props.placeholder ?? "인자 하나씩 추가"}
           onChange={(event) => setArgDraft(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Enter") {

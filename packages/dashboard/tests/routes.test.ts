@@ -6,14 +6,23 @@ import { join } from "node:path";
 import { createSqliteSessionStore } from "@mcpeak/record/external";
 import { afterEach, describe, expect, it } from "vitest";
 import type {
+  AnalyzeSecurityResponse,
   AnalyzeTokensResponse,
   RunEvent,
+  RunSummary,
   SourceEdit,
   SourceEditResponse,
   StartRunRequest,
 } from "../src/api-types.js";
 import { startDashboardServer } from "../src/index.js";
 import type { AnalyzeTokensOutcome, AnalyzeTokensOverrides } from "../src/server/analyze.js";
+import type {
+  AnalyzeSecurityOutcome,
+  AnalyzeSecurityOverrides,
+  analyzeSecurity,
+  PrepareSecurityOutcome,
+  prepareSecurityRun,
+} from "../src/server/analyze-security.js";
 import { handleRequest } from "../src/server/routes.js";
 import type { RunIo } from "../src/server/run-registry.js";
 import { RunRegistry } from "../src/server/run-registry.js";
@@ -43,6 +52,10 @@ async function startTestServer(
     argv: readonly string[],
     overrides?: AnalyzeTokensOverrides,
   ) => Promise<AnalyzeTokensOutcome>,
+  security?: {
+    readonly prepare?: typeof prepareSecurityRun;
+    readonly analyze?: typeof analyzeSecurity;
+  },
 ): Promise<TestServer> {
   const root = await mkdtemp(join(tmpdir(), "mcpeak-dashboard-routes-"));
   const registry = new RunRegistry();
@@ -53,6 +66,8 @@ async function startTestServer(
       registry,
       execute,
       analyze,
+      prepareSecurity: security?.prepare,
+      analyzeSecurity: security?.analyze,
     }).catch((error: unknown) => {
       response.destroy(error instanceof Error ? error : new Error(String(error)));
     });
@@ -1197,5 +1212,297 @@ describe("POST /api/analyze/source-edits", () => {
     const response = await postSourceEdits(server, "{ argv: ");
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({ error: "본문이 올바른 JSON이 아닙니다." });
+  });
+});
+
+async function postSecurity(server: TestServer, body: string): Promise<Response> {
+  return fetch(`${server.baseUrl}/api/analyze/security`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body,
+  });
+}
+
+/** 점검을 시작하고 runId 를 돌려준다. */
+async function startSecurity(server: TestServer, body: unknown = { argv: [] }): Promise<string> {
+  const response = await postSecurity(server, JSON.stringify(body));
+  expect(response.status).toBe(200);
+  return ((await response.json()) as { runId: string }).runId;
+}
+
+function getSecurity(server: TestServer, runId: string): Promise<Response> {
+  return fetch(`${server.baseUrl}/api/analyze/security/${encodeURIComponent(runId)}`);
+}
+
+const SECURITY_ARGV = ["--json", "--command", "node"];
+
+type SecurityResult = { readonly exitCode: number; readonly outcome: AnalyzeSecurityOutcome };
+
+/**
+ * 점검 fake 한 쌍. prepare 는 정해 둔 결과를, analyze 는 `run` 이 만든 결과를 돌려주고 둘 다 받은
+ * 인자를 남긴다.
+ */
+function fakeSecurity(
+  run: (io: { readonly writeStderr: (text: string) => void }) => Promise<SecurityResult>,
+  prepared: PrepareSecurityOutcome = { ok: true, argv: SECURITY_ARGV },
+) {
+  const prepareCalls: { root: string; request: unknown }[] = [];
+  const analyzeCalls: {
+    argv: readonly string[];
+    context: { readonly root: string };
+    overrides?: AnalyzeSecurityOverrides;
+  }[] = [];
+  const prepare: typeof prepareSecurityRun = (root, request) => {
+    prepareCalls.push({ root, request });
+    return Promise.resolve(prepared);
+  };
+  const analyze: typeof analyzeSecurity = (argv, io, context, overrides) => {
+    analyzeCalls.push({ argv, context, overrides });
+    return run(io);
+  };
+  return { security: { prepare, analyze }, prepareCalls, analyzeCalls };
+}
+
+const SECURITY_BODY = {
+  report: { schemaVersion: 1, findings: [] },
+  reportText: "{}\n",
+  rendered: "mcpeak audit 결과\n",
+  views: [],
+  sandboxLine: null,
+  limits: ["a", "b"],
+  exitCode: 2,
+  cleanupError: "",
+} as unknown as AnalyzeSecurityResponse;
+
+const securityDone = (): Promise<SecurityResult> =>
+  Promise.resolve({ exitCode: 2, outcome: { ok: true, body: SECURITY_BODY } });
+
+describe("POST /api/analyze/security", () => {
+  it("runId 를 돌려주고 prepare 가 만든 argv 로 analyze 를 부른다", async () => {
+    const { security, prepareCalls, analyzeCalls } = fakeSecurity(securityDone);
+    server = await startTestServer(undefined, undefined, security);
+    const request = { argv: ["--command", "node"], probe: "none" };
+
+    const response = await postSecurity(server, JSON.stringify(request));
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { runId: unknown };
+    expect(Object.keys(body)).toEqual(["runId"]);
+    expect(typeof body.runId).toBe("string");
+    await tick();
+
+    expect(prepareCalls).toEqual([{ root: server.root, request }]);
+    expect(analyzeCalls.map((call) => call.argv)).toEqual([SECURITY_ARGV]);
+    expect(analyzeCalls[0]?.context).toEqual({ root: server.root });
+    expect(analyzeCalls[0]?.overrides).toBeUndefined();
+  });
+
+  it("prepare 가 거절하면 400 과 그 문장이고 run 을 시작하지 않는다", async () => {
+    const { security, analyzeCalls } = fakeSecurity(securityDone, {
+      ok: false,
+      error: "허용되지 않는 경로입니다.",
+    });
+    server = await startTestServer(undefined, undefined, security);
+
+    const response = await postSecurity(
+      server,
+      JSON.stringify({ argv: [], baselinePath: "../b.json" }),
+    );
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "허용되지 않는 경로입니다." });
+    await tick();
+    expect(analyzeCalls).toHaveLength(0);
+    expect(server.registry.list()).toHaveLength(0);
+  });
+
+  it("본문이 JSON 이 아니면 400 이다", async () => {
+    const { security, prepareCalls } = fakeSecurity(securityDone);
+    server = await startTestServer(undefined, undefined, security);
+
+    const response = await postSecurity(server, "{ argv: ");
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "본문이 올바른 JSON이 아닙니다." });
+    expect(prepareCalls).toHaveLength(0);
+  });
+
+  it("형식이 틀리면 400 이다", async () => {
+    const { security, prepareCalls } = fakeSecurity(securityDone);
+    server = await startTestServer(undefined, undefined, security);
+
+    for (const body of [
+      { argv: "x" },
+      { argv: [], probe: "sometimes" },
+      { argv: [], sandbox: { compareHost: "y", allowHosts: [] } },
+      { argv: [], updateBaseline: "yes" },
+      { argv: [1] },
+      { argv: [], serverId: 1 },
+      { argv: [], baselinePath: 1 },
+      { argv: [], sandbox: { compareHost: true, allowHosts: [1] } },
+      { argv: [], sandbox: null },
+    ]) {
+      const response = await postSecurity(server, JSON.stringify(body));
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({ error: "요청 형식이 올바르지 않습니다." });
+    }
+    expect(prepareCalls).toHaveLength(0);
+  });
+
+  it("모르는 serverId 는 400 이고 prepare 를 부르지 않는다", async () => {
+    const { security, prepareCalls } = fakeSecurity(securityDone);
+    server = await startTestServer(undefined, undefined, security);
+
+    const response = await postSecurity(server, JSON.stringify({ argv: [], serverId: "nope" }));
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "서버 후보를 찾을 수 없습니다: nope" });
+    expect(prepareCalls).toHaveLength(0);
+  });
+
+  it("아는 serverId 면 후보 env 가 analyze 의 candidateEnv 로 넘어간다", async () => {
+    const { security, analyzeCalls } = fakeSecurity(securityDone);
+    server = await startTestServer(undefined, undefined, security);
+    await writeFile(
+      join(server.root, ".mcp.json"),
+      JSON.stringify({
+        mcpServers: { w: { command: "node", args: [], env: { API_KEY: `\${API_KEY}` } } },
+      }),
+      "utf8",
+    );
+    const previous = process.env.API_KEY;
+    process.env.API_KEY = "secret";
+    try {
+      const response = await postSecurity(
+        server,
+        JSON.stringify({
+          argv: ["--command", "node", "--env", "API_KEY"],
+          serverId: "mcp-config:.mcp.json:w",
+        }),
+      );
+      expect(response.status).toBe(200);
+      expect(await response.text()).not.toContain("secret");
+      await tick();
+      expect(analyzeCalls).toHaveLength(1);
+      expect(analyzeCalls[0]?.overrides?.candidateEnv?.API_KEY).toBe("secret");
+    } finally {
+      if (previous === undefined) delete process.env.API_KEY;
+      else process.env.API_KEY = previous;
+    }
+  });
+});
+
+describe("GET /api/analyze/security/<runId>", () => {
+  it("끝난 점검의 body 를 200 으로 돌려준다", async () => {
+    server = await startTestServer(undefined, undefined, fakeSecurity(securityDone).security);
+    const runId = await startSecurity(server);
+    await tick();
+
+    const response = await getSecurity(server, runId);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(SECURITY_BODY);
+  });
+
+  it("두 번 읽어도 본문이 바이트 단위로 같다", async () => {
+    server = await startTestServer(undefined, undefined, fakeSecurity(securityDone).security);
+    const runId = await startSecurity(server);
+    await tick();
+
+    const first = await (await getSecurity(server, runId)).text();
+    const second = await (await getSecurity(server, runId)).text();
+    expect(second).toBe(first);
+    expect(first).toBe(JSON.stringify(SECURITY_BODY));
+    expect(first).not.toContain(runId);
+  });
+
+  it("끝나지 않았으면 409 다", async () => {
+    const never = () => new Promise<SecurityResult>(() => {});
+    server = await startTestServer(undefined, undefined, fakeSecurity(never).security);
+    const runId = await startSecurity(server);
+    await tick();
+
+    const response = await getSecurity(server, runId);
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ error: "점검이 아직 끝나지 않았습니다." });
+  });
+
+  it("리포트 없이 끝났으면 400 과 그 문장이다", async () => {
+    const failed = (): Promise<SecurityResult> =>
+      Promise.resolve({ exitCode: 1, outcome: { ok: false, error: "오류 [X]: a\n해결: b" } });
+    server = await startTestServer(undefined, undefined, fakeSecurity(failed).security);
+    const runId = await startSecurity(server);
+    await tick();
+
+    const response = await getSecurity(server, runId);
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "오류 [X]: a\n해결: b" });
+  });
+
+  it("없는 runId 는 404 다", async () => {
+    server = await startTestServer(undefined, undefined, fakeSecurity(securityDone).security);
+
+    const response = await getSecurity(server, "nope");
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({
+      error:
+        "그런 점검이 없습니다.\n→ 대시보드는 점검 결과를 메모리에만 둡니다. 서버를 다시 시작했다면 다시 점검하세요.",
+    });
+  });
+
+  it("점검이 아닌 run 의 id 는 404 다", async () => {
+    server = await startTestServer(async () => 0, undefined, fakeSecurity(securityDone).security);
+    const started = await fetch(`${server.baseUrl}/api/runs`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ flow: "test", argv: [] }),
+    });
+    const { runId } = (await started.json()) as { runId: string };
+    await tick();
+
+    const response = await getSecurity(server, runId);
+    expect(response.status).toBe(404);
+    const { error } = (await response.json()) as { error: string };
+    expect(error.split("\n")[0]).toBe("그런 점검이 없습니다.");
+  });
+
+  it("진행 문장이 SSE 로 흐른다", async () => {
+    const { security } = fakeSecurity(async (io) => {
+      io.writeStderr("격리 컨테이너를 준비합니다.\n");
+      return { exitCode: 0, outcome: { ok: true, body: SECURITY_BODY } };
+    });
+    server = await startTestServer(undefined, undefined, security);
+    const runId = await startSecurity(server);
+
+    const events = await collectSseEvents(`${server.baseUrl}/api/runs/${runId}/events`, 2);
+    expect(events[0]?.kind).toBe("stderr");
+    expect(events[0]?.kind === "stderr" ? events[0].html : "").toContain(
+      "격리 컨테이너를 준비합니다.",
+    );
+    expect(events.at(-1)).toMatchObject({ kind: "done", exitCode: 0 });
+  });
+});
+
+describe("GET /api/runs", () => {
+  it("점검 run 은 목록에 없다", async () => {
+    server = await startTestServer(async () => 0, undefined, fakeSecurity(securityDone).security);
+    await fetch(`${server.baseUrl}/api/runs`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ flow: "test", argv: [] }),
+    });
+    await startSecurity(server);
+    await tick();
+
+    const list = (await (await fetch(`${server.baseUrl}/api/runs`)).json()) as RunSummary[];
+    expect(list).toHaveLength(1);
+    expect(list[0]?.flow).toBe("test");
+  });
+
+  it("점검 run 의 요약은 flow 가 audit 이다", async () => {
+    server = await startTestServer(undefined, undefined, fakeSecurity(securityDone).security);
+    const runId = await startSecurity(server);
+    await tick();
+
+    const response = await fetch(`${server.baseUrl}/api/runs/${encodeURIComponent(runId)}`);
+    expect(response.status).toBe(200);
+    const summary = (await response.json()) as RunSummary;
+    expect(summary.flow).toBe("audit");
+    expect(summary.argv).toEqual(SECURITY_ARGV);
   });
 });

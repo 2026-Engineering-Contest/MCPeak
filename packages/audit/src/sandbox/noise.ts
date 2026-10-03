@@ -4,6 +4,12 @@ type Exec = Extract<SyscallEvent, { kind: "exec" }>;
 
 const basename = (path: string): string => path.slice(path.lastIndexOf("/") + 1);
 
+/**
+ * 사용자가 준 서버 명령의 이름. 호스트의 경로로 올 수 있어 `/` 와 `\\` 둘 다로 자른다. 백엔드(docker.ts)가
+ * 캐시 tmpfs 를 열지 정할 때 쓰는 규칙과 같아야 한다. 다르면 tmpfs 는 열렸는데 행은 걸리지 않는다.
+ */
+const commandName = (command: string): string => command.split(/[\\/]/).pop() || command;
+
 /** 게이트웨이가 듣는 포트. 이 포트로 가는 접속은 게이트웨이가 요청 기록으로 따로 본다. */
 const GATEWAY_PORTS: ReadonlySet<number> = new Set([53, 80, 443]);
 
@@ -15,6 +21,12 @@ const RUNNER_COMMANDS: ReadonlySet<string> = new Set(["npx", "npm"]);
 const RUNNER_CHILDREN: ReadonlySet<string> = new Set(["node", "sh", "npm", "npx"]);
 /** pnpm 이 만든 bin 셸 스크립트가 자기 위치를 구하느라 부르는 것. */
 const BIN_SHIM_HELPERS: ReadonlySet<string> = new Set(["sed", "dirname", "uname"]);
+
+/**
+ * 실행기가 받은 패키지를 두는 자리. 명령이 npx·npm 일 때만 백엔드가 여기에 쓰기 가능한 tmpfs 를 얹는다
+ * (ADR-0109). 끝의 `/` 까지가 접두다. `/home/node/.npmrc` 나 `/home/node/.npm-x` 는 여기에 들지 않는다.
+ */
+const NPM_CACHE_PREFIX = "/home/node/.npm/";
 
 interface NoiseContext {
   readonly command: string;
@@ -33,7 +45,7 @@ function isRunnerStartExec(event: SyscallEvent, context: NoiseContext): event is
   return (
     event.kind === "exec" &&
     event.phase.kind === "start" &&
-    RUNNER_COMMANDS.has(basename(context.command))
+    RUNNER_COMMANDS.has(commandName(context.command))
   );
 }
 
@@ -72,6 +84,16 @@ export const NOISE_TABLE: readonly NoiseRow[] = [
       "pnpm 이 만든 bin 셸 스크립트가 자기 위치를 구하는 과정이다. trace-npx-start.txt 에서 tsc 스크립트가 sed, dirname, uname 을 실행한다",
     matches: (event, context) =>
       isRunnerStartExec(event, context) && BIN_SHIM_HELPERS.has(basename(event.path)),
+  },
+  {
+    name: "npm-cache",
+    reason:
+      "명령이 npx·npm 일 때 실행기가 받은 패키지를 캐시에 채우는 과정이다. 서버가 호출 중에 그 자리에 쓰는 것은 빼지 않는다. trace-npx-registry-start.txt 에서 npx 가 /home/node/.npm/ 아래 _logs, _cacache, _npx 를 쓰기로 열고 _cacache/tmp 의 파일을 옮기고 지운다",
+    matches: (event, context) =>
+      (event.kind === "alter" || (event.kind === "open" && event.write)) &&
+      event.phase.kind === "start" &&
+      RUNNER_COMMANDS.has(commandName(context.command)) &&
+      event.path.startsWith(NPM_CACHE_PREFIX),
   },
   {
     name: "dev-null",

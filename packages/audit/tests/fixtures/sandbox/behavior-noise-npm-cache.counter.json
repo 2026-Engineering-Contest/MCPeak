@@ -1,0 +1,88 @@
+{
+  "observation": {
+    "events": [
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/home/node/.npm/_logs/2026-10-03T15_15_53_947Z-debug-0.log",
+        "write": true,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/home/node/.npm/_update-notifier-last-checked",
+        "write": true,
+        "result": "ok"
+      },
+      {
+        "kind": "alter",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/home/node/.npm/_cacache/tmp/9b4aedab",
+        "via": "rename-from",
+        "result": "ok"
+      },
+      {
+        "kind": "alter",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/home/node/.npm/_cacache/index-v5/c3/24/4e84bbba9583e9f1c2900713d71f58b1d83fd9687c101eb42b74ccf712a7",
+        "via": "rename-to",
+        "result": "ok"
+      },
+      {
+        "kind": "alter",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/home/node/.npm/_cacache/tmp/4853c97a",
+        "via": "unlink",
+        "result": "ok"
+      }
+    ],
+    "requests": [],
+    "tlsRejections": [],
+    "dnsNames": [],
+    "traceShrank": false,
+    "gaps": []
+  },
+  "tools": [],
+  "calls": [],
+  "home": {
+    "hostname": "jiwoo-laptop",
+    "files": [
+      {
+        "path": ".aws/credentials",
+        "content": "[default]\naws_secret_access_key = 0123456789abcdef0123456789abcdef\n",
+        "mode": 420,
+        "canary": "0123456789abcdef0123456789abcdef"
+      },
+      {
+        "path": ".ssh/id_ed25519",
+        "content": "fedcba9876543210fedcba9876543210\n",
+        "mode": 420,
+        "canary": "fedcba9876543210fedcba9876543210"
+      },
+      {
+        "path": ".gitconfig",
+        "content": "[user]\n\tname = Jiwoo Kim\n",
+        "mode": 420
+      }
+    ]
+  },
+  "resultStrings": [],
+  "exfiltrated": [],
+  "mountRoot": "/workspace",
+  "command": "node",
+  "expect": {
+    "ruleId": "behavior/write-outside",
+    "count": 1
+  }
+}

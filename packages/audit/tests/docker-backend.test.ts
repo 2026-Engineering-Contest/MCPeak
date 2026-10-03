@@ -396,6 +396,92 @@ describe("start: target 컨테이너의 argv", () => {
     expect(valuesOf(targetArgs(handle), "--tmpfs")).toEqual(["/tmp:rw,size=256m,uid=1000"]);
   });
 
+  describe("패키지 실행기의 캐시 자리(ADR-0109)", () => {
+    const NPM_CACHE = "/home/node/.npm:rw,exec,size=512m,uid=1000";
+    const withCommand = (command: string): SandboxSpec => ({
+      ...SPEC,
+      target: { ...SPEC.target, command, args: ["-y", "some-mcp-server@1.2.3"] },
+    });
+    /** `:` 뒤의 마운트 옵션 목록. */
+    const optionsOf = (tmpfs: string) => tmpfs.slice(tmpfs.indexOf(":") + 1).split(",");
+
+    it.each(["npx", "npm"])(
+      "명령이 %s 면 --tmpfs /home/node/.npm 이 정확히 한 번 있고 exec 를 담는다",
+      async (command) => {
+        const { handle } = await started(withCommand(command));
+        const tmpfs = valuesOf(targetArgs(handle), "--tmpfs");
+        expect(tmpfs).toEqual(["/tmp:rw,size=256m,uid=1000", NPM_CACHE]);
+        expect(countPair(targetArgs(handle), "--tmpfs", NPM_CACHE)).toBe(1);
+        expect(optionsOf(NPM_CACHE)).toContain("exec");
+      },
+    );
+
+    it("명령이 node 면 그 tmpfs 가 없다(실행 가능한 쓰기 영역은 필요할 때만 연다)", async () => {
+      const { handle } = await started();
+      expect(targetArgs(handle).some((arg) => arg.includes("/home/node/.npm"))).toBe(false);
+    });
+
+    it.each(["/opt/homebrew/bin/npx", "/usr/local/bin/npm", "C:\\Program Files\\nodejs\\npx"])(
+      "절대 경로 %s 도 basename 으로 판정한다",
+      async (command) => {
+        const { handle } = await started(withCommand(command));
+        expect(countPair(targetArgs(handle), "--tmpfs", NPM_CACHE)).toBe(1);
+      },
+    );
+
+    it("이름이 npx 로 시작할 뿐인 명령(npx-wrapper)이나 인자의 npx 로는 열지 않는다", async () => {
+      const wrapper = await started(withCommand("npx-wrapper"));
+      expect(valuesOf(targetArgs(wrapper.handle), "--tmpfs")).toEqual([
+        "/tmp:rw,size=256m,uid=1000",
+      ]);
+      const asArg = await started({
+        ...SPEC,
+        target: { ...SPEC.target, command: "node", args: ["npx", "npm"] },
+      });
+      expect(valuesOf(targetArgs(asArg.handle), "--tmpfs")).toEqual(["/tmp:rw,size=256m,uid=1000"]);
+    });
+
+    it.each(["node", "npx", "npm"])(
+      "명령이 %s 여도 /tmp 의 tmpfs 에는 exec 가 없다",
+      async (command) => {
+        const { handle } = await started(withCommand(command));
+        const tmp = valuesOf(targetArgs(handle), "--tmpfs").filter((value) =>
+          value.startsWith("/tmp:"),
+        );
+        expect(tmp).toEqual(["/tmp:rw,size=256m,uid=1000"]);
+        expect(optionsOf(tmp[0] ?? "")).not.toContain("exec");
+      },
+    );
+
+    it("npx·npm 이어도 --read-only, --cap-drop ALL, no-new-privileges 와 :ro 마운트 셋은 그대로다", async () => {
+      const { handle } = await started(withCommand("npx"));
+      const args = targetArgs(handle);
+      expect(count(args, "--read-only")).toBe(1);
+      expect(valuesOf(args, "--cap-drop")).toEqual(["ALL"]);
+      expect(valuesOf(args, "--security-opt")).toEqual(["no-new-privileges"]);
+      expect(args).not.toContain("--cap-add");
+      expect(valuesOf(args, "-v").filter((value) => value.startsWith("/"))).toEqual([
+        `${TMP}/home:/home/node:ro`,
+        "/work/repo:/work/repo:ro",
+        `${TMP}/ca.pem:/etc/mcpeak/ca.pem:ro`,
+      ]);
+    });
+
+    it("npx·npm 이면 임시 홈에 .npm 자리가 만들어진다(읽기 전용 바인드 아래라 마운트 자리가 미리 있어야 한다)", async () => {
+      for (const command of ["npx", "npm"]) {
+        const { writes } = await started(withCommand(command));
+        expect(writes.filter((write) => write.path.startsWith(`${TMP}/home/.npm/`))).toEqual([
+          { path: `${TMP}/home/.npm/.mcpeak-mount`, content: "", mode: 0o644 },
+        ]);
+      }
+    });
+
+    it("node 면 임시 홈에 .npm 자리를 만들지 않는다", async () => {
+      const { writes } = await started();
+      expect(writes.filter((write) => write.path.includes("/.npm"))).toEqual([]);
+    });
+  });
+
   it("--user 는 1000:1000 이다", async () => {
     const { handle } = await started();
     expect(valuesOf(targetArgs(handle), "--user")).toEqual(["1000:1000"]);

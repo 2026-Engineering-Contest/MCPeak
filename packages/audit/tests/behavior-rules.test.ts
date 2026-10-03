@@ -878,6 +878,7 @@ describe("fixtures/sandbox/behavior-*.json", () => {
       "package-runner",
       "package-bin",
       "bin-shim-helper",
+      "npm-cache",
       "dev-null",
       "unix-socket",
       "embedded-resolver",
@@ -933,7 +934,9 @@ describe("filterNoise", () => {
       exec(START, "/usr/bin/uname", ["uname"]),
       exec(START, "/usr/local/bin/npm", ["npm", "exec"]),
     ];
-    for (const command of ["npx", "npm", "/usr/local/bin/npx"])
+    // 백엔드(docker.ts)가 명령을 `/` 와 `\\` 둘 다로 잘라 판정한다. 잡음 표도 같은 규칙이어야 tmpfs 는 열렸는데
+    // 행은 안 걸리는 어긋남이 없다.
+    for (const command of ["npx", "npm", "/usr/local/bin/npx", "C:\\Program Files\\nodejs\\npx"])
       expect(kept(events, command)).toEqual([]);
     // 실행기 과정이 아닌 것은 npx 여도 남는다.
     const curl = exec(START, "/usr/bin/curl", ["curl", "https://example.invalid/"]);
@@ -944,6 +947,86 @@ describe("filterNoise", () => {
     expect(kept([...events, inCall], "npx")).toEqual([inCall]);
     // 명령이 node 면 첫 exec 만 빠진다.
     expect(kept(events, "node")).toEqual(events.slice(1));
+  });
+
+  it("npm 캐시: 명령이 npx·npm 일 때만 start 단계의 /home/node/.npm/ 아래 쓰기 열기와 지우기·옮기기가 빠진다", () => {
+    const CACHE = "/home/node/.npm/_cacache/tmp/4853c97a";
+    const events = [
+      open(START, "/home/node/.npm/_logs/debug-0.log", true),
+      open(START, "/home/node/.npm/_npx/a705c79b42eea4c8/package.json", true, "denied"),
+      alter(START, CACHE, "unlink", "ok"),
+      alter(START, CACHE, "rename-from", "ok"),
+      alter(START, "/home/node/.npm/_cacache/index-v5/c3/24/4e84", "rename-to", "ok"),
+    ];
+    // 백엔드(docker.ts)가 명령을 `/` 와 `\\` 둘 다로 잘라 판정한다. 잡음 표도 같은 규칙이어야 tmpfs 는 열렸는데
+    // 행은 안 걸리는 어긋남이 없다.
+    for (const command of ["npx", "npm", "/usr/local/bin/npx", "C:\\Program Files\\nodejs\\npx"])
+      expect(kept(events, command)).toEqual([]);
+    // 명령이 node 면 그 자리의 쓰기는 서버가 한 일이다.
+    expect(kept(events, "node")).toEqual(events);
+    expect(byRule(run(kept(events, "node")), "write-outside")).toHaveLength(1);
+
+    // 호출 단계에서 같은 자리에 쓰거나 지우는 것은 npx 여도 남는다.
+    const inCall = [
+      open(phaseOf(PLACEHOLDER), "/home/node/.npm/_npx/a705c79b42eea4c8/payload", true),
+      alter(phaseOf(PLACEHOLDER), CACHE, "unlink", "ok"),
+    ];
+    expect(kept([...events, ...inCall], "npx")).toEqual(inCall);
+    expect(byRule(run(kept([...events, ...inCall], "npx")), "write-outside")).toHaveLength(1);
+    // list·shutdown 단계도 실행기가 캐시를 채우는 때가 아니다.
+    const later = [open(LIST, CACHE, true), alter(SHUTDOWN, CACHE, "unlink", "ok")];
+    expect(kept(later, "npx")).toEqual(later);
+
+    // 접두는 `/home/node/.npm/` 까지다. 홈의 다른 자리와 이름만 비슷한 자리는 남는다.
+    const outside = [
+      open(START, "/home/node/.npmrc", true),
+      open(START, "/home/node/.npm-evil/x", true),
+      open(START, "/home/node/.ssh/authorized_keys", true),
+      open(START, "/home/node/.npm", true),
+      alter(START, "/home/node/.gitconfig", "unlink"),
+      open(START, "/work/.npm/x", true),
+    ];
+    expect(kept(outside, "npx")).toEqual(outside);
+    // 읽기 전용 열기는 표가 다루지 않는다. 그대로 남고 어느 규칙에도 닿지 않는다.
+    const read = open(START, "/home/node/.npm/_cacache/index-v5/c3/24/4e84", false);
+    expect(kept([read], "npx")).toEqual([read]);
+  });
+
+  it("npm 캐시: 레지스트리에서 받아 띄운 실제 기록에서 start 단계에 남는 쓰기·실행이 없다", () => {
+    // 격리 이미지에 ADR-0109 의 tmpfs 를 얹고 `npx -y @modelcontextprotocol/server-everything@2026.8.31` 을
+    // strace 아래 띄워 떠 온 기록이다(채집 명령과 줄인 방법은 docs/reports/2026-10-04-sandbox-N1.md).
+    const lines = readFileSync(join(SANDBOX, "trace-npx-registry-start.txt"), "utf8").split("\n");
+    const parsed = parseTrace(lines, START, "/workspace");
+    expect(parsed.unparsed).toBe(0);
+    const isCacheWrite = (event: SyscallEvent) =>
+      ((event.kind === "open" && event.write) || event.kind === "alter") &&
+      event.path.startsWith("/home/node/.npm/");
+    const cacheWrites = parsed.events.filter(isCacheWrite);
+    expect(cacheWrites.some((event) => event.kind === "open")).toBe(true);
+    expect(cacheWrites.some((event) => event.kind === "alter" && event.via === "unlink")).toBe(
+      true,
+    );
+    expect(cacheWrites.some((event) => event.kind === "alter" && event.via === "rename-to")).toBe(
+      true,
+    );
+    // 받은 패키지의 bin 은 캐시 안에서 실행된다. 그래서 그 자리가 exec 여야 한다.
+    expect(parsed.events).toContainEqual(
+      exec(START, "/home/node/.npm/_npx/a705c79b42eea4c8/node_modules/.bin/mcp-server-everything", [
+        "mcp-server-everything",
+      ]),
+    );
+
+    // 채집은 게이트웨이 없이 했다. 접속은 이 표의 다른 행과 network 규칙의 몫이라 여기서는 보지 않는다.
+    const local = parsed.events.filter((event) => event.kind !== "connect");
+    const filtered = kept(local, "npx");
+    expect(filtered.filter(isCacheWrite)).toEqual([]);
+    expect(filtered.filter((event) => event.kind === "exec" && event.result === "ok")).toEqual([]);
+    expect(run(filtered, { tools: [], calls: [] })).toEqual([]);
+
+    // 같은 기록이라도 명령이 node 였다면 그 쓰기는 서버가 한 것이다.
+    const asNode = kept(local, "node");
+    expect(asNode.filter(isCacheWrite)).toEqual(cacheWrites);
+    expect(byRule(run(asNode, { tools: [], calls: [] }), "write-outside")).toHaveLength(1);
   });
 
   it("/dev/null: 쓰기 열기 중 /dev/null 만 빠진다", () => {

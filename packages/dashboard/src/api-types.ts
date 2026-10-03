@@ -48,7 +48,7 @@ export type StartRunRequest =
 
 /**
  * run 의 종류. `audit` 는 보안 탭이 `POST /api/analyze/security` 로 시작하는 점검이다.
- * `POST /api/runs` 로는 시작할 수 없고 `GET /api/runs` 목록에도 실리지 않는다(ADR-0109).
+ * `POST /api/runs` 로는 시작할 수 없고 `GET /api/runs` 목록에도 실리지 않는다(ADR-0110).
  */
 export type RunFlow = StartRunRequest["flow"] | "audit";
 

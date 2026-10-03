@@ -11,7 +11,7 @@ import { resolveProjectPath } from "./paths.js";
 
 /**
  * 보안 점검 실행기. `mcpeak audit --json` 의 커맨드 함수(`runAuditCommand`)를 그대로 돌리고 stdout
- * 바이트를 메모리로 받는다(ADR-0046, ADR-0109). 규칙·정렬·종료 코드를 여기서 다시 쓰지 않는다.
+ * 바이트를 메모리로 받는다(ADR-0046, ADR-0110). 규칙·정렬·종료 코드를 여기서 다시 쓰지 않는다.
  * 화면에 나오는 위치 문장과 격리 상태 문장도 `@mcpeak/audit` 가 만든 글자다.
  *
  * 테스트가 실제 서버에 붙지 않고 fake 를 끼울 수 있도록 커맨드 함수와 동적 import 로더를

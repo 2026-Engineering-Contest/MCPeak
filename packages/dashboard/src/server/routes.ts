@@ -75,7 +75,7 @@ export interface RouterOptions {
 
 /**
  * 점검 run 의 결과 자리. run 과 수명이 같다(run 이 사라지면 함께 사라진다). `RunRegistry` 가
- * flow 별 결과 타입을 알지 않게 여기 둔다(ADR-0109).
+ * flow 별 결과 타입을 알지 않게 여기 둔다(ADR-0110).
  */
 interface SecuritySlot {
   outcome?: AnalyzeSecurityOutcome;
@@ -215,7 +215,7 @@ export async function handleRequest(
     return;
   }
   if (method === "GET" && pathname === "/api/runs") {
-    // 점검 run 은 목록에 싣지 않는다. 결과는 보안 탭이 보이고 실행 화면에는 진행 문장뿐이다(ADR-0109).
+    // 점검 run 은 목록에 싣지 않는다. 결과는 보안 탭이 보이고 실행 화면에는 진행 문장뿐이다(ADR-0110).
     sendJson(
       response,
       200,
@@ -496,7 +496,7 @@ function isAnalyzeSecurityRequest(value: unknown): value is AnalyzeSecurityReque
 }
 
 /**
- * 보안 점검은 run 으로 돈다(ADR-0109). 격리 이미지를 처음 만들 때 수 분이 걸리므로 runId 를 바로
+ * 보안 점검은 run 으로 돈다(ADR-0110). 격리 이미지를 처음 만들 때 수 분이 걸리므로 runId 를 바로
  * 돌려주고, 진행은 기존 SSE 로, 결과는 `GET /api/analyze/security/<runId>` 로 받는다. 경로와 argv 는
  * run 을 시작하기 전에 가둔다. 거절하면 run 이 생기지 않는다.
  */

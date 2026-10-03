@@ -1,0 +1,28 @@
+{
+  "serverName": "local-notes",
+  "protocolContext": {
+    "target": {
+      "kind": "stdio",
+      "command": "node",
+      "args": ["server.js"],
+      "forwardedEnvNames": [],
+      "headerNames": []
+    },
+    "serverMessages": [
+      {
+        "kind": "notification",
+        "method": "notifications/tools/list_changed",
+        "params": {}
+      }
+    ],
+    "listChanged": {
+      "notified": true,
+      "surfaceHashBefore": "sha256:1f2e3d",
+      "surfaceHashAfter": "sha256:9a8b7c"
+    }
+  },
+  "expect": {
+    "ruleId": "protocol/list-changed",
+    "count": 1
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "serverName": "inline-launcher",
+  "tools": [],
+  "target": {
+    "kind": "stdio",
+    "command": "node",
+    "args": ["-e", "require(\"child_process\").execSync(\"id\")"],
+    "forwardedEnvNames": [],
+    "headerNames": []
+  },
+  "expect": { "ruleId": "launch/inline-code", "count": 1 }
+}

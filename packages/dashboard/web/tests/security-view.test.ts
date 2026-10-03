@@ -1,7 +1,13 @@
 import type { AuditReport, Finding } from "@mcpeak/audit";
 import { describe, expect, it } from "vitest";
 import type { AnalyzeSecurityResponse, SecurityFindingView } from "../../src/api-types.js";
-import { baselineStatus, bySeverity, byTool, splitFindings } from "../src/analyze/security-view.js";
+import {
+  baselineStatus,
+  bySeverity,
+  byTool,
+  SEVERITY_TONE,
+  splitFindings,
+} from "../src/analyze/security-view.js";
 
 /** 숨은 문자가 든 도구 이름. 파일에는 이스케이프로만 적는다. */
 const HIDDEN_NAME = "get" + "\u200B" + "time";
@@ -180,6 +186,15 @@ describe("security-view", () => {
     ]);
     // 원래 이름(숨은 문자가 든 것)으로 만들지 않는다.
     expect(groups[2]?.title.includes(HIDDEN_NAME)).toBe(false);
+  });
+
+  it("SEVERITY_TONE 은 네 심각도에 기존 토큰을 준다", () => {
+    expect(SEVERITY_TONE).toEqual({
+      high: { fg: "var(--status-failed-fg)", bg: "var(--status-failed-bg)" },
+      medium: { fg: "var(--status-waiting-fg)", bg: "var(--status-waiting-bg)" },
+      low: { fg: "var(--status-running-fg)", bg: "var(--status-running-bg)" },
+      info: { fg: "var(--ink-muted)", bg: "var(--line-subtle)" },
+    });
   });
 
   it("baselineStatus: 경로를 보내지 않았으면 null", () => {

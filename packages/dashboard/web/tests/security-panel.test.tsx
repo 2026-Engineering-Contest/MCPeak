@@ -9,6 +9,7 @@ import type {
   ServerCandidate,
   ServerMeta,
 } from "../../src/api-types.js";
+import { SEVERITY_TONE } from "../src/analyze/security-view.js";
 import { AnalyzeView } from "../src/screens/AnalyzeView.js";
 
 /** run-view.test 와 같은 방식의 EventSource fake. 네트워크·서버 없음. */
@@ -258,8 +259,20 @@ function currentStep(): string | null {
   return document.querySelector('[aria-current="step"] > span:last-child')?.textContent ?? null;
 }
 
-function startButton(): HTMLElement {
-  return screen.getByRole("button", { name: /^점검 (시작|중…)$/ });
+/** `container` 안에서 글자 전체(자식 요소의 글자 포함)가 `text` 인 `<p>`. 한 줄이 여러 조각으로 나뉜 자리에 쓴다. */
+function lineOf(container: HTMLElement, text: string): HTMLElement {
+  return within(container).getByText(
+    (_, element) => element?.tagName === "P" && element.textContent === text,
+  );
+}
+
+/** 규칙 id 가 `ruleId` 인 발견의 `<li>`. */
+function findingOf(ruleId: string): HTMLElement {
+  const item = screen.getByText(ruleId).closest("li");
+  if (item === null) {
+    throw new Error(`발견이 <li> 안에 없다: ${ruleId}`);
+  }
+  return item;
 }
 
 /** 첫 후보가 선택될 때까지 기다린 뒤 점검을 시작하고 이벤트 스트림이 열릴 때까지 기다린다. */
@@ -347,9 +360,59 @@ describe("SecurityPanel", () => {
 
     expect(postedBodies(fetchMock)).toEqual([{ argv: WEATHER_ARGV, serverId: WEATHER.id }]);
     expect(source.url).toBe("/api/runs/r1/events");
-    // 도는 동안에는 다시 시작할 수 없다.
-    expect(startButton()).toHaveProperty("disabled", true);
-    expect(startButton().textContent).toBe("점검 중…");
+  });
+
+  it("점검 시작을 누르면 점검 단계로 넘어가고 폼이 사라진다", async () => {
+    stubFetch();
+    render(<AnalyzeView tab="security" />);
+    expect(
+      [...document.querySelectorAll("ol > li > span:last-child")].map((step) => step.textContent),
+    ).toEqual(["서버 선택", "점검", "결과"]);
+
+    await start();
+
+    expect(currentStep()).toBe("점검");
+    expect(screen.queryByRole("button", { name: "점검 시작" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "점검 중…" })).toBeNull();
+    expect(screen.queryByRole("radio", { name: /^weather/ })).toBeNull();
+    expect(screen.queryByText("호출 정책")).toBeNull();
+    expect(screen.getByText("진행")).toBeTruthy();
+  });
+
+  it("점검 단계는 점검 중인 서버를 보인다", async () => {
+    stubFetch();
+    render(<AnalyzeView tab="security" />);
+
+    await start();
+
+    expect(
+      screen.getByText("점검 대상: node examples/weather-server/server.mjs --port 3000"),
+    ).toBeTruthy();
+  });
+
+  it("점검 단계에서 서버 다시 고르기를 누르면 서버 선택으로 돌아가고 고른 값이 남는다", async () => {
+    const fetchMock = stubFetch();
+    render(<AnalyzeView tab="security" />);
+    await screen.findByRole("radio", { name: /^weather/ });
+    fireEvent.click(screen.getByRole("button", { name: "전부" }));
+    const source = await start();
+    expect(screen.getByText("점검은 중단되지 않고 끝까지 돕니다.")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "← 서버 다시 고르기" }));
+
+    expect(currentStep()).toBe("서버 선택");
+    expect(screen.getByRole("button", { name: "점검 시작" })).toHaveProperty("disabled", false);
+    expect(screen.getByRole("button", { name: "전부" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("radio", { name: /^weather/ })).toHaveProperty("checked", true);
+    expect(screen.queryByText("진행")).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+    // 진행 스트림은 닫힌다. 떠난 run 이 끝나도 결과를 읽지 않는다.
+    expect(source.closed).toBe(true);
+    act(() => {
+      source.emit({ kind: "done", exitCode: 2 });
+    });
+    expect(resultRequests(fetchMock)).toEqual([]);
+    expect(currentStep()).toBe("서버 선택");
   });
 
   it("점검 옵션을 요청 본문의 필드로 싣는다", async () => {
@@ -466,17 +529,18 @@ describe("SecurityPanel", () => {
     expect(screen.queryByRole("button", { name: "인자 a.example.com 제거" })).toBeNull();
   });
 
-  it("없는 run 이면 그 문장을 보이고 다시 시작할 수 있다", async () => {
+  it("없는 run 이면 서버 선택 단계로 돌아가 다시 시작할 수 있다", async () => {
     stubFetch({ summary: { status: 404, body: { error: "그런 run이 없습니다." } } });
     render(<AnalyzeView tab="security" />);
     await screen.findByRole("radio", { name: /^weather/ });
 
     fireEvent.click(screen.getByRole("button", { name: "점검 시작" }));
 
-    // 버튼이 돌아온 뒤에 본다. 그 전의 alert 는 진행 패널이 잠깐 보이는 같은 문장이다.
+    // 버튼이 돌아온 뒤에 본다. 그 전의 alert 는 점검 단계가 잠깐 보이는 같은 문장이다.
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "점검 시작" })).toHaveProperty("disabled", false);
     });
+    expect(currentStep()).toBe("서버 선택");
     const alert = screen.getByRole("alert");
     expect(alert.tagName).toBe("PRE");
     expect(alert.textContent).toBe(
@@ -495,7 +559,7 @@ describe("SecurityPanel", () => {
 
     expect((await screen.findByRole("alert")).textContent).toContain("서버 오류");
     expect(screen.getByText("진행")).toBeTruthy();
-    expect(startButton()).toHaveProperty("disabled", true);
+    expect(currentStep()).toBe("점검");
   });
 
   it("진행 문장을 로그 패널에 보인다", async () => {
@@ -515,10 +579,10 @@ describe("SecurityPanel", () => {
       ),
     ).toBeTruthy();
     // 진행 문장만으로는 결과를 읽지 않는다.
-    expect(currentStep()).toBe("서버 선택");
+    expect(currentStep()).toBe("점검");
   });
 
-  it("done 이벤트 뒤 결과를 한 번 읽어 보인다", async () => {
+  it("done 뒤 결과를 읽으면 결과 단계다", async () => {
     const fetchMock = stubFetch();
     render(<AnalyzeView tab="security" />);
     const source = await start();
@@ -530,7 +594,10 @@ describe("SecurityPanel", () => {
       source.emit({ kind: "done", exitCode: 2 });
     });
 
-    expect(await screen.findByText("판정: 심각 1건, 주의 1건, 낮음 0건, 정보 0건")).toBeTruthy();
+    expect((await screen.findByText(/^판정: /)).textContent).toBe(
+      "판정: 심각 1건, 주의 1건, 낮음 0건, 정보 0건",
+    );
+    // 결과는 한 번만 읽는다.
     expect(resultRequests(fetchMock)).toEqual(["/api/analyze/security/r1"]);
     expect(currentStep()).toBe("결과");
     expect(screen.queryByRole("alert")).toBeNull();
@@ -541,21 +608,44 @@ describe("SecurityPanel", () => {
     expect(source.closed).toBe(true);
   });
 
-  it("발견은 위치·메시지·해결 세 줄로 보인다", async () => {
+  it("판정 줄의 글자는 CLI 판정 줄과 같다", async () => {
     await runToResult();
 
-    const head = screen.getByText("[심각] desc/hidden-unicode · 도구 'get<U+200B>time' 의 name");
-    const item = head.closest("li");
-    if (item === null) {
-      throw new Error("발견이 <li> 안에 없다");
-    }
-    expect(within(item).getByText("→ 보이지 않는 문자가 들어 있습니다.")).toBeTruthy();
-    expect(within(item).getByText("해결: 보이지 않는 문자를 지우세요.")).toBeTruthy();
-    expect(within(item).getByText("근거: U+200B · raw")).toBeTruthy();
+    const verdict = screen.getByText(/^판정: /);
+    expect(verdict.textContent).toBe("판정: 심각 1건, 주의 1건, 낮음 0건, 정보 0건");
+    // 집계마다 칩 하나다. 0건인 칩은 정보 톤으로 흐리다.
+    const chips = [...verdict.querySelectorAll<HTMLElement>("[data-severity]")];
+    expect(chips.map((chip) => chip.textContent)).toEqual([
+      "심각 1건",
+      "주의 1건",
+      "낮음 0건",
+      "정보 0건",
+    ]);
+    expect(chips.map((chip) => chip.style.color)).toEqual([
+      SEVERITY_TONE.high.fg,
+      SEVERITY_TONE.medium.fg,
+      SEVERITY_TONE.info.fg,
+      SEVERITY_TONE.info.fg,
+    ]);
+  });
 
-    // 근거가 없는 발견에는 넷째 줄이 없다.
-    const plain = screen.getByText("[주의] protocol/plaintext · 프로토콜").closest("li");
-    expect(plain?.textContent?.includes("근거:")).toBe(false);
+  it("발견은 심각도 배지·규칙·위치·메시지·해결을 보인다", async () => {
+    await runToResult();
+
+    const item = findingOf("desc/hidden-unicode");
+    const badge = within(item).getByText("심각");
+    expect(badge.style.color).toBe(SEVERITY_TONE.high.fg);
+    expect(badge.style.background).toBe(SEVERITY_TONE.high.bg);
+    expect(within(item).getByText("도구 'get<U+200B>time' 의 name")).toBeTruthy();
+    expect(within(item).getByText("→ 보이지 않는 문자가 들어 있습니다.")).toBeTruthy();
+    expect(lineOf(item, "해결: 보이지 않는 문자를 지우세요.")).toBeTruthy();
+    // 왼쪽 띠가 심각도 색이다.
+    expect(item.style.borderLeftColor).toBe(SEVERITY_TONE.high.fg);
+
+    const medium = findingOf("protocol/plaintext");
+    expect(within(medium).getByText("주의").style.color).toBe(SEVERITY_TONE.medium.fg);
+    expect(within(medium).getByText("프로토콜")).toBeTruthy();
+    expect(medium.style.borderLeftColor).toBe(SEVERITY_TONE.medium.fg);
 
     // 기본은 심각도별 구획이다.
     expect(
@@ -567,6 +657,26 @@ describe("SecurityPanel", () => {
       "검사하지 않은 것",
       "이 점검의 한계",
     ]);
+    // 심각도별 보기의 구획 제목은 그 심각도의 색이다.
+    expect(screen.getByRole("heading", { level: 3, name: "심각 1건" }).style.color).toBe(
+      SEVERITY_TONE.high.fg,
+    );
+  });
+
+  it("근거는 조각마다 따로 보인다", async () => {
+    await runToResult();
+
+    const item = findingOf("desc/hidden-unicode");
+    expect(within(item).getByText("근거")).toBeTruthy();
+    expect([...item.querySelectorAll("code")].map((piece) => piece.textContent)).toEqual([
+      "U+200B",
+      "raw",
+    ]);
+
+    // 근거가 없는 발견에는 그 줄이 없다.
+    const plain = findingOf("protocol/plaintext");
+    expect(within(plain).queryByText("근거")).toBeNull();
+    expect(plain.querySelector("code")).toBeNull();
   });
 
   it("도구별로 바꾸면 도구 제목 구획으로 묶인다", async () => {
@@ -581,9 +691,7 @@ describe("SecurityPanel", () => {
         .slice(0, 2),
     ).toEqual(["서버 전체 (실행 명령·프로토콜·도구 표면) · 1건", "도구 'get<U+200B>time' · 1건"]);
     expect(
-      within(sectionOf("도구 'get<U+200B>time' · 1건")).getByText(
-        "[심각] desc/hidden-unicode · 도구 'get<U+200B>time' 의 name",
-      ),
+      within(sectionOf("도구 'get<U+200B>time' · 1건")).getByText("desc/hidden-unicode"),
     ).toBeTruthy();
     expect(screen.queryByRole("heading", { level: 3, name: "심각 1건" })).toBeNull();
   });
@@ -593,10 +701,10 @@ describe("SecurityPanel", () => {
 
     const section = sectionOf("권한 조합 경고 (결함이 아닙니다)");
     expect(within(section).getByText("→ 읽기와 보내기 도구가 함께 있습니다.")).toBeTruthy();
-    expect(within(section).getByText("해결: 권한을 나누세요.")).toBeTruthy();
+    expect(lineOf(section, "해결: 권한을 나누세요.")).toBeTruthy();
     // 화면 전체에 한 번뿐이다. 결함 목록에는 없다.
     expect(screen.getAllByText("→ 읽기와 보내기 도구가 함께 있습니다.")).toHaveLength(1);
-    expect(document.body.textContent?.includes("flow/toxic-combination ·")).toBe(false);
+    expect(screen.queryByText("flow/toxic-combination")).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "도구별" }));
     expect(screen.getAllByText("→ 읽기와 보내기 도구가 함께 있습니다.")).toHaveLength(1);
@@ -648,6 +756,9 @@ describe("SecurityPanel", () => {
       ["api.example.com", "443", "GET", "/v1", "2", "선언됨"],
       ["evil.example.net", "80", "POST", "/x", "1", "선언 없음"],
     ]);
+    // 선언 없는 목적지가 눈에 띈다.
+    expect(within(table).getByText("선언 없음").style.color).toBe("var(--status-failed-fg)");
+    expect(within(table).getByText("선언됨").style.color).toBe("");
   });
 
   it("cleanupError 가 있으면 alert 로 보인다", async () => {
@@ -681,17 +792,22 @@ describe("SecurityPanel", () => {
         .getAllByRole("listitem")
         .map((item) => item.textContent),
     ).toEqual(LIMITS);
-    expect(within(sectionOf("검사하지 않은 것")).getByText(`surface: ${SKIP_REASON}`)).toBeTruthy();
+    expect(
+      within(sectionOf("검사하지 않은 것"))
+        .getAllByRole("listitem")
+        .map((item) => item.textContent),
+    ).toEqual([`surface: ${SKIP_REASON}`]);
 
     const details = screen.getByText("CLI 리포트 원문").closest("details");
     expect(details?.querySelector("pre")?.textContent).toBe(RENDERED);
   });
 
-  it("결과 요청이 400 이면 error 문장을 그대로 보이고 서버 선택 단계에 머문다", async () => {
+  it("결과 요청이 400 이면 서버 선택 단계로 돌아가 error 문장을 그대로 보인다", async () => {
     const error = "오류 [CONNECT_FAILED]: x\n해결: y";
     stubFetch({ result: { status: 400, body: { error } } });
     render(<AnalyzeView tab="security" />);
     const source = await start();
+    expect(currentStep()).toBe("점검");
 
     act(() => {
       source.emit({ kind: "done", exitCode: 1 });
@@ -702,7 +818,7 @@ describe("SecurityPanel", () => {
     expect(screen.getByRole("button", { name: "점검 시작" })).toHaveProperty("disabled", false);
   });
 
-  it("시작 요청이 400 이면 error 문장을 그대로 보인다", async () => {
+  it("시작 요청이 400 이면 서버 선택 단계에 머문다", async () => {
     const error = "기준 파일이 아닌 파일은 덮어쓰지 않습니다: package.json\n→ 다른 경로를 쓰세요.";
     stubFetch({ start: { status: 400, body: { error } } });
     render(<AnalyzeView tab="security" />);
@@ -712,10 +828,11 @@ describe("SecurityPanel", () => {
 
     expect((await screen.findByRole("alert")).textContent).toBe(error);
     expect(FakeEventSource.instances).toHaveLength(0);
+    expect(currentStep()).toBe("서버 선택");
     expect(screen.getByRole("button", { name: "점검 시작" })).toHaveProperty("disabled", false);
   });
 
-  it("다시 점검은 같은 요청을 다시 POST 한다", async () => {
+  it("다시 점검은 점검 단계로 간다", async () => {
     const fetchMock = stubFetch({
       start: [
         { status: 200, body: { runId: "r1" } },
@@ -738,6 +855,8 @@ describe("SecurityPanel", () => {
     expect(bodies).toHaveLength(2);
     expect(bodies[1]).toEqual(bodies[0]);
     expect(lastSource().url).toBe("/api/runs/r2/events");
+    expect(currentStep()).toBe("점검");
+    expect(screen.queryByText(/^판정: /)).toBeNull();
     // 앞 run 의 완료 상태로 새 run 의 결과를 미리 읽지 않는다.
     expect(resultRequests(fetchMock)).toEqual(["/api/analyze/security/r1"]);
 
@@ -784,7 +903,7 @@ describe("SecurityPanel", () => {
     );
 
     expect(screen.getByText("→ <img src=x>")).toBeTruthy();
-    expect(screen.getByText("해결: <b>fix</b>")).toBeTruthy();
+    expect(lineOf(document.body, "해결: <b>fix</b>")).toBeTruthy();
     expect(screen.getByText("<script>limit</script>")).toBeTruthy();
     expect(document.querySelector("img")).toBeNull();
     expect(document.querySelector("b")).toBeNull();

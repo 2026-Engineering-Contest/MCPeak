@@ -25,6 +25,13 @@ describe("describeRun", () => {
     });
   });
 
+  it("audit 는 대상 서버만 읽고 스위트는 null 이다", () => {
+    expect(describeRun("audit", ["--json", "--command", "node", "--arg", "s.mjs"])).toEqual({
+      server: "node s.mjs",
+      suite: null,
+    });
+  });
+
   it("HTTP 대상은 URL 이 서버다", () => {
     expect(describeRun("test", ["s.json", "--url", "https://example.test/mcp"])).toEqual({
       server: "https://example.test/mcp",

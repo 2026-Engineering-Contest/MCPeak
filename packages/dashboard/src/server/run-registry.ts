@@ -1,11 +1,5 @@
 import type { ReviewIO } from "@mcpeak/cli/commands";
-import type {
-  RunEvent,
-  RunEventInput,
-  RunStatus,
-  RunSummary,
-  StartRunRequest,
-} from "../api-types.js";
+import type { RunEvent, RunEventInput, RunFlow, RunStatus, RunSummary } from "../api-types.js";
 import { ansiToHtml } from "./ansi.js";
 import { WebReviewIO } from "./review-bridge.js";
 
@@ -29,7 +23,7 @@ export interface RunIo {
   readonly reviewIO: ReviewIO;
 }
 
-type Flow = StartRunRequest["flow"];
+type Flow = RunFlow;
 
 /**
  * 진행 중·끝난 run을 메모리에 들고 있는 레지스트리. 영속화는 비범위다.

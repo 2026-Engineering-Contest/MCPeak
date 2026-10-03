@@ -3,6 +3,7 @@ import { assertMockDefinition } from "@mcpeak/mock";
 import { parseOverlay } from "@mcpeak/optimize";
 import { validateMcpSuite } from "@mcpeak/runner";
 import type {
+  AnalyzeSecurityRequest,
   AnalyzeTokensRequest,
   AnswerRequest,
   ApiError,
@@ -20,6 +21,11 @@ import {
   analyzeTokens,
 } from "./analyze.js";
 import {
+  type AnalyzeSecurityOutcome,
+  analyzeSecurity,
+  prepareSecurityRun,
+} from "./analyze-security.js";
+import {
   ensureRepairBundleDir,
   listMocks,
   listServerCandidates,
@@ -31,7 +37,7 @@ import {
   writeFileContent,
 } from "./files.js";
 import { resolveProjectPath } from "./paths.js";
-import type { RunIo, RunRegistry } from "./run-registry.js";
+import type { RunHandle, RunIo, RunRegistry } from "./run-registry.js";
 import { planSourceEdits, resolveSourceFile } from "./source-edits.js";
 import { formatSseEvent, formatSseEvents, SSE_HEADERS } from "./sse.js";
 import { serveStatic } from "./static.js";
@@ -59,7 +65,25 @@ export interface RouterOptions {
     argv: readonly string[],
     overrides?: AnalyzeTokensOverrides,
   ) => Promise<AnalyzeTokensOutcome>;
+  /**
+   * 보안 점검의 요청 가드와 실행기. 기본값은 `analyze-security.ts` 의 실제 함수다. `execute` 와
+   * 같은 이유로 연다.
+   */
+  readonly prepareSecurity?: typeof prepareSecurityRun;
+  readonly analyzeSecurity?: typeof analyzeSecurity;
 }
+
+/**
+ * 점검 run 의 결과 자리. run 과 수명이 같다(run 이 사라지면 함께 사라진다). `RunRegistry` 가
+ * flow 별 결과 타입을 알지 않게 여기 둔다(ADR-0109).
+ */
+interface SecuritySlot {
+  outcome?: AnalyzeSecurityOutcome;
+}
+const securitySlots = new WeakMap<RunHandle, SecuritySlot>();
+
+const SECURITY_PATH = "/api/analyze/security";
+const PROBE_POLICIES = new Set(["readonly", "none", "all"]);
 
 const RUN_FLOWS = new Set<StartRunRequest["flow"]>(["test", "generate", "repair", "verify"]);
 
@@ -165,6 +189,17 @@ export async function handleRequest(
     await handleSourceEdits(request, response, options.root);
     return;
   }
+  if (method === "POST" && pathname === SECURITY_PATH) {
+    await handleAnalyzeSecurity(
+      request,
+      response,
+      options.root,
+      options.registry,
+      options.prepareSecurity ?? prepareSecurityRun,
+      options.analyzeSecurity ?? analyzeSecurity,
+    );
+    return;
+  }
   if (method === "POST" && pathname === "/api/runs") {
     await handleStartRun(
       request,
@@ -175,8 +210,17 @@ export async function handleRequest(
     );
     return;
   }
+  if (method === "GET" && pathname.startsWith(`${SECURITY_PATH}/`)) {
+    handleGetSecurity(response, options.registry, decodeParam(pathname, `${SECURITY_PATH}/`));
+    return;
+  }
   if (method === "GET" && pathname === "/api/runs") {
-    sendJson(response, 200, options.registry.list());
+    // 점검 run 은 목록에 싣지 않는다. 결과는 보안 탭이 보이고 실행 화면에는 진행 문장뿐이다(ADR-0109).
+    sendJson(
+      response,
+      200,
+      options.registry.list().filter((run) => run.flow !== "audit"),
+    );
     return;
   }
   if (method === "GET" && pathname.startsWith("/api/runs/") && pathname.endsWith("/events")) {
@@ -430,6 +474,104 @@ async function handleAnalyzeTokens(
     return;
   }
   sendJson(response, 400, { error: outcome.error });
+}
+
+function isAnalyzeSecurityRequest(value: unknown): value is AnalyzeSecurityRequest {
+  if (typeof value !== "object" || value === null) return false;
+  const record = value as Record<string, unknown>;
+  if (!Array.isArray(record.argv)) return false;
+  if (!record.argv.every((item) => typeof item === "string")) return false;
+  if (record.serverId !== undefined && typeof record.serverId !== "string") return false;
+  if (record.probe !== undefined) {
+    if (typeof record.probe !== "string" || !PROBE_POLICIES.has(record.probe)) return false;
+  }
+  if (record.baselinePath !== undefined && typeof record.baselinePath !== "string") return false;
+  if (record.updateBaseline !== undefined && typeof record.updateBaseline !== "boolean")
+    return false;
+  if (record.sandbox === undefined) return true;
+  if (typeof record.sandbox !== "object" || record.sandbox === null) return false;
+  const { compareHost, allowHosts } = record.sandbox as Record<string, unknown>;
+  if (typeof compareHost !== "boolean" || !Array.isArray(allowHosts)) return false;
+  return allowHosts.every((item) => typeof item === "string");
+}
+
+/**
+ * 보안 점검은 run 으로 돈다(ADR-0109). 격리 이미지를 처음 만들 때 수 분이 걸리므로 runId 를 바로
+ * 돌려주고, 진행은 기존 SSE 로, 결과는 `GET /api/analyze/security/<runId>` 로 받는다. 경로와 argv 는
+ * run 을 시작하기 전에 가둔다. 거절하면 run 이 생기지 않는다.
+ */
+async function handleAnalyzeSecurity(
+  request: IncomingMessage,
+  response: ServerResponse,
+  root: string,
+  registry: RunRegistry,
+  prepare: typeof prepareSecurityRun,
+  analyze: typeof analyzeSecurity,
+): Promise<void> {
+  const body = await readJsonBody<unknown>(request);
+  if (body === undefined) {
+    sendJson(response, 400, { error: "본문이 올바른 JSON이 아닙니다." });
+    return;
+  }
+  if (!isAnalyzeSecurityRequest(body)) {
+    sendJson(response, 400, { error: "요청 형식이 올바르지 않습니다." });
+    return;
+  }
+  // 후보 env 는 handleStartRun 과 같은 규칙이다. 값은 이 프로세스 안에서만 산다(설계 §4.3).
+  let candidateEnv: Readonly<Record<string, string>> | undefined;
+  if (body.serverId !== undefined) {
+    candidateEnv = await resolveCandidateEnv(root, body.serverId, process.env);
+    if (candidateEnv === undefined) {
+      sendJson(response, 400, { error: `서버 후보를 찾을 수 없습니다: ${body.serverId}` });
+      return;
+    }
+  }
+  const prepared = await prepare(root, body);
+  if (!prepared.ok) {
+    sendJson(response, 400, { error: prepared.error });
+    return;
+  }
+  const slot: SecuritySlot = {};
+  const handle = registry.start("audit", prepared.argv, async (io) => {
+    const result = await analyze(
+      prepared.argv,
+      io,
+      { root },
+      candidateEnv === undefined ? undefined : { candidateEnv },
+    );
+    slot.outcome = result.outcome;
+    return result.exitCode;
+  });
+  // `registry.start` 는 execute 를 다음 마이크로태스크로 미룬다. 이 set 이 항상 먼저다.
+  securitySlots.set(handle, slot);
+  const result: StartRunResponse = { runId: handle.runId };
+  sendJson(response, 200, result);
+}
+
+/** 점검 결과. 본문에 시각·난수·runId 를 싣지 않는다. 같은 run 을 두 번 읽으면 바이트가 같다. */
+function handleGetSecurity(
+  response: ServerResponse,
+  registry: RunRegistry,
+  runId: string | null,
+): void {
+  const handle = runId === null ? undefined : registry.get(runId);
+  const slot = handle === undefined ? undefined : securitySlots.get(handle);
+  if (slot === undefined) {
+    sendJson(response, 404, {
+      error:
+        "그런 점검이 없습니다.\n→ 대시보드는 점검 결과를 메모리에만 둡니다. 서버를 다시 시작했다면 다시 점검하세요.",
+    });
+    return;
+  }
+  if (slot.outcome === undefined) {
+    sendJson(response, 409, { error: "점검이 아직 끝나지 않았습니다." });
+    return;
+  }
+  if (slot.outcome.ok) {
+    sendJson(response, 200, slot.outcome.body);
+    return;
+  }
+  sendJson(response, 400, { error: slot.outcome.error });
 }
 
 function isSourceEditRequest(value: unknown): value is SourceEditRequest {

@@ -1,6 +1,9 @@
+import { randomBytes } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
+import auditMetadata from "../../audit/package.json";
 import optimizeMetadata from "../../optimize/package.json";
 import packageMetadata from "../package.json";
+import { type AuditCommandDependencies, runAuditCommand } from "./audit-command.js";
 import { nodeGenerateDependencies, nodeReviewIO, runGenerateCommand } from "./generate-command.js";
 import { commandDiscovery, commandHelp, GLOBAL_HELP } from "./help.js";
 import { type OptimizeCommandDependencies, runOptimizeCommand } from "./optimize-command.js";
@@ -9,7 +12,15 @@ import { escapeTerminalText } from "./repair-render.js";
 import { parseTestCommand, runCli } from "./test-command.js";
 
 export type Command = (argv: string[]) => Promise<number>;
-export const COMMANDS = ["test", "generate", "repair", "record", "mock", "optimize"] as const;
+export const COMMANDS = [
+  "test",
+  "generate",
+  "repair",
+  "record",
+  "mock",
+  "optimize",
+  "audit",
+] as const;
 
 const unavailableDependencies = {
   readFile: async (): Promise<Uint8Array> => {
@@ -98,9 +109,37 @@ export function nodeOptimizeDependencies(
   };
 }
 
+/**
+ * `audit` 실행 의존성. `nodeOptimizeDependencies` 와 같은 이유로 함수로 뺀다. 주입 자체를 테스트가
+ * 단언할 수 있어야 `connectHttp`·`readEnv`·`fetch` 를 빠뜨린 배선이 초록으로 남지 않는다.
+ *
+ * `random` 은 카나리 값이다. 출력에 쓰지 않으므로 무작위여도 `--json` 의 바이트 결정론을 깨지
+ * 않는다. 서버가 값을 예측해 숨길 수 없게 암호학적 난수를 쓴다. `generatorVersion` 은 리포트의
+ * `generator` 가 `@mcpeak/audit` 이므로 그 패키지의 버전이고, 읽는 방식은 optimize 와 같다.
+ */
+export function nodeAuditDependencies(
+  core: typeof import("@mcpeak/core"),
+  audit: typeof import("@mcpeak/audit"),
+): AuditCommandDependencies {
+  return {
+    connectStdio: core.connectStdio,
+    connectHttp: core.connectHttp,
+    readEnv: (name) => process.env[name],
+    readFile: (path) => readFile(path, "utf8"),
+    writeFile: (path, text) => writeFile(path, text, "utf8"),
+    audit: audit.audit,
+    renderReport: audit.renderReport,
+    generatorVersion: auditMetadata.version,
+    writeStdout: (text) => void process.stdout.write(text),
+    writeStderr: (text) => void process.stderr.write(text),
+    fetch: globalThis.fetch,
+    random: () => randomBytes(8).toString("hex"),
+  };
+}
+
 /** `mcpeak help <이름>` 으로 볼 수 있는 명령. 위 두 갈래가 같은 목록을 봐야 한다. */
 // `replay`·`verify` 는 ADR-0059 로 제거됐다. 그 둘은 위쪽에서 마이그레이션 안내로 간다.
-const HELP_TOPICS = ["test", "generate", "repair", "optimize"] as const;
+const HELP_TOPICS = ["test", "generate", "repair", "optimize", "audit"] as const;
 const isHelpTopic = (value: string | undefined): value is (typeof HELP_TOPICS)[number] =>
   HELP_TOPICS.includes(value as (typeof HELP_TOPICS)[number]);
 
@@ -245,6 +284,20 @@ export async function run(argv: string[]): Promise<number> {
       return 1;
     }
     return runOptimizeCommand(argv, nodeOptimizeDependencies(core, optimize));
+  }
+  if (argv[0] === "audit") {
+    // `optimize` 분기와 같은 모양이다. `test` 경로가 이 패키지를 로드하지 않게 동적 import 한다.
+    let core: typeof import("@mcpeak/core");
+    let audit: typeof import("@mcpeak/audit");
+    try {
+      [core, audit] = await Promise.all([import("@mcpeak/core"), import("@mcpeak/audit")]);
+    } catch {
+      process.stderr.write(
+        "오류 [AUDIT_RUNTIME_UNAVAILABLE]: @mcpeak/audit 를 로드하지 못했습니다.\n해결: 의존성을 설치한 뒤 다시 실행하세요.\n",
+      );
+      return 1;
+    }
+    return runAuditCommand(argv, nodeAuditDependencies(core, audit));
   }
   if (argv[0] !== "test") return runCli(argv, unavailableDependencies);
   try {

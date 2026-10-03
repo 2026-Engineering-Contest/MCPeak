@@ -1,0 +1,17 @@
+{
+  "name": "@mcpeak-examples/audit-target-server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "mcpeak audit 의 E2E 표적. 검사 규칙 여섯 개를 일부러 밟는 취약 예제 MCP 서버 (stdio)",
+  "license": "MIT",
+  "bin": {
+    "example-audit-target-server": "./server.mjs"
+  },
+  "scripts": {
+    "start": "node ./server.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "catalog:"
+  }
+}

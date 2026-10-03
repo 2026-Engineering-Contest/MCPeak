@@ -70,6 +70,11 @@ const E2E_TIMEOUT_MS = 600_000;
 const CALL_WAIT_MS = 15_000;
 /** `get_forecast` 로 불러 볼 도시. 상류가 특정 질의에 답하지 않는 일이 있어 하나에 매달리지 않는다. */
 const FORECAST_CITIES = ["Seoul", "Tokyo", "Berlin", "London"] as const;
+/**
+ * 레지스트리에서 받아 띄우는 서버. 버전을 고정한다. 격리 안에서는 npm 캐시가 매번 비어 있어 이 실행은
+ * 언제나 registry.npmjs.org 에서 새로 받는다(ADR-0109).
+ */
+const NPX_SERVER = ["npx", "-y", "@modelcontextprotocol/server-everything@2026.8.31"] as const;
 
 const SKIP = process.env.MCPEAK_SKIP_DOCKER_E2E === "1";
 const REQUIRE = process.env.MCPEAK_REQUIRE_DOCKER_E2E === "1";
@@ -90,6 +95,8 @@ interface Finding {
 interface Report {
   readonly exitCode: number;
   readonly probe: string;
+  readonly server: { readonly toolCount: number };
+  readonly skipped: ReadonlyArray<{ readonly family: string; readonly reason: string }>;
   readonly counts: Readonly<Record<string, number>>;
   readonly findings: readonly Finding[];
   readonly sandbox?: {
@@ -400,6 +407,45 @@ describe("audit sandbox e2e", () => {
         name === "live-weather-server"
           ? [{ ruleId: "behavior/write-outside", severity: "medium", tool: "add_note" }]
           : [],
+      );
+    },
+    E2E_TIMEOUT_MS,
+  );
+
+  dockerIt(
+    "레지스트리에서 받는 npx 서버(server-everything, 버전 고정)가 격리 안에서 끝까지 돌고 실행기의 캐시 쓰기·자식 프로세스가 발견으로 새지 않는다",
+    async () => {
+      const result = await cli(["audit", "--sandbox", "--json", "--", ...NPX_SERVER]);
+      // 1 은 접속 실패다. 발견이 있으면 2, 없으면 0 이고 어느 쪽인지는 서버 버전과 상류에 달렸다.
+      expect(result.code).not.toBe(1);
+      const report = reportOf(result);
+      expect(report.sandbox?.status).toBe("ran");
+      expect(report.server.toolCount).toBeGreaterThan(0);
+
+      // 호출이 아닌 단계(start·list·shutdown)의 행위는 서버 전체에 붙는다. 실행기가 캐시를 채우고
+      // 패키지의 bin 을 띄우는 일은 start 단계라, 잡음 표가 못 빼면 여기에 나온다.
+      const serverWide = report.findings
+        .filter((f) => f.ruleId.startsWith("behavior/") && f.location.kind === "server")
+        .map((f) => ({ ruleId: f.ruleId, evidence: f.evidence }));
+      expect(serverWide).toEqual([]);
+      expect(
+        report.skipped.filter((entry) => entry.reason.includes("해석하지 못했습니다")),
+      ).toEqual([]);
+
+      // 실행기가 패키지를 받는 접속은 선언된 목적지의 기록(info)으로만 남는다.
+      const registry = report.findings
+        .filter(
+          (f) =>
+            f.ruleId.startsWith("network/") &&
+            // 카나리 유출 발견은 첫 칸이 "<호스트> <자리표>" 꼴이다. 그것도 놓치지 않는다.
+            (f.evidence[0] === "registry.npmjs.org" ||
+              f.evidence[0]?.startsWith("registry.npmjs.org ")),
+        )
+        .map((f) => `${f.ruleId}:${f.severity}`);
+      expect(registry).toEqual(["network/declared-destination:info"]);
+
+      expect(result.stderr.split("\n")).toContain(
+        "격리 안에서는 패키지를 매번 새로 받습니다. 서버가 뜨기까지 1분까지 기다립니다.",
       );
     },
     E2E_TIMEOUT_MS,

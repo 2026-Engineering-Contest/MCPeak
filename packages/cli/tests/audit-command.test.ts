@@ -635,6 +635,214 @@ describe("runAuditCommand: 격리 배선", () => {
   });
 });
 
+/** 격리가 실제로 켜지는 가짜 백엔드. 컨테이너는 띄우지 않고 `docker run …` 꼴의 실행 대상만 돌려준다. */
+const LAUNCH_ENV = { PATH: "/usr/bin", HOME: "/home/alice" };
+function runningBackend(launchArgs: readonly string[]): SandboxBackend {
+  return {
+    name: "fake",
+    commands: ["node", "npx", "npm"],
+    detect: async () => ({ ok: true }),
+    start: async () => ({
+      launchTarget: {
+        kind: "stdio",
+        command: "docker",
+        args: ["run", "--rm", "-i", "image", ...launchArgs],
+        forwardedEnvNames: [],
+        headerNames: [],
+      },
+      launchEnv: LAUNCH_ENV,
+      image: "image",
+      mark: async () => {},
+      snapshot: async () => ({
+        events: [],
+        requests: [],
+        tlsRejections: [],
+        dnsNames: [],
+        traceShrank: false,
+        gaps: [],
+        unparsedLines: 0,
+      }),
+      destroy: async () => {},
+    }),
+  };
+}
+
+const RUNNER_PROGRESS =
+  "격리 안에서는 패키지를 매번 새로 받습니다. 서버가 뜨기까지 1분까지 기다립니다.";
+const RUNNER_CONNECT_HINT =
+  "해결: 격리 안에서 패키지를 받지 못했거나 1분 안에 뜨지 못했습니다. 패키지 이름과 버전을 확인하고, 큰 패키지는 로컬에 설치한 뒤 node 로 띄우세요.";
+const DEFAULT_CONNECT_HINT = "해결: mcpeak test 없이 같은 명령으로 서버가 뜨는지 먼저 확인하세요.";
+
+/** 격리가 켜진 실행 하나. 진짜 `audit` 를 쓰고 백엔드와 연결만 가짜다. */
+function sandboxedRun(server: readonly string[], extra: Partial<AuditCommandDependencies> = {}) {
+  const h = harness(fakeConnection().connection, {
+    sandbox: {
+      createBackend: () => runningBackend(server),
+      stat: hostStat,
+      cwd: "/home/alice/repo",
+      home: "/home/alice",
+    },
+    ...extra,
+  });
+  const optionsOf = (index: number) =>
+    h.connectStdio.mock.calls[index]?.[0] as Record<string, unknown>;
+  return { ...h, optionsOf };
+}
+
+describe("runAuditCommand: 패키지 실행기(npx·npm)의 격리 연결", () => {
+  it.each([
+    ["npx", ["npx", "-y", "pkg"]],
+    ["npm", ["npm", "exec", "pkg"]],
+    ["절대 경로 npx", ["/opt/homebrew/bin/npx", "-y", "pkg"]],
+    ["역슬래시 경로 npx", ["C:\\nodejs\\npx", "-y", "pkg"]],
+  ])("%s 대상이면 격리 연결에 connectTimeoutMs 60000 이 넘어간다", async (_name, server) => {
+    const { deps, connectStdio, optionsOf } = sandboxedRun(server);
+    // 종료 코드는 대상에 달렸다(고정하지 않은 패키지는 launch 발견을 낸다). 접속 실패(1)가 아니면 된다.
+    expect(await runAuditCommand(["audit", "--sandbox", "--", ...server], deps)).not.toBe(1);
+    expect(connectStdio).toHaveBeenCalledTimes(1);
+    expect(optionsOf(0)).toEqual({
+      command: "docker",
+      args: ["run", "--rm", "-i", "image", ...server],
+      env: LAUNCH_ENV,
+      advertise: { sampling: true, elicitation: true, roots: true },
+      connectTimeoutMs: 60_000,
+    });
+  });
+
+  it.each([
+    ["node", ["node", "server.mjs"]],
+    // basename 의 정확 일치다. 이름이 npx 로 시작하거나 인자에 npx 가 있는 것은 실행기가 아니다.
+    ["인자에 npx 가 있는 node", ["node", "npx"]],
+  ])("%s 대상이면 connectTimeoutMs 를 넘기지 않고 진행 문장도 없다", async (_name, server) => {
+    const { deps, connectStdio, optionsOf, stderr } = sandboxedRun(server);
+    expect(await runAuditCommand(["audit", "--sandbox", "--", ...server], deps)).toBe(0);
+    expect(connectStdio).toHaveBeenCalledTimes(1);
+    expect(optionsOf(0).command).toBe("docker");
+    expect("connectTimeoutMs" in optionsOf(0)).toBe(false);
+    expect(stderr()).not.toContain(RUNNER_PROGRESS);
+  });
+
+  it("--compare-host 의 둘째 연결(원래 대상)에는 connectTimeoutMs 를 넘기지 않는다", async () => {
+    const server = ["npx", "-y", "pkg"];
+    const { deps, connectStdio, optionsOf } = sandboxedRun(server);
+    await runAuditCommand(["audit", "--sandbox", "--compare-host", "--", ...server], deps);
+    expect(connectStdio).toHaveBeenCalledTimes(2);
+    expect(optionsOf(0).connectTimeoutMs).toBe(60_000);
+    expect(optionsOf(1).command).toBe("npx");
+    expect("connectTimeoutMs" in optionsOf(1)).toBe(false);
+  });
+
+  it("격리 없이 돌거나 격리가 켜지지 않으면(Docker 없음) npx 여도 기본값 그대로이고 진행 문장이 없다", async () => {
+    for (const argv of [
+      ["audit", "--", "npx", "-y", "pkg"],
+      ["audit", "--sandbox", "--", "npx", "-y", "pkg"],
+    ]) {
+      // harness 의 기본 백엔드는 detect 가 docker-missing 이다.
+      const { deps, connectStdio, stderr } = harness(fakeConnection().connection);
+      expect(await runAuditCommand(argv, deps)).not.toBe(1);
+      const options = connectStdio.mock.calls[0]?.[0] as Record<string, unknown>;
+      expect(options.command).toBe("npx");
+      expect("connectTimeoutMs" in options).toBe(false);
+      expect(stderr()).toBe("");
+    }
+  });
+
+  it("npx 면 격리 연결을 열기 직전에 진행 줄이 한 번 나온다", async () => {
+    const server = ["npx", "-y", "pkg"];
+    const events: string[] = [];
+    const { connection } = fakeConnection();
+    const { deps } = sandboxedRun(server, {
+      connectStdio: async () => {
+        events.push("<connect>");
+        return connection;
+      },
+      writeStderr: (text) => {
+        events.push(text);
+      },
+    });
+    expect(await runAuditCommand(["audit", "--sandbox", "--json", "--", ...server], deps)).not.toBe(
+      1,
+    );
+    expect(events.filter((event) => event === `${RUNNER_PROGRESS}\n`)).toHaveLength(1);
+    expect(events.slice(0, 3)).toEqual([
+      "격리 컨테이너를 준비합니다.\n",
+      `${RUNNER_PROGRESS}\n`,
+      "<connect>",
+    ]);
+  });
+
+  it("npx 격리 접속 실패의 해결 줄은 패키지와 1분을 말하고 나머지 줄은 그대로다", async () => {
+    const server = ["npx", "-y", "pkg@9.9.9"];
+    const { deps, stderr, stdout } = sandboxedRun(server, {
+      connectStdio: vi.fn(async () => {
+        throw new Error("제한 시간 안에 MCP 초기화를 마치지 못했습니다.\n    at stack");
+      }),
+    });
+    expect(await runAuditCommand(["audit", "--sandbox", "--", ...server], deps)).toBe(1);
+    expect(stderr()).toBe(
+      "격리 컨테이너를 준비합니다.\n" +
+        `${RUNNER_PROGRESS}\n` +
+        "→ 서버에 붙지 못했습니다: npx -y pkg@9.9.9\n" +
+        "→ 제한 시간 안에 MCP 초기화를 마치지 못했습니다.\n" +
+        `${RUNNER_CONNECT_HINT}\n`,
+    );
+    expect(stdout()).toBe("");
+  });
+
+  it("npx 격리 접속 실패에도 서버 프로세스 진단은 해결 줄 뒤에 그대로 붙는다", async () => {
+    const server = ["npx", "-y", "pkg"];
+    const failure = Object.assign(new Error("제한 시간 안에 MCP 초기화를 마치지 못했습니다."), {
+      name: "McpClientError",
+      code: "CONNECT_TIMEOUT",
+      hint: "서버 명령을 확인하세요.",
+      diagnostics: {
+        stderr: "npm error code E404\n",
+        stderrTruncated: false,
+        exitCode: 1,
+        signal: null,
+      },
+    });
+    const run = async (argv: string[], backendArgs: readonly string[]) => {
+      const h = sandboxedRun(backendArgs, {
+        connectStdio: vi.fn(async () => {
+          throw failure;
+        }),
+      });
+      expect(await runAuditCommand(argv, h.deps)).toBe(1);
+      return h.stderr();
+    };
+    const runner = await run(["audit", "--sandbox", "--", ...server], server);
+    const plain = await run(["audit", "--sandbox", ...SERVER], ["node", "server.mjs"]);
+    expect(runner).toContain(`\n${RUNNER_CONNECT_HINT}\n`);
+    expect(runner).toContain("npm error code E404");
+    // 해결 줄 뒤의 진단 블록은 node 대상의 것과 글자까지 같다.
+    expect(runner.split(`${RUNNER_CONNECT_HINT}\n`)[1]).toBe(
+      plain.split(`${DEFAULT_CONNECT_HINT}\n`)[1],
+    );
+    expect(plain.split(`${DEFAULT_CONNECT_HINT}\n`)[1]).not.toBe("");
+  });
+
+  it("node 격리 접속 실패와 격리 없는 npx 접속 실패는 기존 문장이다", async () => {
+    const failing = () => ({
+      connectStdio: vi.fn(async () => {
+        throw new Error("spawn failed");
+      }),
+    });
+    const inside = sandboxedRun(["node", "server.mjs"], failing());
+    expect(await runAuditCommand(["audit", "--sandbox", ...SERVER], inside.deps)).toBe(1);
+    expect(inside.stderr()).toBe(
+      "격리 컨테이너를 준비합니다.\n" +
+        "→ 서버에 붙지 못했습니다: node server.mjs\n→ spawn failed\n" +
+        `${DEFAULT_CONNECT_HINT}\n`,
+    );
+    const outside = harness(fakeConnection().connection, failing());
+    expect(await runAuditCommand(["audit", "--", "npx", "-y", "pkg"], outside.deps)).toBe(1);
+    expect(outside.stderr()).toBe(
+      `→ 서버에 붙지 못했습니다: npx -y pkg\n→ spawn failed\n${DEFAULT_CONNECT_HINT}\n`,
+    );
+  });
+});
+
 describe("runAuditCommand", () => {
   it("connectStdio 에 카나리 env 와 전달 env 의 합, advertise 셋 모두 true 를 넘긴다", async () => {
     const { deps, connectStdio } = harness(fakeConnection().connection);

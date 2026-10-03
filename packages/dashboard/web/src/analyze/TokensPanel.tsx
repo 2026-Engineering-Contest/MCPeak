@@ -10,6 +10,7 @@ import { apiGet, apiSend } from "../api.js";
 import type { Transport } from "../build-test-argv.js";
 import { Button } from "../components/Button.js";
 import { Card } from "../components/Card.js";
+import { Stepper } from "../components/Stepper.js";
 import type { CommandMethod } from "../generate/steps/StepServer.js";
 import { splitCommand } from "../generate/steps/StepServer.js";
 import type { RunServerChoice, RunServerPatch } from "../home/steps/StepRunServer.js";
@@ -58,9 +59,15 @@ function effectiveTarget(state: TokensState): { command: string; args: readonly 
   return { command: split.command, args: [...split.leadingArgs, ...state.args] };
 }
 
+/** 단계 이름. 결과는 요청 한 번의 산물이라 URL 로 다시 열 수 없으므로 라우트가 아니라 단계다. */
+const STEPS = ["서버 선택", "결과"] as const;
+
 /**
  * 토큰 탭(계획서 §5.6). 서버를 고르고 `분석 시작` 을 누르면 `POST /api/analyze/tokens` 한 번으로
  * 결과를 받는다. 요청은 동기라 "분석 중" 은 그 Promise 의 수명과 같고, 타이머·폴링이 없다.
+ *
+ * 화면은 두 단계다(2026-10-03 단계화면-비교 §3.2). 단계는 `result` 하나에서 구한다. 성공하면
+ * 결과 단계로 넘어가고, 실패하면 서버 선택 단계에 머문다.
  */
 export function TokensPanel(): JSX.Element {
   const [state, setState] = useState<TokensState>(INITIAL_STATE);
@@ -170,44 +177,54 @@ export function TokensPanel(): JSX.Element {
 
   return (
     <div className="space-y-6">
-      <Card className="space-y-5 p-6">
-        <StepRunServer
-          choice={state.choice}
-          command={state.command}
-          args={state.args}
-          method={state.method}
-          target={state.target}
-          transport={state.transport}
-          url={state.url}
-          headerEnvs={state.headerEnvs}
-          candidates={candidates}
-          root={root}
-          recentCommands={recentCommands}
-          onChange={patchServer}
-        />
-        <div className="space-y-2">
-          <Button
-            variant="primary"
-            disabled={analyzing || !("argv" in argv)}
-            onClick={() => void startAnalysis()}
-          >
-            {analyzing ? "분석 중…" : "분석 시작"}
-          </Button>
-          {"error" in argv && <p className="text-xs text-ink-muted">{argv.error}</p>}
-        </div>
-      </Card>
+      <Stepper steps={STEPS} current={result === null ? 0 : 1} />
 
-      {error !== null && (
-        <pre
-          role="alert"
-          className="overflow-x-auto whitespace-pre-wrap rounded-lg border border-line bg-surface px-4 py-3 font-mono text-xs"
-          style={{ color: "var(--status-failed-fg)" }}
-        >
-          {error}
-        </pre>
+      {result === null ? (
+        <>
+          <Card className="space-y-5 p-6">
+            <StepRunServer
+              choice={state.choice}
+              command={state.command}
+              args={state.args}
+              method={state.method}
+              target={state.target}
+              transport={state.transport}
+              url={state.url}
+              headerEnvs={state.headerEnvs}
+              candidates={candidates}
+              root={root}
+              recentCommands={recentCommands}
+              onChange={patchServer}
+            />
+            <div className="space-y-2">
+              <Button
+                variant="primary"
+                disabled={analyzing || !("argv" in argv)}
+                onClick={() => void startAnalysis()}
+              >
+                {analyzing ? "분석 중…" : "분석 시작"}
+              </Button>
+              {"error" in argv && <p className="text-xs text-ink-muted">{argv.error}</p>}
+            </div>
+          </Card>
+
+          {error !== null && (
+            <pre
+              role="alert"
+              className="overflow-x-auto whitespace-pre-wrap rounded-lg border border-line bg-surface px-4 py-3 font-mono text-xs"
+              style={{ color: "var(--status-failed-fg)" }}
+            >
+              {error}
+            </pre>
+          )}
+        </>
+      ) : (
+        <>
+          {/* 폼 상태(state)는 그대로 두므로 돌아가면 고른 서버가 남아 있다. */}
+          <Button onClick={() => setResult(null)}>← 서버 다시 고르기</Button>
+          <TokensResult result={result} />
+        </>
       )}
-
-      {result !== null && <TokensResult result={result} />}
     </div>
   );
 }

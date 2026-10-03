@@ -841,6 +841,7 @@ const ANALYZE_BODY = {
   overlay: { schemaVersion: 1 },
   overlayText: "t",
   report: "r",
+  sourceTools: [],
 } as unknown as AnalyzeTokensResponse;
 
 describe("POST /api/analyze/tokens", () => {

@@ -1,3 +1,4 @@
+import type { ToolDef } from "@mcpeak/core";
 import type { OptimizeOverlay } from "@mcpeak/optimize";
 
 /** 실행 도중 발생하는 이벤트 본문. RunRecord 경계에서 run별 id를 붙인다. */
@@ -224,4 +225,9 @@ export interface AnalyzeTokensResponse {
   readonly overlayText: string;
   /** `mcpeak optimize` 가 stdout 에 내는 사람용 리포트 원문(`renderReport`). */
   readonly report: string;
+  /**
+   * 서버 tools/list 원본. `runOptimizeCommand` 가 `optimize()` 에 넘긴 `input.tools` 그대로다.
+   * 화면의 before/after 비교용이며 `overlay.tools` 와 같은 순서·같은 이름이다.
+   */
+  readonly sourceTools: readonly ToolDef[];
 }

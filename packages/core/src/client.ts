@@ -111,6 +111,37 @@ export function assertToolArguments(
   }
 }
 
+/**
+ * cursor 페이지네이션을 끝까지 따라가 항목을 모은다. 같은 cursor 가 두 번 오면 `onRepeat` 의
+ * 오류를 던진다. 서버가 cursor 를 되돌리면 무한 루프가 되기 때문이다. `listTools` 와
+ * `server-surface` 의 `listToolsRaw` 가 같은 규칙을 쓰도록 여기 하나만 둔다.
+ */
+export async function collectPages<T>(
+  fetchPage: (cursor: string | undefined) => Promise<{ items: readonly T[]; nextCursor?: string }>,
+  onRepeat: () => Error,
+): Promise<T[]> {
+  const items: T[] = [];
+  const observed = new Set<string | undefined>();
+  let cursor: string | undefined;
+  while (true) {
+    if (observed.has(cursor)) throw onRepeat();
+    observed.add(cursor);
+    const page = await fetchPage(cursor);
+    items.push(...page.items);
+    cursor = page.nextCursor;
+    if (cursor === undefined) return items;
+  }
+}
+
+/** tools/list 의 cursor 반복 오류. `listTools` 와 `listToolsRaw` 가 같은 오류를 낸다. */
+export function toolsCursorRepeated(diagnostics: () => McpDiagnosticsInput): McpClientError {
+  return new McpClientError({
+    code: "PAGINATION_CURSOR_REPEATED",
+    phase: "listTools",
+    diagnostics: diagnostics(),
+  });
+}
+
 export function createMcpClientAdapter(
   sdk: SdkClient,
   diagnostics: () => McpDiagnosticsInput,
@@ -149,35 +180,24 @@ export function createMcpClientAdapter(
   };
   return {
     async listTools(): Promise<ToolDef[]> {
-      const tools: ToolDef[] = [];
-      const observed = new Set<string | undefined>();
-      let cursor: string | undefined;
-      while (true) {
-        if (observed.has(cursor))
-          throw new McpClientError({
-            code: "PAGINATION_CURSOR_REPEATED",
-            phase: "listTools",
-            diagnostics: diagnostics(),
-          });
-        observed.add(cursor);
-        let page: Awaited<ReturnType<SdkClient["listTools"]>>;
-        try {
-          page = await sdk.listTools(cursor === undefined ? {} : { cursor });
-        } catch (cause) {
-          if (isCoreError(cause)) throw cause;
-          throw operationFailure("listTools", cause);
-        }
-        for (const tool of page.tools) {
-          tools.push({
-            name: tool.name,
-            ...(tool.description === undefined ? {} : { description: tool.description }),
-            inputSchema: tool.inputSchema,
-            ...(tool.outputSchema === undefined ? {} : { outputSchema: tool.outputSchema }),
-          });
-        }
-        cursor = page.nextCursor;
-        if (cursor === undefined) return tools;
-      }
+      const tools = await collectPages(
+        async (cursor) => {
+          try {
+            const page = await sdk.listTools(cursor === undefined ? {} : { cursor });
+            return { items: page.tools, nextCursor: page.nextCursor };
+          } catch (cause) {
+            if (isCoreError(cause)) throw cause;
+            throw operationFailure("listTools", cause);
+          }
+        },
+        () => toolsCursorRepeated(diagnostics),
+      );
+      return tools.map((tool) => ({
+        name: tool.name,
+        ...(tool.description === undefined ? {} : { description: tool.description }),
+        inputSchema: tool.inputSchema,
+        ...(tool.outputSchema === undefined ? {} : { outputSchema: tool.outputSchema }),
+      }));
     },
     async callTool(name: string, args: unknown): Promise<ToolResult> {
       assertToolArguments(name, args, diagnostics);

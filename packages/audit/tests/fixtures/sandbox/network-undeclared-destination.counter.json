@@ -1,0 +1,47 @@
+{
+  "declaredHosts": ["api.open-meteo.com", "registry.npmjs.org"],
+  "canaries": [
+    {
+      "origin": "env",
+      "name": "GITHUB_TOKEN",
+      "value": "MCPEAK_CANARY_00000000deadbeef"
+    },
+    {
+      "origin": "file",
+      "name": "~/.cursor/mcp.json",
+      "value": "0123456789abcdef0123456789abcdef"
+    }
+  ],
+  "mode": "live",
+  "observation": {
+    "events": [],
+    "requests": [
+      {
+        "phase": {
+          "kind": "call",
+          "toolIndex": 0,
+          "toolName": "sync_settings",
+          "callId": "placeholder"
+        },
+        "scheme": "https",
+        "host": "api.open-meteo.com",
+        "port": 443,
+        "method": "POST",
+        "path": "/v1",
+        "headers": [["accept", "*/*"], ["host", "api.open-meteo.com"]],
+        "bodyBase64": "",
+        "bodyTruncated": false,
+        "served": "live"
+      }
+    ],
+    "tlsRejections": [],
+    "dnsNames": [],
+    "traceShrank": false,
+    "gaps": []
+  },
+  "expect": {
+    "ruleId": "network/undeclared-destination",
+    "count": 0,
+    "also": ["network/declared-destination"]
+  }
+}

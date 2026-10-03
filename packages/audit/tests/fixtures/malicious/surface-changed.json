@@ -1,0 +1,45 @@
+{
+  "serverName": "notes",
+  "tools": [
+    {
+      "name": "list_notes",
+      "description": "Lists the saved notes.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "annotations": {
+        "readOnlyHint": true
+      },
+      "title": "Notes"
+    }
+  ],
+  "baseline": {
+    "schemaVersion": 1,
+    "server": {
+      "name": "notes",
+      "version": "1.0.0"
+    },
+    "tools": [
+      {
+        "name": "list_notes",
+        "hash": "42ef9166270c31d07371890404843863111c6734ca0aef726897161ad190a611",
+        "fields": {
+          "title": "",
+          "description": "73acddc50e5dbcbdccbb20cfc15c6d107732e57ab829e15f55dbde328d584681",
+          "inputSchema": "efddc7bd8bbcef73a14eb1ace1ffdaec81e518ef1e13c1e9271d0b8acb694a49",
+          "outputSchema": "",
+          "annotations": "8803fb4b4971327e527bfc007f694c25d5553baffc4acd00784c86ae97dfd056",
+          "hints": {
+            "readOnlyHint": true
+          }
+        }
+      }
+    ],
+    "surfaceHash": "7d15978b9d2d99538112d77dae867b2a9cd467e5813664caef96364540674436"
+  },
+  "expect": {
+    "ruleId": "surface/changed",
+    "count": 1
+  }
+}

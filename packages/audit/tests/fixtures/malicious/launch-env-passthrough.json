@@ -1,0 +1,12 @@
+{
+  "serverName": "github",
+  "tools": [],
+  "target": {
+    "kind": "stdio",
+    "command": "node",
+    "args": ["dist/server.js"],
+    "forwardedEnvNames": ["GITHUB_TOKEN"],
+    "headerNames": []
+  },
+  "expect": { "ruleId": "launch/env-passthrough", "count": 1 }
+}

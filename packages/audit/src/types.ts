@@ -130,6 +130,22 @@ export interface AuditReport {
 export interface BaselineTool {
   readonly name: string;
   readonly hash: string;
+  /**
+   * 필드 단위 비교 재료. 각 필드 정규화 직렬화의 sha256 hex 이고, 없는 필드는 "" 다.
+   * `hints` 는 주석 완화(readOnlyHint true→false 등) 판정용 원값이다. 없는 기준 파일은 필드를 모른다고 본다.
+   */
+  readonly fields?: {
+    readonly title: string;
+    readonly description: string;
+    readonly inputSchema: string;
+    readonly outputSchema: string;
+    readonly annotations: string;
+    readonly hints: {
+      readonly readOnlyHint?: boolean;
+      readonly destructiveHint?: boolean;
+      readonly openWorldHint?: boolean;
+    };
+  };
 }
 
 export interface AuditBaseline {

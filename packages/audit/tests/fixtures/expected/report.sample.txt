@@ -51,4 +51,4 @@ mcpeak audit 결과
   - protocol: stdio 대상이라 HTTP 프로토콜 검사는 해당 없습니다.
 
 이 검사는 설명문의 문형과 프로토콜 표면만 봅니다. 바꿔 말한 지시와 서버 코드의 실제 행위는 보지 못합니다.
-행위 관측(Docker 격리)은 mcpeak audit --sandbox 로 켭니다. (단계 2에서 제공)
+행위 관측(Docker 격리)은 mcpeak audit --sandbox 로 켭니다.

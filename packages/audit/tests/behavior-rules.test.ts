@@ -934,7 +934,9 @@ describe("filterNoise", () => {
       exec(START, "/usr/bin/uname", ["uname"]),
       exec(START, "/usr/local/bin/npm", ["npm", "exec"]),
     ];
-    for (const command of ["npx", "npm", "/usr/local/bin/npx"])
+    // 백엔드(docker.ts)가 명령을 `/` 와 `\\` 둘 다로 잘라 판정한다. 잡음 표도 같은 규칙이어야 tmpfs 는 열렸는데
+    // 행은 안 걸리는 어긋남이 없다.
+    for (const command of ["npx", "npm", "/usr/local/bin/npx", "C:\\Program Files\\nodejs\\npx"])
       expect(kept(events, command)).toEqual([]);
     // 실행기 과정이 아닌 것은 npx 여도 남는다.
     const curl = exec(START, "/usr/bin/curl", ["curl", "https://example.invalid/"]);
@@ -956,7 +958,9 @@ describe("filterNoise", () => {
       alter(START, CACHE, "rename-from", "ok"),
       alter(START, "/home/node/.npm/_cacache/index-v5/c3/24/4e84", "rename-to", "ok"),
     ];
-    for (const command of ["npx", "npm", "/usr/local/bin/npx"])
+    // 백엔드(docker.ts)가 명령을 `/` 와 `\\` 둘 다로 잘라 판정한다. 잡음 표도 같은 규칙이어야 tmpfs 는 열렸는데
+    // 행은 안 걸리는 어긋남이 없다.
+    for (const command of ["npx", "npm", "/usr/local/bin/npx", "C:\\Program Files\\nodejs\\npx"])
       expect(kept(events, command)).toEqual([]);
     // 명령이 node 면 그 자리의 쓰기는 서버가 한 일이다.
     expect(kept(events, "node")).toEqual(events);

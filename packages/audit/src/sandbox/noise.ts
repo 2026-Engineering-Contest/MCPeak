@@ -4,6 +4,12 @@ type Exec = Extract<SyscallEvent, { kind: "exec" }>;
 
 const basename = (path: string): string => path.slice(path.lastIndexOf("/") + 1);
 
+/**
+ * 사용자가 준 서버 명령의 이름. 호스트의 경로로 올 수 있어 `/` 와 `\\` 둘 다로 자른다. 백엔드(docker.ts)가
+ * 캐시 tmpfs 를 열지 정할 때 쓰는 규칙과 같아야 한다. 다르면 tmpfs 는 열렸는데 행은 걸리지 않는다.
+ */
+const commandName = (command: string): string => command.split(/[\\/]/).pop() || command;
+
 /** 게이트웨이가 듣는 포트. 이 포트로 가는 접속은 게이트웨이가 요청 기록으로 따로 본다. */
 const GATEWAY_PORTS: ReadonlySet<number> = new Set([53, 80, 443]);
 
@@ -39,7 +45,7 @@ function isRunnerStartExec(event: SyscallEvent, context: NoiseContext): event is
   return (
     event.kind === "exec" &&
     event.phase.kind === "start" &&
-    RUNNER_COMMANDS.has(basename(context.command))
+    RUNNER_COMMANDS.has(commandName(context.command))
   );
 }
 
@@ -86,7 +92,7 @@ export const NOISE_TABLE: readonly NoiseRow[] = [
     matches: (event, context) =>
       (event.kind === "alter" || (event.kind === "open" && event.write)) &&
       event.phase.kind === "start" &&
-      RUNNER_COMMANDS.has(basename(context.command)) &&
+      RUNNER_COMMANDS.has(commandName(context.command)) &&
       event.path.startsWith(NPM_CACHE_PREFIX),
   },
   {

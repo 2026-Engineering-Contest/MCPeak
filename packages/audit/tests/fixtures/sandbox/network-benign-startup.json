@@ -1,0 +1,134 @@
+{
+  "declaredHosts": ["api.open-meteo.com", "registry.npmjs.org"],
+  "canaries": [
+    {
+      "origin": "env",
+      "name": "GITHUB_TOKEN",
+      "value": "MCPEAK_CANARY_00000000deadbeef"
+    },
+    {
+      "origin": "file",
+      "name": "~/.cursor/mcp.json",
+      "value": "0123456789abcdef0123456789abcdef"
+    }
+  ],
+  "mode": "live",
+  "observation": {
+    "events": [
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/work/examples/weather-server/server.mjs",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/home/node/.npmrc",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "connect",
+        "phase": {
+          "kind": "start"
+        },
+        "family": "unix",
+        "address": "/var/run/nscd/socket",
+        "port": 0
+      },
+      {
+        "kind": "connect",
+        "phase": {
+          "kind": "start"
+        },
+        "family": "inet",
+        "address": "<gateway>",
+        "port": 53
+      },
+      {
+        "kind": "connect",
+        "phase": {
+          "kind": "start"
+        },
+        "family": "inet",
+        "address": "<gateway>",
+        "port": 443
+      },
+      {
+        "kind": "connect",
+        "phase": {
+          "kind": "call",
+          "toolIndex": 0,
+          "toolName": "get_forecast",
+          "callId": "placeholder"
+        },
+        "family": "inet",
+        "address": "<gateway>",
+        "port": 443
+      }
+    ],
+    "requests": [
+      {
+        "phase": {
+          "kind": "start"
+        },
+        "scheme": "https",
+        "host": "registry.npmjs.org",
+        "port": 443,
+        "method": "GET",
+        "path": "/@modelcontextprotocol%2fsdk",
+        "headers": [["accept", "*/*"], ["host", "registry.npmjs.org"]],
+        "bodyBase64": "",
+        "bodyTruncated": false,
+        "served": "live"
+      },
+      {
+        "phase": {
+          "kind": "call",
+          "toolIndex": 0,
+          "toolName": "get_forecast",
+          "callId": "placeholder"
+        },
+        "scheme": "https",
+        "host": "api.open-meteo.com",
+        "port": 443,
+        "method": "GET",
+        "path": "/v1/forecast?latitude=37.5",
+        "headers": [["accept", "*/*"], ["host", "api.open-meteo.com"]],
+        "bodyBase64": "",
+        "bodyTruncated": false,
+        "served": "live"
+      }
+    ],
+    "tlsRejections": [],
+    "dnsNames": [
+      {
+        "phase": {
+          "kind": "start"
+        },
+        "name": "registry.npmjs.org"
+      },
+      {
+        "phase": {
+          "kind": "call",
+          "toolIndex": 0,
+          "toolName": "get_forecast",
+          "callId": "placeholder"
+        },
+        "name": "api.open-meteo.com"
+      }
+    ],
+    "traceShrank": false,
+    "gaps": []
+  },
+  "expect": {
+    "ruleId": "network/declared-destination",
+    "count": 2
+  }
+}

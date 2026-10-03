@@ -8,7 +8,7 @@ function fakeFetch(): typeof fetch {
   return vi.fn(async () => new Response("[]", { status: 200 })) as unknown as typeof fetch;
 }
 
-const NAV_LABELS = ["Test", "Runs", "Generate", "Replay", "Mock", "Repair"];
+const NAV_LABELS = ["Test", "Runs", "Generate", "Replay", "Mock", "Repair", "Analyze"];
 /** 사이드바 아래쪽 보조 링크(#459). 주 메뉴 뒤에 따로 선다. */
 const SECONDARY_LABELS = ["Settings", "Help & Docs"];
 
@@ -30,7 +30,7 @@ describe("app shell", () => {
     window.location.hash = "";
   });
 
-  it("사이드바 라벨이 순서대로 Test, Runs, Generate, Replay, Mock, Repair 이고 그 뒤에 Settings, Help & Docs 가 온다", async () => {
+  it("사이드바 라벨이 순서대로 Test, Runs, Generate, Replay, Mock, Repair, Analyze 이고 그 뒤에 Settings, Help & Docs 가 온다", async () => {
     window.location.hash = "#/home";
     render(<App />);
     const nav = await screen.findByRole("navigation");

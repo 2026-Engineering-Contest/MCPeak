@@ -23,4 +23,22 @@ describe("App", () => {
     const active = screen.getByRole("link", { name: label });
     expect(active.getAttribute("aria-current")).toBe("page");
   });
+
+  it("#/analyze 는 분석 화면과 토큰 탭을 연다", () => {
+    window.location.hash = "#/analyze";
+
+    render(React.createElement(App));
+
+    expect(screen.getByRole("heading", { name: "분석" })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "토큰" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("link", { name: "Analyze" }).getAttribute("aria-current")).toBe("page");
+  });
+
+  it("#/analyze/security 는 보안 탭을 연다", () => {
+    window.location.hash = "#/analyze/security";
+
+    render(React.createElement(App));
+
+    expect(screen.getByRole("tab", { name: "보안" }).getAttribute("aria-selected")).toBe("true");
+  });
 });

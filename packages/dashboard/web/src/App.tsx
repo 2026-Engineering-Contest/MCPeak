@@ -1,8 +1,10 @@
 import type { JSX } from "react";
 import { useEffect, useRef, useState } from "react";
+import type { AnalyzeTab } from "./analyze/types.js";
 import { Sidebar } from "./components/Sidebar.js";
 import { ThemeToggle } from "./components/ThemeToggle.js";
 import { leaveBlocker } from "./leave-guard.js";
+import { AnalyzeView } from "./screens/AnalyzeView.js";
 import { GenerateWizard } from "./screens/GenerateWizard.js";
 import { Home } from "./screens/Home.js";
 import { MockBuilder } from "./screens/MockBuilder.js";
@@ -21,6 +23,7 @@ import { SettingsView } from "./screens/SettingsView.js";
  * | `#/generate` | GenerateWizard |
  * | `#/mock` | MockBuilder (목 만들기) |
  * | `#/repair/:id` | RepairReview |
+ * | `#/analyze`, `#/analyze/:tab` | AnalyzeView (`tokens` 기본, `security` 는 준비 중) |
  * | `#/settings` | SettingsView (준비 중) |
  *
  * 이탈 확인: 화면이 `useLeaveGuard` 로 막아 두면 해시를 되돌리고 그 화면이 묻는다(leave-guard.ts).
@@ -32,6 +35,7 @@ type Route =
   | { readonly screen: "replay" }
   | { readonly screen: "mock" }
   | { readonly screen: "repair"; readonly runId: string | null }
+  | { readonly screen: "analyze"; readonly tab: AnalyzeTab }
   | { readonly screen: "settings" }
   | { readonly screen: "redirect" };
 
@@ -74,6 +78,11 @@ function parseRoute(hash: string): Route {
       screen: "repair",
       runId: rest[0] !== undefined ? decodeRouteValue(rest[0]) : null,
     };
+  }
+  if (first === "analyze") {
+    // 모르는 탭 이름은 기본 탭으로 연다. 화면을 통째로 #/home 으로 보내면 Analyze 메뉴를 고른
+    // 사용자가 엉뚱한 화면에 선다.
+    return { screen: "analyze", tab: rest[0] === "security" ? "security" : "tokens" };
   }
   if (first === "settings") {
     return { screen: "settings" };
@@ -170,6 +179,8 @@ function Screen({
       return <MockBuilder />;
     case "repair":
       return <RepairReview runId={route.runId} />;
+    case "analyze":
+      return <AnalyzeView tab={route.tab} />;
     case "settings":
       return <SettingsView />;
   }

@@ -61,6 +61,7 @@
     "@mcpeak/generate": "workspace:*",
     "@mcpeak/record": "workspace:*",
     "@mcpeak/mock": "workspace:*",
-    "@mcpeak/optimize": "workspace:*"
+    "@mcpeak/optimize": "workspace:*",
+    "@mcpeak/audit": "workspace:*"
   }
 }

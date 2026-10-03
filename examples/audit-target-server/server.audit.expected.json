@@ -1,0 +1,89 @@
+{
+  "exitCode": 2,
+  "counts": {
+    "high": 5,
+    "medium": 1,
+    "low": 0,
+    "info": 0
+  },
+  "findings": [
+    {
+      "ruleId": "desc/injection",
+      "severity": "high",
+      "location": {
+        "kind": "tool",
+        "toolIndex": 0,
+        "toolName": "add_numbers",
+        "path": "description"
+      },
+      "message": "모델에게 내리는 지시가 있습니다: \"<IMPORTANT>\" (raw 형에서 발견)",
+      "fix": "이 서버를 신뢰하지 않는다면 등록하지 마세요. 서버 작성자라면 설명에서 모델 지시를 빼세요.",
+      "evidence": ["<IMPORTANT>", "raw"]
+    },
+    {
+      "ruleId": "desc/hidden-unicode",
+      "severity": "high",
+      "location": {
+        "kind": "tool",
+        "toolIndex": 1,
+        "toolName": "get\u200Btime",
+        "path": "name"
+      },
+      "message": "보이지 않는 문자 U+200B (zero-width) 가 들어 있습니다",
+      "fix": "보이지 않는 문자는 사람에게는 안 보이고 모델에게는 보입니다. 설명을 ASCII 로 다시 쓰세요.",
+      "evidence": ["U+200B (zero-width)"]
+    },
+    {
+      "ruleId": "schema/secret-field",
+      "severity": "medium",
+      "location": {
+        "kind": "tool",
+        "toolIndex": 2,
+        "toolName": "translate_text",
+        "path": "inputSchema.properties.api_key"
+      },
+      "message": "비밀값을 인자로 요구합니다: 'api_key'",
+      "fix": "비밀은 인자가 아니라 서버 환경변수로 받아야 합니다. 모델 컨텍스트에 비밀이 실립니다.",
+      "evidence": ["api_key"]
+    },
+    {
+      "ruleId": "schema/annotation-mismatch",
+      "severity": "high",
+      "location": {
+        "kind": "tool",
+        "toolIndex": 3,
+        "toolName": "delete_all",
+        "path": "annotations"
+      },
+      "message": "readOnlyHint 가 true 인데 이름·설명이 'delete' 를 말합니다",
+      "fix": "클라이언트는 readOnlyHint 를 보고 확인 없이 실행합니다. 주석을 false 로 고치거나 이름을 바꾸세요.",
+      "evidence": ["delete"]
+    },
+    {
+      "ruleId": "secret/env-leak",
+      "severity": "high",
+      "location": {
+        "kind": "result",
+        "toolIndex": 4,
+        "toolName": "echo_env",
+        "path": "content[0].text"
+      },
+      "message": "환경변수 GITHUB_TOKEN 에 심은 값이 응답에 나왔습니다",
+      "fix": "서버가 환경변수를 읽어 밖으로 냅니다. 등록하지 마세요.",
+      "evidence": ["<canary:GITHUB_TOKEN>", "raw"]
+    },
+    {
+      "ruleId": "result/injection",
+      "severity": "high",
+      "location": {
+        "kind": "result",
+        "toolIndex": 5,
+        "toolName": "get_tip",
+        "path": "content[0].text"
+      },
+      "message": "호출 응답에 모델 지시가 있습니다: \"ignore previous instructions\"",
+      "fix": "응답으로 모델을 조종하는 수법입니다(ATPA). 등록하지 마세요.",
+      "evidence": ["ignore previous instructions", "raw"]
+    }
+  ]
+}

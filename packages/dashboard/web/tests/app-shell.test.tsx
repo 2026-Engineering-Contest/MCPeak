@@ -79,7 +79,7 @@ describe("app shell", () => {
       expect(window.location.hash).toBe("#/welcome");
     });
     expect(
-      await screen.findByRole("heading", { level: 1, name: "MCPeak 을 어떻게 쓰시나요?" }),
+      await screen.findByRole("heading", { level: 1, name: "MCP를 어떻게 쓰시나요?" }),
     ).toBeTruthy();
     expect(document.querySelector("nav")).toBeNull();
   });
@@ -113,20 +113,20 @@ describe("app shell", () => {
   it("선택 화면의 두 링크는 #/home 과 #/user/check 를 가리킨다", async () => {
     window.location.hash = "#/welcome";
     render(<App />);
-    await screen.findByRole("heading", { level: 1, name: "MCPeak 을 어떻게 쓰시나요?" });
+    await screen.findByRole("heading", { level: 1, name: "MCP를 어떻게 쓰시나요?" });
     const hrefs = screen.getAllByRole("link").map((link) => link.getAttribute("href"));
     expect(hrefs).toEqual(["#/home", "#/user/check"]);
     // 카드 전체가 링크 하나이고, 접근 이름은 제목과 설명을 이은 글자다.
     expect(
       screen
         .getByRole("link", {
-          name: "개발자 MCP 서버를 만들고 테스트합니다. 테스트 실행, 생성, 녹화·재생, 목, 분석을 씁니다.",
+          name: "개발자 MCP를 만들고 테스트합니다. 테스트 실행, 생성, 녹화·재생, 목, 분석을 씁니다.",
         })
         .getAttribute("href"),
     ).toBe("#/home");
     expect(
       screen
-        .getByRole("link", { name: "사용자 쓰려는 MCP 서버를 등록하기 전에 점검합니다." })
+        .getByRole("link", { name: "사용자 쓰려는 MCP를 등록하기 전에 점검합니다." })
         .getAttribute("href"),
     ).toBe("#/user/check");
     expect(screen.getByText("사이드바 아래에서 언제든 바꿀 수 있습니다.")).toBeTruthy();

@@ -66,6 +66,8 @@ const SIX_RULES = [
 
 /** 감사 한 번이 수 초에서 수십 초다. 이미지를 처음 만드는 실행은 몇 분이 걸린다. */
 const E2E_TIMEOUT_MS = 600_000;
+/** 격리 안의 도구 호출 하나를 기다리는 시간. MCP 요청 제한(60초)보다 짧아야 우리 문장이 먼저 나온다. */
+const CALL_WAIT_MS = 30_000;
 
 const SKIP = process.env.MCPEAK_SKIP_DOCKER_E2E === "1";
 const REQUIRE = process.env.MCPEAK_REQUIRE_DOCKER_E2E === "1";
@@ -209,7 +211,11 @@ const NOTHING_LEFT = { containers: [], networks: [], volumes: [], tmp: [] };
  */
 async function insideSandbox<T>(
   server: string,
-  body: (connection: Awaited<ReturnType<typeof core.connectStdio>>, names: string[]) => Promise<T>,
+  body: (
+    connection: Awaited<ReturnType<typeof core.connectStdio>>,
+    names: string[],
+    handle: auditModule.SandboxHandle,
+  ) => Promise<T>,
 ): Promise<T> {
   const random = () => randomBytes(8).toString("hex");
   const backend = auditModule.createDockerBackend(
@@ -237,7 +243,7 @@ async function insideSandbox<T>(
       env: handle.launchEnv,
     });
     try {
-      return await body(connection, [...canaries.names]);
+      return await body(connection, [...canaries.names], handle);
     } finally {
       await connection.close();
     }
@@ -378,9 +384,41 @@ describe("audit sandbox e2e", () => {
     "live-weather 의 get_forecast 호출 결과에 isError 가 없고 그 접속이 network/declared-destination 뿐이다",
     async () => {
       // 응답 자체는 감사 리포트에 실리지 않는다. 백엔드를 직접 띄워 게이트웨이를 거친 호출 결과를 본다.
-      const result = await insideSandbox(liveWeather, (connection) =>
-        connection.client.callTool("get_forecast", { city: "Seoul" }),
-      );
+      const result = await insideSandbox(liveWeather, async (connection, _names, handle) => {
+        // 서버의 fetch 에는 제한 시간이 없다. 상류가 멈추면 호출이 MCP 요청 제한(60초)까지 매달리고
+        // "protocol 오류" 한 줄만 남는다. 그 전에 끊고, 게이트웨이가 무엇을 봤는지를 실패 문장에 싣는다.
+        const call = connection.client.callTool("get_forecast", { city: "Seoul" });
+        call.catch(() => {});
+        const waited = await Promise.race([
+          call.then((value) => ({ value })),
+          new Promise<undefined>((done) => setTimeout(() => done(undefined), CALL_WAIT_MS)),
+        ]);
+        if (waited !== undefined) return waited.value;
+        const seen = await handle.snapshot();
+        throw new Error(
+          [
+            `→ get_forecast 가 ${CALL_WAIT_MS / 1000}초 안에 답하지 않았습니다. 게이트웨이가 본 것:`,
+            `→ 이름 조회: ${seen.dnsNames.map((entry) => entry.name).join(", ") || "없음"}`,
+            `→ 요청: ${
+              seen.requests
+                .map((entry) => `${entry.method} ${entry.host}${entry.path} (${entry.served})`)
+                .join(" | ") || "없음"
+            }`,
+            `→ 인증서 거부: ${seen.tlsRejections.map((entry) => entry.host).join(", ") || "없음"}`,
+            `→ 서버의 접속: ${
+              seen.events
+                .flatMap((event) =>
+                  event.kind === "connect" && event.family !== "unix"
+                    ? [`${event.address}:${event.port}`]
+                    : [],
+                )
+                .join(", ") || "없음"
+            }`,
+            `→ 읽지 못한 관측: ${seen.gaps.map((gap) => `${gap.source}: ${gap.reason}`).join(" | ") || "없음"}`,
+            "요청이 없으면 서버가 게이트웨이에 닿지 못한 것이고, 요청이 있으면 상류가 답하지 않은 것입니다.",
+          ].join("\n"),
+        );
+      });
       expect(result.isError ?? false).toBe(false);
       expect(JSON.stringify(result.content)).not.toBe("[]");
 

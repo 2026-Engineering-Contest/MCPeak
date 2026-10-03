@@ -231,24 +231,35 @@ function probeUpstreamFromGateway(host: string): string {
     const https = require("node:https");
     (async () => {
       const out = [];
+      const HOST = ${JSON.stringify(host)};
       let addresses = [];
-      try { addresses = await dns.lookup(${JSON.stringify(host)}, { all: true }); }
+      try { addresses = await dns.lookup(HOST, { all: true }); }
       catch (error) { out.push("이름 풀이 실패 " + error.code); }
+      // 게이트웨이는 서버가 보낸 헤더를 그대로 상류에 전달한다. 최소 헤더와, Node fetch(undici)가 보내는 것과
+      // 같은 헤더 두 가지로 접속해 본다. 뒤의 것만 멈추면 상류가 그 헤더의 요청에 답하지 않는 것이다.
+      const variants = [
+        ["최소", { host: HOST }],
+        ["fetch", { host: HOST, connection: "keep-alive", accept: "*/*", "accept-language": "*", "sec-fetch-mode": "cors", "user-agent": "node", "accept-encoding": "gzip, deflate" }],
+      ];
       for (const { address, family } of addresses) {
+        if (family !== 4) { out.push("IPv" + family + " " + address + ": 건너뜀"); continue; }
         for (const path of ["/v1/search?name=Seoul&count=1&language=ko", "/v1/search?name=mcpeak&count=1&language=ko"]) {
-          const started = Date.now();
-          const result = await new Promise((done) => {
-            const request = https.request({ host: address, port: 443, path, servername: ${JSON.stringify(host)}, headers: { host: ${JSON.stringify(host)} }, agent: false, timeout: 5000 }, (response) => {
-              let size = 0;
-              response.on("data", (chunk) => { size += chunk.length; });
-              response.on("end", () => done("HTTP " + response.statusCode + " " + size + "B " + (response.headers["content-encoding"] || "identity")));
-              response.on("error", (error) => done("응답 오류 " + error.code));
+          for (const [label, headers] of variants) {
+            const started = Date.now();
+            const result = await new Promise((done) => {
+              const request = https.request({ host: address, port: 443, path, servername: HOST, headers, agent: false, setHost: false }, (response) => {
+                let size = 0;
+                response.on("data", (chunk) => { size += chunk.length; });
+                response.on("end", () => done("HTTP " + response.statusCode + " " + size + "B " + (response.headers["content-encoding"] || "identity")));
+                response.on("error", (error) => done("응답 오류 " + error.code));
+              });
+              const timer = setTimeout(() => { request.destroy(); done("8초 무응답(" + (request.socket && request.socket.connecting ? "접속 중" : "접속됨") + ")"); }, 8000);
+              request.on("close", () => clearTimeout(timer));
+              request.on("error", (error) => done("오류 " + (error.code || error.message)));
+              request.end();
             });
-            request.on("timeout", () => { request.destroy(); done("5초 무응답"); });
-            request.on("error", (error) => done("오류 " + (error.code || error.message)));
-            request.end();
-          });
-          out.push("IPv" + family + " " + address + " " + path.slice(16, 22) + ": " + result + " (" + (Date.now() - started) + "ms)");
+            out.push(address + " " + path.slice(16, 22) + " " + label + ": " + result + " (" + (Date.now() - started) + "ms)");
+          }
         }
       }
       console.log(out.join(" | "));
@@ -256,9 +267,9 @@ function probeUpstreamFromGateway(host: string): string {
   `;
   const ran = spawnSync("docker", ["exec", gateway, "node", "-e", script], {
     encoding: "utf8",
-    timeout: 60_000,
+    timeout: 90_000,
   });
-  return (ran.stdout.trim() || ran.stderr.trim() || "출력 없음").slice(0, 1500);
+  return (ran.stdout.trim() || ran.stderr.trim() || "출력 없음").slice(0, 2500);
 }
 
 /**

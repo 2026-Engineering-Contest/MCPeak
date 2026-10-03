@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SandboxHandle, SandboxSpec } from "../src/sandbox/backend.js";
 import { createDockerBackend, type DockerIo } from "../src/sandbox/docker.js";
 import { sandboxImageTag } from "../src/sandbox/image.js";
-import type { TraceParser } from "../src/sandbox/trace.js";
+import { parseTrace, type TraceParser } from "../src/sandbox/trace.js";
 import { AuditError, type SandboxUnavailable, type SyscallEvent } from "../src/types.js";
 
 /**
@@ -459,7 +459,7 @@ describe("start: target 컨테이너의 argv", () => {
     });
   });
 
-  it("명령은 strace -f -qq -s 256 -e trace=openat,execve,connect,?unlink,unlinkat,?rmdir,?rename,?renameat,renameat2 로 감싸이고 그 뒤가 원래 command·args 순서 그대로다", async () => {
+  it("명령은 strace -f -qq -s 256 -e trace=openat,execve,connect,?unlink,unlinkat,?rmdir,?rename,?renameat,renameat2 로 감싸이고 그 뒤가 command 는 basename, args 는 원래 순서 그대로다", async () => {
     const { handle } = await started();
     const args = targetArgs(handle);
     expect(args.slice(args.indexOf(IMAGE) + 1)).toEqual([
@@ -471,6 +471,23 @@ describe("start: target 컨테이너의 argv", () => {
     ]);
     expect(handle.image).toBe(IMAGE);
   });
+
+  it.each([
+    ["/opt/homebrew/bin/node", "node"],
+    ["./node_modules/.bin/npx", "npx"],
+    ["C:\\Program Files\\nodejs\\npm", "npm"],
+    ["C:\\tools/bin\\node", "node"],
+    ["node", "node"],
+    ["npx", "npx"],
+  ])(
+    "command 가 경로(%s)면 컨테이너 안에서는 basename(%s)으로 실행하고 args 는 건드리지 않는다",
+    async (command, expected) => {
+      const args = ["/opt/homebrew/lib/server.mjs", "--path=C:\\x\\y", "a/b"];
+      const { handle } = await started({ ...SPEC, target: { ...SPEC.target, command, args } });
+      const launch = targetArgs(handle);
+      expect(launch.slice(launch.indexOf(IMAGE) + 1)).toEqual([...STRACE, expected, ...args]);
+    },
+  );
 
   it("-w 가 SandboxSpec.cwd 다", async () => {
     const { handle } = await started();
@@ -892,6 +909,147 @@ describe("mark 와 snapshot", () => {
       { lines: ["/a"], phase: { kind: "start" }, cwd: SPEC.cwd },
       { lines: ["/b"], phase: { kind: "list" }, cwd: SPEC.cwd },
     ]);
+  });
+
+  describe("mark 경계에 걸친 갈라진 줄", () => {
+    const OPEN_HEAD = '17    openat(AT_FDCWD, "/a", O_RDONLY <unfinished ...>';
+    const OPEN_TAIL = "17    <... openat resumed>)             = 3";
+    const CONNECT_HEAD = "18    connect(5, {…}, 16 <unfinished ...>";
+    const CONNECT_TAIL = "18    <... connect resumed>)            = 0";
+    const CALL = { kind: "call", toolIndex: 0, toolName: "ping", callId: "placeholder" } as const;
+
+    /** 해석기가 단계마다 받은 줄을 그대로 기록한다. */
+    async function recording() {
+      const fake = fakeIo();
+      const seen: { phase: string; lines: readonly string[] }[] = [];
+      const parse: TraceParser = (lines, phase) => {
+        seen.push({ phase: phase.kind, lines });
+        return { events: [], unparsed: 0 };
+      };
+      const handle = await createDockerBackend(fake.io, parse).start(SPEC);
+      const feed = (lines: readonly string[]) => {
+        fake.state.trace = `${lines.join("\n")}\n`;
+      };
+      return { handle, seen, feed };
+    }
+
+    it("짝이 아직 없는 <unfinished ...> 줄부터는 이번 단계에 붙이지 않고 다음 mark 로 미룬다", async () => {
+      const { handle, seen, feed } = await recording();
+      feed(["10    /x", OPEN_HEAD, "10    /y"]);
+      await handle.mark({ kind: "list" });
+      feed(["10    /x", OPEN_HEAD, "10    /y", OPEN_TAIL, "10    /z"]);
+      await handle.mark(CALL);
+      await handle.snapshot();
+      expect(seen).toEqual([
+        { phase: "start", lines: ["10    /x"] },
+        // 반쪽과 그 뒤의 줄이 짝과 함께 한 단계에 온다. 순서는 trace 그대로다.
+        { phase: "list", lines: [OPEN_HEAD, "10    /y", OPEN_TAIL, "10    /z"] },
+      ]);
+    });
+
+    it("mark 가 반쪽 사이에 오든 뒤에 오든 해석기가 받는 줄 묶음에 반쪽만 남는 일이 없다", async () => {
+      const all = ["10    /x", OPEN_HEAD, CONNECT_HEAD, OPEN_TAIL, CONNECT_TAIL, "10    /y"];
+      for (let cut = 1; cut <= all.length; cut += 1) {
+        const { handle, seen, feed } = await recording();
+        feed(all.slice(0, cut));
+        await handle.mark({ kind: "list" });
+        feed(all);
+        await handle.snapshot();
+        expect(seen.flatMap((segment) => segment.lines)).toEqual(all);
+        for (const { lines } of seen) {
+          const heads = lines.filter((line) => line.endsWith("<unfinished ...>")).length;
+          const tails = lines.filter((line) => line.includes("resumed>")).length;
+          expect(heads).toBe(tails);
+        }
+      }
+    });
+
+    it("같은 PID 의 resumed 만 짝으로 본다", async () => {
+      const { handle, seen, feed } = await recording();
+      feed([OPEN_HEAD, CONNECT_HEAD, CONNECT_TAIL]);
+      await handle.mark({ kind: "list" });
+      feed([OPEN_HEAD, CONNECT_HEAD, CONNECT_TAIL, OPEN_TAIL]);
+      await handle.snapshot();
+      // 17 의 짝이 없으므로 그 줄부터 전부 미뤄졌다. 18 의 짝이 있어도 앞의 줄을 넘어가지 않는다.
+      expect(seen).toEqual([
+        { phase: "list", lines: [OPEN_HEAD, CONNECT_HEAD, CONNECT_TAIL, OPEN_TAIL] },
+      ]);
+    });
+
+    it("짝이 다 있으면 미루지 않는다", async () => {
+      const { handle, seen, feed } = await recording();
+      feed([OPEN_HEAD, OPEN_TAIL, "10    /y"]);
+      await handle.mark({ kind: "list" });
+      await handle.snapshot();
+      expect(seen).toEqual([{ phase: "start", lines: [OPEN_HEAD, OPEN_TAIL, "10    /y"] }]);
+    });
+
+    it("한 번 미룬 줄은 다음 mark 에서도 짝이 없으면 더 미루지 않는다(끝나지 않는 호출이 뒤의 관측을 붙잡지 않게)", async () => {
+      const { handle, seen, feed } = await recording();
+      feed(["10    /x", OPEN_HEAD, "10    /y"]);
+      await handle.mark({ kind: "list" });
+      feed(["10    /x", OPEN_HEAD, "10    /y", "10    /z", CONNECT_HEAD]);
+      await handle.mark(CALL);
+      feed(["10    /x", OPEN_HEAD, "10    /y", "10    /z", CONNECT_HEAD, CONNECT_TAIL]);
+      await handle.mark({ kind: "shutdown" });
+      await handle.snapshot();
+      expect(seen).toEqual([
+        { phase: "start", lines: ["10    /x"] },
+        // 17 은 한 번 미뤘으니 놓는다. 새로 온 18 의 반쪽은 처음이라 미룬다.
+        { phase: "list", lines: [OPEN_HEAD, "10    /y", "10    /z"] },
+        { phase: "call", lines: [CONNECT_HEAD, CONNECT_TAIL] },
+      ]);
+    });
+
+    it("snapshot 에서도 짝을 못 찾은 줄은 버리지 않고 지금 단계로 해석기에 넘긴다", async () => {
+      const { handle, seen, feed } = await recording();
+      feed(["10    /x", OPEN_HEAD, "10    /y"]);
+      await handle.mark({ kind: "shutdown" });
+      const first = await handle.snapshot();
+      expect(seen).toEqual([
+        { phase: "start", lines: ["10    /x"] },
+        { phase: "shutdown", lines: [OPEN_HEAD, "10    /y"] },
+      ]);
+      // snapshot 은 상태를 바꾸지 않는다.
+      seen.length = 0;
+      expect(await handle.snapshot()).toEqual(first);
+      expect(seen).toHaveLength(2);
+    });
+
+    it("미룬 줄이 있어도 traceShrank 는 누적 줄 수로 판정하고, 미룬 줄은 기록이 줄어도 남는다", async () => {
+      const { handle, seen, feed } = await recording();
+      feed(["10    /x", OPEN_HEAD, "10    /y"]);
+      await handle.mark({ kind: "list" });
+      // 같은 줄 수면 줄지 않은 것이다(미룬 줄 때문에 줄었다고 보지 않는다).
+      await handle.mark(CALL);
+      expect((await handle.snapshot()).traceShrank).toBe(false);
+      feed(["10    /x"]);
+      const observation = await handle.snapshot();
+      expect(observation.traceShrank).toBe(true);
+      expect(seen.at(-1)?.lines).toEqual([OPEN_HEAD, "10    /y"]);
+    });
+
+    it("실제 해석기와 함께: 경계에 걸려도 unparsedLines 가 0 이고 사건이 한 단계에 온다", async () => {
+      const fake = fakeIo();
+      const handle = await createDockerBackend(fake.io, parseTrace).start(SPEC);
+      const head =
+        '17    openat(AT_FDCWD, "/workspace/package.json", O_RDONLY|O_CLOEXEC <unfinished ...>';
+      const tail = "17    <... openat resumed>)             = 19";
+      fake.state.trace = `${head}\n`;
+      await handle.mark({ kind: "list" });
+      fake.state.trace = `${head}\n${tail}\n`;
+      const observation = await handle.snapshot();
+      expect(observation.unparsedLines).toBe(0);
+      expect(observation.events).toEqual([
+        {
+          kind: "open",
+          phase: { kind: "list" },
+          path: "/workspace/package.json",
+          write: false,
+          result: "ok",
+        },
+      ]);
+    });
   });
 
   it("mark 는 gateway 의 POST /phase 를 Authorization 과 함께 부른다", async () => {

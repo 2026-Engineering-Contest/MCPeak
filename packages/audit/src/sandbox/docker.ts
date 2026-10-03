@@ -502,7 +502,10 @@ export function createDockerBackend(io: DockerIo, parse: TraceParser): SandboxBa
     // destroy 가 없는 컨테이너를 치운 것으로 본다.
     target.present = true;
 
-    const command = spec.target.command ?? "";
+    // 호스트의 절대 경로(/opt/homebrew/bin/node)는 컨테이너에 없다. 경로로 온 명령은 이름만 남겨
+    // 이미지의 PATH 에서 찾게 한다. Windows 구분자도 자른다. args 는 건드리지 않는다.
+    const given = spec.target.command ?? "";
+    const command = given.split(/[\\/]/).pop() || given;
     const launchArgs = [
       "run",
       "--name",
@@ -553,7 +556,10 @@ export function createDockerBackend(io: DockerIo, parse: TraceParser): SandboxBa
 
     // 단계 귀속의 상태. 시각을 쓰지 않고 trace 의 누적 줄 수로 자른다.
     let phase: SandboxPhase = { kind: "start" };
-    let counted = 0;
+    /** 지금까지 본 누적 줄 수. 줄었는지(traceShrank)는 이 수로만 판정한다. */
+    let seenLines = 0;
+    /** 읽었지만 아직 어느 단계에도 붙이지 않은 줄. 짝을 기다리는 반쪽 줄과 그 뒤의 줄이다. */
+    let carried: readonly string[] = [];
     let traceShrank = false;
     const segments: { readonly phase: SandboxPhase; readonly lines: readonly string[] }[] = [];
     const traceGaps: string[] = [];
@@ -597,6 +603,41 @@ export function createDockerBackend(io: DockerIo, parse: TraceParser): SandboxBa
       return end < 0 ? [] : outcome.stdout.slice(0, end).split("\n");
     }
 
+    /**
+     * strace -f 는 다른 프로세스가 끼어들면 한 호출을 `<unfinished ...>` 와 `<... resumed>` 두 줄로
+     * 가른다. 그 사이에 mark 가 오면 반쪽씩 다른 단계로 가서 해석기가 둘 다 못 읽는다. 그러면
+     * unparsedLines 와 사건의 단계가 mark 시점의 우연에 따라 실행마다 달라진다. 그래서 짝이 아직 없는
+     * 가장 앞의 반쪽 줄부터는 이번 단계에 붙이지 않고 다음으로 미룬다. 돌려주는 값은 붙일 줄의 수다.
+     * 판정은 줄 내용과 순서로만 한다. 짝은 해석기와 같이 줄 머리의 PID 로 맞춘다.
+     *
+     * 앞쪽 `released` 줄은 이미 한 번 미룬 것이라 다시 미루지 않는다. 끝나지 않는 호출(막힌 connect
+     * 등) 하나가 뒤의 관측 전부를 마지막 단계로 끌고 가지 않게 한다.
+     */
+    function attachable(pool: readonly string[], released: number): number {
+      const waiting = new Map<string, number>();
+      /** 짝을 찾은 호출의 [반쪽, 짝] 자리. */
+      const pairs: (readonly [number, number])[] = [];
+      pool.forEach((line, index) => {
+        const head = /^(?:(\d+)\s+)?(.*)$/.exec(line);
+        const pid = head?.[1] ?? "";
+        const body = head?.[2] ?? "";
+        if (body.endsWith("<unfinished ...>")) {
+          if (!waiting.has(pid)) waiting.set(pid, index);
+        } else if (/^<\.\.\. [a-z_0-9]+ resumed>/.test(body)) {
+          const front = waiting.get(pid);
+          if (front !== undefined) pairs.push([front, index]);
+          waiting.delete(pid);
+        }
+      });
+      let cut = Math.min(pool.length, ...[...waiting.values()].filter((at) => at >= released));
+      // 자른 자리 뒤에 짝이 있는 호출은 반쪽도 함께 미룬다. 앞으로 당긴 자리가 또 다른 호출을
+      // 가를 수 있어 뒤에서부터 본다.
+      for (const [front, back] of [...pairs].sort((a, b) => b[0] - a[0])) {
+        if (front < cut && back >= cut) cut = front;
+      }
+      return cut;
+    }
+
     async function mark(next: SandboxPhase): Promise<void> {
       // 게이트웨이가 진행 중 요청을 비운 뒤에 답하므로, 먼저 알리고 그다음 trace 를 읽는다.
       try {
@@ -610,13 +651,14 @@ export function createDockerBackend(io: DockerIo, parse: TraceParser): SandboxBa
       const lines = await readTrace();
       if (!Array.isArray(lines)) {
         note(traceGaps, (lines as { readonly reason: string }).reason);
-      } else if (lines.length < counted) {
-        // 기록이 줄었다. 서버가 건드린 것이다. 이미 읽은 관측은 그대로 둔다.
-        traceShrank = true;
-        counted = lines.length;
       } else {
-        if (lines.length > counted) segments.push({ phase, lines: lines.slice(counted) });
-        counted = lines.length;
+        // 기록이 줄었으면 서버가 건드린 것이다. 이미 읽은 관측과 미뤄 둔 줄은 그대로 둔다.
+        if (lines.length < seenLines) traceShrank = true;
+        const pool = [...carried, ...lines.slice(seenLines)];
+        const cut = attachable(pool, carried.length);
+        if (cut > 0) segments.push({ phase, lines: pool.slice(0, cut) });
+        carried = pool.slice(cut);
+        seenLines = lines.length;
       }
       phase = next;
     }
@@ -625,12 +667,15 @@ export function createDockerBackend(io: DockerIo, parse: TraceParser): SandboxBa
       const trace = [...traceGaps];
       const gate = [...gatewayGaps];
 
-      // 마지막 mark 뒤의 줄은 지금 단계의 것이다. 상태를 바꾸지 않아 다시 불러도 같다.
+      // 마지막 mark 뒤의 줄과 미뤄 둔 줄은 지금 단계의 것이다. 여기서는 더 미루지 않는다. 짝을 끝내
+      // 못 찾은 반쪽도 해석기에 넘겨 unparsed 로 세게 한다. 줄 목록은 바꾸지 않아 다시 불러도 같다.
       const all = [...segments];
       const lines = await readTrace();
+      let tail = carried;
       if (!Array.isArray(lines)) note(trace, (lines as { readonly reason: string }).reason);
-      else if (lines.length < counted) traceShrank = true;
-      else if (lines.length > counted) all.push({ phase, lines: lines.slice(counted) });
+      else if (lines.length < seenLines) traceShrank = true;
+      else tail = [...carried, ...lines.slice(seenLines)];
+      if (tail.length > 0) all.push({ phase, lines: tail });
 
       let events: SyscallEvent[] = [];
       let unparsedLines = 0;

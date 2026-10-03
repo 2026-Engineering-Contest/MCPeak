@@ -486,18 +486,16 @@ describe("SecurityPanel", () => {
     ).toBeTruthy();
   });
 
-  it("격리를 켜면 실행할 수 있는 명령과 npx -y 제한을 말한다", async () => {
+  it("격리를 켜면 실행할 수 있는 명령을 말한다", async () => {
     stubFetch();
     render(<AnalyzeView tab="security" />);
     await screen.findByRole("radio", { name: /^weather/ });
-    expect(screen.queryByText(/npx -y 로 레지스트리에서 받는 서버는/)).toBeNull();
+    expect(screen.queryByText(/격리 이미지는 node, npx, npm 으로/)).toBeNull();
 
     fireEvent.click(screen.getByLabelText("Docker 격리 안에서 실행 (행위 관측)"));
 
     expect(
-      screen.getByText(
-        "격리 이미지는 node, npx, npm 으로 띄우는 서버만 실행합니다. npx -y 로 레지스트리에서 받는 서버는 격리 안에서 뜨지 않습니다. 로컬에 설치해 node 로 띄우세요.",
-      ),
+      screen.getByText("격리 이미지는 node, npx, npm 으로 띄우는 서버만 실행합니다."),
     ).toBeTruthy();
     expect(
       screen.getByText(

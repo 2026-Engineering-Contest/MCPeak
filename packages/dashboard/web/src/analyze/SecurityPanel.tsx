@@ -37,9 +37,8 @@ const PROBE_OPTIONS: readonly { readonly value: ProbeChoice; readonly label: str
 
 const REMOTE_SANDBOX_HINT =
   "원격 서버는 격리할 수 없습니다. 격리는 프로세스를 띄우는 대상에만 적용됩니다.";
-/** 단계 2 의 알려진 한계(PR #497). `npx -y` 제한이 풀리면 둘째·셋째 문장을 지운다. */
-const SANDBOX_HINT =
-  "격리 이미지는 node, npx, npm 으로 띄우는 서버만 실행합니다. npx -y 로 레지스트리에서 받는 서버는 격리 안에서 뜨지 않습니다. 로컬에 설치해 node 로 띄우세요.";
+/** 격리 이미지가 띄울 수 있는 명령. `npx -y` 로 받는 서버도 뜬다(PR #498, ADR-0109). */
+const SANDBOX_HINT = "격리 이미지는 node, npx, npm 으로 띄우는 서버만 실행합니다.";
 const COMPARE_HOST_HINT =
   "서버를 이 머신에서 한 번 더 띄워 tools/list 만 받습니다. 도구는 호출하지 않습니다.";
 const PROGRESS_DESCRIPTION =

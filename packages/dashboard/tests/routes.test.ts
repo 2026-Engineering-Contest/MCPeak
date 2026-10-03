@@ -5,7 +5,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createSqliteSessionStore } from "@mcpeak/record/external";
 import { afterEach, describe, expect, it } from "vitest";
-import type { AnalyzeTokensResponse, RunEvent, StartRunRequest } from "../src/api-types.js";
+import type {
+  AnalyzeTokensResponse,
+  RunEvent,
+  SourceEdit,
+  SourceEditResponse,
+  StartRunRequest,
+} from "../src/api-types.js";
 import { startDashboardServer } from "../src/index.js";
 import type { AnalyzeTokensOutcome, AnalyzeTokensOverrides } from "../src/server/analyze.js";
 import { handleRequest } from "../src/server/routes.js";
@@ -841,6 +847,7 @@ const ANALYZE_BODY = {
   overlay: { schemaVersion: 1 },
   overlayText: "t",
   report: "r",
+  sourceTools: [],
 } as unknown as AnalyzeTokensResponse;
 
 describe("POST /api/analyze/tokens", () => {
@@ -990,5 +997,205 @@ describe("PUT /api/overlays/<path>", () => {
     const response = await putOverlay(server, "../o.json", await validOverlayText());
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({ error: "허용되지 않는 경로입니다." });
+  });
+});
+
+function postSourceEdits(server: TestServer, body: string): Promise<Response> {
+  return fetch(`${server.baseUrl}/api/analyze/source-edits`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body,
+  });
+}
+
+const SOURCE_ARGV = ["--command", "node", "--arg", "srv/server.mjs"];
+const SOURCE_TEXT = [
+  "const tools = [",
+  '  { name: "a", inputSchema: { type: "object", properties: {} } },',
+  "];",
+  "",
+].join("\n");
+const SOURCE_AFTER = SOURCE_TEXT.replace(", properties: {} }", " }");
+/** 소스에 글자로 있는 변경. */
+const PROPERTIES_EDIT: SourceEdit = {
+  tool: "a",
+  change: { kind: "schema-key-removed", path: "inputSchema", key: "properties" },
+};
+/** 소스에 없는 변경(SDK 가 붙이는 값). */
+const SCHEMA_EDIT: SourceEdit = {
+  tool: "a",
+  change: { kind: "schema-key-removed", path: "inputSchema", key: "$schema" },
+};
+const SOURCE_EDITS: readonly SourceEdit[] = [PROPERTIES_EDIT, SCHEMA_EDIT];
+const NOT_FOUND_EDITS: readonly SourceEdit[] = [SCHEMA_EDIT];
+
+/** 임시 루트에 서버 소스를 하나 둔다. 쓰기 테스트는 이 파일만 건드린다. */
+async function writeServerSource(server: TestServer): Promise<string> {
+  const file = join(server.root, "srv", "server.mjs");
+  await mkdir(join(server.root, "srv"), { recursive: true });
+  await writeFile(file, SOURCE_TEXT, "utf8");
+  return file;
+}
+
+describe("POST /api/analyze/source-edits", () => {
+  it("apply 가 없으면 파일을 쓰지 않고 미리보기를 준다", async () => {
+    server = await startTestServer();
+    const file = await writeServerSource(server);
+    const { mtimeMs } = await stat(file);
+
+    const response = await postSourceEdits(
+      server,
+      JSON.stringify({ argv: SOURCE_ARGV, edits: SOURCE_EDITS }),
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      file: "srv/server.mjs",
+      mtimeMs,
+      before: SOURCE_TEXT,
+      after: SOURCE_AFTER,
+      results: [
+        { ...PROPERTIES_EDIT, status: "ready", detail: "소스에서 1곳을 찾았습니다." },
+        {
+          ...SCHEMA_EDIT,
+          status: "not-found",
+          detail:
+            "소스 파일에서 찾지 못했습니다. SDK 나 라이브러리가 만드는 값이면 소스에서 고칠 수 없습니다.",
+        },
+      ],
+      readyCount: 1,
+      applied: false,
+      conflict: false,
+    } satisfies SourceEditResponse);
+    expect(SOURCE_AFTER).not.toBe(SOURCE_TEXT);
+    await expect(readFile(file, "utf8")).resolves.toBe(SOURCE_TEXT);
+    expect((await stat(file)).mtimeMs).toBe(mtimeMs);
+  });
+
+  it("apply 면 파일을 고치고 applied:true 를 준다", async () => {
+    server = await startTestServer();
+    const file = await writeServerSource(server);
+    const preview = (await (
+      await postSourceEdits(server, JSON.stringify({ argv: SOURCE_ARGV, edits: SOURCE_EDITS }))
+    ).json()) as SourceEditResponse;
+
+    const response = await postSourceEdits(
+      server,
+      JSON.stringify({
+        argv: SOURCE_ARGV,
+        edits: SOURCE_EDITS,
+        apply: { baseMtimeMs: preview.mtimeMs },
+      }),
+    );
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as SourceEditResponse;
+    expect(body).toEqual({
+      ...preview,
+      mtimeMs: (await stat(file)).mtimeMs,
+      before: preview.after,
+      applied: true,
+    });
+    await expect(readFile(file, "utf8")).resolves.toBe(preview.after);
+  });
+
+  it("baseMtimeMs 가 다르면 conflict 이고 파일을 쓰지 않는다", async () => {
+    server = await startTestServer();
+    const file = await writeServerSource(server);
+    const { mtimeMs } = await stat(file);
+
+    const response = await postSourceEdits(
+      server,
+      JSON.stringify({
+        argv: SOURCE_ARGV,
+        edits: SOURCE_EDITS,
+        apply: { baseMtimeMs: mtimeMs - 1 },
+      }),
+    );
+    expect(response.status).toBe(200);
+    // 본문은 지금 파일로 다시 계산한 미리보기다. mtime 도 지금 값이라 그대로 다시 적용할 수 있다.
+    expect(await response.json()).toMatchObject({
+      file: "srv/server.mjs",
+      mtimeMs,
+      before: SOURCE_TEXT,
+      after: SOURCE_AFTER,
+      readyCount: 1,
+      applied: false,
+      conflict: true,
+    });
+    await expect(readFile(file, "utf8")).resolves.toBe(SOURCE_TEXT);
+  });
+
+  it("ready 가 없는데 apply 면 400 이다", async () => {
+    server = await startTestServer();
+    const file = await writeServerSource(server);
+    const { mtimeMs } = await stat(file);
+
+    const response = await postSourceEdits(
+      server,
+      JSON.stringify({
+        argv: SOURCE_ARGV,
+        edits: NOT_FOUND_EDITS,
+        apply: { baseMtimeMs: mtimeMs },
+      }),
+    );
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "적용할 수 있는 변경이 없습니다." });
+    await expect(readFile(file, "utf8")).resolves.toBe(SOURCE_TEXT);
+  });
+
+  it("--url 이면 400 이고 원격 문장이다", async () => {
+    server = await startTestServer();
+
+    const response = await postSourceEdits(
+      server,
+      JSON.stringify({ argv: ["--url", "http://localhost:3000/mcp"], edits: SOURCE_EDITS }),
+    );
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      error: "원격(HTTP) 서버는 소스 파일 위치를 알 수 없어 고칠 수 없습니다.",
+    });
+  });
+
+  it("소스 파일을 찾지 못하면 400 이고 고칠 방법을 말한다", async () => {
+    server = await startTestServer();
+
+    const response = await postSourceEdits(
+      server,
+      JSON.stringify({ argv: ["--command", "npx", "--arg", "some-server"], edits: SOURCE_EDITS }),
+    );
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      error:
+        "실행 명령에서 프로젝트 안의 서버 소스 파일을 찾지 못했습니다.\n해결: 인자에 스크립트 경로가 있어야 합니다(예: node ./server.mjs).",
+    });
+  });
+
+  it("형식이 틀리면 400 이다", async () => {
+    server = await startTestServer();
+    const file = await writeServerSource(server);
+    const invalid: unknown[] = [
+      { argv: "node", edits: SOURCE_EDITS },
+      { argv: SOURCE_ARGV },
+      { argv: SOURCE_ARGV, edits: [{ tool: "a" }] },
+      { argv: SOURCE_ARGV, edits: [{ tool: 1, change: { kind: "x", path: "p" } }] },
+      { argv: SOURCE_ARGV, edits: [{ tool: "a", change: { kind: "x" } }] },
+      { argv: SOURCE_ARGV, edits: SOURCE_EDITS, apply: {} },
+      { argv: SOURCE_ARGV, edits: SOURCE_EDITS, apply: { baseMtimeMs: "0" } },
+      [],
+    ];
+
+    for (const body of invalid) {
+      const response = await postSourceEdits(server, JSON.stringify(body));
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({ error: "요청 형식이 올바르지 않습니다." });
+    }
+    await expect(readFile(file, "utf8")).resolves.toBe(SOURCE_TEXT);
+  });
+
+  it("본문이 JSON 이 아니면 400 이다", async () => {
+    server = await startTestServer();
+
+    const response = await postSourceEdits(server, "{ argv: ");
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "본문이 올바른 JSON이 아닙니다." });
   });
 });

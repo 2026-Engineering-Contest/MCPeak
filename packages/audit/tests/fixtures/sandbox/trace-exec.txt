@@ -1,0 +1,67 @@
+10    openat(AT_FDCWD, "/dev/null", O_RDONLY|O_CLOEXEC) = 21
+17    execve("/usr/bin/id", ["/usr/bin/id"], 0x1eb3bc00 /* 6 vars */) = 0
+17    openat(AT_FDCWD, "/etc/ld.so.cache", O_RDONLY|O_CLOEXEC) = 3
+17    openat(AT_FDCWD, "/lib/aarch64-linux-gnu/libselinux.so.1", O_RDONLY|O_CLOEXEC) = 3
+17    openat(AT_FDCWD, "/lib/aarch64-linux-gnu/libc.so.6", O_RDONLY|O_CLOEXEC) = 3
+17    openat(AT_FDCWD, "/lib/aarch64-linux-gnu/libpcre2-8.so.0", O_RDONLY|O_CLOEXEC) = 3
+17    openat(AT_FDCWD, "/proc/filesystems", O_RDONLY|O_CLOEXEC) = 3
+17    connect(3, {sa_family=AF_UNIX, sun_path="/var/run/nscd/socket"}, 110) = -1 ENOENT (No such file or directory)
+17    connect(3, {sa_family=AF_UNIX, sun_path="/var/run/nscd/socket"}, 110) = -1 ENOENT (No such file or directory)
+17    openat(AT_FDCWD, "/etc/nsswitch.conf", O_RDONLY|O_CLOEXEC) = 3
+17    openat(AT_FDCWD, "/etc/passwd", O_RDONLY|O_CLOEXEC) = 3
+17    connect(3, {sa_family=AF_UNIX, sun_path="/var/run/nscd/socket"}, 110) = -1 ENOENT (No such file or directory)
+17    connect(3, {sa_family=AF_UNIX, sun_path="/var/run/nscd/socket"}, 110) = -1 ENOENT (No such file or directory)
+17    openat(AT_FDCWD, "/etc/group", O_RDONLY|O_CLOEXEC) = 3
+17    openat(AT_FDCWD, "/proc/sys/kernel/ngroups_max", O_RDONLY|O_CLOEXEC) = 3
+17    openat(AT_FDCWD, "/proc/sys/kernel/ngroups_max", O_RDONLY|O_CLOEXEC) = 3
+17    openat(AT_FDCWD, "/etc/group", O_RDONLY|O_CLOEXEC) = 3
+10    --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=17, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+10    openat(AT_FDCWD, "/dev/null", O_RDONLY|O_CLOEXEC) = 17
+10    openat(AT_FDCWD, "/dev/null", O_RDONLY|O_CLOEXEC) = 22
+18    execve("/usr/local/sbin/du", ["du", "-sk", "/tmp"], 0x1eb3bc00 /* 6 vars */) = -1 ENOENT (No such file or directory)
+18    execve("/usr/local/bin/du", ["du", "-sk", "/tmp"], 0x1eb3bc00 /* 6 vars */) = -1 ENOENT (No such file or directory)
+18    execve("/usr/sbin/du", ["du", "-sk", "/tmp"], 0x1eb3bc00 /* 6 vars */) = -1 ENOENT (No such file or directory)
+18    execve("/usr/bin/du", ["du", "-sk", "/tmp"], 0x1eb3bc00 /* 6 vars */) = 0
+18    openat(AT_FDCWD, "/etc/ld.so.cache", O_RDONLY|O_CLOEXEC) = 3
+18    openat(AT_FDCWD, "/lib/aarch64-linux-gnu/libc.so.6", O_RDONLY|O_CLOEXEC) = 3
+18    openat(AT_FDCWD, "/tmp", O_RDONLY|O_NOCTTY|O_NONBLOCK|O_NOFOLLOW|O_CLOEXEC|O_DIRECTORY) = 3
+10    --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=18, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+10    openat(AT_FDCWD, "/dev/null", O_RDONLY|O_CLOEXEC) = 22
+19    execve("/bin/sh", ["/bin/sh", "-c", "echo \"hello world\"; id"], 0x1eb3bc00 /* 6 vars */) = 0
+19    openat(AT_FDCWD, "/etc/ld.so.cache", O_RDONLY|O_CLOEXEC) = 3
+19    openat(AT_FDCWD, "/lib/aarch64-linux-gnu/libc.so.6", O_RDONLY|O_CLOEXEC) = 3
+20    execve("/usr/bin/id", ["id"], 0xaaaabdf328b8 /* 6 vars */) = 0
+20    openat(AT_FDCWD, "/etc/ld.so.cache", O_RDONLY|O_CLOEXEC) = 3
+20    openat(AT_FDCWD, "/lib/aarch64-linux-gnu/libselinux.so.1", O_RDONLY|O_CLOEXEC) = 3
+20    openat(AT_FDCWD, "/lib/aarch64-linux-gnu/libc.so.6", O_RDONLY|O_CLOEXEC) = 3
+20    openat(AT_FDCWD, "/lib/aarch64-linux-gnu/libpcre2-8.so.0", O_RDONLY|O_CLOEXEC) = 3
+20    openat(AT_FDCWD, "/proc/filesystems", O_RDONLY|O_CLOEXEC) = 3
+20    connect(3, {sa_family=AF_UNIX, sun_path="/var/run/nscd/socket"}, 110) = -1 ENOENT (No such file or directory)
+20    connect(3, {sa_family=AF_UNIX, sun_path="/var/run/nscd/socket"}, 110) = -1 ENOENT (No such file or directory)
+20    openat(AT_FDCWD, "/etc/nsswitch.conf", O_RDONLY|O_CLOEXEC) = 3
+20    openat(AT_FDCWD, "/etc/passwd", O_RDONLY|O_CLOEXEC) = 3
+20    connect(3, {sa_family=AF_UNIX, sun_path="/var/run/nscd/socket"}, 110) = -1 ENOENT (No such file or directory)
+20    connect(3, {sa_family=AF_UNIX, sun_path="/var/run/nscd/socket"}, 110) = -1 ENOENT (No such file or directory)
+20    openat(AT_FDCWD, "/etc/group", O_RDONLY|O_CLOEXEC) = 3
+20    openat(AT_FDCWD, "/proc/sys/kernel/ngroups_max", O_RDONLY|O_CLOEXEC) = 3
+20    openat(AT_FDCWD, "/proc/sys/kernel/ngroups_max", O_RDONLY|O_CLOEXEC) = 3
+20    openat(AT_FDCWD, "/etc/group", O_RDONLY|O_CLOEXEC) = 3
+19    --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=20, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+10    --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=19, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+10    openat(AT_FDCWD, "/dev/null", O_RDONLY|O_CLOEXEC) = 22
+21    execve("/bin/echo", ["/bin/echo", "two words", "tab\there", "quote\"q", "back\\slash", "\355\225\234\352\270\200", "new\nline"], 0x1eb3bc00 /* 6 vars */) = 0
+21    openat(AT_FDCWD, "/etc/ld.so.cache", O_RDONLY|O_CLOEXEC) = 3
+21    openat(AT_FDCWD, "/lib/aarch64-linux-gnu/libc.so.6", O_RDONLY|O_CLOEXEC) = 3
+10    --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=21, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+10    openat(AT_FDCWD, "/dev/null", O_RDONLY|O_CLOEXEC) = 22
+22    execve("/usr/local/sbin/mcpeak-no-such-command", ["mcpeak-no-such-command", "x"], 0x1eb3bc00 /* 6 vars */) = -1 ENOENT (No such file or directory)
+22    execve("/usr/local/bin/mcpeak-no-such-command", ["mcpeak-no-such-command", "x"], 0x1eb3bc00 /* 6 vars */) = -1 ENOENT (No such file or directory)
+22    execve("/usr/sbin/mcpeak-no-such-command", ["mcpeak-no-such-command", "x"], 0x1eb3bc00 /* 6 vars */) = -1 ENOENT (No such file or directory)
+22    execve("/usr/bin/mcpeak-no-such-command", ["mcpeak-no-such-command", "x"], 0x1eb3bc00 /* 6 vars */) = -1 ENOENT (No such file or directory)
+22    execve("/sbin/mcpeak-no-such-command", ["mcpeak-no-such-command", "x"], 0x1eb3bc00 /* 6 vars */) = -1 ENOENT (No such file or directory)
+22    execve("/bin/mcpeak-no-such-command", ["mcpeak-no-such-command", "x"], 0x1eb3bc00 /* 6 vars */) = -1 ENOENT (No such file or directory)
+10    --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=22, si_uid=1000, si_status=127, si_utime=0, si_stime=0} ---
+10    openat(AT_FDCWD, "/dev/null", O_RDONLY|O_CLOEXEC) = 22
+23    openat(AT_FDCWD, "/etc/ld.so.cache", O_RDONLY|O_CLOEXEC) = 3
+23    openat(AT_FDCWD, "/lib/aarch64-linux-gnu/libc.so.6", O_RDONLY|O_CLOEXEC) = 3
+10    --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=23, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---

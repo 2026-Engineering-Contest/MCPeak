@@ -3,7 +3,14 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { renderReport } from "../src/report.js";
-import type { AuditReport, Finding, Severity } from "../src/types.js";
+import type {
+  AuditReport,
+  Finding,
+  SandboxNetworkMode,
+  SandboxReport,
+  SandboxUnavailableCode,
+  Severity,
+} from "../src/types.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const expectedDir = join(here, "fixtures", "expected");
@@ -174,7 +181,7 @@ describe("renderReport", () => {
   it("마지막 두 줄이 고정 문장이다", () => {
     const tail = [
       "이 검사는 설명문의 문형과 프로토콜 표면만 봅니다. 바꿔 말한 지시와 서버 코드의 실제 행위는 보지 못합니다.",
-      "행위 관측(Docker 격리)은 mcpeak audit --sandbox 로 켭니다. (단계 2에서 제공)",
+      "행위 관측(Docker 격리)은 mcpeak audit --sandbox 로 켭니다.",
     ];
     for (const r of [report(), loadSample()]) {
       const text = renderReport(r);
@@ -213,5 +220,199 @@ describe("renderReport", () => {
 
     const readonly = renderReport(report({ probe: "readonly", probedTools: ["a"] })).split("\n");
     expect(readonly[2]).toBe("호출 정책 readonly · 호출한 도구 1개");
+  });
+});
+
+const RAN: Extract<SandboxReport, { status: "ran" }> = {
+  status: "ran",
+  backend: "docker",
+  image: "mcpeak-audit-sandbox:0123456789ab",
+  network: "live",
+  compareHost: false,
+  callCount: 7,
+  declaredHosts: ["api.example.net", "registry.npmjs.org"],
+  requests: [],
+};
+
+const STAGE_ONE_TAIL = [
+  "이 검사는 설명문의 문형과 프로토콜 표면만 봅니다. 바꿔 말한 지시와 서버 코드의 실제 행위는 보지 못합니다.",
+  "행위 관측(Docker 격리)은 mcpeak audit --sandbox 로 켭니다.",
+];
+
+function loadSandboxSample(): AuditReport {
+  return JSON.parse(readFileSync(join(expectedDir, "report.sandbox.json"), "utf8")) as AuditReport;
+}
+
+describe("renderReport: 격리", () => {
+  it.each<[SandboxNetworkMode, string]>([
+    ["live", "가로채기"],
+    ["record", "가로채기(녹화)"],
+    ["replay", "재생(네트워크 없음)"],
+  ])("ran 이면 둘째 줄이 §6.1 의 격리 실행 문장이다(네트워크 세 값 각각): %s", (network, label) => {
+    const lines = renderReport(report({ sandbox: { ...RAN, network } })).split("\n");
+    expect(lines[0]).toBe("mcpeak audit 결과");
+    expect(lines[1]).toBe(
+      `격리 실행: Docker 컨테이너 안에서 서버를 띄웠습니다 · 네트워크 ${label} · 이미지 mcpeak-audit-sandbox:0123456789ab`,
+    );
+    expect(lines[2]).toBe(
+      "서버 demo 1.0.0 · 도구 3개 · 프롬프트 0개 · 리소스 0개 · instructions 없음",
+    );
+  });
+
+  it.each<[SandboxUnavailableCode, string, string]>([
+    [
+      "docker-missing",
+      "",
+      "행위 관측 안 함: Docker 를 찾을 수 없습니다. 서버는 격리 없이 이 머신에서 실행됐습니다. (설치: https://docs.docker.com/get-docker/)",
+    ],
+    [
+      "daemon-down",
+      "",
+      "행위 관측 안 함: Docker 데몬이 응답하지 않습니다. 서버는 격리 없이 이 머신에서 실행됐습니다. (Docker Desktop 을 켜거나 dockerd 를 시작한 뒤 다시 실행하세요)",
+    ],
+    [
+      "unsupported-command",
+      "python3",
+      "행위 관측 안 함: 격리 이미지가 실행할 수 없습니다: 'python3'. 격리 이미지는 node, npx, npm 만 실행합니다. 서버는 격리 없이 이 머신에서 실행됐습니다.",
+    ],
+    [
+      "image-build-failed",
+      "failed to resolve source metadata for docker.io/library/node",
+      "행위 관측 안 함: 격리 이미지를 만들지 못했습니다: failed to resolve source metadata for docker.io/library/node. 서버는 격리 없이 이 머신에서 실행됐습니다. (docker build 가 되는지, 네트워크가 되는지 확인하세요)",
+    ],
+    [
+      "start-failed",
+      "Conflict. The container name <container> is already in use",
+      "행위 관측 안 함: 격리 컨테이너를 띄우지 못했습니다: Conflict. The container name <container> is already in use. 서버는 격리 없이 이 머신에서 실행됐습니다.",
+    ],
+  ])(
+    "unavailable 다섯 code 각각의 둘째 줄이 §6.1 표와 글자 단위로 같다: %s",
+    (code, detail, expected) => {
+      const text = renderReport(
+        report({ sandbox: { status: "unavailable", reason: { code, detail } } }),
+      );
+      const lines = text.split("\n");
+      expect(lines[1]).toBe(expected);
+      expect(lines[2]).toBe(
+        "서버 demo 1.0.0 · 도구 3개 · 프롬프트 0개 · 리소스 0개 · instructions 없음",
+      );
+      // 격리가 안 켜졌으면 꼬리와 호출 정책 줄은 단계 1 과 같다.
+      expect(lines[3]).toBe("호출 정책 readonly · 호출한 도구 0개");
+      expect(text.trimEnd().split("\n").slice(-2)).toEqual(STAGE_ONE_TAIL);
+      expect(text).not.toContain("선언된 목적지");
+    },
+  );
+
+  it("unavailable 의 detail 에 든 제어 문자는 표기로 바뀐다", () => {
+    const esc = String.fromCodePoint(0x1b);
+    const text = renderReport(
+      report({
+        sandbox: {
+          status: "unavailable",
+          reason: { code: "start-failed", detail: `boom${esc}[2K` },
+        },
+      }),
+    );
+    expect(text).not.toContain(esc);
+    expect(text.split("\n")[1]).toContain("boom<U+001B>[2K");
+  });
+
+  it("ran 이면 꼬리 다섯 줄이고 compareHost 에 따라 둘째 줄이 갈린다", () => {
+    const first =
+      "격리 실행은 한 번의 관측입니다. 호출 횟수나 시간이 지나야 달라지는 행동은 보지 못합니다.";
+    const rest = [
+      "HTTP 가 아닌 접속은 목적지 주소와 포트만 기록했고 내용은 보지 못했습니다.",
+      "관측되지 않았다는 것은 없다는 증명이 아닙니다. 암호화하거나 요약해서 내보낸 값은 이 검사가 알아보지 못합니다.",
+      "사전 점검은 피해를 0 으로 만들지 않습니다. 조용히 몇 달 갈 일을 첫 시도에서 드러내는 것이 목적입니다. 등록한 뒤에는 --baseline 비교를 이어 가세요.",
+    ];
+    const tail = (compareHost: boolean) => {
+      const text = renderReport(report({ sandbox: { ...RAN, compareHost } }));
+      expect(text.endsWith("\n")).toBe(true);
+      const lines = text.trimEnd().split("\n");
+      // 꼬리 앞은 빈 줄이다.
+      expect(lines.at(-6)).toBe("");
+      return lines.slice(-5);
+    };
+    expect(tail(false)).toEqual([
+      first,
+      "컨테이너라는 흔적(/.dockerenv, cgroup)은 지우지 못했습니다. 격리를 알아채고 얌전히 구는 서버는 --compare-host 로 안팎의 도구 표면을 비교해 보세요.",
+      ...rest,
+    ]);
+    expect(tail(true)).toEqual([
+      first,
+      "컨테이너라는 흔적(/.dockerenv, cgroup)은 지우지 못했습니다. 안팎의 도구 표면은 비교했지만 호출 뒤의 행동까지 같다는 뜻은 아닙니다.",
+      ...rest,
+    ]);
+    // 단계 1 의 꼬리 두 줄은 없다.
+    const text = renderReport(report({ sandbox: RAN }));
+    for (const line of STAGE_ONE_TAIL) expect(text).not.toContain(line);
+  });
+
+  it("ran 이면 서버 줄 아래에 선언된 목적지 줄이 있다", () => {
+    const lines = renderReport(report({ sandbox: RAN })).split("\n");
+    expect(lines[3]).toBe(
+      "선언된 목적지 2곳: api.example.net, registry.npmjs.org (도구 설명·README·package.json·--allow-host 에서 읽음)",
+    );
+    expect(lines[4]).toBe("호출 정책 readonly · 호출한 도구 0개");
+    expect(lines[5]).toBe("");
+  });
+
+  it("ran 이고 호출 정책이 all 이면 꼬리가 격리 문장과 호출 횟수다", () => {
+    const lines = renderReport(
+      report({ probe: "all", probedTools: ["a", "b", "c"], sandbox: RAN }),
+    ).split("\n");
+    expect(lines[4]).toBe(
+      "호출 정책 all · 호출한 도구 3개 (격리 안이라 상태를 바꾸는 도구도 호출했습니다. 호출 7회)",
+    );
+    // 격리가 안 켜진 실행은 all 이어도 단계 1 의 꼬리다.
+    const unavailable = renderReport(
+      report({
+        probe: "all",
+        probedTools: ["a"],
+        sandbox: { status: "unavailable", reason: { code: "daemon-down", detail: "" } },
+      }),
+    ).split("\n");
+    expect(unavailable[3]).toBe(
+      "호출 정책 all · 호출한 도구 1개 (상태를 바꾸는 도구도 호출했습니다)",
+    );
+  });
+
+  it("sandbox 가 없으면 마지막 줄이 '(단계 2에서 제공)' 없는 문장이다", () => {
+    const text = renderReport(report());
+    expect(text.trimEnd().split("\n").slice(-2)).toEqual(STAGE_ONE_TAIL);
+    expect(text).not.toContain("단계 2에서 제공");
+    expect(text.split("\n")[1]).toBe(
+      "서버 demo 1.0.0 · 도구 3개 · 프롬프트 0개 · 리소스 0개 · instructions 없음",
+    );
+  });
+
+  it("call 위치가 \"도구 '<name>' 호출(<callId>) 중\" 으로 나온다", () => {
+    const zwsp = String.fromCodePoint(0x200b);
+    const finding = (toolIndex: number, toolName: string, callId: string): Finding => ({
+      ruleId: "behavior/child-process",
+      severity: "low",
+      location: { kind: "call", toolIndex, toolName, callId, path: "" },
+      message: "자식 프로세스를 띄웠습니다: du -sk .",
+      fix: "f",
+      evidence: ["du -sk .", `호출: ${callId}`],
+    });
+    const text = renderReport(
+      report({
+        findings: [
+          finding(1, "disk_usage", "placeholder"),
+          finding(0, `read${zwsp}note`, "path:traversal"),
+        ],
+        sandbox: RAN,
+      }),
+    );
+    expect(headLines(text)).toEqual([
+      "[낮음] behavior/child-process · 도구 'read<U+200B>note' 호출(path:traversal) 중",
+      "[낮음] behavior/child-process · 도구 'disk_usage' 호출(placeholder) 중",
+    ]);
+  });
+
+  it("fixtures/expected/report.sandbox.txt 와 글자 단위로 같다", () => {
+    const expected = readFileSync(join(expectedDir, "report.sandbox.txt"), "utf8");
+    expect(renderReport(loadSandboxSample())).toBe(expected);
   });
 });

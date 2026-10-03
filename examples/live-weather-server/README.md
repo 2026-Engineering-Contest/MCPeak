@@ -26,6 +26,18 @@ node examples/live-weather-server/server.mjs
 
 외부 API 는 전부 무료·무인증이다. 로컬 툴은 네트워크 없이 돈다.
 
+## 외부 API
+
+`server.mjs` 가 부르는 곳은 아래 넷이 전부다. `mcpeak audit --sandbox` 는 문서에 적힌 주소를 서버가
+선언한 목적지로 읽으므로, 여기 적힌 호스트로 가는 요청은 "선언 밖 목적지" 로 잡히지 않는다.
+
+| 호스트 | 주소 | 쓰는 툴 |
+|---|---|---|
+| `api.open-meteo.com` | https://api.open-meteo.com/v1/forecast | `get_forecast` |
+| `geocoding-api.open-meteo.com` | https://geocoding-api.open-meteo.com/v1/search | `get_forecast`, `search_city` |
+| `earthquake.usgs.gov` | https://earthquake.usgs.gov/fdsnws/event/1/query | `list_recent_quakes` |
+| `api.frankfurter.dev` | https://api.frankfurter.dev/v1/latest | `convert_currency` |
+
 ## 일부러 둔 결함 한 곳
 
 `mcpeak test` 가 잡고 `mcpeak repair` 가 원인을 짚는 장면을 위한 것이다. `server.mjs` 안에

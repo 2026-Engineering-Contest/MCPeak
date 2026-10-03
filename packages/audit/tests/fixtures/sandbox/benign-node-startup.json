@@ -1,0 +1,3632 @@
+{
+  "observation": {
+    "events": [
+      {
+        "kind": "exec",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/usr/local/bin/node",
+        "argv": ["node", "examples/weather-server/server.mjs"],
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/etc/ld.so.cache",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/lib/aarch64-linux-gnu/libdl.so.2",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/lib/aarch64-linux-gnu/libstdc++.so.6",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/lib/aarch64-linux-gnu/libm.so.6",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/lib/aarch64-linux-gnu/libgcc_s.so.1",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/lib/aarch64-linux-gnu/libpthread.so.0",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/lib/aarch64-linux-gnu/libc.so.6",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/etc/ssl/openssl.cnf",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/proc/version_signature",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/proc/self/cgroup",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/sys/fs/cgroup/memory.max",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/sys/fs/cgroup/memory.high",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/proc/meminfo",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/proc/self/maps",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/examples/weather-server/server.mjs",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/examples/weather-server/package.json",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/examples/weather-server/node_modules/@modelcontextprotocol/sdk/package.json",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/@modelcontextprotocol+sdk@1.30.0_zod@4.4.3/node_modules/@modelcontextprotocol/sdk/dist/esm/server/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/@modelcontextprotocol+sdk@1.30.0_zod@4.4.3/node_modules/@modelcontextprotocol/sdk/dist/esm/package.json",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/@modelcontextprotocol+sdk@1.30.0_zod@4.4.3/node_modules/@modelcontextprotocol/sdk/dist/esm/server/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/@modelcontextprotocol+sdk@1.30.0_zod@4.4.3/node_modules/@modelcontextprotocol/sdk/dist/esm/server/index.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/@modelcontextprotocol+sdk@1.30.0_zod@4.4.3/node_modules/@modelcontextprotocol/sdk/dist/esm/server/stdio.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/@modelcontextprotocol+sdk@1.30.0_zod@4.4.3/node_modules/@modelcontextprotocol/sdk/dist/esm/types.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/@modelcontextprotocol+sdk@1.30.0_zod@4.4.3/node_modules/@modelcontextprotocol/sdk/dist/esm/shared/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/@modelcontextprotocol+sdk@1.30.0_zod@4.4.3/node_modules/@modelcontextprotocol/sdk/dist/esm/validation/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/@modelcontextprotocol+sdk@1.30.0_zod@4.4.3/node_modules/@modelcontextprotocol/sdk/dist/esm/server/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/@modelcontextprotocol+sdk@1.30.0_zod@4.4.3/node_modules/@modelcontextprotocol/sdk/dist/esm/experimental/tasks/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/@modelcontextprotocol+sdk@1.30.0_zod@4.4.3/node_modules/@modelcontextprotocol/sdk/dist/esm/experimental/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/@modelcontextprotocol+sdk@1.30.0_zod@4.4.3/node_modules/@modelcontextprotocol/sdk/dist/esm/experimental/tasks/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/@modelcontextprotocol+sdk@1.30.0_zod@4.4.3/node_modules/@modelcontextprotocol/sdk/dist/esm/experimental/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/@modelcontextprotocol+sdk@1.30.0_zod@4.4.3/node_modules/@modelcontextprotocol/sdk/dist/esm/shared/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/@modelcontextprotocol+sdk@1.30.0_zod@4.4.3/node_modules/zod/package.json",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/package.json",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/@modelcontextprotocol+sdk@1.30.0_zod@4.4.3/node_modules/@modelcontextprotocol/sdk/dist/esm/shared/protocol.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/@modelcontextprotocol+sdk@1.30.0_zod@4.4.3/node_modules/@modelcontextprotocol/sdk/dist/esm/validation/ajv-provider.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/@modelcontextprotocol+sdk@1.30.0_zod@4.4.3/node_modules/@modelcontextprotocol/sdk/dist/esm/server/zod-compat.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/@modelcontextprotocol+sdk@1.30.0_zod@4.4.3/node_modules/@modelcontextprotocol/sdk/dist/esm/experimental/tasks/server.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/@modelcontextprotocol+sdk@1.30.0_zod@4.4.3/node_modules/@modelcontextprotocol/sdk/dist/esm/experimental/tasks/helpers.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/dev/null",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/@modelcontextprotocol+sdk@1.30.0_zod@4.4.3/node_modules/@modelcontextprotocol/sdk/dist/esm/shared/stdio.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/index.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/@modelcontextprotocol+sdk@1.30.0_zod@4.4.3/node_modules/@modelcontextprotocol/sdk/dist/esm/server/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/@modelcontextprotocol+sdk@1.30.0_zod@4.4.3/node_modules/@modelcontextprotocol/sdk/dist/esm/experimental/tasks/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/@modelcontextprotocol+sdk@1.30.0_zod@4.4.3/node_modules/@modelcontextprotocol/sdk/dist/esm/experimental/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/@modelcontextprotocol+sdk@1.30.0_zod@4.4.3/node_modules/@modelcontextprotocol/sdk/dist/esm/server/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/@modelcontextprotocol+sdk@1.30.0_zod@4.4.3/node_modules/@modelcontextprotocol/sdk/dist/esm/validation/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/@modelcontextprotocol+sdk@1.30.0_zod@4.4.3/node_modules/ajv/package.json",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/@modelcontextprotocol+sdk@1.30.0_zod@4.4.3/node_modules/ajv/dist/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/package.json",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/proc/sys/vm/overcommit_memory",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/@modelcontextprotocol+sdk@1.30.0_zod@4.4.3/node_modules/@modelcontextprotocol/sdk/dist/esm/validation/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/@modelcontextprotocol+sdk@1.30.0_zod@4.4.3/node_modules/ajv-formats/package.json",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/@modelcontextprotocol+sdk@1.30.0_zod@4.4.3/node_modules/ajv-formats/dist/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv-formats@3.0.1_ajv@8.20.0/node_modules/ajv-formats/dist/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv-formats@3.0.1_ajv@8.20.0/node_modules/ajv-formats/package.json",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/@modelcontextprotocol+sdk@1.30.0_zod@4.4.3/node_modules/@modelcontextprotocol/sdk/dist/esm/server/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v3/package.json",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/@modelcontextprotocol+sdk@1.30.0_zod@4.4.3/node_modules/@modelcontextprotocol/sdk/dist/esm/server/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4-mini/package.json",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/classic/package.json",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/@modelcontextprotocol+sdk@1.30.0_zod@4.4.3/node_modules/@modelcontextprotocol/sdk/dist/esm/experimental/tasks/interfaces.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/@modelcontextprotocol+sdk@1.30.0_zod@4.4.3/node_modules/@modelcontextprotocol/sdk/dist/esm/server/zod-json-schema-compat.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/ajv.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv-formats@3.0.1_ajv@8.20.0/node_modules/ajv-formats/dist/index.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv-formats@3.0.1_ajv@8.20.0/node_modules/ajv-formats/dist/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v3/index.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4-mini/index.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/classic/index.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/@modelcontextprotocol+sdk@1.30.0_zod@4.4.3/node_modules/@modelcontextprotocol/sdk/dist/esm/server/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/@modelcontextprotocol+sdk@1.30.0_zod@4.4.3/node_modules/@modelcontextprotocol/sdk/dist/esm/server/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/@modelcontextprotocol+sdk@1.30.0_zod@4.4.3/node_modules/@modelcontextprotocol/sdk/dist/esm/server/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/@modelcontextprotocol+sdk@1.30.0_zod@4.4.3/node_modules/zod-to-json-schema/package.json",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/package.json",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/mini/package.json",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/index.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v3/external.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/mini/external.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/classic/external.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v3/helpers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v3/helpers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v3/helpers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/core/package.json",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/locales/package.json",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/Options.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/Refs.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/errorMessages.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/getRelativePath.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parseDef.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parseTypes.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/any.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/array.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/bigint.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/boolean.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/branded.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/catch.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/date.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/default.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/effects.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/enum.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/intersection.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/literal.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/map.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/nativeEnum.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/never.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/null.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/nullable.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/number.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/object.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/optional.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/pipeline.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/promise.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/readonly.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/record.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/set.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/string.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/tuple.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/undefined.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/union.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/unknown.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/selectParser.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/zodToJsonSchema.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v3/errors.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v3/helpers/parseUtil.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v3/helpers/typeAliases.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v3/helpers/util.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v3/types.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v3/ZodError.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/core/index.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/mini/parse.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/mini/schemas.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/mini/checks.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/core/json-schema-processors.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/locales/index.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/mini/iso.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/mini/coerce.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/classic/schemas.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/classic/checks.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/classic/errors.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/classic/parse.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/classic/compat.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/locales/en.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/classic/from-json-schema.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/classic/iso.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/classic/coerce.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod/package.json",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod-to-json-schema@3.25.2_zod@4.4.3/node_modules/zod-to-json-schema/dist/esm/parsers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v3/locales/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v3/locales/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v3/helpers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v3/helpers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v3/helpers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v3/helpers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v3/locales/en.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v3/helpers/errorUtil.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/core/core.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/core/parse.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/core/errors.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/core/schemas.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/core/checks.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/core/versions.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/core/util.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/core/regexes.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/core/registries.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/core/doc.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/core/api.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/core/to-json-schema.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/core/json-schema-generator.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/core/json-schema.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/locales/ar.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/locales/az.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/locales/be.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/locales/bg.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/locales/ca.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/locales/cs.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/locales/da.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/locales/de.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/locales/el.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/locales/eo.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/locales/es.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/locales/fa.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/locales/fi.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/locales/fr.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/locales/fr-CA.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/locales/he.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/locales/hr.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/locales/hu.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/locales/hy.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/locales/id.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/locales/is.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/locales/it.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/locales/ja.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/locales/ka.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/locales/kh.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/locales/km.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/locales/ko.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/locales/lt.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/locales/mk.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/locales/ms.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/locales/nl.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/locales/no.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/locales/ota.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/locales/ps.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/locales/pl.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/locales/pt.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/locales/ro.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/locales/ru.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/locales/sl.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/locales/sv.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/locales/ta.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/locales/th.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/locales/tr.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/locales/ua.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/locales/uk.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/locales/ur.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/locales/uz.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/locales/vi.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/locales/zh-CN.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/locales/zh-TW.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v4/locales/yo.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/zod@4.4.3/node_modules/zod/v3/helpers/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/core.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/compile/validate/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/compile/validate/index.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/compile/validate/boolSchema.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/compile/errors.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/compile/codegen/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/compile/codegen/index.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/compile/codegen/code.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/compile/codegen/scope.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/compile/util.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/compile/names.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/compile/codegen/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/compile/validate/dataType.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/compile/rules.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/compile/validate/applicability.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/compile/validate/defaults.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/compile/validate/keyword.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/vocabularies/code.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/compile/codegen/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/compile/validate/subschema.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/compile/resolve.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/fast-deep-equal/package.json",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/fast-deep-equal@3.1.3/node_modules/fast-deep-equal/package.json",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/fast-deep-equal@3.1.3/node_modules/fast-deep-equal/index.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/json-schema-traverse/package.json",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/json-schema-traverse@1.0.0/node_modules/json-schema-traverse/package.json",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/json-schema-traverse@1.0.0/node_modules/json-schema-traverse/index.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/compile/codegen/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/runtime/validation_error.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/compile/ref_error.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/compile/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/compile/index.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/compile/validate/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/refs/data.json",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/runtime/uri.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/fast-uri/package.json",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/fast-uri@3.1.4/node_modules/fast-uri/package.json",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/fast-uri@3.1.4/node_modules/fast-uri/index.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/fast-uri@3.1.4/node_modules/fast-uri/lib/utils.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/fast-uri@3.1.4/node_modules/fast-uri/lib/schemes.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/vocabularies/draft7.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/vocabularies/core/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/vocabularies/core/index.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/vocabularies/core/id.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/vocabularies/core/ref.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/compile/codegen/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/compile/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/vocabularies/validation/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/vocabularies/validation/index.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/vocabularies/validation/limitNumber.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/compile/codegen/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/vocabularies/validation/multipleOf.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/vocabularies/validation/limitLength.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/runtime/ucs2length.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/vocabularies/validation/pattern.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/vocabularies/validation/limitProperties.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/vocabularies/validation/required.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/vocabularies/validation/limitItems.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/vocabularies/validation/uniqueItems.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/runtime/equal.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/vocabularies/validation/const.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/vocabularies/validation/enum.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/vocabularies/applicator/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/vocabularies/applicator/index.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/vocabularies/applicator/additionalItems.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/compile/codegen/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/vocabularies/applicator/prefixItems.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/vocabularies/applicator/items.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/vocabularies/applicator/items2020.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/vocabularies/applicator/contains.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/vocabularies/applicator/dependencies.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/vocabularies/applicator/propertyNames.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/vocabularies/applicator/additionalProperties.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/vocabularies/applicator/properties.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/compile/validate/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/vocabularies/applicator/patternProperties.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/vocabularies/applicator/not.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/vocabularies/applicator/anyOf.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/vocabularies/applicator/oneOf.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/vocabularies/applicator/allOf.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/vocabularies/applicator/if.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/vocabularies/applicator/thenElse.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/vocabularies/format/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/vocabularies/format/index.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/vocabularies/format/format.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/compile/codegen/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/vocabularies/metadata.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/vocabularies/discriminator/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/vocabularies/discriminator/index.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/compile/codegen/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/vocabularies/discriminator/types.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/compile/package.json",
+        "write": false,
+        "result": "missing"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv/dist/refs/json-schema-draft-07.json",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv-formats@3.0.1_ajv@8.20.0/node_modules/ajv-formats/dist/formats.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv-formats@3.0.1_ajv@8.20.0/node_modules/ajv-formats/dist/limit.js",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv-formats@3.0.1_ajv@8.20.0/node_modules/ajv/package.json",
+        "write": false,
+        "result": "ok"
+      },
+      {
+        "kind": "open",
+        "phase": {
+          "kind": "start"
+        },
+        "path": "/workspace/node_modules/.pnpm/ajv-formats@3.0.1_ajv@8.20.0/node_modules/ajv/dist/compile/codegen/package.json",
+        "write": false,
+        "result": "missing"
+      }
+    ],
+    "requests": [],
+    "tlsRejections": [],
+    "dnsNames": [],
+    "traceShrank": false,
+    "gaps": []
+  },
+  "tools": [
+    {
+      "name": "get_weather",
+      "description": "지정한 도시의 현재 날씨를 반환한다.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "city": {
+            "type": "string",
+            "description": "도시 이름"
+          }
+        },
+        "required": ["city"]
+      }
+    },
+    {
+      "name": "add",
+      "description": "두 수를 더한다.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "a": {
+            "type": "number"
+          },
+          "b": {
+            "type": "number"
+          }
+        },
+        "required": ["a", "b"]
+      }
+    }
+  ],
+  "calls": [
+    {
+      "toolIndex": 0,
+      "toolName": "get_weather",
+      "callId": "placeholder",
+      "outcome": "ok"
+    },
+    {
+      "toolIndex": 1,
+      "toolName": "add",
+      "callId": "placeholder",
+      "outcome": "ok"
+    }
+  ],
+  "home": {
+    "hostname": "jiwoo-laptop",
+    "files": [
+      {
+        "path": ".aws/credentials",
+        "content": "[default]\naws_secret_access_key = 0123456789abcdef0123456789abcdef\n",
+        "mode": 420,
+        "canary": "0123456789abcdef0123456789abcdef"
+      },
+      {
+        "path": ".ssh/id_ed25519",
+        "content": "fedcba9876543210fedcba9876543210\n",
+        "mode": 420,
+        "canary": "fedcba9876543210fedcba9876543210"
+      },
+      {
+        "path": ".gitconfig",
+        "content": "[user]\n\tname = Jiwoo Kim\n",
+        "mode": 420
+      }
+    ]
+  },
+  "resultStrings": [],
+  "exfiltrated": [],
+  "mountRoot": "/workspace",
+  "command": "node",
+  "expect": {
+    "count": 0
+  }
+}

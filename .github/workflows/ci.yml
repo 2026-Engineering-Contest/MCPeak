@@ -119,6 +119,8 @@ jobs:
 
       - name: Test
         if: env.CODE == 'true'
+        env:
+          MCPEAK_SKIP_DOCKER_E2E: "1"
         run: pnpm test
 
       # 문서 PR 에서 이 잡이 왜 아무것도 안 했는지 로그에 남긴다. 빈 잡이 초록으로 끝나면
@@ -175,6 +177,11 @@ jobs:
         env:
           MCPEAK_REQUIRE_E2E: "1"
         run: pnpm vitest run packages/cli/tests/fetch-server-e2e.test.ts
+
+      - name: Sandbox E2E (Docker)
+        env:
+          MCPEAK_REQUIRE_DOCKER_E2E: "1"
+        run: pnpm vitest run packages/cli/tests/audit-sandbox-e2e.test.ts
 
   build:
     # 빌드만 별도 잡으로 분리한다.

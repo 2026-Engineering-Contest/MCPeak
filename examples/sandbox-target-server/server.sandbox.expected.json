@@ -1,0 +1,122 @@
+{
+  "exitCode": 2,
+  "counts": {
+    "high": 4,
+    "medium": 1,
+    "low": 1,
+    "info": 2
+  },
+  "findings": [
+    {
+      "ruleId": "surface/environment-dependent",
+      "severity": "high",
+      "location": {
+        "kind": "surface",
+        "path": ""
+      },
+      "message": "격리 안과 이 머신에서 도구 'ping' 의 description 가 다릅니다",
+      "fix": "서버가 실행 환경을 보고 다른 도구 정의를 내줍니다. 점검을 피하려는 행동입니다. 등록하지 마세요.",
+      "evidence": ["ping", "description"]
+    },
+    {
+      "ruleId": "behavior/file-canary-read",
+      "severity": "high",
+      "location": {
+        "kind": "call",
+        "toolIndex": 0,
+        "toolName": "read_note",
+        "callId": "path:traversal",
+        "path": ""
+      },
+      "message": "자격 증명 파일 ~/.aws/credentials 를 열었고 그 내용이 호출 응답에 나왔습니다",
+      "fix": "서버가 자격 증명을 읽어 모델에게 돌려줍니다. 받는 경로를 허용 디렉터리 안으로 좁히지 않았다면 등록하지 마세요.",
+      "evidence": ["~/.aws/credentials", "호출: path:traversal"]
+    },
+    {
+      "ruleId": "schema/over-broad",
+      "severity": "info",
+      "location": {
+        "kind": "tool",
+        "toolIndex": 0,
+        "toolName": "read_note",
+        "path": "inputSchema.properties.path"
+      },
+      "message": "입력 제약이 없는 경로 인자입니다: 'path'",
+      "fix": "명령·경로·URL 은 enum·pattern 으로 좁히세요. 주입(CVE-2025-68144 류)의 입구입니다.",
+      "evidence": ["path"]
+    },
+    {
+      "ruleId": "behavior/internal-address",
+      "severity": "high",
+      "location": {
+        "kind": "call",
+        "toolIndex": 1,
+        "toolName": "fetch_status",
+        "callId": "url:metadata",
+        "path": ""
+      },
+      "message": "내부 주소 169.254.169.254:80 에 접속을 시도했습니다",
+      "fix": "클라우드 메타데이터나 사내망에 닿으려는 모양입니다. 도구가 받는 주소를 서버가 검증하는지 확인하세요.",
+      "evidence": ["127.0.0.1:8080", "호출: url:metadata, url:loopback", "169.254.169.254:80"]
+    },
+    {
+      "ruleId": "schema/over-broad",
+      "severity": "info",
+      "location": {
+        "kind": "tool",
+        "toolIndex": 1,
+        "toolName": "fetch_status",
+        "path": "inputSchema.properties.url"
+      },
+      "message": "입력 제약이 없는 URL 인자입니다: 'url'",
+      "fix": "명령·경로·URL 은 enum·pattern 으로 좁히세요. 주입(CVE-2025-68144 류)의 입구입니다.",
+      "evidence": ["url"]
+    },
+    {
+      "ruleId": "behavior/child-process",
+      "severity": "low",
+      "location": {
+        "kind": "call",
+        "toolIndex": 2,
+        "toolName": "disk_usage",
+        "callId": "placeholder",
+        "path": ""
+      },
+      "message": "자식 프로세스를 띄웠습니다: du -sk /tmp",
+      "fix": "셸이나 다운로드 도구를 띄우는 서버는 명령 주입의 입구입니다. 이 실행이 도구의 기능인지 확인하세요.",
+      "evidence": ["du -sk /tmp", "호출: placeholder"]
+    },
+    {
+      "ruleId": "network/canary-exfiltration",
+      "severity": "high",
+      "location": {
+        "kind": "call",
+        "toolIndex": 3,
+        "toolName": "sync_settings",
+        "callId": "placeholder",
+        "path": ""
+      },
+      "message": "파일 ~/.cursor/mcp.json 에 심은 값이 collect.sandbox-target.example.net 로 가는 요청의 본문 에 실렸습니다 (raw 형에서 발견)",
+      "fix": "서버가 자격 증명을 밖으로 보냅니다. 등록하지 마세요.",
+      "evidence": [
+        "collect.sandbox-target.example.net <canary:~/.cursor/mcp.json>",
+        "호출: placeholder",
+        "요청의 본문: raw"
+      ]
+    },
+    {
+      "ruleId": "network/undeclared-destination",
+      "severity": "medium",
+      "location": {
+        "kind": "call",
+        "toolIndex": 3,
+        "toolName": "sync_settings",
+        "callId": "placeholder",
+        "path": ""
+      },
+      "message": "선언되지 않은 호스트 collect.sandbox-target.example.net 에 접속했습니다: POST /v1",
+      "fix": "서버 문서에 없는 목적지입니다. 의도된 접속이면 --allow-host collect.sandbox-target.example.net 로 선언하세요. 아니면 등록하지 마세요.",
+      "evidence": ["collect.sandbox-target.example.net", "호출: placeholder"]
+    }
+  ]
+}

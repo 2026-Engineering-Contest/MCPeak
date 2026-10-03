@@ -9,6 +9,8 @@ import type {
   FileContent,
   PutFileRequest,
   ServerMeta,
+  SourceEditRequest,
+  SourceEditResponse,
   StartRunRequest,
   StartRunResponse,
 } from "../api-types.js";
@@ -30,6 +32,7 @@ import {
 } from "./files.js";
 import { resolveProjectPath } from "./paths.js";
 import type { RunIo, RunRegistry } from "./run-registry.js";
+import { planSourceEdits, resolveSourceFile } from "./source-edits.js";
 import { formatSseEvent, formatSseEvents, SSE_HEADERS } from "./sse.js";
 import { serveStatic } from "./static.js";
 import type { ExecuteFlowOverrides } from "./wiring.js";
@@ -156,6 +159,10 @@ export async function handleRequest(
   }
   if (method === "POST" && pathname === "/api/analyze/tokens") {
     await handleAnalyzeTokens(request, response, options.root, options.analyze ?? analyzeTokens);
+    return;
+  }
+  if (method === "POST" && pathname === "/api/analyze/source-edits") {
+    await handleSourceEdits(request, response, options.root);
     return;
   }
   if (method === "POST" && pathname === "/api/runs") {
@@ -423,6 +430,97 @@ async function handleAnalyzeTokens(
     return;
   }
   sendJson(response, 400, { error: outcome.error });
+}
+
+function isSourceEditRequest(value: unknown): value is SourceEditRequest {
+  if (typeof value !== "object" || value === null) return false;
+  const record = value as Record<string, unknown>;
+  if (!Array.isArray(record.argv)) return false;
+  if (!record.argv.every((item) => typeof item === "string")) return false;
+  if (!Array.isArray(record.edits)) return false;
+  const editsOk = record.edits.every((item: unknown) => {
+    if (typeof item !== "object" || item === null) return false;
+    const { tool, change } = item as Record<string, unknown>;
+    if (typeof tool !== "string" || typeof change !== "object" || change === null) return false;
+    const { kind, path } = change as Record<string, unknown>;
+    return typeof kind === "string" && typeof path === "string";
+  });
+  if (!editsOk) return false;
+  if (record.apply === undefined) return true;
+  if (typeof record.apply !== "object" || record.apply === null) return false;
+  return typeof (record.apply as Record<string, unknown>).baseMtimeMs === "number";
+}
+
+/**
+ * 토큰 탭의 "MCP 수정하기"(ADR-0106). 실행 명령에서 찾은 소스 파일 하나에 압축 변경을 글자 치환으로
+ * 반영한다. `apply` 가 없으면 계획만 돌려주고 파일을 쓰지 않는다. 쓸 때는 미리보기가 본 mtime 이
+ * 지금과 같아야 한다. 다르면 사용자가 확인한 diff 가 이미 낡은 것이라 쓰지 않고 새 미리보기를 준다.
+ */
+async function handleSourceEdits(
+  request: IncomingMessage,
+  response: ServerResponse,
+  root: string,
+): Promise<void> {
+  const body = await readJsonBody<unknown>(request);
+  if (body === undefined) {
+    sendJson(response, 400, { error: "본문이 올바른 JSON이 아닙니다." });
+    return;
+  }
+  if (!isSourceEditRequest(body)) {
+    sendJson(response, 400, { error: "요청 형식이 올바르지 않습니다." });
+    return;
+  }
+  const located = await resolveSourceFile(root, body.argv);
+  if (!located.ok) {
+    sendJson(response, 400, { error: located.error });
+    return;
+  }
+  const current = await readFileContent(root, located.absolute);
+  const plan = planSourceEdits(current.content, body.edits);
+  const preview: SourceEditResponse = {
+    file: located.relative,
+    mtimeMs: current.mtimeMs,
+    before: current.content,
+    after: plan.after,
+    results: plan.results,
+    readyCount: plan.readyCount,
+    applied: false,
+    conflict: false,
+  };
+  if (body.apply === undefined) {
+    sendJson(response, 200, preview);
+    return;
+  }
+  if (plan.readyCount === 0) {
+    sendJson(response, 400, { error: "적용할 수 있는 변경이 없습니다." });
+    return;
+  }
+  const conflict: SourceEditResponse = { ...preview, conflict: true };
+  if (body.apply.baseMtimeMs !== current.mtimeMs) {
+    sendJson(response, 200, conflict);
+    return;
+  }
+  try {
+    const written = await writeFileContent(located.absolute, plan.after, body.apply.baseMtimeMs);
+    if (!written.saved) {
+      // 읽은 뒤 쓰기 직전에 파일이 바뀌었다. 쓰지 않았으므로 위와 같은 충돌이다.
+      sendJson(response, 200, conflict);
+      return;
+    }
+    sendJson(response, 200, {
+      ...preview,
+      mtimeMs: written.mtimeMs,
+      before: plan.after,
+      applied: true,
+    } satisfies SourceEditResponse);
+  } catch (error) {
+    const message = writeErrorMessage(error);
+    if (message !== null) {
+      sendJson(response, 400, { error: message });
+      return;
+    }
+    throw error;
+  }
 }
 
 function isStartRunRequest(value: unknown): value is StartRunRequest {

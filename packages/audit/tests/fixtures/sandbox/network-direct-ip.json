@@ -1,0 +1,41 @@
+{
+  "declaredHosts": ["api.open-meteo.com", "registry.npmjs.org"],
+  "canaries": [
+    {
+      "origin": "env",
+      "name": "GITHUB_TOKEN",
+      "value": "MCPEAK_CANARY_00000000deadbeef"
+    },
+    {
+      "origin": "file",
+      "name": "~/.cursor/mcp.json",
+      "value": "0123456789abcdef0123456789abcdef"
+    }
+  ],
+  "mode": "live",
+  "observation": {
+    "events": [
+      {
+        "kind": "connect",
+        "phase": {
+          "kind": "call",
+          "toolIndex": 0,
+          "toolName": "sync_settings",
+          "callId": "placeholder"
+        },
+        "family": "inet",
+        "address": "203.0.113.7",
+        "port": 443
+      }
+    ],
+    "requests": [],
+    "tlsRejections": [],
+    "dnsNames": [],
+    "traceShrank": false,
+    "gaps": []
+  },
+  "expect": {
+    "ruleId": "network/direct-ip",
+    "count": 1
+  }
+}

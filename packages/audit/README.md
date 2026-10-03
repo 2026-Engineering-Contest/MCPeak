@@ -9,6 +9,7 @@ mcpeak audit --command npx --arg -y --arg some-mcp-server@1.2.3 --env GITHUB_TOK
 mcpeak audit --url https://mcp.example.com/mcp --header-env Authorization=MCP_TOKEN
 mcpeak audit --baseline ./server.audit.json -- node ./server.mjs   # 도구 정의 변경 추적
 mcpeak audit --json -- node ./server.mjs                           # 결과 JSON
+mcpeak audit --sandbox -- node ./server.mjs                        # Docker 격리 안에서 행위 관측
 ```
 
 종료 코드는 심각·주의 발견이 있으면 2, 없으면 0, 연결·입력 실패는 1 이다. 권한 조합 경고(`flow`)와
@@ -25,9 +26,67 @@ mcpeak audit --json -- node ./server.mjs                           # 결과 JSON
 | `protocol` | HTTP 평문, 무인증 수락, Origin 미검사, OAuth 메타데이터의 안전하지 않은 엔드포인트, URL 의 세션 식별자, 서버 발신 요청과 그 안의 지시, 감사 중 도구 목록 변경 |
 | `secret` | 카나리 env 의 유출, 전달한 실제 값의 반향, 설명의 비밀 이름 언급 |
 | `result` | 호출 응답의 모델 지시·보이지 않는 문자·ANSI·과대 크기·무응답 |
-| `surface` | `--baseline` 기준 파일과 지금 도구 정의의 차이 |
+| `surface` | `--baseline` 기준 파일과 지금 도구 정의의 차이. `--sandbox --compare-host` 면 격리 안과 이 머신의 도구 정의 차이도 본다 |
+| `behavior` | (`--sandbox`) 미끼 자격 증명 파일 읽기, 내부 주소 접속 시도, 자식 프로세스, readOnlyHint 와 어긋나는 쓰기·실행, 임시 디렉터리 밖 쓰기, 점검 기록 훼손 |
+| `network` | (`--sandbox`) 카나리가 실린 나가는 요청, 선언되지 않은 목적지, 내부 주소로 풀리는 이름, 인증서 고정, 이름 조회 없는 직접 IP 접속, 재생에 없는 요청 |
 
 규칙 하나하나의 조건과 문장은 `docs/plans/2026-10-03-audit-핵심-검사-구현계획.md` §3·§6 이 정본이다.
+`behavior`·`network` 와 격리 실행은 `docs/plans/2026-10-03-audit-샌드박스-행위-관측-구현계획.md` §3·§6 이 정본이다.
+
+## 격리 실행 (`--sandbox`)
+
+서버를 사용자 머신이 아니라 버려지는 Docker 컨테이너 안에서 띄우고, 모든 도구를 고정 페이로드로 불러 그동안
+연 파일, 띄운 프로세스, 시도한 접속, 나간 HTTP 요청을 기록한다.
+
+```
+mcpeak audit --sandbox -- node ./server.mjs
+mcpeak audit --sandbox --compare-host -- node ./server.mjs
+mcpeak audit --sandbox --allow-host api.example.com -- npx -y some-mcp-server@1.2.3
+mcpeak audit --sandbox --sandbox-session ./server.session.json --json -- node ./server.mjs   # 녹화
+mcpeak audit --sandbox --sandbox-replay ./server.session.json --json -- node ./server.mjs    # 재생
+```
+
+| 옵션 | 뜻 |
+|---|---|
+| `--sandbox` | 격리 실행을 켠다. `--url` 과 함께 쓸 수 없다 |
+| `--sandbox-session <path>` | 격리 안의 서버가 주고받은 HTTP 왕복을 이 파일에 녹화한다 |
+| `--sandbox-replay <path>` | 이 세션 파일로만 답한다. 상류에 접속하지 않는다. `--sandbox-session` 과 함께 쓸 수 없다 |
+| `--allow-host <host>` | 선언된 목적지에 더한다. 반복할 수 있다. 그 호스트와 하위 도메인이 선언으로 취급된다 |
+| `--compare-host` | 이 머신에서 **격리 없이** 서버를 한 번 더 띄워 `tools/list` 만 받고 격리 안의 표면과 비교한다 |
+| `--sandbox-mount <dir>` | 컨테이너에 읽기 전용으로 보일 호스트 디렉터리 |
+
+알아 둘 것:
+
+- **격리가 켜지지 않으면 서버는 이 머신에서 돈다.** Docker 가 없거나, 데몬이 응답하지 않거나, 명령이
+  `node`·`npx`·`npm` 이 아니면 격리 없이 같은 점검을 하고 리포트 둘째 줄이 "행위 관측 안 함: …" 으로 사유를
+  말한다. 종료 코드는 그 점검의 결과를 따른다.
+- **호출 정책의 기본값이 다르다.** 격리가 실제로 켜진 실행은 `all`(상태를 바꾸는 도구도 부른다), 켜지지 않은
+  실행은 `readonly` 다. `--probe` 를 직접 주면 어느 쪽에서도 그 값이다(ADR-0107).
+- **`--compare-host` 는 서버를 이 머신에서 격리 없이 한 번 띄운다.** 도구는 호출하지 않고 목록만 받지만,
+  서버의 시작 코드는 이 머신에서 실행된다. 격리를 알아채고 다른 도구 정의를 내는 서버를 잡는 옵션이고,
+  기본으로 꺼져 있다(ADR-0108).
+- **네트워크는 끊지 않고 가로챈다.** 컨테이너의 접속은 게이트웨이를 지나며 목적지·헤더·본문이 기록된다.
+  정상 서버는 그대로 응답을 받는다. 도구 설명·README·`package.json`·`--allow-host` 에 있는 호스트는 선언된
+  목적지라 기록(`info`)으로만 남고, 그 밖의 목적지는 발견이다. 컨테이너에는 호스트의 환경변수를 넘기지 않는다.
+- **컨테이너에 보이는 범위.** `--sandbox-mount` 를 주지 않으면 실행한 자리에서 위로 가장 가까운
+  `pnpm-workspace.yaml` 의 디렉터리, 없으면 가장 가까운 `.git` 의 디렉터리, 둘 다 없으면 실행한 자리다. 읽기
+  전용으로 호스트와 같은 경로에 붙는다. 홈 디렉터리와 `/` 는 거절한다. 서버 인자가 가리키는 파일이 그 범위
+  밖이면 거절한다.
+- **녹화와 재생.** 같은 세션 파일로 재생한 두 실행의 `--json` 은 바이트 단위로 같다. 녹화와 재생의 출력은
+  `sandbox.network` 값 하나만 다르다. 녹화에 없는 요청이 재생에서 나오면 `network/replay-miss` 다.
+- **정리.** 컨테이너·네트워크·볼륨에는 라벨 `mcpeak.audit=1` 이 붙고 실행이 끝나면 지운다. 지우지 못하면
+  리포트를 먼저 내고 남은 것과 직접 치우는 명령을 stderr 에 낸 뒤 종료 코드 1 로 끝난다. 점검 도중 프로세스를
+  강제로 끝내면(Ctrl-C 등) 지울 기회가 없어 남는다. 그때는 아래 명령으로 치운다.
+
+  ```
+  docker rm -f $(docker ps -aq --filter label=mcpeak.audit=1)
+  docker network prune -f --filter label=mcpeak.audit=1
+  docker volume rm $(docker volume ls -q --filter label=mcpeak.audit=1)
+  ```
+
+- 격리 이미지(`mcpeak-audit-sandbox:<내용 해시>`)는 첫 실행에서 만든다. 몇 분 걸릴 수 있다.
+
+예제는 `examples/sandbox-target-server`(일부러 취약하게 만든 표적)에 있다.
 
 ## 설계에서 정한 것
 
@@ -35,14 +94,21 @@ mcpeak audit --json -- node ./server.mjs                           # 결과 JSON
   밖으로 보내지 않는다. 같은 입력이면 `--json` 출력이 바이트까지 같다(ADR-0104).
 - **도구 호출은 기본이 읽기 전용이다.** `--probe readonly` 는 readOnlyHint 가 true 인 도구만 부른다.
   `all` 은 상태를 바꾸는 도구도 부르므로 버려도 되는 환경에서만 쓴다(ADR-0105).
+- **격리 안의 네트워크는 차단이 아니라 가로채기로 관측한다.** 격리가 실제로 켜진 실행만 모든 도구를
+  부른다(ADR-0107). 격리 흔적은 다 지우지 못하고, 그 자리는 안팎 표면 비교와 지속 비교가 메운다(ADR-0108).
 - **서버에 진짜 비밀을 주지 않는다.** stdio 서버를 띄울 때 흔한 비밀 이름에 카나리 값을 넣고, 응답에
   그 값이 나오면 유출로 본다. `--env` 로 명시한 이름만 실제 값을 넘긴다. 어느 값도 출력에 쓰지 않는다.
 
 ## 한계
 
-설명문의 문형과 프로토콜 표면만 본다. 바꿔 말한 지시와 서버 코드의 실제 행위는 보지 못하므로 발견 0 이
-안전하다는 뜻은 아니다. 공개 중독 벤치마크 MCPTox 에서 첫 실측 탐지율은 36.1% 다
-(`docs/benchmark/mcp-audit-recall/RESULTS.md`). 행위 관측(Docker 격리)은 단계 2 의 `--sandbox` 가 맡는다.
+`--sandbox` 없이는 설명문의 문형과 프로토콜 표면만 본다. 바꿔 말한 지시와 서버 코드의 실제 행위는 보지
+못하므로 발견 0 이 안전하다는 뜻은 아니다. 공개 중독 벤치마크 MCPTox 에서 첫 실측 탐지율은 36.1% 다
+(`docs/benchmark/mcp-audit-recall/RESULTS.md`).
+
+`--sandbox` 는 한 번의 실행에서 관측된 행위만 본다. 호출 횟수나 시간이 지나야 달라지는 행동, 암호화하거나
+요약해서 내보낸 값, HTTP 가 아닌 접속의 내용, 인증서 고정을 쓰는 접속의 내용은 보지 못한다. 컨테이너라는
+흔적(`/.dockerenv`, cgroup)은 지우지 못해서 격리를 알아채고 얌전히 구는 서버가 있을 수 있다. 관측되지
+않았다는 것은 없다는 증명이 아니다.
 
 ## 라이브러리로 쓰기
 

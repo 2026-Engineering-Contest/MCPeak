@@ -1,3 +1,4 @@
+import type { ToolDef } from "@mcpeak/core";
 import type { OptimizeOverlay } from "@mcpeak/optimize";
 
 /** 실행 도중 발생하는 이벤트 본문. RunRecord 경계에서 run별 id를 붙인다. */
@@ -207,7 +208,7 @@ export interface MockFileEntry {
  * 돌린다. 판정은 `mcpeak optimize` 와 같은 함수(`runOptimizeCommand`)가 한다(ADR-0046).
  *
  * `argv` 는 optimize 의 **대상 옵션만** 싣는다(`--command`/`--arg`/`--env` 또는 `--url`/`--header-env`).
- * `--out`·`--json` 은 싣지 않는다. 오버레이를 어디에 쓸지는 화면의 저장 버튼이 따로 정한다.
+ * `--out`·`--json` 은 싣지 않는다. 화면은 오버레이를 파일로 저장하지 않는다(ADR-0106).
  * `serverId` 는 `StartRunRequest` 와 같은 뜻이다. 값은 실리지 않는다(설계 §4.3).
  */
 export interface AnalyzeTokensRequest {
@@ -218,10 +219,60 @@ export interface AnalyzeTokensRequest {
 export interface AnalyzeTokensResponse {
   readonly overlay: OptimizeOverlay;
   /**
-   * CLI 가 `--out` 파일에 쓰는 바이트 그대로(2칸 들여쓰기, 끝 개행). 저장 버튼이 이것을
-   * `PUT /api/overlays/<path>` 로 보낸다. `overlay` 는 이 문자열을 `JSON.parse` 한 값이다.
+   * CLI 가 `--out` 파일에 쓰는 바이트 그대로(2칸 들여쓰기, 끝 개행). `PUT /api/overlays/<path>` 가
+   * 받는 내용과 같은 형식이다. 화면의 저장 버튼은 없어졌고(ADR-0106) 라우트만 남아 있다.
+   * `overlay` 는 이 문자열을 `JSON.parse` 한 값이다.
    */
   readonly overlayText: string;
   /** `mcpeak optimize` 가 stdout 에 내는 사람용 리포트 원문(`renderReport`). */
   readonly report: string;
+  /**
+   * 서버 tools/list 원본. `runOptimizeCommand` 가 `optimize()` 에 넘긴 `input.tools` 그대로다.
+   * 화면의 before/after 비교용이며 `overlay.tools` 와 같은 순서·같은 이름이다.
+   */
+  readonly sourceTools: readonly ToolDef[];
+}
+
+type OverlayToolChange = OptimizeOverlay["tools"][number]["changes"][number];
+
+/** 소스에 반영을 시도할 변경 하나. 화면이 `overlay.tools[].changes` 를 도구 이름과 함께 그대로 보낸다. */
+export interface SourceEdit {
+  readonly tool: string;
+  readonly change: OverlayToolChange;
+}
+
+export type SourceEditStatus = "ready" | "not-found" | "ambiguous" | "unsupported";
+
+export interface SourceEditResult {
+  readonly tool: string;
+  readonly change: OverlayToolChange;
+  readonly status: SourceEditStatus;
+  /** 사람이 읽는 한 줄. 서버가 정한 문장 그대로다(ADR-0106). */
+  readonly detail: string;
+}
+
+/**
+ * POST /api/analyze/source-edits. `apply` 가 없으면 미리보기다(파일을 쓰지 않는다).
+ * `argv` 는 `AnalyzeTokensRequest.argv` 와 같은 배열이다.
+ */
+export interface SourceEditRequest {
+  readonly argv: readonly string[];
+  readonly edits: readonly SourceEdit[];
+  readonly apply?: { readonly baseMtimeMs: number };
+}
+
+export interface SourceEditResponse {
+  /** 프로젝트 루트 기준 상대경로. */
+  readonly file: string;
+  /** 미리보기면 지금 파일의 mtime, 적용했으면 쓴 뒤의 mtime. */
+  readonly mtimeMs: number;
+  /** 파일의 지금 내용과, ready 인 변경을 전부 반영한 내용. 적용 뒤에는 둘이 같다. */
+  readonly before: string;
+  readonly after: string;
+  /** `edits` 와 같은 순서·같은 길이. */
+  readonly results: readonly SourceEditResult[];
+  readonly readyCount: number;
+  readonly applied: boolean;
+  /** `apply.baseMtimeMs` 가 지금 mtime 과 달라 쓰지 않았다. 본문은 새 미리보기다. */
+  readonly conflict: boolean;
 }

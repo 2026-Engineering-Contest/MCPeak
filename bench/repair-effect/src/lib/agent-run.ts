@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { join } from "node:path";
-import { WORK_DIR } from "./paths.ts";
+import { MODEL, WORK_DIR } from "./paths.ts";
 import type { FaultId } from "./faults.ts";
 
 const AGENT_TIMEOUT_MS = 900000;
@@ -27,7 +27,7 @@ export function AGENT_ARGS(prompt: string): string[] {
     "--strict-mcp-config",
     "--mcp-config", '{"mcpServers":{}}',
     "--permission-mode", "acceptEdits",
-    "--model", "claude-sonnet-5",
+    "--model", MODEL,
     "--output-format", "stream-json",
     "--verbose",
     "--no-session-persistence",

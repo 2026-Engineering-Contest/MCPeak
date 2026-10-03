@@ -22,7 +22,7 @@ export const RESULTS_DIR = join(BENCH_ROOT, "results");
 /** 참조 서버가 뜨는 포트. */
 export const PORT = 3931;
 
-/** repair 진단에 쓰는 모델 이름. */
+/** repair 진단과 수리 에이전트가 함께 쓰는 모델 이름. 보고서의 "수리 모델" 값도 여기서 나온다. */
 export const MODEL = "claude-sonnet-5";
 
 /** 저장소 빌드 산출물인 mcpeak CLI. */

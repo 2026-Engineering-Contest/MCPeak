@@ -86,6 +86,14 @@ async function runJob(job: Job): Promise<{ skipped: boolean; exitCode: number | 
     const prompt = buildPrompt(job.condition, diagnosis);
 
     const run = await runAgent({ workDir: tempDir, prompt });
+    // result 이벤트가 없는데 타임아웃도 아니면 claude 가 뜨지 못한 것이다(실행 파일 없음, spawn
+    // 실패). 이것을 done.json 으로 남기면 다음 실행이 건너뛰고 score 가 "수리 실패" 로 센다.
+    // 실행 실패와 수리 실패는 다른 숫자이므로 여기서 멈춘다.
+    if (run.result === null && !run.timedOut) {
+      throw new Error(
+        `${job.faultId}/${job.condition}/#${job.attempt}: 에이전트가 result 이벤트 없이 종료됨 (exit=${run.exitCode}). claude 실행 파일과 PATH 를 확인한다.`,
+      );
+    }
 
     const editedVariant = join(tempDir, VARIANT_NAME);
     const editedExists = await exists(editedVariant);

@@ -168,6 +168,9 @@ async function main(): Promise<void> {
 
   for (const fault of FAULTS) {
     const variant = variants[fault.id];
+    if (variant === undefined) {
+      throw new Error(`variants.json 에 ${fault.id} 가 없다. pnpm verify-variants 를 다시 실행해야 한다.`);
+    }
     records.push(defectRecord(fault.id, fault.target, baselinePassing, variant));
 
     for (const condition of REPAIR_CONDITIONS as readonly ("plain" | "diagnosed")[]) {

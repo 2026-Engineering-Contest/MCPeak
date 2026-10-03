@@ -21,18 +21,24 @@ function execFileWithTimeout(
   timeoutMs: number,
 ): Promise<{ code: number | null; timedOut: boolean }> {
   return new Promise((resolve) => {
+    let timedOut = false;
+    // 콜백은 프로세스가 닫힌 뒤에 온다. 타임아웃으로 죽인 경우도 여기서만 resolve 하므로,
+    // 호출자가 임시 디렉터리를 지우거나 다음 시나리오를 띄울 때 이 프로세스는 이미 없다.
     const child = execFile(bin, args, { cwd, maxBuffer: 1024 * 1024 * 64 }, (error) => {
+      clearTimeout(timer);
+      if (timedOut) {
+        resolve({ code: null, timedOut: true });
+        return;
+      }
       // 종료 코드는 판정에 쓰지 않는다. checks.json 만 본다.
       const code = error && "code" in error && typeof error.code === "number" ? error.code : 0;
       resolve({ code, timedOut: false });
     });
 
     const timer = setTimeout(() => {
+      timedOut = true;
       child.kill("SIGKILL");
-      resolve({ code: null, timedOut: true });
     }, timeoutMs);
-
-    child.once("exit", () => clearTimeout(timer));
   });
 }
 

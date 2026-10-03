@@ -204,4 +204,22 @@ describe("parseServerInput", () => {
       JSON.stringify(parseServerInput(MCP_SERVERS_JSON)),
     );
   });
+
+  it("JSON 의 command 가 환경변수 할당으로 시작하면 거절하고 값을 싣지 않는다", () => {
+    const result = parseServerInput('{"a":{"command":"API_KEY=s3cr3t-value node s.mjs"}}');
+    expect(result).toEqual({
+      ok: false,
+      error:
+        "'a' 항목의 command 가 환경변수 할당으로 시작합니다. 값은 env 칸으로 옮기고 command 에는 실행 파일만 적으세요.",
+    });
+    expect(JSON.stringify(result)).not.toContain("s3cr3t-value");
+  });
+
+  it("이름 없는 한 서버 설정의 command 도 같은 이유로 거절한다", () => {
+    expect(parseServerInput('{"command":"TOKEN=x npx -y pkg"}')).toEqual({
+      ok: false,
+      error:
+        "설정의 command 가 환경변수 할당으로 시작합니다. 값은 env 칸으로 옮기고 command 에는 실행 파일만 적으세요.",
+    });
+  });
 });

@@ -75,6 +75,11 @@ function entryOf(name: string | null, value: unknown): PastedServer | string {
   const label = name === null ? "설정" : `'${name}' 항목`;
   if (!isRecord(value)) return `${label}이 객체가 아닙니다.`;
   if (typeof value.command === "string" && value.command.trim() !== "") {
+    // `"command": "API_KEY=x node"` 처럼 셸 줄을 통째로 적은 설정. 받아들이면 그 값이 대상 줄과 요청에
+    // 실린다. 값은 문장에 싣지 않는다.
+    if (ENV_ASSIGNMENT.test(value.command.trim())) {
+      return `${label}의 command 가 환경변수 할당으로 시작합니다. 값은 env 칸으로 옮기고 command 에는 실행 파일만 적으세요.`;
+    }
     const args = value.args ?? [];
     if (!Array.isArray(args) || !args.every((arg): arg is string => typeof arg === "string")) {
       return `${label}의 args 는 문자열 배열이어야 합니다.`;

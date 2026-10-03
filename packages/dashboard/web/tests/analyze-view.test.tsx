@@ -570,17 +570,22 @@ describe("AnalyzeView", () => {
     const items = within(screen.getByRole("list", { name: "변경별 상태" })).getAllByRole(
       "listitem",
     );
-    expect(items.map((item) => item.getAttribute("data-status"))).toEqual(["not-found", "ready"]);
-    expect(items[0]?.textContent).toContain("a");
-    expect(items[0]?.querySelector("code")?.textContent).toBe("/");
-    expect(items[0]?.textContent).toContain(
+    // 줄은 묶음마다 하나이고 ready 묶음이 먼저다.
+    expect(items.map((item) => item.getAttribute("data-status"))).toEqual(["ready", "not-found"]);
+    expect(items[0]?.textContent).toContain('설명을 정리했습니다: "A tool.  " → "A"');
+    expect(items[0]?.textContent).toContain("1건 · a");
+    expect(items[0]?.textContent).toContain("소스에서 1곳을 찾았습니다.");
+    expect((items[0] as HTMLElement).style.color).toBe("var(--status-done-fg)");
+    expect(items[1]?.querySelector("code")?.textContent).toBe("/");
+    expect(items[1]?.textContent).toContain(
       "에서 '$schema' 키를 지웠습니다. 검증 의미는 같습니다.",
     );
-    expect(items[0]?.textContent).toContain(NOT_FOUND_DETAIL);
-    expect(items[1]?.textContent).toContain('설명을 정리했습니다: "A tool.  " → "A"');
-    expect(items[1]?.textContent).toContain("소스에서 1곳을 찾았습니다.");
-    expect((items[1] as HTMLElement).style.color).toBe("var(--status-done-fg)");
-    expect(items[0]?.className).toContain("text-ink-muted");
+    expect(items[1]?.textContent).toContain("1건 · a");
+    expect(items[1]?.textContent).toContain(NOT_FOUND_DETAIL);
+    expect(items[1]?.className).toContain("text-ink-muted");
+    // 도구가 하나뿐인 묶음에는 펼침이 없다.
+    expect(items[0]?.querySelector("details")).toBeNull();
+    expect(items[1]?.querySelector("details")).toBeNull();
 
     const preview = screen.getByLabelText("파일 변경 미리보기");
     const pres = preview.querySelectorAll("pre");
@@ -740,30 +745,112 @@ describe("AnalyzeView", () => {
     });
   });
 
-  it("ready 가 0 이면 적용 버튼이 비활성이고 사유 안내를 보인다", async () => {
+  /** 소스에서 하나도 못 고치는 미리보기. `results` 만 바꿔 쓴다. */
+  function noReadyPreview(results: SourceEditResponse["results"]): StubResponse {
+    return {
+      status: 200,
+      body: previewResponse({ after: SOURCE_BEFORE, results, readyCount: 0 }),
+    };
+  }
+
+  const PROXY_GUIDE =
+    "소스에서 고칠 수 있는 변경이 없습니다. 전부 SDK 나 라이브러리가 만드는 값으로 보입니다. 이런 값은 서버 소스가 아니라 프록시(mcpeak-optimize-proxy)로 줄입니다.";
+  const REASON_GUIDE = "소스에서 고칠 수 있는 변경이 없습니다. 위 사유를 확인하세요.";
+
+  it("ready 가 0 이면 적용 버튼이 없고 닫기로 미리보기를 닫는다", async () => {
     stubFetch({
       sourceEdits: [
-        {
-          status: 200,
-          body: previewResponse({
-            after: SOURCE_BEFORE,
-            results: [
-              { tool: "a", change: SCHEMA_CHANGE, status: "not-found", detail: NOT_FOUND_DETAIL },
-            ],
-            readyCount: 0,
-          }),
-        },
+        noReadyPreview([
+          { tool: "a", change: SCHEMA_CHANGE, status: "not-found", detail: NOT_FOUND_DETAIL },
+        ]),
       ],
     });
     render(<AnalyzeView tab="tokens" />);
     await openPreview();
 
     expect(screen.getByText("적용 가능 0건 / 전체 1건")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "적용" })).toHaveProperty("disabled", true);
-    expect(
-      screen.getByText("소스에서 고칠 수 있는 변경이 없습니다. 위 목록의 사유를 확인하세요."),
-    ).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "적용" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "취소" })).toBeNull();
     expect(screen.queryByLabelText("파일 변경 미리보기")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "닫기" }));
+
+    expect(screen.queryByRole("list", { name: "변경별 상태" })).toBeNull();
+    expect(screen.getByRole("button", { name: "MCP 수정하기" })).toHaveProperty("disabled", false);
+  });
+
+  it("같은 사유의 변경은 한 줄로 묶어 건수와 도구를 보인다", async () => {
+    stubFetch({
+      sourceEdits: [
+        noReadyPreview(
+          ["a", "b", "c"].map((tool) => ({
+            tool,
+            change: SCHEMA_CHANGE,
+            status: "not-found" as const,
+            detail: NOT_FOUND_DETAIL,
+          })),
+        ),
+      ],
+    });
+    render(<AnalyzeView tab="tokens" />);
+    await openPreview();
+
+    // 건수는 묶음 수가 아니라 변경 수다.
+    expect(screen.getByText("적용 가능 0건 / 전체 3건")).toBeTruthy();
+    const items = within(screen.getByRole("list", { name: "변경별 상태" })).getAllByRole(
+      "listitem",
+    );
+    expect(items).toHaveLength(1);
+    const [item] = items;
+    expect(item?.getAttribute("data-status")).toBe("not-found");
+    expect(item?.querySelector("code")?.textContent).toBe("/");
+    expect(item?.textContent).toContain("에서 '$schema' 키를 지웠습니다. 검증 의미는 같습니다.");
+    expect(within(item as HTMLElement).getByText("3건 · a 외 2개").tagName).toBe("SPAN");
+    expect(item?.textContent).toContain(NOT_FOUND_DETAIL);
+    const details = item?.querySelector("details");
+    expect(details?.querySelector("summary")?.textContent).toBe("도구 3개 보기");
+    expect(within(details as HTMLElement).getByText("a, b, c")).toBeTruthy();
+  });
+
+  it("전부 not-found 면 프록시 안내를 보이고 적용 버튼이 없다", async () => {
+    stubFetch({
+      sourceEdits: [
+        noReadyPreview([
+          { tool: "a", change: SCHEMA_CHANGE, status: "not-found", detail: NOT_FOUND_DETAIL },
+          { tool: "b", change: CLEANED_CHANGE, status: "not-found", detail: NOT_FOUND_DETAIL },
+        ]),
+      ],
+    });
+    render(<AnalyzeView tab="tokens" />);
+    await openPreview();
+
+    expect(screen.getByText(PROXY_GUIDE).tagName).toBe("P");
+    expect(screen.queryByText(REASON_GUIDE)).toBeNull();
+    expect(screen.queryByRole("button", { name: "적용" })).toBeNull();
+    expect(screen.getByRole("button", { name: "닫기" })).toBeTruthy();
+  });
+
+  it("not-found 가 아닌 사유가 섞이면 사유 확인 안내를 보인다", async () => {
+    stubFetch({
+      sourceEdits: [
+        noReadyPreview([
+          { tool: "a", change: SCHEMA_CHANGE, status: "not-found", detail: NOT_FOUND_DETAIL },
+          {
+            tool: "b",
+            change: CLEANED_CHANGE,
+            status: "ambiguous",
+            detail: "같은 문자열을 서로 다르게 바꾸는 변경이 있어 건드리지 않습니다.",
+          },
+        ]),
+      ],
+    });
+    render(<AnalyzeView tab="tokens" />);
+    await openPreview();
+
+    expect(screen.getByText(REASON_GUIDE).tagName).toBe("P");
+    expect(screen.queryByText(PROXY_GUIDE)).toBeNull();
+    expect(screen.queryByRole("button", { name: "적용" })).toBeNull();
+    expect(screen.getByRole("button", { name: "닫기" })).toBeTruthy();
   });
 
   it("취소를 누르면 미리보기가 닫힌다", async () => {

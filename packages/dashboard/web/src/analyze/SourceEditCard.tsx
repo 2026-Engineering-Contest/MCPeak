@@ -9,14 +9,8 @@ import type {
 import { apiSend } from "../api.js";
 import { Button } from "../components/Button.js";
 import { Card } from "../components/Card.js";
-import {
-  DIFF_MARK,
-  DIFF_PRE_CLASS,
-  DIFF_STYLE,
-  describeChangeParts,
-  diffHunks,
-  type HunkLine,
-} from "./tool-diff.js";
+import { groupSourceEditResults, toolsLabel } from "./source-edit-groups.js";
+import { DIFF_MARK, DIFF_PRE_CLASS, DIFF_STYLE, diffHunks, type HunkLine } from "./tool-diff.js";
 
 /** `overlay.tools` 를 원본 순서로 돌며 변경을 도구 이름과 함께 편다. 서버가 같은 순서로 결과를 돌려준다. */
 function collectEdits(result: AnalyzeTokensResponse): readonly SourceEdit[] {
@@ -62,6 +56,16 @@ function HunkPre({
   );
 }
 
+/**
+ * 고칠 수 있는 변경이 하나도 없을 때의 안내. 전부 소스에 없는 값이면 사유를 다시 읽으라고 하는 대신
+ * 그런 값을 줄이는 길(프록시)을 알려 준다.
+ */
+function noReadyGuide(preview: SourceEditResponse): string {
+  return preview.results.every((item) => item.status === "not-found")
+    ? "소스에서 고칠 수 있는 변경이 없습니다. 전부 SDK 나 라이브러리가 만드는 값으로 보입니다. 이런 값은 서버 소스가 아니라 프록시(mcpeak-optimize-proxy)로 줄입니다."
+    : "소스에서 고칠 수 있는 변경이 없습니다. 위 사유를 확인하세요.";
+}
+
 /** 받은 미리보기 하나. 변경별 상태와 파일 diff 를 보인다(적용·취소 버튼은 카드가 그린다). */
 function Preview({ preview }: { readonly preview: SourceEditResponse }): JSX.Element {
   const hunks = preview.readyCount > 0 ? diffHunks(preview.before, preview.after) : [];
@@ -74,23 +78,31 @@ function Preview({ preview }: { readonly preview: SourceEditResponse }): JSX.Ele
       <p className="text-sm text-ink">
         파일: <code className="font-mono text-xs">{preview.file}</code>
       </p>
+      {/* 건수는 묶음 수가 아니라 변경 수다. */}
       <p className="text-sm text-ink">{`적용 가능 ${preview.readyCount}건 / 전체 ${preview.results.length}건`}</p>
       <ul aria-label="변경별 상태" className="list-disc space-y-2 pl-5 text-sm">
-        {preview.results.map((item, index) => {
-          const { path, text } = describeChangeParts(item.change);
-          const ready = item.status === "ready";
+        {groupSourceEditResults(preview.results).map((group, index) => {
+          const ready = group.status === "ready";
           return (
             <li
-              // 같은 변경이 여러 도구에 되풀이된다. 서버가 요청 순서를 지키므로 순서를 키로 쓴다.
+              // 같은 사유의 변경은 도구가 몇 개든 한 줄이다. 묶음 순서는 응답만으로 정해진다.
               // biome-ignore lint/suspicious/noArrayIndexKey: 고정 순서 목록이다.
               key={index}
-              data-status={item.status}
+              data-status={group.status}
               className={ready ? "break-words" : "break-words text-ink-muted"}
               style={ready ? { color: "var(--status-done-fg)" } : undefined}
             >
-              <span className="font-mono text-xs">{item.tool}</span>{" "}
-              <code className="font-mono text-xs">{path}</code> {text}
-              <span className="block">{item.detail}</span>
+              <code className="font-mono text-xs">{group.path}</code> {group.text}{" "}
+              <span className="font-mono text-xs">
+                {`${group.tools.length}건 · ${toolsLabel(group.tools)}`}
+              </span>
+              <span className="block">{group.detail}</span>
+              {group.tools.length > 1 && (
+                <details>
+                  <summary className="cursor-pointer">{`도구 ${group.tools.length}개 보기`}</summary>
+                  <span className="block font-mono text-xs">{group.tools.join(", ")}</span>
+                </details>
+              )}
             </li>
           );
         })}
@@ -106,9 +118,7 @@ function Preview({ preview }: { readonly preview: SourceEditResponse }): JSX.Ele
           ))}
         </section>
       ) : (
-        <p className="text-sm text-ink-muted">
-          소스에서 고칠 수 있는 변경이 없습니다. 위 목록의 사유를 확인하세요.
-        </p>
+        <p className="text-sm text-ink-muted">{noReadyGuide(preview)}</p>
       )}
     </>
   );
@@ -193,15 +203,18 @@ export function SourceEditCard({
         <>
           <Preview preview={preview} />
           <div className="flex gap-2">
-            <Button
-              variant="primary"
-              disabled={busy !== null || preview.readyCount === 0}
-              onClick={() => void send({ baseMtimeMs: preview.mtimeMs })}
-            >
-              {busy === "apply" ? "적용 중…" : "적용"}
-            </Button>
+            {/* 적용할 것이 없으면 누를 수 없는 버튼을 두지 않는다. 남는 일은 닫는 것뿐이다. */}
+            {preview.readyCount > 0 && (
+              <Button
+                variant="primary"
+                disabled={busy !== null}
+                onClick={() => void send({ baseMtimeMs: preview.mtimeMs })}
+              >
+                {busy === "apply" ? "적용 중…" : "적용"}
+              </Button>
+            )}
             <Button disabled={busy !== null} onClick={cancel}>
-              취소
+              {preview.readyCount > 0 ? "취소" : "닫기"}
             </Button>
           </div>
         </>

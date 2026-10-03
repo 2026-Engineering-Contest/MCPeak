@@ -31,6 +31,48 @@ const SOURCE_A = {
 
 const OVERLAY_TEXT = '{\n  "schemaVersion": 1\n}\n';
 
+/** 비교 `<pre>` 의 줄 하나에서 표시 글자(`aria-hidden`)를 뺀 원래 줄. */
+function lineText(line: Element): string {
+  return [...line.childNodes]
+    .filter((node) => node.nodeType === Node.TEXT_NODE)
+    .map((node) => node.textContent ?? "")
+    .join("");
+}
+
+/** 비교 `<pre>` 를 줄 단위로 읽어 원래 문자열로 되돌린다. */
+function preText(pre: Element): string {
+  return [...pre.querySelectorAll("[data-diff]")].map(lineText).join("\n");
+}
+
+/** 도구 a 의 설명까지 바뀐 응답. 원본에는 지운 줄, 압축에는 바뀐 줄이 생긴다. */
+function cleanedResponse(): AnalyzeTokensResponse {
+  const base = analyzeResponse();
+  const [a, b] = base.overlay.tools;
+  if (a === undefined || b === undefined) {
+    throw new Error("analyzeResponse 의 도구가 둘이 아니다");
+  }
+  return {
+    ...base,
+    overlay: {
+      ...base.overlay,
+      tools: [
+        {
+          ...a,
+          changes: [
+            ...a.changes,
+            { kind: "description-cleaned", path: "/", before: "A tool.  ", after: "A" },
+          ],
+        },
+        b,
+      ],
+    },
+    sourceTools: [
+      { ...SOURCE_A, description: "A tool.  " },
+      { name: "b", inputSchema: {} },
+    ],
+  };
+}
+
 function analyzeResponse(
   otherCapabilities: AnalyzeTokensResponse["overlay"]["source"]["otherCapabilities"] = [],
 ): AnalyzeTokensResponse {
@@ -327,7 +369,7 @@ describe("AnalyzeView", () => {
     expect(within(panel).getByText("원본 (600 바이트)")).toBeTruthy();
     expect(within(panel).getByText("압축 (400 바이트)")).toBeTruthy();
     const pres = panel.querySelectorAll("pre");
-    expect([...pres].map((pre) => pre.textContent)).toEqual([
+    expect([...pres].map(preText)).toEqual([
       formatToolSide(SOURCE_A),
       formatToolSide({ name: "a", description: "A", inputSchema: { type: "object" } }),
     ]);
@@ -337,11 +379,72 @@ describe("AnalyzeView", () => {
         .getAllByRole("listitem")
         .map((item) => item.textContent),
     ).toEqual([describeChange({ kind: "schema-key-removed", path: "/", key: "$schema" })]);
+    // 경로는 <code> 안에 있고, 화면에 백틱 문자가 그대로 보이지 않는다.
+    expect([...list.querySelectorAll("li > code")].map((code) => code.textContent)).toEqual(["/"]);
+    expect(list.textContent).not.toContain("`");
 
     fireEvent.click(toggle);
 
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
     expect(document.getElementById(panelId)).toBeNull();
+  });
+
+  it("펼치면 원본 칸에 removed 줄, 압축 칸에 added 줄이 표시된다", async () => {
+    stubFetch({ analyze: { status: 200, body: cleanedResponse() } });
+    render(<AnalyzeView tab="tokens" />);
+    await analyze();
+
+    const toggle = await screen.findByRole("button", { name: "변경사항" });
+    fireEvent.click(toggle);
+
+    const panel = document.getElementById(toggle.getAttribute("aria-controls") ?? "");
+    const [beforePre, afterPre] = [...(panel?.querySelectorAll("pre") ?? [])];
+    if (beforePre === undefined || afterPre === undefined) {
+      throw new Error("비교 <pre> 가 둘이 아니다");
+    }
+
+    const removed = [...beforePre.querySelectorAll('[data-diff="removed"]')];
+    expect(removed.map(lineText)).toEqual([
+      '  "description": "A tool.  ",',
+      '    "$schema": "http://json-schema.org/draft-07/schema#",',
+    ]);
+    expect(beforePre.querySelectorAll('[data-diff="added"]')).toHaveLength(0);
+    const added = [...afterPre.querySelectorAll('[data-diff="added"]')];
+    expect(added.map(lineText)).toEqual(['  "description": "A",']);
+    expect(afterPre.querySelectorAll('[data-diff="removed"]')).toHaveLength(0);
+
+    // 줄 앞 표시 글자는 한 칸이고 읽기 도구에는 숨긴다.
+    const marks = (lines: readonly Element[]): readonly (string | null)[] =>
+      lines.map((line) => line.querySelector('[aria-hidden="true"]')?.textContent ?? null);
+    expect(marks(removed)).toEqual(["-", "-"]);
+    expect(marks(added)).toEqual(["+"]);
+    expect(marks([...afterPre.querySelectorAll('[data-diff="same"]')].slice(0, 1))).toEqual([" "]);
+    // 색은 기존 상태 토큰이다.
+    expect((removed[0] as HTMLElement).style.backgroundColor).toBe("var(--status-failed-bg)");
+    expect((removed[0] as HTMLElement).style.color).toBe("var(--status-failed-fg)");
+    expect((added[0] as HTMLElement).style.backgroundColor).toBe("var(--status-done-bg)");
+    expect((added[0] as HTMLElement).style.color).toBe("var(--status-done-fg)");
+    // 강조가 들어가도 줄을 이으면 원래 JSON 이다.
+    expect(preText(beforePre)).toBe(formatToolSide({ ...SOURCE_A, description: "A tool.  " }));
+  });
+
+  it("변경사항 버튼은 접히면 on-accent, 펼치면 primary 다", async () => {
+    stubFetch();
+    render(<AnalyzeView tab="tokens" />);
+    await analyze();
+
+    const toggle = await screen.findByRole("button", { name: "변경사항" });
+    expect(toggle.className).toContain("border-accent-border");
+    expect(toggle.className.split(" ")).not.toContain("bg-accent");
+
+    fireEvent.click(toggle);
+
+    expect(toggle.className.split(" ")).toContain("bg-accent");
+    expect(toggle.className).not.toContain("border-accent-border");
+
+    fireEvent.click(toggle);
+
+    expect(toggle.className).toContain("border-accent-border");
   });
 
   it("원본을 찾지 못하면 그 자리에 안내 문장을 보인다", async () => {
@@ -352,6 +455,14 @@ describe("AnalyzeView", () => {
     fireEvent.click(await screen.findByRole("button", { name: "변경사항" }));
 
     expect(screen.getByText("원본 정의를 찾지 못했습니다.")).toBeTruthy();
+    // 견줄 원본이 없으니 압축 칸은 강조 없이 그린다.
+    const pres = document.querySelectorAll('td[id^="analyze-diff-"] pre');
+    expect(pres).toHaveLength(1);
+    const kinds = [...(pres[0]?.querySelectorAll("[data-diff]") ?? [])].map((line) =>
+      line.getAttribute("data-diff"),
+    );
+    expect(kinds.length).toBeGreaterThan(0);
+    expect(new Set(kinds)).toEqual(new Set(["same"]));
   });
 
   it("변경이 없는 도구는 변경 없음 버튼이 비활성이다", async () => {

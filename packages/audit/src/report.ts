@@ -208,7 +208,7 @@ function compareText(a: string, b: string): number {
  * 드러낸다. 그대로 쓰면 hidden-unicode 발견의 위치 줄이 정작 그 문자를 숨기고(`get<U+200B>time` 이
  * `gettime` 으로 보인다), ESC 가 들어 있으면 터미널을 조작한다(근거 조각의 evidenceFragment 와 같은 규약).
  */
-function describeLocation(location: Location): string {
+export function describeLocation(location: Location): string {
   const path = escapeInvisible(location.path);
   const at = (subject: string, joiner = " 의 "): string =>
     path === "" ? subject : `${subject}${joiner}${path}`;

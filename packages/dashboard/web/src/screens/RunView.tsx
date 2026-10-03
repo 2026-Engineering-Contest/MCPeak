@@ -32,6 +32,7 @@ const FLOW_TITLES: Record<RunSummary["flow"], string> = {
   test: "테스트 실행",
   generate: "생성 실행",
   repair: "수리 실행",
+  verify: "한 번에 검증",
 };
 
 /**

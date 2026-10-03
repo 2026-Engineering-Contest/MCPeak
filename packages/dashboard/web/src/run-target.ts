@@ -77,6 +77,8 @@ export function describeRun(
   }
   // HTTP 대상이면 `--command` 가 아예 없다(둘은 CLI 가 함께 못 쓰게 막는다).
   const server = optionValue(argv, "--url") ?? commandLine(argv);
-  const suite = flow === "generate" ? optionValue(argv, "--out") : firstPositional(argv);
+  // verify 는 generate argv 그대로 받으므로 스위트 자리도 `--out` 이다.
+  const suite =
+    flow === "generate" || flow === "verify" ? optionValue(argv, "--out") : firstPositional(argv);
   return { server, suite };
 }

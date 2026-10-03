@@ -161,6 +161,40 @@ describe("GenerateWizard", () => {
     expect(screen.getByLabelText("시험 실행 전 초기화 명령 (선택)")).toHaveProperty("value", "");
   });
 
+  it('4단계 "한 번에 검증" 을 켜면 같은 argv 로 flow:"verify" 를 POST 한다', async () => {
+    const fetchMock = await renderWizard();
+    fillStepServer("server.js");
+    fillStepSuite();
+    clickNext();
+    // 기본은 꺼짐이다. 켜면 시작 버튼 문구가 바뀌고 플로우만 달라진다. argv 는 같다.
+    const toggle = screen.getByLabelText("한 번에 검증");
+    expect(toggle).toHaveProperty("checked", false);
+    fireEvent.click(toggle);
+    // 미리보기가 생성 단계만 나타낸다는 안내가 붙는다. 명령만 복사해 돌리면 재현되지 않기 때문이다.
+    expect(screen.getByText("실행될 CLI 명령 (생성 단계)")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "생성하고 바로 검증" }));
+
+    await waitFor(() => {
+      expect(window.location.hash).toBe("#/runs/run-new");
+    });
+    const body = postedBody(fetchMock);
+    expect(body.flow).toBe("verify");
+    expect(body.argv).toEqual([
+      "--command",
+      "node",
+      "--arg",
+      "server.js",
+      "--suite-id",
+      "weather",
+      "--name",
+      "날씨 서버",
+      "--out",
+      "examples/weather/suite.json",
+      "--provider",
+      "claude",
+    ]);
+  });
+
   it('4단계 완주 후 생성 시작이 조립된 argv로 flow:"generate"를 POST한다', async () => {
     const fetchMock = await renderWizard();
     fillStepServer("server.js");

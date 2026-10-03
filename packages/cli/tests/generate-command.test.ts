@@ -34,6 +34,7 @@ import type {
 } from "@mcpeak/runner";
 import { suiteFingerprint, validateMcpSuite } from "@mcpeak/runner";
 import { describe, expect, it, vi } from "vitest";
+import { autoReviewIO } from "../src/auto-review-io.js";
 import {
   type GenerateCommandDependencies,
   nodeReviewIO,
@@ -4306,6 +4307,26 @@ describe("generate 시험 실행 게이트", () => {
       await runGenerateCommand(gateArgv, d.value);
       expect(d.output()).toContain("  입력값 교정 1건이 명세에 반영되었습니다.\n");
       expect(d.output()).toContain(`    weather.city: ${JSON.stringify(synthesized)} → "서울"\n`);
+    });
+  });
+
+  describe("autoReviewIO 로 사람 개입 없이 저장한다", () => {
+    it("위반 케이스 실패를 서버 결함으로 분류해 저장하고 종료 코드 0", async () => {
+      const d = gateDeps({ choices: [] });
+      // gateDeps 의 대본 io 를 자동 승인 io 로 바꾼다. 화면 출력은 같은 screen 에 모은다.
+      d.value.reviewIO = autoReviewIO({ write: (text) => d.io.write(text) });
+      await expect(runGenerateCommand(gateArgv, d.value)).resolves.toBe(0);
+      const saved = d.savedSuite();
+      expect(saved?.approval?.cases?.filter((c) => c.status === "serverDefect")).toHaveLength(
+        failingCases,
+      );
+      expect(saved?.approval?.cases?.filter((c) => c.status === "passed")).toHaveLength(happyCases);
+      const output = d.output();
+      expect(output).toContain("▸ 자동 승인: 검토 메뉴 → save\n");
+      expect(output).toContain("▸ 자동 승인: 선택: → s\n");
+      expect(output).toContain("▸ 자동 승인: 최종 JSON을 저장할까요? → 예\n");
+      // 대본 io 는 쓰이지 않았다. 질문은 전부 자동 승인이 받았다.
+      expect(d.io.choose).not.toHaveBeenCalled();
     });
   });
 });

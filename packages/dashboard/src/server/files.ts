@@ -1,12 +1,16 @@
 import { mkdir, open, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
+import { assertMockDefinition, type MockDefinition } from "@mcpeak/mock";
+import type { StoredInteraction } from "@mcpeak/record/external";
 import { validateMcpSuite } from "@mcpeak/runner";
 import type {
   FileContent,
   FileEntry,
+  MockFileEntry,
   PutFileResponse,
   ServerCandidate,
   SessionEntry,
+  SessionInteractionEntry,
 } from "../api-types.js";
 
 const EXCLUDED_DIRS = new Set(["node_modules", ".git", "dist"]);
@@ -50,6 +54,31 @@ export async function listSuites(root: string): Promise<FileEntry[]> {
     } catch {
       // 무효 JSON·읽기 실패는 조용히 제외한다. 목록은 유효한 것만 보여준다.
     }
+  }
+  return results.sort((a, b) => a.path.localeCompare(b.path));
+}
+
+/**
+ * `**\/*.json` 중 `assertMockDefinition` 을 통과하는 파일. 무효 JSON · 무효 정의는 조용히
+ * 뺀다(`listSuites` 와 같은 정책). 판정 규칙은 mock 안에 있다 — 여기서 다시 쓰지 않는다.
+ */
+export async function listMocks(root: string): Promise<MockFileEntry[]> {
+  const files = await walkJsonFiles(root);
+  const results: MockFileEntry[] = [];
+  for (const absolute of files) {
+    let definition: MockDefinition;
+    try {
+      const parsed: unknown = JSON.parse(await readFile(absolute, "utf8"));
+      assertMockDefinition(parsed);
+      definition = parsed;
+    } catch {
+      continue;
+    }
+    results.push({
+      path: toRelative(root, absolute),
+      toolCount: definition.tools.length,
+      responseCount: definition.responses?.length ?? 0,
+    });
   }
   return results.sort((a, b) => a.path.localeCompare(b.path));
 }
@@ -289,6 +318,44 @@ export async function listSessions(root: string): Promise<SessionEntry[]> {
     });
   }
   return results.sort((a, b) => a.path.localeCompare(b.path));
+}
+
+/** 저장된 결과 → 화면 모양. 결과가 없거나 끝나지 않은 호출은 `incomplete` 다. */
+function toEntryOutcome(interaction: StoredInteraction): SessionInteractionEntry["outcome"] {
+  const outcome = interaction.outcome;
+  if (interaction.status === "incomplete" || outcome === undefined) return { kind: "incomplete" };
+  if (outcome.kind === "response") {
+    return { kind: "response", status: outcome.status, body: outcome.body };
+  }
+  return {
+    kind: "throw",
+    failureKind: outcome.failureKind,
+    ...(outcome.code === undefined ? {} : { code: outcome.code }),
+  };
+}
+
+/**
+ * 녹화본 하나의 외부 호출 목록. 세션이 아니면 `null` 이다(호출부가 404 로 옮긴다).
+ *
+ * 판정은 `listSessions` 처럼 `loadSession` 에 맡긴다. URL 은 녹화 때 경로를 지운 표시용
+ * 값(`request.display.url`)을 쓴다 — 응답의 `url` 은 지우지 않은 값일 수 있다.
+ */
+export async function readSessionInteractions(
+  absolute: string,
+): Promise<SessionInteractionEntry[] | null> {
+  const { loadSession } = await loadExternal();
+  const snapshot = loadSession(absolute);
+  if (snapshot === null) return null;
+  return snapshot.interactions
+    .map(
+      (interaction): SessionInteractionEntry => ({
+        ordinal: interaction.ordinal,
+        method: interaction.request.display.method,
+        url: interaction.request.display.url,
+        outcome: toEntryOutcome(interaction),
+      }),
+    )
+    .sort((a, b) => a.ordinal - b.ordinal);
 }
 
 /** 프론트의 REPAIR_BUNDLE_DIR 와 같은 값. 두 곳에 있는 이유는 web 이 src 를 import 하지 않기 때문이다. */

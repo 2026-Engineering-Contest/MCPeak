@@ -1,3 +1,4 @@
+import type { ReviewIO } from "@mcpeak/cli/commands";
 import type {
   RunEvent,
   RunEventInput,
@@ -21,7 +22,11 @@ export interface RunHandle {
 export interface RunIo {
   readonly writeStdout: (text: string) => void; // ansiToHtml 거쳐 stdout 이벤트
   readonly writeStderr: (text: string) => void;
-  readonly reviewIO: WebReviewIO;
+  /**
+   * 커맨드 함수에 넘기는 승인 IO. 보통은 브라우저 질문으로 잇는 `WebReviewIO` 이고, 한 번에
+   * 검증(verify)은 자동 승인 IO 로 바꿔 끼운다. 그래서 클래스가 아니라 인터페이스로 받는다.
+   */
+  readonly reviewIO: ReviewIO;
 }
 
 type Flow = StartRunRequest["flow"];

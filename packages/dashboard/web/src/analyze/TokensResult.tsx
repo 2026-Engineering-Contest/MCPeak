@@ -1,4 +1,4 @@
-import type { JSX } from "react";
+import type { CSSProperties, JSX } from "react";
 import { Fragment, useState } from "react";
 import type { AnalyzeTokensResponse, PutFileResponse } from "../../../src/api-types.js";
 import { apiSend } from "../api.js";
@@ -6,7 +6,13 @@ import { Button } from "../components/Button.js";
 import { Card } from "../components/Card.js";
 import { Field, INPUT_CLASS } from "../components/Field.js";
 import { percent, tokens } from "./format.js";
-import { describeChange, findSourceTool, formatToolSide } from "./tool-diff.js";
+import {
+  type DiffLine,
+  describeChangeParts,
+  diffLines,
+  findSourceTool,
+  formatToolSide,
+} from "./tool-diff.js";
 
 type OptimizedTool = AnalyzeTokensResponse["overlay"]["tools"][number];
 
@@ -33,9 +39,41 @@ function sortedTools(
 const DIFF_PRE_CLASS =
   "overflow-x-auto whitespace-pre rounded-sm border border-line bg-surface px-3 py-2 font-mono text-xs text-ink";
 
+/** 줄 앞 표시 글자 한 칸. 색을 못 보는 화면에서도 지운 줄과 바뀐 줄이 갈린다. */
+const DIFF_MARK: Record<DiffLine["kind"], string> = { same: " ", removed: "-", added: "+" };
+
+/** 지운 줄·바뀐 줄의 색. 라이트·다크 양쪽에 이미 정의된 상태 색을 그대로 쓴다. */
+const DIFF_STYLE: Record<DiffLine["kind"], CSSProperties | undefined> = {
+  same: undefined,
+  removed: { backgroundColor: "var(--status-failed-bg)", color: "var(--status-failed-fg)" },
+  added: { backgroundColor: "var(--status-done-bg)", color: "var(--status-done-fg)" },
+};
+
 /**
- * 펼친 도구 하나의 before/after(계획서 2026-10-03 단계화면-비교 §3.3). 원본·압축 JSON 을
- * 나란히 두고 그 아래 변경 목록을 적는다.
+ * 비교 칸 하나(계획서 §6.3). 줄마다 `data-diff` 를 달고, 표시 글자를 뺀 `textContent` 가 원래 줄이다.
+ */
+function DiffPre({ lines }: { readonly lines: readonly DiffLine[] }): JSX.Element {
+  return (
+    <pre className={DIFF_PRE_CLASS}>
+      {/* 긴 줄 때문에 가로로 밀어도 배경색이 줄 끝까지 이어지게, 가장 긴 줄 폭에 맞춘다. */}
+      <span className="block w-max min-w-full">
+        {lines.map((line, index) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: 줄 순서가 곧 정체다. 같은 줄이 여러 번 나온다.
+          <span key={index} data-diff={line.kind} className="block" style={DIFF_STYLE[line.kind]}>
+            <span aria-hidden="true" className="select-none">
+              {DIFF_MARK[line.kind]}
+            </span>
+            {line.text}
+          </span>
+        ))}
+      </span>
+    </pre>
+  );
+}
+
+/**
+ * 펼친 도구 하나의 before/after(계획서 2026-10-03 단계화면-비교 §3.3, §6.3). 원본·압축 JSON 을
+ * 나란히 두고 달라진 줄에 색을 입힌 뒤, 그 아래 변경 목록을 적는다.
  */
 function ToolDiff({
   tool,
@@ -45,6 +83,9 @@ function ToolDiff({
   readonly sourceTools: AnalyzeTokensResponse["sourceTools"];
 }): JSX.Element {
   const source = findSourceTool(sourceTools, tool.name);
+  const after = formatToolSide(tool);
+  // 원본을 못 찾으면 견줄 대상이 없다. 압축 칸을 자기 자신과 견줘 전부 same 으로 그린다.
+  const diff = diffLines(source === undefined ? after : formatToolSide(source), after);
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-2 gap-4">
@@ -53,25 +94,28 @@ function ToolDiff({
           {source === undefined ? (
             <p className="text-sm text-ink-muted">원본 정의를 찾지 못했습니다.</p>
           ) : (
-            <pre className={DIFF_PRE_CLASS}>{formatToolSide(source)}</pre>
+            <DiffPre lines={diff.before} />
           )}
         </div>
         <div className="min-w-0 space-y-1">
           <p className="text-caption font-medium text-ink-muted">{`압축 (${tool.bytes.after} 바이트)`}</p>
-          <pre className={DIFF_PRE_CLASS}>{formatToolSide(tool)}</pre>
+          <DiffPre lines={diff.after} />
         </div>
       </div>
       <ul
         aria-label={`${tool.name} 변경 목록`}
         className="list-disc space-y-1 pl-5 text-sm text-ink"
       >
-        {tool.changes.map((change, index) => (
-          // 변경은 같은 문장이 두 번 나올 수 있어 순서를 키로 쓴다. 목록은 다시 정렬되지 않는다.
-          // biome-ignore lint/suspicious/noArrayIndexKey: 고정 순서 목록이다.
-          <li key={index} className="break-words">
-            {describeChange(change)}
-          </li>
-        ))}
+        {tool.changes.map((change, index) => {
+          const { path, text } = describeChangeParts(change);
+          return (
+            // 변경은 같은 문장이 두 번 나올 수 있어 순서를 키로 쓴다. 목록은 다시 정렬되지 않는다.
+            // biome-ignore lint/suspicious/noArrayIndexKey: 고정 순서 목록이다.
+            <li key={index} className="break-words">
+              <code className="font-mono text-xs">{path}</code> {text}
+            </li>
+          );
+        })}
       </ul>
     </div>
   );
@@ -194,6 +238,7 @@ export function TokensResult({ result }: { readonly result: AnalyzeTokensRespons
                       {tool.changes.length > 0 ? (
                         <Button
                           size="sm"
+                          variant={isOpen ? "primary" : "on-accent"}
                           aria-expanded={isOpen}
                           aria-controls={diffId}
                           onClick={() => toggle(tool.name)}

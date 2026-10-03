@@ -31,7 +31,7 @@ const ALLOWED_INTERNAL_DEPENDENCIES: Readonly<Record<PackageName, readonly Packa
   optimize: ["core"],
   audit: ["core"],
   cli: ["core", "runner", "generate", "record", "mock", "optimize", "audit"],
-  dashboard: ["core", "runner", "generate", "record", "mock", "cli"],
+  dashboard: ["core", "runner", "generate", "record", "mock", "optimize", "cli"],
 };
 
 interface PackageManifest {

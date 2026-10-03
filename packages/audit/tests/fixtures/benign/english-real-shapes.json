@@ -374,6 +374,14 @@
       "annotations": {
         "destructiveHint": false
       }
+    },
+    {
+      "name": "list_trash",
+      "description": "Lists every file in the trash.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
     }
   ]
 }

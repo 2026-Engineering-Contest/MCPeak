@@ -232,6 +232,31 @@ describe("schema/over-broad", () => {
     );
     expect(found).toEqual([]);
   });
+  it("properties 가 빈 객체 {} 면 인자 없는 도구로 보고 잡지 않는다", () => {
+    const found = only(
+      runSchemaRules([
+        {
+          name: "list_trash",
+          description: "Lists every file in the trash.",
+          inputSchema: { type: "object", properties: {} },
+        },
+      ]),
+      "schema/over-broad",
+    );
+    expect(found).toEqual([]);
+  });
+  it("properties 가 {} 여도 additionalProperties 가 true 면 medium 으로 잡는다", () => {
+    const found = only(
+      runSchemaRules([
+        {
+          name: "run_shell",
+          inputSchema: { type: "object", properties: {}, additionalProperties: true },
+        },
+      ]),
+      "schema/over-broad",
+    );
+    expect(found.map((f) => [f.severity, f.location.path])).toEqual([["medium", "inputSchema"]]);
+  });
   it("제약 없는 'command' 문자열은 info 로 보고한다", () => {
     const found = only(
       runSchemaRules([withProps("execute", { command: { type: "string" } })]),

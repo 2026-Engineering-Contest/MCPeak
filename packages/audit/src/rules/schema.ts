@@ -189,10 +189,14 @@ export function runSchemaRules(tools: readonly RawTool[]): Finding[] {
     }
 
     // schema/over-broad
+    // `properties: {}` 에 additionalProperties 가 true 가 아니면 "인자 없음" 선언이라 보지 않는다.
+    // 첫 조건은 properties 키가 아예 없거나 additionalProperties 가 명시적으로 true 일 때만이다.
+    // additionalProperties: false 는 어느 쪽이든 닫힌 입력이라 보지 않는다.
     const top = inputSchema.properties;
     const noProperties = !isObject(top) || Object.keys(top).length === 0;
+    const additional = inputSchema.additionalProperties;
     const open =
-      inputSchema.additionalProperties === undefined || inputSchema.additionalProperties === true;
+      additional === true || (!("properties" in inputSchema) && additional === undefined);
     const broad = BROAD_TOOL.exec(spaced(tool.name)) ?? BROAD_TOOL.exec(spaced(description));
     if (noProperties && open && broad?.[1]) {
       const message = `입력 제약이 없는 ${broadKind(broad[1])} 인자입니다: 'inputSchema'`;

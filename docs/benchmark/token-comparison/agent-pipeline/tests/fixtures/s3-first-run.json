@@ -1,0 +1,2142 @@
+{
+  "schemaVersion": 1,
+  "suite": {
+    "id": "s3",
+    "name": "s3",
+    "defaultTimeoutMs": 10000
+  },
+  "status": "failed",
+  "cases": [
+    {
+      "spec": {
+        "id": "add-note-success",
+        "name": "add_note가 오류 없이 응답한다",
+        "operation": {
+          "type": "callTool",
+          "tool": "add_note",
+          "input": {
+            "title": "example",
+            "body": "example"
+          }
+        },
+        "assertions": [
+          {
+            "type": "isError",
+            "expected": false
+          }
+        ]
+      },
+      "status": "passed",
+      "operation": {
+        "status": "completed",
+        "timeoutMs": 10000
+      },
+      "assertions": [
+        {
+          "spec": {
+            "type": "isError",
+            "expected": false
+          },
+          "status": "passed"
+        }
+      ],
+      "rejectionBasis": "notApplicable"
+    },
+    {
+      "spec": {
+        "id": "add-note-branch-with-tags",
+        "name": "add_note가 선택 필드 'tags' 를 받아 정상 응답한다",
+        "operation": {
+          "type": "callTool",
+          "tool": "add_note",
+          "input": {
+            "title": "example",
+            "body": "example",
+            "tags": []
+          }
+        },
+        "assertions": [
+          {
+            "type": "isError",
+            "expected": false
+          }
+        ]
+      },
+      "status": "passed",
+      "operation": {
+        "status": "completed",
+        "timeoutMs": 10000
+      },
+      "assertions": [
+        {
+          "spec": {
+            "type": "isError",
+            "expected": false
+          },
+          "status": "passed"
+        }
+      ],
+      "rejectionBasis": "notApplicable"
+    },
+    {
+      "spec": {
+        "id": "add-note-missing-body",
+        "name": "add_note가 필수 필드 'body' 누락을 거절한다",
+        "operation": {
+          "type": "callTool",
+          "tool": "add_note",
+          "input": {
+            "title": "example"
+          }
+        },
+        "assertions": [
+          {
+            "type": "isError",
+            "expected": true
+          }
+        ]
+      },
+      "status": "passed",
+      "operation": {
+        "status": "completed",
+        "timeoutMs": 10000
+      },
+      "assertions": [
+        {
+          "spec": {
+            "type": "isError",
+            "expected": true
+          },
+          "status": "passed"
+        }
+      ],
+      "rejectionBasis": "verified"
+    },
+    {
+      "spec": {
+        "id": "add-note-missing-title",
+        "name": "add_note가 필수 필드 'title' 누락을 거절한다",
+        "operation": {
+          "type": "callTool",
+          "tool": "add_note",
+          "input": {
+            "body": "example"
+          }
+        },
+        "assertions": [
+          {
+            "type": "isError",
+            "expected": true
+          }
+        ]
+      },
+      "status": "passed",
+      "operation": {
+        "status": "completed",
+        "timeoutMs": 10000
+      },
+      "assertions": [
+        {
+          "spec": {
+            "type": "isError",
+            "expected": true
+          },
+          "status": "passed"
+        }
+      ],
+      "rejectionBasis": "verified"
+    },
+    {
+      "spec": {
+        "id": "add-note-type-body",
+        "name": "add_note가 'body' 타입 위반을 거절한다",
+        "operation": {
+          "type": "callTool",
+          "tool": "add_note",
+          "input": {
+            "title": "example",
+            "body": 0
+          }
+        },
+        "assertions": [
+          {
+            "type": "isError",
+            "expected": true
+          }
+        ]
+      },
+      "status": "passed",
+      "operation": {
+        "status": "completed",
+        "timeoutMs": 10000
+      },
+      "assertions": [
+        {
+          "spec": {
+            "type": "isError",
+            "expected": true
+          },
+          "status": "passed"
+        }
+      ],
+      "rejectionBasis": "verified"
+    },
+    {
+      "spec": {
+        "id": "add-note-type-tags",
+        "name": "add_note가 'tags' 타입 위반을 거절한다",
+        "operation": {
+          "type": "callTool",
+          "tool": "add_note",
+          "input": {
+            "title": "example",
+            "body": "example",
+            "tags": "example"
+          }
+        },
+        "assertions": [
+          {
+            "type": "isError",
+            "expected": true
+          }
+        ]
+      },
+      "status": "passed",
+      "operation": {
+        "status": "completed",
+        "timeoutMs": 10000
+      },
+      "assertions": [
+        {
+          "spec": {
+            "type": "isError",
+            "expected": true
+          },
+          "status": "passed"
+        }
+      ],
+      "rejectionBasis": "verified"
+    },
+    {
+      "spec": {
+        "id": "add-note-type-tags-item",
+        "name": "add_note가 'tags[]' 타입 위반을 거절한다",
+        "operation": {
+          "type": "callTool",
+          "tool": "add_note",
+          "input": {
+            "title": "example",
+            "body": "example",
+            "tags": [0]
+          }
+        },
+        "assertions": [
+          {
+            "type": "isError",
+            "expected": true
+          }
+        ]
+      },
+      "status": "passed",
+      "operation": {
+        "status": "completed",
+        "timeoutMs": 10000
+      },
+      "assertions": [
+        {
+          "spec": {
+            "type": "isError",
+            "expected": true
+          },
+          "status": "passed"
+        }
+      ],
+      "rejectionBasis": "verified"
+    },
+    {
+      "spec": {
+        "id": "add-note-type-title",
+        "name": "add_note가 'title' 타입 위반을 거절한다",
+        "operation": {
+          "type": "callTool",
+          "tool": "add_note",
+          "input": {
+            "title": 0,
+            "body": "example"
+          }
+        },
+        "assertions": [
+          {
+            "type": "isError",
+            "expected": true
+          }
+        ]
+      },
+      "status": "passed",
+      "operation": {
+        "status": "completed",
+        "timeoutMs": 10000
+      },
+      "assertions": [
+        {
+          "spec": {
+            "type": "isError",
+            "expected": true
+          },
+          "status": "passed"
+        }
+      ],
+      "rejectionBasis": "verified"
+    },
+    {
+      "spec": {
+        "id": "add-note-range-lower-title",
+        "name": "add_note가 'title' 하한 미만 값을 거절한다",
+        "operation": {
+          "type": "callTool",
+          "tool": "add_note",
+          "input": {
+            "title": "",
+            "body": "example"
+          }
+        },
+        "assertions": [
+          {
+            "type": "isError",
+            "expected": true
+          }
+        ]
+      },
+      "status": "passed",
+      "operation": {
+        "status": "completed",
+        "timeoutMs": 10000
+      },
+      "assertions": [
+        {
+          "spec": {
+            "type": "isError",
+            "expected": true
+          },
+          "status": "passed"
+        }
+      ],
+      "rejectionBasis": "verified"
+    },
+    {
+      "spec": {
+        "id": "list-notes-success",
+        "name": "list_notes가 오류 없이 응답한다",
+        "operation": {
+          "type": "callTool",
+          "tool": "list_notes",
+          "input": {}
+        },
+        "assertions": [
+          {
+            "type": "isError",
+            "expected": false
+          }
+        ]
+      },
+      "status": "passed",
+      "operation": {
+        "status": "completed",
+        "timeoutMs": 10000
+      },
+      "assertions": [
+        {
+          "spec": {
+            "type": "isError",
+            "expected": false
+          },
+          "status": "passed"
+        }
+      ],
+      "rejectionBasis": "notApplicable"
+    },
+    {
+      "spec": {
+        "id": "list-notes-branch-with-tag",
+        "name": "list_notes가 선택 필드 'tag' 를 받아 정상 응답한다",
+        "operation": {
+          "type": "callTool",
+          "tool": "list_notes",
+          "input": {
+            "tag": "example"
+          }
+        },
+        "assertions": [
+          {
+            "type": "isError",
+            "expected": false
+          }
+        ]
+      },
+      "status": "passed",
+      "operation": {
+        "status": "completed",
+        "timeoutMs": 10000
+      },
+      "assertions": [
+        {
+          "spec": {
+            "type": "isError",
+            "expected": false
+          },
+          "status": "passed"
+        }
+      ],
+      "rejectionBasis": "notApplicable"
+    },
+    {
+      "spec": {
+        "id": "list-notes-type-tag",
+        "name": "list_notes가 'tag' 타입 위반을 거절한다",
+        "operation": {
+          "type": "callTool",
+          "tool": "list_notes",
+          "input": {
+            "tag": 0
+          }
+        },
+        "assertions": [
+          {
+            "type": "isError",
+            "expected": true
+          }
+        ]
+      },
+      "status": "passed",
+      "operation": {
+        "status": "completed",
+        "timeoutMs": 10000
+      },
+      "assertions": [
+        {
+          "spec": {
+            "type": "isError",
+            "expected": true
+          },
+          "status": "passed"
+        }
+      ],
+      "rejectionBasis": "verified"
+    },
+    {
+      "spec": {
+        "id": "convert-units-success",
+        "name": "convert_units가 오류 없이 응답한다",
+        "operation": {
+          "type": "callTool",
+          "tool": "convert_units",
+          "input": {
+            "value": 0,
+            "from": "km",
+            "to": "km"
+          }
+        },
+        "assertions": [
+          {
+            "type": "isError",
+            "expected": false
+          },
+          {
+            "type": "structuredContentMatchesSchema",
+            "schema": {
+              "type": "object",
+              "required": ["value", "from", "to", "converted"],
+              "properties": {
+                "converted": {
+                  "type": "number"
+                },
+                "from": {
+                  "type": "string"
+                },
+                "to": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "number"
+                }
+              },
+              "additionalProperties": false
+            }
+          }
+        ]
+      },
+      "status": "failed",
+      "operation": {
+        "status": "completed",
+        "timeoutMs": 10000
+      },
+      "assertions": [
+        {
+          "spec": {
+            "type": "isError",
+            "expected": false
+          },
+          "status": "failed",
+          "diagnostic": {
+            "code": "IS_ERROR_MISMATCH",
+            "message": "정상 응답을 기대했지만 오류 응답을 받았습니다.",
+            "expected": false,
+            "actual": true,
+            "hint": "툴 입력값과 서버의 오류 응답을 확인하세요.",
+            "notes": [
+              "MCP error -32602: Output validation error: Invalid structured content for tool convert_units: Invalid input: expected number, received undefined at converted"
+            ]
+          }
+        },
+        {
+          "spec": {
+            "type": "structuredContentMatchesSchema",
+            "schema": {
+              "type": "object",
+              "required": ["value", "from", "to", "converted"],
+              "properties": {
+                "converted": {
+                  "type": "number"
+                },
+                "from": {
+                  "type": "string"
+                },
+                "to": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "number"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "status": "failed",
+          "diagnostic": {
+            "code": "STRUCTURED_CONTENT_EXTRACTION_FAILED",
+            "message": "저장된 출력 계약을 검사할 structuredContent가 응답에 없습니다.",
+            "actual": "undefined",
+            "hint": "서버가 outputSchema를 선언했다면 정상 응답에 structuredContent도 반환해야 합니다."
+          }
+        }
+      ],
+      "rejectionBasis": "notApplicable"
+    },
+    {
+      "spec": {
+        "id": "convert-units-branch-enum-from-2",
+        "name": "convert_units가 'from' 의 다른 선언값에 정상 응답한다",
+        "operation": {
+          "type": "callTool",
+          "tool": "convert_units",
+          "input": {
+            "value": 0,
+            "from": "m",
+            "to": "km"
+          }
+        },
+        "assertions": [
+          {
+            "type": "isError",
+            "expected": false
+          },
+          {
+            "type": "structuredContentMatchesSchema",
+            "schema": {
+              "type": "object",
+              "required": ["value", "from", "to", "converted"],
+              "properties": {
+                "converted": {
+                  "type": "number"
+                },
+                "from": {
+                  "type": "string"
+                },
+                "to": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "number"
+                }
+              },
+              "additionalProperties": false
+            }
+          }
+        ]
+      },
+      "status": "failed",
+      "operation": {
+        "status": "completed",
+        "timeoutMs": 10000
+      },
+      "assertions": [
+        {
+          "spec": {
+            "type": "isError",
+            "expected": false
+          },
+          "status": "failed",
+          "diagnostic": {
+            "code": "IS_ERROR_MISMATCH",
+            "message": "정상 응답을 기대했지만 오류 응답을 받았습니다.",
+            "expected": false,
+            "actual": true,
+            "hint": "툴 입력값과 서버의 오류 응답을 확인하세요.",
+            "notes": [
+              "MCP error -32602: Output validation error: Invalid structured content for tool convert_units: Invalid input: expected number, received undefined at converted"
+            ]
+          }
+        },
+        {
+          "spec": {
+            "type": "structuredContentMatchesSchema",
+            "schema": {
+              "type": "object",
+              "required": ["value", "from", "to", "converted"],
+              "properties": {
+                "converted": {
+                  "type": "number"
+                },
+                "from": {
+                  "type": "string"
+                },
+                "to": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "number"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "status": "failed",
+          "diagnostic": {
+            "code": "STRUCTURED_CONTENT_EXTRACTION_FAILED",
+            "message": "저장된 출력 계약을 검사할 structuredContent가 응답에 없습니다.",
+            "actual": "undefined",
+            "hint": "서버가 outputSchema를 선언했다면 정상 응답에 structuredContent도 반환해야 합니다."
+          }
+        }
+      ],
+      "rejectionBasis": "notApplicable"
+    },
+    {
+      "spec": {
+        "id": "convert-units-branch-enum-from-last",
+        "name": "convert_units가 'from' 의 마지막 선언값에 정상 응답한다",
+        "operation": {
+          "type": "callTool",
+          "tool": "convert_units",
+          "input": {
+            "value": 0,
+            "from": "mi",
+            "to": "km"
+          }
+        },
+        "assertions": [
+          {
+            "type": "isError",
+            "expected": false
+          },
+          {
+            "type": "structuredContentMatchesSchema",
+            "schema": {
+              "type": "object",
+              "required": ["value", "from", "to", "converted"],
+              "properties": {
+                "converted": {
+                  "type": "number"
+                },
+                "from": {
+                  "type": "string"
+                },
+                "to": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "number"
+                }
+              },
+              "additionalProperties": false
+            }
+          }
+        ]
+      },
+      "status": "failed",
+      "operation": {
+        "status": "completed",
+        "timeoutMs": 10000
+      },
+      "assertions": [
+        {
+          "spec": {
+            "type": "isError",
+            "expected": false
+          },
+          "status": "failed",
+          "diagnostic": {
+            "code": "IS_ERROR_MISMATCH",
+            "message": "정상 응답을 기대했지만 오류 응답을 받았습니다.",
+            "expected": false,
+            "actual": true,
+            "hint": "툴 입력값과 서버의 오류 응답을 확인하세요.",
+            "notes": [
+              "MCP error -32602: Output validation error: Invalid structured content for tool convert_units: Invalid input: expected number, received undefined at converted"
+            ]
+          }
+        },
+        {
+          "spec": {
+            "type": "structuredContentMatchesSchema",
+            "schema": {
+              "type": "object",
+              "required": ["value", "from", "to", "converted"],
+              "properties": {
+                "converted": {
+                  "type": "number"
+                },
+                "from": {
+                  "type": "string"
+                },
+                "to": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "number"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "status": "failed",
+          "diagnostic": {
+            "code": "STRUCTURED_CONTENT_EXTRACTION_FAILED",
+            "message": "저장된 출력 계약을 검사할 structuredContent가 응답에 없습니다.",
+            "actual": "undefined",
+            "hint": "서버가 outputSchema를 선언했다면 정상 응답에 structuredContent도 반환해야 합니다."
+          }
+        }
+      ],
+      "rejectionBasis": "notApplicable"
+    },
+    {
+      "spec": {
+        "id": "convert-units-branch-enum-to-2",
+        "name": "convert_units가 'to' 의 다른 선언값에 정상 응답한다",
+        "operation": {
+          "type": "callTool",
+          "tool": "convert_units",
+          "input": {
+            "value": 0,
+            "from": "km",
+            "to": "m"
+          }
+        },
+        "assertions": [
+          {
+            "type": "isError",
+            "expected": false
+          },
+          {
+            "type": "structuredContentMatchesSchema",
+            "schema": {
+              "type": "object",
+              "required": ["value", "from", "to", "converted"],
+              "properties": {
+                "converted": {
+                  "type": "number"
+                },
+                "from": {
+                  "type": "string"
+                },
+                "to": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "number"
+                }
+              },
+              "additionalProperties": false
+            }
+          }
+        ]
+      },
+      "status": "failed",
+      "operation": {
+        "status": "completed",
+        "timeoutMs": 10000
+      },
+      "assertions": [
+        {
+          "spec": {
+            "type": "isError",
+            "expected": false
+          },
+          "status": "failed",
+          "diagnostic": {
+            "code": "IS_ERROR_MISMATCH",
+            "message": "정상 응답을 기대했지만 오류 응답을 받았습니다.",
+            "expected": false,
+            "actual": true,
+            "hint": "툴 입력값과 서버의 오류 응답을 확인하세요.",
+            "notes": [
+              "MCP error -32602: Output validation error: Invalid structured content for tool convert_units: Invalid input: expected number, received undefined at converted"
+            ]
+          }
+        },
+        {
+          "spec": {
+            "type": "structuredContentMatchesSchema",
+            "schema": {
+              "type": "object",
+              "required": ["value", "from", "to", "converted"],
+              "properties": {
+                "converted": {
+                  "type": "number"
+                },
+                "from": {
+                  "type": "string"
+                },
+                "to": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "number"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "status": "failed",
+          "diagnostic": {
+            "code": "STRUCTURED_CONTENT_EXTRACTION_FAILED",
+            "message": "저장된 출력 계약을 검사할 structuredContent가 응답에 없습니다.",
+            "actual": "undefined",
+            "hint": "서버가 outputSchema를 선언했다면 정상 응답에 structuredContent도 반환해야 합니다."
+          }
+        }
+      ],
+      "rejectionBasis": "notApplicable"
+    },
+    {
+      "spec": {
+        "id": "convert-units-branch-enum-to-last",
+        "name": "convert_units가 'to' 의 마지막 선언값에 정상 응답한다",
+        "operation": {
+          "type": "callTool",
+          "tool": "convert_units",
+          "input": {
+            "value": 0,
+            "from": "km",
+            "to": "mi"
+          }
+        },
+        "assertions": [
+          {
+            "type": "isError",
+            "expected": false
+          },
+          {
+            "type": "structuredContentMatchesSchema",
+            "schema": {
+              "type": "object",
+              "required": ["value", "from", "to", "converted"],
+              "properties": {
+                "converted": {
+                  "type": "number"
+                },
+                "from": {
+                  "type": "string"
+                },
+                "to": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "number"
+                }
+              },
+              "additionalProperties": false
+            }
+          }
+        ]
+      },
+      "status": "failed",
+      "operation": {
+        "status": "completed",
+        "timeoutMs": 10000
+      },
+      "assertions": [
+        {
+          "spec": {
+            "type": "isError",
+            "expected": false
+          },
+          "status": "failed",
+          "diagnostic": {
+            "code": "IS_ERROR_MISMATCH",
+            "message": "정상 응답을 기대했지만 오류 응답을 받았습니다.",
+            "expected": false,
+            "actual": true,
+            "hint": "툴 입력값과 서버의 오류 응답을 확인하세요.",
+            "notes": [
+              "MCP error -32602: Output validation error: Invalid structured content for tool convert_units: Invalid input: expected number, received undefined at converted"
+            ]
+          }
+        },
+        {
+          "spec": {
+            "type": "structuredContentMatchesSchema",
+            "schema": {
+              "type": "object",
+              "required": ["value", "from", "to", "converted"],
+              "properties": {
+                "converted": {
+                  "type": "number"
+                },
+                "from": {
+                  "type": "string"
+                },
+                "to": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "number"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "status": "failed",
+          "diagnostic": {
+            "code": "STRUCTURED_CONTENT_EXTRACTION_FAILED",
+            "message": "저장된 출력 계약을 검사할 structuredContent가 응답에 없습니다.",
+            "actual": "undefined",
+            "hint": "서버가 outputSchema를 선언했다면 정상 응답에 structuredContent도 반환해야 합니다."
+          }
+        }
+      ],
+      "rejectionBasis": "notApplicable"
+    },
+    {
+      "spec": {
+        "id": "convert-units-missing-from",
+        "name": "convert_units가 필수 필드 'from' 누락을 거절한다",
+        "operation": {
+          "type": "callTool",
+          "tool": "convert_units",
+          "input": {
+            "value": 0,
+            "to": "km"
+          }
+        },
+        "assertions": [
+          {
+            "type": "isError",
+            "expected": true
+          }
+        ]
+      },
+      "status": "passed",
+      "operation": {
+        "status": "completed",
+        "timeoutMs": 10000
+      },
+      "assertions": [
+        {
+          "spec": {
+            "type": "isError",
+            "expected": true
+          },
+          "status": "passed"
+        }
+      ],
+      "rejectionBasis": "verified"
+    },
+    {
+      "spec": {
+        "id": "convert-units-missing-to",
+        "name": "convert_units가 필수 필드 'to' 누락을 거절한다",
+        "operation": {
+          "type": "callTool",
+          "tool": "convert_units",
+          "input": {
+            "value": 0,
+            "from": "km"
+          }
+        },
+        "assertions": [
+          {
+            "type": "isError",
+            "expected": true
+          }
+        ]
+      },
+      "status": "passed",
+      "operation": {
+        "status": "completed",
+        "timeoutMs": 10000
+      },
+      "assertions": [
+        {
+          "spec": {
+            "type": "isError",
+            "expected": true
+          },
+          "status": "passed"
+        }
+      ],
+      "rejectionBasis": "verified"
+    },
+    {
+      "spec": {
+        "id": "convert-units-missing-value",
+        "name": "convert_units가 필수 필드 'value' 누락을 거절한다",
+        "operation": {
+          "type": "callTool",
+          "tool": "convert_units",
+          "input": {
+            "from": "km",
+            "to": "km"
+          }
+        },
+        "assertions": [
+          {
+            "type": "isError",
+            "expected": true
+          }
+        ]
+      },
+      "status": "passed",
+      "operation": {
+        "status": "completed",
+        "timeoutMs": 10000
+      },
+      "assertions": [
+        {
+          "spec": {
+            "type": "isError",
+            "expected": true
+          },
+          "status": "passed"
+        }
+      ],
+      "rejectionBasis": "verified"
+    },
+    {
+      "spec": {
+        "id": "convert-units-type-from",
+        "name": "convert_units가 'from' 타입 위반을 거절한다",
+        "operation": {
+          "type": "callTool",
+          "tool": "convert_units",
+          "input": {
+            "value": 0,
+            "from": 0,
+            "to": "km"
+          }
+        },
+        "assertions": [
+          {
+            "type": "isError",
+            "expected": true
+          }
+        ]
+      },
+      "status": "passed",
+      "operation": {
+        "status": "completed",
+        "timeoutMs": 10000
+      },
+      "assertions": [
+        {
+          "spec": {
+            "type": "isError",
+            "expected": true
+          },
+          "status": "passed"
+        }
+      ],
+      "rejectionBasis": "verified"
+    },
+    {
+      "spec": {
+        "id": "convert-units-type-to",
+        "name": "convert_units가 'to' 타입 위반을 거절한다",
+        "operation": {
+          "type": "callTool",
+          "tool": "convert_units",
+          "input": {
+            "value": 0,
+            "from": "km",
+            "to": 0
+          }
+        },
+        "assertions": [
+          {
+            "type": "isError",
+            "expected": true
+          }
+        ]
+      },
+      "status": "passed",
+      "operation": {
+        "status": "completed",
+        "timeoutMs": 10000
+      },
+      "assertions": [
+        {
+          "spec": {
+            "type": "isError",
+            "expected": true
+          },
+          "status": "passed"
+        }
+      ],
+      "rejectionBasis": "verified"
+    },
+    {
+      "spec": {
+        "id": "convert-units-type-value",
+        "name": "convert_units가 'value' 타입 위반을 거절한다",
+        "operation": {
+          "type": "callTool",
+          "tool": "convert_units",
+          "input": {
+            "value": "example",
+            "from": "km",
+            "to": "km"
+          }
+        },
+        "assertions": [
+          {
+            "type": "isError",
+            "expected": true
+          }
+        ]
+      },
+      "status": "passed",
+      "operation": {
+        "status": "completed",
+        "timeoutMs": 10000
+      },
+      "assertions": [
+        {
+          "spec": {
+            "type": "isError",
+            "expected": true
+          },
+          "status": "passed"
+        }
+      ],
+      "rejectionBasis": "verified"
+    },
+    {
+      "spec": {
+        "id": "convert-units-enum-from",
+        "name": "convert_units가 'from' 의 선언되지 않은 값을 거절한다",
+        "operation": {
+          "type": "callTool",
+          "tool": "convert_units",
+          "input": {
+            "value": 0,
+            "from": "__mcpeak_invalid_enum__",
+            "to": "km"
+          }
+        },
+        "assertions": [
+          {
+            "type": "isError",
+            "expected": true
+          }
+        ]
+      },
+      "status": "passed",
+      "operation": {
+        "status": "completed",
+        "timeoutMs": 10000
+      },
+      "assertions": [
+        {
+          "spec": {
+            "type": "isError",
+            "expected": true
+          },
+          "status": "passed"
+        }
+      ],
+      "rejectionBasis": "verified"
+    },
+    {
+      "spec": {
+        "id": "convert-units-enum-to",
+        "name": "convert_units가 'to' 의 선언되지 않은 값을 거절한다",
+        "operation": {
+          "type": "callTool",
+          "tool": "convert_units",
+          "input": {
+            "value": 0,
+            "from": "km",
+            "to": "__mcpeak_invalid_enum__"
+          }
+        },
+        "assertions": [
+          {
+            "type": "isError",
+            "expected": true
+          }
+        ]
+      },
+      "status": "passed",
+      "operation": {
+        "status": "completed",
+        "timeoutMs": 10000
+      },
+      "assertions": [
+        {
+          "spec": {
+            "type": "isError",
+            "expected": true
+          },
+          "status": "passed"
+        }
+      ],
+      "rejectionBasis": "verified"
+    },
+    {
+      "spec": {
+        "id": "summarize-text-success",
+        "name": "summarize_text가 오류 없이 응답한다",
+        "operation": {
+          "type": "callTool",
+          "tool": "summarize_text",
+          "input": {
+            "text": "example"
+          }
+        },
+        "assertions": [
+          {
+            "type": "isError",
+            "expected": false
+          }
+        ]
+      },
+      "status": "passed",
+      "operation": {
+        "status": "completed",
+        "timeoutMs": 10000
+      },
+      "assertions": [
+        {
+          "spec": {
+            "type": "isError",
+            "expected": false
+          },
+          "status": "passed"
+        }
+      ],
+      "rejectionBasis": "notApplicable"
+    },
+    {
+      "spec": {
+        "id": "summarize-text-bound-upper-options-maxwords",
+        "name": "summarize_text가 'options.maxWords' 상한 경계값에 정상 응답한다",
+        "operation": {
+          "type": "callTool",
+          "tool": "summarize_text",
+          "input": {
+            "text": "example",
+            "options": {
+              "maxWords": 200
+            }
+          }
+        },
+        "assertions": [
+          {
+            "type": "isError",
+            "expected": false
+          }
+        ]
+      },
+      "status": "passed",
+      "operation": {
+        "status": "completed",
+        "timeoutMs": 10000
+      },
+      "assertions": [
+        {
+          "spec": {
+            "type": "isError",
+            "expected": false
+          },
+          "status": "passed"
+        }
+      ],
+      "rejectionBasis": "notApplicable"
+    },
+    {
+      "spec": {
+        "id": "summarize-text-branch-with-options",
+        "name": "summarize_text가 선택 필드 'options' 를 받아 정상 응답한다",
+        "operation": {
+          "type": "callTool",
+          "tool": "summarize_text",
+          "input": {
+            "text": "example",
+            "options": {}
+          }
+        },
+        "assertions": [
+          {
+            "type": "isError",
+            "expected": false
+          }
+        ]
+      },
+      "status": "passed",
+      "operation": {
+        "status": "completed",
+        "timeoutMs": 10000
+      },
+      "assertions": [
+        {
+          "spec": {
+            "type": "isError",
+            "expected": false
+          },
+          "status": "passed"
+        }
+      ],
+      "rejectionBasis": "notApplicable"
+    },
+    {
+      "spec": {
+        "id": "summarize-text-missing-text",
+        "name": "summarize_text가 필수 필드 'text' 누락을 거절한다",
+        "operation": {
+          "type": "callTool",
+          "tool": "summarize_text",
+          "input": {}
+        },
+        "assertions": [
+          {
+            "type": "isError",
+            "expected": true
+          }
+        ]
+      },
+      "status": "passed",
+      "operation": {
+        "status": "completed",
+        "timeoutMs": 10000
+      },
+      "assertions": [
+        {
+          "spec": {
+            "type": "isError",
+            "expected": true
+          },
+          "status": "passed"
+        }
+      ],
+      "rejectionBasis": "verified"
+    },
+    {
+      "spec": {
+        "id": "summarize-text-type-options",
+        "name": "summarize_text가 'options' 타입 위반을 거절한다",
+        "operation": {
+          "type": "callTool",
+          "tool": "summarize_text",
+          "input": {
+            "text": "example",
+            "options": "example"
+          }
+        },
+        "assertions": [
+          {
+            "type": "isError",
+            "expected": true
+          }
+        ]
+      },
+      "status": "passed",
+      "operation": {
+        "status": "completed",
+        "timeoutMs": 10000
+      },
+      "assertions": [
+        {
+          "spec": {
+            "type": "isError",
+            "expected": true
+          },
+          "status": "passed"
+        }
+      ],
+      "rejectionBasis": "verified"
+    },
+    {
+      "spec": {
+        "id": "summarize-text-type-options-maxwords",
+        "name": "summarize_text가 'options.maxWords' 타입 위반을 거절한다",
+        "operation": {
+          "type": "callTool",
+          "tool": "summarize_text",
+          "input": {
+            "text": "example",
+            "options": {
+              "maxWords": 1.5
+            }
+          }
+        },
+        "assertions": [
+          {
+            "type": "isError",
+            "expected": true
+          }
+        ]
+      },
+      "status": "passed",
+      "operation": {
+        "status": "completed",
+        "timeoutMs": 10000
+      },
+      "assertions": [
+        {
+          "spec": {
+            "type": "isError",
+            "expected": true
+          },
+          "status": "passed"
+        }
+      ],
+      "rejectionBasis": "verified"
+    },
+    {
+      "spec": {
+        "id": "summarize-text-type-options-style",
+        "name": "summarize_text가 'options.style' 타입 위반을 거절한다",
+        "operation": {
+          "type": "callTool",
+          "tool": "summarize_text",
+          "input": {
+            "text": "example",
+            "options": {
+              "style": 0
+            }
+          }
+        },
+        "assertions": [
+          {
+            "type": "isError",
+            "expected": true
+          }
+        ]
+      },
+      "status": "passed",
+      "operation": {
+        "status": "completed",
+        "timeoutMs": 10000
+      },
+      "assertions": [
+        {
+          "spec": {
+            "type": "isError",
+            "expected": true
+          },
+          "status": "passed"
+        }
+      ],
+      "rejectionBasis": "verified"
+    },
+    {
+      "spec": {
+        "id": "summarize-text-type-text",
+        "name": "summarize_text가 'text' 타입 위반을 거절한다",
+        "operation": {
+          "type": "callTool",
+          "tool": "summarize_text",
+          "input": {
+            "text": 0
+          }
+        },
+        "assertions": [
+          {
+            "type": "isError",
+            "expected": true
+          }
+        ]
+      },
+      "status": "passed",
+      "operation": {
+        "status": "completed",
+        "timeoutMs": 10000
+      },
+      "assertions": [
+        {
+          "spec": {
+            "type": "isError",
+            "expected": true
+          },
+          "status": "passed"
+        }
+      ],
+      "rejectionBasis": "verified"
+    },
+    {
+      "spec": {
+        "id": "summarize-text-enum-options-style",
+        "name": "summarize_text가 'options.style' 의 선언되지 않은 값을 거절한다",
+        "operation": {
+          "type": "callTool",
+          "tool": "summarize_text",
+          "input": {
+            "text": "example",
+            "options": {
+              "style": "__mcpeak_invalid_enum__"
+            }
+          }
+        },
+        "assertions": [
+          {
+            "type": "isError",
+            "expected": true
+          }
+        ]
+      },
+      "status": "passed",
+      "operation": {
+        "status": "completed",
+        "timeoutMs": 10000
+      },
+      "assertions": [
+        {
+          "spec": {
+            "type": "isError",
+            "expected": true
+          },
+          "status": "passed"
+        }
+      ],
+      "rejectionBasis": "verified"
+    },
+    {
+      "spec": {
+        "id": "summarize-text-range-lower-options-maxwords",
+        "name": "summarize_text가 'options.maxWords' 하한 미만 값을 거절한다",
+        "operation": {
+          "type": "callTool",
+          "tool": "summarize_text",
+          "input": {
+            "text": "example",
+            "options": {
+              "maxWords": 0
+            }
+          }
+        },
+        "assertions": [
+          {
+            "type": "isError",
+            "expected": true
+          }
+        ]
+      },
+      "status": "passed",
+      "operation": {
+        "status": "completed",
+        "timeoutMs": 10000
+      },
+      "assertions": [
+        {
+          "spec": {
+            "type": "isError",
+            "expected": true
+          },
+          "status": "passed"
+        }
+      ],
+      "rejectionBasis": "verified"
+    },
+    {
+      "spec": {
+        "id": "summarize-text-range-upper-options-maxwords",
+        "name": "summarize_text가 'options.maxWords' 상한 초과 값을 거절한다",
+        "operation": {
+          "type": "callTool",
+          "tool": "summarize_text",
+          "input": {
+            "text": "example",
+            "options": {
+              "maxWords": 201
+            }
+          }
+        },
+        "assertions": [
+          {
+            "type": "isError",
+            "expected": true
+          }
+        ]
+      },
+      "status": "passed",
+      "operation": {
+        "status": "completed",
+        "timeoutMs": 10000
+      },
+      "assertions": [
+        {
+          "spec": {
+            "type": "isError",
+            "expected": true
+          },
+          "status": "passed"
+        }
+      ],
+      "rejectionBasis": "verified"
+    },
+    {
+      "spec": {
+        "id": "lookup-country-success",
+        "name": "lookup_country가 오류 없이 응답한다",
+        "operation": {
+          "type": "callTool",
+          "tool": "lookup_country",
+          "input": {
+            "code": "KR"
+          }
+        },
+        "assertions": [
+          {
+            "type": "isError",
+            "expected": false
+          }
+        ]
+      },
+      "status": "passed",
+      "operation": {
+        "status": "completed",
+        "timeoutMs": 10000
+      },
+      "assertions": [
+        {
+          "spec": {
+            "type": "isError",
+            "expected": false
+          },
+          "status": "passed"
+        }
+      ],
+      "rejectionBasis": "notApplicable"
+    },
+    {
+      "spec": {
+        "id": "lookup-country-branch-enum-code-2",
+        "name": "lookup_country가 'code' 의 다른 선언값에 정상 응답한다",
+        "operation": {
+          "type": "callTool",
+          "tool": "lookup_country",
+          "input": {
+            "code": "US"
+          }
+        },
+        "assertions": [
+          {
+            "type": "isError",
+            "expected": false
+          }
+        ]
+      },
+      "status": "passed",
+      "operation": {
+        "status": "completed",
+        "timeoutMs": 10000
+      },
+      "assertions": [
+        {
+          "spec": {
+            "type": "isError",
+            "expected": false
+          },
+          "status": "passed"
+        }
+      ],
+      "rejectionBasis": "notApplicable"
+    },
+    {
+      "spec": {
+        "id": "lookup-country-branch-enum-code-last",
+        "name": "lookup_country가 'code' 의 마지막 선언값에 정상 응답한다",
+        "operation": {
+          "type": "callTool",
+          "tool": "lookup_country",
+          "input": {
+            "code": "IN"
+          }
+        },
+        "assertions": [
+          {
+            "type": "isError",
+            "expected": false
+          }
+        ]
+      },
+      "status": "passed",
+      "operation": {
+        "status": "completed",
+        "timeoutMs": 10000
+      },
+      "assertions": [
+        {
+          "spec": {
+            "type": "isError",
+            "expected": false
+          },
+          "status": "passed"
+        }
+      ],
+      "rejectionBasis": "notApplicable"
+    },
+    {
+      "spec": {
+        "id": "lookup-country-branch-with-fields",
+        "name": "lookup_country가 선택 필드 'fields' 를 받아 정상 응답한다",
+        "operation": {
+          "type": "callTool",
+          "tool": "lookup_country",
+          "input": {
+            "code": "KR",
+            "fields": ["name", "capital", "currency", "callingCode"]
+          }
+        },
+        "assertions": [
+          {
+            "type": "isError",
+            "expected": false
+          }
+        ]
+      },
+      "status": "passed",
+      "operation": {
+        "status": "completed",
+        "timeoutMs": 10000
+      },
+      "assertions": [
+        {
+          "spec": {
+            "type": "isError",
+            "expected": false
+          },
+          "status": "passed"
+        }
+      ],
+      "rejectionBasis": "notApplicable"
+    },
+    {
+      "spec": {
+        "id": "lookup-country-missing-code",
+        "name": "lookup_country가 필수 필드 'code' 누락을 거절한다",
+        "operation": {
+          "type": "callTool",
+          "tool": "lookup_country",
+          "input": {}
+        },
+        "assertions": [
+          {
+            "type": "isError",
+            "expected": true
+          }
+        ]
+      },
+      "status": "passed",
+      "operation": {
+        "status": "completed",
+        "timeoutMs": 10000
+      },
+      "assertions": [
+        {
+          "spec": {
+            "type": "isError",
+            "expected": true
+          },
+          "status": "passed"
+        }
+      ],
+      "rejectionBasis": "verified"
+    },
+    {
+      "spec": {
+        "id": "lookup-country-type-code",
+        "name": "lookup_country가 'code' 타입 위반을 거절한다",
+        "operation": {
+          "type": "callTool",
+          "tool": "lookup_country",
+          "input": {
+            "code": 0
+          }
+        },
+        "assertions": [
+          {
+            "type": "isError",
+            "expected": true
+          }
+        ]
+      },
+      "status": "passed",
+      "operation": {
+        "status": "completed",
+        "timeoutMs": 10000
+      },
+      "assertions": [
+        {
+          "spec": {
+            "type": "isError",
+            "expected": true
+          },
+          "status": "passed"
+        }
+      ],
+      "rejectionBasis": "verified"
+    },
+    {
+      "spec": {
+        "id": "lookup-country-type-fields",
+        "name": "lookup_country가 'fields' 타입 위반을 거절한다",
+        "operation": {
+          "type": "callTool",
+          "tool": "lookup_country",
+          "input": {
+            "code": "KR",
+            "fields": "example"
+          }
+        },
+        "assertions": [
+          {
+            "type": "isError",
+            "expected": true
+          }
+        ]
+      },
+      "status": "passed",
+      "operation": {
+        "status": "completed",
+        "timeoutMs": 10000
+      },
+      "assertions": [
+        {
+          "spec": {
+            "type": "isError",
+            "expected": true
+          },
+          "status": "passed"
+        }
+      ],
+      "rejectionBasis": "verified"
+    },
+    {
+      "spec": {
+        "id": "lookup-country-type-fields-item",
+        "name": "lookup_country가 'fields[]' 타입 위반을 거절한다",
+        "operation": {
+          "type": "callTool",
+          "tool": "lookup_country",
+          "input": {
+            "code": "KR",
+            "fields": [0, "capital", "currency", "callingCode"]
+          }
+        },
+        "assertions": [
+          {
+            "type": "isError",
+            "expected": true
+          }
+        ]
+      },
+      "status": "passed",
+      "operation": {
+        "status": "completed",
+        "timeoutMs": 10000
+      },
+      "assertions": [
+        {
+          "spec": {
+            "type": "isError",
+            "expected": true
+          },
+          "status": "passed"
+        }
+      ],
+      "rejectionBasis": "verified"
+    },
+    {
+      "spec": {
+        "id": "lookup-country-enum-code",
+        "name": "lookup_country가 'code' 의 선언되지 않은 값을 거절한다",
+        "operation": {
+          "type": "callTool",
+          "tool": "lookup_country",
+          "input": {
+            "code": "__mcpeak_invalid_enum__"
+          }
+        },
+        "assertions": [
+          {
+            "type": "isError",
+            "expected": true
+          }
+        ]
+      },
+      "status": "passed",
+      "operation": {
+        "status": "completed",
+        "timeoutMs": 10000
+      },
+      "assertions": [
+        {
+          "spec": {
+            "type": "isError",
+            "expected": true
+          },
+          "status": "passed"
+        }
+      ],
+      "rejectionBasis": "verified"
+    },
+    {
+      "spec": {
+        "id": "lookup-country-enum-fields-item",
+        "name": "lookup_country가 'fields[]' 의 선언되지 않은 값을 거절한다",
+        "operation": {
+          "type": "callTool",
+          "tool": "lookup_country",
+          "input": {
+            "code": "KR",
+            "fields": ["__mcpeak_invalid_enum__", "capital", "currency", "callingCode"]
+          }
+        },
+        "assertions": [
+          {
+            "type": "isError",
+            "expected": true
+          }
+        ]
+      },
+      "status": "passed",
+      "operation": {
+        "status": "completed",
+        "timeoutMs": 10000
+      },
+      "assertions": [
+        {
+          "spec": {
+            "type": "isError",
+            "expected": true
+          },
+          "status": "passed"
+        }
+      ],
+      "rejectionBasis": "verified"
+    },
+    {
+      "spec": {
+        "id": "evaluate-expression-success",
+        "name": "evaluate_expression가 오류 없이 응답한다",
+        "operation": {
+          "type": "callTool",
+          "tool": "evaluate_expression",
+          "input": {
+            "expression": "example"
+          }
+        },
+        "assertions": [
+          {
+            "type": "isError",
+            "expected": false
+          },
+          {
+            "type": "structuredContentMatchesSchema",
+            "schema": {
+              "type": "object",
+              "required": ["expression", "value"],
+              "properties": {
+                "expression": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "number"
+                }
+              },
+              "additionalProperties": false
+            }
+          }
+        ]
+      },
+      "status": "failed",
+      "operation": {
+        "status": "completed",
+        "timeoutMs": 10000
+      },
+      "assertions": [
+        {
+          "spec": {
+            "type": "isError",
+            "expected": false
+          },
+          "status": "failed",
+          "diagnostic": {
+            "code": "IS_ERROR_MISMATCH",
+            "message": "정상 응답을 기대했지만 오류 응답을 받았습니다.",
+            "expected": false,
+            "actual": true,
+            "hint": "툴 입력값과 서버의 오류 응답을 확인하세요.",
+            "notes": [
+              "→ 식을 해석할 수 없습니다: 'example' (숫자 · + - * / · 괄호 외의 문자가 있습니다)",
+              "→ 숫자, + - * /, 괄호만 쓸 수 있습니다. 예: (2 + 3) * 4 / 5"
+            ]
+          }
+        },
+        {
+          "spec": {
+            "type": "structuredContentMatchesSchema",
+            "schema": {
+              "type": "object",
+              "required": ["expression", "value"],
+              "properties": {
+                "expression": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "number"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "status": "failed",
+          "diagnostic": {
+            "code": "STRUCTURED_CONTENT_EXTRACTION_FAILED",
+            "message": "저장된 출력 계약을 검사할 structuredContent가 응답에 없습니다.",
+            "actual": "undefined",
+            "hint": "서버가 outputSchema를 선언했다면 정상 응답에 structuredContent도 반환해야 합니다."
+          }
+        }
+      ],
+      "rejectionBasis": "notApplicable"
+    },
+    {
+      "spec": {
+        "id": "evaluate-expression-missing-expression",
+        "name": "evaluate_expression가 필수 필드 'expression' 누락을 거절한다",
+        "operation": {
+          "type": "callTool",
+          "tool": "evaluate_expression",
+          "input": {}
+        },
+        "assertions": [
+          {
+            "type": "isError",
+            "expected": true
+          }
+        ]
+      },
+      "status": "passed",
+      "operation": {
+        "status": "completed",
+        "timeoutMs": 10000
+      },
+      "assertions": [
+        {
+          "spec": {
+            "type": "isError",
+            "expected": true
+          },
+          "status": "passed"
+        }
+      ],
+      "rejectionBasis": "verified"
+    },
+    {
+      "spec": {
+        "id": "evaluate-expression-type-expression",
+        "name": "evaluate_expression가 'expression' 타입 위반을 거절한다",
+        "operation": {
+          "type": "callTool",
+          "tool": "evaluate_expression",
+          "input": {
+            "expression": 0
+          }
+        },
+        "assertions": [
+          {
+            "type": "isError",
+            "expected": true
+          }
+        ]
+      },
+      "status": "passed",
+      "operation": {
+        "status": "completed",
+        "timeoutMs": 10000
+      },
+      "assertions": [
+        {
+          "spec": {
+            "type": "isError",
+            "expected": true
+          },
+          "status": "passed"
+        }
+      ],
+      "rejectionBasis": "verified"
+    },
+    {
+      "spec": {
+        "id": "evaluate-expression-range-lower-expression",
+        "name": "evaluate_expression가 'expression' 하한 미만 값을 거절한다",
+        "operation": {
+          "type": "callTool",
+          "tool": "evaluate_expression",
+          "input": {
+            "expression": ""
+          }
+        },
+        "assertions": [
+          {
+            "type": "isError",
+            "expected": true
+          }
+        ]
+      },
+      "status": "passed",
+      "operation": {
+        "status": "completed",
+        "timeoutMs": 10000
+      },
+      "assertions": [
+        {
+          "spec": {
+            "type": "isError",
+            "expected": true
+          },
+          "status": "passed"
+        }
+      ],
+      "rejectionBasis": "verified"
+    }
+  ],
+  "summary": {
+    "total": 50,
+    "passed": 44,
+    "failed": 6,
+    "timedOut": 0,
+    "cancelled": 0,
+    "notRun": 0,
+    "rejectionUnverified": 0
+  },
+  "spec": {
+    "approval": "matched",
+    "fingerprint": "5d1cf05e35159687940cf82b7ee6c1deadf68d74e30ab99a0e0a43daeb57bb80",
+    "findings": [],
+    "approvedFingerprint": "5d1cf05e35159687940cf82b7ee6c1deadf68d74e30ab99a0e0a43daeb57bb80"
+  }
+}

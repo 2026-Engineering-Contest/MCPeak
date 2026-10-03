@@ -5,6 +5,14 @@ import { buildGenerateArgv } from "../build-argv.js";
 
 type ConfirmFields = Pick<GenerateForm, "dryRun" | "repair" | "diagnoseRejections" | "resetCmd">;
 
+/**
+ * argv 에 들어가지 않는 4단계 옵션. `verify` 는 실행 플로우를 `generate` 에서 `verify` 로 바꾼다
+ * (ADR-0103). 승인 질문에 자동으로 답해 저장하고 곧바로 test 를 잇는다.
+ */
+export interface ConfirmOptions {
+  readonly verify: boolean;
+}
+
 /** argv 한 토큰을 셸 표기로 감싼다(표시 전용, 전송은 배열 그대로). */
 function quoteToken(token: string): string {
   if (token === "" || /\s|"/.test(token)) {
@@ -28,7 +36,8 @@ export function formatCliCommand(argv: readonly string[]): string {
  */
 export function StepConfirm(props: {
   form: GenerateForm;
-  onChange: (patch: Partial<ConfirmFields>) => void;
+  options: ConfirmOptions;
+  onChange: (patch: Partial<ConfirmFields & ConfirmOptions>) => void;
 }): JSX.Element {
   const { form } = props;
   const http = form.transport === "http";
@@ -60,6 +69,7 @@ export function StepConfirm(props: {
     ["자동 교정", form.repair ? "켬" : "끔"],
     ["거절 근거 진단", form.diagnoseRejections ? "켬" : "끔"],
     ["초기화 명령", form.resetCmd === "" ? "없음" : form.resetCmd],
+    ["한 번에 검증", props.options.verify ? "켬" : "끔"],
   ];
 
   return (
@@ -100,6 +110,13 @@ export function StepConfirm(props: {
         }
         onChange={(diagnoseRejections) => props.onChange({ diagnoseRejections })}
       />
+      <Toggle
+        id="generate-verify"
+        label="한 번에 검증"
+        checked={props.options.verify}
+        hint="승인 질문에 자동으로 답해 저장하고 곧바로 테스트를 실행합니다. 남은 실패는 서버 결함으로 기록합니다."
+        onChange={(verify) => props.onChange({ verify })}
+      />
       <Field
         label="시험 실행 전 초기화 명령 (선택)"
         htmlFor="generate-reset-cmd"
@@ -132,12 +149,21 @@ export function StepConfirm(props: {
       </div>
 
       <div className="rounded-md border border-line bg-line-subtle px-3 py-2">
-        <p className="text-xs text-ink-muted">실행될 CLI 명령</p>
+        <p className="text-xs text-ink-muted">
+          {props.options.verify ? "실행될 CLI 명령 (생성 단계)" : "실행될 CLI 명령"}
+        </p>
         {cliCommand !== null ? (
           <p className="font-mono text-sm break-all text-ink">{cliCommand}</p>
         ) : (
           <p className="text-sm" style={{ color: "var(--status-failed-fg)" }}>
             {buildError}
+          </p>
+        )}
+        {props.options.verify && (
+          <p className="mt-1 text-xs text-ink-muted">
+            한 번에 검증은 대시보드 전용 흐름입니다. 이 명령의 승인 질문에 자동으로 답해 저장한 뒤
+            같은 서버에 mcpeak test 를 이어 돌립니다. 이 명령만 터미널에서 실행하면 재현되지
+            않습니다.
           </p>
         )}
       </div>

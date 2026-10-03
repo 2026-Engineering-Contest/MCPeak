@@ -1,0 +1,925 @@
+{
+  "schemaVersion": 1,
+  "id": "server",
+  "name": "server",
+  "approval": {
+    "fingerprint": "a5b95def0768ba2b6c9715b8535075463a96ab10c2b5febeff0c7252728f2ee5"
+  },
+  "defaultTimeoutMs": 10000,
+  "cases": [
+    {
+      "id": "get-note-success",
+      "name": "get_note가 오류 없이 응답한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "get_note",
+        "input": {
+          "id": "11111111-1111-4111-8111-111111111111"
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": false
+        }
+      ]
+    },
+    {
+      "id": "get-note-missing-id",
+      "name": "get_note가 필수 필드 'id' 누락을 거절한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "get_note",
+        "input": {}
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": true
+        }
+      ]
+    },
+    {
+      "id": "get-note-type-id",
+      "name": "get_note가 'id' 타입 위반을 거절한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "get_note",
+        "input": {
+          "id": 0
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": true
+        }
+      ]
+    },
+    {
+      "id": "get-note-undeclared",
+      "name": "get_note가 선언되지 않은 필드 '__mcpeak_undeclared__' 를 거절한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "get_note",
+        "input": {
+          "id": "11111111-1111-4111-8111-111111111111",
+          "__mcpeak_undeclared__": "example"
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": true
+        }
+      ]
+    },
+    {
+      "id": "create-note-success",
+      "name": "create_note가 오류 없이 응답한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "create_note",
+        "input": {
+          "title": "example",
+          "priority": "low",
+          "dueAt": "2000-01-01T00:00:00Z",
+          "author": {
+            "name": "example"
+          }
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": false
+        }
+      ]
+    },
+    {
+      "id": "create-note-bound-upper-tags",
+      "name": "create_note가 'tags' 상한 경계값에 정상 응답한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "create_note",
+        "input": {
+          "title": "example",
+          "priority": "low",
+          "dueAt": "2000-01-01T00:00:00Z",
+          "author": {
+            "name": "example"
+          },
+          "tags": ["home", "home", "home", "home", "home"]
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": false
+        }
+      ]
+    },
+    {
+      "id": "create-note-bound-upper-title",
+      "name": "create_note가 'title' 상한 경계값에 정상 응답한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "create_note",
+        "input": {
+          "title": "examplexxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "priority": "low",
+          "dueAt": "2000-01-01T00:00:00Z",
+          "author": {
+            "name": "example"
+          }
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": false
+        }
+      ]
+    },
+    {
+      "id": "create-note-branch-with-body",
+      "name": "create_note가 선택 필드 'body' 를 받아 정상 응답한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "create_note",
+        "input": {
+          "title": "example",
+          "priority": "low",
+          "dueAt": "2000-01-01T00:00:00Z",
+          "author": {
+            "name": "example"
+          },
+          "body": "example"
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": false
+        }
+      ]
+    },
+    {
+      "id": "create-note-branch-enum-priority-2",
+      "name": "create_note가 'priority' 의 다른 선언값에 정상 응답한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "create_note",
+        "input": {
+          "title": "example",
+          "priority": "mid",
+          "dueAt": "2000-01-01T00:00:00Z",
+          "author": {
+            "name": "example"
+          }
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": false
+        }
+      ]
+    },
+    {
+      "id": "create-note-branch-enum-priority-last",
+      "name": "create_note가 'priority' 의 마지막 선언값에 정상 응답한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "create_note",
+        "input": {
+          "title": "example",
+          "priority": "high",
+          "dueAt": "2000-01-01T00:00:00Z",
+          "author": {
+            "name": "example"
+          }
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": false
+        }
+      ]
+    },
+    {
+      "id": "create-note-branch-with-tags",
+      "name": "create_note가 선택 필드 'tags' 를 받아 정상 응답한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "create_note",
+        "input": {
+          "title": "example",
+          "priority": "low",
+          "dueAt": "2000-01-01T00:00:00Z",
+          "author": {
+            "name": "example"
+          },
+          "tags": ["home"]
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": false
+        }
+      ]
+    },
+    {
+      "id": "create-note-missing-author",
+      "name": "create_note가 필수 필드 'author' 누락을 거절한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "create_note",
+        "input": {
+          "title": "example",
+          "priority": "low",
+          "dueAt": "2000-01-01T00:00:00Z"
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": true
+        }
+      ]
+    },
+    {
+      "id": "create-note-missing-author-name",
+      "name": "create_note가 필수 필드 'author.name' 누락을 거절한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "create_note",
+        "input": {
+          "title": "example",
+          "priority": "low",
+          "dueAt": "2000-01-01T00:00:00Z",
+          "author": {}
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": true
+        }
+      ]
+    },
+    {
+      "id": "create-note-missing-dueat",
+      "name": "create_note가 필수 필드 'dueAt' 누락을 거절한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "create_note",
+        "input": {
+          "title": "example",
+          "priority": "low",
+          "author": {
+            "name": "example"
+          }
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": true
+        }
+      ]
+    },
+    {
+      "id": "create-note-missing-priority",
+      "name": "create_note가 필수 필드 'priority' 누락을 거절한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "create_note",
+        "input": {
+          "title": "example",
+          "dueAt": "2000-01-01T00:00:00Z",
+          "author": {
+            "name": "example"
+          }
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": true
+        }
+      ]
+    },
+    {
+      "id": "create-note-missing-title",
+      "name": "create_note가 필수 필드 'title' 누락을 거절한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "create_note",
+        "input": {
+          "priority": "low",
+          "dueAt": "2000-01-01T00:00:00Z",
+          "author": {
+            "name": "example"
+          }
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": true
+        }
+      ]
+    },
+    {
+      "id": "create-note-type-author",
+      "name": "create_note가 'author' 타입 위반을 거절한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "create_note",
+        "input": {
+          "title": "example",
+          "priority": "low",
+          "dueAt": "2000-01-01T00:00:00Z",
+          "author": "example"
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": true
+        }
+      ]
+    },
+    {
+      "id": "create-note-type-author-email",
+      "name": "create_note가 'author.email' 타입 위반을 거절한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "create_note",
+        "input": {
+          "title": "example",
+          "priority": "low",
+          "dueAt": "2000-01-01T00:00:00Z",
+          "author": {
+            "name": "example",
+            "email": 0
+          }
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": true
+        }
+      ]
+    },
+    {
+      "id": "create-note-type-author-name",
+      "name": "create_note가 'author.name' 타입 위반을 거절한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "create_note",
+        "input": {
+          "title": "example",
+          "priority": "low",
+          "dueAt": "2000-01-01T00:00:00Z",
+          "author": {
+            "name": 0
+          }
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": true
+        }
+      ]
+    },
+    {
+      "id": "create-note-type-body",
+      "name": "create_note가 'body' 타입 위반을 거절한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "create_note",
+        "input": {
+          "title": "example",
+          "priority": "low",
+          "dueAt": "2000-01-01T00:00:00Z",
+          "author": {
+            "name": "example"
+          },
+          "body": 0
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": true
+        }
+      ]
+    },
+    {
+      "id": "create-note-type-dueat",
+      "name": "create_note가 'dueAt' 타입 위반을 거절한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "create_note",
+        "input": {
+          "title": "example",
+          "priority": "low",
+          "dueAt": 0,
+          "author": {
+            "name": "example"
+          }
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": true
+        }
+      ]
+    },
+    {
+      "id": "create-note-type-parentid",
+      "name": "create_note가 'parentId' 타입 위반을 거절한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "create_note",
+        "input": {
+          "title": "example",
+          "priority": "low",
+          "dueAt": "2000-01-01T00:00:00Z",
+          "author": {
+            "name": "example"
+          },
+          "parentId": 0
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": true
+        }
+      ]
+    },
+    {
+      "id": "create-note-type-priority",
+      "name": "create_note가 'priority' 타입 위반을 거절한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "create_note",
+        "input": {
+          "title": "example",
+          "priority": 0,
+          "dueAt": "2000-01-01T00:00:00Z",
+          "author": {
+            "name": "example"
+          }
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": true
+        }
+      ]
+    },
+    {
+      "id": "create-note-type-tags",
+      "name": "create_note가 'tags' 타입 위반을 거절한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "create_note",
+        "input": {
+          "title": "example",
+          "priority": "low",
+          "dueAt": "2000-01-01T00:00:00Z",
+          "author": {
+            "name": "example"
+          },
+          "tags": "example"
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": true
+        }
+      ]
+    },
+    {
+      "id": "create-note-type-tags-item",
+      "name": "create_note가 'tags[]' 타입 위반을 거절한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "create_note",
+        "input": {
+          "title": "example",
+          "priority": "low",
+          "dueAt": "2000-01-01T00:00:00Z",
+          "author": {
+            "name": "example"
+          },
+          "tags": [0]
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": true
+        }
+      ]
+    },
+    {
+      "id": "create-note-type-title",
+      "name": "create_note가 'title' 타입 위반을 거절한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "create_note",
+        "input": {
+          "title": 0,
+          "priority": "low",
+          "dueAt": "2000-01-01T00:00:00Z",
+          "author": {
+            "name": "example"
+          }
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": true
+        }
+      ]
+    },
+    {
+      "id": "create-note-enum-priority",
+      "name": "create_note가 'priority' 의 선언되지 않은 값을 거절한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "create_note",
+        "input": {
+          "title": "example",
+          "priority": "__mcpeak_invalid_enum__",
+          "dueAt": "2000-01-01T00:00:00Z",
+          "author": {
+            "name": "example"
+          }
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": true
+        }
+      ]
+    },
+    {
+      "id": "create-note-enum-tags-item",
+      "name": "create_note가 'tags[]' 의 선언되지 않은 값을 거절한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "create_note",
+        "input": {
+          "title": "example",
+          "priority": "low",
+          "dueAt": "2000-01-01T00:00:00Z",
+          "author": {
+            "name": "example"
+          },
+          "tags": ["__mcpeak_invalid_enum__"]
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": true
+        }
+      ]
+    },
+    {
+      "id": "create-note-range-lower-author-name",
+      "name": "create_note가 'author.name' 하한 미만 값을 거절한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "create_note",
+        "input": {
+          "title": "example",
+          "priority": "low",
+          "dueAt": "2000-01-01T00:00:00Z",
+          "author": {
+            "name": ""
+          }
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": true
+        }
+      ]
+    },
+    {
+      "id": "create-note-range-upper-tags",
+      "name": "create_note가 'tags' 상한 초과 값을 거절한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "create_note",
+        "input": {
+          "title": "example",
+          "priority": "low",
+          "dueAt": "2000-01-01T00:00:00Z",
+          "author": {
+            "name": "example"
+          },
+          "tags": ["home", "home", "home", "home", "home", "home"]
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": true
+        }
+      ]
+    },
+    {
+      "id": "create-note-range-lower-title",
+      "name": "create_note가 'title' 하한 미만 값을 거절한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "create_note",
+        "input": {
+          "title": "",
+          "priority": "low",
+          "dueAt": "2000-01-01T00:00:00Z",
+          "author": {
+            "name": "example"
+          }
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": true
+        }
+      ]
+    },
+    {
+      "id": "create-note-range-upper-title",
+      "name": "create_note가 'title' 상한 초과 값을 거절한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "create_note",
+        "input": {
+          "title": "examplexxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "priority": "low",
+          "dueAt": "2000-01-01T00:00:00Z",
+          "author": {
+            "name": "example"
+          }
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": true
+        }
+      ]
+    },
+    {
+      "id": "list-notes-success",
+      "name": "list_notes가 오류 없이 응답한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "list_notes",
+        "input": {}
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": false
+        }
+      ]
+    },
+    {
+      "id": "list-notes-bound-upper-limit",
+      "name": "list_notes가 'limit' 상한 경계값에 정상 응답한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "list_notes",
+        "input": {
+          "limit": 50
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": false
+        }
+      ]
+    },
+    {
+      "id": "list-notes-branch-with-filter",
+      "name": "list_notes가 선택 필드 'filter' 를 받아 정상 응답한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "list_notes",
+        "input": {
+          "filter": {
+            "priority": "low"
+          }
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": false
+        }
+      ]
+    },
+    {
+      "id": "list-notes-branch-with-limit",
+      "name": "list_notes가 선택 필드 'limit' 를 받아 정상 응답한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "list_notes",
+        "input": {
+          "limit": 10
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": false
+        }
+      ]
+    },
+    {
+      "id": "list-notes-missing-filter-priority",
+      "name": "list_notes가 필수 필드 'filter.priority' 누락을 거절한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "list_notes",
+        "input": {
+          "filter": {}
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": true
+        }
+      ]
+    },
+    {
+      "id": "list-notes-type-filter",
+      "name": "list_notes가 'filter' 타입 위반을 거절한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "list_notes",
+        "input": {
+          "filter": "example"
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": true
+        }
+      ]
+    },
+    {
+      "id": "list-notes-type-filter-priority",
+      "name": "list_notes가 'filter.priority' 타입 위반을 거절한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "list_notes",
+        "input": {
+          "filter": {
+            "priority": 0
+          }
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": true
+        }
+      ]
+    },
+    {
+      "id": "list-notes-type-filter-tag",
+      "name": "list_notes가 'filter.tag' 타입 위반을 거절한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "list_notes",
+        "input": {
+          "filter": {
+            "priority": "low",
+            "tag": 0
+          }
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": true
+        }
+      ]
+    },
+    {
+      "id": "list-notes-type-limit",
+      "name": "list_notes가 'limit' 타입 위반을 거절한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "list_notes",
+        "input": {
+          "limit": 1.5
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": true
+        }
+      ]
+    },
+    {
+      "id": "list-notes-enum-filter-priority",
+      "name": "list_notes가 'filter.priority' 의 선언되지 않은 값을 거절한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "list_notes",
+        "input": {
+          "filter": {
+            "priority": "__mcpeak_invalid_enum__"
+          }
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": true
+        }
+      ]
+    },
+    {
+      "id": "list-notes-enum-filter-tag",
+      "name": "list_notes가 'filter.tag' 의 선언되지 않은 값을 거절한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "list_notes",
+        "input": {
+          "filter": {
+            "priority": "low",
+            "tag": "__mcpeak_invalid_enum__"
+          }
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": true
+        }
+      ]
+    },
+    {
+      "id": "list-notes-range-lower-limit",
+      "name": "list_notes가 'limit' 하한 미만 값을 거절한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "list_notes",
+        "input": {
+          "limit": 0
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": true
+        }
+      ]
+    },
+    {
+      "id": "list-notes-range-upper-limit",
+      "name": "list_notes가 'limit' 상한 초과 값을 거절한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "list_notes",
+        "input": {
+          "limit": 51
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": true
+        }
+      ]
+    }
+  ]
+}

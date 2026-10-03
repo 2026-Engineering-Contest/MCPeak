@@ -1,5 +1,13 @@
 import { escapeInvisible } from "./rules/description.js";
-import type { AuditReport, Finding, Location, Severity } from "./types.js";
+import type {
+  AuditReport,
+  Finding,
+  Location,
+  SandboxNetworkMode,
+  SandboxReport,
+  SandboxUnavailable,
+  Severity,
+} from "./types.js";
 
 const SEVERITY_ORDER: readonly Severity[] = ["high", "medium", "low", "info"];
 
@@ -21,19 +29,94 @@ const FLOW_FIX =
 
 const FOOTER = [
   "이 검사는 설명문의 문형과 프로토콜 표면만 봅니다. 바꿔 말한 지시와 서버 코드의 실제 행위는 보지 못합니다.",
-  "행위 관측(Docker 격리)은 mcpeak audit --sandbox 로 켭니다. (단계 2에서 제공)",
+  "행위 관측(Docker 격리)은 mcpeak audit --sandbox 로 켭니다.",
 ];
+
+type SandboxRan = Extract<SandboxReport, { status: "ran" }>;
+
+const NETWORK_LABEL: Record<SandboxNetworkMode, string> = {
+  live: "가로채기",
+  record: "가로채기(녹화)",
+  // 재생에서도 게이트웨이는 bridge 에 붙는다. 서버 쪽에서 본 사실로 읽는다(상류에 닿지 않는다).
+  replay: "재생(네트워크 없음)",
+};
+
+/**
+ * 격리 이미지가 실행하는 명령. `SandboxBackend.commands` 를 `, ` 로 이은 것과 같아야 한다. 리포트에는
+ * 백엔드의 목록이 실려 오지 않아(`SandboxReport` 의 unavailable 갈래에 자리가 없다) 여기 적어 둔다.
+ */
+const SANDBOX_COMMANDS = "node, npx, npm";
+
+const RAN_FOOTER_FIRST =
+  "격리 실행은 한 번의 관측입니다. 호출 횟수나 시간이 지나야 달라지는 행동은 보지 못합니다.";
+const RAN_FOOTER_TRACES = {
+  compared:
+    "컨테이너라는 흔적(/.dockerenv, cgroup)은 지우지 못했습니다. 안팎의 도구 표면은 비교했지만 호출 뒤의 행동까지 같다는 뜻은 아닙니다.",
+  notCompared:
+    "컨테이너라는 흔적(/.dockerenv, cgroup)은 지우지 못했습니다. 격리를 알아채고 얌전히 구는 서버는 --compare-host 로 안팎의 도구 표면을 비교해 보세요.",
+} as const;
+const RAN_FOOTER_REST = [
+  "HTTP 가 아닌 접속은 목적지 주소와 포트만 기록했고 내용은 보지 못했습니다.",
+  "관측되지 않았다는 것은 없다는 증명이 아닙니다. 암호화하거나 요약해서 내보낸 값은 이 검사가 알아보지 못합니다.",
+  "사전 점검은 피해를 0 으로 만들지 않습니다. 조용히 몇 달 갈 일을 첫 시도에서 드러내는 것이 목적입니다. 등록한 뒤에는 --baseline 비교를 이어 가세요.",
+];
+
+const UNOBSERVED = "서버는 격리 없이 이 머신에서 실행됐습니다.";
+
+/**
+ * 격리가 켜지지 않은 실행의 둘째 줄. 사용자는 `--sandbox` 를 주었으므로 격리됐다고 믿고 있다. 그래서
+ * 다섯 문장 모두 서버가 어디서 돌았는지를 말한다. `detail` 은 docker 가 낸 글자라 표기로 바꿔 싣는다.
+ */
+function describeUnavailable(reason: SandboxUnavailable): string {
+  const detail = escapeInvisible(reason.detail);
+  switch (reason.code) {
+    case "docker-missing":
+      return `행위 관측 안 함: Docker 를 찾을 수 없습니다. ${UNOBSERVED} (설치: https://docs.docker.com/get-docker/)`;
+    case "daemon-down":
+      return `행위 관측 안 함: Docker 데몬이 응답하지 않습니다. ${UNOBSERVED} (Docker Desktop 을 켜거나 dockerd 를 시작한 뒤 다시 실행하세요)`;
+    case "unsupported-command":
+      return `행위 관측 안 함: 격리 이미지가 실행할 수 없습니다: '${detail}'. 격리 이미지는 ${SANDBOX_COMMANDS} 만 실행합니다. ${UNOBSERVED}`;
+    case "image-build-failed":
+      return `행위 관측 안 함: 격리 이미지를 만들지 못했습니다: ${detail}. ${UNOBSERVED} (docker build 가 되는지, 네트워크가 되는지 확인하세요)`;
+    case "start-failed":
+      return `행위 관측 안 함: 격리 컨테이너를 띄우지 못했습니다: ${detail}. ${UNOBSERVED}`;
+  }
+}
+
+function describeRan(sandbox: SandboxRan): string {
+  return `격리 실행: Docker 컨테이너 안에서 서버를 띄웠습니다 · 네트워크 ${NETWORK_LABEL[sandbox.network]} · 이미지 ${escapeInvisible(sandbox.image)}`;
+}
+
+/** 호출 정책 줄의 꼬리. 격리가 켜졌을 때만 다르다(§6.1). */
+function probeTail(report: AuditReport, ran: SandboxRan | undefined): string {
+  if (report.probe !== "all") return "";
+  return ran === undefined
+    ? " (상태를 바꾸는 도구도 호출했습니다)"
+    : ` (격리 안이라 상태를 바꾸는 도구도 호출했습니다. 호출 ${ran.callCount}회)`;
+}
 
 /** §6.1 의 사람용 리포트. 색을 쓰지 않고, 같은 입력에는 같은 문자열을 낸다. */
 export function renderReport(report: AuditReport): string {
-  const { server, counts } = report;
-  const lines: string[] = [
-    "mcpeak audit 결과",
+  const { server, counts, sandbox } = report;
+  const ran = sandbox?.status === "ran" ? sandbox : undefined;
+  const lines: string[] = ["mcpeak audit 결과"];
+  if (sandbox !== undefined)
+    lines.push(
+      sandbox.status === "ran" ? describeRan(sandbox) : describeUnavailable(sandbox.reason),
+    );
+  lines.push(
     `서버 ${server.name} ${server.version} · 도구 ${server.toolCount}개 · 프롬프트 ${server.promptCount}개 · 리소스 ${server.resourceCount}개 · instructions ${server.hasInstructions ? "있음" : "없음"}`,
-    `호출 정책 ${report.probe} · 호출한 도구 ${report.probedTools.length}개${report.probe === "all" ? " (상태를 바꾸는 도구도 호출했습니다)" : ""}`,
+  );
+  // 선언은 서버가 스스로 쓸 수 있는 것이라, 무엇을 선언으로 보았는지를 사용자가 보게 한다.
+  if (ran !== undefined)
+    lines.push(
+      `선언된 목적지 ${ran.declaredHosts.length}곳: ${ran.declaredHosts.map(escapeInvisible).join(", ")} (도구 설명·README·package.json·--allow-host 에서 읽음)`,
+    );
+  lines.push(
+    `호출 정책 ${report.probe} · 호출한 도구 ${report.probedTools.length}개${probeTail(report, ran)}`,
     "",
     `판정: 심각 ${counts.high}건, 주의 ${counts.medium}건, 낮음 ${counts.low}건, 정보 ${counts.info}건`,
-  ];
+  );
 
   const flows = report.findings.filter(isFlow);
   const defects = report.findings.filter((f) => !isFlow(f));
@@ -77,7 +160,16 @@ export function renderReport(report: AuditReport): string {
     for (const s of report.skipped) lines.push(`  - ${s.family}: ${s.reason}`);
   }
 
-  lines.push("", ...FOOTER);
+  lines.push(
+    "",
+    ...(ran === undefined
+      ? FOOTER
+      : [
+          RAN_FOOTER_FIRST,
+          ran.compareHost ? RAN_FOOTER_TRACES.compared : RAN_FOOTER_TRACES.notCompared,
+          ...RAN_FOOTER_REST,
+        ]),
+  );
   return `${lines.join("\n")}\n`;
 }
 

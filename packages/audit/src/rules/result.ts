@@ -44,6 +44,8 @@ export interface ToolCallResult {
   readonly toolName: string;
   readonly raw: unknown;
   readonly outcome: "ok" | "timeout" | "error";
+  /** 격리 안의 호출이면 호출 계획의 callId. 판정과 위치에는 쓰지 않는다. */
+  readonly callId?: string;
 }
 
 const isObject = (value: unknown): value is Record<string, unknown> =>

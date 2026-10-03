@@ -14,6 +14,12 @@ export {
   runGenerateCommand,
 } from "./generate-command.js";
 export {
+  type OptimizeCommandDependencies,
+  type OptimizeCommandInput,
+  parseOptimizeCommand,
+  runOptimizeCommand,
+} from "./optimize-command.js";
+export {
   parseRepairCommand,
   type RepairCommandDependencies,
   type RepairCommandInput,

@@ -67,7 +67,9 @@ const SIX_RULES = [
 /** 감사 한 번이 수 초에서 수십 초다. 이미지를 처음 만드는 실행은 몇 분이 걸린다. */
 const E2E_TIMEOUT_MS = 600_000;
 /** 격리 안의 도구 호출 하나를 기다리는 시간. MCP 요청 제한(60초)보다 짧아야 우리 문장이 먼저 나온다. */
-const CALL_WAIT_MS = 30_000;
+const CALL_WAIT_MS = 15_000;
+/** `get_forecast` 로 불러 볼 도시. 상류가 특정 질의에 답하지 않는 일이 있어 하나에 매달리지 않는다. */
+const FORECAST_CITIES = ["Seoul", "Tokyo", "Berlin", "London"] as const;
 
 const SKIP = process.env.MCPEAK_SKIP_DOCKER_E2E === "1";
 const REQUIRE = process.env.MCPEAK_REQUIRE_DOCKER_E2E === "1";
@@ -434,18 +436,31 @@ describe("audit sandbox e2e", () => {
       const result = await insideSandbox(liveWeather, async (connection, _names, handle) => {
         // 서버의 fetch 에는 제한 시간이 없다. 상류가 멈추면 호출이 MCP 요청 제한(60초)까지 매달리고
         // "protocol 오류" 한 줄만 남는다. 그 전에 끊고, 게이트웨이가 무엇을 봤는지를 실패 문장에 싣는다.
-        const call = connection.client.callTool("get_forecast", { city: "Seoul" });
-        call.catch(() => {});
-        const waited = await Promise.race([
-          call.then((value) => ({ value })),
-          new Promise<undefined>((done) => setTimeout(() => done(undefined), CALL_WAIT_MS)),
-        ]);
-        if (waited !== undefined) return waited.value;
+        //
+        // 도시를 하나로 못 박지 않는다. open-meteo 지오코딩은 GitHub 러너에서 온 `name=Seoul` 질의에
+        // 답하지 않았다(같은 주소로 가는 다른 질의는 0.5초 만에 200 이었고, 게이트웨이를 거치지 않고
+        // 컨테이너에서 직접 접속해도 같았다). 이 스펙이 보는 것은 "게이트웨이를 거친 실제 호출이 오류 없이
+        // 돌아온다" 이지 특정 질의에 대한 상류의 가용성이 아니다. 후보를 차례로 부르고 오류 없는 응답이
+        // 하나라도 오면 그것으로 단언한다. 전부 멈추거나 전부 오류면 실패한다.
+        const waitedCities: string[] = [];
+        for (const city of FORECAST_CITIES) {
+          const call = connection.client.callTool("get_forecast", { city });
+          call.catch(() => {});
+          const waited = await Promise.race([
+            call.then(
+              (value) => ({ value }),
+              () => undefined,
+            ),
+            new Promise<undefined>((done) => setTimeout(() => done(undefined), CALL_WAIT_MS)),
+          ]);
+          if (waited !== undefined && waited.value.isError !== true) return waited.value;
+          waitedCities.push(city);
+        }
         const seen = await handle.snapshot();
         const probe = probeUpstreamFromGateway("geocoding-api.open-meteo.com");
         throw new Error(
           [
-            `→ get_forecast 가 ${CALL_WAIT_MS / 1000}초 안에 답하지 않았습니다. 게이트웨이가 본 것:`,
+            `→ get_forecast 가 도시 ${waitedCities.join(", ")} 어느 것에도 ${CALL_WAIT_MS / 1000}초 안에 오류 없이 답하지 않았습니다. 게이트웨이가 본 것:`,
             `→ 이름 조회: ${seen.dnsNames.map((entry) => entry.name).join(", ") || "없음"}`,
             `→ 요청: ${
               seen.requests

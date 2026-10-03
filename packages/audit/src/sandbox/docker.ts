@@ -52,19 +52,35 @@ const SANDBOX_USER = "1000:1000";
 const CONTROL_PORT = 7000;
 const CA_PATH = "/etc/mcpeak/ca.pem";
 const TRACE_DIR = "/var/mcpeak";
+/** 이미지의 `node` 사용자의 홈. 임시 디렉터리의 `home/` 이 읽기 전용으로 여기에 붙는다. */
+const HOME_DIR = "/home/node";
 /**
  * 값이 비밀이 아닌 고정 env. `-e NAME` 으로 넘기려면 값을 docker CLI 프로세스의 env 에 실어야 하는데,
  * HOME 은 CLI 자신의 것과 겹치고 SSL_CERT_FILE 은 Go 로 된 CLI 의 신뢰 저장소를 바꾼다. 그래서 env
  * 파일로 넘긴다. argv 에는 파일 경로만 실린다.
  */
 const TARGET_FIXED_ENV: ReadonlyArray<readonly [string, string]> = [
-  ["HOME", "/home/node"],
+  ["HOME", HOME_DIR],
   ["NODE_EXTRA_CA_CERTS", CA_PATH],
   ["SSL_CERT_FILE", CA_PATH],
   ["REQUESTS_CA_BUNDLE", CA_PATH],
   ["CURL_CA_BUNDLE", CA_PATH],
   ["GIT_SSL_CAINFO", CA_PATH],
 ];
+/**
+ * 패키지 실행기가 레지스트리에서 받은 패키지를 두고 그 bin 을 실행하는 자리(ADR-0109). 홈과 루트가 읽기
+ * 전용이라 이 자리가 없으면 `npx -y <패키지>` 가 캐시 디렉터리를 만들지 못하고 죽는다. Docker 의 tmpfs 는
+ * 기본이 noexec 라서 `exec` 를 명시한다. 명령이 npx·npm 일 때만 연다. `/tmp` 는 어느 명령에서도 noexec 다.
+ */
+const RUNNER_COMMANDS: ReadonlySet<string> = new Set(["npx", "npm"]);
+const NPM_CACHE_DIR = `${HOME_DIR}/.npm`;
+const NPM_CACHE_TMPFS = `${NPM_CACHE_DIR}:rw,exec,size=512m,uid=1000`;
+/**
+ * 마운트 자리를 만드는 자리 파일. 읽기 전용 바인드 아래에는 Docker 가 디렉터리를 만들지 못해 호스트 쪽에
+ * 미리 있어야 하는데 `DockerIo` 에 mkdir 이 없다. 파일을 쓰면 상위 디렉터리가 생긴다. tmpfs 가 덮으므로
+ * 컨테이너에서는 보이지 않는다.
+ */
+const NPM_CACHE_PLACEHOLDER = ".npm/.mcpeak-mount";
 const STRACE = [
   "strace",
   "-f",
@@ -280,6 +296,12 @@ export function createDockerBackend(io: DockerIo, parse: TraceParser): SandboxBa
     const tmp: Resource = { kind: "tmp", id: "", present: false };
     const resources = [target, gateway, network, volume, tmp];
 
+    // 호스트의 절대 경로(/opt/homebrew/bin/node)는 컨테이너에 없다. 경로로 온 명령은 이름만 남겨
+    // 이미지의 PATH 에서 찾게 한다. Windows 구분자도 자른다. args 는 건드리지 않는다.
+    const given = spec.target.command ?? "";
+    const command = given.split(/[\\/]/).pop() || given;
+    const needsNpmCache = RUNNER_COMMANDS.has(command);
+
     /** 실행마다 달라지는 값. 알게 되는 대로 채우고, 밖으로 나가는 문장에서 자리표로 바꾼다. */
     const perRun = { tmpDir: "", gatewayIp: "", controlOrigin: "" };
     const scrub = (text: string): string => {
@@ -337,6 +359,9 @@ export function createDockerBackend(io: DockerIo, parse: TraceParser): SandboxBa
       (tmp as { id: string }).id = perRun.tmpDir;
       for (const file of spec.home.files) {
         await io.writeFile(`${perRun.tmpDir}/home/${file.path}`, file.content, file.mode);
+      }
+      if (needsNpmCache) {
+        await io.writeFile(`${perRun.tmpDir}/home/${NPM_CACHE_PLACEHOLDER}`, "", 0o644);
       }
 
       await must(["network", "create", "--internal", "--label", LABEL, names.network]);
@@ -502,10 +527,6 @@ export function createDockerBackend(io: DockerIo, parse: TraceParser): SandboxBa
     // destroy 가 없는 컨테이너를 치운 것으로 본다.
     target.present = true;
 
-    // 호스트의 절대 경로(/opt/homebrew/bin/node)는 컨테이너에 없다. 경로로 온 명령은 이름만 남겨
-    // 이미지의 PATH 에서 찾게 한다. Windows 구분자도 자른다. args 는 건드리지 않는다.
-    const given = spec.target.command ?? "";
-    const command = given.split(/[\\/]/).pop() || given;
     const launchArgs = [
       "run",
       "--name",
@@ -524,6 +545,7 @@ export function createDockerBackend(io: DockerIo, parse: TraceParser): SandboxBa
       "1g",
       "--tmpfs",
       "/tmp:rw,size=256m,uid=1000",
+      ...(needsNpmCache ? ["--tmpfs", NPM_CACHE_TMPFS] : []),
       "--user",
       SANDBOX_USER,
       "--hostname",
@@ -535,7 +557,7 @@ export function createDockerBackend(io: DockerIo, parse: TraceParser): SandboxBa
       "-v",
       `${names.volume}:${TRACE_DIR}`,
       "-v",
-      `${perRun.tmpDir}/home:/home/node:ro`,
+      `${perRun.tmpDir}/home:${HOME_DIR}:ro`,
       "-v",
       `${spec.mountRoot}:${spec.mountRoot}:ro`,
       "-v",

@@ -68,8 +68,11 @@ const SIX_RULES = [
 const E2E_TIMEOUT_MS = 600_000;
 /** 격리 안의 도구 호출 하나를 기다리는 시간. MCP 요청 제한(60초)보다 짧아야 우리 문장이 먼저 나온다. */
 const CALL_WAIT_MS = 15_000;
-/** `get_forecast` 로 불러 볼 도시. 상류가 특정 질의에 답하지 않는 일이 있어 하나에 매달리지 않는다. */
-const FORECAST_CITIES = ["Seoul", "Tokyo", "Berlin", "London"] as const;
+/**
+ * 레지스트리에서 받아 띄우는 서버. 버전을 고정한다. 격리 안에서는 npm 캐시가 매번 비어 있어 이 실행은
+ * 언제나 registry.npmjs.org 에서 새로 받는다(ADR-0109).
+ */
+const NPX_SERVER = ["npx", "-y", "@modelcontextprotocol/server-everything@2026.8.31"] as const;
 
 const SKIP = process.env.MCPEAK_SKIP_DOCKER_E2E === "1";
 const REQUIRE = process.env.MCPEAK_REQUIRE_DOCKER_E2E === "1";
@@ -90,6 +93,8 @@ interface Finding {
 interface Report {
   readonly exitCode: number;
   readonly probe: string;
+  readonly server: { readonly toolCount: number };
+  readonly skipped: ReadonlyArray<{ readonly family: string; readonly reason: string }>;
   readonly counts: Readonly<Record<string, number>>;
   readonly findings: readonly Finding[];
   readonly sandbox?: {
@@ -208,53 +213,6 @@ async function leftovers() {
 const NOTHING_LEFT = { containers: [], networks: [], volumes: [], tmp: [] };
 
 /**
- * 떠 있는 게이트웨이 컨테이너 안에서 상류에 직접 접속해 본다(진단 전용). 전달이 멈췄을 때 게이트웨이의
- * 전달 코드가 문제인지 컨테이너와 상류 사이가 문제인지를 가른다. 주소마다 5초 제한이다.
- */
-function probeUpstreamFromGateway(host: string): string {
-  const names = spawnSync(
-    "docker",
-    ["ps", "--filter", "label=mcpeak.audit=1", "--format", "{{.Names}}"],
-    { encoding: "utf8" },
-  ).stdout.split("\n");
-  const gateway = names.find((name) => name.endsWith("-gateway"));
-  if (gateway === undefined) return "게이트웨이 컨테이너를 찾지 못했습니다";
-  const script = `
-    const dns = require("node:dns/promises");
-    const https = require("node:https");
-    (async () => {
-      const out = [];
-      let addresses = [];
-      try { addresses = await dns.lookup(${JSON.stringify(host)}, { all: true }); }
-      catch (error) { out.push("이름 풀이 실패 " + error.code); }
-      for (const { address, family } of addresses) {
-        for (const path of ["/v1/search?name=Seoul&count=1&language=ko", "/v1/search?name=mcpeak&count=1&language=ko"]) {
-          const started = Date.now();
-          const result = await new Promise((done) => {
-            const request = https.request({ host: address, port: 443, path, servername: ${JSON.stringify(host)}, headers: { host: ${JSON.stringify(host)} }, agent: false, timeout: 5000 }, (response) => {
-              let size = 0;
-              response.on("data", (chunk) => { size += chunk.length; });
-              response.on("end", () => done("HTTP " + response.statusCode + " " + size + "B " + (response.headers["content-encoding"] || "identity")));
-              response.on("error", (error) => done("응답 오류 " + error.code));
-            });
-            request.on("timeout", () => { request.destroy(); done("5초 무응답"); });
-            request.on("error", (error) => done("오류 " + (error.code || error.message)));
-            request.end();
-          });
-          out.push("IPv" + family + " " + address + " " + path.slice(16, 22) + ": " + result + " (" + (Date.now() - started) + "ms)");
-        }
-      }
-      console.log(out.join(" | "));
-    })();
-  `;
-  const ran = spawnSync("docker", ["exec", gateway, "node", "-e", script], {
-    encoding: "utf8",
-    timeout: 60_000,
-  });
-  return (ran.stdout.trim() || ran.stderr.trim() || "출력 없음").slice(0, 1500);
-}
-
-/**
  * 백엔드를 직접 띄워 격리 안의 서버에 붙는다. CLI 가 넘기는 것과 같은 꼴의 명세를 쓴다. 감사를 거치지
  * 않고 호출 응답 자체를 봐야 하는 스펙이 쓴다.
  */
@@ -265,6 +223,7 @@ async function insideSandbox<T>(
     names: string[],
     handle: auditModule.SandboxHandle,
   ) => Promise<T>,
+  session?: { readonly mode: "record" | "replay"; readonly path: string },
 ): Promise<T> {
   const random = () => randomBytes(8).toString("hex");
   const backend = auditModule.createDockerBackend(
@@ -284,6 +243,7 @@ async function insideSandbox<T>(
     mountRoot: root,
     cwd: root,
     home: auditModule.planHome(random),
+    ...(session === undefined ? {} : { session }),
   });
   try {
     const connection = await core.connectStdio({
@@ -406,6 +366,45 @@ describe("audit sandbox e2e", () => {
   );
 
   dockerIt(
+    "레지스트리에서 받는 npx 서버(server-everything, 버전 고정)가 격리 안에서 끝까지 돌고 실행기의 캐시 쓰기·자식 프로세스가 발견으로 새지 않는다",
+    async () => {
+      const result = await cli(["audit", "--sandbox", "--json", "--", ...NPX_SERVER]);
+      // 1 은 접속 실패다. 발견이 있으면 2, 없으면 0 이고 어느 쪽인지는 서버 버전과 상류에 달렸다.
+      expect(result.code).not.toBe(1);
+      const report = reportOf(result);
+      expect(report.sandbox?.status).toBe("ran");
+      expect(report.server.toolCount).toBeGreaterThan(0);
+
+      // 호출이 아닌 단계(start·list·shutdown)의 행위는 서버 전체에 붙는다. 실행기가 캐시를 채우고
+      // 패키지의 bin 을 띄우는 일은 start 단계라, 잡음 표가 못 빼면 여기에 나온다.
+      const serverWide = report.findings
+        .filter((f) => f.ruleId.startsWith("behavior/") && f.location.kind === "server")
+        .map((f) => ({ ruleId: f.ruleId, evidence: f.evidence }));
+      expect(serverWide).toEqual([]);
+      expect(
+        report.skipped.filter((entry) => entry.reason.includes("해석하지 못했습니다")),
+      ).toEqual([]);
+
+      // 실행기가 패키지를 받는 접속은 선언된 목적지의 기록(info)으로만 남는다.
+      const registry = report.findings
+        .filter(
+          (f) =>
+            f.ruleId.startsWith("network/") &&
+            // 카나리 유출 발견은 첫 칸이 "<호스트> <자리표>" 꼴이다. 그것도 놓치지 않는다.
+            (f.evidence[0] === "registry.npmjs.org" ||
+              f.evidence[0]?.startsWith("registry.npmjs.org ")),
+        )
+        .map((f) => `${f.ruleId}:${f.severity}`);
+      expect(registry).toEqual(["network/declared-destination:info"]);
+
+      expect(result.stderr.split("\n")).toContain(
+        "격리 안에서는 패키지를 매번 새로 받습니다. 서버가 뜨기까지 1분까지 기다립니다.",
+      );
+    },
+    E2E_TIMEOUT_MS,
+  );
+
+  dockerIt(
     "audit-target-server 의 단계 1 발견이 --sandbox 없이 돌린 것과 같다",
     async () => {
       const inside = reportOf(
@@ -433,56 +432,64 @@ describe("audit sandbox e2e", () => {
     "live-weather 의 get_forecast 호출 결과에 isError 가 없고 그 접속이 network/declared-destination 뿐이다",
     async () => {
       // 응답 자체는 감사 리포트에 실리지 않는다. 백엔드를 직접 띄워 게이트웨이를 거친 호출 결과를 본다.
-      const result = await insideSandbox(liveWeather, async (connection, _names, handle) => {
-        // 서버의 fetch 에는 제한 시간이 없다. 상류가 멈추면 호출이 MCP 요청 제한(60초)까지 매달리고
-        // "protocol 오류" 한 줄만 남는다. 그 전에 끊고, 게이트웨이가 무엇을 봤는지를 실패 문장에 싣는다.
-        //
-        // 도시를 하나로 못 박지 않는다. open-meteo 지오코딩은 GitHub 러너에서 온 `name=Seoul` 질의에
-        // 답하지 않았다(같은 주소로 가는 다른 질의는 0.5초 만에 200 이었고, 게이트웨이를 거치지 않고
-        // 컨테이너에서 직접 접속해도 같았다). 이 스펙이 보는 것은 "게이트웨이를 거친 실제 호출이 오류 없이
-        // 돌아온다" 이지 특정 질의에 대한 상류의 가용성이 아니다. 후보를 차례로 부르고 오류 없는 응답이
-        // 하나라도 오면 그것으로 단언한다. 전부 멈추거나 전부 오류면 실패한다.
-        const waitedCities: string[] = [];
-        for (const city of FORECAST_CITIES) {
+      //
+      // 이 호출은 외부 API 를 다시 부르지 않는다. 녹화 실행이 받아 둔 응답을 재생으로 돌려준다. GitHub
+      // 러너에서 녹화 실행 직후에 open-meteo 를 한 번 더 부르면 응답이 오지 않는 일이 간헐적으로 있었다
+      // (같은 잡의 녹화 실행은 매번 성공했고, 1분쯤 뒤 같은 컨테이너에서 직접 접속하면 다시 200 이었다).
+      // 실시간 전달이 된다는 것은 녹화본에 상류의 200 응답이 실려 있다는 것으로 본다. 여기서는 그 응답이
+      // DNS·TLS 종단·게이트웨이를 거쳐 서버의 도구까지 닿아 오류 없는 결과가 되는지를 본다.
+      await recordRun();
+      const recorded = JSON.parse(await readFile(sessionPath(), "utf8")) as {
+        entries: ReadonlyArray<{
+          key: { host: string; path: string };
+          responses: ReadonlyArray<{ status: number }>;
+        }>;
+      };
+      const statusOf = (host: string, pathPart: string) =>
+        recorded.entries.find(
+          (entry) => entry.key.host === host && entry.key.path.includes(pathPart),
+        )?.responses[0]?.status;
+      // 녹화 실행의 get_forecast 가 실제 상류에서 받은 응답 둘(지오코딩, 예보).
+      expect(statusOf("geocoding-api.open-meteo.com", "count=1")).toBe(200);
+      expect(statusOf("api.open-meteo.com", "/v1/forecast")).toBe(200);
+      const geocoding = recorded.entries.find(
+        (entry) =>
+          entry.key.host === "geocoding-api.open-meteo.com" && entry.key.path.includes("count=1"),
+      );
+      const city = new URL(`https://x${geocoding?.key.path ?? ""}`).searchParams.get("name") ?? "";
+      expect(city).not.toBe("");
+
+      const result = await insideSandbox(
+        liveWeather,
+        async (connection, _names, handle) => {
           const call = connection.client.callTool("get_forecast", { city });
           call.catch(() => {});
           const waited = await Promise.race([
-            call.then(
-              (value) => ({ value }),
-              () => undefined,
-            ),
+            call.then((value) => ({ value })),
             new Promise<undefined>((done) => setTimeout(() => done(undefined), CALL_WAIT_MS)),
           ]);
-          if (waited !== undefined && waited.value.isError !== true) return waited.value;
-          waitedCities.push(city);
-        }
-        const seen = await handle.snapshot();
-        const probe = probeUpstreamFromGateway("geocoding-api.open-meteo.com");
-        throw new Error(
-          [
-            `→ get_forecast 가 도시 ${waitedCities.join(", ")} 어느 것에도 ${CALL_WAIT_MS / 1000}초 안에 오류 없이 답하지 않았습니다. 게이트웨이가 본 것:`,
-            `→ 이름 조회: ${seen.dnsNames.map((entry) => entry.name).join(", ") || "없음"}`,
-            `→ 요청: ${
-              seen.requests
-                .map((entry) => `${entry.method} ${entry.host}${entry.path} (${entry.served})`)
-                .join(" | ") || "없음"
-            }`,
-            `→ 인증서 거부: ${seen.tlsRejections.map((entry) => entry.host).join(", ") || "없음"}`,
-            `→ 서버의 접속: ${
-              seen.events
-                .flatMap((event) =>
-                  event.kind === "connect" && event.family !== "unix"
-                    ? [`${event.address}:${event.port}`]
-                    : [],
-                )
-                .join(", ") || "없음"
-            }`,
-            `→ 읽지 못한 관측: ${seen.gaps.map((gap) => `${gap.source}: ${gap.reason}`).join(" | ") || "없음"}`,
-            `→ 게이트웨이 컨테이너에서 상류에 직접 접속: ${probe}`,
-            "요청이 없으면 서버가 게이트웨이에 닿지 못한 것이고, 요청이 있으면 상류가 답하지 않은 것입니다.",
-          ].join("\n"),
-        );
-      });
+          const seen = await handle.snapshot();
+          const requests = seen.requests.map(
+            (entry) => `${entry.method} ${entry.host}${entry.path} (${entry.served})`,
+          );
+          if (waited === undefined) {
+            throw new Error(
+              [
+                `→ 재생 중인 get_forecast('${city}') 가 ${CALL_WAIT_MS / 1000}초 안에 답하지 않았습니다. 게이트웨이가 본 것:`,
+                `→ 이름 조회: ${seen.dnsNames.map((entry) => entry.name).join(", ") || "없음"}`,
+                `→ 요청: ${requests.join(" | ") || "없음"}`,
+                `→ 인증서 거부: ${seen.tlsRejections.map((entry) => entry.host).join(", ") || "없음"}`,
+                `→ 읽지 못한 관측: ${seen.gaps.map((gap) => `${gap.source}: ${gap.reason}`).join(" | ") || "없음"}`,
+                "재생은 상류에 접속하지 않습니다. 요청이 없으면 서버가 게이트웨이에 닿지 못한 것입니다.",
+              ].join("\n"),
+            );
+          }
+          // 두 요청 모두 녹화본으로 답했다. 상류에는 접속하지 않았다.
+          expect(seen.requests.map((entry) => entry.served)).toEqual(["replay-hit", "replay-hit"]);
+          return waited.value;
+        },
+        { mode: "replay", path: sessionPath() },
+      );
       expect(result.isError ?? false).toBe(false);
       expect(JSON.stringify(result.content)).not.toBe("[]");
 

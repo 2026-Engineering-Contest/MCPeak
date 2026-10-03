@@ -100,6 +100,7 @@ export interface AuditCommandDependencies {
     args: readonly string[];
     env?: Readonly<Record<string, string>>;
     advertise?: AdvertiseOptions;
+    connectTimeoutMs?: number;
   }): Promise<StdioAuditConnection>;
   connectHttp(options: HttpConnectOptions): Promise<HttpAuditConnection>;
   /** `--env`·`--header-env` 가 가리키는 환경변수를 읽는 유일한 지점이다. */
@@ -159,6 +160,27 @@ const SANDBOX_ONLY_OPTIONS = [
 
 /** 게이트웨이와 선언 목록이 쓰는 것과 같은 호스트 이름 문법(`sandbox/declared.ts`). 대소문자는 가리지 않는다. */
 const HOSTNAME = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/i;
+
+/**
+ * 패키지 실행기로 띄운 서버의 격리 접속 제한. 격리 안에서는 npm 캐시가 매번 비어 있어 실행기가
+ * 패키지를 새로 받고(ADR-0109), 그 시간이 core 의 기본값 10초를 넘는다. core 가 받는 상한이다.
+ */
+const RUNNER_CONNECT_TIMEOUT_MS = 60_000;
+/** 그 대기가 조용하면 멈춘 것으로 보인다. 격리 연결을 열기 직전에 한 번 낸다. */
+const RUNNER_PROGRESS =
+  "격리 안에서는 패키지를 매번 새로 받습니다. 서버가 뜨기까지 1분까지 기다립니다.";
+/** 패키지 실행기로 띄운 서버가 격리 안에서 붙지 못했을 때의 해결 줄. */
+const RUNNER_CONNECT_HINT =
+  "해결: 격리 안에서 패키지를 받지 못했거나 1분 안에 뜨지 못했습니다. 패키지 이름과 버전을 확인하고, 큰 패키지는 로컬에 설치한 뒤 node 로 띄우세요.";
+
+/**
+ * 명령이 패키지 실행기(npx·npm)인가. `/` 와 `\` 로 자른 마지막 조각의 정확 일치다. 격리 백엔드가
+ * npm 캐시 자리를 여는 판정과 같아야 한다(ADR-0109). 인자는 보지 않는다.
+ */
+function isPackageRunner(command: string | undefined): boolean {
+  const name = (command ?? "").split(/[\\/]/).pop();
+  return name === "npx" || name === "npm";
+}
 
 /** `parseTestCommand` 의 첫 위치 인자 자리. 명세 경로를 쓰지 않으므로 형식만 채운다. */
 const PLACEHOLDER_SUITE = "audit.json";
@@ -398,7 +420,11 @@ export async function runAuditCommand(
   // 대상 해석과 환경·헤더 처리는 그 함수에 맡기고, 감사에 줄 연결은 주입한 함수의 반환에서 잡는다.
   // 연결 실패의 원래 오류도 잡아 둔다. AuditError 는 첫 줄만 싣기 때문에 서버 stderr 꼬리는 여기서 낸다.
   let connectError: unknown;
+  /** 패키지 실행기로 띄운 서버가 격리 안에서 붙지 못했는가. 해결 줄이 달라진다. */
+  let runnerConnectFailed = false;
   const original = auditTarget(input.target);
+  // 진행 문장은 stderr 로 간다. `--json` 이어도 stdout 은 JSON 하나뿐이다.
+  const progress = (line: string) => deps.writeStderr(`${escapeTerminalText(line)}\n`);
   const connect = async (
     target: AuditTarget,
     env: Readonly<Record<string, string>>,
@@ -408,15 +434,19 @@ export async function runAuditCommand(
     // env 에는 컨테이너에 넘길 값과 docker CLI 가 데몬을 찾는 변수가 이미 들어 있어 그대로 쓴다.
     // `--env` 를 여기서 다시 읽어 얹지 않는다. --compare-host 의 둘째 연결은 원래 대상으로 온다.
     if (target !== original) {
+      const runner = isPackageRunner(original.command);
+      if (runner) progress(RUNNER_PROGRESS);
       try {
         return await deps.connectStdio({
           command: target.command ?? "",
           args: target.args ?? [],
           env,
           advertise,
+          ...(runner ? { connectTimeoutMs: RUNNER_CONNECT_TIMEOUT_MS } : {}),
         });
       } catch (error) {
         connectError = error;
+        runnerConnectFailed = runner;
         throw error;
       }
     }
@@ -451,8 +481,6 @@ export async function runAuditCommand(
     if (error instanceof SandboxTargetError) return usageFailure(deps, error.message);
     throw error;
   }
-  // 진행 문장은 stderr 로 간다. `--json` 이어도 stdout 은 JSON 하나뿐이다.
-  const progress = (line: string) => deps.writeStderr(`${escapeTerminalText(line)}\n`);
 
   let report: AuditReport;
   try {
@@ -485,7 +513,8 @@ export async function runAuditCommand(
     );
   } catch (error) {
     const kept = cleanupFailureReport(error);
-    if (kept === undefined) return writeAuditFailure(deps, input.target, error, connectError);
+    if (kept === undefined)
+      return writeAuditFailure(deps, input.target, error, connectError, runnerConnectFailed);
     // 정리 실패는 리포트를 버리지 않는다. 발견을 본 사용자가 정리 실패 때문에 그 발견을 잃으면 안
     // 된다. 리포트를 먼저 내고 남은 자원을 말한 뒤 1 로 끝난다(발견이 있어 2 였더라도).
     writeReport(deps, input, kept);
@@ -565,7 +594,8 @@ function cleanupFailureReport(error: unknown): AuditReport | undefined {
  * 감사 실패를 찍는다. 종료 코드는 언제나 1 이다.
  *
  * - AuditError(연결 실패·기준 파일 문제·재생 세션을 읽지 못함): message 가 §6.3 블록 전체다. 그대로 찍는다. 연결
- *   실패면 core 오류가 들고 온 진단(서버 stderr 꼬리, HTTP 엔드포인트)을 그 뒤에 붙인다.
+ *   실패면 core 오류가 들고 온 진단(서버 stderr 꼬리, HTTP 엔드포인트)을 그 뒤에 붙인다. 패키지
+ *   실행기로 띄운 서버의 격리 접속 실패면 해결 줄만 바꾼다. 원인 줄은 audit 의 것 그대로다.
  * - 기준 파일 쓰기 실패: optimize 의 오버레이 쓰기 실패와 같은 모양.
  * - 그 밖(연결이 선 뒤 tools/list 실패 등): audit 가 감싸지 않고 올린 원래 오류다.
  */
@@ -574,11 +604,15 @@ function writeAuditFailure(
   target: ConnectTarget,
   error: unknown,
   connectError: unknown,
+  runnerConnectFailed: boolean,
 ): number {
   if (isAuditError(error)) {
-    deps.writeStderr(`${escapeLines((error as Error).message)}\n`);
-    if ((error as { code: unknown }).code === "CONNECT_FAILED")
-      writeDiagnostics(deps, connectError);
+    const connectFailed = (error as { code: unknown }).code === "CONNECT_FAILED";
+    const message = (error as Error).message;
+    deps.writeStderr(
+      `${escapeLines(connectFailed && runnerConnectFailed ? withRunnerHint(message) : message)}\n`,
+    );
+    if (connectFailed) writeDiagnostics(deps, connectError);
     return 1;
   }
   if (error instanceof BaselineWriteError) {
@@ -598,6 +632,14 @@ function writeAuditFailure(
   );
   writeDiagnostics(deps, error);
   return 1;
+}
+
+/** 연결 실패 블록의 해결 줄을 패키지 실행기의 것으로 바꾼다. 해결 줄은 블록의 마지막 줄이다. */
+function withRunnerHint(message: string): string {
+  return [
+    ...message.split("\n").filter((line) => !line.startsWith("해결: ")),
+    RUNNER_CONNECT_HINT,
+  ].join("\n");
 }
 
 /** AuditError 는 이름과 코드로 알아본다. 패키지 사본이 둘이면 instanceof 가 어긋난다. */

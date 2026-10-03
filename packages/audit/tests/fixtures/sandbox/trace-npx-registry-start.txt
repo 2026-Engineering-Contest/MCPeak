@@ -1,0 +1,134 @@
+10    execve("/usr/local/bin/npx", ["npx", "-y", "@modelcontextprotocol/server-everything@2026.8.31"], 0xffffc48979d0 /* 6 vars */) = 0
+10    execve("/usr/local/sbin/node", ["node", "/usr/local/bin/npx", "-y", "@modelcontextprotocol/server-everything@2026.8.31"], 0xffffc8418c88 /* 6 vars */) = -1 ENOENT (No such file or directory)
+10    execve("/usr/local/bin/node", ["node", "/usr/local/bin/npx", "-y", "@modelcontextprotocol/server-everything@2026.8.31"], 0xffffc8418c88 /* 6 vars */) = 0
+10    openat(AT_FDCWD, "/home/node/.npm/_logs/2026-10-03T15_15_53_947Z-debug-0.log", O_WRONLY|O_CREAT|O_APPEND|O_CLOEXEC, 0666) = 18
+18    openat(AT_FDCWD, "/home/node/.npm/_update-notifier-last-checked", O_WRONLY|O_CREAT|O_TRUNC|O_CLOEXEC, 0666) = 20
+19    connect(19, {sa_family=AF_UNIX, sun_path="/var/run/nscd/socket"}, 110) = -1 ENOENT (No such file or directory)
+19    connect(19, {sa_family=AF_UNIX, sun_path="/var/run/nscd/socket"}, 110) = -1 ENOENT (No such file or directory)
+19    connect(19, {sa_family=AF_INET, sin_port=htons(53), sin_addr=inet_addr("192.168.65.7")}, 16) = 0
+19    connect(19, {sa_family=AF_INET, sin_port=htons(0), sin_addr=inet_addr("104.16.10.34")}, 16) = 0
+19    connect(19, {sa_family=AF_INET, sin_port=htons(0), sin_addr=inet_addr("104.16.4.34")}, 16) = 0
+19    connect(19, {sa_family=AF_INET, sin_port=htons(0), sin_addr=inet_addr("104.16.11.34")}, 16) = 0
+19    connect(19, {sa_family=AF_INET, sin_port=htons(0), sin_addr=inet_addr("104.16.2.34")}, 16) = 0
+19    connect(19, {sa_family=AF_INET, sin_port=htons(0), sin_addr=inet_addr("104.16.5.34")}, 16 <unfinished ...>
+19    <... connect resumed>)            = 0
+19    connect(19, {sa_family=AF_INET, sin_port=htons(0), sin_addr=inet_addr("104.16.7.34")}, 16) = 0
+19    connect(19, {sa_family=AF_INET, sin_port=htons(0), sin_addr=inet_addr("104.16.3.34")}, 16) = 0
+19    connect(19, {sa_family=AF_INET, sin_port=htons(0), sin_addr=inet_addr("104.16.0.34")}, 16) = 0
+19    connect(19, {sa_family=AF_INET, sin_port=htons(0), sin_addr=inet_addr("104.16.9.34")}, 16) = 0
+19    connect(19, {sa_family=AF_INET, sin_port=htons(0), sin_addr=inet_addr("104.16.1.34")}, 16) = 0
+19    connect(19, {sa_family=AF_INET, sin_port=htons(0), sin_addr=inet_addr("104.16.8.34")}, 16) = 0
+19    connect(19, {sa_family=AF_INET, sin_port=htons(0), sin_addr=inet_addr("104.16.6.34")}, 16) = 0
+10    connect(19, {sa_family=AF_INET, sin_port=htons(443), sin_addr=inet_addr("104.16.10.34")}, 16) = -1 EINPROGRESS (Operation now in progress)
+10    connect(20, {sa_family=AF_INET, sin_port=htons(443), sin_addr=inet_addr("104.16.10.34")}, 16) = -1 EINPROGRESS (Operation now in progress)
+17    openat(AT_FDCWD, "/home/node/.npm/_cacache/tmp/87a20a41", O_WRONLY|O_CREAT|O_EXCL|O_TRUNC|O_CLOEXEC, 0666) = 21
+18    renameat(AT_FDCWD, "/home/node/.npm/_cacache/tmp/87a20a41", AT_FDCWD, "/home/node/.npm/_cacache/content-v2/sha512/9a/ca/48e2216cb1394d42b063897d64570fb1a01062cec562cb6679721b52b397b66d70fe2ddc47a0aaada9a2d5c3434cf5baa88da27407e31483f69fb6cb863c") = 0
+20    openat(AT_FDCWD, "/home/node/.npm/_cacache/index-v5/c3/24/4e84bbba9583e9f1c2900713d71f58b1d83fd9687c101eb42b74ccf712a7", O_WRONLY|O_CREAT|O_APPEND|O_CLOEXEC, 0666) = 21
+20    openat(AT_FDCWD, "/home/node/.npm/_cacache/tmp/9b4aedab", O_WRONLY|O_CREAT|O_EXCL|O_TRUNC|O_CLOEXEC, 0666) = 21
+18    renameat(AT_FDCWD, "/home/node/.npm/_cacache/tmp/9b4aedab", AT_FDCWD, "/home/node/.npm/_cacache/index-v5/c3/24/4e84bbba9583e9f1c2900713d71f58b1d83fd9687c101eb42b74ccf712a7") = 0
+20    openat(AT_FDCWD, "/home/node/.npm/_cacache/tmp/55a46492", O_WRONLY|O_CREAT|O_EXCL|O_TRUNC|O_CLOEXEC, 0666) = 21
+19    renameat(AT_FDCWD, "/home/node/.npm/_cacache/tmp/55a46492", AT_FDCWD, "/home/node/.npm/_cacache/content-v2/sha512/d4/f7/5142bbd5987de97342e9665452380c66eba85b0657363d0bcab691030e0b08ff78c0dce6ca7245c7947d5002ec04830ee892704cc8a2253484fb7a612cf0") = 0
+18    openat(AT_FDCWD, "/home/node/.npm/_cacache/index-v5/c3/24/4e84bbba9583e9f1c2900713d71f58b1d83fd9687c101eb42b74ccf712a7", O_WRONLY|O_CREAT|O_APPEND|O_CLOEXEC, 0666) = 21
+10    connect(21, {sa_family=AF_INET, sin_port=htons(443), sin_addr=inet_addr("104.16.10.34")}, 16) = -1 EINPROGRESS (Operation now in progress)
+10    connect(22, {sa_family=AF_INET, sin_port=htons(443), sin_addr=inet_addr("104.16.10.34")}, 16) = -1 EINPROGRESS (Operation now in progress)
+10    connect(23, {sa_family=AF_INET, sin_port=htons(443), sin_addr=inet_addr("104.16.10.34")}, 16) = -1 EINPROGRESS (Operation now in progress)
+17    openat(AT_FDCWD, "/home/node/.npm/_cacache/tmp/76f7a770", O_WRONLY|O_CREAT|O_EXCL|O_TRUNC|O_CLOEXEC, 0666) = 24
+19    renameat(AT_FDCWD, "/home/node/.npm/_cacache/tmp/76f7a770", AT_FDCWD, "/home/node/.npm/_cacache/content-v2/sha512/b5/04/1c2bb914432a94452dcf3aa8c0c729df55a6ab3d39378bc6ecf5d2e7acdf8c4c78a019373bbe56f1c666b5f4f5d8c3a4e8581f9e815bc797d0afda1674b8") = 0
+17    openat(AT_FDCWD, "/home/node/.npm/_cacache/index-v5/6a/ec/15f8087f2f2639cddfe907c22cf2fb422b664f14fbaade057fa15c80c3bf", O_WRONLY|O_CREAT|O_APPEND|O_CLOEXEC, 0666) = 24
+18    openat(AT_FDCWD, "/home/node/.npm/_cacache/tmp/a07b3706", O_WRONLY|O_CREAT|O_EXCL|O_TRUNC|O_CLOEXEC, 0666) = 24
+18    openat(AT_FDCWD, "/home/node/.npm/_cacache/tmp/1713b783", O_WRONLY|O_CREAT|O_EXCL|O_TRUNC|O_CLOEXEC, 0666) = 25
+19    renameat(AT_FDCWD, "/home/node/.npm/_cacache/tmp/a07b3706", AT_FDCWD, "/home/node/.npm/_cacache/content-v2/sha512/64/7b/7b3c3f090a1977f67a427ef7ed4c179e69a6c7baefbfd1b75be392f5bd294d66156519d4b3ca80ef0c2ff8bb6889be8cf4b4c3f7b11645c83777d88156e2") = 0
+20    openat(AT_FDCWD, "/home/node/.npm/_cacache/index-v5/92/93/2598953ffc8c5d479261876082fe43f9624f322289b72d3f90f2e08bb276", O_WRONLY|O_CREAT|O_APPEND|O_CLOEXEC, 0666) = 24
+19    openat(AT_FDCWD, "/home/node/.npm/_cacache/tmp/2834893e", O_WRONLY|O_CREAT|O_EXCL|O_TRUNC|O_CLOEXEC, 0666) = 24
+17    openat(AT_FDCWD, "/home/node/.npm/_cacache/tmp/f510e794", O_WRONLY|O_CREAT|O_EXCL|O_TRUNC|O_CLOEXEC, 0666) = 26
+19    renameat(AT_FDCWD, "/home/node/.npm/_cacache/tmp/f510e794", AT_FDCWD, "/home/node/.npm/_cacache/content-v2/sha512/a9/12/368d9626291a3974980ac03fb36d711e0ffbcbea2dc6dbb380fe713c569401c5952ffe81932947f12fea572c708a20a85d025904f2e63c5d0e0276c8c68e") = 0
+20    openat(AT_FDCWD, "/home/node/.npm/_cacache/index-v5/dd/6e/bce38caf63982c22edfa4ade01b8c45a3dd89b43c50398b9b8b1769b7865", O_WRONLY|O_CREAT|O_APPEND|O_CLOEXEC, 0666) = 26
+19    renameat(AT_FDCWD, "/home/node/.npm/_cacache/tmp/2834893e", AT_FDCWD, "/home/node/.npm/_cacache/content-v2/sha512/92/31/0314f9eb7b62985059603b3c6501190cc9fa08dc78b57967e96960cda6286e0c95e59079653e8cc5bfa8bb40f45277a57f4bf8422791226cf374ec284385") = 0
+19    openat(AT_FDCWD, "/home/node/.npm/_cacache/index-v5/4f/4a/c432dbdaabe4d1a0e47519ed9d0df6b9c9b672157e02a8e1549737c07958", O_WRONLY|O_CREAT|O_APPEND|O_CLOEXEC, 0666) = 24
+19    renameat(AT_FDCWD, "/home/node/.npm/_cacache/tmp/1713b783", AT_FDCWD, "/home/node/.npm/_cacache/content-v2/sha512/87/ce/dcc7937597b4bb791edf282e68f8b80b177e8dca435b60119db00f5b487e6577f7f8810b4dfb2d63a5bab288dca08517f42c36cc6af3f4bfb673b717f831") = 0
+20    openat(AT_FDCWD, "/home/node/.npm/_cacache/index-v5/04/5a/2b5d7a7c407d85d746baa0f5c9388a333e35a717a8a0a81943daa6cb1364", O_WRONLY|O_CREAT|O_APPEND|O_CLOEXEC, 0666) = 24
+19    openat(AT_FDCWD, "/home/node/.npm/_cacache/tmp/49cc4929", O_WRONLY|O_CREAT|O_EXCL|O_TRUNC|O_CLOEXEC, 0666) = 24
+19    renameat(AT_FDCWD, "/home/node/.npm/_cacache/tmp/49cc4929", AT_FDCWD, "/home/node/.npm/_cacache/content-v2/sha512/a1/15/96fbd4e4a7ee2b2ffaa76ef826dc3a8e0234c75f980454eaa7b54e6a6415adceaf8bd9c737636df20439ecb540811a5b02300161a878407238c3f8c2f149") = 0
+20    openat(AT_FDCWD, "/home/node/.npm/_cacache/index-v5/f8/de/f9c56fdc9f2f7fc39104b94b205c9c1134d1a911ec386542f7735006225a", O_WRONLY|O_CREAT|O_APPEND|O_CLOEXEC, 0666) = 24
+10    connect(25, {sa_family=AF_INET, sin_port=htons(443), sin_addr=inet_addr("104.16.10.34")}, 16) = -1 EINPROGRESS (Operation now in progress)
+10    connect(26, {sa_family=AF_INET, sin_port=htons(443), sin_addr=inet_addr("104.16.10.34")}, 16) = -1 EINPROGRESS (Operation now in progress)
+10    connect(27, {sa_family=AF_INET, sin_port=htons(443), sin_addr=inet_addr("104.16.10.34")}, 16) = -1 EINPROGRESS (Operation now in progress)
+10    connect(28, {sa_family=AF_INET, sin_port=htons(443), sin_addr=inet_addr("104.16.10.34")}, 16) = -1 EINPROGRESS (Operation now in progress)
+10    connect(29, {sa_family=AF_INET, sin_port=htons(443), sin_addr=inet_addr("104.16.10.34")}, 16) = -1 EINPROGRESS (Operation now in progress)
+10    connect(30, {sa_family=AF_INET, sin_port=htons(443), sin_addr=inet_addr("104.16.10.34")}, 16) = -1 EINPROGRESS (Operation now in progress)
+10    connect(31, {sa_family=AF_INET, sin_port=htons(443), sin_addr=inet_addr("104.16.10.34")}, 16) = -1 EINPROGRESS (Operation now in progress)
+10    connect(32, {sa_family=AF_INET, sin_port=htons(443), sin_addr=inet_addr("104.16.10.34")}, 16) = -1 EINPROGRESS (Operation now in progress)
+20    openat(AT_FDCWD, "/home/node/.npm/_cacache/tmp/b60d8615", O_WRONLY|O_CREAT|O_EXCL|O_TRUNC|O_CLOEXEC, 0666) = 24
+18    openat(AT_FDCWD, "/home/node/.npm/_cacache/tmp/3f094381", O_WRONLY|O_CREAT|O_EXCL|O_TRUNC|O_CLOEXEC, 0666) = 24
+20    renameat(AT_FDCWD, "/home/node/.npm/_cacache/tmp/b60d8615", AT_FDCWD, "/home/node/.npm/_cacache/index-v5/04/5a/2b5d7a7c407d85d746baa0f5c9388a333e35a717a8a0a81943daa6cb1364") = 0
+19    openat(AT_FDCWD, "/home/node/.npm/_cacache/tmp/d9a8aaa1", O_WRONLY|O_CREAT|O_EXCL|O_TRUNC|O_CLOEXEC, 0666) = 33
+17    openat(AT_FDCWD, "/home/node/.npm/_cacache/tmp/c67cc641", O_WRONLY|O_CREAT|O_EXCL|O_TRUNC|O_CLOEXEC, 0666) = 34
+18    openat(AT_FDCWD, "/home/node/.npm/_cacache/tmp/507f429f", O_WRONLY|O_CREAT|O_EXCL|O_TRUNC|O_CLOEXEC, 0666) = 36
+19    openat(AT_FDCWD, "/home/node/.npm/_cacache/tmp/e90228fe", O_WRONLY|O_CREAT|O_EXCL|O_TRUNC|O_CLOEXEC, 0666) = 35
+18    openat(AT_FDCWD, "/home/node/.npm/_cacache/tmp/bd120c08", O_WRONLY|O_CREAT|O_EXCL|O_TRUNC|O_CLOEXEC, 0666) = 37
+20    openat(AT_FDCWD, "/home/node/.npm/_cacache/tmp/23bb66ef", O_WRONLY|O_CREAT|O_EXCL|O_TRUNC|O_CLOEXEC, 0666) = 38
+18    renameat(AT_FDCWD, "/home/node/.npm/_cacache/tmp/c67cc641", AT_FDCWD, "/home/node/.npm/_cacache/content-v2/sha512/4f/22/b740ed52adb157dfbc71fbcbbc1d83ccd4959352aaa662f3477f6705ac7b7a1010e0f354bed21487914b1eb8b40767af5ac1ea3969ea29426e7477d8d2f2") = 0
+17    renameat(AT_FDCWD, "/home/node/.npm/_cacache/tmp/d9a8aaa1", AT_FDCWD, "/home/node/.npm/_cacache/content-v2/sha512/58/81/619387e51b2a10de8c2751e01006efbf9b3a077f2859cf7b8dc3d16dda4c7d098ed55604769419c06b8f4df7926558392811df7c570a658e76f95c8e6cf7") = 0
+17    unlinkat(AT_FDCWD, "/home/node/.npm/_cacache/tmp/4853c97a", 0) = 0
+17    unlinkat(AT_FDCWD, "/home/node/.npm/_cacache/tmp/33f08ce3", 0) = 0
+17    unlinkat(AT_FDCWD, "/home/node/.npm/_cacache/tmp/48afd6de", 0) = 0
+20    unlinkat(AT_FDCWD, "/home/node/.npm/_cacache/tmp/efcf125f", 0) = 0
+17    unlinkat(AT_FDCWD, "/home/node/.npm/_cacache/tmp/9aef4a68", 0) = 0
+10    connect(24, {sa_family=AF_INET, sin_port=htons(443), sin_addr=inet_addr("104.16.10.34")}, 16) = -1 EINPROGRESS (Operation now in progress)
+10    connect(33, {sa_family=AF_INET, sin_port=htons(443), sin_addr=inet_addr("104.16.10.34")}, 16) = -1 EINPROGRESS (Operation now in progress)
+18    openat(AT_FDCWD, "/home/node/.npm/_npx/a705c79b42eea4c8/node_modules/hasown/.nycrc", O_WRONLY|O_CREAT|O_TRUNC|O_NOFOLLOW|O_CLOEXEC, 0666) = 35
+19    openat(AT_FDCWD, "/home/node/.npm/_npx/a705c79b42eea4c8/node_modules/has-symbols/.eslintrc", O_WRONLY|O_CREAT|O_TRUNC|O_NOFOLLOW|O_CLOEXEC, 0666) = 37
+20    openat(AT_FDCWD, "/home/node/.npm/_npx/a705c79b42eea4c8/node_modules/isexe/package.json", O_WRONLY|O_CREAT|O_TRUNC|O_NOFOLLOW|O_CLOEXEC, 0666) = 39
+18    openat(AT_FDCWD, "/home/node/.npm/_npx/a705c79b42eea4c8/node_modules/es-object-atoms/.eslintrc", O_WRONLY|O_CREAT|O_TRUNC|O_NOFOLLOW|O_CLOEXEC, 0666) = 41
+20    openat(AT_FDCWD, "/home/node/.npm/_npx/a705c79b42eea4c8/node_modules/media-typer/LICENSE", O_WRONLY|O_CREAT|O_TRUNC|O_NOFOLLOW|O_CLOEXEC, 0666) = 43
+18    openat(AT_FDCWD, "/home/node/.npm/_npx/a705c79b42eea4c8/node_modules/math-intrinsics/.eslintrc", O_WRONLY|O_CREAT|O_TRUNC|O_NOFOLLOW|O_CLOEXEC, 0666) = 45
+19    openat(AT_FDCWD, "/home/node/.npm/_npx/a705c79b42eea4c8/node_modules/get-proto/.eslintrc", O_WRONLY|O_CREAT|O_TRUNC|O_NOFOLLOW|O_CLOEXEC, 0666) = 47
+18    openat(AT_FDCWD, "/home/node/.npm/_npx/a705c79b42eea4c8/node_modules/side-channel-weakmap/.editorconfig", O_WRONLY|O_CREAT|O_TRUNC|O_NOFOLLOW|O_CLOEXEC, 0666) = 49
+17    openat(AT_FDCWD, "/home/node/.npm/_npx/a705c79b42eea4c8/node_modules/function-bind/.eslintrc", O_WRONLY|O_CREAT|O_TRUNC|O_NOFOLLOW|O_CLOEXEC, 0666) = 51
+17    openat(AT_FDCWD, "/home/node/.npm/_npx/a705c79b42eea4c8/node_modules/dunder-proto/.eslintrc", O_WRONLY|O_CREAT|O_TRUNC|O_NOFOLLOW|O_CLOEXEC, 0666) = 53
+17    openat(AT_FDCWD, "/home/node/.npm/_npx/a705c79b42eea4c8/node_modules/hasown/LICENSE", O_WRONLY|O_CREAT|O_TRUNC|O_NOFOLLOW|O_CLOEXEC, 0666) = 54
+18    openat(AT_FDCWD, "/home/node/.npm/_npx/a705c79b42eea4c8/node_modules/has-symbols/.nycrc", O_WRONLY|O_CREAT|O_TRUNC|O_NOFOLLOW|O_CLOEXEC, 0666) = 55
+17    openat(AT_FDCWD, "/home/node/.npm/_npx/a705c79b42eea4c8/node_modules/isexe/.npmignore", O_WRONLY|O_CREAT|O_TRUNC|O_NOFOLLOW|O_CLOEXEC, 0666) = 56
+18    openat(AT_FDCWD, "/home/node/.npm/_npx/a705c79b42eea4c8/node_modules/es-object-atoms/LICENSE", O_WRONLY|O_CREAT|O_TRUNC|O_NOFOLLOW|O_CLOEXEC, 0666) = 57
+19    openat(AT_FDCWD, "/home/node/.npm/_npx/a705c79b42eea4c8/node_modules/media-typer/index.js", O_WRONLY|O_CREAT|O_TRUNC|O_NOFOLLOW|O_CLOEXEC, 0666) = 58
+20    openat(AT_FDCWD, "/home/node/.npm/_npx/a705c79b42eea4c8/node_modules/math-intrinsics/LICENSE", O_WRONLY|O_CREAT|O_TRUNC|O_NOFOLLOW|O_CLOEXEC, 0666) = 59
+20    openat(AT_FDCWD, "/home/node/.npm/_npx/a705c79b42eea4c8/node_modules/get-proto/.nycrc", O_WRONLY|O_CREAT|O_TRUNC|O_NOFOLLOW|O_CLOEXEC, 0666) = 60
+20    openat(AT_FDCWD, "/home/node/.npm/_npx/a705c79b42eea4c8/node_modules/side-channel-weakmap/.eslintrc", O_WRONLY|O_CREAT|O_TRUNC|O_NOFOLLOW|O_CLOEXEC, 0666) = 61
+20    openat(AT_FDCWD, "/home/node/.npm/_npx/a705c79b42eea4c8/node_modules/dunder-proto/.nycrc", O_WRONLY|O_CREAT|O_TRUNC|O_NOFOLLOW|O_CLOEXEC, 0666) = 62
+20    openat(AT_FDCWD, "/home/node/.npm/_npx/a705c79b42eea4c8/node_modules/gopd/.eslintrc", O_WRONLY|O_CREAT|O_TRUNC|O_NOFOLLOW|O_CLOEXEC, 0666) = 64
+19    openat(AT_FDCWD, "/home/node/.npm/_npx/a705c79b42eea4c8/node_modules/call-bind-apply-helpers/.eslintrc", O_WRONLY|O_CREAT|O_TRUNC|O_NOFOLLOW|O_CLOEXEC, 0666) = 66
+17    openat(AT_FDCWD, "/home/node/.npm/_npx/a705c79b42eea4c8/node_modules/hasown/index.js", O_WRONLY|O_CREAT|O_TRUNC|O_NOFOLLOW|O_CLOEXEC, 0666) = 35
+20    openat(AT_FDCWD, "/home/node/.npm/_npx/a705c79b42eea4c8/node_modules/has-symbols/LICENSE", O_WRONLY|O_CREAT|O_TRUNC|O_NOFOLLOW|O_CLOEXEC, 0666) = 37
+18    openat(AT_FDCWD, "/home/node/.npm/_npx/a705c79b42eea4c8/node_modules/isexe/README.md", O_WRONLY|O_CREAT|O_TRUNC|O_NOFOLLOW|O_CLOEXEC, 0666) = 38
+20    openat(AT_FDCWD, "/home/node/.npm/_npx/a705c79b42eea4c8/node_modules/es-object-atoms/index.js", O_WRONLY|O_CREAT|O_TRUNC|O_NOFOLLOW|O_CLOEXEC, 0666) = 39
+20    unlinkat(AT_FDCWD, "/home/node/.npm/_cacache/tmp/37bf7aea", 0 <unfinished ...>
+20    <... unlinkat resumed>)           = 0
+17    unlinkat(AT_FDCWD, "/home/node/.npm/_cacache/tmp/1c3d92f5", 0 <unfinished ...>
+17    <... unlinkat resumed>)           = 0
+22    execve("/home/node/.npm/_npx/a705c79b42eea4c8/node_modules/.bin/sh", ["sh", "-c", "mcp-server-everything"], 0xffff980052c0 /* 28 vars */) = -1 ENOENT (No such file or directory)
+22    execve("/workspace/node_modules/.bin/sh", ["sh", "-c", "mcp-server-everything"], 0xffff980052c0 /* 28 vars */) = -1 ENOENT (No such file or directory)
+22    execve("/node_modules/.bin/sh", ["sh", "-c", "mcp-server-everything"], 0xffff980052c0 /* 28 vars */) = -1 ENOENT (No such file or directory)
+22    execve("/usr/local/lib/node_modules/npm/node_modules/@npmcli/run-script/lib/node-gyp-bin/sh", ["sh", "-c", "mcp-server-everything"], 0xffff980052c0 /* 28 vars */) = -1 ENOENT (No such file or directory)
+22    execve("/usr/local/sbin/sh", ["sh", "-c", "mcp-server-everything"], 0xffff980052c0 /* 28 vars */) = -1 ENOENT (No such file or directory)
+22    execve("/usr/local/bin/sh", ["sh", "-c", "mcp-server-everything"], 0xffff980052c0 /* 28 vars */) = -1 ENOENT (No such file or directory)
+22    execve("/usr/sbin/sh", ["sh", "-c", "mcp-server-everything"], 0xffff980052c0 /* 28 vars */) = -1 ENOENT (No such file or directory)
+22    execve("/usr/bin/sh", ["sh", "-c", "mcp-server-everything"], 0xffff980052c0 /* 28 vars */) = 0
+23    execve("/home/node/.npm/_npx/a705c79b42eea4c8/node_modules/.bin/mcp-server-everything", ["mcp-server-everything"], 0xaaaabcc82848 /* 28 vars */) = 0
+23    execve("/home/node/.npm/_npx/a705c79b42eea4c8/node_modules/.bin/node", ["node", "/home/node/.npm/_npx/a705c79b42eea4c8/node_modules/.bin/mcp-server-everything"], 0xffffe34faa38 /* 28 vars */) = -1 ENOENT (No such file or directory)
+23    execve("/workspace/node_modules/.bin/node", ["node", "/home/node/.npm/_npx/a705c79b42eea4c8/node_modules/.bin/mcp-server-everything"], 0xffffe34faa38 /* 28 vars */) = -1 ENOENT (No such file or directory)
+23    execve("/node_modules/.bin/node", ["node", "/home/node/.npm/_npx/a705c79b42eea4c8/node_modules/.bin/mcp-server-everything"], 0xffffe34faa38 /* 28 vars */) = -1 ENOENT (No such file or directory)
+23    execve("/usr/local/lib/node_modules/npm/node_modules/@npmcli/run-script/lib/node-gyp-bin/node", ["node", "/home/node/.npm/_npx/a705c79b42eea4c8/node_modules/.bin/mcp-server-everything"], 0xffffe34faa38 /* 28 vars */) = -1 ENOENT (No such file or directory)
+23    execve("/usr/local/sbin/node", ["node", "/home/node/.npm/_npx/a705c79b42eea4c8/node_modules/.bin/mcp-server-everything"], 0xffffe34faa38 /* 28 vars */) = -1 ENOENT (No such file or directory)
+23    execve("/usr/local/bin/node", ["node", "/home/node/.npm/_npx/a705c79b42eea4c8/node_modules/.bin/mcp-server-everything"], 0xffffe34faa38 /* 28 vars */) = 0
+22    --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=23, si_uid=1000, si_status=0, si_utime=13 /* 0.13 s */, si_stime=4 /* 0.04 s */} ---
+10    --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=22, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+10    openat(AT_FDCWD, "/tmp/node-compile-cache/v22.23.3-arm64-2b4477fa-1000/e9502cdb.KAu5hD", O_RDWR|O_CREAT|O_EXCL|O_CLOEXEC, 0600) = 18
+10    renameat(AT_FDCWD, "/tmp/node-compile-cache/v22.23.3-arm64-2b4477fa-1000/e9502cdb.KAu5hD", AT_FDCWD, "/tmp/node-compile-cache/v22.23.3-arm64-2b4477fa-1000/e9502cdb") = 0
+10    openat(AT_FDCWD, "/tmp/node-compile-cache/v22.23.3-arm64-2b4477fa-1000/52839e32.ZasAi4", O_RDWR|O_CREAT|O_EXCL|O_CLOEXEC, 0600) = 18
+10    renameat(AT_FDCWD, "/tmp/node-compile-cache/v22.23.3-arm64-2b4477fa-1000/52839e32.ZasAi4", AT_FDCWD, "/tmp/node-compile-cache/v22.23.3-arm64-2b4477fa-1000/52839e32") = 0
+10    openat(AT_FDCWD, "/tmp/node-compile-cache/v22.23.3-arm64-2b4477fa-1000/3f048520.cQMgi4", O_RDWR|O_CREAT|O_EXCL|O_CLOEXEC, 0600) = 18
+10    renameat(AT_FDCWD, "/tmp/node-compile-cache/v22.23.3-arm64-2b4477fa-1000/3f048520.cQMgi4", AT_FDCWD, "/tmp/node-compile-cache/v22.23.3-arm64-2b4477fa-1000/3f048520") = 0
+10    openat(AT_FDCWD, "/tmp/node-compile-cache/v22.23.3-arm64-2b4477fa-1000/3d2023a8.CmKSlZ", O_RDWR|O_CREAT|O_EXCL|O_CLOEXEC, 0600) = 18
+10    renameat(AT_FDCWD, "/tmp/node-compile-cache/v22.23.3-arm64-2b4477fa-1000/3d2023a8.CmKSlZ", AT_FDCWD, "/tmp/node-compile-cache/v22.23.3-arm64-2b4477fa-1000/3d2023a8") = 0
+10    openat(AT_FDCWD, "/tmp/node-compile-cache/v22.23.3-arm64-2b4477fa-1000/3147a1e3.xvVCNP", O_RDWR|O_CREAT|O_EXCL|O_CLOEXEC, 0600) = 18
+10    openat(AT_FDCWD, "/tmp/node-compile-cache/v22.23.3-arm64-2b4477fa-1000/c70a10fa.tiV9a5", O_RDWR|O_CREAT|O_EXCL|O_CLOEXEC, 0600) = 18

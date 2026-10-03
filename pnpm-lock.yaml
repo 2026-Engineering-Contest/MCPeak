@@ -63,6 +63,12 @@ importers:
         specifier: 'catalog:'
         version: 1.30.0(zod@4.4.3)
 
+  examples/sandbox-target-server:
+    dependencies:
+      '@modelcontextprotocol/sdk':
+        specifier: 'catalog:'
+        version: 1.30.0(zod@4.4.3)
+
   examples/weather-server:
     dependencies:
       '@modelcontextprotocol/sdk':

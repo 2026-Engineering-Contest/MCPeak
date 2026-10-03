@@ -34,7 +34,8 @@
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.mts",
   "files": [
-    "dist"
+    "dist",
+    "sandbox"
   ],
   "scripts": {
     "build": "tsdown --config-loader native",

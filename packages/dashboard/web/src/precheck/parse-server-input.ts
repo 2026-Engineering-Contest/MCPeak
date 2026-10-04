@@ -71,25 +71,65 @@ function tokenize(line: string): readonly string[] | null {
   return tokens.filter((token) => token !== "\\");
 }
 
+/**
+ * 실행 파일 앞에 붙은 환경변수 전달을 걷어 낸다. `KEY=value node s.mjs` 와 `env KEY=value node s.mjs`
+ * 두 꼴이다. 이름만 남기고 값은 버린다. `env` 와 그 옵션(`-i` 등)도 버린다. env 를 넘기지 않으므로
+ * 남길 뜻이 없다. 걷어 내지 않으면 값이 args 에 실려 대상 줄과 요청으로 나간다(ADR-0111).
+ */
+function stripEnv(tokens: readonly string[]): {
+  readonly envNames: readonly string[];
+  readonly rest: readonly string[];
+} {
+  const envNames: string[] = [];
+  let index = 0;
+  for (;;) {
+    const token = tokens[index];
+    if (token === undefined) break;
+    if (ENV_ASSIGNMENT.test(token)) {
+      envNames.push(token.slice(0, token.indexOf("=")));
+      index += 1;
+      continue;
+    }
+    if (token !== "env" && !token.endsWith("/env")) break;
+    // `env` 뒤의 옵션과 할당까지가 env 의 몫이다. 그다음 토큰이 실행 파일이다.
+    index += 1;
+    while (tokens[index]?.startsWith("-") === true) index += 1;
+  }
+  return { envNames, rest: tokens.slice(index) };
+}
+
 function entryOf(name: string | null, value: unknown): PastedServer | string {
   const label = name === null ? "설정" : `'${name}' 항목`;
   if (!isRecord(value)) return `${label}이 객체가 아닙니다.`;
   if (typeof value.command === "string" && value.command.trim() !== "") {
-    // `"command": "API_KEY=x node"` 처럼 셸 줄을 통째로 적은 설정. 받아들이면 그 값이 대상 줄과 요청에
-    // 실린다. 값은 문장에 싣지 않는다.
-    if (ENV_ASSIGNMENT.test(value.command.trim())) {
-      return `${label}의 command 가 환경변수 할당으로 시작합니다. 값은 env 칸으로 옮기고 command 에는 실행 파일만 적으세요.`;
+    // `"command": "API_KEY=x node"`, `"command": "env API_KEY=x node"` 처럼 셸 줄을 통째로 적은 설정.
+    // command 한 칸은 실행 파일 하나라 나눠 읽지 않는다. 받아들이면 그 값이 대상 줄과 요청에 실린다.
+    // 값은 문장에 싣지 않는다.
+    if (
+      value.command
+        .trim()
+        .split(/\s+/)
+        .some((token) => ENV_ASSIGNMENT.test(token))
+    ) {
+      return `${label}의 command 에 환경변수 할당이 있습니다. 값은 env 칸으로 옮기고 command 에는 실행 파일만 적으세요.`;
     }
     const args = value.args ?? [];
     if (!Array.isArray(args) || !args.every((arg): arg is string => typeof arg === "string")) {
       return `${label}의 args 는 문자열 배열이어야 합니다.`;
     }
+    // `{"command":"env","args":["API_KEY=x","node","s.mjs"]}` 꼴. 값이 args 에 실리지 않게 걷어 낸다.
+    const stripped = stripEnv([value.command.trim(), ...args]);
+    const command = stripped.rest[0];
+    if (command === undefined) {
+      return `${label}에 실행 명령이 없습니다. 환경변수 뒤에 명령을 적으세요.`;
+    }
+    const declared = isRecord(value.env) ? Object.keys(value.env) : [];
     return {
       name,
       transport: "stdio",
-      command: value.command.trim(),
-      args,
-      envNames: isRecord(value.env) ? Object.keys(value.env) : [],
+      command,
+      args: stripped.rest.slice(1),
+      envNames: [...declared, ...stripped.envNames.filter((key) => !declared.includes(key))],
       url: "",
       headerNames: [],
     };
@@ -156,15 +196,9 @@ export function parseServerInput(text: string): ParsedInput {
   }
   const tokens = tokenize(trimmed);
   if (tokens === null) return fail("따옴표가 닫히지 않았습니다.");
-  // 명령 앞의 `KEY=value` 는 env 다. 이름만 남긴다.
-  let index = 0;
-  const envNames: string[] = [];
-  while (index < tokens.length && ENV_ASSIGNMENT.test(tokens[index] as string)) {
-    const token = tokens[index] as string;
-    envNames.push(token.slice(0, token.indexOf("=")));
-    index += 1;
-  }
-  const command = tokens[index];
+  // 명령 앞의 `KEY=value` 와 `env KEY=value` 는 env 다. 이름만 남긴다.
+  const { envNames, rest } = stripEnv(tokens);
+  const command = rest[0];
   if (command === undefined) return fail("실행 명령이 없습니다. 환경변수 뒤에 명령을 적으세요.");
   return {
     ok: true,
@@ -173,7 +207,7 @@ export function parseServerInput(text: string): ParsedInput {
         name: null,
         transport: "stdio",
         command,
-        args: tokens.slice(index + 1),
+        args: rest.slice(1),
         envNames,
         url: "",
         headerNames: [],

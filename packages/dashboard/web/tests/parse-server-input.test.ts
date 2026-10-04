@@ -205,12 +205,12 @@ describe("parseServerInput", () => {
     );
   });
 
-  it("JSON 의 command 가 환경변수 할당으로 시작하면 거절하고 값을 싣지 않는다", () => {
+  it("JSON 의 command 에 환경변수 할당이 있으면 거절하고 값을 싣지 않는다", () => {
     const result = parseServerInput('{"a":{"command":"API_KEY=s3cr3t-value node s.mjs"}}');
     expect(result).toEqual({
       ok: false,
       error:
-        "'a' 항목의 command 가 환경변수 할당으로 시작합니다. 값은 env 칸으로 옮기고 command 에는 실행 파일만 적으세요.",
+        "'a' 항목의 command 에 환경변수 할당이 있습니다. 값은 env 칸으로 옮기고 command 에는 실행 파일만 적으세요.",
     });
     expect(JSON.stringify(result)).not.toContain("s3cr3t-value");
   });
@@ -219,7 +219,70 @@ describe("parseServerInput", () => {
     expect(parseServerInput('{"command":"TOKEN=x npx -y pkg"}')).toEqual({
       ok: false,
       error:
-        "설정의 command 가 환경변수 할당으로 시작합니다. 값은 env 칸으로 옮기고 command 에는 실행 파일만 적으세요.",
+        "설정의 command 에 환경변수 할당이 있습니다. 값은 env 칸으로 옮기고 command 에는 실행 파일만 적으세요.",
     });
+  });
+
+  it("JSON 의 command 가 env 로 값을 넘겨도 거절한다", () => {
+    const result = parseServerInput('{"a":{"command":"env API_KEY=s3cr3t-value node s.mjs"}}');
+    expect(result).toEqual({
+      ok: false,
+      error:
+        "'a' 항목의 command 에 환경변수 할당이 있습니다. 값은 env 칸으로 옮기고 command 에는 실행 파일만 적으세요.",
+    });
+    expect(JSON.stringify(result)).not.toContain("s3cr3t-value");
+  });
+
+  it("JSON 의 command 가 env 이고 args 가 값을 넘기면 이름만 남기고 실행 파일을 찾는다", () => {
+    const result = parseServerInput(
+      '{"a":{"command":"env","args":["API_KEY=s3cr3t-value","node","s.mjs"],"env":{"TOKEN":"t0k"}}}',
+    );
+    expect(result).toEqual({
+      ok: true,
+      servers: [
+        {
+          name: "a",
+          transport: "stdio",
+          command: "node",
+          args: ["s.mjs"],
+          envNames: ["TOKEN", "API_KEY"],
+          url: "",
+          headerNames: [],
+        },
+      ],
+    });
+    expect(JSON.stringify(result)).not.toContain("s3cr3t-value");
+    expect(JSON.stringify(result)).not.toContain("t0k");
+  });
+
+  it("JSON 의 command 가 env 뿐이면 실행 명령이 없다고 말한다", () => {
+    expect(parseServerInput('{"a":{"command":"env","args":["API_KEY=x"]}}')).toEqual({
+      ok: false,
+      error: "'a' 항목에 실행 명령이 없습니다. 환경변수 뒤에 명령을 적으세요.",
+    });
+  });
+
+  it("명령 한 줄의 env KEY=value 는 이름만 남기고 값을 싣지 않는다", () => {
+    const result = parseServerInput("env -i API_KEY=s3cr3t-value TOKEN=t0k npx -y pkg");
+    expect(result).toEqual({
+      ok: true,
+      servers: [
+        {
+          name: null,
+          transport: "stdio",
+          command: "npx",
+          args: ["-y", "pkg"],
+          envNames: ["API_KEY", "TOKEN"],
+          url: "",
+          headerNames: [],
+        },
+      ],
+    });
+    expect(JSON.stringify(result)).not.toContain("s3cr3t-value");
+  });
+
+  it("실행 파일 뒤의 KEY=value 꼴 인자는 건드리지 않는다", () => {
+    const result = parseServerInput("node s.mjs --define MODE=dev");
+    expect(result.ok && result.servers[0]?.args).toEqual(["s.mjs", "--define", "MODE=dev"]);
   });
 });

@@ -147,12 +147,32 @@ export function createForwarder(state, io) {
       return;
     }
 
+    /**
+     * 녹화 모드면, 전달이 실패해 게이트웨이가 스스로 답한 응답을 이 키의 응답으로 적는다. 적지 않으면
+     * 카세트에 이 키가 없어 재생에서만 `replay-miss` 가 생긴다. 문구가 고정이라 실행마다 바이트가 같다.
+     * @param {number} status
+     * @param {string} text
+     */
+    const recordGatewayFailure = (status, text) => {
+      if (state.mode !== "record") return;
+      state.recorder.record(
+        key,
+        {
+          status,
+          headers: [["content-type", "text/plain; charset=utf-8"]],
+          body: Buffer.from(text, "utf8"),
+        },
+        state.secrets,
+      );
+    };
+
     /** @type {string} */
     let address;
     try {
       address = await io.lookup(host);
     } catch {
       note("live");
+      recordGatewayFailure(502, "mcpeak: 상류 이름을 풀지 못했습니다");
       reply(response, 502, "mcpeak: 상류 이름을 풀지 못했습니다");
       return;
     }
@@ -178,11 +198,21 @@ export function createForwarder(state, io) {
     });
     upstreams.add(upstream);
     upstream.on("close", () => upstreams.delete(upstream));
-    upstream.on("error", () => reply(response, 502, "mcpeak: 상류에 접속하지 못했습니다"));
+    // 이 요청의 카세트 항목이 정해졌는가. 상류가 응답을 시작했거나 합성 실패를 이미 적었으면 참이다.
+    let settled = false;
+    upstream.on("error", () => {
+      // `error` 는 상류가 답한 뒤에도, 한 요청에 두 번도 올 수 있다. 응답 없이 끝난 요청에 한 번만 적는다.
+      if (!settled) {
+        settled = true;
+        recordGatewayFailure(502, "mcpeak: 상류에 접속하지 못했습니다");
+      }
+      reply(response, 502, "mcpeak: 상류에 접속하지 못했습니다");
+    });
     response.on("close", () => {
       if (!response.writableFinished) upstream.destroy();
     });
     upstream.on("response", (answer) => {
+      settled = true;
       /** @type {Buffer[]} */
       const chunks = [];
       response.writeHead(answer.statusCode ?? 502, answer.statusMessage, answer.rawHeaders);

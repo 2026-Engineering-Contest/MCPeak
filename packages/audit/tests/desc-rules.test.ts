@@ -2,6 +2,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { collectStrings } from "../src/collect.js";
 import { DESC_RULES, runDescRules } from "../src/rules/description.js";
+import { runSteeringRules } from "../src/rules/steering.js";
 import type { Finding, RawTool } from "../src/types.js";
 
 const base64 = (text: string) => Buffer.from(text, "utf8").toString("base64");
@@ -584,7 +585,7 @@ describe("desc/non-standard-field", () => {
 });
 
 describe("runDescRules 공통", () => {
-  it("DESC_RULES 는 desc 가족 열 개다", () => {
+  it("DESC_RULES 는 desc 가족 열한 개다", () => {
     expect(DESC_RULES.map((rule) => rule.id)).toEqual([
       "desc/injection",
       "desc/covert-action",
@@ -596,6 +597,7 @@ describe("runDescRules 공통", () => {
       "desc/ansi-escape",
       "desc/encoded-blob",
       "desc/non-standard-field",
+      "desc/steering",
     ]);
     expect(DESC_RULES.every((rule) => rule.family === "desc")).toBe(true);
   });
@@ -678,15 +680,16 @@ describe("desc 픽스처", () => {
       instructions?: string;
       expect: { ruleId: string; count: number };
     };
-    const findings = runDescRules(
-      collectStrings({
-        tools: fixture.tools,
-        prompts: fixture.prompts ?? [],
-        resources: fixture.resources ?? [],
-        instructions: fixture.instructions,
-      }),
-      { serverName: fixture.serverName },
-    );
+    const strings = collectStrings({
+      tools: fixture.tools,
+      prompts: fixture.prompts ?? [],
+      resources: fixture.resources ?? [],
+      instructions: fixture.instructions,
+    });
+    const findings = [
+      ...runDescRules(strings, { serverName: fixture.serverName }),
+      ...runSteeringRules(fixture.tools, { serverName: fixture.serverName }),
+    ];
     expect(fixture.expect.count).toBe(1);
     expect(findings.map((finding) => finding.ruleId)).toEqual([fixture.expect.ruleId]);
     const form = /^desc-injection\.(\w+)\.json$/.exec(file)?.[1];

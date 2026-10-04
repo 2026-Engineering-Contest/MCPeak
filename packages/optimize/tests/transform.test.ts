@@ -25,7 +25,11 @@ function syntheticInput(): OptimizeInput {
   };
 }
 
-const VERSION = readJson<{ version: string }>(join(here, "..", "package.json")).version;
+// 기대 픽스처(synthetic.expected.overlay.json)의 generator.version 과 같은 고정값이다.
+// package.json 에서 읽으면 릴리스가 버전을 올릴 때마다 바이트 비교가 깨진다.
+// optimize() 는 받은 버전을 그대로 싣기만 하므로, 실제 패키지 버전이 전달되는지는
+// 호출하는 쪽(cli·dashboard) 테스트가 본다.
+const VERSION = "0.1.0";
 
 function staged(tool: ToolDef): StagedTool {
   return { ...tool, changes: [] };

@@ -174,6 +174,62 @@ describe("schema/annotation-mismatch", () => {
     );
     expect(found).toEqual([]);
   });
+  it("읽기 전용 도구 설명의 명사·리소스 이름·중간 문장은 high 로 잡지 않는다 (실서버 오탐 회귀)", () => {
+    const cases: Array<[string, string]> = [
+      ["git_log", "View commit history with optional filtering by author, date range, or path."],
+      [
+        "netlify_deploy_services_reader",
+        "Select and run one of the following read operations: get-deploy, get-deploy-for-site.",
+      ],
+      [
+        "confirm_cost",
+        "Ask the user to confirm their understanding of the cost of creating a new project.",
+      ],
+      [
+        "searchPostmanElements",
+        "Search for Postman entities. Filter by method, e.g. POST requests only.",
+      ],
+      [
+        "retrieve_page_markdown",
+        "Retrieve a page as Markdown. 403: the integration lacks read/update content capability.",
+      ],
+      [
+        "firecrawl_parse",
+        "Parse one supported document into markdown, links, or a summary; results are sent back inline.",
+      ],
+    ];
+    for (const [name, description] of cases) {
+      const found = only(
+        runSchemaRules([tool(name, { description, annotations: { readOnlyHint: true } })]),
+        "schema/annotation-mismatch",
+      );
+      expect(found, name).toEqual([]);
+    }
+  });
+  it("설명이 파괴적 동사로 '시작'하면 그대로 high 로 잡는다", () => {
+    const found = only(
+      runSchemaRules([
+        tool("do_thing", {
+          description: "Delete every record that matches the filter.",
+          annotations: { readOnlyHint: true },
+        }),
+      ]),
+      "schema/annotation-mismatch",
+    );
+    expect(found.map((f) => f.evidence)).toEqual([["delete"]]);
+  });
+  it("활용형 'Deletes' 는 원형 일치가 아니라 잡지 않는다 (알려진 한계, 수정 전과 같은 동작)", () => {
+    const found = only(
+      runSchemaRules([
+        tool("do_thing", {
+          description: "Deletes every record that matches the filter.",
+          annotations: { readOnlyHint: true },
+        }),
+      ]),
+      "schema/annotation-mismatch",
+    );
+    expect(found).toEqual([]);
+  });
 });
 
 describe("schema/missing-destructive-hint", () => {

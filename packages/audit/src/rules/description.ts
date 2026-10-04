@@ -639,11 +639,16 @@ function scanString(entry: CollectedString, serverName: string): Finding[] {
     "high",
     matchForms(forms, authTool ? COVERT_FOR_AUTH_TOOLS : COVERT),
   );
-  const implicit = record(
-    "desc/implicit-trigger",
-    "medium",
-    matchImplicitTrigger(entry.raw, forms, entry.location),
-  );
+  // 파라미터(스키마 속성) 설명의 조건문은 인자 채우기 안내라 자동 트리거로 보지 않는다. 다른 규칙은 그대로 돈다.
+  const inParameter =
+    entry.location.kind === "tool" && entry.location.path.startsWith("inputSchema");
+  const implicit = inParameter
+    ? false
+    : record(
+        "desc/implicit-trigger",
+        "medium",
+        matchImplicitTrigger(entry.raw, forms, entry.location),
+      );
   const shadowing = record(
     "desc/shadowing",
     "high",

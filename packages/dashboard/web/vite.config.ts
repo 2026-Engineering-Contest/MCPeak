@@ -11,6 +11,22 @@ import { defineConfig } from "vitest/config";
 const root = fileURLToPath(new URL(".", import.meta.url));
 
 /**
+ * 테스트가 값으로 import 하는 워크스페이스 패키지를 소스로 해석한다. 각 패키지의 `exports` 는 `dist` 만
+ * 가리키고, CI 의 verify 잡은 `build` 없이 `pnpm test` 를 돌린다. 이 alias 가 없으면 로컬은 남아 있는
+ * `dist` 로 녹색이고 CI 만 `Failed to resolve entry for package` 로 죽는다. 루트 `vitest.config.ts` 의
+ * alias 는 이 프로젝트에 내려오지 않는다(이 파일을 프로젝트 설정으로 그대로 읽는다).
+ *
+ * `audit` 의 소스가 `core` 를 값으로 import 하므로 둘을 함께 적는다. `test.alias` 에만 둔다. 번들에는
+ * 영향을 주지 않는다. web 소스는 이 패키지들을 타입으로만 import 한다.
+ */
+const testAliases = Object.fromEntries(
+  (["audit", "core"] as const).map((name) => [
+    `@mcpeak/${name}`,
+    fileURLToPath(new URL(`../../${name}/src/index.ts`, import.meta.url)),
+  ]),
+);
+
+/**
  * Vite 설정이면서 동시에 vitest 설정이다.
  *
  * 루트 `vitest.config.ts`의 `include`는 packages 아래 각 패키지의 tests 디렉터리까지만 잡고 `web/tests/`는
@@ -32,6 +48,7 @@ export default defineConfig({
   },
   test: {
     environment: "node",
+    alias: testAliases,
     // .tsx도 잡는다. UI 구현계획(U0~U4)의 컴포넌트 테스트가 tests/*.test.tsx라서
     // .ts만 잡으면 그 파일들이 0개 수집된 채 초록으로 보인다(검사 대상 0개 거짓 신호).
     include: ["tests/**/*.test.{ts,tsx}"],

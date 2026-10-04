@@ -1,5 +1,47 @@
 # ohmymcp
 
+## 0.13.0
+
+### Minor Changes
+
+- 0047003: `mcpeak audit` 서브커맨드를 더한다. MCP 서버를 쓰기 전에 도구 정의·실행 명령·프로토콜 응답을 로컬 규칙으로 점검하고 사람용 리포트나 `--json` 결과를 낸다. 대상 옵션은 `test`·`optimize` 와 같고, `--probe readonly|none|all`(기본 readonly), `--baseline <path>`, `--update-baseline`, `--json` 을 받는다. 종료 코드는 심각·주의 발견이 있으면 2, 없으면 0, 연결·입력 실패는 1 이다. stdio 서버에는 흔한 비밀 이름마다 카나리 값을 넣고, sampling·elicitation·roots 능력을 광고해 서버 발신 요청을 관측한다.
+- ab15a0a: `mcpeak audit --sandbox` 를 더한다. 서버를 Docker 컨테이너 안에서 띄워 모든 도구를 부르고, 그동안의 파일 읽기·자식 프로세스·나가는 접속을 관측해 `behavior`·`network` 발견으로 알린다. `--sandbox-session`·`--sandbox-replay` 로 네트워크를 녹화·재생하고, `--allow-host` 로 목적지를 선언하며, `--compare-host` 로 격리 안팎의 도구 표면을 비교하고, `--sandbox-mount` 로 컨테이너에 보일 범위를 정한다. Docker 가 없으면 격리 없이 점검하고 리포트 둘째 줄이 그 사실을 말한다. 격리가 실제로 켜진 실행의 호출 기본값은 `all` 이다(ADR-0107, ADR-0108).
+- 56c1b7e: `@mcpeak/cli/commands` 에 `autoReviewIO` 를 더한다. `generate` 의 승인 질문(사전보완 전송, 시험 실행, 실패 분류, 교정 값, 재검증, 저장)에 정해진 정책으로 답하는 `ReviewIO` 다. 남은 실패는 서버 결함으로 기록하고, 고른 답은 `▸ 자동 승인: <질문> → <답>` 으로 화면에 남긴다. 대시보드의 "한 번에 검증" 이 쓴다(ADR-0103).
+- dca0cd3: `mcpeak optimize` 서브커맨드를 추가한다. 서버의 `tools/list` 를 읽어 기능을 바꾸지 않고 토큰을 줄인 오버레이를 `--out` 에 쓰고, 변환별 기여를 담은 리포트를 stdout 에 낸다. `--json` 이면 리포트 대신 오버레이 JSON 을 낸다. 대상 옵션(`--`, `--command`/`--arg`/`--env`, `--url`/`--header-env`)은 `test`·`generate` 와 같은 규칙과 오류 문장을 쓴다. 만든 오버레이는 `mcpeak-optimize-proxy <overlay.json> -- <서버 명령>` 으로 띄워 MCP 클라이언트에 붙인다.
+
+### Patch Changes
+
+- 1016a30: `mcpeak audit --sandbox -- npx -y <패키지>` 가 격리 안에서 끝까지 돈다. 격리 안에서는 npm 캐시가 매번 비어 있어 `npx`·`npm` 이 패키지를 새로 받는데, 그 시간이 접속 제한 기본값 10초를 넘어 "제한 시간 안에 MCP 초기화를 마치지 못했습니다" 로 끝났다.
+
+  - 명령이 `npx`·`npm` 이면 격리 안의 서버에 붙을 때 접속 제한을 60초로 준다. `node` 로 띄우는 서버, 격리 없는 실행, `--compare-host` 의 둘째 연결은 전과 같다.
+  - 기다리는 동안 멈춘 것으로 보이지 않게 진행 문장을 stderr 에 한 줄 낸다: `격리 안에서는 패키지를 매번 새로 받습니다. 서버가 뜨기까지 1분까지 기다립니다.`
+  - 그래도 붙지 못하면 해결 줄이 원인에 맞는 다음 행동을 말한다: `해결: 격리 안에서 패키지를 받지 못했거나 1분 안에 뜨지 못했습니다. 패키지 이름과 버전을 확인하고, 큰 패키지는 로컬에 설치한 뒤 node 로 띄우세요.`
+
+- 14c637c: `@mcpeak/cli/commands` 가 `runAuditCommand`·`parseAuditCommand`·`nodeAuditDependencies` 와 그 타입을 내보낸다. 대시보드 Analyze 보안 탭이 쓴다.
+- 68c38a8: `@mcpeak/cli/commands` 가 `runOptimizeCommand`·`parseOptimizeCommand` 와 그 타입을 내보낸다. 대시보드 Analyze 토큰 탭이 쓴다.
+- 5318801: generate 의 입력값 교정에서 서버의 출력 계약 위반(`Output validation error` · `Structured content does not match`)을 교정 대상에서 뺀다. SDK 1.30 의 `McpServer` 는 이것을 `isError: true` 응답으로 돌려줘 보통 거절과 모양이 같았고, 그래서 입력값을 세 번 바꿔 보게 하며 사람이 엉뚱한 곳을 의심하게 했다. 이제 "교정 대상이 아닌 실패" 고지로 가고, 갈래(호출 실패 · 출력 계약 위반)마다 무엇을 보라는 문장을 따로 찍는다.
+
+  입력값 교정 프롬프트에서 AI 제안 값이 현재 값과 같으면 `(현재 값과 같음)` 을 덧붙인다. AI 는 입력 쪽에 고칠 데를 못 찾으면 받은 값을 그대로 돌려주는데, 그것을 제안으로만 찍으면 같은 값을 왜 다시 넣으라는지 알 수 없었다.
+
+- 3d3a8c5: `mcpeak test` 가 거절을 기대한 케이스에서 서버가 선언 위반 입력을 받아들이면, 그 케이스의 다른 참고보다 먼저 `참고: <id> 는 거절을 기대했지만 서버가 선언 위반 입력을 받아들였습니다` 블록과 서버가 무엇을 받아들였는지 말하는 문장(예: `서버가 필수 필드 'b' 가 빠진 입력을 받아들였습니다. 서버의 입력 검증을 확인하세요`)을 낸다. 입력이 선언을 어기지 않는데 서버가 받아들인 경우의 `REJECTION_WITHOUT_VIOLATION` 참고는 입력을 확인하라는 말 대신 서버의 입력 제약이 사라졌을 수 있다고 말한다. 명세에 approval 블록이 없으면(손으로 쓴 명세) 거절 근거 미확인 고지가 generate 승인 화면 대신 `--json` 의 rejectionBody 를 가리킨다. 참고는 비차단이라 판정·exit code·`--json` 출력은 바뀌지 않는다.
+- Updated dependencies [56954eb]
+- Updated dependencies [fb511b8]
+- Updated dependencies [798891a]
+- Updated dependencies [5c87e79]
+- Updated dependencies [ab15a0a]
+- Updated dependencies [8ea349b]
+- Updated dependencies [e2a3953]
+- Updated dependencies [f4248d9]
+- Updated dependencies [4aa22e6]
+- Updated dependencies [90d9682]
+- Updated dependencies [cac23a3]
+  - @mcpeak/audit@0.2.0
+  - @mcpeak/core@0.6.0
+  - @mcpeak/optimize@0.2.0
+  - @mcpeak/runner@0.11.1
+  - @mcpeak/generate@0.8.1
+  - @mcpeak/mock@0.4.3
+
 ## 0.12.0
 
 ### Minor Changes

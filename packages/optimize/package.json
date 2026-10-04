@@ -1,6 +1,6 @@
 {
   "name": "@mcpeak/optimize",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": false,
   "type": "module",
   "description": "MCP 도구 정의 무손실 압축 · 오버레이 프록시",

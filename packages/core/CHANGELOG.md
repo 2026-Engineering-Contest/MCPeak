@@ -1,5 +1,19 @@
 # @ohmymcp-hsu/core
 
+## 0.6.0
+
+### Minor Changes
+
+- fb511b8: `@mcpeak/audit` 패키지를 새로 만든다. MCP 서버 사전 보안 점검의 공유 계약(리포트·기준 파일 타입, 규칙 모듈 시그니처)만 들어 있고 검사 본문은 아직 없다.
+
+  `@mcpeak/core` 의 `connectStdio`·`connectHttp` 반환에 `McpServerSurface` 를 교차로 더한다. `listToolsRaw`(annotations·title·`_meta` 를 버리지 않는 tools/list), `listPrompts`·`listResources`(능력이 없으면 `[]`), `readResource`, `observeServerMessages`(서버가 보낸 요청·알림 관측, 요청에는 MethodNotFound 로 답한다), `serverVersion` 이다. 새 연결 옵션 `advertise` 로 sampling·elicitation·roots 능력을 켤 수 있고, 기본은 전부 꺼져 있어 기존 호출자의 동작은 바뀌지 않는다. `McpClient`·`McpStdioConnection`·`McpHttpConnection` 은 그대로다.
+
+### Patch Changes
+
+- f4248d9: `@mcpeak/optimize` 패키지의 작업 공간과 공유 계약(오버레이 타입, 공개 API 시그니처)을 추가한다. 함수 본문은 아직 없다.
+
+  `connectStdio`·`connectHttp` 가 돌려주는 연결에 서버의 `instructions`(없으면 `undefined`)와 광고한 능력 키의 정렬된 목록 `capabilityKeys` 를 싣는다. 새 타입 `McpServerInfo` 를 교차로 더한 것이라 기존 `McpStdioConnection`·`McpHttpConnection`·`McpClient` 는 바뀌지 않는다.
+
 ## 0.5.0
 
 ### Minor Changes

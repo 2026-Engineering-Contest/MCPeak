@@ -1,5 +1,61 @@
 # MCPTox 재현율 결과
 
+## 2026-10-05 점수 규칙 desc/steering 추가
+
+- MCPTox 커밋: `f85189f9ad12504c197c7f920ab818a40657b1fa` (앞선 두 측정과 같음)
+- audit 규칙: `feat/audit-steering` 브랜치, 커밋 `b91f842`. 도구 사용을 조종하는 설명을 신호 점수로 판정하는 `desc/steering` 을 더했다
+- 측정 방식이 바뀌었다. 중독 도구를 그 서버의 정상 도구 목록에 더해 서버 하나로 만들고, 점수 규칙은 서버 전체 목록에 돌린다(`README.md` 의 "데이터" 절)
+- 같은 커밋으로 두 번 돌린 출력이 바이트까지 같다(`cmp` 일치)
+- 아래는 `measure.mjs` 의 출력 그대로다
+
+사례 1312건 (형식을 못 읽어 전체를 설명으로 본 사례 0건)
+탐지(medium 이상) 1300건, 99.1%
+언급(info 포함) 1310건, 99.8%
+
+| 패러다임 | 사례 | 탐지 | 재현율 |
+|---|---:|---:|---:|
+| Template-1 | 208 | 197 | 94.7% |
+| Template-2 | 519 | 519 | 100.0% |
+| Template-3 | 585 | 584 | 99.8% |
+
+| 위험 유형 | 사례 | 탐지 | 재현율 |
+|---|---:|---:|---:|
+| Code Injection | 63 | 63 | 100.0% |
+| Credential Leakage | 115 | 115 | 100.0% |
+| Data Tampering | 117 | 117 | 100.0% |
+| Financial Loss | 55 | 54 | 98.2% |
+| Information Manipulation | 269 | 267 | 99.3% |
+| Infrastructure Damage | 122 | 117 | 95.9% |
+| Instruction Tampering | 57 | 57 | 100.0% |
+| Message Hijacking | 41 | 41 | 100.0% |
+| Other | 4 | 4 | 100.0% |
+| Privacy Leakage | 273 | 270 | 98.9% |
+| Service Disruption | 196 | 195 | 99.5% |
+
+| 규칙 | 걸린 사례 | 비율 |
+|---|---:|---:|
+| `desc/cross-origin` | 52 | 4.0% |
+| `desc/implicit-trigger` | 6 | 0.5% |
+| `desc/injection` | 885 | 67.5% |
+| `desc/sensitive-path` | 120 | 9.1% |
+| `desc/shadowing` | 242 | 18.4% |
+| `desc/steering` | 1309 | 99.8% |
+
+| 변형 | 문형 규칙(medium 이상) | 점수 규칙 medium | 점수 규칙 low 이상 | 탐지(문형 또는 점수 medium) | 재현율 |
+|---|---:|---:|---:|---:|---:|
+| 원본 | 970 | 1288 | 1309 | 1300 | 99.1% |
+| 말투 완화 | 49 | 1282 | 1308 | 1282 | 97.7% |
+| 말투 전부 + 길이 늘림 | 43 | 1272 | 1309 | 1272 | 97.0% |
+| 기존 도구에 심음 | 890 | 1158 | 1250 | 1243 | 94.7% |
+| 기존 도구에 심음 + 말투 전부 | 46 | 1107 | 1228 | 1109 | 84.5% |
+| 이름 풀어 씀 | 891 | 929 | 1140 | 1147 | 87.4% |
+| 이름 풀어 씀 + 말투 전부 + 길이 늘림 | 52 | 800 | 1040 | 829 | 63.2% |
+| 심음 + 이름 풀어 씀 + 말투 전부 | 46 | 1074 | 1230 | 1078 | 82.2% |
+
+정상 정의: 서버 45개, 도구 352개
+문형 규칙 medium 이상 1건, 점수 규칙 medium 3건, 점수 규칙 low 5건
+점수 규칙이 잡은 정상 도구: AdFin/get_customers_id_directdebitmandates, Codacy/codacy_get_file_clones, Codacy/codacy_list_repository_issues, Codacy/codacy_search_organization_srm_items, Codacy/codacy_search_repository_srm_items, Commander/set_config_value, OP.GG/lol-summoner-renewal, Sequential Thinking/sequentialthinking
+
 ## 2026-10-03 재측정 (audit-W1c, 문형 결함 두 건 수정 뒤)
 
 - MCPTox 커밋: `f85189f9ad12504c197c7f920ab818a40657b1fa` (첫 실측과 같음)

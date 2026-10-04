@@ -65,6 +65,16 @@ const DEMAND =
 const DESTRUCTIVE_VERB =
   /\b(delete|remove|destroy|wipe|erase|drop|truncate|purge|write|overwrite|modify|update|create|insert|mutate|change|reset|revoke|kill|terminate|send|post|publish|transfer|pay|commit|push|deploy)\b/;
 const READ_VERB = /^(list|get|read|fetch|show|describe|search|find|query|check)$/;
+/**
+ * 설명·제목의 "맨 앞 동사"만 본다. 토큰을 공백으로 이은 문자열이 파괴적 동사로 시작할 때만 그 동사를 돌려준다.
+ * 중간의 명사('commit history')·리소스 이름('get-deploy')·HTTP 메서드('POST')는 주 동작이 아니라 보지 않는다.
+ */
+function leadingDestructiveVerb(text: string): string | undefined {
+  const line = spaced(text);
+  const match = DESTRUCTIVE_VERB.exec(line);
+  const verb = match?.[1];
+  return verb !== undefined && line.startsWith(verb) ? verb : undefined;
+}
 const DESTRUCTIVE_FIRST =
   /^(delete|remove|destroy|wipe|erase|drop|truncate|purge|reset|revoke|kill|terminate)$/;
 
@@ -162,11 +172,18 @@ export function runSchemaRules(tools: readonly RawTool[]): Finding[] {
     if (annotations?.readOnlyHint === true) {
       let verb: string | undefined;
       if (nameTokens.some((t) => READ_VERB.test(t))) {
+        // 이름이 읽기 도구꼴이면 이름 첫 토큰만 본다.
         const first = nameTokens[0] ?? "";
         verb = DESTRUCTIVE_VERB.test(first) ? first : undefined;
       } else {
-        const texts = [tool.name, str(tool.title), str(annotations.title), description];
-        verb = texts.map((t) => DESTRUCTIVE_VERB.exec(spaced(t))?.[1]).find(Boolean);
+        // 이름에 읽기 동사가 없으면 이름 첫 토큰, 그다음 설명·제목의 "맨 앞 동사"만 본다.
+        // 설명 전체를 훑지 않는다. 읽기 전용 도구가 명사·리소스 이름으로 파괴적 낱말을 말하는 일이 흔하다.
+        const firstName = nameTokens[0] ?? "";
+        verb =
+          (DESTRUCTIVE_VERB.test(firstName) ? firstName : undefined) ??
+          leadingDestructiveVerb(description) ??
+          leadingDestructiveVerb(str(annotations.title)) ??
+          leadingDestructiveVerb(str(tool.title));
       }
       if (verb) {
         const message = `readOnlyHint 가 true 인데 이름·설명이 '${verb}' 를 말합니다`;

@@ -528,6 +528,47 @@ describe("audit sandbox e2e", () => {
   );
 
   dockerIt(
+    "sandbox-target-server 를 녹화·재생한 --json 이 sandbox.network 만 다르다 (상류 없는 유출 목적지 포함)",
+    async () => {
+      const targetSession = join(dir, "sandbox-target.sandbox-session.json");
+      const base = ["audit", "--sandbox", "--compare-host"];
+      const recorded = await once("target:record", () => [
+        ...base,
+        "--sandbox-session",
+        targetSession,
+        "--json",
+        "--",
+        process.execPath,
+        sandboxTarget,
+      ]);
+      const replayed = await once("target:replay", () => [
+        ...base,
+        "--sandbox-replay",
+        targetSession,
+        "--json",
+        "--",
+        process.execPath,
+        sandboxTarget,
+      ]);
+      expect(reportOf(recorded).sandbox?.network).toBe("record");
+      expect(reportOf(replayed).sandbox?.network).toBe("replay");
+      const recordedLines = recorded.stdout.split("\n");
+      const replayedLines = replayed.stdout.split("\n");
+      expect(replayedLines.length).toBe(recordedLines.length);
+      const different = recordedLines.flatMap((line, index) =>
+        line === replayedLines[index] ? [] : [[line.trim(), replayedLines[index]?.trim()]],
+      );
+      expect(different).toEqual([['"network": "record",', '"network": "replay",']]);
+      expect(replayed.code).toBe(recorded.code);
+      // 수정 전이면 재생에만 network/replay-miss 가 생겨 different 가 늘어난다(회귀 가드).
+      expect(reportOf(replayed).findings.some((f) => f.ruleId === "network/replay-miss")).toBe(
+        false,
+      );
+    },
+    E2E_TIMEOUT_MS,
+  );
+
+  dockerIt(
     "--sandbox-replay 를 두 번 돌린 --json 이 바이트 단위로 같다",
     async () => {
       const first = await replayRun("first");

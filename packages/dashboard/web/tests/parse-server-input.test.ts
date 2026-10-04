@@ -313,7 +313,6 @@ describe("parseServerInput", () => {
       "env -u TOKEN node s.mjs",
       "env --unset TOKEN node s.mjs",
       "env --unset=TOKEN node s.mjs",
-      "env -C /tmp node s.mjs",
       "env -i - node s.mjs",
     ]) {
       const result = parseServerInput(line);
@@ -337,6 +336,110 @@ describe("parseServerInput", () => {
     ).toEqual({
       ok: false,
       error: "'a' 항목의 env 옵션을 읽지 못했습니다. env 를 빼고 command 에 실행 파일만 적으세요.",
+    });
+  });
+
+  it("env 의 작업 디렉터리 옵션은 버리지 않고 거절한다", () => {
+    for (const line of ["env -C /srv/app node s.mjs", "env --chdir=/srv/app node s.mjs"]) {
+      expect(parseServerInput(line), line).toEqual({
+        ok: false,
+        error: "env 의 옵션을 읽지 못했습니다. env 를 빼고 실행 명령만 붙여 넣으세요.",
+      });
+    }
+  });
+
+  it("같은 이름의 환경변수는 한 번만 남긴다", () => {
+    const result = parseServerInput("A=1 A=2 node s.mjs");
+    expect(result.ok && result.servers[0]?.envNames).toEqual(["A"]);
+  });
+
+  describe("값이 인자로 나가는 꼴", () => {
+    it("export 로 시작하는 줄은 거절하고 값을 싣지 않는다", () => {
+      const result = parseServerInput("export API_KEY=s3cr3t-value && node s.mjs");
+      expect(result).toEqual({
+        ok: false,
+        error:
+          "'export' 는 셸 안에서만 도는 명령이라 사전 점검이 띄울 수 없습니다. 'export 이름=값' 은 빼고 서버를 띄우는 명령만 붙여 넣으세요.",
+      });
+    });
+
+    it("셸 연산자가 있는 줄은 거절한다", () => {
+      expect(parseServerInput("cd /srv/app && node s.mjs")).toEqual({
+        ok: false,
+        error:
+          "셸 연산자 '&&' 가 있습니다. 사전 점검은 명령 하나만 띄웁니다. 서버를 띄우는 명령 하나만 붙여 넣으세요.",
+      });
+    });
+
+    it.each([
+      ["sudo API_KEY=s3cr3t-value node s.mjs", "sudo"],
+      ["sudo -E env API_KEY=s3cr3t-value node s.mjs", "env"],
+      ["npx cross-env API_KEY=s3cr3t-value node s.mjs", "cross-env"],
+      ["exec env API_KEY=s3cr3t-value node s.mjs", "env"],
+      ["\\env API_KEY=s3cr3t-value node s.mjs", "env"],
+      ["/usr/bin/sudo API_KEY=s3cr3t-value node s.mjs", "sudo"],
+    ])("%j 는 감싸는 명령 뒤의 할당을 거절하고 이름만 말한다", (line, wrapper) => {
+      const result = parseServerInput(line);
+      expect(result).toEqual({
+        ok: false,
+        error: `'${wrapper}' 뒤에 환경변수 할당(API_KEY)이 있습니다. 사전 점검은 환경변수 값을 넘기지 않습니다. 'API_KEY=...' 을 지우고 다시 붙여 넣으세요.`,
+      });
+      expect(JSON.stringify(result)).not.toContain("s3cr3t-value");
+    });
+
+    it("JSON 의 sh -c 코드에 든 할당은 항목 이름을 붙여 거절한다", () => {
+      const result = parseServerInput(
+        JSON.stringify({
+          a: { command: "sh", args: ["-c", "cd /app && API_KEY=s3cr3t-value node s.mjs"] },
+        }),
+      );
+      expect(result).toEqual({
+        ok: false,
+        error:
+          "'a' 항목: 'sh -c' 의 코드에 환경변수 할당(API_KEY)이 있습니다. 사전 점검은 환경변수 값을 넘기지 않습니다. 'API_KEY=...' 을 지우고 다시 붙여 넣으세요.",
+      });
+      expect(JSON.stringify(result)).not.toContain("s3cr3t-value");
+    });
+
+    it("sh -c 코드의 --옵션=값 은 할당으로 보지 않는다", () => {
+      const result = parseServerInput('bash -lc "node s.mjs --mode=dev"');
+      expect(result.ok && result.servers[0]?.args).toEqual(["-lc", "node s.mjs --mode=dev"]);
+    });
+
+    it("docker 의 환경변수 옵션은 쌍을 걷어 내고 이름만 남긴다", () => {
+      const result = parseServerInput(
+        "docker run -i --rm -e API_KEY=s3cr3t-value --env TOKEN=t0k -eA=1 --env=B=2 -e PASSTHROUGH img --flag X=1",
+      );
+      expect(result).toEqual({
+        ok: true,
+        servers: [
+          {
+            name: null,
+            transport: "stdio",
+            command: "docker",
+            args: ["run", "-i", "--rm", "-e", "PASSTHROUGH", "img", "--flag", "X=1"],
+            envNames: ["API_KEY", "TOKEN", "A", "B"],
+            url: "",
+            headerNames: [],
+          },
+        ],
+      });
+      expect(JSON.stringify(result)).not.toContain("s3cr3t-value");
+      expect(JSON.stringify(result)).not.toContain("t0k");
+    });
+
+    it("JSON 의 docker args 도 같은 식으로 걷어 내고 env 칸의 이름과 합친다", () => {
+      const result = parseServerInput(
+        JSON.stringify({
+          a: {
+            command: "docker",
+            args: ["run", "-e", "API_KEY=s3cr3t-value", "img"],
+            env: { API_KEY: "x", TOKEN: "y" },
+          },
+        }),
+      );
+      expect(result.ok && result.servers[0]?.args).toEqual(["run", "img"]);
+      expect(result.ok && result.servers[0]?.envNames).toEqual(["API_KEY", "TOKEN"]);
     });
   });
 });

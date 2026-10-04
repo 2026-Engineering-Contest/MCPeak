@@ -4,7 +4,7 @@ import { Fragment, useState } from "react";
 import type { AnalyzeSecurityRequest, AnalyzeSecurityResponse } from "../../../src/api-types.js";
 import { Card } from "../components/Card.js";
 import { SegmentedControl } from "../components/SegmentedControl.js";
-import { riskOf } from "./risk-text.js";
+import { type RiskSubject, riskOf } from "./risk-text.js";
 import {
   baselineStatus,
   bySeverity,
@@ -61,11 +61,11 @@ function FixLine({ fix }: { readonly fix: string }): JSX.Element {
 }
 
 /**
- * "왜 위험한가: ..." 한 줄. 사용자에게 보인다. 문장은 규칙 id 로 정해진다(`risk-text.ts`). 모르는
- * 규칙이면 줄이 없다.
+ * "왜 위험한가: ..." 한 줄. 사용자에게 보인다. 문장은 규칙 id 로 정해지고, 같은 id 의 변형은 심각도와
+ * 메시지로 갈린다(`risk-text.ts`). 모르는 규칙이면 줄이 없다.
  */
-function RiskLine({ ruleId }: { readonly ruleId: string }): JSX.Element | null {
-  const risk = riskOf(ruleId);
+function RiskLine({ subject }: { readonly subject: RiskSubject }): JSX.Element | null {
+  const risk = riskOf(subject);
   if (risk === null) {
     return null;
   }
@@ -82,14 +82,14 @@ function RiskLine({ ruleId }: { readonly ruleId: string }): JSX.Element | null {
 /** 발견의 설명 줄. 개발자에게는 해결, 사용자에게는 위험 설명이다. */
 function DetailLine({
   audience,
-  ruleId,
+  subject,
   fix,
 }: {
   readonly audience: Audience;
-  readonly ruleId: string;
+  readonly subject: RiskSubject;
   readonly fix: string;
 }): JSX.Element | null {
-  return audience === "user" ? <RiskLine ruleId={ruleId} /> : <FixLine fix={fix} />;
+  return audience === "user" ? <RiskLine subject={subject} /> : <FixLine fix={fix} />;
 }
 
 /**
@@ -115,7 +115,7 @@ function FindingItem({
         <span className="break-words text-sm text-ink-muted">{view.where}</span>
       </p>
       <p className="break-words text-sm font-medium text-ink">{`→ ${finding.message}`}</p>
-      <DetailLine audience={audience} ruleId={finding.ruleId} fix={finding.fix} />
+      <DetailLine audience={audience} subject={finding} fix={finding.fix} />
       {finding.evidence.length > 0 && (
         <p className="flex flex-wrap items-center gap-1.5">
           <span className={`${LINE_LABEL_CLASS} text-ink-muted`}>근거</span>
@@ -317,11 +317,7 @@ export function SecurityResult({
                   <p className="break-words text-sm font-medium text-ink">
                     {`→ ${row.finding.message}`}
                   </p>
-                  <DetailLine
-                    audience={audience}
-                    ruleId={row.finding.ruleId}
-                    fix={row.finding.fix}
-                  />
+                  <DetailLine audience={audience} subject={row.finding} fix={row.finding.fix} />
                 </li>
               ))}
             </ul>

@@ -8,13 +8,22 @@
  * 규칙:
  * - 무엇을 하라고 말하지 않는다. "고치세요", "등록하지 마세요" 같은 명령문을 쓰지 않는다.
  * - 판정을 바꾸지 않는다. 심각도와 발견 여부는 리포트 그대로이고 이 문장은 설명일 뿐이다.
- * - 규칙 id 하나에 문장 하나다. 같은 입력에 항상 같은 글자가 나온다.
+ * - 규칙 id 하나에 문장 하나가 기본이다. 같은 id 로 오지만 뜻이 다른 발견(판정하지 못한 검사, 로컬호스트의
+ *   평문 HTTP 등)은 `RISK_VARIANTS` 가 심각도와 메시지로 갈라 다른 문장을 준다. 같은 입력에 항상 같은
+ *   글자가 나온다.
  *
  * `@mcpeak/audit` 의 규칙 목록과 이 표가 어긋나지 않는지는 `risk-text.test.ts` 가 본다.
  */
 
 // 타입만. 값으로 import 하면 번들에 서버 코드가 섞인다.
-import type { RuleFamily } from "@mcpeak/audit";
+import type { RuleFamily, Severity } from "@mcpeak/audit";
+
+/** 문장을 고르는 데 쓰는 발견의 세 칸. `Finding` 을 그대로 넘기면 된다. */
+export interface RiskSubject {
+  readonly ruleId: string;
+  readonly severity: Severity;
+  readonly message: string;
+}
 
 const RISK_BY_RULE: Readonly<Record<string, string>> = {
   "desc/injection":
@@ -43,9 +52,9 @@ const RISK_BY_RULE: Readonly<Record<string, string>> = {
   "schema/exfil-channel":
     "모델이 매번 채워야 하는 자유 형식 입력이 있습니다. 대화 내용이나 다른 도구의 결과가 이 칸에 실려 밖으로 넘어갈 수 있습니다.",
   "schema/annotation-mismatch":
-    "도구가 읽기 전용이라고 표시돼 있지만 이름과 설명은 변경이나 삭제를 말합니다. 클라이언트는 읽기 전용 도구를 확인 없이 실행하므로, 묻지 않고 데이터가 바뀌거나 지워질 수 있습니다.",
+    "도구가 읽기 전용이라고 표시돼 있지만 이름과 설명은 변경이나 삭제를 말합니다. 읽기 전용 도구를 확인 없이 실행하는 클라이언트에서는 묻지 않고 데이터가 바뀌거나 지워질 수 있습니다.",
   "schema/missing-destructive-hint":
-    "삭제처럼 되돌릴 수 없는 일을 하는 이름인데 그 사실을 표시하지 않았습니다. 클라이언트가 실행 전에 확인을 묻지 않을 수 있습니다.",
+    "다른 표시는 적어 두었는데, 삭제처럼 되돌릴 수 없는 일을 하는 이름의 도구에 그 사실만 표시하지 않았습니다. 클라이언트가 실행 전에 확인을 묻지 않을 수 있습니다.",
   "schema/over-broad":
     "명령, 경로, URL 같은 입력을 제한 없이 받습니다. 모델이 속으면 이 도구로 아무 명령이나 실행하고 아무 파일에나 손댈 수 있습니다.",
 
@@ -54,7 +63,7 @@ const RISK_BY_RULE: Readonly<Record<string, string>> = {
   "launch/pipe-to-shell":
     "인터넷에서 받은 스크립트를 내용 확인 없이 바로 실행합니다. 받는 시점에 스크립트가 바뀌어 있어도 알 수 없습니다.",
   "launch/unpinned-package":
-    "패키지 버전이 고정돼 있지 않습니다. 실행할 때마다 최신 버전을 받으므로, 나중에 악성 코드가 들어간 버전이 올라오면 그대로 실행됩니다.",
+    "패키지 버전이 고정돼 있지 않습니다. 새 버전이 올라오면 그것을 받아 실행할 수 있어, 나중에 악성 코드가 들어간 버전이 올라오면 그대로 실행됩니다.",
   "launch/remote-source":
     "공식 레지스트리가 아닌 주소에서 코드를 받아 실행합니다. 그 주소의 내용은 검증되지 않고 언제든 바뀔 수 있습니다.",
   "launch/env-passthrough":
@@ -81,6 +90,9 @@ const RISK_BY_RULE: Readonly<Record<string, string>> = {
     "비교할 이전 기록이 없어 지금의 도구 정의를 기준으로 저장했습니다. 위험을 뜻하지 않습니다.",
   "surface/changed":
     "도구 정의가 이전에 확인한 것과 달라졌습니다. 처음에는 안전해 보이던 도구를 나중에 바꾸는 수법일 수 있습니다.",
+  // `RuleInfo` 목록에 없는 규칙이라 `risk-text.test.ts` 의 대조가 보지 못한다. 격리 안과 밖의 비교에서 나온다.
+  "surface/environment-dependent":
+    "MCP 가 격리된 점검 환경과 이 컴퓨터에서 서로 다른 도구 정의를 내주었습니다. 점검받을 때와 실제로 쓸 때 다른 모습을 보인다는 뜻이고, 이 점검 결과가 실제 동작을 대변하지 못합니다.",
 
   "secret/env-leak":
     "점검용으로 심어 둔 가짜 비밀값이 MCP 의 응답에 나왔습니다. 실제로 쓰면 환경변수에 든 진짜 키가 같은 식으로 모델과 로그에 노출됩니다.",
@@ -104,9 +116,9 @@ const RISK_BY_RULE: Readonly<Record<string, string>> = {
     "외부 내용을 읽는 도구, 비공개 데이터를 읽는 도구, 밖으로 내보내는 도구가 한 MCP 에 함께 있습니다. 외부 내용에 숨은 지시 하나로 비공개 데이터가 밖으로 나갈 수 있는 조합입니다.",
 
   "behavior/file-canary-read":
-    "MCP 가 점검용으로 심어 둔 자격 증명 파일을 열었습니다. 실제 컴퓨터에서는 SSH 키나 클라우드 자격 증명을 읽는다는 뜻입니다.",
+    "MCP 가 점검용으로 심어 둔 자격 증명 파일을 열었습니다. 실제 컴퓨터에서는 SSH 키나 클라우드 자격 증명을 읽을 수 있다는 뜻입니다.",
   "behavior/internal-address":
-    "MCP 가 클라우드 메타데이터나 사내망, 이 컴퓨터 내부 주소로 접속을 시도했습니다. 밖에서는 닿을 수 없는 내부 시스템에 손을 대려는 모양입니다.",
+    "MCP 가 클라우드 메타데이터나 사내망, 이 컴퓨터 내부 주소로 접속을 시도했습니다. 로컬 데이터베이스 접속처럼 정상 동작일 수 있지만, 밖에서는 닿을 수 없는 내부 시스템에 닿는 통로이기도 합니다.",
   "behavior/child-process":
     "MCP 가 다른 프로그램을 실행했습니다. 정상 동작일 수 있지만, 그 프로그램은 MCP 와 같은 권한으로 이 컴퓨터에서 돕니다.",
   "behavior/annotation-violation":
@@ -114,7 +126,7 @@ const RISK_BY_RULE: Readonly<Record<string, string>> = {
   "behavior/write-outside":
     "MCP 가 자기 작업 공간 밖의 파일을 쓰거나 지우려 했습니다. 사용자의 다른 파일이 바뀌거나 사라질 수 있습니다.",
   "behavior/observation-tampered":
-    "MCP 가 점검 기록 자체를 건드렸습니다. 자기 행동을 감추려는 시도이고, 이 점검 결과도 온전하다고 볼 수 없습니다.",
+    "MCP 가 점검 기록 자체를 건드렸습니다. 자기 행동을 감추려는 시도일 수 있고, 이 점검 결과도 온전하다고 볼 수 없습니다.",
 
   "network/canary-exfiltration":
     "점검용으로 심어 둔 가짜 비밀값이 바깥으로 나가는 요청에 실렸습니다. 실제로 쓰면 진짜 자격 증명이 외부로 전송됩니다.",
@@ -129,7 +141,52 @@ const RISK_BY_RULE: Readonly<Record<string, string>> = {
   "network/replay-miss":
     "같은 입력에 지난번과 다른 요청을 보냈습니다. 점검할 때와 실제로 쓸 때 다르게 행동할 수 있다는 뜻입니다.",
   "network/direct-ip":
-    "이름 없이 IP 주소로 직접 접속했습니다. 접속 목적지를 감출 때 쓰는 방식입니다.",
+    "이름 없이 IP 주소로 직접 접속했습니다. 접속 목적지를 감출 때 쓰이기도 하는 방식입니다.",
+};
+
+/** `rules/protocol.ts` 의 `unverified` 가 메시지 앞에 붙이는 글자. 검사를 끝내지 못했다는 뜻이다. */
+const UNVERIFIED_PREFIX = "확인 안 함:";
+const UNVERIFIED_RISK =
+  "이 항목은 점검하지 못했습니다. 문제가 있는지 없는지 알 수 없다는 뜻이고, 위험이 발견된 것은 아닙니다.";
+
+interface RiskVariant {
+  readonly when: (subject: RiskSubject) => boolean;
+  readonly risk: string;
+}
+
+/**
+ * 같은 규칙 id 로 오지만 `RISK_BY_RULE` 의 문장이 틀린 말이 되는 발견. 위에서부터 처음 맞는 것을 쓴다.
+ * 가르는 근거는 `@mcpeak/audit` 의 규칙 코드가 내는 심각도와 메시지다. 그쪽 문장이 바뀌면 여기도 고친다.
+ */
+const RISK_VARIANTS: Readonly<Record<string, readonly RiskVariant[]>> = {
+  // 로컬호스트면 info 다.
+  "protocol/plaintext": [
+    {
+      when: (subject) => subject.severity === "info",
+      risk: "암호화되지 않은 HTTP 로 연결하지만 대상이 이 컴퓨터 안의 주소입니다. 주고받는 내용이 이 컴퓨터 밖으로 나가지 않아 보통은 문제가 되지 않습니다.",
+    },
+  ],
+  // 인증 헤더 없이 점검하면 info 다. 서버가 인증을 검사하는지는 이 발견이 말하지 않는다.
+  "protocol/unauthenticated": [
+    {
+      when: (subject) => subject.severity === "info",
+      risk: "인증 정보 없이 연결했습니다. 이 컴퓨터 안에서만 쓰는 MCP 라면 정상이고, 네트워크에 열려 있는 MCP 라면 주소를 아는 누구나 도구를 부를 수 있습니다.",
+    },
+  ],
+  // 로그인류 도구면 info 다.
+  "schema/secret-field": [
+    {
+      when: (subject) => subject.severity === "info",
+      risk: "로그인이나 인증을 하는 도구라서 비밀값을 인자로 받습니다. 용도에는 맞지만, 인자로 넘긴 값은 모델의 대화 내용과 로그에 남습니다.",
+    },
+  ],
+  // 심각도는 같고 메시지의 첫머리가 어긴 주석을 말한다.
+  "behavior/annotation-violation": [
+    {
+      when: (subject) => subject.message.startsWith("destructiveHint"),
+      risk: "지우거나 옮기지 않는다고 표시한 도구가 호출 중에 실제로 파일을 지우거나 옮기려 했습니다. 표시를 믿고 확인 없이 실행되면 데이터가 사라질 수 있습니다.",
+    },
+  ],
 };
 
 /** 표에 없는 규칙(나중에 더해진 규칙)이 쓰는 가족 단위 문장. */
@@ -146,8 +203,17 @@ const RISK_BY_FAMILY: Readonly<Record<RuleFamily, string>> = {
   network: "MCP 가 실행 중에 바깥과 주고받은 접속입니다. 데이터가 밖으로 나갈 수 있습니다.",
 };
 
-/** 규칙 id 의 위험 설명. 표에 없으면 가족 문장, 가족도 모르면 null(줄을 그리지 않는다). */
-export function riskOf(ruleId: string): string | null {
+/**
+ * 발견의 위험 설명. 변형이 맞으면 그 문장, 아니면 규칙의 문장이다. 표에 없으면 가족 문장, 가족도 모르면
+ * null(줄을 그리지 않는다).
+ */
+export function riskOf(subject: RiskSubject): string | null {
+  const { ruleId } = subject;
+  if (ruleId.startsWith("protocol/") && subject.message.startsWith(UNVERIFIED_PREFIX)) {
+    return UNVERIFIED_RISK;
+  }
+  const variant = RISK_VARIANTS[ruleId]?.find((entry) => entry.when(subject));
+  if (variant !== undefined) return variant.risk;
   const exact = RISK_BY_RULE[ruleId];
   if (exact !== undefined) return exact;
   const family = ruleId.slice(0, Math.max(0, ruleId.indexOf("/")));

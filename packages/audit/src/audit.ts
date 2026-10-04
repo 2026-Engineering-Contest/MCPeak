@@ -28,6 +28,7 @@ import {
   planCanaries,
   runSecretRules,
 } from "./rules/secret.js";
+import { runSteeringRules } from "./rules/steering.js";
 import {
   type SandboxBackend,
   SandboxCleanupError,
@@ -439,6 +440,7 @@ async function listSurface(connection: AuditConnection): Promise<Listing> {
 function listFindings(listing: Listing, target: AuditTarget): Finding[] {
   return [
     ...runDescRules(listing.listStrings, { serverName: listing.server.name }),
+    ...runSteeringRules(listing.tools, { serverName: listing.server.name }),
     ...runSchemaRules(listing.tools),
     ...runFlowRules(listing.tools),
     ...runLaunchRules(target),

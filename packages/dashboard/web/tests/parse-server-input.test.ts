@@ -285,4 +285,58 @@ describe("parseServerInput", () => {
     const result = parseServerInput("node s.mjs --define MODE=dev");
     expect(result.ok && result.servers[0]?.args).toEqual(["s.mjs", "--define", "MODE=dev"]);
   });
+
+  it("JSON 의 command 에서 따옴표로 감싼 환경변수 할당도 거절한다", () => {
+    const result = parseServerInput(
+      JSON.stringify({ a: { command: "env 'API_KEY=s3cr3t-value' node s.mjs" } }),
+    );
+    expect(result).toEqual({
+      ok: false,
+      error:
+        "'a' 항목의 command 에 환경변수 할당이 있습니다. 값은 env 칸으로 옮기고 command 에는 실행 파일만 적으세요.",
+    });
+    expect(JSON.stringify(result)).not.toContain("s3cr3t-value");
+  });
+
+  it("JSON 의 command 에 닫히지 않은 따옴표가 있으면 거절한다", () => {
+    const result = parseServerInput(
+      JSON.stringify({ a: { command: "env 'API_KEY=s3cr3t-value node" } }),
+    );
+    expect(result).toEqual({
+      ok: false,
+      error: "'a' 항목의 command 에 닫히지 않은 따옴표가 있습니다.",
+    });
+  });
+
+  it("env 의 값을 받는 옵션은 그 값까지 건너뛴다", () => {
+    for (const line of [
+      "env -u TOKEN node s.mjs",
+      "env --unset TOKEN node s.mjs",
+      "env --unset=TOKEN node s.mjs",
+      "env -C /tmp node s.mjs",
+      "env -i - node s.mjs",
+    ]) {
+      const result = parseServerInput(line);
+      expect(result.ok && result.servers[0]?.command, line).toBe("node");
+      expect(result.ok && result.servers[0]?.args, line).toEqual(["s.mjs"]);
+    }
+  });
+
+  it("env 의 모르는 옵션은 건너뛰지 않고 거절한다", () => {
+    const result = parseServerInput('env -S "API_KEY=s3cr3t-value node s.mjs"');
+    expect(result).toEqual({
+      ok: false,
+      error: "env 의 옵션을 읽지 못했습니다. env 를 빼고 실행 명령만 붙여 넣으세요.",
+    });
+    expect(JSON.stringify(result)).not.toContain("s3cr3t-value");
+  });
+
+  it("JSON 의 args 에 env 의 모르는 옵션이 있으면 거절한다", () => {
+    expect(
+      parseServerInput('{"a":{"command":"env","args":["-S","API_KEY=x node s.mjs"]}}'),
+    ).toEqual({
+      ok: false,
+      error: "'a' 항목의 env 옵션을 읽지 못했습니다. env 를 빼고 command 에 실행 파일만 적으세요.",
+    });
+  });
 });

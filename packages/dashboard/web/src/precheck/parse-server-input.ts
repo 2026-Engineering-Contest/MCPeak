@@ -71,15 +71,24 @@ function tokenize(line: string): readonly string[] | null {
   return tokens.filter((token) => token !== "\\");
 }
 
+/** `env` 의 값 없는 옵션. 버려도 뜻이 달라지지 않는다(env 를 넘기지 않으므로). */
+const ENV_FLAGS: ReadonlySet<string> = new Set(["-", "-i", "--ignore-environment", "-0", "--null"]);
+/** `env` 의 값을 받는 옵션. 다음 토큰까지가 옵션이다. `--unset=NAME` 처럼 붙여 쓴 꼴은 한 토큰이다. */
+const ENV_VALUE_OPTIONS: ReadonlySet<string> = new Set(["-u", "--unset", "-C", "--chdir"]);
+const ENV_JOINED_OPTION = /^--(unset|chdir)=/;
+
 /**
  * 실행 파일 앞에 붙은 환경변수 전달을 걷어 낸다. `KEY=value node s.mjs` 와 `env KEY=value node s.mjs`
- * 두 꼴이다. 이름만 남기고 값은 버린다. `env` 와 그 옵션(`-i` 등)도 버린다. env 를 넘기지 않으므로
- * 남길 뜻이 없다. 걷어 내지 않으면 값이 args 에 실려 대상 줄과 요청으로 나간다(ADR-0111).
+ * 두 꼴이다. 이름만 남기고 값은 버린다. `env` 와 그 옵션도 버린다. env 를 넘기지 않으므로 남길 뜻이
+ * 없다. 걷어 내지 않으면 값이 args 에 실려 대상 줄과 요청으로 나간다(ADR-0111).
+ *
+ * `env` 의 옵션은 아는 것만 받는다. 모르는 옵션(`-S` 등)을 건너뛰면 그 옵션의 값이 실행 파일로
+ * 읽히거나 값이 인자로 샌다. 그때는 null 을 낸다.
  */
 function stripEnv(tokens: readonly string[]): {
   readonly envNames: readonly string[];
   readonly rest: readonly string[];
-} {
+} | null {
   const envNames: string[] = [];
   let index = 0;
   for (;;) {
@@ -93,7 +102,13 @@ function stripEnv(tokens: readonly string[]): {
     if (token !== "env" && !token.endsWith("/env")) break;
     // `env` 뒤의 옵션과 할당까지가 env 의 몫이다. 그다음 토큰이 실행 파일이다.
     index += 1;
-    while (tokens[index]?.startsWith("-") === true) index += 1;
+    for (;;) {
+      const option = tokens[index];
+      if (option === undefined || !option.startsWith("-")) break;
+      if (ENV_FLAGS.has(option) || ENV_JOINED_OPTION.test(option)) index += 1;
+      else if (ENV_VALUE_OPTIONS.has(option)) index += 2;
+      else return null;
+    }
   }
   return { envNames, rest: tokens.slice(index) };
 }
@@ -102,15 +117,12 @@ function entryOf(name: string | null, value: unknown): PastedServer | string {
   const label = name === null ? "설정" : `'${name}' 항목`;
   if (!isRecord(value)) return `${label}이 객체가 아닙니다.`;
   if (typeof value.command === "string" && value.command.trim() !== "") {
-    // `"command": "API_KEY=x node"`, `"command": "env API_KEY=x node"` 처럼 셸 줄을 통째로 적은 설정.
+    // `"command": "API_KEY=x node"`, `"command": "env 'API_KEY=x' node"` 처럼 셸 줄을 통째로 적은 설정.
     // command 한 칸은 실행 파일 하나라 나눠 읽지 않는다. 받아들이면 그 값이 대상 줄과 요청에 실린다.
-    // 값은 문장에 싣지 않는다.
-    if (
-      value.command
-        .trim()
-        .split(/\s+/)
-        .some((token) => ENV_ASSIGNMENT.test(token))
-    ) {
+    // 따옴표를 벗겨서 본다. 값은 문장에 싣지 않는다.
+    const commandTokens = tokenize(value.command.trim());
+    if (commandTokens === null) return `${label}의 command 에 닫히지 않은 따옴표가 있습니다.`;
+    if (commandTokens.some((token) => ENV_ASSIGNMENT.test(token))) {
       return `${label}의 command 에 환경변수 할당이 있습니다. 값은 env 칸으로 옮기고 command 에는 실행 파일만 적으세요.`;
     }
     const args = value.args ?? [];
@@ -119,6 +131,9 @@ function entryOf(name: string | null, value: unknown): PastedServer | string {
     }
     // `{"command":"env","args":["API_KEY=x","node","s.mjs"]}` 꼴. 값이 args 에 실리지 않게 걷어 낸다.
     const stripped = stripEnv([value.command.trim(), ...args]);
+    if (stripped === null) {
+      return `${label}의 env 옵션을 읽지 못했습니다. env 를 빼고 command 에 실행 파일만 적으세요.`;
+    }
     const command = stripped.rest[0];
     if (command === undefined) {
       return `${label}에 실행 명령이 없습니다. 환경변수 뒤에 명령을 적으세요.`;
@@ -197,7 +212,11 @@ export function parseServerInput(text: string): ParsedInput {
   const tokens = tokenize(trimmed);
   if (tokens === null) return fail("따옴표가 닫히지 않았습니다.");
   // 명령 앞의 `KEY=value` 와 `env KEY=value` 는 env 다. 이름만 남긴다.
-  const { envNames, rest } = stripEnv(tokens);
+  const stripped = stripEnv(tokens);
+  if (stripped === null) {
+    return fail("env 의 옵션을 읽지 못했습니다. env 를 빼고 실행 명령만 붙여 넣으세요.");
+  }
+  const { envNames, rest } = stripped;
   const command = rest[0];
   if (command === undefined) return fail("실행 명령이 없습니다. 환경변수 뒤에 명령을 적으세요.");
   return {

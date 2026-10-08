@@ -211,7 +211,10 @@ gettime, delete_all, echo_env, get_tip  정상 1건씩, 입력 없음
 - `show 는 입력 없이 현재 명세를 케이스당 한 줄로 찍고 메뉴로 돌아온다`: 이름을
   `show 는 입력 없이 현재 명세를 도구별로 묶어 찍고 메뉴로 돌아온다` 로 바꾸고, 번호 매김을 가정한 단언
   `expect(shown).toMatch(/\(id weather\)[^\n]*\n {2}1\. /)` 를
-  `expect(shown).toMatch(/\(id weather\)[^\n]*\n\nweather \(\d+건\)\n {2}/)` 로 바꾼다. 나머지 단언은 유지.
+  `expect(shown).toMatch(/\(id weather\)[^\n]*\n\nweather {2}정상 1건씩, 입력 없음\n/)` 로 바꾼다. 케이스 ID 를
+  도는 `expect(shown).toContain(testCase.id)` 는 빼고 도구 이름 단언 `expect(shown).toContain("weather")` 로
+  대신한다. 나머지 단언은 유지. 이 테스트의 픽스처는 입력 없는 정상 1건(`weather-success`)이라 그룹 헤더가
+  아니라 G4 의 합침 줄로 나오고, 그 줄에는 케이스 ID 가 없기 때문이다.
 - `show 는 반영한 변경이 들어간 명세를 보여주고 미반영 후보가 있으면 알린다`: 그대로 통과해야 한다. 바꾸지
   않는다.
 

@@ -26,6 +26,7 @@ import type {
   CallToolCaseSpec,
   ContractAxisKind,
   ContractRangeBound,
+  JsonObject,
   SpecFinding,
   TestCaseSpec,
   TestSuiteSpec,
@@ -36,13 +37,17 @@ import { suiteFingerprint, validateMcpSuite } from "@mcpeak/runner";
 import { describe, expect, it, vi } from "vitest";
 import { autoReviewIO } from "../src/auto-review-io.js";
 import {
+  caseKindOf,
+  describeInputDelta,
   type GenerateCommandDependencies,
+  groupCasesByTool,
   nodeReviewIO,
   parseGenerateCommand,
   renderCaseCountNotice,
   renderCoverage,
   renderOutputContractSkips,
   renderSkippedTools,
+  renderSuiteSummary,
   renderValidBranchSkips,
   runGenerateCommand,
 } from "../src/generate-command.js";
@@ -1039,18 +1044,18 @@ describe("AI 대화형 검토", () => {
     expect(d.io.confirm).toHaveBeenCalledTimes(2);
     expect(d.io.write).toHaveBeenCalledWith(expect.stringContaining("Fingerprint:"));
   });
-  it("show 는 입력 없이 현재 명세를 케이스당 한 줄로 찍고 메뉴로 돌아온다", async () => {
+  it("show 는 입력 없이 현재 명세를 도구별로 묶어 찍고 메뉴로 돌아온다", async () => {
     const d = reviewDeps(["show", "cancel"]);
     await runGenerateCommand(interactiveArgv, d.value);
     expect(d.io.input).not.toHaveBeenCalled();
     const shown = d.io.write.mock.calls.map(([text]) => String(text)).join("");
     expect(shown).toContain("현재 명세: Weather (id weather)");
     expect(shown).toContain(`케이스 ${d.baseline.suite.cases.length}건`);
-    for (const testCase of d.baseline.suite.cases) expect(shown).toContain(testCase.id);
+    // 픽스처는 입력 없는 정상 1건이라 합친 줄로 나온다. 케이스 ID 는 안 보여도 도구 이름은 보여야 한다.
     expect(shown).toContain("weather");
     expect(shown).toContain("저장하면 이 내용이 /tmp/out.json 에 쓰입니다.");
     // 줄바꿈이 실제 개행이어야 한다. 이스케이프를 통째로 걸면 \u000a 로 찍힌다.
-    expect(shown).toMatch(/\(id weather\)[^\n]*\n {2}1\. /);
+    expect(shown).toMatch(/\(id weather\)[^\n]*\n\nweather {2}정상 1건씩, 입력 없음\n/);
     expect(shown).not.toContain("\\u000a");
     expect(d.io.choose).toHaveBeenCalledTimes(2);
   });
@@ -5008,5 +5013,230 @@ describe("--no-dry-run 경계 (#399)", () => {
     expect(stdout.join("")).toContain(
       "시험 실행이 꺼져 있어(--no-dry-run) AI 사전보완을 건너뜁니다",
     );
+  });
+});
+
+describe("show 요약 형식", () => {
+  const callCase = (
+    id: string,
+    tool: string,
+    input: JsonObject,
+    expected: boolean,
+  ): CallToolCaseSpec => ({
+    id,
+    name: id,
+    operation: { type: "callTool", tool, input },
+    assertions: [{ type: "isError", expected }],
+  });
+  const suiteWith = (cases: TestCaseSpec[]): TestSuiteSpec => ({
+    schemaVersion: 1,
+    id: "server",
+    name: "server",
+    cases,
+  });
+  const options = (suite: TestSuiteSpec) => ({
+    suite,
+    revision: 0,
+    outPath: "examples/audit-target-server/server.suite.json",
+    pendingCandidate: false,
+  });
+
+  const addNumbersCases: CallToolCaseSpec[] = [
+    callCase("add-numbers-success", "add_numbers", { a: 0, b: 0 }, false),
+    callCase("add-numbers-missing-a", "add_numbers", { b: 0 }, true),
+    callCase("add-numbers-missing-b", "add_numbers", { a: 0 }, true),
+    callCase("add-numbers-type-a", "add_numbers", { a: "example", b: 0 }, true),
+    callCase("add-numbers-type-b", "add_numbers", { a: 0, b: "example" }, true),
+  ];
+  const translate = (id: string, input: JsonObject, expected: boolean) =>
+    callCase(`translate-text-${id}`, "translate_text", input, expected);
+  const translateCases: CallToolCaseSpec[] = [
+    translate("success", { text: "example", target: "en", api_key: "example" }, false),
+    translate(
+      "bound-upper-text",
+      { text: `example${"x".repeat(93)}`, target: "en", api_key: "example" },
+      false,
+    ),
+    translate("branch-enum-target-2", { text: "example", target: "ko", api_key: "example" }, false),
+    translate(
+      "branch-enum-target-last",
+      { text: "example", target: "ja", api_key: "example" },
+      false,
+    ),
+    translate("missing-api-key", { text: "example", target: "en" }, true),
+    translate("missing-target", { text: "example", api_key: "example" }, true),
+    translate("missing-text", { target: "en", api_key: "example" }, true),
+    translate("type-api-key", { text: "example", target: "en", api_key: 0 }, true),
+    translate("type-target", { text: "example", target: 0, api_key: "example" }, true),
+    translate("type-text", { text: 0, target: "en", api_key: "example" }, true),
+    translate(
+      "enum-target",
+      { text: "example", target: "__mcpeak_invalid_enum__", api_key: "example" },
+      true,
+    ),
+    translate(
+      "range-upper-text",
+      { text: `example${"x".repeat(94)}`, target: "en", api_key: "example" },
+      true,
+    ),
+  ];
+  const getTimeCase = callCase("get-time-success", "gettime", {}, false);
+  const noInputTools: CallToolCaseSpec[] = [
+    getTimeCase,
+    callCase("delete-all-success", "delete_all", {}, false),
+    callCase("echo-env-success", "echo_env", {}, false),
+    callCase("get-tip-success", "get_tip", {}, false),
+  ];
+  // 명세 순서. gettime 이 add_numbers 와 translate_text 사이에 있다.
+  const fullSuite = suiteWith([
+    ...addNumbersCases,
+    getTimeCase,
+    ...translateCases,
+    ...noInputTools.slice(1),
+  ]);
+
+  // 계획서 §2.4 코드 블록을 글자 그대로 옮긴 것이다. 구현 출력을 복사한 값이 아니다.
+  const EXPECTED_FULL_OUTPUT = `현재 명세: server (id server) · 케이스 21건 · revision 0
+
+add_numbers (5건)
+  정상  add-numbers-success    {a:0, b:0}
+  누락  add-numbers-missing-a  a 없음 → 실패
+  누락  add-numbers-missing-b  b 없음 → 실패
+  타입  add-numbers-type-a     a="example" (number 자리) → 실패
+  타입  add-numbers-type-b     b="example" (number 자리) → 실패
+
+translate_text (12건)
+  정상  translate-text-success                  {text:"example", target:"en", api_key:"example"}
+  경계  translate-text-bound-upper-text         text=길이 100
+  분기  translate-text-branch-enum-target-2     target="ko"
+  분기  translate-text-branch-enum-target-last  target="ja"
+  누락  translate-text-missing-api-key          api_key 없음 → 실패
+  누락  translate-text-missing-target           target 없음 → 실패
+  누락  translate-text-missing-text             text 없음 → 실패
+  타입  translate-text-type-api-key             api_key=0 (string 자리) → 실패
+  타입  translate-text-type-target              target=0 (string 자리) → 실패
+  타입  translate-text-type-text                text=0 (string 자리) → 실패
+  열거  translate-text-enum-target              target="__mcpeak_invalid_enum__" → 실패
+  범위  translate-text-range-upper-text         text=길이 101 → 실패
+
+gettime, delete_all, echo_env, get_tip  정상 1건씩, 입력 없음
+
+저장하면 이 내용이 examples/audit-target-server/server.suite.json 에 쓰입니다.
+`;
+
+  it("도구별로 묶고 그룹 헤더에 건수를 적으며 그룹 순서는 명세 등장 순서다", () => {
+    const out = renderSuiteSummary(options(suiteWith([...translateCases, ...addNumbersCases])));
+    expect(out).toContain("\ntranslate_text (12건)\n");
+    expect(out).toContain("\nadd_numbers (5건)\n");
+    expect(out.indexOf("translate_text (12건)")).toBeLessThan(out.indexOf("add_numbers (5건)"));
+  });
+
+  it("ID 접미 규칙에서 종류를 읽고 규칙 밖 ID 는 기타로 둔다", () => {
+    expect(caseKindOf("add-numbers-success")).toBe("정상");
+    expect(caseKindOf("add-numbers-missing-a")).toBe("누락");
+    expect(caseKindOf("add-numbers-type-a")).toBe("타입");
+    expect(caseKindOf("translate-text-enum-target")).toBe("열거");
+    expect(caseKindOf("translate-text-range-upper-text")).toBe("범위");
+    expect(caseKindOf("translate-text-bound-upper-text")).toBe("경계");
+    expect(caseKindOf("translate-text-branch-enum-target-2")).toBe("분기");
+    expect(caseKindOf("weather-undeclared")).toBe("선언밖");
+    expect(caseKindOf("weather-generated")).toBe("생성");
+    expect(caseKindOf("ai-added-negative-city")).toBe("기타");
+  });
+
+  it("기준 입력 대비 빠진 키·바뀐 키·더해진 키만 적는다", () => {
+    const ref = { a: 0, b: 0 };
+    expect(describeInputDelta({ b: 0 }, ref)).toBe("a 없음");
+    expect(describeInputDelta({ a: "example", b: 0 }, ref)).toBe('a="example" (number 자리)');
+    expect(describeInputDelta({ a: 1, b: 0 }, ref)).toBe("a=1");
+    expect(describeInputDelta({ a: 0, b: 0, c: true }, ref)).toBe("c=true (추가)");
+    expect(describeInputDelta({ b: "x" }, ref)).toBe('a 없음, b="x" (number 자리)');
+  });
+
+  it("기준이 없거나 기준과 같으면 입력 전체를 적고 빈 입력은 입력 없음이다", () => {
+    expect(describeInputDelta({ a: 0, b: 0 }, { a: 0, b: 0 })).toBe("{a:0, b:0}");
+    expect(describeInputDelta({ a: 1, b: 2 }, undefined)).toBe("{a:1, b:2}");
+    expect(describeInputDelta({}, undefined)).toBe("입력 없음");
+    expect(describeInputDelta({}, {})).toBe("입력 없음");
+  });
+
+  it("긴 문자열은 내용 대신 길이로 적어 경계와 범위 초과가 구분된다", () => {
+    const ref = { text: "example" };
+    expect(describeInputDelta({ text: "x".repeat(40) }, ref)).toBe(`text="${"x".repeat(40)}"`);
+    expect(describeInputDelta({ text: "x".repeat(41) }, ref)).toBe("text=길이 41");
+    expect(describeInputDelta({ text: "x".repeat(100) }, ref)).toBe("text=길이 100");
+    expect(describeInputDelta({ text: "x".repeat(101) }, ref)).toBe("text=길이 101");
+    expect(describeInputDelta({ text: "x".repeat(100) }, undefined)).toBe("{text:길이 100}");
+  });
+
+  it("차이 열이 80자를 넘으면 79자와 말줄임표로 자른다", () => {
+    const nested = { payload: { items: Array.from({ length: 30 }, (_, i) => ({ id: i })) } };
+    const out = describeInputDelta(nested, { payload: {} });
+    expect(out).toHaveLength(80);
+    expect(out.endsWith("…")).toBe(true);
+  });
+
+  it("기준 케이스는 그 도구에서 첫 isError=false 케이스다", () => {
+    const groups = groupCasesByTool(fullSuite.cases);
+    expect(groups.map((g) => g.tool)).toEqual([
+      "add_numbers",
+      "gettime",
+      "translate_text",
+      "delete_all",
+      "echo_env",
+      "get_tip",
+    ]);
+    expect(groups[2]?.reference).toEqual({ text: "example", target: "en", api_key: "example" });
+    expect(groups[2]?.cases).toHaveLength(12);
+  });
+
+  it("isError=true 만 → 실패로 적고 정상 케이스는 비운다", () => {
+    const out = renderSuiteSummary(options(suiteWith(addNumbersCases)));
+    expect(out).toContain("  누락  add-numbers-missing-a  a 없음 → 실패\n");
+    expect(out).toContain("  정상  add-numbers-success    {a:0, b:0}\n");
+    expect(out).not.toContain("isError=");
+  });
+
+  it("입력 없는 정상 1건짜리 도구는 끝에 한 줄로 합친다", () => {
+    const out = renderSuiteSummary(options(suiteWith([...addNumbersCases, ...noInputTools])));
+    expect(out).toContain("\ngettime, delete_all, echo_env, get_tip  정상 1건씩, 입력 없음\n");
+    expect(out).not.toContain("gettime (1건)");
+  });
+
+  it("입력 없는 정상 케이스라도 같은 도구에 다른 케이스가 있으면 그룹으로 남는다", () => {
+    const undeclared = callCase("get-time-undeclared", "gettime", { extra: 1 }, true);
+    const out = renderSuiteSummary(options(suiteWith([getTimeCase, undeclared])));
+    expect(out).toContain("\ngettime (2건)\n");
+    expect(out).toContain("  선언밖  get-time-undeclared  extra=1 (추가) → 실패\n");
+    expect(out).not.toContain("정상 1건씩");
+  });
+
+  it("listTools 케이스와 isError 외 단언은 타입 이름으로 적는다", () => {
+    const listCase: TestCaseSpec = {
+      id: "tools-listed",
+      name: "목록",
+      operation: { type: "listTools" },
+      assertions: [{ type: "toolExists", tool: "weather" }],
+    };
+    const out = renderSuiteSummary(options(suiteWith([listCase])));
+    expect(out).toContain("\nlistTools (1건)\n");
+    expect(out).toContain("  기타  tools-listed  listTools → toolExists weather\n");
+  });
+
+  it("21건 예시 명세의 전체 출력이 계획서 §2.4 와 바이트까지 같다", () => {
+    const out = renderSuiteSummary(options(fullSuite));
+    expect(out).toBe(EXPECTED_FULL_OUTPUT);
+  });
+
+  it("같은 명세를 두 번 그리면 바이트가 같다", () => {
+    expect(renderSuiteSummary(options(fullSuite))).toBe(renderSuiteSummary(options(fullSuite)));
+  });
+
+  it("제어 문자는 줄 단위로 이스케이프돼 줄바꿈이 살아 있다", () => {
+    const evil = callCase("add-numbers-success", "add_numbers", { a: "x\u001b[31m", b: 0 }, false);
+    const out = renderSuiteSummary(options(suiteWith([evil])));
+    expect(out).toContain("\\u001b");
+    expect(out).not.toContain("\\u000a");
+    expect(out.split("\n").length).toBeGreaterThan(3);
   });
 });

@@ -1,6 +1,7 @@
 import { access, link, open, readFile, unlink } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { createInterface } from "node:readline/promises";
+import { isDeepStrictEqual } from "node:util";
 import type { McpHttpConnection, McpStdioConnection, ToolDef } from "@mcpeak/core";
 import type {
   AuthoringDiffPreview,
@@ -777,51 +778,221 @@ function diffBody(change: AuthoringDiffPreview["changes"][number]): string[] {
       return changedLeaves(change.before, change.after);
   }
 }
-/** `show` 의 입력 JSON 한 줄 상한. 넘으면 자른다. 전체는 저장 후 파일에서 본다. */
-const MAX_SHOW_INPUT_CHARS = 80;
+/** 이 길이를 넘는 문자열 값은 내용 대신 `길이 N` 으로 적는다. 경계 케이스는 길이가 곧 정보다. */
+const MAX_SHOW_VALUE_CHARS = 40;
+/** 차이 열 한 줄 상한. 중첩 객체가 길면 여기서 자른다. 전체는 저장 후 파일에서 본다. */
+const MAX_SHOW_DELTA_CHARS = 80;
+
+/** 케이스 ID 접미 규칙에서 읽은 종류. 규칙 밖 ID 는 "기타". 두 글자 라벨이라 열 폭이 고정된다. */
+export type CaseKind =
+  | "정상"
+  | "누락"
+  | "타입"
+  | "열거"
+  | "범위"
+  | "경계"
+  | "분기"
+  | "선언밖"
+  | "생성"
+  | "기타";
+
+const CASE_KIND_SUFFIXES: readonly (readonly [string, CaseKind])[] = [
+  ["-success", "정상"],
+  ["-generated", "생성"],
+  ["-undeclared", "선언밖"],
+];
+const CASE_KIND_TOKENS: readonly (readonly [string, CaseKind])[] = [
+  ["-missing-", "누락"],
+  ["-type-", "타입"],
+  ["-enum-", "열거"],
+  ["-range-", "범위"],
+  ["-bound-", "경계"],
+  ["-branch-", "분기"],
+];
 
 /**
- * 검토 메뉴 `show`. 지금 승인된 명세를 케이스당 한 줄로 요약한다. 검토 메뉴는 diff(바뀐 값)만
- * 보여 주므로 AI 가 만든 케이스가 무엇인지 저장 전에는 볼 곳이 없었다. 전문 JSON 은 케이스
- * 8건이면 100줄이 넘어 로그를 덮는다. 한 줄 요약이 화면에 맞는다.
+ * generate 가 ID 를 만드는 규칙(`packages/generate/src/render.ts`·`violation-cases.ts`·
+ * `valid-branches.ts`)을 거꾸로 읽는다.
+ *   `<base>-success` → 정상, `<base>-generated` → 생성, `<base>-undeclared` → 선언밖 (끝 일치)
+ *   그 외에는 ID 에서 `-missing-`, `-type-`, `-enum-`, `-range-`, `-bound-`, `-branch-` 중
+ *   **가장 앞에 나오는 것** 하나로 판정한다. 기준 이름 바로 뒤에 종류가 오고 필드 슬러그는 그 뒤라,
+ *   `translate-text-branch-enum-target-2` 는 분기다.
+ *   어느 것도 없으면 기타. AI 나 사람이 넣은 케이스가 여기 해당한다.
+ * 알려진 한계: 도구 이름 슬러그 자체에 `-type-` 같은 토큰이 들어 있으면 라벨이 틀릴 수 있다. 옆의
+ * 차이 열은 데이터에서 계산하므로 라벨이 틀려도 무엇을 보내는 케이스인지는 맞게 보인다.
  */
-function renderSuiteSummary(options: {
+export function caseKindOf(id: string): CaseKind {
+  for (const [suffix, kind] of CASE_KIND_SUFFIXES) {
+    if (id.endsWith(suffix)) return kind;
+  }
+  let found: CaseKind = "기타";
+  let foundAt = Number.POSITIVE_INFINITY;
+  for (const [token, kind] of CASE_KIND_TOKENS) {
+    const at = id.indexOf(token);
+    if (at !== -1 && at < foundAt) {
+      found = kind;
+      foundAt = at;
+    }
+  }
+  return found;
+}
+
+function jsonTypeOf(value: JsonValue): string {
+  if (value === null) return "null";
+  return Array.isArray(value) ? "array" : typeof value;
+}
+
+function formatValue(value: JsonValue): string {
+  return typeof value === "string" && value.length > MAX_SHOW_VALUE_CHARS
+    ? `길이 ${value.length}`
+    : JSON.stringify(value);
+}
+
+function formatInput(input: JsonObject): string {
+  const entries = Object.entries(input);
+  if (entries.length === 0) return "입력 없음";
+  return `{${entries.map(([key, value]) => `${key}:${formatValue(value)}`).join(", ")}}`;
+}
+
+/**
+ * 기준 입력 대비 이 케이스 입력의 차이 한 줄.
+ *   reference 가 없거나 두 입력이 깊은 비교로 같으면 입력 전체: `{a:0, b:0}`. 빈 객체면 `입력 없음`.
+ *   빠진 키: `a 없음`. 더해진 키: `extra=1 (추가)`. 바뀐 키: `a="example" (number 자리)`.
+ *     괄호의 타입은 기준 값의 JSON 타입(string/number/boolean/object/array/null)이고, 바뀐 값이 같은
+ *     타입이면 괄호를 생략한다(`target="ko"`).
+ *   여러 차이는 기준 입력의 키 순서로 `, ` 로 잇는다. 추가된 키는 그 뒤에 이 케이스의 키 순서로.
+ *   최상위 키만 본다. 중첩 객체는 값 전체를 한 덩어리로 비교·표시한다.
+ * 값 표기(`formatValue`): 문자열은 JSON 따옴표, 40자(MAX_SHOW_VALUE_CHARS) 초과면 `길이 N` 으로
+ *   따옴표 없이. 그 외는 `JSON.stringify`. 객체 전체 표기는 `{` + `키:값` 을 `, ` 로 이어 + `}`.
+ * 결과가 80자(MAX_SHOW_DELTA_CHARS)를 넘으면 79자 + `…` 로 자른다. 전체는 저장 후 파일에서 본다.
+ */
+export function describeInputDelta(input: JsonObject, reference: JsonObject | undefined): string {
+  if (reference === undefined || isDeepStrictEqual(input, reference)) {
+    return truncate(formatInput(input), MAX_SHOW_DELTA_CHARS);
+  }
+  const parts: string[] = [];
+  for (const [key, expected] of Object.entries(reference)) {
+    const actual = Object.hasOwn(input, key) ? input[key] : undefined;
+    if (actual === undefined) {
+      parts.push(`${key} 없음`);
+      continue;
+    }
+    if (isDeepStrictEqual(actual, expected)) continue;
+    const expectedType = jsonTypeOf(expected);
+    const place = jsonTypeOf(actual) === expectedType ? "" : ` (${expectedType} 자리)`;
+    parts.push(`${key}=${formatValue(actual)}${place}`);
+  }
+  for (const [key, value] of Object.entries(input)) {
+    if (!Object.hasOwn(reference, key)) parts.push(`${key}=${formatValue(value)} (추가)`);
+  }
+  return truncate(parts.join(", "), MAX_SHOW_DELTA_CHARS);
+}
+
+export interface SuiteSummaryGroup {
+  /** callTool 의 도구 이름. listTools 케이스는 "listTools". */
+  readonly tool: string;
+  readonly cases: readonly TestCaseSpec[];
+  /** 이 도구에서 명세 순서로 첫 번째인, isError expected=false 단언을 가진 callTool 케이스의 입력. 없으면 undefined. */
+  readonly reference: JsonObject | undefined;
+}
+
+/** 도구별 그룹. 순서는 명세에서 도구가 처음 나온 순서. 정렬하지 않는다. */
+export function groupCasesByTool(cases: readonly TestCaseSpec[]): readonly SuiteSummaryGroup[] {
+  const groups = new Map<string, { cases: TestCaseSpec[]; reference: JsonObject | undefined }>();
+  for (const testCase of cases) {
+    const tool = testCase.operation.type === "callTool" ? testCase.operation.tool : "listTools";
+    let group = groups.get(tool);
+    if (group === undefined) {
+      group = { cases: [], reference: undefined };
+      groups.set(tool, group);
+    }
+    group.cases.push(testCase);
+    if (
+      group.reference === undefined &&
+      testCase.operation.type === "callTool" &&
+      testCase.assertions.some(
+        (assertion) => assertion.type === "isError" && assertion.expected === false,
+      )
+    ) {
+      group.reference = testCase.operation.input;
+    }
+  }
+  return Array.from(groups, ([tool, group]) => ({ tool, ...group }));
+}
+
+/** 입력 없는 정상 1건만 가진 도구. 그룹으로 펼치면 헤더와 한 줄이 같은 말을 두 번 한다. */
+function isNoInputSuccessOnly(group: SuiteSummaryGroup): boolean {
+  const [only] = group.cases;
+  return (
+    group.cases.length === 1 &&
+    only !== undefined &&
+    only.operation.type === "callTool" &&
+    Object.keys(only.operation.input).length === 0 &&
+    caseKindOf(only.id) === "정상"
+  );
+}
+
+function renderShowAssertions(testCase: TestCaseSpec): string {
+  const parts: string[] = [];
+  for (const assertion of testCase.assertions) {
+    if (assertion.type === "isError") {
+      if (assertion.expected) parts.push("실패");
+    } else if (assertion.type === "toolExists") {
+      parts.push(`toolExists ${assertion.tool}`);
+    } else {
+      parts.push(assertion.type);
+    }
+  }
+  return parts.length === 0 ? "" : ` → ${parts.join(", ")}`;
+}
+
+/**
+ * 검토 메뉴 `show`. 지금 승인된 명세를 도구별로 묶어 케이스당 한 줄로 요약한다. 검토 메뉴는
+ * diff(바뀐 값)만 보여 주므로 AI 가 만든 케이스가 무엇인지 저장 전에는 볼 곳이 없었다. 전문 JSON 은
+ * 케이스 8건이면 100줄이 넘어 로그를 덮는다. 케이스 줄에는 종류와, 같은 도구의 정상 입력과 달라진
+ * 필드만 적는다. 정상 값을 매 줄 반복하면 무엇이 다른 케이스인지 눈으로 찾아야 한다.
+ */
+export function renderSuiteSummary(options: {
   readonly suite: TestSuiteSpec;
   readonly revision: number;
   readonly outPath: string;
   readonly pendingCandidate: boolean;
 }): string {
   const { suite } = options;
-  const width = String(suite.cases.length).length;
-  const lines = suite.cases.map((testCase, index) => {
-    const number = String(index + 1).padStart(width, " ");
-    const operation =
-      testCase.operation.type === "listTools"
-        ? "listTools"
-        : `callTool ${testCase.operation.tool} ${truncate(
-            JSON.stringify(testCase.operation.input),
-            MAX_SHOW_INPUT_CHARS,
-          )}`;
-    const assertions = testCase.assertions
-      .map((assertion) =>
-        assertion.type === "toolExists"
-          ? `toolExists ${assertion.tool}`
-          : assertion.type === "isError"
-            ? `isError=${assertion.expected}`
-            : assertion.type,
-      )
-      .join(", ");
-    return `  ${number}. ${testCase.id}  ${operation}  → ${assertions}`;
-  });
-  const header = `현재 명세: ${suite.name} (id ${suite.id}) · 케이스 ${suite.cases.length}건 · revision ${options.revision}`;
-  const footer = `저장하면 이 내용이 ${options.outPath} 에 쓰입니다.`;
-  const pending = options.pendingCandidate
-    ? "  → 미반영 AI 후보가 있습니다. 위 목록에는 안 들어 있습니다. apply-all 또는 select 로 반영하세요."
-    : "";
+  const lines: string[] = [
+    `현재 명세: ${suite.name} (id ${suite.id}) · 케이스 ${suite.cases.length}건 · revision ${options.revision}`,
+    "",
+  ];
+  const noInputTools: string[] = [];
+  for (const group of groupCasesByTool(suite.cases)) {
+    if (isNoInputSuccessOnly(group)) {
+      noInputTools.push(group.tool);
+      continue;
+    }
+    const idWidth = Math.max(...group.cases.map((testCase) => testCase.id.length));
+    lines.push(`${group.tool} (${group.cases.length}건)`);
+    for (const testCase of group.cases) {
+      const delta =
+        testCase.operation.type === "listTools"
+          ? "listTools"
+          : describeInputDelta(testCase.operation.input, group.reference);
+      lines.push(
+        `  ${caseKindOf(testCase.id)}  ${testCase.id.padEnd(idWidth, " ")}  ${delta}${renderShowAssertions(testCase)}`,
+      );
+    }
+    lines.push("");
+  }
+  if (noInputTools.length > 0) {
+    lines.push(`${noInputTools.join(", ")}  정상 1건씩, 입력 없음`, "");
+  }
+  lines.push(`저장하면 이 내용이 ${options.outPath} 에 쓰입니다.`);
+  if (options.pendingCandidate) {
+    lines.push(
+      "  → 미반영 AI 후보가 있습니다. 위 목록에는 안 들어 있습니다. apply-all 또는 select 로 반영하세요.",
+    );
+  }
   // 이스케이프는 줄 단위로 건다. 통째로 걸면 줄바꿈까지 \u000a 로 바뀐다.
-  return `${[header, ...lines, footer, ...(pending === "" ? [] : [pending])]
-    .map(escapeTerminalText)
-    .join("\n")}\n`;
+  return `${lines.map(escapeTerminalText).join("\n")}\n`;
 }
 
 function truncate(text: string, max: number): string {

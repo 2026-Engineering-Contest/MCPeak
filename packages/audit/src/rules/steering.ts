@@ -143,10 +143,19 @@ export function steeringSignals(
     .map((n) => nameSource(n))
     .filter((source): source is string => source !== null && new RegExp(source, "i").test(text));
 
+  const sentences = splitSentences(text);
+  // 낱말·주소 신호도 그 낱말이 든 문장을 근거로 남긴다. 낱말만 남기면 steeringFragment 가 문장별 점수를 더할
+  // 때 같은 문장의 신호가 갈라져, 발견 문장에 지시 문장 대신 URL 하나만 보이는 일이 생긴다.
+  const sentenceOf = (matched: string) => sentences.find((s) => s.includes(matched)) ?? text;
+  const markWord = (id: string, pattern: RegExp) => {
+    const matched = pattern.exec(text)?.[0];
+    if (matched !== undefined) mark(id, sentenceOf(matched));
+  };
+
   if (refs.length > 0 && own.length === 0) mark("carrier", text);
-  if (CRED.test(text)) mark("credential", CRED.exec(text)?.[0] ?? text);
-  if (CRED_PATH.test(text)) mark("credential-path", CRED_PATH.exec(text)?.[0] ?? text);
-  if (PAYLOAD.test(text)) mark("payload", PAYLOAD.exec(text)?.[0] ?? text);
+  markWord("credential", CRED);
+  markWord("credential-path", CRED_PATH);
+  markWord("payload", PAYLOAD);
 
   // 서버 이름에도, 같은 서버의 다른 도구 설명에도 나오지 않는 호스트. 예시용 주소(example.com 류, localhost)는 뺀다.
   const vendorText = `${serverName} ${tools
@@ -161,10 +170,9 @@ export function steeringSignals(
     const base = host.split(".").slice(-2).join(".");
     if (/^(localhost|127\.)/.test(host) || /example\.(com|org|net)$/.test(host)) continue;
     if (vendorText.includes(base) || vendorTokens.some((t) => host.includes(t))) continue;
-    mark("external-address", match[0]);
+    mark("external-address", sentenceOf(match[0]));
   }
 
-  const sentences = splitSentences(text);
   let directives = 0;
   for (const sentence of sentences) {
     const directive = DIRECTIVE.test(sentence);

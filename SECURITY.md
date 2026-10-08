@@ -4,13 +4,17 @@ MCPeak에서 보안 문제를 발견하셨다면 공개 이슈로 올리지 말�
 고치기 전에 공개되면 사용자들이 대비할 시간이 없습니다.
 
 > Please report security issues privately via
-> [GitHub Security Advisories](https://github.com/2026-Engineering-Contest/MCPeak/security/advisories/new),
-> not in public issues. English or Korean is fine.
+> [GitHub Security Advisories](https://github.com/2026-Engineering-Contest/MCPeak/security/advisories/new)
+> or by email to pocsclaude@gmail.com, not in public issues. English or Korean is fine.
 
 ## 어떻게 알려 주나요?
 
-[여기](https://github.com/2026-Engineering-Contest/MCPeak/security/advisories/new)에서 비공개로
-제보할 수 있습니다. 제보 내용은 저희 팀과 제보자만 볼 수 있습니다.
+아래 두 방법 중 편한 쪽으로 비공개 제보해 주세요. 제보 내용은 저희 팀과 제보자만 볼 수 있습니다.
+
+- **GitHub**: [여기](https://github.com/2026-Engineering-Contest/MCPeak/security/advisories/new)에서 제보합니다.
+  GitHub 계정이 있다면 이 방법을 권합니다. 고치는 과정을 함께 볼 수 있습니다.
+- **이메일**: [pocsclaude@gmail.com](mailto:pocsclaude@gmail.com)으로 보내 주세요.
+  제목에 `[보안]`이라고 적어 주시면 빨리 확인할 수 있습니다.
 
 아래 내용을 적어 주시면 빨리 확인할 수 있습니다. 모르는 항목은 비워 두셔도 됩니다.
 

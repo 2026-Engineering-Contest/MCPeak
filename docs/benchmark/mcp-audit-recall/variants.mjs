@@ -76,6 +76,10 @@ export const VARIANTS = [
 /**
  * 사례 하나에 변형을 적용한다. `poisoned` 는 중독 도구, `clean` 은 그 서버의 정상 도구 목록이다.
  * 돌려주는 `tool` 이 판정 대상이고 `tools` 는 그 도구가 들어 있는 서버 전체의 목록이다.
+ *
+ * `inplace` 변형은 원문이 정상 도구를 하나도 가리키지 않으면 심을 자리가 없다. 그런 사례는 `null` 을 돌려주고
+ * 측정기가 그 변형의 분모에서 뺀다(고정 커밋에서 1,312건 중 46건). 원본 그대로를 돌려주면 변형 행에 원본
+ * 사례가 섞여 들어 변형의 탐지율이 실제보다 높게 보인다.
  */
 export function applyVariant(poisoned, clean, variant) {
   let text = poisoned.description;
@@ -91,7 +95,8 @@ export function applyVariant(poisoned, clean, variant) {
   const mention = (source) => new RegExp(`(['"\`])?${source}\\1?( tool)?`, "gi");
 
   let target = null;
-  if (variant.inplace && refs.length > 0) {
+  if (variant.inplace) {
+    if (refs.length === 0) return null;
     target = refs[0].tool;
     text = text.replace(mention(refs[0].source), "this tool");
   }

@@ -30,19 +30,31 @@ if (dir === undefined) {
 const data = JSON.parse(readFileSync(join(dir, "response_all.json"), "utf8"));
 
 /**
- * "Tool: <이름>\nDescription: <설명>[\nArguments: …]" 을 도구로 만든다. 사례의 절반가량은 줄바꿈이
+ * "Arguments:" 뒤의 "- 이름: 설명" 목록을 inputSchema 로 만든다. "- No arguments" 면 properties 가 빈 스키마다.
+ * 중독 도구와 정상 도구가 같은 함수를 쓴다. 실제 감사가 받는 스키마와 같은 모양이어야 `carrier`(인자 없는
+ * 도구) 신호가 측정과 실전에서 똑같이 걸린다.
+ */
+function toSchema(argumentsText) {
+  const properties = {};
+  for (const arg of argumentsText.matchAll(/^- ([\w.-]+): (.*?)(?: \(required\))?$/gm)) properties[arg[1]] = { type: "string" };
+  return { type: "object", properties };
+}
+
+/**
+ * "Tool: <이름>\nDescription: <설명>\nArguments: …" 을 도구로 만든다. 사례의 절반가량은 줄바꿈이
  * 실제 개행이 아니라 글자 그대로의 "\\n" 이라 먼저 개행으로 바꾼다. 뒤따르는 "Arguments:" 목록은 인자
- * 설명이지 도구 설명이 아니라서 잘라 낸다. 형식이 다르면 전체를 설명으로 본다(그런 사례는 세어 출력한다).
+ * 설명이지 도구 설명이 아니라서 설명에서 떼어 inputSchema 로 옮긴다(고정 커밋에서 1,312건 중 47건이 인자를
+ * 가진다). 형식이 다르면 전체를 설명으로 본다(그런 사례는 세어 출력한다).
  */
 let unparsed = 0;
 function toTool(text) {
   const normalized = text.replaceAll("\\n", "\n");
-  const match = /^Tool:\s*(.*)\r?\nDescription:\s*([\s\S]*?)(?:\r?\nArguments:[\s\S]*)?$/.exec(normalized);
+  const match = /^Tool:\s*(.*)\r?\nDescription:\s*([\s\S]*?)(?:\r?\nArguments:([\s\S]*))?$/.exec(normalized);
   if (match === null) unparsed += 1;
   return {
     name: match ? match[1].trim() : "poisoned_tool",
     description: match ? match[2].trim() : normalized,
-    inputSchema: { type: "object" },
+    inputSchema: toSchema(match?.[3] ?? ""),
   };
 }
 
@@ -51,9 +63,7 @@ function toCleanTools(prompt) {
   const tools = [];
   const block = /Tool:\s*(.*)\r?\nDescription:\s*([\s\S]*?)\r?\nArguments:([\s\S]*?)(?=\n\s*\n+Tool:|\n\s*\n\s*\n|$)/g;
   for (const match of prompt.replaceAll("\\n", "\n").matchAll(block)) {
-    const properties = {};
-    for (const arg of match[3].matchAll(/^- ([\w.-]+): (.*?)(?: \(required\))?$/gm)) properties[arg[1]] = { type: "string" };
-    tools.push({ name: match[1].trim(), description: match[2].trim(), inputSchema: { type: "object", properties } });
+    tools.push({ name: match[1].trim(), description: match[2].trim(), inputSchema: toSchema(match[3]) });
   }
   return tools;
 }
@@ -125,11 +135,14 @@ const ruleCounts = new Map();
 for (const c of cases) for (const rule of c.rules) ruleCounts.set(rule, (ruleCounts.get(rule) ?? 0) + 1);
 
 // ── (2) 변형 ──
+// 변형을 적용할 수 없는 사례(`applyVariant` 가 null)는 그 행의 분모에서 뺀다. `applicable` 이 그 행의 분모다.
 const variants = VARIANTS.map((variant) => {
-  const row = { name: variant.name, pattern: 0, steeringMedium: 0, steeringLow: 0, detected: 0 };
+  const row = { name: variant.name, applicable: 0, pattern: 0, steeringMedium: 0, steeringLow: 0, detected: 0 };
   for (const c of cases) {
-    const { tool, tools } = applyVariant(c.poisoned, c.server.clean, variant);
-    const verdict = judge(tool, tools, c.server.name, c.server.toolNames);
+    const applied = applyVariant(c.poisoned, c.server.clean, variant);
+    if (applied === null) continue;
+    row.applicable += 1;
+    const verdict = judge(applied.tool, applied.tools, c.server.name, c.server.toolNames);
     if (verdict.pattern) row.pattern += 1;
     if (verdict.steeringMedium) row.steeringMedium += 1;
     if (verdict.steeringLow) row.steeringLow += 1;
@@ -176,8 +189,8 @@ if (args.includes("--json")) {
   for (const g of result.byRisk) console.log(`| ${g.name} | ${g.total} | ${g.detected} | ${g.recall} |`);
   console.log("\n| 규칙 | 걸린 사례 | 비율 |\n|---|---:|---:|");
   for (const r of result.byRule) console.log(`| \`${r.rule}\` | ${r.cases} | ${r.share} |`);
-  console.log("\n| 변형 | 문형 규칙(medium 이상) | 점수 규칙 medium | 점수 규칙 low 이상 | 탐지(문형 또는 점수 medium) | 재현율 |\n|---|---:|---:|---:|---:|---:|");
-  for (const v of result.variants) console.log(`| ${v.name} | ${v.pattern} | ${v.steeringMedium} | ${v.steeringLow} | ${v.detected} | ${ratio(v.detected, result.cases)} |`);
+  console.log("\n| 변형 | 적용 사례 | 문형 규칙(medium 이상) | 점수 규칙 medium | 점수 규칙 low 이상 | 탐지(문형 또는 점수 medium) | 재현율 |\n|---|---:|---:|---:|---:|---:|---:|");
+  for (const v of result.variants) console.log(`| ${v.name} | ${v.applicable} | ${v.pattern} | ${v.steeringMedium} | ${v.steeringLow} | ${v.detected} | ${ratio(v.detected, v.applicable)} |`);
   console.log(`\n정상 정의: 서버 ${clean.servers}개, 도구 ${clean.tools}개`);
   console.log(`문형 규칙 medium 이상 ${clean.pattern}건, 점수 규칙 medium ${clean.steeringMedium}건, 점수 규칙 low ${clean.steeringLow}건`);
   console.log(`점수 규칙이 잡은 정상 도구: ${clean.flagged.join(", ")}`);

@@ -17,11 +17,11 @@ npm install -g @mcpeak/cli
 설치하면 `mcpeak` 명령이 `PATH` 에 놓인다. 한 번만 쓸 거라면 설치 없이 `npx @mcpeak/cli test ...`
 도 된다.
 
-목 서버와 웹 UI 는 별도 패키지다. 전역 설치는 그 패키지 자신의 실행 파일만 `PATH` 에 놓으므로,
-의존성으로 딸려 와도 `mcpeak-mock` · `mcpeak-dashboard` 명령은 따로 설치해야 생긴다.
+목 서버와 웹 UI, 도구 정의 프록시는 별도 패키지다. 전역 설치는 그 패키지 자신의 실행 파일만 `PATH` 에 놓으므로,
+의존성으로 딸려 와도 `mcpeak-mock` · `mcpeak-dashboard` · `mcpeak-optimize-proxy` 명령은 따로 설치해야 생긴다.
 
 ```bash
-npm install -g @mcpeak/cli @mcpeak/mock @mcpeak/dashboard
+npm install -g @mcpeak/cli @mcpeak/mock @mcpeak/dashboard @mcpeak/optimize
 ```
 
 ## 확인
@@ -127,5 +127,7 @@ mcpeak test weather.suite.json -- node ./server.mjs
 명세를 손으로 쓰지 않아도 된다. 서버의 툴 스키마를 읽어 명세를 만들어 주는 흐름은
 [명세 생성](/ko/guide/generate)에 있다. 케이스에 무엇을 적을 수 있는지는
 [명세 작성](/ko/guide/writing-suites)을 본다. 서버가 유료 API 를 부른다면
-[External 세션](/ko/guide/external-sessions)으로 그 호출을 한 번만 녹화한다. 도구가 내부에서
-어떻게 맞물리는지는 [동작 원리](/ko/concepts/how-it-works)를 본다.
+[External 세션](/ko/guide/external-sessions)으로 그 호출을 한 번만 녹화한다. 남이 만든 서버를
+등록하기 전이라면 [Audit](/ko/guide/audit)로 보안 위험을 먼저 점검하고, 도구 정의가 길어 토큰을
+먹는다면 [Optimize](/ko/guide/optimize)로 줄인다. 도구가 내부에서 어떻게 맞물리는지는
+[동작 원리](/ko/concepts/how-it-works)를 본다.

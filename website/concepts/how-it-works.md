@@ -26,10 +26,12 @@ suite (JSON) ──→ runner ──→ core ──→ server process
 | `@mcpeak/generate` | Deterministic baseline generation from schemas, approval based AI review |
 | `@mcpeak/record` | Record and replay of HTTP calls the server makes outward |
 | `@mcpeak/mock` | Mock MCP server (stdio, Streamable HTTP) |
+| `@mcpeak/audit` | Security checks before using a server, behavior observation inside Docker isolation |
+| `@mcpeak/optimize` | Lossless compression of tool definitions, a proxy that serves the overlay |
 | `@mcpeak/cli` | The entry point. Kept thin |
 | `@mcpeak/dashboard` | Local web UI. Reuses the CLI's command functions |
 
-The dependency direction is one way: `dashboard` → `cli` → `runner` / `generate` / `record` / `mock` → `core`. A package can only depend on the layer to its right, and there are no back references.
+The dependency direction is one way: `dashboard` → `cli` → `runner` / `generate` / `record` / `mock` / `audit` / `optimize` → `core`. A package can only depend on the layer to its right, and there are no back references.
 
 ## The server process is isolated
 

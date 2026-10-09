@@ -2,12 +2,12 @@
 
 This page answers questions that only come up after installation is done.
 
-## `mcpeak-mock` or `mcpeak-dashboard` says "command not found"
+## `mcpeak-mock`, `mcpeak-dashboard`, or `mcpeak-optimize-proxy` says "command not found"
 
 This happens because only `@mcpeak/cli` was installed globally. A global npm install only puts that package's own executable on `PATH`. Even a package pulled in as a dependency does not get its bin installed.
 
 ```bash
-npm install -g @mcpeak/mock @mcpeak/dashboard
+npm install -g @mcpeak/mock @mcpeak/dashboard @mcpeak/optimize
 ```
 
 ## It passed, but "거절 근거를 확인하지 못했습니다" (rejection basis not verified) shows up

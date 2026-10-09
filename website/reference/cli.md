@@ -14,7 +14,7 @@ equivalent. `--version` prints the version.
 
 ## Three ways to specify a server
 
-`test` and `generate` accept the same three forms. Use only one.
+`test`, `generate`, `optimize`, and `audit` accept the same three forms. Use only one.
 
 | Form | Meaning |
 |---|---|
@@ -114,14 +114,67 @@ code. The flow is described in [Repair](/guide/repair).
 | `--no-stderr` | off | Excludes server stderr from what is sent |
 | `--yes` | off | Skips the confirmation screen before sending |
 
+## optimize
+
+```
+mcpeak optimize --out <overlay.json> <server spec> [--json]
+```
+
+Reads the server's `tools/list` and builds an overlay that shrinks the definitions without changing
+their meaning. The report goes to stdout. The flow and the list of transformations are described in
+[Optimize](/guide/optimize).
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--out <overlay.json>` | required | Where to write the overlay. An existing file is overwritten, because you rebuild it with the same command whenever the server changes |
+| `--json` | off | Prints the overlay JSON to stdout instead of the report |
+
+The overlay is served with `mcpeak-optimize-proxy`. Only `tools/list` changes; tool names,
+arguments, and call results are the same as the origin. Common parameter descriptions are moved into
+the server instructions, so in a client that does not show instructions to the model, those
+descriptions never reach the model.
+
+## audit
+
+```
+mcpeak audit <server spec>
+             [--probe readonly|none|all] [--baseline <path>] [--update-baseline]
+             [--sandbox [--sandbox-session <path> | --sandbox-replay <path>]
+                        [--allow-host <host> ...] [--compare-host] [--sandbox-mount <dir>]]
+             [--json]
+```
+
+Checks a server's tool definitions and protocol for security risks before you use it. Exits with 2
+when there is a critical or warning finding, 0 when there is none, and 1 on a connection or input
+failure. Permission combination warnings and informational findings do not affect the exit code. The
+check families and how to read the result are described in [Audit](/guide/audit).
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--probe <policy>` | `readonly` | How far to actually call tools. `readonly` calls only tools whose readOnlyHint is true, `none` calls nothing and skips response checks, `all` calls every tool, so use it only in a disposable environment. A run where `--sandbox` isolation is actually on defaults to `all` |
+| `--baseline <path>` | none | The baseline file for tool definitions. Created if missing; otherwise compared against the current definitions and changed tools are reported |
+| `--update-baseline` | off | Rewrites the baseline file with the current definitions without comparing. Must be used with `--baseline` |
+| `--json` | off | Prints the result JSON to stdout instead of the report. For the same server and the same command it is identical down to the byte |
+| `--sandbox` | off | Starts the server inside a Docker container and calls every tool to observe file, process, and network behavior. Only servers launched with `node`, `npx`, or `npm` are isolated; if isolation cannot start, the server runs on this machine without it and the second line of the report says so. Cannot be used with `--url` |
+| `--sandbox-session <path>` | none | Records the HTTP round trips the sandboxed server makes into this file |
+| `--sandbox-replay <path>` | none | Answers only from this session file, without contacting upstream. Cannot be used with `--sandbox-session` |
+| `--allow-host <host>` | none | Adds to the declared destinations. Repeatable. Connections to that host and its subdomains are treated as declared by the server |
+| `--compare-host` | off | Starts the server once more on this machine without isolation, fetches only `tools/list`, and compares it with the tool surface seen inside the sandbox. No tools are called, but the server's startup code runs on this machine |
+| `--sandbox-mount <dir>` | the directory of the nearest `pnpm-workspace.yaml` or `.git` | The host directory made visible read only inside the container. The home directory and `/` are not allowed |
+
+When launching a stdio server, common secret names such as `GITHUB_TOKEN` are filled with fake
+values (canaries). Names passed with `--env` receive the real value instead. No value is written
+to the output.
+
 ## Separate executables
 
 | Command | Package | Meaning |
 |---|---|---|
 | `mcpeak-mock <definition.json>` | `@mcpeak/mock` | Starts a stdio mock server from a definition file. See [mock server](/guide/mock-server) |
+| `mcpeak-optimize-proxy <overlay.json> (-- <server command> \| --url <URL>)` | `@mcpeak/optimize` | A stdio proxy that serves the overlay and forwards `tools/call` to the origin server. See [Optimize](/guide/optimize) |
 | `mcpeak-dashboard [--port <number>]` | `@mcpeak/dashboard` | The local web UI. Default port 7357, or automatic if `0` is given. See [dashboard](/guide/dashboard) |
 
-A global install only places that package's own executable, so install all three separately.
+A global install only places that package's own executable, so install all four separately.
 
 ## Error codes
 

@@ -24,6 +24,7 @@ It looks for suite files under the directory the command was run in. If the list
 | Generate wizard | `generate`'s target selection, dry run, and approval screen |
 | Repair review | Get and review cause candidates from a failed run's bundle |
 | Replay | External session record and replay |
+| Analyze | The tokens tab shows the compression report from [Optimize](/guide/optimize), the security tab the findings from [Audit](/guide/audit) |
 | Settings | Provider, model, and so on |
 
 ## Verdicts match the CLI

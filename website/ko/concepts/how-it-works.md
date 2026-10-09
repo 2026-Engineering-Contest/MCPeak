@@ -33,10 +33,12 @@
 | `@mcpeak/generate` | 스키마에서 결정론적 baseline 생성, 승인형 AI 검토 |
 | `@mcpeak/record` | 서버가 밖으로 부르는 HTTP 의 녹화·재생 |
 | `@mcpeak/mock` | 목 MCP 서버(stdio · Streamable HTTP) |
+| `@mcpeak/audit` | 서버를 쓰기 전의 보안 점검, Docker 격리 안의 행위 관측 |
+| `@mcpeak/optimize` | 도구 정의의 무손실 압축, 오버레이를 서빙하는 프록시 |
 | `@mcpeak/cli` | 진입점. 얇게 유지한다 |
 | `@mcpeak/dashboard` | 로컬 웹 UI. CLI 의 커맨드 함수를 재사용한다 |
 
-의존은 한 방향이다. `dashboard` → `cli` → `runner` / `generate` / `record` / `mock` → `core`.
+의존은 한 방향이다. `dashboard` → `cli` → `runner` / `generate` / `record` / `mock` / `audit` / `optimize` → `core`.
 오른쪽 하위 계층으로만 의존할 수 있고 역참조는 없다.
 
 ## 서버 프로세스는 격리된다

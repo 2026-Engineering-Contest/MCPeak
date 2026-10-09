@@ -17,12 +17,13 @@ npm install -g @mcpeak/cli
 Installing puts the `mcpeak` command on your `PATH`. If you only need it once, you can skip the
 install and run `npx @mcpeak/cli test ...` instead.
 
-The mock server and the web UI are separate packages. A global install only puts that package's
-own executable on `PATH`, so even though they come along as dependencies, the `mcpeak-mock` and
-`mcpeak-dashboard` commands appear only if you install them separately.
+The mock server, the web UI, and the tool definition proxy are separate packages. A global install
+only puts that package's own executable on `PATH`, so even though they come along as dependencies,
+the `mcpeak-mock`, `mcpeak-dashboard`, and `mcpeak-optimize-proxy` commands appear only if you
+install them separately.
 
 ```bash
-npm install -g @mcpeak/cli @mcpeak/mock @mcpeak/dashboard
+npm install -g @mcpeak/cli @mcpeak/mock @mcpeak/dashboard @mcpeak/optimize
 ```
 
 ## Verify
@@ -131,5 +132,7 @@ output shows the cause code and how to fix it.
 You don't have to write suites by hand. [Generating a suite](/guide/generate) covers the flow
 that reads the server's tool schemas and builds a suite for you. See
 [Writing a suite](/guide/writing-suites) for what you can put in a case. If the server calls a
-paid API, use [External sessions](/guide/external-sessions) to record that call once. See
-[How it works](/concepts/how-it-works) for how the pieces fit together internally.
+paid API, use [External sessions](/guide/external-sessions) to record that call once. Before
+registering a server someone else wrote, check it for security risks with [Audit](/guide/audit),
+and if its tool definitions are long and eat tokens, shrink them with [Optimize](/guide/optimize).
+See [How it works](/concepts/how-it-works) for how the pieces fit together internally.

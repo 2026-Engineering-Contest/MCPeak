@@ -40,6 +40,8 @@ MCPeak 은 그 확인을 JSON 명세와 터미널 명령으로 바꾼다. 테스
 | 서버 없이 목으로 테스트한다 | `mcpeak test suite.json --command mcpeak-mock --arg mock.json` | [목 서버](https://2026-engineering-contest.github.io/MCPeak/ko/guide/mock-server) |
 | 외부 API 호출을 녹화하고 재생한다 | `mcpeak test suite.json --record-session s.db -- node ./server.js` | [External 세션](https://2026-engineering-contest.github.io/MCPeak/ko/guide/external-sessions) |
 | 실패한 케이스를 AI 로 고친다 | `mcpeak repair bundle.json --provider claude --model <model>` | [Repair](https://2026-engineering-contest.github.io/MCPeak/ko/guide/repair) |
+| 서버를 쓰기 전에 보안 위험을 점검한다 | `mcpeak audit -- node ./server.js` | [Audit](./packages/audit) |
+| 도구 정의를 줄여 LLM 에 넘긴다 | `mcpeak optimize --out server.optimize.json -- node ./server.js` | [Optimize](./packages/optimize) |
 | 웹 UI 에서 돌린다 | `mcpeak-dashboard` | [대시보드](https://2026-engineering-contest.github.io/MCPeak/ko/guide/dashboard) |
 | CI 에 붙인다 | `mcpeak test suite.json --junit out.xml -- node ./server.js` | [CI 연동](https://2026-engineering-contest.github.io/MCPeak/ko/guide/ci) |
 
@@ -52,11 +54,11 @@ npm install -g @mcpeak/cli
 설치하면 `mcpeak` 명령이 `PATH` 에 놓인다. 한 번만 쓸 거라면 `npx @mcpeak/cli test ...` 로
 설치 없이 실행해도 된다. Node 22.18 이상이 필요하다.
 
-목 서버와 웹 UI 는 별도 패키지다. 전역 설치는 그 패키지 자신의 실행 파일만 `PATH` 에 놓으므로
-`mcpeak-mock` 과 `mcpeak-dashboard` 를 쓰려면 따로 설치해야 한다.
+목 서버와 웹 UI, 도구 정의 프록시는 별도 패키지다. 전역 설치는 그 패키지 자신의 실행 파일만 `PATH` 에 놓으므로
+`mcpeak-mock` 과 `mcpeak-dashboard`, `mcpeak-optimize-proxy` 를 쓰려면 따로 설치해야 한다.
 
 ```bash
-npm install -g @mcpeak/cli @mcpeak/mock @mcpeak/dashboard
+npm install -g @mcpeak/cli @mcpeak/mock @mcpeak/dashboard @mcpeak/optimize
 ```
 
 ## 첫 테스트
@@ -151,7 +153,9 @@ mcpeak test weather.suite.json -- node examples/weather-server/server.mjs
 사용자는 터미널에서 `cli` 를, 브라우저에서 `dashboard` 를 쓴다. `cli` 는 `generate` 로 명세를
 만들고 `runner` 로 실행하며, `runner` 는 `core` 를 거쳐 대상 MCP 서버에 stdio 나 HTTP 로 붙는다.
 `record` 는 서버가 밖으로 부르는 `fetch` 호출을 SQLite 파일에 저장했다가 재생하고, `mock` 은
-대상 서버 자리를 대신한다. `generate` 의 AI 검토는 로컬에 설치된 Claude 나 Codex CLI 로 나간다.
+대상 서버 자리를 대신한다. `audit` 는 대상 서버의 도구 정의와 프로토콜 응답을 읽어 보안 위험을
+점검하고, `optimize` 는 도구 정의를 뜻을 바꾸지 않고 줄인 오버레이를 만들어 프록시로 서빙한다.
+`generate` 의 AI 검토는 로컬에 설치된 Claude 나 Codex CLI 로 나간다.
 결과는 터미널 리포트, JUnit XML, 종료 코드로 나온다.
 
 ## 패키지
@@ -164,9 +168,11 @@ mcpeak test weather.suite.json -- node examples/weather-server/server.mjs
 | [`@mcpeak/generate`](./packages/generate) | 결정론적 baseline 과 승인형 AI 검토로 테스트 생성 |
 | [`@mcpeak/record`](./packages/record) | 녹화, 재생, 계약 스냅샷 |
 | [`@mcpeak/mock`](./packages/mock) | 목 MCP 서버(Streamable HTTP, stdio), 응답 주입 |
+| [`@mcpeak/audit`](./packages/audit) | MCP 서버 사전 보안 점검. Docker 격리 실행(`--sandbox`) |
+| [`@mcpeak/optimize`](./packages/optimize) | 도구 정의 무손실 압축, 오버레이 프록시. `mcpeak-optimize-proxy` 로 띄운다 |
 | [`@mcpeak/dashboard`](./packages/dashboard) | 로컬 웹 UI. `mcpeak-dashboard` 로 띄운다 |
 
-의존 방향은 단방향이다: `dashboard` → `cli` → `runner`/`generate`/`record`/`mock` → `core`.
+의존 방향은 단방향이다: `dashboard` → `cli` → `runner`/`generate`/`record`/`mock`/`audit`/`optimize` → `core`.
 오른쪽에 있는 하위 계층으로만 의존할 수 있다는 뜻이며, 인접 계층을 건너뛰어도 된다
 ([ADR-0091](./docs/adr/0091-패키지는-하위-계층을-직접-의존할-수-있다.md)).
 
@@ -175,7 +181,7 @@ mcpeak test weather.suite.json -- node examples/weather-server/server.mjs
 ```bash
 corepack enable       # pnpm 활성화 (packageManager 핀 사용)
 pnpm install
-pnpm build            # 7개 패키지 + 예제 서버 dist/ 생성
+pnpm build            # 9개 패키지 + 예제 서버 dist/ 생성
 pnpm typecheck
 pnpm test
 pnpm lint
@@ -191,8 +197,8 @@ node packages/cli/dist/cli.mjs test <suite.json> -- node ./server.js
 Node 22.18.0 과 Node 24 에서 검사한다.
 
 가이드 사이트의 원고는 `website/` 에 있고, main 에 푸시되면 GitHub Pages 로 배포된다.
-기여 규칙은 [CONTRIBUTING.md](./CONTRIBUTING.md)에 있다. 이 프로젝트에 참여하는 모든 사람은
-[행동 강령](./CODE_OF_CONDUCT.md)을 지킨다.
+처음 기여한다면 [기여 안내](./.github/CONTRIBUTING.md)를 본다. 팀 내부 규칙은 [CONTRIBUTING.md](./CONTRIBUTING.md)에 있다.
+이 프로젝트에 참여하는 모든 사람은 [행동 강령](./CODE_OF_CONDUCT.md)을 지킨다.
 
 ## 라이선스
 

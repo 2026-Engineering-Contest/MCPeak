@@ -26,6 +26,7 @@ mcpeak-dashboard
 | 생성 마법사 | `generate` 의 대상 선택, 시험 실행, 승인 화면 |
 | Repair 검토 | 실패한 실행의 번들로 원인 후보를 받고 검토한다 |
 | 재생 | External 세션 녹화·재생 |
+| 분석 | 토큰 탭은 [Optimize](/ko/guide/optimize)의 압축 리포트, 보안 탭은 [Audit](/ko/guide/audit)의 점검 결과 |
 | 설정 | provider 와 model 등 |
 
 ## 판정은 CLI 와 같다

@@ -2,13 +2,13 @@
 
 이 문서는 설치를 마친 다음에야 나오는 질문에 답한다.
 
-## `mcpeak-mock` 이나 `mcpeak-dashboard` 가 "command not found" 다
+## `mcpeak-mock` 이나 `mcpeak-dashboard`, `mcpeak-optimize-proxy` 가 "command not found" 다
 
 `@mcpeak/cli` 만 전역 설치했기 때문이다. npm 의 전역 설치는 그 패키지 자신의 실행 파일만 `PATH`
 에 놓는다. 의존성으로 딸려 와도 다른 패키지의 bin 은 생기지 않는다.
 
 ```bash
-npm install -g @mcpeak/mock @mcpeak/dashboard
+npm install -g @mcpeak/mock @mcpeak/dashboard @mcpeak/optimize
 ```
 
 ## 통과했는데 "거절 근거를 확인하지 못했습니다" 가 뜬다

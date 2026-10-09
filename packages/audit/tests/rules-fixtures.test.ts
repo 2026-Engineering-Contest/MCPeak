@@ -11,6 +11,7 @@ import { runProtocolRules } from "../src/rules/protocol.js";
 import { collectResultStrings, runResultRules, type ToolCallResult } from "../src/rules/result.js";
 import { runSchemaRules } from "../src/rules/schema.js";
 import { planCanaries, runSecretRules } from "../src/rules/secret.js";
+import { runSteeringRules } from "../src/rules/steering.js";
 import { compareBaseline, computeSurface, parseBaseline } from "../src/surface/index.js";
 import type { AuditBaseline, AuditTarget, Finding, RawTool } from "../src/types.js";
 import { fakeFetch, type Route } from "./helpers/fake-fetch.js";
@@ -84,6 +85,7 @@ async function runAll(fixture: Fixture): Promise<Finding[]> {
 
   const findings: Finding[] = [
     ...runDescRules(listStrings, { serverName }),
+    ...runSteeringRules(tools, { serverName }),
     ...runSchemaRules(tools),
     ...runFlowRules(tools),
     ...runSecretRules([...listStrings, ...collectResultStrings(results)], plan, forwarded),

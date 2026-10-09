@@ -1,5 +1,59 @@
 # @ohmymcp-hsu/dashboard
 
+## 0.5.0
+
+### Minor Changes
+
+- c3afbe5: Analyze 보안 탭의 서버 면. `POST /api/analyze/security` 가 `mcpeak audit --json` 과 같은 커맨드 함수를 run 으로 돌리고, `GET /api/analyze/security/<runId>` 가 리포트와 표시용 문장을 돌려준다. 판정 로직은 새로 쓰지 않는다(ADR-0046).
+- 570164b: 토큰 탭에서 오버레이 저장을 빼고 "MCP 수정하기" 를 더한다. 압축 변경 가운데 서버 소스에 글자로 있는 것만 찾아 미리보기와 확인을 거쳐 고치고, 고칠 수 없는 변경은 사유를 보인다(ADR-0106).
+- 88de983: Analyze 토큰 탭이 서버 선택과 결과를 두 단계로 나누고, 도구별 변경사항 버튼으로 원본과 압축 정의를 나란히 보여 준다.
+- d331165: Analyze 토큰 탭의 서버 면. `POST /api/analyze/tokens` 가 `mcpeak optimize` 와 같은 커맨드 함수를 돌려 오버레이·리포트를 돌려주고, `PUT /api/overlays/<path>` 가 스위트와 같은 저장 계약으로 오버레이를 쓴다. 판정 로직은 새로 쓰지 않는다(ADR-0046).
+- 35d036b: 대시보드에 Analyze 메뉴와 토큰 탭 화면을 더한다. 숫자는 `mcpeak optimize` 리포트와 같은 식으로 표기하고, 오버레이를 프로젝트 루트에 저장한다. 보안 탭은 준비 중 안내만 둔다.
+- 648f3f7: 대시보드에 "목 만들기" 화면(사이드바 Mock)을 추가한다. `mock.json` 을 폼으로 새로 만들거나 기존 파일을 열어 고칠 수 있고, 응답 줄의 `result` 칸에서 녹화본의 외부 API 응답을 골라 채울 수 있다. 응답의 도구가 폼에 없거나 args 가 도구의 입력 필드와 어긋나면 그 줄에서 바로 말하고, 고친 뒤 화면을 떠나면 버릴지 묻는다. 녹화본은 읽기만 하고, 저장 전 `assertMockDefinition` 으로 검증한다. 폼에 칸이 없는 키는 보존한다. 녹화 때 가려지지 않는 body 안의 URL 은 개수로 경고한다.
+- 7abcd7c: 사용자 모드의 사전 점검 화면(`#/user/check`)을 채운다. README 의 `mcpServers` JSON 조각, 실행 명령 한 줄, 서버 URL 을 붙여 넣으면 기존 `POST /api/analyze/security` 로 한 번 점검하고, 결과는 발견마다 고치는 법 대신 왜 위험한지를 보인다. 사전 점검을 쓰는 사람은 MCP 를 고치는 사람이 아니기 때문이다. 붙여 넣은 설정의 환경변수와 헤더는 이름만 화면에 보이고 값은 어디에도 보내지 않는다(ADR-0111). 격리 실행이 기본으로 켜져 있다. 서버 면은 바뀌지 않는다.
+- f7b42ec: 대시보드를 개발자·사용자 두 모드로 나눈다. 저장된 모드가 없는 브라우저가 빈 주소로 들어오면 모드 선택 화면(`#/welcome`)이 한 번 뜨고, 고른 뒤에는 다시 묻지 않는다. 사용자 모드의 사이드바는 `Check` 하나이고 그 화면이 사전 점검(`#/user/check`)이다. 두 모드 모두 사이드바 아래쪽 `Settings` 바로 위에 모드 전환 링크가 있다. 개발자 모드의 메뉴와 주소는 그대로다.
+- 56c1b7e: 생성 마법사 4단계에 "한 번에 검증" 옵션(기본 꺼짐)을 더한다. 켜면 승인 질문에 자동으로 답해 명세를 저장하고, 같은 서버에 `test` 를 이어 돌려 결과를 한 화면에 보여 준다. 새 `verify` 플로우는 기존 `generate`·`test` 커맨드 함수를 그대로 부른다(ADR-0046, ADR-0103). `RunIo.reviewIO` 는 `WebReviewIO` 클래스가 아니라 `ReviewIO` 인터페이스로 받는다.
+
+### Patch Changes
+
+- cf36b27: 토큰 탭의 변경사항 버튼에 강조색을 입히고, 펼친 비교에서 지운 줄과 바뀐 줄을 색으로 표시한다.
+- 5829574: MCP 수정하기 미리보기가 같은 사유의 변경을 한 줄로 묶어 보이고, 소스에서 고칠 수 있는 변경이 없으면 프록시를 안내한다.
+- 4cebed2: 사전 점검의 위험 설명과 붙여넣기 해석을 고친다.
+
+  - 위험 설명이 같은 규칙 id 의 변형을 가려서 말한다. 판정하지 못한 검사(`확인 안 함:`), 로컬호스트의 평문 HTTP, 인증 헤더 없이 점검한 서버, 인증용 도구의 비밀값 인자, `destructiveHint` 를 어긴 호출이 각자의 문장을 받는다. 전에는 판정하지 못한 발견 아래에 "인증 없이도 접속을 받습니다" 가 붙었다.
+  - 과장으로 읽히는 단정 일곱 곳을 고치고 `surface/environment-dependent` 의 문장을 더했다.
+  - 붙여 넣은 환경변수 값이 인자로 나가는 꼴을 막는다. `sudo KEY=value 명령`, `npx cross-env KEY=value 명령`, `sh -c "KEY=value 명령"`, `export KEY=value && 명령`, 셸 연산자가 든 줄은 거절하고, `docker run -e KEY=value` 는 그 쌍을 걷어 내 이름만 남긴다. 거절 문장에는 이름만 싣는다.
+  - `env -C <디렉터리>` 는 조용히 버리지 않고 거절한다.
+
+- 054657e: 보안 탭이 점검 시작 즉시 점검 단계로 넘어가고, 결과 화면이 심각도를 색과 배지로 구분한다.
+- dad804c: 실행 화면의 상태 문구를 문장마다 한 줄로 나눈다. 통 문자열을 브라우저 줄바꿈에 맡기면 한국어가 글자 단위로 끊겨 "나옵니다" 가 "나옵" 과 "니다." 로 쪼개졌다. 이제 줄은 문장 경계에서만 나뉜다.
+- Updated dependencies [56954eb]
+- Updated dependencies [0047003]
+- Updated dependencies [fb511b8]
+- Updated dependencies [798891a]
+- Updated dependencies [5c87e79]
+- Updated dependencies [ab15a0a]
+- Updated dependencies [8ea349b]
+- Updated dependencies [1016a30]
+- Updated dependencies [e2a3953]
+- Updated dependencies [56c1b7e]
+- Updated dependencies [14c637c]
+- Updated dependencies [68c38a8]
+- Updated dependencies [5318801]
+- Updated dependencies [3d3a8c5]
+- Updated dependencies [dca0cd3]
+- Updated dependencies [f4248d9]
+- Updated dependencies [4aa22e6]
+- Updated dependencies [90d9682]
+- Updated dependencies [cac23a3]
+  - @mcpeak/audit@0.2.0
+  - @mcpeak/cli@0.13.0
+  - @mcpeak/core@0.6.0
+  - @mcpeak/optimize@0.2.0
+  - @mcpeak/runner@0.11.1
+  - @mcpeak/generate@0.8.1
+  - @mcpeak/mock@0.4.3
+
 ## 0.4.0
 
 ### Minor Changes

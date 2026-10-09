@@ -14,7 +14,7 @@ mcpeak help [명령]
 
 ## 서버를 지정하는 세 가지 방법
 
-`test` 와 `generate` 가 같은 방법을 받는다. 셋 중 하나만 쓴다.
+`test` · `generate` · `optimize` · `audit` 가 같은 방법을 받는다. 셋 중 하나만 쓴다.
 
 | 형태 | 뜻 |
 |---|---|
@@ -112,14 +112,63 @@ mcpeak repair <bundle.json> --provider <codex|claude> --model <model>
 | `--no-stderr` | 끔 | 서버 stderr 를 전송에서 뺀다 |
 | `--yes` | 끔 | 전송 확인 화면을 건너뛴다 |
 
+## optimize
+
+```
+mcpeak optimize --out <overlay.json> <서버 지정> [--json]
+```
+
+서버의 `tools/list` 를 읽어 뜻을 바꾸지 않고 줄인 오버레이를 만든다. 리포트는 stdout 에 나간다.
+흐름과 변환 목록은 [Optimize](/ko/guide/optimize)에 있다.
+
+| 옵션 | 기본값 | 뜻 |
+|---|---|---|
+| `--out <overlay.json>` | 필수 | 오버레이를 쓸 경로. 파일이 있으면 덮어쓴다. 서버가 바뀌면 같은 명령으로 다시 만들기 때문이다 |
+| `--json` | 끔 | 리포트 대신 오버레이 JSON 을 stdout 에 낸다 |
+
+만든 오버레이는 `mcpeak-optimize-proxy` 로 서빙한다. 바뀌는 것은 `tools/list` 뿐이고 도구
+이름·인자·호출 결과는 원본과 같다. 공통 파라미터 설명은 서버 instructions 로 옮겨지므로,
+instructions 를 모델에 보여 주지 않는 클라이언트에서는 그 설명이 모델에 닿지 않는다.
+
+## audit
+
+```
+mcpeak audit <서버 지정>
+             [--probe readonly|none|all] [--baseline <path>] [--update-baseline]
+             [--sandbox [--sandbox-session <path> | --sandbox-replay <path>]
+                        [--allow-host <host> ...] [--compare-host] [--sandbox-mount <dir>]]
+             [--json]
+```
+
+서버를 쓰기 전에 도구 정의와 프로토콜의 보안 위험을 점검한다. 심각·주의 발견이 있으면 2,
+없으면 0, 연결·입력 실패는 1 을 낸다. 권한 조합 경고와 정보 발견은 종료 코드에 넣지 않는다.
+검사 가족과 결과 읽는 법은 [Audit](/ko/guide/audit)에 있다.
+
+| 옵션 | 기본값 | 뜻 |
+|---|---|---|
+| `--probe <정책>` | `readonly` | 도구를 실제로 호출할 범위. `readonly` 는 readOnlyHint 가 true 인 도구만, `none` 은 호출하지 않고 응답 검사를 건너뛴다, `all` 은 모든 도구를 부르므로 버려도 되는 환경에서만 쓴다. `--sandbox` 로 격리가 실제로 켜진 실행은 기본값이 `all` 이다 |
+| `--baseline <path>` | 없음 | 도구 정의의 기준 파일. 없으면 만들고, 있으면 지금 정의와 비교해 바뀐 도구를 알린다 |
+| `--update-baseline` | 끔 | 비교하지 않고 기준 파일을 지금 정의로 다시 쓴다. `--baseline` 과 함께 써야 한다 |
+| `--json` | 끔 | 리포트 대신 결과 JSON 을 stdout 에 낸다. 같은 서버에 같은 명령이면 바이트까지 같다 |
+| `--sandbox` | 끔 | 서버를 Docker 컨테이너 안에서 띄우고 모든 도구를 불러 파일·프로세스·네트워크 행위를 관측한다. `node`·`npx`·`npm` 으로 띄우는 서버만 격리하고, 켜지 못하면 격리 없이 이 머신에서 돌며 리포트 둘째 줄이 그 사실을 말한다. `--url` 과 함께 쓸 수 없다 |
+| `--sandbox-session <path>` | 없음 | 격리 안의 서버가 주고받은 HTTP 왕복을 이 파일에 녹화한다 |
+| `--sandbox-replay <path>` | 없음 | 이 세션 파일로만 답한다. 상류에 접속하지 않는다. `--sandbox-session` 과 함께 쓸 수 없다 |
+| `--allow-host <host>` | 없음 | 선언된 목적지에 더한다. 반복할 수 있다. 그 호스트와 하위 도메인으로 가는 접속을 서버가 선언한 것으로 취급한다 |
+| `--compare-host` | 끔 | 이 머신에서 격리 없이 서버를 한 번 더 띄워 `tools/list` 만 받고 격리 안의 도구 표면과 비교한다. 도구는 호출하지 않지만 서버의 시작 코드는 이 머신에서 실행된다 |
+| `--sandbox-mount <dir>` | 가장 가까운 `pnpm-workspace.yaml` 또는 `.git` 의 디렉터리 | 컨테이너에 읽기 전용으로 보일 호스트 디렉터리. 홈 디렉터리와 `/` 는 줄 수 없다 |
+
+stdio 서버를 띄울 때 `GITHUB_TOKEN` 같은 흔한 비밀 이름에 가짜 값(카나리)을 넣는다. `--env`
+로 넘긴 이름에는 카나리 대신 실제 값이 간다. 어느 값도 출력에 쓰지 않는다.
+
 ## 별도 실행 파일
 
 | 명령 | 패키지 | 뜻 |
 |---|---|---|
 | `mcpeak-mock <definition.json>` | `@mcpeak/mock` | 정의 파일로 stdio 목 서버를 띄운다. [목 서버](/ko/guide/mock-server) |
+| `mcpeak-optimize-proxy <overlay.json> (-- <서버 명령> \| --url <URL>)` | `@mcpeak/optimize` | 오버레이를 서빙하는 stdio 프록시. `tools/call` 은 원본 서버로 전달한다. [Optimize](/ko/guide/optimize) |
 | `mcpeak-dashboard [--port <번호>]` | `@mcpeak/dashboard` | 로컬 웹 UI. 기본 포트 7357, `0` 이면 자동. [대시보드](/ko/guide/dashboard) |
 
-전역 설치는 그 패키지의 실행 파일만 놓으므로 셋을 각각 설치한다.
+전역 설치는 그 패키지의 실행 파일만 놓으므로 넷을 각각 설치한다.
 
 ## 오류 코드
 

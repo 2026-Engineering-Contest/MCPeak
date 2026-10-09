@@ -16,6 +16,7 @@ export { PROTOCOL_RULES, runProtocolRules } from "./rules/protocol.js";
 export { RESULT_RULES, runResultRules } from "./rules/result.js";
 export { runSchemaRules, SCHEMA_RULES } from "./rules/schema.js";
 export { planCanaries, runSecretRules, SECRET_RULES } from "./rules/secret.js";
+export { runSteeringRules, STEERING_SIGNALS, STEERING_THRESHOLDS } from "./rules/steering.js";
 export {
   type SandboxBackend,
   SandboxCleanupError,

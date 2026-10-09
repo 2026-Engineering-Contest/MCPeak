@@ -73,6 +73,12 @@ export const DESC_RULES: readonly RuleInfo[] = [
     defaultSeverity: "low",
     summary: "스키마 표준 밖의 필드에 긴 문자열이 있다",
   },
+  {
+    id: "desc/steering",
+    family: "desc",
+    defaultSeverity: "medium",
+    summary: "설명이 모델의 도구 사용을 조종한다. 신호 점수가 35 이상이면 medium, 22 이상이면 low",
+  },
 ];
 
 // ── 문형 (§3.2). folded 형(소문자)을 기준으로 쓴다. raw 형에는 대소문자 무시 사본을 쓴다. ──

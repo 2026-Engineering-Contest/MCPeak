@@ -198,6 +198,7 @@ Node 22.18.0 과 Node 24 에서 검사한다.
 
 가이드 사이트의 원고는 `website/` 에 있고, main 에 푸시되면 GitHub Pages 로 배포된다.
 처음 기여한다면 [기여 안내](./.github/CONTRIBUTING.md)를 본다. 팀 내부 규칙은 [CONTRIBUTING.md](./CONTRIBUTING.md)에 있다.
+이 프로젝트에 참여하는 모든 사람은 [행동 강령](./CODE_OF_CONDUCT.md)을 지킨다.
 
 ## 라이선스
 

@@ -1,4 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <title>MCPeak</title>
   <!-- packages/dashboard/web/src/components/Logo.tsx 와 같은 로고. 테마를 타지 않는 고정 다크 사각형이다. -->
   <defs>
     <linearGradient id="mcpeak-logo-line" x1="0" y1="1" x2="1" y2="0">

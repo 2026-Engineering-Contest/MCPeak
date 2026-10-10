@@ -1,5 +1,15 @@
 # @ohmymcp-hsu/dashboard
 
+## 0.5.1
+
+### Patch Changes
+
+- bca2d19: 보안 탭과 사전 점검의 위험 설명에 `desc/steering` 전용 문장을 더한다. audit 가 새로 내는 이 발견이 가족 공통 문장으로 떨어지지 않는다.
+- Updated dependencies [66e054d]
+- Updated dependencies [296acb7]
+  - @mcpeak/audit@0.3.0
+  - @mcpeak/cli@0.14.0
+
 ## 0.5.0
 
 ### Minor Changes

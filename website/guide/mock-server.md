@@ -153,6 +153,10 @@ Sensitive key values, headers, and URL paths are already redacted at recording t
 inside a body are not, so a warning appears when an imported body contains URLs. Saving is not
 blocked.
 
+The warning only counts **string values that are entirely an absolute http(s) URL**. A URL embedded
+in a sentence, such as `"see https://…?token=…"`, is not counted, so read through the `result`
+before saving even when no warning appears.
+
 ```
 → 이 응답 본문에 URL 이 2개 있습니다. 녹화 때 가려지지 않는 자리라 자격증명이 담겼을 수 있습니다.
 → 저장 전에 result 에서 해당 값을 확인하세요.

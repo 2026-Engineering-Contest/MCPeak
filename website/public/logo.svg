@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <title>MCPeak</title>
+  <!-- packages/dashboard/web/src/components/Logo.tsx 와 같은 로고. 테마를 타지 않는 고정 다크 사각형이다. -->
+  <defs>
+    <linearGradient id="mcpeak-logo-line" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#a78bfa"/>
+      <stop offset="1" stop-color="#7c3aed"/>
+    </linearGradient>
+  </defs>
+  <rect x="0.5" y="0.5" width="31" height="31" rx="8" fill="#0d0d12" stroke="#2a2a33"/>
+  <g transform="translate(4.48 4.48) scale(0.96)">
+    <polyline points="3 18 10 11 13.5 14.5 19.5 8.5" stroke="url(#mcpeak-logo-line)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="19.5" cy="6.5" r="3.5" fill="#4ade80"/>
+    <polyline points="17.9 6.6 19.1 7.8 21.2 5.5" stroke="#0d0d12" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

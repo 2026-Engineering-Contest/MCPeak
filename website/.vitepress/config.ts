@@ -103,10 +103,9 @@ export default defineConfig({
         },
       },
     },
-    socialLinks: [
-      { icon: "github", link: "https://github.com/2026-Engineering-Contest/MCPeak" },
-      { icon: "npm", link: "https://www.npmjs.com/package/@mcpeak/cli" },
-    ],
+    logo: "/logo.svg",
+    // GitHub 은 첫 페이지 hero 와 푸터에 있으므로 상단 바에서는 뺀다.
+    socialLinks: [{ icon: "npm", link: "https://www.npmjs.com/package/@mcpeak/cli" }],
     outline: "deep",
   },
   locales: {

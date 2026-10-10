@@ -119,6 +119,45 @@ An injected rejection, a schema violation, and a match miss are all `isError: tr
 differs. The latter two are diagnostic sentences the mock writes itself; only the first is a
 designed statement that says this is how the server rejects.
 
+## Filling responses from a recording
+
+Instead of making up a `result`, you can fill it with what the real external API returned. If you
+have a session file recorded with an [External session](/guide/external-sessions)
+(`mcpeak test --record-session`), pick a response body from it on the Mock screen of the
+[dashboard](/guide/dashboard).
+
+```bash
+mcpeak test suite.json --record-session weather.session.db -- node ./server.mjs
+mcpeak-dashboard
+```
+
+1. Under **Mock** in the sidebar, start a new mock or open an existing definition file.
+2. On a response card, click **[녹화본에서 가져오기]** (import from recording) and choose a recording.
+3. Preview a body in the list of external calls and click **[이걸로 채우기]** (fill with this).
+   Only that row's `result` changes; the tool, `args`, and `isError` stay as they are. If the field
+   already has a value, you are asked before it is replaced.
+4. Saving runs the definition check (`assertMockDefinition`) and writes the file. Start it with
+   `mcpeak-mock` as usual.
+
+Only calls that got a response can be picked. Calls that ended in an exception or whose recording
+never finished have no body, so they are listed but not selectable. The recording is read only;
+nothing starts a server or records anew.
+
+::: warning A recording holds what the server received, not what it answers
+The recording holds the body the server got from the external API. A mock's `result` is the answer
+the server gives its client. If the real server pulls values out of that response and answers in a
+different shape, edit the imported `result` into that shape.
+:::
+
+Sensitive key values, headers, and URL paths are already redacted at recording time. URL strings
+inside a body are not, so a warning appears when an imported body contains URLs. Saving is not
+blocked.
+
+```
+→ 이 응답 본문에 URL 이 2개 있습니다. 녹화 때 가려지지 않는 자리라 자격증명이 담겼을 수 있습니다.
+→ 저장 전에 result 에서 해당 값을 확인하세요.
+```
+
 ## Design-first workflow
 
 Validating a design before building the server is the main use of a mock. It starts from zero

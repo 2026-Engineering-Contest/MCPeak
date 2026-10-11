@@ -32,7 +32,7 @@
 | `@mcpeak/runner` | 명세 실행, 단언, 실패 메시지, 보고서와 JUnit |
 | `@mcpeak/generate` | 스키마에서 결정론적 baseline 생성, 승인형 AI 검토 |
 | `@mcpeak/record` | 서버가 밖으로 부르는 HTTP 의 녹화·재생 |
-| `@mcpeak/mock` | 목 MCP 서버(stdio · Streamable HTTP) |
+| `@mcpeak/mock` | 목 MCP(stdio · Streamable HTTP) |
 | `@mcpeak/audit` | 서버를 쓰기 전의 보안 점검, Docker 격리 안의 행위 관측 |
 | `@mcpeak/optimize` | 도구 정의의 무손실 압축, 오버레이를 서빙하는 프록시 |
 | `@mcpeak/cli` | 진입점. 얇게 유지한다 |

@@ -906,7 +906,7 @@ export const PERSONA_TERMINALS: Record<
     ],
   },
   user: {
-    title: "zsh — some-mcp-server",
+    title: "zsh — audit-target-server",
     lines: [
       [
         { tone: "dim", text: "$ " },

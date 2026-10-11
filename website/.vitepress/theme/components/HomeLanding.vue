@@ -6,8 +6,10 @@ import {
   DEMO_COMMAND,
   INSTALL_COMMAND,
   type LandingIcon,
+  type LandingPersonaId,
   type LogLine,
   landingCopy,
+  PERSONA_TERMINALS,
   REPO_URL,
 } from "../landing-copy";
 
@@ -36,6 +38,39 @@ const markOf = (line: LogLine): string =>
         : line.kind === "fix"
           ? "해결: "
           : "";
+
+// ── 나는 MCP [개발자 / 사용자] 입니다 ─────────────────────────────────────────
+
+const PERSONA_IDS: readonly LandingPersonaId[] = ["developer", "user"];
+const persona = ref<LandingPersonaId>("developer");
+const activePersona = computed(
+  () =>
+    copy.value.personas.items.find((item) => item.id === persona.value) ??
+    copy.value.personas.items[0],
+);
+const personaTerminal = computed(() => PERSONA_TERMINALS[persona.value]);
+const dashScreen = computed(() => activePersona.value.dashboard.screen);
+const personaTabs = ref<HTMLButtonElement[]>([]);
+
+/** 라디오 그룹의 좌우 화살표 · Home · End. 포커스와 선택을 함께 옮긴다. */
+function onPersonaKey(event: KeyboardEvent): void {
+  const now = PERSONA_IDS.indexOf(persona.value);
+  const last = PERSONA_IDS.length - 1;
+  const next =
+    event.key === "ArrowRight"
+      ? (now + 1) % PERSONA_IDS.length
+      : event.key === "ArrowLeft"
+        ? (now + last) % PERSONA_IDS.length
+        : event.key === "Home"
+          ? 0
+          : event.key === "End"
+            ? last
+            : -1;
+  if (next < 0) return;
+  event.preventDefault();
+  persona.value = PERSONA_IDS[next];
+  personaTabs.value[next]?.focus();
+}
 
 // ── 설치 명령 복사 ──────────────────────────────────────────────────────
 
@@ -257,6 +292,11 @@ const ICON_PATHS: Record<LandingIcon, string> = {
     "M4.5 4h15A1.5 1.5 0 0 1 21 5.5v4a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 9.5v-4A1.5 1.5 0 0 1 4.5 4zM4.5 13h15a1.5 1.5 0 0 1 1.5 1.5v4a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18.5v-4A1.5 1.5 0 0 1 4.5 13zM7 7.5h.01M7 16.5h.01",
   record: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z",
   shield: "M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6zM9 12l2 2 4-4",
+  shrink: "M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7",
+  layout: "M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zM3 9h18M9 21V9",
+  wrench:
+    "M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.8-3.8a6 6 0 0 1-7.9 7.9l-6.9 6.9a2.1 2.1 0 0 1-3-3l6.9-6.9a6 6 0 0 1 7.9-7.9z",
+  box: "M21 8l-9-5-9 5v8l9 5 9-5zM3 8l9 5 9-5M12 13v8",
 };
 
 const DOC_ICON_PATHS = {
@@ -264,6 +304,9 @@ const DOC_ICON_PATHS = {
   book: "M4 4h6a3 3 0 0 1 3 3v13a2 2 0 0 0-2-2H4zM20 4h-6a3 3 0 0 0-3 3v13a2 2 0 0 1 2-2h7z",
   code: "M8 6l-5 6 5 6M16 6l5 6-5 6",
   gear: "M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6zM12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1",
+  shield: ICON_PATHS.shield,
+  shrink: ICON_PATHS.shrink,
+  layout: ICON_PATHS.layout,
 } as const;
 
 const GITHUB_PATH =
@@ -361,105 +404,170 @@ const GITHUB_PATH =
       </div>
     </section>
 
-    <!-- 기능 -->
-    <section class="section">
-      <header class="section-head">
-        <p class="eyebrow">{{ copy.features.eyebrow }}</p>
-        <h2 class="section-title">{{ copy.features.title }}</h2>
-        <p class="section-lead">{{ copy.features.lead }}</p>
-      </header>
-      <div class="grid grid-3">
-        <article v-for="card in copy.features.cards" :key="card.title" class="card">
-          <div class="card-icon">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path :d="ICON_PATHS[card.icon]" />
-              <circle v-if="card.icon === 'record'" cx="12" cy="12" r="3.5" fill="currentColor" />
-            </svg>
-          </div>
-          <h3 class="card-title">{{ card.title }}</h3>
-          <p class="card-text">
-            <template v-for="(seg, k) in segments(card.details)" :key="k"><code v-if="seg.code">{{ seg.text }}</code><template v-else>{{ seg.text }}</template></template>
-          </p>
-        </article>
+    <!-- 나는 MCP [개발자 | 사용자] 입니다. 여기서 고른 사람에 따라 아래 섹션이 전부 바뀐다 -->
+    <section class="chooser">
+      <div class="chooser-inner">
+        <h2 class="chooser-sentence">
+          <span>{{ copy.personas.before }}</span>
+          <span class="chooser-switch" role="radiogroup" :aria-label="copy.personas.choiceLabel" @keydown="onPersonaKey">
+            <button
+              v-for="(item, i) in copy.personas.items"
+              :key="item.id"
+              :ref="(el) => { if (el) personaTabs[i] = el as HTMLButtonElement; }"
+              type="button"
+              role="radio"
+              class="chooser-option"
+              :aria-checked="persona === item.id"
+              :tabindex="persona === item.id ? 0 : -1"
+              @click="persona = item.id"
+            >{{ item.choice }}</button>
+          </span>
+          <span>{{ copy.personas.after }}</span>
+        </h2>
+        <p class="chooser-question" aria-live="polite">{{ activePersona.question }}</p>
       </div>
     </section>
 
-    <!-- 대시보드 -->
-    <section class="dash">
-      <div class="dash-inner">
-        <div class="dash-copy">
-          <p class="eyebrow">{{ copy.dashboard.eyebrow }}</p>
-          <h2 class="section-title dash-title">{{ copy.dashboard.title[0] }}<br />{{ copy.dashboard.title[1] }}</h2>
-          <p class="dash-lead">
-            <template v-for="(seg, k) in segments(copy.dashboard.lead)" :key="k"><code v-if="seg.code">{{ seg.text }}</code><template v-else>{{ seg.text }}</template></template>
-          </p>
-          <ul class="dash-points">
-            <li v-for="point in copy.dashboard.points" :key="point">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10" /></svg>
-              {{ point }}
+    <div :key="activePersona.id" class="persona-scope">
+      <!-- 기능 -->
+      <section class="section persona">
+        <div class="persona-panel">
+          <ol class="persona-list">
+            <li v-for="feature in activePersona.features" :key="feature.title" class="persona-row">
+              <span class="persona-when">{{ feature.when }}</span>
+              <div class="persona-what">
+                <h3 class="card-title persona-title">
+                  <span class="persona-icon">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <path :d="ICON_PATHS[feature.icon]" />
+                      <circle v-if="feature.icon === 'record'" cx="12" cy="12" r="3.5" fill="currentColor" />
+                    </svg>
+                  </span>
+                  {{ feature.title }}
+                </h3>
+                <p class="card-text">
+                  <template v-for="(seg, k) in segments(feature.details)" :key="k"><code v-if="seg.code">{{ seg.text }}</code><template v-else>{{ seg.text }}</template></template>
+                </p>
+                <code class="persona-cmd">{{ feature.command }}</code>
+              </div>
             </li>
-          </ul>
-          <code class="dash-cmd">npm install -g @mcpeak/dashboard &amp;&amp; mcpeak-dashboard</code>
-        </div>
+          </ol>
 
-        <div class="term dash-window" aria-hidden="true">
-          <div class="term-bar">
-            <span class="dot" /><span class="dot" /><span class="dot" />
-            <span class="dash-url">localhost:7357</span>
-          </div>
-          <div class="dash-body">
-            <div class="dash-menu">
-              <span v-for="(item, i) in copy.dashboard.menu" :key="item" :class="{ active: i === 0 }">{{ item }}</span>
+          <div class="persona-side">
+            <div class="term persona-term">
+              <div class="term-bar">
+                <span class="dot" /><span class="dot" /><span class="dot" />
+                <span class="term-title">{{ personaTerminal.title }}</span>
+              </div>
+              <div class="persona-term-body">
+                <div v-for="(line, j) in personaTerminal.lines" :key="j" class="persona-term-line">
+                  <span v-for="(part, k) in line" :key="k" :class="`t-${part.tone}`">{{ part.text }}</span>
+                </div>
+              </div>
             </div>
-            <div class="dash-main">
-              <span class="dash-label">{{ copy.dashboard.suitesLabel }}</span>
-              <div class="dash-row"><span class="led ok" /><span class="dash-file">weather.suite.json</span><span class="c-ok">{{ copy.dashboard.statusPassed }}</span></div>
-              <div class="dash-row is-fail"><span class="led fail" /><span class="dash-file">calendar.suite.json</span><span class="c-fail">{{ copy.dashboard.statusFailed }}</span></div>
-              <div class="dash-row"><span class="led idle" /><span class="dash-file">search.suite.json</span><span class="c-dim-2">{{ copy.dashboard.statusNotRun }}</span></div>
-              <div class="dash-run">
-                <span class="dash-input">node ./server.mjs</span>
-                <span class="dash-run-btn">{{ copy.dashboard.runLabel }}</span>
+            <nav class="persona-start" :aria-label="copy.personas.startLabel">
+              <span class="persona-start-label">{{ copy.personas.startLabel }}</span>
+              <template v-for="(link, k) in activePersona.start" :key="link.link">
+                <span v-if="k > 0" class="persona-start-sep" aria-hidden="true">→</span>
+                <a :href="href(link.link)">{{ link.text }}</a>
+              </template>
+            </nav>
+          </div>
+        </div>
+      </section>
+
+      <!-- 대시보드 -->
+      <section class="dash">
+        <div class="dash-inner">
+          <div class="dash-copy">
+            <p class="eyebrow">{{ copy.dashboard.eyebrow }}</p>
+            <h2 class="section-title dash-title">{{ activePersona.dashboard.title[0] }}<br />{{ activePersona.dashboard.title[1] }}</h2>
+            <p class="dash-lead">
+              <template v-for="(seg, k) in segments(activePersona.dashboard.lead)" :key="k"><code v-if="seg.code">{{ seg.text }}</code><template v-else>{{ seg.text }}</template></template>
+            </p>
+            <ul class="dash-points">
+              <li v-for="point in activePersona.dashboard.points" :key="point">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10" /></svg>
+                {{ point }}
+              </li>
+            </ul>
+            <code class="dash-cmd">{{ activePersona.dashboard.command }}</code>
+          </div>
+
+          <div class="term dash-window" aria-hidden="true">
+            <div class="term-bar">
+              <span class="dot" /><span class="dot" /><span class="dot" />
+              <span class="dash-url">localhost:7357</span>
+            </div>
+            <div class="dash-body">
+              <div class="dash-menu">
+                <span v-for="(item, i) in copy.dashboard.menu" :key="item" :class="{ active: i === activePersona.dashboard.activeMenu }">{{ item }}</span>
+              </div>
+              <div v-if="dashScreen.kind === 'suites'" class="dash-main">
+                <span class="dash-label">{{ dashScreen.label }}</span>
+                <div class="dash-row"><span class="led ok" /><span class="dash-file">weather.suite.json</span><span class="c-ok">{{ dashScreen.passed }}</span></div>
+                <div class="dash-row is-fail"><span class="led fail" /><span class="dash-file">calendar.suite.json</span><span class="c-fail">{{ dashScreen.failed }}</span></div>
+                <div class="dash-row"><span class="led idle" /><span class="dash-file">search.suite.json</span><span class="c-dim-2">{{ dashScreen.notRun }}</span></div>
+                <div class="dash-run">
+                  <span class="dash-input">node ./server.mjs</span>
+                  <span class="dash-run-btn">{{ dashScreen.run }}</span>
+                </div>
+              </div>
+              <div v-else class="dash-main">
+                <div class="dash-tabs">
+                  <span v-for="(tab, i) in dashScreen.tabs" :key="tab" :class="{ active: i === dashScreen.activeTab }">{{ tab }}</span>
+                  <span class="dash-summary c-fail">{{ dashScreen.summary }}</span>
+                </div>
+                <div v-for="finding in dashScreen.findings" :key="finding.rule" class="dash-row" :class="{ 'is-fail': finding.level === 'crit' }">
+                  <span class="dash-badge" :class="`is-${finding.level}`">{{ finding.badge }}</span>
+                  <span class="dash-file">{{ finding.rule }}</span>
+                  <span class="c-dim-2">{{ finding.where }}</span>
+                </div>
+                <div class="dash-run">
+                  <span class="dash-input">npx -y some-mcp-server@1.2.3</span>
+                  <span class="dash-run-btn">Audit</span>
+                </div>
               </div>
             </div>
           </div>
         </div>
-      </div>
-    </section>
+      </section>
 
-    <!-- 시작하기 -->
-    <section class="steps">
-      <div class="section">
+      <!-- 시작하기 -->
+      <section class="steps">
+        <div class="section">
+          <header class="section-head">
+            <p class="eyebrow">{{ copy.steps.eyebrow }}</p>
+            <h2 class="section-title">{{ activePersona.steps.title }}</h2>
+          </header>
+          <ol class="grid grid-3 step-list">
+            <li v-for="(step, i) in activePersona.steps.items" :key="step.title" class="step">
+              <span class="step-num">{{ i + 1 }}</span>
+              <h3 class="card-title step-title">{{ step.title }}</h3>
+              <p class="card-text step-text">
+                <template v-for="(seg, k) in segments(step.details)" :key="k"><code v-if="seg.code">{{ seg.text }}</code><template v-else>{{ seg.text }}</template></template>
+              </p>
+              <code class="step-cmd">{{ step.command }}</code>
+            </li>
+          </ol>
+        </div>
+      </section>
+
+      <!-- 문서 -->
+      <section class="section">
         <header class="section-head">
-          <p class="eyebrow">{{ copy.steps.eyebrow }}</p>
-          <h2 class="section-title">{{ copy.steps.title }}</h2>
+          <p class="eyebrow">{{ copy.docs.eyebrow }}</p>
+          <h2 class="section-title">{{ activePersona.docs.title }}</h2>
         </header>
-        <ol class="grid grid-3 step-list">
-          <li v-for="(step, i) in copy.steps.items" :key="step.title" class="step">
-            <span class="step-num">{{ i + 1 }}</span>
-            <h3 class="card-title step-title">{{ step.title }}</h3>
-            <p class="card-text step-text">
-              <template v-for="(seg, k) in segments(step.details)" :key="k"><code v-if="seg.code">{{ seg.text }}</code><template v-else>{{ seg.text }}</template></template>
-            </p>
-            <code class="step-cmd">{{ step.command }}</code>
-          </li>
-        </ol>
-      </div>
-    </section>
-
-    <!-- 문서 -->
-    <section class="section">
-      <header class="section-head">
-        <p class="eyebrow">{{ copy.docs.eyebrow }}</p>
-        <h2 class="section-title">{{ copy.docs.title }}</h2>
-      </header>
-      <div class="grid grid-4">
-        <a v-for="card in copy.docs.cards" :key="card.title" class="card doc-card" :href="href(card.link)">
-          <svg class="doc-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path :d="DOC_ICON_PATHS[card.icon]" /></svg>
-          <span class="doc-title">{{ card.title }}</span>
-          <span class="card-text">{{ card.details }}</span>
-        </a>
-      </div>
-    </section>
+        <div class="grid grid-4">
+          <a v-for="card in activePersona.docs.cards" :key="card.title" class="card doc-card" :href="href(card.link)">
+            <svg class="doc-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path :d="DOC_ICON_PATHS[card.icon]" /></svg>
+            <span class="doc-title">{{ card.title }}</span>
+            <span class="card-text">{{ card.details }}</span>
+          </a>
+        </div>
+      </section>
+    </div>
 
     <!-- 푸터 -->
     <footer class="foot">
@@ -1026,6 +1134,284 @@ const GITHUB_PATH =
   border-radius: 4px;
 }
 
+/* ── 나는 MCP [개발자 / 사용자] 입니다 ── */
+
+/* 문장 하나에서 괄호 자리만 고른다: 나는 MCP [개발자 | 사용자] 입니다 */
+.chooser {
+  border-top: 1px solid var(--vp-c-divider);
+  border-bottom: 1px solid var(--vp-c-divider);
+  background: var(--vp-c-bg-alt);
+}
+
+.chooser-inner {
+  max-width: 1152px;
+  margin: 0 auto;
+  padding: 72px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  text-align: center;
+}
+
+.chooser-sentence {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 12px 18px;
+  font-size: 44px;
+  line-height: 56px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--vp-c-text-1);
+  border: 0;
+  padding: 0;
+}
+
+.chooser-switch {
+  display: inline-flex;
+  padding: 6px;
+  gap: 4px;
+  border-radius: 16px;
+  border: 2px solid var(--vp-c-brand-1);
+  background: var(--vp-c-bg);
+}
+
+.chooser-option {
+  padding: 2px 22px;
+  border-radius: 10px;
+  border: 0;
+  background: transparent;
+  color: var(--vp-c-text-3);
+  font: inherit;
+  letter-spacing: inherit;
+  cursor: pointer;
+  transition:
+    background-color 0.2s,
+    color 0.2s;
+}
+
+.chooser-option:hover {
+  color: var(--vp-c-text-1);
+}
+
+.chooser-option:focus-visible {
+  outline: 2px solid var(--vp-c-brand-1);
+  outline-offset: 2px;
+}
+
+.chooser-option[aria-checked="true"] {
+  background: var(--vp-c-brand-3);
+  color: var(--vp-c-white);
+}
+
+.chooser-question {
+  margin: 0;
+  font-size: 18px;
+  line-height: 28px;
+  font-weight: 600;
+  color: var(--vp-c-brand-1);
+}
+
+.persona-scope {
+  animation: persona-in 0.3s ease-out;
+}
+
+.persona {
+  padding-top: 72px;
+}
+
+.persona-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 40px;
+  align-items: start;
+}
+
+@keyframes persona-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.persona-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--vp-c-divider);
+}
+
+.persona-row {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr);
+  gap: 6px 24px;
+  padding: 22px 0;
+  border-bottom: 1px solid var(--vp-c-divider);
+}
+
+.persona-when {
+  padding-top: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--vp-c-text-3);
+}
+
+.persona-what {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.persona-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 17px;
+}
+
+.persona-icon {
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  background: var(--vp-c-brand-soft);
+  color: var(--vp-c-brand-1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.persona-cmd {
+  align-self: flex-start;
+  max-width: 100%;
+  overflow-x: auto;
+  white-space: nowrap;
+  font-size: 12.5px;
+  line-height: 20px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--vp-c-divider);
+  background: var(--vp-c-bg-alt);
+  color: var(--vp-c-text-1);
+}
+
+.persona-side {
+  position: sticky;
+  top: calc(var(--vp-nav-height, 64px) + 24px);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.persona-term {
+  font-size: 13px;
+  line-height: 22px;
+}
+
+.persona-term-body {
+  padding: 20px 24px;
+  overflow-x: auto;
+}
+
+.persona-term-line {
+  min-height: 22px;
+  white-space: pre;
+}
+
+.t-plain {
+  color: var(--term-text);
+}
+.t-dim {
+  color: var(--term-dim);
+}
+.t-ok {
+  color: var(--term-ok);
+}
+.t-fail {
+  color: var(--term-fail);
+}
+.t-warn {
+  color: #f9b44e;
+}
+.t-brand {
+  color: var(--term-brand);
+}
+.t-bold {
+  color: var(--term-text);
+  font-weight: 600;
+}
+
+.persona-start {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  font-size: 14px;
+}
+
+.persona-start-label {
+  font-weight: 600;
+  color: var(--vp-c-text-2);
+  margin-right: 4px;
+}
+
+.persona-start a {
+  font-weight: 600;
+  color: var(--vp-c-brand-1);
+  text-decoration: none;
+}
+
+.persona-start a:hover {
+  text-decoration: underline;
+}
+
+.persona-start-sep {
+  color: var(--vp-c-text-3);
+}
+
+@media (max-width: 960px) {
+  .persona-panel {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .persona-side {
+    position: static;
+  }
+}
+
+@media (max-width: 640px) {
+  .chooser-inner {
+    padding: 56px 24px;
+  }
+  .chooser-sentence {
+    font-size: 30px;
+    line-height: 40px;
+    gap: 10px 12px;
+  }
+  .chooser-option {
+    padding: 2px 14px;
+  }
+  .persona-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .persona-when {
+    padding-top: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .persona-scope {
+    animation: none;
+  }
+}
+
 /* ── 대시보드 ── */
 
 .dash {
@@ -1177,6 +1563,49 @@ const GITHUB_PATH =
   text-overflow: ellipsis;
   white-space: nowrap;
   font-family: var(--vp-font-family-mono);
+}
+
+.dash-tabs {
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--term-dim);
+}
+
+.dash-tabs span {
+  padding: 4px 12px;
+  border-radius: 6px;
+}
+
+.dash-tabs .active {
+  background: var(--term-bar);
+  color: var(--term-text);
+  font-weight: 600;
+}
+
+.dash-tabs .dash-summary {
+  margin-left: auto;
+  padding: 0;
+  font-weight: 600;
+}
+
+.dash-badge {
+  flex-shrink: 0;
+  padding: 0 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 20px;
+}
+.dash-badge.is-crit {
+  background: rgba(246, 111, 129, 0.16);
+  color: var(--term-fail);
+}
+.dash-badge.is-warn {
+  background: rgba(249, 180, 78, 0.16);
+  color: #f9b44e;
 }
 
 .led {

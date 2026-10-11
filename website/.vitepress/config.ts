@@ -126,7 +126,7 @@ export default defineConfig({
       lang: "ko",
       link: "/ko/",
       description:
-        "MCP 서버를 코드로 자동 테스트한다. 선언형 명세, 스키마 기반 생성, 목 서버, 외부 호출 녹화·재생.",
+        "MCP를 코드로 자동 테스트한다. 선언형 명세, 스키마 기반 생성, 목 서버, 외부 호출 녹화·재생.",
       themeConfig: {
         nav: [
           { text: "빠른 시작", link: "/ko/quick-start" },

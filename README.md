@@ -1,6 +1,6 @@
 <h1 align="center">MCPeak</h1>
 
-<p align="center"><b>MCP 서버를 코드로 자동 테스트하는 프레임워크</b><br>
+<p align="center"><b>MCP를 코드로 자동 테스트하는 프레임워크</b><br>
 서버를 띄우고, 응답을 검증하고, 외부 호출을 녹화해 재생하고, 목 서버로 대체하는 일을 명령 하나로 한다.</p>
 
 <p align="center">
@@ -148,10 +148,10 @@ mcpeak test weather.suite.json -- node examples/weather-server/server.mjs
 
 ## 구조
 
-<p align="center"><img src="./docs/assets/architecture.png" alt="MCPeak 시스템 구조. 사용자는 터미널로 cli 를, 브라우저로 dashboard 를 쓴다. cli 는 generate 로 명세를 만들고 runner 로 실행하며, runner 는 core 를 통해 대상 MCP 서버에 stdio 나 HTTP 로 붙는다. record 는 서버가 밖으로 부르는 fetch 호출을 SQLite 에 저장하고 재생한다. mock 은 대상 서버를 대신한다. generate 의 AI 검토는 Claude 나 Codex CLI 로 나가고, 결과는 리포트, JUnit XML, 종료 코드로 나온다." width="100%"></p>
+<p align="center"><img src="./docs/assets/architecture.png" alt="MCPeak 시스템 구조. 사용자는 터미널로 cli 를, 브라우저로 dashboard 를 쓴다. cli 는 generate 로 명세를 만들고 runner 로 실행하며, runner 는 core 를 통해 대상 MCP에 stdio 나 HTTP 로 붙는다. record 는 서버가 밖으로 부르는 fetch 호출을 SQLite 에 저장하고 재생한다. mock 은 대상 서버를 대신한다. generate 의 AI 검토는 Claude 나 Codex CLI 로 나가고, 결과는 리포트, JUnit XML, 종료 코드로 나온다." width="100%"></p>
 
 사용자는 터미널에서 `cli` 를, 브라우저에서 `dashboard` 를 쓴다. `cli` 는 `generate` 로 명세를
-만들고 `runner` 로 실행하며, `runner` 는 `core` 를 거쳐 대상 MCP 서버에 stdio 나 HTTP 로 붙는다.
+만들고 `runner` 로 실행하며, `runner` 는 `core` 를 거쳐 대상 MCP에 stdio 나 HTTP 로 붙는다.
 `record` 는 서버가 밖으로 부르는 `fetch` 호출을 SQLite 파일에 저장했다가 재생하고, `mock` 은
 대상 서버 자리를 대신한다. `audit` 는 대상 서버의 도구 정의와 프로토콜 응답을 읽어 보안 위험을
 점검하고, `optimize` 는 도구 정의를 뜻을 바꾸지 않고 줄인 오버레이를 만들어 프록시로 서빙한다.
@@ -167,8 +167,8 @@ mcpeak test weather.suite.json -- node examples/weather-server/server.mjs
 | [`@mcpeak/runner`](./packages/runner) | 선언형 테스트 실행, assertion, 구조화된 리포트 |
 | [`@mcpeak/generate`](./packages/generate) | 결정론적 baseline 과 승인형 AI 검토로 테스트 생성 |
 | [`@mcpeak/record`](./packages/record) | 녹화, 재생, 계약 스냅샷 |
-| [`@mcpeak/mock`](./packages/mock) | 목 MCP 서버(Streamable HTTP, stdio), 응답 주입 |
-| [`@mcpeak/audit`](./packages/audit) | MCP 서버 사전 보안 점검. Docker 격리 실행(`--sandbox`) |
+| [`@mcpeak/mock`](./packages/mock) | 목 MCP(Streamable HTTP, stdio), 응답 주입 |
+| [`@mcpeak/audit`](./packages/audit) | MCP 사전 보안 점검. Docker 격리 실행(`--sandbox`) |
 | [`@mcpeak/optimize`](./packages/optimize) | 도구 정의 무손실 압축, 오버레이 프록시. `mcpeak-optimize-proxy` 로 띄운다 |
 | [`@mcpeak/dashboard`](./packages/dashboard) | 로컬 웹 UI. `mcpeak-dashboard` 로 띄운다 |
 

@@ -3,7 +3,15 @@
   "version": "0.8.1",
   "private": false,
   "type": "module",
-  "description": "결정론적 baseline과 승인형 AI 검토로 MCP 테스트를 생성",
+  "description": "Generate MCP server tests from tool schemas: deterministic baseline plus approval-gated AI review",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "mcp-server",
+    "testing",
+    "test-generation",
+    "json-schema"
+  ],
   "license": "MIT",
   "engines": {
     "node": ">=22.18.0"

@@ -3,7 +3,15 @@
   "version": "0.2.0",
   "private": false,
   "type": "module",
-  "description": "MCP 도구 정의 무손실 압축 · 오버레이 프록시",
+  "description": "Lossless compression of MCP tool definitions with an overlay proxy",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "mcp-server",
+    "tool-definitions",
+    "token-optimization",
+    "proxy"
+  ],
   "license": "MIT",
   "engines": {
     "node": ">=22.18.0"

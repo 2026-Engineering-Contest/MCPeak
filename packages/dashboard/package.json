@@ -3,7 +3,15 @@
   "version": "0.5.0",
   "private": false,
   "type": "module",
-  "description": "MCPeak 대시보드 (로컬 웹 UI · CLI 플로우 구동)",
+  "description": "Local web UI for MCPeak, the MCP server testing framework",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "mcp-server",
+    "testing",
+    "dashboard",
+    "web-ui"
+  ],
   "license": "MIT",
   "engines": {
     "node": ">=22.18.0"

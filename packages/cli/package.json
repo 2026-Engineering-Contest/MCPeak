@@ -3,7 +3,15 @@
   "version": "0.13.0",
   "private": false,
   "type": "module",
-  "description": "MCPeak 프레임워크의 CLI 진입점 (얇게 유지)",
+  "description": "CLI for testing MCP servers: run test suites, generate tests, record/replay, mock, and audit",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "mcp-server",
+    "testing",
+    "test-framework",
+    "cli"
+  ],
   "license": "MIT",
   "engines": {
     "node": ">=22.18.0"

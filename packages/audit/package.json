@@ -3,7 +3,15 @@
   "version": "0.2.0",
   "private": false,
   "type": "module",
-  "description": "MCP 서버 사전 보안 점검",
+  "description": "Pre-use security audit for MCP servers, with optional Docker-sandboxed runs",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "mcp-server",
+    "security",
+    "audit",
+    "scanner"
+  ],
   "license": "MIT",
   "engines": {
     "node": ">=22.18.0"

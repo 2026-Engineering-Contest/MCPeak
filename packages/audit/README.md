@@ -1,7 +1,9 @@
+**English** · [한국어](./README.ko.md)
+
 # @mcpeak/audit
 
-MCP 서버를 쓰기 전에 도구 정의·실행 명령·프로토콜 응답을 읽고 보안 위험을 점검한다. CLI 에서는
-`mcpeak audit` 로 쓴다.
+Reads an MCP server's tool definitions, launch command, and protocol responses and checks them for security risks before you use the server. From the CLI, use it as
+`mcpeak audit`.
 
 ```
 mcpeak audit -- node ./server.mjs
@@ -12,31 +14,31 @@ mcpeak audit --json -- node ./server.mjs                           # 결과 JSON
 mcpeak audit --sandbox -- node ./server.mjs                        # Docker 격리 안에서 행위 관측
 ```
 
-종료 코드는 심각·주의 발견이 있으면 2, 없으면 0, 연결·입력 실패는 1 이다. 권한 조합 경고(`flow`)와
-정보 발견은 종료 코드에 넣지 않는다.
+The exit code is 2 when there is a critical or warning finding, 0 when there is none, and 1 on a connection or input failure. Permission combination warnings (`flow`) and
+informational findings do not affect the exit code.
 
-## 무엇을 보나
+## What it looks at
 
-| 가족 | 보는 것 |
+| Family | What it checks |
 |---|---|
-| `desc` | 도구·프롬프트·리소스·instructions 의 모든 문자열과 스키마 키 이름. 모델 지시, 숨은 부차 동작, 자동 실행 트리거, 다른 도구 섀도잉, 무관한 서비스 언급, 민감 경로, 보이지 않는 문자, ANSI 이스케이프, 인코딩된 긴 문자열, 스키마 표준 밖 필드 |
-| `schema` | 비밀값 인자, 대화를 실어 보낼 수 있는 자유 문자열 필드, readOnlyHint 와 이름의 불일치, 파괴적 이름의 destructiveHint 누락, 제약 없는 명령·경로·URL 인자 |
-| `flow` | 외부 입력 읽기·비공개 데이터 접근·외부 쓰기가 한 서버에 모두 있는 조합(경고) |
-| `launch` | 실행 명령의 인라인 코드, 원격 스크립트를 셸로 넘기기, 버전 미고정 패키지, 원격 주소 실행, 실제 env 전달 |
-| `protocol` | HTTP 평문, 무인증 수락, Origin 미검사, OAuth 메타데이터의 안전하지 않은 엔드포인트, URL 의 세션 식별자, 서버 발신 요청과 그 안의 지시, 감사 중 도구 목록 변경 |
-| `secret` | 카나리 env 의 유출, 전달한 실제 값의 반향, 설명의 비밀 이름 언급 |
-| `result` | 호출 응답의 모델 지시·보이지 않는 문자·ANSI·과대 크기·무응답 |
-| `surface` | `--baseline` 기준 파일과 지금 도구 정의의 차이. `--sandbox --compare-host` 면 격리 안과 이 머신의 도구 정의 차이도 본다 |
-| `behavior` | (`--sandbox`) 미끼 자격 증명 파일 읽기, 내부 주소 접속 시도, 자식 프로세스, readOnlyHint 와 어긋나는 쓰기·실행, 임시 디렉터리 밖 쓰기, 점검 기록 훼손 |
-| `network` | (`--sandbox`) 카나리가 실린 나가는 요청, 선언되지 않은 목적지, 내부 주소로 풀리는 이름, 인증서 고정, 이름 조회 없는 직접 IP 접속, 재생에 없는 요청 |
+| `desc` | Every string and schema key name in tools, prompts, resources, and instructions. Model instructions, hidden side effects, auto-execution triggers, shadowing of other tools, mentions of unrelated services, sensitive paths, invisible characters, ANSI escapes, long encoded strings, fields outside the schema standard |
+| `schema` | Secret arguments, free text fields that could carry the conversation, mismatch between readOnlyHint and the name, missing destructiveHint on destructive names, unconstrained command, path, and URL arguments |
+| `flow` | The combination of reading external input, accessing private data, and writing externally all in one server (warning) |
+| `launch` | Inline code in the launch command, piping remote scripts to a shell, unpinned package versions, running a remote address, forwarding real env |
+| `protocol` | Plain HTTP, accepting without authentication, no Origin check, insecure endpoints in OAuth metadata, session identifiers in URLs, server initiated requests and the instructions inside them, tool list changes during the audit |
+| `secret` | Leaks of canary env values, echoes of forwarded real values, secret names mentioned in descriptions |
+| `result` | Model instructions, invisible characters, ANSI, oversized content, and no response in call responses |
+| `surface` | The difference between the `--baseline` file and the current tool definitions. With `--sandbox --compare-host`, also the difference between the tool definitions inside isolation and on this machine |
+| `behavior` | (`--sandbox`) Reading decoy credential files, attempts to connect to internal addresses, child processes, writes and executions that contradict readOnlyHint, writes outside the temporary directory, tampering with the audit record |
+| `network` | (`--sandbox`) Outgoing requests carrying a canary, undeclared destinations, names that resolve to internal addresses, certificate pinning, direct IP connections without a name lookup, requests absent from the replay |
 
-규칙 하나하나의 조건과 문장은 `docs/plans/2026-10-03-audit-핵심-검사-구현계획.md` §3·§6 이 정본이다.
-`behavior`·`network` 와 격리 실행은 `docs/plans/2026-10-03-audit-샌드박스-행위-관측-구현계획.md` §3·§6 이 정본이다.
+The conditions and wording of each rule are defined authoritatively in §3 and §6 of `docs/plans/2026-10-03-audit-핵심-검사-구현계획.md`.
+For `behavior`, `network`, and isolated execution, §3 and §6 of `docs/plans/2026-10-03-audit-샌드박스-행위-관측-구현계획.md` are authoritative.
 
-## 격리 실행 (`--sandbox`)
+## Isolated execution (`--sandbox`)
 
-서버를 사용자 머신이 아니라 버려지는 Docker 컨테이너 안에서 띄우고, 모든 도구를 고정 페이로드로 불러 그동안
-연 파일, 띄운 프로세스, 시도한 접속, 나간 HTTP 요청을 기록한다.
+Starts the server inside a disposable Docker container instead of on your machine, calls every tool with fixed payloads, and records the files it opened, the processes it spawned,
+the connections it attempted, and the HTTP requests it sent out in the meantime.
 
 ```
 mcpeak audit --sandbox -- node ./server.mjs
@@ -46,42 +48,42 @@ mcpeak audit --sandbox --sandbox-session ./server.session.json --json -- node ./
 mcpeak audit --sandbox --sandbox-replay ./server.session.json --json -- node ./server.mjs    # 재생
 ```
 
-| 옵션 | 뜻 |
+| Option | Meaning |
 |---|---|
-| `--sandbox` | 격리 실행을 켠다. `--url` 과 함께 쓸 수 없다 |
-| `--sandbox-session <path>` | 격리 안의 서버가 주고받은 HTTP 왕복을 이 파일에 녹화한다 |
-| `--sandbox-replay <path>` | 이 세션 파일로만 답한다. 상류에 접속하지 않는다. `--sandbox-session` 과 함께 쓸 수 없다 |
-| `--allow-host <host>` | 선언된 목적지에 더한다. 반복할 수 있다. 그 호스트와 하위 도메인이 선언으로 취급된다 |
-| `--compare-host` | 이 머신에서 **격리 없이** 서버를 한 번 더 띄워 `tools/list` 만 받고 격리 안의 표면과 비교한다 |
-| `--sandbox-mount <dir>` | 컨테이너에 읽기 전용으로 보일 호스트 디렉터리 |
+| `--sandbox` | Turns on isolated execution. Cannot be used with `--url` |
+| `--sandbox-session <path>` | Records the HTTP round trips of the server inside isolation to this file |
+| `--sandbox-replay <path>` | Answers only from this session file. Never connects upstream. Cannot be used with `--sandbox-session` |
+| `--allow-host <host>` | Adds to the declared destinations. Repeatable. The host and its subdomains are treated as declared |
+| `--compare-host` | Starts the server once more on this machine **without isolation**, fetches only `tools/list`, and compares it with the surface inside isolation |
+| `--sandbox-mount <dir>` | A host directory to expose read-only to the container |
 
-알아 둘 것:
+Things to know:
 
-- **격리가 켜지지 않으면 서버는 이 머신에서 돈다.** Docker 가 없거나, 데몬이 응답하지 않거나, 명령이
-  `node`·`npx`·`npm` 이 아니면 격리 없이 같은 점검을 하고 리포트 둘째 줄이 "행위 관측 안 함: …" 으로 사유를
-  말한다. 종료 코드는 그 점검의 결과를 따른다.
-- **호출 정책의 기본값이 다르다.** 격리가 실제로 켜진 실행은 `all`(상태를 바꾸는 도구도 부른다), 켜지지 않은
-  실행은 `readonly` 다. `--probe` 를 직접 주면 어느 쪽에서도 그 값이다(ADR-0107).
-- **`--compare-host` 는 서버를 이 머신에서 격리 없이 한 번 띄운다.** 도구는 호출하지 않고 목록만 받지만,
-  서버의 시작 코드는 이 머신에서 실행된다. 격리를 알아채고 다른 도구 정의를 내는 서버를 잡는 옵션이고,
-  기본으로 꺼져 있다(ADR-0108).
-- **네트워크는 끊지 않고 가로챈다.** 컨테이너의 접속은 게이트웨이를 지나며 목적지·헤더·본문이 기록된다.
-  정상 서버는 그대로 응답을 받는다. 도구 설명·README·`package.json`·`--allow-host` 에 있는 호스트는 선언된
-  목적지라 기록(`info`)으로만 남고, 그 밖의 목적지는 발견이다. 컨테이너에는 호스트의 환경변수를 넘기지 않는다.
-- **컨테이너에 보이는 범위.** `--sandbox-mount` 를 주지 않으면 실행한 자리에서 위로 가장 가까운
-  `pnpm-workspace.yaml` 의 디렉터리, 없으면 가장 가까운 `.git` 의 디렉터리, 둘 다 없으면 실행한 자리다. 읽기
-  전용으로 호스트와 같은 경로에 붙는다. 홈 디렉터리와 `/` 는 거절한다. 서버 인자가 가리키는 파일이 그 범위
-  밖이면 거절한다.
-- **`npx`·`npm` 으로 받아 띄우는 서버.** 명령이 `npx`·`npm` 일 때만 컨테이너의 `~/.npm` 에 실행 가능한
-  임시 영역(512MB)을 연다. 실행기가 그 자리에 패키지를 받고 bin 을 실행해야 하기 때문이다. `node` 로 띄우는
-  서버에는 열지 않고 `/tmp` 는 언제나 실행 불가다(ADR-0109). 실행기가 시작하면서 그 자리에 쓰는 것은
-  발견으로 치지 않는다. 서버가 호출 중에 그 자리에 쓰거나 거기서 실행하는 것은 막지 못하고 `behavior` 발견으로만
-  드러난다. 512MB 를 넘는 패키지는 받지 못한다. 실행마다 새로 받으므로 시작이 느리다.
-- **녹화와 재생.** 같은 세션 파일로 재생한 두 실행의 `--json` 은 바이트 단위로 같다. 녹화와 재생의 출력은
-  `sandbox.network` 값 하나만 다르다. 녹화에 없는 요청이 재생에서 나오면 `network/replay-miss` 다.
-- **정리.** 컨테이너·네트워크·볼륨에는 라벨 `mcpeak.audit=1` 이 붙고 실행이 끝나면 지운다. 지우지 못하면
-  리포트를 먼저 내고 남은 것과 직접 치우는 명령을 stderr 에 낸 뒤 종료 코드 1 로 끝난다. 점검 도중 프로세스를
-  강제로 끝내면(Ctrl-C 등) 지울 기회가 없어 남는다. 그때는 아래 명령으로 치운다.
+- **If isolation does not turn on, the server runs on this machine.** Without Docker, when the daemon does not respond, or when the command is not
+  `node`, `npx`, or `npm`, the same checks run without isolation and the second line of the report gives the reason as "행위 관측 안 함: …" (behavior not observed: …).
+  The exit code follows the result of those checks.
+- **The default call policy differs.** A run with isolation actually on uses `all` (tools that change state are called too); a run without it
+  uses `readonly`. If you pass `--probe` explicitly, that value applies either way (ADR-0107).
+- **`--compare-host` starts the server once on this machine without isolation.** It fetches only the list and calls no tools, but
+  the server's startup code runs on this machine. The option catches servers that detect isolation and present different tool definitions, and
+  it is off by default (ADR-0108).
+- **The network is intercepted, not cut.** The container's connections pass through a gateway, which records destination, headers, and body.
+  A well-behaved server gets its responses as usual. Hosts that appear in tool descriptions, the README, `package.json`, or `--allow-host` are declared
+  destinations and are only logged (`info`); any other destination is a finding. The container does not receive the host's environment variables.
+- **What the container can see.** Without `--sandbox-mount`, it is the directory of the nearest
+  `pnpm-workspace.yaml` above where you ran the command, or failing that the directory of the nearest `.git`, or failing both the directory you ran it in. It is mounted
+  read-only at the same path as on the host. Your home directory and `/` are refused. If a file the server arguments point to lies outside that scope,
+  it is refused.
+- **Servers fetched and started via `npx` or `npm`.** Only when the command is `npx` or `npm` is an executable
+  temporary area (512MB) opened at the container's `~/.npm`, because the npx/npm launcher has to download the package there and execute its bin. It is not opened for servers started
+  with `node`, and `/tmp` is always non-executable (ADR-0109). What the launcher writes there on startup is
+  not counted as a finding. A server writing there or executing from there during a call is not prevented; it only surfaces as a `behavior` finding.
+  Packages larger than 512MB cannot be downloaded. Each run downloads afresh, so startup is slow.
+- **Recording and replay.** The `--json` of two runs replayed from the same session file is identical down to the byte. The outputs of recording and replay
+  differ only in the single `sandbox.network` value. A request that appears in replay but not in the recording is `network/replay-miss`.
+- **Cleanup.** Containers, networks, and volumes carry the label `mcpeak.audit=1` and are removed when the run ends. If they cannot be removed,
+  the report is emitted first, then what remains and the commands to clean it up by hand are written to stderr, and the run ends with exit code 1. If the process is
+  killed during the audit (Ctrl-C and so on), there is no chance to remove them and they remain. In that case, clean up with the commands below.
 
   ```
   docker rm -f $(docker ps -aq --filter label=mcpeak.audit=1)
@@ -89,52 +91,52 @@ mcpeak audit --sandbox --sandbox-replay ./server.session.json --json -- node ./s
   docker volume rm $(docker volume ls -q --filter label=mcpeak.audit=1)
   ```
 
-- 격리 이미지(`mcpeak-audit-sandbox:<내용 해시>`)는 첫 실행에서 만든다. 몇 분 걸릴 수 있다.
+- The isolation image (`mcpeak-audit-sandbox:<내용 해시>`, tagged with a content hash) is built on the first run. It can take a few minutes.
 
-예제는 `examples/sandbox-target-server`(일부러 취약하게 만든 표적)에 있다.
+An example is in `examples/sandbox-target-server` (a target made vulnerable on purpose).
 
-## 설계에서 정한 것
+## Design decisions
 
-- **판정은 이 컴퓨터 안에서만 한다.** 규칙은 정규식·코드포인트 표·스키마 검사·해시이고 도구 정의를
-  밖으로 보내지 않는다. 같은 입력이면 `--json` 출력이 바이트까지 같다(ADR-0104).
-- **도구 호출은 기본이 읽기 전용이다.** `--probe readonly` 는 readOnlyHint 가 true 인 도구만 부른다.
-  `all` 은 상태를 바꾸는 도구도 부르므로 버려도 되는 환경에서만 쓴다(ADR-0105).
-- **격리 안의 네트워크는 차단이 아니라 가로채기로 관측한다.** 격리가 실제로 켜진 실행만 모든 도구를
-  부른다(ADR-0107). 격리 흔적은 다 지우지 못하고, 그 자리는 안팎 표면 비교와 지속 비교가 메운다(ADR-0108).
-- **서버에 진짜 비밀을 주지 않는다.** stdio 서버를 띄울 때 흔한 비밀 이름에 카나리 값을 넣고, 응답에
-  그 값이 나오면 유출로 본다. `--env` 로 명시한 이름만 실제 값을 넘긴다. 어느 값도 출력에 쓰지 않는다.
+- **Verdicts are made only on this computer.** The rules are regular expressions, code point tables, schema checks, and hashes, and tool definitions are
+  never sent out. For the same input, the `--json` output is identical down to the byte (ADR-0104).
+- **Tool calls are read-only by default.** `--probe readonly` calls only tools whose readOnlyHint is true.
+  `all` also calls tools that change state, so use it only in a disposable environment (ADR-0105).
+- **The network inside isolation is observed by interception, not blocking.** Only runs with isolation actually on call every
+  tool (ADR-0107). Traces of isolation cannot all be erased; the inside/outside surface comparison and the persistent comparison fill that gap (ADR-0108).
+- **The server is never given real secrets.** When launching a stdio server, common secret names are filled with canary values, and if
+  that value appears in a response, it is treated as a leak. Only names given explicitly with `--env` receive their real values. No value is ever written to the output.
 
-## 한계
+## Limits
 
-`--sandbox` 없이도 정적 가족(`desc`·`schema`·`flow`·`launch`)과 `protocol`·`surface` 는 다 돌고,
-`--probe` 로 부른 도구의 호출 결과와 비밀값 반향(`result`·`secret`)도 본다. 보지 못하는 것은 `behavior`·
-`network`, 곧 서버 코드가 실제로 연 파일·띄운 프로세스·시도한 접속이다. 그래서 발견 0 이 안전하다는 뜻은
-아니다.
+Even without `--sandbox`, the static families (`desc`, `schema`, `flow`, `launch`) and `protocol` and `surface` all run,
+and the call results of tools called via `--probe` and echoes of secret values (`result`, `secret`) are examined too. What is not seen is `behavior` and
+`network`, that is, the files the server code actually opened, the processes it spawned, and the connections it attempted. So zero findings does not mean
+safe.
 
-설명문 검사는 두 층이다. 문형 규칙(`desc/injection` 등)은 정해진 표현을 찾고, 점수 규칙(`desc/steering`)은
-설명이 모델의 도구 사용을 조종하는 모양을 신호 19개로 잰다. 공개 중독 벤치마크 MCPTox 1,312 사례에서 둘을
-합친 탐지율은 원문 99.1%, 낱말을 바꿔 쓴 변형 97.3%, 겨냥한 도구의 설명에 직접 심고 말투까지 바꾼 변형
-84.3%, 다른 도구의 이름을 풀어 쓰고 말투까지 바꾼 변형 63.2% 다
-(`docs/benchmark/mcp-audit-recall/RESULTS.md`). 변형은 기계적 치환이라, 사람이 공들여 다시 쓴 설명에서는 더
-낮을 수 있다.
+Description checking has two layers. Pattern rules (`desc/injection` and others) look for specific expressions, and the scoring rule (`desc/steering`)
+measures, with 19 signals, how much a description is shaped to steer the model's tool use. On the 1,312 cases of the public poisoning benchmark MCPTox, the two
+combined detect 99.1% of the originals, 97.3% of variants with substituted wording, 84.3% of variants planted directly in the targeted tool's description with the tone also changed,
+and 63.2% of variants that spell out another tool's name with the tone also changed
+(`docs/benchmark/mcp-audit-recall/RESULTS.md`). The variants are mechanical substitutions, so the rate may be
+lower on descriptions a person has carefully rewritten.
 
-**검사 방식을 아는 공격자는 막지 못한다.** 규칙과 점수표가 이 저장소에 공개돼 있어서, 신호가 되는 낱말만
-피해 쓰면 점수 규칙은 거의 잡지 못한다(실측 1.3%). 그때 남는 것은 지우면 공격이 성립하지 않는 내용, 곧 자격
-증명 경로나 서버와 무관한 주소를 가리키는 사례뿐이고 전체의 10% 쯤이다. 점수 규칙은 영어 설명만 본다.
+**It does not stop an attacker who knows how the checks work.** The rules and the score table are public in this repository, so writing around just the words that
+act as signals leaves the scoring rule catching almost nothing (1.3% measured). What remains then is only content without which the attack would not work, that is, cases pointing to
+credential paths or to addresses unrelated to the server, about 10% of the total. The scoring rule only looks at English descriptions.
 
-점수 규칙의 주의(medium)는 정상 도구의 1% 쯤에서도 나온다. "반드시 먼저 무엇을 부르라"고 강하게 지시하는
-정상 설명이 그렇다. 발견 문장이 근거 문장과 걸린 신호를 함께 보여 주므로 읽고 판단한다.
+The scoring rule's warning (medium) also fires on about 1% of legitimate tools. Legitimate descriptions that strongly instruct "always call X first"
+are an example. The finding shows the evidence sentence together with the signals it triggered, so read it and decide.
 
-`--sandbox` 는 한 번의 실행에서 관측된 행위만 본다. 호출 횟수나 시간이 지나야 달라지는 행동, 암호화하거나
-요약해서 내보낸 값, HTTP 가 아닌 접속의 내용, 인증서 고정을 쓰는 접속의 내용은 보지 못한다. 컨테이너라는
-흔적(`/.dockerenv`, cgroup)은 지우지 못해서 격리를 알아채고 얌전히 구는 서버가 있을 수 있다. 관측되지
-않았다는 것은 없다는 증명이 아니다.
+`--sandbox` sees only the behavior observed in a single run. Behavior that changes with call count or over time, values exfiltrated in encrypted or
+summarized form, the content of non-HTTP connections, and the content of connections that use certificate pinning are not seen. Container
+traces (`/.dockerenv`, cgroup) cannot be erased, so some servers may detect isolation and behave themselves. Not
+observed is not proof of absence.
 
-## 라이브러리로 쓰기
+## Using it as a library
 
 ```ts
 import { audit, renderReport } from "@mcpeak/audit";
 ```
 
-`audit(options, dependencies)` 는 연결·파일·fetch·난수를 모두 주입받는 함수다. 꼴은 `src/audit.ts` 의
-`AuditDependencies` 에 있고, CLI 배선은 `packages/cli/src/audit-command.ts` 가 예다.
+`audit(options, dependencies)` is a function into which connections, files, fetch, and randomness are all injected. Its shape is in `AuditDependencies` in
+`src/audit.ts`, and the CLI wiring in `packages/cli/src/audit-command.ts` is an example.

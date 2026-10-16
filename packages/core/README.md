@@ -1,13 +1,15 @@
+**English** · [한국어](./README.ko.md)
+
 # @mcpeak/core
 
-`@mcpeak/core`는 MCP 서버에 붙어 handshake를 완료한 뒤 동결된 `McpClient`를 제공한다.
-transport는 두 가지다. 로컬 서버는 프로세스를 stdio로 시작해서 붙고, 원격 서버는 URL에
-Streamable HTTP로 붙는다. stdio 경로에서 서버 프로세스, stdin/stdout, bounded stderr와 종료
-수명주기는 Core가 소유한다.
+`@mcpeak/core` attaches to an MCP server, completes the handshake, and then provides a frozen `McpClient`.
+There are two transports. A local server is attached by starting its process over stdio, and a remote server is attached at a URL
+over Streamable HTTP. On the stdio path, Core owns the server process, stdin/stdout, bounded stderr, and the shutdown
+lifecycle.
 
-## 공개 API
+## Public API
 
-간단히 사용할 때는 `connect`로 동결된 클라이언트만 받을 수 있다.
+For simple use, `connect` gives you just the frozen client.
 
 ```ts
 import { connect } from "@mcpeak/core";
@@ -31,8 +33,8 @@ try {
 }
 ```
 
-CLI나 다른 composition root에서 정상 종료와 즉시 강제 종료를 구분해야 하면 `connectStdio`를
-사용한다.
+When the CLI or another composition root needs to distinguish a graceful shutdown from an immediate forced shutdown, use
+`connectStdio`.
 
 ```ts
 import { connectStdio } from "@mcpeak/core";
@@ -55,31 +57,31 @@ try {
 console.log(connection.getDiagnostics());
 ```
 
-`connect`는 `connectStdio(options)`의 `connection.client`를 반환한다. `ConnectOptions`는
-`command`, `args`, 명시적인 `env`, `cwd`, handshake 제한 시간, stdout 메시지 최대 크기와 stderr
-최대 크기를 받는다. 기본값은 각각 10초, 10 MiB, 64 KiB다. 값은 유한한 정수여야 하며 허용
-범위를 벗어나면 자식 프로세스를 시작하기 전에 실패한다.
+`connect` returns the `connection.client` of `connectStdio(options)`. `ConnectOptions` takes
+`command`, `args`, an explicit `env`, `cwd`, the handshake time limit, the maximum stdout message size, and the maximum stderr
+size. The defaults are 10 seconds, 10 MiB, and 64 KiB respectively. Values must be finite integers, and anything outside the allowed
+range fails before the child process is started.
 
-환경변수는 전체 `process.env`를 상속하지 않는다. 부모 환경에는 인증 토큰 같은 비밀값이 섞일 수
-있고, 실행마다 달라지는 값이 테스트 결정론성을 깨뜨릴 수 있기 때문이다. SDK가 허용한 안전한
-기본 환경변수만 전달하며, 추가 값은 `env`에 명시한 경우에만 자식 프로세스로 전달한다.
+Environment variables do not inherit the whole of `process.env`. The parent environment can contain secrets such as auth tokens,
+and values that change from run to run can break test determinism. Only the safe default environment variables allowed by the SDK
+are passed, and additional values are passed to the child process only when specified in `env`.
 
-stderr는 신뢰할 수 없는 자식 프로세스 입력으로 취급한다. 최근 byte만 bounded buffer에 보존하며
-기본 상한은 64 KiB다. stderr 내용은 진단 snapshot에는 포함될 수 있지만 기본 오류 message와
-`McpClientError.toJSON()`에는 포함되지 않는다. 오류 JSON에는 code, phase, 고정된 message와 hint,
-exit code, signal, stderr 잘림 여부만 들어간다.
+stderr is treated as untrusted child process input. Only the most recent bytes are kept in a bounded buffer, with
+a default cap of 64 KiB. stderr content may be included in diagnostic snapshots but is not included in the default error message or
+`McpClientError.toJSON()`. The error JSON contains only the code, phase, fixed message and hint,
+exit code, signal, and whether stderr was truncated.
 
-실행은 shell을 거치지 않으므로 `args`가 공백이나 shell 문자를 포함해도 다시 해석되지 않는다.
-Windows에서는 `.cmd`와 `.bat` command를 거절한다. 운영체제가 직접 실행할 수 있는 executable을
-`command`로 주고, script 경로와 script 인자는 `args`로 전달한다. Windows command wrapping과
-command-line quoting은 이 transport의 범위가 아니다.
+Execution does not go through a shell, so even if `args` contains spaces or shell characters, they are not reinterpreted.
+On Windows, `.cmd` and `.bat` commands are rejected. Give an executable the operating system can run directly as
+`command`, and pass the script path and script arguments in `args`. Windows command wrapping and
+command-line quoting are outside the scope of this transport.
 
-SSE, WebSocket, OAuth 기반 원격 인증은 후속 설계와 ADR에서 별도로 결정한다.
+SSE, WebSocket, and OAuth-based remote authentication will be decided separately in a follow-up design and ADR.
 
-## Streamable HTTP로 연결하기
+## Connecting over Streamable HTTP
 
-URL로만 접근할 수 있는 MCP 서버에는 `command` 대신 `url`을 준다. 같은 `connect`가 옵션 모양을
-보고 transport를 고른다.
+For an MCP server reachable only by URL, give `url` instead of `command`. The same `connect` picks the transport by
+the shape of the options.
 
 ```ts
 import { connect } from "@mcpeak/core";
@@ -101,24 +103,23 @@ try {
 }
 ```
 
-`HttpConnectOptions`는 `url`, 선택적 `headers`, 선택적 `connectTimeoutMs`만 받는다. 프로세스가
-없으므로 `forceClose`도 없고, `close()`가 내부 abort로 pending 요청을 끊는다. 실패 진단은
-`transport: "http"`로 태그되며 `url`, `status`, `statusText`, `sessionId`를 싣는다. 헤더 값은
-진단이나 오류 JSON 어디에도 실리지 않는다.
+`HttpConnectOptions` takes only `url`, optional `headers`, and optional `connectTimeoutMs`. With no
+process there is no `forceClose`, and `close()` cuts pending requests with an internal abort. Failure diagnostics are
+tagged `transport: "http"` and carry `url`, `status`, `statusText`, and `sessionId`. Header values
+never appear in diagnostics or error JSON.
 
-**OAuth와 재연결은 지원하지 않는다.** 인증은 직접 만든 `headers`로만 붙이고 401은
-`HTTP_UNAUTHORIZED`로 끝나며, 연결이 끊기면 재시도 없이 즉시 실패한다(자세한 이유는
-[ADR-0020](https://github.com/2026-Engineering-Contest/MCPeak/blob/main/docs/adr/0020-streamable-http-transport.md)
-참조).
+**OAuth and reconnection are not supported.** Authentication is attached only through headers you build yourself, a 401
+ends as `HTTP_UNAUTHORIZED`, and a dropped connection fails immediately without retrying (for the detailed reasoning, see
+[ADR-0020](https://github.com/2026-Engineering-Contest/MCPeak/blob/main/docs/adr/0020-streamable-http-transport.md)).
 
-Core는 Runner를 import하지 않는다. Runner는 `McpClient`를 주입받고, CLI가 `connectStdio`의
-`client`, `close`, `forceClose`를 Runner의 shutdown 경계에 조립하는 composition root다.
+Core does not import Runner. Runner receives an injected `McpClient`, and the CLI is the composition root that assembles `connectStdio`'s
+`client`, `close`, and `forceClose` into Runner's shutdown boundary.
 
-## 범위와 안정성
+## Scope and stability
 
-`src/types.ts`의 `McpClient`, `ToolDef`, `ToolResult`는 패키지 간 동결 계약이다. #406에서 합의한
-선택적 `ToolDef.outputSchema`만 `tools/list`의 출력 계약을 손실 없이 전달하며, `McpClient`와
-`ToolResult`의 기존 형태는 바꾸지 않는다. Core는 `@modelcontextprotocol/sdk` 1.x를 사용하며 SDK
-버전을 올리지 않는다.
+`McpClient`, `ToolDef`, and `ToolResult` in `src/types.ts` are a frozen contract between packages. Only the optional
+`ToolDef.outputSchema` agreed in #406 carries the output contract of `tools/list` without loss, and the existing shape of `McpClient` and
+`ToolResult` is not changed. Core uses `@modelcontextprotocol/sdk` 1.x and does not upgrade the SDK
+version.
 
-오너: `@seodduu` `@endl24` `@sunghoon0303` (MCP 서버 테스트 파트)
+Owners: `@seodduu` `@endl24` `@sunghoon0303` (MCP server testing part)

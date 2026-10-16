@@ -1,5 +1,25 @@
 # @ohmymcp-hsu/dashboard
 
+## 0.5.1
+
+### Patch Changes
+
+- bca2d19: 보안 탭과 사전 점검의 위험 설명에 `desc/steering` 전용 문장을 더한다. audit 가 새로 내는 이 발견이 가족 공통 문장으로 떨어지지 않는다.
+- 1d093ff: npm 검색에 잡히도록 모든 패키지에 `keywords` 를 넣고 `description` 을 영어로 바꿉니다. 그동안
+  keywords 가 없고 설명이 한국어라 npm 에서 `mcp testing` 으로 검색해도 상위 20 개에 나오지 않았습니다.
+  코드와 동작은 바뀌지 않습니다.
+- Updated dependencies [66e054d]
+- Updated dependencies [296acb7]
+- Updated dependencies [1d093ff]
+  - @mcpeak/audit@0.3.0
+  - @mcpeak/cli@0.14.0
+  - @mcpeak/core@0.6.1
+  - @mcpeak/runner@0.11.2
+  - @mcpeak/generate@0.8.2
+  - @mcpeak/optimize@0.2.1
+  - @mcpeak/record@0.5.1
+  - @mcpeak/mock@0.4.4
+
 ## 0.5.0
 
 ### Minor Changes

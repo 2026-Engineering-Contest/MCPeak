@@ -1,6 +1,6 @@
 {
   "name": "@mcpeak/record",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "private": false,
   "type": "module",
   "description": "Record and replay an MCP server's outbound HTTP calls for deterministic tests",

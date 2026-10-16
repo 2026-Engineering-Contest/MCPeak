@@ -1,5 +1,29 @@
 # ohmymcp
 
+## 0.14.0
+
+### Minor Changes
+
+- 296acb7: `mcpeak generate` 검토 메뉴의 `show` 가 명세를 도구별로 묶어 보여 줍니다. 케이스 줄에는 종류
+  (정상·누락·타입·열거·범위·경계·분기)와 정상 입력 대비 달라진 필드만 적고, 40자를 넘는 문자열은
+  내용 대신 길이로 적어 경계 케이스와 범위 초과 케이스가 구분됩니다. 입력 없는 정상 1건짜리 도구는
+  한 줄로 합칩니다. 저장되는 명세 파일은 바뀌지 않습니다.
+
+### Patch Changes
+
+- 1d093ff: npm 검색에 잡히도록 모든 패키지에 `keywords` 를 넣고 `description` 을 영어로 바꿉니다. 그동안
+  keywords 가 없고 설명이 한국어라 npm 에서 `mcp testing` 으로 검색해도 상위 20 개에 나오지 않았습니다.
+  코드와 동작은 바뀌지 않습니다.
+- Updated dependencies [66e054d]
+- Updated dependencies [1d093ff]
+  - @mcpeak/audit@0.3.0
+  - @mcpeak/core@0.6.1
+  - @mcpeak/runner@0.11.2
+  - @mcpeak/generate@0.8.2
+  - @mcpeak/optimize@0.2.1
+  - @mcpeak/record@0.5.1
+  - @mcpeak/mock@0.4.4
+
 ## 0.13.0
 
 ### Minor Changes

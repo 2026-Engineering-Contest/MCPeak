@@ -205,9 +205,13 @@ jobs:
               budget=$(( DEADLINE - $(date +%s) ))
               [ "$budget" -lt 5 ] && budget=5
 
+              # `|| rc=$?` 로 받는다. 이 스텝은 `bash -e` 로 돌아서, `probe` 를 맨몸으로
+              # 부르면 첫 미확인(1 · 2)에서 재시도도 문장도 없이 그 자리에서 끝난다.
+              # 2026-10-16 릴리스가 그렇게 9개 전부 발행되고도 빨갛게 끝났다.
               LAST_ERROR=""
-              probe "$spec" "$budget"
-              case "$?" in
+              rc=0
+              probe "$spec" "$budget" || rc=$?
+              case "$rc" in
                 0) echo "  ✓ ${spec}" ;;
                 1) still+=("$spec"); absent+=("$spec") ;;
                 *) still+=("$spec"); failed+=("${spec} (${LAST_ERROR:-원인 불명})") ;;

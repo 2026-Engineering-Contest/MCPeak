@@ -1,34 +1,36 @@
+**English** · [한국어](./README.ko.md)
+
 # @mcpeak/mock
 
-목 MCP 서버 · 응답 주입. **Streamable HTTP** 와 **stdio** 두 가지로 뜬다.
+A mock MCP server with response injection. It starts over either **Streamable HTTP** or **stdio**.
 
-- **오너:** `@storyrago` (③ mock server 파트)
-- **의존:** `@mcpeak/core` · `@modelcontextprotocol/sdk` (catalog, 1.x 고정)
+- **Owner:** `@storyrago` (③ mock server part)
+- **Depends on:** `@mcpeak/core` · `@modelcontextprotocol/sdk` (catalog, pinned to 1.x)
 
-실제 MCP 서버 없이, MCP 를 사용하는 프로그램을 테스트하기 위한 것이다.
-외부 API 키도 실제 데이터도 없이 원하는 상황을 그대로 세워둘 수 있다.
+It is for testing programs that use MCP without a real MCP server.
+You can set up exactly the situation you want, with no external API keys and no real data.
 
-**서버를 만들기 전에 설계를 먼저 검증하려면** → [설계 우선 워크플로](#설계-우선-워크플로)
+**To validate a design before building the server** → [Design-first workflow](#design-first-workflow)
 
-## 어느 쪽을 쓰나
+## Which one to use
 
-| | 대상 | 응답 주입 |
+| | Target | Response injection |
 |---|---|---|
-| **HTTP** `createMockServer` | MCP 를 사용하는 **외부 프로그램** | 띄운 뒤 `on()` 으로 |
-| **stdio** `mcpeak-mock` | **우리 도구**(`mcpeak test`) | 정의 파일에 미리 |
+| **HTTP** `createMockServer` | **External programs** that use MCP | With `on()` after starting |
+| **stdio** `mcpeak-mock` | **Our own tool** (`mcpeak test`) | Up front, in the definition file |
 
-`core.connect()` 는 HTTP 도 안다 (ADR-0020). 갈리는 이유는 CLI 다 — `mcpeak test` 가
-`core.connectStdio` 를 하드코딩하고 `--url` 이 없다 (`packages/cli/src/index.ts:132`·`234`).
-자세한 배경은 ADR-0007.
+`core.connect()` understands HTTP too (ADR-0020). The split comes from the CLI: `mcpeak test`
+hardcodes `core.connectStdio` and has no `--url` (`packages/cli/src/index.ts:132`·`234`).
+See ADR-0007 for the full background.
 
-### 목이 아니라 External 세션이 맞는 경우
+### When an External session fits instead of a mock
 
-둘 다 "진짜를 가짜로 바꾼다" 인데 **바꾸는 층이 다르다.** 헷갈리면 엉뚱한 것을 세우게 된다.
+Both "replace the real thing with a fake", but **they replace different layers.** Mix them up and you end up setting up the wrong one.
 
-| | 무엇을 대신하나 | 언제 |
+| | What it replaces | When |
 |---|---|---|
-| **`mock`** | MCP **서버 자체** | 서버가 아직 없다 · 서버를 쓰는 쪽을 테스트한다 |
-| **External 세션**<br>`mcpeak test --record-session` | 서버가 부르는 **외부 API** | 서버는 진짜로 돌리고, 그 서버가 나가는 네트워크만 없애고 싶다 |
+| **`mock`** | The MCP **server itself** | The server doesn't exist yet · you're testing the side that uses the server |
+| **External session**<br>`mcpeak test --record-session` | The **external API** the server calls | The server runs for real; you only want to remove the network calls it makes outward |
 
 ```
 [우리 도구] ──(1)── [MCP 서버] ──(2)── [외부 API]
@@ -36,19 +38,21 @@
           mock 이 대신함            External 세션이 대신함
 ```
 
-**목을 External 세션으로 녹화하면 녹화 건수가 0 이다.** 목은 정의 파일에 적힌 응답만
-돌려주고 밖으로 나가는 코드가 없기 때문이다(`src/` 에 HTTP 클라이언트 호출 0건). 세션 파일은
-생기지만 아무 호출도 막지 못하고, 도구도 그렇게 알려준다(ADR-0057).
+> `[our tool] ──(1)── [MCP server] ──(2)── [external API]` — a mock stands in at (1), an External session stands in at (2).
 
-서버 코드를 실제로 돌려야 하는데 그 서버가 유료 API 나 부작용 있는 endpoint 를 부르는
-상황이 External 세션의 자리다.
+**Recording a mock with an External session yields zero recorded calls.** A mock only returns the
+responses written in its definition file and has no code that reaches out (0 HTTP client calls in `src/`). A session file
+is created, but it blocks no calls, and the tool tells you so (ADR-0057).
 
-세션은 `@mcpeak/record` 소관이다. `mcpeak help test` 와 그 패키지 README 를 본다.
+An External session is for when the server code has to actually run, but that server calls a paid API or an endpoint
+with side effects.
 
-## HTTP — 외부 프로그램용
+Sessions belong to `@mcpeak/record`. See `mcpeak help test` and that package's README.
 
-라이브러리로 부르는 경로라 **프로젝트에 설치해야** 합니다. 전역 설치(`npm i -g`)는 실행 파일만
-놓으므로 `import` 가 `ERR_MODULE_NOT_FOUND` 로 깨집니다.
+## HTTP — for external programs
+
+This path calls it as a library, so you **must install it in your project**. A global install (`npm i -g`) only places
+the executable, so `import` breaks with `ERR_MODULE_NOT_FOUND`.
 
 ```bash
 npm install --save-dev @mcpeak/mock
@@ -67,9 +71,11 @@ console.log(mock.url);   // http://127.0.0.1:53211/mcp
 await mock.close();
 ```
 
-## stdio — 우리 도구용
+> Comments: `인자를 지정` = specific arguments; `나머지 전부` = everything else; `테스트 대상 프로그램을 이 주소에 연결한다` = connect the program under test to this address.
 
-정의 파일을 만들고,
+## stdio — for our tool
+
+Write a definition file,
 
 ```json
 {
@@ -83,18 +89,18 @@ await mock.close();
 }
 ```
 
-`mcpeak test` 의 대상으로 지정한다.
+and point `mcpeak test` at it.
 
 ```bash
 mcpeak test suite.json --command mcpeak-mock --arg definition.json
 ```
 
-프로세스가 곧 서버라 실행 중에는 응답을 주입할 수 없다. 그래서 정의 파일에 미리 적는다.
+The process is the server, so you can't inject responses while it's running. That's why they are written into the definition file up front.
 
-## 설계 우선 워크플로
+## Design-first workflow
 
-**MCP 서버를 만들기 전에 설계를 먼저 검증하는 것**이 목의 주된 쓰임이다. 구현 0 줄에서
-시작해 구현자에게 넘길 계약까지 만든다.
+**Validating a design before building the MCP server** is the main use of a mock. It starts from zero lines of
+implementation and ends with a contract to hand to the implementer.
 
 ```
 ① 설계 ──→ ② 체험 ──→ ③ 명세 ──→ ( 구현 ) ──→ ④ 판정
@@ -103,9 +109,11 @@ JSON       클라이언트에   (계약 초안)                실물 서버에
            붙여본다
 ```
 
-### ① 설계 — 정의 파일을 쓴다
+> ① design (definition file JSON) ──→ ② try it (attach to a real client) ──→ ③ suite (generate a suite, the contract draft) ──→ ( implement ) ──→ ④ verdict (run the same suite on the real server)
 
-툴 스키마와 예상 응답을 적는다. 실패 응답도 같이 적는다 — **실패 UX 도 계약의 절반이다.**
+### ① Design — write the definition file
+
+Write the tool schemas and the expected responses. Write the failure responses too — **failure UX is half the contract.**
 
 ```json
 {
@@ -127,7 +135,7 @@ JSON       클라이언트에   (계약 초안)                실물 서버에
 }
 ```
 
-### ② 체험 — 진짜 클라이언트에 붙인다
+### ② Try it — attach a real client
 
 ```json
 {
@@ -140,96 +148,106 @@ JSON       클라이언트에   (계약 초안)                실물 서버에
 }
 ```
 
-Claude Desktop 설정에 위처럼 넣는다. **경로는 절대경로여야 한다** — 클라이언트가 어느
-디렉터리에서 띄울지 알 수 없다.
+Add this to your Claude Desktop configuration as shown. **The path must be absolute** — there's no way to know which
+directory the client will launch from.
 
-여기서 볼 것은 **응답 내용이 아니다.** 응답은 내가 적은 것이라 볼 게 없다. 봐야 하는 것은
-**클라이언트가 내 스키마를 어떻게 다루는가**다.
+What to watch here **isn't the response content.** You wrote the responses, so there's nothing to see there. What you need to watch is
+**how the client handles your schema.**
 
-- 이 툴을 언제 고르나 — `description` 이 부족하면 엉뚱할 때 고르거나 아예 안 고른다
-- 인자를 어떻게 채우나 — 필드 이름만 보고 맞게 채우는지
-- 거절을 만났을 때 뭐라고 하나 — 내가 쓴 오류 문장이 사용자에게 도움이 되는지
+- When it picks this tool — if `description` is thin, it picks it at the wrong moment or never picks it at all
+- How it fills in arguments — whether it fills them correctly just from the field names
+- What it says when it hits a rejection — whether the error message you wrote actually helps the user
 
-**이 셋은 서버를 다 만든 뒤에 고치면 비싸다.** 스키마와 문장을 바꾸는 일이라 구현 전이 가장 싸다.
+**These three are expensive to fix after the server is built.** They are matters of changing a schema or a sentence, so they're cheapest before implementation.
 
-### ③ 명세 — 목에서 계약 초안을 뽑는다
+### ③ Suite — pull a draft contract from the mock
 
 ```bash
 mcpeak generate --suite-id weather --name "날씨 서버 계약" \
   --out contract.suite.json \
   --command mcpeak-mock --arg weather.mock.json --baseline-only
 ```
+
+> **Note:** MCPeak's own messages are currently printed in Korean; English translations are shown alongside.
+
 ```
 baseline suite를 저장했습니다: contract.suite.json
 커버리지  1 tools, 3 axes 전부 검증
 ```
 
-이 suite 가 **구현자에게 넘기는 계약 초안**이다. 정상 케이스 하나와 위반 케이스들이 들어 있다.
+> Saved the baseline suite: contract.suite.json
+> Coverage  1 tools, all 3 axes verified
 
-> ⚠️ **정상 케이스가 실패하면 `ANY` 폴백이 없는 것이다.** `generate` 는 정상 입력을 스키마에서
-> 합성하므로 `{ "city": "example" }` 같은 값이 나온다. 내가 `"서울"` 만 적어뒀으면 그 호출은
-> 표에 없다.
+This suite is **the draft contract you hand to the implementer.** It contains one passing case and the violation cases.
+
+> ⚠️ **If the passing case fails, there's no `ANY` fallback.** `generate` synthesizes a valid input from the schema,
+> so you get a value like `{ "city": "example" }`. If you only wrote `"서울"`, that call isn't
+> in the table.
 > ```
 > ✗ get-weather-success  get_weather가 오류 없이 응답한다
 >     → 툴 'get_weather' 을(를) 인자 {"city":"example"} 로 호출했지만 주입된 응답이 없습니다.
 >     → 이 툴에 주입된 인자: {"city":"서울"}, {"city":"없는도시"}
 > ```
-> `args` 를 생략한 줄(= `ANY`)을 하나 두면 된다. 위반 인자는 `ANY` 가 먹지 않으므로
-> (「인자 검사」 참조) 거절 케이스는 그대로 동작한다.
+> > ✗ get-weather-success  get_weather responds without an error
+> > → Tool 'get_weather' was called with arguments {"city":"example"}, but no response was injected for it.
+> > → Arguments injected for this tool: {"city":"서울"}, {"city":"없는도시"}
+>
+> Add one entry that omits `args` (= `ANY`). `ANY` doesn't catch violating arguments
+> (see "Argument checking"), so the rejection cases keep working.
 
-### ④ 판정 — 같은 suite 를 실물 서버에
+### ④ Verdict — the same suite against the real server
 
-구현이 끝나면 **같은 파일**을 진짜 서버에 돌린다. 통과하면 구현이 설계 계약을 지켰다는 증명이다.
+Once the implementation is done, run **the same file** against the real server. Passing proves the implementation kept the design contract.
 
 ```bash
 mcpeak test contract.suite.json --command node --arg ./server.js
 ```
 
-**목에서 초록인 것은 구현이 맞다는 뜻이 아니다.** 같은 suite 를 예제 서버에 돌린 실제 결과:
+**Green on the mock doesn't mean the implementation is correct.** The actual result of running the same suite against the example server:
 
-| | 결과 |
+| | Result |
 |---|---|
-| 목 | `3 passed` |
-| 실물 (`examples/weather-server`) | `2 passed, 1 failed` |
+| Mock | `3 passed` |
+| Real server (`examples/weather-server`) | `2 passed, 1 failed` |
 
-실물은 서울·부산·제주만 아는데 합성 입력이 `"example"` 이라 정상 케이스가 깨졌다. 목은 `ANY`
-폴백이 다 받아서 초록이었다. **③까지의 초록은 "목 기준 확인" 이고, 계약 판정은 ④에서 난다.**
+The real server only knows Seoul, Busan, and Jeju, but the synthesized input was `"example"`, so the passing case broke. The mock was green because its `ANY`
+fallback caught everything. **Green through ③ is "checked against the mock"; the contract verdict comes from ④.**
 
-### 알아둘 것
+### Things to know
 
-- **`거절 근거를 확인하지 못했습니다` 경고는 목에서 항상 뜬다.** `runner` 는 거절이 SDK 입력
-  검증에서 나온 것인지 오류 문장의 접두어로 판별하는데(`MCP error -32602:` 등), 목의 거절문은
-  그 목록에 없다. 케이스는 통과하고 경고만 붙는다.
-- **완성된 MCP 를 실제로 쓰는 것은 목이 아니다.** 목은 구현 전 설계 검증과, 실물을 붙일 수
-  없는 환경(외부 API 키 없음, 응답이 매번 다름)의 대역이다. 내 서버를 목으로 테스트하는 것은
-  내가 적은 답이 나오는지 보는 것이라 순환이다 — 그건 `@mcpeak/record` 가 한다.
+- **The `거절 근거를 확인하지 못했습니다` (could not confirm the grounds for rejection) warning always appears on a mock.** The `runner` tells whether a rejection came from the SDK's input
+  validation by the prefix of the error message (`MCP error -32602:`, etc.), and the mock's rejection message
+  isn't in that list. The case passes and only the warning is attached.
+- **A mock is not how you actually use a finished MCP server.** A mock is for validating a design before implementation, and a stand-in for
+  environments where the real server can't be attached (no external API key, responses that differ every time). Testing your own server with a mock is
+  just checking that the answer you wrote comes back, which is circular — that's what `@mcpeak/record` does.
 
-## 응답 매칭 규칙
+## Response matching rules
 
-두 진입점이 **같은 규칙**을 쓴다.
+Both entry points use **the same rules.**
 
-주입 시점에도 같다 — `tools` 에 없는 툴 이름은 정의 파일이든 `mock.on()` 이든 그 자리에서
-거절한다. 오타가 주입에 성공한 것처럼 보이면, 실제 호출이 미스로 떨어질 때까지 아무 신호도
-받지 못한다.
+The same goes for injection time — a tool name not in `tools` is rejected on the spot, whether in a definition file or in `mock.on()`.
+If a typo looked like a successful injection, you'd get no signal at all until a real call
+fell through as a miss.
 
-1. **인자를 지정한 응답이 우선한다.** 스키마 검사보다도 앞이다.
-2. 없으면 **`inputSchema` 로 인자를 검사한다.** 어기면 `isError: true` 로 거절한다.
-3. 통과하면 `ANY`(정의 파일에서는 `args` 생략)가 받는다.
-4. 그것도 없으면 `isError: true` 와 함께 무엇이 등록돼 있는지 알려준다.
+1. **A response with specified arguments takes priority.** Even ahead of the schema check.
+2. If there's none, **the arguments are checked against `inputSchema`.** A violation is rejected with `isError: true`.
+3. If the check passes, `ANY` (in a definition file, omitting `args`) handles it.
+4. If there's no such entry either, it returns `isError: true` and states what is registered.
 
-`ANY` 는 편하지만 **스키마가 허용하는 범위에서는 어떤 인자로 불러도 통과**하게 만든다.
-기본은 인자 지정이고 `ANY` 는 예외로 쓴다.
+`ANY` is convenient, but it **lets a call with any arguments the schema allows pass.**
+Specifying arguments is the default; use `ANY` as the exception.
 
-`result` 는 MCP 와이어 포맷이 아니라 **알맹이**다. `content: [{ type: "text", ... }]` 포장은 목이 한다.
+`result` is not the MCP wire format but **the payload.** The mock does the `content: [{ type: "text", ... }]` wrapping.
 
-### 인자 검사
+### Argument checking
 
-`tools/list` 로 광고한 `inputSchema` 를 실제 호출에 대조한다. 네 축을 **최상위 필드에서만** 본다
+Matches the `inputSchema` advertised through `tools/list` against the actual call. It checks four axes **on top-level fields only**
 ([ADR-0048](../../docs/adr/0048-목이-inputSchema-를-실제로-검사한다.md)).
 
-| 축 | 스키마의 어디 | 위반 예 |
+| Axis | Where in the schema | Example violation |
 |---|---|---|
-| `required` | `"required": ["city"]` | `city` 를 안 보냄 |
+| `required` | `"required": ["city"]` | Not sending `city` |
 | `type` | `{ "type": "string" }` | `{ "city": 0 }` |
 | `enum` | `{ "enum": ["c", "f"] }` | `{ "unit": "k" }` |
 | `range` | `minimum` · `maximum` · `exclusiveMinimum` · `exclusiveMaximum` · `minLength` · `maxLength` · `minItems` · `maxItems` | `{ "days": 99 }` |
@@ -240,91 +258,98 @@ mcpeak test contract.suite.json --command node --arg ./server.js
 → 거절이 의도한 것이면 responses 에 이 인자를 넣어 응답을 지정하세요.
 ```
 
-**의도한 거절을 설계에 넣으려면 그 인자를 지정해 주입한다.** 1번이 2번보다 앞이라 이 응답이 이긴다.
+> → 'city' of tool 'get_weather' must be a string. Received: 0 (number)
+> → The inputSchema this tool declared through tools/list requires it.
+> → If the rejection is intended, add these arguments to responses and specify the response.
+
+**To put an intended rejection into the design, inject a response for those specific arguments.** Rule 1 comes before rule 2, so this response wins.
 
 ```json
 { "tool": "get_weather", "args": { "city": 0 }, "result": "도시 이름이 잘못됐습니다" }
 ```
 
-**검사하지 않는 것:** 중첩 객체와 배열 원소 내부, `additionalProperties`. 조합자
-(`anyOf` · `oneOf` · `allOf` · `not` · `$ref` · `if`)나 배열 `type` 이 있으면 — 루트에 있으면 그 툴
-전체를, 필드에 있으면 그 필드만 — 건너뛴다. 툴 전체를 건너뛴 경우는 서버를 띄울 때 `stderr` 로
-한 번 고지한다.
+**Not checked:** the inside of nested objects and array elements, and `additionalProperties`. If a combinator
+(`anyOf` · `oneOf` · `allOf` · `not` · `$ref` · `if`) or an array-form `type` is present, it is skipped — the whole tool
+if it's at the root, just that field if it's on a field. When a whole tool is skipped, it's reported once to `stderr`
+when the server starts.
 
 ```
 → 다음 툴은 inputSchema 를 해석할 수 없어 인자 검사를 건너뜁니다:
    'search' — 해석할 수 없는 키워드: anyOf
 ```
 
-### 거절 응답 주입
+> → Argument checking is skipped for the following tools because their inputSchema can't be interpreted:
+>    'search' — uninterpretable keyword: anyOf
 
-실패도 계약의 절반이다. `isError: true` 를 붙이면 **내가 정한 문장으로 거절**할 수 있다.
+### Injecting a rejection response
+
+Failure is half the contract too. Attach `isError: true` and you can **reject with a sentence you chose.**
 
 ```json
 { "tool": "get_meeting", "args": { "id": "m-99" },
   "result": { "error": "→ 'm-99' 회의록이 없습니다" }, "isError": true }
 ```
 
-코드에서는 네 번째 인자로 넘긴다.
+In code, pass it as the fourth argument.
 
 ```ts
 mock.on("get_meeting", { id: "m-99" }, { error: "→ 'm-99' 회의록이 없습니다" }, { isError: true });
 ```
 
-생략하면 성공이다. `isError: false` 를 명시해도 같다 — 참일 때만 와이어에 싣는다.
+Omit it and the response is a success. Stating `isError: false` explicitly is the same — it goes on the wire only when true.
 
-**매칭 미스의 `isError` 와는 다른 것이다.**
+**This is different from the `isError` of a match miss.**
 
-| | 언제 | 본문 |
+| | When | Body |
 |---|---|---|
-| **주입한 거절** | `isError: true` 로 선언한 인자 | 내가 쓴 `result` |
-| **스키마 위반** | 표에 없고 `inputSchema` 를 어긴 인자 | 목이 만든 위반 진단문 (`… 이어야 합니다`) |
-| **매칭 미스** | 표에 없고 스키마는 지킨 인자 | 목이 만든 안내문 (`주입된 응답이 없습니다`) |
+| **Injected rejection** | Arguments declared with `isError: true` | The `result` you wrote |
+| **Schema violation** | Arguments not in the table that violate `inputSchema` | A violation diagnostic the mock writes (`… 이어야 합니다`, "must be …") |
+| **Match miss** | Arguments not in the table that satisfy the schema | A guidance message the mock writes (`주입된 응답이 없습니다`, "no response was injected") |
 
-셋 다 `isError: true` 지만 **본문으로 구분된다.** 뒤의 둘은 "목이 판단한 것" 이고, 첫 번째만
-"서버가 이렇게 거절한다" 는 **설계**다. 위반 진단문 대신 내 문장을 내보내고 싶으면 그 인자를
-표에 적으면 된다 — 매칭 규칙 1번이 2번보다 앞이다.
+All three are `isError: true`, but **they're told apart by the body.** The latter two are "what the mock decided"; only the first is
+a **design** that says "this is how the server rejects." If you want your own sentence instead of the violation diagnostic, write those arguments
+into the table — matching rule 1 comes before rule 2.
 
-### 키로 만들 수 없는 인자
+### Arguments that can't be made into a key
 
-아래는 주입 시점에 거부됩니다. MCP 호출은 JSON 으로 오므로 **어떤 호출로도 도달할 수 없는
-값**이고, 그대로 두면 주입은 성공한 것처럼 보이는데 영영 안 맞거나 다른 주입과 같은 키가 됩니다.
+The following are rejected at injection time. An MCP call arrives as JSON, so these are **values no call can ever
+reach**; left in place, the injection looks like it succeeded but never matches, or ends up with the same key as another injection.
 
-| 값 | 예 |
+| Value | Example |
 |---|---|
-| 순환 참조 | `o.self = o` |
-| 희소 배열 | `[1, , 3]` |
+| Circular reference | `o.self = o` |
+| Sparse array | `[1, , 3]` |
 | `NaN` · `Infinity` | `{ n: NaN }` |
-| JSON 이 아닌 값 | `Date` · 함수 · 심볼 · `BigInt` · `Map` |
+| Non-JSON value | `Date` · function · symbol · `BigInt` · `Map` |
 
-`undefined` 는 거부하지 않습니다 — 객체 프로퍼티면 빼고, 배열 원소면 `null` 로 둡니다.
+`undefined` is not rejected — as an object property it's dropped, and as an array element it becomes `null`.
 
-중첩 깊이 상한은 512 입니다. 호출 인자가 이를 넘으면 서버를 죽이지 않고 `isError: true`
-응답으로 알려줍니다.
+The nesting depth limit is 512. If a call's arguments exceed it, the server isn't killed; it reports this with an `isError: true`
+response.
 
-거부 집합은 `record` 의 카세트 매칭 키(ADR-0003)와 같습니다. 다만 `record` 는 키를 SHA-256 으로
-해시하고 목은 하지 않습니다 — 목의 키는 파일에 남지 않고 실패 메시지에 그대로 찍히기 때문입니다.
-배경은 ADR-0029.
+The rejection set is the same as `record`'s cassette matching key (ADR-0003). However, `record` hashes the key with SHA-256
+and the mock doesn't — the mock's key isn't left in a file and is printed as is in failure messages.
+See ADR-0029 for the background.
 
-## 설계 메모
+## Design notes
 
-- **HTTP 는 stateless 로 띄운다.** `sessionIdGenerator: undefined`. stateful 로 가면 SDK 가
-  `randomUUID()` 로 세션 ID 를 만들어 결정론성이 깨진다. 대신 stateless 는 요청마다
-  `Server`/transport 를 새로 만들어야 한다 (SDK 제약).
-- **포트 기본값은 0** 이다. 빈 포트를 자동으로 받는다. 고정 포트는 이미 물려 있을 때
-  실패하고 병렬 실행 시 충돌한다.
-- **매칭 키는 객체 키 순서에 영향받지 않는다.** `{a:1,b:2}` 와 `{b:2,a:1}` 이 같은 응답을
-  찾는다. `JSON.stringify` 를 그대로 쓰면 삽입 순서를 타서 결정론성이 깨진다.
-- **`ToolDef.inputSchema` 는 JSON Schema 그대로 나간다.** 저수준 `Server` 를 쓰기 때문에
-  Zod 변환이 필요 없고, 따라서 zod 의존성도 없다.
-- **`src/stdio.ts` 는 top-level await 를 쓰지 않는다.** 빌드가 cjs 도 함께 내는데 그쪽에서
-  지원되지 않는다. `packages/cli/src/cli.ts` 도 같은 이유로 같은 형태다.
+- **HTTP starts stateless.** `sessionIdGenerator: undefined`. If it were stateful, the SDK would
+  generate a session ID with `randomUUID()`, breaking determinism. In exchange, stateless mode has to create a new
+  `Server`/transport for every request (an SDK constraint).
+- **The default port is 0.** An open port is assigned automatically. A fixed port fails when it's already
+  taken and collides during parallel runs.
+- **The matching key isn't affected by object key order.** `{a:1,b:2}` and `{b:2,a:1}` find the same
+  response. Using `JSON.stringify` as is would follow insertion order and break determinism.
+- **`ToolDef.inputSchema` goes out exactly as JSON Schema.** Because it uses the low-level `Server`,
+  no Zod conversion is needed, and so there's no zod dependency either.
+- **`src/stdio.ts` doesn't use top-level await.** The build also emits cjs, where
+  it isn't supported. `packages/cli/src/cli.ts` has the same shape for the same reason.
 
-## 실패했을 때
+## When it fails
 
-실패 메시지가 곧 제품이다 (CLAUDE.md).
+The failure message is the product (CLAUDE.md).
 
-**주입되지 않은 호출**
+**A call with no injected response**
 
 ```
 → 툴 'get_weather' 을(를) 인자 {"city":"제주"} 로 호출했지만 주입된 응답이 없습니다.
@@ -333,27 +358,38 @@ mock.on("get_meeting", { id: "m-99" }, { error: "→ 'm-99' 회의록이 없습�
 → 인자를 가리지 않으려면 mock.on(툴이름, ANY, 응답) 을 쓰세요.
 ```
 
-**뒤 두 줄은 진입점에 따라 다르다.** 정의 파일로 띄웠다면 없는 `mock.on` 대신 그 파일을
-가리킨다 — 고칠 자리가 다르기 때문이다.
+> → Tool 'get_weather' was called with arguments {"city":"제주"}, but no response was injected for it.
+> → Arguments injected for this tool: {"city":"서울"}
+> → Check that the arguments in mock.on(toolName, args, response) match the call.
+> → To accept any arguments, use mock.on(toolName, ANY, response).
+
+**The last two lines depend on the entry point.** If you started from a definition file, they point at that file instead of a nonexistent `mock.on`
+— because the place to fix is different.
 
 ```
 → weather.mock.json 의 responses 에서 이 툴의 args 가 호출과 일치하는지 확인하세요.
 → 인자를 가리지 않으려면 그 항목에서 args 를 생략하세요.
 ```
 
-**정의 파일이 잘못됐을 때**
+> → Check that this tool's args in the responses of weather.mock.json match the call.
+> → To accept any arguments, omit args in that entry.
+
+**When the definition file is malformed**
 
 ```
 → 올바르지 않은 목 정의입니다 — weather.mock.json: responses[0] 의 툴 '없는툴' 이 tools 에 없습니다. 있는 툴: get_weather, add
 → 형식: { "tools": [ { "name": ..., "inputSchema": ... } ], "responses": [ { "tool": ..., "result": ... } ] }
 ```
 
-`assertMockDefinition(value, source?)` 을 직접 불러 검증할 수도 있다.
+> → Invalid mock definition — weather.mock.json: tool '없는툴' in responses[0] is not in tools. Available tools: get_weather, add
+> → Format: { "tools": [ { "name": ..., "inputSchema": ... } ], "responses": [ { "tool": ..., "result": ... } ] }
 
-## 미결
+You can also call `assertMockDefinition(value, source?)` directly to validate.
 
-- 목 응답은 **사람이 지정한 결정론적 값**을 쓴다 (ADR-0005 에서 확정). 스키마 기반 랜덤
-  생성은 폐기됐고, 고정 시드 생성은 보류 상태다 — 툴이 많은 서버의 스모크 테스트 수요가
-  실제로 확인되면 그때 별도로 결정한다.
-- CLI 의 HTTP 연결 — `core.connect()` 쪽은 됐다 (ADR-0020, #16). `mcpeak test` 에 `--url`
-  이 생기면 우리 러너가 HTTP 목에도 붙는다. 지금은 CLI 가 stdio 로 고정돼 있다
+## Open questions
+
+- Mock responses use **deterministic values a person specifies** (settled in ADR-0005). Schema-based random
+  generation was dropped, and fixed-seed generation is on hold — it will be decided separately once demand for smoke tests
+  of servers with many tools is actually confirmed.
+- HTTP connections from the CLI — the `core.connect()` side is done (ADR-0020, #16). Once `mcpeak test` gets `--url`,
+  our runner will attach to the HTTP mock too. For now the CLI is fixed to stdio

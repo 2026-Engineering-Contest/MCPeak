@@ -1,12 +1,14 @@
+**English** · [한국어](./README.ko.md)
+
 # @mcpeak/optimize
 
-MCP 서버의 도구 정의를 뜻을 바꾸지 않고 줄이고, 줄인 정의를 내보내는 프록시를 띄운다.
-서버 코드는 건드리지 않는다. 바뀌는 것은 LLM 에게 보이는 `tools/list` 만이고, `tools/call` 은
-원본 이름과 인자로 서버에 그대로 전달된다(ADR-0102).
+Shrinks an MCP server's tool definitions without changing their meaning, and starts a proxy that serves the shrunken definitions.
+The server code is not touched. The only thing that changes is the `tools/list` the LLM sees; `tools/call` is
+forwarded to the server as is, with the original names and arguments (ADR-0102).
 
-## 사용법
+## Usage
 
-두 명령이다. 먼저 오버레이를 만들고, 그 오버레이를 프록시가 서빙한다.
+Two commands. First build the overlay, then let the proxy serve it.
 
 ```bash
 # 1. 서버의 tools/list 를 읽어 오버레이를 만든다. 리포트가 stdout 에 나온다.
@@ -17,40 +19,43 @@ mcpeak-optimize-proxy ./server.optimize.json -- node ./server.mjs
 mcpeak-optimize-proxy ./server.optimize.json --url http://localhost:3000/mcp
 ```
 
-`--out` 은 필수다. 서버 이름으로 파일명을 지어 주지 않는다. 자세한 옵션은 `mcpeak help optimize`.
+> Comments: 1. Read the server's tools/list and build the overlay. The report goes to stdout.
+> 2. Put the proxy in place of the server command in the MCP client configuration.
 
-프록시는 시작할 때 원본 서버의 도구 이름 목록을 오버레이와 대조한다. 서버가 바뀌어 있으면
-서비스하지 않고 오버레이를 다시 만들라고 안내한다.
+`--out` is required. It doesn't invent a file name from the server name. For all options, see `mcpeak help optimize`.
 
-## 무엇을 바꾸나: 안전 프로필 세 변환
+On startup, the proxy compares the origin server's tool name list against the overlay. If the server has changed,
+it refuses to serve and tells you to rebuild the overlay.
 
-공개 서버 35개, 모델 선택 테스트 210건, 스키마 동치 표본 약 72,000개에서 도구 선택을 바꾸지
-않은 변환만 쓴다(`docs/2026-09-27-mcp-도구-정의-압축-조사-실험.md`).
+## What it changes: three safe-profile transformations
 
-| 변환 | 건드리는 것 | 왜 안전한가 |
+Only transformations that didn't change tool selection across 35 public servers, 210 model selection tests, and about 72,000 schema equivalence samples
+are used (`docs/2026-09-27-mcp-도구-정의-압축-조사-실험.md`).
+
+| Transformation | What it touches | Why it is safe |
 |---|---|---|
-| 무손실 정규화 | `inputSchema` 의 `$schema`·`$id`·`$comment`·`title`, `additionalProperties:true`, 빈 `required`·`properties` | 검증 의미가 바뀌지 않는다 |
-| 잡음 제거 | 설명의 URL, `Example:` 이하 블록, 파라미터 이름을 되풀이하는 3단어 이하 설명 | 모델이 도구를 고르거나 인자를 채우는 데 쓰지 않는 정보다 |
-| 공통 파라미터 승격 | 이름·설명이 같은 파라미터가 3개 이상 도구에 반복되면 설명을 서버 `instructions` 사전으로 한 번만 | 정보가 사라지지 않고 자리만 옮긴다 |
+| Lossless normalization | `$schema`·`$id`·`$comment`·`title` in `inputSchema`, `additionalProperties:true`, empty `required`·`properties` | The validation semantics don't change |
+| Noise removal | URLs in descriptions, blocks after `Example:`, descriptions of three words or fewer that repeat the parameter name | Information the model doesn't use to pick a tool or fill arguments |
+| Common parameter promotion | When a parameter with the same name and description repeats across three or more tools, its description goes once into a dictionary in the server `instructions` | The information isn't lost, only moved |
 
-기대 감소는 서버별 중앙값 12%, 범위 1~38% 다. 절감률은 서버가 정하고, 이 도구가 보장하는 것은
-기능 유지다. 변환기는 자기 출력을 게이트(원본과 결과의 구조 동치 검사)에 통과시킨 뒤에만
-오버레이를 쓴다. 통과하지 못하면 그것은 이 도구의 결함이며 문장이 그렇게 말한다.
+The expected reduction is a median of 12% per server, ranging from 1% to 38%. The reduction rate is decided by the server; what this tool guarantees is
+that functionality is preserved. The transformer writes the overlay only after its own output passes a gate (a structural equivalence check between the original and the result).
+If it doesn't pass, that's a defect in this tool, and the message says so.
 
-## 하지 않는 것
+## What it doesn't do
 
-- 파라미터 설명 삭제, `default` 삭제, `additionalProperties:false` 삭제. 실측에서 오선택과 인자
-  누락을 냈다.
-- 도구 제외, 병합, 이름 변경. 호출 계약이 바뀐다.
-- 공유 문장을 서버 `instructions` 로 승격. 개조식 설명에 조각을 남기고 도구 한정 지침을 전역화해
-  퇴행을 냈다. 결함을 고친 뒤 옵션으로 되살릴 예정이다.
-- resources·prompts 중계. 프록시는 tools 만 광고한다. 원본이 다른 능력을 갖고 있으면 리포트가
-  경고한다.
+- Delete parameter descriptions, delete `default`, or delete `additionalProperties:false`. In measurements these caused wrong selections and missing
+  arguments.
+- Exclude, merge, or rename tools. That changes the call contract.
+- Promote shared sentences into the server `instructions`. It left fragments in bulleted descriptions and turned tool-specific guidance global,
+  causing regressions. It's planned to come back as an option once the defect is fixed.
+- Relay resources·prompts. The proxy advertises tools only. If the origin has other capabilities, the report
+  warns about it.
 
-## 주의
+## Caution
 
-공통 파라미터 승격은 클라이언트가 서버 `instructions` 를 모델에게 보여 줄 때만 정보가 보존된다.
-`instructions` 를 무시하는 클라이언트에서는 그 파라미터 설명이 모델에 닿지 않는다. 그런
-클라이언트가 대상이면 오버레이를 만들기 전에 이 점을 감안한다.
+Common parameter promotion preserves information only when the client shows the server `instructions` to the model.
+In a client that ignores `instructions`, those parameter descriptions never reach the model. If such a
+client is the target, take this into account before building the overlay.
 
-토큰 수는 UTF-8 바이트 ÷ 4 근사치다. 리포트가 "근사" 라고 표시한다.
+Token counts are an approximation of UTF-8 bytes ÷ 4. The report marks them as "근사" (approximate).

@@ -1,46 +1,48 @@
+**English** · [한국어](./README.ko.md)
+
 # @mcpeak/record
 
-MCP 서버가 **밖으로 부르는 HTTP 호출**을 녹화·재생하고(External 세션), **이름으로 판정 가능한**
-비밀값을 프로세스 밖으로 나가는 경계에서 제거한다. URL 경로에는 판정에 쓸 이름이 없어서, 그쪽은
-저장 직전에 통째로 지운다([자세히](#external-세션은-url-경로를-저장하지-않는다)).
+Records and replays **the HTTP calls an MCP server makes outward** (External session), and removes **secrets that can be identified
+by name** at the boundary where they leave the process. URL paths have no name to judge by, so those are
+erased entirely just before saving ([details](#external-sessions-dont-store-the-url-path)).
 
-- **오너:** `@ddxng5` (② replay/record 파트)
-- **의존:** 없다. Node 내장(`node:sqlite`·`node:http`)만 쓴다.
-- **결정:** [ADR-0051](../../docs/adr/0051-external-record-replay와-tool-카세트-경계-분리.md),
+- **Owner:** `@ddxng5` (② replay/record part)
+- **Depends on:** nothing. Only Node built-ins (`node:sqlite`·`node:http`).
+- **Decisions:** [ADR-0051](../../docs/adr/0051-external-record-replay와-tool-카세트-경계-분리.md),
   [ADR-0052](../../docs/adr/0052-coordinator가-engine과-session-store를-소유한다.md),
   [ADR-0053](../../docs/adr/0053-http-외부-요청-매칭과-반복-호출-정책.md),
   [ADR-0057](../../docs/adr/0057-external-어댑터는-global-fetch-까지만-가로챈다.md),
   [ADR-0059](../../docs/adr/0059-tool-카세트를-제거한다.md)
-- **마스킹 결정:** [ADR-0039](../../docs/adr/0039-민감-키-목록과-매칭-경계.md),
+- **Masking decisions:** [ADR-0039](../../docs/adr/0039-민감-키-목록과-매칭-경계.md),
   [ADR-0041](../../docs/adr/0041-마스킹의-적용-경계.md),
   [ADR-0045](../../docs/adr/0045-민감-키-목록의-복수형과-key-합성어.md)
 
-## Tool 카세트는 제거됐다
+## The Tool cassette has been removed
 
-이 패키지에는 한때 **Tool 카세트**가 있었다. MCP 클라이언트를 감싸 *우리가 서버에게 물어본
-것*(`listTools`·`callTool`)을 녹화해, 재생할 때 **서버를 아예 띄우지 않는** 기능이었다.
-[ADR-0059](../../docs/adr/0059-tool-카세트를-제거한다.md)가 그것을 제거했고, 이 패키지는 이제
-External 세션 전용이다.
+This package once had a **Tool cassette.** It wrapped the MCP client and recorded *what we asked the
+server* (`listTools`·`callTool`), so that replay **didn't start the server at all.**
+[ADR-0059](../../docs/adr/0059-tool-카세트를-제거한다.md) removed it, and this package is now
+External sessions only.
 
-| 사라진 것 | 대신 |
+| What's gone | Instead |
 |---|---|
-| `cassetteClient` · `loadCassette` · `saveCassette` · `matchKey` · `redact` | `@mcpeak/record` 는 이제 External API 만 내보낸다 |
-| `verifyCassette` · `mcpeak verify` | 없다. 카세트가 만든 드리프트 문제라 카세트와 함께 사라졌다 |
+| `cassetteClient` · `loadCassette` · `saveCassette` · `matchKey` · `redact` | `@mcpeak/record` now exports only the External API |
+| `verifyCassette` · `mcpeak verify` | Nothing. It addressed drift that the cassette created, so it went away with the cassette |
 | `mcpeak replay` | `mcpeak test <suite> --session <path>` |
-| `generate --cassette` · `--record` | `generate` 는 항상 실제 서버를 호출한다 |
+| `generate --cassette` · `--record` | `generate` always calls the real server |
 
-목적별로 갈아탈 곳이 다르다.
+Where to move depends on what you wanted.
 
-- **서버의 외부 API 호출을 막고 싶다** → 아래 External 세션. 서버는 실제로 뜨고 그 서버가
-  밖에 부르는 호출만 멈춘다.
-- **서버 자체를 실행하지 않고 결정론적 응답으로 테스트하고 싶다** → `@mcpeak/mock`.
-  사람이 지정한 응답이라 녹화본처럼 낡지 않는다.
+- **You want to stop the server's external API calls** → External sessions below. The server really starts, and only the calls
+  it makes outward are stopped.
+- **You want to test with deterministic responses without running the server at all** → `@mcpeak/mock`.
+  The responses are specified by a person, so they don't go stale the way a recording does.
 
-**External 이 카세트를 그대로 대신하지는 못한다.** 잡는 범위가 `globalThis.fetch` 하나라
-(아래 절), 서버 자체가 비결정적이거나 Node 가 아닌 서버는 덮지 못한다. ADR-0059 「결과」에
-후속 과제로 적혀 있다.
+**External sessions don't replace the cassette one-for-one.** They capture only `globalThis.fetch`
+(see the section below), so they don't cover a server that is itself nondeterministic or a server that isn't Node. This is listed as follow-up work
+under "Consequences" in ADR-0059.
 
-## 공개 API
+## Public API
 
 ```ts
 import {
@@ -51,71 +53,71 @@ import {
 } from "@mcpeak/record";
 ```
 
-루트(`@mcpeak/record`)와 `@mcpeak/record/external` 은 **같은 것**을 가리킨다. 카세트가 사라져
-이 패키지의 API 가 하나뿐이기 때문이고, 서브패스는 이미 그것을 부르고 있는 소비자를 위해
-남겨 둔다. 쓰는 법은 [라이브러리로 쓰기](#라이브러리로-쓰기).
+The root (`@mcpeak/record`) and `@mcpeak/record/external` point to **the same thing.** With the cassette gone,
+this package has only one API; the subpath is kept for consumers who
+already import it. For usage, see [Using it as a library](#using-it-as-a-library).
 
-## 마스킹
+## Masking
 
-이름으로 판정한다. 키를 `-`·`_` 구분자와 카멜케이스 경계로 단어를 나눈 뒤, **뒤에서부터
-이어붙인 접미 조합**이 `authorization`, `apikey`, `accesstoken`, `refreshtoken`, `token`,
-`secret`, `password`, `cookie`, `secretkey` 중 하나와 정확히 일치하는 자리만 `"[redacted]"`
-로 바꾼다. 대소문자는 구분하지 않는다. 부분 문자열 포함이 아니라 접미 일치이므로
-`tokenCount`·`passwordPolicy`처럼 머리 명사가 다른 합성어는 마스킹하지 않고, 반대로
-`X-Api-Key`처럼 앞단어와 합쳐 목록에 걸리는 이름은 마스킹한다. 판정 규칙과 한계는
+It judges by name. A key is split into words on `-`·`_` separators and camelCase boundaries, and only spots where
+**a suffix combination joined from the end** exactly matches one of `authorization`, `apikey`, `accesstoken`, `refreshtoken`, `token`,
+`secret`, `password`, `cookie`, `secretkey` are replaced with `"[redacted]"`.
+Case is ignored. It's a suffix match, not a substring match, so
+compounds with a different head noun such as `tokenCount`·`passwordPolicy` are not masked, while names that hit the list when
+joined with a preceding word, such as `X-Api-Key`, are masked. For the rules and their limits, see
 [ADR-0039](../../docs/adr/0039-민감-키-목록과-매칭-경계.md) ·
 [ADR-0045](../../docs/adr/0045-민감-키-목록의-복수형과-key-합성어.md).
 
-External 세션에서 이 판정이 걸리는 자리는 넷이다.
+In an External session this judgment applies in four places.
 
-| 자리 | 적용 |
+| Place | Applied |
 |---|---|
-| 요청·응답 JSON body | 키 이름이 걸리면 그 값을 `[redacted]` |
-| 헤더 이름 | 위와 같은 단어 판정. 더해 `authorization`·`cookie`·`set-cookie`·`proxy-authorization` 은 이름 판정과 무관하게 항상 마스킹한다 |
-| URL query 파라미터 | 키 이름이 걸리면 그 값을 `[redacted]` |
-| URL 경로 | 이름이 없어 판정할 수 없다. 그래서 통째로 지운다 — [아래 절](#external-세션은-url-경로를-저장하지-않는다) |
+| Request/response JSON body | If a key name matches, its value becomes `[redacted]` |
+| Header names | The same word matching. In addition, `authorization`·`cookie`·`set-cookie`·`proxy-authorization` are always masked regardless of name matching |
+| URL query parameters | If a key name matches, its value becomes `[redacted]` |
+| URL path | There's no name, so it can't be judged. It is erased entirely instead — [section below](#external-sessions-dont-store-the-url-path) |
 
-**이름으로 판정할 수 없는 자리는 마스킹되지 않는다.** JSON body 안에 URL 문자열로 실린 값,
-자유 텍스트에 섞인 토큰이 그렇다. `fetch` 가 던진 오류의 `message`·`stack`·`cause` 를 아예
-저장하지 않는 것도 같은 이유다(ADR-0053) — 자유 텍스트에는 키가 없어 마스킹이 작동하지 않고,
-네트워크 오류 문구에는 실패한 URL 이 통째로 들어가는 경우가 흔하다. 저장하는 것은 닫힌
-열거형(`failureKind`·`name`·`code`)뿐이다.
+**Places that can't be judged by name are not masked.** Values carried as URL strings inside a JSON body, and tokens
+mixed into free text, are examples. The same reason is why the `message`·`stack`·`cause` of an error thrown by `fetch` are
+not stored at all (ADR-0053) — free text has no keys, so masking can't work, and
+network error messages often contain the failed URL in full. Only closed
+enumerations (`failureKind`·`name`·`code`) are stored.
 
-## External 세션
+## External sessions
 
-**서버가 밖으로 부르는 HTTP 호출**을 녹화·재생한다. 유료 API 나 부작용이 있는 endpoint 를
-부르는 서버가 대상이며, 재생할 때도 **서버 자체는 실제로 뜬다** — 멈추는 것은 서버가 아니라
-그 서버가 밖에 부르는 쪽이다.
+Records and replays **the HTTP calls a server makes outward.** It targets servers that call paid APIs or endpoints with side effects,
+and even during replay **the server itself really starts** — what stops is not the server but
+the calls it makes outward.
 
-### 잡는 범위는 `globalThis.fetch` 하나다
+### The only thing it captures is `globalThis.fetch`
 
-첫 어댑터의 이름이 `node.fetch.v1` 이고, 그 이름 안의 `fetch` 가 곧 범위다. 아래는 **범위 밖**이라
-녹화도 재생도 되지 않는다.
+The first adapter is named `node.fetch.v1`, and the `fetch` in that name is its scope. The following are **out of scope**
+and are neither recorded nor replayed.
 
-- `node:http` · `node:https` 직접 호출
-- 그 위에 얹힌 axios · got · node-fetch
-- Node 가 아닌 서버(Python · Go 등) — 주입이 Node 의 `--import` 훅이라 애초에 닿지 않는다
+- Direct calls to `node:http` · `node:https`
+- axios · got · node-fetch, which sit on top of those
+- Servers that aren't Node (Python · Go, etc.) — the injection is Node's `--import` hook, so it never reaches them in the first place
 
-**범위 밖 호출은 Coordinator 에 도달하지 않는다.** 그래서 재생 중에도 실제 네트워크로 나가고,
-막지 못한다. 대신 CLI 가 녹화 0건 · 재생 0건 · 부분 재생 같은 종료 요약으로 그 가능성을 알린다.
-범위를 이렇게 정한 이유와 대안 비교는
+**Out-of-scope calls never reach the Coordinator.** So even during replay they go out to the real network, and
+can't be stopped. Instead, the CLI flags that possibility with an end-of-run summary such as zero recorded · zero replayed · partial replay.
+For why the scope was set this way and a comparison of alternatives, see
 [ADR-0057](../../docs/adr/0057-external-어댑터는-global-fetch-까지만-가로챈다.md).
 
-### CLI 로 쓰기
+### Using it from the CLI
 
-**CLI 에서는** 세션 파일 하나가 세션 하나다 — `sessionId` 를 고정값 `"default"` 로 쓴다. Store
-자체는 `sessionId` 로 세션을 구분하므로 한 SQLite 파일에 여러 세션을 담을 수 있다(아래 라이브러리
-예제 참고). 왕복 예제는 [루트 README](../../README.md#외부-api-를-부르는-서버).
+**In the CLI,** one session file is one session — `sessionId` is the fixed value `"default"`. The Store
+itself distinguishes sessions by `sessionId`, so one SQLite file can hold several sessions (see the library
+example below). For a round-trip example, see the [root README](../../README.md#외부-api-를-부르는-서버).
 
 ```bash
 mcpeak test suite.json --command node --arg ./server.js --record-session weather.session.db
 mcpeak test suite.json --command node --arg ./server.js --session weather.session.db
 ```
 
-### 라이브러리로 쓰기
+### Using it as a library
 
-`@mcpeak/record/external` 이 공개하는 것은 Store 와 Coordinator 둘이다. Coordinator 가 자식에게
-실어 줄 환경 변수를 만들고, 그 환경 변수로 뜬 자식의 `fetch` 가 녹화·재생된다.
+`@mcpeak/record/external` exposes two things: the Store and the Coordinator. The Coordinator builds the environment variables
+to hand to the child, and the `fetch` of a child started with those environment variables is recorded and replayed.
 
 ```ts
 import { createSqliteSessionStore, startExternalCoordinator } from "@mcpeak/record/external";
@@ -144,50 +146,52 @@ try {
 }
 ```
 
-재생은 `{ mode: "replay", sourceSessionId, store }` 로 열고, **그 store 는
-`createSqliteSessionStore({ path, readOnly: true })` 로 연다.** 재생은 읽기이므로 파일을 만들
-이유도 고칠 이유도 없다 — 읽기 전용으로 열지 않으면 스키마 DDL 이 무조건 돌아서, 읽기
-전용(chmod 444) 세션은 재생되지 않고 0바이트 파일을 넘기면 실패한 실행이 그 파일을 빈 세션
-DB 로 덮어쓴다.
+> Comment: start the child process with `handle.childEnvironment` passed through as its env.
 
-재생은 `{ mode: "replay", sourceSessionId, store }` 로 연다. `finish()` 를 **성공·실패 어느
-경로에서도 부르고**, 그 뒤에 `store.close()` 한다 — 안 부르면 SQLite 파일 핸들이 남고 녹화 세션이
-`running` 인 채로 남아 다음 실행이 이어 쓸 수 없다. 반환된 요약의 `interactionCount` ·
-`consumedCount` · `unusedCount` 가 CLI 종료 알림의 근거다.
+Replay is opened with `{ mode: "replay", sourceSessionId, store }`, and **that store is opened with
+`createSqliteSessionStore({ path, readOnly: true })`.** Replay is a read, so there's no reason to create the file or
+modify it — if it isn't opened read-only, the schema DDL always runs, so a read-only
+(chmod 444) session won't replay, and passing a 0-byte file lets a failed run overwrite that file with an empty session
+DB.
 
-### `node:sqlite` 실험 경고
+Replay is opened with `{ mode: "replay", sourceSessionId, store }`. Call `finish()` **on both the success and the failure
+path,** and call `store.close()` after it — if you don't, the SQLite file handle stays open and the recording session
+stays `running`, so the next run can't continue writing to it. The returned summary's `interactionCount` ·
+`consumedCount` · `unusedCount` are what the CLI's end-of-run notice is based on.
 
-External 세션은 `node:sqlite` 로 저장한다. Node 가 이 모듈을 아직 실험적으로 표시하므로,
-런타임에 따라 stderr 에 경고가 한 줄 찍힌다.
+### The `node:sqlite` experimental warning
+
+External sessions are stored with `node:sqlite`. Node still marks this module as experimental, so
+depending on the runtime, one line of warning is printed to stderr.
 
 ```
 (node:2845) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 ```
 
-**프로세스에서 `node:sqlite` 를 처음 로드하는 순간 한 번** 나온다. 세션 하나당도, 호출
-하나당도 아니다 — 모듈 로드는 프로세스에서 한 번뿐이라 한 프로세스가 세션을 여러 개 열어도
-줄은 하나다. `mcpeak test` 한 번은 프로세스 하나이므로 실행당 최대 한 줄이 된다.
+It appears **once, the moment the process first loads `node:sqlite`.** Not once per session, nor once per
+call — a module loads only once per process, so even if one process opens several sessions,
+there's one line. One `mcpeak test` run is one process, so it's at most one line per run.
 
-실측한 것은 두 버전이다.
+Two versions were measured.
 
-| 런타임 | |
+| Runtime | |
 |---|---|
-| Node 22.18.0 | 경고가 나온다 |
-| Node 24.16.0 | 나오지 않는다 |
+| Node 22.18.0 | The warning appears |
+| Node 24.16.0 | It doesn't appear |
 
-그 사이 버전은 재지 않았다. 경고가 어느 패치에서 빠졌는지 모르므로 "22 대는 나오고 24 대는
-안 나온다" 로 일반화하지 않는다.
+Versions in between weren't measured. We don't know which patch dropped the warning, so we don't generalize it as "22.x shows it and 24.x
+doesn't."
 
-이 경고는 **Node 의 API 표면**에 대한 것이지 저장된 녹화에 대한 것이 아니다. 파일은 헤더가
-`SQLite format 3` 인 표준 SQLite 라서 다른 도구로도 열리고, Node 가 바인딩을 바꿔도 그대로
-읽힌다. 경고를 지우지 않는 이유와 범위를 좁힌 방법은
+This warning is about **Node's API surface,** not about the saved recording. The file is standard SQLite with the header
+`SQLite format 3`, so other tools can open it, and it stays readable even if Node changes the binding.
+For why the warning isn't suppressed and how its scope was narrowed, see
 [ADR-0056](../../docs/adr/0056-node-sqlite-실험-경고를-external-사용자에게만-보인다.md).
 
-### External 세션은 URL 경로를 저장하지 않는다
+### External sessions don't store the URL path
 
-마스킹은 **이름**으로 판정한다. URL 경로 세그먼트에는 판정에 쓸 이름이 없어서, 이름 기반
-마스킹으로는 무엇이 비밀인지 가릴 수 없다. 그래서 matchKey 를 계산한 **뒤**, 저장 직전에
-pathname 을 통째로 지운다.
+Masking judges by **name.** URL path segments have no name to judge by, so name-based
+masking can't tell what is secret. So **after** computing the matchKey, the pathname is erased entirely just before
+saving.
 
 ```
 https://hooks.example.com/services/T000/B111/XXXXsecret?token=abc
@@ -195,25 +199,27 @@ https://hooks.example.com/services/T000/B111/XXXXsecret?token=abc
 https://hooks.example.com/<redacted>?token=[redacted]
 ```
 
-**표준 URL 필드 넷**에 같은 규칙이 적용된다. `location`·`content-location` 은 상대 참조(RFC
-9110, `Location: /hooks/SECRET`)여도 거부하지 않고 응답 URL 기준으로 절대 URL 로 해석한 뒤
-같은 규칙으로 지운다. 값 **안에** URL 을 담는 `link`(RFC 8288)·`refresh` 는 문법을 해석해 URL
-부분만 같은 규칙으로 지우고 나머지 구조는 남긴다 — pagination 진단(`rel="next"`)이 남아야
-해서다.
+> `↓ 저장되는 값` = ↓ the value that is stored
 
-| 자리 | 적용 |
+The same rule applies to **four standard URL fields.** `location`·`content-location` are not rejected even when they're relative references (RFC
+9110, `Location: /hooks/SECRET`); they are resolved to an absolute URL against the response URL and then erased by
+the same rule. `link` (RFC 8288)·`refresh`, which carry a URL **inside** their value, are parsed, and only the URL
+part is erased by the same rule while the rest of the structure is kept — pagination diagnostics (`rel="next"`) need to
+survive.
+
+| Place | Applied |
 |---|---|
-| 요청 `display.url` | pathname → `<redacted>` |
-| 저장 outcome `url` | 위와 같다 |
-| `location` 헤더 | 절대 URL 로 해석 후 pathname → `<redacted>` |
-| `content-location` 헤더 | 위와 같다 |
-| `link` 헤더 | 각 `<URI>` 를 위와 같이 지운다. 파라미터는 `rel` 이 등록 값(`next`·`prev`·`first`·`last`·`self` 등)일 때만 남기고, 그 밖의 `rel` 값과 다른 파라미터(`title`·`type`·`anchor`·확장 파라미터)는 이름째 `param=[redacted]` 로 |
-| `refresh` 헤더 | 지연 초는 남기고 `url=` 의 URL 을 위와 같이 지운다. 구분자 뒤에 `url=` 이 없으면 해석 실패로 본다 |
+| Request `display.url` | pathname → `<redacted>` |
+| Stored outcome `url` | Same as above |
+| `location` header | Resolved to an absolute URL, then pathname → `<redacted>` |
+| `content-location` header | Same as above |
+| `link` header | Each `<URI>` is erased as above. Parameters are kept only when `rel` is a registered value (`next`·`prev`·`first`·`last`·`self`, etc.); other `rel` values and other parameters (`title`·`type`·`anchor`·extension parameters) become `param=[redacted]`, name included |
+| `refresh` header | The delay seconds are kept, and the URL in `url=` is erased as above. If there's no `url=` after the separator, it's treated as a parse failure |
 
-`link`·`refresh` 값이 문법대로 해석되지 않으면 통째로 `[redacted]` 다 — 무엇을 지워야 할지
-모르는 값을 원문으로 남기지 않는다. `link` 파라미터 값은 문법상 임의 문자열이라(`title="sk_…"`
-도 문법에 맞는다) 이름으로 토큰을 가려낼 수 없어서, 등록된 `rel` 값 외에는 아무 값도 원문으로
-남기지 않는다. 파라미터 **이름**도 외부가 정하는 임의 token 이라(`sk_live_…=1`) 같이 지운다.
+If a `link`·`refresh` value doesn't parse according to its grammar, the whole value becomes `[redacted]` — a value where we don't know what to erase
+isn't left as the original. `link` parameter values are arbitrary strings by grammar (`title="sk_…"`
+is grammatically valid), so tokens can't be picked out by name, and no value other than a registered `rel` value is left
+as the original. Parameter **names** are also arbitrary tokens set by the outside (`sk_live_…=1`), so they're erased as well.
 
 ```
 Link: </services/T00/B00/XXXXSECRET?cursor=2>; rel="next"
@@ -221,70 +227,72 @@ Link: </services/T00/B00/XXXXSECRET?cursor=2>; rel="next"
 Link: <https://hooks.example.com/<redacted>?cursor=2>; rel="next"
 ```
 
-matchKey 계산에 쓰는 정확한 pathname(매칭 재료)은 **자식 프로세스 밖으로 나가지 않는다** —
-Coordinator 로 보내지도, Store 에 실리지도 않는다. `/hooks/AAA` 와 `/hooks/BBB` 는 여전히
-다른 matchKey 를 낸다. pathname 이 없어도 매칭 정확도가 변하지 않는 이유다.
+> `↓ 저장되는 값` = ↓ the value that is stored
 
-**이것이 전부는 아니다.** JSON body 안의 URL 문자열(pagination 의 `next`, HATEOAS 링크)에는
-경로가 그대로 남는다. 값의 이름으로 판정할 수 없는 자리라 ADR-0053 도 이를 보장 범위 밖으로
-둔다. **자격증명이 어디에 실려 나가든 아래 정리 절차는 똑같이 적용된다.**
+The exact pathname used to compute the matchKey (the matching material) **never leaves the child process** —
+it isn't sent to the Coordinator or put in the Store. `/hooks/AAA` and `/hooks/BBB` still
+produce different matchKeys. That's why matching accuracy doesn't change even without the pathname.
 
-Slack·Discord webhook처럼 **경로 자체가 자격증명**인 endpoint를 녹화해도, 그 값은 위 URL
-필드·헤더에서는 남지 않는다. 다만 그 endpoint 가 JSON body 로 자기 URL 을 되돌려주면 그
-자리로는 여전히 샌다.
+**This isn't everything.** URL strings inside a JSON body (pagination `next`, HATEOAS links) keep
+their path as is. These are places that can't be judged by the value's name, so ADR-0053 also leaves them outside its
+guarantees. **Wherever a credential leaks out, the cleanup procedure below applies the same way.**
 
-### body 의 URL 은 지우지 않고 센다
+Even if you record an endpoint whose **path itself is a credential,** like a Slack·Discord webhook, that value doesn't remain in the URL
+fields·headers above. But if that endpoint returns its own URL in a JSON body, it still leaks
+through that spot.
 
-**지우지 않는 이유는 저장본이 곧 재생 입력이기 때문이다.** `restoreHttpOutcome` 이 저장한
-body 를 그대로 서버에게 돌려주므로, 여기서 경로를 지우면 `next` 를 따라가는 서버가 없는
-경로로 요청해 재생이 깨진다 — body 에 URL 이 있는 서버, 즉 지켜야 할 바로 그 서버가 깨진다.
-근거와 버린 대안들은 [ADR-0062](../../docs/adr/0062-세션-본문의-url-은-지우지-않고-알린다.md).
+### URLs in the body are counted, not erased
 
-대신 **녹화가 끝나면 무엇이 남았는지 센다.** 갈래는 둘이다.
+**They aren't erased because the stored copy is the replay input.** `restoreHttpOutcome` returns the stored
+body to the server as is, so erasing the path here would make a server that follows `next` request a
+nonexistent path and break replay — the very server that needs protecting, one with URLs in its body, would break.
+For the rationale and the alternatives that were dropped, see [ADR-0062](../../docs/adr/0062-세션-본문의-url-은-지우지-않고-알린다.md).
 
-| 갈래 | 뜻 |
+Instead, **once recording ends, it counts what remains.** There are two kinds.
+
+| Kind | Meaning |
 |---|---|
-| 되돌아온 경로 | body 의 URL 이 **그 요청의 경로를 그대로 담고 있다.** 자식이 정확한 경로를 쥐고 판정하므로 추측이 없다 — ADR-0053 이 표준 자리에서 지운 값이 body 로 되돌아왔다는 뜻이다 |
-| 그 밖의 URL | 되돌아온 경로는 아니지만 URL 로 해석되는 문자열. 약한 신호다 |
+| Echoed path | A URL in the body **contains that request's path as is.** The child judges with the exact path in hand, so there's no guessing — it means a value ADR-0053 erased from the standard places came back through the body |
+| Other URLs | Strings that parse as URLs but aren't an echoed path. A weak signal |
 
-세는 것은 **세션 안에서 서로 다른 URL 의 개수**다. **원문 URL 은 세션 파일의 body 에 그대로
-남는다** — 지우지 않는 것이 이 결정이다. 값이 나가지 않는 곳은 **Coordinator wire 와 종료
-요약** 둘이다. 자식이 부모로 보내는 것은 SHA-256 지문뿐이고 화면에 나가는 것은 개수뿐이라,
-세는 일 자체가 새 유출 경로를 만들지 않는다.
+What's counted is **the number of distinct URLs within the session.** **The original URLs remain as is in the session file's
+body** — not erasing them is the decision. The places the values don't go are **the Coordinator wire and the end-of-run
+summary.** The child sends the parent only SHA-256 fingerprints and only counts go to the screen, so
+the counting itself doesn't create a new leak path.
 
-URL 이 512개를 넘으면 지문 일부를 버리고 "최소 N건" 으로 알린다. 전부 실으면 Coordinator
-payload 상한을 넘겨 녹화가 통째로 실패하기 때문이다.
+If there are more than 512 URLs, some fingerprints are dropped and it reports "at least N." Sending them all would exceed the Coordinator
+payload limit and fail the whole recording.
 
-**둘 중 하나라도 잡힌 세션은 커밋 전에 내용을 확인하라.**
+**If either kind is caught in a session, check its contents before committing.**
 
-- **되돌아온 경로** — ADR-0053 이 지우려던 경로가 body 로 되돌아와 원문으로 들어 있다.
-  경로가 자격증명인 endpoint 였다면 그 값이 파일에 있다.
-- **그 밖의 URL** — 이쪽도 안전하다는 뜻이 아니다. 응답이 담은 **다른** webhook URL 처럼
-  경로가 자격증명인 URL 이 여기 들어갈 수 있다. 요청 경로와 다를 뿐이다.
+- **Echoed path** — the path ADR-0053 meant to erase came back through the body and is stored as the original.
+  If the endpoint's path was a credential, that value is in the file.
+- **Other URLs** — this doesn't mean they're safe either. A URL whose path is a credential, like a **different** webhook URL
+  carried in the response, can land here. It just differs from the request path.
 
-자격증명이 들어 있으면 커밋하지 말고 아래 정리 절차를 따른다.
+If a credential is in it, don't commit; follow the cleanup procedure below.
 
-**이 절 위에 있던 서술("URL 경로가 원문으로 저장된다")은 ADR-0053 의 구현 PR 이전 버전에
-해당한다.** 그 시점에 만든 세션 파일에는 경로가 원문으로 남아 있으므로, 아래 정리 절차가
-여전히 필요하다.
+**The description that used to be above this section ("URL paths are stored as the original") applies to the version before ADR-0053's
+implementation PR.** Session files made at that time still have the path as the original, so the cleanup procedure below is
+still needed.
 
-### 세션 파일에 자격증명이 들어갔을 때
+### When a credential got into a session file
 
-이 문서의 이전 버전(경로 제거 구현 이전)에서 녹화한 세션에는 경로가 원문으로 들어 있다.
-**파일을 지우는 것으로 끝나지 않는다.**
+Sessions recorded with an earlier version of this document (before path removal was implemented) contain the path as the original.
+**Deleting the file doesn't end it.**
 
-1. 세션 파일을 삭제한다.
-2. 노출된 자격증명을 **폐기하고 재발급한다.** 커밋했다면 파일을 지워도 git 히스토리에
-   남아 있으므로, 그 값은 이미 노출된 것으로 다뤄야 한다.
-3. 새 자격증명으로 다시 녹화한다.
+1. Delete the session file.
+2. **Revoke and reissue** the exposed credential. If you committed it, it remains in git history even after
+   the file is deleted, so treat the value as already exposed.
+3. Record again with the new credential.
 
-## 제외 범위
+## Out of scope
 
-첫 버전은 사용자 정의 매칭 함수, 사용자 정의 마스킹 규칙, TTL, 부분 매칭을 제공하지 않는다.
-필요성이 확인되면 별도 ADR로 확장한다.
+The first version doesn't provide custom matching functions, custom masking rules, TTL, or partial matching.
+If the need is confirmed, it will be extended through a separate ADR.
 
-**계약 스냅샷(`snapshotContract`)과 비결정 필드 제거도 제공하지 않는다.** 이 패키지는
-비결정성을 지워서 감추지 않고, 같은 키에 다른 응답이 오면 경고해서 드러낸다. 실행 간
-차이를 판정하는 일은 `runner` 의 결정론성 확인이 맡는다
-([ADR-0038](../../docs/adr/0038-결정론성-확인의-비교-대상과-캡처-위치.md)). 근거는
+**Contract snapshots (`snapshotContract`) and removal of nondeterministic fields aren't provided either.** This package
+doesn't hide nondeterminism by erasing it; it surfaces it by warning when a different response comes for the same key. Judging
+differences between runs is the job of `runner`'s determinism check
+([ADR-0038](../../docs/adr/0038-결정론성-확인의-비교-대상과-캡처-위치.md)). For the rationale, see
 [ADR-0047](../../docs/adr/0047-계약-스냅샷-api-철회.md).

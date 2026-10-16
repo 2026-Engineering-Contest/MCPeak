@@ -1,13 +1,15 @@
+**English** · [한국어](./README.ko.md)
+
 # @mcpeak/runner
 
-선언형 MCP 테스트 명세를 순서대로 실행하고, assertion 결과와 구조화된 이벤트·보고서를 제공합니다.
+Runs declarative MCP test suites in order and provides assertion results along with structured events and reports.
 
-- **오너:** `@seodduu` `@endl24` `@sunghoon0303` (① MCP 서버 테스트 파트)
-- **의존:** `@mcpeak/core`
+- **Owners:** `@seodduu` `@endl24` `@sunghoon0303` (① MCP server testing part)
+- **Dependency:** `@mcpeak/core`
 
-## 명세 작성
+## Writing a suite
 
-`defineMcpSuite`로 TypeScript 리터럴 타입을 유지하면서 런타임 명세 검증을 수행합니다. 명세를 외부 JSON이나 생성 결과로 받는 경우에는 `validateMcpSuite`를 사용하세요.
+`defineMcpSuite` validates the suite at runtime while preserving TypeScript literal types. When you receive a suite as external JSON or as generated output, use `validateMcpSuite`.
 
 ```ts
 import { defineMcpSuite } from "@mcpeak/runner";
@@ -48,14 +50,14 @@ export const suite = defineMcpSuite({
 });
 ```
 
-`listTools`에는 `toolExists`를, `callTool`에는 `isError`, `bodyMatchesSchema`,
-`structuredContentMatchesSchema`를 쓸 수 있습니다. 마지막 단언은 기존 text 본문 추출 규칙을
-바꾸지 않고 `ToolResult.raw.structuredContent`만 저장된 계약과 대조합니다. 명세와 실행 결과는
-명세 순서대로 처리되며, `RunnerReport`와 `RunnerEvent`는 `JSON.stringify`할 수 있습니다.
+`listTools` can take `toolExists`, and `callTool` can take `isError`, `bodyMatchesSchema`, and
+`structuredContentMatchesSchema`. The last assertion leaves the existing text body extraction rule
+unchanged and checks only `ToolResult.raw.structuredContent` against the saved contract. Suites and run results are
+processed in suite order, and `RunnerReport` and `RunnerEvent` can be passed to `JSON.stringify`.
 
-## 실행과 종료 수명주기
+## Execution and shutdown lifecycle
 
-`runSuite`는 주입받은 client를 절대로 닫지 않습니다. 실행을 시작한 쪽은 client와 정확히 같은 객체를 가진, 멱등적인 shutdown controller를 제공하고 `finalizeRunnerExecution`으로 종료를 마무리해야 합니다.
+`runSuite` never closes the client injected into it. The side that starts the run must provide an idempotent shutdown controller holding exactly the same object as the client, and complete the shutdown with `finalizeRunnerExecution`.
 
 ```ts
 import {
@@ -90,24 +92,24 @@ const execution = runSuite({
 const report = await finalizeRunnerExecution({ execution, shutdown });
 ```
 
-case `timeoutMs`가 있으면 그것이 우선하고, 없으면 suite의 `defaultTimeoutMs`, 둘 다 없으면 Runner의 10초 fallback을 사용합니다. timeout 또는 외부 `AbortSignal` 중단은 이후 케이스 실행을 멈춥니다.
+A case's `timeoutMs` takes priority if present; otherwise the suite's `defaultTimeoutMs` is used, and if neither is set, Runner's 10 second fallback. A timeout or an abort from an external `AbortSignal` stops the execution of the remaining cases.
 
-`execution.drain`은 pending MCP 작업을 기다리는 비거부 결과입니다. 기본 마감은 `5_000ms`이고 결과는 `{ status: "settled" }` 또는 `{ status: "deadlineExceeded", pendingOperations: 1 }`입니다. drain 완료 뒤 graceful close와 force close는 각각 기본 `2_000ms`로 독립 제한됩니다. controller는 stdio라면 프로세스 종료 또는 kill, HTTP라면 요청 abort나 socket destroy 같은 실제 전송 계층 종료를 구현해야 합니다. 늦게 끝나거나 거부되는 MCP 작업의 rejection handler도 controller 수명주기 동안 유지하세요.
+`execution.drain` is a non-rejecting result that waits for pending MCP operations. The default deadline is `5_000ms`, and the result is `{ status: "settled" }` or `{ status: "deadlineExceeded", pendingOperations: 1 }`. After drain completes, graceful close and force close are each limited independently, by default to `2_000ms`. The controller must implement actual transport layer shutdown: process exit or kill for stdio, request abort or socket destroy for HTTP. Keep rejection handlers for MCP operations that finish late or reject in place for the lifetime of the controller.
 
-`drainTimeoutMs`는 `1..60_000`의 유한 정수여야 합니다. `closeTimeoutMs`와 `forceCloseTimeoutMs`는 각각 `1..10_000`의 유한 정수여야 합니다. 0, 비유한수, 음수, 소수는 실행 전에 동기 `RangeError`가 발생합니다.
+`drainTimeoutMs` must be a finite integer in `1..60_000`. `closeTimeoutMs` and `forceCloseTimeoutMs` must each be a finite integer in `1..10_000`. Zero, non-finite numbers, negative numbers, and decimals throw a synchronous `RangeError` before the run.
 
-## 관찰 데이터와 후속 수정
+## Observed data and follow-up repair
 
-observer 이벤트와 보고서에는 기본 민감 키(authorization, cookie, password, secret, token 등)를 재귀적으로 마스킹합니다. 호출자는 `sensitiveKeys`와 `sensitiveValues`를 추가할 수 있습니다. 기본 한도는 case당 65,536 bytes, report당 1,048,576 bytes입니다. Runner는 이벤트나 보고서를 자동 저장하지 않습니다.
+Observer events and reports recursively mask default sensitive keys (authorization, cookie, password, secret, token, and so on). Callers can add `sensitiveKeys` and `sensitiveValues`. The default limits are 65,536 bytes per case and 1,048,576 bytes per report. Runner never saves events or reports automatically.
 
-`RunnerReport`에는 실패한 case의 정제된 명세와 진단이 남습니다. 따라서 JSON-safe한 sanitized repair input으로 변환하여, 사용자 검토를 거치는 후속 repair 흐름에 사용할 수 있습니다. 원본 MCP 호출은 별도로 보관된 입력을 사용하므로 observer 데이터에 비밀값을 노출하지 않습니다.
+A `RunnerReport` keeps the sanitized suite and diagnostics of failed cases. So it can be converted into JSON-safe sanitized repair input and used in a follow-up repair flow that goes through user review. The original MCP calls use separately kept input, so no secrets are exposed in observer data.
 
-## 현재 제외 범위
+## Currently out of scope
 
-- generate provider 또는 repair validator 구현
-- JUnit 출력과 Vitest adapter
-- 병렬 실행
+- generate provider or repair validator implementation
+- JUnit output and a Vitest adapter
+- Parallel execution
 
-## 이전 API 호환성
+## Compatibility with the previous API
 
-`createMcpTest(config, body)`와 `toContainTool(result, name)`은 minor 버전 호환성을 위한 deprecated shim입니다. 기존 시그니처와 `not implemented` 오류를 그대로 유지하며, major release 전에는 제거하지 않습니다. 새 코드에서는 선언형 `defineMcpSuite`와 `runSuite`를 사용하세요.
+`createMcpTest(config, body)` and `toContainTool(result, name)` are deprecated shims kept for minor version compatibility. They keep their existing signatures and the `not implemented` error as they are, and will not be removed before a major release. In new code, use the declarative `defineMcpSuite` and `runSuite`.

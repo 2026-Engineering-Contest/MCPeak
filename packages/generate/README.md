@@ -1,17 +1,19 @@
+**English** · [한국어](./README.ko.md)
+
 # @mcpeak/generate
 
-MCP 도구의 입력 스키마에서 결정론적 baseline을 만들고, 사용자가 승인한 AI 보조 검토로 테스트
-초안을 발전시킵니다.
+Builds a deterministic baseline from the input schemas of MCP tools, and evolves the test
+draft through AI-assisted review that the user approves.
 
-- **오너:** `@seodduu` `@endl24` `@sunghoon0303`
-- **생성 시 의존:** `@mcpeak/core`, `@mcpeak/runner`
-- **생성 결과 실행 시 의존:** `@mcpeak/runner`
+- **Owners:** `@seodduu` `@endl24` `@sunghoon0303`
+- **Dependencies at generation time:** `@mcpeak/core`, `@mcpeak/runner`
+- **Dependencies when running the generated result:** `@mcpeak/runner`
 
-## 결정론적 baseline
+## Deterministic baseline
 
-`createBaselineSuite()`는 하나의 서버에서 발견한 `ToolDef[]`를 메모리의 `TestSuiteSpec`으로
-합성합니다. 같은 도구 정의와 옵션은 같은 suite와 fingerprint를 반환합니다. 이 API는 파일을
-쓰거나 서버에 연결하지 않으므로, CLI와 다른 사용자 인터페이스가 안전하게 조립할 수 있습니다.
+`createBaselineSuite()` synthesizes the `ToolDef[]` discovered on a single server into an in-memory
+`TestSuiteSpec`. The same tool definitions and options return the same suite and fingerprint. This API
+neither writes files nor connects to a server, so the CLI and other user interfaces can compose it safely.
 
 ```ts
 import { createBaselineSuite } from "@mcpeak/generate";
@@ -24,16 +26,16 @@ const baseline = createBaselineSuite(tools, {
 console.log(baseline.suiteFingerprint);
 ```
 
-입력값은 `const` → `default` → `examples[0]` → `enum[0]` → 타입별 고정값 순서로 선택합니다.
-객체에서는 필수 프로퍼티만 포함하고 배열에서는 `items`로 원소 한 개를 생성합니다. baseline의
-happy-path는 도구 응답의 `isError`가 `false`인지 확인합니다. 도구가 `outputSchema`를 선언하면
-의미를 보존할 수 있는 부분집합을 `structuredContentMatchesSchema` 단언으로 함께 저장합니다.
-따라서 서버가 나중에 선언과 응답을 함께 바꿔도 저장 당시 출력 계약으로 다시 검사합니다.
+Input values are picked in this order: `const` → `default` → `examples[0]` → `enum[0]` → a fixed value per type.
+Objects get only their required properties, and arrays get a single element generated from `items`. The baseline's
+happy path checks that the tool response's `isError` is `false`. If a tool declares an `outputSchema`,
+the subset whose meaning can be preserved is saved along with it as a `structuredContentMatchesSchema` assertion.
+So even if the server later changes both its declaration and its response, it is checked again against the output contract as it stood when saved.
 
-`generateTests()`는 기존 TypeScript 파일 생성 API로 계속 제공됩니다. 생성 파일 이름과 입력값
-선택 규칙은 아래 설명을 따릅니다.
+`generateTests()` remains available as the existing TypeScript file generation API. Generated file names and the input value
+selection rules follow the description below.
 
-## 테스트 생성
+## Generating tests
 
 ```ts
 import { generateTests } from "@mcpeak/generate";
@@ -43,13 +45,13 @@ const paths = await generateTests(tools, {
 });
 ```
 
-기본적으로 생성 대상 파일이 이미 있으면 어떤 파일도 쓰지 않고 `OUTPUT_FILE_EXISTS` 오류로
-중단합니다. 기존 생성 파일을 명시적으로 교체하려는 경우에만 `overwrite: true`를 지정하세요.
-자동 생성 파일은 직접 수정하지 말고 사람이 작성하는 테스트는 별도 파일에 보관하는 것을 권장합니다.
-덮어쓰기는 심볼릭 링크를 따라가지 않는 파일 열기를 지원하는 환경에서만 동작합니다. 대상이
-심볼릭 링크이거나 플랫폼이 해당 기능을 지원하지 않으면 기존 파일을 변경하지 않고 중단합니다.
-현재 Node.js가 `O_NOFOLLOW`를 제공하지 않는 Windows에서는 `overwrite: true`를 지원하지 않으며,
-기본 no-clobber 생성과 새 파일 생성은 그대로 사용할 수 있습니다.
+By default, if any target file already exists, no file is written and it stops with an `OUTPUT_FILE_EXISTS`
+error. Specify `overwrite: true` only when you explicitly intend to replace existing generated files.
+We recommend not editing generated files directly and keeping hand-written tests in separate files.
+Overwriting works only in environments that support opening files without following symbolic links. If the target is
+a symbolic link or the platform does not support that capability, it stops without changing the existing file.
+On Windows, where Node.js currently does not provide `O_NOFOLLOW`, `overwrite: true` is not supported;
+the default no-clobber generation and creating new files still work.
 
 ```ts
 await generateTests(tools, {
@@ -58,50 +60,50 @@ await generateTests(tools, {
 });
 ```
 
-도구 이름은 소문자 영문·숫자와 하이픈으로 정규화되고 최대 80자로 잘립니다. 정규화 결과가
-비어 있거나 Windows 예약 이름이면 `tool-<순번>`을 사용합니다. 이미 예약된 이름과 충돌하면
-비어 있는 이름을 찾을 때까지 `-2`, `-3`처럼 결정론적 접미사를 붙입니다. 따라서 호출자는
-접미사가 없는 `<tool-name>.generated.ts`를 가정하지 말고 반환된 `paths`로 생성 파일을 찾아야
-합니다. 생성 파일은 서버 연결 방법이나 `McpClient`를 포함하지 않고 Runner의 선언형
-`generatedSuite`만 export합니다.
+Tool names are normalized to lowercase letters, digits, and hyphens and truncated to at most 80 characters. If the normalized result
+is empty or a Windows reserved name, `tool-<순번>` (a sequence number) is used. If it collides with an already reserved name,
+deterministic suffixes such as `-2`, `-3` are appended until a free name is found. So callers
+should not assume an unsuffixed `<tool-name>.generated.ts` and should find generated files through the returned `paths`.
+Generated files contain neither how to connect to the server nor an `McpClient`; they export only Runner's declarative
+`generatedSuite`.
 
-지원하는 키워드는 `type`(단일), `required`, `properties`, `items`(단일 스키마), `enum`, `const`,
-`default`, `examples`, 범위·길이·개수 제약, 표에 있는 `format`, `pattern`(ECMA-262 부분집합),
-`additionalProperties`, `propertyNames`, 로컬 `$ref`(`$defs`·`definitions`), `anyOf`, `oneOf`
-입니다. `allOf`·`not`·`if`·`patternProperties`·배열 형태 `type`·튜플 `items`·원격 `$ref` 는 아직
-지원하지 않으며, 그런 키워드가 있는 툴은 건너뛰고 나머지 툴을 생성합니다. 후보값이 제약을
-만족하지 않거나 제약이 서로 모순이면 파일을 쓰기 전에 `GenerateTestsError` 를 발생시킵니다.
+The supported keywords are `type` (single), `required`, `properties`, `items` (single schema), `enum`, `const`,
+`default`, `examples`, range, length, and count constraints, the `format` values in the table, `pattern` (an ECMA-262 subset),
+`additionalProperties`, `propertyNames`, local `$ref` (`$defs`, `definitions`), `anyOf`, and `oneOf`.
+`allOf`, `not`, `if`, `patternProperties`, array-form `type`, tuple `items`, and remote `$ref` are not
+supported yet; a tool that has such a keyword is skipped and the remaining tools are generated. If a candidate value does not
+satisfy its constraints or the constraints contradict each other, a `GenerateTestsError` is thrown before any file is written.
 
-## AI 보조 검토와 승인
+## AI-assisted review and approval
 
-AI 보조 흐름은 baseline, 현재 승인 draft, 검토 중 candidate, 최종 실행 snapshot을 분리합니다.
-Codex 또는 Claude의 제안은 바로 실행하거나 저장되지 않습니다. 승인 draft는 사용자가 선택한
-변경만 적용할 때 바뀝니다.
+The AI-assisted flow keeps the baseline, the current approved draft, the candidate under review, and the final run snapshot separate.
+Suggestions from Codex or Claude are never run or saved immediately. The approved draft changes only when the user applies
+the changes they selected.
 
-사용자가 재수정을 요청할 때마다 provider session을 재개하지 않는 stateless한 새 요청을 만듭니다.
-각 요청은 baseline, 현재 working candidate, 사용자 피드백, 필요한 도구 정의와 고정 출력 계약을
-다시 사용합니다. 이전 raw prompt나 provider 출력은 자동으로 다음 요청에 포함하지 않습니다.
+Each time the user asks for another revision, a new stateless request is built without resuming the provider session.
+Each request reuses the baseline, the current working candidate, the user's feedback, the needed tool definitions, and the fixed output contract.
+Earlier raw prompts and provider output are not automatically included in the next request.
 
-승인은 세 단계입니다.
+Approval has three stages.
 
-1. 전송 승인: provider, model, 정제된 payload, byte 길이, timeout, fingerprint를 검토합니다.
-2. 변경 승인: 정제된 candidate와 로컬에서 계산한 diff를 검토하고 적용할 변경을 선택합니다.
-3. 최종 실행 승인: 저장 또는 실행 전에 최종 suite snapshot의 fingerprint를 다시 확인합니다.
+1. Send approval: review the provider, model, sanitized payload, byte length, timeout, and fingerprint.
+2. Change approval: review the sanitized candidate and a locally computed diff, and choose which changes to apply.
+3. Final run approval: confirm the fingerprint of the final suite snapshot again before saving or running.
 
-provider 결과는 runtime validation, 크기 제한, redaction을 통과한 candidate만 검토 화면에
-노출합니다. raw prompt, provider stdout·stderr, native error stack, 실제 MCP 입력·응답은 public
-상태, 로그, report에 보존하지 않습니다.
+Of the provider's results, only candidates that pass runtime validation, size limits, and redaction are shown
+on the review screen. Raw prompts, provider stdout and stderr, native error stacks, and actual MCP inputs and responses are not kept in public
+state, logs, or reports.
 
-Codex와 Claude adapter는 각각 빈 임시 작업 디렉터리, stdin, 구조화 출력 계약을 사용합니다.
-도구, MCP, 파일 쓰기와 provider session 영속화를 차단하고, 환경변수 allowlist, timeout, 취소와
-bounded 종료를 적용합니다. 실제 provider 실행에는 사용자가 설치하고 인증한 CLI가 필요합니다.
+The Codex and Claude adapters each use an empty temporary working directory, stdin, and a structured output contract.
+They block tools, MCP, file writes, and provider session persistence, and apply an environment variable allowlist, timeout, cancellation, and
+bounded shutdown. Actually running a provider requires a CLI the user has installed and authenticated.
 
-`RunnerReport`를 바탕으로 provider를 호출해 테스트를 자동 repair하는 기능은 이 패키지의 현재
-범위가 아닙니다. Runner의 실행과 report 계약도 변경하지 않습니다.
+Calling a provider based on a `RunnerReport` to automatically repair tests is not in this package's current
+scope. It also does not change Runner's execution and report contracts.
 
-## 실제 client로 실행
+## Running with a real client
 
-생성 파일과 실제 서버 연결은 별도 실행 진입점에서 조합합니다.
+Generated files and the real server connection are composed in a separate execution entry point.
 
 ```ts
 import { runSuite } from "@mcpeak/runner";
@@ -115,15 +117,15 @@ const execution = runSuite({
 const report = await execution.report;
 ```
 
-client와 transport를 만든 실행 진입점은 실행이 끝난 뒤 해당 client의 종료도 책임져야 합니다.
-생성된 코드는 Vitest에 의존하지 않으므로 CLI, Dashboard 또는 별도 테스트 adapter에서도 같은
-suite를 사용할 수 있습니다.
+The execution entry point that created the client and transport is also responsible for closing that client after the run ends.
+Generated code does not depend on Vitest, so the CLI, the Dashboard, or a separate test adapter can all use the same
+suite.
 
-## 자동 생성 범위
+## Scope of automatic generation
 
-스키마만으로 알 수 없는 비정상 입력, 구체적인 업무 결과값과 비즈니스 규칙 검증은 생성하지
-않습니다. `outputSchema`의 타입·필드 구조는 검사하지만 `sum: 999`처럼 타입만 맞는 계산 오답은
-판정하지 않습니다. `patternProperties`, 조합 스키마 등 Runner 부분집합으로 의미를 보존할 수 없는
-출력 계약은 조용히 키워드를 버리지 않습니다. 정상 `isError` 검사는 유지하고 결과의
-`outputContractSkips`와 CLI 경고에 미검증 경로·원인을 남깁니다. 생성 결과를 초안으로 검토한 뒤
-필요한 assertion과 케이스를 별도 파일에 추가하세요.
+It does not generate abnormal inputs that the schema alone cannot tell you about, specific business result values, or business rule validation.
+It checks the types and field structure of `outputSchema`, but does not judge a computation error that only has the right type, like `sum: 999`.
+For output contracts whose meaning cannot be preserved with the Runner subset, such as `patternProperties` or combined schemas,
+keywords are not silently dropped. The normal `isError` check is kept, and the unverified paths and reasons are left in the result's
+`outputContractSkips` and in a CLI warning. Review the generated result as a draft, then
+add the assertions and cases you need in a separate file.

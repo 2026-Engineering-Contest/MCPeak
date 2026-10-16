@@ -318,6 +318,49 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
+      # 배포하지 않는 패키지(config.json 의 `ignore`)를 대상으로 한 changeset 을 **거부한다.**
+      # `changeset version` 은 그런 파일을 소비하지 않고 남긴다. changesets/action 은 남은
+      # 파일을 보고 매번 배포 대신 버전 PR 경로로 가는데, 바뀐 게 없어 "No commits between
+      # main and changeset-release/main" 으로 실패한다 — 2026-10-04 부터 릴리스가 멈춘 원인이다.
+      # 아래 `changeset status` 는 이것을 정상으로 본다. 빈 changeset(`---\n---`)은 정상 소비된다.
+      # 따옴표 이스케이프를 피하려고 `node -e` 대신 heredoc 으로 스크립트를 넘긴다.
+      - name: Reject changesets for ignored packages
+        run: |
+          node - <<'EOF'
+          const fs = require("node:fs");
+          const path = require("node:path");
+          const dir = ".changeset";
+          const { ignore = [] } = JSON.parse(fs.readFileSync(path.join(dir, "config.json"), "utf8"));
+          // `*` 는 `[^/]*` 로, 나머지 정규식 특수문자는 이스케이프한다.
+          const escape = (s) => s.replace(/[.+?^$|()[\]{}\\/]/g, "\\$&");
+          const toRegExp = (glob) => new RegExp("^" + glob.split("*").map(escape).join("[^/]*") + "$");
+          const patterns = ignore.map(toRegExp);
+          const files = fs
+            .readdirSync(dir)
+            .filter((f) => f.endsWith(".md") && f !== "README.md")
+            .sort();
+          let failed = false;
+          for (const f of files) {
+            const file = path.join(dir, f);
+            const lines = fs.readFileSync(file, "utf8").split(/\r?\n/);
+            if (lines[0].trim() !== "---") continue;
+            const end = lines.indexOf("---", 1);
+            const front = lines.slice(1, end === -1 ? lines.length : end);
+            for (const line of front) {
+              const m = line.match(/^\s*["']?([^"':]+?)["']?\s*:/);
+              if (!m) continue;
+              const pkg = m[1].trim();
+              if (!patterns.some((re) => re.test(pkg))) continue;
+              failed = true;
+              console.log(`::error::${file} 이 배포하지 않는 패키지 '${pkg}' 를 대상으로 합니다 (.changeset/config.json 의 ignore).`);
+              console.log("::error::이런 changeset 은 changeset version 이 소비하지 않고 남아, 릴리스가 배포 대신 버전 PR 을 만들다 실패합니다 (2026-10-04 부터 릴리스가 멈춘 원인).");
+              console.log("::error::배포하지 않는 패키지만 바꿨다면 이 파일을 지우고 'pnpm changeset add --empty' 로 빈 changeset 을 넣으세요.");
+            }
+          }
+          if (failed) process.exit(1);
+          console.log(`changeset ${files.length} 개 검사 — ignore 대상 없음`);
+          EOF
+
       # 실패를 **삼키지 않는다.** 한때 이 자리가 `|| echo` 뿐이라 탐지하고도 SUCCESS 로
       # 찍혔다(#264). 지금은 출력을 잡아 두고 `if/else` 로 갈라 마지막에 `exit 1` 한다.
       #

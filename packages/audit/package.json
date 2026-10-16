@@ -1,6 +1,6 @@
 {
   "name": "@mcpeak/audit",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": false,
   "type": "module",
   "description": "Pre-use security audit for MCP servers, with optional Docker-sandboxed runs",

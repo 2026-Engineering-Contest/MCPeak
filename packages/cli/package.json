@@ -1,6 +1,6 @@
 {
   "name": "@mcpeak/cli",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "private": false,
   "type": "module",
   "description": "CLI for testing MCP servers: run test suites, generate tests, record/replay, mock, and audit",

@@ -1,6 +1,6 @@
 {
   "name": "@mcpeak/mock",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "private": false,
   "type": "module",
   "description": "Mock MCP servers (Streamable HTTP and stdio) with response injection for testing",

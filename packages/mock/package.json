@@ -3,7 +3,15 @@
   "version": "0.4.3",
   "private": false,
   "type": "module",
-  "description": "목 MCP 서버 (Streamable HTTP · stdio) · 응답 주입",
+  "description": "Mock MCP servers (Streamable HTTP and stdio) with response injection for testing",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "mcp-server",
+    "testing",
+    "mock-server",
+    "mock"
+  ],
   "license": "MIT",
   "engines": {
     "node": ">=22.18.0"

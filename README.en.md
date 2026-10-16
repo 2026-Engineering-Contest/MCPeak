@@ -27,7 +27,7 @@ Until now, the only way to know how an MCP (Model Context Protocol) server behav
 to an LLM client and poke at it by hand. MCPeak turns that check into a JSON suite and a terminal
 command. When a test fails, it prints in one line which assertion differs from what, why, and how
 to fix it. HTTP calls the server makes through `globalThis.fetch` are recorded once and replayed
-afterwards, so the same input always gives the same result. Even before the server code exists, you
+afterwards, so those calls return the same responses on every run. Even before the server code exists, you
 can validate the design with a single mock definition file.
 
 > **Note:** the CLI's own messages (failure reasons, fix hints, errors) are currently printed in

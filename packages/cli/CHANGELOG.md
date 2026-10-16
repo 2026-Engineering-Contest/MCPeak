@@ -1,5 +1,20 @@
 # ohmymcp
 
+## 0.14.1
+
+### Patch Changes
+
+- f179930: npm 페이지에 보이는 패키지 README 를 영어로 바꾸고, 한국어 원문은 `README.ko.md` 로 옮겨 맨 위
+  링크로 전환하게 합니다. README 가 없던 dashboard 에는 새로 씁니다. 코드와 동작은 바뀌지 않습니다.
+- Updated dependencies [f179930]
+  - @mcpeak/core@0.6.2
+  - @mcpeak/runner@0.11.3
+  - @mcpeak/generate@0.8.3
+  - @mcpeak/optimize@0.2.2
+  - @mcpeak/record@0.5.2
+  - @mcpeak/mock@0.4.5
+  - @mcpeak/audit@0.3.1
+
 ## 0.14.0
 
 ### Minor Changes

@@ -1,6 +1,6 @@
 {
   "name": "@mcpeak/core",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "private": false,
   "type": "module",
   "description": "MCP protocol client, transports, and process lifecycle for MCPeak",

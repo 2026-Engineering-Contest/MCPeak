@@ -1,6 +1,6 @@
 {
   "name": "@mcpeak/optimize",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "private": false,
   "type": "module",
   "description": "Lossless compression of MCP tool definitions with an overlay proxy",

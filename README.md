@@ -20,7 +20,8 @@ mcpeak test weather.suite.json -- node ./server.js
   <a href="https://2026-engineering-contest.github.io/MCPeak/">English docs</a> ·
   <a href="https://2026-engineering-contest.github.io/MCPeak/ko/quick-start">빠른 시작</a> ·
   <a href="https://2026-engineering-contest.github.io/MCPeak/ko/reference/cli">CLI 레퍼런스</a> ·
-  <a href="https://2026-engineering-contest.github.io/MCPeak/ko/faq">FAQ</a>
+  <a href="https://2026-engineering-contest.github.io/MCPeak/ko/faq">FAQ</a> ·
+  <a href="./README.en.md">English README</a>
 </p>
 
 MCP(Model Context Protocol) 서버는 LLM 클라이언트에 붙여 손으로 눌러 봐야 동작을 알 수 있었다.

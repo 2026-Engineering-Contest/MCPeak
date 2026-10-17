@@ -22,6 +22,7 @@
 /docs/adr/            @seodduu @endl24 @sunghoon0303
 /CONTRIBUTING.md      @seodduu @endl24 @sunghoon0303 @ddxng5 @storyrago
 /.github/CONTRIBUTING.md  @seodduu @endl24 @sunghoon0303 @ddxng5 @storyrago
+/CODE_OF_CONDUCT.md   @seodduu @endl24 @sunghoon0303 @ddxng5 @storyrago
 
 # CI 게이트는 전원의 코드 경로를 막거나 통과시키므로 전원이 리뷰한다.
 # 배포 워크플로는 릴리스 담당이 본다 — npm 발행은 되돌릴 수 없어서

@@ -6,6 +6,7 @@ MCPeak에 관심을 가져 주셔서 고맙습니다. 이 문서는 팀 밖에�
 > **English.** Issues and pull requests in English are welcome. Small fixes (bugs, docs, examples)
 > can go straight to a PR. For new features or anything listed under "이슈를 먼저 열어 주세요",
 > please open an issue first. Security problems go to [SECURITY.md](../SECURITY.md), not public issues.
+> Everyone taking part is expected to follow our [Code of Conduct](../CODE_OF_CONDUCT.md).
 > English docs: https://2026-engineering-contest.github.io/MCPeak/
 
 ## 무엇부터 하면 좋을까요?
@@ -95,6 +96,11 @@ docs(cli): test 명령 예시 보완
 
 **리뷰**는 고친 패키지의 담당자에게 자동으로 요청됩니다. 처음 기여하시는 경우 CI는 메인테이너가
 승인한 뒤에 돌기 시작합니다. 일주일이 지나도 답이 없으면 PR에 댓글로 한 번 불러 주세요.
+
+## 행동 강령
+
+이 프로젝트에 참여하는 모든 분은 [행동 강령](../CODE_OF_CONDUCT.md)을 지켜 주세요. 문제가 되는 행동을 겪거나
+보셨다면 행동 강령에 적힌 방법으로 알려 주세요.
 
 ## 라이선스
 

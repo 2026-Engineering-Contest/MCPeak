@@ -1,0 +1,4 @@
+{"name":"mediawiki","command":"../servers/node_modules/.bin/mediawiki-mcp-server","calls":[
+ {"tool":"get-page","input":{"title":"Model Context Protocol","content":"source"}},
+ {"tool":"search-page","input":{"query":"Anthropic Claude","limit":5}},
+ {"tool":"get-recent-changes","input":{"hideBots":true}}]}

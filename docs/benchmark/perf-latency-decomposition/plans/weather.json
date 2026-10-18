@@ -1,0 +1,4 @@
+{"name":"weather","command":"../servers/node_modules/.bin/mcp-server-weather","calls":[
+ {"tool":"get-forecast","input":{"latitude":37.7749,"longitude":-122.4194}},
+ {"tool":"get-forecast","input":{"latitude":40.7128,"longitude":-74.006}},
+ {"tool":"get-alerts","input":{"state":"CA"}}]}

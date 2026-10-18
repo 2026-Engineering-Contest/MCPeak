@@ -1,0 +1,4 @@
+{"name":"pkgver","command":"../servers/node_modules/.bin/mcp-package-version","calls":[
+ {"tool":"check_npm_versions","input":{"dependencies":{"zod":"^3.0.0","vitest":"^2.0.0","typescript":"^5.0.0","express":"^4.0.0","react":"^18.0.0"}}},
+ {"tool":"check_docker_tags","input":{"image":"nginx","limit":5}},
+ {"tool":"check_github_actions","input":{"actions":[{"owner":"actions","repo":"checkout","currentVersion":"v3"},{"owner":"actions","repo":"setup-node","currentVersion":"v3"}]}}]}

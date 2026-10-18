@@ -1,0 +1,1 @@
+{"name":"pera1","command":"node","args":["../servers/node_modules/@kazuph/mcp-github-pera1/dist/index.js"],"calls":[{"tool":"github_get_code","input":{"url":"https://github.com/colinhacks/zod","dir":"packages/docs","ext":"md"}}]}

@@ -1,0 +1,3 @@
+{"name":"airbnb","command":"../servers/node_modules/.bin/mcp-server-airbnb","args":["--ignore-robots-txt"],"calls":[
+ {"tool":"airbnb_search","input":{"location":"Seoul","adults":2}},
+ {"tool":"airbnb_search","input":{"location":"Tokyo","adults":2}}]}

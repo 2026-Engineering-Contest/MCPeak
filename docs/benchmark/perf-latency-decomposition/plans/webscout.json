@@ -1,0 +1,3 @@
+{"name":"webscout","command":"../servers/node_modules/.bin/web-scout-mcp","calls":[
+ {"tool":"DuckDuckGoWebSearch","input":{"query":"model context protocol","maxResults":5}},
+ {"tool":"UrlContentExtractor","input":{"url":"https://modelcontextprotocol.io/introduction"}}]}

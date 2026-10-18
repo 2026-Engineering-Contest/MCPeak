@@ -1,0 +1,1 @@
+{"name":"arxiv","command":"node","args":["../servers/node_modules/arxiv-mcp/dist/index.js"],"calls":[{"tool":"search_papers","input":{"query":"model context protocol","limit":5}},{"tool":"paper_info","input":{"paperId":"2504.08999"}}]}

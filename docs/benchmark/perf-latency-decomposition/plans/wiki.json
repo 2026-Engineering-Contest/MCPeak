@@ -1,0 +1,1 @@
+{"name":"wiki","command":"node","args":["../servers/node_modules/wikipedia-mcp-server/build/index.js"],"calls":[{"tool":"search_wikipedia","input":{"query":"Model Context Protocol","limit":5}},{"tool":"get_wikipedia_article","input":{"title":"Anthropic","include_content":true}}]}

@@ -1,0 +1,1 @@
+{"name":"fetchmcp","command":"node","args":["../servers/node_modules/fetch-mcp/cli.js"],"calls":[{"tool":"fetch_url","input":{"url":"https://modelcontextprotocol.io/introduction","max_length":5000}},{"tool":"fetch_url","input":{"url":"https://en.wikipedia.org/wiki/Model_Context_Protocol","max_length":5000}}]}

@@ -1,0 +1,1 @@
+{"name":"hn","command":"node","args":["../servers/node_modules/hackernews-mcp/bin/cli.js"],"calls":[{"tool":"get_top_hackernews_stories","input":{"count":10}}]}

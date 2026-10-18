@@ -1,0 +1,3 @@
+{"name":"context7","command":"../servers/node_modules/.bin/context7-mcp","calls":[
+ {"tool":"resolve-library-id","input":{"libraryName":"zod","query":"schema validation"}},
+ {"tool":"query-docs","input":{"libraryId":"/colinhacks/zod","query":"how to define an object schema"}}]}

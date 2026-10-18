@@ -1,0 +1,1 @@
+{"name":"npxfetch","command":"node","args":["../servers/node_modules/@tokenizin/mcp-npx-fetch/dist/index.js"],"calls":[{"tool":"fetch_markdown","input":{"url":"https://modelcontextprotocol.io/introduction"}},{"tool":"fetch_json","input":{"url":"https://registry.npmjs.org/zod/latest"}}]}

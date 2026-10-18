@@ -1,0 +1,3 @@
+{"name":"kfetch","command":"../servers/node_modules/.bin/mcp-fetch","calls":[
+ {"tool":"imageFetch","input":{"url":"https://modelcontextprotocol.io/introduction","enableFetchImages":false}},
+ {"tool":"imageFetch","input":{"url":"https://en.wikipedia.org/wiki/Model_Context_Protocol","enableFetchImages":false}}]}

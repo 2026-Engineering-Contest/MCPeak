@@ -1,0 +1,3 @@
+{"name":"coingecko","command":"../servers/node_modules/.bin/mcp-server","calls":[
+ {"tool":"search_docs","input":{"query":"get coin price by id","language":"http"}},
+ {"tool":"execute","input":{"code":"const r = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd'); return await r.json();","intent":"price lookup"}}]}

@@ -10,6 +10,7 @@ import { PERF_USAGE, PERF_USAGE_HINT } from "../src/help.js";
 import { nodePerfDependencies, run } from "../src/index.js";
 import {
   type PerfCommandDependencies,
+  type PerfSignal,
   parsePerfCommand,
   runPerfCommand,
 } from "../src/perf-command.js";
@@ -94,6 +95,13 @@ function harness(
   const writeFileFake = vi.fn(async (path: string, text: string) => {
     written.set(path, text);
   });
+  // 신호 처리기는 등록만 기록하고 실제 프로세스 신호에는 달지 않는다.
+  const handlers: ((signal: PerfSignal) => Promise<void>)[] = [];
+  const detach = vi.fn();
+  const onSignal = vi.fn((handler: (signal: PerfSignal) => Promise<void>) => {
+    handlers.push(handler);
+    return detach;
+  });
   let clock = 1000;
   const deps: PerfCommandDependencies = {
     connectStdio,
@@ -106,6 +114,9 @@ function harness(
     writeFile: writeFileFake,
     makeTempDir: async () => "/tmp/mcpeak-perf-fake",
     removeDir,
+    removeDirSync: vi.fn(),
+    onSignal,
+    killSelf: vi.fn(),
     now: () => {
       clock += 1;
       return clock;
@@ -136,6 +147,15 @@ function harness(
     writeFile: writeFileFake,
     written,
     closed,
+    connection,
+    onSignal,
+    detach,
+    /** 등록된 신호 처리기를 흉내 내어 부른다. 처리기가 없으면 실패한다. */
+    signal: async (signal: PerfSignal) => {
+      const handler = handlers.at(-1);
+      if (handler === undefined) throw new Error("신호 처리기가 등록되지 않았다");
+      await handler(signal);
+    },
     stdout: () => stdout.join(""),
     stderr: () => stderr.join(""),
   };
@@ -199,7 +219,6 @@ describe("parsePerfCommand", () => {
       "b",
       "--baseline",
       "base.json",
-      "--update-baseline",
       "--threshold-pct",
       "125",
       "--threshold-ms",
@@ -217,7 +236,6 @@ describe("parsePerfCommand", () => {
       "--tool=a",
       "--tool=b",
       "--baseline=base.json",
-      "--update-baseline",
       "--threshold-pct=125",
       "--threshold-ms=0",
       "--json",
@@ -232,7 +250,8 @@ describe("parsePerfCommand", () => {
       intervalMs: 100,
       tools: ["a", "b"],
       baselinePath: "base.json",
-      updateBaseline: true,
+      // `--update-baseline` 은 `--tool` 과 함께 쓸 수 없어(계획 E26) 여기서 빼고 아래 테스트가 따로 본다.
+      updateBaseline: false,
       thresholdPct: 125,
       thresholdMs: 0,
       json: true,
@@ -348,6 +367,23 @@ describe("parsePerfCommand", () => {
     expect(await usageError(["s.json", "--update-baseline", "--", "node"])).toBe(
       usage("--update-baseline 은 --baseline <path> 와 함께 써야 합니다."),
     );
+  });
+
+  it("--update-baseline 과 --tool 을 함께 주면 측정 전에 거절한다(계획 E26)", async () => {
+    const measure = vi.fn(perf.measure);
+    const h = harness({ perf: { measure } });
+    await expect(
+      runPerfCommand(
+        [SUITE, "--baseline", BASELINE, "--update-baseline", "--tool", "a", "--", "node"],
+        h.deps,
+      ),
+    ).resolves.toBe(1);
+    expect(h.stderr()).toBe(
+      `오류 [CLI_USAGE]: --update-baseline 은 --tool 과 함께 쓸 수 없습니다. 기준은 명세 전체로 갱신합니다.\n해결: ${PERF_USAGE_HINT}\n`,
+    );
+    expect(h.connectStdio).not.toHaveBeenCalled();
+    expect(measure).not.toHaveBeenCalled();
+    expect(h.writeFile).not.toHaveBeenCalled();
   });
 
   it("명세 경로가 없으면 test 와 같은 문장에 perf 사용법", async () => {
@@ -547,6 +583,58 @@ describe("runPerfCommand: 기준선", () => {
     expect(regressed.stdout()).toContain(`기준선 비교 (${BASELINE})`);
     expect(regressed.stdout()).toContain("'a-ok' 호출당 외부 요청 0건, 기준 -1건");
   });
+
+  /** 회귀가 나지 않는 기준 한 행. */
+  const baseRow = (id: string, tool: string) => ({
+    id,
+    tool,
+    n: 5,
+    insideP50: 1000,
+    externalP50: 0,
+    totalP50: 1,
+    requestsP50: 0,
+  });
+  const baselineOf = (rows: readonly object[]) =>
+    JSON.stringify({
+      schemaVersion: 1,
+      generator: { name: "@mcpeak/perf", version: "0.0.0" },
+      settings: { repeat: 5, intervalMs: 0 },
+      cases: rows,
+    });
+
+  it("--tool 로 비교하면 기준을 이번 plan 의 케이스로 좁혀 뺀 케이스 줄을 내지 않는다(계획 E26)", async () => {
+    const compareBaseline = vi.fn(perf.compareBaseline);
+    const h = harness({
+      trace: [HELLO],
+      files: { [BASELINE]: baselineOf([baseRow("a-ok", "a"), baseRow("b-ok", "b")]) },
+      perf: { compareBaseline },
+    });
+    await expect(
+      runPerfCommand([SUITE, "--baseline", BASELINE, "--tool", "b", "--", "node"], h.deps),
+    ).resolves.toBe(0);
+    expect(compareBaseline).toHaveBeenCalledTimes(1);
+    expect(compareBaseline.mock.calls[0]?.[1].cases.map((c) => c.id)).toEqual(["b-ok"]);
+    expect(h.stdout()).not.toContain("'a-ok' 는 기준에 있지만 이번 명세에 없습니다.");
+  });
+
+  it("--tool 이 없으면 명세에서 사라진 케이스는 지금처럼 '명세에 없습니다' 줄을 낸다", async () => {
+    const compareBaseline = vi.fn(perf.compareBaseline);
+    const rows = [baseRow("a-ok", "a"), baseRow("b-ok", "b"), baseRow("gone", "c")];
+    const h = harness({
+      trace: [HELLO],
+      files: { [BASELINE]: baselineOf(rows) },
+      perf: { compareBaseline },
+    });
+    await expect(
+      runPerfCommand([SUITE, "--baseline", BASELINE, "--", "node"], h.deps),
+    ).resolves.toBe(0);
+    expect(compareBaseline.mock.calls[0]?.[1].cases.map((c) => c.id)).toEqual([
+      "a-ok",
+      "b-ok",
+      "gone",
+    ]);
+    expect(h.stdout()).toContain("'gone' 는 기준에 있지만 이번 명세에 없습니다.");
+  });
 });
 
 describe("runPerfCommand: 실행", () => {
@@ -622,6 +710,93 @@ describe("runPerfCommand: 실행", () => {
       "오류 [MCP_CONNECTION_FAILED]: MCP 서버 연결에 실패했습니다.\n" +
         "해결: command 실행 가능 여부와 MCP 서버 설정을 확인하세요.\n",
     );
+  });
+});
+
+describe("runPerfCommand: 신호 정리(계획 E25)", () => {
+  it("측정 동안 신호 처리기를 달고, 정상 종료면 떼며 재발신하지 않는다", async () => {
+    const h = harness();
+    await expect(runPerfCommand([SUITE, "--", "node"], h.deps)).resolves.toBe(0);
+    expect(h.onSignal).toHaveBeenCalledTimes(1);
+    expect(h.detach).toHaveBeenCalledTimes(1);
+    expect(h.deps.killSelf).not.toHaveBeenCalled();
+    expect(h.deps.removeDirSync).not.toHaveBeenCalled();
+  });
+
+  it("추적 디렉터리를 만들기 전에 끝나는 경로에서는 처리기를 달지 않는다", async () => {
+    const h = harness();
+    await expect(runPerfCommand([SUITE, "--tool", "zz", "--", "node"], h.deps)).resolves.toBe(1);
+    expect(h.onSignal).not.toHaveBeenCalled();
+  });
+
+  it.each(["SIGINT", "SIGTERM"] as const)(
+    "측정 중 %s 가 오면 연결 close → 추적 동기 삭제 → 처리기 떼기 → 같은 신호로 재발신",
+    async (signal) => {
+      const events: string[] = [];
+      let h: ReturnType<typeof harness> | undefined;
+      const measure: typeof perf.measure = async (input) => {
+        await h?.signal(signal);
+        return perf.measure(input);
+      };
+      h = harness({
+        perf: { measure },
+        extra: {
+          removeDirSync: vi.fn((path: string) => events.push(`removeDirSync:${path}`)),
+          killSelf: vi.fn((s: PerfSignal) => events.push(`kill:${s}`)),
+        },
+      });
+      const close = h.connection.close;
+      h.connection.close = async () => {
+        events.push("close");
+        await close();
+      };
+      h.detach.mockImplementation(() => events.push("detach"));
+      await runPerfCommand([SUITE, "--", "node"], h.deps);
+      // 테스트의 재발신은 프로세스를 끝내지 않으므로 그 뒤 정상 경로가 이어진다. 앞 네 단계만 본다.
+      expect(events.slice(0, 4)).toEqual([
+        "close",
+        "removeDirSync:/tmp/mcpeak-perf-fake",
+        "detach",
+        `kill:${signal}`,
+      ]);
+      expect(h.deps.killSelf).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it("연결 전에 신호가 오면 닫을 연결 없이 지우고 재발신한다", async () => {
+    const events: string[] = [];
+    let h: ReturnType<typeof harness> | undefined;
+    const { connection } = fakeConnection();
+    h = harness({
+      extra: {
+        connectStdio: vi.fn(async () => {
+          await h?.signal("SIGINT");
+          return connection;
+        }),
+        removeDirSync: vi.fn(() => events.push("removeDirSync")),
+        killSelf: vi.fn(() => events.push("kill")),
+      },
+    });
+    await runPerfCommand([SUITE, "--", "node"], h.deps);
+    expect(events.slice(0, 2)).toEqual(["removeDirSync", "kill"]);
+  });
+
+  it("연결 닫기가 실패해도 지우고 재발신한다", async () => {
+    let h: ReturnType<typeof harness> | undefined;
+    const measure: typeof perf.measure = async (input) => {
+      await h?.signal("SIGINT");
+      return perf.measure(input);
+    };
+    h = harness({ perf: { measure } });
+    h.connection.close = async () => {
+      throw new Error("close failed");
+    };
+    h.connection.forceClose = async () => {
+      throw new Error("forceClose failed");
+    };
+    await runPerfCommand([SUITE, "--", "node"], h.deps);
+    expect(h.deps.removeDirSync).toHaveBeenCalledWith("/tmp/mcpeak-perf-fake");
+    expect(h.deps.killSelf).toHaveBeenCalledWith("SIGINT");
   });
 });
 
@@ -721,6 +896,9 @@ describe("nodePerfDependencies", () => {
         "writeFile",
         "makeTempDir",
         "removeDir",
+        "removeDirSync",
+        "onSignal",
+        "killSelf",
         "now",
         "sleep",
         "validateSuite",
@@ -763,5 +941,21 @@ describe("nodePerfDependencies", () => {
     expect(dir.startsWith(join(tmpdir(), "mcpeak-perf-"))).toBe(true);
     await deps.removeDir(dir);
     await expect(deps.readFile(dir)).rejects.toMatchObject({ code: "ENOENT" });
+
+    // 동기 삭제도 같은 디렉터리를 지운다. 없는 경로는 조용히 넘어간다.
+    const syncDir = await deps.makeTempDir(join(tmpdir(), "mcpeak-perf-"));
+    await writeFile(join(syncDir, "1.jsonl"), "{}\n");
+    deps.removeDirSync(syncDir);
+    await expect(deps.readFile(syncDir)).rejects.toMatchObject({ code: "ENOENT" });
+    expect(() => deps.removeDirSync(syncDir)).not.toThrow();
+
+    // 신호 처리기는 SIGINT·SIGTERM 둘에 달리고, 돌려준 함수가 둘 다 뗀다. 재발신은 부르지 않는다.
+    const before = { int: process.listenerCount("SIGINT"), term: process.listenerCount("SIGTERM") };
+    const off = deps.onSignal(async () => {});
+    expect(process.listenerCount("SIGINT")).toBe(before.int + 1);
+    expect(process.listenerCount("SIGTERM")).toBe(before.term + 1);
+    off();
+    expect(process.listenerCount("SIGINT")).toBe(before.int);
+    expect(process.listenerCount("SIGTERM")).toBe(before.term);
   });
 });

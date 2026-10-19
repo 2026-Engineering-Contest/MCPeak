@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { rmSync } from "node:fs";
 import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import auditMetadata from "../../audit/package.json";
@@ -10,7 +11,7 @@ import { nodeDockerIo } from "./audit-sandbox-io.js";
 import { nodeGenerateDependencies, nodeReviewIO, runGenerateCommand } from "./generate-command.js";
 import { commandDiscovery, commandHelp, GLOBAL_HELP } from "./help.js";
 import { type OptimizeCommandDependencies, runOptimizeCommand } from "./optimize-command.js";
-import { type PerfCommandDependencies, runPerfCommand } from "./perf-command.js";
+import { type PerfCommandDependencies, type PerfSignal, runPerfCommand } from "./perf-command.js";
 import { type RepairCommandDependencies, runRepairCommand } from "./repair-command.js";
 import { escapeTerminalText } from "./repair-render.js";
 import { parseTestCommand, runCli } from "./test-command.js";
@@ -181,6 +182,18 @@ export function nodePerfDependencies(
     writeFile: (path, text) => writeFile(path, text, "utf8"),
     makeTempDir: (prefix) => mkdtemp(prefix),
     removeDir: (path) => rm(path, { recursive: true, force: true }),
+    removeDirSync: (path) => rmSync(path, { recursive: true, force: true }),
+    onSignal: (handler) => {
+      const listener = (signal: NodeJS.Signals) => void handler(signal as PerfSignal);
+      process.on("SIGINT", listener);
+      process.on("SIGTERM", listener);
+      return () => {
+        process.off("SIGINT", listener);
+        process.off("SIGTERM", listener);
+      };
+    },
+    // 처리기를 뗀 뒤라 기본 동작(신호 종료)이 일어난다.
+    killSelf: (signal) => void process.kill(process.pid, signal),
     now: () => performance.timeOrigin + performance.now(),
     sleep: (ms, signal) =>
       new Promise<void>((resolve) => {

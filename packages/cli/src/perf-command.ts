@@ -49,6 +49,9 @@ export interface PerfCommandInput {
   readonly json: boolean;
 }
 
+/** 측정 동안 가로채는 종료 신호(계획 E25). */
+export type PerfSignal = "SIGINT" | "SIGTERM";
+
 export interface PerfCommandDependencies {
   connectStdio(options: {
     command: string;
@@ -61,6 +64,12 @@ export interface PerfCommandDependencies {
   writeFile(path: string, text: string): Promise<void>;
   makeTempDir(prefix: string): Promise<string>;
   removeDir(path: string): Promise<void>;
+  /** 신호 처리기 안에서 쓴다. 재발신 뒤에는 비동기 작업이 끝나지 못하므로 동기로 지운다. */
+  removeDirSync(path: string): void;
+  /** SIGINT·SIGTERM 처리기를 단다. 돌려준 함수가 둘 다 뗀다. */
+  onSignal(handler: (signal: PerfSignal) => Promise<void>): () => void;
+  /** 처리기를 뗀 뒤 부른다. 같은 신호로 이 프로세스를 다시 끝내 셸이 신호 종료(130 등)를 본다. */
+  killSelf(signal: PerfSignal): void;
   now(): number;
   sleep(ms: number, signal?: AbortSignal): Promise<void>;
   readonly validateSuite: typeof import("@mcpeak/runner").validateMcpSuite;
@@ -218,6 +227,11 @@ export function parsePerfCommand(argv: readonly string[]): PerfCommandInput {
 
   if (updateBaseline && baselinePath === undefined)
     throw new UsageError("--update-baseline 은 --baseline <path> 와 함께 써야 합니다.");
+  // 일부 케이스로 기준을 덮어쓰면 기준에서 나머지 케이스가 빠진다(설계 §8.5, 계획 E26).
+  if (updateBaseline && tools.length > 0)
+    throw new UsageError(
+      "--update-baseline 은 --tool 과 함께 쓸 수 없습니다. 기준은 명세 전체로 갱신합니다.",
+    );
 
   // 첫 위치 인자가 명세 경로다. 남은 위치 인자는 `parseTestCommand` 가 test 와 같은 문장으로 거절한다.
   const [suitePath, ...rest] = positionals;
@@ -481,17 +495,53 @@ export async function runPerfCommand(
       deps.writeStderr(loaded);
       return 1;
     }
-    baseline = loaded;
+    // `--tool` 로 뺀 케이스가 "이번 명세에 없습니다" 로 보이지 않게 기준을 이번 plan 으로 좁힌다.
+    // `--tool` 이 없으면 좁히지 않아, 명세에서 실제로 사라진 케이스는 그 줄을 낸다(설계 §7.3, 계획 E26).
+    if (input.tools.length > 0) {
+      const planned = new Set(plan.calls.map((call) => call.caseId));
+      baseline = { ...loaded, cases: loaded.cases.filter((row) => planned.has(row.id)) };
+    } else {
+      baseline = loaded;
+    }
   }
 
   // 여기부터 만든 추적 디렉터리는 어느 경로로 끝나든 지운다. 남으면 요청 헤더·본문이 임시
-  // 디렉터리에 남는다(설계 §3.2 8항).
+  // 디렉터리에 남는다(설계 §3.2 8항). SIGINT·SIGTERM 은 finally 를 거치지 않으므로 처리기가
+  // 연결을 닫고 지운 뒤 같은 신호로 다시 끝낸다(계획 E25).
   const traceDir = await deps.makeTempDir(join(tmpdir(), TRACE_DIR_PREFIX));
+  const session: MeasureSession = {};
+  let detachSignals: (() => void) | undefined;
+  const detach = () => {
+    detachSignals?.();
+    detachSignals = undefined;
+  };
+  let interrupted = false;
+  detachSignals = deps.onSignal(async (signal) => {
+    // 두 번째 신호는 닫기를 기다리지 않는다. 닫기가 멈춰도 사용자가 빠져나갈 수 있어야 한다.
+    if (!interrupted) {
+      interrupted = true;
+      const connection = session.connection;
+      if (connection !== undefined) await closeQuietly(connection);
+    }
+    try {
+      deps.removeDirSync(traceDir);
+    } catch {
+      // 지우지 못해도 신호 종료는 해야 한다. 더 할 수 있는 일이 없다.
+    }
+    detach();
+    deps.killSelf(signal);
+  });
   try {
-    return await measureAndReport(input, plan, baseline, traceDir, deps);
+    return await measureAndReport(input, plan, baseline, traceDir, deps, session);
   } finally {
+    detach();
     await deps.removeDir(traceDir);
   }
+}
+
+/** 신호 처리기가 닫을 연결. 열린 동안만 채운다. */
+interface MeasureSession {
+  connection?: CliConnection;
 }
 
 async function measureAndReport(
@@ -500,6 +550,7 @@ async function measureAndReport(
   baseline: PerfBaseline | undefined,
   traceDir: string,
   deps: PerfCommandDependencies,
+  session: MeasureSession,
 ): Promise<number> {
   const env = deps.perf.childEnvironment({
     traceDir,
@@ -524,12 +575,14 @@ async function measureAndReport(
     });
   }
   const connectEnd = deps.now();
+  session.connection = connection;
 
   let tools: ToolDef[];
   const listStart = deps.now();
   try {
     tools = await connection.client.listTools();
   } catch (error) {
+    session.connection = undefined;
     await closeQuietly(connection);
     return writeCoreFailure(
       deps,
@@ -556,6 +609,7 @@ async function measureAndReport(
     });
   } finally {
     // 추적은 연결을 닫은 뒤에 읽는다. 자식이 끝나야 마지막 줄까지 파일에 남는다.
+    session.connection = undefined;
     await closeQuietly(connection);
   }
   deps.writeStderr(`측정 완료: 호출 ${measurements.length}회\n`);

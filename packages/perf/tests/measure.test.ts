@@ -1,4 +1,4 @@
-import type { ToolResult } from "@mcpeak/core";
+import { McpClientError, type ToolResult } from "@mcpeak/core";
 import { describe, expect, it } from "vitest";
 import { measure } from "../src/measure.js";
 import type { PerfCall, PerfMeasurement, PerfPlan } from "../src/types.js";
@@ -287,6 +287,65 @@ describe("measure", () => {
       "a h.example/a?q=… 와 k.example/b 둘",
     ]);
     expect(measured.every((m) => !(m.detail ?? "").includes("SECRET_7c1"))).toBe(true);
+  });
+
+  it("오류 detail 은 cause 사슬의 가장 안쪽 Error 의 문장이다", async () => {
+    // core 의 McpClientError 는 고정 문장을 message 로 두고 SDK 사유를 cause 에 싣는다(설계 §5.4, 계획 E24).
+    const rejection = (cause?: unknown) =>
+      new McpClientError({
+        code: "OPERATION_FAILED",
+        phase: "callTool",
+        diagnostics: { stderr: "", stderrTruncated: false, exitCode: null, signal: null },
+        ...(cause === undefined ? {} : { cause }),
+      });
+    const looped = new Error("바깥 고리");
+    const inner = new Error("안쪽 고리", { cause: looped });
+    (looped as { cause?: unknown }).cause = inner;
+    const errors: unknown[] = [
+      rejection(new Error("MCP error -32602: Output validation error: bad\nstack")),
+      rejection(new Error("connect postgres://user:pw@db.example:5432/x?token=S refused")),
+      rejection(),
+      // cause 가 Error 가 아니면 거기서 멈추고 그 앞 Error 의 문장을 쓴다.
+      new Error("바깥 문장", { cause: "문자열 원인" }),
+      looped,
+    ];
+    const h = harness({
+      respond: async (_name, _args, index) => {
+        throw errors[index];
+      },
+    });
+    const measured = await measure({
+      client: h.client,
+      availableTools: new Set(["a"]),
+      plan: plan([perfCall("A", "a")], errors.length, 0),
+      now: h.now,
+      sleep: h.sleep,
+    });
+    expect(measured.map((m) => m.detail)).toEqual([
+      "MCP error -32602: Output validation error: bad",
+      "connect db.example:5432/x?token=… refused",
+      "MCP 작업이 protocol 오류로 거절되었습니다.",
+      "바깥 문장",
+      // 순환이면 이미 본 Error 를 다시 만나는 자리에서 멈춘다. 그 직전이 가장 안쪽이다.
+      "안쪽 고리",
+    ]);
+    expect(measured.every((m) => !(m.detail ?? "").includes("pw"))).toBe(true);
+  });
+
+  it("http(s) 밖 스킴의 URL 도 가린다", async () => {
+    const h = harness({
+      respond: async () => {
+        throw new Error("redis://:hunter2@cache.example:6379/0 와 ftp://f.example/p?k=v");
+      },
+    });
+    const measured = await measure({
+      client: h.client,
+      availableTools: new Set(["a"]),
+      plan: plan([perfCall("A", "a")], 1, 0),
+      now: h.now,
+      sleep: h.sleep,
+    });
+    expect(measured[0]?.detail).toBe("cache.example:6379/0 와 f.example/p?k=…");
   });
 
   it("callTool 이 동기로 던져도 threw 로 센다", async () => {

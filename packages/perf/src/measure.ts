@@ -5,7 +5,8 @@ import { displayUrl } from "./url.js";
 /** 설계 §4.5: 오류 첫 줄의 상한. 표 한 줄에 들어가는 길이. */
 const MAX_DETAIL_CHARS = 200;
 
-const URL_PATTERN = /https?:\/\/[^\s"'<>]+/g;
+/** 스킴이 있는 URL. http(s) 밖(postgres·redis 등)도 userinfo 와 쿼리 값을 가려야 한다(계획 E24). */
+const URL_PATTERN = /[A-Za-z][A-Za-z0-9+.-]*:\/\/[^\s"'<>]+/g;
 
 /** 경쟁의 결과. 호출 결과, 호출 거부, 타임아웃 셋 중 하나다. */
 type RaceResult =
@@ -13,9 +14,24 @@ type RaceResult =
   | { readonly kind: "rejected"; readonly error: unknown }
   | { readonly kind: "timeout" };
 
-/** §5.4: 오류 메시지의 첫 줄, 그 안의 URL 을 displayUrl 로, 200자를 넘으면 잘라 … 를 붙인다. */
+/**
+ * cause 사슬에서 가장 안쪽 Error. core 의 McpClientError 는 고정 문장을 message 로 두고 SDK 사유를
+ * cause 에 싣는다. 바깥 문장만 쓰면 모든 거부가 같은 문장이 된다(설계 §5.4). 이미 본 Error 를 다시
+ * 만나면(순환) 거기서 멈춘다.
+ */
+function innermostError(error: Error): Error {
+  const seen = new Set<Error>([error]);
+  let current = error;
+  while (current.cause instanceof Error && !seen.has(current.cause)) {
+    current = current.cause;
+    seen.add(current);
+  }
+  return current;
+}
+
+/** §5.4: 원인 문장의 첫 줄, 그 안의 URL 을 displayUrl 로, 200자를 넘으면 잘라 … 를 붙인다. */
 function errorDetail(error: unknown): string {
-  const message = error instanceof Error ? error.message : String(error);
+  const message = error instanceof Error ? innermostError(error).message : String(error);
   const firstLine = (message.split(/\r?\n/)[0] ?? "").replace(URL_PATTERN, (url) =>
     displayUrl(url),
   );

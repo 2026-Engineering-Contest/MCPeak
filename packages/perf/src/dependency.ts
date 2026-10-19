@@ -31,21 +31,6 @@ function tokens(text: string): ReadonlySet<string> {
   return found;
 }
 
-/**
- * 응답 본문 토큰. 한 요청은 같은 호출의 뒤 요청 여럿과 비교되므로(§6.2) 본문을 한 번만 파싱한다.
- * 키가 요청 객체라 같은 입력에 같은 결과이고, 요청이 버려지면 함께 사라진다.
- */
-const bodyTokens = new WeakMap<ObservedRequest, ReadonlySet<string>>();
-
-function responseTokens(request: ObservedRequest, body: string): ReadonlySet<string> {
-  let found = bodyTokens.get(request);
-  if (found === undefined) {
-    found = tokens(body);
-    bodyTokens.set(request, found);
-  }
-  return found;
-}
-
 /** decodeURIComponent 가 던지면 원문을 쓴다. */
 function decodeUrl(url: string): string {
   try {
@@ -53,6 +38,82 @@ function decodeUrl(url: string): string {
   } catch {
     return url;
   }
+}
+
+/*
+ * 아래 두 캐시가 있는 이유. rules.ts 는 순차 요청마다 앞선 모든 요청과 judge 를 부른다(§6.2). 그래서 한 요청은
+ * earlier 로 뒤 요청 여럿과, later 로 앞 요청 여럿과 비교된다. 쌍마다 출력을 다시 걸러 내고 입력 문자열을 다시
+ * 훑으면 요청 수의 제곱에 본문 길이가 곱해진다. 키가 요청 객체라 같은 입력에 같은 결과이고, 요청이 버려지면
+ * 함께 사라진다.
+ */
+
+/** earlier 의 걸러 낸 출력. 입력 반향 제외가 호출 입력에 달려 있어 그 문자열을 함께 둔다. */
+interface Outputs {
+  readonly inputEcho: string;
+  readonly tokens: readonly string[];
+}
+const outputCache = new WeakMap<ObservedRequest, Outputs>();
+
+/**
+ * §6.1 outputs(earlier): 응답 본문 토큰과 Location 에서 호출 입력과 자기 요청에 이미 있던 토큰을 뺀 것.
+ * 순서는 본문 토큰, Location 이다.
+ */
+function outputsOf(earlier: ObservedRequest, body: string, inputEcho: string): readonly string[] {
+  const cached = outputCache.get(earlier);
+  if (cached !== undefined && cached.inputEcho === inputEcho) return cached.tokens;
+
+  const candidates = [...tokens(body)];
+  const location = earlier.responseHeaders?.location;
+  if (location !== undefined) candidates.push(location);
+
+  const earlierUrl = decodeUrl(earlier.url);
+  const earlierBody = earlier.requestBody ?? "";
+  const kept = candidates.filter(
+    (token) =>
+      !inputEcho.includes(token) && !earlierUrl.includes(token) && !earlierBody.includes(token),
+  );
+  outputCache.set(earlier, { inputEcho, tokens: kept });
+  return kept;
+}
+
+/** 입력 문자열의 부분 문자열 검사에 앞서 쓰는 조각 길이. JSON 토큰의 최소 길이와 같다. */
+const GRAM = MIN_JSON_TOKEN_LENGTH;
+
+/** later 의 입력 문자열과 그 안의 모든 GRAM 길이 조각. */
+interface Inputs {
+  readonly text: string;
+  readonly grams: ReadonlySet<string>;
+}
+const inputCache = new WeakMap<ObservedRequest, Inputs>();
+
+/** §6.1 inputs(later): URL, 요청 본문, 담긴 요청 헤더 값을 " " 로 이은 것. */
+function inputsOf(later: ObservedRequest): Inputs {
+  const cached = inputCache.get(later);
+  if (cached !== undefined) return cached;
+  const text = [
+    decodeUrl(later.url),
+    later.requestBody ?? "",
+    Object.values(later.requestHeaders ?? {}).join(" "),
+  ].join(" ");
+  const grams = new Set<string>();
+  for (let i = 0; i + GRAM <= text.length; i += 1) grams.add(text.slice(i, i + GRAM));
+  const inputs = { text, grams };
+  inputCache.set(later, inputs);
+  return inputs;
+}
+
+/**
+ * `inputs.text.includes(token)` 와 같은 답을 낸다. 토큰이 들어 있으려면 그 첫 조각과 끝 조각이 입력의 조각이어야
+ * 하므로, 둘 중 하나라도 없으면 본문을 훑지 않고 거짓이다. 조각보다 짧은 토큰(짧은 Location)은 바로 훑는다.
+ */
+function contains(inputs: Inputs, token: string): boolean {
+  if (
+    token.length >= GRAM &&
+    (!inputs.grams.has(token.slice(0, GRAM)) || !inputs.grams.has(token.slice(-GRAM)))
+  ) {
+    return false;
+  }
+  return inputs.text.includes(token);
 }
 
 /**
@@ -70,23 +131,10 @@ export function judge(
   }
   if (later.requestBodyUnknown === true) return "unknown";
 
-  const outputs = [...responseTokens(earlier, earlier.responseBody)];
-  const location = earlier.responseHeaders?.location;
-  if (location !== undefined) outputs.push(location);
-
-  const inputEcho = JSON.stringify(input);
-  const earlierUrl = decodeUrl(earlier.url);
-  const earlierBody = earlier.requestBody ?? "";
-  const laterInputs = [
-    decodeUrl(later.url),
-    later.requestBody ?? "",
-    Object.values(later.requestHeaders ?? {}).join(" "),
-  ].join(" ");
-
+  const outputs = outputsOf(earlier, earlier.responseBody, JSON.stringify(input));
+  const inputs = inputsOf(later);
   for (const token of outputs) {
-    if (inputEcho.includes(token)) continue;
-    if (earlierUrl.includes(token) || earlierBody.includes(token)) continue;
-    if (laterInputs.includes(token)) return "dependent";
+    if (contains(inputs, token)) return "dependent";
   }
   return "independent";
 }

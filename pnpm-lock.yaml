@@ -110,6 +110,9 @@ importers:
       '@mcpeak/optimize':
         specifier: workspace:*
         version: link:../optimize
+      '@mcpeak/perf':
+        specifier: workspace:*
+        version: link:../perf
       '@mcpeak/record':
         specifier: workspace:*
         version: link:../record
@@ -204,6 +207,16 @@ importers:
       '@mcpeak/core':
         specifier: workspace:*
         version: link:../core
+      '@modelcontextprotocol/sdk':
+        specifier: 'catalog:'
+        version: 1.30.0(zod@4.4.3)
+
+  packages/perf:
+    dependencies:
+      '@mcpeak/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
       '@modelcontextprotocol/sdk':
         specifier: 'catalog:'
         version: 1.30.0(zod@4.4.3)

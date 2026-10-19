@@ -66,7 +66,16 @@ function plainEnv(): Record<string, string> {
 }
 
 function runChild(
-  mode: "fetch" | "http" | "env" | "cancel" | "cancel-decoder" | "unread" | "worker" | "props",
+  mode:
+    | "fetch"
+    | "http"
+    | "env"
+    | "cancel"
+    | "cancel-decoder"
+    | "unread"
+    | "worker"
+    | "props"
+    | "patched-clone",
   env: Record<string, string>,
 ): Promise<{ stdout: string; stderr: string; code: number | null; pid: number }> {
   return new Promise((resolve, reject) => {
@@ -310,6 +319,23 @@ describe.sequential("preload", () => {
     expect(JSON.parse(observed.stdout)).toEqual(JSON.parse(plain.stdout));
 
     // 프리로드가 실제로 실려 fetch 를 감쌌는지 확인한다. 안 실렸다면 위 비교는 아무것도 보지 않는다.
+    const { entries } = await readTrace(traceDir);
+    expect(starts(entries, "fetch").length).toBeGreaterThan(0);
+  });
+
+  it("감싼 응답의 clone 은 호출 시점의 Response.prototype.clone 을 따른다", async () => {
+    const traceDir = await freshTraceDir();
+    const observed = await runChild("patched-clone", childEnv(traceDir));
+    const plain = await runChild("patched-clone", plainEnv());
+    expect(observed.stderr).toBe("");
+    expect(plain.stderr).toBe("");
+    const observedProps = JSON.parse(observed.stdout);
+    expect(observedProps.calls).toBe(1);
+    expect(observedProps.cloneUrl).toBe(observedProps.url);
+    expect(observedProps.cloneRedirected).toBe(true);
+    expect(observedProps.cloneType).toBe(observedProps.type);
+    expect(observedProps).toEqual(JSON.parse(plain.stdout));
+
     const { entries } = await readTrace(traceDir);
     expect(starts(entries, "fetch").length).toBeGreaterThan(0);
   });

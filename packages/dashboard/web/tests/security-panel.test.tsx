@@ -291,7 +291,7 @@ async function runToResult(
   response: AnalyzeSecurityResponse = securityResponse(),
 ): Promise<ReturnType<typeof vi.fn>> {
   const fetchMock = stubFetch({ result: { status: 200, body: response } });
-  render(<AnalyzeView tab="security" />);
+  render(<AnalyzeView pillar="security" />);
   const source = await start();
   act(() => {
     source.emit({ kind: "done", exitCode: response.exitCode });
@@ -323,7 +323,7 @@ describe("SecurityPanel", () => {
 
   it("보안 탭은 접속 폼과 점검 옵션을 보인다", async () => {
     stubFetch();
-    render(<AnalyzeView tab="security" />);
+    render(<AnalyzeView pillar="security" />);
 
     expect(await screen.findByRole("radio", { name: /^weather/ })).toHaveProperty("checked", true);
     expect(screen.getByRole("button", { name: "점검 시작" })).toBeTruthy();
@@ -337,24 +337,24 @@ describe("SecurityPanel", () => {
 
   it("토큰 탭에서 고른 서버가 보안 탭에 남는다", async () => {
     stubFetch({ servers: [] });
-    const { rerender } = render(<AnalyzeView tab="tokens" />);
+    const { rerender } = render(<AnalyzeView pillar="tokens" />);
     fireEvent.change(await screen.findByLabelText("서버 스크립트"), {
       target: { value: "server.js" },
     });
 
-    rerender(<AnalyzeView tab="security" />);
+    rerender(<AnalyzeView pillar="security" />);
 
     expect(screen.getByLabelText("서버 스크립트")).toHaveProperty("value", "server.js");
     expect(screen.getByRole("button", { name: "점검 시작" })).toHaveProperty("disabled", false);
 
     // 돌아가도 남아 있다.
-    rerender(<AnalyzeView tab="tokens" />);
+    rerender(<AnalyzeView pillar="tokens" />);
     expect(screen.getByLabelText("서버 스크립트")).toHaveProperty("value", "server.js");
   });
 
   it("점검 시작이 올바른 본문을 POST 하고 이벤트 스트림을 연다", async () => {
     const fetchMock = stubFetch();
-    render(<AnalyzeView tab="security" />);
+    render(<AnalyzeView pillar="security" />);
 
     const source = await start();
 
@@ -364,7 +364,7 @@ describe("SecurityPanel", () => {
 
   it("점검 시작을 누르면 점검 단계로 넘어가고 폼이 사라진다", async () => {
     stubFetch();
-    render(<AnalyzeView tab="security" />);
+    render(<AnalyzeView pillar="security" />);
     expect(
       [...document.querySelectorAll("ol > li > span:last-child")].map((step) => step.textContent),
     ).toEqual(["서버 선택", "점검", "결과"]);
@@ -381,7 +381,7 @@ describe("SecurityPanel", () => {
 
   it("점검 단계는 점검 중인 서버를 보인다", async () => {
     stubFetch();
-    render(<AnalyzeView tab="security" />);
+    render(<AnalyzeView pillar="security" />);
 
     await start();
 
@@ -392,7 +392,7 @@ describe("SecurityPanel", () => {
 
   it("점검 단계에서 서버 다시 고르기를 누르면 서버 선택으로 돌아가고 고른 값이 남는다", async () => {
     const fetchMock = stubFetch();
-    render(<AnalyzeView tab="security" />);
+    render(<AnalyzeView pillar="security" />);
     await screen.findByRole("radio", { name: /^weather/ });
     fireEvent.click(screen.getByRole("button", { name: "전부" }));
     const source = await start();
@@ -417,7 +417,7 @@ describe("SecurityPanel", () => {
 
   it("점검 옵션을 요청 본문의 필드로 싣는다", async () => {
     const fetchMock = stubFetch();
-    render(<AnalyzeView tab="security" />);
+    render(<AnalyzeView pillar="security" />);
     await screen.findByRole("radio", { name: /^weather/ });
 
     fireEvent.click(screen.getByRole("button", { name: "호출 안 함" }));
@@ -443,7 +443,7 @@ describe("SecurityPanel", () => {
 
   it("대상이 비면 버튼이 비활성이고 사유를 보인다", async () => {
     stubFetch({ servers: [] });
-    render(<AnalyzeView tab="security" />);
+    render(<AnalyzeView pillar="security" />);
     await screen.findByLabelText("서버 스크립트");
 
     expect(screen.getByRole("button", { name: "점검 시작" })).toHaveProperty("disabled", true);
@@ -452,7 +452,7 @@ describe("SecurityPanel", () => {
 
   it("기준 파일 경로가 비면 갱신 체크박스가 비활성이다", async () => {
     stubFetch();
-    render(<AnalyzeView tab="security" />);
+    render(<AnalyzeView pillar="security" />);
     await screen.findByRole("radio", { name: /^weather/ });
 
     const update = screen.getByLabelText("기준 파일을 지금 표면으로 갱신");
@@ -471,7 +471,7 @@ describe("SecurityPanel", () => {
 
   it("http 대상이면 격리 체크박스가 비활성이고 이유를 보인다", async () => {
     stubFetch();
-    render(<AnalyzeView tab="security" />);
+    render(<AnalyzeView pillar="security" />);
     await screen.findByRole("radio", { name: /^weather/ });
     const sandbox = screen.getByLabelText("Docker 격리 안에서 실행 (행위 관측)");
     expect(sandbox).toHaveProperty("disabled", false);
@@ -488,7 +488,7 @@ describe("SecurityPanel", () => {
 
   it("격리를 켜면 실행할 수 있는 명령을 말한다", async () => {
     stubFetch();
-    render(<AnalyzeView tab="security" />);
+    render(<AnalyzeView pillar="security" />);
     await screen.findByRole("radio", { name: /^weather/ });
     expect(screen.queryByText(/격리 이미지는 node, npx, npm 으로/)).toBeNull();
 
@@ -507,7 +507,7 @@ describe("SecurityPanel", () => {
 
   it("허용 호스트 입력은 자기 문장을 쓴다", async () => {
     stubFetch({ servers: [] });
-    render(<AnalyzeView tab="security" />);
+    render(<AnalyzeView pillar="security" />);
     // 직접 입력 갈래라 접속 폼에 "서버 인자" 입력이 하나 있다.
     await screen.findByLabelText("서버 스크립트");
     expect(screen.getAllByLabelText("서버 인자")).toHaveLength(1);
@@ -529,7 +529,7 @@ describe("SecurityPanel", () => {
 
   it("없는 run 이면 서버 선택 단계로 돌아가 다시 시작할 수 있다", async () => {
     stubFetch({ summary: { status: 404, body: { error: "그런 run이 없습니다." } } });
-    render(<AnalyzeView tab="security" />);
+    render(<AnalyzeView pillar="security" />);
     await screen.findByRole("radio", { name: /^weather/ });
 
     fireEvent.click(screen.getByRole("button", { name: "점검 시작" }));
@@ -552,7 +552,7 @@ describe("SecurityPanel", () => {
 
   it("run 조회만 실패하면 문장을 보이고 진행을 유지한다", async () => {
     stubFetch({ summary: { status: 500, body: { error: "서버 오류" } } });
-    render(<AnalyzeView tab="security" />);
+    render(<AnalyzeView pillar="security" />);
     await start();
 
     expect((await screen.findByRole("alert")).textContent).toContain("서버 오류");
@@ -562,7 +562,7 @@ describe("SecurityPanel", () => {
 
   it("진행 문장을 로그 패널에 보인다", async () => {
     stubFetch();
-    render(<AnalyzeView tab="security" />);
+    render(<AnalyzeView pillar="security" />);
     const source = await start();
 
     act(() => {
@@ -582,7 +582,7 @@ describe("SecurityPanel", () => {
 
   it("done 뒤 결과를 읽으면 결과 단계다", async () => {
     const fetchMock = stubFetch();
-    render(<AnalyzeView tab="security" />);
+    render(<AnalyzeView pillar="security" />);
     const source = await start();
     expect(resultRequests(fetchMock)).toEqual([]);
 
@@ -768,7 +768,7 @@ describe("SecurityPanel", () => {
 
   it("기준 파일을 보냈으면 그 상태를 한 줄로 보인다", async () => {
     stubFetch();
-    render(<AnalyzeView tab="security" />);
+    render(<AnalyzeView pillar="security" />);
     await screen.findByRole("radio", { name: /^weather/ });
     fireEvent.change(screen.getByLabelText("기준 파일 (프로젝트 루트 기준, 선택)"), {
       target: { value: "b.json" },
@@ -803,7 +803,7 @@ describe("SecurityPanel", () => {
   it("결과 요청이 400 이면 서버 선택 단계로 돌아가 error 문장을 그대로 보인다", async () => {
     const error = "오류 [CONNECT_FAILED]: x\n해결: y";
     stubFetch({ result: { status: 400, body: { error } } });
-    render(<AnalyzeView tab="security" />);
+    render(<AnalyzeView pillar="security" />);
     const source = await start();
     expect(currentStep()).toBe("점검");
 
@@ -819,7 +819,7 @@ describe("SecurityPanel", () => {
   it("시작 요청이 400 이면 서버 선택 단계에 머문다", async () => {
     const error = "기준 파일이 아닌 파일은 덮어쓰지 않습니다: package.json\n→ 다른 경로를 쓰세요.";
     stubFetch({ start: { status: 400, body: { error } } });
-    render(<AnalyzeView tab="security" />);
+    render(<AnalyzeView pillar="security" />);
     await screen.findByRole("radio", { name: /^weather/ });
 
     fireEvent.click(screen.getByRole("button", { name: "점검 시작" }));
@@ -837,7 +837,7 @@ describe("SecurityPanel", () => {
         { status: 200, body: { runId: "r2" } },
       ],
     });
-    render(<AnalyzeView tab="security" />);
+    render(<AnalyzeView pillar="security" />);
     const first = await start();
     act(() => {
       first.emit({ kind: "done", exitCode: 2 });
@@ -870,7 +870,7 @@ describe("SecurityPanel", () => {
 
   it("서버 다시 고르기를 누르면 폼으로 돌아오고 점검 옵션이 남는다", async () => {
     stubFetch();
-    render(<AnalyzeView tab="security" />);
+    render(<AnalyzeView pillar="security" />);
     await screen.findByRole("radio", { name: /^weather/ });
     fireEvent.click(screen.getByRole("button", { name: "전부" }));
     const source = await start();

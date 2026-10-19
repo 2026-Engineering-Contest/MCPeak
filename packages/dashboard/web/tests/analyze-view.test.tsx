@@ -254,7 +254,7 @@ describe("AnalyzeView", () => {
 
   it("토큰 탭이 기본이고 탭 둘이 tablist 에 있다", async () => {
     stubFetch();
-    render(<AnalyzeView tab="tokens" />);
+    render(<AnalyzeView pillar="tokens" />);
 
     const tablist = screen.getByRole("tablist", { name: "분석 종류" });
     const tabs = within(tablist).getAllByRole("tab");
@@ -266,7 +266,7 @@ describe("AnalyzeView", () => {
 
   it("첫 후보가 초기 선택이고 분석 시작이 올바른 본문을 POST 한다", async () => {
     const fetchMock = stubFetch();
-    render(<AnalyzeView tab="tokens" />);
+    render(<AnalyzeView pillar="tokens" />);
 
     expect(await screen.findByRole("radio", { name: /^weather/ })).toHaveProperty("checked", true);
     fireEvent.click(screen.getByRole("button", { name: "분석 시작" }));
@@ -297,7 +297,7 @@ describe("AnalyzeView", () => {
 
   it("명령이 비면 버튼이 비활성이고 사유를 보인다", async () => {
     stubFetch({ servers: [] });
-    render(<AnalyzeView tab="tokens" />);
+    render(<AnalyzeView pillar="tokens" />);
 
     await screen.findByText(/bin 을 찾지 못했습니다/);
     expect(screen.getByRole("button", { name: "분석 시작" })).toHaveProperty("disabled", true);
@@ -306,7 +306,7 @@ describe("AnalyzeView", () => {
 
   it("성공 응답의 숫자를 요약과 표에 보이고 CLI 리포트 원문을 담는다", async () => {
     stubFetch();
-    render(<AnalyzeView tab="tokens" />);
+    render(<AnalyzeView pillar="tokens" />);
     await analyze();
 
     expect(await screen.findByText("1000 바이트 (~250 토큰)")).toBeTruthy();
@@ -331,7 +331,7 @@ describe("AnalyzeView", () => {
 
   it("otherCapabilities 가 있으면 주의 문장을 보인다", async () => {
     stubFetch({ analyze: { status: 200, body: analyzeResponse(["resources"]) } });
-    render(<AnalyzeView tab="tokens" />);
+    render(<AnalyzeView pillar="tokens" />);
     await analyze();
 
     const notice = await screen.findByText(/^주의:/);
@@ -344,7 +344,7 @@ describe("AnalyzeView", () => {
   it("실패 응답의 error 문장을 그대로 보인다", async () => {
     const error = "오류 [MCP_CONNECTION_FAILED]: x\n해결: y";
     stubFetch({ analyze: { status: 400, body: { error } } });
-    render(<AnalyzeView tab="tokens" />);
+    render(<AnalyzeView pillar="tokens" />);
     await analyze();
 
     const alert = await screen.findByRole("alert");
@@ -354,7 +354,7 @@ describe("AnalyzeView", () => {
 
   it("처음에는 서버 선택 단계다", async () => {
     stubFetch();
-    render(<AnalyzeView tab="tokens" />);
+    render(<AnalyzeView pillar="tokens" />);
     await screen.findByRole("radio", { name: /^weather/ });
 
     expect(currentStep()).toBe("서버 선택");
@@ -363,7 +363,7 @@ describe("AnalyzeView", () => {
 
   it("성공하면 결과 단계로 넘어가 폼이 사라진다", async () => {
     stubFetch();
-    render(<AnalyzeView tab="tokens" />);
+    render(<AnalyzeView pillar="tokens" />);
     await analyze();
 
     await screen.findByRole("table", { name: "도구별 감소" });
@@ -373,7 +373,7 @@ describe("AnalyzeView", () => {
 
   it("실패하면 서버 선택 단계에 머문다", async () => {
     stubFetch({ analyze: { status: 400, body: { error: "오류 [X]: a\n해결: b" } } });
-    render(<AnalyzeView tab="tokens" />);
+    render(<AnalyzeView pillar="tokens" />);
     await analyze();
 
     await screen.findByRole("alert");
@@ -383,7 +383,7 @@ describe("AnalyzeView", () => {
 
   it("서버 다시 고르기를 누르면 폼으로 돌아온다", async () => {
     stubFetch();
-    render(<AnalyzeView tab="tokens" />);
+    render(<AnalyzeView pillar="tokens" />);
     await analyze();
 
     fireEvent.click(await screen.findByRole("button", { name: "← 서버 다시 고르기" }));
@@ -397,7 +397,7 @@ describe("AnalyzeView", () => {
 
   it("변경사항을 누르면 원본·압축 JSON 과 변경 목록이 보이고 다시 누르면 사라진다", async () => {
     stubFetch();
-    render(<AnalyzeView tab="tokens" />);
+    render(<AnalyzeView pillar="tokens" />);
     await analyze();
 
     const table = await screen.findByRole("table", { name: "도구별 감소" });
@@ -436,7 +436,7 @@ describe("AnalyzeView", () => {
 
   it("펼치면 원본 칸에 removed 줄, 압축 칸에 added 줄이 표시된다", async () => {
     stubFetch({ analyze: { status: 200, body: cleanedResponse() } });
-    render(<AnalyzeView tab="tokens" />);
+    render(<AnalyzeView pillar="tokens" />);
     await analyze();
 
     const toggle = await screen.findByRole("button", { name: "변경사항" });
@@ -475,7 +475,7 @@ describe("AnalyzeView", () => {
 
   it("변경사항 버튼은 접히면 on-accent, 펼치면 primary 다", async () => {
     stubFetch();
-    render(<AnalyzeView tab="tokens" />);
+    render(<AnalyzeView pillar="tokens" />);
     await analyze();
 
     const toggle = await screen.findByRole("button", { name: "변경사항" });
@@ -494,7 +494,7 @@ describe("AnalyzeView", () => {
 
   it("원본을 찾지 못하면 그 자리에 안내 문장을 보인다", async () => {
     stubFetch({ analyze: { status: 200, body: { ...analyzeResponse(), sourceTools: [] } } });
-    render(<AnalyzeView tab="tokens" />);
+    render(<AnalyzeView pillar="tokens" />);
     await analyze();
 
     fireEvent.click(await screen.findByRole("button", { name: "변경사항" }));
@@ -512,7 +512,7 @@ describe("AnalyzeView", () => {
 
   it("변경이 없는 도구는 변경 없음 버튼이 비활성이다", async () => {
     stubFetch();
-    render(<AnalyzeView tab="tokens" />);
+    render(<AnalyzeView pillar="tokens" />);
     await analyze();
 
     expect(await screen.findByRole("button", { name: "변경 없음" })).toHaveProperty(
@@ -523,7 +523,7 @@ describe("AnalyzeView", () => {
 
   it("결과 단계에 저장 경로와 오버레이 저장 버튼이 없다", async () => {
     const fetchMock = stubFetch();
-    render(<AnalyzeView tab="tokens" />);
+    render(<AnalyzeView pillar="tokens" />);
     await analyze();
 
     await screen.findByRole("table", { name: "도구별 감소" });
@@ -547,7 +547,7 @@ describe("AnalyzeView", () => {
 
   it("MCP 수정하기를 누르면 argv 와 변경 목록을 POST 하고 미리보기를 보인다", async () => {
     const fetchMock = stubFetch({ analyze: { status: 200, body: cleanedResponse() } });
-    render(<AnalyzeView tab="tokens" />);
+    render(<AnalyzeView pillar="tokens" />);
     await openPreview();
 
     expect(postedBodies(fetchMock, "/api/analyze/source-edits")).toEqual([
@@ -613,7 +613,7 @@ describe("AnalyzeView", () => {
         },
       ],
     });
-    render(<AnalyzeView tab="tokens" />);
+    render(<AnalyzeView pillar="tokens" />);
     await openPreview();
 
     fireEvent.click(screen.getByRole("button", { name: "적용" }));
@@ -644,7 +644,7 @@ describe("AnalyzeView", () => {
         { status: 200, body: previewResponse({ applied: true, mtimeMs: 20 }) },
       ],
     });
-    render(<AnalyzeView tab="tokens" />);
+    render(<AnalyzeView pillar="tokens" />);
     await openPreview();
     fireEvent.click(screen.getByRole("button", { name: "적용" }));
 
@@ -677,7 +677,7 @@ describe("AnalyzeView", () => {
         { status: 200, body: previewResponse({ applied: true, mtimeMs: 20 }) },
       ],
     });
-    render(<AnalyzeView tab="tokens" />);
+    render(<AnalyzeView pillar="tokens" />);
     await openPreview();
     fireEvent.click(screen.getByRole("button", { name: "적용" }));
     fireEvent.click(await screen.findByRole("button", { name: "다시 분석" }));
@@ -709,7 +709,7 @@ describe("AnalyzeView", () => {
         { status: 200, body: previewResponse({ applied: true, mtimeMs: 40 }) },
       ],
     });
-    render(<AnalyzeView tab="tokens" />);
+    render(<AnalyzeView pillar="tokens" />);
     await openPreview();
 
     fireEvent.click(screen.getByRole("button", { name: "적용" }));
@@ -755,7 +755,7 @@ describe("AnalyzeView", () => {
         ]),
       ],
     });
-    render(<AnalyzeView tab="tokens" />);
+    render(<AnalyzeView pillar="tokens" />);
     await openPreview();
 
     expect(screen.getByText("적용 가능 0건 / 전체 1건")).toBeTruthy();
@@ -782,7 +782,7 @@ describe("AnalyzeView", () => {
         ),
       ],
     });
-    render(<AnalyzeView tab="tokens" />);
+    render(<AnalyzeView pillar="tokens" />);
     await openPreview();
 
     // 건수는 묶음 수가 아니라 변경 수다.
@@ -811,7 +811,7 @@ describe("AnalyzeView", () => {
         ]),
       ],
     });
-    render(<AnalyzeView tab="tokens" />);
+    render(<AnalyzeView pillar="tokens" />);
     await openPreview();
 
     expect(screen.getByText(PROXY_GUIDE).tagName).toBe("P");
@@ -834,7 +834,7 @@ describe("AnalyzeView", () => {
         ]),
       ],
     });
-    render(<AnalyzeView tab="tokens" />);
+    render(<AnalyzeView pillar="tokens" />);
     await openPreview();
 
     expect(screen.getByText(REASON_GUIDE).tagName).toBe("P");
@@ -845,7 +845,7 @@ describe("AnalyzeView", () => {
 
   it("취소를 누르면 미리보기가 닫힌다", async () => {
     stubFetch({ analyze: { status: 200, body: cleanedResponse() } });
-    render(<AnalyzeView tab="tokens" />);
+    render(<AnalyzeView pillar="tokens" />);
     await openPreview();
 
     fireEvent.click(screen.getByRole("button", { name: "취소" }));
@@ -860,7 +860,7 @@ describe("AnalyzeView", () => {
     const error =
       "실행 명령에서 프로젝트 안의 서버 소스 파일을 찾지 못했습니다.\n해결: 인자에 스크립트 경로가 있어야 합니다(예: node ./server.mjs).";
     stubFetch({ sourceEdits: [{ status: 400, body: { error } }] });
-    render(<AnalyzeView tab="tokens" />);
+    render(<AnalyzeView pillar="tokens" />);
     await analyze();
 
     fireEvent.click(await screen.findByRole("button", { name: "MCP 수정하기" }));
@@ -882,7 +882,7 @@ describe("AnalyzeView", () => {
         { status: 400, body: { error: "적용할 수 있는 변경이 없습니다." } },
       ],
     });
-    render(<AnalyzeView tab="tokens" />);
+    render(<AnalyzeView pillar="tokens" />);
     await openPreview();
 
     fireEvent.click(screen.getByRole("button", { name: "적용" }));
@@ -907,7 +907,7 @@ describe("AnalyzeView", () => {
         },
       },
     });
-    render(<AnalyzeView tab="tokens" />);
+    render(<AnalyzeView pillar="tokens" />);
     await analyze();
 
     expect(await screen.findByText("반영할 변경이 없습니다.")).toBeTruthy();

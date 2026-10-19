@@ -42,4 +42,22 @@ describe("App", () => {
 
     expect(screen.getByRole("tab", { name: "보안" }).getAttribute("aria-selected")).toBe("true");
   });
+
+  it("#/analyze/tokens 는 토큰 탭이 선택이다", () => {
+    window.location.hash = "#/analyze/tokens";
+
+    render(React.createElement(App));
+
+    expect(screen.getByRole("tab", { name: "토큰" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("tab", { name: "보안" }).getAttribute("aria-selected")).toBe("false");
+  });
+
+  it("#/analyze/performance 는 토큰 탭이 선택이고 해시는 그대로다", () => {
+    window.location.hash = "#/analyze/performance";
+
+    render(React.createElement(App));
+
+    expect(screen.getByRole("tab", { name: "토큰" }).getAttribute("aria-selected")).toBe("true");
+    expect(window.location.hash).toBe("#/analyze/performance");
+  });
 });

@@ -1,6 +1,6 @@
 import type { JSX } from "react";
 import { useEffect, useRef, useState } from "react";
-import type { AnalyzeTab } from "./analyze/types.js";
+import type { AnalyzePillar } from "./analyze/types.js";
 import { Sidebar } from "./components/Sidebar.js";
 import { ThemeToggle } from "./components/ThemeToggle.js";
 import { leaveBlocker } from "./leave-guard.js";
@@ -34,7 +34,7 @@ import { themeStorage } from "./theme.js";
  * | `#/generate` | GenerateWizard |
  * | `#/mock` | MockBuilder (목 만들기) |
  * | `#/repair/:id` | RepairReview |
- * | `#/analyze`, `#/analyze/:tab` | AnalyzeView (`tokens` 기본, `security` 는 보안 탭) |
+ * | `#/analyze`, `#/analyze/:pillar` | AnalyzeView (개요. `tokens`·`security` 는 그 축의 상세를 함께 연다) |
  * | `#/settings` | SettingsView (준비 중) |
  * | `#/user/check` (사용자 모드의 기본 리다이렉트 대상) | PreCheck (사전 점검) |
  * | `#/welcome` | Welcome (모드 선택. 저장된 모드가 없을 때의 기본 리다이렉트 대상) |
@@ -51,7 +51,7 @@ type Route =
   | { readonly screen: "replay" }
   | { readonly screen: "mock" }
   | { readonly screen: "repair"; readonly runId: string | null }
-  | { readonly screen: "analyze"; readonly tab: AnalyzeTab }
+  | { readonly screen: "analyze"; readonly pillar: AnalyzePillar | null }
   | { readonly screen: "settings" }
   | { readonly screen: "check" }
   | { readonly screen: "welcome" }
@@ -98,9 +98,10 @@ function parseRoute(hash: string): Route {
     };
   }
   if (first === "analyze") {
-    // 모르는 탭 이름은 기본 탭으로 연다. 화면을 통째로 #/home 으로 보내면 Analyze 메뉴를 고른
-    // 사용자가 엉뚱한 화면에 선다.
-    return { screen: "analyze", tab: rest[0] === "security" ? "security" : "tokens" };
+    // 상세가 있는 축 이름만 받는다. 모르는 축(아직 연결 안 된 performance 포함)은 개요로 연다.
+    // 화면을 통째로 #/home 으로 보내면 Analyze 메뉴를 고른 사용자가 엉뚱한 화면에 선다.
+    const pillar = rest[0] === "tokens" || rest[0] === "security" ? rest[0] : null;
+    return { screen: "analyze", pillar };
   }
   if (first === "settings") {
     return { screen: "settings" };
@@ -227,7 +228,7 @@ function Screen({
     case "repair":
       return <RepairReview runId={route.runId} />;
     case "analyze":
-      return <AnalyzeView tab={route.tab} />;
+      return <AnalyzeView pillar={route.pillar} />;
     case "settings":
       return <SettingsView />;
     case "check":

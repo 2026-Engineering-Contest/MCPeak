@@ -146,10 +146,21 @@ export async function prepareSecurityRun(
 const CLI_USAGE_PREFIX = "오류 [CLI_USAGE]: ";
 
 /**
+ * 격리 대상 판정의 거절 문장(@mcpeak/cli `audit-sandbox-target.ts` 의 `SandboxTargetError` 세 가지).
+ * 이 문장일 때만 격리 없이 다시 돈다. 다른 사용법 오류(잘못된 허용 호스트 등)는 격리 설정이 틀린 것이라
+ * 조용히 로컬로 바꾸지 않고 그 문장을 결과로 낸다. CLI 문장이 바뀌면 실제 CLI 를 쓰는 테스트가 깨진다.
+ */
+const SANDBOX_TARGET_REJECTIONS: readonly RegExp[] = [
+  /^--sandbox-mount 경로가 없습니다: /,
+  /^격리에 보일 범위가 홈 디렉터리나 \/ 입니다: /,
+  /^서버 인자 '.*' 가 격리에 보이는 범위\(.*\) 밖에 있습니다\./,
+];
+
+/**
  * 점검을 끝까지 돌린다. 던지지 않는다. `exitCode` 는 run 의 종료 코드가 된다.
  *
- * `context.fallbackArgv` 가 있으면 격리를 시도만 한다(ADR-0117). 첫 실행이 리포트 없이 `CLI_USAGE` 로
- * 끝나면 격리 없이 한 번 더 돈다. CLI 는 마운트 범위를 정하지 못하면(서버 인자가 범위 밖, 범위가 홈)
+ * `context.fallbackArgv` 가 있으면 격리를 시도만 한다(ADR-0117). 첫 실행이 리포트 없이 격리 대상 거절
+ * (`SANDBOX_TARGET_REJECTIONS`)로 끝나면 격리 없이 한 번 더 돈다. CLI 는 마운트 범위를 정하지 못하면(서버 인자가 범위 밖, 범위가 홈)
  * 서버를 띄우기 전에 사용법 오류로 끝난다. Docker 를 못 쓰는 경우는 CLI·audit 가 스스로 격리 없는 경로로
  * 돌고 `report.sandbox` 에 사유를 싣는다. 여기서 다시 돌지 않는다.
  */
@@ -202,14 +213,17 @@ export async function analyzeSecurity(
   let sandboxFallbackReason: string | null = null;
   try {
     exitCode = await runner(argv, deps);
+    const usage = stderrBefore.startsWith(CLI_USAGE_PREFIX)
+      ? (stderrBefore.split("\n")[0] ?? "").slice(CLI_USAGE_PREFIX.length)
+      : null;
     if (
       context.fallbackArgv !== undefined &&
       stdout === "" &&
-      stderrBefore.startsWith(CLI_USAGE_PREFIX)
+      usage !== null &&
+      SANDBOX_TARGET_REJECTIONS.some((pattern) => pattern.test(usage))
     ) {
-      // 격리 대상 판정의 거절이다. 그 문장의 첫 줄을 사유로 남기고 격리 없이 다시 돈다. 다른 사용법
-      // 오류였다면 다시 돈 실행도 같은 문장으로 끝나고, 그 문장이 결과다.
-      sandboxFallbackReason = (stderrBefore.split("\n")[0] ?? "").slice(CLI_USAGE_PREFIX.length);
+      // 격리 대상 판정의 거절이다. 그 문장의 첫 줄을 사유로 남기고 격리 없이 다시 돈다.
+      sandboxFallbackReason = usage;
       stderrBefore = "";
       exitCode = await runner(context.fallbackArgv, deps);
     }

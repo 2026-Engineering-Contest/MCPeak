@@ -541,12 +541,14 @@ describe("analyzeSecurity", () => {
     expect(body.sandboxFallbackReason).toBeNull();
   });
 
-  it("fallbackArgv 가 있고 격리 실행이 CLI_USAGE 로 끝나면 격리 없이 다시 돌고 그 사유 첫 줄을 싣는다", async () => {
+  it("fallbackArgv 가 있고 격리 실행이 격리 대상 거절로 끝나면 격리 없이 다시 돌고 그 사유 첫 줄을 싣는다", async () => {
     const calls: (readonly string[])[] = [];
     const runner = vi.fn<Runner>(async (argv, deps) => {
       calls.push(argv);
       if (argv.includes("--sandbox")) {
-        deps.writeStderr("오류 [CLI_USAGE]: 서버 인자 's.mjs' 가 범위 밖에 있습니다.\n해결: y\n");
+        deps.writeStderr(
+          "오류 [CLI_USAGE]: 서버 인자 's.mjs' 가 격리에 보이는 범위(/r) 밖에 있습니다. 둘을 함께 담는 디렉터리를 --sandbox-mount 로 주세요.\n해결: y\n",
+        );
         return 1;
       }
       deps.writeStdout(reportText(SAMPLE));
@@ -562,12 +564,12 @@ describe("analyzeSecurity", () => {
     expect(calls).toEqual([["--sandbox", ...ARGV], ARGV]);
     // 첫 실행의 문장도 진행 로그에 남는다. 사용자가 왜 격리 없이 돌았는지 로그에서도 본다.
     expect(written).toEqual([
-      "오류 [CLI_USAGE]: 서버 인자 's.mjs' 가 범위 밖에 있습니다.\n해결: y\n",
+      "오류 [CLI_USAGE]: 서버 인자 's.mjs' 가 격리에 보이는 범위(/r) 밖에 있습니다. 둘을 함께 담는 디렉터리를 --sandbox-mount 로 주세요.\n해결: y\n",
     ]);
     expect(result.exitCode).toBe(2);
     if (!result.outcome.ok) throw new Error(result.outcome.error);
     expect(result.outcome.body.sandboxFallbackReason).toBe(
-      "서버 인자 's.mjs' 가 범위 밖에 있습니다.",
+      "서버 인자 's.mjs' 가 격리에 보이는 범위(/r) 밖에 있습니다. 둘을 함께 담는 디렉터리를 --sandbox-mount 로 주세요.",
     );
     expect(result.outcome.body.report).toEqual(SAMPLE);
   });
@@ -575,7 +577,9 @@ describe("analyzeSecurity", () => {
   it("다시 돈 실행도 리포트 없이 끝나면 그 실행의 stderr 가 error 다", async () => {
     const runner = vi.fn<Runner>(async (argv, deps) => {
       deps.writeStderr(
-        argv.includes("--sandbox") ? "오류 [CLI_USAGE]: a\n" : "오류 [CLI_USAGE]: b\n",
+        argv.includes("--sandbox")
+          ? "오류 [CLI_USAGE]: 격리에 보일 범위가 홈 디렉터리나 / 입니다: /h. x\n"
+          : "오류 [CLI_USAGE]: b\n",
       );
       return 1;
     });
@@ -588,6 +592,27 @@ describe("analyzeSecurity", () => {
     expect(runner).toHaveBeenCalledTimes(2);
     expect(result).toEqual({ exitCode: 1, outcome: { ok: false, error: "오류 [CLI_USAGE]: b" } });
   });
+
+  it.each(["허용 호스트는 호스트 이름이어야 합니다(예: api.example.com): 'bad host'", "x"])(
+    "격리 대상 거절이 아닌 CLI_USAGE(%s)면 fallbackArgv 가 있어도 다시 돌지 않고 그 문장이 결과다",
+    async (message) => {
+      const { runner } = capturingRunner((deps) => {
+        deps.writeStderr(`오류 [CLI_USAGE]: ${message}\n`);
+        return 1;
+      });
+      const result = await analyzeSecurity(
+        ["--sandbox", ...ARGV],
+        capturingIo().io,
+        { root, fallbackArgv: ARGV },
+        { runner, loaders: loadersFor().loaders },
+      );
+      expect(runner).toHaveBeenCalledTimes(1);
+      expect(result).toEqual({
+        exitCode: 1,
+        outcome: { ok: false, error: `오류 [CLI_USAGE]: ${message}` },
+      });
+    },
+  );
 
   it("fallbackArgv 가 없으면 CLI_USAGE 로 끝나도 다시 돌지 않는다", async () => {
     const { runner } = capturingRunner((deps) => {

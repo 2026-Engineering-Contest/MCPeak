@@ -1,4 +1,4 @@
-// preload-e2e 의 자식. 인자: 모드(fetch | http | env | cancel | cancel-decoder | unread | worker), 루프백 서버 origin.
+// preload-e2e 의 자식. 인자: 모드(fetch | http | env | cancel | cancel-decoder | unread | worker | props), 루프백 서버 origin.
 // worker 모드가 띄우는 worker 는 같은 파일을 workerData(origin) 로 다시 실행한다.
 // 프리로드가 응답 스트림을 건드리면 여기서 드러나야 하므로 일부러 단순하게 둔다.
 import http from "node:http";
@@ -51,6 +51,44 @@ if (mode === "fetch") {
   await reader.read();
   process.stdout.write(await within(reader.cancel(), 1000));
   process.exit(0);
+} else if (mode === "props") {
+  // 리다이렉트 응답의 겉모습. 프리로드 유무로 같은 값이 나와야 한다.
+  const res = await fetch(`${origin}/redirect`);
+  const copy = res.clone();
+  // headers 를 두 번 읽어 같은 객체인지 본다(원본은 getter 가 같은 Headers 를 돌려준다).
+  const firstHeaders = res.headers;
+  let headersSet = "ok";
+  try {
+    res.headers.set("x-added", "1");
+  } catch (error) {
+    headersSet = error.constructor.name;
+  }
+  const [body, copyBody] = await Promise.all([res.text(), copy.text()]);
+  let cloneAfterUse = "ok";
+  try {
+    res.clone();
+  } catch (error) {
+    cloneAfterUse = error.constructor.name;
+  }
+  const props = {
+    url: res.url,
+    redirected: res.redirected,
+    type: res.type,
+    cloneUrl: copy.url,
+    cloneRedirected: copy.redirected,
+    cloneType: copy.type,
+    keys: Object.keys(res).length,
+    cloneKeys: Object.keys(copy).length,
+    json: JSON.stringify(res),
+    headersSet,
+    cloneContentType: copy.headers.get("content-type"),
+    sameHeaders: firstHeaders === res.headers,
+    body,
+    copyBody,
+    cloneAfterUse,
+    instance: res instanceof Response && copy instanceof Response,
+  };
+  process.stdout.write(JSON.stringify(props));
 } else if (mode === "unread") {
   // 큰 본문을 받기만 하고 읽지 않는다. 관측이 본문을 대신 당기면 루프백이 전부 보낸다.
   const res = await fetch(`${origin}/big`);

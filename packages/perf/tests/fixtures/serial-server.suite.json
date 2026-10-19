@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "id": "perf-serial-server",
+  "name": "perf E2E 픽스처",
+  "defaultTimeoutMs": 10000,
+  "cases": [
+    {
+      "id": "serial",
+      "name": "serial 이 독립 요청 둘을 순차로 보낸다",
+      "operation": { "type": "callTool", "tool": "serial", "input": {} },
+      "assertions": [{ "type": "isError", "expected": false }]
+    },
+    {
+      "id": "parallel",
+      "name": "parallel 이 독립 요청 둘을 함께 보낸다",
+      "operation": { "type": "callTool", "tool": "parallel", "input": {} },
+      "assertions": [{ "type": "isError", "expected": false }]
+    },
+    {
+      "id": "dependent",
+      "name": "dependent 가 첫 응답의 id 를 둘째 요청에 쓴다",
+      "operation": { "type": "callTool", "tool": "dependent", "input": {} },
+      "assertions": [{ "type": "isError", "expected": false }]
+    },
+    {
+      "id": "repeat",
+      "name": "repeat 이 한 호출 안에서 같은 요청을 두 번 보낸다",
+      "operation": { "type": "callTool", "tool": "repeat", "input": {} },
+      "assertions": [{ "type": "isError", "expected": false }]
+    },
+    {
+      "id": "retry",
+      "name": "retry 가 429 뒤 같은 요청을 다시 보낸다",
+      "operation": { "type": "callTool", "tool": "retry", "input": {} },
+      "assertions": [{ "type": "isError", "expected": false }]
+    },
+    {
+      "id": "prefetch-1",
+      "name": "prefetch 가 id 1 로 설정과 항목을 받는다",
+      "operation": { "type": "callTool", "tool": "prefetch", "input": { "id": 1 } },
+      "assertions": [{ "type": "isError", "expected": false }]
+    },
+    {
+      "id": "prefetch-2",
+      "name": "prefetch 가 id 2 로 설정과 항목을 받는다",
+      "operation": { "type": "callTool", "tool": "prefetch", "input": { "id": 2 } },
+      "assertions": [{ "type": "isError", "expected": false }]
+    },
+    {
+      "id": "http",
+      "name": "http 가 node:http 로 요청 하나를 보낸다",
+      "operation": { "type": "callTool", "tool": "http", "input": {} },
+      "assertions": [{ "type": "isError", "expected": false }]
+    },
+    {
+      "id": "local",
+      "name": "local 이 외부 요청 없이 답한다",
+      "operation": { "type": "callTool", "tool": "local", "input": {} },
+      "assertions": [{ "type": "isError", "expected": false }]
+    },
+    {
+      "id": "fails",
+      "name": "fails 가 isError 로 답한다 (perf 가 isError 횟수를 세도록 거절 기대 단언을 두지 않는다)",
+      "operation": { "type": "callTool", "tool": "fails", "input": {} },
+      "assertions": [{ "type": "bodyMatchesSchema", "schema": { "type": "array" } }]
+    }
+  ]
+}

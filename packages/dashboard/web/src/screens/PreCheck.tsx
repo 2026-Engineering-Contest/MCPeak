@@ -5,7 +5,9 @@ import type {
   AnalyzeSecurityResponse,
   StartRunResponse,
 } from "../../../src/api-types.js";
-import { ErrorAlert, REMOTE_SANDBOX_HINT, SecurityProgress } from "../analyze/SecurityPanel.js";
+import { ErrorAlert } from "../analyze/ErrorAlert.js";
+import { REMOTE_SANDBOX_HINT } from "../analyze/SecurityOptions.js";
+import { SecurityProgress } from "../analyze/SecurityProgress.js";
 import { SecurityResult } from "../analyze/SecurityResult.js";
 import { apiGet, apiSend } from "../api.js";
 import { Button } from "../components/Button.js";
@@ -46,7 +48,7 @@ function targetOf(server: PastedServer): string {
  * 붙여 넣은 설정의 env 값과 헤더 값은 입력 칸 밖 어디에도 보이지 않고 어디에도 보내지 않는다. 이름만
  * 화면에 보이고 요청에는 이름도 싣지 않는다. 최근 명령 목록에도 쓰지 않는다.
  *
- * 단계는 `SecurityPanel` 과 같이 따로 상태를 두지 않고 구한다. 결과가 있으면 결과, 도는 run 이 있으면
+ * 단계는 Analyze 의 보안 상세(`useSecurityAnalysis`)와 같이 따로 상태를 두지 않고 구한다. 결과가 있으면 결과, 도는 run 이 있으면
  * 점검, 아니면 서버 붙여넣기다. 타이머와 폴링이 없다.
  */
 export function PreCheck(): JSX.Element {

@@ -3,7 +3,7 @@ import type { AuditReport, Finding, SandboxReport, Severity } from "@mcpeak/audi
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AnalyzeSecurityResponse, RunEventInput } from "../../src/api-types.js";
-import { REMOTE_SANDBOX_HINT } from "../src/analyze/SecurityPanel.js";
+import { REMOTE_SANDBOX_HINT } from "../src/analyze/SecurityOptions.js";
 import { PreCheck } from "../src/screens/PreCheck.js";
 
 /** security-panel.test 와 같은 방식의 EventSource fake. 네트워크·서버 없음. */

@@ -8,6 +8,7 @@ import type {
 } from "../../src/api-types.js";
 import { firstLine } from "../src/analyze/pillar-state.js";
 import { PILLARS, securitySummary, tokensSummary } from "../src/analyze/pillars.js";
+import { analyzeResponse } from "./analyze-fixture-data.js";
 
 function finding(ruleId: string): Finding {
   // severity·location·message 는 요약 함수가 읽지 않는다. 형식만 맞춘다.
@@ -69,53 +70,6 @@ function securityResponse(
   } as AnalyzeSecurityResponse;
 }
 
-/**
- * analyze-view.test.tsx 의 `analyzeResponse()` 를 복사했다. 요약 함수가 읽는 수치는
- * before 1000, after 760, 도구 a 600→400, b 400→360, promotedParameters 2 다.
- */
-function tokensResponse(): AnalyzeTokensResponse {
-  return {
-    overlay: {
-      schemaVersion: 1,
-      generator: { name: "@mcpeak/optimize", version: "0.0.0" },
-      source: {
-        toolCount: 2,
-        toolNames: ["a", "b"],
-        instructions: "",
-        bytes: 1000,
-        otherCapabilities: [],
-      },
-      instructions: "",
-      tools: [
-        {
-          name: "a",
-          description: "A",
-          inputSchema: { type: "object" },
-          bytes: { before: 600, after: 400 },
-          changes: [{ kind: "schema-key-removed", path: "/", key: "$schema" }],
-        },
-        { name: "b", inputSchema: {}, bytes: { before: 400, after: 360 }, changes: [] },
-      ],
-      totals: {
-        bytesBefore: 1000,
-        bytesAfter: 700,
-        bytesAfterWithInstructions: 760,
-        promotedParameters: 2,
-      },
-    },
-    overlayText: '{\n  "schemaVersion": 1\n}\n',
-    report: "REPORT\n",
-    sourceTools: [
-      {
-        name: "a",
-        description: "A",
-        inputSchema: { $schema: "http://json-schema.org/draft-07/schema#", type: "object" },
-      },
-      { name: "b", inputSchema: {} },
-    ],
-  };
-}
-
 interface ToolBytes {
   readonly name: string;
   readonly before: number;
@@ -128,7 +82,7 @@ function withTools(
   tools: readonly ToolBytes[],
 ): AnalyzeTokensResponse {
   const first = response.overlay.tools[0];
-  if (first === undefined) throw new Error("tokensResponse 의 도구가 비었다");
+  if (first === undefined) throw new Error("analyzeResponse 의 도구가 비었다");
   return {
     ...response,
     overlay: {
@@ -262,7 +216,7 @@ describe("securitySummary", () => {
 
 describe("tokensSummary", () => {
   it("감소가 있으면 백분율 판정이고 큰 숫자에 빼기 기호가 붙는다", () => {
-    const s = tokensSummary(tokensResponse()); // before 1000, after 760
+    const s = tokensSummary(analyzeResponse()); // before 1000, after 760
     expect(s.verdict).toEqual({ label: "24.0% 줄일 수 있음", tone: "waiting" });
     expect(s.headline).toBe("−24.0%");
     expect(s.headlineNote).toBe("~250 → ~190 토큰");
@@ -274,7 +228,7 @@ describe("tokensSummary", () => {
 
   it("감소가 0 이면 줄일 것 없음 done 이고 큰 숫자가 0% 다", () => {
     const s = tokensSummary(
-      withTotals(tokensResponse(), { bytesBefore: 1000, bytesAfterWithInstructions: 1000 }, [
+      withTotals(analyzeResponse(), { bytesBefore: 1000, bytesAfterWithInstructions: 1000 }, [
         { name: "a", before: 600, after: 600 },
       ]),
     );
@@ -285,7 +239,7 @@ describe("tokensSummary", () => {
 
   it("요약 줄은 감소 바이트 1위 도구이고 같으면 원본 순서다", () => {
     const s = tokensSummary(
-      withTools(tokensResponse(), [
+      withTools(analyzeResponse(), [
         { name: "a", before: 100, after: 50 },
         { name: "b", before: 100, after: 50 },
         { name: "c", before: 100, after: 90 },
@@ -295,26 +249,26 @@ describe("tokensSummary", () => {
   });
 
   it("기본 픽스처의 1위는 a 이고 백분율은 그 도구 기준이다", () => {
-    expect(tokensSummary(tokensResponse()).foot).toBe("가장 큰 감소: a −33.3%"); // 600→400
+    expect(tokensSummary(analyzeResponse()).foot).toBe("가장 큰 감소: a −33.3%"); // 600→400
   });
 
   it("막대는 압축 칸 하나이고 비율은 after/before 다", () => {
     const s = tokensSummary(
-      withTotals(tokensResponse(), { bytesBefore: 200, bytesAfterWithInstructions: 50 }),
+      withTotals(analyzeResponse(), { bytesBefore: 200, bytesAfterWithInstructions: 50 }),
     );
     expect(s.bar).toEqual([{ ratio: 0.25, tone: "accent", label: "압축" }]);
   });
 
   it("before 가 0 이면 막대가 비고 줄일 것 없음이다", () => {
     const s = tokensSummary(
-      withTotals(tokensResponse(), { bytesBefore: 0, bytesAfterWithInstructions: 0 }),
+      withTotals(analyzeResponse(), { bytesBefore: 0, bytesAfterWithInstructions: 0 }),
     );
     expect(s.bar).toEqual([]);
     expect(s.verdict.label).toBe("줄일 것 없음");
   });
 
   it("같은 응답이면 같은 요약이다", () => {
-    const response = tokensResponse();
+    const response = analyzeResponse();
     expect(JSON.stringify(tokensSummary(response))).toBe(JSON.stringify(tokensSummary(response)));
   });
 });

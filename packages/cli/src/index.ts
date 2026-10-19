@@ -187,9 +187,11 @@ export function nodePerfDependencies(
       const listener = (signal: NodeJS.Signals) => void handler(signal as PerfSignal);
       process.on("SIGINT", listener);
       process.on("SIGTERM", listener);
+      process.on("SIGHUP", listener);
       return () => {
         process.off("SIGINT", listener);
         process.off("SIGTERM", listener);
+        process.off("SIGHUP", listener);
       };
     },
     // 처리기를 뗀 뒤라 기본 동작(신호 종료)이 일어난다.

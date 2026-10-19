@@ -729,7 +729,7 @@ describe("runPerfCommand: 신호 정리(계획 E25)", () => {
     expect(h.onSignal).not.toHaveBeenCalled();
   });
 
-  it.each(["SIGINT", "SIGTERM"] as const)(
+  it.each(["SIGINT", "SIGTERM", "SIGHUP"] as const)(
     "측정 중 %s 가 오면 연결 close → 추적 동기 삭제 → 처리기 떼기 → 같은 신호로 재발신",
     async (signal) => {
       const events: string[] = [];
@@ -797,6 +797,37 @@ describe("runPerfCommand: 신호 정리(계획 E25)", () => {
     await runPerfCommand([SUITE, "--", "node"], h.deps);
     expect(h.deps.removeDirSync).toHaveBeenCalledWith("/tmp/mcpeak-perf-fake");
     expect(h.deps.killSelf).toHaveBeenCalledWith("SIGINT");
+  });
+
+  // 처리기가 연결을 닫는 동안 본 흐름이 계속 진행해 리포트를 쓰는 경쟁을 막는다(설계 §3.2 8항, 재검토 N5).
+  // 테스트의 재발신은 프로세스를 끝내지 않으므로 measure 가 끝난 뒤의 본 흐름을 그대로 볼 수 있다.
+  it.each([
+    ["텍스트 리포트", [SUITE, "--", "node"]],
+    ["--json", [SUITE, "--json", "--", "node"]],
+    ["--update-baseline", [SUITE, "--baseline", BASELINE, "--update-baseline", "--", "node"]],
+  ] as const)(
+    "신호를 받은 뒤에는 measure 가 끝나도 리포트도 기준 파일도 쓰지 않는다 (%s)",
+    async (_name, argv) => {
+      let h: ReturnType<typeof harness> | undefined;
+      const measure: typeof perf.measure = async (input) => {
+        const result = perf.measure(input);
+        await h?.signal("SIGINT");
+        return result;
+      };
+      h = harness({ trace: [HELLO], perf: { measure } });
+      const code = await runPerfCommand(argv, h.deps);
+      expect(h.deps.killSelf).toHaveBeenCalledWith("SIGINT");
+      expect(h.stdout()).toBe("");
+      expect(h.writeFile).not.toHaveBeenCalled();
+      // 셸이 신호 종료에 보는 값과 같다. 실제로는 재발신이 먼저 프로세스를 끝낸다.
+      expect(code).toBe(130);
+    },
+  );
+
+  it("신호 전에 끝난 측정은 지금처럼 리포트를 쓴다", async () => {
+    const h = harness({ trace: [HELLO] });
+    await expect(runPerfCommand([SUITE, "--", "node"], h.deps)).resolves.toBe(0);
+    expect(h.stdout()).toContain("mcpeak perf 결과");
   });
 });
 
@@ -949,13 +980,19 @@ describe("nodePerfDependencies", () => {
     await expect(deps.readFile(syncDir)).rejects.toMatchObject({ code: "ENOENT" });
     expect(() => deps.removeDirSync(syncDir)).not.toThrow();
 
-    // 신호 처리기는 SIGINT·SIGTERM 둘에 달리고, 돌려준 함수가 둘 다 뗀다. 재발신은 부르지 않는다.
-    const before = { int: process.listenerCount("SIGINT"), term: process.listenerCount("SIGTERM") };
+    // 신호 처리기는 SIGINT·SIGTERM·SIGHUP 셋에 달리고, 돌려준 함수가 셋 다 뗀다. 재발신은 부르지 않는다.
+    const before = {
+      int: process.listenerCount("SIGINT"),
+      term: process.listenerCount("SIGTERM"),
+      hup: process.listenerCount("SIGHUP"),
+    };
     const off = deps.onSignal(async () => {});
     expect(process.listenerCount("SIGINT")).toBe(before.int + 1);
     expect(process.listenerCount("SIGTERM")).toBe(before.term + 1);
+    expect(process.listenerCount("SIGHUP")).toBe(before.hup + 1);
     off();
     expect(process.listenerCount("SIGINT")).toBe(before.int);
     expect(process.listenerCount("SIGTERM")).toBe(before.term);
+    expect(process.listenerCount("SIGHUP")).toBe(before.hup);
   });
 });

@@ -135,6 +135,32 @@ describe("runRules: perf/sequential-independent", () => {
     expect(result.dependency.get("c")).toEqual({ dependent: 0, independent: 5, unknown: 0 });
   });
 
+  it("호출 시작 앞에 찍힌 요청이 있어도 상한은 음수가 아니다", () => {
+    // 4차 검토 breaker 실측 모양. 첫 요청이 시계 오차로 호출 t0 보다 1.5ms 앞에 찍히고, 뒤에 짧은 독립 순차
+    // 요청이 하나 있다. external 은 호출 시작에서 자른 [0, 0.5]·[0.6, 1.0] 의 합 0.9 다. len 을 자르지 않으면
+    // 임계 경로가 2.0 이 되어 상한이 −1.1 로 나왔다(설계 §6.2, 계획 E37).
+    const result = runRules(
+      build([
+        {
+          id: "c",
+          length: 10,
+          requests: () => [
+            { url: "https://h.example/x1", t0: -1.5, tEnd: 0.5, body: '{"a":"aaaa1"}' },
+            { url: "https://h.example/x0", t0: 0.6, tEnd: 1.0, body: '{"b":"bbbb2"}' },
+          ],
+        },
+      ]),
+    );
+    const [finding] = only(result.findings, "perf/sequential-independent");
+    expect(finding).toBeDefined();
+    const saving = finding?.evidence.savingUpperBoundMs as number;
+    expect(saving).toBeGreaterThanOrEqual(0);
+    // 잘린 len 으로 임계 경로는 0.5, 상한은 0.9 − 0.5 = 0.4. 시각 기준 T 가 커서 부동소수 오차가 0.0002 쯤이다.
+    expect(saving).toBeCloseTo(0.4, 3);
+    expect(finding?.lines[1]).not.toContain("-");
+    expect(finding?.lines[1]).toBe("병렬로 보내면 최대 약 0ms 줄일 수 있습니다 (p50 기준 상한).");
+  });
+
   it("임계 경로는 의존 체인을 따라간다", () => {
     // G_i 의 응답 토큰이 F_i 의 URL 에 들어가고, 나머지 쌍은 서로 무관하다.
     const chain = (j: number, start: number): RequestSpec[] => [

@@ -96,7 +96,12 @@ function sequentialRun(run: OkRun, input: Readonly<Record<string, unknown>>): Se
       else if (anyUnknown) unknown += 1;
       else independent.push(later);
     }
-    const length = Math.max(0, Math.min(ends[i] as number, measurement.t1) - later.t0);
+    // §6.2 len(i). 시작도 호출 시작에서 자른다. callTiming 의 external 이 그렇게 자르므로, 자르지 않으면 호출
+    // 앞에 찍힌 요청이 임계 경로만 늘려 saving 이 음수가 된다(계획 E37).
+    const length = Math.max(
+      0,
+      Math.min(ends[i] as number, measurement.t1) - Math.max(later.t0, measurement.t0),
+    );
     finish.push(length + longestPred);
     latestEnd = Math.max(latestEnd, ends[i] as number);
   });
@@ -105,7 +110,8 @@ function sequentialRun(run: OkRun, input: Readonly<Record<string, unknown>>): Se
   return {
     counts: { dependent, independent: independent.length, unknown },
     independent,
-    saving: callTiming(measurement, run.requests).external - criticalPath,
+    // §6.2 saving(c). 단축 상한은 음수일 수 없다.
+    saving: Math.max(0, callTiming(measurement, run.requests).external - criticalPath),
   };
 }
 

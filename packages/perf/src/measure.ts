@@ -8,20 +8,31 @@ const MAX_DETAIL_CHARS = 200;
 /** 스킴이 있는 URL. http(s) 밖(postgres·redis 등)도 userinfo 와 쿼리 값을 가려야 한다(계획 E24). */
 const URL_PATTERN = /[A-Za-z][A-Za-z0-9+.-]*:\/\/[^\s"'<>]+/g;
 
-/**
- * 서버 문장에 흔히 섞이는 비밀 모양(설계 §5.4, 계획 E31). Bearer 값, JWT, sk-·pk-·rk- 키. 이 밖의 서버 문장은
- * 서버가 쓴 그대로 싣는다(한계).
+/*
+ * 서버 문장에 흔히 섞이는 비밀 모양(설계 §5.4, 계획 E31·E35). Bearer 값, JWT, sk-·pk-·rk- 키. 이 밖의 서버 문장은
+ * 서버가 쓴 그대로 싣는다(한계). Bearer 와 키는 모양이 맞아도 값이 비밀다울 때만 가린다. "Bearer token required"
+ * 나 제약·인덱스 이름(pk-orders-customer-region-idx)까지 가리면 원인 문장을 읽을 수 없다(3차 검토 실측).
  */
+
 /** 값은 RFC 6750 token68 문자만. 값 뒤에 붙은 닫는 괄호·쉼표 같은 문장 부호는 살린다. */
-const BEARER_PATTERN = /Bearer\s+[A-Za-z0-9._~+/=-]+/g;
+const BEARER_PATTERN = /Bearer\s+([A-Za-z0-9._~+/=-]+)/g;
+/** 이보다 짧은 Bearer 값은 숫자가 섞여야 토큰으로 본다. 영어 낱말은 대개 이보다 짧고 숫자가 없다. */
+const MIN_BEARER_WORD_CHARS = 16;
 const JWT_PATTERN = /eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)?/g;
-const KEY_PATTERN = /\b(?:sk|pk|rk)-[A-Za-z0-9_-]{16,}/g;
+const KEY_PATTERN = /\b(?:sk|pk|rk)-([A-Za-z0-9_-]+)/g;
+/** 키 본문에 이만큼 이어진 영숫자 조각이 있어야 키로 본다. 이름은 짧은 낱말을 `-` 로 이어 이 조각이 없다. */
+const KEY_RUN = /[A-Za-z0-9]{12,}/;
+const DIGIT = /\d/;
 
 function maskSecrets(text: string): string {
   return text
-    .replace(BEARER_PATTERN, "Bearer …")
+    .replace(BEARER_PATTERN, (match, value: string) =>
+      value.length >= MIN_BEARER_WORD_CHARS || DIGIT.test(value) ? "Bearer …" : match,
+    )
     .replace(JWT_PATTERN, "…")
-    .replace(KEY_PATTERN, "…");
+    .replace(KEY_PATTERN, (match, body: string) =>
+      DIGIT.test(body) && KEY_RUN.test(body) ? "…" : match,
+    );
 }
 
 /** 경쟁의 결과. 호출 결과, 호출 거부, 타임아웃 셋 중 하나다. */
@@ -54,7 +65,8 @@ function causeMessage(error: unknown): string {
   if (!(error instanceof Error)) return collapsePrefix(String(error));
   const inner = innermostError(error);
   if (error instanceof McpClientError && error.code !== "OPERATION_FAILED" && inner !== error) {
-    return `${error.message}: ${collapsePrefix(inner.message)}`;
+    // 바깥 문장 끝의 마침표 하나를 떼고 잇는다. "….: " 처럼 마침표 뒤에 콜론이 오지 않게(계획 E35).
+    return `${error.message.replace(/\.$/, "")}: ${collapsePrefix(inner.message)}`;
   }
   return collapsePrefix(inner.message);
 }

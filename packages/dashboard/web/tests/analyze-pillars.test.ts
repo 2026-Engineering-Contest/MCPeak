@@ -5,6 +5,7 @@ import type {
   AnalyzeSecurityRequest,
   AnalyzeSecurityResponse,
   AnalyzeTokensResponse,
+  PassedRule,
 } from "../../src/api-types.js";
 import { firstLine } from "../src/analyze/pillar-state.js";
 import { PILLARS, securitySummary, tokensSummary } from "../src/analyze/pillars.js";
@@ -34,6 +35,7 @@ function securityResponse(
     readonly exitCode?: number;
     readonly findings?: readonly Finding[];
     readonly probedTools?: readonly string[];
+    readonly passedRules?: readonly PassedRule[];
   } = {},
 ): AnalyzeSecurityResponse {
   const findings = overrides.findings ?? [HIGH_ONLY];
@@ -64,9 +66,11 @@ function securityResponse(
     rendered: "",
     views: findings.map(() => ({ where: "서버", tool: null, toolIndex: -1 })),
     sandboxLine: null,
+    sandboxFallbackReason: null,
     limits: [],
     exitCode,
     cleanupError: "",
+    passedRules: overrides.passedRules ?? [],
   } as AnalyzeSecurityResponse;
 }
 
@@ -142,7 +146,7 @@ describe("securitySummary", () => {
     expect(s.verdict).toEqual({ label: "조치 필요", tone: "failed" });
   });
 
-  it("exitCode 0 이고 낮음만 있으면 낮음·정보만 running 이다", () => {
+  it("exitCode 0 이고 낮음만 있으면 조치 불필요(참고 N건) running 이고 N 은 낮음 + 정보다", () => {
     const s = securitySummary(
       request,
       securityResponse({
@@ -151,10 +155,15 @@ describe("securitySummary", () => {
         findings: [LOW_A, LOW_B],
       }),
     );
-    expect(s.verdict).toEqual({ label: "낮음·정보만", tone: "running" });
+    expect(s.verdict).toEqual({ label: "조치 불필요(참고 2건)", tone: "running" });
+    const mixed = securitySummary(
+      request,
+      securityResponse({ counts: { high: 0, medium: 0, low: 1, info: 2 }, exitCode: 0 }),
+    );
+    expect(mixed.verdict.label).toBe("조치 불필요(참고 3건)");
   });
 
-  it("발견 0 이면 발견 없음 done 이고 막대가 비고 칩은 다섯 개가 0 이다", () => {
+  it("발견 0 이면 발견 없음 done 이고 막대가 비고 칩은 여섯 개가 0 이다", () => {
     const s = securitySummary(
       request,
       securityResponse({
@@ -165,8 +174,27 @@ describe("securitySummary", () => {
     );
     expect(s.verdict).toEqual({ label: "발견 없음", tone: "done" });
     expect(s.bar).toEqual([]);
-    expect(s.chips.map((c) => c.count)).toEqual([0, 0, 0, 0, 0]);
-    expect(s.chips.map((c) => c.label)).toEqual(["심각", "주의", "낮음", "정보", "흐름 경고"]);
+    expect(s.chips.map((c) => c.count)).toEqual([0, 0, 0, 0, 0, 0]);
+    expect(s.chips.map((c) => c.label)).toEqual([
+      "심각",
+      "주의",
+      "낮음",
+      "정보",
+      "흐름 경고",
+      "안전",
+    ]);
+  });
+
+  it("안전 칩은 다섯 칩 뒤에 오고 passedRules 수를 done 톤으로 센다", () => {
+    const passedRules: readonly PassedRule[] = [
+      { id: "desc/injection", family: "desc", summary: "a" },
+      { id: "result/oversized", family: "result", summary: "b" },
+    ];
+    const s = securitySummary(request, securityResponse({ passedRules }));
+    expect(s.chips).toHaveLength(6);
+    expect(s.chips[5]).toEqual({ label: "안전", count: 2, tone: "done" });
+    // 판정은 counts·exitCode 만 본다. 안전 칩은 판정을 바꾸지 않는다.
+    expect(s.verdict).toEqual({ label: "조치 필요", tone: "failed" });
   });
 
   it("흐름 경고는 결함 수에 들지 않고 칩에만 세며 판정은 흐름 경고만 이다", () => {
@@ -193,17 +221,21 @@ describe("securitySummary", () => {
     expect(s.bar.map((b) => b.tone)).toEqual(["failed", "waiting"]);
   });
 
-  it("기준 파일을 보냈으면 요약 줄이 baselineStatus 문장이다", () => {
+  it("기준 파일을 보냈으면 요약 줄이 실행 방식 뒤에 baselineStatus 문장이다", () => {
     const s = securitySummary(
       { argv: [], baselinePath: "b.json" },
       securityResponse({ findings: [CHANGED, CHANGED] }),
     );
-    expect(s.foot).toBe("기준 파일과 다릅니다: b.json (변경 2건)");
+    expect(s.foot).toBe(
+      "로컬 실행(readonly): 격리할 수 없는 대상입니다 · 기준 파일과 다릅니다: b.json (변경 2건)",
+    );
   });
 
-  it("기준 파일이 없으면 요약 줄이 호출 수와 정책이다", () => {
+  it("기준 파일이 없으면 요약 줄이 실행 방식 뒤에 호출 수와 정책이다", () => {
     const s = securitySummary(request, securityResponse({ probedTools: ["a", "b"] }));
-    expect(s.foot).toBe("도구 2개 호출 (probe readonly)");
+    expect(s.foot).toBe(
+      "로컬 실행(readonly): 격리할 수 없는 대상입니다 · 도구 2개 호출 (probe readonly)",
+    );
   });
 
   it("같은 응답이면 같은 요약이다", () => {

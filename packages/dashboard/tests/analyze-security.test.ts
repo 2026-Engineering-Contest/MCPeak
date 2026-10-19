@@ -4,7 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AuditReport, SandboxReport } from "@mcpeak/audit";
 import * as realAudit from "@mcpeak/audit";
-import type { AuditCommandDependencies } from "@mcpeak/cli/commands";
+import {
+  type AuditCommandDependencies,
+  runAuditCommand as realRunAuditCommand,
+} from "@mcpeak/cli/commands";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AnalyzeSecurityRequest } from "../src/api-types.js";
 import { analyzeSecurity, prepareSecurityRun } from "../src/server/analyze-security.js";
@@ -272,6 +275,47 @@ describe("prepareSecurityRun", () => {
     expect(result).toEqual({ ok: true, argv: ["--baseline", "suite.json", "--json"] });
   });
 
+  it("sandboxOptional 이면 격리 플래그만 뺀 fallbackArgv 를 함께 낸다", async () => {
+    expect(
+      await prepare({
+        argv: ["--command", "node"],
+        probe: "none",
+        sandbox: { compareHost: true, allowHosts: ["a.example.com"] },
+        sandboxOptional: true,
+      }),
+    ).toEqual({
+      ok: true,
+      argv: [
+        "--probe",
+        "none",
+        "--sandbox",
+        "--compare-host",
+        "--allow-host",
+        "a.example.com",
+        "--json",
+        "--command",
+        "node",
+      ],
+      fallbackArgv: ["--probe", "none", "--json", "--command", "node"],
+    });
+  });
+
+  it("sandboxOptional 이어도 sandbox 가 없으면 fallbackArgv 가 없다", async () => {
+    expect(await prepare({ argv: ["--command", "node"], sandboxOptional: true })).toEqual({
+      ok: true,
+      argv: ["--json", "--command", "node"],
+    });
+  });
+
+  it("sandboxOptional 이 없으면 sandbox 가 있어도 fallbackArgv 가 없다", async () => {
+    expect(
+      await prepare({
+        argv: ["--command", "node"],
+        sandbox: { compareHost: false, allowHosts: [] },
+      }),
+    ).toEqual({ ok: true, argv: ["--sandbox", "--json", "--command", "node"] });
+  });
+
   it("audit 모듈을 못 읽으면 ANALYZE_RUNTIME_UNAVAILABLE 문장이다", async () => {
     await writeFile(join(root, "suite.json"), '{"a":1}', "utf8");
     const result = await prepareSecurityRun(
@@ -372,6 +416,46 @@ describe("analyzeSecurity", () => {
     ]);
   });
 
+  it("passedRules 는 발견·건너뜀에 걸리지 않은 규칙을 audit 카탈로그 순서로 싣는다", async () => {
+    const { body } = await bodyOf(SAMPLE);
+    const ids = body.passedRules.map((p) => p.id);
+    // SAMPLE 은 surface 를 건너뛰고 desc/hidden-unicode·protocol/plaintext·flow/toxic-combination 을 발견했다.
+    expect(ids).not.toContain("desc/hidden-unicode");
+    expect(ids).not.toContain("protocol/plaintext");
+    expect(ids).not.toContain("flow/toxic-combination");
+    expect(body.passedRules.some((p) => p.family === "surface")).toBe(false);
+    // 같은 family 의 다른 규칙은 통과다.
+    expect(ids).toContain("desc/injection");
+    expect(ids).toContain("protocol/unauthenticated");
+    // 격리를 요청하지 않은 실행이라 behavior·network 는 돌지 않았다. 통과가 아니다.
+    expect(body.passedRules.some((p) => p.family === "behavior" || p.family === "network")).toBe(
+      false,
+    );
+    // 순서는 DESC → SCHEMA → … → NETWORK 다. 첫 줄은 desc 의 첫 규칙이다. 격리가 돈 실행이면 끝은 network 다.
+    expect(ids[0]).toBe(realAudit.DESC_RULES[0]?.id);
+    const ran = await bodyOf(
+      withSandbox({
+        status: "ran",
+        backend: "docker",
+        image: "mcpeak-audit:abc",
+        network: "live",
+        compareHost: false,
+        callCount: 1,
+        declaredHosts: [],
+        requests: [],
+      }),
+    );
+    expect(ran.body.passedRules.at(-1)?.id).toBe(realAudit.NETWORK_RULES.at(-1)?.id);
+    expect(body.passedRules[0]).toEqual({
+      id: realAudit.DESC_RULES[0]?.id,
+      family: "desc",
+      summary: realAudit.DESC_RULES[0]?.summary,
+    });
+    // 같은 리포트면 같은 목록이다.
+    const again = await bodyOf(SAMPLE);
+    expect(JSON.stringify(again.body.passedRules)).toBe(JSON.stringify(body.passedRules));
+  });
+
   it("sandbox 가 없으면 sandboxLine 은 null 이고 limits 는 단계 1 의 두 줄이다", async () => {
     const { body } = await bodyOf(SAMPLE);
     expect(body.sandboxLine).toBeNull();
@@ -450,6 +534,117 @@ describe("analyzeSecurity", () => {
       exitCode: 1,
       outcome: { ok: false, error: "오류 [CLI_USAGE]: x\n해결: y" },
     });
+  });
+
+  it("리포트가 나오면 sandboxFallbackReason 은 null 이다", async () => {
+    const { body } = await bodyOf(SAMPLE);
+    expect(body.sandboxFallbackReason).toBeNull();
+  });
+
+  it("fallbackArgv 가 있고 격리 실행이 CLI_USAGE 로 끝나면 격리 없이 다시 돌고 그 사유 첫 줄을 싣는다", async () => {
+    const calls: (readonly string[])[] = [];
+    const runner = vi.fn<Runner>(async (argv, deps) => {
+      calls.push(argv);
+      if (argv.includes("--sandbox")) {
+        deps.writeStderr("오류 [CLI_USAGE]: 서버 인자 's.mjs' 가 범위 밖에 있습니다.\n해결: y\n");
+        return 1;
+      }
+      deps.writeStdout(reportText(SAMPLE));
+      return 2;
+    });
+    const { io, written } = capturingIo();
+    const result = await analyzeSecurity(
+      ["--sandbox", ...ARGV],
+      io,
+      { root, fallbackArgv: ARGV },
+      { runner, loaders: loadersFor().loaders },
+    );
+    expect(calls).toEqual([["--sandbox", ...ARGV], ARGV]);
+    // 첫 실행의 문장도 진행 로그에 남는다. 사용자가 왜 격리 없이 돌았는지 로그에서도 본다.
+    expect(written).toEqual([
+      "오류 [CLI_USAGE]: 서버 인자 's.mjs' 가 범위 밖에 있습니다.\n해결: y\n",
+    ]);
+    expect(result.exitCode).toBe(2);
+    if (!result.outcome.ok) throw new Error(result.outcome.error);
+    expect(result.outcome.body.sandboxFallbackReason).toBe(
+      "서버 인자 's.mjs' 가 범위 밖에 있습니다.",
+    );
+    expect(result.outcome.body.report).toEqual(SAMPLE);
+  });
+
+  it("다시 돈 실행도 리포트 없이 끝나면 그 실행의 stderr 가 error 다", async () => {
+    const runner = vi.fn<Runner>(async (argv, deps) => {
+      deps.writeStderr(
+        argv.includes("--sandbox") ? "오류 [CLI_USAGE]: a\n" : "오류 [CLI_USAGE]: b\n",
+      );
+      return 1;
+    });
+    const result = await analyzeSecurity(
+      ["--sandbox", ...ARGV],
+      capturingIo().io,
+      { root, fallbackArgv: ARGV },
+      { runner, loaders: loadersFor().loaders },
+    );
+    expect(runner).toHaveBeenCalledTimes(2);
+    expect(result).toEqual({ exitCode: 1, outcome: { ok: false, error: "오류 [CLI_USAGE]: b" } });
+  });
+
+  it("fallbackArgv 가 없으면 CLI_USAGE 로 끝나도 다시 돌지 않는다", async () => {
+    const { runner } = capturingRunner((deps) => {
+      deps.writeStderr("오류 [CLI_USAGE]: x\n");
+      return 1;
+    });
+    await analyzeSecurity(
+      ["--sandbox", ...ARGV],
+      capturingIo().io,
+      { root },
+      { runner, loaders: loadersFor().loaders },
+    );
+    expect(runner).toHaveBeenCalledTimes(1);
+  });
+
+  it("CLI_USAGE 가 아닌 실패면 fallbackArgv 가 있어도 다시 돌지 않는다", async () => {
+    const { runner } = capturingRunner((deps) => {
+      deps.writeStderr("오류 [AUDIT_CONNECT_FAILED]: x\n");
+      return 1;
+    });
+    const result = await analyzeSecurity(
+      ["--sandbox", ...ARGV],
+      capturingIo().io,
+      { root, fallbackArgv: ARGV },
+      { runner, loaders: loadersFor().loaders },
+    );
+    expect(runner).toHaveBeenCalledTimes(1);
+    expect(result.outcome.ok).toBe(false);
+  });
+
+  it("실제 CLI 가 격리 범위 밖의 서버 인자를 거절하면 그 문장이 사유이고 격리 없이 다시 돈다", async () => {
+    // 범위는 root 다(위에 pnpm-workspace.yaml·.git 이 없는 임시 디렉터리). 서버 파일은 그 밖에 둔다.
+    // 첫 실행만 실제 runAuditCommand 다. 그 실행은 서버를 띄우기 전에 사용법 오류로 끝난다.
+    const outside = await mkdtemp(join(tmpdir(), "mcpeak-dashboard-outside-"));
+    try {
+      const server = join(outside, "server.mjs");
+      await writeFile(server, "", "utf8");
+      const target = ["--command", "node", "--arg", server];
+      const runner = vi.fn<Runner>(async (argv, deps) => {
+        if (argv.includes("--sandbox")) return realRunAuditCommand(argv, deps);
+        deps.writeStdout(reportText(SAMPLE));
+        return 2;
+      });
+      const result = await analyzeSecurity(
+        ["--sandbox", "--json", ...target],
+        capturingIo().io,
+        { root, fallbackArgv: ["--json", ...target] },
+        { runner, loaders: loadersFor().loaders },
+      );
+      expect(runner).toHaveBeenCalledTimes(2);
+      if (!result.outcome.ok) throw new Error(result.outcome.error);
+      expect(result.outcome.body.sandboxFallbackReason).toBe(
+        `서버 인자 '${server}' 가 격리에 보이는 범위(${root}) 밖에 있습니다. 둘을 함께 담는 디렉터리를 --sandbox-mount 로 주세요.`,
+      );
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+    }
   });
 
   it("runner 를 바꾸지 않으면 실제 runAuditCommand 가 돌고, 대상이 없으면 CLI 의 문장이 error 다", async () => {

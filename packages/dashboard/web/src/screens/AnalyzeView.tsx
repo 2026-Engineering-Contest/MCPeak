@@ -1,12 +1,14 @@
 import type { JSX } from "react";
 import { useRef, useState } from "react";
 import { buildAnalyzeRequests, describeTarget } from "../analyze/build-analyze-requests.js";
-import { INITIAL_SECURITY_FORM, type SecurityForm } from "../analyze/build-security-request.js";
 import { ErrorAlert } from "../analyze/ErrorAlert.js";
-import { PillarBadge, PillarCard } from "../analyze/PillarCard.js";
+import { PassedChecks } from "../analyze/PassedChecks.js";
+import { PillarBadge } from "../analyze/PillarBadge.js";
+import { PillarCard } from "../analyze/PillarCard.js";
 import { PILLARS, securitySummary, tokensSummary } from "../analyze/pillars.js";
 import { SecurityProgressView } from "../analyze/SecurityProgress.js";
 import { SecurityResult } from "../analyze/SecurityResult.js";
+import { securityExecution } from "../analyze/security-execution.js";
 import { TargetBar } from "../analyze/TargetBar.js";
 import { TokensResult } from "../analyze/TokensResult.js";
 import type { AnalyzePillar } from "../analyze/types.js";
@@ -48,7 +50,11 @@ function detailBadge(
   return null;
 }
 
-const IDLE_DETAIL = "아직 분석하지 않았습니다. 위에서 서버를 고르고 한 번에 분석을 누르세요.";
+/**
+ * 결과 단계에서 한 축만 idle 일 때의 안내. 두 요청은 같은 틱에 나가므로 지금 흐름에서는 보이지 않는다.
+ * 상태 타입이 idle 을 갖고 있어 갈래를 남겨 둔다.
+ */
+const IDLE_DETAIL = "아직 분석하지 않았습니다. 위에서 서버를 고르고 분석하기를 누르세요.";
 
 /** 보안 상세의 본문(설계 §3.4). 구독은 훅이 가지므로 여기서는 받은 events 를 그리기만 한다. */
 function SecurityDetail({ security }: { readonly security: SecurityAnalysis }): JSX.Element {
@@ -74,7 +80,13 @@ function SecurityDetail({ security }: { readonly security: SecurityAnalysis }): 
       {security.startError !== null && <ErrorAlert message={security.startError} />}
       {sent !== null && (
         <>
-          <SecurityResult key={state.serial} response={state.result} request={sent} />
+          <SecurityResult
+            key={state.serial}
+            response={state.result}
+            request={sent}
+            // 발견 없이 통과한 검사(ADR-0117). 발견 목록 바로 다음에 온다. 서버가 센 목록을 그리기만 한다.
+            passedChecks={<PassedChecks rules={state.result.passedRules} />}
+          />
           <div className="flex flex-wrap gap-2">
             <Button
               disabled={security.state.kind === "running"}
@@ -125,28 +137,31 @@ function TokensDetail({ tokens }: { readonly tokens: TokensAnalysis }): JSX.Elem
 }
 
 /**
- * Analyze(설계 2026-10-18 개정 1). 대상 영역 → 축 카드 셋 → 고른 축의 상세. 카드는 링크라 고른 축이
- * 해시(`#/analyze/<pillar>`)에 남고, 이 컴포넌트는 `pillar` prop 만 본다. 축 상태는 두 훅이 독립으로 들고,
- * 접속 상태·보안 옵션·대상 영역 펼침은 여기 한 번만 둔다. 라우트가 `#/analyze*` 안에서 바뀌어도 같은
- * 인스턴스라 상태가 남는다.
+ * Analyze(ADR-0117). 두 단계다. 서버 선택 단계는 대상 영역(접속 폼·분석하기)뿐이고, 분석하기를 한 번
+ * 누르면 결과 단계로 넘어가 대상 영역 아래에 축 카드 셋이 붙는다. 카드는 링크라 고른 축이 해시
+ * (`#/analyze/<pillar>`)에 남고, 그 축의 상세는 카드 아래에 펼쳐진다. 이 컴포넌트는 `pillar` prop 만 본다.
+ * 서버 선택 단계에서는 `pillar` 가 있어도 상세를 그리지 않는다(아직 결과가 없다). 해시는 건드리지 않는다.
+ * 축 상태는 두 훅이 독립으로 들고, 접속 상태·대상 영역 펼침은 여기 한 번만 둔다. 점검 옵션은 없다.
+ * 격리는 고르지 않고 늘 시도한다. 쓸 수 없으면 격리 없이(readonly) 돌고, 어느 쪽으로 돌았는지를 카드와
+ * 상세 머리가 보인다. 기준 파일·호출 정책은 CLI `mcpeak audit` 에서만 고른다. 라우트가 `#/analyze*` 안에서
+ * 바뀌어도 같은 인스턴스라 상태가 남는다.
  */
 export function AnalyzeView({ pillar }: { readonly pillar: AnalyzePillar | null }): JSX.Element {
   const target = useAnalyzeTarget();
-  const [securityForm, setSecurityForm] = useState<SecurityForm>(INITIAL_SECURITY_FORM);
   const [targetOpen, setTargetOpen] = useState(true);
   const tokens = useTokensAnalysis();
   const security = useSecurityAnalysis();
-  /** 한 번에 분석 한 번당 접기·`rememberCommand` 를 한 번만 하는 가드. */
+  /** 분석하기 한 번당 접기·`rememberCommand` 를 한 번만 하는 가드. */
   const collapsed = useRef(false);
 
-  function patchForm(partial: Partial<SecurityForm>): void {
-    setSecurityForm((previous) => ({ ...previous, ...partial }));
-  }
-
-  // 한 번에 분석(설계 §7). 버튼 비활성 판정·사유·제출이 같은 값을 쓴다. 돌고 있는 동안의 사유가 입력 오류보다 앞선다.
-  const built = buildAnalyzeRequests(target, securityForm);
+  // 분석하기(설계 §7). 버튼 비활성 판정·사유·제출이 같은 값을 쓴다. 돌고 있는 동안의 사유가 입력 오류보다 앞선다.
+  const built = buildAnalyzeRequests(target);
   const running = tokens.state.kind === "running" || security.state.kind === "running";
   const disabledReason = running ? "분석이 돌고 있습니다" : "error" in built ? built.error : null;
+  // 결과 단계는 축 상태에서 바로 읽는다. 어느 축이든 idle 을 벗어나면 결과 단계다. 두 훅 모두 idle 로
+  // 돌아가는 전이가 없으므로 한 번 넘어가면 서버 선택 단계로 돌아가지 않는다. 둘 다 시작에 실패해도
+  // failed 라 결과 단계이고, 카드가 실패를 보인다.
+  const hasResults = tokens.state.kind !== "idle" || security.state.kind !== "idle";
 
   /** 두 요청 중 하나라도 시작에 성공하면 한 번만. */
   function collapseOnce(): void {
@@ -196,8 +211,6 @@ export function AnalyzeView({ pillar }: { readonly pillar: AnalyzePillar | null 
 
       <TargetBar
         target={target}
-        form={securityForm}
-        onFormChange={patchForm}
         open={targetOpen}
         onOpen={() => setTargetOpen(true)}
         onRunAll={runAll}
@@ -205,42 +218,56 @@ export function AnalyzeView({ pillar }: { readonly pillar: AnalyzePillar | null 
         running={running}
       />
 
-      {/* Tailwind 의 md 는 768px 이다. 설계의 760px 와 8px 다르지만 토큰을 새로 만들지 않는다. */}
-      <div role="tablist" aria-label="분석 축" className="grid grid-cols-1 gap-3 md:grid-cols-3">
-        {PILLARS.map((descriptor) => {
-          const card =
-            descriptor.id === "tokens"
-              ? { state: tokens.state, ...tokensCard }
-              : descriptor.id === "security"
-                ? { state: security.state, ...securityCard }
-                : { state: { kind: "idle" as const }, summary: null, analyzedTarget: null };
-          return (
-            <PillarCard
-              key={descriptor.id}
-              descriptor={descriptor}
-              selected={pillar === descriptor.id}
-              state={card.state}
-              summary={card.summary}
-              analyzedTarget={card.analyzedTarget}
-            />
-          );
-        })}
-      </div>
+      {hasResults && (
+        <>
+          {/* Tailwind 의 md 는 768px 이다. 설계의 760px 와 8px 다르지만 토큰을 새로 만들지 않는다. */}
+          <div
+            role="tablist"
+            aria-label="분석 축"
+            className="grid grid-cols-1 gap-3 md:grid-cols-3"
+          >
+            {PILLARS.map((descriptor) => {
+              const card =
+                descriptor.id === "tokens"
+                  ? { state: tokens.state, ...tokensCard }
+                  : descriptor.id === "security"
+                    ? { state: security.state, ...securityCard }
+                    : { state: { kind: "idle" as const }, summary: null, analyzedTarget: null };
+              return (
+                <PillarCard
+                  key={descriptor.id}
+                  descriptor={descriptor}
+                  selected={pillar === descriptor.id}
+                  state={card.state}
+                  summary={card.summary}
+                  analyzedTarget={card.analyzedTarget}
+                />
+              );
+            })}
+          </div>
 
-      {pillar !== null && (
-        <section role="tabpanel" id={`panel-${pillar}`} aria-labelledby={`pillar-${pillar}`}>
-          <Card className="space-y-4 p-6">
-            <div className="flex flex-wrap items-center gap-3">
-              <h2 className="text-title font-semibold text-ink">{PILLAR_NAME[pillar]} 상세</h2>
-              {detailBadge(pillar, tokens, security)}
-            </div>
-            {pillar === "security" ? (
-              <SecurityDetail security={security} />
-            ) : (
-              <TokensDetail tokens={tokens} />
-            )}
-          </Card>
-        </section>
+          {pillar !== null && (
+            <section role="tabpanel" id={`panel-${pillar}`} aria-labelledby={`pillar-${pillar}`}>
+              <Card className="space-y-4 p-6">
+                <div className="flex flex-wrap items-center gap-3">
+                  <h2 className="text-title font-semibold text-ink">{PILLAR_NAME[pillar]} 상세</h2>
+                  {detailBadge(pillar, tokens, security)}
+                  {/* 보안 점검이 어디서 돌았는가(ADR-0117). 응답에서 순수 함수로 구한다. */}
+                  {pillar === "security" && security.state.kind === "done" && (
+                    <p className="break-words text-sm text-ink-muted">
+                      {securityExecution(security.state.result)}
+                    </p>
+                  )}
+                </div>
+                {pillar === "security" ? (
+                  <SecurityDetail security={security} />
+                ) : (
+                  <TokensDetail tokens={tokens} />
+                )}
+              </Card>
+            </section>
+          )}
+        </>
       )}
     </section>
   );

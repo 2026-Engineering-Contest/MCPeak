@@ -1,7 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from "vitest";
 import { buildAnalyzeRequests, describeTarget } from "../src/analyze/build-analyze-requests.js";
-import { INITIAL_SECURITY_FORM } from "../src/analyze/build-security-request.js";
 import type { AnalyzeTarget, AnalyzeTargetState } from "../src/analyze/use-analyze-target.js";
 import { WEATHER, WEATHER_ARGV } from "./analyze-fixture-data.js";
 
@@ -38,29 +37,62 @@ describe("buildAnalyzeRequests", () => {
     expect(
       buildAnalyzeRequests(
         targetWith({ argv: { error: "서버를 고르거나 실행 명령을 입력하세요." } }),
-        INITIAL_SECURITY_FORM,
       ),
     ).toEqual({ error: "서버를 고르거나 실행 명령을 입력하세요." });
   });
 
-  it("기준 파일이 .json 이 아니면 그 문장이다", () => {
-    expect(
-      buildAnalyzeRequests(targetWith({ argv: { argv: WEATHER_ARGV }, serverId: WEATHER.id }), {
-        ...INITIAL_SECURITY_FORM,
-        baselinePath: "b.txt",
-      }),
-    ).toEqual({ error: "기준 파일 경로는 .json 으로 끝나야 합니다." });
-  });
-
-  it("둘 다 되면 토큰은 argv·serverId, 보안은 buildSecurityRequest 결과다", () => {
+  it("node 대상이면 보안 요청에 격리 시도(sandbox·sandboxOptional)를 싣고 토큰은 argv·serverId 뿐이다", () => {
     const out = buildAnalyzeRequests(
       targetWith({ argv: { argv: WEATHER_ARGV }, serverId: WEATHER.id }),
-      INITIAL_SECURITY_FORM,
     );
     expect(out).toEqual({
       tokens: { argv: WEATHER_ARGV, serverId: WEATHER.id },
-      security: { argv: WEATHER_ARGV, serverId: WEATHER.id },
+      security: {
+        argv: WEATHER_ARGV,
+        serverId: WEATHER.id,
+        sandbox: { compareHost: false, allowHosts: [] },
+        sandboxOptional: true,
+      },
     });
+  });
+
+  it("직접 입력 갈래면 serverId 키 자체가 없다", () => {
+    const out = buildAnalyzeRequests(targetWith({ argv: { argv: WEATHER_ARGV } }));
+    expect(out).toEqual({
+      tokens: { argv: WEATHER_ARGV },
+      security: {
+        argv: WEATHER_ARGV,
+        sandbox: { compareHost: false, allowHosts: [] },
+        sandboxOptional: true,
+      },
+    });
+  });
+
+  it("npx·npm 은 경로가 붙어도 basename 으로 본다", () => {
+    for (const command of ["npx", "/usr/local/bin/npm", "C:\\nodejs\\npx"]) {
+      const argv = ["--command", command, "--arg", "-y"];
+      const out = buildAnalyzeRequests(targetWith({ argv: { argv } }));
+      expect("security" in out && out.security.sandbox).toEqual({
+        compareHost: false,
+        allowHosts: [],
+      });
+    }
+  });
+
+  it("http 대상이면 보안 요청에 sandbox 키가 없다", () => {
+    const argv = ["--url", "http://localhost:3000/mcp"];
+    const out = buildAnalyzeRequests(
+      targetWith({ state: { ...INITIAL_STATE, transport: "http" }, argv: { argv } }),
+    );
+    expect(out).toEqual({ tokens: { argv }, security: { argv } });
+  });
+
+  it("격리 이미지가 실행하지 않는 명령(python 등)이면 보안 요청에 sandbox 키가 없다", () => {
+    for (const command of ["python", "uvx", "/usr/bin/python3", "nodemon", "node.exe"]) {
+      const argv = ["--command", command, "--arg", "server.py"];
+      const out = buildAnalyzeRequests(targetWith({ argv: { argv } }));
+      expect(out).toEqual({ tokens: { argv }, security: { argv } });
+    }
   });
 });
 

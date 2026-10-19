@@ -54,7 +54,7 @@ export function lastSource(): FakeEventSource {
 
 /**
  * `EventSource` 전역을 fake 로 바꾸고 인스턴스 목록을 비운다. 두 테스트 파일 모두 `beforeEach` 에서 부른다.
- * 한 번에 분석이 보안 run 도 시작하므로 비용 테스트도 필요하다(jsdom 에는 `EventSource` 가 없다).
+ * 분석하기가 보안 run 도 시작하므로 비용 테스트도 필요하다(jsdom 에는 `EventSource` 가 없다).
  */
 export function installFakeEventSource(): void {
   FakeEventSource.instances = [];
@@ -217,10 +217,10 @@ export function resultRequests(fetchMock: ReturnType<typeof vi.fn>): readonly st
     .filter((url) => url.startsWith("/api/analyze/security/"));
 }
 
-/** 첫 후보가 뜰 때까지 기다린 뒤 한 번에 분석을 누른다. 응답은 기다리지 않는다. */
+/** 첫 후보가 뜰 때까지 기다린 뒤 분석하기를 누른다. 응답은 기다리지 않는다. */
 export async function runAll(): Promise<void> {
   await screen.findByRole("radio", { name: /^weather/ });
-  fireEvent.click(screen.getByRole("button", { name: "한 번에 분석" }));
+  fireEvent.click(screen.getByRole("button", { name: "분석하기" }));
 }
 
 /** 상세를 연다. 해시는 바꾸지 않는다(AnalyzeView 는 pillar prop 만 본다). */
@@ -228,14 +228,33 @@ export function showDetail(rerender: RenderResult["rerender"], pillar: AnalyzePi
   rerender(<AnalyzeView pillar={pillar} />);
 }
 
-/** 보안 카드 요소. */
+/** 보안 카드 요소. 결과 단계에서만 있다. */
 export function securityCard(): HTMLElement {
   return screen.getByRole("tab", { name: /^보안/ });
 }
 
-/** 비용 카드 요소. */
+/** 비용 카드 요소. 결과 단계에서만 있다. */
 export function costCard(): HTMLElement {
   return screen.getByRole("tab", { name: /^비용 최적화/ });
+}
+
+/** 펼친 상세(`tabpanel`). 이름은 카드에서 오므로 id 로 찾는다. 없으면 던진다. */
+function detailPanel(pillar: AnalyzePillar): HTMLElement {
+  const panel = document.getElementById(`panel-${pillar}`);
+  if (panel === null) {
+    throw new Error(`상세가 펼쳐져 있지 않습니다: ${pillar}`);
+  }
+  return panel;
+}
+
+/** 펼친 보안 상세. `showDetail(rerender, "security")` 뒤에 쓴다. */
+export function securityDetail(): HTMLElement {
+  return detailPanel("security");
+}
+
+/** 펼친 비용 최적화 상세. `showDetail(rerender, "tokens")` 뒤에 쓴다. */
+export function costDetail(): HTMLElement {
+  return detailPanel("tokens");
 }
 
 /** 비용 카드가 running 을 벗어날 때까지("분석 중…" 배지가 사라질 때까지) 기다린다. done 이든 failed 든. */

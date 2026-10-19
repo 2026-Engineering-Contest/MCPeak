@@ -7,6 +7,7 @@ import {
   runAuditCommand,
 } from "@mcpeak/cli/commands";
 import type { AnalyzeSecurityRequest, AnalyzeSecurityResponse } from "../api-types.js";
+import { passedRules, ruleCatalog } from "./passed-rules.js";
 import { resolveProjectPath } from "./paths.js";
 
 /**
@@ -31,7 +32,12 @@ export interface AnalyzeSecurityOverrides {
 }
 
 export type PrepareSecurityOutcome =
-  | { readonly ok: true; readonly argv: readonly string[] }
+  | {
+      readonly ok: true;
+      readonly argv: readonly string[];
+      /** `sandboxOptional` 로 격리를 요청했을 때만 있다. `argv` 에서 격리 플래그만 뺀 것이다. */
+      readonly fallbackArgv?: readonly string[];
+    }
   | { readonly ok: false; readonly error: string };
 
 export type AnalyzeSecurityOutcome =
@@ -116,24 +122,41 @@ export async function prepareSecurityRun(
 
   // 3. 조립. 순서를 고정한다. 같은 요청이면 항상 같은 배열이다.
   //    `--baseline` 값은 상대경로 그대로다. 절대경로로 바꾸면 리포트 문장이 머신마다 달라진다.
-  const argv: string[] = [];
-  if (request.probe !== undefined) argv.push("--probe", request.probe);
-  if (baselinePath !== undefined) argv.push("--baseline", baselinePath);
-  if (request.updateBaseline === true) argv.push("--update-baseline");
-  if (request.sandbox !== undefined) {
-    argv.push("--sandbox");
-    if (request.sandbox.compareHost) argv.push("--compare-host");
-    for (const host of request.sandbox.allowHosts) argv.push("--allow-host", host);
-  }
-  argv.push("--json", ...request.argv);
+  const assemble = (sandbox: AnalyzeSecurityRequest["sandbox"]): string[] => {
+    const argv: string[] = [];
+    if (request.probe !== undefined) argv.push("--probe", request.probe);
+    if (baselinePath !== undefined) argv.push("--baseline", baselinePath);
+    if (request.updateBaseline === true) argv.push("--update-baseline");
+    if (sandbox !== undefined) {
+      argv.push("--sandbox");
+      if (sandbox.compareHost) argv.push("--compare-host");
+      for (const host of sandbox.allowHosts) argv.push("--allow-host", host);
+    }
+    argv.push("--json", ...request.argv);
+    return argv;
+  };
+  const argv = assemble(request.sandbox);
+  // 격리를 시도만 하는 요청(ADR-0117)이면 격리 없이 다시 돌 argv 도 지금 만든다. 나머지 옵션은 같다.
+  if (request.sandbox !== undefined && request.sandboxOptional === true)
+    return { ok: true, argv, fallbackArgv: assemble(undefined) };
   return { ok: true, argv };
 }
 
-/** 점검을 끝까지 돌린다. 던지지 않는다. `exitCode` 는 run 의 종료 코드가 된다. */
+/** CLI `usageFailure` 의 머리. 격리 대상 판정(`SandboxTargetError`)의 거절도 이 머리로 나온다. */
+const CLI_USAGE_PREFIX = "오류 [CLI_USAGE]: ";
+
+/**
+ * 점검을 끝까지 돌린다. 던지지 않는다. `exitCode` 는 run 의 종료 코드가 된다.
+ *
+ * `context.fallbackArgv` 가 있으면 격리를 시도만 한다(ADR-0117). 첫 실행이 리포트 없이 `CLI_USAGE` 로
+ * 끝나면 격리 없이 한 번 더 돈다. CLI 는 마운트 범위를 정하지 못하면(서버 인자가 범위 밖, 범위가 홈)
+ * 서버를 띄우기 전에 사용법 오류로 끝난다. Docker 를 못 쓰는 경우는 CLI·audit 가 스스로 격리 없는 경로로
+ * 돌고 `report.sandbox` 에 사유를 싣는다. 여기서 다시 돌지 않는다.
+ */
 export async function analyzeSecurity(
   argv: readonly string[],
   io: { readonly writeStderr: (text: string) => void },
-  context: { readonly root: string },
+  context: { readonly root: string; readonly fallbackArgv?: readonly string[] },
   overrides: AnalyzeSecurityOverrides = {},
 ): Promise<{ readonly exitCode: number; readonly outcome: AnalyzeSecurityOutcome }> {
   const runner = overrides.runner ?? runAuditCommand;
@@ -176,8 +199,20 @@ export async function analyzeSecurity(
   };
 
   let exitCode: number;
+  let sandboxFallbackReason: string | null = null;
   try {
     exitCode = await runner(argv, deps);
+    if (
+      context.fallbackArgv !== undefined &&
+      stdout === "" &&
+      stderrBefore.startsWith(CLI_USAGE_PREFIX)
+    ) {
+      // 격리 대상 판정의 거절이다. 그 문장의 첫 줄을 사유로 남기고 격리 없이 다시 돈다. 다른 사용법
+      // 오류였다면 다시 돈 실행도 같은 문장으로 끝나고, 그 문장이 결과다.
+      sandboxFallbackReason = (stderrBefore.split("\n")[0] ?? "").slice(CLI_USAGE_PREFIX.length);
+      stderrBefore = "";
+      exitCode = await runner(context.fallbackArgv, deps);
+    }
   } catch (error) {
     return fail(
       `오류 [ANALYZE_FAILED]: 점검이 예기치 않게 끝났습니다: ${firstLine(error)}\n해결: 같은 서버에 mcpeak audit 를 터미널에서 직접 돌려 같은 오류가 나는지 확인하세요.`,
@@ -217,9 +252,11 @@ export async function analyzeSecurity(
         })),
         // 첫 줄은 제목이고, sandbox 가 있으면 둘째 줄이 그 상태다(report.ts renderReport).
         sandboxLine: report.sandbox === undefined ? null : (lines[1] ?? null),
+        sandboxFallbackReason,
         limits: lines.slice(lines.lastIndexOf("") + 1),
         exitCode,
         cleanupError: stderrAfter.replace(/\n+$/, ""),
+        passedRules: passedRules(report, ruleCatalog(audit)),
       },
     },
   };

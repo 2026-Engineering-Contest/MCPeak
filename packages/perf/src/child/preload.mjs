@@ -292,11 +292,38 @@ function observeFetchResponse(response, { endBase, tHeaders, now, write, trailer
     statusText: response.statusText,
     headers: response.headers,
   });
-  // 새 Response 는 url·redirected·type 을 받지 못한다. 서버가 읽는 값이라 원본 것을 그대로 보인다.
-  for (const key of ["url", "redirected", "type"]) {
-    Object.defineProperty(wrapped, key, { value: response[key], enumerable: true });
-  }
+  dressAs(wrapped, response);
   return wrapped;
+}
+
+/**
+ * 프리로드가 로드될 때의 `Response.prototype.clone`. 서버가 나중에 프로토타입을 바꿔도 이것을 쓴다. 모듈 최상위라
+ * install 의 try 밖이므로, Response 가 없는 런타임에서도 던지지 않게 읽는다(감싸기는 Response 가 있을 때만 일어난다).
+ */
+const responseClone = globalThis.Response?.prototype?.clone;
+
+/**
+ * §4.3 fetch 3항 끝 문장(계획 E30). 감싼 응답 target 이 원본 source 와 같게 보이게 한다. 새 Response 는
+ * url·redirected·type 을 받지 못하고, headers 는 고칠 수 있는 사본이 되며, 원래 clone() 은 그 둘을 잃은 복제본을
+ * 만든다. 그래서 넷을 원본 값으로 덮고 clone 도 덮는다. 모두 열거되지 않는 own 속성이라 Object.keys·
+ * JSON.stringify 는 원본처럼 비어 있다.
+ */
+function dressAs(target, source) {
+  const hidden = (value) => ({ value, enumerable: false, writable: false, configurable: true });
+  Object.defineProperties(target, {
+    url: hidden(source.url),
+    redirected: hidden(source.redirected),
+    type: hidden(source.type),
+    // 원본 응답의 Headers 는 불변(immutable guard)이라 서버가 고치려 하면 원본처럼 TypeError 가 난다.
+    headers: hidden(source.headers),
+    // 원래 clone 의 의미(두 갈래 모두 읽힘, bodyUsed 면 TypeError)는 원래 메서드가 지킨다. 이 호출은 서버가
+    // clone() 을 부를 때만 일어나며, 관측이 스스로 본문을 복제하는 일은 없다.
+    clone: hidden(function clone() {
+      const copy = Reflect.apply(responseClone, this, []);
+      dressAs(copy, source);
+      return copy;
+    }),
+  });
 }
 
 function decodeUtf8(chunks, total) {

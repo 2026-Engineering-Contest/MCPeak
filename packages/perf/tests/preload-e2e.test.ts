@@ -55,8 +55,18 @@ function childEnv(traceDir: string): Record<string, string> {
   return { ...base, ...childEnvironment({ traceDir }) };
 }
 
+/** 프리로드 없이 띄울 환경. `NODE_OPTIONS` 와 추적 디렉터리 변수를 뺀다. */
+function plainEnv(): Record<string, string> {
+  const base: Record<string, string> = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    if (key !== "NODE_OPTIONS" && key !== PERF_TRACE_DIR_ENV && value !== undefined)
+      base[key] = value;
+  }
+  return base;
+}
+
 function runChild(
-  mode: "fetch" | "http" | "env" | "cancel" | "cancel-decoder" | "unread" | "worker",
+  mode: "fetch" | "http" | "env" | "cancel" | "cancel-decoder" | "unread" | "worker" | "props",
   env: Record<string, string>,
 ): Promise<{ stdout: string; stderr: string; code: number | null; pid: number }> {
   return new Promise((resolve, reject) => {
@@ -122,6 +132,11 @@ beforeAll(async () => {
         res.end();
       };
       pump();
+      return;
+    }
+    if (req.url === "/redirect") {
+      res.writeHead(302, { location: "/slow" });
+      res.end("moved");
       return;
     }
     if (req.url === "/slow") {
@@ -284,6 +299,19 @@ describe.sequential("preload", () => {
     expect(end.tHeaders).toBeTypeOf("number");
     expect(end.tEnd - (end.tHeaders as number)).toBeGreaterThanOrEqual(100);
     expect("responseBody" in end).toBe(false);
+  });
+
+  it("감싼 응답은 clone·열거·headers 에서 프리로드 없는 응답과 같다", async () => {
+    const traceDir = await freshTraceDir();
+    const observed = await runChild("props", childEnv(traceDir));
+    const plain = await runChild("props", plainEnv());
+    expect(observed.stderr).toBe("");
+    expect(plain.stderr).toBe("");
+    expect(JSON.parse(observed.stdout)).toEqual(JSON.parse(plain.stdout));
+
+    // 프리로드가 실제로 실려 fetch 를 감쌌는지 확인한다. 안 실렸다면 위 비교는 아무것도 보지 않는다.
+    const { entries } = await readTrace(traceDir);
+    expect(starts(entries, "fetch").length).toBeGreaterThan(0);
   });
 
   it("변수가 없으면 아무것도 쓰지 않는다", async () => {

@@ -139,6 +139,48 @@ describe("judge", () => {
     expect(judge(b, a, {})).toBe("dependent");
   });
 
+  it("같은 earlier 를 여러 later 와 비교해도 쌍마다 답이 같다", () => {
+    // earlier 의 걸러 낸 출력과 later 의 입력은 한 번만 계산해 둔다. 순서가 바뀌어도 답은 같아야 한다.
+    const a = request("https://h.example/a", { responseBody: '{"id":"abc123","x":"zzzz9"}' });
+    const hit = request("https://h.example/item/abc123", { seq: 2 });
+    const miss = request("https://h.example/item/other", { seq: 3 });
+    const viaBody = request("https://h.example/b", {
+      seq: 4,
+      method: "POST",
+      requestBody: '{"ref":"zzzz9"}',
+    });
+    for (let round = 0; round < 2; round += 1) {
+      expect(judge(hit, a, {})).toBe("dependent");
+      expect(judge(miss, a, {})).toBe("independent");
+      expect(judge(viaBody, a, {})).toBe("dependent");
+    }
+    // 같은 later 를 다른 earlier 와 비교해도 입력 문자열이 섞이지 않는다.
+    const b = request("https://h.example/c", { seq: 5, responseBody: '{"id":"other"}' });
+    expect(judge(miss, b, {})).toBe("dependent");
+    expect(judge(hit, b, {})).toBe("independent");
+  });
+
+  it("호출 입력이 다르면 입력 반향 제외를 다시 계산한다", () => {
+    const a = request("https://h.example/lookup", { responseBody: '{"city":"Busan"}' });
+    const b = request("https://h.example/search?q=Busan", { seq: 2 });
+    expect(judge(b, a, { city: "Busan" })).toBe("independent");
+    expect(judge(b, a, { city: "Seoul" })).toBe("dependent");
+    expect(judge(b, a, { city: "Busan" })).toBe("independent");
+  });
+
+  it("조각보다 짧은 Location 도 출력이다", () => {
+    const a = request("https://h/start", { responseBody: "", location: "/z9" });
+    expect(judge(request("https://h/next/z9", { seq: 2 }), a, {})).toBe("dependent");
+    expect(judge(request("https://h/next/z8", { seq: 3 }), a, {})).toBe("independent");
+  });
+
+  it("토큰의 첫 조각과 끝 조각이 입력에 따로 있어도 토큰이 없으면 독립이다", () => {
+    // 조각 검사는 거르기만 한다. 두 조각이 떨어져 있으면 본문을 훑어 독립으로 판정한다.
+    const a = request("https://h.example/a", { responseBody: '{"id":"abcdefgh"}' });
+    const b = request("https://h.example/abcd/x/efgh", { seq: 2 });
+    expect(judge(b, a, {})).toBe("independent");
+  });
+
   it("URL 디코딩이 실패하면 원문으로 본다", () => {
     const a = request("https://h.example/a", { responseBody: '{"id":"abc123"}' });
     expect(judge(request("https://h.example/%E0%A4%A/abc123", { seq: 2 }), a, {})).toBe(

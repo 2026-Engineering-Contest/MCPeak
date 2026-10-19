@@ -150,8 +150,40 @@ describe("assignRequests", () => {
     expect(assigned.get(first)).toEqual([]);
     expect(assigned.get(second)?.map((r) => r.seq)).toEqual([1]);
     expect(callTiming(first, assigned.get(first) ?? []).requests).toBe(0);
-    // 기준 T 근처의 double 간격이 약 0.00024ms 라 1700 − 1499.8 이 정확히 200.2 가 되지 않는다.
-    expect(callTiming(second, assigned.get(second) ?? []).external).toBeCloseTo(200.2, 3);
+    // 외부 대기의 시작은 둘째 호출 t0(1500.1)에서 자른다(설계 §5.3, 계획 E34). 기준 T 근처의 double 간격이
+    // 약 0.00024ms 라 1700 − 1500.1 이 정확히 199.9 가 되지 않는다.
+    expect(callTiming(second, assigned.get(second) ?? []).external).toBeCloseTo(199.9, 3);
+  });
+
+  /** 서버를 부르지 않은 점 측정. t0 === t1 이다. */
+  function point(
+    t: number,
+    outcome: "skipped" | "missingTool",
+    iteration: number,
+  ): PerfMeasurement {
+    return { caseId: "c", tool: "t", iteration, t0: T + t, t1: T + t, outcome };
+  }
+
+  it("점 측정은 후보가 아니다: missingTool 점 사이에 낀 요청", () => {
+    // 설계 §10.1 은 B 를 [100.1, 200] 으로 적었지만, 그러면 요청 99.0 이 B 의 여유 창(98.1~)에도 들어 §5.1 의
+    // "가장 늦은 후보" 규칙으로 B 에 간다. 점 제외만 보려고 B 를 [102.1, 200] 으로 둔다(보고서에 적었다).
+    const a = call(0, 100, 0);
+    const missing = point(100.05, "missingTool", 1);
+    const b = call(102.1, 200, 2);
+    const entries = [...req(1, 99.0, 99.5), ...req(2, 100.3, 150)];
+    const assigned = assignRequests(mergeTrace(entries), [a, missing, b]);
+    expect(assigned.get(a)?.map((r) => r.seq)).toEqual([1]);
+    expect(assigned.get(missing)).toEqual([]);
+    expect(assigned.get(b)?.map((r) => r.seq)).toEqual([2]);
+  });
+
+  it("점 측정은 후보가 아니다: 타임아웃 뒤 skipped 점", () => {
+    const timedOut: PerfMeasurement = { ...call(0, 100, 0), outcome: "threw", timedOut: true };
+    const skipped = point(100.05, "skipped", 1);
+    const assigned = assignRequests(mergeTrace(req(1, 99.5, 99.9)), [timedOut, skipped]);
+    expect(assigned.get(timedOut)?.map((r) => r.seq)).toEqual([1]);
+    expect(assigned.get(skipped)).toEqual([]);
+    expect([...assigned.keys()]).toEqual([timedOut, skipped]);
   });
 
   it("다음 호출과 2ms 넘게 떨어진 응답 뒤 요청은 앞 호출의 afterResponse 다", () => {
@@ -241,6 +273,31 @@ describe("callTiming", () => {
     expect(timing.external).toBe(200);
   });
 
+  it("요청 시작은 호출 시작에서 자른다", () => {
+    // 여유 창으로 배정된, 호출 t0 보다 앞에 찍힌 요청은 호출 밖 시간을 더하지 않는다(설계 §5.3).
+    const c = call(1000, 1500);
+    const timing = timingOf([...req(1, 998, 1100), ...req(2, 1200, 1250)], [c], c);
+    expect(timing.external).toBe(150);
+    expect(timing.inside).toBe(350);
+    expect(timing.requests).toBe(2);
+    expect(timing.maxConcurrency).toBe(1);
+  });
+
+  it("호출 시작 전에 끝난 요청은 동시 수에 들지 않는다", () => {
+    // 시작을 c.t0 로 자르면 끝이 c.t0 이하인 요청은 [c.t0, c.t0] 가 된다. 그 구간을 남기면 c.t0 에 시작한
+    // 요청과 동시로 세므로, 외부 대기 합집합과 동시 수 둘 다에서 뺀다. 요청 수에는 남는다.
+    const c = call(100.1, 200);
+    const given = timingOf([...req(1, 99.0, 99.5), ...req(2, 100.3, 150)], [c], c);
+    expect(given.maxConcurrency).toBe(1);
+    expect(given.external).toBeCloseTo(49.7, 3);
+    expect(given.requests).toBe(2);
+    // 두 번째 요청이 c.t0 보다 앞에서 시작해 c.t0 로 잘리면, 남겨 둔 길이 0 구간과 같은 시각에 열린다.
+    const atStart = timingOf([...req(1, 99.0, 99.5), ...req(2, 99.8, 150)], [c], c);
+    expect(atStart.maxConcurrency).toBe(1);
+    expect(atStart.external).toBeCloseTo(49.9, 3);
+    expect(atStart.requests).toBe(2);
+  });
+
   it("요청 끝은 호출 끝에서 자른다", () => {
     const c = call(1000, 1500);
     const timing = timingOf(req(1, 1400, 1800), [c], c);
@@ -309,10 +366,11 @@ describe("callTiming", () => {
     });
   });
 
-  it("외부 대기가 응답 시간보다 길면 서버 안 시간은 0 이다", () => {
+  it("외부 대기가 응답 시간 전체를 덮으면 서버 안 시간은 0 이다", () => {
+    // 시작을 호출 t0 에서 자르므로(설계 §5.3) 외부 대기는 응답 시간을 넘지 않는다. 예전에는 502 였다.
     const c = call(1000, 1500);
     const timing = timingOf(req(1, 998, 1500), [c], c);
-    expect(timing.external).toBe(502);
+    expect(timing.external).toBe(500);
     expect(timing.inside).toBe(0);
   });
 });

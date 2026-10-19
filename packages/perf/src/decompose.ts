@@ -2,13 +2,13 @@ import type { ObservedRequest, Percentiles, PerfMeasurement, TraceEntry } from "
 
 /** 호출 하나의 분해 결과. §5.1·§5.3 의 정의 그대로. */
 export interface CallTiming {
-  /** 배정된 요청 중 t0 ≤ c.t1 인 것들의 [t0, min(requestEnd, c.t1)] 합집합 길이. */
+  /** 배정된 요청 중 t0 ≤ c.t1 인 것들의 [max(t0, c.t0), min(requestEnd, c.t1)] 합집합 길이. 호출 시작 전에 끝난 요청은 뺀다. */
   readonly external: number;
   /** max(0, (c.t1 − c.t0) − external). */
   readonly inside: number;
   /** 배정된 요청 수. afterResponse 를 포함한다. */
   readonly requests: number;
-  /** t0 ≤ c.t1 인 요청들의 [t0, min(requestEnd, c.t1)] 가 동시에 열린 최대 수. 같은 시각의 끝은 시작보다 먼저 처리한다. */
+  /** t0 ≤ c.t1 인 요청들의 [max(t0, c.t0), min(requestEnd, c.t1)] 가 동시에 열린 최대 수. 같은 시각의 끝은 시작보다 먼저 처리한다. 호출 시작 전에 끝난 요청은 뺀다. */
   readonly maxConcurrency: number;
   /** t0 ≤ c.t1 인 요청 중 tEnd 가 없는 것이 하나라도 있으면 true. */
   readonly externalLowerBound: boolean;
@@ -59,8 +59,14 @@ export function mergeTrace(entries: readonly TraceEntry[]): readonly ObservedReq
   return merged.sort((a, b) => a.pid - b.pid || a.seq - b.seq);
 }
 
+/** 서버를 부른 측정인가. skipped·missingTool 은 부르지 않은 점(t0 === t1)이라 요청을 낼 수 없다(§5.1, 계획 E34). */
+function callsServer(measurement: PerfMeasurement): boolean {
+  return measurement.outcome !== "skipped" && measurement.outcome !== "missingTool";
+}
+
 /**
- * §5.1 호출 배정. 요청 e 의 후보는 m.t0 − 2 ≤ e.t0 ≤ m.t1 + 2 인 측정(여유 창)이고, 후보 중 measurements
+ * §5.1 호출 배정. 요청 e 의 후보는 m.t0 − 2 ≤ e.t0 ≤ m.t1 + 2 인 측정(여유 창)이고, 점 측정(skipped·missingTool)은
+ * 후보가 아니다. 그 측정도 Map 의 키로는 남고 값은 빈 배열이다. 후보 중 measurements
  * 배열 순서가 가장 늦은 측정 하나에 배정한다. 측정은 직렬이라 배열에서 늦을수록 시작도 늦다. 서버는 호출을 받은
  * 뒤에야 그 호출의 요청을 내므로 경계 근처의 요청은 나중 호출의 것일 가능성이 크다. 자식 시계 오차로 다음 호출
  * 첫 요청이 그 호출 t0 보다 앞에 찍혀도 앞 호출의 afterResponse 로 밀리지 않게 하려는 규칙이다. 엄밀 구간에 든
@@ -79,6 +85,7 @@ export function assignRequests(
     // lib 이 ES2022 라 findLast 를 쓰지 않고 뒤에서부터 찾는다.
     for (let i = measurements.length - 1; i >= 0; i -= 1) {
       const m = measurements[i] as PerfMeasurement;
+      if (!callsServer(m)) continue;
       if (request.t0 >= m.t0 - ASSIGN_SLACK_MS && request.t0 <= m.t1 + ASSIGN_SLACK_MS) {
         assigned.get(m)?.push(request);
         break;
@@ -172,9 +179,13 @@ export function callTiming(
       continue;
     }
     if (request.tEnd === undefined) externalLowerBound = true;
+    // 시작은 호출 t0 에서 자른다. 여유 창으로 배정된, t0 보다 앞에 찍힌 요청이 호출 밖 시간을 더하지 않게 한다(§5.3).
+    const begin = Math.max(request.t0, measurement.t0);
     const end = Math.min(requestEnd(request, measurement), measurement.t1);
-    // 끝이 시작보다 앞선 기록(시계 역행 등)은 길이 0 으로 본다.
-    intervals.push([request.t0, Math.max(request.t0, end)]);
+    // 호출 시작 전에 이미 끝난 요청은 [c.t0, c.t0] 로 남기면 c.t0 에 시작한 요청과 동시로 세므로 구간에서 뺀다.
+    // 요청 수에는 남는다. 호출 안에서 시작한 요청의 길이 0 구간(시계 역행 등)은 지금처럼 자기 자신을 센다.
+    if (request.t0 < measurement.t0 && end <= measurement.t0) continue;
+    intervals.push([begin, Math.max(begin, end)]);
   }
   const external = unionLength(intervals);
   return {

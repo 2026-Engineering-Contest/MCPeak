@@ -6,12 +6,16 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { childEnvironment, PERF_TRACE_DIR_ENV } from "../src/child-env.js";
+import { mergeTrace } from "../src/decompose.js";
 import { readTrace } from "../src/trace.js";
 import type { TraceEntry } from "../src/types.js";
 
 /** `/slow` 의 전체 본문. 앞부분은 즉시, 뒷부분은 150ms 뒤에 간다. */
 const FULL = '{"part":"one","tail":"two"}';
 const TAIL_DELAY_MS = 150;
+/** `/big` 의 전체 크기. 서버가 안 읽으면 이것보다 훨씬 적게 나가야 한다(배압). */
+const BIG_TOTAL = 50 * 1024 * 1024;
+const BIG_CHUNK = 64 * 1024;
 
 const FIXTURE = fileURLToPath(new URL("./fixtures/preload-child.mjs", import.meta.url));
 
@@ -20,12 +24,26 @@ type End = Extract<TraceEntry, { kind: "end" }>;
 
 let server: Server;
 let origin: string;
+/** `/endless` 연결이 닫힌 횟수. */
+let endlessClosed = 0;
+/** `/big` 에 지금까지 쓴 바이트. */
+let bigSent = 0;
 const dirs: string[] = [];
 
 async function freshTraceDir(): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), "mcpeak-perf-preload-"));
   dirs.push(dir);
   return dir;
+}
+
+/** limitMs 안에 cond 가 참이 되면 true. */
+async function waitFor(cond: () => boolean, limitMs: number): Promise<boolean> {
+  const deadline = Date.now() + limitMs;
+  while (Date.now() < deadline) {
+    if (cond()) return true;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  return cond();
 }
 
 /** `process.env` 에서 `NODE_OPTIONS` 를 뺀 것에 `childEnvironment` 를 얹는다. */
@@ -38,7 +56,7 @@ function childEnv(traceDir: string): Record<string, string> {
 }
 
 function runChild(
-  mode: "fetch" | "http" | "env",
+  mode: "fetch" | "http" | "env" | "cancel" | "cancel-decoder" | "unread" | "worker",
   env: Record<string, string>,
 ): Promise<{ stdout: string; stderr: string; code: number | null; pid: number }> {
   return new Promise((resolve, reject) => {
@@ -79,6 +97,33 @@ function endOf(entries: readonly TraceEntry[], start: Start): End[] {
 
 beforeAll(async () => {
   server = createServer((req, res) => {
+    if (req.url === "/endless") {
+      // 연결이 닫힐 때까지 20ms 마다 쓴다.
+      res.writeHead(200, { "content-type": "text/plain" });
+      const timer = setInterval(() => res.write("x".repeat(100)), 20);
+      res.on("close", () => {
+        clearInterval(timer);
+        endlessClosed += 1;
+      });
+      return;
+    }
+    if (req.url === "/big") {
+      // 배압을 지키며 쓴다. 받는 쪽이 안 읽으면 drain 이 오지 않아 멈춘다.
+      res.writeHead(200, { "content-type": "application/octet-stream" });
+      const chunk = Buffer.alloc(BIG_CHUNK, 120);
+      const pump = () => {
+        while (bigSent < BIG_TOTAL) {
+          bigSent += BIG_CHUNK;
+          if (!res.write(chunk)) {
+            res.once("drain", pump);
+            return;
+          }
+        }
+        res.end();
+      };
+      pump();
+      return;
+    }
     if (req.url === "/slow") {
       res.writeHead(200, { "content-type": "application/json" });
       res.write('{"part":"one",');
@@ -144,6 +189,10 @@ describe.sequential("preload", () => {
     for (const undiciStart of undiciStarts) {
       expect(undiciStart.parentFetch).toBe(fetchStart.seq);
       expect(undiciStart.url).toBe(`${origin}/slow`);
+      // 설계 §4.3 undici 절: headers 채널은 tHeaders 만 적고 status 는 적지 않는다(계획 E27).
+      for (const undiciEnd of endOf(entries, undiciStart)) {
+        expect(undiciEnd.status).toBeUndefined();
+      }
     }
   });
 
@@ -155,6 +204,62 @@ describe.sequential("preload", () => {
     expect(start.requestHeaders).toEqual({ authorization: "Bearer t", "x-trace": "1" });
     expect(start.requestBody).toBeUndefined();
     expect(start.requestBodyUnknown).toBeUndefined();
+  });
+
+  // cancel: 첫 청크 뒤 body.cancel(). cancel-decoder: pipeThrough(TextDecoderStream) 뒤 reader.cancel().
+  it.each(["cancel", "cancel-decoder"] as const)(
+    "끝없는 본문을 버리면(%s) 1초 안에 풀리고 원점 연결이 닫힌다",
+    async (mode) => {
+      const traceDir = await freshTraceDir();
+      const closedBefore = endlessClosed;
+      const result = await runChild(mode, childEnv(traceDir));
+      expect(result.stderr).toBe("");
+      expect(result.stdout).toMatch(/^resolved \d+ms$/);
+      expect(await waitFor(() => endlessClosed > closedBefore, 1000)).toBe(true);
+
+      const { entries } = await readTrace(traceDir);
+      const start = starts(entries, "fetch")[0] as Start;
+      const ends = endOf(entries, start);
+      expect(ends).toHaveLength(1);
+      expect((ends[0] as End).bodyEnd).toBe(false);
+    },
+  );
+
+  it("서버가 안 읽은 큰 본문은 관측이 대신 당기지 않는다", async () => {
+    const traceDir = await freshTraceDir();
+    bigSent = 0;
+    const result = await runChild("unread", childEnv(traceDir));
+    expect(result.stderr).toBe("");
+    expect(result.stdout).toBe("200");
+    process.stderr.write(`[preload-e2e] /big 에 쓴 바이트: ${bigSent} / ${BIG_TOTAL}\n`);
+    expect(bigSent).toBeLessThan(BIG_TOTAL / 4);
+
+    // 서버가 읽지 않았으므로 fetch 의 끝 줄은 없다(설계 §4.3 fetch 3항, 하한 경로).
+    const { entries } = await readTrace(traceDir);
+    const start = starts(entries, "fetch")[0] as Start;
+    expect(endOf(entries, start)).toEqual([]);
+  });
+
+  it("worker 와 메인의 fetch 는 seq 가 겹치지 않아 병합 뒤 둘 다 남는다", async () => {
+    const traceDir = await freshTraceDir();
+    const result = await runChild("worker", childEnv(traceDir));
+    expect(result.stderr).toBe("");
+    expect(result.code).toBe(0);
+    expect(result.stdout).toBe(`${FULL}|${FULL}`);
+
+    const { entries } = await readTrace(traceDir);
+    expect(entries.filter((entry) => entry.kind === "hello")).toHaveLength(2);
+    const fetchStarts = starts(entries, "fetch");
+    expect(fetchStarts).toHaveLength(2);
+    expect(new Set(fetchStarts.map((s) => s.seq)).size).toBe(2);
+
+    const merged = mergeTrace(entries).filter((request) => request.via === "fetch");
+    expect(merged).toHaveLength(2);
+    for (const request of merged) {
+      expect(request.pid).toBe(result.pid);
+      expect(request.bodyEnd).toBe(true);
+      expect(request.responseBody).toBe(FULL);
+    }
   });
 
   it("node:http 는 늦게 단 data 리스너가 본문 전체를 받는다", async () => {

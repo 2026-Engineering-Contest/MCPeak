@@ -1,0 +1,44 @@
+{
+  "calls": [
+    {
+      "caseId": "get-forecast-success",
+      "tool": "get_forecast",
+      "input": {
+        "city": "Busan"
+      },
+      "timeoutMs": 10000
+    },
+    {
+      "caseId": "compare-cities-success",
+      "tool": "compare_cities",
+      "input": {
+        "cities": [
+          "Seoul",
+          "Busan",
+          "Jeju"
+        ]
+      },
+      "timeoutMs": 10000
+    },
+    {
+      "caseId": "lookup-country-success",
+      "tool": "lookup_country",
+      "input": {
+        "code": "KR"
+      },
+      "timeoutMs": 10000
+    },
+    {
+      "caseId": "convert-units-success",
+      "tool": "convert_units",
+      "input": {
+        "value": 10,
+        "from": "km",
+        "to": "mi"
+      },
+      "timeoutMs": 10000
+    }
+  ],
+  "repeat": 5,
+  "intervalMs": 0
+}

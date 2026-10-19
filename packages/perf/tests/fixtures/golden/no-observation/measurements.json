@@ -1,0 +1,167 @@
+[
+  {
+    "caseId": "get-forecast-success",
+    "tool": "get_forecast",
+    "iteration": 0,
+    "t0": 1700000010000,
+    "t1": 1700000010284,
+    "outcome": "ok"
+  },
+  {
+    "caseId": "get-forecast-success",
+    "tool": "get_forecast",
+    "iteration": 1,
+    "t0": 1700000012000,
+    "t1": 1700000012284,
+    "outcome": "ok"
+  },
+  {
+    "caseId": "get-forecast-success",
+    "tool": "get_forecast",
+    "iteration": 2,
+    "t0": 1700000014000,
+    "t1": 1700000014284,
+    "outcome": "ok"
+  },
+  {
+    "caseId": "get-forecast-success",
+    "tool": "get_forecast",
+    "iteration": 3,
+    "t0": 1700000016000,
+    "t1": 1700000016284,
+    "outcome": "ok"
+  },
+  {
+    "caseId": "get-forecast-success",
+    "tool": "get_forecast",
+    "iteration": 4,
+    "t0": 1700000018000,
+    "t1": 1700000018664,
+    "outcome": "ok"
+  },
+  {
+    "caseId": "compare-cities-success",
+    "tool": "compare_cities",
+    "iteration": 0,
+    "t0": 1700000020000,
+    "t1": 1700000020425,
+    "outcome": "ok"
+  },
+  {
+    "caseId": "compare-cities-success",
+    "tool": "compare_cities",
+    "iteration": 1,
+    "t0": 1700000022000,
+    "t1": 1700000022425,
+    "outcome": "ok"
+  },
+  {
+    "caseId": "compare-cities-success",
+    "tool": "compare_cities",
+    "iteration": 2,
+    "t0": 1700000024000,
+    "t1": 1700000024425,
+    "outcome": "ok"
+  },
+  {
+    "caseId": "compare-cities-success",
+    "tool": "compare_cities",
+    "iteration": 3,
+    "t0": 1700000026000,
+    "t1": 1700000026425,
+    "outcome": "ok"
+  },
+  {
+    "caseId": "compare-cities-success",
+    "tool": "compare_cities",
+    "iteration": 4,
+    "t0": 1700000028000,
+    "t1": 1700000028425,
+    "outcome": "ok"
+  },
+  {
+    "caseId": "lookup-country-success",
+    "tool": "lookup_country",
+    "iteration": 0,
+    "t0": 1700000030000,
+    "t1": 1700000030001,
+    "outcome": "ok"
+  },
+  {
+    "caseId": "lookup-country-success",
+    "tool": "lookup_country",
+    "iteration": 1,
+    "t0": 1700000032000,
+    "t1": 1700000032001,
+    "outcome": "ok"
+  },
+  {
+    "caseId": "lookup-country-success",
+    "tool": "lookup_country",
+    "iteration": 2,
+    "t0": 1700000034000,
+    "t1": 1700000034001,
+    "outcome": "ok"
+  },
+  {
+    "caseId": "lookup-country-success",
+    "tool": "lookup_country",
+    "iteration": 3,
+    "t0": 1700000036000,
+    "t1": 1700000036001,
+    "outcome": "ok"
+  },
+  {
+    "caseId": "lookup-country-success",
+    "tool": "lookup_country",
+    "iteration": 4,
+    "t0": 1700000038000,
+    "t1": 1700000038003,
+    "outcome": "ok"
+  },
+  {
+    "caseId": "convert-units-success",
+    "tool": "convert_units",
+    "iteration": 0,
+    "t0": 1700000040000,
+    "t1": 1700000040002,
+    "outcome": "threw",
+    "detail": "MCP error -32602: Output validation error: Invalid structured content for tool convert_units: Invalid input: expected number, received undefined at converted"
+  },
+  {
+    "caseId": "convert-units-success",
+    "tool": "convert_units",
+    "iteration": 1,
+    "t0": 1700000042000,
+    "t1": 1700000042002,
+    "outcome": "threw",
+    "detail": "MCP error -32602: Output validation error: Invalid structured content for tool convert_units: Invalid input: expected number, received undefined at converted"
+  },
+  {
+    "caseId": "convert-units-success",
+    "tool": "convert_units",
+    "iteration": 2,
+    "t0": 1700000044000,
+    "t1": 1700000044002,
+    "outcome": "threw",
+    "detail": "MCP error -32602: Output validation error: Invalid structured content for tool convert_units: Invalid input: expected number, received undefined at converted"
+  },
+  {
+    "caseId": "convert-units-success",
+    "tool": "convert_units",
+    "iteration": 3,
+    "t0": 1700000046000,
+    "t1": 1700000046002,
+    "outcome": "threw",
+    "detail": "MCP error -32602: Output validation error: Invalid structured content for tool convert_units: Invalid input: expected number, received undefined at converted"
+  },
+  {
+    "caseId": "convert-units-success",
+    "tool": "convert_units",
+    "iteration": 4,
+    "t0": 1700000048000,
+    "t1": 1700000048002,
+    "outcome": "threw",
+    "detail": "MCP error -32602: Output validation error: Invalid structured content for tool convert_units: Invalid input: expected number, received undefined at converted"
+  }
+]

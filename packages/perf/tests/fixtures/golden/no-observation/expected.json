@@ -1,0 +1,122 @@
+{
+  "schemaVersion": 1,
+  "generator": {
+    "name": "@mcpeak/perf",
+    "version": "0.0.0-test"
+  },
+  "server": {
+    "command": "node examples/live-weather-server/server.mjs",
+    "toolCount": 11
+  },
+  "settings": {
+    "repeat": 5,
+    "intervalMs": 0,
+    "caseCount": 4,
+    "observation": "none"
+  },
+  "coldStart": {
+    "connectMs": 312,
+    "listToolsMs": 4
+  },
+  "cases": [
+    {
+      "id": "get-forecast-success",
+      "tool": "get_forecast",
+      "n": 5,
+      "outcomes": {
+        "ok": 5,
+        "isError": 0,
+        "empty": 0,
+        "threw": 0,
+        "skipped": 0,
+        "missingTool": 0
+      },
+      "total": {
+        "p50": 284,
+        "p95": 664,
+        "min": 284,
+        "max": 664
+      },
+      "dependency": {
+        "dependent": 0,
+        "independent": 0,
+        "unknown": 0
+      },
+      "requestSummaries": []
+    },
+    {
+      "id": "compare-cities-success",
+      "tool": "compare_cities",
+      "n": 5,
+      "outcomes": {
+        "ok": 5,
+        "isError": 0,
+        "empty": 0,
+        "threw": 0,
+        "skipped": 0,
+        "missingTool": 0
+      },
+      "total": {
+        "p50": 425,
+        "p95": 425,
+        "min": 425,
+        "max": 425
+      },
+      "dependency": {
+        "dependent": 0,
+        "independent": 0,
+        "unknown": 0
+      },
+      "requestSummaries": []
+    },
+    {
+      "id": "lookup-country-success",
+      "tool": "lookup_country",
+      "n": 5,
+      "outcomes": {
+        "ok": 5,
+        "isError": 0,
+        "empty": 0,
+        "threw": 0,
+        "skipped": 0,
+        "missingTool": 0
+      },
+      "total": {
+        "p50": 1,
+        "p95": 3,
+        "min": 1,
+        "max": 3
+      },
+      "dependency": {
+        "dependent": 0,
+        "independent": 0,
+        "unknown": 0
+      },
+      "requestSummaries": []
+    },
+    {
+      "id": "convert-units-success",
+      "tool": "convert_units",
+      "n": 0,
+      "outcomes": {
+        "ok": 0,
+        "isError": 0,
+        "empty": 0,
+        "threw": 5,
+        "skipped": 0,
+        "missingTool": 0
+      },
+      "firstError": "MCP error -32602: Output validation error: Invalid structured content for tool convert_units: Invalid input: expected number, received undefined at converted",
+      "dependency": {
+        "dependent": 0,
+        "independent": 0,
+        "unknown": 0
+      },
+      "requestSummaries": []
+    }
+  ],
+  "findings": [],
+  "undecidedCases": 0,
+  "aborted": null,
+  "exitCode": 0
+}

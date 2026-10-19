@@ -1,14 +1,16 @@
 import { randomBytes } from "node:crypto";
-import { readFile, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import auditMetadata from "../../audit/package.json";
 import optimizeMetadata from "../../optimize/package.json";
+import perfMetadata from "../../perf/package.json";
 import packageMetadata from "../package.json";
 import { type AuditCommandDependencies, runAuditCommand } from "./audit-command.js";
 import { nodeDockerIo } from "./audit-sandbox-io.js";
 import { nodeGenerateDependencies, nodeReviewIO, runGenerateCommand } from "./generate-command.js";
 import { commandDiscovery, commandHelp, GLOBAL_HELP } from "./help.js";
 import { type OptimizeCommandDependencies, runOptimizeCommand } from "./optimize-command.js";
+import { type PerfCommandDependencies, runPerfCommand } from "./perf-command.js";
 import { type RepairCommandDependencies, runRepairCommand } from "./repair-command.js";
 import { escapeTerminalText } from "./repair-render.js";
 import { parseTestCommand, runCli } from "./test-command.js";
@@ -22,6 +24,7 @@ export const COMMANDS = [
   "mock",
   "optimize",
   "audit",
+  "perf",
 ] as const;
 
 const unavailableDependencies = {
@@ -156,9 +159,55 @@ export function nodeAuditDependencies(
   };
 }
 
+/**
+ * `perf` 실행 의존성. `nodeOptimizeDependencies` 와 같은 이유로 함수로 뺀다. 주입 자체를 테스트가
+ * 단언할 수 있어야 빠뜨린 배선이 초록으로 남지 않는다(설계 §8.6).
+ *
+ * `now` 는 `performance.timeOrigin + performance.now()` 다. 자식 프리로드가 같은 시계로 요청
+ * 시각을 적으므로 이 시계여야 호출 창과 요청이 한 축에 놓인다(설계 §2.1). `sleep` 은 signal 이
+ * abort 되면 타이머만 해제하고 끝나지 않는다. 남은 타이머가 CLI 종료를 늦추지 않게 하기 위해서다.
+ * `generatorVersion` 은 리포트의 `generator` 가 `@mcpeak/perf` 이므로 그 패키지의 버전이고, 읽는
+ * 방식은 optimize 와 같다.
+ */
+export function nodePerfDependencies(
+  core: typeof import("@mcpeak/core"),
+  runner: typeof import("@mcpeak/runner"),
+  perf: typeof import("@mcpeak/perf"),
+): PerfCommandDependencies {
+  return {
+    connectStdio: core.connectStdio,
+    readEnv: (name) => process.env[name],
+    readFile: (path) => readFile(path),
+    writeFile: (path, text) => writeFile(path, text, "utf8"),
+    makeTempDir: (prefix) => mkdtemp(prefix),
+    removeDir: (path) => rm(path, { recursive: true, force: true }),
+    now: () => performance.timeOrigin + performance.now(),
+    sleep: (ms, signal) =>
+      new Promise<void>((resolve) => {
+        if (signal?.aborted === true) return;
+        const timer = setTimeout(resolve, ms);
+        signal?.addEventListener("abort", () => clearTimeout(timer), { once: true });
+      }),
+    validateSuite: runner.validateMcpSuite,
+    perf: {
+      measure: perf.measure,
+      readTrace: perf.readTrace,
+      analyze: perf.analyze,
+      compareBaseline: perf.compareBaseline,
+      toBaseline: perf.toBaseline,
+      parseBaseline: perf.parseBaseline,
+      renderReport: perf.renderReport,
+      childEnvironment: perf.childEnvironment,
+    },
+    generatorVersion: perfMetadata.version,
+    writeStdout: (text) => void process.stdout.write(text),
+    writeStderr: (text) => void process.stderr.write(text),
+  };
+}
+
 /** `mcpeak help <이름>` 으로 볼 수 있는 명령. 위 두 갈래가 같은 목록을 봐야 한다. */
 // `replay`·`verify` 는 ADR-0059 로 제거됐다. 그 둘은 위쪽에서 마이그레이션 안내로 간다.
-const HELP_TOPICS = ["test", "generate", "repair", "optimize", "audit"] as const;
+const HELP_TOPICS = ["test", "generate", "repair", "optimize", "audit", "perf"] as const;
 const isHelpTopic = (value: string | undefined): value is (typeof HELP_TOPICS)[number] =>
   HELP_TOPICS.includes(value as (typeof HELP_TOPICS)[number]);
 
@@ -317,6 +366,25 @@ export async function run(argv: string[]): Promise<number> {
       return 1;
     }
     return runAuditCommand(argv, nodeAuditDependencies(core, audit));
+  }
+  if (argv[0] === "perf") {
+    // `optimize` 분기와 같은 모양이다. `test` 경로가 이 패키지를 로드하지 않게 동적 import 한다.
+    let core: typeof import("@mcpeak/core");
+    let runner: typeof import("@mcpeak/runner");
+    let perf: typeof import("@mcpeak/perf");
+    try {
+      [core, runner, perf] = await Promise.all([
+        import("@mcpeak/core"),
+        import("@mcpeak/runner"),
+        import("@mcpeak/perf"),
+      ]);
+    } catch {
+      process.stderr.write(
+        "오류 [PERF_RUNTIME_UNAVAILABLE]: @mcpeak/perf 를 로드하지 못했습니다.\n해결: 의존성을 설치한 뒤 다시 실행하세요.\n",
+      );
+      return 1;
+    }
+    return runPerfCommand(argv, nodePerfDependencies(core, runner, perf));
   }
   if (argv[0] !== "test") return runCli(argv, unavailableDependencies);
   try {

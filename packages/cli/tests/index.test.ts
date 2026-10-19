@@ -50,7 +50,16 @@ const OPTIONAL_GENERATE_DEPENDENCIES = {
 
 describe("mcpeak cli", () => {
   it("알려진 서브커맨드를 선언한다", () => {
-    expect(COMMANDS).toEqual(["test", "generate", "repair", "record", "mock", "optimize", "audit"]);
+    expect(COMMANDS).toEqual([
+      "test",
+      "generate",
+      "repair",
+      "record",
+      "mock",
+      "optimize",
+      "audit",
+      "perf",
+    ]);
   });
 
   /**
@@ -92,6 +101,8 @@ describe("mcpeak cli", () => {
     [["test", "--help"], "mcpeak test <suite.json>"],
     [["help", "generate"], "mcpeak generate --out <suite.json>"],
     [["generate", "--help"], "mcpeak generate --out <suite.json>"],
+    [["help", "perf"], "mcpeak perf <suite.json>"],
+    [["perf", "--help"], "mcpeak perf <suite.json>"],
   ])("%j 는 해당 서브커맨드 도움말을 stdout 에 쓴다", async (argv, expected) => {
     const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);

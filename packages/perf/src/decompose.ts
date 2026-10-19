@@ -60,11 +60,13 @@ export function mergeTrace(entries: readonly TraceEntry[]): readonly ObservedReq
 }
 
 /**
- * §5.1 호출 배정. 요청 e 는 먼저 c.t0 ≤ e.t0 ≤ c.t1 인 호출(엄밀 구간) 중 measurements 배열에서 가장 앞선
- * 호출에 배정한다. 그런 호출이 없을 때만 e.t0 ≥ c.t0 − 2 이고 e.t0 ≤ c.t1 + 2 인 호출(여유 창) 중 가장 앞선
- * 호출 하나에 배정한다. 연속 호출에서 다음 호출의 첫 요청이 앞 호출의 여유 창에 들어 afterResponse 로 밀리는
- * 것을 막기 위해서다. 둘 다 없는 요청은 버린다. 반환 Map 은 measurements 의 모든 원소를
- * 배열 순서대로 키로 갖고, 각 값은 t0 오름차순, 같으면 seq, 그래도 같으면 pid 오름차순이다.
+ * §5.1 호출 배정. 요청 e 의 후보는 m.t0 − 2 ≤ e.t0 ≤ m.t1 + 2 인 측정(여유 창)이고, 후보 중 measurements
+ * 배열 순서가 가장 늦은 측정 하나에 배정한다. 측정은 직렬이라 배열에서 늦을수록 시작도 늦다. 서버는 호출을 받은
+ * 뒤에야 그 호출의 요청을 내므로 경계 근처의 요청은 나중 호출의 것일 가능성이 크다. 자식 시계 오차로 다음 호출
+ * 첫 요청이 그 호출 t0 보다 앞에 찍혀도 앞 호출의 afterResponse 로 밀리지 않게 하려는 규칙이다. 엄밀 구간에 든
+ * 측정은 그 뒤 측정의 여유 창보다 늦을 수 없으므로 따로 먼저 볼 필요가 없다. 후보가 없는 요청은 버린다.
+ * 반환 Map 은 measurements 의 모든 원소를 배열 순서대로 키로 갖고, 각 값은 t0 오름차순, 같으면 seq,
+ * 그래도 같으면 pid 오름차순이다.
  */
 export function assignRequests(
   requests: readonly ObservedRequest[],
@@ -74,12 +76,14 @@ export function assignRequests(
   for (const measurement of measurements) assigned.set(measurement, []);
 
   for (const request of requests) {
-    const owner =
-      measurements.find((m) => request.t0 >= m.t0 && request.t0 <= m.t1) ??
-      measurements.find(
-        (m) => request.t0 >= m.t0 - ASSIGN_SLACK_MS && request.t0 <= m.t1 + ASSIGN_SLACK_MS,
-      );
-    if (owner !== undefined) assigned.get(owner)?.push(request);
+    // lib 이 ES2022 라 findLast 를 쓰지 않고 뒤에서부터 찾는다.
+    for (let i = measurements.length - 1; i >= 0; i -= 1) {
+      const m = measurements[i] as PerfMeasurement;
+      if (request.t0 >= m.t0 - ASSIGN_SLACK_MS && request.t0 <= m.t1 + ASSIGN_SLACK_MS) {
+        assigned.get(m)?.push(request);
+        break;
+      }
+    }
   }
 
   for (const list of assigned.values()) {

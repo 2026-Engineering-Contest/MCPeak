@@ -905,3 +905,28 @@ for (const [fixture, expectedStatus, expectedSummary] of [
     await rm(dir, { recursive: true, force: true });
   }
 }
+
+// `mcpeak perf` (설계 §10.3 "dist 로 실행"). 프리로드는 번들 밖 `child/preload.mjs` 를 URL 로 가리켜
+// 자식에 `--import` 로 실린다. dist 레이아웃이 그 상대 경로를 지키지 못하면 자식이 프리로드를 못 찾아
+// 관측 없음으로 떨어지거나 기동에 실패하는데, 소스로 도는 유닛·E2E 에서는 드러나지 않는다.
+{
+  const dir = await mkdtemp(join(tmpdir(), "mcpeak-dist-perf-"));
+  const pidFile = join(dir, "pid");
+  const suite = join(root, "examples/weather-server/server.suite.json");
+  try {
+    const result = await execute(["perf", suite, "--", process.execPath, wrapper, pidFile, server]);
+    await expectExited(pidFile);
+    assert.equal(
+      result.code,
+      0,
+      `dist perf 의 종료 코드가 0 이 아닙니다. 실제 코드: ${result.code}\nstderr:\n${result.err}`,
+    );
+    assert.ok(
+      result.out.includes("관측 Node 프리로드"),
+      `dist perf 의 stdout 에 '관측 Node 프리로드' 가 없습니다. 프리로드가 자식에 실리지 않았습니다. 실제 출력:\n${result.out}`,
+    );
+  } finally {
+    await cleanupPid(pidFile);
+    await rm(dir, { recursive: true, force: true });
+  }
+}

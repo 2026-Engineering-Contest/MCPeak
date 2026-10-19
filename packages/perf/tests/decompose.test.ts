@@ -129,38 +129,48 @@ describe("mergeTrace", () => {
 });
 
 describe("assignRequests", () => {
-  it("요청은 후보 중 가장 앞선 호출 하나에만 배정된다", () => {
+  it("요청은 후보 중 가장 늦은 호출 하나에만 배정된다", () => {
     const first = call(1000, 1500, 0);
     const second = call(1501, 1900, 1);
-    const entries = [start(1, 1500.5), end(1, 1600)];
-    const assigned = assignRequests(mergeTrace(entries), [first, second]);
-    expect(assigned.get(first)?.map((r) => r.seq)).toEqual([1]);
-    expect(assigned.get(second)).toEqual([]);
-    const timing = callTiming(first, assigned.get(first) ?? []);
-    expect(timing.afterResponse).toBe(1);
-    expect(callTiming(second, assigned.get(second) ?? []).requests).toBe(0);
-  });
-
-  it("엄밀 구간이 여유 창보다 먼저다", () => {
-    const first = call(1000, 1500, 0);
-    const second = call(1500.1, 1900, 1);
     const entries = [start(1, 1500.5), end(1, 1600)];
     const assigned = assignRequests(mergeTrace(entries), [first, second]);
     expect(assigned.get(first)).toEqual([]);
     expect(assigned.get(second)?.map((r) => r.seq)).toEqual([1]);
     const firstTiming = callTiming(first, assigned.get(first) ?? []);
-    expect(firstTiming.afterResponse).toBe(0);
     expect(firstTiming.requests).toBe(0);
+    expect(firstTiming.afterResponse).toBe(0);
     expect(callTiming(second, assigned.get(second) ?? []).requests).toBe(1);
   });
 
-  it("후보 판정 순서는 measurements 배열 순서다", () => {
+  it("다음 호출 시작보다 조금 앞에 찍힌 요청은 다음 호출의 것이다", () => {
+    const first = call(1000, 1500, 0);
+    const second = call(1500.1, 1900, 1);
+    const entries = req(1, 1499.8, 1700);
+    const assigned = assignRequests(mergeTrace(entries), [first, second]);
+    expect(assigned.get(first)).toEqual([]);
+    expect(assigned.get(second)?.map((r) => r.seq)).toEqual([1]);
+    expect(callTiming(first, assigned.get(first) ?? []).requests).toBe(0);
+    // 기준 T 근처의 double 간격이 약 0.00024ms 라 1700 − 1499.8 이 정확히 200.2 가 되지 않는다.
+    expect(callTiming(second, assigned.get(second) ?? []).external).toBeCloseTo(200.2, 3);
+  });
+
+  it("다음 호출과 2ms 넘게 떨어진 응답 뒤 요청은 앞 호출의 afterResponse 다", () => {
+    const first = call(1000, 1500, 0);
+    const second = call(1510, 1900, 1);
+    const entries = [start(1, 1501), end(1, 1600)];
+    const assigned = assignRequests(mergeTrace(entries), [first, second]);
+    expect(assigned.get(first)?.map((r) => r.seq)).toEqual([1]);
+    expect(assigned.get(second)).toEqual([]);
+    expect(callTiming(first, assigned.get(first) ?? []).afterResponse).toBe(1);
+  });
+
+  it("후보 중 가장 늦은 호출은 measurements 배열에서 가장 뒤의 후보다", () => {
     const later = call(1501, 1900, 1);
     const earlier = call(1000, 1500, 0);
     const entries = [start(1, 1500.5), end(1, 1600)];
     const assigned = assignRequests(mergeTrace(entries), [later, earlier]);
-    expect(assigned.get(later)?.map((r) => r.seq)).toEqual([1]);
-    expect(assigned.get(earlier)).toEqual([]);
+    expect(assigned.get(later)).toEqual([]);
+    expect(assigned.get(earlier)?.map((r) => r.seq)).toEqual([1]);
   });
 
   it("창은 앞뒤로 2ms 여유를 둔다", () => {

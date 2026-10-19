@@ -56,7 +56,7 @@ mcpeak perf 결과
 get-forecast-success    5       287   668            285            2               2
 compare-cities-success  5      1310  1702           1301            9               6
 lookup-country-success  5         1     3              0            1               0
-convert-units-success   0                                                              측정 안 됨: threw 5회. 첫 오류: MCP error -32602: Output validation error: Invalid structured content for tool convert_units: Invalid input: expected number, received undefined at converted
+convert-units-success   0                                                              측정 안 됨: isError 5회
 
 진단 1건 (종료 코드에 영향 없음)
 → 'compare_cities' 호출 안에서 독립 요청 2건이 순차로 나갑니다 (5회 중 5회): GET geocoding-api.open-meteo.com/v1/search?name=…&count=…&language=… ×2
@@ -153,4 +153,4 @@ Reports and baseline files never carry request or response headers or bodies, an
 values masked as `…`. The same trace and the same measurements always produce byte-identical reports. The latency
 numbers themselves are measurements and differ from run to run.
 
-The design and its evidence are in `docs/2026-10-18-perf-지연-분해-설계.md` and ADR-0117 (written in Korean).
+The design and its evidence are in `docs/2026-10-18-perf-지연-분해-설계.md` and ADR-0118 (written in Korean).

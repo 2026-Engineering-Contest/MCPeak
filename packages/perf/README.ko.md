@@ -54,7 +54,7 @@ mcpeak perf 결과
 get-forecast-success    5       287   668            285            2               2
 compare-cities-success  5      1310  1702           1301            9               6
 lookup-country-success  5         1     3              0            1               0
-convert-units-success   0                                                              측정 안 됨: threw 5회. 첫 오류: MCP error -32602: Output validation error: Invalid structured content for tool convert_units: Invalid input: expected number, received undefined at converted
+convert-units-success   0                                                              측정 안 됨: isError 5회
 
 진단 1건 (종료 코드에 영향 없음)
 → 'compare_cities' 호출 안에서 독립 요청 2건이 순차로 나갑니다 (5회 중 5회): GET geocoding-api.open-meteo.com/v1/search?name=…&count=…&language=… ×2
@@ -139,4 +139,4 @@ mcpeak perf <suite.json> (-- <executable> [args...] | --command <executable> [--
 리포트와 기준 파일에는 요청·응답 헤더와 본문을 싣지 않고, URL 은 쿼리 값을 `…` 로 가린 모양만 싣는다. 같은
 추적과 같은 측정값을 넣으면 리포트가 바이트 단위로 같다. 지연 수치 자체는 측정값이라 실행마다 다르다.
 
-설계와 근거는 `docs/2026-10-18-perf-지연-분해-설계.md` 와 ADR-0117 에 있다.
+설계와 근거는 `docs/2026-10-18-perf-지연-분해-설계.md` 와 ADR-0118 에 있다.

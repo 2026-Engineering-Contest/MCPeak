@@ -96,7 +96,7 @@ mcpeak perf <suite.json> (-- <executable> [args...] | --command <executable> [--
 | `--interval-ms <ms>` | 0 | Wait between calls. An integer from 0 to 60000. Shown in the report's settings line |
 | `--tool <name>` | none | Repeatable. Only the cases for that tool |
 | `--baseline <path>` | none | The baseline file. Compared against when given; written when combined with `--update-baseline` |
-| `--update-baseline` | off | Writes the baseline file from this measurement. Does not compare |
+| `--update-baseline` | off | Writes the baseline file from this measurement. Does not compare. Cannot be combined with `--tool` (the baseline is always rewritten from the whole suite) |
 | `--threshold-pct <n>` | 50 | The ratio part of the in-server regression threshold. An integer from 0 to 1000 |
 | `--threshold-ms <n>` | 20 | The floor of the in-server regression threshold. An integer from 0 to 60000 |
 | `--json` | off | Prints only the report JSON to stdout |

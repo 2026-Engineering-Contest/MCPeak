@@ -184,7 +184,7 @@ mcpeak perf <suite.json> (-- <executable> [args...] | --command <executable> [--
 | `--interval-ms <ms>` | `0` | 호출 사이 대기. 0 이상 60000 이하 정수. 0 이면 서버의 레이트리미터 대기가 서버 안 시간으로 보일 수 있다 |
 | `--tool <name>` | 없음 | 그 도구의 케이스만 잰다. 반복할 수 있다 |
 | `--baseline <path>` | 없음 | 기준 파일과 비교한다. 서버 안 p50 이 허용치를 넘거나 호출당 외부 요청 수가 늘면 회귀로 2 |
-| `--update-baseline` | 끔 | 비교하지 않고 측정 결과로 기준 파일을 쓴다. `--baseline` 과 함께 써야 한다 |
+| `--update-baseline` | 끔 | 비교하지 않고 측정 결과로 기준 파일을 쓴다. `--baseline` 과 함께 써야 하고 `--tool` 과는 함께 쓸 수 없다(기준은 명세 전체로 갱신한다) |
 | `--threshold-pct <n>` | `50` | 서버 안 회귀 허용치 `기준 × (1 + n/100) + threshold-ms` 의 비율. 0 이상 1000 이하 정수 |
 | `--threshold-ms <n>` | `20` | 같은 허용치의 바닥. 0 이상 60000 이하 정수 |
 | `--json` | 끔 | 리포트 대신 결과 JSON 을 stdout 에 낸다 |

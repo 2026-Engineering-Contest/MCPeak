@@ -192,7 +192,7 @@ Servers that are not Node only get response time and cold start.
 | `--interval-ms <ms>` | `0` | Wait between calls. An integer from 0 to 60000. At 0, a server's rate limiter wait may show up as in-server time |
 | `--tool <name>` | none | Measures only the cases for that tool. Repeatable |
 | `--baseline <path>` | none | Compares with the baseline file. In-server p50 above the allowance, or more external requests per call, is a regression and exits with 2 |
-| `--update-baseline` | off | Writes the baseline file from this measurement without comparing. Must be used with `--baseline` |
+| `--update-baseline` | off | Writes the baseline file from this measurement without comparing. Must be used with `--baseline` and cannot be combined with `--tool` (the baseline is always rewritten from the whole suite) |
 | `--threshold-pct <n>` | `50` | The ratio in the in-server allowance `baseline × (1 + n/100) + threshold-ms`. An integer from 0 to 1000 |
 | `--threshold-ms <n>` | `20` | The floor of the same allowance. An integer from 0 to 60000 |
 | `--json` | off | Prints the result JSON to stdout instead of the report |

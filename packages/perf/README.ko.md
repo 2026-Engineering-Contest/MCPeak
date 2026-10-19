@@ -89,7 +89,7 @@ mcpeak perf <suite.json> (-- <executable> [args...] | --command <executable> [--
 | `--interval-ms <ms>` | 0 | 호출 사이 대기. 0 이상 60000 이하 정수. 리포트 설정 줄에 표시 |
 | `--tool <name>` | 없음 | 반복 가능. 그 도구의 케이스만 |
 | `--baseline <path>` | 없음 | 기준 파일. 있으면 비교, `--update-baseline` 과 함께면 쓰기 |
-| `--update-baseline` | 꺼짐 | 측정 결과로 기준 파일을 쓴다. 비교하지 않는다 |
+| `--update-baseline` | 꺼짐 | 측정 결과로 기준 파일을 쓴다. 비교하지 않는다. `--tool` 과는 함께 쓸 수 없다(기준은 명세 전체로 갱신한다) |
 | `--threshold-pct <n>` | 50 | 서버 안 회귀 임계의 비율. 0 이상 1000 이하 정수 |
 | `--threshold-ms <n>` | 20 | 서버 안 회귀 임계의 바닥. 0 이상 60000 이하 정수 |
 | `--json` | 꺼짐 | stdout 에 리포트 JSON 하나만 |

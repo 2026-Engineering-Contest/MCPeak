@@ -245,7 +245,7 @@ const PERF_OPTIONS = `옵션:
   --baseline <path>     기준 파일입니다. 있으면 비교하고, --update-baseline 과 함께면
                         씁니다
   --update-baseline     측정 결과로 기준 파일을 씁니다. 비교하지 않습니다.
-                        --baseline 과 함께 써야 합니다
+                        --baseline 과 함께 써야 하고 --tool 과는 함께 쓸 수 없습니다
   --threshold-pct <n>   서버 안 p50 회귀의 비율 허용치입니다. 기본값은 50 입니다.
                         0 이상 1000 이하 정수
   --threshold-ms <n>    서버 안 p50 회귀의 절대 허용치입니다. 기본값은 20 입니다.

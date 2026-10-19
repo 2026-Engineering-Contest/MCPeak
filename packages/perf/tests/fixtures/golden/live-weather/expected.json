@@ -1,0 +1,234 @@
+{
+  "schemaVersion": 1,
+  "generator": {
+    "name": "@mcpeak/perf",
+    "version": "0.0.0-test"
+  },
+  "server": {
+    "command": "node examples/live-weather-server/server.mjs",
+    "toolCount": 11
+  },
+  "settings": {
+    "repeat": 5,
+    "intervalMs": 0,
+    "caseCount": 4,
+    "observation": "preload"
+  },
+  "coldStart": {
+    "connectMs": 312,
+    "listToolsMs": 4
+  },
+  "cases": [
+    {
+      "id": "get-forecast-success",
+      "tool": "get_forecast",
+      "n": 5,
+      "outcomes": {
+        "ok": 5,
+        "isError": 0,
+        "empty": 0,
+        "threw": 0,
+        "skipped": 0,
+        "missingTool": 0
+      },
+      "total": {
+        "p50": 284,
+        "p95": 664,
+        "min": 284,
+        "max": 664
+      },
+      "external": {
+        "p50": 280,
+        "p95": 660,
+        "min": 280,
+        "max": 660
+      },
+      "inside": {
+        "p50": 4,
+        "p95": 4,
+        "min": 4,
+        "max": 4
+      },
+      "requests": {
+        "p50": 2,
+        "p95": 2,
+        "min": 2,
+        "max": 2
+      },
+      "maxConcurrency": 1,
+      "externalLowerBound": false,
+      "afterResponse": 0,
+      "dependency": {
+        "dependent": 5,
+        "independent": 0,
+        "unknown": 0
+      },
+      "requestSummaries": [
+        {
+          "display": "GET api.open-meteo.com/v1/forecast?latitude=…&longitude=…&timezone=…&daily=…",
+          "via": "fetch",
+          "count": 5,
+          "durationP50": 200
+        },
+        {
+          "display": "GET geocoding-api.open-meteo.com/v1/search?name=…&count=…&language=…&apikey=…",
+          "via": "fetch",
+          "count": 5,
+          "durationP50": 80
+        }
+      ]
+    },
+    {
+      "id": "compare-cities-success",
+      "tool": "compare_cities",
+      "n": 5,
+      "outcomes": {
+        "ok": 5,
+        "isError": 0,
+        "empty": 0,
+        "threw": 0,
+        "skipped": 0,
+        "missingTool": 0
+      },
+      "total": {
+        "p50": 425,
+        "p95": 425,
+        "min": 425,
+        "max": 425
+      },
+      "external": {
+        "p50": 420,
+        "p95": 420,
+        "min": 420,
+        "max": 420
+      },
+      "inside": {
+        "p50": 5,
+        "p95": 5,
+        "min": 5,
+        "max": 5
+      },
+      "requests": {
+        "p50": 6,
+        "p95": 6,
+        "min": 6,
+        "max": 6
+      },
+      "maxConcurrency": 1,
+      "externalLowerBound": false,
+      "afterResponse": 0,
+      "dependency": {
+        "dependent": 15,
+        "independent": 10,
+        "unknown": 0
+      },
+      "requestSummaries": [
+        {
+          "display": "GET api.open-meteo.com/v1/forecast?latitude=…&longitude=…&timezone=…",
+          "via": "fetch",
+          "count": 15,
+          "durationP50": 100
+        },
+        {
+          "display": "GET geocoding-api.open-meteo.com/v1/search?name=…&count=…&language=…",
+          "via": "fetch",
+          "count": 15,
+          "durationP50": 40
+        }
+      ]
+    },
+    {
+      "id": "lookup-country-success",
+      "tool": "lookup_country",
+      "n": 5,
+      "outcomes": {
+        "ok": 5,
+        "isError": 0,
+        "empty": 0,
+        "threw": 0,
+        "skipped": 0,
+        "missingTool": 0
+      },
+      "total": {
+        "p50": 1,
+        "p95": 3,
+        "min": 1,
+        "max": 3
+      },
+      "external": {
+        "p50": 0,
+        "p95": 0,
+        "min": 0,
+        "max": 0
+      },
+      "inside": {
+        "p50": 1,
+        "p95": 3,
+        "min": 1,
+        "max": 3
+      },
+      "requests": {
+        "p50": 0,
+        "p95": 0,
+        "min": 0,
+        "max": 0
+      },
+      "maxConcurrency": 0,
+      "externalLowerBound": false,
+      "afterResponse": 0,
+      "dependency": {
+        "dependent": 0,
+        "independent": 0,
+        "unknown": 0
+      },
+      "requestSummaries": []
+    },
+    {
+      "id": "convert-units-success",
+      "tool": "convert_units",
+      "n": 0,
+      "outcomes": {
+        "ok": 0,
+        "isError": 0,
+        "empty": 0,
+        "threw": 5,
+        "skipped": 0,
+        "missingTool": 0
+      },
+      "firstError": "MCP error -32602: Output validation error: Invalid structured content for tool convert_units: Invalid input: expected number, received undefined at converted",
+      "dependency": {
+        "dependent": 0,
+        "independent": 0,
+        "unknown": 0
+      },
+      "requestSummaries": []
+    }
+  ],
+  "findings": [
+    {
+      "ruleId": "perf/sequential-independent",
+      "caseIds": [
+        "compare-cities-success"
+      ],
+      "tools": [
+        "compare_cities"
+      ],
+      "lines": [
+        "'compare_cities' 호출 안에서 독립 요청 2건이 순차로 나갑니다 (5회 중 5회): GET geocoding-api.open-meteo.com/v1/search?name=…&count=…&language=… ×2",
+        "병렬로 보내면 최대 약 280ms 줄일 수 있습니다 (p50 기준 상한).",
+        "Promise.all 로 한 번에 보내고, 상대 API 의 동시 요청 한도와 429 백오프를 함께 두세요."
+      ],
+      "evidence": {
+        "observed": 5,
+        "of": 5,
+        "requests": [
+          "GET geocoding-api.open-meteo.com/v1/search?name=…&count=…&language=… ×2"
+        ],
+        "savingUpperBoundMs": 280
+      }
+    }
+  ],
+  "undecidedCases": 0,
+  "aborted": null,
+  "exitCode": 0
+}

@@ -47,6 +47,7 @@ Where you start depends on what you want to do.
 | Fix failing cases with AI | `mcpeak repair bundle.json --provider claude --model <model>` | [Repair](https://2026-engineering-contest.github.io/MCPeak/guide/repair) |
 | Check a server for security risks before using it | `mcpeak audit -- node ./server.js` | [Audit](https://2026-engineering-contest.github.io/MCPeak/guide/audit) |
 | Shrink tool definitions before handing them to an LLM | `mcpeak optimize --out server.optimize.json -- node ./server.js` | [Optimize](https://2026-engineering-contest.github.io/MCPeak/guide/optimize) |
+| Split tool call latency into external wait and in-server time | `mcpeak perf suite.json -- node ./server.js` | [Perf](./packages/perf) |
 | Run it from a web UI | `mcpeak-dashboard` | [Dashboard](https://2026-engineering-contest.github.io/MCPeak/guide/dashboard) |
 | Hook it into CI | `mcpeak test suite.json --junit out.xml -- node ./server.js` | [CI integration](https://2026-engineering-contest.github.io/MCPeak/guide/ci) |
 
@@ -188,9 +189,10 @@ XML, and an exit code.
 | [`@mcpeak/mock`](./packages/mock) | Mock MCP (Streamable HTTP, stdio), response injection |
 | [`@mcpeak/audit`](./packages/audit) | Pre-use MCP security checks. Docker-isolated runs (`--sandbox`) |
 | [`@mcpeak/optimize`](./packages/optimize) | Lossless tool definition compression, overlay proxy. Run with `mcpeak-optimize-proxy` |
+| [`@mcpeak/perf`](./packages/perf) | Tool call latency split (external HTTP wait and in-server time), sequential and repeated request diagnostics, baseline regression gate |
 | [`@mcpeak/dashboard`](./packages/dashboard) | Local web UI. Run with `mcpeak-dashboard` |
 
-Dependencies flow one way: `dashboard` → `cli` → `runner`/`generate`/`record`/`mock`/`audit`/`optimize` → `core`.
+Dependencies flow one way: `dashboard` → `cli` → `runner`/`generate`/`record`/`mock`/`audit`/`optimize`/`perf` → `core`.
 A package may only depend on layers to its right, and may skip adjacent layers
 ([ADR-0091](./docs/adr/0091-패키지는-하위-계층을-직접-의존할-수-있다.md)).
 

@@ -3,6 +3,7 @@ import type { RenderResult } from "@testing-library/react";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SourceEditResponse } from "../../src/api-types.js";
+import { SANDBOX_WRITE_NOTICE } from "../src/analyze/sandbox-hint.js";
 import { describeChange, formatToolSide } from "../src/analyze/tool-diff.js";
 import { readRecentCommands } from "../src/recent-commands.js";
 import { AnalyzeView } from "../src/screens/AnalyzeView.js";
@@ -688,6 +689,23 @@ describe("AnalyzeView 개요", () => {
     expect(screen.queryByRole("heading", { name: /상세$/ })).toBeNull();
     // 접힌 바도 아니다.
     expect(screen.queryByRole("button", { name: "대상 바꾸기" })).toBeNull();
+  });
+
+  it("격리를 시도하는 대상이면 분석하기 아래에 외부 쓰기 안내가 있다", async () => {
+    stubFetch();
+    render(<AnalyzeView pillar={null} />);
+    await screen.findByRole("radio", { name: /^weather/ });
+
+    expect(screen.getByText(SANDBOX_WRITE_NOTICE)).toBeTruthy();
+  });
+
+  it("격리할 수 없는 명령이면 외부 쓰기 안내가 없다", async () => {
+    stubFetch({ servers: [{ ...WEATHER, id: "py", name: "py", command: "python" }] });
+    render(<AnalyzeView pillar={null} />);
+    await screen.findByRole("radio", { name: /^py/ });
+
+    expect(screen.getByRole("button", { name: "분석하기" })).toHaveProperty("disabled", false);
+    expect(screen.queryByText(SANDBOX_WRITE_NOTICE)).toBeNull();
   });
 
   it("분석하기를 누르면 카드 셋이 나타나고 대상 영역이 접힌다", async () => {

@@ -61,7 +61,11 @@ ADR-0116 의 Analyze 는 대상 영역(접속 폼과 점검 옵션) → 축 카�
    명령은 싣지 않는다.
    - **격리 안의 호출 정책.** 대시보드는 `probe` 를 보내지 않는다. CLI `audit-command.ts` 의
      `sandboxOptions` 는 `--probe` 가 없으면 격리 안을 `all`, 격리 밖을 `readonly` 로 돌린다(ADR-0107).
-     컨테이너 안의 쓰기 도구 호출은 호스트에 닿지 않으므로 이것이 의도와 같다. 대시보드가 고칠 것은 없다.
+     컨테이너는 호스트 파일과 자격 증명을 막지만 외부 부작용까지 막지는 않는다. 기본 모드(녹화·재생 세션
+     없음)에서 게이트웨이는 외부 요청을 상류로 전달하므로, 외부 서비스에 쓰는 도구를 호출하면 그 쓰기가 실제로
+     일어난다. 그래서 격리를 시도하는 대상이면 "분석하기" 아래에 `SANDBOX_WRITE_NOTICE`("Docker 를 쓸 수 있으면
+     격리 안에서 모든 도구를 호출합니다. 외부 서비스에 쓰는 도구라면 실제 요청이 나갈 수 있습니다.")를 늘
+     보여 분석 전에 알린다(PR #532 리뷰 반영). 호출 정책 자체는 CLI 기본값 그대로 두고 대시보드가 고치지 않는다.
    - **Docker 를 못 쓸 때.** audit `startSandbox` 가 `backend.detect()` 로 판정해 격리 없는 경로(`auditDirect`,
      `options.probe` = readonly)로 돌고 `report.sandbox` 에 `{ status: "unavailable", reason }` 을 싣는다.
      대시보드는 Docker 를 대신 켜지 않는다.

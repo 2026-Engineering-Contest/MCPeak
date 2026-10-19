@@ -8,6 +8,7 @@ import { PillarCard } from "../analyze/PillarCard.js";
 import { PILLARS, securitySummary, tokensSummary } from "../analyze/pillars.js";
 import { SecurityProgressView } from "../analyze/SecurityProgress.js";
 import { SecurityResult } from "../analyze/SecurityResult.js";
+import { SANDBOX_WRITE_NOTICE } from "../analyze/sandbox-hint.js";
 import { securityExecution } from "../analyze/security-execution.js";
 import { TargetBar } from "../analyze/TargetBar.js";
 import { TokensResult } from "../analyze/TokensResult.js";
@@ -215,6 +216,10 @@ export function AnalyzeView({ pillar }: { readonly pillar: AnalyzePillar | null 
         onOpen={() => setTargetOpen(true)}
         onRunAll={runAll}
         disabledReason={disabledReason}
+        // 격리를 시도하는 대상이면 외부 쓰기 부작용을 미리 알린다(ADR-0117).
+        notice={
+          "security" in built && built.security.sandbox !== undefined ? SANDBOX_WRITE_NOTICE : null
+        }
         running={running}
       />
 

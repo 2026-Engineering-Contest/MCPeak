@@ -35,6 +35,7 @@ export function TargetBar({
   onRunAll,
   disabledReason,
   running,
+  notice = null,
 }: {
   readonly target: AnalyzeTarget;
   readonly open: boolean;
@@ -43,6 +44,8 @@ export function TargetBar({
   /** null 이면 활성. 문장이면 비활성이고 버튼 아래에 보인다. */
   readonly disabledReason: string | null;
   readonly running: boolean;
+  /** 펼친 폼의 분석하기 아래에 늘 보이는 안내. null 이면 없다. */
+  readonly notice?: string | null;
 }): JSX.Element {
   const runButton = (
     <Button variant="primary" disabled={disabledReason !== null} onClick={onRunAll}>
@@ -60,6 +63,7 @@ export function TargetBar({
         <div className="space-y-2 border-t border-line pt-5">
           {runButton}
           {reason}
+          {notice !== null && <p className="text-xs text-ink-muted">{notice}</p>}
         </div>
       </Card>
     );

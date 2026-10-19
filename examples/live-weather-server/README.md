@@ -1,7 +1,7 @@
 # example-live-weather-server
 
 mcpeak 의 **전 과정을 한 서버로 보여주는** 데모용 예제 MCP 서버. **stdio** 트랜스포트로 동작하고,
-툴 10개가 각자 다른 단계를 맡는다. 일부는 **실제 공개 API 를 `fetch` 로 부르고**, 일부는 로컬에서
+툴 11개가 각자 다른 단계를 맡는다. 일부는 **실제 공개 API 를 `fetch` 로 부르고**, 일부는 로컬에서
 결정론적으로 동작하며, 한 곳에는 **일부러 둔 결함**이 있다. `McpServer.registerTool` 에 zod 스키마를
 넘겨 SDK 가 JSON Schema 를 만들고 인자를 검증하는 경로를 쓴다(`zod-notes-server` 와 같은 조합).
 
@@ -14,6 +14,7 @@ node examples/live-weather-server/server.mjs
 | 툴 | 종류 | 입력 | 보여주는 것 |
 |---|---|---|---|
 | `get_forecast` | 외부 (Open-Meteo, fetch 2회) | `city` | 호출마다 기온이 바뀐다. 재생이 그것을 고정한다 |
+| `compare_cities` | 외부 (Open-Meteo, 도시마다 fetch 2회, 전부 직렬) | `cities[]`(2~3개) | `mcpeak perf` 가 "독립 요청이 순차로 나간다" 고 진단하는 자리. 일부러 직렬이다 |
 | `convert_currency` | 외부 (Frankfurter) | `amount, from, to` | 환율 날짜가 날마다 바뀐다 |
 | `search_city` | 외부 (Open-Meteo 지오코딩) | `query`, `count`(default 5), `language`(enum) | baseline 이 `default` · `enum` 에서 값을 고르는 자리 |
 | `list_recent_quakes` | 외부 (USGS) | `minMagnitude`(default 5), `limit`(default 10) | 최근 N건. 요청에 시각을 넣지 않아 재생이 맞는다 |
@@ -33,8 +34,8 @@ node examples/live-weather-server/server.mjs
 
 | 호스트 | 주소 | 쓰는 툴 |
 |---|---|---|
-| `api.open-meteo.com` | https://api.open-meteo.com/v1/forecast | `get_forecast` |
-| `geocoding-api.open-meteo.com` | https://geocoding-api.open-meteo.com/v1/search | `get_forecast`, `search_city` |
+| `api.open-meteo.com` | https://api.open-meteo.com/v1/forecast | `get_forecast`, `compare_cities` |
+| `geocoding-api.open-meteo.com` | https://geocoding-api.open-meteo.com/v1/search | `get_forecast`, `compare_cities`, `search_city` |
 | `earthquake.usgs.gov` | https://earthquake.usgs.gov/fdsnws/event/1/query | `list_recent_quakes` |
 | `api.frankfurter.dev` | https://api.frankfurter.dev/v1/latest | `convert_currency` |
 

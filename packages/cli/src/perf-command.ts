@@ -49,8 +49,8 @@ export interface PerfCommandInput {
   readonly json: boolean;
 }
 
-/** 측정 동안 가로채는 종료 신호(계획 E25). */
-export type PerfSignal = "SIGINT" | "SIGTERM";
+/** 측정 동안 가로채는 종료 신호(계획 E25). SIGHUP 은 터미널을 닫을 때 온다. */
+export type PerfSignal = "SIGINT" | "SIGTERM" | "SIGHUP";
 
 export interface PerfCommandDependencies {
   connectStdio(options: {
@@ -66,7 +66,7 @@ export interface PerfCommandDependencies {
   removeDir(path: string): Promise<void>;
   /** 신호 처리기 안에서 쓴다. 재발신 뒤에는 비동기 작업이 끝나지 못하므로 동기로 지운다. */
   removeDirSync(path: string): void;
-  /** SIGINT·SIGTERM 처리기를 단다. 돌려준 함수가 둘 다 뗀다. */
+  /** SIGINT·SIGTERM·SIGHUP 처리기를 단다. 돌려준 함수가 셋 다 뗀다. */
   onSignal(handler: (signal: PerfSignal) => Promise<void>): () => void;
   /** 처리기를 뗀 뒤 부른다. 같은 신호로 이 프로세스를 다시 끝내 셸이 신호 종료(130 등)를 본다. */
   killSelf(signal: PerfSignal): void;
@@ -506,7 +506,7 @@ export async function runPerfCommand(
   }
 
   // 여기부터 만든 추적 디렉터리는 어느 경로로 끝나든 지운다. 남으면 요청 헤더·본문이 임시
-  // 디렉터리에 남는다(설계 §3.2 8항). SIGINT·SIGTERM 은 finally 를 거치지 않으므로 처리기가
+  // 디렉터리에 남는다(설계 §3.2 8항). SIGINT·SIGTERM·SIGHUP 은 finally 를 거치지 않으므로 처리기가
   // 연결을 닫고 지운 뒤 같은 신호로 다시 끝낸다(계획 E25).
   const traceDir = await deps.makeTempDir(join(tmpdir(), TRACE_DIR_PREFIX));
   const session: MeasureSession = {};
@@ -515,11 +515,10 @@ export async function runPerfCommand(
     detachSignals?.();
     detachSignals = undefined;
   };
-  let interrupted = false;
   detachSignals = deps.onSignal(async (signal) => {
     // 두 번째 신호는 닫기를 기다리지 않는다. 닫기가 멈춰도 사용자가 빠져나갈 수 있어야 한다.
-    if (!interrupted) {
-      interrupted = true;
+    if (session.interrupted === undefined) {
+      session.interrupted = signal;
       const connection = session.connection;
       if (connection !== undefined) await closeQuietly(connection);
     }
@@ -539,10 +538,20 @@ export async function runPerfCommand(
   }
 }
 
-/** 신호 처리기가 닫을 연결. 열린 동안만 채운다. */
+/** 신호 처리기와 본 흐름이 함께 보는 상태. */
 interface MeasureSession {
+  /** 신호 처리기가 닫을 연결. 열린 동안만 채운다. */
   connection?: CliConnection;
+  /** 처리기가 받은 첫 신호. 채워진 뒤에는 본 흐름이 아무것도 쓰지 않는다(설계 §3.2 8항). */
+  interrupted?: PerfSignal;
 }
+
+/** 셸이 신호 종료에 보는 값(128 + 신호 번호). 실제로는 재발신이 먼저 프로세스를 끝낸다. */
+const SIGNAL_EXIT_CODES: Readonly<Record<PerfSignal, number>> = {
+  SIGINT: 130,
+  SIGTERM: 143,
+  SIGHUP: 129,
+};
 
 async function measureAndReport(
   input: PerfCommandInput,
@@ -612,9 +621,20 @@ async function measureAndReport(
     session.connection = undefined;
     await closeQuietly(connection);
   }
+  // 신호 처리기가 연결을 닫으면 남은 callTool 이 거부된 채로 measure 가 끝난다. 그 측정으로
+  // 리포트나 기준 파일을 쓰면 중단된 실행의 결과가 남는다(재검토 N5).
+  if (session.interrupted !== undefined) return SIGNAL_EXIT_CODES[session.interrupted];
   deps.writeStderr(`측정 완료: 호출 ${measurements.length}회\n`);
 
-  const { entries } = await deps.perf.readTrace(traceDir);
+  let entries: Awaited<ReturnType<PerfCommandDependencies["perf"]["readTrace"]>>["entries"];
+  try {
+    ({ entries } = await deps.perf.readTrace(traceDir));
+  } catch (error) {
+    // 측정 뒤에 온 신호는 추적 디렉터리를 먼저 지워 읽기가 실패할 수 있다.
+    if (session.interrupted !== undefined) return SIGNAL_EXIT_CODES[session.interrupted];
+    throw error;
+  }
+  if (session.interrupted !== undefined) return SIGNAL_EXIT_CODES[session.interrupted];
   // 리포트 머리 줄에 그대로 찍히는 값이라 정수로 둔다. 시계는 소수 밀리초다.
   let report: PerfReport = deps.perf.analyze({
     plan,

@@ -27,8 +27,6 @@ export interface SecurityAnalysis {
   readonly events: readonly RunEvent[];
   /** 스트림 조회만 실패한 문장(`useRunEvents(runId).error` 중 missing 이 아닌 것). run 은 살아 있을 수 있어 상태를 바꾸지 않는다. */
   readonly progressError: string | null;
-  /** T2 전용(임시). "← 서버 다시 고르기". T3 이 지운다. */
-  readonly reset: () => void;
 }
 
 function messageOf(err: unknown): string {
@@ -125,13 +123,5 @@ export function useSecurityAnalysis(): SecurityAnalysis {
   const events = runId === null ? [] : run.events;
   const progressError = run.missing ? null : run.error;
 
-  /** 서버 선택 단계로 돌아간다. `sent` 는 그대로다. */
-  const reset = useCallback((): void => {
-    awaitedRun.current = null;
-    setRunId(null);
-    setState({ kind: "idle" });
-    setStartError(null);
-  }, []);
-
-  return { state, sent, runId, start, startError, events, progressError, reset };
+  return { state, sent, runId, start, startError, events, progressError };
 }

@@ -17,8 +17,6 @@ export interface TokensAnalysis {
   readonly reanalyze: () => Promise<void>;
   readonly reanalyzing: boolean;
   readonly reanalyzeError: string | null;
-  /** T2 전용(임시). "← 서버 다시 고르기". T3 이 지운다. */
-  readonly reset: () => void;
 }
 
 function messageOf(err: unknown): string {
@@ -75,10 +73,5 @@ export function useTokensAnalysis(): TokensAnalysis {
     }
   }, [analyzed, reanalyzing]);
 
-  const reset = useCallback((): void => {
-    setState({ kind: "idle" });
-    setReanalyzeError(null);
-  }, []);
-
-  return { state, analyzed, start, reanalyze, reanalyzing, reanalyzeError, reset };
+  return { state, analyzed, start, reanalyze, reanalyzing, reanalyzeError };
 }

@@ -1,250 +1,51 @@
 // @vitest-environment jsdom
+import type { RenderResult } from "@testing-library/react";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type {
-  AnalyzeTokensResponse,
-  ServerCandidate,
-  ServerMeta,
-  SourceEditResponse,
-} from "../../src/api-types.js";
+import type { SourceEditResponse } from "../../src/api-types.js";
 import { describeChange, formatToolSide } from "../src/analyze/tool-diff.js";
+import { readRecentCommands } from "../src/recent-commands.js";
 import { AnalyzeView } from "../src/screens/AnalyzeView.js";
+import {
+  analyzeResponse,
+  CLEANED_CHANGE,
+  CLEANED_EDITS,
+  cleanedResponse,
+  costCard,
+  finishSecurityRun,
+  installFakeEventSource,
+  lineText,
+  NOT_FOUND_DETAIL,
+  PENDING,
+  postedBodies,
+  preText,
+  previewResponse,
+  runAll,
+  SCHEMA_CHANGE,
+  SOURCE_A,
+  SOURCE_AFTER,
+  SOURCE_BEFORE,
+  type StubResponse,
+  securityCard,
+  showDetail,
+  stubFetch,
+  WEATHER,
+  WEATHER_ARGV,
+  waitTokensSettled,
+} from "./analyze-fixtures.js";
 
-const META: ServerMeta = { root: "/tmp/proj" };
-/** home.test 의 WEATHER 와 같은 값이다. */
-const WEATHER: ServerCandidate = {
-  id: "mcp-config:.mcp.json:weather",
-  name: "weather",
-  command: "node",
-  args: ["examples/weather-server/server.mjs", "--port", "3000"],
-  source: "mcp-config",
-  path: ".mcp.json",
-  envNames: ["API_KEY"],
-};
-
-/** 도구 a 의 원본. 압축본은 `$schema` 키만 빠진다. */
-const SOURCE_A = {
-  name: "a",
-  description: "A",
-  inputSchema: { $schema: "http://json-schema.org/draft-07/schema#", type: "object" },
-};
-
-/** WEATHER 후보로 분석할 때 화면이 만드는 argv. */
-const WEATHER_ARGV = [
-  "--command",
-  "node",
-  "--arg",
-  "examples/weather-server/server.mjs",
-  "--arg",
-  "--port",
-  "--arg",
-  "3000",
-  "--env",
-  "API_KEY",
-];
-
-const SCHEMA_CHANGE = { kind: "schema-key-removed", path: "/", key: "$schema" } as const;
-const CLEANED_CHANGE = {
-  kind: "description-cleaned",
-  path: "/",
-  before: "A tool.  ",
-  after: "A",
-} as const;
-/** `cleanedResponse()` 의 변경을 도구 이름과 함께 편 것. 화면이 이 순서로 보낸다. */
-const CLEANED_EDITS = [
-  { tool: "a", change: SCHEMA_CHANGE },
-  { tool: "a", change: CLEANED_CHANGE },
-];
-
-const NOT_FOUND_DETAIL =
-  "소스 파일에서 찾지 못했습니다. SDK 나 라이브러리가 만드는 값이면 소스에서 고칠 수 없습니다.";
-const SOURCE_BEFORE =
-  'const tools = [\n  {\n    name: "a",\n    description: "A tool.  ",\n  },\n];\n';
-const SOURCE_AFTER = SOURCE_BEFORE.replace('"A tool.  "', '"A"');
-
-/** `cleanedResponse()` 에 대한 미리보기. 설명 한 건만 소스에 있다. */
-function previewResponse(overrides: Partial<SourceEditResponse> = {}): SourceEditResponse {
-  return {
-    file: "srv/server.mjs",
-    mtimeMs: 10,
-    before: SOURCE_BEFORE,
-    after: SOURCE_AFTER,
-    results: [
-      { tool: "a", change: SCHEMA_CHANGE, status: "not-found", detail: NOT_FOUND_DETAIL },
-      {
-        tool: "a",
-        change: CLEANED_CHANGE,
-        status: "ready",
-        detail: "소스에서 1곳을 찾았습니다.",
-      },
-    ],
-    readyCount: 1,
-    applied: false,
-    conflict: false,
-    ...overrides,
-  };
+/** 토큰 응답을 기다려 비용 상세를 열고 `MCP 수정하기` 를 눌러 미리보기가 뜰 때까지 기다린다. */
+async function openPreview(rerender: RenderResult["rerender"]): Promise<void> {
+  await waitTokensSettled();
+  showDetail(rerender, "tokens");
+  fireEvent.click(await screen.findByRole("button", { name: "MCP 수정하기" }));
+  await screen.findByRole("list", { name: "변경별 상태" });
 }
 
-const OVERLAY_TEXT = '{\n  "schemaVersion": 1\n}\n';
-
-/** 비교 `<pre>` 의 줄 하나에서 표시 글자(`aria-hidden`)를 뺀 원래 줄. */
-function lineText(line: Element): string {
-  return [...line.childNodes]
-    .filter((node) => node.nodeType === Node.TEXT_NODE)
-    .map((node) => node.textContent ?? "")
-    .join("");
-}
-
-/** 비교 `<pre>` 를 줄 단위로 읽어 원래 문자열로 되돌린다. */
-function preText(pre: Element): string {
-  return [...pre.querySelectorAll("[data-diff]")].map(lineText).join("\n");
-}
-
-/** 도구 a 의 설명까지 바뀐 응답. 원본에는 지운 줄, 압축에는 바뀐 줄이 생긴다. */
-function cleanedResponse(): AnalyzeTokensResponse {
-  const base = analyzeResponse();
-  const [a, b] = base.overlay.tools;
-  if (a === undefined || b === undefined) {
-    throw new Error("analyzeResponse 의 도구가 둘이 아니다");
-  }
-  return {
-    ...base,
-    overlay: {
-      ...base.overlay,
-      tools: [
-        {
-          ...a,
-          changes: [
-            ...a.changes,
-            { kind: "description-cleaned", path: "/", before: "A tool.  ", after: "A" },
-          ],
-        },
-        b,
-      ],
-    },
-    sourceTools: [
-      { ...SOURCE_A, description: "A tool.  " },
-      { name: "b", inputSchema: {} },
-    ],
-  };
-}
-
-function analyzeResponse(
-  otherCapabilities: AnalyzeTokensResponse["overlay"]["source"]["otherCapabilities"] = [],
-): AnalyzeTokensResponse {
-  return {
-    overlay: {
-      schemaVersion: 1,
-      generator: { name: "@mcpeak/optimize", version: "0.0.0" },
-      source: {
-        toolCount: 2,
-        toolNames: ["a", "b"],
-        instructions: "",
-        bytes: 1000,
-        otherCapabilities,
-      },
-      instructions: "",
-      tools: [
-        {
-          name: "a",
-          description: "A",
-          inputSchema: { type: "object" },
-          bytes: { before: 600, after: 400 },
-          changes: [{ kind: "schema-key-removed", path: "/", key: "$schema" }],
-        },
-        { name: "b", inputSchema: {}, bytes: { before: 400, after: 360 }, changes: [] },
-      ],
-      totals: {
-        bytesBefore: 1000,
-        bytesAfter: 700,
-        bytesAfterWithInstructions: 760,
-        promotedParameters: 2,
-      },
-    },
-    overlayText: OVERLAY_TEXT,
-    report: "REPORT\n",
-    sourceTools: [SOURCE_A, { name: "b", inputSchema: {} }],
-  };
-}
-
-interface StubResponse {
-  readonly status: number;
-  readonly body: unknown;
-}
-
-/**
- * home.test 의 stubFetch 와 같은 방식. POST 응답만 이 화면의 것으로 바꿔 둔다. 배열로 주면 요청
- * 순서대로 하나씩 쓰고, 다 쓰면 마지막 것을 되풀이한다.
- */
-function stubFetch(
-  options: {
-    readonly servers?: readonly ServerCandidate[];
-    readonly analyze?: StubResponse | readonly StubResponse[];
-    readonly sourceEdits?: readonly StubResponse[];
-  } = {},
-): ReturnType<typeof vi.fn> {
-  const servers = options.servers ?? [WEATHER];
-  const analyzeQueue: readonly StubResponse[] = [
-    options.analyze ?? { status: 200, body: analyzeResponse() },
-  ].flat();
-  const sourceEditQueue = options.sourceEdits ?? [{ status: 200, body: previewResponse() }];
-  let analyzeCount = 0;
-  let sourceEditCount = 0;
-  const take = (queue: readonly StubResponse[], index: number): Response => {
-    const picked = queue[Math.min(index, queue.length - 1)];
-    return new Response(JSON.stringify(picked?.body), { status: picked?.status ?? 500 });
-  };
-  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-    const url = String(input);
-    if (init?.method === "POST" && url === "/api/analyze/tokens") {
-      analyzeCount += 1;
-      return take(analyzeQueue, analyzeCount - 1);
-    }
-    if (init?.method === "POST" && url === "/api/analyze/source-edits") {
-      sourceEditCount += 1;
-      return take(sourceEditQueue, sourceEditCount - 1);
-    }
-    if (url === "/api/servers") {
-      return new Response(JSON.stringify(servers), { status: 200 });
-    }
-    if (url === "/api/meta") {
-      return new Response(JSON.stringify(META), { status: 200 });
-    }
-    return new Response("[]", { status: 200 });
-  });
-  vi.stubGlobal("fetch", fetchMock);
-  return fetchMock;
-}
-
-/** `url` 로 보낸 POST 본문을 보낸 순서대로. */
-function postedBodies(
-  fetchMock: ReturnType<typeof vi.fn>,
-  url: string,
-): readonly Record<string, unknown>[] {
-  return fetchMock.mock.calls
-    .filter(([input, init]) => String(input) === url && init?.method === "POST")
-    .map(([, init]) => JSON.parse(String(init?.body)) as Record<string, unknown>);
-}
-
-function sentBody(fetchMock: ReturnType<typeof vi.fn>, method: string): Record<string, unknown> {
-  const call = fetchMock.mock.calls.find(([, init]) => init?.method === method);
-  return JSON.parse(String(call?.[1]?.body)) as Record<string, unknown>;
-}
-
-/** 첫 후보가 선택될 때까지 기다린 뒤 분석을 시작하고 결과 요약이 뜰 때까지 기다린다. */
-async function analyze(): Promise<void> {
-  await screen.findByRole("radio", { name: /^weather/ });
-  fireEvent.click(screen.getByRole("button", { name: "분석 시작" }));
-}
-
-/** `aria-current="step"` 인 단계의 이름. 번호 칸을 빼고 라벨(마지막 span)만 읽는다. */
-function currentStep(): string | null {
-  return document.querySelector('[aria-current="step"] > span:last-child')?.textContent ?? null;
-}
-
-describe("AnalyzeView", () => {
+describe("AnalyzeView 비용 상세", () => {
   beforeEach(() => {
     window.localStorage.clear();
+    installFakeEventSource();
   });
 
   afterEach(() => {
@@ -252,62 +53,21 @@ describe("AnalyzeView", () => {
     vi.unstubAllGlobals();
   });
 
-  it("토큰 탭이 기본이고 탭 둘이 tablist 에 있다", async () => {
-    stubFetch();
-    render(<AnalyzeView pillar="tokens" />);
-
-    const tablist = screen.getByRole("tablist", { name: "분석 종류" });
-    const tabs = within(tablist).getAllByRole("tab");
-    expect(tabs.map((tab) => tab.textContent)).toEqual(["토큰", "보안"]);
-    expect(screen.getByRole("tab", { name: "토큰" }).getAttribute("aria-selected")).toBe("true");
-    expect(screen.getByRole("tab", { name: "보안" }).getAttribute("aria-selected")).toBe("false");
-    await screen.findByRole("radio", { name: /^weather/ });
-  });
-
-  it("첫 후보가 초기 선택이고 분석 시작이 올바른 본문을 POST 한다", async () => {
-    const fetchMock = stubFetch();
-    render(<AnalyzeView pillar="tokens" />);
-
-    expect(await screen.findByRole("radio", { name: /^weather/ })).toHaveProperty("checked", true);
-    fireEvent.click(screen.getByRole("button", { name: "분석 시작" }));
-
-    await waitFor(() => {
-      expect(
-        fetchMock.mock.calls.some(
-          ([url, init]) => url === "/api/analyze/tokens" && init?.method === "POST",
-        ),
-      ).toBe(true);
-    });
-    expect(sentBody(fetchMock, "POST")).toEqual({
-      argv: [
-        "--command",
-        "node",
-        "--arg",
-        "examples/weather-server/server.mjs",
-        "--arg",
-        "--port",
-        "--arg",
-        "3000",
-        "--env",
-        "API_KEY",
-      ],
-      serverId: WEATHER.id,
-    });
-  });
-
   it("명령이 비면 버튼이 비활성이고 사유를 보인다", async () => {
     stubFetch({ servers: [] });
-    render(<AnalyzeView pillar="tokens" />);
+    render(<AnalyzeView pillar={null} />);
 
     await screen.findByText(/bin 을 찾지 못했습니다/);
-    expect(screen.getByRole("button", { name: "분석 시작" })).toHaveProperty("disabled", true);
+    expect(screen.getByRole("button", { name: "한 번에 분석" })).toHaveProperty("disabled", true);
     expect(screen.getByText("서버를 고르거나 실행 명령을 입력하세요.")).toBeTruthy();
   });
 
   it("성공 응답의 숫자를 요약과 표에 보이고 CLI 리포트 원문을 담는다", async () => {
     stubFetch();
-    render(<AnalyzeView pillar="tokens" />);
-    await analyze();
+    const { rerender } = render(<AnalyzeView pillar={null} />);
+    await runAll();
+    await waitTokensSettled();
+    showDetail(rerender, "tokens");
 
     expect(await screen.findByText("1000 바이트 (~250 토큰)")).toBeTruthy();
     expect(screen.getByText("760 바이트 (~190 토큰, 24.0% 감소)")).toBeTruthy();
@@ -331,8 +91,10 @@ describe("AnalyzeView", () => {
 
   it("otherCapabilities 가 있으면 주의 문장을 보인다", async () => {
     stubFetch({ analyze: { status: 200, body: analyzeResponse(["resources"]) } });
-    render(<AnalyzeView pillar="tokens" />);
-    await analyze();
+    const { rerender } = render(<AnalyzeView pillar={null} />);
+    await runAll();
+    await waitTokensSettled();
+    showDetail(rerender, "tokens");
 
     const notice = await screen.findByText(/^주의:/);
     expect(notice.textContent).toContain("주의: 서버가 resources 능력도 광고합니다.");
@@ -344,61 +106,22 @@ describe("AnalyzeView", () => {
   it("실패 응답의 error 문장을 그대로 보인다", async () => {
     const error = "오류 [MCP_CONNECTION_FAILED]: x\n해결: y";
     stubFetch({ analyze: { status: 400, body: { error } } });
-    render(<AnalyzeView pillar="tokens" />);
-    await analyze();
+    const { rerender } = render(<AnalyzeView pillar={null} />);
+    await runAll();
+    await waitTokensSettled();
+    showDetail(rerender, "tokens");
 
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toBe(error);
     expect(screen.queryByRole("table", { name: "도구별 감소" })).toBeNull();
   });
 
-  it("처음에는 서버 선택 단계다", async () => {
-    stubFetch();
-    render(<AnalyzeView pillar="tokens" />);
-    await screen.findByRole("radio", { name: /^weather/ });
-
-    expect(currentStep()).toBe("서버 선택");
-    expect(screen.queryByRole("table", { name: "도구별 감소" })).toBeNull();
-  });
-
-  it("성공하면 결과 단계로 넘어가 폼이 사라진다", async () => {
-    stubFetch();
-    render(<AnalyzeView pillar="tokens" />);
-    await analyze();
-
-    await screen.findByRole("table", { name: "도구별 감소" });
-    expect(currentStep()).toBe("결과");
-    expect(screen.queryByRole("button", { name: "분석 시작" })).toBeNull();
-  });
-
-  it("실패하면 서버 선택 단계에 머문다", async () => {
-    stubFetch({ analyze: { status: 400, body: { error: "오류 [X]: a\n해결: b" } } });
-    render(<AnalyzeView pillar="tokens" />);
-    await analyze();
-
-    await screen.findByRole("alert");
-    expect(currentStep()).toBe("서버 선택");
-    expect(screen.getByRole("button", { name: "분석 시작" })).toBeTruthy();
-  });
-
-  it("서버 다시 고르기를 누르면 폼으로 돌아온다", async () => {
-    stubFetch();
-    render(<AnalyzeView pillar="tokens" />);
-    await analyze();
-
-    fireEvent.click(await screen.findByRole("button", { name: "← 서버 다시 고르기" }));
-
-    expect(currentStep()).toBe("서버 선택");
-    expect(screen.queryByRole("table", { name: "도구별 감소" })).toBeNull();
-    // 폼 상태는 유지된다. 고른 후보가 그대로다.
-    expect(screen.getByRole("radio", { name: /^weather/ })).toHaveProperty("checked", true);
-    expect(screen.getByRole("button", { name: "분석 시작" })).toHaveProperty("disabled", false);
-  });
-
   it("변경사항을 누르면 원본·압축 JSON 과 변경 목록이 보이고 다시 누르면 사라진다", async () => {
     stubFetch();
-    render(<AnalyzeView pillar="tokens" />);
-    await analyze();
+    const { rerender } = render(<AnalyzeView pillar={null} />);
+    await runAll();
+    await waitTokensSettled();
+    showDetail(rerender, "tokens");
 
     const table = await screen.findByRole("table", { name: "도구별 감소" });
     const rowA = within(table).getAllByRole("row")[1] as HTMLElement;
@@ -436,8 +159,10 @@ describe("AnalyzeView", () => {
 
   it("펼치면 원본 칸에 removed 줄, 압축 칸에 added 줄이 표시된다", async () => {
     stubFetch({ analyze: { status: 200, body: cleanedResponse() } });
-    render(<AnalyzeView pillar="tokens" />);
-    await analyze();
+    const { rerender } = render(<AnalyzeView pillar={null} />);
+    await runAll();
+    await waitTokensSettled();
+    showDetail(rerender, "tokens");
 
     const toggle = await screen.findByRole("button", { name: "변경사항" });
     fireEvent.click(toggle);
@@ -475,8 +200,10 @@ describe("AnalyzeView", () => {
 
   it("변경사항 버튼은 접히면 on-accent, 펼치면 primary 다", async () => {
     stubFetch();
-    render(<AnalyzeView pillar="tokens" />);
-    await analyze();
+    const { rerender } = render(<AnalyzeView pillar={null} />);
+    await runAll();
+    await waitTokensSettled();
+    showDetail(rerender, "tokens");
 
     const toggle = await screen.findByRole("button", { name: "변경사항" });
     expect(toggle.className).toContain("border-accent-border");
@@ -494,8 +221,10 @@ describe("AnalyzeView", () => {
 
   it("원본을 찾지 못하면 그 자리에 안내 문장을 보인다", async () => {
     stubFetch({ analyze: { status: 200, body: { ...analyzeResponse(), sourceTools: [] } } });
-    render(<AnalyzeView pillar="tokens" />);
-    await analyze();
+    const { rerender } = render(<AnalyzeView pillar={null} />);
+    await runAll();
+    await waitTokensSettled();
+    showDetail(rerender, "tokens");
 
     fireEvent.click(await screen.findByRole("button", { name: "변경사항" }));
 
@@ -512,8 +241,10 @@ describe("AnalyzeView", () => {
 
   it("변경이 없는 도구는 변경 없음 버튼이 비활성이다", async () => {
     stubFetch();
-    render(<AnalyzeView pillar="tokens" />);
-    await analyze();
+    const { rerender } = render(<AnalyzeView pillar={null} />);
+    await runAll();
+    await waitTokensSettled();
+    showDetail(rerender, "tokens");
 
     expect(await screen.findByRole("button", { name: "변경 없음" })).toHaveProperty(
       "disabled",
@@ -521,10 +252,12 @@ describe("AnalyzeView", () => {
     );
   });
 
-  it("결과 단계에 저장 경로와 오버레이 저장 버튼이 없다", async () => {
+  it("상세에 저장 경로와 오버레이 저장 버튼이 없다", async () => {
     const fetchMock = stubFetch();
-    render(<AnalyzeView pillar="tokens" />);
-    await analyze();
+    const { rerender } = render(<AnalyzeView pillar={null} />);
+    await runAll();
+    await waitTokensSettled();
+    showDetail(rerender, "tokens");
 
     await screen.findByRole("table", { name: "도구별 감소" });
     expect(screen.queryByLabelText(/저장 경로/)).toBeNull();
@@ -538,17 +271,11 @@ describe("AnalyzeView", () => {
     expect(fetchMock.mock.calls.some(([, init]) => init?.method === "PUT")).toBe(false);
   });
 
-  /** 분석을 끝내고 `MCP 수정하기` 를 눌러 미리보기가 뜰 때까지 기다린다. */
-  async function openPreview(): Promise<void> {
-    await analyze();
-    fireEvent.click(await screen.findByRole("button", { name: "MCP 수정하기" }));
-    await screen.findByRole("list", { name: "변경별 상태" });
-  }
-
   it("MCP 수정하기를 누르면 argv 와 변경 목록을 POST 하고 미리보기를 보인다", async () => {
     const fetchMock = stubFetch({ analyze: { status: 200, body: cleanedResponse() } });
-    render(<AnalyzeView pillar="tokens" />);
-    await openPreview();
+    const { rerender } = render(<AnalyzeView pillar={null} />);
+    await runAll();
+    await openPreview(rerender);
 
     expect(postedBodies(fetchMock, "/api/analyze/source-edits")).toEqual([
       { argv: WEATHER_ARGV, edits: CLEANED_EDITS },
@@ -613,8 +340,9 @@ describe("AnalyzeView", () => {
         },
       ],
     });
-    render(<AnalyzeView pillar="tokens" />);
-    await openPreview();
+    const { rerender } = render(<AnalyzeView pillar={null} />);
+    await runAll();
+    await openPreview(rerender);
 
     fireEvent.click(screen.getByRole("button", { name: "적용" }));
 
@@ -644,8 +372,9 @@ describe("AnalyzeView", () => {
         { status: 200, body: previewResponse({ applied: true, mtimeMs: 20 }) },
       ],
     });
-    render(<AnalyzeView pillar="tokens" />);
-    await openPreview();
+    const { rerender } = render(<AnalyzeView pillar={null} />);
+    await runAll();
+    await openPreview(rerender);
     fireEvent.click(screen.getByRole("button", { name: "적용" }));
 
     fireEvent.click(await screen.findByRole("button", { name: "다시 분석" }));
@@ -662,10 +391,10 @@ describe("AnalyzeView", () => {
     });
     expect(screen.getByRole("button", { name: "MCP 수정하기" })).toBeTruthy();
     expect(screen.queryByRole("status")).toBeNull();
-    expect(currentStep()).toBe("결과");
+    expect(within(costCard()).getByText("24.0% 줄일 수 있음")).toBeTruthy();
   });
 
-  it("다시 분석이 실패하면 결과 단계에 머물고 CLI 문장을 보인다", async () => {
+  it("다시 분석이 실패하면 상세에 머물고 CLI 문장을 보인다", async () => {
     const error = "오류 [MCP_CONNECTION_FAILED]: x\n해결: y";
     stubFetch({
       analyze: [
@@ -677,15 +406,16 @@ describe("AnalyzeView", () => {
         { status: 200, body: previewResponse({ applied: true, mtimeMs: 20 }) },
       ],
     });
-    render(<AnalyzeView pillar="tokens" />);
-    await openPreview();
+    const { rerender } = render(<AnalyzeView pillar={null} />);
+    await runAll();
+    await openPreview(rerender);
     fireEvent.click(screen.getByRole("button", { name: "적용" }));
     fireEvent.click(await screen.findByRole("button", { name: "다시 분석" }));
 
     const alert = await screen.findByRole("alert");
     expect(alert.tagName).toBe("PRE");
     expect(alert.textContent).toBe(error);
-    expect(currentStep()).toBe("결과");
+    expect(within(costCard()).queryByText("실패")).toBeNull();
     // 이전 결과는 그대로다.
     expect(screen.getByRole("table", { name: "도구별 감소" })).toBeTruthy();
   });
@@ -709,8 +439,9 @@ describe("AnalyzeView", () => {
         { status: 200, body: previewResponse({ applied: true, mtimeMs: 40 }) },
       ],
     });
-    render(<AnalyzeView pillar="tokens" />);
-    await openPreview();
+    const { rerender } = render(<AnalyzeView pillar={null} />);
+    await runAll();
+    await openPreview(rerender);
 
     fireEvent.click(screen.getByRole("button", { name: "적용" }));
 
@@ -755,8 +486,9 @@ describe("AnalyzeView", () => {
         ]),
       ],
     });
-    render(<AnalyzeView pillar="tokens" />);
-    await openPreview();
+    const { rerender } = render(<AnalyzeView pillar={null} />);
+    await runAll();
+    await openPreview(rerender);
 
     expect(screen.getByText("적용 가능 0건 / 전체 1건")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "적용" })).toBeNull();
@@ -782,8 +514,9 @@ describe("AnalyzeView", () => {
         ),
       ],
     });
-    render(<AnalyzeView pillar="tokens" />);
-    await openPreview();
+    const { rerender } = render(<AnalyzeView pillar={null} />);
+    await runAll();
+    await openPreview(rerender);
 
     // 건수는 묶음 수가 아니라 변경 수다.
     expect(screen.getByText("적용 가능 0건 / 전체 3건")).toBeTruthy();
@@ -811,8 +544,9 @@ describe("AnalyzeView", () => {
         ]),
       ],
     });
-    render(<AnalyzeView pillar="tokens" />);
-    await openPreview();
+    const { rerender } = render(<AnalyzeView pillar={null} />);
+    await runAll();
+    await openPreview(rerender);
 
     expect(screen.getByText(PROXY_GUIDE).tagName).toBe("P");
     expect(screen.queryByText(REASON_GUIDE)).toBeNull();
@@ -834,8 +568,9 @@ describe("AnalyzeView", () => {
         ]),
       ],
     });
-    render(<AnalyzeView pillar="tokens" />);
-    await openPreview();
+    const { rerender } = render(<AnalyzeView pillar={null} />);
+    await runAll();
+    await openPreview(rerender);
 
     expect(screen.getByText(REASON_GUIDE).tagName).toBe("P");
     expect(screen.queryByText(PROXY_GUIDE)).toBeNull();
@@ -845,8 +580,9 @@ describe("AnalyzeView", () => {
 
   it("취소를 누르면 미리보기가 닫힌다", async () => {
     stubFetch({ analyze: { status: 200, body: cleanedResponse() } });
-    render(<AnalyzeView pillar="tokens" />);
-    await openPreview();
+    const { rerender } = render(<AnalyzeView pillar={null} />);
+    await runAll();
+    await openPreview(rerender);
 
     fireEvent.click(screen.getByRole("button", { name: "취소" }));
 
@@ -860,8 +596,10 @@ describe("AnalyzeView", () => {
     const error =
       "실행 명령에서 프로젝트 안의 서버 소스 파일을 찾지 못했습니다.\n해결: 인자에 스크립트 경로가 있어야 합니다(예: node ./server.mjs).";
     stubFetch({ sourceEdits: [{ status: 400, body: { error } }] });
-    render(<AnalyzeView pillar="tokens" />);
-    await analyze();
+    const { rerender } = render(<AnalyzeView pillar={null} />);
+    await runAll();
+    await waitTokensSettled();
+    showDetail(rerender, "tokens");
 
     fireEvent.click(await screen.findByRole("button", { name: "MCP 수정하기" }));
 
@@ -882,8 +620,9 @@ describe("AnalyzeView", () => {
         { status: 400, body: { error: "적용할 수 있는 변경이 없습니다." } },
       ],
     });
-    render(<AnalyzeView pillar="tokens" />);
-    await openPreview();
+    const { rerender } = render(<AnalyzeView pillar={null} />);
+    await runAll();
+    await openPreview(rerender);
 
     fireEvent.click(screen.getByRole("button", { name: "적용" }));
 
@@ -907,11 +646,240 @@ describe("AnalyzeView", () => {
         },
       },
     });
-    render(<AnalyzeView pillar="tokens" />);
-    await analyze();
+    const { rerender } = render(<AnalyzeView pillar={null} />);
+    await runAll();
+    await waitTokensSettled();
+    showDetail(rerender, "tokens");
 
     expect(await screen.findByText("반영할 변경이 없습니다.")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "MCP 수정하기" })).toBeNull();
     expect(postedBodies(fetchMock, "/api/analyze/source-edits")).toEqual([]);
+  });
+});
+
+describe("AnalyzeView 개요", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    installFakeEventSource();
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  it("처음에는 대상 폼이 펼쳐져 있고 세 카드가 idle 이다", async () => {
+    stubFetch();
+    render(<AnalyzeView pillar={null} />);
+    await screen.findByRole("radio", { name: /^weather/ });
+
+    const tabs = within(screen.getByRole("tablist", { name: "분석 축" })).getAllByRole("tab");
+    expect(tabs).toHaveLength(3);
+    // 보안 옵션도 펼쳐져 있다.
+    expect(screen.getByText("호출 정책")).toBeTruthy();
+    expect(screen.getAllByText("아직 분석하지 않았습니다")).toHaveLength(2);
+    expect(screen.getByText("아직 연결되지 않았습니다")).toBeTruthy();
+    expect(screen.queryByRole("tabpanel")).toBeNull();
+  });
+
+  it("성능 카드는 비활성이고 눌러도 해시가 바뀌지 않는다", async () => {
+    stubFetch();
+    window.location.hash = "#/analyze";
+    render(<AnalyzeView pillar={null} />);
+
+    const card = await screen.findByRole("tab", { name: /^성능 효율성/ });
+    expect(card.getAttribute("aria-disabled")).toBe("true");
+    fireEvent.click(card);
+    // jsdom 의 fragment 이동은 비동기다.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(window.location.hash).toBe("#/analyze");
+  });
+
+  it("첫 후보가 초기 선택이고 한 번에 분석이 두 요청을 같은 틱에 보낸다", async () => {
+    const fetchMock = stubFetch({ analyze: PENDING, start: PENDING });
+    render(<AnalyzeView pillar={null} />);
+    await runAll();
+
+    const posts = fetchMock.mock.calls
+      .filter(([, init]) => init?.method === "POST")
+      .map(([url]) => String(url));
+    // 순서까지(설계 §1.3).
+    expect(posts).toEqual(["/api/analyze/tokens", "/api/analyze/security"]);
+    expect(postedBodies(fetchMock, "/api/analyze/tokens")[0]).toEqual({
+      argv: WEATHER_ARGV,
+      serverId: WEATHER.id,
+    });
+    expect(postedBodies(fetchMock, "/api/analyze/security")[0]).toEqual({
+      argv: WEATHER_ARGV,
+      serverId: WEATHER.id,
+    });
+  });
+
+  it("기준 파일이 .json 이 아니면 버튼이 비활성이고 그 사유를 보인다", async () => {
+    stubFetch();
+    render(<AnalyzeView pillar={null} />);
+    await screen.findByRole("radio", { name: /^weather/ });
+
+    fireEvent.change(screen.getByLabelText("기준 파일 (프로젝트 루트 기준, 선택)"), {
+      target: { value: "b.txt" },
+    });
+
+    expect(screen.getByRole("button", { name: "한 번에 분석" })).toHaveProperty("disabled", true);
+    expect(screen.getByText("기준 파일 경로는 .json 으로 끝나야 합니다.")).toBeTruthy();
+  });
+
+  it("토큰 응답이 오면 비용 카드가 요약을 보이고 보안 카드는 점검 중이다", async () => {
+    stubFetch();
+    render(<AnalyzeView pillar={null} />);
+    await runAll();
+
+    await within(costCard()).findByText("24.0% 줄일 수 있음");
+    expect(within(costCard()).getByText("−24.0%")).toBeTruthy();
+    expect(within(costCard()).getByText(/^분석한 대상: weather · /)).toBeTruthy();
+    // 두 POST 의 resolve 순서는 정해지지 않는다.
+    await within(securityCard()).findByText("점검 중…");
+    expect(within(securityCard()).getByText("진행은 상세에서 봅니다")).toBeTruthy();
+  });
+
+  it("토큰이 실패해도 보안은 점검 중이고 비용 카드는 실패와 첫 줄을 보인다", async () => {
+    stubFetch({ analyze: { status: 400, body: { error: "첫 줄\n둘째 줄" } } });
+    render(<AnalyzeView pillar={null} />);
+    await runAll();
+
+    await within(costCard()).findByText("실패");
+    expect(within(costCard()).getByText("첫 줄")).toBeTruthy();
+    expect(within(costCard()).queryByText(/둘째 줄/)).toBeNull();
+    expect(within(costCard()).getByText("전문은 상세에서 봅니다")).toBeTruthy();
+    await within(securityCard()).findByText("점검 중…");
+  });
+
+  it("하나라도 시작되면 대상 영역이 접히고 대상 바꾸기가 펼친다", async () => {
+    stubFetch();
+    render(<AnalyzeView pillar={null} />);
+    await runAll();
+
+    await within(costCard()).findByText("24.0% 줄일 수 있음");
+    expect(screen.queryByRole("radio", { name: /^weather/ })).toBeNull();
+    // 서버 칸
+    expect(screen.getByText("weather")).toBeTruthy();
+    expect(screen.getByText(/probe auto · 기준 파일 없음/)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "대상 바꾸기" }));
+
+    expect(await screen.findByRole("radio", { name: /^weather/ })).toHaveProperty("checked", true);
+    // 결과는 그대로다.
+    expect(within(costCard()).getByText("24.0% 줄일 수 있음")).toBeTruthy();
+  });
+
+  it("보안이 먼저 시작되면 토큰 응답 전에도 대상 영역이 접힌다", async () => {
+    stubFetch({ analyze: PENDING });
+    render(<AnalyzeView pillar={null} />);
+    await runAll();
+
+    await waitFor(() => expect(screen.queryByRole("radio", { name: /^weather/ })).toBeNull());
+    expect(within(costCard()).getByText("분석 중…")).toBeTruthy();
+  });
+
+  it("하나라도 시작되면 최근 명령을 한 번 저장한다", async () => {
+    stubFetch({ servers: [] });
+    render(<AnalyzeView pillar={null} />);
+    fireEvent.change(await screen.findByLabelText("서버 스크립트"), {
+      target: { value: "server.js" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "한 번에 분석" }));
+
+    await waitTokensSettled();
+    await finishSecurityRun();
+    // rememberCommand 는 state.target(스크립트)만 저장한다(use-analyze-target.ts 142행).
+    expect(readRecentCommands()).toEqual(["server.js"]);
+  });
+
+  it("둘 다 시작에 실패하면 대상 영역은 펼친 채고 두 카드가 실패다", async () => {
+    stubFetch({
+      servers: [],
+      analyze: { status: 400, body: { error: "토큰 실패" } },
+      start: { status: 400, body: { error: "보안 실패\n둘째" } },
+    });
+    render(<AnalyzeView pillar={null} />);
+    fireEvent.change(await screen.findByLabelText("서버 스크립트"), {
+      target: { value: "server.js" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "한 번에 분석" }));
+
+    await within(costCard()).findByText("실패");
+    await within(securityCard()).findByText("실패");
+    expect(within(securityCard()).getByText("보안 실패")).toBeTruthy();
+    // 펼친 채다.
+    expect(screen.getByLabelText("서버 스크립트")).toHaveProperty("value", "server.js");
+    expect(readRecentCommands()).toEqual([]);
+  });
+
+  it("분석이 도는 동안 한 번에 분석은 비활성이고 사유가 분석이 돌고 있습니다 다", async () => {
+    stubFetch({ analyze: PENDING });
+    render(<AnalyzeView pillar={null} />);
+    await runAll();
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "분석 중…" })).toHaveProperty("disabled", true),
+    );
+    expect(screen.getByText("분석이 돌고 있습니다")).toBeTruthy();
+  });
+
+  it("카드를 누르면 해시가 바뀐다", async () => {
+    stubFetch();
+    window.location.hash = "#/analyze";
+    render(<AnalyzeView pillar={null} />);
+    await screen.findByRole("radio", { name: /^weather/ });
+
+    fireEvent.click(costCard());
+
+    // jsdom 의 fragment 이동은 비동기다.
+    await waitFor(() => expect(window.location.hash).toBe("#/analyze/tokens"));
+    // 다음 테스트에 남기지 않는다.
+    window.location.hash = "#/analyze";
+  });
+
+  it("pillar 가 tokens 면 비용 상세가 펼쳐지고 카드는 선택 상태다", async () => {
+    stubFetch();
+    const { rerender } = render(<AnalyzeView pillar={null} />);
+    await screen.findByRole("radio", { name: /^weather/ });
+
+    showDetail(rerender, "tokens");
+
+    const panel = screen.getByRole("tabpanel");
+    expect(within(panel).getByRole("heading", { name: "비용 최적화 상세" })).toBeTruthy();
+    expect(
+      within(panel).getByText(
+        "아직 분석하지 않았습니다. 위에서 서버를 고르고 한 번에 분석을 누르세요.",
+      ),
+    ).toBeTruthy();
+    expect(costCard().getAttribute("aria-selected")).toBe("true");
+    expect(panel.getAttribute("id")).toBe("panel-tokens");
+  });
+
+  it("같은 응답을 다시 받아도 카드 글자가 같다", async () => {
+    // "다시 분석" 버튼은 SourceEditCard 가 적용(applied)을 마친 뒤에만 보인다(SourceEditCard.tsx 194행).
+    // 그래서 진입은 기존 "다시 분석을 누르면 같은 argv 로 …" 테스트와 같다(openPreview → 적용).
+    stubFetch({
+      analyze: [
+        { status: 200, body: cleanedResponse() },
+        { status: 200, body: cleanedResponse() },
+      ],
+      sourceEdits: [
+        { status: 200, body: previewResponse() },
+        { status: 200, body: previewResponse({ applied: true, mtimeMs: 20 }) },
+      ],
+    });
+    const { rerender } = render(<AnalyzeView pillar={null} />);
+    await runAll();
+    await waitTokensSettled();
+    const before = costCard().textContent;
+
+    await openPreview(rerender);
+    fireEvent.click(screen.getByRole("button", { name: "적용" }));
+    fireEvent.click(await screen.findByRole("button", { name: "다시 분석" }));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "다시 분석" })).toBeNull());
+
+    expect(costCard().textContent).toBe(before);
   });
 });

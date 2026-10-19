@@ -1,139 +1,43 @@
 import type { JSX } from "react";
-import { useEffect, useRef, useState } from "react";
-import type {
-  AnalyzeSecurityRequest,
-  AnalyzeSecurityResponse,
-  StartRunResponse,
-} from "../../../src/api-types.js";
-import { apiGet, apiSend } from "../api.js";
-import { ArgChips } from "../components/ArgChips.js";
+import { useState } from "react";
+import type { AnalyzeSecurityRequest } from "../../../src/api-types.js";
 import { Button } from "../components/Button.js";
 import { Card } from "../components/Card.js";
-import { Field, INPUT_CLASS, Toggle } from "../components/Field.js";
-import { LogPanel } from "../components/LogPanel.js";
-import { SegmentedControl } from "../components/SegmentedControl.js";
 import { Stepper } from "../components/Stepper.js";
-import { useRunEvents } from "../run-stream.js";
 import { describeRun } from "../run-target.js";
 import { AnalyzeTargetForm } from "./AnalyzeTargetForm.js";
 import {
   buildSecurityRequest,
   INITIAL_SECURITY_FORM,
-  type ProbeChoice,
   type SecurityForm,
 } from "./build-security-request.js";
+import { ErrorAlert } from "./ErrorAlert.js";
+import { REMOTE_SANDBOX_HINT, SecurityOptions } from "./SecurityOptions.js";
+import { SecurityProgress, SecurityProgressView } from "./SecurityProgress.js";
 import { SecurityResult } from "./SecurityResult.js";
 import type { AnalyzeTarget } from "./use-analyze-target.js";
+import { useSecurityAnalysis } from "./use-security-analysis.js";
+
+/** `PreCheck.tsx`·`precheck.test.tsx` 가 이 경로로 import 한다. T3 이 그쪽 import 를 옮긴 뒤 지운다. */
+export { ErrorAlert, REMOTE_SANDBOX_HINT, SecurityProgress };
 
 /** 단계 이름. 결과는 run 한 번의 산물이라 라우트가 아니라 단계다. */
 const STEPS = ["서버 선택", "점검", "결과"] as const;
-
-const PROBE_OPTIONS: readonly { readonly value: ProbeChoice; readonly label: string }[] = [
-  { value: "auto", label: "자동" },
-  { value: "readonly", label: "읽기 전용만" },
-  { value: "none", label: "호출 안 함" },
-  { value: "all", label: "전부" },
-];
-
-export const REMOTE_SANDBOX_HINT =
-  "원격 서버는 격리할 수 없습니다. 격리는 프로세스를 띄우는 대상에만 적용됩니다.";
-/** 격리 이미지가 띄울 수 있는 명령. `npx -y` 로 받는 서버도 뜬다(PR #498, ADR-0109). */
-const SANDBOX_HINT = "격리 이미지는 node, npx, npm 으로 띄우는 서버만 실행합니다.";
-const COMPARE_HOST_HINT =
-  "서버를 이 머신에서 한 번 더 띄워 tools/list 만 받습니다. 도구는 호출하지 않습니다.";
-const PROGRESS_DESCRIPTION =
-  "격리 실행은 이미지를 처음 만들 때 몇 분이 걸립니다. 도는 동안 대시보드를 끄면 격리 자원이 남습니다(치우는 법: packages/audit/README.md).";
-
-const ALERT_CLASS =
-  "overflow-x-auto whitespace-pre-wrap rounded-lg border border-line bg-surface px-4 py-3 font-mono text-xs";
-
-export function ErrorAlert({ message }: { readonly message: string }): JSX.Element {
-  return (
-    <pre role="alert" className={ALERT_CLASS} style={{ color: "var(--status-failed-fg)" }}>
-      {message}
-    </pre>
-  );
-}
-
-/**
- * 점검 단계의 진행 패널. 도는 점검 하나의 진행이다. run 마다 새로 마운트된다(부모가 `key` 를 run 으로 준다). 그래서 앞 run 의
- * 완료 상태가 새 run 의 첫 렌더에 남지 않고, 완료 보고는 run 마다 정확히 한 번이다.
- *
- * 타이머·폴링이 없다. 완료는 `useRunEvents` 의 status 로만 안다. `failed` 는 "발견이 있다"(종료 코드 2)일
- * 수도 있으므로 여기서는 끝났다는 것만 알리고 실패로 그리지 않는다.
- */
-export function SecurityProgress({
-  runId,
-  onFinished,
-  onMissing,
-}: {
-  readonly runId: string;
-  readonly onFinished: (runId: string) => void;
-  /** 서버가 없다고 확인한 run 이다. 기다려도 이벤트가 오지 않으므로 부모가 폼을 다시 연다. */
-  readonly onMissing: (message: string) => void;
-}): JSX.Element {
-  const run = useRunEvents(runId);
-  const finished = run.status === "done" || run.status === "failed";
-  /** 부모에 알리는 것은 run 당 한 번이다. 재연결로 지난 이벤트가 다시 흘러도 결과를 다시 읽지 않는다. */
-  const reported = useRef(false);
-
-  useEffect(() => {
-    if (!finished || reported.current) {
-      return;
-    }
-    reported.current = true;
-    onFinished(runId);
-  }, [finished, runId, onFinished]);
-
-  // 조회만 실패한 경우(missing 이 아닌 error)는 run 이 살아 있을 수 있으므로 진행을 유지한다.
-  const missingMessage = run.missing ? run.error : null;
-
-  useEffect(() => {
-    if (missingMessage === null || reported.current) {
-      return;
-    }
-    reported.current = true;
-    onMissing(missingMessage);
-  }, [missingMessage, onMissing]);
-
-  return (
-    <>
-      {/* LogPanel 은 부모의 남는 높이를 채우는 모양이다. 높이를 묶어 주지 않으면 본문이 안에서
-          스크롤하지 않고 화면이 로그만큼 길어진다. */}
-      <div className="flex h-[440px] flex-col">
-        <LogPanel title="진행" description={PROGRESS_DESCRIPTION} events={run.events} />
-      </div>
-      {run.error !== null && <ErrorAlert message={run.error} />}
-    </>
-  );
-}
 
 /**
  * 보안 탭(보안 탭 계획서 §5.7). 서버를 고르고 `점검 시작` 을 누르면 `POST /api/analyze/security` 가
  * run 을 시작한다. 진행은 그 run 의 SSE 로 받고, 끝나면 `GET /api/analyze/security/<runId>` 를 한 번
  * 읽는다. 판정은 CLI 와 같은 함수가 한 것이고 이 화면은 받은 글자를 보이기만 한다.
  *
- * 단계는 따로 상태를 두지 않고 구한다. 결과가 있으면 결과, 도는 run 이 있으면 점검, 아니면 서버
- * 선택이다. 시작에 성공하는 순간 점검 단계로 넘어가 폼이 사라지고, 결과 읽기가 실패하거나 run 이
- * 없다고 확인되면 서버 선택 단계로 돌아간다.
+ * 상태 전이와 SSE 구독은 `useSecurityAnalysis` 가 갖고 이 패널은 그리기와 버튼 배치만 한다. 단계는 따로
+ * 상태를 두지 않고 구한다. 결과가 있으면 결과, 도는 run 이 있으면 점검, 아니면 서버 선택이다.
  */
 export function SecurityPanel({ target }: { readonly target: AnalyzeTarget }): JSX.Element {
   const [form, setForm] = useState<SecurityForm>(INITIAL_SECURITY_FORM);
-  const [runId, setRunId] = useState<string | null>(null);
-  /** 시작에 성공한 요청 그대로. 다시 점검이 폼을 다시 읽지 않고 이것을 보낸다. */
-  const [sent, setSent] = useState<AnalyzeSecurityRequest | null>(null);
-  const [result, setResult] = useState<AnalyzeSecurityResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const analysis = useSecurityAnalysis();
+  const { state, sent, runId } = analysis;
+  /** "점검 중…" 글자와 버튼 비활성. 훅 계약에 없어 패널이 `start` 의 앞뒤로 든다. */
   const [starting, setStarting] = useState(false);
-  /**
-   * 지금 기다리는 run. 점검 단계를 떠난 뒤에 늦게 도착한 결과를 버리는 데 쓴다. 렌더에서는 읽지 않는다.
-   */
-  const awaitedRun = useRef<string | null>(null);
-
-  const http = target.state.transport === "http";
-  /** 원격 대상에서는 체크가 남아 있어도 꺼진 것으로 보인다. 요청도 싣지 않는다. */
-  const sandboxOn = form.sandbox && !http;
-  const baselineEmpty = form.baselinePath.trim() === "";
 
   function patchForm(partial: Partial<SecurityForm>): void {
     setForm((previous) => ({ ...previous, ...partial }));
@@ -165,18 +69,8 @@ export function SecurityPanel({ target }: { readonly target: AnalyzeTarget }): J
   /** 점검을 시작한다. 성공 여부를 돌려준다. 실패하면 서버 문장을 그대로 보인다. */
   async function start(request: AnalyzeSecurityRequest): Promise<boolean> {
     setStarting(true);
-    setError(null);
     try {
-      const response = await apiSend<StartRunResponse>("POST", "/api/analyze/security", request);
-      // 다시 점검이면 여기서 앞 결과를 내린다. 시작에 실패하면 앞 결과는 그대로 남는다.
-      setResult(null);
-      setSent(request);
-      setRunId(response.runId);
-      awaitedRun.current = response.runId;
-      return true;
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-      return false;
+      return await analysis.start(request);
     } finally {
       setStarting(false);
     }
@@ -191,34 +85,10 @@ export function SecurityPanel({ target }: { readonly target: AnalyzeTarget }): J
     }
   }
 
-  /** run 이 끝난 뒤 결과를 한 번 읽는다. 리포트 없이 끝난 점검은 400 이고 그 본문이 CLI stderr 원문이다. */
-  async function loadResult(finishedRunId: string): Promise<void> {
-    try {
-      const response = await apiGet<AnalyzeSecurityResponse>(
-        `/api/analyze/security/${encodeURIComponent(finishedRunId)}`,
-      );
-      if (awaitedRun.current === finishedRunId) {
-        setResult(response);
-      }
-    } catch (err) {
-      if (awaitedRun.current !== finishedRunId) {
-        return;
-      }
-      leaveRun();
-      setError(err instanceof Error ? err.message : String(err));
-    }
-  }
+  const step = state.kind === "done" ? 2 : runId !== null ? 1 : 0;
 
-  /** 서버 선택 단계로 돌아간다. 점검 옵션(form)과 접속 상태(target)는 그대로 두므로 고른 것이 남는다. */
-  function leaveRun(): void {
-    awaitedRun.current = null;
-    setRunId(null);
-    setResult(null);
-    setError(null);
-  }
-
-  const step = result !== null && sent !== null ? 2 : runId !== null && sent !== null ? 1 : 0;
-
+  /** 시작·결과 읽기의 실패는 failed 의 문장, 다시 점검의 시작 실패는 done 을 유지한 채 `startError` 다. */
+  const error = state.kind === "failed" ? state.error : analysis.startError;
   const errorAlert = error !== null && <ErrorAlert message={error} />;
 
   return (
@@ -230,74 +100,7 @@ export function SecurityPanel({ target }: { readonly target: AnalyzeTarget }): J
           <Card className="space-y-5 p-6">
             <AnalyzeTargetForm target={target} />
 
-            <div className="space-y-4 border-t border-line pt-5">
-              <h2 className="text-title font-semibold text-ink">점검 옵션</h2>
-
-              <div className="space-y-1">
-                <p className="text-sm font-medium text-ink">호출 정책</p>
-                <SegmentedControl
-                  options={PROBE_OPTIONS}
-                  value={form.probe}
-                  onChange={(probe) => patchForm({ probe })}
-                />
-                <p className="text-xs text-ink-muted">
-                  자동은 격리 안에서는 전부, 격리가 없으면 읽기 전용 도구만 호출합니다.
-                </p>
-              </div>
-
-              <div className="space-y-2">
-                <Field
-                  label="기준 파일 (프로젝트 루트 기준, 선택)"
-                  htmlFor="security-baseline-path"
-                >
-                  <input
-                    id="security-baseline-path"
-                    className={`${INPUT_CLASS} font-mono`}
-                    value={form.baselinePath}
-                    placeholder=".mcpeak/audit-baseline.json"
-                    onChange={(event) => patchForm({ baselinePath: event.target.value })}
-                  />
-                </Field>
-                <Toggle
-                  id="security-update-baseline"
-                  label="기준 파일을 지금 표면으로 갱신"
-                  checked={form.updateBaseline && !baselineEmpty}
-                  disabled={baselineEmpty}
-                  onChange={(updateBaseline) => patchForm({ updateBaseline })}
-                />
-              </div>
-
-              <div className="space-y-3">
-                <Toggle
-                  id="security-sandbox"
-                  label="Docker 격리 안에서 실행 (행위 관측)"
-                  checked={sandboxOn}
-                  disabled={http}
-                  hint={http ? REMOTE_SANDBOX_HINT : sandboxOn ? SANDBOX_HINT : undefined}
-                  onChange={(sandbox) => patchForm({ sandbox })}
-                />
-                {sandboxOn && (
-                  <div className="space-y-3 pl-6">
-                    <Toggle
-                      id="security-compare-host"
-                      label="이 머신에서 받은 도구 표면과 비교 (--compare-host)"
-                      checked={form.compareHost}
-                      hint={COMPARE_HOST_HINT}
-                      onChange={(compareHost) => patchForm({ compareHost })}
-                    />
-                    <ArgChips
-                      idPrefix="security-allow-host"
-                      args={form.allowHosts}
-                      hint="--allow-host"
-                      label="허용 호스트"
-                      placeholder="호스트 이름 하나씩 추가 (예: api.example.com)"
-                      removeLabel={(host) => `허용 호스트 ${host} 제거`}
-                      onChange={(allowHosts) => patchForm({ allowHosts })}
-                    />
-                  </div>
-                )}
-              </div>
-            </div>
+            <SecurityOptions form={form} transport={target.state.transport} onChange={patchForm} />
 
             <div className="space-y-2">
               <Button
@@ -315,11 +118,11 @@ export function SecurityPanel({ target }: { readonly target: AnalyzeTarget }): J
         </>
       )}
 
-      {step === 1 && runId !== null && sent !== null && (
+      {step === 1 && sent !== null && (
         <>
           <div className="space-y-2">
             <div className="flex flex-wrap items-center gap-3">
-              <Button onClick={leaveRun}>← 서버 다시 고르기</Button>
+              <Button onClick={analysis.reset}>← 서버 다시 고르기</Button>
               {/* 취소 API 가 없다. 화면만 돌아가고 서버의 run 은 끝까지 돈다. */}
               <p className="text-xs text-ink-muted">점검은 중단되지 않고 끝까지 돕니다.</p>
             </div>
@@ -327,29 +130,22 @@ export function SecurityPanel({ target }: { readonly target: AnalyzeTarget }): J
               {`점검 대상: ${describeRun("audit", sent.argv).server ?? ""}`}
             </p>
           </div>
-          <SecurityProgress
-            key={runId}
-            runId={runId}
-            onFinished={(finished) => void loadResult(finished)}
-            onMissing={(message) => {
-              leaveRun();
-              setError(message);
-            }}
-          />
+          {/* 구독은 훅이 하나만 연다. 여기서 구독형 SecurityProgress 를 쓰면 스트림이 둘이 된다. */}
+          <SecurityProgressView events={analysis.events} error={analysis.progressError} />
         </>
       )}
 
-      {step === 2 && result !== null && sent !== null && (
+      {step === 2 && state.kind === "done" && sent !== null && (
         <>
           <div className="flex flex-wrap gap-2">
-            <Button onClick={leaveRun}>← 서버 다시 고르기</Button>
+            <Button onClick={analysis.reset}>← 서버 다시 고르기</Button>
             <Button disabled={starting} onClick={() => void start(sent)}>
               다시 점검
             </Button>
           </div>
           {/* 다시 점검의 시작 실패는 결과 위에 보인다. 앞 결과는 그대로 둔다. */}
           {errorAlert}
-          <SecurityResult response={result} request={sent} />
+          <SecurityResult response={state.result} request={sent} />
         </>
       )}
     </div>

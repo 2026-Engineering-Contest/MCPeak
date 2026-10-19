@@ -364,7 +364,7 @@ describe("measure", () => {
       sleep: h.sleep,
     });
     expect(measured.map((m) => m.detail)).toEqual([
-      "요청 완료 전 MCP 서버가 종료되었습니다.: MCP error -32000: Connection closed",
+      "요청 완료 전 MCP 서버가 종료되었습니다: MCP error -32000: Connection closed",
       "요청 완료 전 MCP 서버가 종료되었습니다.",
       "MCP error -32603: boom",
     ]);
@@ -406,7 +406,7 @@ describe("measure", () => {
     });
     expect(measured.map((m) => m.detail)).toEqual([
       "MCP error -32602: Output validation error: bad",
-      "요청 완료 전 MCP 서버가 종료되었습니다.: MCP error -32000: Connection closed",
+      "요청 완료 전 MCP 서버가 종료되었습니다: MCP error -32000: Connection closed",
       "MCP error -32602: MCP error -32603: x",
       "wrapped MCP error 1: MCP error 1: y",
     ]);
@@ -418,8 +418,11 @@ describe("measure", () => {
         "upstream 401: Invalid API key sk-live-ABCDEF1234567890 (Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.SECRETPAYLOAD)",
       ),
       new Error("token eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.c2lnbmF0dXJl expired"),
-      new Error("keys pk-ABCDEFGHIJKLMNOP and rk-0123456789abcdef_- and sk-short ok"),
-      new Error("Bearer\tabc.def rejected"),
+      // 키는 숫자가 섞이고 12자 이상 영숫자 조각이 있어야 가린다(계획 E35).
+      new Error("keys pk-ABCDEFGH12345678 and rk-0123456789abcdef_- and sk-short1 ok"),
+      // 16자 미만 Bearer 값은 숫자가 섞여야 가린다(계획 E35).
+      new Error("Bearer\tabc1.def rejected"),
+      new Error("OpenAI 401: sk-proj-Ab3dEfGhIjKlMnOpQrStUvWx_yz-0123 is invalid"),
     ];
     const h = harness({
       respond: async (_name, _args, index) => {
@@ -437,12 +440,43 @@ describe("measure", () => {
       // Bearer 값은 token68 문자까지라 뒤의 닫는 괄호는 남는다.
       "upstream 401: Invalid API key … (Authorization: Bearer …)",
       "token … expired",
-      // 16자 미만 키는 그대로다(설계 §5.4 의 한계).
-      "keys … and … and sk-short ok",
+      // 12자 이상 영숫자 조각이 없는 키는 그대로다(설계 §5.4 의 한계).
+      "keys … and … and sk-short1 ok",
       "Bearer … rejected",
+      "OpenAI 401: … is invalid",
     ]);
-    for (const secret of ["sk-live", "SECRETPAYLOAD", "eyJ", "ABCDEFGHIJKLMNOP", "abc.def"])
+    for (const secret of [
+      "sk-live",
+      "SECRETPAYLOAD",
+      "eyJ",
+      "ABCDEFGH12345678",
+      "abc1.def",
+      "sk-proj",
+    ])
       expect(measured.every((m) => !(m.detail ?? "").includes(secret))).toBe(true);
+  });
+
+  it("비밀 모양을 닮은 정상 문장은 그대로 둔다", async () => {
+    // 3차 검토 실측(계획 E35): 인증 안내 문장과 제약·인덱스 이름이 가려져 원인을 읽을 수 없었다.
+    const sentences = [
+      "Bearer token required",
+      "Missing Bearer authentication header",
+      "unique constraint pk-orders-customer-region-idx",
+      "index rk-2024-shard-assignment-table not found",
+    ];
+    const h = harness({
+      respond: async (_name, _args, index) => {
+        throw new Error(sentences[index]);
+      },
+    });
+    const measured = await measure({
+      client: h.client,
+      availableTools: new Set(["a"]),
+      plan: plan([perfCall("A", "a")], sentences.length, 0),
+      now: h.now,
+      sleep: h.sleep,
+    });
+    expect(measured.map((m) => m.detail)).toEqual(sentences);
   });
 
   it("비밀 가림은 URL 가림 뒤이고 200자 자르기 앞이다", async () => {

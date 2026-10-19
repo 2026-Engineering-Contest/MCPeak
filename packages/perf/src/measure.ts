@@ -1,4 +1,4 @@
-import type { McpClient, ToolResult } from "@mcpeak/core";
+import { type McpClient, McpClientError, type ToolResult } from "@mcpeak/core";
 import type { CallOutcome, PerfCall, PerfMeasurement, PerfPlan } from "./types.js";
 import { displayUrl } from "./url.js";
 
@@ -7,6 +7,22 @@ const MAX_DETAIL_CHARS = 200;
 
 /** 스킴이 있는 URL. http(s) 밖(postgres·redis 등)도 userinfo 와 쿼리 값을 가려야 한다(계획 E24). */
 const URL_PATTERN = /[A-Za-z][A-Za-z0-9+.-]*:\/\/[^\s"'<>]+/g;
+
+/**
+ * 서버 문장에 흔히 섞이는 비밀 모양(설계 §5.4, 계획 E31). Bearer 값, JWT, sk-·pk-·rk- 키. 이 밖의 서버 문장은
+ * 서버가 쓴 그대로 싣는다(한계).
+ */
+/** 값은 RFC 6750 token68 문자만. 값 뒤에 붙은 닫는 괄호·쉼표 같은 문장 부호는 살린다. */
+const BEARER_PATTERN = /Bearer\s+[A-Za-z0-9._~+/=-]+/g;
+const JWT_PATTERN = /eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)?/g;
+const KEY_PATTERN = /\b(?:sk|pk|rk)-[A-Za-z0-9_-]{16,}/g;
+
+function maskSecrets(text: string): string {
+  return text
+    .replace(BEARER_PATTERN, "Bearer …")
+    .replace(JWT_PATTERN, "…")
+    .replace(KEY_PATTERN, "…");
+}
 
 /** 경쟁의 결과. 호출 결과, 호출 거부, 타임아웃 셋 중 하나다. */
 type RaceResult =
@@ -29,11 +45,36 @@ function innermostError(error: Error): Error {
   return current;
 }
 
-/** §5.4: 원인 문장의 첫 줄, 그 안의 URL 을 displayUrl 로, 200자를 넘으면 잘라 … 를 붙인다. */
+/**
+ * 원인 문장. core 의 McpClientError 가 OPERATION_FAILED 가 아니면(서버 종료, 전송 실패 등) 그 분류가 원인보다
+ * 중요하므로 `{바깥}: {가장 안쪽}` 으로 잇는다. 원인만 실으면 "Connection closed" 만 남아 서버가 죽은 줄 모른다
+ * (계획 E31). OPERATION_FAILED 의 바깥 문장은 모든 거부에 같은 고정 문장이라 가장 안쪽만 쓴다(계획 E24).
+ */
+function causeMessage(error: unknown): string {
+  if (!(error instanceof Error)) return collapsePrefix(String(error));
+  const inner = innermostError(error);
+  if (error instanceof McpClientError && error.code !== "OPERATION_FAILED" && inner !== error) {
+    return `${error.message}: ${collapsePrefix(inner.message)}`;
+  }
+  return collapsePrefix(inner.message);
+}
+
+/**
+ * 맨 앞에서 연달아 반복된 같은 `MCP error <정수>: ` 머리말을 하나로 줄인다. 저수준 Server 가 McpError 를
+ * 던지면 서버 문장에 이미 머리말이 있고 클라이언트 SDK 가 다시 붙인다. 번호가 다르면 다른 오류라 그대로 둔다.
+ */
+function collapsePrefix(message: string): string {
+  return message.replace(/^(MCP error -?\d+: )\1+/, "$1");
+}
+
+/**
+ * §5.4: 원인 문장의 첫 줄, 그 안의 URL 을 displayUrl 로, 흔한 비밀 모양을 … 로, 200자를 넘으면 잘라 … 를
+ * 붙인다. 순서가 계약이다. 자른 뒤에 가리면 잘린 비밀 조각이 패턴에 안 맞아 남는다.
+ */
 function errorDetail(error: unknown): string {
-  const message = error instanceof Error ? innermostError(error).message : String(error);
-  const firstLine = (message.split(/\r?\n/)[0] ?? "").replace(URL_PATTERN, (url) =>
-    displayUrl(url),
+  const message = causeMessage(error);
+  const firstLine = maskSecrets(
+    (message.split(/\r?\n/)[0] ?? "").replace(URL_PATTERN, (url) => displayUrl(url)),
   );
   return firstLine.length > MAX_DETAIL_CHARS
     ? `${firstLine.slice(0, MAX_DETAIL_CHARS)}…`

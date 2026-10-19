@@ -332,6 +332,135 @@ describe("measure", () => {
     expect(measured.every((m) => !(m.detail ?? "").includes("pw"))).toBe(true);
   });
 
+  it("OPERATION_FAILED 밖의 McpClientError 는 분류 문장 뒤에 원인을 잇는다", async () => {
+    // 서버 종료·전송 실패는 분류가 원인보다 중요하다(설계 §5.4, 계획 E31). 원인만 실으면
+    // "Connection closed" 만 남아 서버가 죽은 줄 모른다.
+    const diagnostics = { stderr: "", stderrTruncated: false, exitCode: 1, signal: null };
+    const errors: unknown[] = [
+      new McpClientError({
+        code: "PROCESS_EXITED",
+        phase: "process",
+        diagnostics,
+        cause: new Error("MCP error -32000: Connection closed"),
+      }),
+      new McpClientError({ code: "PROCESS_EXITED", phase: "process", diagnostics }),
+      new McpClientError({
+        code: "OPERATION_FAILED",
+        phase: "callTool",
+        diagnostics,
+        cause: new Error("MCP error -32603: boom"),
+      }),
+    ];
+    const h = harness({
+      respond: async (_name, _args, index) => {
+        throw errors[index];
+      },
+    });
+    const measured = await measure({
+      client: h.client,
+      availableTools: new Set(["a"]),
+      plan: plan([perfCall("A", "a")], errors.length, 0),
+      now: h.now,
+      sleep: h.sleep,
+    });
+    expect(measured.map((m) => m.detail)).toEqual([
+      "요청 완료 전 MCP 서버가 종료되었습니다.: MCP error -32000: Connection closed",
+      "요청 완료 전 MCP 서버가 종료되었습니다.",
+      "MCP error -32603: boom",
+    ]);
+  });
+
+  it("맨 앞에서 연달아 반복된 MCP error 머리말은 하나만 남긴다", async () => {
+    // 저수준 Server 가 McpError 를 던지면 서버 문장에 이미 머리말이 있고 클라이언트 SDK 가 다시 붙인다.
+    const diagnostics = { stderr: "", stderrTruncated: false, exitCode: null, signal: null };
+    const twice = "MCP error -32602: MCP error -32602: Output validation error: bad";
+    const errors: unknown[] = [
+      new McpClientError({
+        code: "OPERATION_FAILED",
+        phase: "callTool",
+        diagnostics,
+        cause: new Error(twice),
+      }),
+      // 접두를 잇는 경우는 안쪽 문장에 먼저 적용한다.
+      new McpClientError({
+        code: "PROCESS_EXITED",
+        phase: "process",
+        diagnostics,
+        cause: new Error("MCP error -32000: MCP error -32000: MCP error -32000: Connection closed"),
+      }),
+      // 번호가 다르거나 맨 앞이 아니면 그대로다.
+      new Error("MCP error -32602: MCP error -32603: x"),
+      new Error("wrapped MCP error 1: MCP error 1: y"),
+    ];
+    const h = harness({
+      respond: async (_name, _args, index) => {
+        throw errors[index];
+      },
+    });
+    const measured = await measure({
+      client: h.client,
+      availableTools: new Set(["a"]),
+      plan: plan([perfCall("A", "a")], errors.length, 0),
+      now: h.now,
+      sleep: h.sleep,
+    });
+    expect(measured.map((m) => m.detail)).toEqual([
+      "MCP error -32602: Output validation error: bad",
+      "요청 완료 전 MCP 서버가 종료되었습니다.: MCP error -32000: Connection closed",
+      "MCP error -32602: MCP error -32603: x",
+      "wrapped MCP error 1: MCP error 1: y",
+    ]);
+  });
+
+  it("흔한 비밀 모양을 가린다", async () => {
+    const errors: unknown[] = [
+      new Error(
+        "upstream 401: Invalid API key sk-live-ABCDEF1234567890 (Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.SECRETPAYLOAD)",
+      ),
+      new Error("token eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.c2lnbmF0dXJl expired"),
+      new Error("keys pk-ABCDEFGHIJKLMNOP and rk-0123456789abcdef_- and sk-short ok"),
+      new Error("Bearer\tabc.def rejected"),
+    ];
+    const h = harness({
+      respond: async (_name, _args, index) => {
+        throw errors[index];
+      },
+    });
+    const measured = await measure({
+      client: h.client,
+      availableTools: new Set(["a"]),
+      plan: plan([perfCall("A", "a")], errors.length, 0),
+      now: h.now,
+      sleep: h.sleep,
+    });
+    expect(measured.map((m) => m.detail)).toEqual([
+      // Bearer 값은 token68 문자까지라 뒤의 닫는 괄호는 남는다.
+      "upstream 401: Invalid API key … (Authorization: Bearer …)",
+      "token … expired",
+      // 16자 미만 키는 그대로다(설계 §5.4 의 한계).
+      "keys … and … and sk-short ok",
+      "Bearer … rejected",
+    ]);
+    for (const secret of ["sk-live", "SECRETPAYLOAD", "eyJ", "ABCDEFGHIJKLMNOP", "abc.def"])
+      expect(measured.every((m) => !(m.detail ?? "").includes(secret))).toBe(true);
+  });
+
+  it("비밀 가림은 URL 가림 뒤이고 200자 자르기 앞이다", async () => {
+    const h = harness({
+      respond: async () => {
+        throw new Error(`GET https://h.example/x?k=v Bearer ${"t".repeat(300)} 끝`);
+      },
+    });
+    const measured = await measure({
+      client: h.client,
+      availableTools: new Set(["a"]),
+      plan: plan([perfCall("A", "a")], 1, 0),
+      now: h.now,
+      sleep: h.sleep,
+    });
+    expect(measured[0]?.detail).toBe("GET h.example/x?k=… Bearer … 끝");
+  });
+
   it("http(s) 밖 스킴의 URL 도 가린다", async () => {
     const h = harness({
       respond: async () => {

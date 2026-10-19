@@ -1,5 +1,5 @@
 import type { Severity } from "@mcpeak/audit";
-import type { JSX } from "react";
+import type { JSX, ReactNode } from "react";
 import { Fragment, useState } from "react";
 import type { AnalyzeSecurityRequest, AnalyzeSecurityResponse } from "../../../src/api-types.js";
 import { Card } from "../components/Card.js";
@@ -179,11 +179,17 @@ export function SecurityResult({
   response,
   request,
   audience = "developer",
+  passedChecks,
 }: {
   readonly response: AnalyzeSecurityResponse;
   readonly request: AnalyzeSecurityRequest;
   /** 주지 않으면 개발자다. 보안 탭은 주지 않는다. */
   readonly audience?: Audience;
+  /**
+   * 발견 목록 바로 다음, 권한 조합 경고·검사하지 않은 것 위에 끼우는 구획(ADR-0117 의 안전 구획).
+   * 개발자 모드 Analyze 만 넘긴다. 사전 점검은 넘기지 않아 그 화면은 바뀌지 않는다.
+   */
+  readonly passedChecks?: ReactNode;
 }): JSX.Element {
   const [grouping, setGrouping] = useState<Grouping>("severity");
   const { report } = response;
@@ -300,6 +306,8 @@ export function SecurityResult({
           ))}
         </>
       )}
+
+      {passedChecks}
 
       {flows.length > 0 && (
         <section className="space-y-2">

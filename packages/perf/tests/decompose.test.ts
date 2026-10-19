@@ -141,6 +141,19 @@ describe("assignRequests", () => {
     expect(callTiming(second, assigned.get(second) ?? []).requests).toBe(0);
   });
 
+  it("엄밀 구간이 여유 창보다 먼저다", () => {
+    const first = call(1000, 1500, 0);
+    const second = call(1500.1, 1900, 1);
+    const entries = [start(1, 1500.5), end(1, 1600)];
+    const assigned = assignRequests(mergeTrace(entries), [first, second]);
+    expect(assigned.get(first)).toEqual([]);
+    expect(assigned.get(second)?.map((r) => r.seq)).toEqual([1]);
+    const firstTiming = callTiming(first, assigned.get(first) ?? []);
+    expect(firstTiming.afterResponse).toBe(0);
+    expect(firstTiming.requests).toBe(0);
+    expect(callTiming(second, assigned.get(second) ?? []).requests).toBe(1);
+  });
+
   it("후보 판정 순서는 measurements 배열 순서다", () => {
     const later = call(1501, 1900, 1);
     const earlier = call(1000, 1500, 0);

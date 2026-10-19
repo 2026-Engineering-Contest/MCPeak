@@ -60,8 +60,10 @@ export function mergeTrace(entries: readonly TraceEntry[]): readonly ObservedReq
 }
 
 /**
- * §5.1 호출 배정. 요청 e 의 후보는 e.t0 ≥ c.t0 − 2 이고 e.t0 ≤ c.t1 + 2 인 호출이고, 그중 measurements 배열에서
- * 가장 앞선 호출 하나에만 배정한다. 후보가 없는 요청은 버린다. 반환 Map 은 measurements 의 모든 원소를
+ * §5.1 호출 배정. 요청 e 는 먼저 c.t0 ≤ e.t0 ≤ c.t1 인 호출(엄밀 구간) 중 measurements 배열에서 가장 앞선
+ * 호출에 배정한다. 그런 호출이 없을 때만 e.t0 ≥ c.t0 − 2 이고 e.t0 ≤ c.t1 + 2 인 호출(여유 창) 중 가장 앞선
+ * 호출 하나에 배정한다. 연속 호출에서 다음 호출의 첫 요청이 앞 호출의 여유 창에 들어 afterResponse 로 밀리는
+ * 것을 막기 위해서다. 둘 다 없는 요청은 버린다. 반환 Map 은 measurements 의 모든 원소를
  * 배열 순서대로 키로 갖고, 각 값은 t0 오름차순, 같으면 seq, 그래도 같으면 pid 오름차순이다.
  */
 export function assignRequests(
@@ -72,9 +74,11 @@ export function assignRequests(
   for (const measurement of measurements) assigned.set(measurement, []);
 
   for (const request of requests) {
-    const owner = measurements.find(
-      (m) => request.t0 >= m.t0 - ASSIGN_SLACK_MS && request.t0 <= m.t1 + ASSIGN_SLACK_MS,
-    );
+    const owner =
+      measurements.find((m) => request.t0 >= m.t0 && request.t0 <= m.t1) ??
+      measurements.find(
+        (m) => request.t0 >= m.t0 - ASSIGN_SLACK_MS && request.t0 <= m.t1 + ASSIGN_SLACK_MS,
+      );
     if (owner !== undefined) assigned.get(owner)?.push(request);
   }
 

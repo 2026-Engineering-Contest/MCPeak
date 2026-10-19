@@ -260,9 +260,11 @@ export function securityResponse(
     rendered: RENDERED,
     views: VIEWS,
     sandboxLine: null,
+    sandboxFallbackReason: null,
     limits: LIMITS,
     exitCode: 2,
     cleanupError: "",
+    passedRules: [],
     ...rest,
   };
 }

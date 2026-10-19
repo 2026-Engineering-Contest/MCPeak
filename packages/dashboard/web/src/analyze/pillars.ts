@@ -4,6 +4,7 @@ import type {
   AnalyzeTokensResponse,
 } from "../../../src/api-types.js";
 import { percent, tokens } from "./format.js";
+import { securityExecution } from "./security-execution.js";
 import { baselineStatus, splitFindings } from "./security-view.js";
 import type { AnalyzePillarId } from "./types.js";
 
@@ -94,14 +95,15 @@ export function securitySummary(
 
   // 판정은 CLI 의 exitCode 를 따른다. 화면이 새 임계값을 두지 않는다.
   // audit.ts: exitCode = high + medium > 0 ? 2 : 0
-  // 라벨은 칩과 모순되면 안 된다. 낮음·정보 칩이 0 인데 "낮음·정보만" 이라 쓰면 사용자가 칩을 못 믿는다.
+  // 라벨은 칩과 모순되면 안 된다. 낮음·정보 칩이 0 인데 "조치 불필요(참고 N건)" 이라 쓰면 사용자가 칩을 못 믿는다.
+  // 낮음·정보만 있을 때의 라벨은 "조치 불필요(참고 N건)" 이고 N 은 낮음 + 정보다(사용자 결정 2026-10-19).
   // exitCode 2 의 식은 audit.ts 의 high + medium > 0 이다. exitCode 1(격리 정리 실패)이어도 counts 는 그대로이므로
-  // 같은 식을 함께 본다. 그렇지 않으면 칩 "심각 1" 옆에 "낮음·정보만" 이 뜬다.
+  // 같은 식을 함께 본다. 그렇지 않으면 칩 "심각 1" 옆에 "조치 불필요" 가 뜬다.
   const verdict: PillarVerdict =
     report.exitCode === 2 || high + medium > 0
       ? { label: "조치 필요", tone: "failed" }
       : defects > 0
-        ? { label: "낮음·정보만", tone: "running" }
+        ? { label: `조치 불필요(참고 ${low + info}건)`, tone: "running" }
         : flows > 0
           ? { label: "흐름 경고만", tone: "waiting" }
           : { label: "발견 없음", tone: "done" };
@@ -120,6 +122,8 @@ export function securitySummary(
     { label: "낮음", count: low, tone: "running" },
     { label: "정보", count: info, tone: "info" },
     { label: "흐름 경고", count: flows, tone: "waiting" },
+    // 발견 없이 통과한 규칙 수(ADR-0117). 서버가 센 목록의 길이다. 판정에는 쓰지 않는다.
+    { label: "안전", count: response.passedRules.length, tone: "done" },
   ]; // 0 이어도 빼지 않는다. 자리가 흔들리면 읽기 어렵다
 
   return {
@@ -128,9 +132,11 @@ export function securitySummary(
     headlineNote: `건 발견 · 도구 ${report.server.toolCount}개 점검`,
     bar,
     chips,
-    foot:
+    // 실행 방식이 앞이다. 격리 여부에 따라 관측 범위가 달라 같은 서버의 결과도 다를 수 있다(ADR-0117).
+    foot: `${securityExecution(response)} · ${
       baselineStatus(request, response) ??
-      `도구 ${report.probedTools.length}개 호출 (probe ${report.probe})`,
+      `도구 ${report.probedTools.length}개 호출 (probe ${report.probe})`
+    }`,
   };
 }
 

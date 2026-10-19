@@ -6,9 +6,9 @@ import type {
   StartRunResponse,
 } from "../../../src/api-types.js";
 import { ErrorAlert } from "../analyze/ErrorAlert.js";
-import { REMOTE_SANDBOX_HINT } from "../analyze/SecurityOptions.js";
 import { SecurityProgress } from "../analyze/SecurityProgress.js";
 import { SecurityResult } from "../analyze/SecurityResult.js";
+import { REMOTE_SANDBOX_HINT } from "../analyze/sandbox-hint.js";
 import { apiGet, apiSend } from "../api.js";
 import { Button } from "../components/Button.js";
 import { Card } from "../components/Card.js";

@@ -1272,6 +1272,7 @@ const SECURITY_BODY = {
   limits: ["a", "b"],
   exitCode: 2,
   cleanupError: "",
+  passedRules: [],
 } as unknown as AnalyzeSecurityResponse;
 
 const securityDone = (): Promise<SecurityResult> =>
@@ -1294,6 +1295,27 @@ describe("POST /api/analyze/security", () => {
     expect(analyzeCalls.map((call) => call.argv)).toEqual([SECURITY_ARGV]);
     expect(analyzeCalls[0]?.context).toEqual({ root: server.root });
     expect(analyzeCalls[0]?.overrides).toBeUndefined();
+  });
+
+  it("prepare 가 fallbackArgv 를 내면 analyze 의 context 로 넘긴다", async () => {
+    const fallbackArgv = ["--json", "--command", "node"];
+    const { security, analyzeCalls } = fakeSecurity(securityDone, {
+      ok: true,
+      argv: SECURITY_ARGV,
+      fallbackArgv,
+    });
+    server = await startTestServer(undefined, undefined, security);
+    const request = {
+      argv: ["--command", "node"],
+      sandbox: { compareHost: false, allowHosts: [] },
+      sandboxOptional: true,
+    };
+
+    const response = await postSecurity(server, JSON.stringify(request));
+    expect(response.status).toBe(200);
+    await tick();
+
+    expect(analyzeCalls[0]?.context).toEqual({ root: server.root, fallbackArgv });
   });
 
   it("prepare 가 거절하면 400 과 그 문장이고 run 을 시작하지 않는다", async () => {
@@ -1338,6 +1360,7 @@ describe("POST /api/analyze/security", () => {
       { argv: [], baselinePath: 1 },
       { argv: [], sandbox: { compareHost: true, allowHosts: [1] } },
       { argv: [], sandbox: null },
+      { argv: [], sandboxOptional: "yes" },
     ]) {
       const response = await postSecurity(server, JSON.stringify(body));
       expect(response.status).toBe(400);

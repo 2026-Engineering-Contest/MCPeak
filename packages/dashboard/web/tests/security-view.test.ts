@@ -103,9 +103,11 @@ function sample(
     rendered: "RENDERED\n",
     views,
     sandboxLine: null,
+    sandboxFallbackReason: null,
     limits: [],
     exitCode: 2,
     cleanupError: "",
+    passedRules: [],
   };
 }
 

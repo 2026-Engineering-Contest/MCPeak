@@ -34,7 +34,7 @@ import { themeStorage } from "./theme.js";
  * | `#/generate` | GenerateWizard |
  * | `#/mock` | MockBuilder (목 만들기) |
  * | `#/repair/:id` | RepairReview |
- * | `#/analyze`, `#/analyze/:pillar` | AnalyzeView (개요. `tokens`·`security` 는 그 축의 상세를 함께 연다) |
+ * | `#/analyze`, `#/analyze/:pillar` | AnalyzeView (`tokens`·`security` 는 결과 단계에서 그 축의 상세를 함께 연다. 서버 선택 단계에서는 무시한다, ADR-0117) |
  * | `#/settings` | SettingsView (준비 중) |
  * | `#/user/check` (사용자 모드의 기본 리다이렉트 대상) | PreCheck (사전 점검) |
  * | `#/welcome` | Welcome (모드 선택. 저장된 모드가 없을 때의 기본 리다이렉트 대상) |

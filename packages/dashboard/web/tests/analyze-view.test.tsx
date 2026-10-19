@@ -58,7 +58,7 @@ describe("AnalyzeView 비용 상세", () => {
     render(<AnalyzeView pillar={null} />);
 
     await screen.findByText(/bin 을 찾지 못했습니다/);
-    expect(screen.getByRole("button", { name: "한 번에 분석" })).toHaveProperty("disabled", true);
+    expect(screen.getByRole("button", { name: "분석하기" })).toHaveProperty("disabled", true);
     expect(screen.getByText("서버를 고르거나 실행 명령을 입력하세요.")).toBeTruthy();
   });
 
@@ -668,17 +668,46 @@ describe("AnalyzeView 개요", () => {
     vi.unstubAllGlobals();
   });
 
-  it("처음에는 대상 폼이 펼쳐져 있고 세 카드가 idle 이다", async () => {
+  it("처음에는 서버 선택과 분석하기만 있고 카드·상세가 없다", async () => {
     stubFetch();
     render(<AnalyzeView pillar={null} />);
     await screen.findByRole("radio", { name: /^weather/ });
 
-    const tabs = within(screen.getByRole("tablist", { name: "분석 축" })).getAllByRole("tab");
+    expect(
+      screen.getByText(
+        "서버에 한 번 붙어 도구 정의를 읽고, 세 축으로 나눠 봅니다. 축을 고르면 상세가 아래에 펼쳐집니다.",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: "분석하기" })).toHaveProperty("disabled", false);
+    // 카드 줄도, 상세도, 빈 안내 상자도 없다.
+    expect(screen.queryByRole("tablist")).toBeNull();
+    expect(screen.queryAllByRole("tab")).toHaveLength(0);
+    expect(screen.queryByRole("tabpanel")).toBeNull();
+    expect(screen.queryByText(/아직 분석하지 않았습니다/)).toBeNull();
+    expect(screen.queryByText("아직 연결되지 않았습니다")).toBeNull();
+    expect(screen.queryByRole("heading", { name: /상세$/ })).toBeNull();
+    // 접힌 바도 아니다.
+    expect(screen.queryByRole("button", { name: "대상 바꾸기" })).toBeNull();
+  });
+
+  it("분석하기를 누르면 카드 셋이 나타나고 대상 영역이 접힌다", async () => {
+    stubFetch();
+    render(<AnalyzeView pillar={null} />);
+    await runAll();
+
+    const tabs = within(await screen.findByRole("tablist", { name: "분석 축" })).getAllByRole(
+      "tab",
+    );
     expect(tabs).toHaveLength(3);
-    // 보안 옵션도 펼쳐져 있다.
-    expect(screen.getByText("호출 정책")).toBeTruthy();
-    expect(screen.getAllByText("아직 분석하지 않았습니다")).toHaveLength(2);
+    expect(tabs.map((tab) => tab.getAttribute("id"))).toEqual([
+      "pillar-security",
+      "pillar-tokens",
+      "pillar-performance",
+    ]);
+    await waitFor(() => expect(screen.queryByRole("radio", { name: /^weather/ })).toBeNull());
+    expect(screen.getByRole("button", { name: "대상 바꾸기" })).toBeTruthy();
     expect(screen.getByText("아직 연결되지 않았습니다")).toBeTruthy();
+    // 카드를 누르기 전에는 상세가 없다.
     expect(screen.queryByRole("tabpanel")).toBeNull();
   });
 
@@ -686,6 +715,7 @@ describe("AnalyzeView 개요", () => {
     stubFetch();
     window.location.hash = "#/analyze";
     render(<AnalyzeView pillar={null} />);
+    await runAll();
 
     const card = await screen.findByRole("tab", { name: /^성능 효율성/ });
     expect(card.getAttribute("aria-disabled")).toBe("true");
@@ -695,7 +725,7 @@ describe("AnalyzeView 개요", () => {
     expect(window.location.hash).toBe("#/analyze");
   });
 
-  it("첫 후보가 초기 선택이고 한 번에 분석이 두 요청을 같은 틱에 보낸다", async () => {
+  it("첫 후보가 초기 선택이고 분석하기가 두 요청을 같은 틱에 보낸다", async () => {
     const fetchMock = stubFetch({ analyze: PENDING, start: PENDING });
     render(<AnalyzeView pillar={null} />);
     await runAll();
@@ -712,20 +742,9 @@ describe("AnalyzeView 개요", () => {
     expect(postedBodies(fetchMock, "/api/analyze/security")[0]).toEqual({
       argv: WEATHER_ARGV,
       serverId: WEATHER.id,
+      sandbox: { compareHost: false, allowHosts: [] },
+      sandboxOptional: true,
     });
-  });
-
-  it("기준 파일이 .json 이 아니면 버튼이 비활성이고 그 사유를 보인다", async () => {
-    stubFetch();
-    render(<AnalyzeView pillar={null} />);
-    await screen.findByRole("radio", { name: /^weather/ });
-
-    fireEvent.change(screen.getByLabelText("기준 파일 (프로젝트 루트 기준, 선택)"), {
-      target: { value: "b.txt" },
-    });
-
-    expect(screen.getByRole("button", { name: "한 번에 분석" })).toHaveProperty("disabled", true);
-    expect(screen.getByText("기준 파일 경로는 .json 으로 끝나야 합니다.")).toBeTruthy();
   });
 
   it("토큰 응답이 오면 비용 카드가 요약을 보이고 보안 카드는 점검 중이다", async () => {
@@ -762,12 +781,12 @@ describe("AnalyzeView 개요", () => {
     expect(screen.queryByRole("radio", { name: /^weather/ })).toBeNull();
     // 서버 칸
     expect(screen.getByText("weather")).toBeTruthy();
-    expect(screen.getByText(/probe auto · 기준 파일 없음/)).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "대상 바꾸기" }));
 
     expect(await screen.findByRole("radio", { name: /^weather/ })).toHaveProperty("checked", true);
-    // 결과는 그대로다.
+    // 결과 단계(카드)는 그대로다.
+    expect(screen.getAllByRole("tab")).toHaveLength(3);
     expect(within(costCard()).getByText("24.0% 줄일 수 있음")).toBeTruthy();
   });
 
@@ -786,7 +805,7 @@ describe("AnalyzeView 개요", () => {
     fireEvent.change(await screen.findByLabelText("서버 스크립트"), {
       target: { value: "server.js" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "한 번에 분석" }));
+    fireEvent.click(screen.getByRole("button", { name: "분석하기" }));
 
     await waitTokensSettled();
     await finishSecurityRun();
@@ -794,7 +813,7 @@ describe("AnalyzeView 개요", () => {
     expect(readRecentCommands()).toEqual(["server.js"]);
   });
 
-  it("둘 다 시작에 실패하면 대상 영역은 펼친 채고 두 카드가 실패다", async () => {
+  it("둘 다 시작에 실패해도 카드 단계로 가서 두 카드가 실패다", async () => {
     stubFetch({
       servers: [],
       analyze: { status: 400, body: { error: "토큰 실패" } },
@@ -804,24 +823,29 @@ describe("AnalyzeView 개요", () => {
     fireEvent.change(await screen.findByLabelText("서버 스크립트"), {
       target: { value: "server.js" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "한 번에 분석" }));
+    fireEvent.click(screen.getByRole("button", { name: "분석하기" }));
 
     await within(costCard()).findByText("실패");
     await within(securityCard()).findByText("실패");
     expect(within(securityCard()).getByText("보안 실패")).toBeTruthy();
-    // 펼친 채다.
+    expect(screen.getAllByRole("tab")).toHaveLength(3);
+    // 시작에 성공한 것이 없으니 대상 영역은 펼친 채다.
     expect(screen.getByLabelText("서버 스크립트")).toHaveProperty("value", "server.js");
     expect(readRecentCommands()).toEqual([]);
   });
 
-  it("분석이 도는 동안 한 번에 분석은 비활성이고 사유가 분석이 돌고 있습니다 다", async () => {
+  it("접힌 바에는 분석하기가 없고, 펼치면 도는 동안 비활성이며 사유가 분석이 돌고 있습니다 다", async () => {
     stubFetch({ analyze: PENDING });
     render(<AnalyzeView pillar={null} />);
     await runAll();
 
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "분석 중…" })).toHaveProperty("disabled", true),
-    );
+    // 보안 시작이 성공하면 접힌다. 접힌 바에는 대상 바꾸기만 있다.
+    await screen.findByRole("button", { name: "대상 바꾸기" });
+    expect(screen.queryByRole("button", { name: "분석하기" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "분석 중…" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "대상 바꾸기" }));
+    expect(screen.getByRole("button", { name: "분석 중…" })).toHaveProperty("disabled", true);
     expect(screen.getByText("분석이 돌고 있습니다")).toBeTruthy();
   });
 
@@ -829,7 +853,8 @@ describe("AnalyzeView 개요", () => {
     stubFetch();
     window.location.hash = "#/analyze";
     render(<AnalyzeView pillar={null} />);
-    await screen.findByRole("radio", { name: /^weather/ });
+    await runAll();
+    await waitTokensSettled();
 
     fireEvent.click(costCard());
 
@@ -839,22 +864,44 @@ describe("AnalyzeView 개요", () => {
     window.location.hash = "#/analyze";
   });
 
-  it("pillar 가 tokens 면 비용 상세가 펼쳐지고 카드는 선택 상태다", async () => {
+  it("pillar 가 tokens 면 비용 상세가 카드 아래 펼쳐지고 카드는 선택 상태다", async () => {
     stubFetch();
     const { rerender } = render(<AnalyzeView pillar={null} />);
-    await screen.findByRole("radio", { name: /^weather/ });
+    await runAll();
+    await waitTokensSettled();
 
     showDetail(rerender, "tokens");
 
     const panel = screen.getByRole("tabpanel");
     expect(within(panel).getByRole("heading", { name: "비용 최적화 상세" })).toBeTruthy();
-    expect(
-      within(panel).getByText(
-        "아직 분석하지 않았습니다. 위에서 서버를 고르고 한 번에 분석을 누르세요.",
-      ),
-    ).toBeTruthy();
+    expect(within(panel).getByRole("table", { name: "도구별 감소" })).toBeTruthy();
     expect(costCard().getAttribute("aria-selected")).toBe("true");
+    expect(securityCard().getAttribute("aria-selected")).toBe("false");
     expect(panel.getAttribute("id")).toBe("panel-tokens");
+    // 카드 줄 뒤에 온다.
+    const tablist = screen.getByRole("tablist", { name: "분석 축" });
+    expect(tablist.compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+  });
+
+  it("1단계에서 #/analyze/security 여도 상세가 없다", async () => {
+    stubFetch();
+    render(<AnalyzeView pillar="security" />);
+    await screen.findByRole("radio", { name: /^weather/ });
+
+    expect(screen.queryByRole("tabpanel")).toBeNull();
+    expect(screen.queryByRole("heading", { name: "보안 상세" })).toBeNull();
+    expect(screen.queryAllByRole("tab")).toHaveLength(0);
+    expect(screen.getByRole("button", { name: "분석하기" })).toBeTruthy();
+  });
+
+  it("1단계에서 pillar 가 있던 채로 분석하기를 누르면 그 상세가 펼쳐진다", async () => {
+    stubFetch();
+    render(<AnalyzeView pillar="security" />);
+    await runAll();
+
+    const panel = await screen.findByRole("tabpanel");
+    expect(panel.getAttribute("id")).toBe("panel-security");
+    expect(within(panel).getByRole("heading", { name: "보안 상세" })).toBeTruthy();
   });
 
   it("같은 응답을 다시 받아도 카드 글자가 같다", async () => {

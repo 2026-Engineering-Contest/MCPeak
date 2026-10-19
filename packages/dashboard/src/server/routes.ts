@@ -488,6 +488,8 @@ function isAnalyzeSecurityRequest(value: unknown): value is AnalyzeSecurityReque
   if (record.baselinePath !== undefined && typeof record.baselinePath !== "string") return false;
   if (record.updateBaseline !== undefined && typeof record.updateBaseline !== "boolean")
     return false;
+  if (record.sandboxOptional !== undefined && typeof record.sandboxOptional !== "boolean")
+    return false;
   if (record.sandbox === undefined) return true;
   if (typeof record.sandbox !== "object" || record.sandbox === null) return false;
   const { compareHost, allowHosts } = record.sandbox as Record<string, unknown>;
@@ -536,7 +538,9 @@ async function handleAnalyzeSecurity(
     const result = await analyze(
       prepared.argv,
       io,
-      { root },
+      prepared.fallbackArgv === undefined
+        ? { root }
+        : { root, fallbackArgv: prepared.fallbackArgv },
       candidateEnv === undefined ? undefined : { candidateEnv },
     );
     slot.outcome = result.outcome;

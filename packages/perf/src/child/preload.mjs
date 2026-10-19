@@ -297,10 +297,20 @@ function observeFetchResponse(response, { endBase, tHeaders, now, write, trailer
 }
 
 /**
- * 프리로드가 로드될 때의 `Response.prototype.clone`. 서버가 나중에 프로토타입을 바꿔도 이것을 쓴다. 모듈 최상위라
- * install 의 try 밖이므로, Response 가 없는 런타임에서도 던지지 않게 읽는다(감싸기는 Response 가 있을 때만 일어난다).
+ * 프리로드가 로드될 때의 `Response.prototype.clone`. 호출 시점의 프로토타입 값이 함수가 아닐 때만 쓰는 대비값이다.
+ * 모듈 최상위라 install 의 try 밖이므로, Response 가 없는 런타임에서도 던지지 않게 읽는다(감싸기는 Response 가
+ * 있을 때만 일어난다).
  */
-const responseClone = globalThis.Response?.prototype?.clone;
+const loadTimeClone = globalThis.Response?.prototype?.clone;
+
+/**
+ * §4.3 fetch 3항, 계획 E36. 부를 때마다 지금의 `Response.prototype.clone` 을 읽는다. 프리로드 뒤에 그것을 덮는
+ * 라이브러리(msw 류)가 있으면 원본 응답에서처럼 그 clone 이 불려야 한다.
+ */
+function currentClone() {
+  const now = globalThis.Response?.prototype?.clone;
+  return typeof now === "function" ? now : loadTimeClone;
+}
 
 /**
  * §4.3 fetch 3항 끝 문장(계획 E30). 감싼 응답 target 이 원본 source 와 같게 보이게 한다. 새 Response 는
@@ -316,11 +326,18 @@ function dressAs(target, source) {
     type: hidden(source.type),
     // 원본 응답의 Headers 는 불변(immutable guard)이라 서버가 고치려 하면 원본처럼 TypeError 가 난다.
     headers: hidden(source.headers),
-    // 원래 clone 의 의미(두 갈래 모두 읽힘, bodyUsed 면 TypeError)는 원래 메서드가 지킨다. 이 호출은 서버가
-    // clone() 을 부를 때만 일어나며, 관측이 스스로 본문을 복제하는 일은 없다.
+    // 원래 clone 의 의미(두 갈래 모두 읽힘, bodyUsed 면 TypeError)는 호출 시점의 프로토타입 clone 이 지킨다.
+    // 그 clone 이 던지면 서버에게 그대로 간다. 이 호출은 서버가 clone() 을 부를 때만 일어나며, 관측이 스스로
+    // 본문을 복제하는 일은 없다.
     clone: hidden(function clone() {
-      const copy = Reflect.apply(responseClone, this, []);
-      dressAs(copy, source);
+      const copy = Reflect.apply(currentClone(), this, []);
+      if (copy !== null && typeof copy === "object") {
+        try {
+          dressAs(copy, source);
+        } catch {
+          // 덮은 clone 이 고칠 수 없는 객체를 돌려줬다. 그 값을 그대로 서버에게 준다.
+        }
+      }
       return copy;
     }),
   });

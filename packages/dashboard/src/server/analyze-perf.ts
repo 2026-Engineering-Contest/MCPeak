@@ -156,8 +156,20 @@ export async function analyzePerf(
       `오류 [ANALYZE_FAILED]: 측정 결과를 읽지 못했습니다: ${firstLine(error)}\n해결: 같은 서버에 mcpeak perf --json 을 터미널에서 직접 돌려 출력이 JSON 인지 확인하세요.`,
     );
   }
+  const rendered = perf.renderReport(report);
+  // 화면이 CLI 원문 대신 구획으로 그리므로 문장 줄은 여기서 떼어 보낸다(analyze-security.ts 의 limits 와 같은 식).
+  const lines = rendered.replace(/\n$/, "").split("\n");
   return {
     exitCode,
-    outcome: { ok: true, body: { report, rendered: perf.renderReport(report), exitCode } },
+    outcome: {
+      ok: true,
+      body: {
+        report,
+        rendered,
+        exitCode,
+        abortedLine: lines.find((line) => line.startsWith("측정 중단: ")) ?? null,
+        limits: lines.slice(lines.lastIndexOf("") + 1),
+      },
+    },
   };
 }

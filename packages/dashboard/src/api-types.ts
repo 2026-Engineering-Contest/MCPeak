@@ -386,4 +386,8 @@ export interface AnalyzePerfResponse {
   readonly rendered: string;
   /** CLI 종료 코드. 0 은 정상, 2 는 기준선 회귀다. */
   readonly exitCode: number;
+  /** `rendered` 에서 "측정 중단: " 으로 시작하는 줄. 없으면 null. CLI 문장 그대로다. */
+  readonly abortedLine: string | null;
+  /** `rendered` 의 마지막 빈 줄 뒤의 줄들(이 측정의 한계). 보안의 limits 와 같은 규칙. */
+  readonly limits: readonly string[];
 }

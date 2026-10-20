@@ -197,26 +197,24 @@ export function performanceSummary(response: AnalyzePerfResponse): PillarSummary
   );
   const saving = savings.reduce((sum, item) => sum + item.ms, 0);
   const after = Math.max(0, current - saving);
-  const failedCalls = report.cases.reduce(
-    (sum, entry) => sum + entry.outcomes.threw + entry.outcomes.isError,
-    0,
-  );
   const findings = report.findings.length;
+  // 측정은 ok 반복이 하나라도 있는 케이스(n > 0), 미측정은 하나도 없는 케이스다. 미측정은 판정을 바꾸지 않고
+  // 칩으로만 센다. 실패 반복을 판정 글자로 세면 서버 장애처럼 읽힌다(사용자 확인 루프 수정 3).
+  const measuredCases = report.cases.filter((entry) => entry.n > 0).length;
+  const unmeasuredCases = report.cases.length - measuredCases;
 
   const verdict: PillarVerdict =
     report.settings.observation === "none"
       ? { label: "관측 안 함", tone: "info" }
       : report.aborted !== null
         ? { label: "측정 중단", tone: "failed" }
-        : failedCalls > 0
-          ? { label: `호출 실패 ${failedCalls}건`, tone: "failed" }
-          : report.baseline !== undefined && report.exitCode === 2
-            ? { label: "회귀", tone: "failed" }
-            : findings > 0
-              ? { label: `진단 ${findings}건`, tone: "waiting" }
-              : report.baseline === undefined
-                ? { label: "진단 0건(기준선 없음)", tone: "done" }
-                : { label: "진단 0건", tone: "done" };
+        : report.baseline !== undefined && report.exitCode === 2
+          ? { label: "회귀", tone: "failed" }
+          : findings > 0
+            ? { label: `진단 ${findings}건`, tone: "waiting" }
+            : report.baseline === undefined
+              ? { label: "진단 0건(기준선 없음)", tone: "done" }
+              : { label: "진단 0건", tone: "done" };
 
   // 단축 1위. 같으면 리포트 순서가 앞인 것(정렬이 안정적이고 리포트 순서가 §6.3 으로 고정돼 있다).
   const top = [...savings].sort((x, y) => y.ms - x.ms)[0];
@@ -228,7 +226,8 @@ export function performanceSummary(response: AnalyzePerfResponse): PillarSummary
     baseLabel: "현재",
     bar: current === 0 ? [] : [{ ratio: after / current, tone: "accent", label: "개선 후" }],
     chips: [
-      { label: "도구", count: report.server.toolCount, tone: "info" },
+      { label: "측정", count: measuredCases, tone: "done" },
+      { label: "미측정", count: unmeasuredCases, tone: "info" },
       { label: "진단", count: findings, tone: "info" },
     ],
     foot:

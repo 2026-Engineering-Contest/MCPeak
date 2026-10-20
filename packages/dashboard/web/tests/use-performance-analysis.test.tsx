@@ -35,6 +35,8 @@ const RESPONSE: AnalyzePerfResponse = {
   },
   rendered: "",
   exitCode: 0,
+  abortedLine: null,
+  limits: [],
 };
 
 describe("usePerformanceAnalysis", () => {

@@ -79,3 +79,156 @@
 
 - 화면은 jsdom 행동 테스트로만 확인했다. 실제 브라우저 확인(§6 자체 점검·사용자 확인 루프)은 하지 않았다.
 - done 상태(결과 `rendered`, 카드 요약)를 끝까지 그리는 행동 테스트는 §5.3 표에 없어 두지 않았다. 요약 함수 자체는 T3 테스트가 단언한다.
+
+## 수정 1: 명세 목록을 고른 서버 기준으로 거른다 (사용자 확인 루프)
+
+요구: 성능 상세의 명세 목록이 저장소 전체를 보여 길다. 홈 마법사와 같은 규칙으로 고른 서버에 딸린 명세만 위에
+보이고, 딸린 명세가 없으면 생성 화면으로 안내한다.
+
+바꾼 파일
+
+- `packages/dashboard/web/src/analyze/PerformanceResult.tsx`: `home/match-suites.ts` 의 `matchSuites` 를 그대로
+  import 해 목록을 matched·others 로 가른다. matched 는 펴고, others 는 "다른 명세 보기 (N)" 버튼으로 편다(홈의
+  「다른 스위트 보기」 와 같은 모양). matched 가 비면 명세 자리에 "이 서버용 테스트 명세가 없습니다. 성능 측정은
+  명세의 케이스를 그대로 호출하므로 먼저 명세를 만드세요." 와 링크 `#/generate` "명세 만들기" 를 보인다. 저장소에
+  명세가 하나도 없을 때 쓰던 홈의 빈 목록 문장 두 개는 이 안내로 바꿨다.
+- `packages/dashboard/web/src/screens/AnalyzeView.tsx`: 더 쓰지 않는 `root` prop 을 넘기지 않는다(한 줄 삭제).
+- `packages/dashboard/web/tests/performance-detail.test.tsx`: 테스트 둘 추가("고른 서버에 딸린 명세만 먼저 보인다",
+  "딸린 명세가 없으면 생성 화면 링크가 보인다"). 기존 테스트 정리 둘. 미승인 명세 픽스처 경로를
+  `examples/weather-server/draft.suite.json` → `examples/weather-server/server.suite.draft.json` 으로 바꿨다(앞의 것은
+  weather 서버에 딸린 이름이 아니라 접힌 쪽으로 간다). "원격 대상이면 …" 테스트는 HTTP 대상에 딸린 명세가 없으므로
+  "다른 명세 보기" 를 편 뒤 명세를 고른다.
+
+검증
+
+| 명령 | 결과 |
+|---|---|
+| `pnpm vitest run --project web .../performance-detail.test.tsx .../analyze-view.test.tsx .../app.test.ts` | 3 파일, 57 테스트 통과 |
+| `pnpm build --force` | `Tasks: 10 successful`, `Cached: 0 cached, 10 total` |
+| `pnpm typecheck --force` | `Tasks: 10 successful`, `Cached: 0 cached, 10 total` |
+| `pnpm lint` | `Checked 784 files`, 오류 없음 |
+
+`pnpm test` 전체는 오케스트레이터가 다시 돈다고 해서 돌리지 않았다.
+
+임의 판단
+
+1. `matchSuites` 에 넘기는 args 는 측정 대상 argv 의 `--arg` 값들이다(`buildAnalyzeArgv` 가 직접 입력이면 스크립트
+   경로를 선두 `--arg` 로 싣으므로 같은 규칙이 된다). HTTP 대상은 빈 배열이라 matched 가 늘 비고 안내가 보인다.
+   새 화면 상태를 만들지 않으려고 `AnalyzeView` 에서 args 를 따로 넘기지 않고 이미 받는 argv 에서 구했다.
+2. matched 가 정확히 1개면 목록을 처음 받은 뒤 한 번만 그것을 미리 고른다. 이미 고른 명세가 있으면 건드리지 않고,
+   사용자가 바꾼 선택을 되돌리지 않는다.
+3. 고른 명세가 접힌 쪽(others)에 있으면 "다른 명세 보기" 를 펴 둔다. 고른 것이 보이지 않으면 무엇을 측정하는지
+   알 수 없기 때문이다.
+4. 홈과 달리 matched 가 비어도 others 를 자동으로 펴지 않는다. 요구가 "펼칠 수는 있다" 였고, 안내와 링크가 먼저
+   보이게 하려는 것이다.
+5. 버튼 글자는 홈의 「다른 스위트 보기」 를 따라 개수를 붙였다("다른 명세 보기 (N)").
+
+## 수정 2: 성능 상세를 보안 상세와 같은 구조로 다시 짠다 (사용자 확인 루프)
+
+요구: 측정 시작 뒤 CLI 출력(`rendered`)을 등폭으로 띄우지 말고, 보안 분석과 같은 구조·같은 화면 어휘로 보인다.
+오케스트레이터가 이번 수정에 한해 응답 계약에 두 필드를 더하는 것을 허용했다.
+
+바꾼 파일
+
+- `packages/dashboard/src/api-types.ts`: `AnalyzePerfResponse` 에 `abortedLine: string | null`, `limits: readonly string[]`
+  (지시한 주석 그대로, 필수 필드).
+- `packages/dashboard/src/server/analyze-perf.ts`: `rendered` 를 줄로 나눠 "측정 중단: " 으로 시작하는 줄과 마지막
+  빈 줄 뒤의 줄들을 뗀다. `analyze-security.ts` 의 `limits` 계산과 같은 식이다.
+- `packages/dashboard/tests/analyze-perf.test.ts`: `fakeLoaders` 가 `renderReport` 를 인자로 받는다(기본값은 예전
+  `"R\n"`). 성공 테스트 기대값에 `abortedLine: null`, `limits: ["R"]` 추가. 테스트 "analyzePerf 는 rendered 에서 중단
+  줄과 한계 줄을 떼어 낸다" 추가.
+- `packages/dashboard/web/src/analyze/performance-view.ts` (생성): CLI `packages/perf/src/report.ts` 의 규칙을 옮겨 적은
+  순수 함수. `failureReason`, `unmeasuredReason`(report.ts `remark` 의 n=0 갈래), 케이스 표의 열(`caseColumns`, 관측
+  안 함이면 외부·서버 안·요청 열을 뺀다, 외부 대기의 `≥`), `RULE_LABEL`, `performanceCounts`, `observationLabel`.
+  `@mcpeak/perf` 는 타입만 import 한다.
+- `packages/dashboard/web/tests/performance-view.test.ts` (생성): 같은 `CaseResult` 로 `@mcpeak/perf` 의 `renderReport`
+  를 값으로 import 해(테스트에서는 된다) 측정 안 된 케이스의 사유가 CLI 표 비고와 글자가 같은지, 측정한 케이스의
+  칸 값이 CLI 표의 칸과 순서·글자가 같은지(preload·none 둘 다) 대조한다. 손으로 적은 기대 문자열은 없다.
+- `packages/dashboard/web/src/analyze/PerformanceResult.tsx`: 단계 전환을 `SecurityDetail` 과 같게 바꿨다. running 이면
+  진행 패널(LogPanel "진행") + "측정은 중단되지 않고 끝까지 돕니다.", done 이면 결과 + "다시 측정"·"명세 바꾸기",
+  그 밖이면 명세 고르기 폼. 결과 컴포넌트 `PerformanceResult` 를 새로 두었다: 판정 카드(칩 셋, dl 그리드 다섯 칸),
+  중단 띠(role="alert"), "개선 지점 N건", "케이스별 응답 시간" 표(overflow-x-auto), "측정하지 않은 케이스 N개"(접힘),
+  "이 측정의 한계". `rendered` 원문은 화면에 없다.
+- `packages/dashboard/web/tests/performance-detail.test.tsx`: 테스트 넷 추가("done 이면 CLI 원문 대신 케이스 표를
+  보인다", "중단 줄이 있으면 alert 로 그 글자를 보인다", "명세 바꾸기를 누르면 명세 선택이 다시 보인다", "다시 측정은
+  같은 본문으로 한 번 더 보낸다").
+- 오케스트레이터 허용으로 고친 두 픽스처: `packages/dashboard/web/tests/analyze-pillars.test.ts` 의 `perfResponse`
+  반환과 `packages/dashboard/web/tests/use-performance-analysis.test.tsx` 의 응답 상수에 `abortedLine: null, limits: []`
+  만 더했다(필수 필드라 TS2739 로 깨졌다). 단언과 테스트 이름은 그대로다.
+
+`AnalyzeView.tsx`, `PillarCard.tsx`, `performanceSummary`, 보안 쪽 파일은 바꾸지 않았다.
+
+검증
+
+| 명령 | 결과 |
+|---|---|
+| `pnpm vitest run packages/dashboard/tests/analyze-perf.test.ts` | 1 파일, 15 테스트 통과 |
+| `pnpm vitest run --project web` performance-detail, performance-view, analyze-view, app, analyze-pillars, use-performance-analysis | 6 파일, 99 테스트 통과 |
+| `pnpm build --force` | `Tasks: 10 successful`, `Cached: 0 cached, 10 total` |
+| `pnpm typecheck --force` | `Tasks: 10 successful`, `Cached: 0 cached, 10 total` |
+| `pnpm lint` | `Checked 786 files`, 오류 없음 |
+
+`pnpm test` 전체는 오케스트레이터가 돈다.
+
+임의 판단
+
+1. **보안 쪽 조각은 복제했다.** `SECTION_TITLE_CLASS`, `BADGE_CLASS`, `COUNT_CHIP_CLASS`, 톤 토큰 쌍(done·waiting·failed,
+   0 인 칩의 흐린 톤은 보안 정보 톤과 같은 값), `FindingItem` 의 모양, 한계 구획의 모양, 진행 패널 모양
+   (`SecurityProgressView` 는 격리 안내 문장이 박혀 있어 재사용하지 않고 같은 모양의 `PerformanceProgressView` 를
+   같은 파일에 두었다). 보안 파일은 고치지 않았다.
+2. **실패(failed)는 오류 문장 + 폼이다.** 보안은 failed 에서 ErrorAlert 만 보이지만, 성능은 분석하기와 별개로 시작하므로
+   폼이 없으면 다시 시작할 길이 없다. 오류 전문을 폼 위에 보인다.
+3. **명세 바꾸기 상태는 상세 컴포넌트 안에 둔다.** 다른 축 상세로 갔다 오면 결과 화면으로 돌아온다. 결과는 다음 측정이
+   시작될 때 훅이 내린다. 바꾼 뒤 시작이 실패하면 결과(done)는 남고 문장은 폼 위에 보인다.
+4. **"다시 측정" 은 다른 축이 도는 동안 비활성이다**(R11 과 같은 이유). 사유 "다른 분석이 끝난 뒤 측정할 수 있습니다." 를
+   버튼 아래에 보인다. 원격 판정은 하지 않는다. 보낸 요청은 이미 stdio 로 측정한 것이기 때문이다.
+5. **칩 톤**: 진단·측정 안 된 케이스는 waiting(주의) 톤, 호출 실패는 failed 톤, 0 이면 흐린 톤.
+6. **규칙 배지 옆에는 `finding.tools` 를 쉼표로 이어 보인다**(보안의 규칙 id 자리). 머리 줄은 `lines[0]` 을 "→" 없이
+   굵게, 나머지 줄은 "→ " 를 붙인다.
+7. **콜드 스타트 값은 반올림하지 않는다.** CLI 머리 줄이 반올림 없이 찍기 때문이다. 표의 숫자는 `millis` 다.
+8. **"관측 안 함" 이면 개선 지점 구획에 0건이라는 제목과 "서버 안을 관측하지 못해 개선 지점을 찾지 않았습니다." 를
+   보인다.** "개선 지점이 없습니다." 로 읽히지 않게 하려는 것이다(§6 의 "관측 안 함인데 진단 0건처럼 보임" 대비).
+9. 측정한 케이스가 없으면 케이스 표 구획을 그리지 않는다. 측정하지 않은 케이스가 없으면 그 구획도 없다.
+10. 판정 카드의 dl 그리드는 좁은 폭에서 2열, `sm` 이상 3열이다(다섯 칸이라 보안의 3열 고정보다 줄바꿈이 고르다).
+
+## 수정 3: 측정·미측정 케이스 수를 보이고 "호출 실패" 를 없앤다 (사용자 확인 루프)
+
+요구: 통과(측정)된 케이스 수를 보이고, "호출 실패" 와 "측정 안 된 케이스" 를 "미측정 케이스" 하나로 묶는다. "호출
+실패" 는 서비스 문제처럼 읽힌다. 오케스트레이터가 이번 수정에 한해 `performanceSummary` 계약 변경을 허용했다.
+
+바꾼 파일
+
+- `packages/dashboard/web/src/analyze/pillars.ts`: `performanceSummary` 의 판정에서 "호출 실패 N건" 분기와
+  `failedCalls` 를 지웠다. 순서는 관측 안 함 → 측정 중단 → 회귀(기준선 있을 때) → 진단 N건 → 진단 0건(기준선 없음)/
+  진단 0건. 칩은 측정(n>0 케이스 수, done) · 미측정(n=0 케이스 수, info) · 진단(info) 셋이고 "도구" 칩은 뺐다. 나머지는
+  그대로다.
+- `packages/dashboard/web/src/analyze/performance-view.ts`: `performanceCounts` 가 `{ measured, unmeasured, findings }`
+  를 돌려준다(`failedCalls` 삭제). 기준은 카드 칩과 같다.
+- `packages/dashboard/web/src/analyze/PerformanceResult.tsx`: 판정 칩을 "측정 N개"(done) · "미측정 N개" · "진단 N건"
+  순으로 바꿨다. 구획 제목 "측정하지 않은 케이스 N개" → "미측정 케이스 N개". 사유 문장(CLI 와 같은 글자)은 그대로다.
+- `packages/dashboard/web/tests/analyze-pillars.test.ts`: 첫 테스트의 chips 기대를 측정 2·미측정 1·진단 3 으로.
+  "threw 와 isError 를 호출 실패로 센다" → "미측정 케이스는 판정을 바꾸지 않고 칩으로 센다"(a threw 1·b isError 2 에도
+  verdict "진단 3건", 칩 측정 2·미측정 1). "측정 중단을 호출 실패보다 먼저 본다" → "측정 중단을 진단보다 먼저 본다"
+  (단언은 그대로).
+- `packages/dashboard/web/tests/performance-view.test.ts`: 집계 테스트를 measured·unmeasured·findings 로.
+- `packages/dashboard/web/tests/performance-detail.test.tsx`: "done 이면 CLI 원문 대신 케이스 표를 보인다" 에
+  "호출 실패" 가 화면 글자에 없다는 단언 하나 추가(픽스처에 threw 5회인 미측정 케이스가 있다).
+
+검증
+
+| 명령 | 결과 |
+|---|---|
+| `pnpm vitest run --project web` analyze-pillars, performance-view, performance-detail, analyze-view | 4 파일, 88 테스트 통과 |
+| `pnpm build --force` | `Tasks: 10 successful`, `Cached: 0 cached, 10 total` |
+| `pnpm typecheck --force` | `Tasks: 10 successful`, `Cached: 0 cached, 10 total` |
+| `pnpm lint` | `Checked 786 files`, 오류 없음 |
+| `grep -rn "호출 실패" packages/dashboard/web/src` | 결과 없음 |
+
+임의 판단
+
+1. 상세의 "미측정" 칩은 카드와 같은 info 톤이다. info 톤이 곧 흐린 톤(`--ink-muted`/`--line-subtle`)이라 0 이 아니어도
+   흐리게 보인다. 수를 강조하려면 waiting 톤으로 바꿀 수 있다.
+2. 상세의 "측정" 칩은 done 톤이고 0 이면 다른 칩처럼 흐리게 둔다.
+3. 측정한 케이스 표에는 지금 비고 열이 없다(수정 2 에서 CLI 표의 칸 일곱만 옮겼다). 그래서 "일부 반복만 실패한 케이스의
+   비고(`실패 N회(...)`)" 는 화면에 없고, 이번 수정에서 새로 넣지 않았다. 필요하면 report.ts `remark` 의 n>0 갈래를
+   performance-view.ts 로 옮겨 비고 열을 더할 수 있다.

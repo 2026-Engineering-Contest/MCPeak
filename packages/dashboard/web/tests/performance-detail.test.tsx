@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { CaseResult, PerfReport } from "@mcpeak/perf";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { AnalyzePerfResponse } from "../../src/api-types.js";
 import {
   buildPerfRequest,
   INITIAL_PERF_FORM,
@@ -13,6 +15,7 @@ import {
   FakeEventSource,
   finishSecurityRun,
   installFakeEventSource,
+  lastSource,
   PENDING,
   postedBodies,
   runAll,
@@ -30,7 +33,9 @@ import {
  */
 
 const SUITE = "examples/weather-server/server.suite.json";
-const UNAPPROVED_SUITE = "examples/weather-server/draft.suite.json";
+// 두 명세 모두 weather 서버(`examples/weather-server/server.mjs`)에 딸린 이름이라 펼치지 않아도 보인다.
+const UNAPPROVED_SUITE = "examples/weather-server/server.suite.draft.json";
+const OTHER_SUITE = "docs/x.suite.json";
 const SPEC = { server: { command: "node" }, cases: [] };
 
 const SUITES = {
@@ -48,6 +53,59 @@ async function openPerformance(options: StubOptions = {}): Promise<ReturnType<ty
   await finishSecurityRun();
   await waitTokensSettled();
   showDetail(rerender, "performance");
+  return fetchMock;
+}
+
+function perfCase(id: string, p50: number | undefined): CaseResult {
+  return {
+    id,
+    tool: id,
+    n: p50 === undefined ? 0 : 5,
+    outcomes:
+      p50 === undefined
+        ? { ok: 0, isError: 0, empty: 0, threw: 5, skipped: 0, missingTool: 0 }
+        : { ok: 5, isError: 0, empty: 0, threw: 0, skipped: 0, missingTool: 0 },
+    ...(p50 === undefined ? {} : { total: { p50, p95: p50, min: p50, max: p50 } }),
+    dependency: { dependent: 0, independent: 0, unknown: 0 },
+    requestSummaries: [],
+  };
+}
+
+/** 측정 두 케이스와 측정 안 된 한 케이스. `rendered` 는 CLI 원문 흉내이고 화면에 나오면 안 된다. */
+function perfResponse(abortedLine: string | null = null): AnalyzePerfResponse {
+  const report: PerfReport = {
+    schemaVersion: 1,
+    generator: { name: "@mcpeak/perf", version: "0.0.0" },
+    server: { command: "node s.mjs", toolCount: 3 },
+    settings: { repeat: 5, intervalMs: 0, caseCount: 3, observation: "preload" },
+    coldStart: { connectMs: 80, listToolsMs: 3 },
+    cases: [perfCase("a", 412.4), perfCase("b", 600.6), perfCase("c", undefined)],
+    findings: [],
+    undecidedCases: 0,
+    aborted: null,
+    exitCode: 0,
+  };
+  return {
+    report,
+    rendered: "mcpeak perf 결과\n서버 node s.mjs\n",
+    exitCode: 0,
+    abortedLine,
+    limits: ["한계 문장"],
+  };
+}
+
+/** 성능 상세를 열고 명세를 골라 시작한 뒤 run 을 끝내 결과까지 간다. */
+async function measureToDone(response: AnalyzePerfResponse): Promise<ReturnType<typeof vi.fn>> {
+  const fetchMock = await openPerformance({ perfResult: { status: 200, body: response } });
+  fireEvent.click(await screen.findByRole("radio", { name: SUITE }));
+  await waitFor(() => expect(startButton().disabled).toBe(false));
+  fireEvent.click(startButton());
+  await waitFor(() => expect(FakeEventSource.instances).toHaveLength(2));
+  const source = lastSource();
+  act(() => {
+    source.emit({ kind: "done", exitCode: 0 });
+  });
+  await screen.findByRole("table", { name: /케이스별/ });
   return fetchMock;
 }
 
@@ -116,7 +174,9 @@ describe("AnalyzeView 성능 상세", () => {
     await waitTokensSettled();
     showDetail(rerender, "performance");
 
-    fireEvent.click(await screen.findByRole("radio", { name: SUITE }));
+    // HTTP 대상에는 스크립트 인자가 없어 딸린 명세가 없다. 접힌 목록을 펴서 고른다.
+    fireEvent.click(await screen.findByRole("button", { name: /다른 명세 보기/ }));
+    fireEvent.click(screen.getByRole("radio", { name: SUITE }));
     expect(startButton().disabled).toBe(true);
     fireEvent.click(startButton());
     const reason = performanceUnavailable("http");
@@ -189,5 +249,58 @@ describe("AnalyzeView 성능 상세", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "대상 바꾸기" }));
     expect(screen.getByRole<HTMLButtonElement>("button", { name: /^분석/ }).disabled).toBe(true);
+  });
+
+  it("고른 서버에 딸린 명세만 먼저 보인다", async () => {
+    await openPerformance({ suites: [{ path: SUITE }, { path: OTHER_SUITE }] });
+
+    expect(await screen.findByRole("radio", { name: SUITE })).toBeTruthy();
+    expect(screen.queryByRole("radio", { name: OTHER_SUITE })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: /다른 명세 보기/ }));
+    expect(screen.getByRole("radio", { name: OTHER_SUITE })).toBeTruthy();
+  });
+
+  it("딸린 명세가 없으면 생성 화면 링크가 보인다", async () => {
+    await openPerformance({ suites: [{ path: OTHER_SUITE }] });
+
+    const link = await screen.findByRole("link", { name: /명세 만들기/ });
+    expect(link.getAttribute("href")).toBe("#/generate");
+    expect(startButton().disabled).toBe(true);
+  });
+  it("done 이면 CLI 원문 대신 케이스 표를 보인다", async () => {
+    const response = perfResponse();
+    await measureToDone(response);
+
+    expect(pageText()).not.toContain("mcpeak perf 결과");
+    // 미측정 케이스(c, threw 5회)가 있어도 서비스 장애처럼 읽히는 글자를 쓰지 않는다.
+    expect(pageText()).not.toContain("호출 실패");
+    const table = screen.getByRole("table", { name: /케이스별/ });
+    const bodyRows = within(table).getAllByRole("row").length - 1;
+    expect(bodyRows).toBe(response.report.cases.filter((entry) => entry.n > 0).length);
+  });
+
+  it("중단 줄이 있으면 alert 로 그 글자를 보인다", async () => {
+    const line = "측정 중단: 'a' 호출이 10000ms 안에 끝나지 않아 남은 호출을 하지 않았습니다.";
+    await measureToDone(perfResponse(line));
+
+    const alerts = screen.getAllByRole("alert").map((element) => element.textContent);
+    expect(alerts).toContain(line);
+  });
+
+  it("명세 바꾸기를 누르면 명세 선택이 다시 보인다", async () => {
+    await measureToDone(perfResponse());
+    expect(screen.queryByRole("radio", { name: SUITE })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: /^명세 바꾸기/ }));
+    expect(screen.getByRole("radio", { name: SUITE })).toBeTruthy();
+  });
+
+  it("다시 측정은 같은 본문으로 한 번 더 보낸다", async () => {
+    const fetchMock = await measureToDone(perfResponse());
+
+    fireEvent.click(screen.getByRole("button", { name: /^다시 측정/ }));
+    await waitFor(() => expect(perfPosts(fetchMock)).toHaveLength(2));
+    expect(JSON.stringify(perfPosts(fetchMock)[1])).toBe(JSON.stringify(perfPosts(fetchMock)[0]));
   });
 });

@@ -381,7 +381,7 @@ function perfResponse(overrides: Partial<PerfReport> = {}): AnalyzePerfResponse 
     exitCode: 0,
     ...overrides,
   };
-  return { report, rendered: "", exitCode: report.exitCode };
+  return { report, rendered: "", exitCode: report.exitCode, abortedLine: null, limits: [] };
 }
 
 const BASELINE = { path: "b.json", settingsMismatch: false, lines: [], regressedCaseIds: ["a"] };
@@ -396,7 +396,8 @@ describe("performanceSummary", () => {
     expect(summary.baseLabel).toBe("현재");
     expect(summary.bar).toEqual([{ ratio: 593 / 1013, tone: "accent", label: "개선 후" }]);
     expect(summary.chips).toEqual([
-      { label: "도구", count: 6, tone: "info" },
+      { label: "측정", count: 2, tone: "done" },
+      { label: "미측정", count: 1, tone: "info" },
       { label: "진단", count: 3, tone: "info" },
     ]);
     expect(summary.foot).toBe("가장 큰 단축: compare_cities −300ms");
@@ -429,7 +430,7 @@ describe("performanceSummary", () => {
     expect(summary.verdict).toEqual({ label: "관측 안 함", tone: "info" });
   });
 
-  it("performanceSummary 는 측정 중단을 호출 실패보다 먼저 본다", () => {
+  it("performanceSummary 는 측정 중단을 진단보다 먼저 본다", () => {
     const summary = performanceSummary(
       perfResponse({
         aborted: { caseId: "a", timeoutMs: 10000 },
@@ -443,7 +444,8 @@ describe("performanceSummary", () => {
     expect(summary.verdict).toEqual({ label: "측정 중단", tone: "failed" });
   });
 
-  it("performanceSummary 는 threw 와 isError 를 호출 실패로 센다", () => {
+  it("performanceSummary 는 미측정 케이스는 판정을 바꾸지 않고 칩으로 센다", () => {
+    // a·b 는 일부 반복만 실패했고 n 이 5 라 측정이다. c 는 n 이 0 이라 미측정이다.
     const summary = performanceSummary(
       perfResponse({
         cases: [
@@ -453,7 +455,11 @@ describe("performanceSummary", () => {
         ],
       }),
     );
-    expect(summary.verdict.label).toBe("호출 실패 3건");
+    expect(summary.verdict.label).toBe("진단 3건");
+    expect(summary.chips.slice(0, 2)).toEqual([
+      { label: "측정", count: 2, tone: "done" },
+      { label: "미측정", count: 1, tone: "info" },
+    ]);
   });
 
   it("performanceSummary 는 기준선이 있을 때만 회귀를 낸다", () => {

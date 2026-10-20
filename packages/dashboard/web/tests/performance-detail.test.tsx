@@ -11,6 +11,7 @@ import {
 } from "../src/analyze/build-perf-request.js";
 import { AnalyzeView } from "../src/screens/AnalyzeView.js";
 import {
+  cleanedResponse,
   costCard,
   FakeEventSource,
   finishSecurityRun,
@@ -18,7 +19,9 @@ import {
   lastSource,
   PENDING,
   postedBodies,
+  previewResponse,
   runAll,
+  SOURCE_AFTER,
   securityCard,
   showDetail,
   stubFetch,
@@ -302,6 +305,82 @@ describe("AnalyzeView 성능 상세", () => {
     fireEvent.click(screen.getByRole("button", { name: /^다시 측정/ }));
     await waitFor(() => expect(perfPosts(fetchMock)).toHaveLength(2));
     expect(JSON.stringify(perfPosts(fetchMock)[1])).toBe(JSON.stringify(perfPosts(fetchMock)[0]));
+  });
+
+  it("성능이 도는 동안 다시 점검을 누를 수 없다", async () => {
+    const fetchMock = stubFetch(SUITES);
+    const { rerender } = render(<AnalyzeView pillar={null} />);
+    await runAll();
+    await finishSecurityRun();
+    await waitTokensSettled();
+    showDetail(rerender, "performance");
+
+    fireEvent.click(await screen.findByRole("radio", { name: SUITE }));
+    await waitFor(() => expect(startButton().disabled).toBe(false));
+    fireEvent.click(startButton());
+    await waitFor(() => expect(perfPosts(fetchMock)).toHaveLength(1));
+    // 성능 run 의 스트림이 열렸다. done 은 보내지 않는다.
+    await waitFor(() => expect(FakeEventSource.instances).toHaveLength(2));
+
+    showDetail(rerender, "security");
+    const rerun = await screen.findByRole<HTMLButtonElement>("button", { name: /^다시 점검/ });
+    expect(rerun.disabled).toBe(true);
+    fireEvent.click(rerun);
+    expect(postedBodies(fetchMock, "/api/analyze/security")).toHaveLength(1);
+  });
+
+  it("성능이 도는 동안 다시 분석을 누를 수 없다", async () => {
+    const fetchMock = stubFetch({
+      ...SUITES,
+      analyze: { status: 200, body: cleanedResponse() },
+      sourceEdits: [
+        { status: 200, body: previewResponse() },
+        {
+          status: 200,
+          body: previewResponse({ applied: true, mtimeMs: 20, before: SOURCE_AFTER }),
+        },
+      ],
+    });
+    const { rerender } = render(<AnalyzeView pillar={null} />);
+    await runAll();
+    await finishSecurityRun();
+    await waitTokensSettled();
+    showDetail(rerender, "performance");
+
+    fireEvent.click(await screen.findByRole("radio", { name: SUITE }));
+    await waitFor(() => expect(startButton().disabled).toBe(false));
+    fireEvent.click(startButton());
+    await waitFor(() => expect(perfPosts(fetchMock)).toHaveLength(1));
+    // 성능 run 의 스트림이 열렸다. done 은 보내지 않는다.
+    await waitFor(() => expect(FakeEventSource.instances).toHaveLength(2));
+
+    // 다시 분석 버튼은 소스 수정을 적용한 뒤에만 보인다. 상세를 오가면 그 상태가 지워지므로 여기서 적용한다.
+    showDetail(rerender, "tokens");
+    fireEvent.click(await screen.findByRole("button", { name: "MCP 수정하기" }));
+    fireEvent.click(await screen.findByRole("button", { name: "적용" }));
+    const rerun = await screen.findByRole<HTMLButtonElement>("button", { name: /^다시 분석/ });
+    expect(rerun.disabled).toBe(true);
+    fireEvent.click(rerun);
+    expect(postedBodies(fetchMock, "/api/analyze/tokens")).toHaveLength(1);
+  });
+
+  it("원격 대상으로 바꾸면 다시 측정이 비활성이다", async () => {
+    const fetchMock = await measureToDone(perfResponse());
+    expect(perfPosts(fetchMock)).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "대상 바꾸기" }));
+    fireEvent.click(screen.getByRole("button", { name: "HTTP URL" }));
+    fireEvent.change(screen.getByLabelText("URL"), {
+      target: { value: "https://example.test/mcp" },
+    });
+
+    const rerun = screen.getByRole<HTMLButtonElement>("button", { name: /^다시 측정/ });
+    expect(rerun.disabled).toBe(true);
+    const reason = performanceUnavailable("http");
+    expect(reason).not.toBeNull();
+    expect(pageText()).toContain(reason);
+    fireEvent.click(rerun);
+    expect(perfPosts(fetchMock)).toHaveLength(1);
   });
 });
 

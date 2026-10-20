@@ -79,8 +79,18 @@ function detailBadge(
  */
 const IDLE_DETAIL = "아직 분석하지 않았습니다. 위에서 서버를 고르고 분석하기를 누르세요.";
 
+/** 성능이 도는 동안 다시 점검·다시 분석을 막는 사유(ADR-0119). 측정이 다른 축의 부하를 함께 재지 않게 한다. */
+const PERF_RUNNING_REASON = "성능 측정이 끝난 뒤 다시 할 수 있습니다.";
+
 /** 보안 상세의 본문(설계 §3.4). 구독은 훅이 가지므로 여기서는 받은 events 를 그리기만 한다. */
-function SecurityDetail({ security }: { readonly security: SecurityAnalysis }): JSX.Element {
+function SecurityDetail({
+  security,
+  perfRunning,
+}: {
+  readonly security: SecurityAnalysis;
+  /** 성능이 running 이다. 다시 점검을 막는다. */
+  readonly perfRunning: boolean;
+}): JSX.Element {
   const { state, sent } = security;
   if (state.kind === "idle") {
     return <p className="text-sm text-ink-muted">{IDLE_DETAIL}</p>;
@@ -110,13 +120,14 @@ function SecurityDetail({ security }: { readonly security: SecurityAnalysis }): 
             // 발견 없이 통과한 검사(ADR-0117). 발견 목록 바로 다음에 온다. 서버가 센 목록을 그리기만 한다.
             passedChecks={<PassedChecks rules={state.result.passedRules} />}
           />
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Button
-              disabled={security.state.kind === "running"}
+              disabled={security.state.kind === "running" || perfRunning}
               onClick={() => void security.start(sent)}
             >
               다시 점검
             </Button>
+            {perfRunning && <p className="text-xs text-ink-muted">{PERF_RUNNING_REASON}</p>}
           </div>
         </>
       )}
@@ -125,7 +136,14 @@ function SecurityDetail({ security }: { readonly security: SecurityAnalysis }): 
 }
 
 /** 비용 최적화 상세의 본문(설계 §3.4). 옛 토큰 패널의 결과 단계와 같은 배치다. */
-function TokensDetail({ tokens }: { readonly tokens: TokensAnalysis }): JSX.Element {
+function TokensDetail({
+  tokens,
+  perfRunning,
+}: {
+  readonly tokens: TokensAnalysis;
+  /** 성능이 running 이다. 다시 분석을 막는다. */
+  readonly perfRunning: boolean;
+}): JSX.Element {
   const { state } = tokens;
   if (state.kind === "idle") {
     return <p className="text-sm text-ink-muted">{IDLE_DETAIL}</p>;
@@ -154,6 +172,8 @@ function TokensDetail({ tokens }: { readonly tokens: TokensAnalysis }): JSX.Elem
         result={state.result}
         argv={tokens.analyzed?.argv ?? []}
         onReanalyze={() => void tokens.reanalyze()}
+        // 버튼은 SourceEditCard 안에 있다. 사유 줄도 거기서 버튼 옆에 보인다.
+        reanalyzeDisabledReason={perfRunning ? PERF_RUNNING_REASON : null}
       />
     </>
   );
@@ -305,7 +325,10 @@ export function AnalyzeView({ pillar }: { readonly pillar: AnalyzePillar | null 
                   )}
                 </div>
                 {pillar === "security" ? (
-                  <SecurityDetail security={security} />
+                  <SecurityDetail
+                    security={security}
+                    perfRunning={performance.state.kind === "running"}
+                  />
                 ) : pillar === "performance" ? (
                   <PerformanceDetail
                     performance={performance}
@@ -317,7 +340,10 @@ export function AnalyzeView({ pillar }: { readonly pillar: AnalyzePillar | null 
                     otherRunning={otherRunning}
                   />
                 ) : (
-                  <TokensDetail tokens={tokens} />
+                  <TokensDetail
+                    tokens={tokens}
+                    perfRunning={performance.state.kind === "running"}
+                  />
                 )}
               </Card>
             </section>

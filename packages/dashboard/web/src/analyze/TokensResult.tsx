@@ -112,11 +112,14 @@ export function TokensResult({
   result,
   argv,
   onReanalyze,
+  reanalyzeDisabledReason = null,
 }: {
   readonly result: AnalyzeTokensResponse;
   /** 분석에 쓴 argv 그대로. 소스 수정이 같은 서버를 가리키게 한다. */
   readonly argv: readonly string[];
   readonly onReanalyze: () => void;
+  /** `SourceEditCard` 로 그대로 넘긴다. 주지 않으면 다시 분석은 지금처럼 활성이다. */
+  readonly reanalyzeDisabledReason?: string | null;
 }): JSX.Element {
   const { source, totals, tools } = result.overlay;
   const reduced = totals.bytesBefore - totals.bytesAfterWithInstructions;
@@ -240,7 +243,12 @@ export function TokensResult({
         </pre>
       </details>
 
-      <SourceEditCard result={result} argv={argv} onReanalyze={onReanalyze} />
+      <SourceEditCard
+        result={result}
+        argv={argv}
+        onReanalyze={onReanalyze}
+        reanalyzeDisabledReason={reanalyzeDisabledReason}
+      />
     </div>
   );
 }

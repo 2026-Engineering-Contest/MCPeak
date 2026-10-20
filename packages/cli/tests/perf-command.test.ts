@@ -637,17 +637,48 @@ describe("runPerfCommand: 기준선", () => {
   });
 });
 
+/** 시작 줄, 호출마다의 진행 줄, 끝 줄. 케이스 순으로 케이스마다 repeat 회다. */
+function progressStderr(caseIds: readonly string[], repeat: number): string {
+  const total = caseIds.length * repeat;
+  const lines = caseIds.flatMap((id, index) =>
+    Array.from(
+      { length: repeat },
+      (_, i) => `측정 중 ${index * repeat + i + 1}/${total} · ${id} (${i + 1}/${repeat}회)\n`,
+    ),
+  );
+  return `측정: 케이스 ${caseIds.length}개 × ${repeat}회\n${lines.join("")}측정 완료: 호출 ${total}회\n`;
+}
+
 describe("runPerfCommand: 실행", () => {
-  it("진행 문장은 stderr 두 줄", async () => {
+  it("진행 문장은 stderr 의 시작 줄, 호출마다의 진행 줄, 끝 줄이다", async () => {
     const h = harness();
     await expect(runPerfCommand([SUITE, "--repeat", "3", "--", "node"], h.deps)).resolves.toBe(0);
-    expect(h.stderr()).toBe("측정: 케이스 2개 × 3회\n측정 완료: 호출 6회\n");
+    expect(h.stderr()).toBe(progressStderr(["a-ok", "b-ok"], 3));
+  });
+
+  it("측정 중 호출마다 진행 줄을 쓴다", async () => {
+    // 측정값은 실제 measure 로 만들고, 진행 통지만 손으로 (1,4)~(4,4) 를 부른다.
+    const measure: typeof perf.measure = async (input) => {
+      const result = await perf.measure({ ...input, onProgress: undefined });
+      for (let done = 1; done <= 4; done += 1) input.onProgress?.(done, 4);
+      return result;
+    };
+    const h = harness({ perf: { measure } });
+    await expect(runPerfCommand([SUITE, "--repeat", "2", "--", "node"], h.deps)).resolves.toBe(0);
+    expect(h.stderr()).toBe(
+      "측정: 케이스 2개 × 2회\n" +
+        "측정 중 1/4 · a-ok (1/2회)\n" +
+        "측정 중 2/4 · a-ok (2/2회)\n" +
+        "측정 중 3/4 · b-ok (1/2회)\n" +
+        "측정 중 4/4 · b-ok (2/2회)\n" +
+        "측정 완료: 호출 4회\n",
+    );
   });
 
   it("--json 이어도 진행 문장은 stderr 이고 stdout 은 JSON 하나다", async () => {
     const h = harness();
     await expect(runPerfCommand([SUITE, "--json", "--", "node"], h.deps)).resolves.toBe(0);
-    expect(h.stderr()).toBe("측정: 케이스 2개 × 5회\n측정 완료: 호출 10회\n");
+    expect(h.stderr()).toBe(progressStderr(["a-ok", "b-ok"], 5));
     const report = JSON.parse(h.stdout()) as PerfReport;
     expect(h.stdout()).toBe(`${JSON.stringify(report, null, 2)}\n`);
     expect(report.generator.version).toBe("9.9.9");

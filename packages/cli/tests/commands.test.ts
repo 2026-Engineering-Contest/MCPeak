@@ -27,4 +27,15 @@ describe("@mcpeak/cli/commands 공개 면", () => {
     const index = await import("../src/index.js");
     expect(index.nodeAuditDependencies).toBe(commands.nodeAuditDependencies);
   });
+  it("perf 커맨드 함수와 의존성 조립 함수를 내보낸다", () => {
+    expect(typeof commands.runPerfCommand).toBe("function");
+    expect(typeof commands.nodePerfDependencies).toBe("function");
+  });
+  it("nodePerfDependencies 는 index 의 것과 같은 함수다", async () => {
+    const index = await import("../src/index.js");
+    expect(index.nodePerfDependencies).toBe(commands.nodePerfDependencies);
+  });
+  it("parsePerfCommand 는 공개 면에 없다", () => {
+    expect("parsePerfCommand" in commands).toBe(false);
+  });
 });

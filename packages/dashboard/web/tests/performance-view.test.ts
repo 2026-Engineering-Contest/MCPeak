@@ -126,11 +126,11 @@ describe("performance-view", () => {
     ]);
   });
 
-  it("집계는 진단·호출 실패(threw+isError)·측정 안 된 케이스를 센다", () => {
+  it("집계는 측정·미측정 케이스와 진단을 센다", () => {
     expect(performanceCounts(report(CASES, "preload"))).toEqual({
-      findings: 0,
-      failedCalls: 5,
+      measured: 2,
       unmeasured: 2,
+      findings: 0,
     });
     expect(observationLabel(report(CASES, "none"))).toBe("관측 안 함");
     expect(observationLabel(report(CASES, "preload"))).toBe("Node 프리로드");

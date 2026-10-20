@@ -348,7 +348,7 @@ function FindingItem({ finding }: { readonly finding: PerfFinding }): JSX.Elemen
 
 /**
  * 성능 측정 결과(ADR-0119). 보안 결과(`SecurityResult`)와 같은 구조다. 판정 카드, 중단 띠, 개선 지점, 케이스별
- * 응답 시간, 측정하지 않은 케이스, 이 측정의 한계 순이다. 숫자와 문장은 perf 리포트에서 오고, 표의 칸과 사유는
+ * 응답 시간, 미측정 케이스, 이 측정의 한계 순이다. 숫자와 문장은 perf 리포트에서 오고, 표의 칸과 사유는
  * CLI 와 같은 규칙(`performance-view.ts`)으로 만든다. CLI 리포트 원문은 보이지 않는다.
  */
 export function PerformanceResult({
@@ -363,16 +363,11 @@ export function PerformanceResult({
   const measured = report.cases.filter((entry) => entry.n > 0);
   const unmeasured = report.cases.filter((entry) => entry.n === 0);
 
+  // 카드 칩(performanceSummary)과 같은 셋, 같은 순서다. 미측정은 카드처럼 info 톤이라 0 이 아니어도 흐리다.
   const chips: readonly CountChip[] = [
+    { key: "measured", label: "측정", count: counts.measured, unit: "개", tone: DONE_TONE },
+    { key: "unmeasured", label: "미측정", count: counts.unmeasured, unit: "개", tone: MUTED_TONE },
     { key: "findings", label: "진단", count: counts.findings, unit: "건", tone: WAITING_TONE },
-    { key: "failed", label: "호출 실패", count: counts.failedCalls, unit: "건", tone: FAILED_TONE },
-    {
-      key: "unmeasured",
-      label: "측정 안 된 케이스",
-      count: counts.unmeasured,
-      unit: "개",
-      tone: WAITING_TONE,
-    },
   ];
   const summary: readonly (readonly [string, string])[] = [
     ["서버", report.server.command],
@@ -506,7 +501,7 @@ export function PerformanceResult({
       {unmeasured.length > 0 && (
         <details className="rounded-lg border border-line bg-surface">
           <summary className="cursor-pointer px-4 py-2 text-sm font-semibold text-ink">
-            {`측정하지 않은 케이스 ${unmeasured.length}개`}
+            {`미측정 케이스 ${unmeasured.length}개`}
           </summary>
           <ul className="list-disc space-y-1 border-t border-line py-3 pr-4 pl-9 text-sm text-ink-muted">
             {unmeasured.map((entry) => (

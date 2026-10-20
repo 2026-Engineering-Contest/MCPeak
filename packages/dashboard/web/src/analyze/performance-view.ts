@@ -76,19 +76,20 @@ export const RULE_LABEL: Readonly<Record<PerfRuleId, string>> = {
   "perf/repeated-request": "응답 재사용",
 };
 
-/** 판정 줄의 집계. 호출 실패는 performanceSummary 와 같은 기준(threw + isError)이다. */
+/**
+ * 판정 줄의 집계. performanceSummary 의 칩과 같은 기준이다. 측정은 ok 반복이 하나라도 있는 케이스(n > 0),
+ * 미측정은 하나도 없는 케이스다. 일부 반복만 실패한 케이스는 측정이다.
+ */
 export function performanceCounts(report: PerfReport): {
-  readonly findings: number;
-  readonly failedCalls: number;
+  readonly measured: number;
   readonly unmeasured: number;
+  readonly findings: number;
 } {
+  const measured = report.cases.filter((entry) => entry.n > 0).length;
   return {
+    measured,
+    unmeasured: report.cases.length - measured,
     findings: report.findings.length,
-    failedCalls: report.cases.reduce(
-      (sum, entry) => sum + entry.outcomes.threw + entry.outcomes.isError,
-      0,
-    ),
-    unmeasured: report.cases.filter((entry) => entry.n === 0).length,
   };
 }
 

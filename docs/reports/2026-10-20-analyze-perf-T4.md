@@ -190,3 +190,45 @@
    보인다.** "개선 지점이 없습니다." 로 읽히지 않게 하려는 것이다(§6 의 "관측 안 함인데 진단 0건처럼 보임" 대비).
 9. 측정한 케이스가 없으면 케이스 표 구획을 그리지 않는다. 측정하지 않은 케이스가 없으면 그 구획도 없다.
 10. 판정 카드의 dl 그리드는 좁은 폭에서 2열, `sm` 이상 3열이다(다섯 칸이라 보안의 3열 고정보다 줄바꿈이 고르다).
+
+## 수정 3: 측정·미측정 케이스 수를 보이고 "호출 실패" 를 없앤다 (사용자 확인 루프)
+
+요구: 통과(측정)된 케이스 수를 보이고, "호출 실패" 와 "측정 안 된 케이스" 를 "미측정 케이스" 하나로 묶는다. "호출
+실패" 는 서비스 문제처럼 읽힌다. 오케스트레이터가 이번 수정에 한해 `performanceSummary` 계약 변경을 허용했다.
+
+바꾼 파일
+
+- `packages/dashboard/web/src/analyze/pillars.ts`: `performanceSummary` 의 판정에서 "호출 실패 N건" 분기와
+  `failedCalls` 를 지웠다. 순서는 관측 안 함 → 측정 중단 → 회귀(기준선 있을 때) → 진단 N건 → 진단 0건(기준선 없음)/
+  진단 0건. 칩은 측정(n>0 케이스 수, done) · 미측정(n=0 케이스 수, info) · 진단(info) 셋이고 "도구" 칩은 뺐다. 나머지는
+  그대로다.
+- `packages/dashboard/web/src/analyze/performance-view.ts`: `performanceCounts` 가 `{ measured, unmeasured, findings }`
+  를 돌려준다(`failedCalls` 삭제). 기준은 카드 칩과 같다.
+- `packages/dashboard/web/src/analyze/PerformanceResult.tsx`: 판정 칩을 "측정 N개"(done) · "미측정 N개" · "진단 N건"
+  순으로 바꿨다. 구획 제목 "측정하지 않은 케이스 N개" → "미측정 케이스 N개". 사유 문장(CLI 와 같은 글자)은 그대로다.
+- `packages/dashboard/web/tests/analyze-pillars.test.ts`: 첫 테스트의 chips 기대를 측정 2·미측정 1·진단 3 으로.
+  "threw 와 isError 를 호출 실패로 센다" → "미측정 케이스는 판정을 바꾸지 않고 칩으로 센다"(a threw 1·b isError 2 에도
+  verdict "진단 3건", 칩 측정 2·미측정 1). "측정 중단을 호출 실패보다 먼저 본다" → "측정 중단을 진단보다 먼저 본다"
+  (단언은 그대로).
+- `packages/dashboard/web/tests/performance-view.test.ts`: 집계 테스트를 measured·unmeasured·findings 로.
+- `packages/dashboard/web/tests/performance-detail.test.tsx`: "done 이면 CLI 원문 대신 케이스 표를 보인다" 에
+  "호출 실패" 가 화면 글자에 없다는 단언 하나 추가(픽스처에 threw 5회인 미측정 케이스가 있다).
+
+검증
+
+| 명령 | 결과 |
+|---|---|
+| `pnpm vitest run --project web` analyze-pillars, performance-view, performance-detail, analyze-view | 4 파일, 88 테스트 통과 |
+| `pnpm build --force` | `Tasks: 10 successful`, `Cached: 0 cached, 10 total` |
+| `pnpm typecheck --force` | `Tasks: 10 successful`, `Cached: 0 cached, 10 total` |
+| `pnpm lint` | `Checked 786 files`, 오류 없음 |
+| `grep -rn "호출 실패" packages/dashboard/web/src` | 결과 없음 |
+
+임의 판단
+
+1. 상세의 "미측정" 칩은 카드와 같은 info 톤이다. info 톤이 곧 흐린 톤(`--ink-muted`/`--line-subtle`)이라 0 이 아니어도
+   흐리게 보인다. 수를 강조하려면 waiting 톤으로 바꿀 수 있다.
+2. 상세의 "측정" 칩은 done 톤이고 0 이면 다른 칩처럼 흐리게 둔다.
+3. 측정한 케이스 표에는 지금 비고 열이 없다(수정 2 에서 CLI 표의 칸 일곱만 옮겼다). 그래서 "일부 반복만 실패한 케이스의
+   비고(`실패 N회(...)`)" 는 화면에 없고, 이번 수정에서 새로 넣지 않았다. 필요하면 report.ts `remark` 의 n>0 갈래를
+   performance-view.ts 로 옮겨 비고 열을 더할 수 있다.

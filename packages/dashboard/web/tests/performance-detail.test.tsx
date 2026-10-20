@@ -273,6 +273,8 @@ describe("AnalyzeView 성능 상세", () => {
     await measureToDone(response);
 
     expect(pageText()).not.toContain("mcpeak perf 결과");
+    // 미측정 케이스(c, threw 5회)가 있어도 서비스 장애처럼 읽히는 글자를 쓰지 않는다.
+    expect(pageText()).not.toContain("호출 실패");
     const table = screen.getByRole("table", { name: /케이스별/ });
     const bodyRows = within(table).getAllByRole("row").length - 1;
     expect(bodyRows).toBe(response.report.cases.filter((entry) => entry.n > 0).length);

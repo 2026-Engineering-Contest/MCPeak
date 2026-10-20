@@ -165,7 +165,7 @@ and every decision that "could have gone another way" gets a one-page record in 
 
 ## Architecture
 
-<p align="center"><img src="./docs/assets/architecture.png" alt="MCPeak system architecture. Users run cli from a terminal and dashboard from a browser. cli builds suites with generate and runs them with runner, and runner attaches to the target MCP over stdio or HTTP through core. record stores and replays the server's outbound fetch calls in SQLite. mock stands in for the target server. generate's AI review goes out to the Claude or Codex CLI, and results come out as a report, JUnit XML, and an exit code." width="100%"></p>
+<p align="center"><img src="./docs/assets/architecture.png" alt="MCPeak system architecture. Users run cli from a terminal and dashboard from a browser. cli builds suites with generate and runs them with runner, and runner attaches to the target MCP over stdio or HTTP through core. optimize is an overlay proxy that compresses tool definitions and reaches the target server through core. mock is a fake server that stands in for the target. record stores and replays the server's outbound fetch calls in SQLite. audit runs a pre-use security check and can run the server inside a Docker sandbox. generate's AI review goes out to the Claude or Codex CLI, and results come out as a report, JUnit XML, and an exit code." width="100%"></p>
 
 Users run `cli` from a terminal and `dashboard` from a browser. `cli` builds suites with `generate`
 and runs them with `runner`, and `runner` attaches to the target MCP over stdio or HTTP through

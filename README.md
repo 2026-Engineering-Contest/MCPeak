@@ -149,7 +149,7 @@ mcpeak test weather.suite.json -- node examples/weather-server/server.mjs
 
 ## 구조
 
-<p align="center"><img src="./docs/assets/architecture.png" alt="MCPeak 시스템 구조. 사용자는 터미널로 cli 를, 브라우저로 dashboard 를 쓴다. cli 는 generate 로 명세를 만들고 runner 로 실행하며, runner 는 core 를 통해 대상 MCP에 stdio 나 HTTP 로 붙는다. record 는 서버가 밖으로 부르는 fetch 호출을 SQLite 에 저장하고 재생한다. mock 은 대상 서버를 대신한다. generate 의 AI 검토는 Claude 나 Codex CLI 로 나가고, 결과는 리포트, JUnit XML, 종료 코드로 나온다." width="100%"></p>
+<p align="center"><img src="./docs/assets/architecture.png" alt="MCPeak 시스템 구조. 사용자는 터미널로 cli 를, 브라우저로 dashboard 를 쓴다. cli 는 generate 로 명세를 만들고 runner 로 실행하며, runner 는 core 를 통해 대상 MCP에 stdio 나 HTTP 로 붙는다. optimize 는 도구 정의를 압축하는 오버레이 프록시로, core 를 거쳐 대상 서버에 붙는다. mock 은 대상 서버를 대신하는 가짜 서버다. record 는 서버가 밖으로 부르는 fetch 호출을 SQLite 에 저장하고 재생한다. audit 은 사용 전 보안 점검을 하고, 필요하면 Docker 격리 안에서 서버를 실행한다. generate 의 AI 검토는 Claude 나 Codex CLI 로 나가고, 결과는 리포트, JUnit XML, 종료 코드로 나온다." width="100%"></p>
 
 사용자는 터미널에서 `cli` 를, 브라우저에서 `dashboard` 를 쓴다. `cli` 는 `generate` 로 명세를
 만들고 `runner` 로 실행하며, `runner` 는 `core` 를 거쳐 대상 MCP에 stdio 나 HTTP 로 붙는다.

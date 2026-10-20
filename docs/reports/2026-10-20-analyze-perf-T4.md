@@ -79,3 +79,46 @@
 
 - 화면은 jsdom 행동 테스트로만 확인했다. 실제 브라우저 확인(§6 자체 점검·사용자 확인 루프)은 하지 않았다.
 - done 상태(결과 `rendered`, 카드 요약)를 끝까지 그리는 행동 테스트는 §5.3 표에 없어 두지 않았다. 요약 함수 자체는 T3 테스트가 단언한다.
+
+## 수정 1: 명세 목록을 고른 서버 기준으로 거른다 (사용자 확인 루프)
+
+요구: 성능 상세의 명세 목록이 저장소 전체를 보여 길다. 홈 마법사와 같은 규칙으로 고른 서버에 딸린 명세만 위에
+보이고, 딸린 명세가 없으면 생성 화면으로 안내한다.
+
+바꾼 파일
+
+- `packages/dashboard/web/src/analyze/PerformanceResult.tsx`: `home/match-suites.ts` 의 `matchSuites` 를 그대로
+  import 해 목록을 matched·others 로 가른다. matched 는 펴고, others 는 "다른 명세 보기 (N)" 버튼으로 편다(홈의
+  「다른 스위트 보기」 와 같은 모양). matched 가 비면 명세 자리에 "이 서버용 테스트 명세가 없습니다. 성능 측정은
+  명세의 케이스를 그대로 호출하므로 먼저 명세를 만드세요." 와 링크 `#/generate` "명세 만들기" 를 보인다. 저장소에
+  명세가 하나도 없을 때 쓰던 홈의 빈 목록 문장 두 개는 이 안내로 바꿨다.
+- `packages/dashboard/web/src/screens/AnalyzeView.tsx`: 더 쓰지 않는 `root` prop 을 넘기지 않는다(한 줄 삭제).
+- `packages/dashboard/web/tests/performance-detail.test.tsx`: 테스트 둘 추가("고른 서버에 딸린 명세만 먼저 보인다",
+  "딸린 명세가 없으면 생성 화면 링크가 보인다"). 기존 테스트 정리 둘. 미승인 명세 픽스처 경로를
+  `examples/weather-server/draft.suite.json` → `examples/weather-server/server.suite.draft.json` 으로 바꿨다(앞의 것은
+  weather 서버에 딸린 이름이 아니라 접힌 쪽으로 간다). "원격 대상이면 …" 테스트는 HTTP 대상에 딸린 명세가 없으므로
+  "다른 명세 보기" 를 편 뒤 명세를 고른다.
+
+검증
+
+| 명령 | 결과 |
+|---|---|
+| `pnpm vitest run --project web .../performance-detail.test.tsx .../analyze-view.test.tsx .../app.test.ts` | 3 파일, 57 테스트 통과 |
+| `pnpm build --force` | `Tasks: 10 successful`, `Cached: 0 cached, 10 total` |
+| `pnpm typecheck --force` | `Tasks: 10 successful`, `Cached: 0 cached, 10 total` |
+| `pnpm lint` | `Checked 784 files`, 오류 없음 |
+
+`pnpm test` 전체는 오케스트레이터가 다시 돈다고 해서 돌리지 않았다.
+
+임의 판단
+
+1. `matchSuites` 에 넘기는 args 는 측정 대상 argv 의 `--arg` 값들이다(`buildAnalyzeArgv` 가 직접 입력이면 스크립트
+   경로를 선두 `--arg` 로 싣으므로 같은 규칙이 된다). HTTP 대상은 빈 배열이라 matched 가 늘 비고 안내가 보인다.
+   새 화면 상태를 만들지 않으려고 `AnalyzeView` 에서 args 를 따로 넘기지 않고 이미 받는 argv 에서 구했다.
+2. matched 가 정확히 1개면 목록을 처음 받은 뒤 한 번만 그것을 미리 고른다. 이미 고른 명세가 있으면 건드리지 않고,
+   사용자가 바꾼 선택을 되돌리지 않는다.
+3. 고른 명세가 접힌 쪽(others)에 있으면 "다른 명세 보기" 를 펴 둔다. 고른 것이 보이지 않으면 무엇을 측정하는지
+   알 수 없기 때문이다.
+4. 홈과 달리 matched 가 비어도 others 를 자동으로 펴지 않는다. 요구가 "펼칠 수는 있다" 였고, 안내와 링크가 먼저
+   보이게 하려는 것이다.
+5. 버튼 글자는 홈의 「다른 스위트 보기」 를 따라 개수를 붙였다("다른 명세 보기 (N)").

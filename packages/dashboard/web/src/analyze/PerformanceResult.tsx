@@ -1,11 +1,13 @@
 import type { JSX } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { FileContent, FileEntry } from "../../../src/api-types.js";
 import { apiGet } from "../api.js";
 import type { Transport } from "../build-test-argv.js";
 import { Button } from "../components/Button.js";
 import { Field, INPUT_CLASS } from "../components/Field.js";
+import { FOCUS_RING } from "../components/focus-ring.js";
 import { LogPanel } from "../components/LogPanel.js";
+import { matchSuites } from "../home/match-suites.js";
 import {
   buildPerfRequest,
   type PerfForm,
@@ -20,6 +22,15 @@ export const OTHER_RUNNING_REASON = "다른 분석이 끝난 뒤 측정할 수 �
 
 /** 성능 카드의 idle 문장(R1). 다른 축처럼 분석하기를 기다린다고 읽히지 않게 한다. */
 export const PERFORMANCE_IDLE_NOTE = "상세에서 명세를 골라 측정합니다";
+
+/** 고른 서버에 딸린 명세가 없을 때의 안내. 생성 화면 링크가 뒤따른다. */
+export const NO_MATCHED_SUITE =
+  "이 서버용 테스트 명세가 없습니다. 성능 측정은 명세의 케이스를 그대로 호출하므로 먼저 명세를 만드세요.";
+
+/** argv 의 `--arg` 값들. 홈 마법사가 `matchSuites` 에 넘기는 서버 인자와 같은 값이다(직접 입력이면 스크립트 경로가 선두). */
+function serverArgs(argv: readonly string[]): readonly string[] {
+  return argv.flatMap((value, index) => (index > 0 && argv[index - 1] === "--arg" ? [value] : []));
+}
 
 /** 고른 명세의 내용 읽기. 승인 여부는 명세 JSON 에 `approval` 키가 있는지다(runner reporter 와 같은 기준). */
 type SuiteRead =
@@ -54,7 +65,6 @@ export function PerformanceDetail({
   argv,
   serverId,
   transport,
-  root,
   otherRunning,
 }: {
   readonly performance: PerformanceAnalysis;
@@ -64,8 +74,6 @@ export function PerformanceDetail({
   readonly argv: { readonly argv: readonly string[] } | { readonly error: string };
   readonly serverId: string | undefined;
   readonly transport: Transport;
-  /** 명세 목록이 비었을 때 탐색 루트를 말하는 데만 쓴다. */
-  readonly root: string | null;
   /** 토큰 또는 보안이 running 이다. */
   readonly otherRunning: boolean;
 }): JSX.Element {
@@ -73,6 +81,9 @@ export function PerformanceDetail({
   const [suites, setSuites] = useState<readonly FileEntry[] | null>(null);
   const [suitesError, setSuitesError] = useState<string | null>(null);
   const [suiteRead, setSuiteRead] = useState<SuiteRead | null>(null);
+  const [othersOpen, setOthersOpen] = useState(false);
+  /** 딸린 명세가 하나뿐일 때 미리 고르는 것은 목록을 받은 뒤 한 번만이다. 사용자가 바꾼 선택을 되돌리지 않는다. */
+  const preselected = useRef(false);
   const { state } = performance;
   const running = state.kind === "running";
 
@@ -84,6 +95,23 @@ export function PerformanceDetail({
         setSuitesError(messageOf(err));
       });
   }, []);
+
+  // 홈 마법사와 같은 규칙으로 고른 서버에 딸린 명세만 위에 편다. 나머지는 접는다.
+  const { matched, others } = matchSuites(
+    "argv" in argv ? serverArgs(argv.argv) : [],
+    suites ?? [],
+  );
+  const onlyMatch = matched.length === 1 ? matched[0]?.path : undefined;
+  // 고른 명세가 접힌 쪽에 있으면 펴 둔다. 고른 것이 안 보이면 무엇을 측정하는지 모른다.
+  const showOthers = othersOpen || others.some((suite) => suite.path === form.suitePath);
+
+  useEffect(() => {
+    if (suites === null || preselected.current) return;
+    preselected.current = true;
+    if (onlyMatch !== undefined && form.suitePath === "") {
+      onFormChange({ ...form, suitePath: onlyMatch });
+    }
+  }, [suites, onlyMatch, form, onFormChange]);
 
   useEffect(() => {
     if (form.suitePath === "") {
@@ -118,6 +146,21 @@ export function PerformanceDetail({
   // 내용을 아직 못 읽었으면 미승인으로 본다.
   const approved = suiteRead?.kind === "ready" && suiteRead.approved;
 
+  function suiteRow(suite: FileEntry): JSX.Element {
+    return (
+      <label key={suite.path} className="flex min-w-0 items-center gap-2 text-sm text-ink">
+        <input
+          type="radio"
+          name="perf-suite"
+          value={suite.path}
+          checked={form.suitePath === suite.path}
+          onChange={() => onFormChange({ ...form, suitePath: suite.path })}
+        />
+        <span className="break-all font-mono text-xs">{suite.path}</span>
+      </label>
+    );
+  }
+
   function start(): void {
     if (reason !== null || running || !("request" in built)) return;
     void performance.start(built.request);
@@ -127,31 +170,29 @@ export function PerformanceDetail({
     <div className="space-y-5">
       <fieldset className="min-w-0 space-y-2" disabled={running}>
         <legend className="mb-2 text-sm font-medium text-ink">명세</legend>
-        {suites !== null && suites.length === 0 && suitesError === null && (
-          <div className="space-y-1 rounded-md border border-line bg-line-subtle px-3 py-2 text-sm text-ink-muted">
-            <p>
-              이 디렉터리 아래에서 스위트를 찾지 못했습니다{root ? ": " : "."}
-              {root ? <span className="font-mono text-xs text-ink">{root}</span> : null}
-            </p>
-            <p>
-              → 스위트가 있는 디렉터리에서 mcpeak-dashboard 를 다시 띄우거나, 왼쪽 Generate 로 새로
-              만드세요.
-            </p>
+        {suitesError !== null && <ErrorAlert message={suitesError} />}
+        {suites !== null && matched.length === 0 && (
+          <div className="space-y-2 rounded-md border border-line bg-line-subtle px-3 py-2 text-sm text-ink-muted">
+            <p>{NO_MATCHED_SUITE}</p>
+            <a href="#/generate" className={`font-semibold text-accent ${FOCUS_RING}`}>
+              명세 만들기
+            </a>
           </div>
         )}
-        {suitesError !== null && <ErrorAlert message={suitesError} />}
-        {suites?.map((suite) => (
-          <label key={suite.path} className="flex min-w-0 items-center gap-2 text-sm text-ink">
-            <input
-              type="radio"
-              name="perf-suite"
-              value={suite.path}
-              checked={form.suitePath === suite.path}
-              onChange={() => onFormChange({ ...form, suitePath: suite.path })}
-            />
-            <span className="break-all font-mono text-xs">{suite.path}</span>
-          </label>
-        ))}
+        {matched.map(suiteRow)}
+        {others.length > 0 && (
+          <div className="space-y-2">
+            <button
+              type="button"
+              aria-expanded={showOthers}
+              className={`text-sm text-ink-muted hover:text-ink ${FOCUS_RING}`}
+              onClick={() => setOthersOpen((previous) => !previous)}
+            >
+              {showOthers ? "▾" : "▸"} 다른 명세 보기 ({others.length})
+            </button>
+            {showOthers && others.map(suiteRow)}
+          </div>
+        )}
       </fieldset>
 
       <div className="max-w-[160px]">

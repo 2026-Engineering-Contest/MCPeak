@@ -314,7 +314,6 @@ export function AnalyzeView({ pillar }: { readonly pillar: AnalyzePillar | null 
                     argv={target.argv}
                     serverId={target.serverId}
                     transport={target.state.transport}
-                    root={target.root}
                     otherRunning={otherRunning}
                   />
                 ) : (

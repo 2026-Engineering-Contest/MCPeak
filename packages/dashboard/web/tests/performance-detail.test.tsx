@@ -30,7 +30,9 @@ import {
  */
 
 const SUITE = "examples/weather-server/server.suite.json";
-const UNAPPROVED_SUITE = "examples/weather-server/draft.suite.json";
+// 두 명세 모두 weather 서버(`examples/weather-server/server.mjs`)에 딸린 이름이라 펼치지 않아도 보인다.
+const UNAPPROVED_SUITE = "examples/weather-server/server.suite.draft.json";
+const OTHER_SUITE = "docs/x.suite.json";
 const SPEC = { server: { command: "node" }, cases: [] };
 
 const SUITES = {
@@ -116,7 +118,9 @@ describe("AnalyzeView 성능 상세", () => {
     await waitTokensSettled();
     showDetail(rerender, "performance");
 
-    fireEvent.click(await screen.findByRole("radio", { name: SUITE }));
+    // HTTP 대상에는 스크립트 인자가 없어 딸린 명세가 없다. 접힌 목록을 펴서 고른다.
+    fireEvent.click(await screen.findByRole("button", { name: /다른 명세 보기/ }));
+    fireEvent.click(screen.getByRole("radio", { name: SUITE }));
     expect(startButton().disabled).toBe(true);
     fireEvent.click(startButton());
     const reason = performanceUnavailable("http");
@@ -189,5 +193,23 @@ describe("AnalyzeView 성능 상세", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "대상 바꾸기" }));
     expect(screen.getByRole<HTMLButtonElement>("button", { name: /^분석/ }).disabled).toBe(true);
+  });
+
+  it("고른 서버에 딸린 명세만 먼저 보인다", async () => {
+    await openPerformance({ suites: [{ path: SUITE }, { path: OTHER_SUITE }] });
+
+    expect(await screen.findByRole("radio", { name: SUITE })).toBeTruthy();
+    expect(screen.queryByRole("radio", { name: OTHER_SUITE })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: /다른 명세 보기/ }));
+    expect(screen.getByRole("radio", { name: OTHER_SUITE })).toBeTruthy();
+  });
+
+  it("딸린 명세가 없으면 생성 화면 링크가 보인다", async () => {
+    await openPerformance({ suites: [{ path: OTHER_SUITE }] });
+
+    const link = await screen.findByRole("link", { name: /명세 만들기/ });
+    expect(link.getAttribute("href")).toBe("#/generate");
+    expect(startButton().disabled).toBe(true);
   });
 });

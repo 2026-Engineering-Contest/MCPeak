@@ -11,7 +11,7 @@ import { analyzePerf, preparePerfRun } from "../src/server/analyze-perf.js";
  * `nodePerfDependencies` 가 읽는 필드만 채운 fake 모듈. 서버에 붙지 않는다(설계 §3.7).
  * `renderReport` 만 결과를 단언하려고 고정 문자열을 돌려준다.
  */
-function fakeLoaders() {
+function fakeLoaders(render: () => string = () => "R\n") {
   const core = { connectStdio: vi.fn() } as unknown as typeof import("@mcpeak/core");
   const runner = { validateMcpSuite: vi.fn() } as unknown as typeof import("@mcpeak/runner");
   const perf = {
@@ -21,7 +21,7 @@ function fakeLoaders() {
     compareBaseline: vi.fn(),
     toBaseline: vi.fn(),
     parseBaseline: vi.fn(),
-    renderReport: () => "R\n",
+    renderReport: render,
     childEnvironment: vi.fn(),
   } as unknown as typeof import("@mcpeak/perf");
   return {
@@ -214,8 +214,30 @@ describe("analyzePerf", () => {
     expect(result.exitCode).toBe(0);
     expect(result.outcome).toEqual({
       ok: true,
-      body: { report: REPORT, rendered: "R\n", exitCode: 0 },
+      body: {
+        report: REPORT,
+        rendered: "R\n",
+        exitCode: 0,
+        abortedLine: null,
+        limits: ["R"],
+      },
     });
+  });
+
+  it("analyzePerf 는 rendered 에서 중단 줄과 한계 줄을 떼어 낸다", async () => {
+    const runner = vi.fn<Runner>(async (_argv, deps) => {
+      deps.writeStdout(`${JSON.stringify(REPORT)}\n`);
+      return 0;
+    });
+    const result = await analyzePerf(
+      ARGV,
+      capturingIo().io,
+      { root },
+      { runner, loaders: fakeLoaders(() => "제목\n\n측정 중단: x\n\n한계1\n한계2\n") },
+    );
+    if (!result.outcome.ok) throw new Error(result.outcome.error);
+    expect(result.outcome.body.abortedLine).toBe("측정 중단: x");
+    expect(result.outcome.body.limits).toEqual(["한계1", "한계2"]);
   });
 
   it("analyzePerf 는 리포트 없이 끝나면 stderr 원문을 오류로 낸다", async () => {

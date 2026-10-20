@@ -122,3 +122,71 @@
 4. 홈과 달리 matched 가 비어도 others 를 자동으로 펴지 않는다. 요구가 "펼칠 수는 있다" 였고, 안내와 링크가 먼저
    보이게 하려는 것이다.
 5. 버튼 글자는 홈의 「다른 스위트 보기」 를 따라 개수를 붙였다("다른 명세 보기 (N)").
+
+## 수정 2: 성능 상세를 보안 상세와 같은 구조로 다시 짠다 (사용자 확인 루프)
+
+요구: 측정 시작 뒤 CLI 출력(`rendered`)을 등폭으로 띄우지 말고, 보안 분석과 같은 구조·같은 화면 어휘로 보인다.
+오케스트레이터가 이번 수정에 한해 응답 계약에 두 필드를 더하는 것을 허용했다.
+
+바꾼 파일
+
+- `packages/dashboard/src/api-types.ts`: `AnalyzePerfResponse` 에 `abortedLine: string | null`, `limits: readonly string[]`
+  (지시한 주석 그대로, 필수 필드).
+- `packages/dashboard/src/server/analyze-perf.ts`: `rendered` 를 줄로 나눠 "측정 중단: " 으로 시작하는 줄과 마지막
+  빈 줄 뒤의 줄들을 뗀다. `analyze-security.ts` 의 `limits` 계산과 같은 식이다.
+- `packages/dashboard/tests/analyze-perf.test.ts`: `fakeLoaders` 가 `renderReport` 를 인자로 받는다(기본값은 예전
+  `"R\n"`). 성공 테스트 기대값에 `abortedLine: null`, `limits: ["R"]` 추가. 테스트 "analyzePerf 는 rendered 에서 중단
+  줄과 한계 줄을 떼어 낸다" 추가.
+- `packages/dashboard/web/src/analyze/performance-view.ts` (생성): CLI `packages/perf/src/report.ts` 의 규칙을 옮겨 적은
+  순수 함수. `failureReason`, `unmeasuredReason`(report.ts `remark` 의 n=0 갈래), 케이스 표의 열(`caseColumns`, 관측
+  안 함이면 외부·서버 안·요청 열을 뺀다, 외부 대기의 `≥`), `RULE_LABEL`, `performanceCounts`, `observationLabel`.
+  `@mcpeak/perf` 는 타입만 import 한다.
+- `packages/dashboard/web/tests/performance-view.test.ts` (생성): 같은 `CaseResult` 로 `@mcpeak/perf` 의 `renderReport`
+  를 값으로 import 해(테스트에서는 된다) 측정 안 된 케이스의 사유가 CLI 표 비고와 글자가 같은지, 측정한 케이스의
+  칸 값이 CLI 표의 칸과 순서·글자가 같은지(preload·none 둘 다) 대조한다. 손으로 적은 기대 문자열은 없다.
+- `packages/dashboard/web/src/analyze/PerformanceResult.tsx`: 단계 전환을 `SecurityDetail` 과 같게 바꿨다. running 이면
+  진행 패널(LogPanel "진행") + "측정은 중단되지 않고 끝까지 돕니다.", done 이면 결과 + "다시 측정"·"명세 바꾸기",
+  그 밖이면 명세 고르기 폼. 결과 컴포넌트 `PerformanceResult` 를 새로 두었다: 판정 카드(칩 셋, dl 그리드 다섯 칸),
+  중단 띠(role="alert"), "개선 지점 N건", "케이스별 응답 시간" 표(overflow-x-auto), "측정하지 않은 케이스 N개"(접힘),
+  "이 측정의 한계". `rendered` 원문은 화면에 없다.
+- `packages/dashboard/web/tests/performance-detail.test.tsx`: 테스트 넷 추가("done 이면 CLI 원문 대신 케이스 표를
+  보인다", "중단 줄이 있으면 alert 로 그 글자를 보인다", "명세 바꾸기를 누르면 명세 선택이 다시 보인다", "다시 측정은
+  같은 본문으로 한 번 더 보낸다").
+- 오케스트레이터 허용으로 고친 두 픽스처: `packages/dashboard/web/tests/analyze-pillars.test.ts` 의 `perfResponse`
+  반환과 `packages/dashboard/web/tests/use-performance-analysis.test.tsx` 의 응답 상수에 `abortedLine: null, limits: []`
+  만 더했다(필수 필드라 TS2739 로 깨졌다). 단언과 테스트 이름은 그대로다.
+
+`AnalyzeView.tsx`, `PillarCard.tsx`, `performanceSummary`, 보안 쪽 파일은 바꾸지 않았다.
+
+검증
+
+| 명령 | 결과 |
+|---|---|
+| `pnpm vitest run packages/dashboard/tests/analyze-perf.test.ts` | 1 파일, 15 테스트 통과 |
+| `pnpm vitest run --project web` performance-detail, performance-view, analyze-view, app, analyze-pillars, use-performance-analysis | 6 파일, 99 테스트 통과 |
+| `pnpm build --force` | `Tasks: 10 successful`, `Cached: 0 cached, 10 total` |
+| `pnpm typecheck --force` | `Tasks: 10 successful`, `Cached: 0 cached, 10 total` |
+| `pnpm lint` | `Checked 786 files`, 오류 없음 |
+
+`pnpm test` 전체는 오케스트레이터가 돈다.
+
+임의 판단
+
+1. **보안 쪽 조각은 복제했다.** `SECTION_TITLE_CLASS`, `BADGE_CLASS`, `COUNT_CHIP_CLASS`, 톤 토큰 쌍(done·waiting·failed,
+   0 인 칩의 흐린 톤은 보안 정보 톤과 같은 값), `FindingItem` 의 모양, 한계 구획의 모양, 진행 패널 모양
+   (`SecurityProgressView` 는 격리 안내 문장이 박혀 있어 재사용하지 않고 같은 모양의 `PerformanceProgressView` 를
+   같은 파일에 두었다). 보안 파일은 고치지 않았다.
+2. **실패(failed)는 오류 문장 + 폼이다.** 보안은 failed 에서 ErrorAlert 만 보이지만, 성능은 분석하기와 별개로 시작하므로
+   폼이 없으면 다시 시작할 길이 없다. 오류 전문을 폼 위에 보인다.
+3. **명세 바꾸기 상태는 상세 컴포넌트 안에 둔다.** 다른 축 상세로 갔다 오면 결과 화면으로 돌아온다. 결과는 다음 측정이
+   시작될 때 훅이 내린다. 바꾼 뒤 시작이 실패하면 결과(done)는 남고 문장은 폼 위에 보인다.
+4. **"다시 측정" 은 다른 축이 도는 동안 비활성이다**(R11 과 같은 이유). 사유 "다른 분석이 끝난 뒤 측정할 수 있습니다." 를
+   버튼 아래에 보인다. 원격 판정은 하지 않는다. 보낸 요청은 이미 stdio 로 측정한 것이기 때문이다.
+5. **칩 톤**: 진단·측정 안 된 케이스는 waiting(주의) 톤, 호출 실패는 failed 톤, 0 이면 흐린 톤.
+6. **규칙 배지 옆에는 `finding.tools` 를 쉼표로 이어 보인다**(보안의 규칙 id 자리). 머리 줄은 `lines[0]` 을 "→" 없이
+   굵게, 나머지 줄은 "→ " 를 붙인다.
+7. **콜드 스타트 값은 반올림하지 않는다.** CLI 머리 줄이 반올림 없이 찍기 때문이다. 표의 숫자는 `millis` 다.
+8. **"관측 안 함" 이면 개선 지점 구획에 0건이라는 제목과 "서버 안을 관측하지 못해 개선 지점을 찾지 않았습니다." 를
+   보인다.** "개선 지점이 없습니다." 로 읽히지 않게 하려는 것이다(§6 의 "관측 안 함인데 진단 0건처럼 보임" 대비).
+9. 측정한 케이스가 없으면 케이스 표 구획을 그리지 않는다. 측정하지 않은 케이스가 없으면 그 구획도 없다.
+10. 판정 카드의 dl 그리드는 좁은 폭에서 2열, `sm` 이상 3열이다(다섯 칸이라 보안의 3열 고정보다 줄바꿈이 고르다).

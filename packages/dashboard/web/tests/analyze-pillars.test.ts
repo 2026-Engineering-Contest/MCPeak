@@ -381,7 +381,7 @@ function perfResponse(overrides: Partial<PerfReport> = {}): AnalyzePerfResponse 
     exitCode: 0,
     ...overrides,
   };
-  return { report, rendered: "", exitCode: report.exitCode };
+  return { report, rendered: "", exitCode: report.exitCode, abortedLine: null, limits: [] };
 }
 
 const BASELINE = { path: "b.json", settingsMismatch: false, lines: [], regressedCaseIds: ["a"] };

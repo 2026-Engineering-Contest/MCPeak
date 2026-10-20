@@ -688,7 +688,7 @@ function perfResponse(overrides: Partial<PerfReport> = {}): AnalyzePerfResponse 
     readonly perfResult?: StubResponse | readonly StubResponse[];
     /** GET /api/suites. 없으면 `[]` */
     readonly suites?: readonly { readonly path: string }[];
-    /** GET /api/suites/<path> 의 본문(명세 JSON). 경로를 키로 찾는다. 없는 경로는 404 `{ error: "없음" }` */
+    /** GET /api/suites/<path>. 값은 명세 JSON 이고 응답은 실제 API 처럼 FileContent { path, content: JSON 문자열, mtimeMs: 0 } 로 감싼다. 없는 경로는 404 `{ error: "없음" }` */
     readonly suiteContent?: Readonly<Record<string, unknown>>;
 ```
 
@@ -767,7 +767,7 @@ export type AnalyzePillarId = AnalyzePillar;
 - R2. "분석하기" 는 지금처럼 토큰·보안 두 요청만 보낸다. 성능 요청은 보내지 않는다.
 - R3. 성능 상세(`#/analyze/performance`)에 명세 선택(목록은 `GET /api/suites`), 반복 횟수 입력(기본 5), 시작 버튼이 있다.
   도구 거르기 입력은 두지 않아도 된다(`tools` 는 빈 배열로 보낸다).
-- R4. 명세를 고르면 `GET /api/suites/<path>` 로 내용을 읽어 `approval` 키 여부를 구하고, 시작 버튼 위에
+- R4. 명세를 고르면 `GET /api/suites/<path>` 로 내용을 읽어(응답은 `FileContent` 이고 명세는 `JSON.parse(content)` 다) `approval` 키 여부를 구하고, 시작 버튼 위에
   `perfStartNotice(repeat, approved)` 의 줄을 그대로 보인다.
 - R5. 원격 대상이면 시작 버튼이 비활성이고 `performanceUnavailable` 문장을 보인다. 성능 카드도 그 문장의 뜻을 보인다.
 - R6. `buildPerfRequest` 가 throw 하면 버튼이 비활성이고 그 문장이 보인다(보안 상세와 같은 방식).

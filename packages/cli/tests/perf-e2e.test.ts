@@ -116,7 +116,15 @@ describe.sequential("perf CLI e2e", { timeout: E2E_TIMEOUT_MS }, () => {
     expect(result.code, result.stderr).toBe(0);
     const report = JSON.parse(result.stdout) as PerfReport;
     expect(result.stdout).toBe(`${JSON.stringify(report, null, 2)}\n`);
-    expect(result.stderr).toBe("측정: 케이스 1개 × 5회\n측정 완료: 호출 5회\n");
+    expect(result.stderr).toBe(
+      "측정: 케이스 1개 × 5회\n" +
+        "측정 중 1/5 · serial (1/5회)\n" +
+        "측정 중 2/5 · serial (2/5회)\n" +
+        "측정 중 3/5 · serial (3/5회)\n" +
+        "측정 중 4/5 · serial (4/5회)\n" +
+        "측정 중 5/5 · serial (5/5회)\n" +
+        "측정 완료: 호출 5회\n",
+    );
     expect(report.settings.observation).toBe("preload");
     expect(report.cases.map((c) => c.id)).toEqual(["serial"]);
   });

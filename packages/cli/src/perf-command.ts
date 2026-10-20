@@ -615,6 +615,17 @@ async function measureAndReport(
       plan,
       now: deps.now,
       sleep: deps.sleep,
+      // measure 는 케이스 순(케이스마다 repeat 회)으로 기록할 때마다 부르므로 done 으로 케이스를 되짚는다.
+      // 케이스 id 는 명세에서 온 글자라 그대로 터미널에 쓰지 않는다.
+      onProgress: (done, total) => {
+        // 신호 처리기가 연결을 닫으면 남은 호출이 거부된 채로 기록돼 여기가 계속 불린다. 중단 뒤에는 쓰지 않는다.
+        if (session.interrupted !== undefined) return;
+        const index = Math.floor((done - 1) / plan.repeat);
+        const iteration = ((done - 1) % plan.repeat) + 1;
+        deps.writeStderr(
+          `측정 중 ${done}/${total} · ${escapeTerminalText(plan.calls[index]?.caseId ?? "")} (${iteration}/${plan.repeat}회)\n`,
+        );
+      },
     });
   } finally {
     // 추적은 연결을 닫은 뒤에 읽는다. 자식이 끝나야 마지막 줄까지 파일에 남는다.

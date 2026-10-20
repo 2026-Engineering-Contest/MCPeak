@@ -56,6 +56,12 @@
       }
     },
     {
+      "includes": ["packages/perf/tests/fixtures/golden/**"],
+      "formatter": {
+        "enabled": false
+      }
+    },
+    {
       "includes": ["docs/benchmark/**"],
       "linter": {
         "enabled": false

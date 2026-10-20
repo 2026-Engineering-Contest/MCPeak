@@ -1,0 +1,57 @@
+{
+  "name": "@mcpeak/perf",
+  "version": "0.0.0",
+  "private": false,
+  "type": "module",
+  "description": "Split MCP tool call latency into external HTTP wait and in-server time",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "mcp-server",
+    "performance",
+    "latency"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/2026-Engineering-Contest/MCPeak.git",
+    "directory": "packages/perf"
+  },
+  "homepage": "https://github.com/2026-Engineering-Contest/MCPeak#readme",
+  "bugs": "https://github.com/2026-Engineering-Contest/MCPeak/issues",
+  "publishConfig": {
+    "access": "public"
+  },
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.mjs"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    }
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.mts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsdown --config-loader native",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --root ../.. packages/perf"
+  },
+  "dependencies": {
+    "@mcpeak/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/sdk": "catalog:"
+  }
+}

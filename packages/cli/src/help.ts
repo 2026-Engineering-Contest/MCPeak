@@ -225,12 +225,51 @@ stdio 서버를 띄울 때 GITHUB_TOKEN 같은 흔한 비밀 이름에 가짜 �
 행위는 보지 못하므로 발견 0 이 안전하다는 뜻은 아닙니다. --sandbox 는 한 번의 실행에서 관측된
 행위만 봅니다. 판정은 이 컴퓨터 안에서만 하고 도구 정의를 외부로 보내지 않습니다.`;
 
+export const PERF_USAGE =
+  "사용법: mcpeak perf <suite.json> (-- <executable> [args...] | --command <executable> [--arg <value> ...] [--env <NAME> ...]) [--repeat <n>] [--interval-ms <ms>] [--tool <name> ...] [--baseline <path> [--update-baseline]] [--threshold-pct <n>] [--threshold-ms <n>] [--json]";
+
+/**
+ * perf 옵션 설명. 설계 §8.4 의 옵션 표를 옮긴 것이다. 사용법 한 줄로는 기준선 판정의 허용치가
+ * 무엇에 걸리는지, 간격 기본값 0 이 무슨 뜻인지 알 수 없다. 둘 다 결과를 잘못 읽게 하는 값이다.
+ * 원격 옵션 설명(`REMOTE_TARGET_OPTIONS`)은 넣지 않는다. perf 는 그 옵션을 거절한다.
+ */
+const PERF_OPTIONS = `옵션:
+  -- <executable> [args...]
+                        \`--\` 뒤는 전부 서버를 띄울 명령입니다. 첫 토큰이 실행 파일,
+                        나머지가 그 인자입니다. \`--command\`/\`--arg\` 와 같은 일을 하며
+                        함께 쓸 수 없습니다
+  --repeat <n>          케이스당 호출 수입니다. 기본값은 5 입니다. 1 이상 100 이하 정수
+  --interval-ms <ms>    호출 사이 대기입니다. 기본값은 0 입니다. 0 이상 60000 이하 정수.
+                        리포트 설정 줄에 표시됩니다
+  --tool <name>         그 도구의 케이스만 잽니다. 반복할 수 있습니다
+  --baseline <path>     기준 파일입니다. 있으면 비교하고, --update-baseline 과 함께면
+                        씁니다
+  --update-baseline     측정 결과로 기준 파일을 씁니다. 비교하지 않습니다.
+                        --baseline 과 함께 써야 하고 --tool 과는 함께 쓸 수 없습니다
+  --threshold-pct <n>   서버 안 p50 회귀의 비율 허용치입니다. 기본값은 50 입니다.
+                        0 이상 1000 이하 정수
+  --threshold-ms <n>    서버 안 p50 회귀의 절대 허용치입니다. 기본값은 20 입니다.
+                        0 이상 60000 이하 정수. 기준의 (1 + 비율/100)배에 이 값을 더한
+                        것을 넘으면 회귀입니다
+  --json                리포트 대신 결과 JSON 하나를 stdout 에 냅니다
+${ENV_FORWARD_OPTION}
+
+측정 대상은 명세의 callTool 케이스 중 거절(isError: true)을 기대하지 않는 것입니다. 서버 프로세스
+안에 관측 코드를 실어야 하므로 --url 과 --header-env 는 받지 않습니다.
+
+--interval-ms 기본값 0 은 서버의 레이트리미터 대기가 서버 안 시간으로 보일 수 있다는 뜻입니다.
+어떤 양수도 그 서버의 한도를 아는 척하는 값이라 기본을 0 으로 두고 설정 줄에 적습니다.
+
+종료 코드는 측정 완료 0, 기준선 회귀 2, 사용 오류·연결 실패·명세 오류·기준 파일 오류 1 입니다.
+진단은 종료 코드를 바꾸지 않습니다.`;
+
 const COMMANDS = `명령:
   test      JSON 테스트 명세로 MCP 서버를 실행하고 검증합니다.
   generate  MCP 서버의 툴 스키마에서 테스트 명세를 생성합니다.
   repair    실패한 test 실행의 번들로 서버 코드의 원인 후보를 제안받습니다.
   optimize  기능을 바꾸지 않고 MCP 서버의 도구 정의를 줄인 오버레이를 만듭니다.
-  audit     MCP 서버를 쓰기 전에 도구 정의와 프로토콜의 보안 위험을 점검합니다.`;
+  audit     MCP 서버를 쓰기 전에 도구 정의와 프로토콜의 보안 위험을 점검합니다.
+  perf      도구 호출 지연을 외부 대기와 서버 안 시간으로 나누고 회귀를 잡습니다.`;
 
 export const GLOBAL_HELP = `MCPeak — MCP 서버 테스트 프레임워크
 
@@ -258,7 +297,7 @@ ${COMMANDS}
  * 묻지도 않은 명령의 사용법 200 자를 읽고 나서야 목록에 닿는다.
  */
 export const commandDiscovery =
-  "사용 가능한 명령: test, generate, repair, optimize, audit. 전체 도움말: mcpeak --help";
+  "사용 가능한 명령: test, generate, repair, optimize, audit, perf. 전체 도움말: mcpeak --help";
 
 export const TEST_USAGE_HINT = `${TEST_USAGE} ${commandDiscovery}`;
 
@@ -270,9 +309,18 @@ export const OPTIMIZE_USAGE_HINT = `${OPTIMIZE_USAGE} ${commandDiscovery}`;
 
 export const AUDIT_USAGE_HINT = `${AUDIT_USAGE} ${commandDiscovery}`;
 
+export const PERF_USAGE_HINT = `${PERF_USAGE} ${commandDiscovery}`;
+
 export function commandHelp(
-  command: "test" | "generate" | "repair" | "optimize" | "audit",
+  command: "test" | "generate" | "repair" | "optimize" | "audit" | "perf",
 ): string {
+  if (command === "perf")
+    return `perf — 도구 호출 지연을 외부 대기와 서버 안 시간으로 나누고 회귀를 잡습니다.
+
+${PERF_USAGE}
+
+${PERF_OPTIONS}
+`;
   if (command === "test")
     return `test — JSON 테스트 명세로 MCP 서버를 실행하고 검증합니다.
 

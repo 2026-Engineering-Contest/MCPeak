@@ -43,6 +43,7 @@ MCPeak 은 그 확인을 JSON 명세와 터미널 명령으로 바꾼다. 테스
 | 실패한 케이스를 AI 로 고친다 | `mcpeak repair bundle.json --provider claude --model <model>` | [Repair](https://2026-engineering-contest.github.io/MCPeak/ko/guide/repair) |
 | 서버를 쓰기 전에 보안 위험을 점검한다 | `mcpeak audit -- node ./server.js` | [Audit](./packages/audit) |
 | 도구 정의를 줄여 LLM 에 넘긴다 | `mcpeak optimize --out server.optimize.json -- node ./server.js` | [Optimize](./packages/optimize) |
+| 도구 호출 지연을 외부 대기와 서버 안 시간으로 나눈다 | `mcpeak perf suite.json -- node ./server.js` | [Perf](./packages/perf) |
 | 웹 UI 에서 돌린다 | `mcpeak-dashboard` | [대시보드](https://2026-engineering-contest.github.io/MCPeak/ko/guide/dashboard) |
 | CI 에 붙인다 | `mcpeak test suite.json --junit out.xml -- node ./server.js` | [CI 연동](https://2026-engineering-contest.github.io/MCPeak/ko/guide/ci) |
 
@@ -171,9 +172,10 @@ mcpeak test weather.suite.json -- node examples/weather-server/server.mjs
 | [`@mcpeak/mock`](./packages/mock) | 목 MCP(Streamable HTTP, stdio), 응답 주입 |
 | [`@mcpeak/audit`](./packages/audit) | MCP 사전 보안 점검. Docker 격리 실행(`--sandbox`) |
 | [`@mcpeak/optimize`](./packages/optimize) | 도구 정의 무손실 압축, 오버레이 프록시. `mcpeak-optimize-proxy` 로 띄운다 |
+| [`@mcpeak/perf`](./packages/perf) | 도구 호출 지연 분해(외부 HTTP 대기와 서버 안 시간), 순차·반복 요청 진단, 기준선 회귀 게이트 |
 | [`@mcpeak/dashboard`](./packages/dashboard) | 로컬 웹 UI. `mcpeak-dashboard` 로 띄운다 |
 
-의존 방향은 단방향이다: `dashboard` → `cli` → `runner`/`generate`/`record`/`mock`/`audit`/`optimize` → `core`.
+의존 방향은 단방향이다: `dashboard` → `cli` → `runner`/`generate`/`record`/`mock`/`audit`/`optimize`/`perf` → `core`.
 오른쪽에 있는 하위 계층으로만 의존할 수 있다는 뜻이며, 인접 계층을 건너뛰어도 된다
 ([ADR-0091](./docs/adr/0091-패키지는-하위-계층을-직접-의존할-수-있다.md)).
 

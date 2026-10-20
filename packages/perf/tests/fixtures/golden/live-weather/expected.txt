@@ -1,0 +1,19 @@
+mcpeak perf 결과
+서버 node examples/live-weather-server/server.mjs · 도구 11개 · 관측 Node 프리로드(fetch, node:http, http2, undici)
+설정 반복 5회 · 호출 간격 0ms · 케이스 4개 (callTool 중 거절 기대 제외)
+콜드 스타트 기동+핸드셰이크 312ms · tools/list 4ms
+
+케이스                     n  응답 p50  p95  외부 대기 p50  서버 안 p50  외부 요청/호출
+get-forecast-success    5     284  664        280         4         2
+compare-cities-success  5     425  425        420         5         6
+lookup-country-success  5       1    3          0         1         0
+convert-units-success   0                                              측정 안 됨: threw 5회. 첫 오류: MCP error -32602: Output validation error: Invalid structured content for tool convert_units: Invalid input: expected number, received undefined at converted
+
+진단 1건 (종료 코드에 영향 없음)
+→ 'compare_cities' 호출 안에서 독립 요청 2건이 순차로 나갑니다 (5회 중 5회): GET geocoding-api.open-meteo.com/v1/search?name=…&count=…&language=… ×2
+→ 병렬로 보내면 최대 약 280ms 줄일 수 있습니다 (p50 기준 상한).
+→ Promise.all 로 한 번에 보내고, 상대 API 의 동시 요청 한도와 429 백오프를 함께 두세요.
+
+외부 대기는 서버 프로세스 안에서 관측한 HTTP 요청(fetch·node:http·http2·undici)의 시작부터 응답 본문 끝까지의 합집합입니다.
+서버 안 시간은 응답 시간에서 그것을 뺀 나머지이고, 처리뿐 아니라 레이트리미터·타이머 대기, 첫 연결의 TLS, stdio 전송이 들어 있습니다.
+수치는 이 컴퓨터와 이 네트워크에서 잰 값입니다. 전후 비교는 같은 조건에서 --baseline 으로 하세요.

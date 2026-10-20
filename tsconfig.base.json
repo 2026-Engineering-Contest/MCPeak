@@ -25,6 +25,7 @@
       "@mcpeak/mock": ["./packages/mock/src/index.ts"],
       "@mcpeak/optimize": ["./packages/optimize/src/index.ts"],
       "@mcpeak/audit": ["./packages/audit/src/index.ts"],
+      "@mcpeak/perf": ["./packages/perf/src/index.ts"],
       "@mcpeak/cli/commands": ["./packages/cli/src/commands.ts"]
     }
   }

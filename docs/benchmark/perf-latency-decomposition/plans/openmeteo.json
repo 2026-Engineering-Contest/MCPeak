@@ -1,0 +1,1 @@
+{"name": "openmeteo", "command": "node", "args": ["../servers/node_modules/open-meteo-mcp/dist/index.js"], "calls": [{"tool": "get_weather", "input": {"location": "Seoul"}}, {"tool": "get_air_quality", "input": {"location": "Tokyo"}}, {"tool": "compare_weather", "input": {"locations": ["Seoul", "Tokyo", "Berlin"]}}], "env": {"NODE_OPTIONS": "--dns-result-order=ipv4first"}}

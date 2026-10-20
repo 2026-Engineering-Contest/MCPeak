@@ -6,11 +6,12 @@
  * 한다. 타입·필수·범위·enum 위반은 핸들러에 닿기 전에 SDK 가 `-32602` 로 거절하므로, 핸들러는
  * 스키마로 못 적는 의미 검증(모르는 도시, 종류가 다른 단위, 해석 못 하는 식)만 맡는다.
  *
- * 툴 10개가 각자 다른 단계를 맡는다.
+ * 툴 11개가 각자 다른 단계를 맡는다.
  *
  * | 툴 | 종류 | 보여주는 것 |
  * |---|---|---|
  * | get_forecast · convert_currency · search_city | 외부 fetch | 녹화·재생. 호출마다 값이 바뀌는 비결정성을 재생이 고정한다 |
+ * | compare_cities | 외부 fetch | `mcpeak perf` 의 순차 독립 요청 진단. 도시마다 지오코딩·예보를 직렬로 부른다 |
  * | list_recent_quakes | 외부 fetch | 최근 N건. 요청에 시각을 넣지 않아 재생이 맞는다(아래 5번) |
  * | add_note · list_notes | 로컬, 파일 상태 | `--determinism` 이 차이를 잡고 `--reset-cmd` 로 통과 |
  * | convert_units | 로컬 | **결함 A.** outputSchema 는 `converted` 인데 `result` 를 돌려준다 |
@@ -165,7 +166,7 @@ const external = (handler) => async (args) => {
 const server = new McpServer({ name: "example-live-weather-server", version: "0.3.0" });
 
 // ---------------------------------------------------------------------------
-// 외부 호출 툴 넷
+// 외부 호출 툴 다섯
 // ---------------------------------------------------------------------------
 
 server.registerTool(
@@ -212,6 +213,65 @@ server.registerTool(
       condition: WEATHER_CODES[code] ?? `코드 ${code}`,
       observedAt: data.current?.time,
     });
+  }),
+);
+
+// `mcpeak perf` 데모용. 도시마다 지오코딩 뒤 예보를 부르는 것을 전부 직렬로 한다. 2·3번째 도시의
+// 지오코딩은 앞 응답과 무관한데도 앞 도시가 끝나기를 기다리므로, perf 가 "독립 요청이 순차로
+// 나간다" 고 진단한다. 일부러 둔 모양이라 Promise.all 로 바꾸지 않는다. URL 은 get_forecast 와 같다.
+server.registerTool(
+  "compare_cities",
+  {
+    description: "도시 2~3개의 현재 기온과 날씨 코드를 차례로 조회한다 (Open-Meteo).",
+    inputSchema: {
+      cities: z
+        .array(z.string().min(1))
+        .min(2)
+        .max(3)
+        .meta({ examples: [["Seoul", "Busan", "Tokyo"]] })
+        .describe("도시 이름 2~3개. 예: Seoul, Busan, Tokyo"),
+    },
+  },
+  external(async ({ cities }) => {
+    const results = [];
+    for (const city of cities) {
+      if (city.trim() === "") {
+        return fail(
+          "→ 'cities' 의 각 항목은 비어 있지 않은 문자열이어야 합니다. " +
+            '예: { "cities": ["Seoul", "Busan"] }',
+        );
+      }
+
+      const geo = new URL(GEOCODING_URL);
+      geo.searchParams.set("name", city.trim());
+      geo.searchParams.set("count", "1");
+      geo.searchParams.set("language", "ko");
+      const places = await getJson(geo);
+      const place = places.results?.[0];
+      if (place === undefined) {
+        return fail(
+          `→ '${city}' 에 해당하는 지역을 찾지 못했습니다.\n` +
+            "→ 도시 이름을 한글이나 영문 정식 명칭으로 적어 보세요. 예: 부산, Seoul, Tokyo",
+        );
+      }
+
+      const forecast = new URL(FORECAST_URL);
+      forecast.searchParams.set("latitude", String(place.latitude));
+      forecast.searchParams.set("longitude", String(place.longitude));
+      forecast.searchParams.set("current", "temperature_2m,weather_code");
+      forecast.searchParams.set("timezone", place.timezone ?? "UTC");
+      const data = await getJson(forecast);
+      const code = data.current?.weather_code;
+
+      results.push({
+        city: place.name,
+        country: place.country,
+        temp: data.current?.temperature_2m,
+        condition: WEATHER_CODES[code] ?? `코드 ${code}`,
+        observedAt: data.current?.time,
+      });
+    }
+    return text(results);
   }),
 );
 

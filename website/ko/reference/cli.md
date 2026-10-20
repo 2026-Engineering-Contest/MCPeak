@@ -160,6 +160,39 @@ mcpeak audit <서버 지정>
 stdio 서버를 띄울 때 `GITHUB_TOKEN` 같은 흔한 비밀 이름에 가짜 값(카나리)을 넣는다. `--env`
 로 넘긴 이름에는 카나리 대신 실제 값이 간다. 어느 값도 출력에 쓰지 않는다.
 
+## perf
+
+```
+mcpeak perf <suite.json> (-- <executable> [args...] | --command <executable> [--arg <value> ...] [--env <NAME> ...])
+            [--repeat <n>] [--interval-ms <ms>] [--tool <name> ...]
+            [--baseline <path> [--update-baseline]] [--threshold-pct <n>] [--threshold-ms <n>] [--json]
+```
+
+명세의 `callTool` 케이스 중 거절(`isError: true`)을 기대하지 않는 것을 케이스마다 반복 호출해, 응답 시간을
+외부 HTTP 대기(요청 시작부터 응답 본문 끝까지)와 서버 안 시간으로 나눈 표를 stdout 에 낸다. 순차 독립 요청과
+반복 요청을 진단하지만 진단은 종료 코드를 바꾸지 않는다. 측정이 끝나면 0, 기준선 회귀는 2, 사용 오류·연결
+실패·명세 오류·기준 파일 오류는 1 을 낸다. 진행 문장은 stderr 로 나간다. 진단 규칙과 리포트 읽는 법은
+[@mcpeak/perf](https://github.com/2026-Engineering-Contest/MCPeak/tree/main/packages/perf)에 있다.
+
+서버 지정은 `--` 와 `--command` 만 받고 `--url`·`--header-env` 는 거절한다. 관측 코드를 서버 프로세스 안에
+실어야 해서, 이 도구가 띄우지 않은 원격 서버는 잴 수 없기 때문이다. Node 가 아닌 서버는 응답 시간과 콜드
+스타트만 낸다.
+
+| 옵션 | 기본값 | 뜻 |
+|---|---|---|
+| `--repeat <n>` | `5` | 케이스당 호출 수. 1 이상 100 이하 정수 |
+| `--interval-ms <ms>` | `0` | 호출 사이 대기. 0 이상 60000 이하 정수. 0 이면 서버의 레이트리미터 대기가 서버 안 시간으로 보일 수 있다 |
+| `--tool <name>` | 없음 | 그 도구의 케이스만 잰다. 반복할 수 있다 |
+| `--baseline <path>` | 없음 | 기준 파일과 비교한다. 서버 안 p50 이 허용치를 넘거나 호출당 외부 요청 수가 늘면 회귀로 2 |
+| `--update-baseline` | 끔 | 비교하지 않고 측정 결과로 기준 파일을 쓴다. `--baseline` 과 함께 써야 하고 `--tool` 과는 함께 쓸 수 없다(기준은 명세 전체로 갱신한다) |
+| `--threshold-pct <n>` | `50` | 서버 안 회귀 허용치 `기준 × (1 + n/100) + threshold-ms` 의 비율. 0 이상 1000 이하 정수 |
+| `--threshold-ms <n>` | `20` | 같은 허용치의 바닥. 0 이상 60000 이하 정수 |
+| `--json` | 끔 | 리포트 대신 결과 JSON 을 stdout 에 낸다 |
+
+외부 대기는 네트워크 변동이 커서 기준선 판정에 넣지 않고 보여주기만 한다. 외부 호출을 관측하지 못한 실행에
+`--baseline` 을 주면 리포트를 낸 뒤 1 로 끝난다. `test` 전용 옵션(`--junit`, `--repair-bundle`, `--determinism`,
+`--reset-cmd`, `--stderr-lines`, `--session`, `--record-session`)은 받지 않는다.
+
 ## 별도 실행 파일
 
 | 명령 | 패키지 | 뜻 |

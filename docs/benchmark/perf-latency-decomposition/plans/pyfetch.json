@@ -1,0 +1,2 @@
+{"name":"pyfetch","command":"uvx","args":["mcp-server-fetch"],"calls":[
+ {"tool":"fetch","input":{"url":"https://modelcontextprotocol.io/introduction","max_length":5000}}]}

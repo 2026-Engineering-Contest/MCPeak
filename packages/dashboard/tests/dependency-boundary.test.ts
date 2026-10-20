@@ -13,6 +13,7 @@ const packageNames = [
   "mock",
   "optimize",
   "audit",
+  "perf",
   "cli",
   "dashboard",
 ] as const;
@@ -30,8 +31,9 @@ const ALLOWED_INTERNAL_DEPENDENCIES: Readonly<Record<PackageName, readonly Packa
   mock: ["core"],
   optimize: ["core"],
   audit: ["core"],
-  cli: ["core", "runner", "generate", "record", "mock", "optimize", "audit"],
-  dashboard: ["core", "runner", "generate", "record", "mock", "optimize", "audit", "cli"],
+  perf: ["core"],
+  cli: ["core", "runner", "generate", "record", "mock", "optimize", "audit", "perf"],
+  dashboard: ["core", "runner", "generate", "record", "mock", "optimize", "audit", "perf", "cli"],
 };
 
 interface PackageManifest {

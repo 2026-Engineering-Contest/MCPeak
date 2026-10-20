@@ -166,6 +166,42 @@ When launching a stdio server, common secret names such as `GITHUB_TOKEN` are fi
 values (canaries). Names passed with `--env` receive the real value instead. No value is written
 to the output.
 
+## perf
+
+```
+mcpeak perf <suite.json> (-- <executable> [args...] | --command <executable> [--arg <value> ...] [--env <NAME> ...])
+            [--repeat <n>] [--interval-ms <ms>] [--tool <name> ...]
+            [--baseline <path> [--update-baseline]] [--threshold-pct <n>] [--threshold-ms <n>] [--json]
+```
+
+Calls each `callTool` case in the suite that does not expect a rejection (`isError: true`) repeatedly, and prints
+to stdout a table that splits the response time into external HTTP wait (from the start of each request to the end
+of its response body) and in-server time. It diagnoses sequential independent requests and repeated requests, but
+diagnostics do not change the exit code. Exits with 0 when the measurement finishes, 2 on a baseline regression,
+and 1 on a usage error, connection failure, suite error, or baseline file error. Progress lines go to stderr. The
+diagnostic rules and how to read the report are described in
+[@mcpeak/perf](https://github.com/2026-Engineering-Contest/MCPeak/tree/main/packages/perf).
+
+The server can only be specified with `--` or `--command`; `--url` and `--header-env` are rejected. The observation
+code has to be loaded into the server process, so a remote server this tool did not start cannot be measured.
+Servers that are not Node only get response time and cold start.
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--repeat <n>` | `5` | Calls per case. An integer from 1 to 100 |
+| `--interval-ms <ms>` | `0` | Wait between calls. An integer from 0 to 60000. At 0, a server's rate limiter wait may show up as in-server time |
+| `--tool <name>` | none | Measures only the cases for that tool. Repeatable |
+| `--baseline <path>` | none | Compares with the baseline file. In-server p50 above the allowance, or more external requests per call, is a regression and exits with 2 |
+| `--update-baseline` | off | Writes the baseline file from this measurement without comparing. Must be used with `--baseline` and cannot be combined with `--tool` (the baseline is always rewritten from the whole suite) |
+| `--threshold-pct <n>` | `50` | The ratio in the in-server allowance `baseline × (1 + n/100) + threshold-ms`. An integer from 0 to 1000 |
+| `--threshold-ms <n>` | `20` | The floor of the same allowance. An integer from 0 to 60000 |
+| `--json` | off | Prints the result JSON to stdout instead of the report |
+
+External wait swings widely with the network, so it is shown but left out of the baseline verdict. Giving
+`--baseline` to a run where no external calls could be observed prints the report and then exits with 1. Options
+only `test` has (`--junit`, `--repair-bundle`, `--determinism`, `--reset-cmd`, `--stderr-lines`, `--session`,
+`--record-session`) are not accepted.
+
 ## Separate executables
 
 | Command | Package | Meaning |

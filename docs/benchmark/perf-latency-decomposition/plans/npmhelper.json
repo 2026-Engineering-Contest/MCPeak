@@ -1,0 +1,1 @@
+{"name":"npmhelper","command":"node","args":["../servers/node_modules/@pinkpixel/npm-helper-mcp/dist/index.js"],"calls":[{"tool":"search_npm","input":{"query":"mcp server","maxResults":5}},{"tool":"get_package_details","input":{"packageName":"zod"}},{"tool":"get_package_versions","input":{"packageName":"vitest"}}]}

@@ -1,0 +1,1 @@
+{"name":"ghrepo","command":"node","args":["../servers/node_modules/github-repo-mcp/dist/index.js"],"calls":[{"tool":"getRepoAllDirectories","input":{"repoUrl":"https://github.com/modelcontextprotocol/typescript-sdk"}},{"tool":"getRepoFile","input":{"repoUrl":"https://github.com/modelcontextprotocol/typescript-sdk","path":"README.md"}}]}

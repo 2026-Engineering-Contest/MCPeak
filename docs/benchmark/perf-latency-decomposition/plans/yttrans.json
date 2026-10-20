@@ -1,0 +1,1 @@
+{"name":"yttrans","command":"node","args":["../servers/node_modules/@kimtaeyoon83/mcp-server-youtube-transcript/dist/index.js"],"calls":[{"tool":"get_transcript","input":{"url":"https://www.youtube.com/watch?v=dQw4w9WgXcQ","lang":"en"}}]}

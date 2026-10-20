@@ -3,7 +3,7 @@
   "id": "server",
   "name": "server",
   "approval": {
-    "fingerprint": "e189ead45658cac088c94c8021ff6946f76a4a6ab3b684ade770ce0b1d05a2d0",
+    "fingerprint": "11580db98ded66f0146bcf5f79f981b718a6b6b545c194e5172370e0854fda79",
     "cases": [
       {
         "id": "get-forecast-success",
@@ -15,6 +15,10 @@
       },
       {
         "id": "get-forecast-type-city",
+        "status": "passed"
+      },
+      {
+        "id": "compare-cities-success",
         "status": "passed"
       },
       {
@@ -383,6 +387,23 @@
         {
           "type": "isError",
           "expected": true
+        }
+      ]
+    },
+    {
+      "id": "compare-cities-success",
+      "name": "compare_cities가 오류 없이 응답한다",
+      "operation": {
+        "type": "callTool",
+        "tool": "compare_cities",
+        "input": {
+          "cities": ["Seoul", "Busan", "Tokyo"]
+        }
+      },
+      "assertions": [
+        {
+          "type": "isError",
+          "expected": false
         }
       ]
     },

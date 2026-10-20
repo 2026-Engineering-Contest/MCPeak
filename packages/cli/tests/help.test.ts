@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { commandHelp, GENERATE_USAGE, GENERATE_USAGE_HINT, TEST_USAGE } from "../src/help.js";
+import {
+  commandDiscovery,
+  commandHelp,
+  GENERATE_USAGE,
+  GENERATE_USAGE_HINT,
+  GLOBAL_HELP,
+  PERF_USAGE,
+  TEST_USAGE,
+} from "../src/help.js";
 
 /** 도움말은 옵션의 유일한 설명이다. */
 describe("generate 도움말", () => {
@@ -87,6 +95,61 @@ describe("generate 도움말", () => {
     // 힌트는 stderr 한 줄이다. 여기에 옵션 설명 블록이 섞이면 오류 메시지가 화면을 덮는다.
     expect(GENERATE_USAGE_HINT).toContain(GENERATE_USAGE);
     expect(GENERATE_USAGE_HINT).not.toContain("\n");
+  });
+});
+
+/** perf 는 설계 §8.4 의 옵션 표가 도움말 본문이다(계획 §8.2). */
+describe("perf 도움말", () => {
+  const help = commandHelp("perf");
+
+  it("전체 도움말의 명령 목록에 audit 다음 줄로 perf 가 있다", () => {
+    expect(GLOBAL_HELP).toContain(
+      "  audit     MCP 서버를 쓰기 전에 도구 정의와 프로토콜의 보안 위험을 점검합니다.\n" +
+        "  perf      도구 호출 지연을 외부 대기와 서버 안 시간으로 나누고 회귀를 잡습니다.\n",
+    );
+  });
+
+  it("명령 발견 문장에 perf 가 있다", () => {
+    expect(commandDiscovery).toBe(
+      "사용 가능한 명령: test, generate, repair, optimize, audit, perf. 전체 도움말: mcpeak --help",
+    );
+  });
+
+  it("머리 줄과 사용법 줄", () => {
+    expect(
+      help.startsWith(
+        "perf — 도구 호출 지연을 외부 대기와 서버 안 시간으로 나누고 회귀를 잡습니다.\n\n" +
+          `${PERF_USAGE}\n\n옵션:\n`,
+      ),
+    ).toBe(true);
+  });
+
+  it.each([
+    ["--repeat <n>          케이스당 호출 수입니다. 기본값은 5 입니다. 1 이상 100 이하 정수"],
+    ["--interval-ms <ms>    호출 사이 대기입니다. 기본값은 0 입니다. 0 이상 60000 이하 정수"],
+    ["--tool <name>         그 도구의 케이스만 잽니다. 반복할 수 있습니다"],
+    ["--baseline <path>     기준 파일입니다. 있으면 비교하고, --update-baseline 과 함께면"],
+    // 두 줄을 전체 줄로 고정한다. 앞부분만 보면 둘째 줄의 --tool 제약이 빠져도 녹색이다(계획 E26).
+    [
+      "--update-baseline     측정 결과로 기준 파일을 씁니다. 비교하지 않습니다.\n" +
+        "                        --baseline 과 함께 써야 하고 --tool 과는 함께 쓸 수 없습니다\n",
+    ],
+    ["--threshold-pct <n>   서버 안 p50 회귀의 비율 허용치입니다. 기본값은 50 입니다."],
+    ["--threshold-ms <n>    서버 안 p50 회귀의 절대 허용치입니다. 기본값은 20 입니다."],
+    ["--json                리포트 대신 결과 JSON 하나를 stdout 에 냅니다"],
+  ])("옵션 줄 %s", (line) => {
+    expect(help).toContain(`  ${line}`);
+  });
+
+  it("--env 는 받고 원격 옵션은 받지 않는다고 말한다", () => {
+    expect(help).toContain("--env <NAME>");
+    expect(help).not.toContain("--header-env <헤더이름>");
+    expect(help).toContain("--url 과 --header-env 는 받지 않습니다");
+  });
+
+  it("종료 코드와 간격 기본값의 뜻을 말한다", () => {
+    expect(help).toContain("종료 코드는 측정 완료 0, 기준선 회귀 2");
+    expect(help).toContain("레이트리미터");
   });
 });
 

@@ -19,13 +19,17 @@ export {
   type ReviewIO,
   runGenerateCommand,
 } from "./generate-command.js";
-export { nodeAuditDependencies } from "./index.js";
+export { nodeAuditDependencies, nodePerfDependencies } from "./index.js";
 export {
   type OptimizeCommandDependencies,
   type OptimizeCommandInput,
   parseOptimizeCommand,
   runOptimizeCommand,
 } from "./optimize-command.js";
+export {
+  type PerfCommandDependencies,
+  runPerfCommand,
+} from "./perf-command.js";
 export {
   parseRepairCommand,
   type RepairCommandDependencies,

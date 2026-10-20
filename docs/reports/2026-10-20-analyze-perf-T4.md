@@ -6,7 +6,7 @@
 
 | 항목 | 값 |
 |---|---|
-| pwd | `/Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/ohmymcp-analyze-perf-T4` |
+| pwd | `.claude/worktrees/ohmymcp-analyze-perf-T4` |
 | `git rev-parse HEAD` | `19fbb48883782592b60ae38f5776b345ff57a590` (커밋 전이라 BASE 와 같다) |
 | BASE (`feat/analyze-perf`) | `19fbb48883782592b60ae38f5776b345ff57a590` |
 | T3SHA (대장 `analyze-perf-T3`) | `b6c2731de02920812cf52309a7a52a682320cf6c` (`feat/analyze-perf` 의 조상임을 확인) |

@@ -6,7 +6,7 @@
 
 | 항목 | 값 |
 |---|---|
-| pwd | `/Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/ohmymcp-analyze-perf-fix` |
+| pwd | `.claude/worktrees/ohmymcp-analyze-perf-fix` |
 | 브랜치 | `feat/analyze-perf-fix` |
 | HEAD = `feat/analyze-perf` | `41462c3750dbf0a10df8f35f3cdc056647a66edf` |
 
@@ -75,5 +75,5 @@ T4 worktree(7488 대시보드가 쓰는 곳)에서는 worktree 생성 명령만 
    다시 마운트되어 적용 상태(다시 분석 버튼)가 지워지기 때문이다.
 3. "다시 측정" 의 사유는 원격이 다른 축 실행보다 앞선다(상세 폼의 사유 순서와 같다).
 4. CI 재현 때 perf dist 를 치워 둔 곳은 지시한 다른 세션의 scratchpad 가 아니라 이 세션의 scratchpad
-   (`/private/tmp/claude-501/-Users-doo---hyun-Study-Project-OhMyMCP/3c456f1a-a8c1-4f19-96e7-b91ee8538d96/scratchpad/perf-dist-bak`)
+   (`<세션 scratchpad>/perf-dist-bak`)
    다. 남의 세션 디렉터리에 쓰지 않으려는 것이고, 동작은 같다.

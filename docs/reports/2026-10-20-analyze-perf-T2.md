@@ -6,7 +6,7 @@
 
 | 항목 | 값 |
 |---|---|
-| pwd | `/Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/ohmymcp-analyze-perf-T2` |
+| pwd | `.claude/worktrees/ohmymcp-analyze-perf-T2` |
 | 브랜치 | `feat/analyze-perf-T2` |
 | git rev-parse HEAD | `df28bd22af86b30c9c941a0bf51b002fe3c6d8e0` (커밋하지 않았으므로 BASE 와 같다) |
 | BASE (`feat/analyze-perf`) | `df28bd22af86b30c9c941a0bf51b002fe3c6d8e0` |

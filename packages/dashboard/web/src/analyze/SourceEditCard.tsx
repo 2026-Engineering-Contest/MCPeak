@@ -134,10 +134,16 @@ export function SourceEditCard({
   result,
   argv,
   onReanalyze,
+  reanalyzeDisabledReason = null,
 }: {
   readonly result: AnalyzeTokensResponse;
   readonly argv: readonly string[];
   readonly onReanalyze: () => void;
+  /**
+   * 문장이면 다시 분석이 비활성이고 그 문장을 버튼 옆에 보인다. null(기본)이면 지금처럼 활성이다.
+   * Analyze 는 성능 측정이 도는 동안 준다(ADR-0119).
+   */
+  readonly reanalyzeDisabledReason?: string | null;
 }): JSX.Element {
   const edits = collectEdits(result);
   const [preview, setPreview] = useState<SourceEditResponse | null>(null);
@@ -191,9 +197,18 @@ export function SourceEditCard({
           <p role="status" className="text-sm text-ink">
             {`${applied.file} 에 ${applied.readyCount}건을 적용했습니다. 다시 분석하면 줄어든 결과를 확인할 수 있습니다.`}
           </p>
-          <Button variant="primary" onClick={onReanalyze}>
-            다시 분석
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="primary"
+              disabled={reanalyzeDisabledReason !== null}
+              onClick={onReanalyze}
+            >
+              다시 분석
+            </Button>
+            {reanalyzeDisabledReason !== null && (
+              <p className="text-xs text-ink-muted">{reanalyzeDisabledReason}</p>
+            )}
+          </div>
         </>
       ) : preview === null ? (
         <Button variant="primary" disabled={busy !== null} onClick={() => void send()}>

@@ -69,9 +69,15 @@ describe("App", () => {
     expect(within(panel).getByRole("heading", { name: "보안 상세" })).toBeTruthy();
     expect(screen.getByRole("tab", { name: /^보안/ }).getAttribute("aria-selected")).toBe("true");
 
-    // 성능 효율성은 상세가 없는 축이다. 주소는 그대로 두고 상세를 닫는다.
+    // 결과 단계에서 #/analyze/performance 면 성능 상세 tabpanel 이 열린다.
     window.location.hash = "#/analyze/performance";
-    await waitFor(() => expect(screen.queryByRole("tabpanel")).toBeNull());
-    expect(window.location.hash).toBe("#/analyze/performance");
+    await waitFor(() =>
+      expect(
+        within(screen.getByRole("tabpanel")).getByRole("heading", { name: "성능 효율성 상세" }),
+      ).toBeTruthy(),
+    );
+    expect(screen.getByRole("tab", { name: /^성능 효율성/ }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
   });
 });

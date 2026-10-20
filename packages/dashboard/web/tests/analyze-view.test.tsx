@@ -724,23 +724,25 @@ describe("AnalyzeView 개요", () => {
     ]);
     await waitFor(() => expect(screen.queryByRole("radio", { name: /^weather/ })).toBeNull());
     expect(screen.getByRole("button", { name: "대상 바꾸기" })).toBeTruthy();
-    expect(screen.getByText("아직 연결되지 않았습니다")).toBeTruthy();
+    // 성능 카드는 분석하기를 기다리지 않는다. 명세를 골라 측정한다는 문장이 보인다.
+    expect(
+      within(screen.getByRole("tab", { name: /^성능 효율성/ })).getByText(/명세를 골라 측정/),
+    ).toBeTruthy();
     // 카드를 누르기 전에는 상세가 없다.
     expect(screen.queryByRole("tabpanel")).toBeNull();
   });
 
-  it("성능 카드는 비활성이고 눌러도 해시가 바뀌지 않는다", async () => {
+  it("성능 카드는 활성이고 누르면 해시가 성능 상세로 바뀐다", async () => {
     stubFetch();
     window.location.hash = "#/analyze";
     render(<AnalyzeView pillar={null} />);
     await runAll();
 
     const card = await screen.findByRole("tab", { name: /^성능 효율성/ });
-    expect(card.getAttribute("aria-disabled")).toBe("true");
+    expect(card.getAttribute("aria-disabled")).toBeNull();
     fireEvent.click(card);
     // jsdom 의 fragment 이동은 비동기다.
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(window.location.hash).toBe("#/analyze");
+    await waitFor(() => expect(window.location.hash).toBe("#/analyze/performance"));
   });
 
   it("첫 후보가 초기 선택이고 분석하기가 두 요청을 같은 틱에 보낸다", async () => {

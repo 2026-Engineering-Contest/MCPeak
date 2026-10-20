@@ -4,7 +4,7 @@
 
 ## 작업 공간
 
-- pwd: `/Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/ohmymcp-analyze-perf-T1`
+- pwd: `.claude/worktrees/ohmymcp-analyze-perf-T1`
 - 브랜치: `feat/perf-cli-exports`
 - BASE (`git rev-parse feat/analyze-perf`): `43d6ffd2e7fe594e83e0bfc29e8da48bd8ff0576`
 - `git rev-parse HEAD`: `43d6ffd2e7fe594e83e0bfc29e8da48bd8ff0576` (BASE 와 같음, 커밋하지 않음)

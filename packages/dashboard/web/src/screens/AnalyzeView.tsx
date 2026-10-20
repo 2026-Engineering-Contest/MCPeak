@@ -1,11 +1,17 @@
 import type { JSX } from "react";
 import { useRef, useState } from "react";
 import { buildAnalyzeRequests, describeTarget } from "../analyze/build-analyze-requests.js";
+import {
+  INITIAL_PERF_FORM,
+  type PerfForm,
+  performanceUnavailable,
+} from "../analyze/build-perf-request.js";
 import { ErrorAlert } from "../analyze/ErrorAlert.js";
 import { PassedChecks } from "../analyze/PassedChecks.js";
+import { PERFORMANCE_IDLE_NOTE, PerformanceDetail } from "../analyze/PerformanceResult.js";
 import { PillarBadge } from "../analyze/PillarBadge.js";
 import { PillarCard } from "../analyze/PillarCard.js";
-import { PILLARS, securitySummary, tokensSummary } from "../analyze/pillars.js";
+import { PILLARS, performanceSummary, securitySummary, tokensSummary } from "../analyze/pillars.js";
 import { SecurityProgressView } from "../analyze/SecurityProgress.js";
 import { SecurityResult } from "../analyze/SecurityResult.js";
 import { SANDBOX_WRITE_NOTICE } from "../analyze/sandbox-hint.js";
@@ -14,6 +20,10 @@ import { TargetBar } from "../analyze/TargetBar.js";
 import { TokensResult } from "../analyze/TokensResult.js";
 import type { AnalyzePillar } from "../analyze/types.js";
 import { useAnalyzeTarget } from "../analyze/use-analyze-target.js";
+import {
+  type PerformanceAnalysis,
+  usePerformanceAnalysis,
+} from "../analyze/use-performance-analysis.js";
 import { type SecurityAnalysis, useSecurityAnalysis } from "../analyze/use-security-analysis.js";
 import { type TokensAnalysis, useTokensAnalysis } from "../analyze/use-tokens-analysis.js";
 import { Button } from "../components/Button.js";
@@ -23,6 +33,7 @@ import { PageHeader } from "../components/PageHeader.js";
 const PILLAR_NAME: Readonly<Record<AnalyzePillar, string>> = {
   security: "보안",
   tokens: "비용 최적화",
+  performance: "성능 효율성",
 };
 
 /** 상세 머리의 배지. 글자는 카드와 같다. idle 이면 없다. */
@@ -30,7 +41,18 @@ function detailBadge(
   pillar: AnalyzePillar,
   tokens: TokensAnalysis,
   security: SecurityAnalysis,
+  performance: PerformanceAnalysis,
 ): JSX.Element | null {
+  if (pillar === "performance") {
+    const { state } = performance;
+    if (state.kind === "done") {
+      const { verdict } = performanceSummary(state.result);
+      return <PillarBadge label={verdict.label} tone={verdict.tone} />;
+    }
+    if (state.kind === "running") return <PillarBadge label="측정 중…" tone="running" />;
+    if (state.kind === "failed") return <PillarBadge label="실패" tone="failed" />;
+    return null;
+  }
   if (pillar === "security") {
     const { state, sent } = security;
     if (state.kind === "done" && sent !== null) {
@@ -57,8 +79,18 @@ function detailBadge(
  */
 const IDLE_DETAIL = "아직 분석하지 않았습니다. 위에서 서버를 고르고 분석하기를 누르세요.";
 
+/** 성능이 도는 동안 다시 점검·다시 분석을 막는 사유(ADR-0119). 측정이 다른 축의 부하를 함께 재지 않게 한다. */
+const PERF_RUNNING_REASON = "성능 측정이 끝난 뒤 다시 할 수 있습니다.";
+
 /** 보안 상세의 본문(설계 §3.4). 구독은 훅이 가지므로 여기서는 받은 events 를 그리기만 한다. */
-function SecurityDetail({ security }: { readonly security: SecurityAnalysis }): JSX.Element {
+function SecurityDetail({
+  security,
+  perfRunning,
+}: {
+  readonly security: SecurityAnalysis;
+  /** 성능이 running 이다. 다시 점검을 막는다. */
+  readonly perfRunning: boolean;
+}): JSX.Element {
   const { state, sent } = security;
   if (state.kind === "idle") {
     return <p className="text-sm text-ink-muted">{IDLE_DETAIL}</p>;
@@ -88,13 +120,14 @@ function SecurityDetail({ security }: { readonly security: SecurityAnalysis }): 
             // 발견 없이 통과한 검사(ADR-0117). 발견 목록 바로 다음에 온다. 서버가 센 목록을 그리기만 한다.
             passedChecks={<PassedChecks rules={state.result.passedRules} />}
           />
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Button
-              disabled={security.state.kind === "running"}
+              disabled={security.state.kind === "running" || perfRunning}
               onClick={() => void security.start(sent)}
             >
               다시 점검
             </Button>
+            {perfRunning && <p className="text-xs text-ink-muted">{PERF_RUNNING_REASON}</p>}
           </div>
         </>
       )}
@@ -103,7 +136,14 @@ function SecurityDetail({ security }: { readonly security: SecurityAnalysis }): 
 }
 
 /** 비용 최적화 상세의 본문(설계 §3.4). 옛 토큰 패널의 결과 단계와 같은 배치다. */
-function TokensDetail({ tokens }: { readonly tokens: TokensAnalysis }): JSX.Element {
+function TokensDetail({
+  tokens,
+  perfRunning,
+}: {
+  readonly tokens: TokensAnalysis;
+  /** 성능이 running 이다. 다시 분석을 막는다. */
+  readonly perfRunning: boolean;
+}): JSX.Element {
   const { state } = tokens;
   if (state.kind === "idle") {
     return <p className="text-sm text-ink-muted">{IDLE_DETAIL}</p>;
@@ -132,6 +172,8 @@ function TokensDetail({ tokens }: { readonly tokens: TokensAnalysis }): JSX.Elem
         result={state.result}
         argv={tokens.analyzed?.argv ?? []}
         onReanalyze={() => void tokens.reanalyze()}
+        // 버튼은 SourceEditCard 안에 있다. 사유 줄도 거기서 버튼 옆에 보인다.
+        reanalyzeDisabledReason={perfRunning ? PERF_RUNNING_REASON : null}
       />
     </>
   );
@@ -152,16 +194,21 @@ export function AnalyzeView({ pillar }: { readonly pillar: AnalyzePillar | null 
   const [targetOpen, setTargetOpen] = useState(true);
   const tokens = useTokensAnalysis();
   const security = useSecurityAnalysis();
+  const performance = usePerformanceAnalysis();
+  /** 성능 상세의 폼. 상세를 오가도 남도록 여기 둔다. */
+  const [perfForm, setPerfForm] = useState<PerfForm>(INITIAL_PERF_FORM);
   /** 분석하기 한 번당 접기·`rememberCommand` 를 한 번만 하는 가드. */
   const collapsed = useRef(false);
 
   // 분석하기(설계 §7). 버튼 비활성 판정·사유·제출이 같은 값을 쓴다. 돌고 있는 동안의 사유가 입력 오류보다 앞선다.
   const built = buildAnalyzeRequests(target);
-  const running = tokens.state.kind === "running" || security.state.kind === "running";
+  const otherRunning = tokens.state.kind === "running" || security.state.kind === "running";
+  // 성능이 도는 동안에도 분석하기를 막는다. 측정이 다른 축의 부하를 함께 재지 않게 한다(ADR-0119).
+  const running = otherRunning || performance.state.kind === "running";
   const disabledReason = running ? "분석이 돌고 있습니다" : "error" in built ? built.error : null;
   // 결과 단계는 축 상태에서 바로 읽는다. 어느 축이든 idle 을 벗어나면 결과 단계다. 두 훅 모두 idle 로
   // 돌아가는 전이가 없으므로 한 번 넘어가면 서버 선택 단계로 돌아가지 않는다. 둘 다 시작에 실패해도
-  // failed 라 결과 단계이고, 카드가 실패를 보인다.
+  // failed 라 결과 단계이고, 카드가 실패를 보인다. 성능은 결과 단계에서만 시작하므로 여기서 보지 않는다.
   const hasResults = tokens.state.kind !== "idle" || security.state.kind !== "idle";
 
   /** 두 요청 중 하나라도 시작에 성공하면 한 번만. */
@@ -202,6 +249,13 @@ export function AnalyzeView({ pillar }: { readonly pillar: AnalyzePillar | null 
           analyzedTarget: describeTarget(target.candidates, security.sent),
         }
       : { summary: null, analyzedTarget: null };
+  const performanceCard =
+    performance.state.kind === "done" && performance.sent !== null
+      ? {
+          summary: performanceSummary(performance.state.result),
+          analyzedTarget: describeTarget(target.candidates, performance.sent),
+        }
+      : { summary: null, analyzedTarget: null };
 
   return (
     <section className="mx-auto max-w-[1040px] space-y-6">
@@ -237,7 +291,7 @@ export function AnalyzeView({ pillar }: { readonly pillar: AnalyzePillar | null 
                   ? { state: tokens.state, ...tokensCard }
                   : descriptor.id === "security"
                     ? { state: security.state, ...securityCard }
-                    : { state: { kind: "idle" as const }, summary: null, analyzedTarget: null };
+                    : { state: performance.state, ...performanceCard };
               return (
                 <PillarCard
                   key={descriptor.id}
@@ -246,6 +300,12 @@ export function AnalyzeView({ pillar }: { readonly pillar: AnalyzePillar | null 
                   state={card.state}
                   summary={card.summary}
                   analyzedTarget={card.analyzedTarget}
+                  {...(descriptor.id === "performance"
+                    ? {
+                        idleNote:
+                          performanceUnavailable(target.state.transport) ?? PERFORMANCE_IDLE_NOTE,
+                      }
+                    : {})}
                 />
               );
             })}
@@ -256,7 +316,7 @@ export function AnalyzeView({ pillar }: { readonly pillar: AnalyzePillar | null 
               <Card className="space-y-4 p-6">
                 <div className="flex flex-wrap items-center gap-3">
                   <h2 className="text-title font-semibold text-ink">{PILLAR_NAME[pillar]} 상세</h2>
-                  {detailBadge(pillar, tokens, security)}
+                  {detailBadge(pillar, tokens, security, performance)}
                   {/* 보안 점검이 어디서 돌았는가(ADR-0117). 응답에서 순수 함수로 구한다. */}
                   {pillar === "security" && security.state.kind === "done" && (
                     <p className="break-words text-sm text-ink-muted">
@@ -265,9 +325,25 @@ export function AnalyzeView({ pillar }: { readonly pillar: AnalyzePillar | null 
                   )}
                 </div>
                 {pillar === "security" ? (
-                  <SecurityDetail security={security} />
+                  <SecurityDetail
+                    security={security}
+                    perfRunning={performance.state.kind === "running"}
+                  />
+                ) : pillar === "performance" ? (
+                  <PerformanceDetail
+                    performance={performance}
+                    form={perfForm}
+                    onFormChange={setPerfForm}
+                    argv={target.argv}
+                    serverId={target.serverId}
+                    transport={target.state.transport}
+                    otherRunning={otherRunning}
+                  />
                 ) : (
-                  <TokensDetail tokens={tokens} />
+                  <TokensDetail
+                    tokens={tokens}
+                    perfRunning={performance.state.kind === "running"}
+                  />
                 )}
               </Card>
             </section>

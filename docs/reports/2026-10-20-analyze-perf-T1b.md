@@ -4,7 +4,7 @@
 
 ## 작업 공간
 
-- pwd: `/Users/doo._.hyun/Study/Project/OhMyMCP/.claude/worktrees/ohmymcp-perf-progress`
+- pwd: `.claude/worktrees/ohmymcp-perf-progress`
 - 브랜치: `feat/perf-progress` (origin/main 에서 분기)
 - BASE (`git rev-parse origin/main`): `62e8c387a9a5b122e20e3cd451a2288c033e803b` (지시의 값과 같음)
 - `git rev-parse HEAD`: `62e8c387a9a5b122e20e3cd451a2288c033e803b` (커밋하지 않음)

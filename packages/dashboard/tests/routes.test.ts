@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { createSqliteSessionStore } from "@mcpeak/record/external";
 import { afterEach, describe, expect, it } from "vitest";
 import type {
+  AnalyzePerfResponse,
   AnalyzeSecurityResponse,
   AnalyzeTokensResponse,
   RunEvent,
@@ -16,6 +17,11 @@ import type {
 } from "../src/api-types.js";
 import { startDashboardServer } from "../src/index.js";
 import type { AnalyzeTokensOutcome, AnalyzeTokensOverrides } from "../src/server/analyze.js";
+import type {
+  AnalyzePerfOutcome,
+  analyzePerf,
+  preparePerfRun,
+} from "../src/server/analyze-perf.js";
 import type {
   AnalyzeSecurityOutcome,
   AnalyzeSecurityOverrides,
@@ -56,6 +62,7 @@ async function startTestServer(
     readonly prepare?: typeof prepareSecurityRun;
     readonly analyze?: typeof analyzeSecurity;
   },
+  perf?: { readonly prepare?: typeof preparePerfRun; readonly analyze?: typeof analyzePerf },
 ): Promise<TestServer> {
   const root = await mkdtemp(join(tmpdir(), "mcpeak-dashboard-routes-"));
   const registry = new RunRegistry();
@@ -68,6 +75,8 @@ async function startTestServer(
       analyze,
       prepareSecurity: security?.prepare,
       analyzeSecurity: security?.analyze,
+      preparePerf: perf?.prepare,
+      analyzePerf: perf?.analyze,
     }).catch((error: unknown) => {
       response.destroy(error instanceof Error ? error : new Error(String(error)));
     });
@@ -1527,5 +1536,127 @@ describe("GET /api/runs", () => {
     const summary = (await response.json()) as RunSummary;
     expect(summary.flow).toBe("audit");
     expect(summary.argv).toEqual(SECURITY_ARGV);
+  });
+});
+
+async function postPerf(server: TestServer, body: string): Promise<Response> {
+  return fetch(`${server.baseUrl}/api/analyze/perf`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body,
+  });
+}
+
+function getPerf(server: TestServer, runId: string): Promise<Response> {
+  return fetch(`${server.baseUrl}/api/analyze/perf/${encodeURIComponent(runId)}`);
+}
+
+const PERF_ARGV = ["s.json", "--json", "--command", "node"];
+
+const PERF_BODY = {
+  report: { schemaVersion: 1, cases: [], findings: [] },
+  rendered: "mcpeak perf 결과\n",
+  exitCode: 0,
+} as unknown as AnalyzePerfResponse;
+
+type PerfResult = { readonly exitCode: number; readonly outcome: AnalyzePerfOutcome };
+
+/** 측정 fake 한 쌍. prepare 는 정해 둔 결과를, analyze 는 `result` 를 돌려주고 받은 argv 를 남긴다. */
+function fakePerf(
+  result: PerfResult = { exitCode: 0, outcome: { ok: true, body: PERF_BODY } },
+  prepared: ReturnType<typeof preparePerfRun> = { ok: true, argv: PERF_ARGV },
+) {
+  const analyzeCalls: (readonly string[])[] = [];
+  const prepare: typeof preparePerfRun = () => prepared;
+  const analyze: typeof analyzePerf = (argv) => {
+    analyzeCalls.push(argv);
+    return Promise.resolve(result);
+  };
+  return { perf: { prepare, analyze }, analyzeCalls };
+}
+
+async function runCount(server: TestServer): Promise<number> {
+  return ((await (await fetch(`${server.baseUrl}/api/runs`)).json()) as RunSummary[]).length;
+}
+
+describe("POST /api/analyze/perf", () => {
+  it("POST /api/analyze/perf 는 형식이 틀린 본문을 run 없이 거절한다", async () => {
+    server = await startTestServer(undefined, undefined, undefined, fakePerf().perf);
+    const before = await runCount(server);
+
+    const response = await postPerf(server, JSON.stringify({ argv: "x", suitePath: "s.json" }));
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "요청 형식이 올바르지 않습니다." });
+    expect(await runCount(server)).toBe(before);
+    expect(server.registry.list()).toHaveLength(0);
+  });
+
+  it("POST /api/analyze/perf 는 가드 거절을 그대로 400 으로 낸다", async () => {
+    const { perf, analyzeCalls } = fakePerf(undefined, { ok: false, error: "E" });
+    server = await startTestServer(undefined, undefined, undefined, perf);
+
+    const response = await postPerf(
+      server,
+      JSON.stringify({ argv: ["--command", "node"], suitePath: "s.json" }),
+    );
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "E" });
+    await tick();
+    expect(analyzeCalls).toHaveLength(0);
+    expect(server.registry.list()).toHaveLength(0);
+  });
+
+  it("POST /api/analyze/perf 는 perf run 을 열고 GET 이 결과를 돌려준다", async () => {
+    const { perf, analyzeCalls } = fakePerf();
+    server = await startTestServer(undefined, undefined, undefined, perf);
+
+    const response = await postPerf(
+      server,
+      JSON.stringify({ argv: ["--command", "node"], suitePath: "s.json" }),
+    );
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { runId: string };
+    expect(Object.keys(body)).toEqual(["runId"]);
+    await tick();
+    expect(analyzeCalls).toEqual([PERF_ARGV]);
+
+    const first = await getPerf(server, body.runId);
+    expect(first.status).toBe(200);
+    const firstText = await first.text();
+    expect(JSON.parse(firstText)).toEqual(PERF_BODY);
+    const secondText = await (await getPerf(server, body.runId)).text();
+    expect(secondText).toBe(firstText);
+  });
+});
+
+describe("GET /api/analyze/perf/<runId>", () => {
+  it("GET /api/analyze/perf 는 모르는 run 에 404", async () => {
+    server = await startTestServer(undefined, undefined, undefined, fakePerf().perf);
+
+    const response = await getPerf(server, "nope");
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({
+      error:
+        "그런 측정이 없습니다.\n→ 대시보드는 측정 결과를 메모리에만 둡니다. 서버를 다시 시작했다면 다시 측정하세요.",
+    });
+  });
+
+  it("perf run 은 GET /api/runs 목록에 없다", async () => {
+    server = await startTestServer(async () => 0, undefined, undefined, fakePerf().perf);
+    await fetch(`${server.baseUrl}/api/runs`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ flow: "test", argv: [] }),
+    });
+    const started = await postPerf(
+      server,
+      JSON.stringify({ argv: ["--command", "node"], suitePath: "s.json" }),
+    );
+    expect(started.status).toBe(200);
+    await tick();
+
+    const list = (await (await fetch(`${server.baseUrl}/api/runs`)).json()) as RunSummary[];
+    expect(list.map((run) => run.flow)).not.toContain("perf");
+    expect(list).toHaveLength(1);
   });
 });

@@ -98,9 +98,10 @@ function parseRoute(hash: string): Route {
     };
   }
   if (first === "analyze") {
-    // 상세가 있는 축 이름만 받는다. 모르는 축(아직 연결 안 된 performance 포함)은 개요로 연다.
+    // 상세가 있는 축 이름만 받는다. 모르는 축은 개요로 연다.
     // 화면을 통째로 #/home 으로 보내면 Analyze 메뉴를 고른 사용자가 엉뚱한 화면에 선다.
-    const pillar = rest[0] === "tokens" || rest[0] === "security" ? rest[0] : null;
+    const pillar =
+      rest[0] === "tokens" || rest[0] === "security" || rest[0] === "performance" ? rest[0] : null;
     return { screen: "analyze", pillar };
   }
   if (first === "settings") {

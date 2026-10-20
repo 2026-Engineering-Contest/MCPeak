@@ -79,7 +79,7 @@ export const PILLARS: readonly PillarDescriptor[] = [
     name: "성능 효율성",
     description:
       "도구 호출의 응답 시간을 외부 대기와 서버 안 시간으로 나누고, 병렬화·재사용으로 줄일 지점을 찾습니다.",
-    available: false,
+    available: true,
   },
 ];
 

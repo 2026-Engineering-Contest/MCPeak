@@ -1,9 +1,10 @@
 import type {
+  AnalyzePerfResponse,
   AnalyzeSecurityRequest,
   AnalyzeSecurityResponse,
   AnalyzeTokensResponse,
 } from "../../../src/api-types.js";
-import { percent, tokens } from "./format.js";
+import { millis, percent, tokens } from "./format.js";
 import { securityExecution } from "./security-execution.js";
 import { baselineStatus, splitFindings } from "./security-view.js";
 import type { AnalyzePillarId } from "./types.js";
@@ -37,6 +38,8 @@ export interface PillarSummary {
   readonly headline: string;
   /** 큰 숫자 옆 단위·보조 문장. */
   readonly headlineNote: string;
+  /** 막대 첫 줄(100% 기준 줄)의 라벨. 없으면 "원본" 이다. 둘째 줄 라벨은 `bar[0].label` 이다. */
+  readonly baseLabel?: string;
   readonly bar: readonly PillarBarSegment[];
   readonly chips: readonly PillarChip[];
   /** 요약 줄. 한 문장. */
@@ -75,7 +78,7 @@ export const PILLARS: readonly PillarDescriptor[] = [
     eyebrow: "PERFORMANCE EFFICIENCY",
     name: "성능 효율성",
     description:
-      "도구 호출 지연·처리량·동시성 한계를 재고, 부하 변화에 맞게 조정할 지점을 찾습니다.",
+      "도구 호출의 응답 시간을 외부 대기와 서버 안 시간으로 나누고, 병렬화·재사용으로 줄일 지점을 찾습니다.",
     available: false,
   },
 ];
@@ -171,5 +174,66 @@ export function tokensSummary(response: AnalyzeTokensResponse): PillarSummary {
       top !== undefined && top.reduced > 0
         ? `가장 큰 감소: ${top.tool.name} −${percent(top.reduced, top.tool.bytes.before)}%`
         : "줄어든 도구 없음",
+  };
+}
+
+/**
+ * 성능 카드 요약(ADR-0119). 숫자는 perf 리포트를 그대로 읽고 CLI 와 같은 반올림만 한다. 배지는 리포트가 가진
+ * 값으로만 가르고, 위에서 처음 맞는 하나다. 관측하지 못한 상태가 다른 판정을 가리지 않도록 "관측 안 함" 이 맨 앞이다.
+ */
+export function performanceSummary(response: AnalyzePerfResponse): PillarSummary {
+  const { report } = response;
+  // 측정한 케이스의 응답 시간 중앙값 합계. 케이스마다 CLI 처럼 반올림한 뒤 더한다.
+  const current = report.cases.reduce(
+    (sum, entry) => sum + (entry.total === undefined ? 0 : millis(entry.total.p50)),
+    0,
+  );
+  // 단축 시간을 숫자로 내는 진단은 병렬화(sequential-independent) 하나다. 리포트 순서 그대로다.
+  const savings = report.findings.flatMap((finding) =>
+    finding.ruleId === "perf/sequential-independent" &&
+    finding.evidence.savingUpperBoundMs !== undefined
+      ? [{ tool: finding.tools[0] ?? "", ms: millis(finding.evidence.savingUpperBoundMs) }]
+      : [],
+  );
+  const saving = savings.reduce((sum, item) => sum + item.ms, 0);
+  const after = Math.max(0, current - saving);
+  const failedCalls = report.cases.reduce(
+    (sum, entry) => sum + entry.outcomes.threw + entry.outcomes.isError,
+    0,
+  );
+  const findings = report.findings.length;
+
+  const verdict: PillarVerdict =
+    report.settings.observation === "none"
+      ? { label: "관측 안 함", tone: "info" }
+      : report.aborted !== null
+        ? { label: "측정 중단", tone: "failed" }
+        : failedCalls > 0
+          ? { label: `호출 실패 ${failedCalls}건`, tone: "failed" }
+          : report.baseline !== undefined && report.exitCode === 2
+            ? { label: "회귀", tone: "failed" }
+            : findings > 0
+              ? { label: `진단 ${findings}건`, tone: "waiting" }
+              : report.baseline === undefined
+                ? { label: "진단 0건(기준선 없음)", tone: "done" }
+                : { label: "진단 0건", tone: "done" };
+
+  // 단축 1위. 같으면 리포트 순서가 앞인 것(정렬이 안정적이고 리포트 순서가 §6.3 으로 고정돼 있다).
+  const top = [...savings].sort((x, y) => y.ms - x.ms)[0];
+
+  return {
+    verdict,
+    headline: saving > 0 ? `−${saving} ms` : "0 ms",
+    headlineNote: `~${current} → ~${after} ms`,
+    baseLabel: "현재",
+    bar: current === 0 ? [] : [{ ratio: after / current, tone: "accent", label: "개선 후" }],
+    chips: [
+      { label: "도구", count: report.server.toolCount, tone: "info" },
+      { label: "진단", count: findings, tone: "info" },
+    ],
+    foot:
+      top !== undefined && top.ms > 0
+        ? `가장 큰 단축: ${top.tool} −${top.ms}ms`
+        : "병렬화로 줄일 곳 없음",
   };
 }

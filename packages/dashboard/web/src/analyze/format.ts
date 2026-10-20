@@ -14,3 +14,8 @@ export function percent(reduced: number, base: number): string {
 export function tokens(bytes: number): number {
   return Math.round(bytes / 4);
 }
+
+/** `packages/perf/src/report.ts` 의 `ms` 와 같은 반올림. 카드 숫자와 CLI 리포트 숫자가 같아야 한다. */
+export function millis(value: number): number {
+  return Math.round(value);
+}

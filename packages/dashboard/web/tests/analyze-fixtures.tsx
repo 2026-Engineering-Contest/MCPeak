@@ -125,6 +125,14 @@ export function stubFetch(
     readonly result?: StubResponse | readonly StubResponse[];
     /** 주면 `GET /api/runs/<id>` 가 이것을 돌려준다. 없으면 도는 run 의 summary 다. */
     readonly summary?: StubResponse;
+    /** POST /api/analyze/perf. 없으면 `{ status: 200, body: { runId: "p1" } }` */
+    readonly perfStart?: StubResponse | readonly StubResponse[];
+    /** GET /api/analyze/perf/<id>. 없으면 `{ status: 500, body: { error: "perfResult 를 주지 않았습니다" } }`(빈 리포트를 done 으로 그리면 요약 함수가 깨진다. 결과까지 가는 테스트는 유효한 응답을 직접 준다) */
+    readonly perfResult?: StubResponse | readonly StubResponse[];
+    /** GET /api/suites. 없으면 `[]` */
+    readonly suites?: readonly { readonly path: string }[];
+    /** GET /api/suites/<path>. 값은 명세 JSON 이고 응답은 실제 API 처럼 FileContent { path, content: JSON 문자열, mtimeMs: 0 } 로 감싼다. 경로를 키로 찾는다. 없는 경로는 404 `{ error: "없음" }` */
+    readonly suiteContent?: Readonly<Record<string, unknown>>;
   } = {},
 ): ReturnType<typeof vi.fn> {
   const servers = options.servers ?? [WEATHER];
@@ -138,10 +146,18 @@ export function stubFetch(
   const resultQueue: readonly StubResponse[] = [
     options.result ?? { status: 200, body: securityResponse() },
   ].flat();
+  const perfStartQueue: readonly StubResponse[] = [
+    options.perfStart ?? { status: 200, body: { runId: "p1" } },
+  ].flat();
+  const perfResultQueue: readonly StubResponse[] = [
+    options.perfResult ?? { status: 500, body: { error: "perfResult 를 주지 않았습니다" } },
+  ].flat();
   let analyzeCount = 0;
   let sourceEditCount = 0;
   let startCount = 0;
   let resultCount = 0;
+  let perfStartCount = 0;
+  let perfResultCount = 0;
   const take = (queue: readonly StubResponse[], index: number): Promise<Response> => {
     const picked = queue[Math.min(index, queue.length - 1)];
     if (picked?.pending === true) {
@@ -168,6 +184,28 @@ export function stubFetch(
     if (url.startsWith("/api/analyze/security/")) {
       resultCount += 1;
       return take(resultQueue, resultCount - 1);
+    }
+    if (init?.method === "POST" && url === "/api/analyze/perf") {
+      perfStartCount += 1;
+      return take(perfStartQueue, perfStartCount - 1);
+    }
+    if (url.startsWith("/api/analyze/perf/")) {
+      perfResultCount += 1;
+      return take(perfResultQueue, perfResultCount - 1);
+    }
+    // 목록이 먼저다. `/api/suites/` 분기는 이 경로에 걸리지 않지만 순서로도 분명히 한다.
+    if (url === "/api/suites") {
+      return new Response(JSON.stringify(options.suites ?? []), { status: 200 });
+    }
+    if (url.startsWith("/api/suites/")) {
+      const path = decodeURIComponent(url.slice("/api/suites/".length));
+      const content = options.suiteContent?.[path];
+      return content === undefined
+        ? new Response(JSON.stringify({ error: "없음" }), { status: 404 })
+        : new Response(
+            JSON.stringify({ path, content: JSON.stringify(content, null, 2), mtimeMs: 0 }),
+            { status: 200 },
+          );
     }
     // 훅이 마운트마다 run 의 summary 를 한 번 읽는다(#295).
     if (/^\/api\/runs\/[^/]+$/.test(url)) {
@@ -215,6 +253,13 @@ export function resultRequests(fetchMock: ReturnType<typeof vi.fn>): readonly st
   return fetchMock.mock.calls
     .map(([input]) => String(input))
     .filter((url) => url.startsWith("/api/analyze/security/"));
+}
+
+/** perf 결과를 읽은 요청의 주소를 보낸 순서대로. `resultRequests` 의 perf 판이다. */
+export function perfResultRequests(fetchMock: ReturnType<typeof vi.fn>): readonly string[] {
+  return fetchMock.mock.calls
+    .map(([input]) => String(input))
+    .filter((url) => url.startsWith("/api/analyze/perf/"));
 }
 
 /** 첫 후보가 뜰 때까지 기다린 뒤 분석하기를 누른다. 응답은 기다리지 않는다. */

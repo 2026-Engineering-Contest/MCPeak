@@ -321,9 +321,9 @@ describe("firstLine", () => {
 });
 
 describe("PILLARS", () => {
-  it("순서가 보안, 비용 최적화, 성능 효율성이고 성능만 비활성이다", () => {
+  it("순서가 보안, 비용 최적화, 성능 효율성이고 세 축 모두 활성이다", () => {
     expect(PILLARS.map((p) => p.id)).toEqual(["security", "tokens", "performance"]);
-    expect(PILLARS.map((p) => p.available)).toEqual([true, true, false]);
+    expect(PILLARS.map((p) => p.available)).toEqual([true, true, true]);
     expect(PILLARS.map((p) => p.name)).toEqual(["보안", "비용 최적화", "성능 효율성"]);
   });
 });

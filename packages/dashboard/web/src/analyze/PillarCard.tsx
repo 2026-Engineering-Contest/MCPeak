@@ -42,38 +42,42 @@ function CardTop({
   );
 }
 
-/** 분포 막대. 보안은 심각도 칸 나열, 비용은 원본 100% 줄 + 압축 줄. 글자가 없으므로 읽기 도구에는 숨긴다. */
+/**
+ * 분포 막대. 보안은 심각도 칸 나열, 비용·성능은 기준 100% 줄 + 비교 줄. 첫 줄 라벨은 `baseLabel ?? "원본"`,
+ * 둘째 줄 라벨은 `bar[0].label` 이다. 성능은 측정한 케이스가 없으면(`bar` 가 빔) 막대를 그리지 않는다. 돌지 않은
+ * 측정을 100% 막대로 보이지 않기 위해서다. 글자가 없으므로 읽기 도구에는 숨긴다.
+ */
 function SummaryBar({
   id,
   summary,
 }: {
   readonly id: PillarDescriptor["id"];
   readonly summary: PillarSummary;
-}): JSX.Element {
-  if (id === "tokens") {
+}): JSX.Element | null {
+  if (id !== "security") {
     const after = summary.bar[0];
+    if (after === undefined && id === "performance") return null;
     return (
-      <div aria-hidden="true" className="grid gap-1 text-[11px] text-ink-muted">
-        <div className="grid grid-cols-[32px_1fr] items-center gap-2">
-          <span>원본</span>
-          <div className="h-2 overflow-hidden rounded-sm bg-line-subtle">
-            <i
-              className="block h-full rounded-sm opacity-45"
-              style={{ width: "100%", background: "var(--ink-muted)" }}
-            />
-          </div>
+      <div
+        aria-hidden="true"
+        className="grid grid-cols-[minmax(32px,max-content)_1fr] items-center gap-x-2 gap-y-1 text-[11px] text-ink-muted"
+      >
+        <span>{summary.baseLabel ?? "원본"}</span>
+        <div className="h-2 overflow-hidden rounded-sm bg-line-subtle">
+          <i
+            className="block h-full rounded-sm opacity-45"
+            style={{ width: "100%", background: "var(--ink-muted)" }}
+          />
         </div>
-        <div className="grid grid-cols-[32px_1fr] items-center gap-2">
-          <span>압축</span>
-          <div className="h-2 overflow-hidden rounded-sm bg-line-subtle">
-            <i
-              className="block h-full rounded-sm"
-              style={{
-                width: `${after === undefined ? 0 : (after.ratio * 100).toFixed(1)}%`,
-                background: TONE_STYLE[after?.tone ?? "accent"].fg,
-              }}
-            />
-          </div>
+        <span>{after?.label ?? "압축"}</span>
+        <div className="h-2 overflow-hidden rounded-sm bg-line-subtle">
+          <i
+            className="block h-full rounded-sm"
+            style={{
+              width: `${after === undefined ? 0 : (after.ratio * 100).toFixed(1)}%`,
+              background: TONE_STYLE[after?.tone ?? "accent"].fg,
+            }}
+          />
         </div>
       </div>
     );
@@ -107,6 +111,7 @@ export function PillarCard({
   state,
   summary,
   analyzedTarget,
+  idleNote = "아직 분석하지 않았습니다",
 }: {
   readonly descriptor: PillarDescriptor;
   readonly selected: boolean;
@@ -116,6 +121,8 @@ export function PillarCard({
   readonly summary: PillarSummary | null;
   /** 요약 줄 앞에 붙는 "분석한 대상: <이름>". done 일 때만. */
   readonly analyzedTarget: string | null;
+  /** idle 일 때의 문장. 성능은 분석하기를 기다리지 않으므로 다른 문장을 준다(구현계획 §5.2 R1·R5). */
+  readonly idleNote?: string;
 }): JSX.Element {
   const { id } = descriptor;
 
@@ -145,7 +152,8 @@ export function PillarCard({
     );
   }
 
-  const runningLabel = id === "security" ? "점검 중…" : "분석 중…";
+  const runningLabel =
+    id === "security" ? "점검 중…" : id === "performance" ? "측정 중…" : "분석 중…";
   const badge =
     state.kind === "done" && summary !== null ? (
       <PillarBadge label={summary.verdict.label} tone={summary.verdict.tone} />
@@ -171,7 +179,7 @@ export function PillarCard({
       <CardTop descriptor={descriptor} badge={badge} />
       <p className="min-h-[3em] text-xs text-ink-muted">{descriptor.description}</p>
 
-      {state.kind === "idle" && <p className="text-sm text-ink-muted">아직 분석하지 않았습니다</p>}
+      {state.kind === "idle" && <p className="text-sm text-ink-muted">{idleNote}</p>}
       {state.kind === "running" && <p className="text-sm text-ink-muted">진행은 상세에서 봅니다</p>}
       {state.kind === "failed" && (
         <p className="break-all font-mono text-sm text-ink">{firstLine(state.error)}</p>

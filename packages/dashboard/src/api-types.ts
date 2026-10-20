@@ -1,6 +1,7 @@
 import type { AuditReport, ProbePolicy } from "@mcpeak/audit";
 import type { ToolDef } from "@mcpeak/core";
 import type { OptimizeOverlay } from "@mcpeak/optimize";
+import type { PerfReport } from "@mcpeak/perf";
 
 /** 실행 도중 발생하는 이벤트 본문. RunRecord 경계에서 run별 id를 붙인다. */
 export type RunEventInput =
@@ -47,10 +48,11 @@ export type StartRunRequest =
   | ({ readonly flow: "verify" } & StartRunFields);
 
 /**
- * run 의 종류. `audit` 는 보안 탭이 `POST /api/analyze/security` 로 시작하는 점검이다.
- * `POST /api/runs` 로는 시작할 수 없고 `GET /api/runs` 목록에도 실리지 않는다(ADR-0110).
+ * run 의 종류. `audit` 는 보안 탭이 `POST /api/analyze/security` 로, `perf` 는 성능 상세가
+ * `POST /api/analyze/perf` 로 시작한다. 둘 다 `POST /api/runs` 로는 시작할 수 없고 `GET /api/runs` 목록에도
+ * 실리지 않는다(ADR-0110, ADR-0119).
  */
-export type RunFlow = StartRunRequest["flow"] | "audit";
+export type RunFlow = StartRunRequest["flow"] | "audit" | "perf";
 
 export interface StartRunResponse {
   readonly runId: string;
@@ -357,4 +359,31 @@ export interface AnalyzeSecurityResponse {
    * `report.findings` 에 없는 것, 규칙 목록 순서 그대로(`server/passed-rules.ts`).
    */
   readonly passedRules: readonly PassedRule[];
+}
+
+/**
+ * POST /api/analyze/perf. 성능 측정을 run 으로 시작한다. 판정은 `mcpeak perf --json` 과 같은 함수
+ * (`runPerfCommand`)가 한다(ADR-0046, ADR-0119).
+ *
+ * `argv` 는 대상 옵션(`--command`, `--arg`, `--env`)과 그 값만 싣는다. 원격 대상은 perf 가 받지 않는다.
+ */
+export interface AnalyzePerfRequest {
+  readonly argv: readonly string[];
+  readonly serverId?: string;
+  /** 프로젝트 루트 기준 상대경로(`.json`). 측정할 명세다. */
+  readonly suitePath: string;
+  /** 1 이상 100 이하 정수. 없으면 CLI 기본값(5)이다. */
+  readonly repeat?: number;
+  /** `--tool` 값. 준 순서 그대로다. 비었거나 없으면 거르지 않는다. */
+  readonly tools?: readonly string[];
+}
+
+/** GET /api/analyze/perf/<runId>. 시각·난수·runId 를 싣지 않는다. */
+export interface AnalyzePerfResponse {
+  /** `mcpeak perf --json` 의 stdout 을 `JSON.parse` 한 값. */
+  readonly report: PerfReport;
+  /** `renderReport(report)`. CLI 의 사람용 리포트와 같은 함수가 만든다. */
+  readonly rendered: string;
+  /** CLI 종료 코드. 0 은 정상, 2 는 기준선 회귀다. */
+  readonly exitCode: number;
 }

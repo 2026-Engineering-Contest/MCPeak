@@ -34,6 +34,7 @@ const FLOW_TITLES: Record<RunSummary["flow"], string> = {
   repair: "수리 실행",
   verify: "한 번에 검증",
   audit: "보안 점검",
+  perf: "성능 측정",
 };
 
 /**

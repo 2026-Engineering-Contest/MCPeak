@@ -305,6 +305,12 @@ export interface AnalyzeSecurityRequest {
     /** `--allow-host` 값. 준 순서 그대로다. */
     readonly allowHosts: readonly string[];
   };
+  /**
+   * true 면 격리를 시도만 한다(ADR-0117). CLI 가 격리 대상 판정(마운트 범위)에서 사용법 오류로 거절하면
+   * 서버가 격리 플래그만 뺀 argv 로 한 번 더 돈다. 서버를 띄우기 전의 거절이라 다시 돌아도 부작용이 없다.
+   * 없으면 거절이 곧 결과다(사전 점검은 사용자가 격리를 골랐으므로 조용히 격리 없이 돌지 않는다).
+   */
+  readonly sandboxOptional?: boolean;
 }
 
 /** 발견 하나의 표시용 글자. `report.findings` 와 같은 순서·같은 길이로 온다. */
@@ -315,6 +321,13 @@ export interface SecurityFindingView {
   readonly tool: string | null;
   /** 도구에 걸린 발견이면 그 `toolIndex`, 아니면 -1(CLI 정렬과 같은 값). */
   readonly toolIndex: number;
+}
+
+/** 발견 없이 통과한 규칙 하나. `@mcpeak/audit` 의 `RuleInfo` 에서 화면이 쓰는 세 필드만 옮긴 것이다. */
+export interface PassedRule {
+  readonly id: string;
+  readonly family: string;
+  readonly summary: string;
 }
 
 /** GET /api/analyze/security/<runId>. 시각·난수·runId 를 싣지 않는다. */
@@ -328,10 +341,20 @@ export interface AnalyzeSecurityResponse {
   readonly views: readonly SecurityFindingView[];
   /** `report.sandbox` 가 있으면 `rendered` 의 둘째 줄(격리 실행 줄 또는 "행위 관측 안 함" 줄), 없으면 null. */
   readonly sandboxLine: string | null;
+  /**
+   * 격리를 시도했지만(`sandboxOptional`) CLI 가 격리 대상 판정에서 거절해 격리 없이 다시 돈 경우, 그 거절
+   * 문장의 첫 줄에서 `오류 [CLI_USAGE]: ` 를 뗀 글자. 다시 돌지 않았으면 null.
+   */
+  readonly sandboxFallbackReason: string | null;
   /** `rendered` 의 마지막 빈 줄 뒤의 줄들(이 점검의 한계). */
   readonly limits: readonly string[];
   /** CLI 종료 코드. 0 은 발견 없음, 2 는 발견 있음, 1 은 리포트를 낸 뒤 격리 자원 정리에 실패한 경우다. */
   readonly exitCode: number;
   /** 리포트를 낸 **뒤에** CLI 가 stderr 에 쓴 글자(정리 실패 문장). 끝 개행은 뗀다. 없으면 "". */
   readonly cleanupError: string;
+  /**
+   * 발견 없이 통과한 규칙. `@mcpeak/audit` 의 규칙 목록 중 family 가 `report.skipped` 에 없고 ruleId 가
+   * `report.findings` 에 없는 것, 규칙 목록 순서 그대로(`server/passed-rules.ts`).
+   */
+  readonly passedRules: readonly PassedRule[];
 }

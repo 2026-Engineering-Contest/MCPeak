@@ -3,7 +3,7 @@ import type { AuditReport, Finding, SandboxReport, Severity } from "@mcpeak/audi
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AnalyzeSecurityResponse, RunEventInput } from "../../src/api-types.js";
-import { REMOTE_SANDBOX_HINT } from "../src/analyze/SecurityPanel.js";
+import { REMOTE_SANDBOX_HINT } from "../src/analyze/sandbox-hint.js";
 import { PreCheck } from "../src/screens/PreCheck.js";
 
 /** security-panel.test 와 같은 방식의 EventSource fake. 네트워크·서버 없음. */
@@ -116,9 +116,11 @@ function securityResponse(
     rendered: "mcpeak audit · sample 1.0.0\n",
     views: findings.map(() => ({ where: "서버", tool: null, toolIndex: -1 })),
     sandboxLine: null,
+    sandboxFallbackReason: null,
     limits: ["정적 검사는 도구 정의의 글자만 봅니다."],
     exitCode: report.exitCode,
     cleanupError: "",
+    passedRules: [],
     ...rest,
   };
 }
@@ -465,6 +467,21 @@ describe("PreCheck", () => {
     expect(screen.getByText(/^판정: /)).toBeTruthy();
     expect(screen.getByRole("button", { name: BACK_LABEL })).toBeTruthy();
     expect(screen.getByRole("button", { name: "다시 점검" })).toBeTruthy();
+  });
+
+  it("PreCheck 결과에는 안전 구획이 없다", async () => {
+    await runToResult(
+      securityResponse(FINDINGS, {
+        passedRules: [{ id: "desc/injection", family: "desc", summary: "지시문을 본다." }],
+      }),
+    );
+
+    expect(screen.getByText(/^판정: /)).toBeTruthy();
+    // 안전 구획은 개발자 모드 Analyze 의 보안 상세에만 있다(ADR-0117).
+    expect(screen.queryByRole("heading", { name: /^안전/ })).toBeNull();
+    expect(screen.queryByText("발견 없이 통과한 검사가 없습니다.")).toBeNull();
+    expect(screen.queryByText("해당 없음")).toBeNull();
+    expect(screen.queryByText("desc/injection")).toBeNull();
   });
 
   it("결과는 해결 문장 대신 왜 위험한지를 보인다", async () => {

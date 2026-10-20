@@ -304,3 +304,99 @@ describe("AnalyzeView 성능 상세", () => {
     expect(JSON.stringify(perfPosts(fetchMock)[1])).toBe(JSON.stringify(perfPosts(fetchMock)[0]));
   });
 });
+
+/** `perfResponse()` 에 병렬화 진단 하나(a, 단축 상한 120.4ms)를 더한 것. 헤드라인이 0 이 아니게 된다. */
+function perfResponseWithSaving(): AnalyzePerfResponse {
+  const base = perfResponse();
+  return {
+    ...base,
+    report: {
+      ...base.report,
+      findings: [
+        {
+          ruleId: "perf/sequential-independent",
+          caseIds: ["a"],
+          tools: ["a"],
+          lines: [],
+          evidence: { observed: 5, of: 5, requests: [], savingUpperBoundMs: 120.4 },
+        },
+      ],
+    },
+  };
+}
+
+function performanceCard(): HTMLElement {
+  return screen.getByRole("tab", { name: /^성능 효율성/ });
+}
+
+/**
+ * 확인 루프에서 확정한 화면의 구조와 문구(구현계획 §7, ADR-0119). 위 행동 테스트와 달리 사용자에게 보이는
+ * 글자를 그대로 고정한다. 문구를 바꾸려면 ADR-0119 와 이 단언을 함께 고친다.
+ */
+describe("AnalyzeView 성능 확정 화면", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    installFakeEventSource();
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  it("카드는 단축 헤드라인과 측정·미측정·진단 칩, 진단 배지를 보인다", async () => {
+    await measureToDone(perfResponseWithSaving());
+
+    const card = performanceCard();
+    await waitFor(() => expect(card.textContent).toContain("−120 ms"));
+    const text = card.textContent ?? "";
+    // 412 + 601 = 1013, 단축 120 을 빼면 893 이다.
+    expect(text).toContain("~1013 → ~893 ms");
+    expect(text).toContain("진단 1건");
+    const chips = within(card)
+      .getAllByText(
+        (_, element) => element?.tagName === "SPAN" && /\d$/.test(element.textContent ?? ""),
+      )
+      .map((element) => element.textContent);
+    expect(chips).toEqual(expect.arrayContaining(["측정 2", "미측정 1", "진단 1"]));
+    expect(text).toContain("가장 큰 단축: a −120ms");
+    expect(text).not.toContain("호출 실패");
+  });
+
+  it("진단이 없고 기준선이 없으면 배지가 진단 0건(기준선 없음)이다", async () => {
+    await measureToDone(perfResponse());
+
+    await waitFor(() => expect(performanceCard().textContent).toContain("진단 0건(기준선 없음)"));
+    expect(performanceCard().textContent).toContain("0 ms");
+  });
+
+  it("상세는 개선 지점·케이스별 응답 시간·미측정 케이스·이 측정의 한계 구획을 보인다", async () => {
+    await measureToDone(perfResponseWithSaving());
+
+    expect(screen.getByRole("heading", { name: "개선 지점 1건" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "케이스별 응답 시간" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "이 측정의 한계" })).toBeTruthy();
+    expect(pageText()).toContain("미측정 케이스 1개");
+    expect(pageText()).toContain("한계 문장");
+  });
+
+  it("시작 버튼 위 고지는 확정 문구 그대로다", async () => {
+    await openPerformance();
+
+    fireEvent.click(await screen.findByRole("radio", { name: UNAPPROVED_SUITE }));
+    for (const line of [
+      "명세의 성공 케이스를 케이스마다 5번 실제로 호출합니다. 쓰기 도구도 포함됩니다.",
+      "격리 없이 이 컴퓨터에서 서버를 띄웁니다.",
+      "이 명세는 아직 승인되지 않았습니다(approval 없음). 케이스 내용을 확인한 뒤 측정하세요.",
+    ]) {
+      await waitFor(() => expect(pageText()).toContain(line));
+    }
+  });
+
+  it("원격 사유는 확정 문구 그대로다", () => {
+    expect(performanceUnavailable("http")).toBe(
+      "원격(HTTP) 서버는 측정할 수 없습니다. 성능 측정은 서버 프로세스 안에 관측 코드를 실어야 해서, 대시보드가 직접 띄우는 stdio 서버만 됩니다.",
+    );
+    expect(performanceUnavailable("stdio")).toBeNull();
+  });
+});

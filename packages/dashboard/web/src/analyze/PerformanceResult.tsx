@@ -65,7 +65,7 @@ function hasApproval(content: string): boolean {
  * 성능 상세(ADR-0119, 구현계획 §5). 명세를 고르고 반복 횟수를 정해 시작하면 `POST /api/analyze/perf` 가 나간다.
  * 분석하기는 이 요청을 보내지 않는다. 비활성 판정·사유·제출이 같은 `buildPerfRequest` 를 부른다. 사유는 원격 대상이
  * 가장 앞이다(대상을 바꾸지 않으면 풀리지 않는다). 그다음이 다른 축의 실행, 그다음이 폼 오류다.
- * 결과는 perf 리포트의 `rendered` 를 그대로 보인다. 취소는 없다.
+ * 결과는 PerformanceResult 가 구획으로 그린다. rendered 원문은 보이지 않는다. 취소는 없다.
  */
 export function PerformanceDetail({
   performance,
@@ -191,6 +191,10 @@ export function PerformanceDetail({
   }
 
   const { sent } = performance;
+  // 다시 측정은 보낸 요청을 그대로 다시 보내지만, 지금 대상이 원격이면 막는다. 화면이 원격 대상을 보이는데
+  // 측정이 다시 나가면 사용자는 원격을 잰 것으로 읽는다(G6). 원격 사유가 다른 축 실행보다 앞선다.
+  const rerunReason =
+    performanceUnavailable(transport) ?? (otherRunning ? OTHER_RUNNING_REASON : null);
   if (state.kind === "done" && sent !== null && !choosing) {
     return (
       <>
@@ -198,12 +202,12 @@ export function PerformanceDetail({
         {performance.startError !== null && <ErrorAlert message={performance.startError} />}
         <PerformanceResult key={state.serial} response={state.result} />
         <div className="flex flex-wrap gap-2">
-          <Button disabled={otherRunning} onClick={() => void performance.start(sent)}>
+          <Button disabled={rerunReason !== null} onClick={() => void performance.start(sent)}>
             다시 측정
           </Button>
           <Button onClick={() => setChoosing(true)}>명세 바꾸기</Button>
         </div>
-        {otherRunning && <p className="text-xs text-ink-muted">{OTHER_RUNNING_REASON}</p>}
+        {rerunReason !== null && <p className="text-xs text-ink-muted">{rerunReason}</p>}
       </>
     );
   }

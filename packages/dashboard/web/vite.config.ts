@@ -16,11 +16,12 @@ const root = fileURLToPath(new URL(".", import.meta.url));
  * `dist` 로 녹색이고 CI 만 `Failed to resolve entry for package` 로 죽는다. 루트 `vitest.config.ts` 의
  * alias 는 이 프로젝트에 내려오지 않는다(이 파일을 프로젝트 설정으로 그대로 읽는다).
  *
- * `audit` 의 소스가 `core` 를 값으로 import 하므로 둘을 함께 적는다. `test.alias` 에만 둔다. 번들에는
+ * `audit`·`perf` 의 소스가 `core` 를 값으로 import 하므로 `core` 를 함께 적는다. `perf` 는
+ * `performance-view.test.ts` 가 `renderReport` 를 값으로 대조하려고 쓴다. `test.alias` 에만 둔다. 번들에는
  * 영향을 주지 않는다. web 소스는 이 패키지들을 타입으로만 import 한다.
  */
 const testAliases = Object.fromEntries(
-  (["audit", "core"] as const).map((name) => [
+  (["audit", "core", "perf"] as const).map((name) => [
     `@mcpeak/${name}`,
     fileURLToPath(new URL(`../../${name}/src/index.ts`, import.meta.url)),
   ]),

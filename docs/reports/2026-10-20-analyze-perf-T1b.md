@@ -58,3 +58,23 @@
    부른다. 지시가 요구한 마지막 줄 "측정 완료: 호출 4회" 가 측정값 개수에서 나오기 때문이다.
 3. 잔존 단언 실패를 이번 변경과 무관하다고 판정하려고, 실행 중 다른 프로세스를 1초마다 기록하는 진단 스크립트를 scratchpad 에
    두고 돌렸다(그 스크립트 안의 표본기만 하위 셸로 돌렸다).
+
+## 리뷰 수정 (PR #537, CodeRabbit 지적 1건)
+
+지적: 신호 처리기가 `session.interrupted` 를 먼저 세우고 연결을 닫는다. 남은 `callTool` 이 거부된 채로 기록되면 `measure` 가
+`onProgress` 를 계속 불러, 중단 뒤에도 진행 줄이 stderr 에 나온다. "중단 뒤 본 흐름은 아무것도 쓰지 않는다" 는 계약 위반이다.
+
+- `packages/cli/src/perf-command.ts`: `onProgress` 콜백 맨 앞에서 `session.interrupted !== undefined` 면 바로 돌아간다.
+  `session` 은 `measureAndReport` 의 인자라 그 자리에서 보인다. 이유는 주석 한 줄로 적었다.
+- `packages/cli/tests/perf-command.test.ts`: 신호 정리 describe 에 "신호로 중단된 뒤에는 진행 줄을 쓰지 않는다" 를 더했다.
+  기존 신호 테스트처럼 fake measure 안에서 `h.signal("SIGINT")` 를 부른다. `(1,4)` 를 부른 뒤 신호를 보내고 `(2,4)`~`(4,4)` 를
+  더 부른다. stderr 가 시작 줄과 첫 진행 줄 하나뿐인지, 종료 코드 130 과 `killSelf("SIGINT")` 를 단언한다.
+
+| 명령 | 결과 |
+|---|---|
+| 수정 전 `pnpm vitest run packages/cli/tests/perf-command.test.ts` | 1 실패(새 테스트), 80 통과 |
+| `pnpm vitest run packages/cli/tests/perf-command.test.ts packages/cli/tests/perf-e2e.test.ts` | 파일 2 통과, 테스트 85 통과 |
+| `pnpm typecheck --force` | Tasks 10 successful, `Cached: 0 cached, 10 total` |
+| `pnpm lint` | 776 파일, 오류 0, 경고 14 (기존 것) |
+
+이번 수정 범위에서는 `pnpm build --force` 와 `pnpm test` 전체를 다시 돌리지 않았다(지시한 검증 명령 밖).

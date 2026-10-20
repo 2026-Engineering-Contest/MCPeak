@@ -855,6 +855,22 @@ describe("runPerfCommand: 신호 정리(계획 E25)", () => {
     },
   );
 
+  // 처리기가 연결을 닫으면 남은 callTool 이 거부된 채로 기록돼 onProgress 가 계속 불린다.
+  it("신호로 중단된 뒤에는 진행 줄을 쓰지 않는다", async () => {
+    let h: ReturnType<typeof harness> | undefined;
+    const measure: typeof perf.measure = async (input) => {
+      const result = await perf.measure({ ...input, onProgress: undefined });
+      input.onProgress?.(1, 4);
+      await h?.signal("SIGINT");
+      for (let done = 2; done <= 4; done += 1) input.onProgress?.(done, 4);
+      return result;
+    };
+    h = harness({ perf: { measure } });
+    await expect(runPerfCommand([SUITE, "--repeat", "2", "--", "node"], h.deps)).resolves.toBe(130);
+    expect(h.deps.killSelf).toHaveBeenCalledWith("SIGINT");
+    expect(h.stderr()).toBe("측정: 케이스 2개 × 2회\n측정 중 1/4 · a-ok (1/2회)\n");
+  });
+
   it("신호 전에 끝난 측정은 지금처럼 리포트를 쓴다", async () => {
     const h = harness({ trace: [HELLO] });
     await expect(runPerfCommand([SUITE, "--", "node"], h.deps)).resolves.toBe(0);

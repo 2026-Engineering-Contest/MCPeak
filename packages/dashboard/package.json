@@ -61,6 +61,7 @@
     "@mcpeak/runner": "workspace:*",
     "@mcpeak/optimize": "workspace:*",
     "@mcpeak/audit": "workspace:*",
+    "@mcpeak/perf": "workspace:*",
     "@mcpeak/cli": "workspace:*"
   },
   "devDependencies": {

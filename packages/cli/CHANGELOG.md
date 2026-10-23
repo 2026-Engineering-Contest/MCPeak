@@ -1,5 +1,18 @@
 # ohmymcp
 
+## 0.15.0
+
+### Minor Changes
+
+- 2e65de1: `@mcpeak/cli/commands` 가 `runPerfCommand`, `nodePerfDependencies`, `PerfCommandDependencies` 를 내보냅니다. 대시보드가 perf 를 같은 커맨드 함수로 돌리기 위한 공개 면입니다.
+- 4af2609: `mcpeak perf` 를 추가한다. 도구 호출 응답 시간을 외부 HTTP 대기와 서버 안 시간으로 나누고, 순차 독립 요청과 반복 요청을 진단하며, `--baseline` 으로 서버 안 시간과 외부 요청 수의 회귀를 종료 코드 2 로 알린다.
+
+### Patch Changes
+
+- d3f0d43: `mcpeak perf` 가 측정 도중 호출마다 진행 줄(`측정 중 N/M · <케이스> (i/R회)`)을 stderr 에 씁니다.
+- Updated dependencies [4af2609]
+  - @mcpeak/perf@0.1.0
+
 ## 0.14.1
 
 ### Patch Changes

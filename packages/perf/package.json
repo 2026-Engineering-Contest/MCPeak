@@ -1,6 +1,6 @@
 {
   "name": "@mcpeak/perf",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": false,
   "type": "module",
   "description": "Split MCP tool call latency into external HTTP wait and in-server time",

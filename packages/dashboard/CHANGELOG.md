@@ -1,5 +1,31 @@
 # @ohmymcp-hsu/dashboard
 
+## 0.6.0
+
+### Minor Changes
+
+- c2c7b79: Analyze 화면의 성능 효율성 카드가 `mcpeak perf` 와 연결됩니다. 카드를 눌러 연 상세에서 고른 서버에 딸린 테스트 명세와 반복 횟수를 고르고, 시작 전 고지(케이스를 실제로 반복 호출하고 쓰기 도구도 포함되며 격리 없이 이 컴퓨터에서 서버를 띄운다)를 본 뒤 측정을 시작합니다. 성능 측정은 "분석하기" 에 들지 않고, 원격(HTTP) 서버는 측정할 수 없습니다. 결과는 카드에 병렬화로 줄일 수 있는 시간과 측정·미측정·진단 칩으로, 상세에 개선 지점·케이스별 응답 시간·미측정 케이스·이 측정의 한계로 보입니다. 서버 API 에 `POST /api/analyze/perf` 와 `GET /api/analyze/perf/<runId>` 가 늘어납니다.
+- 1d6ae74: 개발자 모드 Analyze 화면이 탭 둘에서 서버 선택과 축 카드로 바뀝니다. 처음에는 서버를 고르는 폼과 "분석하기"
+  버튼만 있습니다. 누르면 보안 점검과 토큰 분석이 동시에 시작되고, 폼이 한 줄로 접힌 아래에 축 카드 셋(보안,
+  비용 최적화, 성능 효율성 준비 중)이 나타나 각 축의 판정과 집계를 보입니다. 카드를 누르면 그 축의 상세가 카드
+  아래에 펼쳐지고 주소가 `#/analyze/security`·`#/analyze/tokens` 로 바뀝니다. 점검 옵션(호출 정책·기준 파일·
+  Docker 격리)은 대시보드에 없습니다. 대신 "분석하기" 는 격리할 수 있는 서버(stdio 이고 명령이 node·npx·npm)면
+  Docker 격리를 자동으로 시도해 컨테이너 안에서 모든 도구를 호출하고, Docker 를 못 쓰거나 격리 범위를 정하지
+  못하면 이 머신에서 읽기 전용 도구만 호출합니다. 어느 쪽으로 돌았는지는 보안 카드 요약 줄과 보안 상세 머리에
+  "격리 실행(Docker)" 또는 "로컬 실행(readonly): <사유>" 로 보입니다. 첫 격리 실행은 이미지를 만드느라 몇 분이
+  걸릴 수 있습니다. 보안 카드에 "안전 N" 칩이, 보안 상세의 발견 목록 다음에 "안전 (발견 없이 통과한 검사)"
+  구획이 생깁니다. `POST /api/analyze/security` 요청에 선택 필드 `sandboxOptional` 이, `GET
+/api/analyze/security/<runId>` 응답에 `passedRules`·`sandboxFallbackReason` 필드가 늘어납니다. 다른 서버 API 는
+  바뀌지 않습니다.
+
+### Patch Changes
+
+- Updated dependencies [2e65de1]
+- Updated dependencies [4af2609]
+- Updated dependencies [d3f0d43]
+  - @mcpeak/cli@0.15.0
+  - @mcpeak/perf@0.1.0
+
 ## 0.5.2
 
 ### Patch Changes

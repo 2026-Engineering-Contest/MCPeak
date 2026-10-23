@@ -1,6 +1,6 @@
 {
   "name": "@mcpeak/dashboard",
-  "version": "0.5.2",
+  "version": "0.6.0",
   "private": false,
   "type": "module",
   "description": "Local web UI for MCPeak, the MCP server testing framework",

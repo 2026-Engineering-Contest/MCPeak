@@ -32,8 +32,8 @@ informational findings do not affect the exit code.
 | `behavior` | (`--sandbox`) Reading decoy credential files, attempts to connect to internal addresses, child processes, writes and executions that contradict readOnlyHint, writes outside the temporary directory, tampering with the audit record |
 | `network` | (`--sandbox`) Outgoing requests carrying a canary, undeclared destinations, names that resolve to internal addresses, certificate pinning, direct IP connections without a name lookup, requests absent from the replay |
 
-The conditions and wording of each rule are defined authoritatively in §3 and §6 of `docs/plans/2026-10-03-audit-핵심-검사-구현계획.md`.
-For `behavior`, `network`, and isolated execution, §3 and §6 of `docs/plans/2026-10-03-audit-샌드박스-행위-관측-구현계획.md` are authoritative.
+The conditions and wording of each rule are defined authoritatively in §3 and §6 of `docs/audit/plans/2026-10-03-audit-핵심-검사-구현계획.md`.
+For `behavior`, `network`, and isolated execution, §3 and §6 of `docs/audit/plans/2026-10-03-audit-샌드박스-행위-관측-구현계획.md` are authoritative.
 
 ## Isolated execution (`--sandbox`)
 
@@ -117,7 +117,7 @@ Description checking has two layers. Pattern rules (`desc/injection` and others)
 measures, with 19 signals, how much a description is shaped to steer the model's tool use. On the 1,312 cases of the public poisoning benchmark MCPTox, the two
 combined detect 99.1% of the originals, 97.3% of variants with substituted wording, 84.3% of variants planted directly in the targeted tool's description with the tone also changed,
 and 63.2% of variants that spell out another tool's name with the tone also changed
-(`docs/benchmark/mcp-audit-recall/RESULTS.md`). The variants are mechanical substitutions, so the rate may be
+(`docs/audit/benchmark/mcp-audit-recall/RESULTS.md`). The variants are mechanical substitutions, so the rate may be
 lower on descriptions a person has carefully rewritten.
 
 **It does not stop an attacker who knows how the checks work.** The rules and the score table are public in this repository, so writing around just the words that

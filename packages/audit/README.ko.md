@@ -32,8 +32,8 @@ mcpeak audit --sandbox -- node ./server.mjs                        # Docker 격�
 | `behavior` | (`--sandbox`) 미끼 자격 증명 파일 읽기, 내부 주소 접속 시도, 자식 프로세스, readOnlyHint 와 어긋나는 쓰기·실행, 임시 디렉터리 밖 쓰기, 점검 기록 훼손 |
 | `network` | (`--sandbox`) 카나리가 실린 나가는 요청, 선언되지 않은 목적지, 내부 주소로 풀리는 이름, 인증서 고정, 이름 조회 없는 직접 IP 접속, 재생에 없는 요청 |
 
-규칙 하나하나의 조건과 문장은 `docs/plans/2026-10-03-audit-핵심-검사-구현계획.md` §3·§6 이 정본이다.
-`behavior`·`network` 와 격리 실행은 `docs/plans/2026-10-03-audit-샌드박스-행위-관측-구현계획.md` §3·§6 이 정본이다.
+규칙 하나하나의 조건과 문장은 `docs/audit/plans/2026-10-03-audit-핵심-검사-구현계획.md` §3·§6 이 정본이다.
+`behavior`·`network` 와 격리 실행은 `docs/audit/plans/2026-10-03-audit-샌드박스-행위-관측-구현계획.md` §3·§6 이 정본이다.
 
 ## 격리 실행 (`--sandbox`)
 
@@ -117,7 +117,7 @@ mcpeak audit --sandbox --sandbox-replay ./server.session.json --json -- node ./s
 설명이 모델의 도구 사용을 조종하는 모양을 신호 19개로 잰다. 공개 중독 벤치마크 MCPTox 1,312 사례에서 둘을
 합친 탐지율은 원문 99.1%, 낱말을 바꿔 쓴 변형 97.3%, 겨냥한 도구의 설명에 직접 심고 말투까지 바꾼 변형
 84.3%, 다른 도구의 이름을 풀어 쓰고 말투까지 바꾼 변형 63.2% 다
-(`docs/benchmark/mcp-audit-recall/RESULTS.md`). 변형은 기계적 치환이라, 사람이 공들여 다시 쓴 설명에서는 더
+(`docs/audit/benchmark/mcp-audit-recall/RESULTS.md`). 변형은 기계적 치환이라, 사람이 공들여 다시 쓴 설명에서는 더
 낮을 수 있다.
 
 **검사 방식을 아는 공격자는 막지 못한다.** 규칙과 점수표가 이 저장소에 공개돼 있어서, 신호가 되는 낱말만

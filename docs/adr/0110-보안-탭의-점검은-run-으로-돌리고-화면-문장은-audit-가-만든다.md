@@ -4,8 +4,8 @@
 - 날짜: 2026-10-04
 - 담당: dashboard
 - 작성자: @seodduu
-- 참조: ADR-0046, ADR-0091, ADR-0107, `docs/plans/2026-10-03-analyze-보안탭-구현계획.md` §3·§4.3·§4.4·§5.4,
-  `docs/2026-10-03-analyze-로드맵.md` 단계 3b
+- 참조: ADR-0046, ADR-0091, ADR-0107, `docs/dashboard/plans/2026-10-03-analyze-보안탭-구현계획.md` §3·§4.3·§4.4·§5.4,
+  `docs/dashboard/2026-10-03-analyze-로드맵.md` 단계 3b
 
 ## 배경
 

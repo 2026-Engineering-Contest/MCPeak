@@ -4,9 +4,9 @@
 - 날짜: 2026-10-20
 - 담당: dashboard
 - 작성자: @seodduu
-- 참조: ADR-0116, ADR-0117, ADR-0118, `docs/2026-10-18-analyze-통합-대시보드-설계.md` §9,
-  `docs/2026-10-18-perf-지연-분해-설계.md` §13 Q1,
-  `docs/plans/2026-10-20-analyze-성능-카드-perf-연결-구현계획.md`
+- 참조: ADR-0116, ADR-0117, ADR-0118, `docs/dashboard/2026-10-18-analyze-통합-대시보드-설계.md` §9,
+  `docs/perf/2026-10-18-perf-지연-분해-설계.md` §13 Q1,
+  `docs/dashboard/plans/2026-10-20-analyze-성능-카드-perf-연결-구현계획.md`
 
 ## 배경
 

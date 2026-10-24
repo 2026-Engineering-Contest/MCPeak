@@ -4,8 +4,8 @@
 - 날짜: 2026-09-12
 - 담당: cli, runner
 - 작성자: @seodduu
-- 참조: `docs/2026-09-12-generate-승인-화면은-실패한-케이스만-AI-에-보낸다-설계.md`,
-  `docs/superpowers/specs/2026-08-18-rejection-basis-verification-design.md` (이하 "#89 설계") §5.2 · §6,
+- 참조: `docs/generate/2026-09-12-generate-승인-화면은-실패한-케이스만-AI-에-보낸다-설계.md`,
+  `docs/runner/specs/2026-08-18-rejection-basis-verification-design.md` (이하 "#89 설계") §5.2 · §6,
   [ADR-0049](./0049-provider-자유-텍스트-값-치환-경계.md)
 
 ## 배경

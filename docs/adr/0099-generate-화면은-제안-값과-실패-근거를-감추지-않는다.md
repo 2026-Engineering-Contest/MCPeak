@@ -4,11 +4,11 @@
 - 날짜: 2026-09-13
 - 담당: cli, dashboard
 - 작성자: @seodduu
-- 참조: `docs/2026-09-13-generate-화면은-제안-값과-실패-근거를-감추지-않는다-설계.md`,
-  `docs/plans/2026-09-13-generate-화면은-제안-값과-실패-근거를-감추지-않는다-구현계획.md`,
-  `docs/superpowers/specs/2026-08-15-dry-run-input-repair-design.md` (이하 "원본 교정 설계") §8.6 · §8.6.1,
+- 참조: `docs/generate/2026-09-13-generate-화면은-제안-값과-실패-근거를-감추지-않는다-설계.md`,
+  `docs/generate/plans/2026-09-13-generate-화면은-제안-값과-실패-근거를-감추지-않는다-구현계획.md`,
+  `docs/generate/specs/2026-08-15-dry-run-input-repair-design.md` (이하 "원본 교정 설계") §8.6 · §8.6.1,
   [ADR-0098](./0098-generate-승인-화면은-실패한-케이스만-AI-에-보낸다.md),
-  [실측 기록](../2026-09-11-공개서버-직접조작-데모-실측-문제.md) §4
+  [실측 기록](../common/2026-09-11-공개서버-직접조작-데모-실측-문제.md) §4
 
 ## 배경
 
@@ -118,7 +118,7 @@ ADR-0098 은 **무엇을 보일지**를 줄이는 결정이었다. 기본 화면
 
 ## 결과
 
-- **이 ADR 이 원본 교정 설계 `docs/superpowers/specs/2026-08-15-dry-run-input-repair-design.md`
+- **이 ADR 이 원본 교정 설계 `docs/generate/specs/2026-08-15-dry-run-input-repair-design.md`
   의 §8.6 · §8.6.1 을 대체한다.** 그 두 절이 고정한 교정 머리말과 필드 질문 문안은 더 이상 맞지
   않는다. 새 문안은 2026-09-13 설계 문서 §4.3 · §4.4 · §4.5 에 있다. 원본 문서에는 그리로
   가리키는 정정 인용 블록이 들어가 있다. 교정 회차 수·캐시·되돌리기 규칙(원본 §4)은 그대로다.

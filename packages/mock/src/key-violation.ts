@@ -114,7 +114,7 @@ export function findKeyViolation(value: unknown): KeyViolation | undefined {
  * 위반을 사람이 읽는 문장으로 바꾼다. 실패 메시지가 곧 제품이다 (CLAUDE.md).
  *
  * 변하는 값(`path` · `found`) 뒤에 조사를 붙이지 않는다. 받침 유무가 갈려서
- * 어느 쪽으로 고정해도 한쪽이 틀린다 — `docs/reports/task-b6.md` 에서 모델 이름으로
+ * 어느 쪽으로 고정해도 한쪽이 틀린다 — `docs/cli/reports/task-b6.md` 에서 모델 이름으로
  * 같은 문제를 겪고 내린 결론이다. 그래서 값은 전부 콜론이나 대시 뒤에 둔다.
  */
 function keyViolationMessage(violation: KeyViolation, source: string): string {

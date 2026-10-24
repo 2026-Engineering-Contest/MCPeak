@@ -994,7 +994,7 @@ describe("filterNoise", () => {
 
   it("npm 캐시: 레지스트리에서 받아 띄운 실제 기록에서 start 단계에 남는 쓰기·실행이 없다", () => {
     // 격리 이미지에 ADR-0109 의 tmpfs 를 얹고 `npx -y @modelcontextprotocol/server-everything@2026.8.31` 을
-    // strace 아래 띄워 떠 온 기록이다(채집 명령과 줄인 방법은 docs/reports/2026-10-04-sandbox-N1.md).
+    // strace 아래 띄워 떠 온 기록이다(채집 명령과 줄인 방법은 docs/audit/reports/2026-10-04-sandbox-N1.md).
     const lines = readFileSync(join(SANDBOX, "trace-npx-registry-start.txt"), "utf8").split("\n");
     const parsed = parseTrace(lines, START, "/workspace");
     expect(parsed.unparsed).toBe(0);

@@ -4,7 +4,7 @@
 - 날짜: 2026-08-14
 - 작성자: @endl24 (runner 파트)
 - 승인: 승인 (2026-08-17, @endl24 · 파트 ① 오너)
-- 관련 설계: [CLI 보고서 렌더링 설계](../superpowers/specs/2026-08-13-cli-report-rendering-design.md) §9.3
+- 관련 설계: [CLI 보고서 렌더링 설계](../cli/specs/2026-08-13-cli-report-rendering-design.md) §9.3
 - 관련 결정: [ADR-0002](./0002-matcher-strategy.md) — 결과 소비를 우리 리포터가 맡기로 한 전제
 
 ## 배경

@@ -4,8 +4,8 @@
 - 날짜: 2026-08-25
 - 담당: dashboard (공용)
 - 작성자: @seodduu
-- 참조: `docs/2026-08-25-대시보드-generate-서버-선택-설계.md` §3, §8,
-  `docs/2026-08-25-대시보드-홈-실행-폼-설계.md` §5-3, ADR-0079,
+- 참조: `docs/dashboard/2026-08-25-대시보드-generate-서버-선택-설계.md` §3, §8,
+  `docs/dashboard/2026-08-25-대시보드-홈-실행-폼-설계.md` §5-3, ADR-0079,
   `packages/dashboard/web/src/components/ServerPicker.tsx`
 
 ## 배경

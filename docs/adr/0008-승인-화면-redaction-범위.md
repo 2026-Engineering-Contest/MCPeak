@@ -5,7 +5,7 @@
 - 담당: generate, cli
 - 작성자: @seodduu (generate·cli 파트)
 - 승인: 미승인. 아래 '승인' 절 참조
-- 참조: [ADR-0007](./0007-provider-전송-스키마-분리.md), `docs/reports/task-b4.md`
+- 참조: [ADR-0007](./0007-provider-전송-스키마-분리.md), `docs/cli/reports/task-b4.md`
 
 ## 배경
 

@@ -4,7 +4,7 @@
 - 날짜: 2026-09-28
 - 담당: optimize
 - 작성자: @seodduu
-- 관련: `docs/2026-09-27-mcp-도구-정의-압축-조사-실험.md`, `docs/plans/2026-09-28-optimize-안전-프로필-구현계획.md`, ADR-0091
+- 관련: `docs/optimize/2026-09-27-mcp-도구-정의-압축-조사-실험.md`, `docs/optimize/plans/2026-09-28-optimize-안전-프로필-구현계획.md`, ADR-0091
 
 ## 배경
 

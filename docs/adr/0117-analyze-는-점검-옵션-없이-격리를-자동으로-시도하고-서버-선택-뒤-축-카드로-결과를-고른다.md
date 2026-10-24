@@ -4,8 +4,8 @@
 - 날짜: 2026-10-19
 - 담당: dashboard
 - 작성자: @seodduu
-- 참조: ADR-0116, ADR-0110, ADR-0111, `docs/2026-10-18-analyze-통합-대시보드-설계.md` §3,
-  `docs/reports/2026-10-19-analyze-C3.md`, `docs/reports/2026-10-19-analyze-simplify.md`
+- 참조: ADR-0116, ADR-0110, ADR-0111, `docs/dashboard/2026-10-18-analyze-통합-대시보드-설계.md` §3,
+  `docs/dashboard/reports/2026-10-19-analyze-C3.md`, `docs/dashboard/reports/2026-10-19-analyze-simplify.md`
 
 ## 배경
 

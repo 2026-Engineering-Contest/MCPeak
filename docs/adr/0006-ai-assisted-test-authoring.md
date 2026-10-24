@@ -3,7 +3,7 @@
 - 상태: 승인
 - 날짜: 2026-08-12
 - 담당: generate
-- 상세 설계: [AI 보조 테스트 작성·반복 검토 설계](../superpowers/specs/2026-08-12-ai-assisted-test-authoring-design.md)
+- 상세 설계: [AI 보조 테스트 작성·반복 검토 설계](../generate/specs/2026-08-12-ai-assisted-test-authoring-design.md)
 
 ## 배경
 

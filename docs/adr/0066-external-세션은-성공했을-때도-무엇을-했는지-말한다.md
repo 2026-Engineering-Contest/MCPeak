@@ -11,7 +11,7 @@
   [ADR-0057](./0057-external-어댑터는-global-fetch-까지만-가로챈다.md),
   [ADR-0062](./0062-세션-본문의-url-은-지우지-않고-알린다.md)
 - 참조: `packages/cli/src/test-command.ts` (`externalSessionOutcome`·`externalSessionNotice`),
-  `docs/superpowers/plans/2026-08-21-external-record-replay-implementation.md` P10,
+  `docs/record/plans/2026-08-21-external-record-replay-implementation.md` P10,
   `CLAUDE.md` (실패 메시지가 곧 제품이다)
 
 ## 배경

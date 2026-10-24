@@ -4,8 +4,8 @@
 - 날짜: 2026-10-04
 - 담당: audit
 - 작성자: @seodduu
-- 참조: ADR-0104, `docs/plans/2026-10-04-audit-오탐과-재생-비대칭-수정-구현계획.md` §2·§3,
-  `docs/plans/2026-10-03-audit-핵심-검사-구현계획.md` §3·§6
+- 참조: ADR-0104, `docs/audit/plans/2026-10-04-audit-오탐과-재생-비대칭-수정-구현계획.md` §2·§3,
+  `docs/audit/plans/2026-10-03-audit-핵심-검사-구현계획.md` §3·§6
 
 ## 배경
 

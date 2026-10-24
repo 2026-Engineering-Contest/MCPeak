@@ -7,7 +7,7 @@
 - 승인: 미승인
 - 참조: `docs/adr/0003-cassette-matching-key.md`,
   `docs/architecture.md`,
-  `docs/superpowers/specs/2026-08-15-dry-run-approval-gate-design.md` §5.2 · §15,
+  `docs/cli/specs/2026-08-15-dry-run-approval-gate-design.md` §5.2 · §15,
   `packages/record/src/index.ts` (`cassetteClient`),
   `packages/cli/src/cassette-wiring.ts`,
   CONTRIBUTING §9 (W3 통과 기준)

@@ -30,7 +30,7 @@ it refuses to serve and tells you to rebuild the overlay.
 ## What it changes: three safe-profile transformations
 
 Only transformations that didn't change tool selection across 35 public servers, 210 model selection tests, and about 72,000 schema equivalence samples
-are used (`docs/2026-09-27-mcp-도구-정의-압축-조사-실험.md`).
+are used (`docs/optimize/2026-09-27-mcp-도구-정의-압축-조사-실험.md`).
 
 | Transformation | What it touches | Why it is safe |
 |---|---|---|

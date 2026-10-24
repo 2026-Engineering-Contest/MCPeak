@@ -673,7 +673,7 @@ async function saveSuite(
     //
     // hard link를 못 쓰는 파일시스템(EPERM/ENOTSUP)에서 rename으로 떨어뜨리고 싶어지는
     // 자리다. 하지 마라. rename은 대상이 있으면 **말없이 덮어쓴다.** 실측으로 확인했다
-    // (docs/reports/task-r4.md: link는 EEXIST로 실패하며 기존 내용 PRECIOUS를 보존했고,
+    // (docs/cli/reports/task-r4.md: link는 EEXIST로 실패하며 기존 내용 PRECIOUS를 보존했고,
     // rename은 같은 상황에서 NEW로 덮어썼다). fallback을 넣는 순간 R4에서 없앤 데이터 손실
     // 결함이 그대로 돌아온다. 저장하지 못하는 편이 남의 파일을 날리는 것보다 낫다.
     // `--force` 의 덮어쓰기. 지우고 link 하는 순서를 지킨다. rename 으로 바꾸지 마라.
@@ -1332,7 +1332,7 @@ async function loadFixtures(
  *
  * **기존 파일을 절대 고치지 않는다.** 병합 로직을 만들지 않는다. 파일이 있으면 붙여 넣을
  * 조각만 찍는다. 덮어쓸 수 있는 primitive 를 두지 않는다는 것이 이 저장소의 결론이고
- * (`docs/reports/task-r4.md`), `rename` 으로 떨어지고 싶어지는 자리에서 그 결정을
+ * (`docs/cli/reports/task-r4.md`), `rename` 으로 떨어지고 싶어지는 자리에서 그 결정을
  * 우회하지 않는다. `openTemp` → `link` → `unlink` 만 쓴다.
  */
 async function writeBackFixtures(

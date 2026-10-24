@@ -41,7 +41,7 @@
       }
     },
     {
-      "includes": ["docs/mockups/**"],
+      "includes": ["docs/*/mockups/**"],
       "linter": {
         "enabled": false
       },
@@ -62,7 +62,7 @@
       }
     },
     {
-      "includes": ["docs/benchmark/**"],
+      "includes": ["docs/*/benchmark/**"],
       "linter": {
         "enabled": false
       },

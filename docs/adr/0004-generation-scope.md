@@ -117,7 +117,7 @@
 
 생성 테스트는 Runner의 선언형 `TestSuiteSpec`을 사용하고, 각 happy-path 케이스는 `callTool` 작업과 `{ type: "isError", expected: false }` assertion으로 표현하는 방향을 제안한다. 생성한 명세는 파일을 쓰기 전에 Runner의 공개 validator로 검증한다.
 
-compile·repair 요청을 준비할 때는 [Runner 설계의 Generate 요청 검증 계약](../superpowers/specs/2026-08-11-runner-design.md)에 따라 `tools[].inputSchema`를 redaction보다 먼저 runtime `ReadonlyJsonValue`로 검증한다. 비 JSON 값은 preview·binding·provider 호출 전에 동기 `GenerateRequestValidationError`로 거절하며, 오류 코드는 `INVALID_TOOL_INPUT_SCHEMA`를 사용한다.
+compile·repair 요청을 준비할 때는 [Runner 설계의 Generate 요청 검증 계약](../runner/specs/2026-08-11-runner-design.md)에 따라 `tools[].inputSchema`를 redaction보다 먼저 runtime `ReadonlyJsonValue`로 검증한다. 비 JSON 값은 preview·binding·provider 호출 전에 동기 `GenerateRequestValidationError`로 거절하며, 오류 코드는 `INVALID_TOOL_INPUT_SCHEMA`를 사용한다.
 
 다만 `generate → runner → core` 의존 방향과 `@ohmymcp-hsu/generate`의 Runner workspace dependency 추가는 이 ADR만으로 확정하지 않는다. Runner 담당과 팀의 별도 승인을 받은 뒤 의존성과 구체적인 생성 파일 형식을 구현한다. 승인 전에는 Runner 계약을 generate 내부에 복사하지 않는다.
 

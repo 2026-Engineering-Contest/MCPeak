@@ -3,7 +3,7 @@
 - 상태: 제안
 - 날짜: 2026-09-28
 - 담당: dashboard
-- 관련: 설계 `docs/superpowers/specs/2026-09-28-dashboard-mock-builder-design.md`, ADR-0062, ADR-0091
+- 관련: 설계 `docs/dashboard/specs/2026-09-28-dashboard-mock-builder-design.md`, ADR-0062, ADR-0091
 
 ## 배경
 

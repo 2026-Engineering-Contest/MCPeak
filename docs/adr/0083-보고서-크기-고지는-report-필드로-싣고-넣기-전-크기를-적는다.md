@@ -5,7 +5,7 @@
 - 담당: runner, cli
 - 작성자: @seodduu (① MCP 서버 테스트 파트)
 - 참조: [#92](https://github.com/2026-Engineering-Contest/MCPeak/issues/92),
-  `docs/superpowers/specs/2026-08-15-contract-axis-coverage-design.md` §9.2,
+  `docs/runner/specs/2026-08-15-contract-axis-coverage-design.md` §9.2,
   `packages/runner/src/executor.ts`, `packages/runner/src/reporter.ts`,
   `packages/cli/src/test-command.ts`
 

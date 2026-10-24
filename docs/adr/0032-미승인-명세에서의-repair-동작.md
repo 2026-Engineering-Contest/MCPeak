@@ -9,7 +9,7 @@
   `docs/adr/0018-입력-계약-대조-소비자-배선.md`,
   `docs/adr/0024-케이스-분류-저장-위치.md`,
   `docs/adr/0026-승인-지문-표시-시점.md`,
-  `docs/superpowers/specs/2026-08-16-server-repair-design.md` §5.4·§6.5
+  `docs/cli/specs/2026-08-16-server-repair-design.md` §5.4·§6.5
 
 ## 배경
 

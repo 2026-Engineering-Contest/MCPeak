@@ -8,7 +8,7 @@
 - 참조: `docs/adr/0008-승인-화면-redaction-범위.md`,
   `docs/adr/0011-응답-본문-추출-규칙.md`,
   `docs/adr/0025-시험-실행-입력값-교정-권한-경계.md`,
-  `docs/superpowers/specs/2026-08-15-dry-run-input-repair-design.md` §4.4·§8.6
+  `docs/generate/specs/2026-08-15-dry-run-input-repair-design.md` §4.4·§8.6
 
 ## 배경
 

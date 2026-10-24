@@ -11,7 +11,7 @@ import { renderReport, type ReportInput } from "../lib/report-render.ts";
 const CONFORMANCE_COMMIT = "1573ad5fc857d569ef405296e5d61de3ee6f921c";
 
 /**
- * docs/plans/2026-09-23-repair-효과-벤치마크-설계.md 8절 "전제와 한계" 다섯 항목을
+ * docs/common/plans/2026-09-23-repair-효과-벤치마크-설계.md 8절 "전제와 한계" 다섯 항목을
  * 그대로 옮긴 것이다. 설계 문서가 바뀌면 이 배열도 손으로 맞춰야 한다.
  */
 const PREMISES: readonly string[] = [

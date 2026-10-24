@@ -153,4 +153,4 @@ Reports and baseline files never carry request or response headers or bodies, an
 values masked as `…`. The same trace and the same measurements always produce byte-identical reports. The latency
 numbers themselves are measurements and differ from run to run.
 
-The design and its evidence are in `docs/2026-10-18-perf-지연-분해-설계.md` and ADR-0118 (written in Korean).
+The design and its evidence are in `docs/perf/2026-10-18-perf-지연-분해-설계.md` and ADR-0118 (written in Korean).

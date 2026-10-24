@@ -8,7 +8,7 @@
 - 참조: `docs/adr/0008-승인-화면-redaction-범위.md`,
   `docs/adr/0014-진단-출력-채널.md`,
   `docs/adr/0027-isError-진단의-서버-응답-본문.md`,
-  `docs/superpowers/specs/2026-08-16-server-repair-design.md` §7.2·§7.3
+  `docs/cli/specs/2026-08-16-server-repair-design.md` §7.2·§7.3
 
 ## 배경
 

@@ -8,7 +8,7 @@
 - 참조: `docs/adr/0007-provider-전송-스키마-분리.md`,
   `docs/adr/0009-generate가-runner에-의존하는-예외.md`,
   `docs/adr/0025-시험-실행-입력값-교정-권한-경계.md`,
-  `docs/superpowers/specs/2026-08-16-server-repair-design.md` §5.1·§5.2
+  `docs/cli/specs/2026-08-16-server-repair-design.md` §5.1·§5.2
 
 ## 배경
 

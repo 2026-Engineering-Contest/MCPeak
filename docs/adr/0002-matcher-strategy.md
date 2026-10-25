@@ -4,8 +4,8 @@
 - 날짜: 2026-08-13
 - 작성자: @endl24 (runner 파트)
 - 승인: 승인 (2026-08-17, @endl24 · 파트 ① 오너) — 조건 완화 경위는 아래 「승인 상태」 참조
-- 관련 설계: [Runner 설계 논의 인수인계](../2026-08-11-runner-session-handoff.md),
-  [Runner 실행 설계](../superpowers/specs/2026-08-11-runner-design.md)
+- 관련 설계: [Runner 설계 논의 인수인계](../runner/2026-08-11-runner-session-handoff.md),
+  [Runner 실행 설계](../runner/specs/2026-08-11-runner-design.md)
 
 ## 배경
 
@@ -145,7 +145,7 @@ minor 변경이다. 반대로 지금 공개해두고 없애는 것은 major 릴�
 - README의 30초 예제 수정이 후속 과제로 남는다. 현재 예제는 실행하면 실패하므로, 이 ADR이
   승인되는 즉시 별도 PR로 처리한다.
 - 결과 소비 경로 전체를 우리가 책임지게 된다. 터미널 렌더러는
-  [CLI 보고서 렌더링 설계](../superpowers/specs/2026-08-13-cli-report-rendering-design.md)가
+  [CLI 보고서 렌더링 설계](../cli/specs/2026-08-13-cli-report-rendering-design.md)가
   `packages/runner/src/reporter.ts`로 이미 다루고 있으며, 그 설계의 ADR-0012·0013이 출력 전환과
   배치를 결정한다. 이 ADR은 그 방향과 충돌하지 않는다 — 렌더러가 `runner`에 있는 근거가
   "`RunnerReport` 타입을 소유한 쪽이 렌더도 소유한다"이고, A안은 그 타입의 유일한 생산자를

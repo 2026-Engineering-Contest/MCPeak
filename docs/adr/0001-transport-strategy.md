@@ -4,7 +4,7 @@
 - 날짜: 2026-08-12
 - 승인일: 2026-08-12
 - 작성자: core 오너
-- 관련 설계: [Core stdio transport 및 프로세스 수명주기 설계](../superpowers/specs/2026-08-12-core-stdio-transport-design.md)
+- 관련 설계: [Core stdio transport 및 프로세스 수명주기 설계](../core/specs/2026-08-12-core-stdio-transport-design.md)
 
 ## 배경
 

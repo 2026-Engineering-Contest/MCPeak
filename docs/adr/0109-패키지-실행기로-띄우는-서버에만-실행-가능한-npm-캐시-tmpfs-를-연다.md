@@ -4,7 +4,7 @@
 - 날짜: 2026-10-04
 - 담당: audit
 - 작성자: @seodduu
-- 참조: ADR-0107, ADR-0108, `docs/reports/2026-10-04-sandbox-N1.md`
+- 참조: ADR-0107, ADR-0108, `docs/audit/reports/2026-10-04-sandbox-N1.md`
 
 ## 배경
 

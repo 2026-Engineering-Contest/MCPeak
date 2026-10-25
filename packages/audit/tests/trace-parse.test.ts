@@ -9,7 +9,7 @@ const SANDBOX = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "sandb
 
 /**
  * `trace-*.txt` 는 전부 격리 이미지 안에서 `strace -f -qq -s 256 -e trace=…` 로 떠 온 원문이다
- * (채집 명령은 docs/reports/2026-10-03-sandbox-T4.md). 파일마다 그때의 작업 디렉터리가 다르다.
+ * (채집 명령은 docs/audit/reports/2026-10-03-sandbox-T4.md). 파일마다 그때의 작업 디렉터리가 다르다.
  */
 const CWD: Readonly<Record<string, string>> = {
   "trace-rename2.txt": "/tmp",

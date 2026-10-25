@@ -4,8 +4,8 @@
 - 날짜: 2026-08-25
 - 담당: dashboard (공용)
 - 작성자: @seodduu
-- 참조: `docs/2026-08-25-대시보드-repair-번들-자동-관리-설계.md`,
-  `docs/2026-08-25-대시보드-홈-실행-폼-설계.md` §2 목표 4, §3 비범위,
+- 참조: `docs/dashboard/2026-08-25-대시보드-repair-번들-자동-관리-설계.md`,
+  `docs/dashboard/2026-08-25-대시보드-홈-실행-폼-설계.md` §2 목표 4, §3 비범위,
   `packages/cli/src/repair-bundle.ts`, `packages/dashboard/web/src/screens/RunView.tsx`
 
 ## 배경

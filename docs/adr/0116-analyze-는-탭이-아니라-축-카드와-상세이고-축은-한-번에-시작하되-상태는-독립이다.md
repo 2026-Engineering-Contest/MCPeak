@@ -4,8 +4,8 @@
 - 날짜: 2026-10-18
 - 담당: dashboard
 - 작성자: @seodduu
-- 참조: ADR-0110, ADR-0111, `docs/2026-10-18-analyze-통합-대시보드-설계.md` §12·§13,
-  `docs/plans/2026-10-18-analyze-통합-대시보드-구현계획.md`, `docs/2026-10-03-analyze-로드맵.md` §0
+- 참조: ADR-0110, ADR-0111, `docs/dashboard/2026-10-18-analyze-통합-대시보드-설계.md` §12·§13,
+  `docs/dashboard/plans/2026-10-18-analyze-통합-대시보드-구현계획.md`, `docs/dashboard/2026-10-03-analyze-로드맵.md` §0
 
 ## 배경
 

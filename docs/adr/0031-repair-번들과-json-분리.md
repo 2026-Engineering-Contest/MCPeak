@@ -8,7 +8,7 @@
 - 참조: `docs/adr/0012-cli-기본-출력-전환.md`,
   `docs/adr/0016-junit-time-속성-고정.md`,
   `docs/adr/0027-isError-진단의-서버-응답-본문.md`,
-  `docs/superpowers/specs/2026-08-16-server-repair-design.md` §4
+  `docs/cli/specs/2026-08-16-server-repair-design.md` §4
 
 ## 배경
 

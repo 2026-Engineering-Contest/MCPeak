@@ -5,7 +5,7 @@
 - 담당: generate
 - 작성자: @seodduu (generate 파트)
 - 승인: 미승인. 아래 '승인' 절 참조
-- 참조: [AI provider 스키마 호환성 조사](../ai-provider-schema-compatibility.md)
+- 참조: [AI provider 스키마 호환성 조사](../generate/ai-provider-schema-compatibility.md)
 
 ## 배경
 

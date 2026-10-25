@@ -1,6 +1,6 @@
-// desc/steering 의 판정. 설계는 docs/plans/2026-10-05-audit-조종-신호-점수-규칙-설계.md 다.
+// desc/steering 의 판정. 설계는 docs/audit/plans/2026-10-05-audit-조종-신호-점수-규칙-설계.md 다.
 // 정규식·점수·기준·신호 순서는 실측으로 고정한 값이다. 점수표를 고치려면
-// docs/benchmark/mcp-audit-recall/measure.mjs 의 변형 표로 전후를 견준다.
+// docs/audit/benchmark/mcp-audit-recall/measure.mjs 의 변형 표로 전후를 견준다.
 
 import type { Finding, RawTool } from "../types.js";
 import { evidenceFragment } from "./description.js";

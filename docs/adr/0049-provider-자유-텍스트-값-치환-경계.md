@@ -8,7 +8,7 @@
 - 참조: [ADR-0033](./0033-stderr-외부-전송-경계.md) — 같은 판단을 stderr 한 곳에 내린 결정,
   [ADR-0008](./0008-승인-화면-redaction-범위.md) — redaction 범위를 넓히지 않는다,
   [ADR-0034](./0034-provider-진단-통로-분리.md),
-  `docs/superpowers/specs/2026-08-18-rejection-basis-verification-design.md` §6.2 · §6.3,
+  `docs/runner/specs/2026-08-18-rejection-basis-verification-design.md` §6.2 · §6.3,
   이슈 #165
 
 ## 배경

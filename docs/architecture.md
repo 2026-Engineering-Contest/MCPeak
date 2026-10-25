@@ -177,7 +177,7 @@ ADR도 이미 1인 1개씩 균등 배정돼 있다:
 
 ## 7. CLI와 Core 연결 결정
 
-2026-08-12 승인된 [Core stdio transport 설계](./superpowers/specs/2026-08-12-core-stdio-transport-design.md)에
+2026-08-12 승인된 [Core stdio transport 설계](./core/specs/2026-08-12-core-stdio-transport-design.md)에
 따라 CLI가 composition root로서 Core와 Runner를 직접 조립한다.
 
 ```text

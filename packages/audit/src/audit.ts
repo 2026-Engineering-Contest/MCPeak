@@ -36,6 +36,7 @@ import {
   type SandboxSpec,
 } from "./sandbox/backend.js";
 import { planCalls } from "./sandbox/call-plan.js";
+import { commandName } from "./sandbox/command-name.js";
 import { extractDeclaredHosts } from "./sandbox/declared.js";
 import { planHome } from "./sandbox/home.js";
 import { filterNoise } from "./sandbox/noise.js";
@@ -642,8 +643,6 @@ function unavailableIn(error: unknown): SandboxUnavailable | undefined {
   if (typeof code !== "string" || !Object.hasOwn(UNAVAILABLE_CODES, code)) return undefined;
   return { code: code as SandboxUnavailableCode, detail: typeof detail === "string" ? detail : "" };
 }
-
-const commandName = (command: string) => command.slice(command.search(/[^/\\]*$/));
 
 /**
  * 격리를 켠다. 켜지 못하면 사유를 돌려주고, 호출자는 격리 없는 경로로 돈다. 격리 이미지가 실행할 수

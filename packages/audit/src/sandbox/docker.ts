@@ -8,6 +8,7 @@ import {
   type SyscallEvent,
 } from "../types.js";
 import type { SandboxBackend, SandboxHandle, SandboxSpec } from "./backend.js";
+import { commandName } from "./command-name.js";
 import { sandboxImageTag } from "./image.js";
 import type { TraceParser } from "./trace.js";
 
@@ -296,10 +297,10 @@ export function createDockerBackend(io: DockerIo, parse: TraceParser): SandboxBa
     const tmp: Resource = { kind: "tmp", id: "", present: false };
     const resources = [target, gateway, network, volume, tmp];
 
-    // 호스트의 절대 경로(/opt/homebrew/bin/node)는 컨테이너에 없다. 경로로 온 명령은 이름만 남겨
-    // 이미지의 PATH 에서 찾게 한다. Windows 구분자도 자른다. args 는 건드리지 않는다.
-    const given = spec.target.command ?? "";
-    const command = given.split(/[\\/]/).pop() || given;
+    // 호스트의 절대 경로(/opt/homebrew/bin/node, C:\Program Files\nodejs\node.exe)는 컨테이너에
+    // 없다. 경로와 윈도우 실행 파일 확장자를 떼 이미지의 PATH 에서 찾게 한다(#540). 허용 목록 판정과
+    // 같은 함수를 쓴다 — 규칙이 갈리면 통과한 명령을 컨테이너가 못 찾는다. args 는 건드리지 않는다.
+    const command = commandName(spec.target.command ?? "");
     const needsNpmCache = RUNNER_COMMANDS.has(command);
 
     /** 실행마다 달라지는 값. 알게 되는 대로 채우고, 밖으로 나가는 문장에서 자리표로 바꾼다. */

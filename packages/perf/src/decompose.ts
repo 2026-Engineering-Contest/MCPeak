@@ -16,8 +16,31 @@ export interface CallTiming {
   readonly afterResponse: number;
 }
 
-/** 설계 §2.1: 프로세스 간 시계 정렬 오차(1ms 미만)를 덮는 배정 창의 여유. */
-const ASSIGN_SLACK_MS = 2;
+/**
+ * §5.1 배정 창의 **앞쪽** 여유. 호출 t0 보다 이만큼 앞에 찍힌 요청까지 그 호출의 후보로 본다.
+ *
+ * 설계 §2.1 은 프로세스 간 시계 정렬 오차를 1ms 미만으로 보고 여유를 2ms 로 뒀다. 윈도우에서 그
+ * 전제가 깨진다 — 같은 머신에서 부모와 자식의 `performance.timeOrigin + performance.now()` 가
+ * spawn 마다 다르게 어긋나고, 30회 표본에서 중앙 0.9ms · p90 9.2ms · **최대 19.3ms** 였다(#541).
+ *
+ * 그런데 부모가 응답을 받은 시각과 서버가 다음 호출의 첫 요청을 내보내는 시각의 진짜 간격은
+ * 1~5ms 뿐이다. 오차가 그보다 크면 다음 호출의 첫 요청이 **앞 호출 창 안에** 찍히고, 여유 2ms 로는
+ * 덮지 못한다. 그러면 그 요청이 앞 호출로 배정돼 앞 호출의 외부 대기는 멀쩡해 보이고 다음 호출은
+ * 요청 0건으로 굶는다. 반복의 p50 이 굶은 쪽에 떨어지면 100ms 를 기다린 요청이 5ms 로 찍힌다.
+ *
+ * 관측된 꼬리(19.3ms)에 여유를 둬 25ms 로 잡는다. **이 값은 측정에 근거한 상한이지 증명이 아니다** —
+ * 더 느린 머신에서 꼬리가 더 길면 같은 증상이 돌아온다. 오차를 실제로 재서 보정하는 것이 근본
+ * 해결이고, 그것은 설계 §2.1 을 바꾸는 일이라 별도로 다룬다.
+ */
+const ASSIGN_BACK_SLACK_MS = 25;
+
+/**
+ * §5.1 배정 창의 **뒤쪽** 여유. 설계 §2.1 의 2ms 그대로다.
+ *
+ * 앞쪽만 넓힌다. 뒤쪽을 함께 넓히면 다음 호출이 낸 요청이 앞 호출의 것으로 빨려 들어가 지금 고치는
+ * 증상이 반대 방향으로 생긴다.
+ */
+const ASSIGN_FORWARD_SLACK_MS = 2;
 
 type StartEntry = Extract<TraceEntry, { kind: "start" }>;
 type EndEntry = Extract<TraceEntry, { kind: "end" }>;
@@ -65,15 +88,39 @@ function callsServer(measurement: PerfMeasurement): boolean {
 }
 
 /**
- * §5.1 호출 배정. 요청 e 의 후보는 m.t0 − 2 ≤ e.t0 ≤ m.t1 + 2 인 측정(여유 창)이고, 점 측정(skipped·missingTool)은
- * 후보가 아니다. 그 측정도 Map 의 키로는 남고 값은 빈 배열이다. 후보 중 measurements
+ * §5.1 호출 배정. 요청 e 의 후보는 `windowStart(m) ≤ e.t0 ≤ m.t1 + 2` 인 측정(여유 창)이고, 점 측정
+ * (skipped·missingTool)은 후보가 아니다. 그 측정도 Map 의 키로는 남고 값은 빈 배열이다. 후보 중 measurements
  * 배열 순서가 가장 늦은 측정 하나에 배정한다. 측정은 직렬이라 배열에서 늦을수록 시작도 늦다. 서버는 호출을 받은
  * 뒤에야 그 호출의 요청을 내므로 경계 근처의 요청은 나중 호출의 것일 가능성이 크다. 자식 시계 오차로 다음 호출
  * 첫 요청이 그 호출 t0 보다 앞에 찍혀도 앞 호출의 afterResponse 로 밀리지 않게 하려는 규칙이다. 엄밀 구간에 든
  * 측정은 그 뒤 측정의 여유 창보다 늦을 수 없으므로 따로 먼저 볼 필요가 없다. 후보가 없는 요청은 버린다.
+ *
+ * 창은 앞뒤가 다르다. 뒤는 2ms, 앞은 25ms 이고 앞 측정의 t0 에서 멈춘다 — 그 이유는
+ * `ASSIGN_BACK_SLACK_MS` 와 `windowStart` 에 적었다. 앞쪽 여유가 넓어진 대가로, 앞 호출이 응답을
+ * 보낸 뒤 25ms 안에 **진짜로** 시작한 요청은 앞 호출의 afterResponse 가 아니라 다음 호출의 요청으로
+ * 배정된다(#541).
  * 반환 Map 은 measurements 의 모든 원소를 배열 순서대로 키로 갖고, 각 값은 t0 오름차순, 같으면 seq,
  * 그래도 같으면 pid 오름차순이다.
  */
+/**
+ * `measurements[index]` 의 여유 창이 시작하는 시각. `t0 - ASSIGN_BACK_SLACK_MS` 이지만 **바로 앞
+ * 측정의 t0 보다 앞으로는 가지 않는다.**
+ *
+ * 이 바닥이 없으면 호출이 여유보다 짧은 서버에서 한 호출의 창이 앞 호출 여러 개를 통째로 덮고,
+ * "가장 늦은 후보" 규칙 때문에 앞 호출들의 요청이 전부 뒤로 끌려간다. 바닥을 두면 창이 앞 측정
+ * 하나 안으로만 들어가므로 피해가 한 칸에 머문다.
+ *
+ * 첫 측정에는 앞 측정이 없어 바닥도 없다. 서버가 기동 중(핸드셰이크·listTools)에 낸 요청이 첫 호출
+ * t0 의 25ms 앞에 있으면 첫 호출로 배정된다 — 측정 전에 보통 그보다 긴 틈이 있어 실제로는 닿지
+ * 않지만, 닿으면 첫 호출의 외부 대기가 부풀 수 있다.
+ */
+function windowStart(measurements: readonly PerfMeasurement[], index: number): number {
+  const m = measurements[index] as PerfMeasurement;
+  const slackStart = m.t0 - ASSIGN_BACK_SLACK_MS;
+  const previous = measurements[index - 1];
+  return previous === undefined ? slackStart : Math.max(slackStart, previous.t0);
+}
+
 export function assignRequests(
   requests: readonly ObservedRequest[],
   measurements: readonly PerfMeasurement[],
@@ -86,7 +133,10 @@ export function assignRequests(
     for (let i = measurements.length - 1; i >= 0; i -= 1) {
       const m = measurements[i] as PerfMeasurement;
       if (!callsServer(m)) continue;
-      if (request.t0 >= m.t0 - ASSIGN_SLACK_MS && request.t0 <= m.t1 + ASSIGN_SLACK_MS) {
+      if (
+        request.t0 >= windowStart(measurements, i) &&
+        request.t0 <= m.t1 + ASSIGN_FORWARD_SLACK_MS
+      ) {
         assigned.get(m)?.push(request);
         break;
       }

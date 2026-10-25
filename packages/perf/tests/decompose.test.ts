@@ -186,9 +186,10 @@ describe("assignRequests", () => {
     expect([...assigned.keys()]).toEqual([timedOut, skipped]);
   });
 
-  it("다음 호출과 2ms 넘게 떨어진 응답 뒤 요청은 앞 호출의 afterResponse 다", () => {
+  it("다음 호출과 25ms 넘게 떨어진 응답 뒤 요청은 앞 호출의 afterResponse 다", () => {
     const first = call(1000, 1500, 0);
-    const second = call(1510, 1900, 1);
+    // 간격이 앞쪽 여유(25ms)보다 넓어야 둘째 호출의 후보가 되지 않는다. 좁으면 아래 스펙대로 둘째 것이다.
+    const second = call(1540, 1900, 1);
     const entries = [start(1, 1501), end(1, 1600)];
     const assigned = assignRequests(mergeTrace(entries), [first, second]);
     expect(assigned.get(first)?.map((r) => r.seq)).toEqual([1]);
@@ -196,25 +197,90 @@ describe("assignRequests", () => {
     expect(callTiming(first, assigned.get(first) ?? []).afterResponse).toBe(1);
   });
 
-  it("후보 중 가장 늦은 호출은 measurements 배열에서 가장 뒤의 후보다", () => {
-    const later = call(1501, 1900, 1);
-    const earlier = call(1000, 1500, 0);
-    const entries = [start(1, 1500.5), end(1, 1600)];
-    const assigned = assignRequests(mergeTrace(entries), [later, earlier]);
-    expect(assigned.get(later)).toEqual([]);
-    expect(assigned.get(earlier)?.map((r) => r.seq)).toEqual([1]);
+  /**
+   * 앞쪽 여유를 25ms 로 넓힌 대가다(#541). 앞 호출이 응답을 보낸 뒤 25ms 안에 **진짜로** 시작한
+   * 요청은 앞 호출의 afterResponse 가 아니라 다음 호출의 요청으로 배정된다. 자식 시계 오차(윈도우에서
+   * 최대 19.3ms 실측)로 다음 호출의 첫 요청이 그만큼 앞에 찍히는 것과 글자로는 구분할 수 없다.
+   */
+  it("다음 호출 시작 25ms 안에 든 응답 뒤 요청은 다음 호출의 것이다", () => {
+    const first = call(1000, 1500, 0);
+    const second = call(1510, 1900, 1);
+    const entries = [start(1, 1501), end(1, 1600)];
+    const assigned = assignRequests(mergeTrace(entries), [first, second]);
+    expect(assigned.get(first)).toEqual([]);
+    expect(assigned.get(second)?.map((r) => r.seq)).toEqual([1]);
+    expect(callTiming(first, assigned.get(first) ?? []).afterResponse).toBe(0);
   });
 
-  it("창은 앞뒤로 2ms 여유를 둔다", () => {
+  it("후보 중 가장 늦은 호출은 measurements 배열에서 가장 뒤의 후보다", () => {
+    // 앞쪽 여유가 25ms 라 이웃한 두 호출의 창은 겹친다. 겹친 자리의 요청은 배열에서 뒤인 쪽이 가진다.
+    const first = call(1000, 1500, 0);
+    const second = call(1505, 1900, 1);
+    const entries = [start(1, 1495), end(1, 1600)];
+    const assigned = assignRequests(mergeTrace(entries), [first, second]);
+    expect(assigned.get(first)).toEqual([]);
+    expect(assigned.get(second)?.map((r) => r.seq)).toEqual([1]);
+  });
+
+  it("창의 뒤쪽 여유는 2ms 다", () => {
     const c = call(1000, 1500);
-    const entries = [
-      ...req(1, 998, 1100),
-      ...req(2, 1502, 1600),
-      ...req(3, 997.9, 1100),
-      ...req(4, 1502.1, 1600),
-    ];
+    const entries = [...req(1, 1502, 1600), ...req(2, 1502.1, 1600)];
     const assigned = assignRequests(mergeTrace(entries), [c]);
-    expect(assigned.get(c)?.map((r) => r.seq)).toEqual([1, 2]);
+    expect(assigned.get(c)?.map((r) => r.seq)).toEqual([1]);
+  });
+
+  it("창의 앞쪽 여유는 25ms 다", () => {
+    const c = call(1000, 1500);
+    const entries = [...req(1, 975, 1100), ...req(2, 974.9, 1100)];
+    const assigned = assignRequests(mergeTrace(entries), [c]);
+    expect(assigned.get(c)?.map((r) => r.seq)).toEqual([1]);
+  });
+
+  /**
+   * **알려진 한계다(#541).** 호출이 앞쪽 여유(25ms)보다 짧으면 그 호출의 창이 앞 호출을 통째로 덮고,
+   * "가장 늦은 후보" 규칙으로 요청이 한 칸 뒤 호출로 끌려간다. 글자만 보고는 시계 오차로 앞에 찍힌
+   * 요청과 구분할 수 없어서 생기는, 여유를 넓힌 값이다.
+   *
+   * 피해를 한 칸으로 **묶는** 것이 `windowStart` 의 바닥(앞 측정의 t0)이다. 바닥이 없으면 c 의 창이
+   * 1012 − 25 = 987 까지 열려 세 요청을 전부 가져간다. 바닥이 있으면 c 는 b 안까지만 들어간다.
+   *
+   * 오차를 실제로 재서 보정하면 이 한계가 사라진다. 그것은 설계 §2.1 을 바꾸는 일이라 별도 건이다.
+   */
+  it("호출이 앞쪽 여유보다 짧으면 요청이 한 칸 뒤로 밀린다 — 바닥이 그 피해를 한 칸으로 묶는다", () => {
+    const a = call(1000, 1005, 0);
+    const b = call(1006, 1011, 1);
+    const c = call(1012, 1017, 2);
+    const entries = [...req(1, 1001, 1004), ...req(2, 1007, 1010), ...req(3, 1013, 1016)];
+    const assigned = assignRequests(mergeTrace(entries), [a, b, c]);
+    expect(assigned.get(a)).toEqual([]);
+    expect(assigned.get(b)?.map((r) => r.seq)).toEqual([1]);
+    expect(assigned.get(c)?.map((r) => r.seq)).toEqual([2, 3]);
+    // 바닥이 없었다면 c 가 셋을 다 가져갔다. 한 칸에 묶인 것이 바닥의 몫이다.
+    expect(assigned.get(c)?.length).not.toBe(3);
+  });
+
+  /**
+   * #541 의 회귀. 자식 시계가 부모보다 앞서면 둘째 호출의 첫 요청이 첫 호출 창 **안에** 찍힌다.
+   * 여유가 2ms 였을 때는 그 요청이 첫 호출로 가서, 첫 호출은 외부 대기가 멀쩡해 보이고 둘째 호출은
+   * 요청 0건으로 굶었다. 반복의 p50 이 굶은 쪽에 떨어지면 100ms 를 기다린 요청이 5ms 로 찍혔다.
+   */
+  it("자식 시계가 앞서 둘째 호출의 첫 요청이 첫 호출 창 안에 찍혀도 둘째 호출의 것이다", () => {
+    const first = call(1000, 1127, 0);
+    const second = call(1129, 1233, 1);
+    const entries = [
+      // 첫 호출의 요청. 창 안에서 100ms 기다린다.
+      ...req(1, 1001, 1120),
+      // 둘째 호출의 요청인데 시계 오차로 첫 호출 t1(1127)보다 2ms 앞에 찍혔다.
+      ...req(2, 1125, 1227),
+    ];
+    const assigned = assignRequests(mergeTrace(entries), [first, second]);
+    expect(assigned.get(first)?.map((r) => r.seq)).toEqual([1]);
+    expect(assigned.get(second)?.map((r) => r.seq)).toEqual([2]);
+    // 굶지 않는다. 둘째 호출의 외부 대기는 창에서 자른 길이다(1227 → t1 1233 안이므로 1227 − 1129).
+    const secondTiming = callTiming(second, assigned.get(second) ?? []);
+    expect(secondTiming.requests).toBe(1);
+    expect(secondTiming.external).toBeCloseTo(98, 0);
+    expect(callTiming(first, assigned.get(first) ?? []).requests).toBe(1);
   });
 
   it("후보 호출이 없는 요청은 버린다", () => {

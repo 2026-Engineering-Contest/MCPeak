@@ -19,8 +19,39 @@ import type { AnalyzeTarget } from "./use-analyze-target.js";
  */
 const SANDBOX_COMMANDS: ReadonlySet<string> = new Set(["node", "npx", "npm"]);
 
-/** audit `commandName` 과 같은 식. 마지막 `/`·`\` 뒤가 basename 이다. */
-const commandName = (command: string): string => command.slice(command.search(/[^/\\]*$/));
+/**
+ * 뗄 윈도우 실행 파일 확장자. `@mcpeak/audit` 의 `sandbox/command-name.ts` 와 같은 목록이어야 한다.
+ *
+ * `.com` 과 `.ps1` 은 넣지 않는다 — 전자는 `mcp-server.com` 같은 도메인 꼴 이름을 엉뚱하게 자르고,
+ * 후자는 명령 자리에 그대로 올 수 없다.
+ */
+const EXECUTABLE_EXTENSIONS = [".exe", ".cmd", ".bat"] as const;
+
+/**
+ * 격리 이미지가 실행할 명령의 이름. `@mcpeak/audit` 의 `commandName`
+ * (`packages/audit/src/sandbox/command-name.ts`)과 **같은 값을 내야 한다** — 그 파일이 이 규칙의
+ * 정본이고, 판단 근거도 거기 적혀 있다.
+ *
+ * 경로를 떼고(`/`·`\` 둘 다), 윈도우 실행 파일 확장자도 뗀다. 윈도우에서 node 는 `node.exe` 이고
+ * npm·npx 는 `npm.cmd`·`npx.cmd` 다. 확장자를 떼지 않으면 `SANDBOX_COMMANDS` 를 통과하지 못해
+ * **윈도우 사용자는 격리를 시도조차 받지 못한다.** audit 은 적어도 `unsupported-command` 사유를
+ * 리포트에 남기지만 이 판정은 그보다 앞서 조용히 갈라진다.
+ *
+ * 이 파일은 브라우저 번들이라 `@mcpeak/audit` 를 런타임으로 불러올 수 없다(그 패키지는 `node:`
+ * 모듈을 끌고 온다). 그래서 규칙을 복제한다. 복제가 조용히 어긋나는 것을 막는 것은 아래 주석이
+ * 아니라 `web/tests/build-analyze-requests.test.ts` 의 케이스 표다.
+ *
+ * `process.platform` 을 보지 않고 글자로만 판정한다. 플랫폼으로 갈리면 같은 입력이 머신마다 다른
+ * 결과를 낸다.
+ */
+const commandName = (command: string): string => {
+  const base = command.split(/[\\/]/).pop() || command;
+  const lowered = base.toLowerCase();
+  const extension = EXECUTABLE_EXTENSIONS.find((candidate) => lowered.endsWith(candidate));
+  // 확장자가 이름 전체면(`.exe`) 떼지 않는다. 빈 이름은 어느 목록에도 들지 못한다.
+  if (extension === undefined || lowered === extension) return base;
+  return base.slice(0, -extension.length);
+};
 
 /** 분석하기의 보안 폼. 격리를 늘 시도한다(ADR-0117). 나머지는 기본값이다. */
 const SANDBOX_SECURITY_FORM: SecurityForm = { ...INITIAL_SECURITY_FORM, sandbox: true };

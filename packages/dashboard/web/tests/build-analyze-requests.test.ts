@@ -79,6 +79,54 @@ describe("buildAnalyzeRequests", () => {
     }
   });
 
+  /**
+   * 윈도우에서 node 는 `node.exe` 이고 npm·npx 는 `npm.cmd`·`npx.cmd` 다. 런처나 IDE,
+   * `process.execPath` 가 흔히 그렇게 넘긴다. 확장자를 떼지 않으면 윈도우 사용자는 격리를 시도조차
+   * 받지 못한다(#540).
+   *
+   * 이 표는 `@mcpeak/audit` 의 `sandbox/command-name.ts` 와 같은 규칙을 지킨다. 그 파일이 정본이고,
+   * 이 파일은 브라우저 번들이라 그것을 런타임으로 불러올 수 없어 규칙을 복제한다. 복제가 어긋나면
+   * 여기가 먼저 깨져야 한다.
+   */
+  it("윈도우 실행 파일 확장자가 붙어도 격리 가능으로 본다", () => {
+    const sandboxable = [
+      "node.exe",
+      "npx.cmd",
+      "npm.cmd",
+      "npm.bat",
+      "C:\\Program Files\\nodejs\\node.exe",
+      "C:\\nodejs\\npx.cmd",
+      // 확장자 쪽 대소문자는 가리지 않는다.
+      "node.EXE",
+      "C:\\nodejs\\npx.Cmd",
+    ];
+    for (const command of sandboxable) {
+      const argv = ["--command", command, "--arg", "server.js"];
+      const out = buildAnalyzeRequests(targetWith({ argv: { argv } }));
+      expect("security" in out && out.security.sandbox, command).toEqual({
+        compareHost: false,
+        allowHosts: [],
+      });
+    }
+  });
+
+  /**
+   * 알려진 한계. 확장자는 대소문자를 가리지 않고 떼지만 **이름 자체는 가린다** — 떼고 남은 `NODE` 가
+   * 허용 목록(`node`·`npx`·`npm`)에 없다. `@mcpeak/audit` 의 판정도 똑같아서(`backend.commands`
+   * 비교가 대소문자를 구분한다) 두 쪽이 같은 값을 낸다. 여기서 한쪽만 느슨하게 만들면 대시보드는
+   * 격리를 싣는데 audit 이 `unsupported-command` 로 거절하는, 설명할 수 없는 상태가 된다.
+   *
+   * 실제 `.mcp.json` 은 `node.exe`·`npx.cmd` 처럼 소문자로 적으므로 지금 막는 것은 없다. 느슨하게
+   * 할 거라면 두 패키지를 함께 바꿔야 한다.
+   */
+  it("이름이 대문자면 격리 가능으로 보지 않는다 — audit 판정과 같게 둔다", () => {
+    for (const command of ["NODE.EXE", "C:\\WINDOWS\\Node.Exe", "NPX"]) {
+      const argv = ["--command", command, "--arg", "server.js"];
+      const out = buildAnalyzeRequests(targetWith({ argv: { argv } }));
+      expect(out, command).toEqual({ tokens: { argv }, security: { argv } });
+    }
+  });
+
   it("http 대상이면 보안 요청에 sandbox 키가 없다", () => {
     const argv = ["--url", "http://localhost:3000/mcp"];
     const out = buildAnalyzeRequests(
@@ -88,7 +136,10 @@ describe("buildAnalyzeRequests", () => {
   });
 
   it("격리 이미지가 실행하지 않는 명령(python 등)이면 보안 요청에 sandbox 키가 없다", () => {
-    for (const command of ["python", "uvx", "/usr/bin/python3", "nodemon", "node.exe"]) {
+    // `node.exe` 는 이 목록에 있었다. 격리 이미지는 node 를 실행하므로 여기 들 것이 아니다 — 윈도우가
+    // node 를 그렇게 부르는 것뿐이고, 확장자를 떼지 않은 버그를 단언하고 있었다(#540).
+    // `nodemon` 은 이름이 node 로 시작하지만 다른 실행 파일이라 그대로 남는다.
+    for (const command of ["python", "uvx", "/usr/bin/python3", "nodemon", "node.ps1"]) {
       const argv = ["--command", command, "--arg", "server.py"];
       const out = buildAnalyzeRequests(targetWith({ argv: { argv } }));
       expect(out).toEqual({ tokens: { argv }, security: { argv } });

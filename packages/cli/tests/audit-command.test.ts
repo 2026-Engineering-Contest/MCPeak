@@ -1,5 +1,5 @@
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   AuditError,
@@ -72,16 +72,26 @@ function fakeConnection(
   return { connection, closed: () => closed };
 }
 
+/**
+ * 가짜 호스트 경로는 글자로 박지 않고 `path.join` 으로 만든다. 제품 코드가 `path.resolve` 로 경로를
+ * 푸는데 그 결과가 OS 마다 다르다 — 윈도우에서 `/home/alice` 는 `C:\home\alice` 로 풀려 아래 표의
+ * 어느 키와도 맞지 않는다(#539).
+ */
+const HOST_ROOT = resolve("/");
+const HOST_HOME = join(HOST_ROOT, "home", "alice");
+const HOST_REPO = join(HOST_HOME, "repo");
+const HOST_ELSEWHERE = join(HOST_HOME, "elsewhere");
+
 /** 격리 옵션 스펙이 쓰는 가짜 호스트 파일 시스템. 워크스페이스 루트 하나와 서버 파일 하나다. */
 const HOST_PATHS: Readonly<Record<string, "file" | "directory">> = {
-  "/": "directory",
-  "/home/alice": "directory",
-  "/home/alice/repo": "directory",
-  "/home/alice/repo/pnpm-workspace.yaml": "file",
-  "/home/alice/repo/server.mjs": "file",
-  "/home/alice/repo/package.json": "file",
-  "/home/alice/elsewhere": "directory",
-  "/home/alice/elsewhere/server.mjs": "file",
+  [HOST_ROOT]: "directory",
+  [HOST_HOME]: "directory",
+  [HOST_REPO]: "directory",
+  [join(HOST_REPO, "pnpm-workspace.yaml")]: "file",
+  [join(HOST_REPO, "server.mjs")]: "file",
+  [join(HOST_REPO, "package.json")]: "file",
+  [HOST_ELSEWHERE]: "directory",
+  [join(HOST_ELSEWHERE, "server.mjs")]: "file",
 };
 const hostStat: SandboxTargetFs["stat"] = async (path) => HOST_PATHS[path];
 
@@ -133,7 +143,7 @@ function harness(connection: Connection, extra: Partial<AuditCommandDependencies
       throw new Error("stdio 감사는 fetch 를 부르지 않는다");
     }) as typeof globalThis.fetch,
     random: () => (counter++).toString(16).padStart(16, "0"),
-    sandbox: { createBackend, stat: hostStat, cwd: "/home/alice/repo", home: "/home/alice" },
+    sandbox: { createBackend, stat: hostStat, cwd: HOST_REPO, home: HOST_HOME },
     ...extra,
   };
   return {
@@ -443,7 +453,7 @@ describe("runAuditCommand: 격리 배선", () => {
     const { deps, createBackend, stderr, files } = harness(fakeConnection().connection, {
       audit: fake,
     });
-    files.set("/home/alice/repo/package.json", '{"homepage":"https://docs.example.org"}');
+    files.set(join(HOST_REPO, "package.json"), '{"homepage":"https://docs.example.org"}');
     await runAuditCommand(
       [
         "audit",
@@ -459,8 +469,8 @@ describe("runAuditCommand: 격리 배선", () => {
     );
     expect(calls[0]?.options.sandbox).toEqual({
       probe: "all",
-      mountRoot: "/home/alice/repo",
-      cwd: "/home/alice/repo",
+      mountRoot: HOST_REPO,
+      cwd: HOST_REPO,
       session: { mode: "record", path: "rec.json" },
       allowHosts: ["api.example.com"],
       compareHost: true,
@@ -486,8 +496,8 @@ describe("runAuditCommand: 격리 배선", () => {
       sandbox: {
         createBackend: () => FAKE_BACKEND,
         stat: hostStat,
-        cwd: "/home/alice/elsewhere",
-        home: "/home/alice",
+        cwd: HOST_ELSEWHERE,
+        home: HOST_HOME,
       },
     });
     await runAuditCommand(
@@ -495,15 +505,15 @@ describe("runAuditCommand: 격리 배선", () => {
         "audit",
         "--sandbox",
         "--sandbox-mount",
-        "/home/alice/repo",
+        HOST_REPO,
         "--",
         "node",
-        "/home/alice/repo/server.mjs",
+        join(HOST_REPO, "server.mjs"),
       ],
       deps,
     );
-    expect(calls[0]?.options.sandbox?.mountRoot).toBe("/home/alice/repo");
-    expect(calls[0]?.options.sandbox?.cwd).toBe("/home/alice/repo");
+    expect(calls[0]?.options.sandbox?.mountRoot).toBe(HOST_REPO);
+    expect(calls[0]?.options.sandbox?.cwd).toBe(HOST_REPO);
   });
 
   it("마운트 범위를 정하지 못하면 §6.3 문장으로 연결 전에 멈춘다", async () => {
@@ -515,21 +525,18 @@ describe("runAuditCommand: 격리 배선", () => {
     expect(stderr()).toBe(usage("--sandbox-mount 경로가 없습니다: ./nope"));
     expect(
       await runAuditCommand(
-        ["audit", "--sandbox", "--", "node", "/home/alice/elsewhere/server.mjs"],
+        ["audit", "--sandbox", "--", "node", join(HOST_ELSEWHERE, "server.mjs")],
         deps,
       ),
     ).toBe(1);
     expect(stderr()).toContain(
-      "오류 [CLI_USAGE]: 서버 인자 '/home/alice/elsewhere/server.mjs' 가 격리에 보이는 범위(/home/alice/repo) 밖에 있습니다. 둘을 함께 담는 디렉터리를 --sandbox-mount 로 주세요.\n",
+      `오류 [CLI_USAGE]: 서버 인자 '${join(HOST_ELSEWHERE, "server.mjs")}' 가 격리에 보이는 범위(${HOST_REPO}) 밖에 있습니다. 둘을 함께 담는 디렉터리를 --sandbox-mount 로 주세요.\n`,
     );
     expect(
-      await runAuditCommand(
-        ["audit", "--sandbox", "--sandbox-mount", "/home/alice", ...SERVER],
-        deps,
-      ),
+      await runAuditCommand(["audit", "--sandbox", "--sandbox-mount", HOST_HOME, ...SERVER], deps),
     ).toBe(1);
     expect(stderr()).toContain(
-      "오류 [CLI_USAGE]: 격리에 보일 범위가 홈 디렉터리나 / 입니다: /home/alice. 진짜 자격 증명이 컨테이너에 보입니다. 서버 코드가 있는 디렉터리를 --sandbox-mount 로 주세요.\n",
+      `오류 [CLI_USAGE]: 격리에 보일 범위가 홈 디렉터리나 / 입니다: ${HOST_HOME}. 진짜 자격 증명이 컨테이너에 보입니다. 서버 코드가 있는 디렉터리를 --sandbox-mount 로 주세요.\n`,
     );
     expect(calls).toEqual([]);
     expect(createBackend).not.toHaveBeenCalled();
@@ -679,8 +686,8 @@ function sandboxedRun(server: readonly string[], extra: Partial<AuditCommandDepe
     sandbox: {
       createBackend: () => runningBackend(server),
       stat: hostStat,
-      cwd: "/home/alice/repo",
-      home: "/home/alice",
+      cwd: HOST_REPO,
+      home: HOST_HOME,
     },
     ...extra,
   });

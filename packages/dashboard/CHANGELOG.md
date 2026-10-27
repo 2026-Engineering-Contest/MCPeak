@@ -1,5 +1,21 @@
 # @ohmymcp-hsu/dashboard
 
+## 0.7.0
+
+### Minor Changes
+
+- a28f463: 목 만들기가 실행 폴더의 `mocks/` 아래에만 목 정의를 저장하고, "기존 목 수정" 목록도 `mocks/` 아래(하위 폴더 포함)만 보여 줍니다. 저장 위치 칸은 `mocks/` 를 고정으로 보이고 파일 이름만 받으며(기본값 `mock.json` → `mocks/mock.json`), 폴더가 없으면 저장할 때 만듭니다. `mocks/` 밖을 가리키는 이름은 거절합니다. 루트 등 다른 곳에 둔 목은 더 이상 목록에 나오지 않으니 `mocks/` 로 옮기세요.
+
+### Patch Changes
+
+- 2a799ae: 윈도우에서 분석하기가 격리를 시도조차 하지 않던 문제를 고칩니다. 격리 가능 판정이 서버 명령의 윈도우 실행 파일 확장자를 떼지 않아, `.mcp.json` 에 `npx.cmd` 나 `node.exe` 로 적힌 서버를 고르면 `node`·`npx`·`npm` 목록을 통과하지 못했습니다. 보안 요청에 `sandbox` 키가 실리지 않으므로 사용자는 격리 없는 리포트를 받으면서 그 이유를 안내받지 못했습니다 — `@mcpeak/audit` 쪽은 적어도 `unsupported-command` 사유를 리포트에 남깁니다.
+
+  `node.exe`·`npx.cmd`·`npm.cmd` 를 각각 `node`·`npx`·`npm` 으로 봅니다. 규칙은 `@mcpeak/audit` 의 `sandbox/command-name.ts` 와 같습니다. 이름 자체의 대소문자는 양쪽 모두 가리므로(`NODE.EXE` 는 격리 가능이 아니다) 두 판정이 같은 값을 냅니다.
+
+- Updated dependencies [57c8dc8]
+  - @mcpeak/audit@0.3.2
+  - @mcpeak/cli@0.15.1
+
 ## 0.6.0
 
 ### Minor Changes

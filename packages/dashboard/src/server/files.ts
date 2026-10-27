@@ -58,12 +58,27 @@ export async function listSuites(root: string): Promise<FileEntry[]> {
   return results.sort((a, b) => a.path.localeCompare(b.path));
 }
 
+/** 대시보드가 목 정의를 읽고 쓰는 폴더. 루트 기준. 프론트의 MOCKS_DIR 와 같은 값(ADR-0121). */
+export const MOCKS_DIR = "mocks";
+
 /**
- * `**\/*.json` 중 `assertMockDefinition` 을 통과하는 파일. 무효 JSON · 무효 정의는 조용히
- * 뺀다(`listSuites` 와 같은 정책). 판정 규칙은 mock 안에 있다 — 여기서 다시 쓰지 않는다.
+ * `absolute` 가 `<root>/mocks/` **안**인가. 폴더 자신은 파일 자리가 아니라 거짓이다.
+ * `mocks-old/` 같은 옆 폴더를 접두 일치로 삼키지 않도록 구분자까지 붙여 비교한다.
+ */
+export function isUnderMocksDir(root: string, absolute: string): boolean {
+  return resolve(absolute).startsWith(resolve(root, MOCKS_DIR) + sep);
+}
+
+/**
+ * `<root>/mocks/` 아래 `**\/*.json` 중 `assertMockDefinition` 을 통과하는 파일. 무효 JSON ·
+ * 무효 정의는 조용히 뺀다(`listSuites` 와 같은 정책). 판정 규칙은 mock 안에 있다 — 여기서 다시
+ * 쓰지 않는다. 폴더가 없으면 빈 목록이고, 폴더를 만들지 않는다(만드는 것은 저장뿐이다).
+ *
+ * 루트 전체를 보지 않는 이유: worktree 복사본 · 벤치 결과 · 다른 패키지의 fixture 가 목으로
+ * 잡혔다(ADR-0121). `path` 는 여전히 root 기준이라 `GET /api/mocks/<path>` 로 그대로 연다.
  */
 export async function listMocks(root: string): Promise<MockFileEntry[]> {
-  const files = await walkJsonFiles(root);
+  const files = await walkJsonFiles(join(root, MOCKS_DIR));
   const results: MockFileEntry[] = [];
   for (const absolute of files) {
     let definition: MockDefinition;
@@ -388,11 +403,15 @@ export async function readFileContent(root: string, absolute: string): Promise<F
 /**
  * mtime이 기대값과 다르면 파일을 건드리지 않고 `conflict`를 준다. 파일이 아직 없으면
  * (신규 저장) 충돌이 아니라고 본다.
+ *
+ * `createParentDir` 이면 쓰기 직전에 상위 폴더를 만든다. 호출부가 내용 검증을 마친 뒤에만
+ * 부르므로, 거절된 저장이 빈 폴더를 남기지 않는다.
  */
 export async function writeFileContent(
   absolute: string,
   content: string,
   baseMtimeMs: number,
+  options: { readonly createParentDir?: boolean } = {},
 ): Promise<PutFileResponse> {
   const currentMtimeMs = await stat(absolute)
     .then((stats) => stats.mtimeMs)
@@ -400,6 +419,7 @@ export async function writeFileContent(
   if (currentMtimeMs !== baseMtimeMs) {
     return { saved: false, reason: "conflict", mtimeMs: currentMtimeMs };
   }
+  if (options.createParentDir === true) await mkdir(dirname(absolute), { recursive: true });
   await writeFile(absolute, content, "utf8");
   const stats = await stat(absolute);
   return { saved: true, mtimeMs: stats.mtimeMs };

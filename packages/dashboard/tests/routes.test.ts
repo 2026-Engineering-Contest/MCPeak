@@ -709,15 +709,37 @@ const invalidMockMessage = (path: string): string =>
     '→ 형식: { "tools": [ { "name": ..., "inputSchema": ... } ], "responses": [ { "tool": ..., "result": ... } ] }',
   ].join("\n");
 
+/** `mocks/` 밖을 가리키는 이름으로 저장할 때의 문장 전문. `name` 은 앞의 `mocks/` 를 뗀 것. */
+const outsideMocksMessage = (name: string): string =>
+  [
+    `→ 목 정의는 mocks/ 폴더 안에만 저장할 수 있습니다 — 받은 이름이 폴더 밖을 가리킵니다: ${name}`,
+    "→ '..' 없이 파일 이름만 적으세요. 예: weather.mock.json",
+  ].join("\n");
+
 describe("PUT /api/mocks/<path>", () => {
   it("올바른 목 정의를 content 바이트 그대로 저장한다", async () => {
     server = await startTestServer();
+    await mkdir(join(server.root, "mocks"));
     const content = `${JSON.stringify(VALID_MOCK, null, 2)}\n`;
 
-    const response = await putMock(server, "weather.mock.json", content);
+    const response = await putMock(server, "mocks/weather.mock.json", content);
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ saved: true });
-    await expect(readFile(join(server.root, "weather.mock.json"), "utf8")).resolves.toBe(content);
+    await expect(readFile(join(server.root, "mocks", "weather.mock.json"), "utf8")).resolves.toBe(
+      content,
+    );
+  });
+
+  it("mocks/ 가 없으면 저장할 때 하위 폴더까지 만든다", async () => {
+    server = await startTestServer();
+    const content = `${JSON.stringify(VALID_MOCK, null, 2)}\n`;
+
+    const response = await putMock(server, "mocks/sub/new.mock.json", content);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ saved: true });
+    await expect(
+      readFile(join(server.root, "mocks", "sub", "new.mock.json"), "utf8"),
+    ).resolves.toBe(content);
   });
 
   it("잘못된 정의면 400 과 assertMockDefinition 문장 전문을 주고 파일을 만들지 않는다", async () => {
@@ -730,23 +752,34 @@ describe("PUT /api/mocks/<path>", () => {
     await expect(stat(join(server.root, "mocks", "bad.mock.json"))).rejects.toThrow();
   });
 
+  it("mocks/ 가 없을 때 잘못된 정의를 보내면 폴더도 만들지 않는다", async () => {
+    server = await startTestServer();
+
+    const response = await putMock(server, "mocks/bad.mock.json", JSON.stringify(INVALID_MOCK));
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: invalidMockMessage("mocks/bad.mock.json") });
+    await expect(stat(join(server.root, "mocks"))).rejects.toThrow();
+  });
+
   it("content 가 JSON 이 아니면 400 이다", async () => {
     server = await startTestServer();
-    const response = await putMock(server, "weather.mock.json", "{ tools: ");
+    const response = await putMock(server, "mocks/weather.mock.json", "{ tools: ");
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({ error: "본문 content가 올바른 JSON이 아닙니다." });
+    await expect(stat(join(server.root, "mocks"))).rejects.toThrow();
   });
 
   it("이미 있는 파일은 baseMtimeMs 가 현재 mtime 과 같을 때만 덮어쓴다", async () => {
     server = await startTestServer();
-    const target = join(server.root, "weather.mock.json");
+    await mkdir(join(server.root, "mocks"));
+    const target = join(server.root, "mocks", "weather.mock.json");
     const original = '{"tools":[]}\n';
     await writeFile(target, original, "utf8");
     const before = await stat(target);
     const content = `${JSON.stringify(VALID_MOCK, null, 2)}\n`;
 
     // 새 목은 0 을 보낸다. 있는 파일이면 충돌로 돌아와야 확인을 받을 수 있다.
-    const first = await putMock(server, "weather.mock.json", content, 0);
+    const first = await putMock(server, "mocks/weather.mock.json", content, 0);
     expect(first.status).toBe(200);
     expect(await first.json()).toEqual({
       saved: false,
@@ -755,50 +788,81 @@ describe("PUT /api/mocks/<path>", () => {
     });
     await expect(readFile(target, "utf8")).resolves.toBe(original);
 
-    const second = await putMock(server, "weather.mock.json", content, before.mtimeMs);
+    const second = await putMock(server, "mocks/weather.mock.json", content, before.mtimeMs);
     expect(second.status).toBe(200);
     expect(await second.json()).toMatchObject({ saved: true });
     await expect(readFile(target, "utf8")).resolves.toBe(content);
   });
 
-  it(".json 이 아니면 거절하고 파일을 만들지 않는다", async () => {
+  it(".json 이 아니면 거절하고 파일 · 폴더를 만들지 않는다", async () => {
     server = await startTestServer();
-    const response = await putMock(server, "weather.mock.txt", JSON.stringify(VALID_MOCK));
+    const response = await putMock(server, "mocks/weather.mock.txt", JSON.stringify(VALID_MOCK));
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({
       error: "목 정의는 .json 확장자 파일만 저장할 수 있습니다.",
     });
-    await expect(stat(join(server.root, "weather.mock.txt"))).rejects.toThrow();
+    await expect(stat(join(server.root, "mocks"))).rejects.toThrow();
   });
 
-  it("경로 탈출을 거절한다", async () => {
+  it("mocks/ 밖 경로는 400 과 문장 전문을 주고 파일 · 폴더를 만들지 않는다", async () => {
+    server = await startTestServer();
+    const response = await putMock(server, "other/x.mock.json", JSON.stringify(VALID_MOCK));
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: outsideMocksMessage("other/x.mock.json") });
+    await expect(stat(join(server.root, "other"))).rejects.toThrow();
+    await expect(stat(join(server.root, "mocks"))).rejects.toThrow();
+  });
+
+  it("mocks/../x.json 은 mocks/ 를 뗀 이름으로 거절한다 — 화면에서 ../x.json 을 친 경우다", async () => {
+    server = await startTestServer();
+    const response = await putMock(server, "mocks/../x.json", JSON.stringify(VALID_MOCK));
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: outsideMocksMessage("../x.json") });
+    await expect(stat(join(server.root, "x.json"))).rejects.toThrow();
+    await expect(stat(join(server.root, "mocks"))).rejects.toThrow();
+  });
+
+  it("루트 밖으로 나가는 이름도 같은 문장으로 거절한다", async () => {
     server = await startTestServer();
     const response = await putMock(server, "../outside.mock.json", JSON.stringify(VALID_MOCK));
     expect(response.status).toBe(400);
-    expect(await response.json()).toEqual({ error: "허용되지 않는 경로입니다." });
+    expect(await response.json()).toEqual({ error: outsideMocksMessage("../outside.mock.json") });
     await expect(stat(join(server.root, "..", "outside.mock.json"))).rejects.toThrow();
   });
 });
 
 describe("GET /api/mocks", () => {
-  it("유효한 목 정의만 경로순으로 도구 · 응답 수와 함께 싣는다", async () => {
+  it("mocks/ 아래(하위 폴더 포함)의 유효한 목 정의만 경로순으로 싣는다. 루트 · 다른 폴더의 목은 뺀다", async () => {
     server = await startTestServer();
-    await mkdir(join(server.root, "mocks"));
-    await writeFile(join(server.root, "mocks", "weather.mock.json"), JSON.stringify(VALID_MOCK));
+    await mkdir(join(server.root, "mocks", "sub"), { recursive: true });
+    await mkdir(join(server.root, "examples"));
+    await writeFile(join(server.root, "mocks", "a.mock.json"), JSON.stringify(VALID_MOCK));
     await writeFile(
-      join(server.root, "a-tools-only.json"),
+      join(server.root, "mocks", "sub", "b.mock.json"),
       JSON.stringify({ tools: VALID_MOCK.tools }),
     );
-    await writeFile(join(server.root, "bad.mock.json"), JSON.stringify(INVALID_MOCK));
-    await writeFile(join(server.root, "broken.json"), "{");
-    await writeFile(join(server.root, "package.json"), '{"name":"x"}');
+    await writeFile(join(server.root, "mocks", "bad.mock.json"), JSON.stringify(INVALID_MOCK));
+    await writeFile(join(server.root, "mocks", "broken.json"), "{");
+    // mocks/ 밖의 유효한 목은 목록에 오르지 않는다.
+    await writeFile(join(server.root, "root.mock.json"), JSON.stringify(VALID_MOCK));
+    await writeFile(join(server.root, "examples", "weather.mock.json"), JSON.stringify(VALID_MOCK));
 
     const response = await fetch(`${server.baseUrl}/api/mocks`);
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual([
-      { path: "a-tools-only.json", toolCount: 1, responseCount: 0 },
-      { path: "mocks/weather.mock.json", toolCount: 1, responseCount: 1 },
+      { path: "mocks/a.mock.json", toolCount: 1, responseCount: 1 },
+      { path: "mocks/sub/b.mock.json", toolCount: 1, responseCount: 0 },
     ]);
+  });
+
+  it("mocks/ 가 없으면 200 과 빈 배열이고, 폴더를 만들지 않는다", async () => {
+    server = await startTestServer();
+    await writeFile(join(server.root, "root.mock.json"), JSON.stringify(VALID_MOCK));
+
+    const response = await fetch(`${server.baseUrl}/api/mocks`);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual([]);
+    await expect(stat(join(server.root, "mocks"))).rejects.toThrow();
   });
 });
 

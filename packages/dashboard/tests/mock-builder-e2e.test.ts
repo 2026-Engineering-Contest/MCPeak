@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { McpClient } from "@mcpeak/core";
@@ -137,9 +137,9 @@ function textOf(result: { content: unknown }): unknown {
 describe.sequential("목 만들기 왕복", () => {
   it("새로 만든 파일을 목이 tools/list · tools/call 로 적은 대로 내놓는다", async () => {
     const { base, root } = await startDashboard();
-    await saveDraft(base, "weather.mock.json", DRAFT);
+    await saveDraft(base, "mocks/weather.mock.json", DRAFT);
 
-    const client = await connectToSavedMock(join(root, "weather.mock.json"));
+    const client = await connectToSavedMock(join(root, "mocks", "weather.mock.json"));
 
     const tools = await client.listTools();
     expect(tools.map((tool) => ({ name: tool.name, inputSchema: tool.inputSchema }))).toEqual([
@@ -169,21 +169,22 @@ describe.sequential("목 만들기 왕복", () => {
 
   it("같은 초안을 두 번 저장하면 두 파일이 바이트 단위로 같다", async () => {
     const { base, root } = await startDashboard();
-    await saveDraft(base, "a.mock.json", DRAFT);
-    await saveDraft(base, "b.mock.json", DRAFT);
+    await saveDraft(base, "mocks/a.mock.json", DRAFT);
+    await saveDraft(base, "mocks/b.mock.json", DRAFT);
 
     const [a, b] = await Promise.all([
-      readFile(join(root, "a.mock.json")),
-      readFile(join(root, "b.mock.json")),
+      readFile(join(root, "mocks", "a.mock.json")),
+      readFile(join(root, "mocks", "b.mock.json")),
     ]);
     expect(a.equals(b)).toBe(true);
   });
 
   it("기존 파일을 열어 응답을 더해 저장하면 보존 키가 살고, 목이 새 응답까지 내놓는다", async () => {
     const { base, root } = await startDashboard();
-    await writeFile(join(root, "weather.mock.json"), HANDWRITTEN, "utf8");
+    await mkdir(join(root, "mocks"));
+    await writeFile(join(root, "mocks", "weather.mock.json"), HANDWRITTEN, "utf8");
 
-    const opened = await openMock(base, "weather.mock.json");
+    const opened = await openMock(base, "mocks/weather.mock.json");
     const edited: MockDraft = {
       ...opened.draft,
       responses: [
@@ -191,9 +192,9 @@ describe.sequential("목 만들기 왕복", () => {
         { ...DRAFT.responses[2], extra: {} } as MockDraft["responses"][number],
       ],
     };
-    await saveDraft(base, "weather.mock.json", edited, opened.mtimeMs);
+    await saveDraft(base, "mocks/weather.mock.json", edited, opened.mtimeMs);
 
-    const saved = JSON.parse(await readFile(join(root, "weather.mock.json"), "utf8")) as {
+    const saved = JSON.parse(await readFile(join(root, "mocks", "weather.mock.json"), "utf8")) as {
       $comment?: string;
       tools: { annotations?: unknown }[];
       responses: { isError?: boolean }[];
@@ -202,7 +203,7 @@ describe.sequential("목 만들기 왕복", () => {
     expect(saved.tools[0]?.annotations).toEqual({ readOnlyHint: true });
     expect("isError" in (saved.responses[0] ?? {})).toBe(false);
 
-    const client = await connectToSavedMock(join(root, "weather.mock.json"));
+    const client = await connectToSavedMock(join(root, "mocks", "weather.mock.json"));
     expect(textOf(await client.callTool("get_weather", { city: "Seoul" }))).toEqual({
       temperature: 21.5,
     });
@@ -213,15 +214,16 @@ describe.sequential("목 만들기 왕복", () => {
 
   it("열어서 그대로 두 번 저장하면 두 번째부터 바이트가 같다", async () => {
     const { base, root } = await startDashboard();
-    const file = join(root, "weather.mock.json");
+    await mkdir(join(root, "mocks"));
+    const file = join(root, "mocks", "weather.mock.json");
     await writeFile(file, HANDWRITTEN, "utf8");
 
-    const first = await openMock(base, "weather.mock.json");
-    await saveDraft(base, "weather.mock.json", first.draft, first.mtimeMs);
+    const first = await openMock(base, "mocks/weather.mock.json");
+    await saveDraft(base, "mocks/weather.mock.json", first.draft, first.mtimeMs);
     const afterFirst = await readFile(file);
 
-    const second = await openMock(base, "weather.mock.json");
-    await saveDraft(base, "weather.mock.json", second.draft, second.mtimeMs);
+    const second = await openMock(base, "mocks/weather.mock.json");
+    await saveDraft(base, "mocks/weather.mock.json", second.draft, second.mtimeMs);
     expect((await readFile(file)).equals(afterFirst)).toBe(true);
   });
 });

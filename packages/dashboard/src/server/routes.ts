@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { resolve } from "node:path";
 import { assertMockDefinition } from "@mcpeak/mock";
 import { parseOverlay } from "@mcpeak/optimize";
 import { validateMcpSuite } from "@mcpeak/runner";
@@ -29,10 +30,12 @@ import {
 } from "./analyze-security.js";
 import {
   ensureRepairBundleDir,
+  isUnderMocksDir,
   listMocks,
   listServerCandidates,
   listSessions,
   listSuites,
+  MOCKS_DIR,
   readFileContent,
   readSessionInteractions,
   resolveCandidateEnv,
@@ -388,6 +391,14 @@ async function handleGetInteractions(
  */
 interface PutRules {
   readonly extensionError: string;
+  /**
+   * 저장 위치 제한. `null` 이면 통과, 아니면 사용자에게 그대로 보일 문장. 없으면 루트 안 어디든.
+   * 루트 탈출 검사보다 **먼저** 본다 — 화면에서 `../../x.json` 을 친 사람도 "파일 이름만
+   * 적으세요" 를 봐야 고칠 수 있다.
+   */
+  readonly checkLocation?: (root: string, relative: string) => string | null;
+  /** 검증을 통과한 뒤 상위 폴더를 만드는가. 거절된 저장은 폴더를 남기지 않는다. */
+  readonly createParentDir?: boolean;
   /** 저장해도 되면 `null`, 아니면 사용자에게 그대로 보일 문장. */
   validate(content: string, relative: string): string | null;
 }
@@ -397,8 +408,25 @@ const SUITE_PUT_RULES: PutRules = {
   validate: (content) => validateSuiteContent(content),
 };
 
+/**
+ * `mocks/` 밖 저장 거절 문장. 화면은 입력칸 이름 앞에 `mocks/` 를 붙여 보내므로, 그 접두를
+ * 떼고 보여 줘야 사용자가 자기가 친 글자를 알아본다. 접두가 없는 이름(API 를 직접 부른 경우)은
+ * 그대로 보인다.
+ */
+function outsideMocksDirMessage(relative: string): string {
+  const prefix = `${MOCKS_DIR}/`;
+  const name = relative.startsWith(prefix) ? relative.slice(prefix.length) : relative;
+  return [
+    `→ 목 정의는 ${MOCKS_DIR}/ 폴더 안에만 저장할 수 있습니다 — 받은 이름이 폴더 밖을 가리킵니다: ${name}`,
+    "→ '..' 없이 파일 이름만 적으세요. 예: weather.mock.json",
+  ].join("\n");
+}
+
 const MOCK_PUT_RULES: PutRules = {
   extensionError: "목 정의는 .json 확장자 파일만 저장할 수 있습니다.",
+  checkLocation: (root, relative) =>
+    isUnderMocksDir(root, resolve(root, relative)) ? null : outsideMocksDirMessage(relative),
+  createParentDir: true,
   validate: validateMockContent,
 };
 
@@ -420,6 +448,11 @@ async function handlePutFile(
 ): Promise<void> {
   if (relativeOrNull === null) {
     sendJson(response, 400, { error: "경로를 해석할 수 없습니다." });
+    return;
+  }
+  const locationError = rules.checkLocation?.(root, relativeOrNull) ?? null;
+  if (locationError !== null) {
+    sendJson(response, 400, { error: locationError });
     return;
   }
   const absolute = resolveProjectPath(root, relativeOrNull);
@@ -446,7 +479,9 @@ async function handlePutFile(
     return;
   }
   try {
-    const result = await writeFileContent(absolute, body.content, body.baseMtimeMs);
+    const result = await writeFileContent(absolute, body.content, body.baseMtimeMs, {
+      createParentDir: rules.createParentDir === true,
+    });
     sendJson(response, 200, result);
   } catch (error) {
     const message = writeErrorMessage(error);

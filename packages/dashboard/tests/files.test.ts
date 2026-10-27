@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ensureRepairBundleDir,
+  isUnderMocksDir,
   listServerCandidates,
   listSuites,
   readFileContent,
@@ -114,6 +115,16 @@ describe("files.ts", () => {
 
     const bytesAfter = await readFile(path);
     expect(bytesAfter).toEqual(bytesBefore);
+  });
+
+  it("createParentDir 이면 상위 폴더를 만들어 저장하고, 없으면 만들지 않고 던진다", async () => {
+    const nested = join(root, "mocks", "sub", "a.json");
+    await expect(writeFileContent(nested, "{}", 0)).rejects.toThrow();
+    await expect(stat(join(root, "mocks"))).rejects.toThrow();
+
+    const result = await writeFileContent(nested, "{}", 0, { createParentDir: true });
+    expect(result.saved).toBe(true);
+    await expect(readFile(nested, "utf8")).resolves.toBe("{}");
   });
 });
 
@@ -538,5 +549,19 @@ describe("ensureRepairBundleDir", () => {
 
     expect((await stat(join(root, ".mcpeak", "repair"))).isDirectory()).toBe(true);
     expect(await readFile(join(root, ".mcpeak", ".gitignore"), "utf8")).toBe("*\n");
+  });
+});
+
+describe("isUnderMocksDir", () => {
+  it("mocks/ 안의 파일과 하위 폴더 파일만 참이다", () => {
+    expect(isUnderMocksDir(root, join(root, "mocks", "a.mock.json"))).toBe(true);
+    expect(isUnderMocksDir(root, join(root, "mocks", "sub", "b.mock.json"))).toBe(true);
+  });
+
+  it("mocks 폴더 자신 · 이름이 mocks 로 시작하는 옆 폴더 · 루트 · 루트 밖은 거짓이다", () => {
+    expect(isUnderMocksDir(root, join(root, "mocks"))).toBe(false);
+    expect(isUnderMocksDir(root, join(root, "mocks-old", "a.mock.json"))).toBe(false);
+    expect(isUnderMocksDir(root, join(root, "a.mock.json"))).toBe(false);
+    expect(isUnderMocksDir(root, join(root, "..", "a.mock.json"))).toBe(false);
   });
 });

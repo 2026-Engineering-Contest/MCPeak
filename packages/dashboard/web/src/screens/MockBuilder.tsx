@@ -12,8 +12,11 @@ import { bodyUrlWarning, recordingUrlCount } from "../mock-builder/body-urls.js"
 import {
   buildMockDefinition,
   EMPTY_MOCK_DRAFT,
+  MOCKS_DIR,
   type MockDraft,
   mockFilePath,
+  mockNameFromPath,
+  mockPathFromName,
   newToolDraft,
   preservedKeysNote,
   serializeMockDefinition,
@@ -41,10 +44,11 @@ type SaveState =
   | { readonly kind: "saved"; readonly path: string }
   | { readonly kind: "failed"; readonly message: string };
 
-const DEFAULT_TARGET = "mock.json";
+/** 입력칸 기본값. 실제 경로는 `mocks/mock.json` 이다. */
+const DEFAULT_NAME = "mock.json";
 
 /**
- * 목 만들기 — `mock.json` 을 새로 만들거나 기존 파일을 열어 고친다(설계 2026-09-28).
+ * 목 만들기 — `mocks/` 아래 목 정의를 새로 만들거나 기존 파일을 열어 고친다(설계 2026-09-28).
  *
  * 첫 화면에서 새로 만들기 · 기존 목 수정을 고른다. 녹화본은 시작 갈래가 아니라 응답 카드
  * 안에서 result 를 채울 때 고르는 곳이다. 검증은 서버가 `assertMockDefinition` 으로 한다 — web 은
@@ -57,7 +61,8 @@ export function MockBuilder(): JSX.Element {
   const [source, setSource] = useState<EditSource | null>(null);
   const [draft, setDraft] = useState<MockDraft>(EMPTY_MOCK_DRAFT);
   const [dirty, setDirty] = useState(false);
-  const [targetPath, setTargetPath] = useState(DEFAULT_TARGET);
+  /** 입력칸 값 — `mocks/` 안의 이름만. 경로는 `mockPathFromName` 으로 만든다. */
+  const [targetName, setTargetName] = useState(DEFAULT_NAME);
   const [save, setSave] = useState<SaveState>({ kind: "idle" });
   const [pickerAt, setPickerAt] = useState<number | null>(null);
   const [highlighted, setHighlighted] = useState<number | null>(null);
@@ -70,10 +75,10 @@ export function MockBuilder(): JSX.Element {
   }, []);
   useLeaveGuard(source !== null && dirty, onBlocked);
 
-  function begin(next: EditSource, nextDraft: MockDraft, path: string): void {
+  function begin(next: EditSource, nextDraft: MockDraft, name: string): void {
     setSource(next);
     setDraft(nextDraft);
-    setTargetPath(path);
+    setTargetName(name);
     setDirty(false);
     setSave({ kind: "idle" });
     setPickerAt(null);
@@ -87,9 +92,13 @@ export function MockBuilder(): JSX.Element {
       <div className="space-y-6">
         <PageHeader title="목 만들기" description="어떻게 시작할지 고르세요." />
         <MockStart
-          onNew={() => begin({ kind: "new" }, EMPTY_MOCK_DRAFT, DEFAULT_TARGET)}
+          onNew={() => begin({ kind: "new" }, EMPTY_MOCK_DRAFT, DEFAULT_NAME)}
           onOpen={(mock) =>
-            begin({ kind: "file", path: mock.path, mtimeMs: mock.mtimeMs }, mock.draft, mock.path)
+            begin(
+              { kind: "file", path: mock.path, mtimeMs: mock.mtimeMs },
+              mock.draft,
+              mockNameFromPath(mock.path),
+            )
           }
         />
       </div>
@@ -124,14 +133,15 @@ export function MockBuilder(): JSX.Element {
       setSave({ kind: "invalid", errors: built.errors });
       return;
     }
-    const path = targetPath.trim();
-    if (path === "") {
+    const name = targetName.trim();
+    if (name === "") {
       setSave({
         kind: "invalid",
-        errors: ["저장 위치를 적으세요. 대시보드를 띄운 디렉터리 기준 상대경로입니다."],
+        errors: [`파일 이름을 적으세요. ${MOCKS_DIR}/ 폴더 안에 저장합니다.`],
       });
       return;
     }
+    const path = mockPathFromName(name);
     setSave({ kind: "saving" });
     const request: PutFileRequest = {
       content: serializeMockDefinition(built.definition),
@@ -286,17 +296,20 @@ export function MockBuilder(): JSX.Element {
           <Field
             label="저장 위치"
             htmlFor="mock-target"
-            hint="대시보드를 띄운 디렉터리 기준 상대경로"
+            hint={`대시보드를 띄운 디렉터리의 ${MOCKS_DIR}/ 폴더 안에 저장합니다. 파일 이름만 적으세요.`}
           >
-            <input
-              id="mock-target"
-              className={INPUT_CLASS}
-              value={targetPath}
-              onChange={(event) => {
-                setTargetPath(event.target.value);
-                setSave({ kind: "idle" });
-              }}
-            />
+            <div className="flex items-center gap-1">
+              <span className="font-mono text-sm text-ink-muted">{`${MOCKS_DIR}/`}</span>
+              <input
+                id="mock-target"
+                className={INPUT_CLASS}
+                value={targetName}
+                onChange={(event) => {
+                  setTargetName(event.target.value);
+                  setSave({ kind: "idle" });
+                }}
+              />
+            </div>
           </Field>
           {urlWarning.length > 0 && (
             <div role="note" className="space-y-0.5 text-xs text-ink">
@@ -308,7 +321,7 @@ export function MockBuilder(): JSX.Element {
           <Button
             variant="primary"
             disabled={saving}
-            onClick={() => void submit(baseMtimeFor(targetPath.trim()))}
+            onClick={() => void submit(baseMtimeFor(mockPathFromName(targetName.trim())))}
           >
             저장
           </Button>

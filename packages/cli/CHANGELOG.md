@@ -1,5 +1,12 @@
 # ohmymcp
 
+## 0.15.1
+
+### Patch Changes
+
+- Updated dependencies [57c8dc8]
+  - @mcpeak/audit@0.3.2
+
 ## 0.15.0
 
 ### Minor Changes

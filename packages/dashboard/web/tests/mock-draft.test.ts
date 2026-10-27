@@ -3,8 +3,11 @@ import {
   buildMockDefinition,
   EMPTY_MOCK_DRAFT,
   isBlankResult,
+  MOCKS_DIR,
   type MockDraft,
   mockFilePath,
+  mockNameFromPath,
+  mockPathFromName,
   newResponseDraft,
   newToolDraft,
   pickedResult,
@@ -327,5 +330,20 @@ describe("초안 기본값 · 안내 · 경로", () => {
 
   it("파일 경로는 한 세그먼트로 인코딩한다", () => {
     expect(mockFilePath("mocks/weather mock.json")).toBe("/api/mocks/mocks%2Fweather%20mock.json");
+  });
+});
+
+describe("목 이름 ↔ 경로", () => {
+  it("이름 앞에 mocks/ 를 붙인다", () => {
+    expect(MOCKS_DIR).toBe("mocks");
+    expect(mockPathFromName("weather.mock.json")).toBe("mocks/weather.mock.json");
+    expect(mockPathFromName("sub/a.json")).toBe("mocks/sub/a.json");
+  });
+
+  it("경로 앞의 mocks/ 하나만 떼고, 없으면 그대로 둔다", () => {
+    expect(mockNameFromPath("mocks/weather.mock.json")).toBe("weather.mock.json");
+    expect(mockNameFromPath("mocks/sub/a.json")).toBe("sub/a.json");
+    expect(mockNameFromPath("mocks/mocks/a.json")).toBe("mocks/a.json");
+    expect(mockNameFromPath("examples/a.json")).toBe("examples/a.json");
   });
 });

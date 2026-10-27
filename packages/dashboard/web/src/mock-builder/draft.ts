@@ -240,6 +240,20 @@ export function preservedKeysNote(extra: JsonObject): string | null {
     : `폼에 칸이 없는 키 ${keys.length}개를 그대로 보존합니다: ${keys.join(", ")}`;
 }
 
+/** 목 정의 폴더. 서버의 MOCKS_DIR 와 같은 값 — web 이 src 를 import 하지 않아 두 곳에 있다(ADR-0121). */
+export const MOCKS_DIR = "mocks";
+
+/** 입력칸의 이름 → 루트 기준 경로. 화면은 이름만 받고 폴더는 여기서 붙인다. */
+export function mockPathFromName(name: string): string {
+  return `${MOCKS_DIR}/${name}`;
+}
+
+/** 루트 기준 경로 → 입력칸의 이름. 앞의 `mocks/` 하나만 뗀다. 없으면 그대로 둔다. */
+export function mockNameFromPath(path: string): string {
+  const prefix = `${MOCKS_DIR}/`;
+  return path.startsWith(prefix) ? path.slice(prefix.length) : path;
+}
+
 /** `GET` · `PUT /api/mocks/<path>`. 경로 전체를 한 세그먼트로 인코딩한다(`/api/suites` 와 같은 규칙). */
 export function mockFilePath(path: string): string {
   return `/api/mocks/${encodeURIComponent(path)}`;

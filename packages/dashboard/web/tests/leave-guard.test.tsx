@@ -71,7 +71,7 @@ describe("목 만들기 이탈 확인", () => {
     await editMock();
     fireEvent.change(screen.getByLabelText("도구 이름"), { target: { value: "ping" } });
     fireEvent.click(screen.getByRole("button", { name: "저장" }));
-    await screen.findByText("저장했습니다 — mock.json");
+    await screen.findByText("저장했습니다 — mocks/mock.json");
     expect(unloadPrevented()).toBe(false);
     window.location.hash = "#/runs";
     await waitFor(() => expect(screen.queryByLabelText("도구 이름")).toBeNull());
@@ -85,7 +85,7 @@ describe("목 만들기 이탈 확인", () => {
 
     fireEvent.change(screen.getByLabelText("도구 이름"), { target: { value: "ping" } });
     fireEvent.click(screen.getByRole("button", { name: "저장" }));
-    await screen.findByText("저장했습니다 — mock.json");
+    await screen.findByText("저장했습니다 — mocks/mock.json");
 
     expect(screen.queryByText(LEAVE)).toBeNull();
   });
@@ -98,7 +98,7 @@ describe("목 만들기 이탈 확인", () => {
 
     fireEvent.change(screen.getByLabelText("도구 이름"), { target: { value: "ping" } });
     fireEvent.click(screen.getByRole("button", { name: "저장" }));
-    await screen.findByText("저장했습니다 — mock.json");
+    await screen.findByText("저장했습니다 — mocks/mock.json");
 
     expect(screen.queryByText(back)).toBeNull();
   });

@@ -18,7 +18,7 @@ interface Put {
 let puts: Put[];
 
 const LOADED: FileContent = {
-  path: "examples/weather.mock.json",
+  path: "mocks/weather.mock.json",
   content: JSON.stringify({
     tools: [
       {
@@ -173,7 +173,7 @@ describe("MockBuilder — 새로 만들기", () => {
     await startNew();
     fillWeather();
     fireEvent.change(screen.getByLabelText("저장 위치"), {
-      target: { value: "mocks/weather.mock.json" },
+      target: { value: "weather.mock.json" },
     });
     fireEvent.click(screen.getByRole("button", { name: "저장" }));
 
@@ -193,15 +193,17 @@ describe("MockBuilder — 새로 만들기", () => {
     fillWeather();
     fireEvent.click(screen.getByRole("button", { name: "저장" }));
 
-    expect(await screen.findByText("이미 파일이 있습니다 — mock.json. 덮어쓸까요?")).toBeTruthy();
+    expect(
+      await screen.findByText("이미 파일이 있습니다 — mocks/mock.json. 덮어쓸까요?"),
+    ).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "덮어쓰기" }));
-    expect(await screen.findByText("저장했습니다 — mock.json")).toBeTruthy();
+    expect(await screen.findByText("저장했습니다 — mocks/mock.json")).toBeTruthy();
     expect(puts.map((put) => put.body.baseMtimeMs)).toEqual([0, 42]);
   });
 
   it("서버가 거절하면 그 문장을 줄 그대로 보여준다", async () => {
     const message = [
-      "→ 올바르지 않은 목 정의입니다 — mock.json: responses[0] 의 툴 'x' 이 tools 에 없습니다. 있는 툴: get_weather",
+      "→ 올바르지 않은 목 정의입니다 — mocks/mock.json: responses[0] 의 툴 'x' 이 tools 에 없습니다. 있는 툴: get_weather",
       '→ 형식: { "tools": [ { "name": ..., "inputSchema": ... } ], "responses": [ { "tool": ..., "result": ... } ] }',
     ].join("\n");
     mockApi([new Response(JSON.stringify({ error: message }), { status: 400 })]);
@@ -248,6 +250,48 @@ describe("MockBuilder — 새로 만들기", () => {
     fireEvent.click(screen.getByRole("button", { name: "응답 추가" }));
     expect((screen.getByLabelText("args (JSON)") as HTMLTextAreaElement).value).toBe('{"city":""}');
   });
+
+  it("저장 위치는 mocks/ 접두를 보이고 입력칸 기본값은 mock.json 이며, mocks/mock.json 으로 보낸다", async () => {
+    mockApi([saved(1)]);
+    await startNew();
+    fillWeather();
+    const input = screen.getByLabelText("저장 위치") as HTMLInputElement;
+    expect(input.value).toBe("mock.json");
+    expect(screen.getByText("mocks/")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "저장" }));
+    expect(await screen.findByText("저장했습니다 — mocks/mock.json")).toBeTruthy();
+    expect(puts.map((put) => put.url)).toEqual(["/api/mocks/mocks%2Fmock.json"]);
+  });
+
+  it("폴더 밖을 가리키는 이름이면 서버 문장을 줄 그대로 보여준다", async () => {
+    const message = [
+      "→ 목 정의는 mocks/ 폴더 안에만 저장할 수 있습니다 — 받은 이름이 폴더 밖을 가리킵니다: ../x.json",
+      "→ '..' 없이 파일 이름만 적으세요. 예: weather.mock.json",
+    ].join("\n");
+    mockApi([new Response(JSON.stringify({ error: message }), { status: 400 })]);
+    await startNew();
+    fillWeather();
+    fireEvent.change(screen.getByLabelText("저장 위치"), { target: { value: "../x.json" } });
+    fireEvent.click(screen.getByRole("button", { name: "저장" }));
+
+    expect((await screen.findByRole("alert")).textContent).toBe(message);
+    expect(puts.map((put) => put.url)).toEqual(["/api/mocks/mocks%2F..%2Fx.json"]);
+  });
+
+  it("이름이 비면 PUT 하지 않고 무엇을 적을지 말한다", async () => {
+    mockApi([]);
+    await startNew();
+    fillWeather();
+    fireEvent.change(screen.getByLabelText("저장 위치"), { target: { value: "  " } });
+    fireEvent.click(screen.getByRole("button", { name: "저장" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(Array.from(alert.querySelectorAll("li")).map((li) => li.textContent)).toEqual([
+      "파일 이름을 적으세요. mocks/ 폴더 안에 저장합니다.",
+    ]);
+    expect(puts).toEqual([]);
+  });
 });
 
 describe("MockBuilder — 기존 목 수정", () => {
@@ -256,12 +300,14 @@ describe("MockBuilder — 기존 목 수정", () => {
     await openLoaded();
     expect((screen.getByLabelText("도구 이름") as HTMLInputElement).value).toBe("get_weather");
     expect((screen.getByLabelText("설명") as HTMLInputElement).value).toBe("도시의 현재 날씨");
-    expect((screen.getByLabelText("저장 위치") as HTMLInputElement).value).toBe(LOADED.path);
+    expect((screen.getByLabelText("저장 위치") as HTMLInputElement).value).toBe(
+      "weather.mock.json",
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "저장" }));
     await waitFor(() => expect(puts).toHaveLength(1));
     expect(puts[0]).toEqual({
-      url: "/api/mocks/examples%2Fweather.mock.json",
+      url: "/api/mocks/mocks%2Fweather.mock.json",
       body: { content: LOADED_BYTES, baseMtimeMs: 7 },
     });
   });
@@ -283,6 +329,7 @@ describe("MockBuilder — 기존 목 수정", () => {
     fireEvent.change(screen.getByLabelText("저장 위치"), { target: { value: "copy.mock.json" } });
     fireEvent.click(screen.getByRole("button", { name: "저장" }));
     await waitFor(() => expect(puts[0]?.body.baseMtimeMs).toBe(0));
+    expect(puts[0]?.url).toBe("/api/mocks/mocks%2Fcopy.mock.json");
   });
 });
 

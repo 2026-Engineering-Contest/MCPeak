@@ -855,6 +855,21 @@ describe("GET /api/mocks", () => {
     ]);
   });
 
+  it("mocks/ 안에서는 dist · node_modules 이름의 하위 폴더도 목록에 싣는다 — 저장된 목은 모두 보인다", async () => {
+    server = await startTestServer();
+    const content = JSON.stringify(VALID_MOCK);
+    for (const path of ["mocks/dist/a.mock.json", "mocks/node_modules/b.mock.json"]) {
+      const saved = await putMock(server, path, content);
+      expect(saved.status).toBe(200);
+    }
+
+    const response = await fetch(`${server.baseUrl}/api/mocks`);
+    expect(await response.json()).toEqual([
+      { path: "mocks/dist/a.mock.json", toolCount: 1, responseCount: 1 },
+      { path: "mocks/node_modules/b.mock.json", toolCount: 1, responseCount: 1 },
+    ]);
+  });
+
   it("mocks/ 가 없으면 200 과 빈 배열이고, 폴더를 만들지 않는다", async () => {
     server = await startTestServer();
     await writeFile(join(server.root, "root.mock.json"), JSON.stringify(VALID_MOCK));

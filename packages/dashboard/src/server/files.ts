@@ -15,15 +15,22 @@ import type {
 
 const EXCLUDED_DIRS = new Set(["node_modules", ".git", "dist"]);
 
-/** 루트 아래 파일 중 `accept`가 참인 것의 절대경로. 제외 디렉터리는 내려가지 않는다. */
-async function walkFiles(dir: string, accept: (name: string) => boolean): Promise<string[]> {
+/**
+ * 루트 아래 파일 중 `accept`가 참인 것의 절대경로. `excluded` 디렉터리는 내려가지 않는다.
+ * 기본은 `EXCLUDED_DIRS` 다 — 사용자 폴더 전체를 훑을 때 의존성 · 빌드 산출물을 피하려는 것이다.
+ */
+async function walkFiles(
+  dir: string,
+  accept: (name: string) => boolean,
+  excluded: ReadonlySet<string> = EXCLUDED_DIRS,
+): Promise<string[]> {
   const entries = await readdir(dir, { withFileTypes: true }).catch(() => null);
   if (entries === null) return [];
   const results: string[] = [];
   for (const entry of entries) {
     if (entry.isDirectory()) {
-      if (EXCLUDED_DIRS.has(entry.name)) continue;
-      results.push(...(await walkFiles(join(dir, entry.name), accept)));
+      if (excluded.has(entry.name)) continue;
+      results.push(...(await walkFiles(join(dir, entry.name), accept, excluded)));
       continue;
     }
     if (entry.isFile() && accept(entry.name)) {
@@ -34,8 +41,11 @@ async function walkFiles(dir: string, accept: (name: string) => boolean): Promis
 }
 
 /** 루트 아래 `.json` 파일 절대경로 전부. */
-function walkJsonFiles(dir: string): Promise<string[]> {
-  return walkFiles(dir, (name) => name.toLowerCase().endsWith(".json"));
+function walkJsonFiles(
+  dir: string,
+  excluded: ReadonlySet<string> = EXCLUDED_DIRS,
+): Promise<string[]> {
+  return walkFiles(dir, (name) => name.toLowerCase().endsWith(".json"), excluded);
 }
 
 /** OS 구분자와 무관하게 항상 `/`로 이어진 상대경로를 준다. */
@@ -76,9 +86,12 @@ export function isUnderMocksDir(root: string, absolute: string): boolean {
  *
  * 루트 전체를 보지 않는 이유: worktree 복사본 · 벤치 결과 · 다른 패키지의 fixture 가 목으로
  * 잡혔다(ADR-0121). `path` 는 여전히 root 기준이라 `GET /api/mocks/<path>` 로 그대로 연다.
+ *
+ * `mocks/` 안에서는 제외 폴더를 두지 않는다. 저장은 `mocks/dist/a.json` 도 받으므로, 여기서
+ * `dist` 를 건너뛰면 저장한 목이 목록에서 사라진다.
  */
 export async function listMocks(root: string): Promise<MockFileEntry[]> {
-  const files = await walkJsonFiles(join(root, MOCKS_DIR));
+  const files = await walkJsonFiles(join(root, MOCKS_DIR), new Set());
   const results: MockFileEntry[] = [];
   for (const absolute of files) {
     let definition: MockDefinition;

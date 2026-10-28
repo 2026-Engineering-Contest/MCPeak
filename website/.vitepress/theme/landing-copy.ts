@@ -106,7 +106,10 @@ export interface LandingCopy {
   readonly terminalCaption: string;
   readonly statement: {
     readonly strong: string;
+    /** 첫 줄. 여기서 줄을 바꾼다. */
     readonly rest: string;
+    /** 둘째 줄에서 code 앞에 붙는 말. 한국어는 code 로 바로 시작해서 비어 있다. */
+    readonly lead: string;
     readonly code: string;
     readonly tail: string;
   };
@@ -160,7 +163,8 @@ const ko: LandingCopy = {
   terminalCaption: "실패한 케이스는 무엇이 다른지, 왜 다른지, 어떻게 고치는지를 찍는다",
   statement: {
     strong: "실패 메시지가 곧 제품이다.",
-    rest: " 테스트 도구의 화면은 실패했을 때 터미널에 찍히는 문장이다. ",
+    rest: " 테스트 도구의 화면은 실패했을 때 터미널에 찍히는 문장이다.",
+    lead: "",
     code: "expected true, got false",
     tail: " 로 끝내지 않고, 무엇이 왜 다른지와 어떻게 고치는지까지 쓴다.",
   },
@@ -469,7 +473,8 @@ const en: LandingCopy = {
   terminalCaption: "A failed case says what differs, why, and how to fix it",
   statement: {
     strong: "The failure message is the product.",
-    rest: " A test tool's real interface is the sentence it prints when something fails. Instead of stopping at ",
+    rest: " A test tool's real interface is the sentence it prints when something fails.",
+    lead: "Instead of stopping at ",
     code: "expected true, got false",
     tail: ", MCPeak says what differs, why, and how to fix it.",
   },

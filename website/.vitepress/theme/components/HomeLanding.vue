@@ -393,7 +393,7 @@ const GITHUB_PATH =
     <section class="band">
       <div class="band-inner">
         <p class="band-text">
-          <strong>{{ copy.statement.strong }}</strong>{{ copy.statement.rest }}<code>{{ copy.statement.code }}</code>{{ copy.statement.tail }}
+          <strong>{{ copy.statement.strong }}</strong>{{ copy.statement.rest }}<br />{{ copy.statement.lead }}<code>{{ copy.statement.code }}</code>{{ copy.statement.tail }}
         </p>
         <ul class="checks">
           <li v-for="item in copy.checks" :key="item">
@@ -994,7 +994,8 @@ const GITHUB_PATH =
 
 .band-text {
   margin: 0;
-  max-width: 820px;
+  /* 영어 첫 문장이 한 줄에 들어가는 폭. 줄바꿈은 <br> 로 직접 준다. */
+  max-width: 900px;
   font-size: 17px;
   line-height: 30px;
 }
@@ -1250,7 +1251,8 @@ const GITHUB_PATH =
 
 .persona-row {
   display: grid;
-  grid-template-columns: 140px minmax(0, 1fr);
+  /* '…아직 없을 때' 같은 짧은 조건이 한 줄에 들어가는 폭. 140px 에서는 '때'가 혼자 넘어갔다. */
+  grid-template-columns: 160px minmax(0, 1fr);
   gap: 6px 24px;
   padding: 22px 0;
   border-bottom: 1px solid var(--vp-c-divider);
@@ -1292,8 +1294,10 @@ const GITHUB_PATH =
 .persona-cmd {
   align-self: flex-start;
   max-width: 100%;
-  overflow-x: auto;
-  white-space: nowrap;
+  /* 가로 스크롤이 생기면 명령의 뒷부분이 안 보인다. 공백에서 접어 전부 드러낸다. */
+  white-space: pre-wrap;
+  word-break: keep-all;
+  overflow-wrap: break-word;
   font-size: 12.5px;
   line-height: 20px;
   padding: 6px 10px;
@@ -1318,12 +1322,16 @@ const GITHUB_PATH =
 
 .persona-term-body {
   padding: 20px 24px;
-  overflow-x: auto;
 }
 
+/* 진짜 터미널처럼 긴 줄은 접는다. 접힌 뒷줄은 들여써서 새 줄과 구분된다. */
 .persona-term-line {
   min-height: 22px;
-  white-space: pre;
+  white-space: pre-wrap;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+  padding-left: 6ch;
+  text-indent: -6ch;
 }
 
 .t-plain {
@@ -1474,8 +1482,9 @@ const GITHUB_PATH =
   background: var(--vp-c-bg-alt);
   font-size: 13px;
   color: var(--vp-c-text-1);
-  overflow-x: auto;
-  white-space: nowrap;
+  white-space: pre-wrap;
+  word-break: keep-all;
+  overflow-wrap: break-word;
 }
 
 .dash-window {
